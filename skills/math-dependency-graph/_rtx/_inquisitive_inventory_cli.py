@@ -9,12 +9,15 @@ from pathlib import Path
 import sys
 from typing import Mapping, Sequence
 
-from officina.rutter import Message, PythonInstruction
+from officina.rutter import MachineInstruction, Message
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 from ._inquisitive_inventory_rutter import (
     open_experiment,
+    setup_bundled_frozen_gold_experiment,
     setup_experiment,
+    setup_frozen_gold_experiment,
+    setup_iterator_experiment,
     validated_inventory_ledger,
 )
 
@@ -58,10 +61,10 @@ def _instruction(value: object) -> object:
         return None
     if isinstance(value, Message):
         return {"kind": "message", **_plain_json(value.to_json())}
-    if isinstance(value, PythonInstruction):
+    if isinstance(value, MachineInstruction):
         return {
-            "kind": "python",
-            "action_id": value.action_id,
+            "kind": "machine",
+            "machine_id": value.machine_id,
             "mode": value.mode,
             "answer_format": _plain_json(value.answer_format),
         }
@@ -69,17 +72,35 @@ def _instruction(value: object) -> object:
 
 
 def _show(voyage: object) -> dict[str, object]:
-    node = voyage.get_current_node()
+    status = voyage.get_status()
+    evolution = status.current_evolution
+    fault = status.fault
     return {
-        "node": {
-            "rutter_id": node.rutter_id,
-            "definition_version": node.definition_version,
-            "state_id": node.state_id,
-            "node_entry_id": node.node_entry_id,
-            "depth": node.depth,
-            "condition": node.condition,
+        "evolution": {
+            "rutter_id": evolution.rutter_id,
+            "definition_version": evolution.definition_version,
+            "evolution_id": evolution.evolution_id,
+            "evolution_entry_id": evolution.evolution_entry_id,
+            "depth": evolution.depth,
+            "condition": evolution.condition,
         },
-        "instruction": _instruction(voyage.get_instruction()),
+        "instruction": _instruction(status.instruction),
+        "active_result": (
+            None
+            if status.active_result is None
+            else _plain_json(status.active_result.to_json())
+        ),
+        "fault": (
+            None
+            if fault is None
+            else {
+                "category": fault.category,
+                "evolution_id": fault.evolution_id,
+                "evolution_entry_id": fault.evolution_entry_id,
+                "target_evolution_id": fault.target_evolution_id,
+                "transition_hook_ids": list(fault.transition_hook_ids),
+            }
+        ),
     }
 
 
@@ -87,8 +108,15 @@ def _parser() -> argparse.ArgumentParser:
     parser = _JsonArgumentParser(prog="inquisitive_inventory_cli.py")
     modes = parser.add_subparsers(dest="mode", required=True)
     setup = modes.add_parser("setup")
-    setup.add_argument("--source-cases-file", required=True)
-    setup.add_argument("--gold-cases-file", required=True)
+    source = setup.add_mutually_exclusive_group(required=True)
+    source.add_argument("--source-cases-file")
+    source.add_argument("--iterator-state-dir")
+    setup.add_argument("--worker-index", type=int)
+    gold = setup.add_mutually_exclusive_group()
+    gold.add_argument("--gold-cases-file")
+    gold.add_argument("--gold-annotation-file")
+    setup.add_argument("--gold-overlay-file")
+    setup.add_argument("--inventory-fragment-file", action="append")
     setup.add_argument("--experiment-dir", required=True)
     show = modes.add_parser("show")
     show.add_argument("--experiment-dir", required=True)
@@ -110,11 +138,70 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             return 0
         if args.mode == "setup":
-            voyage = setup_experiment(
-                _read_json(Path(args.source_cases_file)),
-                _read_json(Path(args.gold_cases_file)),
-                Path(args.experiment_dir),
+            frozen_gold = bool(
+                args.inventory_fragment_file
+                or args.gold_annotation_file is not None
+                or args.gold_overlay_file is not None
             )
+            if frozen_gold:
+                if (
+                    args.iterator_state_dir is None
+                    or args.worker_index is None
+                    or not args.inventory_fragment_file
+                ):
+                    raise _UsageError(
+                        "full-gold setup requires iterator state, worker index, "
+                        "and inventory fragments"
+                    )
+                explicit_gold = (
+                    args.gold_annotation_file is not None,
+                    args.gold_overlay_file is not None,
+                )
+                if explicit_gold == (True, True):
+                    voyage = setup_frozen_gold_experiment(
+                        Path(args.iterator_state_dir),
+                        args.worker_index,
+                        [Path(path) for path in args.inventory_fragment_file],
+                        Path(args.gold_annotation_file),
+                        Path(args.gold_overlay_file),
+                        Path(args.experiment_dir),
+                    )
+                elif explicit_gold == (False, False):
+                    voyage = setup_bundled_frozen_gold_experiment(
+                        Path(args.iterator_state_dir),
+                        args.worker_index,
+                        [Path(path) for path in args.inventory_fragment_file],
+                        Path(args.experiment_dir),
+                    )
+                else:
+                    raise _UsageError(
+                        "gold annotation and overlay overrides must be supplied together"
+                    )
+            elif args.gold_cases_file is None:
+                raise _UsageError(
+                    "setup requires gold cases or authenticated inventory fragments"
+                )
+            elif args.iterator_state_dir is not None:
+                if args.worker_index is None:
+                    raise _UsageError(
+                        "setup --iterator-state-dir requires --worker-index"
+                    )
+                voyage = setup_iterator_experiment(
+                    Path(args.iterator_state_dir),
+                    args.worker_index,
+                    _read_json(Path(args.gold_cases_file)),
+                    Path(args.experiment_dir),
+                )
+            else:
+                if args.worker_index is not None:
+                    raise _UsageError(
+                        "setup --worker-index requires --iterator-state-dir"
+                    )
+                voyage = setup_experiment(
+                    _read_json(Path(args.source_cases_file)),
+                    _read_json(Path(args.gold_cases_file)),
+                    Path(args.experiment_dir),
+                )
         else:
             voyage = open_experiment(Path(args.experiment_dir))
             if args.mode == "next":

@@ -1,35 +1,41 @@
 schema_version: 6
 node_type: behavioral_source
 id: math-dependency-graph._rtx.source.rtx-inquisitive-inventory-rutter
-version: 2
-description: Composes frozen inventory reports with an attached diagnostic Rutter
-  and one repeat-safe, action-ID-keyed ledger effect.
+version: 7
+description: Presents authenticated iterator-sequence text as finite inventory interactions,
+  then compares each accepted inventory with its indexed adjudicated gold through a TransitionHook.
 gateway:
   language: Python>=3.11
   path: _inquisitive_inventory_rutter.py
 content:
 - _inquisitive_inventory_rutter\.py
 dependencies:
+- source: math-dependency-graph._rtx.source.rtx-inventory-unit-iterator
+  version: 7
+  blueprint:
+    base: module-root
+    path: blueprints/rtx-inventory-unit-iterator.yaml
+  reason: Reads immutable authenticated before/after sequence artifacts for one completed iterator worker.
 - source: common.source.atomic-files
   version: 1
   blueprint:
     base: repository-root
     path: src/officina/common/blueprints/atomic-files.yaml
-  reason: Confines immutable action-ID-keyed ledger rows and strict ledger reads.
+  reason: Confines immutable machine-ID-keyed ledger rows and strict ledger reads.
 - source: rutter.source.diagnostic
-  version: 2
+  version: 3
   blueprint:
     base: repository-root
     path: src/officina/rutter/blueprints/diagnostic.yaml
-  reason: Constructs diagnostic cases, the DiagnoseAnswer child, and its sequence CaseMaker.
+  reason: Constructs diagnostic cases, the DiagnoseAnswer child, and its sequence TransitionHook.
 - source: rutter.source.model
-  version: 1
+  version: 2
   blueprint:
     base: repository-root
     path: src/officina/rutter/blueprints/model.yaml
-  reason: Constructs public Rutter states, callback contexts, validators, records, and results.
+  reason: Constructs public Rutter evolutions, callback contexts, validators, records, and results.
 - source: rutter.source.runtime
-  version: 1
+  version: 3
   blueprint:
     base: repository-root
     path: src/officina/rutter/blueprints/runtime.yaml
@@ -38,28 +44,28 @@ uses_interfaces:
 - interface: common.interface.atomic-files
   version: 1
 - interface: rutter.interface.binding
-  version: 1
+  version: 3
 - interface: rutter.interface.diagnostic
-  version: 2
+  version: 3
 - interface: rutter.interface.model
-  version: 1
+  version: 2
 interfaces:
   math-dependency-graph._rtx.source.rtx-inquisitive-inventory-rutter.interface.experiment-lifecycle:
-    version: 2
-    description: Seal finite source and gold cases into a new experiment, reopen
-      its current public Rutter authority, or validate its exact ledger rows.
-    usage: <setup|open|ledger> <source-cases?> <gold-cases?> <experiment-dir>
+    version: 7
+    description: Seal finite text interactions, current iterator artifacts, or authenticated
+      reconstructed iterator history with indexed gold answers into an experiment.
+    usage: <setup|setup-iterator|setup-frozen-gold|open|ledger> <inputs...> <experiment-dir>
     content:
     - _inquisitive_inventory_rutter\.py
     uses_interfaces:
     - interface: common.interface.atomic-files
       version: 1
     - interface: rutter.interface.binding
-      version: 1
+      version: 3
     - interface: rutter.interface.diagnostic
-      version: 2
+      version: 3
     - interface: rutter.interface.model
-      version: 1
+      version: 2
     contract:
       arguments:
         operation:
@@ -71,18 +77,41 @@ interfaces:
             values:
             - value: setup
               description: Create a new experiment from separately supplied frozen cases.
+            - value: setup-iterator
+              description: Create a new experiment from one completed iterator worker's authenticated sequence artifacts.
+            - value: setup-frozen-gold
+              description: Reconstruct one legacy frozen worker from authenticated fragments and map the bundled or explicitly supplied corrected full gold graph by source span.
             - value: open
               description: Reopen an existing experiment.
             - value: ledger
-              description: Read and validate sorted action-ID-keyed ledger rows.
+              description: Read and validate sorted machine-ID-keyed ledger rows.
         source-cases:
-          description: Controller-frozen before and after inventory snapshots used only by setup.
+          description: Controller-frozen source text, prior inventory, and authenticated historical snapshot used only by setup.
           required: false
           sensitivity: user-private
           type:
             kind: string
             description: Finite JSON-compatible Python array.
             sensitivity: user-private
+        iterator-state-dir:
+          description: Durable iterator state containing immutable sequence delta artifacts.
+          direct_io_ref: iterator-state
+          required: false
+          sensitivity: user-private
+          type:
+            kind: dir
+            access: read
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+        worker-index:
+          description: Positive completed iterator worker whose sequences become cases.
+          required: false
+          sensitivity: public
+          type:
+            kind: integer
+            minimum: 1
+            sensitivity: public
         gold-cases:
           description: Separately adjudicated semantic answers used only by setup.
           required: false
@@ -91,6 +120,42 @@ interfaces:
             kind: string
             description: Finite JSON-compatible Python array.
             sensitivity: secret
+        inventory-fragments:
+          description: Authenticated final worker fragments used to reconstruct legacy sequence snapshots.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            description: Finite array of exact fragment paths.
+            sensitivity: user-private
+        gold-annotation-path:
+          description: Optional override for the bundled frozen full-graph gold annotation used by setup-frozen-gold.
+          direct_io_ref: gold-annotation
+          required: false
+          sensitivity: secret
+          type:
+            kind: file
+            access: read
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+            content_type:
+              kind: string
+              sensitivity: secret
+        gold-overlay-path:
+          description: Optional override for the bundled accepted correction overlay authenticating the base gold file.
+          direct_io_ref: gold-overlay
+          required: false
+          sensitivity: secret
+          type:
+            kind: file
+            access: read
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+            content_type:
+              kind: string
+              sensitivity: secret
         experiment-dir:
           description: Exact experiment directory created by setup or read by open.
           direct_io_ref: experiment-state
@@ -181,7 +246,7 @@ interfaces:
           atomicity:
             per_effect_only: Reckoning and ledger files use their own confined atomic boundaries.
           concurrent_invocations:
-            unsafe: Concurrent setup calls for one absent directory are not coordinated.
+            unsafe: Concurrent setup invocations for one absent directory are not coordinated.
           idempotency:
             non_idempotent: Setup rejects an existing directory; open is read-only.
           on_uncertain_completion:
@@ -197,11 +262,41 @@ interfaces:
       direct_io:
         network: []
         reads:
+        - id: iterator-state
+          medium: local-filesystem
+          access: read
+          system: filesystem
+          content: Iterator SQLite state and immutable authenticated sequence delta artifacts.
+          formats:
+          - sqlite
+          path: <iterator-state-dir>/iterator.sqlite3
+          path_match: exact
+          sensitivity: user-private
+        - id: gold-annotation
+          medium: local-filesystem
+          access: read
+          system: filesystem
+          content: Frozen full-graph gold annotation.
+          formats:
+          - json
+          path: <gold-annotation-path>
+          path_match: exact
+          sensitivity: secret
+        - id: gold-overlay
+          medium: local-filesystem
+          access: read
+          system: filesystem
+          content: Accepted adjudicated correction overlay.
+          formats:
+          - json
+          path: <gold-overlay-path>
+          path_match: exact
+          sensitivity: secret
         - id: experiment-state
           medium: local-filesystem
           access: read-write
           system: filesystem
-          content: Durable Reckoning, lock, and action-ID-keyed ledger rows.
+          content: Durable Reckoning, lock, and machine-ID-keyed ledger rows.
           formats:
           - json
           path: <experiment-dir>/**
@@ -212,7 +307,7 @@ interfaces:
           medium: local-filesystem
           access: read-write
           system: filesystem
-          content: Durable Reckoning, lock, and action-ID-keyed ledger rows.
+          content: Durable Reckoning, lock, and machine-ID-keyed ledger rows.
           formats:
           - json
           path: <experiment-dir>/**

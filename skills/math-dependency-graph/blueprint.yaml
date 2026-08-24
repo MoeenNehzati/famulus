@@ -3,7 +3,7 @@ authority:
 children:
   _rtx: {}
 content:
-- (?:SKILL\.md|base\.json|inventory\.schema\.json|chunk-plan\.schema\.json|run-diagnostics\.schema\.json|semantic-(?:graph|repair)\.schema\.json|proof-normalization\.schema\.json|instructions/(?:inventory|extract|proof-reconciliation)\.md|references/(?:experimental-improvement|gold-standard-extraction)\.md)
+- (?:SKILL\.md|base\.json|inventory\.schema\.json|chunk-plan\.schema\.json|run-diagnostics\.schema\.json|semantic-(?:graph|repair)\.schema\.json|proof-normalization\.schema\.json|instructions/(?:inventory|extract|proof-reconciliation)\.md|references/(?:experimental-improvement|gold-standard-extraction|inquisitive-inventory-rutter)\.md)
 description: Extracts a direct dependency graph from mathematical LaTeX, renders canonical
   graph JSON as interactive HTML, and serves the result locally for inspection.
 discovery:
@@ -49,7 +49,7 @@ gateway:
 id: math-dependency-graph
 namespace_exports:
   _rtx:
-    version: 55
+    version: 66
     access:
       allow_all_modules: true
       allowed_callers: []
@@ -123,7 +123,7 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/instructions-proof-reconciliation.yaml
-version: 82
+version: 90
 maturity: stable
 installation_tier: core
 personal_preference:

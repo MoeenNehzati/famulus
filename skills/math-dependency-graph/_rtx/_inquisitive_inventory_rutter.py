@@ -1,53 +1,84 @@
 #!/usr/bin/env python3
-"""Compose frozen inventory reports with semantic diagnosis and a ledger."""
+"""Compose frozen inventory interactions with semantic diagnosis and a ledger."""
 
 from __future__ import annotations
 
 import hashlib
 import json
 from pathlib import Path
-from typing import Mapping, cast
+import sqlite3
+from copy import deepcopy
+from typing import Iterable, Mapping, Sequence, cast
 
 from officina.common.atomic_files import atomic_create_bytes, read_regular_file_bytes
 from officina.rutter import (
-    Action,
-    ActionContext,
-    ActionResult,
-    AnswerContext,
     AnswerSpec,
     DiagnosisCase,
     DiagnoseAnswer,
-    Done,
-    EdgeContext,
+    EvolutionContext,
     JsonObject,
-    Prompt,
+    LLMStep,
+    LLMResponseContext,
+    MachineContext,
+    MachineResult,
+    MachineStep,
     QuestionCase,
-    RunResult,
     Rutter,
     RutterDefinitionError,
     RutterRegistry,
-    StateContext,
+    Terminal,
+    TransitionContext,
+    TransitionHook,
     Turn,
     ValidationIssue,
     ValidationReport,
-    case_sequence_after,
+    VoyageResult,
+    hook_sequence_after,
 )
 
 
 _RUTTER_NAME = "inquisitive-inventory"
 _RUTTER_ID = "math-graph-inquisitive-inventory"
 _RECKONING_NAME = "inquisitive-inventory.reckoning.json"
-_MAKER_ID = "inventory-diagnosis"
-_REPORT_STATE = "report"
-_RECORD_STATE = "record"
+_TRANSITION_HOOK_ID = "inventory-diagnosis"
+_REPORT_EVOLUTION = "report"
+_RECORD_EVOLUTION = "record"
 _MAX_APPENDIX_CASES = 64
-_CASE_SLOTS = tuple({"index": index} for index in range(_MAX_APPENDIX_CASES))
+_INTERACTION_SLOTS = tuple(
+    {"index": index} for index in range(_MAX_APPENDIX_CASES)
+)
 _CHANGES = ("added", "changed", "deleted")
+_FROZEN_GOLD_ASSET_DIR = (
+    Path(__file__).resolve().parents[1]
+    / "assets"
+    / "inference-from-random-restarts"
+    / "gold"
+)
+_SKILL_ROOT = Path(__file__).resolve().parents[1]
+_INVENTORY_INSTRUCTION_PATH = _SKILL_ROOT / "instructions" / "inventory.md"
+_INVENTORY_SCHEMA_PATH = _SKILL_ROOT / "inventory.schema.json"
+_BUNDLED_GOLD_ANNOTATION = _FROZEN_GOLD_ASSET_DIR / "gold-annotation.json"
+_BUNDLED_GOLD_OVERLAY = _FROZEN_GOLD_ASSET_DIR / "gold-correction-v2.json"
 _MINIMAL_FIX = "minimal_fix must be paper-independent and target inventory.md"
+_REPORT_REQUEST = (
+    "Read the displayed source text, update the prior inventory using the normal "
+    "inventory rules, and return the complete cumulative inventory snapshot for "
+    "this interaction."
+)
+_REPORT_TEXT = (
+    f"{_INVENTORY_INSTRUCTION_PATH.read_text(encoding='utf-8')}\n\n"
+    f"{_REPORT_REQUEST}"
+)
 _DIAGNOSIS_GUIDANCE = (
     "Distinguish an omitted entity from a reported unresolved endpoint.",
     "Treat a reported edge with an unresolved endpoint as recovered, not omitted.",
     "Distinguish a partially recovered dependency chain from a wholly omitted chain.",
+    (
+        "Gold truth does not represent a proof environment separately from the "
+        "result environment it proves. Do not diagnose the worker's separate "
+        "proof node or its proves edge as a mistake, and do not adjust the "
+        "worker's path to remove them."
+    ),
 )
 
 
@@ -333,18 +364,37 @@ def _invalid(path: tuple[str | int, ...], code: str, message: str) -> Validation
     return ValidationReport(False, (ValidationIssue(path, code, message),))
 
 
-def _charter_cases(context: StateContext) -> list[dict[str, object]]:
+def _charter_cases(context: EvolutionContext) -> list[dict[str, object]]:
     cases = context.charter.data.get("cases")
     if not isinstance(cases, (list, tuple)):
         raise RutterDefinitionError("inventory Charter cases must be an array")
     return [_json_object(case, "inventory case") for case in cases]
 
 
-def _case_index(context: StateContext) -> int:
-    return len(context.history.attached_calls(case_maker_id=_MAKER_ID))
+def _frozen_charter_text(context: EvolutionContext, name: str) -> str:
+    text = context.charter.data.get(f"{name}_text")
+    digest = context.charter.data.get(f"{name}_sha256")
+    if type(text) is not str or type(digest) is not str:
+        raise RutterDefinitionError(f"inventory Charter {name} snapshot is invalid")
+    if hashlib.sha256(text.encode("utf-8")).hexdigest() != digest:
+        raise RutterDefinitionError(f"inventory Charter {name} snapshot hash is invalid")
+    return text
 
 
-def _report_data(context: StateContext) -> JsonObject:
+def _output_schema(context: EvolutionContext) -> JsonObject:
+    schema_text = _frozen_charter_text(context, "inventory_schema")
+    try:
+        schema = json.loads(schema_text)
+    except json.JSONDecodeError as error:
+        raise RutterDefinitionError("inventory Charter schema snapshot is invalid") from error
+    return _json_object(schema, "inventory Charter schema")
+
+
+def _case_index(context: EvolutionContext) -> int:
+    return len(context.history.subrutters(transition_hook_id=_TRANSITION_HOOK_ID))
+
+
+def _report_data(context: EvolutionContext) -> JsonObject:
     cases = _charter_cases(context)
     index = _case_index(context)
     if index >= len(cases):
@@ -352,29 +402,31 @@ def _report_data(context: StateContext) -> JsonObject:
     case = cases[index]
     source = _json_object(case.get("source"), "inventory source case")
     return {
-        "sequence": {
+        "interaction": {
+            "interaction_index": index + 1,
             "sequence_id": source["sequence_id"],
             "source_sha256": hashlib.sha256(_canonical_bytes(source)).hexdigest(),
-            "before": source["before"],
-            "after": source["after"],
+            "text": source["text"],
+            "prior_inventory": source["before"],
         },
+        "output_schema": _output_schema(context),
         "minimal_fix_constraint": _MINIMAL_FIX,
     }
 
 
-def _validate_report(context: AnswerContext) -> ValidationReport:
+def _validate_report(context: LLMResponseContext) -> ValidationReport:
     response = context.response
     if response.outcome != "reported":
         return _invalid(("outcome",), "invalid-outcome", "outcome must be reported")
     evidence = response.evidence
-    if set(evidence) != {"sequence_id", "node_ids", "edge_ids"}:
+    if set(evidence) != {"sequence_id", "inventory"}:
         return _invalid(
             ("evidence",),
             "invalid-inventory-report",
-            "evidence must contain sequence_id, node_ids, and edge_ids",
+            "evidence must contain sequence_id and inventory",
         )
-    cases = _charter_cases(context.state)
-    index = _case_index(context.state)
+    cases = _charter_cases(context.evolution)
+    index = _case_index(context.evolution)
     if index >= len(cases):
         return _invalid(
             ("evidence", "sequence_id"),
@@ -388,13 +440,18 @@ def _validate_report(context: AnswerContext) -> ValidationReport:
             "wrong-sequence",
             "sequence_id must match the displayed sequence",
         )
-    for field in ("node_ids", "edge_ids"):
-        if not _valid_change_ids(evidence[field]):
-            return _invalid(
-                ("evidence", field),
-                "invalid-change-ids",
-                f"{field} must contain sorted disjoint added, changed, and deleted IDs",
-            )
+    try:
+        inventory = _json_object(evidence["inventory"], "reported inventory")
+        _files(inventory)
+        _record_map(inventory, "nodes")
+        _record_map(inventory, "edges")
+        _canonical_bytes(inventory)
+    except (TypeError, ValueError) as error:
+        return _invalid(
+            ("evidence", "inventory"),
+            "invalid-inventory",
+            str(error),
+        )
     return ValidationReport(True)
 
 
@@ -457,17 +514,32 @@ def _render_actual_answer(
     source: Mapping[str, object], report: Mapping[str, object]
 ) -> dict[str, object]:
     before = _json_object(source.get("before"), "before snapshot")
-    after = _json_object(source.get("after"), "after snapshot")
+    after = _json_object(report.get("inventory"), "reported inventory")
     before_nodes = _record_map(before, "nodes")
     after_nodes = _record_map(after, "nodes")
     before_edges = _record_map(before, "edges")
     after_edges = _record_map(after, "edges")
     before_files = _files(before)
     after_files = _files(after)
-    node_changes = _json_object(report.get("node_ids"), "reported node IDs")
-    edge_changes = _json_object(report.get("edge_ids"), "reported edge IDs")
-    if not _valid_change_ids(node_changes) or not _valid_change_ids(edge_changes):
-        raise ValueError("reported inventory IDs are invalid")
+    def changes(
+        before_records: Mapping[str, Mapping[str, object]],
+        after_records: Mapping[str, Mapping[str, object]],
+    ) -> dict[str, list[str]]:
+        before_ids = set(before_records)
+        after_ids = set(after_records)
+        return {
+            "added": sorted(after_ids - before_ids),
+            "changed": sorted(
+                local_id
+                for local_id in before_ids & after_ids
+                if _canonical_bytes(before_records[local_id])
+                != _canonical_bytes(after_records[local_id])
+            ),
+            "deleted": sorted(before_ids - after_ids),
+        }
+
+    node_changes = changes(before_nodes, after_nodes)
+    edge_changes = changes(before_edges, after_edges)
 
     node_aliases: dict[str, str] = {}
     unresolved: dict[tuple[str, str], tuple[str, dict[str, object], list[dict[str, object]]]] = {}
@@ -609,9 +681,9 @@ def _render_actual_answer(
     }
 
 
-def _diagnosis_charter(item: JsonObject, context: EdgeContext) -> JsonObject:
+def _diagnosis_charter(item: JsonObject, context: TransitionContext) -> JsonObject:
     index = item.get("index")
-    cases = _charter_cases(context.state)
+    cases = _charter_cases(context.evolution)
     if type(index) is not int or index < 0 or index >= len(cases):
         raise RutterDefinitionError("inventory case sequence is exhausted")
     if not isinstance(context.record, Turn) or context.record.response is None:
@@ -651,92 +723,95 @@ def _diagnosis_charter(item: JsonObject, context: EdgeContext) -> JsonObject:
     ).to_json()
 
 
-def _write_ledger_row(root: Path, action_id: str, row: dict[str, object]) -> None:
+def _write_ledger_row(root: Path, machine_id: str, row: dict[str, object]) -> None:
     ledger = root / "ledger"
-    path = ledger / f"{action_id}.json"
+    path = ledger / f"{machine_id}.json"
     serialized = _canonical_bytes(row) + b"\n"
     created = atomic_create_bytes(path, serialized, allowed_root=root, mode=0o600)
     if not created and read_regular_file_bytes(path, allowed_root=root) != serialized:
         raise ValueError("existing inventory ledger row differs from the replay")
 
 
-def _record_iteration(context: ActionContext) -> ActionResult:
-    turn = context.state.history.require_latest_turn(_REPORT_STATE)
+def _record_iteration(context: MachineContext) -> MachineResult:
+    """Persist the accepted inventory report and choose whether another remains."""
+    turn = context.evolution.history.require_latest_turn(_REPORT_EVOLUTION)
     if turn.response is None:
         raise RutterDefinitionError("inventory ledger requires an accepted report")
-    calls = context.state.history.attached_calls(
-        case_maker_id=_MAKER_ID,
-        edge_id=turn.record_id,
+    hook_runs = context.evolution.history.hook_runs(
+        transition_hook_id=_TRANSITION_HOOK_ID,
+        transition_id=turn.record_id,
     )
-    if len(calls) != 1:
+    if len(hook_runs) != 1:
         raise RutterDefinitionError(
             "inventory ledger requires exactly one attached diagnosis"
         )
-    call = calls[0]
-    root_value = context.state.charter.data.get("experiment_dir")
+    hook_run = hook_runs[0]
+    root_value = context.evolution.charter.data.get("experiment_dir")
     if type(root_value) is not str:
         raise RutterDefinitionError("inventory experiment directory is unavailable")
     row = {
         "ledger_version": 1,
-        "action_id": context.action_id,
-        "maker_id": _MAKER_ID,
-        "edge_id": turn.record_id,
+        "machine_id": context.machine_id,
+        "transition_hook_id": _TRANSITION_HOOK_ID,
+        "transition_id": turn.record_id,
         "sequence_id": turn.response.evidence["sequence_id"],
         "message": _plain_json(turn.message.to_json()),
         "response": _plain_json(turn.response.to_json()),
-        "verdict": call.result.outcome,
-        "child_result": _plain_json(call.result.to_json()),
+        "verdict": hook_run.result.outcome,
+        "child_result": _plain_json(hook_run.result.to_json()),
     }
-    _write_ledger_row(Path(root_value), context.action_id, row)
-    total = len(_charter_cases(context.state))
-    completed = len(context.state.history.attached_calls(case_maker_id=_MAKER_ID))
-    return ActionResult("done" if completed == total else "more", row)
+    _write_ledger_row(Path(root_value), context.machine_id, row)
+    total = len(_charter_cases(context.evolution))
+    completed = len(
+        context.evolution.history.subrutters(
+            transition_hook_id=_TRANSITION_HOOK_ID
+        )
+    )
+    return MachineResult("done" if completed == total else "more", row)
 
 
-def _complete_result(context: StateContext) -> RunResult:
-    completed = len(context.history.attached_calls(case_maker_id=_MAKER_ID))
-    return RunResult("complete", {"iterations": completed})
+def _complete_result(context: EvolutionContext) -> VoyageResult:
+    completed = len(
+        context.history.subrutters(transition_hook_id=_TRANSITION_HOOK_ID)
+    )
+    return VoyageResult("complete", {"iterations": completed})
 
 
 class InquisitiveInventoryRutter(Rutter):
     rutter_id = _RUTTER_ID
-    definition_version = 2
-    start_state = _REPORT_STATE
+    definition_version = 4
+    initial_evolution_id = _REPORT_EVOLUTION
 
-    def define_states(self) -> Mapping[str, object]:
+    def define_evolutions(self) -> Mapping[str, object]:
         return {
-            _REPORT_STATE: Prompt(
-                (
-                    "Report the displayed sequence_id and the sorted added, changed, "
-                    "and deleted local node and edge IDs."
-                ),
+            _REPORT_EVOLUTION: LLMStep(
+                _REPORT_TEXT,
                 answer=AnswerSpec(
                     {
                         "reported": {
                             "sequence_id": "positive integer",
-                            "node_ids": {change: ["local ID"] for change in _CHANGES},
-                            "edge_ids": {change: ["local ID"] for change in _CHANGES},
+                            "inventory": "inventory JSON object",
                         }
                     }
                 ),
                 data=_report_data,
                 validate=_validate_report,
-                then=_RECORD_STATE,
+                then=_RECORD_EVOLUTION,
             ),
-            _RECORD_STATE: Action(
+            _RECORD_EVOLUTION: MachineStep(
                 _record_iteration,
                 mode="repeat-safe",
-                then={"more": _REPORT_STATE, "done": "complete"},
+                then={"more": _REPORT_EVOLUTION, "done": "complete"},
             ),
-            "complete": Done(_complete_result),
+            "complete": Terminal(_complete_result),
         }
 
-    def define_case_makers(self) -> tuple[object, ...]:
+    def define_transition_hooks(self) -> tuple[TransitionHook, ...]:
         return (
-            case_sequence_after(
-                id=_MAKER_ID,
-                after_states={_REPORT_STATE},
-                items=_CASE_SLOTS,
+            hook_sequence_after(
+                id=_TRANSITION_HOOK_ID,
+                after_evolutions={_REPORT_EVOLUTION},
+                items=_INTERACTION_SLOTS,
                 child=DiagnoseAnswer,
                 charter=_diagnosis_charter,
             ),
@@ -760,8 +835,12 @@ def _seal_source_cases(value: object) -> list[dict[str, object]]:
         sequence_id = source.get("sequence_id")
         if type(sequence_id) is not int or sequence_id < 1 or sequence_id in seen:
             raise ValueError("source sequence IDs must be unique positive integers")
-        if set(source) != {"sequence_id", "before", "after"}:
-            raise ValueError("source cases must contain sequence_id, before, and after")
+        if set(source) != {"sequence_id", "text", "before", "after"}:
+            raise ValueError(
+                "source cases must contain sequence_id, text, before, and after"
+            )
+        if not isinstance(source["text"], str) or not source["text"].strip():
+            raise ValueError("source case text must be nonempty")
         for side in ("before", "after"):
             snapshot = _json_object(source[side], f"inventory {side} snapshot")
             _files(snapshot)
@@ -773,6 +852,35 @@ def _seal_source_cases(value: object) -> list[dict[str, object]]:
         raise ValueError("source cases must be ordered by sequence_id")
     _canonical_bytes(cases)
     return cases
+
+
+def _freeze_utf8_file(path: Path, label: str) -> tuple[str, str]:
+    try:
+        content = Path(path).read_bytes().decode("utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise ValueError(f"{label} is not readable UTF-8") from error
+    if not content:
+        raise ValueError(f"{label} must not be empty")
+    return content, hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def _frozen_worker_contract() -> dict[str, object]:
+    instruction, instruction_sha256 = _freeze_utf8_file(
+        _INVENTORY_INSTRUCTION_PATH, "canonical inventory instructions"
+    )
+    schema, schema_sha256 = _freeze_utf8_file(
+        _INVENTORY_SCHEMA_PATH, "canonical inventory schema"
+    )
+    try:
+        _json_object(json.loads(schema), "canonical inventory schema")
+    except json.JSONDecodeError as error:
+        raise ValueError("canonical inventory schema is invalid JSON") from error
+    return {
+        "inventory_instruction_text": instruction,
+        "inventory_instruction_sha256": instruction_sha256,
+        "inventory_schema_text": schema,
+        "inventory_schema_sha256": schema_sha256,
+    }
 
 
 def _seal_cases(
@@ -797,6 +905,448 @@ def _seal_cases(
     return sealed
 
 
+def _load_iterator_source_cases(
+    iterator_state_dir: Path, worker_index: int
+) -> list[dict[str, object]]:
+    """Load and authenticate one worker's immutable closed-sequence snapshots."""
+
+    if type(worker_index) is not int or worker_index < 1:
+        raise ValueError("worker_index must be a positive integer")
+    database = Path(iterator_state_dir).resolve() / "iterator.sqlite3"
+    if not database.is_file():
+        raise ValueError("iterator database is missing")
+    try:
+        with sqlite3.connect(database) as connection:
+            rows = connection.execute(
+                "SELECT artifact.sequence_id, artifact.before_snapshot_json, "
+                "artifact.after_snapshot_json, artifact.before_manifest_json, "
+                "artifact.after_manifest_json, artifact.delta_json, "
+                "first_unit.ordinal, last_unit.ordinal "
+                "FROM sequence_delta_artifacts AS artifact "
+                "JOIN attention_sequences AS sequence "
+                "ON sequence.id = artifact.sequence_id "
+                "JOIN units AS first_unit ON first_unit.id = sequence.first_unit_id "
+                "JOIN units AS last_unit ON last_unit.id = sequence.last_unit_id "
+                "WHERE sequence.worker_index = ? ORDER BY artifact.sequence_id",
+                (worker_index,),
+            ).fetchall()
+            unit_rows = connection.execute(
+                "SELECT ordinal, text FROM units ORDER BY ordinal"
+            ).fetchall()
+    except sqlite3.Error as error:
+        raise ValueError("iterator sequence delta artifacts are unavailable") from error
+    cases: list[dict[str, object]] = []
+    unit_text = {int(ordinal): str(value) for ordinal, value in unit_rows}
+    for row in rows:
+        (
+            sequence_id,
+            before_raw,
+            after_raw,
+            before_manifest_raw,
+            after_manifest_raw,
+            delta_raw,
+            first_ordinal,
+            last_ordinal,
+        ) = row
+        try:
+            before = json.loads(before_raw)
+            after = json.loads(after_raw)
+            before_manifest = json.loads(before_manifest_raw)
+            after_manifest = json.loads(after_manifest_raw)
+            delta = json.loads(delta_raw)
+        except (TypeError, json.JSONDecodeError) as error:
+            raise ValueError("iterator sequence delta artifact is not valid JSON") from error
+        for side, snapshot, manifest in (
+            ("before", before, before_manifest),
+            ("after", after, after_manifest),
+        ):
+            if not isinstance(manifest, Mapping) or manifest.get(
+                "payload_sha256"
+            ) != hashlib.sha256(_canonical_bytes(snapshot)).hexdigest():
+                raise ValueError(
+                    f"iterator {side} manifest does not authenticate its snapshot"
+                )
+        if not isinstance(delta, Mapping):
+            raise ValueError("iterator sequence delta classification is invalid")
+        for kind in ("nodes", "edges"):
+            changes = delta.get(kind)
+            if not isinstance(changes, Mapping) or not _valid_change_ids(
+                {change: changes.get(change) for change in _CHANGES}
+            ):
+                raise ValueError(
+                    f"iterator sequence delta {kind} classification is invalid"
+                )
+        cases.append(
+            {
+                "sequence_id": int(sequence_id),
+                "text": "\n".join(
+                    unit_text[ordinal]
+                    for ordinal in range(int(first_ordinal), int(last_ordinal) + 1)
+                ),
+                "before": before,
+                "after": after,
+            }
+        )
+    if not cases:
+        raise ValueError("worker has no closed sequence delta artifacts")
+    return _seal_source_cases(cases)
+
+
+def _read_json_object(path: Path, label: str) -> dict[str, object]:
+    try:
+        value = json.loads(Path(path).read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise ValueError(f"{label} is not valid JSON") from error
+    return _json_object(value, label)
+
+
+def _gold_locations(value: Iterable[object]) -> list[dict[str, object]]:
+    locations: dict[str, dict[str, object]] = {}
+    for raw in value:
+        location = _json_object(raw, "gold location")
+        if (
+            set(location) != {"file", "start_line", "end_line"}
+            or not isinstance(location["file"], str)
+            or type(location["start_line"]) is not int
+            or type(location["end_line"]) is not int
+            or location["start_line"] < 1
+            or location["end_line"] < location["start_line"]
+        ):
+            raise ValueError("gold locations must be finite source intervals")
+        locations[_canonical_text(location)] = location
+    return sorted(
+        locations.values(),
+        key=lambda item: (item["file"], item["start_line"], item["end_line"]),
+    )
+
+
+def _apply_gold_overlay(
+    base: dict[str, object], overlay: dict[str, object], base_bytes: bytes
+) -> dict[str, object]:
+    if overlay.get("status") != "accepted-adjudicated-overlay":
+        raise ValueError("gold correction overlay is not accepted")
+    if overlay.get("base_gold_sha256") != hashlib.sha256(base_bytes).hexdigest():
+        raise ValueError("gold correction overlay does not authenticate its base")
+    if overlay.get("base_benchmark_version") != base.get("benchmark_version"):
+        raise ValueError("gold correction overlay targets another benchmark version")
+    nodes_raw = base.get("nodes")
+    edges_raw = base.get("edges")
+    operations = overlay.get("operations")
+    if not isinstance(nodes_raw, list) or not isinstance(edges_raw, list) or not isinstance(operations, list):
+        raise ValueError("gold annotation or correction overlay has invalid records")
+    nodes = {
+        str(node["id"]): deepcopy(_json_object(node, "gold node"))
+        for node in nodes_raw
+        if isinstance(node, Mapping) and isinstance(node.get("id"), str)
+    }
+    edges = {
+        str(edge["id"]): deepcopy(_json_object(edge, "gold edge"))
+        for edge in edges_raw
+        if isinstance(edge, Mapping) and isinstance(edge.get("id"), str)
+    }
+    if len(nodes) != len(nodes_raw) or len(edges) != len(edges_raw):
+        raise ValueError("gold annotation IDs must be unique strings")
+    for raw in operations:
+        operation = _json_object(raw, "gold correction operation")
+        kind = operation.get("operation")
+        record_id = operation.get("id")
+        if not isinstance(record_id, str):
+            raise ValueError("gold correction operation requires an ID")
+        if kind == "delete-node":
+            if nodes.pop(record_id, None) is None:
+                raise ValueError("gold correction deletes an absent node")
+        elif kind == "delete-edge":
+            if edges.pop(record_id, None) is None:
+                raise ValueError("gold correction deletes an absent edge")
+        elif kind == "add-node-location":
+            node = nodes.get(record_id)
+            if node is None:
+                raise ValueError("gold correction locates an absent node")
+            current = node.get("locations")
+            if not isinstance(current, list):
+                raise ValueError("gold node locations are invalid")
+            node["locations"] = _gold_locations(
+                [*current, operation.get("location")]
+            )
+        elif kind == "add-edge":
+            if record_id in edges:
+                raise ValueError("gold correction adds a duplicate edge")
+            if not isinstance(operation.get("from"), str) or not isinstance(operation.get("to"), str):
+                raise ValueError("gold correction edge endpoints are invalid")
+            if operation["from"] not in nodes or operation["to"] not in nodes:
+                raise ValueError("gold correction edge endpoint is absent")
+            edges[record_id] = {
+                key: deepcopy(value)
+                for key, value in operation.items()
+                if key != "operation"
+            }
+            edges[record_id]["directness_reason"] = str(
+                operation.get("reason", "Accepted adjudicated direct dependency.")
+            )
+            edges[record_id].setdefault("confidence", "high")
+            edges[record_id].setdefault("explicit_reference_labels", [])
+        else:
+            raise ValueError("gold correction operation is unsupported")
+    counts = overlay.get("derived_counts")
+    if not isinstance(counts, Mapping) or counts.get("nodes") != len(nodes) or counts.get("edges") != len(edges):
+        raise ValueError("gold correction derived counts do not match its result")
+    result = deepcopy(base)
+    result["nodes"] = list(nodes.values())
+    result["edges"] = list(edges.values())
+    return result
+
+
+def _slice_snapshot(fragment: Mapping[str, object], counts: Mapping[str, object]) -> dict[str, object]:
+    snapshot = deepcopy(dict(fragment))
+    for kind in ("nodes", "edges", "gaps"):
+        records = fragment.get(kind)
+        count = counts.get(kind)
+        if not isinstance(records, list) or type(count) is not int or count < 0 or count > len(records):
+            raise ValueError("legacy iterator counts cannot reconstruct a snapshot")
+        snapshot[kind] = deepcopy(records[:count])
+    return snapshot
+
+
+def _legacy_source_cases(
+    iterator_state_dir: Path,
+    worker_index: int,
+    inventory_fragment_paths: Sequence[Path],
+) -> tuple[list[dict[str, object]], dict[int, set[tuple[str, int]]]]:
+    fragments: dict[int, dict[str, object]] = {}
+    for path in inventory_fragment_paths:
+        fragment = _read_json_object(Path(path), "authenticated inventory fragment")
+        chunk_id = fragment.get("chunk_id")
+        if not isinstance(chunk_id, str) or not chunk_id.startswith("iterator-worker-"):
+            raise ValueError("inventory fragment lacks an iterator worker identity")
+        try:
+            index = int(chunk_id.removeprefix("iterator-worker-"))
+        except ValueError as error:
+            raise ValueError("inventory fragment worker identity is invalid") from error
+        if index in fragments:
+            raise ValueError("inventory fragments repeat a worker identity")
+        _files(fragment)
+        _record_map(fragment, "nodes")
+        _record_map(fragment, "edges")
+        fragments[index] = fragment
+    fragment = fragments.get(worker_index)
+    if fragment is None:
+        raise ValueError("authenticated inventory fragment for worker is missing")
+    database = Path(iterator_state_dir).resolve() / "iterator.sqlite3"
+    try:
+        with sqlite3.connect(database) as connection:
+            rows = connection.execute(
+                "SELECT sequence.id, first_unit.ordinal, last_unit.ordinal, "
+                "sequence.before_sha256, sequence.before_counts_json, "
+                "sequence.after_sha256, sequence.after_counts_json "
+                "FROM attention_sequences AS sequence "
+                "JOIN units AS first_unit ON first_unit.id = sequence.first_unit_id "
+                "JOIN units AS last_unit ON last_unit.id = sequence.last_unit_id "
+                "WHERE sequence.worker_index = ? ORDER BY sequence.id",
+                (worker_index,),
+            ).fetchall()
+            unit_rows = connection.execute(
+                "SELECT ordinal, text, metadata_json FROM units ORDER BY ordinal"
+            ).fetchall()
+    except sqlite3.Error as error:
+        raise ValueError("legacy iterator sequence authority is unavailable") from error
+    unit_coordinates: dict[int, set[tuple[str, int]]] = {}
+    unit_text: dict[int, str] = {}
+    for ordinal, text, metadata_raw in unit_rows:
+        try:
+            metadata = json.loads(metadata_raw)
+        except (TypeError, json.JSONDecodeError) as error:
+            raise ValueError("legacy iterator unit metadata is invalid") from error
+        coordinates = metadata.get("coordinates") if isinstance(metadata, Mapping) else None
+        if not isinstance(coordinates, list):
+            raise ValueError("legacy iterator unit coordinates are unavailable")
+        unit_coordinates[int(ordinal)] = {
+            (str(item["source"]), int(item["line"]))
+            for item in coordinates
+            if isinstance(item, Mapping)
+            and isinstance(item.get("source"), str)
+            and type(item.get("line")) is int
+        }
+        unit_text[int(ordinal)] = str(text)
+    cases: list[dict[str, object]] = []
+    coverage: dict[int, set[tuple[str, int]]] = {}
+    for sequence_id, first_ordinal, last_ordinal, before_hash, before_counts_raw, after_hash, after_counts_raw in rows:
+        try:
+            before_counts = json.loads(before_counts_raw)
+            after_counts = json.loads(after_counts_raw)
+        except (TypeError, json.JSONDecodeError) as error:
+            raise ValueError("legacy iterator sequence counts are invalid") from error
+        if not isinstance(before_counts, Mapping) or not isinstance(after_counts, Mapping):
+            raise ValueError("legacy iterator sequence counts are invalid")
+        before = _slice_snapshot(fragment, before_counts)
+        after = _slice_snapshot(fragment, after_counts)
+        if hashlib.sha256(_canonical_bytes(before)).hexdigest() != before_hash or hashlib.sha256(_canonical_bytes(after)).hexdigest() != after_hash:
+            raise ValueError("authenticated fragment does not reproduce iterator snapshots")
+        cases.append(
+            {
+                "sequence_id": int(sequence_id),
+                "text": "\n".join(
+                    unit_text[ordinal]
+                    for ordinal in range(first_ordinal, last_ordinal + 1)
+                ),
+                "before": before,
+                "after": after,
+            }
+        )
+        coverage[int(sequence_id)] = set().union(
+            *(unit_coordinates.get(ordinal, set()) for ordinal in range(first_ordinal, last_ordinal + 1))
+        )
+    if not cases:
+        raise ValueError("worker has no closed legacy iterator sequences")
+    return _seal_source_cases(cases), coverage
+
+
+def _location_overlaps(location: Mapping[str, object], coverage: set[tuple[str, int]]) -> bool:
+    file = location.get("file")
+    start = location.get("start_line")
+    end = location.get("end_line")
+    return (
+        isinstance(file, str)
+        and type(start) is int
+        and type(end) is int
+        and any((file, line) in coverage for line in range(start, end + 1))
+    )
+
+
+def _gold_cases_from_annotation(
+    sequence_ids: Sequence[int],
+    coverage: Mapping[int, set[tuple[str, int]]],
+    corrected: Mapping[str, object],
+) -> list[dict[str, object]]:
+    nodes_raw = corrected.get("nodes")
+    edges_raw = corrected.get("edges")
+    if not isinstance(nodes_raw, list) or not isinstance(edges_raw, list):
+        raise ValueError("corrected gold graph is invalid")
+    nodes = [_json_object(value, "gold node") for value in nodes_raw]
+    edges = [_json_object(value, "gold edge") for value in edges_raw]
+
+    def owner(record: Mapping[str, object], location_key: str) -> int | None:
+        raw_locations = record.get(location_key)
+        if not isinstance(raw_locations, list):
+            raise ValueError("gold record locations are invalid")
+        locations = _gold_locations(raw_locations)
+        return next(
+            (
+                sequence_id
+                for sequence_id in sequence_ids
+                if any(_location_overlaps(location, coverage[sequence_id]) for location in locations)
+            ),
+            None,
+        )
+
+    node_by_id = {str(node["id"]): node for node in nodes}
+    node_owner = {str(node["id"]): owner(node, "locations") for node in nodes}
+    edge_owner = {str(edge["id"]): owner(edge, "evidence") for edge in edges}
+
+    def node_record(node: Mapping[str, object]) -> dict[str, object]:
+        locations = node.get("locations")
+        assert isinstance(locations, list)
+        return {
+            "description": node.get("description"),
+            "locations": _gold_locations(locations),
+            "properties": {
+                key: deepcopy(value)
+                for key, value in node.items()
+                if key not in {"id", "description", "locations"}
+            },
+        }
+
+    cases: list[dict[str, object]] = []
+    for sequence_id in sequence_ids:
+        owned_nodes = [node for node in nodes if node_owner[str(node["id"])] == sequence_id]
+        owned_edges = [edge for edge in edges if edge_owner[str(edge["id"])] == sequence_id]
+        endpoint_ids = {
+            str(edge[role]) for edge in owned_edges for role in ("from", "to")
+        }
+        endpoint_context = {
+            node_id: {"after": {key: value for key, value in node_record(node_by_id[node_id]).items() if key != "properties"}}
+            for node_id in sorted(endpoint_ids)
+        }
+        cases.append(
+            {
+                "sequence_id": sequence_id,
+                "delta_nodes": {
+                    "added": [
+                        {"alias": str(node["id"]), "after": node_record(node)}
+                        for node in owned_nodes
+                    ],
+                    "changed": [],
+                    "deleted": [],
+                },
+                "delta_edges": {
+                    "added": [
+                        {
+                            "alias": str(edge["id"]),
+                            "after": {
+                                "from": str(edge["from"]),
+                                "to": str(edge["to"]),
+                                "description": edge.get("directness_reason", ""),
+                                "locations": _gold_locations(
+                                    cast(list[object], edge["evidence"])
+                                ),
+                                "properties": {
+                                    key: deepcopy(value)
+                                    for key, value in edge.items()
+                                    if key not in {"id", "from", "to", "directness_reason", "evidence"}
+                                },
+                            },
+                        }
+                        for edge in owned_edges
+                    ],
+                    "changed": [],
+                    "deleted": [],
+                },
+                "endpoint_context": endpoint_context,
+            }
+        )
+    return cases
+
+
+def setup_frozen_gold_experiment(
+    iterator_state_dir: Path,
+    worker_index: int,
+    inventory_fragment_paths: Sequence[Path],
+    gold_annotation_path: Path,
+    gold_overlay_path: Path,
+    experiment_dir: Path,
+):
+    """Create an experiment from authenticated legacy iterator history and full gold."""
+
+    source_cases, coverage = _legacy_source_cases(
+        iterator_state_dir, worker_index, inventory_fragment_paths
+    )
+    base_bytes = Path(gold_annotation_path).read_bytes()
+    base = _read_json_object(gold_annotation_path, "gold annotation")
+    overlay = _read_json_object(gold_overlay_path, "gold correction overlay")
+    corrected = _apply_gold_overlay(base, overlay, base_bytes)
+    gold_cases = _gold_cases_from_annotation(
+        [cast(int, case["sequence_id"]) for case in source_cases], coverage, corrected
+    )
+    return setup_experiment(source_cases, gold_cases, experiment_dir)
+
+
+def setup_bundled_frozen_gold_experiment(
+    iterator_state_dir: Path,
+    worker_index: int,
+    inventory_fragment_paths: Sequence[Path],
+    experiment_dir: Path,
+):
+    """Create an experiment using the skill's frozen appendix gold bundle."""
+
+    return setup_frozen_gold_experiment(
+        iterator_state_dir,
+        worker_index,
+        inventory_fragment_paths,
+        _BUNDLED_GOLD_ANNOTATION,
+        _BUNDLED_GOLD_OVERLAY,
+        experiment_dir,
+    )
+
+
 def setup_experiment(
     source_cases: object,
     gold_cases: object,
@@ -805,6 +1355,7 @@ def setup_experiment(
     experiment_dir = Path(experiment_dir).resolve()
     if experiment_dir.exists():
         raise FileExistsError("experiment directory already exists")
+    worker_contract = _frozen_worker_contract()
     cases = _seal_cases(_seal_source_cases(source_cases), gold_cases)
     experiment_dir.mkdir(parents=True)
     (experiment_dir / "ledger").mkdir()
@@ -812,12 +1363,28 @@ def setup_experiment(
         _RUTTER_NAME,
         Path(_RECKONING_NAME),
         {
+            **worker_contract,
             "experiment_dir": str(experiment_dir),
             "gold_commitment_sha256": hashlib.sha256(
                 _canonical_bytes([case["gold"] for case in cases])
             ).hexdigest(),
             "cases": cases,
         },
+    )
+
+
+def setup_iterator_experiment(
+    iterator_state_dir: Path,
+    worker_index: int,
+    gold_cases: object,
+    experiment_dir: Path,
+):
+    """Create a new-Rutter experiment from authenticated iterator history."""
+
+    return setup_experiment(
+        _load_iterator_source_cases(iterator_state_dir, worker_index),
+        gold_cases,
+        experiment_dir,
     )
 
 
@@ -832,15 +1399,19 @@ def validated_inventory_ledger(experiment_dir: Path) -> list[dict[str, object]]:
     if not ledger.is_dir() or ledger.is_symlink():
         raise ValueError("inventory ledger directory is unavailable")
     rows: list[dict[str, object]] = []
-    action_ids: set[str] = set()
+    machine_ids: set[str] = set()
     for path in sorted(ledger.glob("*.json")):
         if path.is_symlink():
             raise ValueError("inventory ledger rows must not be symlinks")
         row = json.loads(read_regular_file_bytes(path, allowed_root=root))
         materialized = _json_object(row, "inventory ledger row")
-        action_id = materialized.get("action_id")
-        if type(action_id) is not str or path.stem != action_id or action_id in action_ids:
+        machine_id = materialized.get("machine_id")
+        if (
+            type(machine_id) is not str
+            or path.stem != machine_id
+            or machine_id in machine_ids
+        ):
             raise ValueError("inventory ledger row identity is invalid")
-        action_ids.add(action_id)
+        machine_ids.add(machine_id)
         rows.append(materialized)
     return rows

@@ -4,14 +4,19 @@
 from __future__ import annotations
 
 import importlib
+import hashlib
 import json
 from pathlib import Path
+import sqlite3
 
 import yaml
 
 
 cli = importlib.import_module(
     "skills.math-dependency-graph._rtx._inquisitive_inventory_cli"
+)
+iterator = importlib.import_module(
+    "skills.math-dependency-graph._rtx._inventory_unit_iterator"
 )
 RTX_ROOT = Path(__file__).resolve().parents[1]
 
@@ -41,6 +46,7 @@ def _source_cases() -> list[dict]:
     return [
         {
             "sequence_id": 1,
+            "text": "A compactness hypothesis.",
             "before": _snapshot([]),
             "after": _snapshot([_node()]),
         }
@@ -110,6 +116,148 @@ def _setup(tmp_path: Path, capsys) -> tuple[Path, dict]:
     return experiment_dir, payload
 
 
+def test_setup_accepts_completed_iterator_instead_of_caller_built_source_cases(
+    tmp_path: Path, capsys
+) -> None:
+    """The public adapter must bind the Rutter to authenticated iterator history."""
+
+    packet = tmp_path / "source-packet.txt"
+    packet.write_text(
+        "@@ source: paper.md\n0001 | A compactness hypothesis.\n",
+        encoding="utf-8",
+    )
+    state_dir = tmp_path / "iterator"
+    iterator.setup_inventory_iterator(
+        packet, state_dir, requested_workers=1, window_chars=80
+    )
+    leased = iterator.next_inventory_unit(state_dir, 1)
+    inventory_path = state_dir / "workers" / "worker-1" / "inventory.json"
+    snapshot = _snapshot([_node()])
+    snapshot["chunk_id"] = "iterator-worker-001"
+    inventory_path.write_text(json.dumps(snapshot), encoding="utf-8")
+    assert iterator.next_inventory_unit(
+        state_dir, 1, ack=leased["unit"]["id"]
+    ) == {"state": "complete"}
+    gold_file = _write_json(tmp_path / "gold.json", _gold_cases())
+    experiment_dir = tmp_path / "experiment"
+
+    status, payload, stderr = _invoke(
+        capsys,
+        "setup",
+        "--iterator-state-dir",
+        state_dir,
+        "--worker-index",
+        "1",
+        "--gold-cases-file",
+        gold_file,
+        "--experiment-dir",
+        experiment_dir,
+    )
+
+    assert status == 0
+    assert stderr == ""
+    assert payload["evolution"]["evolution_id"] == "report"
+    assert payload["instruction"]["data"]["payload"]["interaction"]["sequence_id"] == 1
+
+
+def test_setup_accepts_frozen_gold_annotation_for_legacy_iterator(
+    tmp_path: Path, capsys
+) -> None:
+    """Requiring hand-authored per-sequence cases would keep the appendix unusable."""
+
+    state_dir = tmp_path / "iterator"
+    state_dir.mkdir()
+    before = _snapshot([])
+    after = _snapshot([_node()])
+    after["chunk_id"] = before["chunk_id"] = "iterator-worker-001"
+    with sqlite3.connect(state_dir / "iterator.sqlite3") as connection:
+        connection.executescript(
+            "CREATE TABLE units (id TEXT PRIMARY KEY, ordinal INTEGER NOT NULL, "
+            "text TEXT NOT NULL, metadata_json TEXT NOT NULL);"
+            "CREATE TABLE attention_sequences (id INTEGER PRIMARY KEY, "
+            "worker_index INTEGER NOT NULL, first_unit_id TEXT NOT NULL, "
+            "last_unit_id TEXT NOT NULL, before_sha256 TEXT NOT NULL, "
+            "before_counts_json TEXT NOT NULL, after_sha256 TEXT NOT NULL, "
+            "after_counts_json TEXT NOT NULL);"
+        )
+        connection.execute(
+            "INSERT INTO units VALUES (?, ?, ?, ?)",
+            (
+                "u000001",
+                1,
+                "A compactness hypothesis.",
+                json.dumps(
+                    {"coordinates": [{"source": "paper.md", "line": 1}]}
+                ),
+            ),
+        )
+        canonical = lambda value: json.dumps(
+            value, sort_keys=True, separators=(",", ":")
+        ).encode()
+        connection.execute(
+            "INSERT INTO attention_sequences VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                1,
+                1,
+                "u000001",
+                "u000001",
+                hashlib.sha256(canonical(before)).hexdigest(),
+                json.dumps({"nodes": 0, "edges": 0, "gaps": 0}),
+                hashlib.sha256(canonical(after)).hexdigest(),
+                json.dumps({"nodes": 1, "edges": 0, "gaps": 0}),
+            ),
+        )
+    fragment = _write_json(tmp_path / "fragment.json", after)
+    gold = _write_json(
+        tmp_path / "annotation.json",
+        {
+            "benchmark_version": 1,
+            "nodes": [
+                {
+                    "id": "gold:compactness",
+                    "description": "A compactness hypothesis.",
+                    "locations": [
+                        {"file": "paper.md", "start_line": 1, "end_line": 1}
+                    ],
+                }
+            ],
+            "edges": [],
+        },
+    )
+    overlay = _write_json(
+        tmp_path / "overlay.json",
+        {
+            "base_benchmark_version": 1,
+            "base_gold_sha256": hashlib.sha256(gold.read_bytes()).hexdigest(),
+            "status": "accepted-adjudicated-overlay",
+            "operations": [],
+            "derived_counts": {"nodes": 1, "edges": 0},
+        },
+    )
+
+    status, payload, stderr = _invoke(
+        capsys,
+        "setup",
+        "--iterator-state-dir",
+        state_dir,
+        "--worker-index",
+        "1",
+        "--inventory-fragment-file",
+        fragment,
+        "--gold-annotation-file",
+        gold,
+        "--gold-overlay-file",
+        overlay,
+        "--experiment-dir",
+        tmp_path / "experiment",
+    )
+
+    assert status == 0
+    assert stderr == ""
+    assert payload["evolution"]["evolution_id"] == "report"
+    assert payload["instruction"]["data"]["payload"]["interaction"]["sequence_id"] == 1
+
+
 def test_setup_and_show_project_only_public_bound_operations(
     tmp_path: Path, capsys
 ) -> None:
@@ -123,16 +271,21 @@ def test_setup_and_show_project_only_public_bound_operations(
     assert status == 0
     assert stderr == ""
     assert shown == setup_payload
-    assert shown["node"] == {
+    assert shown["evolution"] == {
         "rutter_id": "math-graph-inquisitive-inventory",
-        "definition_version": 2,
-        "state_id": "report",
-        "node_entry_id": shown["node"]["node_entry_id"],
+        "definition_version": 3,
+        "evolution_id": "report",
+        "evolution_entry_id": shown["evolution"]["evolution_entry_id"],
         "depth": 0,
         "condition": "ready",
     }
+    assert shown["active_result"] is None
+    assert shown["fault"] is None
     assert shown["instruction"]["kind"] == "message"
-    assert shown["instruction"]["data"]["payload"]["sequence"]["sequence_id"] == 1
+    interaction = shown["instruction"]["data"]["payload"]["interaction"]
+    assert interaction["sequence_id"] == 1
+    assert interaction["text"] == "A compactness hypothesis."
+    assert "after" not in interaction
     assert "sealed-gold-node" not in json.dumps(shown, sort_keys=True)
 
 
@@ -151,7 +304,7 @@ def test_next_rejects_invalid_response_without_mutating_reckoning(
             "outcome": "reported",
             "evidence": {
                 "sequence_id": 1,
-                "node_ids": {"added": [], "changed": [], "deleted": []},
+                "unexpected": {},
             },
         },
     )
@@ -178,7 +331,7 @@ def test_next_rejects_invalid_response_without_mutating_reckoning(
                         "path": ["evidence"],
                         "code": "invalid-inventory-report",
                         "message": (
-                            "evidence must contain sequence_id, node_ids, and edge_ids"
+                            "evidence must contain sequence_id and inventory"
                         ),
                     }
                 ],
@@ -195,12 +348,11 @@ def test_equal_next_and_ledger_persist_exact_public_trace(
 
     experiment_dir, setup_payload = _setup(tmp_path, capsys)
     response = {
-        "revision": setup_payload["instruction"]["data"]["state"]["revision"],
+        "revision": setup_payload["instruction"]["data"]["evolution"]["revision"],
         "outcome": "reported",
         "evidence": {
             "sequence_id": 1,
-            "node_ids": {"added": ["n1"], "changed": [], "deleted": []},
-            "edge_ids": {"added": [], "changed": [], "deleted": []},
+            "inventory": _snapshot([_node()]),
         },
     }
     response_file = _write_json(tmp_path / "response.json", response)
@@ -219,9 +371,11 @@ def test_equal_next_and_ledger_persist_exact_public_trace(
 
     assert status == ledger_status == 0
     assert stderr == ledger_stderr == ""
-    assert terminal["node"]["state_id"] == "complete"
-    assert terminal["node"]["condition"] == "terminal"
+    assert terminal["evolution"]["evolution_id"] == "complete"
+    assert terminal["evolution"]["condition"] == "terminal"
     assert terminal["instruction"] is None
+    assert terminal["active_result"]["outcome"] == "complete"
+    assert terminal["fault"] is None
     assert len(ledger["rows"]) == 1
     row = ledger["rows"][0]
     assert row["message"] == {
@@ -234,8 +388,8 @@ def test_equal_next_and_ledger_persist_exact_public_trace(
     assert row["child_result"]["outcome"] == "equal"
 
 
-def test_source_blueprints_follow_live_v6_and_cli_pins_bound_operations_v3() -> None:
-    """A copied prototype contract would retain bound operations v2."""
+def test_source_blueprints_follow_live_v6_and_cli_pins_cutover_interfaces() -> None:
+    """The public cutover must propagate exact Rutter interface versions."""
 
     lifecycle = yaml.safe_load(
         (RTX_ROOT / "blueprints/rtx-inquisitive-inventory-rutter.yaml").read_text(
@@ -256,8 +410,16 @@ def test_source_blueprints_follow_live_v6_and_cli_pins_bound_operations_v3() -> 
         assert len(blueprint["interfaces"]) == 1
     assert {
         "interface": "rutter.interface.bound-operations",
-        "version": 3,
+        "version": 5,
     } in adapter["uses_interfaces"]
+    assert {
+        "interface": "rutter.interface.binding",
+        "version": 3,
+    } in lifecycle["uses_interfaces"]
+    assert {"interface": "rutter.interface.model", "version": 2} in adapter[
+        "uses_interfaces"
+    ]
+    assert lifecycle["version"] == adapter["version"] == 7
     assert adapter["interfaces"][
         "math-dependency-graph._rtx.source.rtx-inquisitive-inventory-cli.interface.experiment"
     ]["process_binding"]["entry"] == "Interface"
@@ -268,7 +430,7 @@ def test_source_blueprints_follow_live_v6_and_cli_pins_bound_operations_v3() -> 
     assert {
         item["value"]
         for item in lifecycle_contract["arguments"]["operation"]["type"]["values"]
-    } == {"setup", "open", "ledger"}
+    } == {"setup", "setup-iterator", "setup-frozen-gold", "open", "ledger"}
 
 
 def test_module_registers_only_the_two_owned_sources_and_cli_export() -> None:
@@ -278,7 +440,7 @@ def test_module_registers_only_the_two_owned_sources_and_cli_export() -> None:
 
     assert module["schema_version"] == 6
     assert module["maturity"] == "stable"
-    assert module["version"] == 55
+    assert module["version"] == 66
     assert "_inquisitive_inventory_rutter\\.py" in module["content"]
     assert "_inquisitive_inventory_cli\\.py" in module["content"]
     assert {

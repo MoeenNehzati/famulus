@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import copy
 import importlib
+import hashlib
 import json
 from pathlib import Path
+import sqlite3
 
 import pytest
 from officina import rutter
@@ -14,6 +16,9 @@ from officina import rutter
 
 inventory = importlib.import_module(
     "skills.math-dependency-graph._rtx._inquisitive_inventory_rutter"
+)
+iterator = importlib.import_module(
+    "skills.math-dependency-graph._rtx._inventory_unit_iterator"
 )
 
 
@@ -300,11 +305,13 @@ def _source_cases() -> list[dict]:
     return [
         {
             "sequence_id": 1,
+            "text": "A compactness hypothesis.",
             "before": _inventory_snapshot(nodes=[], edges=[]),
             "after": _inventory_snapshot(nodes=[compactness], edges=[]),
         },
         {
             "sequence_id": 2,
+            "text": "An existence claim follows from compactness.",
             "before": _inventory_snapshot(nodes=[compactness], edges=[]),
             "after": _inventory_snapshot(
                 nodes=[
@@ -351,7 +358,7 @@ def _gold_cases() -> list[dict]:
                         "from": "gold-prior-node",
                         "to": "gold-existence",
                         "description": (
-                            "The compactness hypothesis is required by the "
+                            "The compactness hypothesis supports the "
                             "existence claim."
                         ),
                         "locations": [
@@ -365,7 +372,7 @@ def _gold_cases() -> list[dict]:
                             "assertion": "explicit",
                             "basis": "explicit-prose",
                             "confidence": "High",
-                            "type": "requires",
+                            "type": "supports",
                         },
                     },
                 }
@@ -405,30 +412,255 @@ def _gold_cases() -> list[dict]:
 
 
 def _report_from_message(message: rutter.Message) -> dict:
-    sequence = message.data["payload"]["sequence"]
-
-    def changes(kind: str) -> dict:
-        before = {record["local_id"]: record for record in sequence["before"][kind]}
-        after = {record["local_id"]: record for record in sequence["after"][kind]}
-        return {
-            "added": sorted(after.keys() - before.keys()),
-            "changed": sorted(
-                local_id
-                for local_id in before.keys() & after.keys()
-                if before[local_id] != after[local_id]
-            ),
-            "deleted": sorted(before.keys() - after.keys()),
-        }
+    interaction = message.data["payload"]["interaction"]
+    source = next(
+        case
+        for case in _source_cases()
+        if case["sequence_id"] == interaction["sequence_id"]
+    )
 
     return {
-        "revision": message.data["state"]["revision"],
+        "revision": message.data["evolution"]["revision"],
         "outcome": "reported",
         "evidence": {
-            "sequence_id": sequence["sequence_id"],
-            "node_ids": changes("nodes"),
-            "edge_ids": changes("edges"),
+            "sequence_id": interaction["sequence_id"],
+            "inventory": source["after"],
         },
     }
+
+
+def _completed_iterator(tmp_path: Path) -> Path:
+    packet = tmp_path / "source-packet.txt"
+    packet.write_text(
+        "@@ source: paper.md\n0001 | A compactness hypothesis.\n",
+        encoding="utf-8",
+    )
+    state_dir = tmp_path / "iterator"
+    iterator.setup_inventory_iterator(
+        packet, state_dir, requested_workers=1, window_chars=80
+    )
+    leased = iterator.next_inventory_unit(state_dir, 1)
+    inventory_path = state_dir / "workers" / "worker-1" / "inventory.json"
+    inventory_path.write_text(
+        json.dumps(
+            _inventory_snapshot(
+                nodes=[_node("n2", 1, "A compactness hypothesis.")],
+                edges=[],
+            )
+        ),
+        encoding="utf-8",
+    )
+    assert iterator.next_inventory_unit(
+        state_dir, 1, ack=leased["unit"]["id"]
+    ) == {"state": "complete"}
+    return state_dir
+
+
+def test_iterator_backed_setup_uses_authenticated_closed_sequence(tmp_path: Path) -> None:
+    """Accepting caller-built source cases would bypass the iterator's durable trace."""
+
+    experiment_dir = tmp_path / "experiment"
+    voyage = inventory.setup_iterator_experiment(
+        _completed_iterator(tmp_path),
+        1,
+        _gold_cases()[:1],
+        experiment_dir,
+    )
+    message = voyage.get_status().instruction
+
+    assert isinstance(message, rutter.Message)
+    interaction = message.data["payload"]["interaction"]
+    assert interaction["sequence_id"] == 1
+    assert interaction["prior_inventory"]["nodes"] == ()
+    interaction = message.data["payload"]["interaction"]
+    assert interaction["text"] == "A compactness hypothesis."
+    assert "after" not in interaction
+    assert "gold-compactness" not in json.dumps(
+        _materialized_json(message.to_json()), sort_keys=True
+    )
+
+
+def test_report_message_embeds_loaded_inventory_instructions_and_frozen_schema(
+    tmp_path: Path,
+) -> None:
+    """Omitting the governing inventory contract recreates an underspecified task."""
+
+    voyage = inventory.setup_experiment(
+        _source_cases(), _gold_cases(), tmp_path / "experiment"
+    )
+    message = voyage.get_status().instruction
+    instruction_text = inventory._INVENTORY_INSTRUCTION_PATH.read_text(
+        encoding="utf-8"
+    )
+    schema_text = inventory._INVENTORY_SCHEMA_PATH.read_text(encoding="utf-8")
+
+    assert isinstance(message, rutter.Message)
+    charter = voyage._reckoning.root.charter.data
+    assert charter["inventory_instruction_text"] == instruction_text
+    assert charter["inventory_instruction_sha256"] == hashlib.sha256(
+        instruction_text.encode("utf-8")
+    ).hexdigest()
+    assert charter["inventory_schema_text"] == schema_text
+    assert charter["inventory_schema_sha256"] == hashlib.sha256(
+        schema_text.encode("utf-8")
+    ).hexdigest()
+    assert message.instructions["text"] == instruction_text + "\n\n" + inventory._REPORT_REQUEST
+    assert _materialized_json(message.data["payload"]["output_schema"]) == json.loads(
+        schema_text
+    )
+
+
+@pytest.mark.parametrize("schema_bytes", (b"", b"\xff", b"{"))
+def test_setup_contract_validation_fails_before_creating_experiment_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, schema_bytes: bytes
+) -> None:
+    """Creating an experiment before validating its frozen worker contract must fail."""
+
+    instruction_path = tmp_path / "inventory.md"
+    schema_path = tmp_path / "inventory.schema.json"
+    experiment_dir = tmp_path / "experiment"
+    instruction_path.write_text("Inventory contract.", encoding="utf-8")
+    schema_path.write_bytes(schema_bytes)
+    monkeypatch.setattr(inventory, "_INVENTORY_INSTRUCTION_PATH", instruction_path)
+    monkeypatch.setattr(inventory, "_INVENTORY_SCHEMA_PATH", schema_path)
+
+    with pytest.raises(ValueError):
+        inventory.setup_experiment(_source_cases(), _gold_cases(), experiment_dir)
+
+    assert not experiment_dir.exists()
+    schema_path.write_text('{"type":"object"}', encoding="utf-8")
+    inventory.setup_experiment(_source_cases(), _gold_cases(), experiment_dir)
+    assert experiment_dir.is_dir()
+
+
+def test_unreadable_setup_contract_fails_before_creating_experiment_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Leaving a partial experiment when the canonical schema cannot be read must fail."""
+
+    instruction_path = tmp_path / "inventory.md"
+    schema_path = tmp_path / "inventory.schema.json"
+    experiment_dir = tmp_path / "experiment"
+    instruction_path.write_text("Inventory contract.", encoding="utf-8")
+    schema_path.write_text('{"type":"object"}', encoding="utf-8")
+    monkeypatch.setattr(inventory, "_INVENTORY_INSTRUCTION_PATH", instruction_path)
+    monkeypatch.setattr(inventory, "_INVENTORY_SCHEMA_PATH", schema_path)
+    read_bytes = Path.read_bytes
+
+    def unreadable(path: Path) -> bytes:
+        if path == schema_path:
+            raise OSError("schema is unreadable")
+        return read_bytes(path)
+
+    monkeypatch.setattr(inventory.Path, "read_bytes", unreadable)
+
+    with pytest.raises(ValueError, match="not readable UTF-8"):
+        inventory.setup_experiment(_source_cases(), _gold_cases(), experiment_dir)
+
+    assert not experiment_dir.exists()
+
+
+def test_frozen_gold_setup_reconstructs_legacy_sequence_and_maps_annotation(
+    tmp_path: Path,
+) -> None:
+    """Using only the final fragment without recorded hashes would fake history."""
+
+    state_dir = tmp_path / "iterator"
+    state_dir.mkdir()
+    before = _inventory_snapshot(nodes=[], edges=[])
+    after = _inventory_snapshot(
+        nodes=[_node("n1", 7, "A compactness hypothesis.")], edges=[]
+    )
+    database = state_dir / "iterator.sqlite3"
+    with sqlite3.connect(database) as connection:
+        connection.executescript(
+            "CREATE TABLE units (id TEXT PRIMARY KEY, ordinal INTEGER NOT NULL, "
+            "text TEXT NOT NULL, metadata_json TEXT NOT NULL);"
+            "CREATE TABLE attention_sequences (id INTEGER PRIMARY KEY, "
+            "worker_index INTEGER NOT NULL, first_unit_id TEXT NOT NULL, "
+            "last_unit_id TEXT NOT NULL, before_sha256 TEXT NOT NULL, "
+            "before_counts_json TEXT NOT NULL, after_sha256 TEXT NOT NULL, "
+            "after_counts_json TEXT NOT NULL);"
+        )
+        connection.execute(
+            "INSERT INTO units VALUES (?, ?, ?, ?)",
+            (
+                "u000001",
+                1,
+                "A compactness hypothesis.",
+                json.dumps(
+                    {
+                        "coordinates": [
+                            {"source": "paper.md", "line": 7, "packet_index": 1}
+                        ]
+                    }
+                ),
+            ),
+        )
+        connection.execute(
+            "INSERT INTO attention_sequences VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                1,
+                1,
+                "u000001",
+                "u000001",
+                hashlib.sha256(inventory._canonical_bytes(before)).hexdigest(),
+                json.dumps({"nodes": 0, "edges": 0, "gaps": 0}),
+                hashlib.sha256(inventory._canonical_bytes(after)).hexdigest(),
+                json.dumps({"nodes": 1, "edges": 0, "gaps": 0}),
+            ),
+        )
+    fragment = tmp_path / "worker-1.json"
+    fragment.write_text(json.dumps(after), encoding="utf-8")
+    gold = {
+        "benchmark_version": 1,
+        "nodes": [
+            {
+                "id": "gold:compactness",
+                "description": "A compactness hypothesis.",
+                "locations": [
+                    {"file": "paper.md", "start_line": 7, "end_line": 7}
+                ],
+                "kind": "assumption",
+            }
+        ],
+        "edges": [],
+    }
+    gold_path = tmp_path / "gold.json"
+    gold_path.write_text(json.dumps(gold), encoding="utf-8")
+    overlay_path = tmp_path / "overlay.json"
+    overlay_path.write_text(
+        json.dumps(
+            {
+                "base_benchmark_version": 1,
+                "base_gold_sha256": hashlib.sha256(gold_path.read_bytes()).hexdigest(),
+                "status": "accepted-adjudicated-overlay",
+                "operations": [],
+                "derived_counts": {"nodes": 1, "edges": 0},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    voyage = inventory.setup_frozen_gold_experiment(
+        state_dir,
+        1,
+        [fragment],
+        gold_path,
+        overlay_path,
+        tmp_path / "experiment",
+    )
+    message = voyage.get_status().instruction
+
+    assert isinstance(message, rutter.Message)
+    interaction = message.data["payload"]["interaction"]
+    assert interaction["sequence_id"] == 1
+    assert interaction["prior_inventory"]["nodes"] == ()
+    assert interaction["text"] == "A compactness hypothesis."
+    assert "after" not in interaction
+    assert "gold:compactness" not in json.dumps(
+        _materialized_json(message.to_json()), sort_keys=True
+    )
 
 
 def _materialized_json(value: object) -> object:
@@ -522,16 +754,16 @@ def test_frozen_semantic_cases_classify_inventory_differences(
     assert inventory.inventory_verdict(actual, expected) == verdict
 
 
-def test_adjudicated_second_gold_case_remains_unchanged() -> None:
-    """Tuning the frozen adjudication to the current report would invalidate evidence."""
+def test_adjudicated_second_gold_case_uses_inventory_edge_vocabulary() -> None:
+    """Using a relationship type unavailable to inventory workers creates a false miss."""
 
     edge = _gold_cases()[1]["delta_edges"]["added"][0]["after"]
 
     assert edge["from"] == "gold-prior-node"
     assert edge["description"] == (
-        "The compactness hypothesis is required by the existence claim."
+        "The compactness hypothesis supports the existence claim."
     )
-    assert edge["properties"]["type"] == "requires"
+    assert edge["properties"]["type"] == "supports"
 
 
 def test_equal_report_composes_child_ledger_and_next_parent_prompt(
@@ -541,29 +773,29 @@ def test_equal_report_composes_child_ledger_and_next_parent_prompt(
 
     experiment_dir = tmp_path / "experiment"
     voyage = inventory.setup_experiment(_source_cases(), _gold_cases(), experiment_dir)
-    first_message = voyage.get_instruction()
+    first_message = voyage.get_status().instruction
 
     assert isinstance(first_message, rutter.Message)
     rendered = json.dumps(_materialized_json(first_message.to_json()), sort_keys=True)
     assert "gold-compactness" not in rendered
     first_response = _report_from_message(first_message)
 
-    next_node = voyage.next(first_response, continue_=True)
-    second_message = voyage.get_instruction()
+    next_evolution = voyage.next(first_response, continue_=True)
+    second_message = voyage.get_status().instruction
     ledger = inventory.validated_inventory_ledger(experiment_dir)
 
-    assert next_node.rutter_id == inventory.InquisitiveInventoryRutter.rutter_id
-    assert next_node.state_id == "report"
+    assert next_evolution.rutter_id == inventory.InquisitiveInventoryRutter.rutter_id
+    assert next_evolution.evolution_id == "report"
     assert isinstance(second_message, rutter.Message)
-    assert second_message.data["payload"]["sequence"]["sequence_id"] == 2
+    assert second_message.data["payload"]["interaction"]["sequence_id"] == 2
     assert len(ledger) == 1
     row = ledger[0]
     assert row["message"] == _materialized_json(first_message.to_json())
     assert row["response"] == first_response
     assert row["verdict"] == "equal"
     assert row["child_result"]["outcome"] == "equal"
-    assert row["maker_id"] == "inventory-diagnosis"
-    assert (experiment_dir / "ledger" / f"{row['action_id']}.json").is_file()
+    assert row["transition_hook_id"] == "inventory-diagnosis"
+    assert (experiment_dir / "ledger" / f"{row['machine_id']}.json").is_file()
 
 
 def test_different_report_reveals_gold_only_in_attached_diagnosis(
@@ -573,22 +805,34 @@ def test_different_report_reveals_gold_only_in_attached_diagnosis(
 
     experiment_dir = tmp_path / "experiment"
     voyage = inventory.setup_experiment(_source_cases(), _gold_cases(), experiment_dir)
-    parent_message = voyage.get_instruction()
+    parent_message = voyage.get_status().instruction
     wrong_response = _report_from_message(parent_message)
-    wrong_response["evidence"]["node_ids"]["added"] = []
+    wrong_response["evidence"]["inventory"]["nodes"] = []
 
     explain = voyage.next(wrong_response, continue_=True)
-    diagnosis_message = voyage.get_instruction()
+    diagnosis_message = voyage.get_status().instruction
 
     assert explain.rutter_id == rutter.DiagnoseAnswer.rutter_id
-    assert explain.state_id == "explain"
-    assert "complete corrected answer" in diagnosis_message.instructions["text"]
+    assert explain.evolution_id == "explain"
+    assert (
+        "adjust your subsequent reasoning and work path"
+        in diagnosis_message.instructions["text"]
+    )
+    assert "Do not return that adjustment" in diagnosis_message.instructions["text"]
+    assert "corrected answer" not in diagnosis_message.instructions["text"]
+    assert (
+        "Gold truth does not represent a proof environment separately from the "
+        "result environment it proves. Do not diagnose the worker's separate "
+        "proof node or its proves edge as a mistake, and do not adjust the "
+        "worker's path to remove them."
+        in diagnosis_message.data["payload"]["metadata"]["diagnosis_guidance"]
+    )
     assert "gold-compactness" in json.dumps(
         _materialized_json(diagnosis_message.to_json()), sort_keys=True
     )
 
     diagnosis_response = {
-        "revision": diagnosis_message.data["state"]["revision"],
+        "revision": diagnosis_message.data["evolution"]["revision"],
         "outcome": "diagnosed",
         "evidence": {
             "mistake": "The compactness node was omitted.",
@@ -600,7 +844,7 @@ def test_different_report_reveals_gold_only_in_attached_diagnosis(
     row = inventory.validated_inventory_ledger(experiment_dir)[0]
 
     assert next_parent.rutter_id == inventory.InquisitiveInventoryRutter.rutter_id
-    assert next_parent.state_id == "report"
+    assert next_parent.evolution_id == "report"
     assert row["message"] == _materialized_json(parent_message.to_json())
     assert row["response"] == wrong_response
     assert row["verdict"] == "different"
@@ -615,20 +859,20 @@ def test_reopen_at_each_inventory_boundary_neither_repeats_nor_skips(
 
     experiment_dir = tmp_path / "experiment"
     voyage = inventory.setup_experiment(_source_cases(), _gold_cases(), experiment_dir)
-    parent_message = voyage.get_instruction()
+    parent_message = voyage.get_status().instruction
     wrong_response = _report_from_message(parent_message)
-    wrong_response["evidence"]["node_ids"]["added"] = []
+    wrong_response["evidence"]["inventory"]["nodes"] = []
 
     child_route = voyage.next(wrong_response, continue_=False)
     assert child_route.rutter_id == rutter.DiagnoseAnswer.rutter_id
-    assert child_route.state_id == "route"
+    assert child_route.evolution_id == "route"
 
     voyage = inventory.open_experiment(experiment_dir)
     explain = voyage.next(continue_=False)
-    assert explain.state_id == "explain"
-    diagnosis_message = inventory.open_experiment(experiment_dir).get_instruction()
+    assert explain.evolution_id == "explain"
+    diagnosis_message = inventory.open_experiment(experiment_dir).get_status().instruction
     diagnosis_response = {
-        "revision": diagnosis_message.data["state"]["revision"],
+        "revision": diagnosis_message.data["evolution"]["revision"],
         "outcome": "diagnosed",
         "evidence": {
             "mistake": "The compactness node was omitted.",
@@ -640,7 +884,7 @@ def test_reopen_at_each_inventory_boundary_neither_repeats_nor_skips(
     child_done = inventory.open_experiment(experiment_dir).next(
         diagnosis_response, continue_=False
     )
-    assert child_done.state_id == "complete-different"
+    assert child_done.evolution_id == "complete-different"
     child_terminal = inventory.open_experiment(experiment_dir).next(
         continue_=False
     )
@@ -650,45 +894,51 @@ def test_reopen_at_each_inventory_boundary_neither_repeats_nor_skips(
         continue_=False
     )
     assert ledger_action.rutter_id == inventory.InquisitiveInventoryRutter.rutter_id
-    assert ledger_action.state_id == "record"
-    action_instruction = inventory.open_experiment(experiment_dir).get_instruction()
-    action_result = action_instruction.run()
+    assert ledger_action.evolution_id == "record"
+    machine_instruction = inventory.open_experiment(experiment_dir).get_status().instruction
+    machine_result = machine_instruction.run()
     first_rows = inventory.validated_inventory_ledger(experiment_dir)
 
     reopened = inventory.open_experiment(experiment_dir)
-    recovered_instruction = reopened.get_instruction()
-    assert recovered_instruction.action_id == action_instruction.action_id
-    assert recovered_instruction.run() == action_result
+    recovered_instruction = reopened.get_status().instruction
+    assert recovered_instruction.machine_id == machine_instruction.machine_id
+    assert recovered_instruction.run() == machine_result
     assert inventory.validated_inventory_ledger(experiment_dir) == first_rows
-    next_prompt = reopened.next(action_result, continue_=False)
-    next_message = inventory.open_experiment(experiment_dir).get_instruction()
+    next_llm_step = reopened.next(machine_result, continue_=False)
+    next_message = inventory.open_experiment(experiment_dir).get_status().instruction
 
-    assert next_prompt.state_id == "report"
-    assert next_message.data["payload"]["sequence"]["sequence_id"] == 2
+    assert next_llm_step.evolution_id == "report"
+    assert next_message.data["payload"]["interaction"]["sequence_id"] == 2
     assert inventory.validated_inventory_ledger(experiment_dir) == first_rows
     assert len(first_rows) == 1
 
 
-def test_two_sequence_trace_preserves_adjudicated_edge_difference(
+def test_two_sequence_trace_preserves_schema_valid_edge_difference(
     tmp_path: Path,
 ) -> None:
-    """Rewriting gold to mirror the current source edge would erase the frozen miss."""
+    """A valid but wrong worker relationship type remains diagnosable."""
 
     experiment_dir = tmp_path / "experiment"
     voyage = inventory.setup_experiment(_source_cases(), _gold_cases(), experiment_dir)
-    first_message = voyage.get_instruction()
+    first_message = voyage.get_status().instruction
     voyage.next(_report_from_message(first_message), continue_=True)
-    second_message = voyage.get_instruction()
+    second_message = voyage.get_status().instruction
+    wrong_response = _report_from_message(second_message)
+    wrong_edge = wrong_response["evidence"]["inventory"]["edges"][0]
+    wrong_edge["type"] = "illustrated-by"
+    wrong_edge["description"] = (
+        "The compactness hypothesis illustrates the existence claim."
+    )
 
-    explain = voyage.next(_report_from_message(second_message), continue_=True)
-    diagnosis_message = voyage.get_instruction()
+    explain = voyage.next(wrong_response, continue_=True)
+    diagnosis_message = voyage.get_status().instruction
     terminal = voyage.next(
         {
-            "revision": diagnosis_message.data["state"]["revision"],
+            "revision": diagnosis_message.data["evolution"]["revision"],
             "outcome": "diagnosed",
             "evidence": {
                 "mistake": "The edge semantics differ from the adjudication.",
-                "reason": "The report says supports while gold says requires.",
+                "reason": "The report says illustrated-by while gold says supports.",
                 "minimal_fix": "Correct the edge semantics in inventory.md without paper tuning.",
             },
         },
@@ -701,7 +951,7 @@ def test_two_sequence_trace_preserves_adjudicated_edge_difference(
     actual = json.loads(rows[2]["child_result"]["value"]["actual_answer"])
     expected = json.loads(rows[2]["child_result"]["value"]["expected_answer"])
 
-    assert terminal.state_id == "complete"
+    assert terminal.evolution_id == "complete"
     assert terminal.condition == "terminal"
     assert {sequence: row["verdict"] for sequence, row in rows.items()} == {
         1: "equal",
@@ -709,5 +959,5 @@ def test_two_sequence_trace_preserves_adjudicated_edge_difference(
     }
     actual_type = actual["delta_edges"]["added"][0]["after"]["properties"]["type"]
     expected_type = expected["delta_edges"]["added"][0]["after"]["properties"]["type"]
-    assert actual_type == "supports"
-    assert expected_type == "requires"
+    assert actual_type == "illustrated-by"
+    assert expected_type == "supports"

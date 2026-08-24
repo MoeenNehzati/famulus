@@ -2059,6 +2059,7 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
         ).read_text(encoding="utf-8")
     )
     assert [entry["source"] for entry in inventory["dependencies"]] == [
+        "math-dependency-graph._rtx.source.rtx-inventory-unit-iterator",
         "common.source.atomic-files",
         "rutter.source.diagnostic",
         "rutter.source.model",
@@ -2066,9 +2067,9 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
     ]
     assert inventory["uses_interfaces"] == [
         {"interface": "common.interface.atomic-files", "version": 1},
-        {"interface": "rutter.interface.binding", "version": 1},
-        {"interface": "rutter.interface.diagnostic", "version": 2},
-        {"interface": "rutter.interface.model", "version": 1},
+        {"interface": "rutter.interface.binding", "version": 3},
+        {"interface": "rutter.interface.diagnostic", "version": 3},
+        {"interface": "rutter.interface.model", "version": 2},
     ]
     assert inventory["interfaces"][
         "math-dependency-graph._rtx.source.rtx-inquisitive-inventory-rutter.interface.experiment-lifecycle"
