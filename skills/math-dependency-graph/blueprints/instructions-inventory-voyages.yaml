@@ -1,0 +1,75 @@
+schema_version: 6
+node_type: behavioral_source
+id: math-dependency-graph.source.instructions-inventory-voyages
+version: 2
+description: Initializes inventory Voyages from a document entrypoint and applies Compass to every dispensed Voyage ID.
+gateway:
+  language: Markdown
+  path: instructions/inventory-voyages.md
+content:
+- instructions/inventory-voyages\.md
+dependencies: []
+uses_interfaces:
+- interface: math-dependency-graph._rtx.interface.inventory-voyage-dispenser
+  version: 2
+- interface: using-compass.interface.default
+  version: 10
+interfaces:
+  math-dependency-graph.source.instructions-inventory-voyages.interface.inventory-voyages:
+    version: 2
+    description: Discover and initialize the inventory Voyage dispenser, then apply Compass to all returned Voyage IDs and collect their completed inventory paths.
+    content:
+    - instructions/inventory-voyages\.md
+    uses_interfaces:
+    - interface: math-dependency-graph._rtx.interface.inventory-voyage-dispenser
+      version: 2
+    - interface: using-compass.interface.default
+      version: 10
+    contract:
+      arguments:
+        request:
+          description: Document entrypoint, fresh run directory, requested positive chunk count, and any explicit mode selection with its required arguments.
+          required: true
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+      preconditions: []
+      caller_warnings:
+      - external-side-effect: Initialization creates durable Voyages and Compass advancement writes completed inventory fragments under the fresh run directory.
+      interaction: {mode: unattended}
+      outputs:
+      - id: inventory-paths
+        audience: machine
+        description: Ordered completed inventory fragment paths, one per terminal Voyage.
+        direct_io_ref: write-1
+        cardinality: {minimum: 1, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: Never empty on success.
+        type: {kind: string, sensitivity: derived-private}
+      outcomes:
+      - id: completed
+        class: success
+        outputs: [inventory-paths]
+        effects: []
+        caller_action: Pool the returned inventory fragments in their stable Voyage order.
+      - id: failed
+        class: error
+        outputs: []
+        effects: []
+        caller_action: Preserve the reported Voyage status and repair only that Voyage before retrying.
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency:
+          snapshot: Every worker is bound to exactly one immutable Voyage created from the same document snapshot and initialization mode.
+        verification:
+        - {method: output-schema, output_ref: inventory-paths}
+      helpers: []
+      direct_io:
+        reads:
+        - {id: read-1, medium: prompt, access: read, content: Inventory Voyage request and authorized dispenser binding, formats: [text], sensitivity: user-private}
+        writes:
+        - {id: write-1, medium: prompt, access: write, content: Ordered completed inventory paths, formats: [markdown], sensitivity: derived-private}
+        network: []
+maturity: stable

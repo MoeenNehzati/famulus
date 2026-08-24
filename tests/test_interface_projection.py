@@ -568,7 +568,7 @@ def test_recurring_tasks_direct_job_edit_exports_project_complete_usage(
         ]
 
 
-def test_live_list_read_and_graph_server_exports_match_their_cli_contracts(
+def test_live_list_read_export_matches_its_cli_contract(
     live_repository_graph: RepositoryBlueprintGraph,
 ) -> None:
     graph = live_repository_graph
@@ -576,22 +576,6 @@ def test_live_list_read_and_graph_server_exports_match_their_cli_contracts(
     list_export = graph.exports["list-manager._rtx.interface.read-list"]
     assert list_export.declaration["usage"] == "<file> [filters] [--sort FIELD]"
 
-    graph_export = graph.exports[
-        "math-dependency-graph._rtx.interface.scripts-serve-graph"
-    ]
-    assert graph_export.declaration["process_binding"]["patterns"] == [
-        {
-            "allowed_flags": ["--directory", "--host", "--port"],
-            "flag_patterns": {
-                "--directory": "^.+$",
-                "--host": "^.+$",
-                "--port": "^(?:[1-9]|[1-9][0-9]{1,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$",
-            },
-            "max_positionals": 0,
-            "min_positionals": 0,
-            "name": "owner",
-        }
-    ]
 
 
 def test_v5_projection_follows_helper_closure_through_facade(

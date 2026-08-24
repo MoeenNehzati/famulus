@@ -1,0 +1,188 @@
+schema_version: 6
+node_type: behavioral_source
+id: math-dependency-graph._rtx.source.rtx-inventory-voyage-dispenser
+version: 2
+description: Defines default and debug inventory Rutter modes, chunks a TeX or Markdown entrypoint, initializes one durable Voyage per requested chunk, and requires a gold-standard path when debug hooks are selected.
+gateway:
+  language: Python>=3.11
+  path: _inventory_pipeline/_voyage_dispenser.py
+content:
+- _inventory_pipeline/_voyage_dispenser\.py
+- _inventory_pipeline/_voyage_support\.py
+dependencies:
+- source: common.source.atomic-files
+  version: 1
+  blueprint: {base: repository-root, path: src/officina/common/blueprints/atomic-files.yaml}
+  reason: Writes cumulative chunk inventories and frozen Voyage inputs atomically.
+- source: rutter.source.engine
+  version: 3
+  blueprint: {base: repository-root, path: src/officina/rutter/blueprints/engine.yaml}
+  reason: Creates and operates each durable inventory Voyage.
+- source: rutter.source.model
+  version: 2
+  blueprint: {base: repository-root, path: src/officina/rutter/blueprints/model.yaml}
+  reason: Declares the Rutter, LLM step, machine step, and terminal result.
+- source: rutter.source.dispenser
+  version: 3
+  blueprint: {base: repository-root, path: src/officina/rutter/blueprints/dispenser.yaml}
+  reason: Routes standard operations to authorized chunk Voyages by ID.
+- source: rutter.source.diagnostic
+  version: 3
+  blueprint: {base: repository-root, path: src/officina/rutter/blueprints/diagnostic.yaml}
+  reason: Attaches the supplied-answer inventory-diagnosis child Rutter in debug mode.
+- source: math-dependency-graph._rtx.source.rtx-inventory-chunk-extractor
+  version: 8
+  blueprint: {base: module-root, path: blueprints/rtx-inventory-chunk-extractor.yaml}
+  reason: Resolves and packets the supplied document entrypoint into internal immutable chunks.
+uses_interfaces:
+- {interface: common.interface.atomic-files, version: 1}
+- {interface: rutter.interface.bound-operations, version: 6}
+- {interface: rutter.interface.model, version: 2}
+- {interface: rutter.interface.dispenser, version: 3}
+- {interface: math-dependency-graph._rtx.source.rtx-inventory-chunk-extractor.interface.scripts-extract-inventory-chunks, version: 1}
+interfaces:
+  math-dependency-graph._rtx.source.rtx-inventory-voyage-dispenser.interface.inventory-voyages:
+    version: 2
+    description: Discover default and debug modes together with their required arguments, initialize inventory Voyages from a TeX or Markdown entrypoint and requested chunk count, use the standard dispenser operations to collect completed chunk inventories, and release terminal Voyage working directories. Default has no hooks; debug attaches inventory-diagnosis and requires a gold-standard JSON path.
+    usage: <help|modes|list> --run-dir <path> | initiate [default] --doc-entrypoint <path> --chunk-count <positive-integer> --run-dir <path> | initiate debug --doc-entrypoint <path> --chunk-count <positive-integer> --inventory-gold-standard <path> --run-dir <path> | <status|validate|advance> <voyage-id> --run-dir <path> [--response-file <path> --responding-to <entry-id>] | release <voyage-id> --run-dir <path>
+    content:
+    - _inventory_pipeline/_voyage_dispenser\.py
+    - _inventory_pipeline/_voyage_support\.py
+    uses_interfaces:
+    - {interface: common.interface.atomic-files, version: 1}
+    - {interface: rutter.interface.bound-operations, version: 6}
+    - {interface: rutter.interface.model, version: 2}
+    - {interface: rutter.interface.dispenser, version: 3}
+    - {interface: math-dependency-graph._rtx.source.rtx-inventory-chunk-extractor.interface.scripts-extract-inventory-chunks, version: 1}
+    process_binding:
+      kind: process
+      entry: Interface
+      patterns:
+      - name: discovery
+        min_positionals: 1
+        max_positionals: 1
+        positional_patterns: {'0': ^(help|modes|list)$}
+        allowed_flags: [--run-dir]
+        required_flags: [--run-dir]
+        flag_patterns: {--run-dir: ^.+$}
+      - name: initiate-default
+        min_positionals: 1
+        max_positionals: 2
+        positional_patterns: {'0': ^initiate$, '1': ^default$}
+        allowed_flags: [--doc-entrypoint, --chunk-count, --run-dir]
+        required_flags: [--doc-entrypoint, --chunk-count, --run-dir]
+        flag_patterns: {--doc-entrypoint: '^.+\.(?:tex|md)$', --chunk-count: '^[1-9][0-9]*$', --run-dir: ^.+$}
+      - name: initiate-debug
+        min_positionals: 2
+        max_positionals: 2
+        positional_patterns: {'0': ^initiate$, '1': ^debug$}
+        allowed_flags: [--doc-entrypoint, --chunk-count, --inventory-gold-standard, --run-dir]
+        required_flags: [--doc-entrypoint, --chunk-count, --inventory-gold-standard, --run-dir]
+        flag_patterns: {--doc-entrypoint: '^.+\.(?:tex|md)$', --chunk-count: '^[1-9][0-9]*$', --inventory-gold-standard: ^.+$, --run-dir: ^.+$}
+      - name: operation
+        min_positionals: 2
+        max_positionals: 2
+        positional_patterns: {'0': ^(status|validate|advance)$}
+        allowed_flags: [--run-dir, --response-file, --responding-to]
+        required_flags: [--run-dir]
+        flag_patterns: {--run-dir: ^.+$, --response-file: ^.+$, --responding-to: ^.+$}
+      - name: release
+        min_positionals: 2
+        max_positionals: 2
+        positional_patterns: {'0': ^release$}
+        allowed_flags: [--run-dir]
+        required_flags: [--run-dir]
+        flag_patterns: {--run-dir: ^.+$}
+    contract:
+      arguments:
+        operation:
+          description: Discovery, initialization, or one standard dispenser operation.
+          required: true
+          sensitivity: public
+          type: {kind: string, sensitivity: public}
+        doc-entrypoint:
+          description: Root TeX or Markdown document to read and partition internally.
+          direct_io_ref: read-1
+          required: false
+          sensitivity: user-private
+          type: {kind: file, access: read, must_exist: true, relative_to: caller-cwd, syntax: literal, content_type: {kind: string, sensitivity: user-private}}
+        chunk-count:
+          description: Requested positive number of nonempty inventory chunks; fewer are returned when the document has fewer packets.
+          required: false
+          sensitivity: public
+          type: {kind: integer, minimum: 1, sensitivity: public}
+        run-dir:
+          description: Fresh initialization directory or existing inventory Voyage collection.
+          required: true
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+        inventory-gold-standard:
+          description: Inventory schema-v3 gold JSON frozen into every debug Voyage and used by inventory-diagnosis hooks; required only for debug initiation.
+          direct_io_ref: read-2
+          required: false
+          sensitivity: user-private
+          type: {kind: file, access: read, must_exist: true, relative_to: caller-cwd, syntax: literal, content_type: {kind: string, sensitivity: user-private, format: {named: json}}}
+        voyage-id:
+          description: Opaque chunk Voyage ID returned by list.
+          required: false
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+      preconditions: []
+      caller_warnings:
+      - external-side-effect: Setup creates durable Voyages, advance may write a completed chunk inventory, and release deletes one terminal Voyage working directory.
+      interaction: {mode: unattended}
+      outputs:
+      - id: result
+        audience: machine
+        description: Finite JSON initialization or standard dispenser result.
+        direct_io_ref: stdout
+        cardinality: {minimum: 1, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: Never empty on success.
+        type: {kind: string, sensitivity: derived-private, format: {named: json}}
+      outcomes:
+      - id: completed
+        class: success
+        outputs: [result]
+        effects: [voyage-state]
+        caller_action: Retain each returned terminal inventory path, then release its Voyage unless an explicit reason requires preserving the working directory.
+      - id: invalid-input
+        class: error
+        outputs: []
+        effects: []
+        caller_action: Correct the document entrypoint, chunk count, Voyage ID, or correlated response.
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency:
+          snapshot: Initialization reads one document snapshot, freezes each internally produced chunk, inventory instruction, and inventory schema inside its Voyage; debug also freezes the supplied gold standard.
+        effects:
+        - id: voyage-state
+          direct_io_ref: voyage-state
+          action: update
+          value_source: {kind: argument, argument_ref: run-dir}
+          may_occur_in_outcomes: [completed]
+          confirmation_evidence: {kind: output, output_ref: result}
+          reversibility: {reversible: Delete the fresh run directory before publishing its derived inventories.}
+        mutation_safety:
+          atomicity: {per_effect_only: Each Voyage and cumulative inventory owns its atomic write boundary.}
+          concurrent_invocations: {safe: Distinct Voyage IDs may be assigned to distinct workers.}
+          idempotency: {non_idempotent: Advance appends one correlated Voyage evolution.}
+          on_uncertain_completion: {verify_then_decide: Read status before retrying an advance.}
+          partial_effects_on_failure: {possible: A completed machine step may precede a later caller failure.}
+          rollback_on_failure: {unavailable: Voyage history is append-only.}
+        verification: [{method: output-schema, output_ref: result}]
+      helpers: []
+      direct_io:
+        reads:
+        - {id: read-1, medium: local-filesystem, access: read, system: filesystem, content: Root TeX or Markdown document and its locally included TeX sources, formats: [text], sensitivity: user-private, path: <doc-entrypoint>, path_match: exact}
+        - {id: read-2, medium: local-filesystem, access: read, system: filesystem, content: Inventory gold standard used only by debug diagnosis hooks, formats: [json], sensitivity: user-private, path: <inventory-gold-standard>, path_match: exact}
+        writes:
+        - {id: voyage-state, medium: local-filesystem, access: write, system: filesystem, content: Durable inventory Voyages and completed chunk inventories, formats: [json], sensitivity: derived-private, path: <run-dir>, path_match: glob}
+        - {id: stdout, medium: stdout, access: write, content: Operation result, formats: [json], sensitivity: derived-private}
+        network: []
+platform_support: {linux: true, macos: true, windows: true}
+runtime_dependencies: []
+maturity: stable

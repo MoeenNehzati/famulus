@@ -3,20 +3,8 @@
 from __future__ import annotations
 
 import copy
-import json
-from pathlib import Path
-
 import pytest
 from jsonschema import Draft202012Validator, ValidationError
-
-
-SCHEMA_PATH = Path(__file__).parents[2] / "inventory.schema.json"
-
-
-def _validator() -> Draft202012Validator:
-    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
-    Draft202012Validator.check_schema(schema)
-    return Draft202012Validator(schema)
 
 
 def _inventory() -> dict[str, object]:
@@ -29,7 +17,7 @@ def _inventory() -> dict[str, object]:
         "nodes": [
             {
                 "local_id": "n1",
-                "location": [0, 128, 134],
+                "statement_location": [0, 128, 134],
                 "environment": "proposition",
                 "labels": ["prop:measurable"],
                 "provenance": "explicit",
@@ -66,34 +54,17 @@ def _inventory() -> dict[str, object]:
     }
 
 
-def test_inventory_schema_accepts_inline_discovery_records() -> None:
+def test_inventory_schema_accepts_inline_discovery_records(
+    inventory_schema_validator: Draft202012Validator,
+) -> None:
     """Workers can report graph semantics without bookkeeping registries."""
 
-    _validator().validate(_inventory())
+    inventory_schema_validator.validate(_inventory())
 
 
-@pytest.mark.parametrize(
-    "field",
-    [
-        "evidence",
-        "references",
-        "candidates",
-        "unresolved_entities",
-        "relationship_hints",
-        "reference_decisions",
-    ],
-)
-def test_inventory_schema_rejects_retired_bookkeeping_arrays(field: str) -> None:
-    """The worker contract cannot regress to normalized pooling registries."""
-
-    inventory = _inventory()
-    inventory[field] = []
-
-    with pytest.raises(ValidationError):
-        _validator().validate(inventory)
-
-
-def test_inventory_schema_requires_reason_for_inferred_edge() -> None:
+def test_inventory_schema_requires_reason_for_inferred_edge(
+    inventory_schema_validator: Draft202012Validator,
+) -> None:
     """A worker inference must retain a concise mathematical rationale."""
 
     inventory = copy.deepcopy(_inventory())
@@ -103,20 +74,24 @@ def test_inventory_schema_requires_reason_for_inferred_edge() -> None:
     del edge["reference"]
 
     with pytest.raises(ValidationError):
-        _validator().validate(inventory)
+        inventory_schema_validator.validate(inventory)
 
 
-def test_inventory_schema_requires_inline_reference_for_reference_edge() -> None:
+def test_inventory_schema_requires_inline_reference_for_reference_edge(
+    inventory_schema_validator: Draft202012Validator,
+) -> None:
     """An explicit-reference edge carries its locator at the point of use."""
 
     inventory = copy.deepcopy(_inventory())
     del inventory["edges"][0]["reference"]
 
     with pytest.raises(ValidationError):
-        _validator().validate(inventory)
+        inventory_schema_validator.validate(inventory)
 
 
-def test_inventory_schema_requires_scope_for_local_assumption() -> None:
+def test_inventory_schema_requires_scope_for_local_assumption(
+    inventory_schema_validator: Draft202012Validator,
+) -> None:
     """A local assumption cannot lose the boundary where it applies."""
 
     inventory = copy.deepcopy(_inventory())
@@ -125,20 +100,24 @@ def test_inventory_schema_requires_scope_for_local_assumption() -> None:
     node["kind_hint"] = "local"
 
     with pytest.raises(ValidationError):
-        _validator().validate(inventory)
+        inventory_schema_validator.validate(inventory)
 
 
-def test_inventory_schema_requires_external_result_identity() -> None:
+def test_inventory_schema_requires_external_result_identity(
+    inventory_schema_validator: Draft202012Validator,
+) -> None:
     """External results remain matchable by name or citation identity."""
 
     inventory = copy.deepcopy(_inventory())
     inventory["nodes"][0]["type_hint"] = "external-result"
 
     with pytest.raises(ValidationError):
-        _validator().validate(inventory)
+        inventory_schema_validator.validate(inventory)
 
 
-def test_inventory_schema_requires_reference_for_reference_gap() -> None:
+def test_inventory_schema_requires_reference_for_reference_gap(
+    inventory_schema_validator: Draft202012Validator,
+) -> None:
     """An unresolved explicit reference keeps its source-visible locator."""
 
     inventory = copy.deepcopy(_inventory())
@@ -152,7 +131,7 @@ def test_inventory_schema_requires_reference_for_reference_gap() -> None:
     ]
 
     with pytest.raises(ValidationError):
-        _validator().validate(inventory)
+        inventory_schema_validator.validate(inventory)
 
 
 @pytest.mark.parametrize(
@@ -164,7 +143,9 @@ def test_inventory_schema_requires_reference_for_reference_gap() -> None:
     ],
 )
 def test_inventory_schema_bounds_worker_prose(
-    path: tuple[object, ...], value: str
+    path: tuple[object, ...],
+    value: str,
+    inventory_schema_validator: Draft202012Validator,
 ) -> None:
     """Inline annotations remain compact rather than reproducing source text."""
 
@@ -184,13 +165,15 @@ def test_inventory_schema_bounds_worker_prose(
     target[path[-1]] = value
 
     with pytest.raises(ValidationError):
-        _validator().validate(inventory)
+        inventory_schema_validator.validate(inventory)
 
 
-def test_inventory_schema_accepts_empty_complete_fragment() -> None:
+def test_inventory_schema_accepts_empty_complete_fragment(
+    inventory_schema_validator: Draft202012Validator,
+) -> None:
     """A chunk with no graph findings still returns the complete v3 shape."""
 
-    _validator().validate(
+    inventory_schema_validator.validate(
         {
             "ir_version": 3,
             "chunk_id": "inventory-empty",

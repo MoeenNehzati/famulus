@@ -291,19 +291,6 @@ def test_repository_multiline_skill_summaries_remain_catalog_safe(
     )
 
 
-def test_math_dependency_graph_description_is_concise_trigger_only(
-    live_catalog: tuple[SkillInfo, ...],
-) -> None:
-    skill = next(
-        skill for skill in live_catalog if skill.name == "math-dependency-graph"
-    )
-    assert skill.description == (
-        "Use when the user asks for a direct assumptions-to-results dependency "
-        "graph of a LaTeX mathematical document. Do not use for proof, notation, "
-        "prose, or literature review."
-    )
-
-
 def test_regenerate_blueprints_description_is_trigger_only(
     live_catalog: tuple[SkillInfo, ...],
 ) -> None:

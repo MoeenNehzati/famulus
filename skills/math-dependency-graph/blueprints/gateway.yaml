@@ -1,8 +1,8 @@
 content:
 - SKILL\.md
 dependencies: []
-description: Orchestrates the measured iterator inventory, extract, compile, and render workflow
-  for one notation-faithful direct mathematical graph.
+description: Orchestrates Voyage-based inventory, extraction, proof normalization,
+  and compilation for one notation-faithful direct mathematical graph.
 gateway:
   language: Markdown
   path: SKILL.md
@@ -13,24 +13,24 @@ interfaces:
     - SKILL\.md
     uses_interfaces:
     - interface: math-dependency-graph.interface.inventory
-      version: 35
+      version: 36
+    - interface: math-dependency-graph.interface.inventory-voyages
+      version: 2
     - interface: math-dependency-graph.interface.extract
-      version: 27
+      version: 29
     - interface: math-dependency-graph.interface.proof-reconciliation
       version: 3
-    - interface: math-dependency-graph._rtx.interface.scripts-advance-extraction-phases
-      version: 28
-    - interface: math-dependency-graph._rtx.interface.scripts-record-run-diagnostics
-      version: 8
-    - interface: math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator
-      version: 5
-    - interface: math-dependency-graph._rtx.interface.scripts-next-inventory-unit
-      version: 4
+    - interface: math-dependency-graph._rtx.interface.scripts-pool-inventory-chunks
+      version: 1
+    - interface: math-dependency-graph._rtx.interface.scripts-apply-proof-digest
+      version: 1
+    - interface: math-dependency-graph._rtx.interface.scripts-semantic-to-canonical-json
+      version: 1
     contract:
       arguments:
         request:
-          description: User request, TeX entrypoint, and optional HTML destination
-            for one fresh measured mathematical graph run.
+          description: User request and TeX or Markdown entrypoint for one fresh
+            mathematical graph run.
           required: true
           sensitivity: user-private
           type:
@@ -58,8 +58,7 @@ interfaces:
       execution:
         consistency:
           snapshot: The result is derived from one fresh source snapshot whose inventory
-            workers consume only durable iterator responses, while every setup and next
-            public wrapper call returns controlled-child timing recorded through diagnostics.
+            workers operate one durable Voyage per immutable chunk.
         lifecycle: finite
         state_effect: read-only
         verification:
@@ -69,8 +68,7 @@ interfaces:
       interaction:
         mode: unattended
       outcomes:
-      - caller_action: Review the graph artifacts, durable diagnostics summary, and
-          unresolved evidence gaps.
+      - caller_action: Review the graph artifacts and unresolved evidence gaps.
         class: success
         effects: []
         id: completed
@@ -87,9 +85,8 @@ interfaces:
         cardinality:
           maximum: 1
           minimum: 1
-        description: Graph artifact locations, run-diagnostics path and summary,
-          represented source scope, exact worker models and retries, timings, ratios,
-          record counts, and genuine unresolved gaps.
+        description: Graph artifact locations, represented source scope, record counts,
+          and genuine unresolved gaps.
         direct_io_ref: write-1
         empty: Never empty on success.
         id: response
@@ -102,24 +99,24 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Orchestrate a measured inventory, extract, compile, and render run.
-    version: 69
+    description: Orchestrate a Voyage inventory, extract, normalize, and compile run.
+    version: 71
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
 - interface: math-dependency-graph.interface.inventory
-  version: 35
+  version: 36
+- interface: math-dependency-graph.interface.inventory-voyages
+  version: 2
 - interface: math-dependency-graph.interface.extract
-  version: 27
+  version: 29
 - interface: math-dependency-graph.interface.proof-reconciliation
   version: 3
-- interface: math-dependency-graph._rtx.interface.scripts-advance-extraction-phases
-  version: 28
-- interface: math-dependency-graph._rtx.interface.scripts-record-run-diagnostics
-  version: 8
-- interface: math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator
-  version: 5
-- interface: math-dependency-graph._rtx.interface.scripts-next-inventory-unit
-  version: 4
-version: 76
+- interface: math-dependency-graph._rtx.interface.scripts-pool-inventory-chunks
+  version: 1
+- interface: math-dependency-graph._rtx.interface.scripts-apply-proof-digest
+  version: 1
+- interface: math-dependency-graph._rtx.interface.scripts-semantic-to-canonical-json
+  version: 1
+version: 78
 maturity: stable

@@ -164,7 +164,7 @@ interfaces:
           - json
           id: read-4
           medium: local-filesystem
-          path: $skill/semantic-{graph,repair}.schema.json
+          path: $skill/schemas/semantic-{graph,repair}.schema.json
           path_match: glob
           sensitivity: public
           system: filesystem
@@ -174,7 +174,7 @@ interfaces:
           - json
           id: read-5
           medium: local-filesystem
-          path: $skill/base.json
+          path: $skill/resources/graph-base.json
           path_match: exact
           sensitivity: public
           system: filesystem
@@ -343,9 +343,9 @@ interfaces:
       preconditions: []
     description: Reconcile pooled inventory and the retained entrypoint into transitional
       notation-faithful entities, proof ownership, and direct relationships, or author one returned narrow repair.
-    version: 27
+    version: 29
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces: []
-version: 27
+version: 29
 maturity: stable

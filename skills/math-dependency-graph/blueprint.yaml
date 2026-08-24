@@ -3,9 +3,13 @@ authority:
 children:
   _rtx: {}
 content:
-- (?:SKILL\.md|base\.json|inventory\.schema\.json|chunk-plan\.schema\.json|run-diagnostics\.schema\.json|semantic-(?:graph|repair)\.schema\.json|proof-normalization\.schema\.json|instructions/(?:inventory|extract|proof-reconciliation)\.md|references/(?:experimental-improvement|gold-standard-extraction|inquisitive-inventory-rutter)\.md)
-description: Extracts a direct dependency graph from mathematical LaTeX, renders canonical
-  graph JSON as interactive HTML, and serves the result locally for inspection.
+- SKILL\.md
+- resources/graph-base\.json
+- schemas/(?:inventory|semantic-graph|semantic-repair|proof-normalization)\.schema\.json
+- instructions/(?:inventory|inventory-voyages|extract|proof-reconciliation)\.md
+- references/(?:experimental-improvement|gold-standard-extraction)\.md
+description: Extracts a direct dependency graph from a mathematical TeX or Markdown
+  document and emits canonical graph JSON for the shared visualization layer.
 discovery:
   mechanism: skill
   catalog:
@@ -37,6 +41,12 @@ exports:
       allowed_callers:
       - math-dependency-graph
     source_interface: math-dependency-graph.source.instructions-inventory.interface.inventory
+  math-dependency-graph.interface.inventory-voyages:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - math-dependency-graph
+    source_interface: math-dependency-graph.source.instructions-inventory-voyages.interface.inventory-voyages
   math-dependency-graph.interface.proof-reconciliation:
     access:
       allow_all_modules: false
@@ -49,59 +59,31 @@ gateway:
 id: math-dependency-graph
 namespace_exports:
   _rtx:
-    version: 66
+    version: 75
     access:
       allow_all_modules: true
       allowed_callers: []
     surface:
       only:
-        math-dependency-graph._rtx.interface.scripts-advance-extraction-phases: 28
-        math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph: 4
-        math-dependency-graph._rtx.interface.scripts-compile-semantic-graph: 6
-        math-dependency-graph._rtx.interface.scripts-extract-mathjax-macros: 1
-        math-dependency-graph._rtx.interface.scripts-merge-batch-ir: 20
-        math-dependency-graph._rtx.interface.scripts-plan-extraction-chunks: 15
-        math-dependency-graph._rtx.interface.scripts-prepare-semantic-source: 4
-        math-dependency-graph._rtx.interface.scripts-record-run-diagnostics: 8
-        math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator: 5
-        math-dependency-graph._rtx.interface.scripts-next-inventory-unit: 4
-        math-dependency-graph._rtx.interface.scripts-normalize-proofs: 2
-        math-dependency-graph._rtx.interface.scripts-serve-graph: 1
+        math-dependency-graph._rtx.interface.inventory-voyage-dispenser: 2
+        math-dependency-graph._rtx.interface.scripts-apply-proof-digest: 1
+        math-dependency-graph._rtx.interface.scripts-extract-inventory-chunks: 1
+        math-dependency-graph._rtx.interface.scripts-pool-inventory-chunks: 1
+        math-dependency-graph._rtx.interface.scripts-semantic-to-canonical-json: 1
     interface_access:
-      math-dependency-graph._rtx.interface.scripts-advance-extraction-phases:
+      math-dependency-graph._rtx.interface.inventory-voyage-dispenser:
         allow_all_modules: false
         allowed_callers: []
-      math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph:
+      math-dependency-graph._rtx.interface.scripts-apply-proof-digest:
         allow_all_modules: false
         allowed_callers: []
-      math-dependency-graph._rtx.interface.scripts-compile-semantic-graph:
+      math-dependency-graph._rtx.interface.scripts-extract-inventory-chunks:
         allow_all_modules: false
         allowed_callers: []
-      math-dependency-graph._rtx.interface.scripts-extract-mathjax-macros:
+      math-dependency-graph._rtx.interface.scripts-pool-inventory-chunks:
         allow_all_modules: false
         allowed_callers: []
-      math-dependency-graph._rtx.interface.scripts-merge-batch-ir:
-        allow_all_modules: false
-        allowed_callers: []
-      math-dependency-graph._rtx.interface.scripts-plan-extraction-chunks:
-        allow_all_modules: false
-        allowed_callers: []
-      math-dependency-graph._rtx.interface.scripts-prepare-semantic-source:
-        allow_all_modules: false
-        allowed_callers: []
-      math-dependency-graph._rtx.interface.scripts-record-run-diagnostics:
-        allow_all_modules: false
-        allowed_callers: []
-      math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator:
-        allow_all_modules: false
-        allowed_callers: []
-      math-dependency-graph._rtx.interface.scripts-next-inventory-unit:
-        allow_all_modules: false
-        allowed_callers: []
-      math-dependency-graph._rtx.interface.scripts-normalize-proofs:
-        allow_all_modules: false
-        allowed_callers: []
-      math-dependency-graph._rtx.interface.scripts-serve-graph:
+      math-dependency-graph._rtx.interface.scripts-semantic-to-canonical-json:
         allow_all_modules: false
         allowed_callers: []
 node_type: module
@@ -119,11 +101,15 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/instructions-inventory.yaml
+  math-dependency-graph.source.instructions-inventory-voyages:
+    blueprint:
+      base: module-root
+      path: blueprints/instructions-inventory-voyages.yaml
   math-dependency-graph.source.instructions-proof-reconciliation:
     blueprint:
       base: module-root
       path: blueprints/instructions-proof-reconciliation.yaml
-version: 90
+version: 102
 maturity: stable
 installation_tier: core
 personal_preference:

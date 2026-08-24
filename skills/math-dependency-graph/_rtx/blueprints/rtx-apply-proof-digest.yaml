@@ -1,0 +1,328 @@
+content:
+- _semantic_pipeline/_apply_proof_digest\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: math-dependency-graph._rtx.source.rtx-init
+  version: 2
+description: Applies complete proof-reconciliation decisions deterministically, redirects
+  accepted proof dependencies into their proved result, writes proof-free semantic IR and
+  provenance together, and never makes proof grouping or target judgments.
+gateway:
+  language: Python>=3.11
+  path: _semantic_pipeline/_apply_proof_digest.py
+id: math-dependency-graph._rtx.source.rtx-apply-proof-digest
+interfaces:
+  math-dependency-graph._rtx.source.rtx-apply-proof-digest.interface.scripts-apply-proof-digest:
+    content:
+    - _semantic_pipeline/_apply_proof_digest\.py
+    uses_interfaces: []
+    contract:
+      arguments:
+        inventory:
+          description: Authoritative pooled inventory projected for proof-free compilation.
+          direct_io_ref: read-4
+          required: true
+          sensitivity: derived-private
+          type:
+            access: read
+            content_type: {format: {named: json}, kind: string, sensitivity: derived-private}
+            kind: file
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+        inventory-out:
+          description: Required compiler-facing pooled inventory projection destination.
+          direct_io_ref: write-3
+          required: true
+          sensitivity: derived-private
+          type:
+            access: write
+            content_type: {format: {named: json}, kind: string, sensitivity: derived-private}
+            kind: file
+            must_exist: false
+            relative_to: caller-cwd
+            syntax: literal
+        decisions:
+          description: Complete proof-normalization decisions for the selected transitional IR.
+          direct_io_ref: read-2
+          required: true
+          sensitivity: derived-private
+          type:
+            access: read
+            content_type:
+              format:
+                named: json
+              kind: string
+              sensitivity: derived-private
+            kind: file
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+        out:
+          description: Required proof-free semantic IR JSON destination.
+          direct_io_ref: write-1
+          required: true
+          sensitivity: derived-private
+          type:
+            access: write
+            content_type:
+              format:
+                named: json
+              kind: string
+              sensitivity: derived-private
+            kind: file
+            must_exist: false
+            relative_to: caller-cwd
+            syntax: literal
+        provenance-out:
+          description: Required normalization provenance sidecar JSON destination.
+          direct_io_ref: write-2
+          required: true
+          sensitivity: derived-private
+          type:
+            access: write
+            content_type:
+              format:
+                named: json
+              kind: string
+              sensitivity: derived-private
+            kind: file
+            must_exist: false
+            relative_to: caller-cwd
+            syntax: literal
+        semantic-ir:
+          description: Transitional semantic-graph IR containing temporary proof entities.
+          direct_io_ref: read-1
+          required: true
+          sensitivity: derived-private
+          type:
+            access: read
+            content_type:
+              format:
+                named: json
+              kind: string
+              sensitivity: derived-private
+            kind: file
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+      caller_warnings:
+      - external-side-effect: Replaces the normalized IR and provenance sidecar only after complete validation.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: transitional mathematical semantic IR
+          formats:
+          - json
+          id: read-1
+          medium: local-filesystem
+          path: <semantic-ir>
+          path_match: exact
+          sensitivity: derived-private
+          system: filesystem
+        - access: read
+          content: proof reconciliation decisions
+          formats:
+          - json
+          id: read-2
+          medium: local-filesystem
+          path: <decisions>
+          path_match: exact
+          sensitivity: derived-private
+          system: filesystem
+        - access: read
+          content: transitional semantic and proof-normalization schemas
+          formats:
+          - json
+          id: read-3
+          medium: local-filesystem
+          path: $skill/schemas/semantic-graph.schema.json and $skill/schemas/proof-normalization.schema.json
+          path_match: glob
+          sensitivity: public
+          system: filesystem
+        - access: read
+          content: authoritative pooled inventory for compiler-facing projection
+          formats:
+          - json
+          id: read-4
+          medium: local-filesystem
+          path: <inventory>
+          path_match: exact
+          sensitivity: derived-private
+          system: filesystem
+        writes:
+        - access: write
+          content: normalized proof-free semantic IR
+          formats:
+          - json
+          id: write-1
+          medium: local-filesystem
+          path: <out>
+          path_match: exact
+          sensitivity: derived-private
+          system: filesystem
+        - access: write
+          content: proof-normalization provenance sidecar
+          formats:
+          - json
+          id: write-2
+          medium: local-filesystem
+          path: <provenance-out>
+          path_match: exact
+          sensitivity: derived-private
+          system: filesystem
+        - access: write
+          content: compiler-facing proof-free pooled inventory projection
+          formats:
+          - json
+          id: write-3
+          medium: local-filesystem
+          path: <inventory-out>
+          path_match: exact
+          sensitivity: derived-private
+          system: filesystem
+        - access: write
+          content: proof-normalization report
+          formats:
+          - json
+          id: write-4
+          medium: stdout
+          sensitivity: derived-private
+      execution:
+        consistency:
+          snapshot: Normalization reads one transitional IR, one complete decision document,
+            and its owned schemas before staging either destination.
+        effects:
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: write-1
+            kind: direct-io
+          direct_io_ref: write-1
+          id: normalized-semantic-ir
+          may_occur_in_outcomes:
+          - normalized
+          reversibility:
+            reversible: Regenerate both artifacts from unchanged transitional IR and decisions.
+          value_source:
+            argument_ref: semantic-ir
+            kind: argument
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: write-2
+            kind: direct-io
+          direct_io_ref: write-2
+          id: provenance-sidecar
+          may_occur_in_outcomes:
+          - normalized
+          reversibility:
+            reversible: Regenerate both artifacts from unchanged transitional IR and decisions.
+          value_source:
+            argument_ref: decisions
+            kind: argument
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            per_effect_only: Both destinations are staged after validation; sibling replacements
+              are compensated from preserved prior bytes if a later replacement fails.
+          concurrent_invocations:
+            unsafe: Concurrent writers to either selected destination are not serialized.
+          idempotency:
+            idempotent: Unchanged inputs produce equivalent normalized IR and provenance.
+          on_uncertain_completion:
+            verify_then_decide: Inspect both destinations before retrying the same normalization.
+          partial_effects_on_failure:
+            impossible: Invalid decisions fail before either destination is staged for replacement.
+          rollback_on_failure:
+            available: Prior destinations are restored when a staged replacement fails.
+        state_effect: mutating
+        verification:
+        - direct_io_ref: write-1
+          method: direct-io-state
+        - direct_io_ref: write-2
+          method: direct-io-state
+        - method: output-schema
+          output_ref: report
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Pass the proof-free IR to semantic compilation and retain the sidecar for audit.
+        class: success
+        effects:
+        - normalized-semantic-ir
+        - provenance-sidecar
+        id: normalized
+        outputs:
+        - report
+      - caller_action: Correct the reported proof disposition, target, bundle, or evidence input.
+        class: refusal
+        effects: []
+        id: invalid-proof-normalization
+        outputs: []
+      - caller_action: Correct unreadable inputs or destinations.
+        class: error
+        effects: []
+        id: failed
+        outputs: []
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: JSON report containing input and output paths plus normalized entity and relationship counts.
+        direct_io_ref: write-4
+        empty: Never empty on success.
+        id: report
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          format:
+            named: json
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Normalize temporary proof entities into strict proof-free semantic IR.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allowed_flags:
+        - --decisions
+        - --inventory
+        - --inventory-out
+        - --out
+        - --provenance-out
+        required_flags:
+        - --decisions
+        - --inventory
+        - --inventory-out
+        - --out
+        - --provenance-out
+        flag_patterns:
+          --decisions: ^.+$
+          --inventory: ^.+$
+          --inventory-out: ^.+$
+          --out: ^.+$
+          --provenance-out: ^.+$
+        max_positionals: 1
+        min_positionals: 1
+        name: owner
+    usage: <semantic-ir.json> --decisions <decisions.json> --inventory <pooled.json> --out <normalized.json> --provenance-out <provenance.json> --inventory-out <projected.json>
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 6
+uses_interfaces: []
+version: 3
+maturity: stable

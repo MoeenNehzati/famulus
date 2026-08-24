@@ -4770,19 +4770,8 @@
         "applies": false
       },
       "interfaces": {
-        "math-dependency-graph._rtx.interface.inquisitive-inventory-experiment": {
+        "math-dependency-graph._rtx.interface.inventory-voyage-dispenser": {
           "dependencies": [
-            {
-              "kind": "python-package",
-              "name": "jsonschema",
-              "version": ">=4,<5",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Validates batch fragments against skill-owned JSON schemas."
-            },
             {
               "kind": "python-package",
               "name": "jsonschema",
@@ -4796,7 +4785,13 @@
             }
           ]
         },
-        "math-dependency-graph._rtx.interface.scripts-advance-extraction-phases": {
+        "math-dependency-graph._rtx.interface.scripts-apply-proof-digest": {
+          "dependencies": []
+        },
+        "math-dependency-graph._rtx.interface.scripts-extract-inventory-chunks": {
+          "dependencies": []
+        },
+        "math-dependency-graph._rtx.interface.scripts-pool-inventory-chunks": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -4807,30 +4802,12 @@
                 "macos": true,
                 "windows": true
               },
-              "reason": "Validates batch fragments against skill-owned JSON schemas."
-            },
-            {
-              "kind": "python-package",
-              "name": "jsonschema",
-              "version": ">=4,<5",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Validates extraction artifacts."
-            },
-            {
-              "kind": "python-package",
-              "name": "jsonschema",
-              "version": ">=4,<5",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Validates generated chunk manifests against the skill-owned schema."
-            },
+              "reason": "Validates completed chunk inventories against the skill-owned schema."
+            }
+          ]
+        },
+        "math-dependency-graph._rtx.interface.scripts-semantic-to-canonical-json": {
+          "dependencies": [
             {
               "kind": "python-package",
               "name": "jsonschema",
@@ -4841,144 +4818,6 @@
                 "windows": true
               },
               "reason": "Validates semantic graph artifacts against the skill-owned JSON Schema."
-            }
-          ]
-        },
-        "math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph": {
-          "dependencies": []
-        },
-        "math-dependency-graph._rtx.interface.scripts-compile-semantic-graph": {
-          "dependencies": [
-            {
-              "kind": "python-package",
-              "name": "jsonschema",
-              "version": ">=4,<5",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Validates batch fragments against skill-owned JSON schemas."
-            },
-            {
-              "kind": "python-package",
-              "name": "jsonschema",
-              "version": ">=4,<5",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Validates semantic graph artifacts against the skill-owned JSON Schema."
-            }
-          ]
-        },
-        "math-dependency-graph._rtx.interface.scripts-extract-mathjax-macros": {
-          "dependencies": []
-        },
-        "math-dependency-graph._rtx.interface.scripts-merge-batch-ir": {
-          "dependencies": [
-            {
-              "kind": "python-package",
-              "name": "jsonschema",
-              "version": ">=4,<5",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Validates batch fragments against skill-owned JSON schemas."
-            }
-          ]
-        },
-        "math-dependency-graph._rtx.interface.scripts-next-inventory-unit": {
-          "dependencies": [
-            {
-              "kind": "python-package",
-              "name": "jsonschema",
-              "version": ">=4,<5",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Validates batch fragments against skill-owned JSON schemas."
-            }
-          ]
-        },
-        "math-dependency-graph._rtx.interface.scripts-normalize-proofs": {
-          "dependencies": []
-        },
-        "math-dependency-graph._rtx.interface.scripts-plan-extraction-chunks": {
-          "dependencies": [
-            {
-              "kind": "python-package",
-              "name": "jsonschema",
-              "version": ">=4,<5",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Validates batch fragments against skill-owned JSON schemas."
-            },
-            {
-              "kind": "python-package",
-              "name": "jsonschema",
-              "version": ">=4,<5",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Validates generated chunk manifests against the skill-owned schema."
-            },
-            {
-              "kind": "python-package",
-              "name": "jsonschema",
-              "version": ">=4,<5",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Validates semantic graph artifacts against the skill-owned JSON Schema."
-            }
-          ]
-        },
-        "math-dependency-graph._rtx.interface.scripts-prepare-semantic-source": {
-          "dependencies": []
-        },
-        "math-dependency-graph._rtx.interface.scripts-record-run-diagnostics": {
-          "dependencies": [
-            {
-              "kind": "python-package",
-              "name": "jsonschema",
-              "version": ">=4,<5",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Validates batch fragments against skill-owned JSON schemas."
-            }
-          ]
-        },
-        "math-dependency-graph._rtx.interface.scripts-serve-graph": {
-          "dependencies": []
-        },
-        "math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator": {
-          "dependencies": [
-            {
-              "kind": "python-package",
-              "name": "jsonschema",
-              "version": ">=4,<5",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Validates batch fragments against skill-owned JSON schemas."
             }
           ]
         }

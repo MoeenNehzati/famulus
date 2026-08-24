@@ -2,7 +2,7 @@
 
 Perform exactly one of the two modes named by the assigned job. This interface owns mathematical judgment in both modes; it does not prepare or pool inventory, compile renderer data, or render HTML.
 
-- **Normal extract:** when the job supplies `semantic-graph.schema.json`, author one transitional whole-document semantic graph object with `ir_version: 2`. Read the assigned extract packet, semantic schema, and `base.json` completely. The packet embeds the complete pooled `inventory-ir.json` as its `inventory` object and names the retained absolute TeX entrypoint, immutable source snapshot, and coordinate sidecar. Write the object to the assigned output path and validate it against `semantic-graph.schema.json`.
+- **Normal extract:** when the job supplies `semantic-graph.schema.json`, author one transitional whole-document semantic graph object with `ir_version: 2`. Read the assigned extract packet, semantic schema, and `graph-base.json` completely. The packet embeds the complete pooled `inventory-ir.json` as its `inventory` object and names the retained absolute TeX entrypoint, immutable source snapshot, and coordinate sidecar. Write the object to the assigned output path and validate it against `semantic-graph.schema.json`.
 - **Localized correction:** only when a phase report has returned `status: "correction-required"` and the job supplies `semantic-repair.schema.json`, author one narrow repair object with `repair_version: 2`. Read the returned diagnostic, persisted `repair_base`, saved pooled `inventory`, repair schema, and immutable job inputs completely. Write the repair to the assigned output path and validate it against `semantic-repair.schema.json`. A repair object is not a semantic graph and must not be required to satisfy `semantic-graph.schema.json`.
 
 Never mix the two output shapes or infer correction mode merely because a normal extract is difficult. A normal extract owns candidate reconciliation, entity inclusion and classification, unresolved-entity resolution, direct relationships, hint and explicit-reference accounting, source-faithful descriptions, evidence, and genuine uncertainty. A localized correction owns only the removals and upserts needed to resolve the returned record-local diagnostic.
@@ -30,7 +30,7 @@ Apply two fail-closed rules:
 - retain or merge every candidate marked `named-indispensable-external-result` as `type: "external-result"`;
 - when an included candidate directly uses a resolved referenced endpoint, retain or merge that endpoint rather than silently discarding it.
 
-Classify from `base.json`:
+Classify from `graph-base.json`:
 
 - `assumption` with kind `standing` or `local`;
 - `setup` with kind `definition` or `notation`;

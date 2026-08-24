@@ -1,0 +1,285 @@
+content:
+- _semantic_pipeline/_to_canonical_json\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: math-dependency-graph._rtx.source.rtx-init
+  version: 2
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-semantic-ir-validator.yaml
+  reason: Reuses exact pooled-inventory reconciliation validation and atomic JSON
+    writing.
+  source: math-dependency-graph._rtx.source.rtx-semantic-ir-validator
+  version: 1
+description: Validates resolved mathematical semantic IR against its exact pooled
+  inventory and compiles it into canonical visualization JSON, deterministically preserving
+  source-visible candidate labels and titles without reading TeX or making semantic
+  decisions.
+gateway:
+  language: Python>=3.11
+  path: _semantic_pipeline/_to_canonical_json.py
+id: math-dependency-graph._rtx.source.rtx-semantic-to-canonical-json
+interfaces:
+  math-dependency-graph._rtx.source.rtx-semantic-to-canonical-json.interface.scripts-semantic-to-canonical-json:
+    content:
+    - _semantic_pipeline/_to_canonical_json\.py
+    uses_interfaces: []
+    contract:
+      arguments:
+        base:
+          description: Optional presentation base; defaults to the skill-owned graph-base.json.
+          direct_io_ref: read-2
+          required: false
+          sensitivity: public
+          type:
+            access: read
+            content_type:
+              format:
+                named: json
+              kind: string
+              sensitivity: public
+            kind: file
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+        out:
+          description: Required canonical graph JSON destination.
+          direct_io_ref: write-1
+          required: true
+          sensitivity: user-private
+          type:
+            access: write
+            content_type:
+              format:
+                named: json
+              kind: string
+              sensitivity: derived-private
+            kind: file
+            must_exist: false
+            relative_to: caller-cwd
+            syntax: literal
+        inventory:
+          description: Authoritative pooled version-2 inventory whose qualified handles
+            and source coordinates the semantic IR reconciles.
+          direct_io_ref: read-4
+          required: true
+          sensitivity: derived-private
+          type:
+            access: read
+            content_type:
+              format:
+                named: json
+              kind: string
+              sensitivity: derived-private
+            kind: file
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+        semantic-ir:
+          description: Resolved semantic-graph IR JSON.
+          direct_io_ref: read-1
+          required: true
+          sensitivity: user-private
+          type:
+            access: read
+            content_type:
+              format:
+                named: json
+              kind: string
+              sensitivity: user-private
+            kind: file
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+      caller_warnings:
+      - external-side-effect: Atomically writes or replaces the selected canonical
+          graph JSON.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: resolved mathematical semantic IR
+          formats:
+          - json
+          id: read-1
+          medium: local-filesystem
+          path: <semantic-ir>
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        - access: read
+          content: mathematical graph presentation base
+          formats:
+          - json
+          id: read-2
+          medium: local-filesystem
+          path: <base> or $skill/resources/graph-base.json
+          path_match: exact
+          sensitivity: public
+          system: filesystem
+        - access: read
+          content: semantic and canonical JSON schemas
+          formats:
+          - json
+          id: read-3
+          medium: local-filesystem
+          path: $skill/schemas/semantic-graph.schema.json and repository graph schema
+          path_match: glob
+          sensitivity: public
+          system: filesystem
+        - access: read
+          content: pooled version-2 inventory used for exact reconciliation and source-coordinate
+            derivation
+          formats:
+          - json
+          id: read-4
+          medium: local-filesystem
+          path: <inventory>
+          path_match: exact
+          sensitivity: derived-private
+          system: filesystem
+        writes:
+        - access: write
+          content: canonical mathematical dependency graph
+          formats:
+          - json
+          id: write-1
+          medium: local-filesystem
+          path: <out>
+          path_match: exact
+          sensitivity: derived-private
+          system: filesystem
+        - access: write
+          content: semantic compilation report
+          formats:
+          - json
+          id: write-2
+          medium: stdout
+          sensitivity: derived-private
+      execution:
+        consistency:
+          snapshot: Compilation uses only the resolved semantic IR, its exact pooled
+            inventory including source-ordered candidate labels and visible titles,
+            selected base, and schemas read during this invocation.
+        effects:
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: write-1
+            kind: direct-io
+          direct_io_ref: write-1
+          id: canonical-graph
+          may_occur_in_outcomes:
+          - compiled
+          reversibility:
+            reversible: Delete or regenerate the canonical graph from unchanged semantic
+              IR.
+          value_source:
+            argument_ref: semantic-ir
+            kind: argument
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            atomic: The canonical artifact replaces its destination only after complete
+              validation.
+          concurrent_invocations:
+            unsafe: Concurrent writers to the same destination are not serialized.
+          idempotency:
+            idempotent: Unchanged semantic IR and base produce equivalent canonical
+              JSON.
+          on_uncertain_completion:
+            verify_then_decide: Validate the destination before retrying compilation.
+          partial_effects_on_failure:
+            impossible: Validation finishes before atomic destination replacement.
+          rollback_on_failure:
+            available: The previous destination remains until atomic replacement.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: report
+        - direct_io_ref: write-1
+          method: direct-io-state
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Pass the canonical JSON to the shared visualization layer when requested.
+        class: success
+        effects:
+        - canonical-graph
+        id: compiled
+        outputs:
+        - report
+      - caller_action: Correct candidate reconciliation, semantic fields, or endpoints.
+        class: refusal
+        effects: []
+        id: invalid-semantic-ir
+        outputs: []
+      - caller_action: Correct unreadable inputs or the selected destination.
+        class: error
+        effects: []
+        id: failed
+        outputs: []
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: JSON report containing semantic IR, base, canonical output, pooled
+          inventory, entity count, and edge count.
+        direct_io_ref: write-2
+        empty: Never empty on success.
+        id: report
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          format:
+            named: json
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Compile resolved mathematical semantics into canonical graph JSON.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allowed_flags:
+        - --inventory
+        - --base
+        - --out
+        required_flags:
+        - --inventory
+        - --out
+        flag_patterns:
+          --inventory: ^.+$
+          --base: ^.+$
+          --out: ^.+$
+        max_positionals: 1
+        min_positionals: 1
+        name: owner
+    usage: <semantic-ir.json> --inventory <inventory-ir.json> --out <canonical.json>
+      [--base <graph-base.json>]
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies:
+- kind: python-package
+  name: jsonschema
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Validates semantic graph artifacts against the skill-owned JSON Schema.
+  version: '>=4,<5'
+schema_version: 6
+uses_interfaces: []
+version: 13
+maturity: stable
