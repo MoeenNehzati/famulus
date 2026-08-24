@@ -20,14 +20,13 @@ from officina.rutter.authoring import (
 )
 from officina.rutter.history import HistoryView, TerminalRecord, Transition
 from officina.rutter.values import (
-    AnswerSpec,
     Charter,
     MachineResult,
     Message,
-    Response,
     ValidationReport,
     VoyageResult,
 )
+from test_support.rutter_fixtures import response_schema as _response_schema
 
 
 class _Child(Rutter):
@@ -45,12 +44,11 @@ def _context() -> EvolutionContext:
 
 def _message() -> Message:
     return Message(
-        {"text": "Review.", "answer": {"approved": {}}},
+        {"text": "Review.", "response_schema": _response_schema("approved")},
         {
             "evolution": {
                 "id": "review",
                 "entry_id": "entry-review",
-                "revision": 0,
             },
             "payload": {},
         },
@@ -61,19 +59,19 @@ def test_llm_callbacks_return_exact_values_and_route_failures_are_typed() -> Non
     context = _context()
     step = LLMStep(
         "Review.",
-        answer=AnswerSpec({"approved": {}}),
+        response_schema=_response_schema("approved"),
         data=lambda value: {"seen": value.evolution_id},
-        validate=lambda value: ValidationReport(True),
+        assess_response=lambda value: ValidationReport(True),
         next_on_outcome="done",
     )
     response_context = LLMResponseContext(
         context,
         _message(),
-        Response(0, "approved", {}),
+        {"outcome": "approved"},
     )
 
     assert evaluation.build_llm_data(context, step) == {"seen": "review"}
-    assert evaluation.validate_llm_response(response_context, step) == ValidationReport(True)
+    assert evaluation.assess_llm_response(response_context, step) == ValidationReport(True)
     with pytest.raises(evaluation._RutterFault) as error:
         evaluation.evaluate_llm_route(
             response_context,
@@ -89,7 +87,7 @@ def test_llm_callbacks_return_exact_values_and_route_failures_are_typed() -> Non
             LLMResponseContext(
                 _context(),
                 _message(),
-                Response(0, "approved", {}),
+                {"outcome": "approved"},
             ),
             lambda context: object(),
         ),
@@ -115,7 +113,7 @@ def test_route_callbacks_reject_non_string_results_as_typed_fault(operation) -> 
 def test_llm_data_normalizes_the_declared_json_object() -> None:
     step = LLMStep(
         "Review.",
-        answer=AnswerSpec({"approved": {}}),
+        response_schema=_response_schema("approved"),
         data=lambda context: {"items": [{"ready": True}]},
         next_on_outcome="done",
     )
@@ -128,7 +126,7 @@ def test_llm_data_normalizes_the_declared_json_object() -> None:
 def test_llm_data_rejects_malformed_json_as_typed_fault() -> None:
     step = LLMStep(
         "Review.",
-        answer=AnswerSpec({"approved": {}}),
+        response_schema=_response_schema("approved"),
         data=lambda context: {"bad": object()},
         next_on_outcome="done",
     )
@@ -142,18 +140,18 @@ def test_llm_data_rejects_malformed_json_as_typed_fault() -> None:
 def test_llm_validator_rejects_non_report_as_typed_fault() -> None:
     step = LLMStep(
         "Review.",
-        answer=AnswerSpec({"approved": {}}),
-        validate=lambda context: {"valid": True},
+        response_schema=_response_schema("approved"),
+        assess_response=lambda context: {"valid": True},
         next_on_outcome="done",
     )
     response_context = LLMResponseContext(
         _context(),
         _message(),
-        Response(0, "approved", {}),
+        {"outcome": "approved"},
     )
 
     with pytest.raises(evaluation._RutterFault) as error:
-        evaluation.validate_llm_response(response_context, step)
+        evaluation.assess_llm_response(response_context, step)
 
     assert error.value.category == "contextual-validation"
 

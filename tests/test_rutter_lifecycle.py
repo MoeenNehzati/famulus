@@ -18,7 +18,6 @@ from officina.rutter.model import (
     MachineResult,
     ActiveChild,
     LLMResponseContext,
-    AnswerSpec,
     SubRutter,
     SubRutterRecord,
     Charter,
@@ -45,7 +44,11 @@ from officina.rutter.model import (
     _EffectRecovery,
 )
 from officina.rutter.runtime import RutterRegistry
-from test_support.rutter_fixtures import DirectChildRutter, ExampleRutter
+from test_support.rutter_fixtures import (
+    DirectChildRutter,
+    ExampleRutter,
+    response_schema as _response_schema,
+)
 
 
 def _assert_effect(
@@ -125,7 +128,7 @@ def test_pure_action_accepts_supplied_result_without_callback(
     source_entry = voyage.get_status().current_evolution.evolution_entry_id
     supplied = MachineResult("calculated", {"source": "supplied"})
 
-    entered = voyage.next(supplied, continue_=False)
+    entered = voyage.advance(supplied, continue_=False)
     persisted = registry.open(path)._store.read()
 
     assert entered.evolution_id == "done"
@@ -174,12 +177,12 @@ def test_omitted_action_result_runs_callback_once(
     registry = RutterRegistry({"pure": PureActionRutter}, tmp_path)
     voyage = registry.create("pure", path, {})
 
-    terminal = voyage.next()
+    terminal = voyage.advance()
     reopened = registry.open(path)
 
     assert terminal.condition == "terminal"
     assert len(executions) == 1
-    assert reopened.next() == terminal
+    assert reopened.advance() == terminal
     assert len(executions) == 1
     actions = reopened._store.read().root.history
     assert len(actions) == 2
@@ -288,18 +291,18 @@ def test_effectful_supplied_result_requires_completed_recovery(
     planned_bytes = (tmp_path / path).read_bytes()
 
     with pytest.raises(RutterValidationError):
-        voyage.next(MachineResult("stored", {"sequence": 1}), continue_=False)
+        voyage.advance(MachineResult("stored", {"sequence": 1}), continue_=False)
     assert executions == []
     assert (tmp_path / path).read_bytes() == planned_bytes
 
     completed_result = instruction.run()
     completed_bytes = (tmp_path / path).read_bytes()
     with pytest.raises(RutterValidationError):
-        voyage.next(MachineResult("stored", {"sequence": 2}), continue_=False)
+        voyage.advance(MachineResult("stored", {"sequence": 2}), continue_=False)
     assert executions == [instruction.machine_id]
     assert (tmp_path / path).read_bytes() == completed_bytes
 
-    entered = voyage.next(completed_result, continue_=False)
+    entered = voyage.advance(completed_result, continue_=False)
     persisted = registry.open(path)._store.read()
 
     assert entered.evolution_id == "done"
@@ -340,7 +343,7 @@ def test_omitted_repeat_safe_action_runs_and_consumes_the_same_wrapper(
     instruction = voyage.get_status().instruction
     assert isinstance(instruction, MachineInstruction)
 
-    terminal = voyage.next()
+    terminal = voyage.advance()
     persisted = registry.open(path)._store.read()
 
     assert terminal.condition == "terminal"
@@ -503,7 +506,7 @@ def test_non_repeat_safe_crash_windows_preserve_authoritative_boundaries(
     with pytest.raises(RunBlocked):
         effect_reopen.validate(MachineResult("sent", {}))
     with pytest.raises(RunBlocked):
-        effect_reopen.next()
+        effect_reopen.advance()
 
     completed_calls: list[str] = []
 
@@ -541,7 +544,7 @@ def test_non_repeat_safe_crash_windows_preserve_authoritative_boundaries(
     recovered = recovered_instruction.run()
     assert recovered == MachineResult("sent", {"receipt": "durable"})
     assert completed_calls == [completed_instruction.machine_id]
-    completed_reopen.next(recovered, continue_=False)
+    completed_reopen.advance(recovered, continue_=False)
     consumed = completed_registry.open(completed_path)._store.read()
     assert consumed.active_effect is None
     assert len(consumed.root.history) == 1
@@ -627,7 +630,7 @@ def test_every_effectful_target_and_self_loop_entrance_allocates_fresh_recovery(
             return {
                 "start": LLMStep(
                     "Start.",
-                    answer=AnswerSpec({"go": {}}),
+                    response_schema=_response_schema("go"),
                     next_on_outcome="store",
                 ),
                 "store": MachineStep(
@@ -641,9 +644,12 @@ def test_every_effectful_target_and_self_loop_entrance_allocates_fresh_recovery(
     path = Path("effect-loop.reckoning.json")
     registry = RutterRegistry({"loop": EffectLoopRutter}, tmp_path)
     voyage = registry.create("loop", path, {})
+    message = voyage.get_status().instruction
+    assert isinstance(message, Message)
 
-    first_entry = voyage.next(
-        {"revision": 0, "outcome": "go", "evidence": {}},
+    first_entry = voyage.advance(
+        {"outcome": "go"},
+        responding_to=message.evolution_entry_id,
         continue_=False,
     )
     first_recovery = registry.open(path)._store.read().active_effect
@@ -657,7 +663,7 @@ def test_every_effectful_target_and_self_loop_entrance_allocates_fresh_recovery(
     assert first_recovery.disposition == "planned"
 
     result = first_instruction.run()
-    second_entry = voyage.next(result, continue_=False)
+    second_entry = voyage.advance(result, continue_=False)
     second_recovery = registry.open(path)._store.read().active_effect
     second_instruction = registry.open(path).get_status().instruction
 
@@ -717,7 +723,7 @@ def test_nested_action_recovery_is_owned_by_the_deepest_leaf_across_reopen(
     registry = RutterRegistry({"parent": ActionParent}, tmp_path)
     voyage = registry.create("parent", path, {})
 
-    child_view = voyage.next(continue_=False)
+    child_view = voyage.advance(continue_=False)
     reopened = registry.open(path)
     persisted = reopened._store.read()
     instruction = reopened.get_status().instruction
@@ -736,7 +742,7 @@ def test_nested_action_recovery_is_owned_by_the_deepest_leaf_across_reopen(
     assert persisted.active_effect.machine_id == instruction.machine_id
 
     result = instruction.run()
-    terminal = reopened.next(result)
+    terminal = reopened.advance(result)
     settled = registry.open(path)._store.read()
 
     assert terminal.condition == "terminal"
@@ -801,7 +807,7 @@ def test_effectful_instruction_callback_failure_persists_only_stable_fault_data(
     assert reopened.get_status().current_evolution.condition == "fault"
     assert reopened.get_status().instruction is None
     with pytest.raises(RunBlocked):
-        reopened.next()
+        reopened.advance()
 
 
 def test_dry_run_supplied_result_records_nothing(
@@ -835,7 +841,7 @@ def test_dry_run_supplied_result_records_nothing(
     )
     pure_before = (tmp_path / pure_path).read_bytes()
 
-    pure_preview = pure.next(
+    pure_preview = pure.advance(
         MachineResult("ready", {}),
         dry_run=True,
     )
@@ -846,7 +852,7 @@ def test_dry_run_supplied_result_records_nothing(
     assert pure_calls == []
     assert (tmp_path / pure_path).read_bytes() == pure_before
     with pytest.raises(PreviewUnavailable):
-        pure.next(dry_run=True)
+        pure.advance(dry_run=True)
     assert (tmp_path / pure_path).read_bytes() == pure_before
 
     effect_calls: list[str] = []
@@ -875,7 +881,7 @@ def test_dry_run_supplied_result_records_nothing(
     )
     planned_before = (tmp_path / effect_path).read_bytes()
     with pytest.raises(PreviewUnavailable):
-        effect.next(MachineResult("stored", {}), dry_run=True)
+        effect.advance(MachineResult("stored", {}), dry_run=True)
     assert effect_calls == []
     assert (tmp_path / effect_path).read_bytes() == planned_before
 
@@ -884,7 +890,7 @@ def test_dry_run_supplied_result_records_nothing(
     completed_result = instruction.run()
     completed_before = (tmp_path / effect_path).read_bytes()
 
-    completed_preview = effect.next(dry_run=True)
+    completed_preview = effect.advance(dry_run=True)
 
     assert completed_preview.evolution_id == "done"
     assert completed_preview.evolution_entry_id is None
@@ -920,7 +926,7 @@ def test_continue_true_executes_action_entered_from_prompt(
             return {
                 "start": LLMStep(
                     "Start.",
-                    answer=AnswerSpec({"go": {}}),
+                    response_schema=_response_schema("go"),
                     next_on_outcome="work",
                 ),
                 "work": MachineStep(execute, mode=mode, next_on_outcome="done"),
@@ -930,9 +936,12 @@ def test_continue_true_executes_action_entered_from_prompt(
     path = Path(f"prompt-action-{mode}.reckoning.json")
     registry = RutterRegistry({"flow": PromptActionRutter}, tmp_path)
     voyage = registry.create("flow", path, {})
+    message = voyage.get_status().instruction
+    assert isinstance(message, Message)
 
-    terminal = voyage.next(
-        {"revision": 0, "outcome": "go", "evidence": {}},
+    terminal = voyage.advance(
+        {"outcome": "go"},
+        responding_to=message.evolution_entry_id,
     )
     persisted = registry.open(path)._store.read()
 
@@ -986,7 +995,7 @@ def test_accepted_action_record_survives_later_callback_fault_without_replay(
                 "store": MachineStep(execute, mode="repeat-safe", choose_next=route),
                 "broken": LLMStep(
                     "Broken.",
-                    answer=AnswerSpec({"ok": {}}),
+                    response_schema=_response_schema("ok"),
                     data=materialize,
                     next_on_outcome="done",
                 ),
@@ -1000,7 +1009,7 @@ def test_accepted_action_record_survives_later_callback_fault_without_replay(
     assert isinstance(instruction, MachineInstruction)
     result = instruction.run()
 
-    faulted = voyage.next(result)
+    faulted = voyage.advance(result)
     reopened = registry.open(path)
     persisted = reopened._store.read()
 
@@ -1024,7 +1033,7 @@ def test_accepted_action_record_survives_later_callback_fault_without_replay(
     assert "private" not in (tmp_path / path).read_text()
     assert reopened.get_status().instruction is None
     with pytest.raises(RunBlocked):
-        reopened.next(result)
+        reopened.advance(result)
     assert executions == [instruction.machine_id]
 
 
@@ -1107,11 +1116,14 @@ def test_create_atomically_enters_prompt_with_its_exact_open_turn(
     assert turn.message.data["evolution"] == {
         "id": "report",
         "entry_id": persisted.root.entered_evolution.entry_id,
-        "revision": 0,
     }
     assert turn.message.instructions == {
         "text": "Report.",
-        "answer": {"reported": {}},
+        "response_schema": {
+            "type": "object",
+            "properties": {"outcome": {"enum": ("reported",)}},
+            "required": ("outcome",),
+        },
     }
     assert turn.message.data["payload"] == {"chunk": "A"}
 
@@ -1147,38 +1159,38 @@ def test_prompt_read_operations_return_stored_values_without_writing(
 
 
 @pytest.mark.parametrize(
-    ("response", "code"),
+    ("response", "current_token", "code"),
     (
-        ({"revision": 0, "outcome": "reported"}, "invalid-envelope"),
+        ({}, True, "invalid-outcome"),
         (
-            {
-                "revision": 0,
-                "outcome": "reported",
-                "evidence": {},
-                "extra": None,
-            },
-            "invalid-envelope",
+            {"revision": 0, "outcome": "reported"},
+            True,
+            "reserved-metadata",
         ),
         (
-            {"revision": 1, "outcome": "reported", "evidence": {}},
-            "stale-revision",
+            {"outcome": "reported"},
+            False,
+            "stale-entrance",
         ),
         (
-            {"revision": 0, "outcome": "unknown", "evidence": {}},
-            "unknown-outcome",
+            {"outcome": "unknown"},
+            True,
+            "response-schema",
         ),
         (
-            {"revision": 0, "outcome": "reported", "evidence": {"n": float("nan")}},
-            "nonfinite-evidence",
+            {"outcome": "reported", "n": float("nan")},
+            True,
+            "nonfinite-response",
         ),
     ),
 )
-def test_invalid_prompt_response_is_reported_and_next_preserves_exact_bytes(
+def test_invalid_prompt_response_is_reported_and_advance_preserves_exact_bytes(
     tmp_path: Path,
     response: object,
+    current_token: bool,
     code: str,
 ) -> None:
-    """Weakening any envelope gate must not let invalid work mutate authority."""
+    """Weakening any response gate must not let invalid work mutate authority."""
 
     root = tmp_path / "reckonings"
     path = Path("invalid.reckoning.json")
@@ -1186,16 +1198,20 @@ def test_invalid_prompt_response_is_reported_and_next_preserves_exact_bytes(
         "example", path, {}
     )
     before = (root / path).read_bytes()
-    current = voyage.get_status().current_evolution
+    status = voyage.get_status()
+    current = status.current_evolution
+    message = status.instruction
+    assert isinstance(message, Message)
+    responding_to = message.evolution_entry_id if current_token else "stale-entry"
 
-    report = voyage.validate(response)
+    report = voyage.validate(response, responding_to=responding_to)
 
     assert report.valid is False
     assert tuple(issue.code for issue in report.issues) == (code,)
     assert voyage.get_status().current_evolution == current
     assert (root / path).read_bytes() == before
     with pytest.raises(RutterValidationError):
-        voyage.next(response)
+        voyage.advance(response, responding_to=responding_to)
     assert voyage.get_status().current_evolution == current
     assert (root / path).read_bytes() == before
 
@@ -1213,7 +1229,7 @@ def test_contextual_prompt_validation_receives_frozen_current_context(
             False,
             (
                 ValidationIssue(
-                    ("evidence", "approved"),
+                    ("approved",),
                     "not-approved",
                     "approval evidence is required",
                 ),
@@ -1229,8 +1245,8 @@ def test_contextual_prompt_validation_receives_frozen_current_context(
             return {
                 "review": LLMStep(
                     "Review.",
-                    answer=AnswerSpec({"accepted": {}}),
-                    validate=reject,
+                    response_schema=_response_schema("accepted"),
+                    assess_response=reject,
                     next_on_outcome="done",
                 ),
                 "done": Terminal(VoyageResult("complete", {})),
@@ -1241,16 +1257,19 @@ def test_contextual_prompt_validation_receives_frozen_current_context(
         "contextual", Path("contextual.reckoning.json"), {}
     )
     before = (root / "contextual.reckoning.json").read_bytes()
+    message = voyage.get_status().instruction
+    assert isinstance(message, Message)
 
     report = voyage.validate(
-        {"revision": 0, "outcome": "accepted", "evidence": {"approved": False}}
+        {"outcome": "accepted", "approved": False},
+        responding_to=message.evolution_entry_id,
     )
 
     assert report == ValidationReport(
         False,
         (
             ValidationIssue(
-                ("evidence", "approved"),
+                ("approved",),
                 "not-approved",
                 "approval evidence is required",
             ),
@@ -1260,7 +1279,7 @@ def test_contextual_prompt_validation_receives_frozen_current_context(
     context = seen[0]
     assert context.evolution.history.entries() == ()
     assert context.message == voyage.get_status().instruction
-    assert context.response.outcome == "accepted"
+    assert context.response["outcome"] == "accepted"
     assert (root / "contextual.reckoning.json").read_bytes() == before
 
 
@@ -1275,9 +1294,12 @@ def test_valid_prompt_response_fills_the_same_turn_and_enters_done(
     voyage = registry.create("example", path, {})
     source = voyage._store.read().root.history[0]
     assert isinstance(source, Turn)
+    message = voyage.get_status().instruction
+    assert isinstance(message, Message)
 
-    entered = voyage.next(
-        {"revision": 0, "outcome": "reported", "evidence": {"note": "ok"}},
+    entered = voyage.advance(
+        {"outcome": "reported", "note": "ok"},
+        responding_to=message.evolution_entry_id,
         continue_=False,
     )
     reopened = registry.open(path)
@@ -1298,11 +1320,7 @@ def test_valid_prompt_response_fills_the_same_turn_and_enters_done(
     assert accepted.record_id == source.record_id
     assert accepted.message == source.message
     assert accepted.response is not None
-    assert accepted.response.to_json() == {
-        "revision": 0,
-        "outcome": "reported",
-        "evidence": {"note": "ok"},
-    }
+    assert accepted.response == {"outcome": "reported", "note": "ok"}
     assert reopened.get_status().instruction is None
 
 
@@ -1323,7 +1341,7 @@ def test_prompt_self_loop_allocates_a_new_entrance_and_rerenders_from_history(
             return {
                 "ask": LLMStep(
                     "Again?",
-                    answer=AnswerSpec({"again": {}}),
+                    response_schema=_response_schema("again"),
                     data=payload,
                     next_on_outcome="ask",
                 )
@@ -1337,8 +1355,9 @@ def test_prompt_self_loop_allocates_a_new_entrance_and_rerenders_from_history(
     first_message = voyage.get_status().instruction
     first_entry = voyage._store.read().root.entered_evolution.entry_id
 
-    second_node = voyage.next(
-        {"revision": 0, "outcome": "again", "evidence": {}},
+    second_node = voyage.advance(
+        {"outcome": "again"},
+        responding_to=first_message.evolution_entry_id,
         continue_=False,
     )
     second_message = voyage.get_status().instruction
@@ -1347,7 +1366,7 @@ def test_prompt_self_loop_allocates_a_new_entrance_and_rerenders_from_history(
     assert second_node.evolution_entry_id != first_entry
     assert second_message != first_message
     assert second_message.data["payload"] == {"accepted": 1}
-    assert second_message.data["evolution"]["revision"] == 1
+    assert "revision" not in second_message.data["evolution"]
     persisted = voyage._store.read()
     assert len(persisted.root.history) == 2
     assert persisted.root.history[0].response is not None
@@ -1372,12 +1391,12 @@ def test_target_prompt_render_failure_keeps_accepted_source_and_faults_in_place(
             return {
                 "source": LLMStep(
                     "Source.",
-                    answer=AnswerSpec({"go": {}}),
+                    response_schema=_response_schema("go"),
                     next_on_outcome="target",
                 ),
                 "target": LLMStep(
                     "Target.",
-                    answer=AnswerSpec({"stop": {}}),
+                    response_schema=_response_schema("stop"),
                     data=fail_data,
                     next_on_outcome="done",
                 ),
@@ -1389,9 +1408,12 @@ def test_target_prompt_render_failure_keeps_accepted_source_and_faults_in_place(
     registry = RutterRegistry({"failure": RenderFailureRutter}, root)
     voyage = registry.create("failure", path, {})
     source_entry = voyage._store.read().root.entered_evolution.entry_id
+    message = voyage.get_status().instruction
+    assert isinstance(message, Message)
 
-    faulted = voyage.next(
-        {"revision": 0, "outcome": "go", "evidence": {}},
+    faulted = voyage.advance(
+        {"outcome": "go"},
+        responding_to=message.evolution_entry_id,
         continue_=False,
     )
     reopened = registry.open(path)
@@ -1413,9 +1435,11 @@ def test_target_prompt_render_failure_keeps_accepted_source_and_faults_in_place(
     assert b"private target detail" not in (root / path).read_bytes()
     assert reopened.get_status().instruction is None
     with pytest.raises(RunBlocked):
-        reopened.validate({"revision": 0, "outcome": "go", "evidence": {}})
+        reopened.validate(
+            {"outcome": "go"}, responding_to=message.evolution_entry_id
+        )
     with pytest.raises(RunBlocked):
-        reopened.next()
+        reopened.advance()
 
 
 def test_prompt_routing_failure_preserves_the_accepted_turn_before_fault(
@@ -1436,7 +1460,7 @@ def test_prompt_routing_failure_preserves_the_accepted_turn_before_fault(
             return {
                 "source": LLMStep(
                     "Source.",
-                    answer=AnswerSpec({"go": {}}),
+                    response_schema=_response_schema("go"),
                     choose_next=fail_route,
                 ),
                 "done": Terminal(VoyageResult("complete", {})),
@@ -1447,9 +1471,12 @@ def test_prompt_routing_failure_preserves_the_accepted_turn_before_fault(
     registry = RutterRegistry({"failure": RoutingFailureRutter}, root)
     voyage = registry.create("failure", path, {})
     source_entry = voyage._store.read().root.entered_evolution.entry_id
+    message = voyage.get_status().instruction
+    assert isinstance(message, Message)
 
-    faulted = voyage.next(
-        {"revision": 0, "outcome": "go", "evidence": {}},
+    faulted = voyage.advance(
+        {"outcome": "go"},
+        responding_to=message.evolution_entry_id,
         continue_=False,
     )
     reopened = registry.open(path)
@@ -1463,7 +1490,7 @@ def test_prompt_routing_failure_preserves_the_accepted_turn_before_fault(
     assert b"private routing detail" not in (root / path).read_bytes()
 
 
-def test_continue_true_settles_done_once_and_terminal_next_is_idempotent(
+def test_continue_true_settles_done_once_and_terminal_advance_is_idempotent(
     tmp_path: Path,
 ) -> None:
     """Duplicating the Terminal authority or advancing terminal state must fail."""
@@ -1472,14 +1499,17 @@ def test_continue_true_settles_done_once_and_terminal_next_is_idempotent(
     path = Path("terminal.reckoning.json")
     registry = RutterRegistry({"example": ExampleRutter}, root)
     voyage = registry.create("example", path, {})
+    message = voyage.get_status().instruction
+    assert isinstance(message, Message)
 
-    terminal = voyage.next(
-        {"revision": 0, "outcome": "reported", "evidence": {}},
+    terminal = voyage.advance(
+        {"outcome": "reported"},
+        responding_to=message.evolution_entry_id,
         continue_=True,
     )
     before = (root / path).read_bytes()
-    again = voyage.next()
-    dry_again = voyage.next(dry_run=True)
+    again = voyage.advance()
+    dry_again = voyage.advance(dry_run=True)
     reopened = registry.open(path)
 
     assert terminal.condition == "terminal"
@@ -1521,12 +1551,12 @@ def test_prompt_and_done_dry_runs_preview_without_entering_or_writing(
             return {
                 "source": LLMStep(
                     "Source.",
-                    answer=AnswerSpec({"go": {}}),
+                    response_schema=_response_schema("go"),
                     next_on_outcome="target",
                 ),
                 "target": LLMStep(
                     "Target.",
-                    answer=AnswerSpec({"finish": {}}),
+                    response_schema=_response_schema("finish"),
                     data=target_data,
                     next_on_outcome="done",
                 ),
@@ -1539,9 +1569,12 @@ def test_prompt_and_done_dry_runs_preview_without_entering_or_writing(
         "preview", path, {}
     )
     before = (root / path).read_bytes()
+    message = voyage.get_status().instruction
+    assert isinstance(message, Message)
 
-    preview = voyage.next(
-        {"revision": 0, "outcome": "go", "evidence": {}},
+    preview = voyage.advance(
+        {"outcome": "go"},
+        responding_to=message.evolution_entry_id,
         continue_=True,
         dry_run=True,
     )
@@ -1556,7 +1589,7 @@ def test_prompt_and_done_dry_runs_preview_without_entering_or_writing(
         "child", done_path, {}
     )
     done_before = (root / done_path).read_bytes()
-    done_preview = done.next(dry_run=True)
+    done_preview = done.advance(dry_run=True)
 
     assert done_preview == EvolutionView("direct-child", 1, "complete", None, 0, "preview")
     assert done._store.read().root.history == ()
@@ -1585,7 +1618,7 @@ def test_done_projection_failure_faults_without_a_done_record(
     registry = RutterRegistry({"done": FailingDoneRutter}, root)
     voyage = registry.create("done", path, {})
 
-    faulted = voyage.next()
+    faulted = voyage.advance()
     reopened = registry.open(path)
 
     assert faulted.condition == "fault"
@@ -1635,7 +1668,7 @@ def test_call_push_keeps_parent_entered_and_exposes_the_child_leaf(
         voyage.validate({})
     assert (root / path).read_bytes() == before
 
-    child_start = voyage.next(continue_=False)
+    child_start = voyage.advance(continue_=False)
     persisted = voyage._store.read()
     child = persisted.root.active_child
 
@@ -1693,7 +1726,7 @@ def test_active_leaf_rejects_child_from_another_call_entrance_before_mutation(
     path = Path("mismatched-call-site.reckoning.json")
     registry = RutterRegistry({"root": CallingRutter}, root)
     voyage = registry.create("root", path, {})
-    voyage.next(continue_=False)
+    voyage.advance(continue_=False)
 
     with voyage._store.transaction() as current:
         corrupted = replace(
@@ -1715,7 +1748,7 @@ def test_active_leaf_rejects_child_from_another_call_entrance_before_mutation(
         RutterStateError,
         match="active explicit SubRutter child does not match the parent entered evolution",
     ):
-        reopened.next(continue_=False)
+        reopened.advance(continue_=False)
 
     persisted = reopened._store.read()
     assert persisted == corrupted
@@ -1739,7 +1772,7 @@ def test_call_push_atomically_materializes_a_prompt_child_across_reopen(
             return {
                 "ask": LLMStep(
                     "Child question.",
-                    answer=AnswerSpec({"answered": {}}),
+                    response_schema=_response_schema("answered"),
                     next_on_outcome="done",
                 ),
                 "done": Terminal(VoyageResult("child-complete", {})),
@@ -1765,7 +1798,7 @@ def test_call_push_atomically_materializes_a_prompt_child_across_reopen(
     registry = RutterRegistry({"calling": CallingRutter}, root)
     voyage = registry.create("calling", path, {})
 
-    child_start = voyage.next(continue_=False)
+    child_start = voyage.advance(continue_=False)
     reopened = registry.open(path)
     persisted = reopened._store.read()
     child = persisted.root.active_child
@@ -1812,10 +1845,10 @@ def test_child_return_is_archived_before_the_parent_mapping_route(
     voyage = registry.create("calling", path, {})
     parent_entry = voyage._store.read().root.entered_evolution.entry_id
 
-    voyage.next(continue_=False)
+    voyage.advance(continue_=False)
     active_call = voyage._store.read().root.active_child
     assert active_call is not None
-    child_terminal = voyage.next(continue_=False)
+    child_terminal = voyage.advance(continue_=False)
     assert child_terminal.condition == "terminal"
 
     reopened = registry.open(path)
@@ -1828,7 +1861,7 @@ def test_child_return_is_archived_before_the_parent_mapping_route(
 
     monkeypatch.setattr(reopened._store, "replace", record_replace)
 
-    target = reopened.next(continue_=False)
+    target = reopened.advance(continue_=False)
 
     assert len(replacements) == 2
     returned, entered = replacements
@@ -1904,7 +1937,7 @@ def test_continue_true_recursively_settles_nested_calls_with_one_revision(
     path = Path("nested-auto.reckoning.json")
     voyage = RutterRegistry({"root": RootRutter}, root).create("root", path, {})
 
-    terminal = voyage.next()
+    terminal = voyage.advance()
     persisted = voyage._store.read()
 
     assert terminal == voyage.get_status().current_evolution
@@ -1967,7 +2000,7 @@ def test_nested_prompt_self_loop_reopens_with_one_global_revision(
             return {
                 "ask": LLMStep(
                     "Again?",
-                    answer=AnswerSpec({"again": {}, "finish": {}}),
+                    response_schema=_response_schema("again", "finish"),
                     next_on_outcome={"again": "ask", "finish": "done"},
                 ),
                 "done": Terminal(VoyageResult("child-complete", {})),
@@ -1987,7 +2020,7 @@ def test_nested_prompt_self_loop_reopens_with_one_global_revision(
                 ),
                 "after": LLMStep(
                     "Parent question.",
-                    answer=AnswerSpec({"done": {}}),
+                    response_schema=_response_schema("done"),
                     next_on_outcome="done",
                 ),
                 "done": Terminal(VoyageResult("root-complete", {})),
@@ -1999,11 +2032,12 @@ def test_nested_prompt_self_loop_reopens_with_one_global_revision(
     voyage = registry.create("root", path, {})
     parent_entry = voyage._store.read().root.entered_evolution.entry_id
 
-    first_child = voyage.next(continue_=False)
+    first_child = voyage.advance(continue_=False)
     first_message = voyage.get_status().instruction
     assert isinstance(first_message, Message)
-    second_child = voyage.next(
-        {"revision": 0, "outcome": "again", "evidence": {}},
+    second_child = voyage.advance(
+        {"outcome": "again"},
+        responding_to=first_message.evolution_entry_id,
         continue_=False,
     )
     reopened = registry.open(path)
@@ -2012,22 +2046,23 @@ def test_nested_prompt_self_loop_reopens_with_one_global_revision(
     assert isinstance(second_message, Message)
     assert first_child.depth == second_child.depth == 1
     assert first_child.evolution_entry_id != second_child.evolution_entry_id
-    assert second_message.data["evolution"]["revision"] == 1
+    assert "revision" not in second_message.data["evolution"]
     stale = reopened.validate(
-        {"revision": 0, "outcome": "finish", "evidence": {}}
+        {"outcome": "finish"}, responding_to=first_message.evolution_entry_id
     )
     assert stale.valid is False
-    assert tuple(issue.code for issue in stale.issues) == ("stale-revision",)
+    assert tuple(issue.code for issue in stale.issues) == ("stale-entrance",)
 
-    child_done = reopened.next(
-        {"revision": 1, "outcome": "finish", "evidence": {}},
+    child_done = reopened.advance(
+        {"outcome": "finish"},
+        responding_to=second_message.evolution_entry_id,
         continue_=False,
     )
     assert child_done.evolution_id == "done"
     assert child_done.depth == 1
-    assert registry.open(path).next(continue_=False).condition == "terminal"
+    assert registry.open(path).advance(continue_=False).condition == "terminal"
 
-    parent_prompt = registry.open(path).next(continue_=False)
+    parent_prompt = registry.open(path).advance(continue_=False)
     final = registry.open(path)
     persisted = final._store.read()
     final_message = final.get_status().instruction
@@ -2035,7 +2070,7 @@ def test_nested_prompt_self_loop_reopens_with_one_global_revision(
     assert parent_prompt.evolution_id == "after"
     assert parent_prompt.depth == 0
     assert isinstance(final_message, Message)
-    assert final_message.data["evolution"]["revision"] == 4
+    assert "revision" not in final_message.data["evolution"]
     assert persisted.global_revision == 4
     assert persisted.root.entered_evolution.entry_id != parent_entry
     assert len(persisted.completed_runs) == 1
@@ -2072,18 +2107,18 @@ def test_call_self_loop_allocates_a_fresh_entrance_child_and_call_id(
     voyage = registry.create("loop", path, {})
     first_parent_entry = voyage._store.read().root.entered_evolution.entry_id
 
-    voyage.next(continue_=False)
+    voyage.advance(continue_=False)
     first_child = voyage._store.read().root.active_child
     assert first_child is not None
-    voyage.next(continue_=False)
-    second_parent = registry.open(path).next(continue_=False)
+    voyage.advance(continue_=False)
+    second_parent = registry.open(path).advance(continue_=False)
 
     assert second_parent.evolution_id == "delegate"
     assert second_parent.evolution_entry_id != first_parent_entry
     assert second_parent.depth == 0
 
     reopened = registry.open(path)
-    second_child_view = reopened.next(continue_=False)
+    second_child_view = reopened.advance(continue_=False)
     persisted = reopened._store.read()
     second_child = persisted.root.active_child
     assert second_child is not None
@@ -2140,7 +2175,7 @@ def test_call_depth_limit_rejects_before_charter_or_id_allocation(
     monkeypatch.setattr(engine, "_new_id", record_allocation)
 
     with pytest.raises(RutterStateError, match="depth"):
-        voyage.next(continue_=False)
+        voyage.advance(continue_=False)
 
     assert charter_calls == []
     assert allocated == []
@@ -2182,7 +2217,7 @@ def test_call_preview_without_a_returned_result_is_read_only_unavailable(
     current = voyage.get_status().current_evolution
 
     with pytest.raises(PreviewUnavailable):
-        voyage.next(dry_run=True)
+        voyage.advance(dry_run=True)
 
     assert charter_calls == []
     assert voyage.get_status().current_evolution == current
@@ -2224,8 +2259,8 @@ def test_call_preview_uses_a_durable_result_for_callable_routing_without_writes(
     path = Path("call-preview-result.reckoning.json")
     registry = RutterRegistry({"root": CallingRutter}, root)
     voyage = registry.create("root", path, {})
-    voyage.next(continue_=False)
-    voyage.next(continue_=False)
+    voyage.advance(continue_=False)
+    voyage.advance(continue_=False)
 
     returning = registry.open(path)
     replace_authority = returning._store.replace
@@ -2244,7 +2279,7 @@ def test_call_preview_uses_a_durable_result_for_callable_routing_without_writes(
     with monkeypatch.context() as patch:
         patch.setattr(returning._store, "replace", crash_before_parent_route)
         with pytest.raises(InjectedCrash, match="return settlement"):
-            returning.next(continue_=False)
+            returning.advance(continue_=False)
 
     at_call = registry.open(path)
     returned = at_call._store.read()
@@ -2255,7 +2290,7 @@ def test_call_preview_uses_a_durable_result_for_callable_routing_without_writes(
     before = (root / path).read_bytes()
     routed.clear()
 
-    preview = at_call.next(dry_run=True)
+    preview = at_call.advance(dry_run=True)
 
     assert preview == EvolutionView(
         "callable-preview",
@@ -2274,7 +2309,7 @@ def test_call_preview_uses_a_durable_result_for_callable_routing_without_writes(
     assert at_call.get_status().current_evolution.evolution_id == "delegate"
     assert (root / path).read_bytes() == before
 
-    entered = at_call.next(continue_=False)
+    entered = at_call.advance(continue_=False)
     assert entered.evolution_id == "done"
     assert entered.condition == "ready"
     assert len(routed) == 2
@@ -2313,7 +2348,7 @@ def test_call_charter_failure_faults_in_place_without_partial_child(
     voyage = registry.create("root", path, {})
     source = voyage.get_status().current_evolution
 
-    faulted = voyage.next(continue_=False)
+    faulted = voyage.advance(continue_=False)
     reopened = registry.open(path)
     persisted = reopened._store.read()
 
@@ -2339,7 +2374,7 @@ def test_call_charter_failure_faults_in_place_without_partial_child(
     assert b"private charter detail" not in (root / path).read_bytes()
     assert reopened.get_status().current_evolution == faulted
     with pytest.raises(RunBlocked):
-        reopened.next()
+        reopened.advance()
 
 
 def test_prompt_child_materialization_failure_leaves_no_partial_attachment(
@@ -2360,7 +2395,7 @@ def test_prompt_child_materialization_failure_leaves_no_partial_attachment(
             return {
                 "ask": LLMStep(
                     "Child question.",
-                    answer=AnswerSpec({"done": {}}),
+                    response_schema=_response_schema("done"),
                     data=fail_data,
                     next_on_outcome="done",
                 ),
@@ -2388,7 +2423,7 @@ def test_prompt_child_materialization_failure_leaves_no_partial_attachment(
     voyage = registry.create("root", path, {})
     source = voyage.get_status().current_evolution
 
-    faulted = voyage.next(continue_=False)
+    faulted = voyage.advance(continue_=False)
     persisted = registry.open(path)._store.read()
 
     assert faulted.condition == "fault"
@@ -2424,7 +2459,7 @@ def test_child_fault_retains_the_complete_active_parent_child_path(
             return {
                 "ask": LLMStep(
                     "Child question.",
-                    answer=AnswerSpec({"done": {}}),
+                    response_schema=_response_schema("done"),
                     choose_next=fail_route,
                 ),
                 "done": Terminal(VoyageResult("child-complete", {})),
@@ -2449,13 +2484,16 @@ def test_child_fault_retains_the_complete_active_parent_child_path(
     path = Path("child-fault-path.reckoning.json")
     registry = RutterRegistry({"root": CallingRutter}, root)
     voyage = registry.create("root", path, {})
-    voyage.next(continue_=False)
+    voyage.advance(continue_=False)
     before_fault = voyage._store.read()
     child = before_fault.root.active_child
     assert child is not None
+    message = voyage.get_status().instruction
+    assert isinstance(message, Message)
 
-    faulted = voyage.next(
-        {"revision": 0, "outcome": "done", "evidence": {}},
+    faulted = voyage.advance(
+        {"outcome": "done"},
+        responding_to=message.evolution_entry_id,
         continue_=False,
     )
     reopened = registry.open(path)
@@ -2519,12 +2557,12 @@ def test_returned_child_record_survives_later_parent_routing_failure(
     path = Path("post-return-routing-failure.reckoning.json")
     registry = RutterRegistry({"root": CallingRutter}, root)
     voyage = registry.create("root", path, {})
-    voyage.next(continue_=False)
+    voyage.advance(continue_=False)
     child = voyage._store.read().root.active_child
     assert child is not None
-    voyage.next(continue_=False)
+    voyage.advance(continue_=False)
 
-    faulted = registry.open(path).next(continue_=False)
+    faulted = registry.open(path).advance(continue_=False)
     reopened = registry.open(path)
     persisted = reopened._store.read()
 
@@ -2575,11 +2613,11 @@ def test_dry_run_at_nested_terminal_does_not_return_or_route_the_child(
     root = tmp_path / "reckonings"
     path = Path("nested-terminal-preview.reckoning.json")
     voyage = RutterRegistry({"root": CallingRutter}, root).create("root", path, {})
-    voyage.next(continue_=False)
-    terminal = voyage.next(continue_=False)
+    voyage.advance(continue_=False)
+    terminal = voyage.advance(continue_=False)
     before = (root / path).read_bytes()
 
-    preview = voyage.next(dry_run=True)
+    preview = voyage.advance(dry_run=True)
 
     assert preview == terminal
     assert preview.condition == "terminal"
@@ -2601,7 +2639,7 @@ def test_root_done_settlement_does_not_spend_an_extra_continuation_step(
     ).create("child", Path("one-step-done.reckoning.json"), {})
     monkeypatch.setattr(engine, "_OPERATION_LIMIT", 1)
 
-    terminal = voyage.next()
+    terminal = voyage.advance()
 
     assert terminal.condition == "terminal"
     assert terminal.evolution_id == "complete"

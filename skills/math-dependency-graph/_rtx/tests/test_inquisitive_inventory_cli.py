@@ -273,7 +273,7 @@ def test_setup_and_show_project_only_public_bound_operations(
     assert shown == setup_payload
     assert shown["evolution"] == {
         "rutter_id": "math-graph-inquisitive-inventory",
-        "definition_version": 3,
+        "definition_version": 5,
         "evolution_id": "report",
         "evolution_entry_id": shown["evolution"]["evolution_entry_id"],
         "depth": 0,
@@ -289,33 +289,49 @@ def test_setup_and_show_project_only_public_bound_operations(
     assert "sealed-gold-node" not in json.dumps(shown, sort_keys=True)
 
 
-def test_next_rejects_invalid_response_without_mutating_reckoning(
-    tmp_path: Path, capsys
-) -> None:
-    """Calling next before public validation could persist malformed authority."""
+def test_cli_exposes_advance_without_next(tmp_path: Path, capsys) -> None:
+    """The removed next alias must not remain callable at the CLI boundary."""
 
     experiment_dir, _payload = _setup(tmp_path, capsys)
+    reckoning = experiment_dir / "inquisitive-inventory.reckoning.json"
+    before = reckoning.read_bytes()
+
+    status, payload, stderr = _invoke(
+        capsys, "next", "--experiment-dir", experiment_dir
+    )
+
+    assert status == 2
+    assert json.loads(stderr) == payload
+    assert payload["error"]["code"] == "usage-error"
+    assert reckoning.read_bytes() == before
+
+
+def test_advance_rejects_invalid_response_without_mutating_reckoning(
+    tmp_path: Path, capsys
+) -> None:
+    """Calling advance before public validation could persist malformed authority."""
+
+    experiment_dir, setup_payload = _setup(tmp_path, capsys)
     reckoning = experiment_dir / "inquisitive-inventory.reckoning.json"
     before = reckoning.read_bytes()
     invalid = _write_json(
         tmp_path / "invalid.json",
         {
-            "revision": 0,
             "outcome": "reported",
-            "evidence": {
-                "sequence_id": 1,
-                "unexpected": {},
-            },
+            "sequence_id": 1,
+            "unexpected": {},
         },
     )
 
     status, payload, stderr = _invoke(
         capsys,
-        "next",
+        "advance",
         "--experiment-dir",
         experiment_dir,
         "--response-file",
         invalid,
+        "--responding-to",
+        setup_payload["evolution"]["evolution_entry_id"],
     )
 
     assert status == 4
@@ -328,12 +344,15 @@ def test_next_rejects_invalid_response_without_mutating_reckoning(
                 "valid": False,
                 "issues": [
                     {
-                        "path": ["evidence"],
-                        "code": "invalid-inventory-report",
-                        "message": (
-                            "evidence must contain sequence_id and inventory"
-                        ),
-                    }
+                        "path": [],
+                        "code": "response-schema",
+                        "message": "response does not satisfy the LLMStep response schema",
+                    },
+                    {
+                        "path": [],
+                        "code": "response-schema",
+                        "message": "response does not satisfy the LLMStep response schema",
+                    },
                 ],
             },
         }
@@ -341,29 +360,28 @@ def test_next_rejects_invalid_response_without_mutating_reckoning(
     assert reckoning.read_bytes() == before
 
 
-def test_equal_next_and_ledger_persist_exact_public_trace(
+def test_equal_advance_and_ledger_persist_exact_public_trace(
     tmp_path: Path, capsys
 ) -> None:
-    """An adapter that bypasses next or re-renders data would lose exact evidence."""
+    """An adapter that bypasses advance or re-renders data would lose exact evidence."""
 
     experiment_dir, setup_payload = _setup(tmp_path, capsys)
     response = {
-        "revision": setup_payload["instruction"]["data"]["evolution"]["revision"],
         "outcome": "reported",
-        "evidence": {
-            "sequence_id": 1,
-            "inventory": _snapshot([_node()]),
-        },
+        "sequence_id": 1,
+        "inventory": _snapshot([_node()]),
     }
     response_file = _write_json(tmp_path / "response.json", response)
 
     status, terminal, stderr = _invoke(
         capsys,
-        "next",
+        "advance",
         "--experiment-dir",
         experiment_dir,
         "--response-file",
         response_file,
+        "--responding-to",
+        setup_payload["evolution"]["evolution_entry_id"],
     )
     ledger_status, ledger, ledger_stderr = _invoke(
         capsys, "ledger", "--experiment-dir", experiment_dir

@@ -17,7 +17,6 @@ from officina.rutter.model import (
     MachineStep,
     ActiveChild,
     ActiveRun,
-    AnswerSpec,
     SubRutter,
     SubRutterRecord,
     Charter,
@@ -29,12 +28,12 @@ from officina.rutter.model import (
     Message,
     LLMStep,
     Reckoning,
-    Response,
     VoyageResult,
     Rutter,
     RutterDefinitionError,
     RutterStateError,
     Turn,
+    ValidationReport,
 )
 from officina.rutter.runtime import RutterRegistry
 from officina.rutter.storage import ReckoningStore
@@ -47,6 +46,7 @@ from test_support.rutter_fixtures import (
     child_charter,
     example_message,
     transition_hook_probe,
+    response_schema as _response_schema,
 )
 
 
@@ -83,12 +83,14 @@ def _prompt_message(
     revision: int = 1,
 ) -> Message:
     return Message(
-        instructions={"text": "Report.", "answer": {"reported": {}}},
+        instructions={
+            "text": "Report.",
+            "response_schema": _response_schema("reported"),
+        },
         data={
             "evolution": {
                 "id": state_id,
                 "entry_id": entry_id,
-                "revision": revision,
             },
             "payload": {"chunk": "A"},
         },
@@ -175,7 +177,7 @@ def test_binding_rejects_duplicate_case_maker_ids(reckoning_root: Path) -> None:
         {
             "start": LLMStep(
                 "Choose.",
-                answer=AnswerSpec({"yes": {}, "no": {}}),
+                response_schema=_response_schema("yes", "no"),
                 next_on_outcome={"yes": "complete"},
             ),
             "complete": Terminal(VoyageResult("complete", {})),
@@ -183,19 +185,20 @@ def test_binding_rejects_duplicate_case_maker_ids(reckoning_root: Path) -> None:
         {
             "start": LLMStep(
                 "Choose.",
-                answer=AnswerSpec({"yes": {}}),
+                response_schema=_response_schema("yes"),
                 next_on_outcome={"yes": "complete", "unknown": "complete"},
             ),
             "complete": Terminal(VoyageResult("complete", {})),
         },
     ),
 )
-def test_binding_rejects_prompt_routes_with_missing_or_undeclared_outcomes(
+def test_binding_does_not_compare_prompt_routes_with_schema_outcomes(
     reckoning_root: Path,
     states: Mapping[str, object],
 ) -> None:
-    with pytest.raises(RutterDefinitionError, match="LLMStep routes"):
-        RutterRegistry({"probe": _definition(states)}, reckoning_root)
+    registry = RutterRegistry({"probe": _definition(states)}, reckoning_root)
+
+    assert registry._by_name["probe"].evolutions["start"] is states["start"]
 
 
 @pytest.mark.parametrize(
@@ -203,7 +206,7 @@ def test_binding_rejects_prompt_routes_with_missing_or_undeclared_outcomes(
     (
         {
             "start": LLMStep(
-                "Continue.", answer=AnswerSpec({"yes": {}}), next_on_outcome="absent"
+                "Continue.", response_schema=_response_schema("yes"), next_on_outcome="absent"
             )
         },
         {
@@ -237,7 +240,7 @@ def test_binding_rejects_undeclared_literal_successors(
             {
                 "start": LLMStep(
                     "Continue.",
-                    answer=AnswerSpec({"yes": {}}),
+                    response_schema=_response_schema("yes"),
                     data=lambda: {},
                     next_on_outcome="complete",
                 ),
@@ -249,13 +252,13 @@ def test_binding_rejects_undeclared_literal_successors(
             {
                 "start": LLMStep(
                     "Continue.",
-                    answer=AnswerSpec({"yes": {}}),
-                    validate=lambda one, two: None,
+                    response_schema=_response_schema("yes"),
+                    assess_response=lambda one, two: None,
                     next_on_outcome="complete",
                 ),
                 "complete": Terminal(VoyageResult("complete", {})),
             },
-            "LLMStep validate",
+            "LLMStep assess_response",
         ),
         (
             {
@@ -488,28 +491,32 @@ def test_registry_and_voyage_expose_only_the_public_operating_protocol(
     assert tuple(inspect.signature(registry.open).parameters) == ("reckoning_path",)
     assert type(voyage) is Voyage
     assert tuple(inspect.signature(voyage.get_status).parameters) == ()
-    assert tuple(inspect.signature(voyage.validate).parameters) == ("response",)
-    assert tuple(inspect.signature(voyage.next).parameters) == (
-        "response",
+    assert tuple(inspect.signature(voyage.validate).parameters) == (
+        "value",
+        "responding_to",
+    )
+    assert tuple(inspect.signature(voyage.advance).parameters) == (
+        "value",
+        "responding_to",
         "continue_",
         "dry_run",
     )
     assert tuple(inspect.signature(voyage.help).parameters) == ()
-    assert voyage.compass_facing_methods == ("get_status", "validate", "next")
+    assert voyage.compass_facing_methods == ("get_status", "validate", "advance")
     assert {
         name for name in dir(voyage) if not name.startswith("_")
     } == {
         "compass_facing_methods",
         "get_status",
         "help",
-        "next",
+        "advance",
         "validate",
     }
     for obsolete in (
         "get_current_node",
         "get_instruction",
         "get_instructions",
-        "advance",
+        "next",
         "inspect",
         "start",
         "resume",
@@ -553,12 +560,11 @@ def test_voyage_help_explains_the_message_response_handoff(
     for token in (
         "current_evolution.condition",
         'instructions["text"]',
-        'instructions["answer"]',
+        'instructions["response_schema"]',
         'data["payload"]',
-        'data["evolution"]["revision"]',
-        '"revision"',
+        "evolution_entry_id",
+        "responding_to",
         '"outcome"',
-        '"evidence"',
     ):
         assert token in help_text
 
@@ -630,7 +636,7 @@ def test_voyage_owns_concrete_engine_operations(
     assert voyage._definition is registry._by_name["friendly-example"]
     assert type(voyage).get_status.__module__ == "officina.rutter.engine"
     assert type(voyage).validate.__module__ == "officina.rutter.engine"
-    assert type(voyage).next.__module__ == "officina.rutter.engine"
+    assert type(voyage).advance.__module__ == "officina.rutter.engine"
 
 
 def test_registry_create_delegates_complete_initial_reckoning_to_engine(
@@ -723,7 +729,7 @@ def _unknown_completed_run() -> CompletedRun:
                 "report",
                 1,
                 _prompt_message("entry-report"),
-                Response(1, "reported", {}),
+                {"outcome": "reported"},
             ),
             Turn(
                 "turn-second",
@@ -731,7 +737,7 @@ def _unknown_completed_run() -> CompletedRun:
                 "report",
                 1,
                 _prompt_message("entry-report"),
-                Response(1, "reported", {}),
+                {"outcome": "reported"},
             ),
         ),
         (
@@ -743,13 +749,12 @@ def _unknown_completed_run() -> CompletedRun:
                 Message(
                     instructions={
                         "text": "Altered.",
-                        "answer": {"reported": {}},
+                        "response_schema": _response_schema("reported"),
                     },
                     data={
                         "evolution": {
                             "id": "report",
                             "entry_id": "entry-report",
-                            "revision": 1,
                         },
                         "payload": {},
                     },
@@ -817,7 +822,7 @@ def test_open_rejects_open_prompt_turn_with_active_attached_child(
         {
             "start": LLMStep(
                 "Report.",
-                answer=AnswerSpec({"reported": {}}),
+                response_schema=_response_schema("reported"),
                 next_on_outcome="complete",
             ),
             "complete": Terminal(VoyageResult("complete", {})),
@@ -874,7 +879,7 @@ def test_open_accepts_accepted_prompt_turn_with_matching_attached_child(
         {
             "start": LLMStep(
                 "Report.",
-                answer=AnswerSpec({"reported": {}}),
+                response_schema=_response_schema("reported"),
                 next_on_outcome="complete",
             ),
             "complete": Terminal(VoyageResult("complete", {})),
@@ -889,7 +894,7 @@ def test_open_accepts_accepted_prompt_turn_with_matching_attached_child(
         "start",
         1,
         _prompt_message("entry-root", "start"),
-        Response(1, "reported", {}),
+        {"outcome": "reported"},
     )
     child = ActiveRun(
         "child-run",
@@ -935,7 +940,7 @@ def test_open_accepts_prompt_immediately_after_response_acceptance(
         "report",
         1,
         _prompt_message("entry-report"),
-        Response(1, "reported", {}),
+        {"outcome": "reported"},
     )
     root = ActiveRun(
         "root-run",
@@ -964,7 +969,7 @@ def test_open_accepts_prompt_after_attached_child_return(
         {
             "start": LLMStep(
                 "Report.",
-                answer=AnswerSpec({"reported": {}}),
+                response_schema=_response_schema("reported"),
                 next_on_outcome="complete",
             ),
             "complete": Terminal(VoyageResult("complete", {})),
@@ -979,7 +984,7 @@ def test_open_accepts_prompt_after_attached_child_return(
         "start",
         1,
         _prompt_message("entry-root", "start"),
-        Response(1, "reported", {}),
+        {"outcome": "reported"},
     )
     completed = _unknown_completed_run()
     returned = SubRutterRecord(
@@ -1024,7 +1029,7 @@ def test_open_accepts_historical_prompt_revision_with_open_prompt_child(
         {
             "start": LLMStep(
                 "Report.",
-                answer=AnswerSpec({"reported": {}}),
+                response_schema=_response_schema("reported"),
                 next_on_outcome="complete",
             ),
             "complete": Terminal(VoyageResult("complete", {})),
@@ -1039,7 +1044,7 @@ def test_open_accepts_historical_prompt_revision_with_open_prompt_child(
         "start",
         1,
         _prompt_message("entry-root", "start"),
-        Response(1, "reported", {}),
+        {"outcome": "reported"},
     )
     child_turn = Turn(
         "turn-child",
@@ -1093,7 +1098,7 @@ def test_open_accepts_faulted_prompt_after_response_without_child(
         "report",
         1,
         _prompt_message("entry-report"),
-        Response(1, "reported", {}),
+        {"outcome": "reported"},
     )
     root = ActiveRun(
         "root-run",
@@ -1135,7 +1140,7 @@ def test_open_rejects_accepted_prompt_without_child_for_mismatched_fault(
         "report",
         1,
         _prompt_message("entry-report"),
-        Response(1, "reported", {}),
+        {"outcome": "reported"},
     )
     root = ActiveRun(
         "root-run",
@@ -1343,3 +1348,87 @@ def test_runtime_does_not_export_a_compatibility_facade() -> None:
         "advance",
     ):
         assert not hasattr(runtime_module, removed)
+
+
+@pytest.mark.parametrize(
+    "response_schema",
+    (
+        {"type": "not-a-json-schema-type"},
+        {"$ref": "https://example.invalid/schema.json"},
+        {"$ref": "file:///tmp/schema.json"},
+        {"$ref": "relative-schema.json"},
+    ),
+)
+def test_binding_rejects_malformed_or_external_response_schemas(
+    tmp_path: Path,
+    response_schema: Mapping[str, object],
+) -> None:
+    """Deferring malformed or external schemas would make validation unstable."""
+
+    definition = _definition(
+        {
+            "start": LLMStep(
+                "Report.",
+                response_schema=response_schema,
+                next_on_outcome="done",
+            ),
+            "done": Terminal(VoyageResult("complete", {})),
+        }
+    )
+
+    with pytest.raises(RutterDefinitionError, match="response_schema"):
+        RutterRegistry({"probe": definition}, tmp_path)
+
+
+def test_binding_allows_fragment_refs_and_uses_route_keys_as_static_outcomes(
+    tmp_path: Path,
+) -> None:
+    """Schema introspection must not replace explicit static routing authority."""
+
+    definition = _definition(
+        {
+            "start": LLMStep(
+                "Report.",
+                response_schema={
+                    "$defs": {"response": {"type": "object"}},
+                    "$ref": "#/$defs/response",
+                    "properties": {
+                        "outcome": {"const": "schema-only-outcome"},
+                    },
+                },
+                next_on_outcome={"mapped-outcome": "done"},
+            ),
+            "done": Terminal(VoyageResult("complete", {})),
+        }
+    )
+
+    registry = RutterRegistry({"probe": definition}, tmp_path)
+
+    assert registry._by_name["probe"].evolutions["start"].next_on_outcome == {
+        "mapped-outcome": "done"
+    }
+
+
+@pytest.mark.parametrize(
+    "assess_response",
+    (lambda: ValidationReport(True), lambda context, extra: ValidationReport(True)),
+)
+def test_binding_requires_one_argument_assessment_callback(
+    tmp_path: Path,
+    assess_response: object,
+) -> None:
+    """An invalid assessment signature cannot be invoked deterministically."""
+
+    definition = _definition(
+        {
+            "start": LLMStep(
+                "Report.",
+                assess_response=assess_response,
+                next_on_outcome="done",
+            ),
+            "done": Terminal(VoyageResult("complete", {})),
+        }
+    )
+
+    with pytest.raises(RutterDefinitionError, match="assess_response"):
+        RutterRegistry({"probe": definition}, tmp_path)

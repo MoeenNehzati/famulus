@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from officina.rutter import (
-    AnswerSpec,
     LLMStep,
     MachineResult,
     MachineStep,
@@ -16,11 +16,27 @@ from officina.rutter import (
     after,
     on_transition,
 )
+from test_support.rutter_fixtures import response_schema as _response_schema
 from officina.visualization.graph import Graph
 from officina.visualization.from_rutter import (
     RutterVisualizer,
     build_rutter_payload,
 )
+
+
+REVIEW_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "outcome": {"enum": ["approved", "revise"]},
+        "comment": {"type": "string"},
+        "requested_changes": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+    },
+    "required": ["outcome"],
+    "additionalProperties": False,
+}
 
 
 class ReviewRutter(Rutter):
@@ -32,12 +48,7 @@ class ReviewRutter(Rutter):
         return {
             "review": LLMStep(
                 "Review the proposed change.",
-                answer=AnswerSpec(
-                    {
-                        "approved": {"comment": "string"},
-                        "revise": {"requested_changes": ["string"]},
-                    }
-                ),
+                response_schema=REVIEW_RESPONSE_SCHEMA,
                 next_on_outcome={"approved": "publish", "revise": "edit"},
             ),
             "edit": MachineStep(
@@ -105,18 +116,7 @@ def test_payload_exposes_prompts_response_formats_transitions_and_hooks() -> Non
             },
             {
                 "label": "Response format",
-                "value": (
-                    '{\n'
-                    '  "approved": {\n'
-                    '    "comment": "string"\n'
-                    '  },\n'
-                    '  "revise": {\n'
-                    '    "requested_changes": [\n'
-                    '      "string"\n'
-                    '    ]\n'
-                    '  }\n'
-                    '}'
-                ),
+                "value": json.dumps(REVIEW_RESPONSE_SCHEMA, indent=2, sort_keys=True),
                 "format": "code",
                 "copyable": True,
             },
@@ -162,9 +162,9 @@ def test_callable_transition_uses_docstring_without_executing_callbacks() -> Non
             return {
                 "ask": LLMStep(
                     "Choose the next step.",
-                    answer=AnswerSpec({"answered": {"choice": "string"}}),
+                    response_schema=_response_schema("answered"),
                     data=lambda context: calls.append("data") or {},
-                    validate=lambda context: calls.append("validate"),
+                    assess_response=lambda context: calls.append("assess"),
                     choose_next=route,
                 ),
                 "done": Terminal(VoyageResult("finished", {})),

@@ -120,9 +120,10 @@ def _parser() -> argparse.ArgumentParser:
     setup.add_argument("--experiment-dir", required=True)
     show = modes.add_parser("show")
     show.add_argument("--experiment-dir", required=True)
-    next_ = modes.add_parser("next")
-    next_.add_argument("--experiment-dir", required=True)
-    next_.add_argument("--response-file")
+    advance = modes.add_parser("advance")
+    advance.add_argument("--experiment-dir", required=True)
+    advance.add_argument("--response-file")
+    advance.add_argument("--responding-to")
     ledger = modes.add_parser("ledger")
     ledger.add_argument("--experiment-dir", required=True)
     return parser
@@ -204,15 +205,26 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
         else:
             voyage = open_experiment(Path(args.experiment_dir))
-            if args.mode == "next":
+            if args.mode == "advance":
                 if args.response_file is None:
-                    voyage.next(continue_=True)
+                    if args.responding_to is not None:
+                        raise _UsageError(
+                            "--responding-to requires --response-file"
+                        )
+                    voyage.advance(continue_=True)
                 else:
                     response = _read_json(Path(args.response_file))
-                    report = voyage.validate(response)
+                    report = voyage.validate(
+                        response,
+                        responding_to=args.responding_to,
+                    )
                     if not report.valid:
                         raise _InvalidResponse(report)
-                    voyage.next(response, continue_=True)
+                    voyage.advance(
+                        response,
+                        responding_to=args.responding_to,
+                        continue_=True,
+                    )
     except _UsageError as error:
         payload = {
             "error": {

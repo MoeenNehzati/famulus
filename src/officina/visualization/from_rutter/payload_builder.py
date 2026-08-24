@@ -65,7 +65,7 @@ def _evolution_description(evolution: object) -> str:
 
 def _llm_step_section(evolution: LLMStep) -> dict[str, object]:
     response_format = json.dumps(
-        _plain_json(evolution.answer.to_json()), indent=2, sort_keys=True
+        _plain_json(evolution.response_schema), indent=2, sort_keys=True
     )
     return {
         "title": "LLM step",
@@ -141,7 +141,7 @@ def _routes(evolution: object) -> list[tuple[str, str]]:
     next_on_outcome = getattr(evolution, "next_on_outcome", None)
     if type(next_on_outcome) is str:
         if isinstance(evolution, LLMStep):
-            return [(str(outcome), next_on_outcome) for outcome in evolution.answer.outcomes]
+            return [("any accepted outcome", next_on_outcome)]
         return [("any outcome", next_on_outcome)]
     if isinstance(next_on_outcome, Mapping):
         return [
@@ -185,7 +185,7 @@ def _transition(
     }.get(source_kind, "evolution")
     trigger = (
         f"Any {outcome_source} outcome selects this transition."
-        if outcome == "any outcome"
+        if outcome in {"any outcome", "any accepted outcome"}
         else f"{outcome_source.capitalize()} outcome '{outcome}' selects this transition."
     )
     description = trigger

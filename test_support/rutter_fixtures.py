@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Callable, Mapping
 
 from officina.rutter.model import (
-    AnswerSpec,
     SubRutter,
     Charter,
     Terminal,
@@ -21,12 +20,14 @@ from officina.rutter.model import (
 
 def example_message() -> Message:
     return Message(
-        instructions={"text": "Report.", "answer": {"reported": {}}},
+        instructions={
+            "text": "Report.",
+            "response_schema": response_schema("reported"),
+        },
         data={
             "evolution": {
                 "id": "report",
                 "entry_id": "entry-report",
-                "revision": 1,
             },
             "payload": {"chunk": "A"},
         },
@@ -36,6 +37,16 @@ def example_message() -> Message:
 def report_data(context: EvolutionContext) -> Mapping[str, object]:
     del context
     return {"chunk": "A"}
+
+
+def response_schema(*outcomes: str) -> Mapping[str, object]:
+    """Return a minimal test schema that constrains only the routing outcome."""
+
+    return {
+        "type": "object",
+        "properties": {"outcome": {"enum": list(outcomes)}},
+        "required": ["outcome"],
+    }
 
 
 def child_charter(context: EvolutionContext) -> Mapping[str, object]:
@@ -131,7 +142,7 @@ class ExampleRutter(Rutter):
         return {
             "report": LLMStep(
                 "Report.",
-                answer=AnswerSpec({"reported": {}}),
+                response_schema=response_schema("reported"),
                 data=report_data,
                 next_on_outcome="complete",
             ),

@@ -94,12 +94,12 @@ def build_llm_data(
         raise _RutterFault("materialization") from exc
 
 
-def validate_llm_response(
+def assess_llm_response(
     context: LLMResponseContext,
     step: LLMStep,
 ) -> ValidationReport:
     try:
-        report = step.validate(context)
+        report = step.assess_response(context)
     except Exception as exc:
         raise _RutterFault("contextual-validation") from exc
     if not isinstance(report, ValidationReport):
@@ -188,5 +188,5 @@ __all__ = (
     "evaluate_subrutter_route",
     "run_machine",
     "select_transition_hooks",
-    "validate_llm_response",
+    "assess_llm_response",
 )

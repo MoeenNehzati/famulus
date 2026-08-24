@@ -16,12 +16,10 @@ from officina.rutter.history import (
     Turn,
 )
 from officina.rutter.values import (
-    AnswerSpec,
     Charter,
     JsonObject,
     MachineResult,
     Message,
-    Response,
     RutterDefinitionError,
     ValidationReport,
     VoyageResult,
@@ -31,7 +29,7 @@ from officina.rutter.values import (
 )
 
 
-def accept(context: LLMResponseContext) -> ValidationReport:
+def _accept_response(context: LLMResponseContext) -> ValidationReport:
     del context
     return ValidationReport(True)
 
@@ -85,9 +83,9 @@ def _routing_modes(
 @dataclass(frozen=True, init=False)
 class LLMStep:
     text: str
-    answer: AnswerSpec
+    response_schema: JsonObject | None
     data: Callable[[EvolutionContext], JsonObject]
-    validate: Callable[[LLMResponseContext], ValidationReport]
+    assess_response: Callable[[LLMResponseContext], ValidationReport]
     next_on_outcome: str | Mapping[str, str] | None
     choose_next: Callable[..., str] | None
 
@@ -95,9 +93,9 @@ class LLMStep:
         self,
         text: str,
         *,
-        answer: AnswerSpec,
+        response_schema: JsonObject | None = None,
         data: Callable[[EvolutionContext], JsonObject] = empty_data,
-        validate: Callable[[LLMResponseContext], ValidationReport] = accept,
+        assess_response: Callable[[LLMResponseContext], ValidationReport] = _accept_response,
         next_on_outcome: str | Mapping[str, str] | None = None,
         choose_next: Callable[..., str] | None = None,
     ) -> None:
@@ -106,13 +104,18 @@ class LLMStep:
             "text",
             _require_text(text, "LLMStep text", RutterDefinitionError),
         )
-        if not isinstance(answer, AnswerSpec):
-            raise RutterDefinitionError("LLMStep answer must be an AnswerSpec")
-        if not callable(data) or not callable(validate):
-            raise RutterDefinitionError("LLMStep data and validate must be callable")
-        object.__setattr__(self, "answer", answer)
+        if response_schema is not None:
+            response_schema = _freeze_object(
+                response_schema,
+                "LLMStep response_schema",
+            )
+        if not callable(data) or not callable(assess_response):
+            raise RutterDefinitionError(
+                "LLMStep data and assess_response must be callable"
+            )
+        object.__setattr__(self, "response_schema", response_schema)
         object.__setattr__(self, "data", data)
-        object.__setattr__(self, "validate", validate)
+        object.__setattr__(self, "assess_response", assess_response)
         next_on_outcome, choose_next = _routing_modes(next_on_outcome, choose_next)
         object.__setattr__(self, "next_on_outcome", next_on_outcome)
         object.__setattr__(self, "choose_next", choose_next)
@@ -194,7 +197,20 @@ class EvolutionContext:
 class LLMResponseContext:
     evolution: EvolutionContext
     message: Message
-    response: Response
+    response: JsonObject
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.evolution, EvolutionContext):
+            raise RutterDefinitionError(
+                "LLMResponseContext evolution must be an EvolutionContext"
+            )
+        if not isinstance(self.message, Message):
+            raise RutterDefinitionError("LLMResponseContext message must be a Message")
+        object.__setattr__(
+            self,
+            "response",
+            _freeze_object(self.response, "LLMResponseContext response"),
+        )
 
 
 @dataclass(frozen=True)
@@ -293,7 +309,6 @@ __all__ = (
     "TransitionContext",
     "TransitionHook",
     "TransitionMatch",
-    "accept",
     "after",
     "before",
     "empty_data",

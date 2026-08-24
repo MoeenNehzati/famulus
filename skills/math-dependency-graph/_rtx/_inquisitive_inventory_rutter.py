@@ -12,7 +12,6 @@ from typing import Iterable, Mapping, Sequence, cast
 
 from officina.common.atomic_files import atomic_create_bytes, read_regular_file_bytes
 from officina.rutter import (
-    AnswerSpec,
     DiagnosisCase,
     DiagnoseAnswer,
     EvolutionContext,
@@ -414,41 +413,32 @@ def _report_data(context: EvolutionContext) -> JsonObject:
     }
 
 
-def _validate_report(context: LLMResponseContext) -> ValidationReport:
+def _assess_report(context: LLMResponseContext) -> ValidationReport:
     response = context.response
-    if response.outcome != "reported":
-        return _invalid(("outcome",), "invalid-outcome", "outcome must be reported")
-    evidence = response.evidence
-    if set(evidence) != {"sequence_id", "inventory"}:
-        return _invalid(
-            ("evidence",),
-            "invalid-inventory-report",
-            "evidence must contain sequence_id and inventory",
-        )
     cases = _charter_cases(context.evolution)
     index = _case_index(context.evolution)
     if index >= len(cases):
         return _invalid(
-            ("evidence", "sequence_id"),
+            ("sequence_id",),
             "sequence-exhausted",
             "no inventory sequence remains",
         )
     source = _json_object(cases[index].get("source"), "inventory source case")
-    if evidence["sequence_id"] != source["sequence_id"]:
+    if response["sequence_id"] != source["sequence_id"]:
         return _invalid(
-            ("evidence", "sequence_id"),
+            ("sequence_id",),
             "wrong-sequence",
             "sequence_id must match the displayed sequence",
         )
     try:
-        inventory = _json_object(evidence["inventory"], "reported inventory")
+        inventory = _json_object(response["inventory"], "reported inventory")
         _files(inventory)
         _record_map(inventory, "nodes")
         _record_map(inventory, "edges")
         _canonical_bytes(inventory)
     except (TypeError, ValueError) as error:
         return _invalid(
-            ("evidence", "inventory"),
+            ("inventory",),
             "invalid-inventory",
             str(error),
         )
@@ -692,9 +682,9 @@ def _diagnosis_charter(item: JsonObject, context: TransitionContext) -> JsonObje
     source = _json_object(case.get("source"), "inventory source case")
     gold = _json_object(case.get("gold"), "inventory gold case")
     response = context.record.response
-    if response.evidence.get("sequence_id") != source.get("sequence_id"):
+    if response.get("sequence_id") != source.get("sequence_id"):
         raise RutterDefinitionError("accepted report does not match the selected case")
-    actual = _render_actual_answer(source, response.evidence)
+    actual = _render_actual_answer(source, response)
     expected = {
         "delta_nodes": gold["delta_nodes"],
         "delta_edges": gold["delta_edges"],
@@ -754,9 +744,9 @@ def _record_iteration(context: MachineContext) -> MachineResult:
         "machine_id": context.machine_id,
         "transition_hook_id": _TRANSITION_HOOK_ID,
         "transition_id": turn.record_id,
-        "sequence_id": turn.response.evidence["sequence_id"],
+        "sequence_id": turn.response["sequence_id"],
         "message": _plain_json(turn.message.to_json()),
-        "response": _plain_json(turn.response.to_json()),
+        "response": _plain_json(turn.response),
         "verdict": hook_run.result.outcome,
         "child_result": _plain_json(hook_run.result.to_json()),
     }
@@ -779,23 +769,25 @@ def _complete_result(context: EvolutionContext) -> VoyageResult:
 
 class InquisitiveInventoryRutter(Rutter):
     rutter_id = _RUTTER_ID
-    definition_version = 4
+    definition_version = 5
     initial_evolution_id = _REPORT_EVOLUTION
 
     def define_evolutions(self) -> Mapping[str, object]:
         return {
             _REPORT_EVOLUTION: LLMStep(
                 _REPORT_TEXT,
-                answer=AnswerSpec(
-                    {
-                        "reported": {
-                            "sequence_id": "positive integer",
-                            "inventory": "inventory JSON object",
-                        }
-                    }
-                ),
+                response_schema={
+                    "type": "object",
+                    "properties": {
+                        "outcome": {"const": "reported"},
+                        "sequence_id": {"type": "integer", "minimum": 1},
+                        "inventory": {"type": "object"},
+                    },
+                    "required": ["outcome", "sequence_id", "inventory"],
+                    "additionalProperties": False,
+                },
                 data=_report_data,
-                validate=_validate_report,
+                assess_response=_assess_report,
                 next_on_outcome=_RECORD_EVOLUTION,
             ),
             _RECORD_EVOLUTION: MachineStep(

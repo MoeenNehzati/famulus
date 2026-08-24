@@ -19,7 +19,6 @@ from officina.rutter.model import (
     MachineResult,
     ActiveChild,
     ActiveRun,
-    AnswerSpec,
     SubRutter,
     SubRutterRecord,
     Charter,
@@ -34,12 +33,12 @@ from officina.rutter.model import (
     LLMStep,
     MachineInstruction,
     Reckoning,
-    Response,
     Rutter,
     RutterDefinitionError,
     RunBlocked,
     RutterStateError,
     RutterValidationError,
+    ValidationIssue,
     ValidationReport,
     VoyageResult,
     VoyageStatus,
@@ -48,7 +47,10 @@ from officina.rutter.model import (
 )
 from officina.rutter.runtime import RutterRegistry
 from officina.rutter.storage import ReckoningStore
-from test_support.rutter_fixtures import ExampleRutter
+from test_support.rutter_fixtures import (
+    ExampleRutter,
+    response_schema as _response_schema,
+)
 
 
 @dataclass(frozen=True)
@@ -65,7 +67,7 @@ def current_model_scenarios() -> Mapping[str, _CurrentModelScenario]:
     """Provide in-memory current-model scenarios for later status projections."""
 
     result = VoyageResult("complete", {})
-    prompt = LLMStep("Review.", answer=AnswerSpec({"approved": {}}), next_on_outcome="done")
+    prompt = LLMStep("Review.", response_schema=_response_schema("approved"), next_on_outcome="done")
     pure = MachineStep(
         lambda context: MachineResult("calculated", {}),
         mode="pure",
@@ -98,12 +100,11 @@ def current_model_scenarios() -> Mapping[str, _CurrentModelScenario]:
         )
 
     message = Message(
-        {"text": "Review.", "answer": {"approved": {}}},
+        {"text": "Review.", "response_schema": _response_schema("approved")},
         {
             "evolution": {
                 "id": "review",
                 "entry_id": "entry-review",
-                "revision": 0,
             },
             "payload": {},
         },
@@ -131,7 +132,7 @@ def current_model_scenarios() -> Mapping[str, _CurrentModelScenario]:
             "review",
             0,
             message,
-            Response(0, "approved", {}),
+            {"outcome": "approved"},
         ),
         MachineRecord(
             "action-pure",
@@ -451,9 +452,11 @@ def test_get_status_projects_one_coherent_read_without_authored_callbacks(
             return {
                 "review": LLMStep(
                     "Review.",
-                    answer=AnswerSpec({"approved": {}}),
+                    response_schema=_response_schema("approved"),
                     data=lambda context: note("llm-data", {}),
-                    validate=lambda context: note("llm-validate", ValidationReport(True)),
+                    assess_response=lambda context: note(
+                        "llm-validate", ValidationReport(True)
+                    ),
                     next_on_outcome="done",
                 ),
                 "action": MachineStep(
@@ -520,12 +523,11 @@ def test_get_status_projects_one_coherent_read_without_authored_callbacks(
     ) == ("status-child" if depth else "root", 1, evolution_id, depth, condition)
     if instruction_kind == "llm":
         assert status.instruction == Message(
-            {"text": "Review.", "answer": {"approved": {}}},
+            {"text": "Review.", "response_schema": _response_schema("approved")},
             {
                 "evolution": {
                     "id": "review",
                     "entry_id": "entry-review",
-                    "revision": 0,
                 },
                 "payload": {},
             },
@@ -564,23 +566,27 @@ def test_public_operations_use_only_the_transaction_bound_validation(
         real_bound_validation(reckoning)
 
     store._semantic_validator = count_bound_validation
-    response = {"revision": 0, "outcome": "reported", "evidence": {}}
+    message = voyage.get_status().instruction
+    assert isinstance(message, Message)
+    response = {"outcome": "reported"}
 
     before = bound_validations
     voyage.get_status()
     assert bound_validations == before + 1
 
     before = bound_validations
-    assert voyage.validate(response).valid is True
+    assert voyage.validate(
+        response, responding_to=message.evolution_entry_id
+    ).valid is True
     assert bound_validations == before + 1
 
     before = bound_validations
     with pytest.raises(RutterValidationError, match="response is required"):
-        voyage.next()
+        voyage.advance()
     assert bound_validations == before + 1
 
 
-@pytest.mark.parametrize("operation", ("get_status", "validate", "next"))
+@pytest.mark.parametrize("operation", ("get_status", "validate", "advance"))
 def test_malformed_recovery_is_rejected_at_transaction_decode_before_callbacks(
     tmp_path: Path,
     operation: str,
@@ -596,9 +602,9 @@ def test_malformed_recovery_is_rejected_at_transaction_decode_before_callbacks(
             return {
                 "review": LLMStep(
                     "Review.",
-                    answer=AnswerSpec({"approved": {}}),
+                    response_schema=_response_schema("approved"),
                     data=lambda context: {},
-                    validate=lambda context: (
+                    assess_response=lambda context: (
                         authored.append("validate") or ValidationReport(True)
                     ),
                     next_on_outcome="done",
@@ -640,15 +646,21 @@ def test_malformed_recovery_is_rejected_at_transaction_decode_before_callbacks(
         real_bound_validation(reckoning)
 
     store._semantic_validator = count_bound_validation
-    response = {"revision": 0, "outcome": "approved", "evidence": {}}
+    response = {"outcome": "approved"}
 
     with pytest.raises(RutterStateError, match="active effect recovery"):
         if operation == "get_status":
             voyage.get_status()
         elif operation == "validate":
-            voyage.validate(response)
+            voyage.validate(
+                response,
+                responding_to=current.root.entered_evolution.entry_id,
+            )
         else:
-            voyage.next(response)
+            voyage.advance(
+                response,
+                responding_to=current.root.entered_evolution.entry_id,
+            )
 
     assert bound_validations == 1
     assert authored == []
@@ -675,7 +687,7 @@ def inactive_child_metadata_scenario() -> tuple[type[Rutter], type[Rutter]]:
             return {
                 "review": LLMStep(
                     "Review.",
-                    answer=AnswerSpec({"approved": {}}),
+                    response_schema=_response_schema("approved"),
                     next_on_outcome="done",
                 ),
                 "delegate": SubRutter(
@@ -726,7 +738,7 @@ def test_reopen_rejects_malformed_known_fault_coordinates(tmp_path: Path) -> Non
             return {
                 "review": LLMStep(
                     "Review.",
-                    answer=AnswerSpec({"approved": {}}),
+                    response_schema=_response_schema("approved"),
                     choose_next=fail_route,
                 ),
                 "done": Terminal(VoyageResult("complete", {})),
@@ -736,12 +748,9 @@ def test_reopen_rejects_malformed_known_fault_coordinates(tmp_path: Path) -> Non
     registry = RutterRegistry({"faulting": FaultingPrompt}, tmp_path)
     voyage = registry.create("faulting", path, {})
     message = voyage.get_status().instruction
-    faulted = voyage.next(
-        {
-            "revision": message.data["evolution"]["revision"],
-            "outcome": "approved",
-            "evidence": {},
-        },
+    faulted = voyage.advance(
+        {"outcome": "approved"},
+        responding_to=message.evolution_entry_id,
         continue_=False,
     )
     assert faulted.condition == "fault"
@@ -780,7 +789,7 @@ def test_opaque_legacy_fault_reopens_and_remains_blocked(tmp_path: Path) -> None
             return {
                 "review": LLMStep(
                     "Review.",
-                    answer=AnswerSpec({"approved": {}}),
+                    response_schema=_response_schema("approved"),
                     next_on_outcome="done",
                 ),
                 "done": Terminal(VoyageResult("complete", {})),
@@ -800,7 +809,7 @@ def test_opaque_legacy_fault_reopens_and_remains_blocked(tmp_path: Path) -> None
     assert type(reopened._reckoning.fault).__name__ == "OpaqueFault"
     assert reopened.get_status().current_evolution.condition == "fault"
     with pytest.raises(RunBlocked):
-        reopened.next()
+        reopened.advance()
 
 
 def test_pure_action_instruction_is_stable_read_only_and_zero_argument(
@@ -919,21 +928,31 @@ def test_public_cutover_exports_voyage_and_self_describing_operating_methods(
         "example", Path("surface.reckoning.json"), {}
     )
     assert tuple(inspect.signature(voyage.get_status).parameters) == ()
-    assert tuple(inspect.signature(voyage.validate).parameters) == ("response",)
-    assert tuple(inspect.signature(voyage.next).parameters) == (
-        "response",
+    assert tuple(inspect.signature(voyage.validate).parameters) == (
+        "value",
+        "responding_to",
+    )
+    assert tuple(inspect.signature(voyage.advance).parameters) == (
+        "value",
+        "responding_to",
         "continue_",
         "dry_run",
     )
     assert tuple(inspect.signature(voyage.help).parameters) == ()
-    assert voyage.compass_facing_methods == ("get_status", "validate", "next")
+    assert voyage.compass_facing_methods == ("get_status", "validate", "advance")
     assert not hasattr(voyage, "get_current_node")
     assert not hasattr(voyage, "get_instruction")
-    assert not hasattr(voyage, "advance")
+    assert not hasattr(voyage, "next")
     assert not hasattr(voyage, "reckoning")
-    next_parameters = inspect.signature(engine._next).parameters
-    assert tuple(next_parameters) == ("voyage", "response", "continue_", "dry_run")
-    assert next_parameters["response"].default is engine.MISSING
+    advance_parameters = inspect.signature(engine._advance).parameters
+    assert tuple(advance_parameters) == (
+        "voyage",
+        "value",
+        "responding_to",
+        "continue_",
+        "dry_run",
+    )
+    assert advance_parameters["value"].default is engine.MISSING
 
 
 def test_done_remains_terminal_after_its_attached_case_child_returns() -> None:
@@ -993,14 +1012,17 @@ def test_every_operation_reloads_authoritative_reckoning(
     first = registry.create("example", path, {})
     stale = registry.open(path)
 
-    terminal = first.next(
-        {"revision": 0, "outcome": "reported", "evidence": {}},
+    message = first.get_status().instruction
+    assert isinstance(message, Message)
+    terminal = first.advance(
+        {"outcome": "reported"},
+        responding_to=message.evolution_entry_id,
         continue_=True,
     )
 
     assert stale.get_status().current_evolution == terminal
     assert stale.get_status().instruction is None
-    assert stale.next() == terminal
+    assert stale.advance() == terminal
 
 
 def test_initial_prompt_render_failure_creates_no_partial_authority(
@@ -1021,7 +1043,7 @@ def test_initial_prompt_render_failure_creates_no_partial_authority(
             return {
                 "start": LLMStep(
                     "Start.",
-                    answer=AnswerSpec({"go": {}}),
+                    response_schema=_response_schema("go"),
                     data=fail_data,
                     next_on_outcome="done",
                 ),
@@ -1049,8 +1071,9 @@ def test_continuation_limit_leaves_entered_done_resumable(
     monkeypatch.setattr(engine, "_OPERATION_LIMIT", 0)
 
     with pytest.raises(RutterStateError, match="continuation limit"):
-        voyage.next(
-            {"revision": 0, "outcome": "reported", "evidence": {}},
+        voyage.advance(
+            {"outcome": "reported"},
+            responding_to=voyage.get_status().instruction.evolution_entry_id,
             continue_=True,
         )
 
@@ -1059,4 +1082,325 @@ def test_continuation_limit_leaves_entered_done_resumable(
     assert reopened.get_status().current_evolution.condition == "ready"
     assert reopened._store.read().root.history[0].response is not None
     monkeypatch.setattr(engine, "_OPERATION_LIMIT", 100)
-    assert reopened.next().condition == "terminal"
+    assert reopened.advance().condition == "terminal"
+
+
+@pytest.mark.parametrize(
+    ("response_schema", "schema_is_public"),
+    ((None, False), ({}, True)),
+)
+def test_none_omits_and_empty_preserves_response_schema(
+    tmp_path: Path,
+    response_schema: object,
+    schema_is_public: bool,
+) -> None:
+    """Normalizing an empty schema to absence would change prompt authority."""
+
+    class SchemaPrompt(Rutter):
+        rutter_id = f"schema-prompt-{schema_is_public}"
+        definition_version = 1
+        initial_evolution_id = "review"
+
+        def define_evolutions(self) -> Mapping[str, object]:
+            return {
+                "review": LLMStep(
+                    "Review.",
+                    response_schema=response_schema,
+                    next_on_outcome="done",
+                ),
+                "done": Terminal(VoyageResult("complete", {})),
+            }
+
+    voyage = RutterRegistry({"prompt": SchemaPrompt}, tmp_path).create(
+        "prompt", Path(f"schema-{schema_is_public}.reckoning.json"), {}
+    )
+    message = voyage.get_status().instruction
+    assert isinstance(message, Message)
+
+    assert ("response_schema" in message.instructions) is schema_is_public
+    assert voyage.validate(
+        {"outcome": "anything", "nested": {"finite": [1, 2]}},
+        responding_to=message.evolution_entry_id,
+    ).valid
+
+
+def test_complete_flat_response_is_schema_validated_before_assessment(
+    tmp_path: Path,
+) -> None:
+    """Validating only evidence or assessing first would admit malformed replies."""
+
+    assessed: list[object] = []
+
+    def assess(context: object) -> ValidationReport:
+        assessed.append(context)
+        return ValidationReport(True)
+
+    class FlatPrompt(Rutter):
+        rutter_id = "flat-prompt"
+        definition_version = 1
+        initial_evolution_id = "review"
+
+        def define_evolutions(self) -> Mapping[str, object]:
+            return {
+                "review": LLMStep(
+                    "Review.",
+                    response_schema={
+                        "type": "object",
+                        "properties": {
+                            "outcome": {"type": "string"},
+                            "sequence_id": {"type": "integer"},
+                            "inventory": {
+                                "type": "object",
+                                "properties": {"nodes": {"type": "array"}},
+                                "required": ["nodes"],
+                                "additionalProperties": False,
+                            },
+                        },
+                        "required": ["outcome", "sequence_id", "inventory"],
+                        "additionalProperties": False,
+                    },
+                    assess_response=assess,
+                    next_on_outcome="done",
+                ),
+                "done": Terminal(VoyageResult("complete", {})),
+            }
+
+    voyage = RutterRegistry({"prompt": FlatPrompt}, tmp_path).create(
+        "prompt", Path("flat-schema.reckoning.json"), {}
+    )
+    message = voyage.get_status().instruction
+    assert isinstance(message, Message)
+    invalid = voyage.validate(
+        {
+            "outcome": "reported",
+            "sequence_id": "wrong",
+            "inventory": {"nodes": "wrong"},
+        },
+        responding_to=message.evolution_entry_id,
+    )
+
+    assert invalid == ValidationReport(
+        False,
+        (
+            ValidationIssue(
+                ("inventory", "nodes"),
+                "response-schema",
+                "response does not satisfy the LLMStep response schema",
+            ),
+            ValidationIssue(
+                ("sequence_id",),
+                "response-schema",
+                "response does not satisfy the LLMStep response schema",
+            ),
+        ),
+    )
+    assert assessed == []
+
+    accepted = voyage.validate(
+        {"outcome": "reported", "sequence_id": 1, "inventory": {"nodes": []}},
+        responding_to=message.evolution_entry_id,
+    )
+
+    assert accepted.valid
+    assert len(assessed) == 1
+
+
+def test_assessment_rejection_preserves_authored_issues_and_does_not_route(
+    tmp_path: Path,
+) -> None:
+    """Replacing authored issues or routing rejected input hides correction data."""
+
+    issue = ValidationIssue(("answer",), "semantic-rejection", "answer is not usable")
+
+    class RejectingPrompt(Rutter):
+        rutter_id = "rejecting-prompt"
+        definition_version = 1
+        initial_evolution_id = "review"
+
+        def define_evolutions(self) -> Mapping[str, object]:
+            return {
+                "review": LLMStep(
+                    "Review.",
+                    response_schema={"type": "object"},
+                    assess_response=lambda context: ValidationReport(False, (issue,)),
+                    next_on_outcome="done",
+                ),
+                "done": Terminal(VoyageResult("complete", {})),
+            }
+
+    path = Path("assessment-rejection.reckoning.json")
+    voyage = RutterRegistry({"prompt": RejectingPrompt}, tmp_path).create(
+        "prompt", path, {}
+    )
+    message = voyage.get_status().instruction
+    assert isinstance(message, Message)
+    before = (tmp_path / path).read_bytes()
+
+    report = voyage.validate(
+        {"outcome": "reported", "answer": "no"},
+        responding_to=message.evolution_entry_id,
+    )
+
+    assert report == ValidationReport(False, (issue,))
+    with pytest.raises(RutterValidationError, match="response was rejected"):
+        voyage.advance(
+            {"outcome": "reported", "answer": "no"},
+            responding_to=message.evolution_entry_id,
+        )
+    assert voyage.get_status().current_evolution.evolution_id == "review"
+    assert (tmp_path / path).read_bytes() == before
+
+
+def test_stale_response_entrance_is_rejected_after_same_step_reenters(
+    tmp_path: Path,
+) -> None:
+    """Correlating by LLMStep ID would admit a response to an earlier entrance."""
+
+    class LoopPrompt(Rutter):
+        rutter_id = "loop-prompt"
+        definition_version = 1
+        initial_evolution_id = "review"
+
+        def define_evolutions(self) -> Mapping[str, object]:
+            return {
+                "review": LLMStep(
+                    "Review.",
+                    next_on_outcome={"again": "review", "done": "complete"},
+                ),
+                "complete": Terminal(VoyageResult("complete", {})),
+            }
+
+    path = Path("stale-entrance.reckoning.json")
+    voyage = RutterRegistry({"prompt": LoopPrompt}, tmp_path).create(
+        "prompt", path, {}
+    )
+    first = voyage.get_status().instruction
+    assert isinstance(first, Message)
+    voyage.advance(
+        {"outcome": "again"},
+        responding_to=first.evolution_entry_id,
+        continue_=False,
+    )
+    second = voyage.get_status().instruction
+    assert isinstance(second, Message)
+    assert second.evolution_entry_id != first.evolution_entry_id
+    before = (tmp_path / path).read_bytes()
+
+    report = voyage.validate(
+        {"outcome": "done"}, responding_to=first.evolution_entry_id
+    )
+
+    assert tuple(issue.code for issue in report.issues) == ("stale-entrance",)
+    with pytest.raises(RutterValidationError, match="response was rejected"):
+        voyage.advance(
+            {"outcome": "done"}, responding_to=first.evolution_entry_id
+        )
+    assert (tmp_path / path).read_bytes() == before
+    assert voyage.get_status().instruction == second
+
+
+def test_reserved_revision_and_unmapped_outcome_stop_before_assessment(
+    tmp_path: Path,
+) -> None:
+    """Engine metadata or unmapped input must not reach authored assessment."""
+
+    assessed: list[object] = []
+
+    class MappedPrompt(Rutter):
+        rutter_id = "mapped-prompt"
+        definition_version = 1
+        initial_evolution_id = "review"
+
+        def define_evolutions(self) -> Mapping[str, object]:
+            return {
+                "review": LLMStep(
+                    "Review.",
+                    response_schema={},
+                    assess_response=lambda context: (
+                        assessed.append(context) or ValidationReport(True)
+                    ),
+                    next_on_outcome={"accepted": "done"},
+                ),
+                "done": Terminal(VoyageResult("complete", {})),
+            }
+
+    path = Path("mapped-outcome.reckoning.json")
+    voyage = RutterRegistry({"prompt": MappedPrompt}, tmp_path).create(
+        "prompt", path, {}
+    )
+    message = voyage.get_status().instruction
+    assert isinstance(message, Message)
+    before = (tmp_path / path).read_bytes()
+
+    reserved = voyage.validate(
+        {"outcome": "accepted", "revision": 0},
+        responding_to=message.evolution_entry_id,
+    )
+    unmapped = voyage.validate(
+        {"outcome": "other"}, responding_to=message.evolution_entry_id
+    )
+
+    assert tuple(issue.code for issue in reserved.issues) == ("reserved-metadata",)
+    assert tuple(issue.code for issue in unmapped.issues) == ("unknown-outcome",)
+    assert assessed == []
+    with pytest.raises(RutterValidationError, match="response was rejected"):
+        voyage.advance(
+            {"outcome": "other"}, responding_to=message.evolution_entry_id
+        )
+    assert voyage._store.read().fault is None
+    assert (tmp_path / path).read_bytes() == before
+
+
+def test_machine_results_forbid_response_correlation_tokens(tmp_path: Path) -> None:
+    """A Message entrance token has no authority over an unrelated machine result."""
+
+    class MachineRutter(Rutter):
+        rutter_id = "machine-token"
+        definition_version = 1
+        initial_evolution_id = "calculate"
+
+        def define_evolutions(self) -> Mapping[str, object]:
+            return {
+                "calculate": MachineStep(
+                    lambda context: MachineResult("calculated", {}),
+                    mode="pure",
+                    next_on_outcome="done",
+                ),
+                "done": Terminal(VoyageResult("complete", {})),
+            }
+
+    voyage = RutterRegistry({"machine": MachineRutter}, tmp_path).create(
+        "machine", Path("machine-token.reckoning.json"), {}
+    )
+    result = {"outcome": "calculated", "value": {}}
+
+    assert voyage.validate(result).valid
+    rejected = voyage.validate(result, responding_to="entry-unrelated")
+    assert tuple(issue.code for issue in rejected.issues) == (
+        "unexpected-responding-to",
+    )
+    with pytest.raises(RutterValidationError, match="responding_to"):
+        voyage.advance(result, responding_to="entry-unrelated")
+
+
+def test_voyage_exposes_advance_without_next_and_compass_lists_it(
+    tmp_path: Path,
+) -> None:
+    """Retaining next would leave two public advancement contracts."""
+
+    voyage = RutterRegistry({"example": ExampleRutter}, tmp_path).create(
+        "example", Path("advance-surface.reckoning.json"), {}
+    )
+
+    assert not hasattr(voyage, "next")
+    assert tuple(inspect.signature(voyage.validate).parameters) == (
+        "value",
+        "responding_to",
+    )
+    assert tuple(inspect.signature(voyage.advance).parameters) == (
+        "value",
+        "responding_to",
+        "continue_",
+        "dry_run",
+    )
+    assert voyage.compass_facing_methods == ("get_status", "validate", "advance")

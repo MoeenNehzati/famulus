@@ -24,7 +24,6 @@ from officina.rutter.authoring import (
     TransitionMatch,
 )
 from officina.rutter.values import (
-    AnswerSpec,
     JsonObject,
     JsonValue,
     MachineResult,
@@ -251,7 +250,7 @@ class DiagnosisDetail:
 
 class DiagnoseAnswer(Rutter):
     rutter_id = "diagnose-answer"
-    definition_version = 3
+    definition_version = 4
     initial_evolution_id = "route"
 
     @staticmethod
@@ -281,15 +280,21 @@ class DiagnoseAnswer(Rutter):
     @staticmethod
     def _validate_detail(context: LLMResponseContext) -> ValidationReport:
         try:
-            DiagnosisDetail.from_json(context.response.evidence)
+            DiagnosisDetail.from_json(
+                {
+                    key: value
+                    for key, value in context.response.items()
+                    if key != "outcome"
+                }
+            )
         except RutterStateError:
             return ValidationReport(
                 False,
                 (
                     ValidationIssue(
-                        ("evidence",),
+                        (),
                         "invalid-diagnosis",
-                        "diagnosis evidence must contain nonempty mistake, reason, and minimal_fix strings",
+                        "diagnosis must contain nonempty mistake, reason, and minimal_fix strings",
                     ),
                 ),
             )
@@ -328,7 +333,13 @@ class DiagnoseAnswer(Rutter):
         case = DiagnosisCase.from_json(context.charter.data)
         turn = context.history.require_latest_turn("explain")
         assert turn.response is not None
-        detail = DiagnosisDetail.from_json(turn.response.evidence)
+        detail = DiagnosisDetail.from_json(
+            {
+                key: value
+                for key, value in turn.response.items()
+                if key != "outcome"
+            }
+        )
         return VoyageResult(
             "different",
             {
@@ -360,7 +371,12 @@ class DiagnoseAnswer(Rutter):
                     "Decide whether the actual and expected answers are "
                     "semantically the same. Reply with explicit yes or no."
                 ),
-                answer=AnswerSpec({"yes": {}, "no": {}}),
+                response_schema={
+                    "type": "object",
+                    "properties": {"outcome": {"enum": ["yes", "no"]}},
+                    "required": ["outcome"],
+                    "additionalProperties": False,
+                },
                 data=self._prompt_data,
                 next_on_outcome={"yes": "complete-equal-llm", "no": "explain"},
             ),
@@ -373,17 +389,19 @@ class DiagnoseAnswer(Rutter):
                     "path accordingly. Do not return that adjustment; return only the "
                     "three diagnostic fields."
                 ),
-                answer=AnswerSpec(
-                    {
-                        "diagnosed": {
-                            "mistake": "nonempty string",
-                            "reason": "nonempty string",
-                            "minimal_fix": "nonempty string",
-                        }
-                    }
-                ),
+                response_schema={
+                    "type": "object",
+                    "properties": {
+                        "outcome": {"const": "diagnosed"},
+                        "mistake": {"type": "string", "minLength": 1},
+                        "reason": {"type": "string", "minLength": 1},
+                        "minimal_fix": {"type": "string", "minLength": 1},
+                    },
+                    "required": ["outcome", "mistake", "reason", "minimal_fix"],
+                    "additionalProperties": False,
+                },
                 data=self._prompt_data,
-                validate=self._validate_detail,
+                assess_response=self._validate_detail,
                 next_on_outcome="complete-different",
             ),
             "complete-equal-evaluator": Terminal(self._equal_evaluator),
@@ -394,7 +412,7 @@ class DiagnoseAnswer(Rutter):
 
 class AskAndDiagnose(Rutter):
     rutter_id = "ask-and-diagnose"
-    definition_version = 2
+    definition_version = 3
     initial_evolution_id = "ask"
     evaluator: Callable[[str, str, EvolutionContext], bool] | None = None
 
@@ -410,36 +428,20 @@ class AskAndDiagnose(Rutter):
             "ask payload",
         )
 
-    @staticmethod
-    def _validate_answer(context: LLMResponseContext) -> ValidationReport:
-        evidence = context.response.evidence
-        if set(evidence) == {"answer"} and type(evidence["answer"]) is str:
-            return ValidationReport(True)
-        return ValidationReport(
-            False,
-            (
-                ValidationIssue(
-                    ("evidence",),
-                    "invalid-answer",
-                    "answer evidence must contain exactly one string field named answer",
-                ),
-            ),
-        )
-
     def _diagnosis_charter(self, context: EvolutionContext) -> JsonObject:
         question = QuestionCase.from_json(context.charter.data)
         turn = context.history.require_latest_turn("ask")
         response = turn.response
         if (
             response is None
-            or response.outcome != "answered"
-            or set(response.evidence) != {"answer"}
-            or type(response.evidence["answer"]) is not str
+            or response.get("outcome") != "answered"
+            or set(response) != {"outcome", "answer"}
+            or type(response["answer"]) is not str
         ):
             raise RutterDefinitionError(
                 "diagnose SubRutter requires the latest accepted ask/answered Turn"
             )
-        actual_answer = response.evidence["answer"]
+        actual_answer = response["answer"]
         verdict = None
         if self.evaluator is not None:
             verdict = self.evaluator(
@@ -473,9 +475,16 @@ class AskAndDiagnose(Rutter):
         return {
             "ask": LLMStep(
                 "Answer the enquiry using the optional format hint.",
-                answer=AnswerSpec({"answered": {"answer": "string"}}),
+                response_schema={
+                    "type": "object",
+                    "properties": {
+                        "outcome": {"const": "answered"},
+                        "answer": {"type": "string"},
+                    },
+                    "required": ["outcome", "answer"],
+                    "additionalProperties": False,
+                },
                 data=self._ask_data,
-                validate=self._validate_answer,
                 next_on_outcome="diagnose",
             ),
             "diagnose": SubRutter(

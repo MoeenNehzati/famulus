@@ -208,6 +208,66 @@ def test_codec_round_trips_one_stable_compact_utf8_record() -> None:
     assert _decode_reckoning(expected) == decoded
 
 
+def test_codec_preserves_canonical_v3_response_envelope_bytes() -> None:
+    """Representable legacy response evidence must keep its canonical v3 bytes."""
+
+    mapping = _valid_mapping()
+    mapping["completed_runs"] = {}
+    mapping["root"]["history"] = [
+        {
+            **_turn(),
+            "response": {
+                "revision": 2,
+                "outcome": "reviewed",
+                "evidence": {"items": ["A", "B"]},
+            },
+        }
+    ]
+    expected = (
+        json.dumps(mapping, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        + "\n"
+    ).encode("utf-8")
+
+    decoded = _decode_reckoning(expected)
+
+    assert decoded.root.history[0].response == {
+        "outcome": "reviewed",
+        "items": ("A", "B"),
+    }
+    assert _canonical_reckoning_bytes(decoded) == expected
+
+
+@pytest.mark.parametrize("reserved", ("outcome", "revision"))
+def test_store_rejects_reserved_legacy_evidence_without_rewriting(
+    tmp_path: Path,
+    reserved: str,
+) -> None:
+    """A colliding persisted response must fail before any file mutation."""
+
+    mapping = _valid_mapping()
+    mapping["root"]["history"] = [
+        {
+            **_turn(),
+            "response": {
+                "revision": 2,
+                "outcome": "reviewed",
+                "evidence": {reserved: "collision"},
+            },
+        }
+    ]
+    path = tmp_path / "colliding.reckoning.json"
+    before = _bytes(mapping)
+    path.write_bytes(before)
+
+    with pytest.raises(
+        RutterStateError,
+        match="^Turn response evidence contains reserved flat-response fields$",
+    ):
+        ReckoningStore(path).read()
+
+    assert path.read_bytes() == before
+
+
 @pytest.mark.parametrize("storage_version", (1, 2))
 def test_decode_rejects_legacy_storage_versions_with_one_stable_error(
     storage_version: int,

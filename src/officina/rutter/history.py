@@ -11,7 +11,6 @@ from officina.rutter.values import (
     JsonObject,
     MachineResult,
     Message,
-    Response,
     RutterDefinitionError,
     RutterStateError,
     VoyageResult,
@@ -27,15 +26,25 @@ from officina.rutter.values import (
 _MAX_ACTIVE_DEPTH = 64
 
 
-def _encode_message_v3(message: Message) -> JsonObject:
+def _encode_message_v3(message: Message, revision: int) -> JsonObject:
     """Project the public evolution envelope onto the unchanged v3 wire."""
 
     data = message.data
+    instructions = message.instructions
+    evolution = data["evolution"]
+    assert isinstance(evolution, Mapping)
     return _freeze_object(
         {
-            "instructions": message.instructions,
+            "instructions": {
+                "text": instructions["text"],
+                "answer": instructions.get("response_schema"),
+            },
             "data": {
-                "state": data["evolution"],
+                "state": {
+                    "id": evolution["id"],
+                    "entry_id": evolution["entry_id"],
+                    "revision": revision,
+                },
                 "payload": data["payload"],
             },
         },
@@ -44,19 +53,88 @@ def _encode_message_v3(message: Message) -> JsonObject:
     )
 
 
-def _decode_message_v3(value: object) -> Message:
+def _decode_message_v3(
+    value: object,
+    evolution_id: object,
+    evolution_entry_id: object,
+    revision: object,
+) -> Message:
     """Decode the unchanged v3 state envelope into the public projection."""
 
     obj = _exact_object(value, {"instructions", "data"}, "Message")
+    instructions = _exact_object(
+        obj["instructions"], {"text", "answer"}, "Message instructions"
+    )
     data = _exact_object(obj["data"], {"state", "payload"}, "Message data")
+    state = _exact_object(
+        data["state"], {"id", "entry_id", "revision"}, "Message state"
+    )
+    state_id = _require_id(state["id"], "evolution", RutterStateError)
+    state_entry_id = _require_id(state["entry_id"], "entry", RutterStateError)
+    state_revision = _require_int(
+        state["revision"], "revision", error=RutterStateError
+    )
+    if {
+        "id": state_id,
+        "entry_id": state_entry_id,
+        "revision": state_revision,
+    } != {
+        "id": evolution_id,
+        "entry_id": evolution_entry_id,
+        "revision": revision,
+    }:
+        raise RutterStateError("Turn message coordinates do not match its record")
+    public_instructions: dict[str, object] = {"text": instructions["text"]}
+    if instructions["answer"] is not None:
+        public_instructions["response_schema"] = instructions["answer"]
     return _state_construct(
         lambda: Message(
-            obj["instructions"],
+            public_instructions,
             {
-                "evolution": data["state"],
+                "evolution": {
+                    "id": evolution_id,
+                    "entry_id": evolution_entry_id,
+                },
                 "payload": data["payload"],
             },
         )
+    )
+
+
+def _encode_response_v3(response: JsonObject, revision: int) -> JsonObject:
+    outcome = response["outcome"]
+    return _freeze_object(
+        {
+            "revision": revision,
+            "outcome": outcome,
+            "evidence": {
+                key: item for key, item in response.items() if key != "outcome"
+            },
+        },
+        "Turn response v3",
+        error=RutterStateError,
+    )
+
+
+def _decode_response_v3(value: object, revision: int) -> JsonObject:
+    obj = _exact_object(value, {"revision", "outcome", "evidence"}, "Turn response")
+    response_revision = _require_int(
+        obj["revision"], "revision", error=RutterStateError
+    )
+    if response_revision != revision:
+        raise RutterStateError("Turn response revision does not match its record")
+    _require_id(obj["outcome"], "outcome", RutterStateError)
+    evidence = _freeze_object(
+        obj["evidence"], "Turn response evidence", error=RutterStateError
+    )
+    if set(evidence) & {"outcome", "revision"}:
+        raise RutterStateError(
+            "Turn response evidence contains reserved flat-response fields"
+        )
+    return _freeze_object(
+        {"outcome": obj["outcome"], **evidence},
+        "Turn response",
+        error=RutterStateError,
     )
 
 
@@ -164,7 +242,7 @@ class Turn:
     evolution_id: str
     revision: int
     message: Message
-    response: Response | None
+    response: JsonObject | None
 
     def __post_init__(self) -> None:
         _require_id(self.record_id, "record", RutterStateError)
@@ -173,18 +251,27 @@ class Turn:
         _require_int(self.revision, "revision", error=RutterStateError)
         if not isinstance(self.message, Message):
             raise RutterStateError("Turn message must be a Message")
-        if self.response is not None and not isinstance(self.response, Response):
-            raise RutterStateError("Turn response must be a Response or null")
+        if self.response is not None:
+            response = _freeze_object(
+                self.response,
+                "Turn response",
+                error=RutterStateError,
+            )
+            if "revision" in response:
+                raise RutterStateError(
+                    "Turn response field 'revision' is reserved for engine metadata"
+                )
+            if "outcome" not in response:
+                raise RutterStateError("Turn response must contain outcome")
+            _require_id(response["outcome"], "outcome", RutterStateError)
+            object.__setattr__(self, "response", response)
         evolution = self.message.data["evolution"]
         assert isinstance(evolution, Mapping)
         if (
             evolution["id"] != self.evolution_id
             or evolution["entry_id"] != self.evolution_entry_id
-            or evolution["revision"] != self.revision
         ):
             raise RutterStateError("Turn message coordinates do not match its record")
-        if self.response is not None and self.response.revision != self.revision:
-            raise RutterStateError("Turn response revision does not match its record")
 
     def to_json(self) -> JsonObject:
         return _freeze_object(
@@ -193,9 +280,11 @@ class Turn:
                 "node_entry_id": self.evolution_entry_id,
                 "state_id": self.evolution_id,
                 "revision": self.revision,
-                "message": _encode_message_v3(self.message),
+                "message": _encode_message_v3(self.message, self.revision),
                 "response": (
-                    None if self.response is None else self.response.to_json()
+                    None
+                    if self.response is None
+                    else _encode_response_v3(self.response, self.revision)
                 ),
             },
             "Turn v3",
@@ -219,8 +308,15 @@ class Turn:
             obj["node_entry_id"],
             obj["state_id"],
             obj["revision"],
-            _decode_message_v3(obj["message"]),
-            None if response is None else Response.from_json(response),
+            _decode_message_v3(
+                obj["message"],
+                obj["state_id"],
+                obj["node_entry_id"],
+                obj["revision"],
+            ),
+            None
+            if response is None
+            else _decode_response_v3(response, obj["revision"]),
         )
 
 

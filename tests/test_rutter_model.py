@@ -7,6 +7,7 @@ from dataclasses import FrozenInstanceError, fields
 from math import inf, nan
 from pathlib import Path
 from types import MappingProxyType
+from typing import Mapping
 
 import pytest
 
@@ -20,7 +21,6 @@ from officina.rutter.model import (
     ActiveChild,
     ActiveRun,
     LLMResponseContext,
-    AnswerSpec,
     SubRutter,
     SubRutterRecord,
     Charter,
@@ -35,7 +35,6 @@ from officina.rutter.model import (
     LLMStep,
     MachineInstruction,
     Reckoning,
-    Response,
     VoyageResult,
     Rutter,
     RutterDefinitionError,
@@ -46,7 +45,11 @@ from officina.rutter.model import (
     ValidationIssue,
     ValidationReport,
 )
-from test_support.rutter_fixtures import ExampleRutter, example_message
+from test_support.rutter_fixtures import (
+    ExampleRutter,
+    example_message,
+    response_schema as _response_schema,
+)
 
 
 def _done_record(
@@ -77,7 +80,7 @@ def _accepted_turn(*, record_id: str = "turn-1") -> Turn:
         evolution_id="report",
         revision=1,
         message=example_message(),
-        response=Response(1, "reported", {"ok": True}),
+        response={"outcome": "reported", "ok": True},
     )
 
 
@@ -109,18 +112,28 @@ def _attached_call_record(
 
 def test_message_has_exact_instruction_and_data_parts() -> None:
     message = Message(
-        instructions={"text": "Report.", "answer": {"reported": {}}},
+        instructions={
+            "text": "Report.",
+            "response_schema": _response_schema("reported"),
+        },
         data={
-            "evolution": {"id": "report", "entry_id": "e1", "revision": 1},
+            "evolution": {"id": "report", "entry_id": "e1"},
             "payload": {"chunk": "A"},
         },
     )
 
     assert set(message.to_json()) == {"instructions", "data"}
     assert message.to_json() == {
-        "instructions": {"text": "Report.", "answer": {"reported": {}}},
+        "instructions": {
+            "text": "Report.",
+            "response_schema": {
+                "type": "object",
+                "properties": {"outcome": {"enum": ("reported",)}},
+                "required": ("outcome",),
+            },
+        },
         "data": {
-            "evolution": {"id": "report", "entry_id": "e1", "revision": 1},
+            "evolution": {"id": "report", "entry_id": "e1"},
             "payload": {"chunk": "A"},
         },
     }
@@ -318,15 +331,17 @@ def test_validation_issue_path_accepts_string_and_integer_segments() -> None:
         (
             Message.from_json,
             {
-                "instructions": {"text": "Report.", "answer": {"reported": {}}},
+                "instructions": {
+                    "text": "Report.",
+                    "response_schema": _response_schema("reported"),
+                },
                 "data": {
-                    "evolution": {"id": "report", "entry_id": "e1", "revision": 1},
+                    "evolution": {"id": "report", "entry_id": "e1"},
                     "payload": {},
                 },
                 "extra": None,
             },
         ),
-        (Response.from_json, {"revision": 1, "outcome": "ok"}),
         (VoyageResult.from_json, {"outcome": "ok", "value": {}, "extra": None}),
         (
             EnteredEvolution.from_json,
@@ -492,15 +507,19 @@ def test_reckoning_rejects_active_and_completed_run_id_overlap() -> None:
         Reckoning(1, 0, root, {"root-run": completed}, None, None)
 
 
-def test_answer_spec_preserves_none_empty_and_shaped_guidance() -> None:
-    spec = AnswerSpec(
-        {"skip": None, "empty": {}, "report": {"summary": "text"}}
-    )
+def test_llm_step_snapshots_none_empty_and_shaped_response_schemas() -> None:
+    source = {"type": "object", "properties": {"summary": {"type": "string"}}}
 
-    assert spec.to_json() == {
-        "skip": None,
-        "empty": {},
-        "report": {"summary": "text"},
+    absent = LLMStep("Report.", next_on_outcome="done")
+    empty = LLMStep("Report.", response_schema={}, next_on_outcome="done")
+    shaped = LLMStep("Report.", response_schema=source, next_on_outcome="done")
+    source["properties"]["summary"]["type"] = "integer"
+
+    assert absent.response_schema is None
+    assert empty.response_schema == {}
+    assert shaped.response_schema == {
+        "type": "object",
+        "properties": {"summary": {"type": "string"}},
     }
 
 
@@ -510,12 +529,12 @@ def test_answer_spec_preserves_none_empty_and_shaped_guidance() -> None:
         (
             lambda: LLMStep(
                 "Report.",
-                answer=AnswerSpec({"reported": {}}),
+                response_schema=_response_schema("reported"),
                 next_on_outcome="done",
             ),
             lambda: LLMStep(
                 "Report.",
-                answer=AnswerSpec({"reported": {}}),
+                response_schema=_response_schema("reported"),
                 choose_next=lambda context: "done",
             ),
         ),
@@ -560,10 +579,10 @@ def test_evolution_constructors_separate_static_and_callback_routing(
 @pytest.mark.parametrize(
     "construct",
     (
-        lambda: LLMStep("Report.", answer=AnswerSpec({"reported": {}})),
+        lambda: LLMStep("Report.", response_schema=_response_schema("reported")),
         lambda: LLMStep(
             "Report.",
-            answer=AnswerSpec({"reported": {}}),
+            response_schema=_response_schema("reported"),
             next_on_outcome="done",
             choose_next=lambda context: "done",
         ),
@@ -671,7 +690,7 @@ def test_rutter_author_boundary_has_stable_identity_and_empty_transition_hooks()
 
 def test_json_round_trips_preserve_exact_persisted_values() -> None:
     message = example_message()
-    response = Response(1, "reported", {"items": ["A", "B"]})
+    response = {"outcome": "reported", "items": ["A", "B"]}
     action_result = MachineResult("stored", {"count": 2})
     run_result = VoyageResult("completed", {"artifact": "draft.md"})
     entered = EnteredEvolution("entry-report", "report")
@@ -722,11 +741,9 @@ def test_json_round_trips_preserve_exact_persisted_values() -> None:
 
     pairs = (
         (Charter, Charter({"items": ["A"]})),
-        (AnswerSpec, AnswerSpec({"reported": {}})),
         (ValidationIssue, ValidationIssue(("evidence", 0), "missing", "required")),
         (ValidationReport, ValidationReport(False, (ValidationIssue((), "x", "x"),))),
         (Message, message),
-        (Response, response),
         (MachineResult, action_result),
         (VoyageResult, run_result),
         (EnteredEvolution, entered),
@@ -822,9 +839,9 @@ def test_history_view_exposes_complete_immutable_query_contract() -> None:
         "next",
         2,
         Message(
-            {"text": "Next.", "answer": {"continued": {}}},
+            {"text": "Next.", "response_schema": _response_schema("continued")},
             {
-                "evolution": {"id": "next", "entry_id": "entry-next", "revision": 2},
+                "evolution": {"id": "next", "entry_id": "entry-next"},
                 "payload": {},
             },
         ),
@@ -932,7 +949,7 @@ def test_history_prefix_excludes_the_source_record_and_later_entries() -> None:
 def test_contexts_are_frozen_and_share_immutable_history() -> None:
     history = HistoryView((_accepted_turn(),))
     state = EvolutionContext(Charter({"artifact": "draft.md"}), "report", "entry-report", history)
-    answer = LLMResponseContext(state, example_message(), Response(1, "reported", {}))
+    answer = LLMResponseContext(state, example_message(), {"outcome": "reported"})
     action = MachineContext(state, "save")
     edge = TransitionContext(
         state,
@@ -985,6 +1002,134 @@ def test_node_view_allows_missing_entrance_only_for_preview() -> None:
 
 
 @pytest.mark.parametrize(
+    ("response_schema", "public_instructions", "wire_answer"),
+    (
+        (None, {"text": "Report."}, None),
+        ({}, {"text": "Report.", "response_schema": {}}, {}),
+        (
+            {"type": "object", "required": ("outcome",)},
+            {
+                "text": "Report.",
+                "response_schema": {"type": "object", "required": ["outcome"]},
+            },
+            {"type": "object", "required": ("outcome",)},
+        ),
+    ),
+)
+def test_turn_v3_adapter_injects_revision_and_round_trips_response_schema(
+    response_schema: object,
+    public_instructions: Mapping[str, object],
+    wire_answer: object,
+) -> None:
+    """Losing the None/empty/schema distinction or exposing revision breaks v3."""
+
+    message = Message(
+        public_instructions,
+        {
+            "evolution": {"id": "report", "entry_id": "entry-report"},
+            "payload": {"chunk": "A"},
+        },
+    )
+    turn = Turn(
+        "turn-1",
+        "entry-report",
+        "report",
+        7,
+        message,
+        {"outcome": "reported", "items": ["A", "B"]},
+    )
+
+    wire = turn.to_json()
+
+    assert message.evolution_entry_id == "entry-report"
+    assert not hasattr(message, "revision")
+    assert "revision" not in message.data["evolution"]
+    assert wire["message"]["instructions"]["answer"] == wire_answer
+    assert wire["message"]["data"]["state"] == {
+        "id": "report",
+        "entry_id": "entry-report",
+        "revision": 7,
+    }
+    assert wire["response"] == {
+        "revision": 7,
+        "outcome": "reported",
+        "evidence": {"items": ("A", "B")},
+    }
+    assert Turn.from_json(wire) == turn
+    assert set(turn.response) == {"outcome", "items"}
+
+
+@pytest.mark.parametrize("reserved", ("outcome", "revision"))
+def test_turn_v3_rejects_legacy_evidence_reserved_key_collisions(
+    reserved: str,
+) -> None:
+    """Flattening colliding legacy evidence would silently lose one value."""
+
+    wire = {
+        "record_id": "turn-1",
+        "node_entry_id": "entry-report",
+        "state_id": "report",
+        "revision": 3,
+        "message": {
+            "instructions": {"text": "Report.", "answer": {}},
+            "data": {
+                "state": {
+                    "id": "report",
+                    "entry_id": "entry-report",
+                    "revision": 3,
+                },
+                "payload": {},
+            },
+        },
+        "response": {
+            "revision": 3,
+            "outcome": "reported",
+            "evidence": {reserved: "collision"},
+        },
+    }
+
+    with pytest.raises(
+        RutterStateError,
+        match="^Turn response evidence contains reserved flat-response fields$",
+    ):
+        Turn.from_json(wire)
+
+
+@pytest.mark.parametrize(
+    ("coordinate", "replacement"),
+    (("id", "other"), ("entry_id", "other-entry"), ("revision", 4)),
+)
+def test_turn_v3_rejects_duplicated_message_coordinate_mismatches(
+    coordinate: str,
+    replacement: object,
+) -> None:
+    """Trusting duplicated wire coordinates would admit contradictory authority."""
+
+    wire = {
+        "record_id": "turn-1",
+        "node_entry_id": "entry-report",
+        "state_id": "report",
+        "revision": 3,
+        "message": {
+            "instructions": {"text": "Report.", "answer": {}},
+            "data": {
+                "state": {
+                    "id": "report",
+                    "entry_id": "entry-report",
+                    "revision": 3,
+                },
+                "payload": {},
+            },
+        },
+        "response": None,
+    }
+    wire["message"]["data"]["state"][coordinate] = replacement
+
+    with pytest.raises(RutterStateError, match="message coordinates"):
+        Turn.from_json(wire)
+
+
+@pytest.mark.parametrize(
     "values",
     (
         ("bad/rutter", 1, "report", "entry-1", 0, "ready"),
@@ -1018,7 +1163,6 @@ def test_public_operating_errors_have_stable_exports_and_categories() -> None:
 
 def test_public_package_has_the_exact_narrow_new_vocabulary_surface() -> None:
     assert rutter_api.__all__ == (
-        "AnswerSpec",
         "AskAndDiagnose",
         "Charter",
         "CompletedVoyageView",
@@ -1043,7 +1187,6 @@ def test_public_package_has_the_exact_narrow_new_vocabulary_surface() -> None:
         "NotApplicable",
         "PreviewUnavailable",
         "QuestionCase",
-        "Response",
         "RunBlocked",
         "Rutter",
         "RutterDefinitionError",
@@ -1064,7 +1207,6 @@ def test_public_package_has_the_exact_narrow_new_vocabulary_surface() -> None:
         "Voyage",
         "VoyageResult",
         "VoyageStatus",
-        "accept",
         "after",
         "ask_and_diagnose_on",
         "before",

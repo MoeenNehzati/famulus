@@ -154,26 +154,6 @@ class Charter:
 
 
 @dataclass(frozen=True)
-class AnswerSpec:
-    outcomes: JsonObject
-
-    def __post_init__(self) -> None:
-        frozen = _freeze_object(self.outcomes, "AnswerSpec")
-        for outcome in frozen:
-            _require_id(outcome, "outcome", RutterDefinitionError)
-        object.__setattr__(self, "outcomes", frozen)
-
-    def to_json(self) -> JsonObject:
-        return _freeze_object(self.outcomes, "AnswerSpec")
-
-    @classmethod
-    def from_json(cls, value: object) -> AnswerSpec:
-        return _state_construct(
-            lambda: cls(_freeze_object(value, "AnswerSpec", error=RutterStateError))
-        )
-
-
-@dataclass(frozen=True)
 class ValidationIssue:
     path: tuple[str | int, ...]
     code: str
@@ -261,20 +241,23 @@ class MachineInstruction:
 
 def _validate_message_parts(instructions: object, data: object) -> tuple[JsonObject, JsonObject]:
     instruction_object = _freeze_object(instructions, "Message instructions")
-    if set(instruction_object) != {"text", "answer"}:
+    if set(instruction_object) not in ({"text"}, {"text", "response_schema"}):
         raise RutterDefinitionError("Message instructions has invalid fields")
     _require_text(instruction_object["text"], "Message instruction text", RutterDefinitionError)
-    AnswerSpec(_freeze_object(instruction_object["answer"], "Message answer"))
+    if "response_schema" in instruction_object:
+        _freeze_object(
+            instruction_object["response_schema"],
+            "Message response schema",
+        )
 
     data_object = _freeze_object(data, "Message data")
     if set(data_object) != {"evolution", "payload"}:
         raise RutterDefinitionError("Message data has invalid fields")
     evolution = _freeze_object(data_object["evolution"], "Message evolution")
-    if set(evolution) != {"id", "entry_id", "revision"}:
+    if set(evolution) != {"id", "entry_id"}:
         raise RutterDefinitionError("Message evolution has invalid fields")
     _require_id(evolution["id"], "evolution", RutterDefinitionError)
     _require_id(evolution["entry_id"], "entry", RutterDefinitionError)
-    _require_int(evolution["revision"], "revision")
     _freeze_object(data_object["payload"], "Message payload")
     return instruction_object, data_object
 
@@ -292,30 +275,18 @@ class Message:
     def to_json(self) -> JsonObject:
         return _object_json(instructions=self.instructions, data=self.data)
 
+    @property
+    def evolution_entry_id(self) -> str:
+        evolution = self.data["evolution"]
+        assert isinstance(evolution, Mapping)
+        entry_id = evolution["entry_id"]
+        assert isinstance(entry_id, str)
+        return entry_id
+
     @classmethod
     def from_json(cls, value: object) -> Message:
         obj = _exact_object(value, {"instructions", "data"}, "Message")
         return _state_construct(lambda: cls(obj["instructions"], obj["data"]))
-
-
-@dataclass(frozen=True)
-class Response:
-    revision: int
-    outcome: str
-    evidence: JsonObject
-
-    def __post_init__(self) -> None:
-        _require_int(self.revision, "revision")
-        _require_id(self.outcome, "outcome", RutterDefinitionError)
-        object.__setattr__(self, "evidence", _freeze_object(self.evidence, "Response evidence"))
-
-    def to_json(self) -> JsonObject:
-        return _object_json(revision=self.revision, outcome=self.outcome, evidence=self.evidence)
-
-    @classmethod
-    def from_json(cls, value: object) -> Response:
-        obj = _exact_object(value, {"revision", "outcome", "evidence"}, "Response")
-        return _state_construct(lambda: cls(obj["revision"], obj["outcome"], obj["evidence"]))
 
 
 @dataclass(frozen=True)
@@ -437,7 +408,6 @@ class VoyageStatus:
 
 
 __all__ = (
-    "AnswerSpec",
     "Charter",
     "EvolutionView",
     "FaultSummary",
@@ -448,7 +418,6 @@ __all__ = (
     "Message",
     "NotApplicable",
     "PreviewUnavailable",
-    "Response",
     "RunBlocked",
     "RutterDefinitionError",
     "RutterError",

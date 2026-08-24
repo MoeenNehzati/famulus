@@ -420,12 +420,9 @@ def _report_from_message(message: rutter.Message) -> dict:
     )
 
     return {
-        "revision": message.data["evolution"]["revision"],
         "outcome": "reported",
-        "evidence": {
-            "sequence_id": interaction["sequence_id"],
-            "inventory": source["after"],
-        },
+        "sequence_id": interaction["sequence_id"],
+        "inventory": source["after"],
     }
 
 
@@ -780,7 +777,11 @@ def test_equal_report_composes_child_ledger_and_next_parent_prompt(
     assert "gold-compactness" not in rendered
     first_response = _report_from_message(first_message)
 
-    next_evolution = voyage.next(first_response, continue_=True)
+    next_evolution = voyage.advance(
+        first_response,
+        responding_to=first_message.evolution_entry_id,
+        continue_=True,
+    )
     second_message = voyage.get_status().instruction
     ledger = inventory.validated_inventory_ledger(experiment_dir)
 
@@ -807,9 +808,13 @@ def test_different_report_reveals_gold_only_in_attached_diagnosis(
     voyage = inventory.setup_experiment(_source_cases(), _gold_cases(), experiment_dir)
     parent_message = voyage.get_status().instruction
     wrong_response = _report_from_message(parent_message)
-    wrong_response["evidence"]["inventory"]["nodes"] = []
+    wrong_response["inventory"]["nodes"] = []
 
-    explain = voyage.next(wrong_response, continue_=True)
+    explain = voyage.advance(
+        wrong_response,
+        responding_to=parent_message.evolution_entry_id,
+        continue_=True,
+    )
     diagnosis_message = voyage.get_status().instruction
 
     assert explain.rutter_id == rutter.DiagnoseAnswer.rutter_id
@@ -832,15 +837,16 @@ def test_different_report_reveals_gold_only_in_attached_diagnosis(
     )
 
     diagnosis_response = {
-        "revision": diagnosis_message.data["evolution"]["revision"],
         "outcome": "diagnosed",
-        "evidence": {
-            "mistake": "The compactness node was omitted.",
-            "reason": "The after snapshot introduces that explicit setup.",
-            "minimal_fix": "Add the missing node to inventory.md without paper-specific tuning.",
-        },
+        "mistake": "The compactness node was omitted.",
+        "reason": "The after snapshot introduces that explicit setup.",
+        "minimal_fix": "Add the missing node to inventory.md without paper-specific tuning.",
     }
-    next_parent = voyage.next(diagnosis_response, continue_=True)
+    next_parent = voyage.advance(
+        diagnosis_response,
+        responding_to=diagnosis_message.evolution_entry_id,
+        continue_=True,
+    )
     row = inventory.validated_inventory_ledger(experiment_dir)[0]
 
     assert next_parent.rutter_id == inventory.InquisitiveInventoryRutter.rutter_id
@@ -849,7 +855,9 @@ def test_different_report_reveals_gold_only_in_attached_diagnosis(
     assert row["response"] == wrong_response
     assert row["verdict"] == "different"
     assert row["child_result"]["outcome"] == "different"
-    assert row["child_result"]["value"]["detail"] == diagnosis_response["evidence"]
+    assert row["child_result"]["value"]["detail"] == {
+        key: value for key, value in diagnosis_response.items() if key != "outcome"
+    }
 
 
 def test_reopen_at_each_inventory_boundary_neither_repeats_nor_skips(
@@ -861,36 +869,39 @@ def test_reopen_at_each_inventory_boundary_neither_repeats_nor_skips(
     voyage = inventory.setup_experiment(_source_cases(), _gold_cases(), experiment_dir)
     parent_message = voyage.get_status().instruction
     wrong_response = _report_from_message(parent_message)
-    wrong_response["evidence"]["inventory"]["nodes"] = []
+    wrong_response["inventory"]["nodes"] = []
 
-    child_route = voyage.next(wrong_response, continue_=False)
+    child_route = voyage.advance(
+        wrong_response,
+        responding_to=parent_message.evolution_entry_id,
+        continue_=False,
+    )
     assert child_route.rutter_id == rutter.DiagnoseAnswer.rutter_id
     assert child_route.evolution_id == "route"
 
     voyage = inventory.open_experiment(experiment_dir)
-    explain = voyage.next(continue_=False)
+    explain = voyage.advance(continue_=False)
     assert explain.evolution_id == "explain"
     diagnosis_message = inventory.open_experiment(experiment_dir).get_status().instruction
     diagnosis_response = {
-        "revision": diagnosis_message.data["evolution"]["revision"],
         "outcome": "diagnosed",
-        "evidence": {
-            "mistake": "The compactness node was omitted.",
-            "reason": "The after snapshot introduces it.",
-            "minimal_fix": "Add it to inventory.md without paper-specific tuning.",
-        },
+        "mistake": "The compactness node was omitted.",
+        "reason": "The after snapshot introduces it.",
+        "minimal_fix": "Add it to inventory.md without paper-specific tuning.",
     }
 
-    child_done = inventory.open_experiment(experiment_dir).next(
-        diagnosis_response, continue_=False
+    child_done = inventory.open_experiment(experiment_dir).advance(
+        diagnosis_response,
+        responding_to=diagnosis_message.evolution_entry_id,
+        continue_=False,
     )
     assert child_done.evolution_id == "complete-different"
-    child_terminal = inventory.open_experiment(experiment_dir).next(
+    child_terminal = inventory.open_experiment(experiment_dir).advance(
         continue_=False
     )
     assert child_terminal.condition == "terminal"
 
-    ledger_action = inventory.open_experiment(experiment_dir).next(
+    ledger_action = inventory.open_experiment(experiment_dir).advance(
         continue_=False
     )
     assert ledger_action.rutter_id == inventory.InquisitiveInventoryRutter.rutter_id
@@ -904,7 +915,7 @@ def test_reopen_at_each_inventory_boundary_neither_repeats_nor_skips(
     assert recovered_instruction.machine_id == machine_instruction.machine_id
     assert recovered_instruction.run() == machine_result
     assert inventory.validated_inventory_ledger(experiment_dir) == first_rows
-    next_llm_step = reopened.next(machine_result, continue_=False)
+    next_llm_step = reopened.advance(machine_result, continue_=False)
     next_message = inventory.open_experiment(experiment_dir).get_status().instruction
 
     assert next_llm_step.evolution_id == "report"
@@ -921,27 +932,33 @@ def test_two_sequence_trace_preserves_schema_valid_edge_difference(
     experiment_dir = tmp_path / "experiment"
     voyage = inventory.setup_experiment(_source_cases(), _gold_cases(), experiment_dir)
     first_message = voyage.get_status().instruction
-    voyage.next(_report_from_message(first_message), continue_=True)
+    voyage.advance(
+        _report_from_message(first_message),
+        responding_to=first_message.evolution_entry_id,
+        continue_=True,
+    )
     second_message = voyage.get_status().instruction
     wrong_response = _report_from_message(second_message)
-    wrong_edge = wrong_response["evidence"]["inventory"]["edges"][0]
+    wrong_edge = wrong_response["inventory"]["edges"][0]
     wrong_edge["type"] = "illustrated-by"
     wrong_edge["description"] = (
         "The compactness hypothesis illustrates the existence claim."
     )
 
-    explain = voyage.next(wrong_response, continue_=True)
+    explain = voyage.advance(
+        wrong_response,
+        responding_to=second_message.evolution_entry_id,
+        continue_=True,
+    )
     diagnosis_message = voyage.get_status().instruction
-    terminal = voyage.next(
+    terminal = voyage.advance(
         {
-            "revision": diagnosis_message.data["evolution"]["revision"],
             "outcome": "diagnosed",
-            "evidence": {
-                "mistake": "The edge semantics differ from the adjudication.",
-                "reason": "The report says illustrated-by while gold says supports.",
-                "minimal_fix": "Correct the edge semantics in inventory.md without paper tuning.",
-            },
+            "mistake": "The edge semantics differ from the adjudication.",
+            "reason": "The report says illustrated-by while gold says supports.",
+            "minimal_fix": "Correct the edge semantics in inventory.md without paper tuning.",
         },
+        responding_to=diagnosis_message.evolution_entry_id,
         continue_=True,
     )
     rows = {

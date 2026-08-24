@@ -9,6 +9,7 @@ import pytest
 
 import officina.rutter as rutter_public
 from officina.rutter.history import CompletedRun, SubRutterRecord, Transition
+from test_support.rutter_fixtures import response_schema as _response_schema
 
 
 class HookChild(rutter_public.Rutter):
@@ -223,7 +224,7 @@ def test_every_matcher_reuses_its_record_anchored_context_and_provenance(
         {"parent": HookedParent}, tmp_path
     ).create("parent", Path("hooked.reckoning.json"), {})
 
-    terminal = voyage.next(continue_=True)
+    terminal = voyage.advance(continue_=True)
 
     assert terminal.evolution_id == "done"
     assert terminal.condition == "terminal"
@@ -336,7 +337,7 @@ def test_multiple_selection_faults_with_every_maker_before_child_allocation(
 
     monkeypatch.setattr("officina.rutter.engine._new_id", observe_allocation)
 
-    fault = voyage.next(continue_=True)
+    fault = voyage.advance(continue_=True)
 
     assert fault.condition == "fault"
     persisted = voyage._store.read()
@@ -409,7 +410,7 @@ def test_case_callback_failure_preserves_accepted_source_as_stable_fault(
 
         monkeypatch.setattr(rutter_public.TransitionMatch, "matches", fail_match)
 
-    fault = voyage.next(continue_=True)
+    fault = voyage.advance(continue_=True)
 
     assert fault.condition == "fault"
     persisted = voyage._store.read()
@@ -443,7 +444,7 @@ def test_prompt_attachment_reopens_after_attach_settle_and_return_boundaries(
             return {
                 "review": rutter_public.LLMStep(
                     "Review.",
-                    answer=rutter_public.AnswerSpec({"approved": {}}),
+                    response_schema=_response_schema("approved"),
                     next_on_outcome="publish",
                 ),
                 "publish": rutter_public.Terminal(
@@ -464,14 +465,17 @@ def test_prompt_attachment_reopens_after_attach_settle_and_return_boundaries(
     path = Path("prompt-reopen.reckoning.json")
     registry = rutter_public.RutterRegistry({"parent": PromptHookParent}, tmp_path)
     voyage = registry.create("parent", path, {})
+    prompt = voyage.get_status().instruction
+    assert prompt is not None
 
-    attached_child = voyage.next(
-        {"revision": 0, "outcome": "approved", "evidence": {}},
+    attached_child = voyage.advance(
+        {"outcome": "approved"},
+        responding_to=prompt.evolution_entry_id,
         continue_=False,
     )
     assert attached_child.rutter_id == HookChild.rutter_id
     reopened = registry.open(path)
-    settled_child = reopened.next(continue_=False)
+    settled_child = reopened.advance(continue_=False)
     assert settled_child.condition == "terminal"
     reopened = registry.open(path)
 
@@ -487,7 +491,7 @@ def test_prompt_attachment_reopens_after_attach_settle_and_return_boundaries(
     with monkeypatch.context() as patcher:
         patcher.setattr(reopened._store, "replace", crash_after_persist)
         with pytest.raises(SimulatedCrash):
-            reopened.next(continue_=False)
+            reopened.advance(continue_=False)
 
     returned = registry.open(path)
     persisted = returned._store.read()
@@ -513,7 +517,7 @@ def test_prompt_attachment_reopens_after_attach_settle_and_return_boundaries(
         )
     assert (tmp_path / path).read_bytes() == before
 
-    target = returned.next(continue_=False)
+    target = returned.advance(continue_=False)
     assert target.evolution_id == "publish"
     assert target.condition == "ready"
 
@@ -561,12 +565,12 @@ def test_pure_action_attachment_return_does_not_offer_or_replay_action(
     registry = rutter_public.RutterRegistry({"parent": ActionHookParent}, tmp_path)
     voyage = registry.create("parent", path, {})
 
-    attached_child = voyage.next(continue_=False)
+    attached_child = voyage.advance(continue_=False)
     assert attached_child.rutter_id == HookChild.rutter_id
     assert len(executions) == 1
     accepted_action_id = executions[0]
     reopened = registry.open(path)
-    settled_child = reopened.next(continue_=False)
+    settled_child = reopened.advance(continue_=False)
     assert settled_child.condition == "terminal"
     reopened = registry.open(path)
 
@@ -582,7 +586,7 @@ def test_pure_action_attachment_return_does_not_offer_or_replay_action(
     with monkeypatch.context() as patcher:
         patcher.setattr(reopened._store, "replace", crash_after_persist)
         with pytest.raises(SimulatedCrash):
-            reopened.next(continue_=False)
+            reopened.advance(continue_=False)
 
     returned = registry.open(path)
     before = (tmp_path / path).read_bytes()
@@ -593,7 +597,7 @@ def test_pure_action_attachment_return_does_not_offer_or_replay_action(
     assert executions == [accepted_action_id]
     assert (tmp_path / path).read_bytes() == before
 
-    target = returned.next(continue_=False)
+    target = returned.advance(continue_=False)
     assert target.evolution_id == "publish"
     assert target.condition == "ready"
     assert executions == [accepted_action_id]

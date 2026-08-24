@@ -34,7 +34,7 @@ from officina.rutter.evaluation import (
     evaluate_subrutter_route,
     run_machine,
     select_transition_hooks,
-    validate_llm_response,
+    assess_llm_response,
 )
 from officina.rutter.history import (
     ActiveChild,
@@ -67,12 +67,12 @@ from officina.rutter.values import (
     Charter,
     EvolutionView,
     FaultSummary,
+    JsonObject,
     MachineInstruction,
     MachineResult,
     Message,
     NotApplicable,
     PreviewUnavailable,
-    Response,
     RunBlocked,
     RutterDefinitionError,
     RutterStateError,
@@ -81,6 +81,8 @@ from officina.rutter.values import (
     ValidationReport,
     VoyageResult,
     VoyageStatus,
+    _freeze_object,
+    _require_id,
 )
 
 
@@ -109,6 +111,10 @@ class _StoreIO(Protocol):
     def replace(self, previous: Reckoning, replacement: Reckoning) -> None: ...
 
 
+class _SchemaValidator(Protocol):
+    def iter_errors(self, instance: object) -> object: ...
+
+
 @dataclass(frozen=True)
 class _BoundDefinition:
     definition: Rutter
@@ -119,6 +125,7 @@ class _BoundDefinition:
     evolutions: Mapping[str, Evolution]
     transition_hooks: tuple[TransitionHook, ...]
     transition_hooks_by_id: Mapping[str, TransitionHook]
+    response_validators: Mapping[str, _SchemaValidator]
     children: tuple[_BoundDefinition, ...]
 
     @property
@@ -366,7 +373,7 @@ def _push_hook(
 
 def _accept_prompt(
     reckoning: Reckoning,
-    response: Response,
+    response: JsonObject,
 ) -> Reckoning:
     """Fill the active LLMStep's exact open Turn and advance the global revision."""
 
@@ -453,7 +460,10 @@ def _select_transition(
         response = record.response
         if response is None:
             raise _RutterFault("routing")
-        outcome = response.outcome
+        outcome_value = response.get("outcome")
+        if type(outcome_value) is not str:
+            raise _RutterFault("routing")
+        outcome = outcome_value
     elif isinstance(evolution, MachineStep) and isinstance(record, MachineRecord):
         response = None
         outcome = record.result.outcome
@@ -733,58 +743,113 @@ def _fault_reckoning(
     )
 
 
+def _plain_json(value: object) -> object:
+    if isinstance(value, Mapping):
+        return {key: _plain_json(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain_json(item) for item in value]
+    return value
+
+
+def _path_sort_key(path: object) -> tuple[tuple[int, object], ...]:
+    return tuple(
+        (0, part) if type(part) is int else (1, str(part))
+        for part in path  # type: ignore[union-attr]
+    )
+
+
+def _schema_error_sort_key(error: object) -> object:
+    return (
+        _path_sort_key(error.absolute_path),  # type: ignore[attr-defined]
+        _path_sort_key(error.absolute_schema_path),  # type: ignore[attr-defined]
+    )
+
+
 def _validate_prompt(
     reckoning: Reckoning,
     run: ActiveRun,
+    definition: _BoundDefinition,
     prompt: LLMStep,
     value: object,
+    responding_to: str | None,
 ) -> ValidationReport:
-    if not isinstance(value, Mapping) or set(value) != {
-        "revision",
-        "outcome",
-        "evidence",
-    }:
+    turn = _prompt_turn(reckoning, run)
+    try:
+        _require_id(responding_to, "responding_to", RutterStateError)
+    except RutterStateError:
         return _invalid(
-            "invalid-envelope",
+            "stale-entrance",
             (),
-            "response must contain exactly revision, outcome, and evidence",
+            "responding_to does not match the current evolution entrance",
         )
-    revision = value["revision"]
-    if type(revision) is not int or revision < 0:
+    if responding_to != turn.evolution_entry_id:
         return _invalid(
-            "invalid-envelope",
-            ("revision",),
-            "response revision must be a nonnegative integer",
+            "stale-entrance",
+            (),
+            "responding_to does not match the current evolution entrance",
         )
-    if revision != reckoning.global_revision:
+    if not isinstance(value, Mapping):
         return _invalid(
-            "stale-revision",
-            ("revision",),
-            "response revision does not match the current revision",
+            "invalid-response",
+            (),
+            "response must be a finite JSON object",
         )
-    outcome = value["outcome"]
-    if type(outcome) is not str or outcome not in prompt.answer.outcomes:
+    try:
+        response = _freeze_object(value, "response", error=RutterStateError)
+    except RutterStateError:
+        return _invalid(
+            "nonfinite-response",
+            (),
+            "response must be a finite JSON object",
+        )
+    if "revision" in response:
+        return _invalid(
+            "reserved-metadata",
+            ("revision",),
+            "response field 'revision' is reserved for engine metadata",
+        )
+    outcome = response.get("outcome")
+    try:
+        _require_id(outcome, "outcome", RutterStateError)
+    except RutterStateError:
+        return _invalid(
+            "invalid-outcome",
+            ("outcome",),
+            "response outcome must be a nonempty stable token",
+        )
+    validator = definition.response_validators.get(
+        run.entered_evolution.evolution_id
+    )
+    if validator is not None:
+        try:
+            errors = sorted(
+                validator.iter_errors(_plain_json(response)),
+                key=_schema_error_sort_key,
+            )
+        except Exception as exc:
+            raise RutterStateError(
+                "LLMStep response schema evaluation failed"
+            ) from exc
+        if errors:
+            return ValidationReport(
+                False,
+                tuple(
+                    ValidationIssue(
+                        tuple(error.absolute_path),
+                        "response-schema",
+                        "response does not satisfy the LLMStep response schema",
+                    )
+                    for error in errors
+                ),
+            )
+    routing = prompt.next_on_outcome
+    if isinstance(routing, Mapping) and outcome not in routing:
         return _invalid(
             "unknown-outcome",
             ("outcome",),
-            "response outcome is not declared by this LLMStep",
+            "response outcome is not accepted by this LLMStep",
         )
-    if not isinstance(value["evidence"], Mapping):
-        return _invalid(
-            "invalid-envelope",
-            ("evidence",),
-            "response evidence must be an object",
-        )
-    try:
-        response = Response.from_json(value)
-    except RutterStateError:
-        return _invalid(
-            "nonfinite-evidence",
-            ("evidence",),
-            "response evidence must be finite JSON",
-        )
-    turn = _prompt_turn(reckoning, run)
-    report = validate_llm_response(
+    report = assess_llm_response(
         LLMResponseContext(
             _evolution_context(run, reckoning),
             turn.message,
@@ -965,13 +1030,15 @@ def _render_prompt(
     prompt: LLMStep,
 ) -> Turn:
     context = _evolution_context(run, reckoning)
+    instructions: dict[str, object] = {"text": prompt.text}
+    if prompt.response_schema is not None:
+        instructions["response_schema"] = prompt.response_schema
     message = Message(
-        instructions={"text": prompt.text, "answer": prompt.answer.outcomes},
+        instructions=instructions,
         data={
             "evolution": {
                 "id": run.entered_evolution.evolution_id,
                 "entry_id": run.entered_evolution.entry_id,
-                "revision": reckoning.global_revision,
             },
             "payload": build_llm_data(context, prompt),
         },
@@ -1030,7 +1097,7 @@ class Voyage:
     compass_facing_methods: ClassVar[tuple[str, ...]] = (
         "get_status",
         "validate",
-        "next",
+        "advance",
     )
 
     @classmethod
@@ -1228,10 +1295,10 @@ class Voyage:
                 "active LLMStep requires exactly one matching current Turn"
             )
         turn = turns[0]
-        if (
-            (type(step.text) is str and turn.message.instructions["text"] != step.text)
-            or turn.message.instructions["answer"] != step.answer.outcomes
-        ):
+        expected_instructions: dict[str, object] = {"text": step.text}
+        if step.response_schema is not None:
+            expected_instructions["response_schema"] = step.response_schema
+        if turn.message.instructions != expected_instructions:
             raise RutterStateError(
                 "active LLMStep Turn differs from the bound definition"
             )
@@ -1246,9 +1313,15 @@ class Voyage:
                     "active LLMStep with an open Turn cannot own an active child"
                 )
             return
-        if turn.response.outcome not in step.answer.outcomes:
+        outcome = turn.response.get("outcome")
+        if type(outcome) is not str:
             raise RutterStateError(
-                "active LLMStep Turn has an undeclared accepted outcome"
+                "active LLMStep Turn has an invalid accepted outcome"
+            )
+        routing = step.next_on_outcome
+        if isinstance(routing, Mapping) and outcome not in routing:
+            raise RutterStateError(
+                "active LLMStep Turn has an unaccepted outcome"
             )
         if child is None:
             if fault is None or isinstance(fault, OpaqueFault):
@@ -1321,9 +1394,10 @@ class Voyage:
         Classify the result through ``current_evolution.condition``. For a ready
         status whose ``instruction`` is a Message, perform
         ``instructions["text"]`` using ``data["payload"]`` and satisfy
-        ``instructions["answer"]`` with ``{"revision":
-        data["evolution"]["revision"], "outcome": ..., "evidence": ...}``.
-        If the instruction is absent or is a MachineInstruction, ask ``next`` to
+        its optional ``instructions["response_schema"]`` with one flat response
+        containing ``{"outcome": ...}``. Pass the Message's
+        ``evolution_entry_id`` as
+        ``responding_to``. If the instruction is absent or is a MachineInstruction, ask ``advance`` to
         settle it instead of executing it directly. A terminal status reports
         ``active_result`` and stops; fault reports ``fault`` and stops; uncertain
         stops for manual reconciliation. Treat any unknown condition or malformed
@@ -1380,20 +1454,26 @@ class Voyage:
                 summary,
             )
 
-    def validate(self, response: object) -> ValidationReport:
+    def validate(
+        self,
+        value: object,
+        *,
+        responding_to: str | None = None,
+    ) -> ValidationReport:
         """Validate a proposed Message response without changing the Voyage.
 
-        Before passing a response to ``next``, require a valid report. Repair an
+        Before passing a response to ``advance``, require a valid report. Repair an
         invalid response only from its public issues and validate it again; stop
         with a public-interface gap if those issues cannot guide a valid repair.
         """
 
-        return _validate(self, response)
+        return _validate(self, value, responding_to=responding_to)
 
-    def next(
+    def advance(
         self,
-        response: object = MISSING,
+        value: object = MISSING,
         *,
+        responding_to: str | None = None,
         continue_: bool = True,
         dry_run: bool = False,
     ) -> EvolutionView:
@@ -1407,9 +1487,10 @@ class Voyage:
         the normal Compass loop. Read ``get_status`` after a real advance.
         """
 
-        return _next(
+        return _advance(
             self,
-            response,
+            value,
+            responding_to=responding_to,
             continue_=continue_,
             dry_run=dry_run,
         )
@@ -1441,7 +1522,12 @@ def _instruction_for(
     return None
 
 
-def _validate(voyage: Voyage, response: object) -> ValidationReport:
+def _validate(
+    voyage: Voyage,
+    value: object,
+    *,
+    responding_to: str | None = None,
+) -> ValidationReport:
     with voyage._store.transaction() as reckoning:
         voyage._reckoning = reckoning
         leaf = deepest_active_leaf(reckoning)
@@ -1453,11 +1539,25 @@ def _validate(voyage: Voyage, response: object) -> ValidationReport:
         if _is_recorded_source(evolution, source):
             raise NotApplicable("an accepted node does not accept another response")
         if isinstance(evolution, MachineStep):
-            return _validate_machine_result(response)
+            if responding_to is not None:
+                return _invalid(
+                    "unexpected-responding-to",
+                    (),
+                    "responding_to is valid only for an LLM response",
+                )
+            return _validate_machine_result(value)
         if not isinstance(evolution, LLMStep):
             raise NotApplicable("the current node does not accept a response")
         try:
-            return _validate_prompt(reckoning, leaf.run, evolution, response)
+            definition = _leaf_definition(voyage, leaf)
+            return _validate_prompt(
+                reckoning,
+                leaf.run,
+                definition,
+                evolution,
+                value,
+                responding_to,
+            )
         except _RutterFault:
             return _invalid(
                 "contextual-validation-failed",
@@ -1719,10 +1819,11 @@ def _advance_machine(
     return entered, None
 
 
-def _next(
+def _advance(
     voyage: Voyage,
-    response: object = MISSING,
+    value: object = MISSING,
     *,
+    responding_to: str | None = None,
     continue_: bool = True,
     dry_run: bool = False,
 ) -> EvolutionView:
@@ -1735,7 +1836,11 @@ def _next(
         if condition in {"fault", "uncertain"}:
             raise RunBlocked("the voyage is blocked")
         if condition == "terminal":
-            if not _is_missing(response):
+            if responding_to is not None:
+                raise RutterValidationError(
+                    "responding_to is valid only for an LLM response"
+                )
+            if not _is_missing(value):
                 raise NotApplicable("a terminal voyage does not accept a response")
             if dry_run:
                 return _node_view(reckoning, leaf, evolution)
@@ -1743,7 +1848,11 @@ def _next(
         source = _source_record(leaf.run, leaf.run.entered_evolution)
         recorded = _is_recorded_source(evolution, source)
         if recorded:
-            if not _is_missing(response):
+            if responding_to is not None:
+                raise RutterValidationError(
+                    "responding_to is valid only for an LLM response"
+                )
+            if not _is_missing(value):
                 raise NotApplicable("an accepted node does not accept another response")
             if dry_run:
                 assert source is not None
@@ -1762,17 +1871,28 @@ def _next(
                     "preview",
                 )
         elif isinstance(evolution, LLMStep):
-            if _is_missing(response):
+            if _is_missing(value):
                 raise RutterValidationError("LLMStep response is required")
             try:
-                report = _validate_prompt(reckoning, leaf.run, evolution, response)
+                report = _validate_prompt(
+                    reckoning,
+                    leaf.run,
+                    definition,
+                    evolution,
+                    value,
+                    responding_to,
+                )
             except _RutterFault as fault:
                 if dry_run:
                     raise RutterValidationError("LLMStep validation failed") from fault
                 return _fault_and_publish(voyage, reckoning, reckoning, fault)
             if not report.valid:
                 raise RutterValidationError("LLMStep response was rejected")
-            normalized = Response.from_json(response)
+            normalized = _freeze_object(
+                value,
+                "response",
+                error=RutterStateError,
+            )
             accepted = _accept_prompt(reckoning, normalized)
             accepted_leaf = deepest_active_leaf(accepted)
             record = _source_record(accepted_leaf.run, accepted_leaf.run.entered_evolution)
@@ -1824,16 +1944,24 @@ def _next(
                 ]
                 return _node_view(reckoning, entered_leaf, entered_state)
         elif isinstance(evolution, SubRutter):
-            if not _is_missing(response):
+            if responding_to is not None:
+                raise RutterValidationError(
+                    "responding_to is valid only for an LLM response"
+                )
+            if not _is_missing(value):
                 raise NotApplicable("SubRutter does not accept a response")
         elif isinstance(evolution, MachineStep):
+            if responding_to is not None:
+                raise RutterValidationError(
+                    "responding_to is valid only for an LLM response"
+                )
             reckoning, stopped = _advance_machine(
                 voyage,
                 reckoning,
                 leaf,
                 definition,
                 evolution,
-                response,
+                value,
                 dry_run=dry_run,
             )
             if stopped is not None:
@@ -1847,7 +1975,11 @@ def _next(
                 return _node_view(reckoning, entered_leaf, entered_state)
         elif not isinstance(evolution, Terminal):
             raise NotApplicable("the current node does not accept a response")
-        elif not _is_missing(response):
+        elif responding_to is not None:
+            raise RutterValidationError(
+                "responding_to is valid only for an LLM response"
+            )
+        elif not _is_missing(value):
             raise NotApplicable("Terminal does not accept a response")
 
         for _ in range(_OPERATION_LIMIT):

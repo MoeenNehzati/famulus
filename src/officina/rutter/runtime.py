@@ -8,6 +8,9 @@ import re
 from types import MappingProxyType
 from typing import Mapping, TypeAlias
 
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import SchemaError
+
 from officina.rutter.authoring import (
     Evolution,
     LLMStep,
@@ -76,6 +79,26 @@ def _require_callback(callback: object, arity: int, label: str) -> None:
         raise RutterDefinitionError(f"{label} must accept exactly {arity} {noun}")
 
 
+def _plain_json(value: object) -> object:
+    if isinstance(value, Mapping):
+        return {key: _plain_json(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain_json(item) for item in value]
+    return value
+
+
+def _contains_external_ref(value: object) -> bool:
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            if key == "$ref" and isinstance(item, str) and not item.startswith("#"):
+                return True
+            if _contains_external_ref(item):
+                return True
+    elif isinstance(value, (list, tuple)):
+        return any(_contains_external_ref(item) for item in value)
+    return False
+
+
 def _construct_definition(source: _Registration) -> Rutter:
     if isinstance(source, Rutter):
         return source
@@ -142,6 +165,7 @@ class _DefinitionBinder:
                 )
             hooks, hooks_by_id = self._freeze_transition_hooks(definition)
             child_sources = self._validate_graph(evolutions, hooks)
+            response_validators = self._prepare_response_validators(evolutions)
             children = tuple(self.bind(child) for child in child_sources)
             bound = _BoundDefinition(
                 definition,
@@ -152,6 +176,7 @@ class _DefinitionBinder:
                 evolutions,
                 hooks,
                 hooks_by_id,
+                response_validators,
                 children,
             )
             self._by_source[source_id] = (source, bound)
@@ -245,17 +270,16 @@ class _DefinitionBinder:
         children: list[_Registration] = []
         for evolution in evolutions.values():
             if isinstance(evolution, LLMStep):
-                if not evolution.answer.outcomes:
-                    raise RutterDefinitionError(
-                        "LLMStep answer must declare at least one outcome"
-                    )
                 _require_callback(evolution.data, 1, "LLMStep data")
-                _require_callback(evolution.validate, 1, "LLMStep validate")
+                _require_callback(
+                    evolution.assess_response,
+                    1,
+                    "LLMStep assess_response",
+                )
                 self._validate_next_on_outcome(
                     evolution.next_on_outcome,
                     evolutions,
                     "LLMStep next_on_outcome",
-                    outcomes=frozenset(evolution.answer.outcomes),
                 )
                 if evolution.choose_next is not None:
                     _require_callback(evolution.choose_next, 1, "LLMStep choose_next")
@@ -284,12 +308,32 @@ class _DefinitionBinder:
         return tuple(children)
 
     @staticmethod
+    def _prepare_response_validators(
+        evolutions: Mapping[str, Evolution],
+    ) -> Mapping[str, Draft202012Validator]:
+        validators: dict[str, Draft202012Validator] = {}
+        for evolution_id, evolution in evolutions.items():
+            if not isinstance(evolution, LLMStep) or evolution.response_schema is None:
+                continue
+            schema = _plain_json(evolution.response_schema)
+            if _contains_external_ref(schema):
+                raise RutterDefinitionError(
+                    "LLMStep response_schema must be self-contained"
+                )
+            try:
+                Draft202012Validator.check_schema(schema)
+                validators[evolution_id] = Draft202012Validator(schema)
+            except SchemaError as exc:
+                raise RutterDefinitionError(
+                    "LLMStep response_schema must be valid Draft 2020-12 JSON Schema"
+                ) from exc
+        return MappingProxyType(validators)
+
+    @staticmethod
     def _validate_next_on_outcome(
         next_on_outcome: str | Mapping[str, str] | None,
         evolutions: Mapping[str, Evolution],
         label: str,
-        *,
-        outcomes: frozenset[str] | None = None,
     ) -> None:
         targets: tuple[object, ...]
         if type(next_on_outcome) is str:
@@ -297,10 +341,6 @@ class _DefinitionBinder:
         elif isinstance(next_on_outcome, Mapping):
             if not next_on_outcome:
                 raise RutterDefinitionError(f"{label} routes must not be empty")
-            if outcomes is not None and set(next_on_outcome) != outcomes:
-                raise RutterDefinitionError(
-                    "LLMStep routes must exactly match declared outcomes"
-                )
             targets = tuple(next_on_outcome.values())
         elif next_on_outcome is None:
             return

@@ -9,6 +9,7 @@ import pytest
 
 import officina.rutter as rutter
 from officina.rutter.history import CompletedRun, SubRutterRecord
+from test_support.rutter_fixtures import response_schema as _response_schema
 
 
 class SequenceChild(rutter.Rutter):
@@ -48,9 +49,12 @@ def _edge_context(
     history: rutter.HistoryView | None = None,
 ) -> rutter.TransitionContext:
     message = rutter.Message(
-        instructions={"text": "Answer.", "answer": {"answered": {"answer": "string"}}},
+        instructions={
+            "text": "Answer.",
+            "response_schema": _response_schema("answered"),
+        },
         data={
-            "evolution": {"id": source, "entry_id": "entry-answer", "revision": 0},
+            "evolution": {"id": source, "entry_id": "entry-answer"},
             "payload": {},
         },
     )
@@ -60,7 +64,7 @@ def _edge_context(
         source,
         0,
         message,
-        rutter.Response(0, outcome, {"answer": answer}),
+        {"outcome": outcome, "answer": answer},
     )
     return rutter.TransitionContext(
         rutter.EvolutionContext(
@@ -331,7 +335,7 @@ def test_diagnose_answer_true_verdict_completes_without_a_prompt(
         {"diagnose": rutter.DiagnoseAnswer}, tmp_path
     ).create("diagnose", Path("equal.reckoning.json"), case.to_json())
 
-    terminal = voyage.next(continue_=True)
+    terminal = voyage.advance(continue_=True)
 
     assert terminal.evolution_id == "complete-equal-evaluator"
     assert terminal.condition == "terminal"
@@ -358,7 +362,7 @@ def test_diagnose_answer_false_verdict_requests_exact_three_field_detail(
         {"diagnose": rutter.DiagnoseAnswer}, tmp_path
     ).create("diagnose", Path("different.reckoning.json"), case.to_json())
 
-    explain = voyage.next(continue_=True)
+    explain = voyage.advance(continue_=True)
     message = voyage.get_status().instruction
 
     assert explain.evolution_id == "explain"
@@ -371,12 +375,16 @@ def test_diagnose_answer_false_verdict_requests_exact_three_field_detail(
             "path accordingly. Do not return that adjustment; return only the "
             "three diagnostic fields."
         ),
-        "answer": {
-            "diagnosed": {
-                "mistake": "nonempty string",
-                "reason": "nonempty string",
-                "minimal_fix": "nonempty string",
-            }
+        "response_schema": {
+            "type": "object",
+            "properties": {
+                "outcome": {"const": "diagnosed"},
+                "mistake": {"type": "string", "minLength": 1},
+                "reason": {"type": "string", "minLength": 1},
+                "minimal_fix": {"type": "string", "minLength": 1},
+            },
+            "required": ("outcome", "mistake", "reason", "minimal_fix"),
+            "additionalProperties": False,
         },
     }
     assert message.data["payload"] == {
@@ -387,17 +395,14 @@ def test_diagnose_answer_false_verdict_requests_exact_three_field_detail(
         "metadata": {"topic": "arithmetic"},
         "ask_for_fix": False,
     }
-    revision = message.data["evolution"]["revision"]
-    terminal = voyage.next(
+    terminal = voyage.advance(
         {
-            "revision": revision,
             "outcome": "diagnosed",
-            "evidence": {
-                "mistake": "The answer is too large.",
-                "reason": "One plus one equals two.",
-                "minimal_fix": "Replace 3 with 2.",
-            },
+            "mistake": "The answer is too large.",
+            "reason": "One plus one equals two.",
+            "minimal_fix": "Replace 3 with 2.",
         },
+        responding_to=message.evolution_entry_id,
         continue_=True,
     )
 
@@ -429,7 +434,7 @@ def test_diagnose_answer_ask_for_fix_directs_internal_adjustment_only(
         {"diagnose": rutter.DiagnoseAnswer}, tmp_path
     ).create("diagnose", Path("fix-request.reckoning.json"), case.to_json())
 
-    explain = voyage.next(continue_=True)
+    explain = voyage.advance(continue_=True)
     message = voyage.get_status().instruction
 
     assert explain.evolution_id == "explain"
@@ -437,13 +442,13 @@ def test_diagnose_answer_ask_for_fix_directs_internal_adjustment_only(
     assert "adjust your subsequent reasoning and work path" in message.instructions["text"]
     assert "Do not return that adjustment" in message.instructions["text"]
     assert "corrected answer" not in message.instructions["text"]
-    assert message.instructions["answer"] == {
-        "diagnosed": {
-            "mistake": "nonempty string",
-            "reason": "nonempty string",
-            "minimal_fix": "nonempty string",
-        }
-    }
+    assert message.instructions["response_schema"]["required"] == (
+        "outcome",
+        "mistake",
+        "reason",
+        "minimal_fix",
+    )
+    assert message.instructions["response_schema"]["additionalProperties"] is False
     assert message.data["payload"]["ask_for_fix"] is True
 
 
@@ -457,7 +462,7 @@ def test_diagnose_answer_without_evaluator_asks_exact_comparison_then_finishes_y
         {"diagnose": rutter.DiagnoseAnswer}, tmp_path
     ).create("diagnose", Path("compare-yes.reckoning.json"), case.to_json())
 
-    compare = voyage.next(continue_=True)
+    compare = voyage.advance(continue_=True)
     message = voyage.get_status().instruction
 
     assert compare.evolution_id == "compare"
@@ -466,7 +471,12 @@ def test_diagnose_answer_without_evaluator_asks_exact_comparison_then_finishes_y
             "Decide whether the actual and expected answers are semantically "
             "the same. Reply with explicit yes or no."
         ),
-        "answer": {"yes": {}, "no": {}},
+        "response_schema": {
+            "type": "object",
+            "properties": {"outcome": {"enum": ("yes", "no")}},
+            "required": ("outcome",),
+            "additionalProperties": False,
+        },
     }
     assert message.data["payload"] == {
         "enquiry": "What is one plus one?",
@@ -476,12 +486,9 @@ def test_diagnose_answer_without_evaluator_asks_exact_comparison_then_finishes_y
         "metadata": {"topic": "arithmetic"},
         "ask_for_fix": False,
     }
-    terminal = voyage.next(
-        {
-            "revision": message.data["evolution"]["revision"],
-            "outcome": "yes",
-            "evidence": {},
-        },
+    terminal = voyage.advance(
+        {"outcome": "yes"},
+        responding_to=message.evolution_entry_id,
         continue_=True,
     )
 
@@ -508,63 +515,62 @@ def test_diagnose_answer_no_flow_preserves_turns_across_invalid_replies_and_reop
     path = Path("compare-no.reckoning.json")
     registry = rutter.RutterRegistry({"diagnose": rutter.DiagnoseAnswer}, tmp_path)
     voyage = registry.create("diagnose", path, case.to_json())
-    voyage.next(continue_=True)
+    voyage.advance(continue_=True)
     compare_message = voyage.get_status().instruction
     before_invalid_compare = (tmp_path / path).read_bytes()
-    invalid_compare = {
-        "revision": compare_message.data["evolution"]["revision"],
-        "outcome": "maybe",
-        "evidence": {},
-    }
+    invalid_compare = {"outcome": "maybe"}
 
-    assert voyage.validate(invalid_compare).valid is False
+    assert voyage.validate(
+        invalid_compare, responding_to=compare_message.evolution_entry_id
+    ).valid is False
     with pytest.raises(rutter.RutterValidationError):
-        voyage.next(invalid_compare)
+        voyage.advance(
+            invalid_compare, responding_to=compare_message.evolution_entry_id
+        )
     assert (tmp_path / path).read_bytes() == before_invalid_compare
 
     voyage = registry.open(path)
-    explain = voyage.next(
-        {
-            "revision": compare_message.data["evolution"]["revision"],
-            "outcome": "no",
-            "evidence": {},
-        },
+    explain = voyage.advance(
+        {"outcome": "no"},
+        responding_to=compare_message.evolution_entry_id,
         continue_=True,
     )
     assert explain.evolution_id == "explain"
     explain_message = voyage.get_status().instruction
     incomplete = {
-        "revision": explain_message.data["evolution"]["revision"],
         "outcome": "diagnosed",
-        "evidence": {"mistake": "Wrong.", "reason": "Not equal."},
+        "mistake": "Wrong.",
+        "reason": "Not equal.",
     }
     before_incomplete = (tmp_path / path).read_bytes()
 
-    report = voyage.validate(incomplete)
+    report = voyage.validate(
+        incomplete, responding_to=explain_message.evolution_entry_id
+    )
     assert report.valid is False
-    assert tuple(issue.code for issue in report.issues) == ("invalid-diagnosis",)
+    assert tuple(issue.code for issue in report.issues) == ("response-schema",)
     with pytest.raises(rutter.RutterValidationError):
-        voyage.next(incomplete)
+        voyage.advance(
+            incomplete, responding_to=explain_message.evolution_entry_id
+        )
     assert (tmp_path / path).read_bytes() == before_incomplete
 
     voyage = registry.open(path)
-    entered_done = voyage.next(
+    entered_done = voyage.advance(
         {
-            "revision": explain_message.data["evolution"]["revision"],
             "outcome": "diagnosed",
-            "evidence": {
-                "mistake": "The answer is too large.",
-                "reason": "One plus one equals two.",
-                "minimal_fix": "Replace 3 with 2.",
-            },
+            "mistake": "The answer is too large.",
+            "reason": "One plus one equals two.",
+            "minimal_fix": "Replace 3 with 2.",
         },
+        responding_to=explain_message.evolution_entry_id,
         continue_=False,
     )
     assert entered_done.evolution_id == "complete-different"
     assert entered_done.condition == "ready"
 
     voyage = registry.open(path)
-    terminal = voyage.next(continue_=False)
+    terminal = voyage.advance(continue_=False)
     assert terminal.condition == "terminal"
     assert _completed_result(voyage).value["decided_by"] == "llm"
     history = rutter.HistoryView(voyage._store.read().root.history)
@@ -585,26 +591,30 @@ def test_ask_and_diagnose_has_exact_ask_envelope_and_answer_validation(
     assert rutter.AskAndDiagnose.evaluator is None
     assert message.instructions == {
         "text": "Answer the enquiry using the optional format hint.",
-        "answer": {"answered": {"answer": "string"}},
+        "response_schema": {
+            "type": "object",
+            "properties": {
+                "outcome": {"const": "answered"},
+                "answer": {"type": "string"},
+            },
+            "required": ("outcome", "answer"),
+            "additionalProperties": False,
+        },
     }
     assert message.data["payload"] == {
         "enquiry": "What is one plus one?",
         "format_hint": {"answer": "integer"},
         "metadata": {"topic": "arithmetic"},
     }
-    invalid = {
-        "revision": message.data["evolution"]["revision"],
-        "outcome": "answered",
-        "evidence": {"answer": 2},
-    }
+    invalid = {"outcome": "answered", "answer": 2}
     before = (tmp_path / path).read_bytes()
 
-    report = voyage.validate(invalid)
+    report = voyage.validate(invalid, responding_to=message.evolution_entry_id)
 
     assert report.valid is False
-    assert tuple(issue.code for issue in report.issues) == ("invalid-answer",)
+    assert tuple(issue.code for issue in report.issues) == ("response-schema",)
     with pytest.raises(rutter.RutterValidationError):
-        voyage.next(invalid)
+        voyage.advance(invalid, responding_to=message.evolution_entry_id)
     assert (tmp_path / path).read_bytes() == before
 
 
@@ -617,18 +627,15 @@ def test_ask_and_diagnose_builds_turn_based_child_call_and_forwards_result(
     registry = rutter.RutterRegistry({"ask": rutter.AskAndDiagnose}, tmp_path)
     voyage = registry.create("ask", path, _question().to_json())
     ask_message = voyage.get_status().instruction
-    parent_call = voyage.next(
-        {
-            "revision": ask_message.data["evolution"]["revision"],
-            "outcome": "answered",
-            "evidence": {"answer": "two"},
-        },
+    parent_call = voyage.advance(
+        {"outcome": "answered", "answer": "two"},
+        responding_to=ask_message.evolution_entry_id,
         continue_=False,
     )
     assert parent_call.evolution_id == "diagnose"
     assert parent_call.depth == 0
 
-    child = registry.open(path).next(continue_=False)
+    child = registry.open(path).advance(continue_=False)
     persisted = registry.open(path)._store.read()
     assert child.rutter_id == rutter.DiagnoseAnswer.rutter_id
     assert child.evolution_id == "route"
@@ -641,15 +648,12 @@ def test_ask_and_diagnose_builds_turn_based_child_call_and_forwards_result(
     )
 
     voyage = registry.open(path)
-    compare = voyage.next(continue_=True)
+    compare = voyage.advance(continue_=True)
     assert compare.evolution_id == "compare"
     compare_message = voyage.get_status().instruction
-    terminal = voyage.next(
-        {
-            "revision": compare_message.data["evolution"]["revision"],
-            "outcome": "yes",
-            "evidence": {},
-        },
+    terminal = voyage.advance(
+        {"outcome": "yes"},
+        responding_to=compare_message.evolution_entry_id,
         continue_=True,
     )
 
@@ -700,12 +704,9 @@ def test_ask_and_diagnose_concrete_subclass_seals_exact_evaluator_verdict(
         "ask", Path("mechanical-ask.reckoning.json"), _question().to_json()
     )
     message = voyage.get_status().instruction
-    terminal = voyage.next(
-        {
-            "revision": message.data["evolution"]["revision"],
-            "outcome": "answered",
-            "evidence": {"answer": "2"},
-        },
+    terminal = voyage.advance(
+        {"outcome": "answered", "answer": "2"},
+        responding_to=message.evolution_entry_id,
         continue_=True,
     )
 
@@ -787,12 +788,9 @@ def test_truthy_evaluator_fault_preserves_the_accepted_ask_turn(
     voyage = registry.create("ask", path, _question().to_json())
     message = voyage.get_status().instruction
 
-    fault = voyage.next(
-        {
-            "revision": message.data["evolution"]["revision"],
-            "outcome": "answered",
-            "evidence": {"answer": "2"},
-        },
+    fault = voyage.advance(
+        {"outcome": "answered", "answer": "2"},
+        responding_to=message.evolution_entry_id,
         continue_=True,
     )
 
@@ -805,7 +803,7 @@ def test_truthy_evaluator_fault_preserves_the_accepted_ask_turn(
     assert persisted.completed_runs == {}
     turns = rutter.HistoryView(persisted.root.history).turns("ask")
     assert len(turns) == 1
-    assert turns[0].response.evidence == {"answer": "2"}
+    assert turns[0].response == {"outcome": "answered", "answer": "2"}
 
 
 def test_terminal_child_diagnostic_stops_until_explicit_resumption(
@@ -829,37 +827,34 @@ def test_terminal_child_diagnostic_stops_until_explicit_resumption(
     registry = rutter.RutterRegistry({"ask": ReopenAsk}, tmp_path)
     voyage = registry.create("ask", path, _question().to_json())
     message = voyage.get_status().instruction
-    at_call = voyage.next(
-        {
-            "revision": message.data["evolution"]["revision"],
-            "outcome": "answered",
-            "evidence": {"answer": "2"},
-        },
+    at_call = voyage.advance(
+        {"outcome": "answered", "answer": "2"},
+        responding_to=message.evolution_entry_id,
         continue_=False,
     )
     assert at_call.evolution_id == "diagnose"
 
-    child_route = registry.open(path).next(continue_=False)
+    child_route = registry.open(path).advance(continue_=False)
     assert child_route.rutter_id == rutter.DiagnoseAnswer.rutter_id
     assert child_route.evolution_id == "route"
     assert evaluations == ["2"]
 
-    child_done = registry.open(path).next(continue_=False)
+    child_done = registry.open(path).advance(continue_=False)
     assert child_done.rutter_id == rutter.DiagnoseAnswer.rutter_id
     assert child_done.evolution_id == "complete-equal-evaluator"
     assert child_done.condition == "ready"
 
-    child_terminal = registry.open(path).next(continue_=False)
+    child_terminal = registry.open(path).advance(continue_=False)
     assert child_terminal.rutter_id == rutter.DiagnoseAnswer.rutter_id
     assert child_terminal.condition == "terminal"
 
-    parent_done = registry.open(path).next(continue_=False)
+    parent_done = registry.open(path).advance(continue_=False)
     assert parent_done.rutter_id == ReopenAsk.rutter_id
     assert parent_done.evolution_id == "complete"
     assert parent_done.condition == "ready"
     assert evaluations == ["2"]
 
-    terminal = registry.open(path).next(continue_=False)
+    terminal = registry.open(path).advance(continue_=False)
     assert terminal.rutter_id == ReopenAsk.rutter_id
     assert terminal.condition == "terminal"
     assert evaluations == ["2"]
@@ -873,7 +868,7 @@ def test_diagnose_answer_on_seals_extracted_answer_and_exact_evaluator_verdict()
     def actual_answer(context: rutter.TransitionContext) -> str:
         assert isinstance(context.record, rutter.Turn)
         assert context.record.response is not None
-        return context.record.response.evidence["answer"]
+        return context.record.response["answer"]
 
     def evaluator(
         actual: str,
@@ -1077,27 +1072,27 @@ def test_non_diagnostic_sequence_advances_once_per_completed_attachment_across_r
     registry = rutter.RutterRegistry({"parent": SequencedParent}, tmp_path)
     voyage = registry.create("parent", path, {})
 
-    first_child = voyage.next(continue_=False)
+    first_child = voyage.advance(continue_=False)
     assert first_child.rutter_id == SequenceChild.rutter_id
     assert registry.open(path)._store.read().root.active_child.run.charter == rutter.Charter(
         {"step": 1}
     )
-    assert registry.open(path).next(continue_=False).condition == "terminal"
+    assert registry.open(path).advance(continue_=False).condition == "terminal"
 
-    second_parent = registry.open(path).next(continue_=False)
+    second_parent = registry.open(path).advance(continue_=False)
     assert second_parent.rutter_id == SequencedParent.rutter_id
     assert second_parent.evolution_id == "second"
-    second_child = registry.open(path).next(continue_=False)
+    second_child = registry.open(path).advance(continue_=False)
     assert second_child.rutter_id == SequenceChild.rutter_id
     assert registry.open(path)._store.read().root.active_child.run.charter == rutter.Charter(
         {"step": 2}
     )
-    assert registry.open(path).next(continue_=False).condition == "terminal"
+    assert registry.open(path).advance(continue_=False).condition == "terminal"
 
-    parent_done = registry.open(path).next(continue_=False)
+    parent_done = registry.open(path).advance(continue_=False)
     assert parent_done.evolution_id == "complete"
     assert parent_done.condition == "ready"
-    terminal = registry.open(path).next(continue_=False)
+    terminal = registry.open(path).advance(continue_=False)
     assert terminal.condition == "terminal"
     reckoning = registry.open(path)._store.read()
     history = rutter.HistoryView(reckoning.root.history, reckoning.completed_runs)
@@ -1153,18 +1148,15 @@ def test_fresh_question_sequence_uses_application_evaluator_subclass(
     registry = rutter.RutterRegistry({"parent": FreshQuestionParent}, tmp_path)
     voyage = registry.create("parent", path, {})
 
-    child_prompt = voyage.next(continue_=True)
+    child_prompt = voyage.advance(continue_=True)
     message = voyage.get_status().instruction
     assert child_prompt.rutter_id == FreshEvaluatorAsk.rutter_id
     assert child_prompt.evolution_id == "ask"
     assert "expected_answer" not in message.data["payload"]
 
-    terminal = voyage.next(
-        {
-            "revision": message.data["evolution"]["revision"],
-            "outcome": "answered",
-            "evidence": {"answer": "2"},
-        },
+    terminal = voyage.advance(
+        {"outcome": "answered", "answer": "2"},
+        responding_to=message.evolution_entry_id,
         continue_=True,
     )
     assert terminal.rutter_id == FreshQuestionParent.rutter_id
@@ -1189,7 +1181,7 @@ def test_diagnose_answer_on_failure_preserves_accepted_source_turn(
             raise RuntimeError("private extractor detail")
         assert isinstance(context.record, rutter.Turn)
         assert context.record.response is not None
-        return context.record.response.evidence["answer"]
+        return context.record.response["answer"]
 
     def evaluator(actual: str, expected: str, context: rutter.TransitionContext) -> object:
         del context
@@ -1216,7 +1208,7 @@ def test_diagnose_answer_on_failure_preserves_accepted_source_turn(
             return {
                 "answer": rutter.LLMStep(
                     "Answer.",
-                    answer=rutter.AnswerSpec({"answered": {"answer": "string"}}),
+                    response_schema=_response_schema("answered"),
                     next_on_outcome="complete",
                 ),
                 "complete": rutter.Terminal(rutter.VoyageResult("finished", {})),
@@ -1230,12 +1222,9 @@ def test_diagnose_answer_on_failure_preserves_accepted_source_turn(
     voyage = registry.create("parent", path, {})
     message = voyage.get_status().instruction
 
-    fault = voyage.next(
-        {
-            "revision": message.data["evolution"]["revision"],
-            "outcome": "answered",
-            "evidence": {"answer": "2"},
-        },
+    fault = voyage.advance(
+        {"outcome": "answered", "answer": "2"},
+        responding_to=message.evolution_entry_id,
         continue_=True,
     )
 
@@ -1248,4 +1237,4 @@ def test_diagnose_answer_on_failure_preserves_accepted_source_turn(
     assert persisted.completed_runs == {}
     turns = rutter.HistoryView(persisted.root.history).turns("answer")
     assert len(turns) == 1
-    assert turns[0].response.evidence == {"answer": "2"}
+    assert turns[0].response == {"outcome": "answered", "answer": "2"}
