@@ -1,0 +1,549 @@
+\section{Bayesian Statistical Arguments}
+
+\subsection{Basin-Size Concentration}
+This subsection proves the auxiliary bounds used in Section~\ref{sec:inference}
+to pass from repeated convergence to posterior concentration of the observed
+basin size. Throughout this subsection,
+$A_\varepsilon:=\{s_{\vx^*}\le 1-\varepsilon\}$.
+
+\begin{lemma}[Bayes denominator bound]\label{lem:eta_bound}
+Let $0 < \eta,\varepsilon < 1$ and $\Pi(A_\eta) < 1$. Then
+\[
+\Pi(A_\varepsilon \mid H_n(\vx^*))
+\le
+\frac{(1-\varepsilon)^{n}\,\Pi(A_\varepsilon)}
+{(1-\eta)^{n}\,(1-\Pi(A_\eta))}.
+\]
+\end{lemma}
+
+\begin{proof}
+By definition of $A_\varepsilon$, on $A_\varepsilon$ we have
+$s_{\vx^*}\le 1-\varepsilon$, so
+\[
+\PP(H_n(\vx^*)\cap A_\varepsilon)
+\le (1-\varepsilon)^n\Pi(A_\varepsilon).
+\]
+Also, on $A_\eta^c$ we have $s_{\vx^*}>1-\eta$, hence
+\[
+\begin{aligned}
+\PP(H_n(\vx^*))
+&\ge \PP(H_n(\vx^*)\cap A_\eta^c)\\
+&\ge (1-\eta)^n(1-\Pi(A_\eta)).
+\end{aligned}
+\]
+Substituting these two bounds into
+\[
+\Pi(A_\varepsilon\mid H_n(\vx^*))
+=\frac{\PP(H_n(\vx^*)\cap A_\varepsilon)}{\PP(H_n(\vx^*))}
+\]
+gives the result.
+\end{proof}
+
+\begin{lemma}[Support near one]\label{lem:supp_tail}
+If $1 \in \operatorname{supp}(\Pi)$, then for every $\varepsilon\in(0,1)$
+there exists $\eta\in(0,\varepsilon)$ such that $\Pi(A_\eta)<1$.
+\end{lemma}
+
+\begin{proof}
+Choose any $\eta\in(0,\varepsilon)$. Since $1\in\operatorname{supp}(\Pi)$,
+we have $\Pi((1-\eta,1])>0$. Since
+$(1-\eta,1]\subseteq A_\eta^c$, it follows that
+$\Pi(A_\eta^c)>0$, hence $\Pi(A_\eta)<1$.
+\end{proof}
+
+\phantomsection\label{proof:eta-bound}
+\propEtaBound*
+\begin{proof}[Proof of Proposition~\ref{prop:eta-bound}]
+By Lemma~\ref{lem:supp_tail}, choose $\eta\in(0,\varepsilon)$ with
+$\Pi(A_\eta)<1$. Lemma~\ref{lem:eta_bound} then gives
+\[
+\Pi(A_\varepsilon\mid H_n(\vx^*))
+\le
+\frac{(1-\varepsilon)^n\Pi(A_\varepsilon)}
+{(1-\eta)^n(1-\Pi(A_\eta))}.
+\]
+Since $\eta<\varepsilon$, the ratio $(1-\varepsilon)/(1-\eta)$ is strictly
+less than one, so the right-hand side decays exponentially in $n$.
+\end{proof}
+
+\propBasinPosteriorSize*
+\begin{proof}\label{proof:basin-posterior-size}
+We start from Lemma~\ref{lem:eta_bound}, which states that for any $\eta\in(0,1)$ with
+$\Pi(A_\eta)<1$,
+\begin{equation}\label{eq:eta_lemma}
+\Pi(A_\varepsilon\mid H_n(\vx^*))
+\;\le\;
+\frac{(1-\varepsilon)^{n}\,\Pi(A_\varepsilon)}{(1-\eta)^{n}\,(1-\Pi(A_\eta))}.
+\end{equation}
+
+We lower bound the denominator. Since $A_\eta=\{s_{\vx^*}\le 1-\eta\}$, we have
+\[
+\begin{aligned}
+1-\Pi(A_\eta)
+&=\Pi(s_{\vx^*}>1-\eta)\\
+&=\int_{1-\eta}^{1} f_s(s)\,ds.
+\end{aligned}
+\]
+For $\eta\in(0,\delta)$, Assumption~\ref{ass:poly_density} yields
+\[
+\begin{aligned}
+1-\Pi(A_\eta)
+&\ge \int_{1-\eta}^{1} c(1-s)^{\kappa}\,ds\\
+&=c\int_{0}^{\eta} u^{\kappa}\,du\\
+&=\frac{c}{\kappa+1}\,\eta^{\kappa+1}.
+\end{aligned}
+\]
+Plugging this into \eqref{eq:eta_lemma} gives, for $\eta\in(0,\delta)$,
+\begin{equation}\label{eq:pre_choice_eta}
+\Pi(A_\varepsilon\mid H_n(\vx^*))
+\;\le\;
+\frac{\kappa+1}{c}\,
+\frac{(1-\varepsilon)^{n}\,\Pi(A_\varepsilon)}{(1-\eta)^{n}\,\eta^{\kappa+1}}
+\end{equation}
+
+Now choose $\eta=1/(n)$. For all $n$ such that $1/(n)<\delta$, we can apply
+\eqref{eq:pre_choice_eta}. As $(1-1/n)^n$ is increasing, we can lower-bound it by its value for n=2.
+\[
+\begin{aligned}
+\left(1-\frac{1}{n}\right)^{n}
+&\ge \left(1-\frac{1}{2}\right)^{2}
+=\frac{1}{4},\\
+\text{equivalently}\qquad
+\left(1-\frac{1}{n}\right)^{-n}
+&\le 4.
+\end{aligned}
+\]
+we obtain from \eqref{eq:pre_choice_eta}
+\[
+\begin{aligned}
+\Pi(A_\varepsilon\mid H_n(\vx^*))
+&\le \frac{\kappa+1}{c}\,
+\left(1-\frac{1}{n}\right)^{-n}\\
+&\qquad{}\cdot n^{\kappa+1}(1-\varepsilon)^{n}\Pi(A_\varepsilon)\\
+&\le \frac{4(\kappa+1)}{c}\,
+n^{\kappa+1}(1-\varepsilon)^{n}\Pi(A_\varepsilon).
+\end{aligned}
+\]
+Finally, since $(1-\varepsilon)^{n} \le e^{-(n)\varepsilon}$ for $\varepsilon\in(0,1)$,
+the second inequality in \eqref{eq:drop_eta_poly_bound} follows.
+\end{proof}
+
+
+\propBetaPrior*
+\phantomsection\label{proof:beta_prior}
+\begin{proof}[Proof of Proposition~\ref{prop:beta_prior}]
+Under the $\operatorname{Beta}(\alpha,\beta)$ prior, the prior density of $s_{\vx^*}$ is
+$p(s)\propto s^{\alpha-1}(1-s)^{\beta-1}$ on $(0,1)$.
+The likelihood of $H_n$ given $s_{\vx^*}=s$ is $\PP(H_n\mid s)=s^n$.
+Therefore the posterior density satisfies
+$p(s\mid H_n)\propto s^n p(s)\propto s^{\alpha+n-1}(1-s)^{\beta-1}$, i.e.\
+$s_{\vx^*}\mid H_n\sim\operatorname{Beta}(\alpha+n,\beta)$ with density
+\[
+\begin{aligned}
+p(s\mid H_n)
+&=\frac{1}{B(\alpha+n,\beta)}\,
+s^{\alpha+n-1}(1-s)^{\beta-1},\\
+&\hspace{8em}s\in(0,1).
+\end{aligned}
+\]
+Hence
+\[
+\begin{aligned}
+&\Pi\!\left(s_{\vx^*}\le 1-\varepsilon\mid H_n\right)\\
+&\qquad=\int_{0}^{1-\varepsilon}
+\frac{s^{\alpha+n-1}(1-s)^{\beta-1}}
+{B(\alpha+n,\beta)}\,ds.
+\end{aligned}
+\]
+
+Make the change of variables $u=1-s$. Then
+\[
+\begin{aligned}
+&\Pi\!\left(s_{\vx^*}\le 1-\varepsilon\mid H_n\right)\\
+&\qquad=\int_{\varepsilon}^{1}
+\frac{u^{\beta-1}(1-u)^{\alpha+n-1}}
+{B(\beta,\alpha+n)}\,du.
+\end{aligned}
+\]
+For $u\in[\varepsilon,1]$ we have $(1-u)^{\alpha+n-1}\le (1-\varepsilon)^{\alpha+n-1}$, so
+\[
+\begin{aligned}
+&\Pi\!\left(s_{\vx^*}\le 1-\varepsilon\mid H_n\right)\\
+&\qquad\le \frac{(1-\varepsilon)^{\alpha+n-1}}
+{B(\beta,\alpha+n)}
+\int_{\varepsilon}^{1}u^{\beta-1}\,du.
+\end{aligned}
+\]
+Evaluating the integral yields
+\[
+\begin{aligned}
+&\Pi\!\left(s_{\vx^*}\le 1-\varepsilon\mid H_n\right)\\
+&\qquad\le (1-\varepsilon)^{\alpha+n-1}\,
+\frac{1-\varepsilon^{\beta}}{\beta\,B(\beta,\alpha+n)}.
+\end{aligned}
+\]
+
+Using the identity
+\[
+\frac{1}{\beta\,B(\beta,\alpha+n)}
+=\frac{\Gamma(\alpha+n+\beta)}{\Gamma(\alpha+n)\Gamma(\beta+1)},
+\]
+and Gautschi's inequality \citep{gautschi1959some} we may bound the Gamma ratio polynomially: for fixed
+\(\beta>0\) there exists a constant \(C_\beta>0\) such that for all \(n\ge 1\)
+\[
+\frac{\Gamma(\alpha+n+\beta)}{\Gamma(\alpha+n)}\le C_\beta(\alpha+n)^{\beta}.
+\]
+Hence we obtain
+\[
+\begin{aligned}
+&\Pi\!\left(s_{\vx^*}\le 1-\varepsilon\mid H_n\right)\\
+&\qquad\le \frac{(\alpha+n+\beta)^{\beta}}{\Gamma(\beta+1)}\,
+(1-\varepsilon)^{\alpha+n-1}.
+\end{aligned}
+\]
+Finally, since $(1-\varepsilon)^{k}\le e^{-k\varepsilon}$ for all $k>0$,
+the exponential bound in \eqref{eq:basin_tail} follows.
+\end{proof}
+
+\subsection{Spike-and-Slab Prior}
+This subsection collects the moment bound used to prove the spike-and-slab
+posterior rate in Proposition~\ref{prop:spike_slab_rate}.
+Under the spike-and-slab prior, write
+\[
+\Pi = p\delta_1+(1-p)W,\qquad p>0,
+\]
+and let
+\[
+q_n:=\EE_W[s_{\vx^*}^n].
+\]
+Then Bayes' rule gives
+\[
+\Pi(s_{\vx^*}=1\mid H_n(\vx^*))
+=
+\frac{p}{p+(1-p)q_n}.
+\]
+The remaining task is to bound $q_n$ under a tail condition on $W$ near $1$.
+
+\begin{lemma}[Moment bound from near--$1$ tail]\label{lem:master_moment}
+Let $S$ be a random variable taking values in $[0,1]$ with law $W$, and define
+\[
+F(u) := W([1-u,1]) = \PP(S \ge 1-u)
+\]
+where $u \in [0,1]$. Then for any $\delta \in (0,1)$ and any integer $n \ge 1$,
+\[
+\EE_W[S^n]
+\;\le\;
+n \int_0^\delta e^{-(n-1)u} F(u)\,du
+\;+\;
+(1-\delta)^n.
+\]
+\end{lemma}
+\phantomsection\label{proof:master_moment}
+\begin{proof}[Proof of Lemma~\ref{lem:master_moment}]
+Since $0 \le S \le 1$, we may write
+\[
+\EE[S^n]
+=\int_0^1 \PP(S^n \ge t)\,dt.
+\]
+Because the map $x \mapsto x^n$ is increasing on $[0,1]$, we have
+\[
+\PP(S^n \ge t) = \PP(S \ge t^{1/n}).
+\]
+Making the change of variables $t = u^n$ (so $dt = n u^{n-1} du$) yields
+\[
+\EE[S^n]
+=\int_0^1 n u^{n-1} \PP(S \ge u)\,du.
+\]
+Now set $u = 1 - r$ to obtain
+\[
+\begin{aligned}
+\EE[S^n]
+&=n \int_0^1 (1-r)^{n-1}
+\PP(S \ge 1-r)\,dr\\
+&=n \int_0^1 (1-r)^{n-1}F(r)\,dr.
+\end{aligned}
+\]
+Using the elementary bound $(1-r)^{n-1} \le e^{-(n-1)r}$ for $r \in [0,1]$ and splitting the
+integral at $\delta \in (0,1)$, we obtain
+\[
+\begin{aligned}
+\EE[S^n]
+&\le n \int_0^\delta e^{-(n-1)r}F(r)\,dr\\
+&\qquad{}+n \int_\delta^1 (1-r)^{n-1}dr.
+\end{aligned}
+\]
+The second term can be computed explicitly:
+\[
+n \int_\delta^1 (1-r)^{n-1} dr = (1-\delta)^n.
+\]
+Combining the bounds completes the proof.
+\end{proof}
+
+\begin{corollary}\label{cor:poly_tail}
+Suppose there exist constants $C>0$, $\gamma>0$, and $\delta>0$ such that
+\[
+F(u) \le C u^\gamma \qquad \forall\, u \in (0,\delta].
+\]
+Then there exists $C'>0$ such that for all $n$ large enough,
+\[
+\EE_W[S^n] \le C' n^{-\gamma}.
+\]
+\end{corollary}
+\phantomsection\label{proof:cor_poly_tail}
+\begin{proof}[Proof of Corollary~\ref{cor:poly_tail}]
+By Lemma~\ref{lem:master_moment},
+\[
+\begin{aligned}
+\EE_W[S^n]
+&\le n\int_0^\delta e^{-(n-1)u}F(u)\,du\\
+&\qquad{}+(1-\delta)^n.
+\end{aligned}
+\]
+Using the assumed tail bound $F(u)\le C u^\gamma$ on $(0,\delta]$, we obtain
+\[
+\begin{aligned}
+\EE_W[S^n]
+&\le Cn\int_0^\delta e^{-(n-1)u}u^\gamma\,du\\
+&\qquad{}+(1-\delta)^n\\
+&\le Cn\int_0^\infty e^{-(n-1)u}u^\gamma\,du\\
+&\qquad{}+(1-\delta)^n.
+\end{aligned}
+\]
+The remaining integral is the Gamma integral:
+\[
+\begin{aligned}
+&\int_0^\infty e^{-(n-1)u}u^\gamma\,du\\
+&\qquad=(n-1)^{-(\gamma+1)}
+\int_0^\infty e^{-v}v^\gamma\,dv\\
+&\qquad=(n-1)^{-(\gamma+1)}\Gamma(\gamma+1),
+\end{aligned}
+\]
+where we used the change of variables $v=(n-1)u$. Hence
+\[
+\begin{aligned}
+\EE_W[S^n]
+&\le C\,\Gamma(\gamma+1)
+\frac{n}{(n-1)^{\gamma+1}}\\
+&\qquad{}+(1-\delta)^n.
+\end{aligned}
+\]
+For all $n\ge 2$, $\frac{n}{(n-1)^{\gamma+1}}\le 2^{\gamma+1}n^{-\gamma}$, and also
+$(1-\delta)^n\le e^{-\delta n}\le n^{-\gamma}$ for all $n$ large enough. Therefore there exists
+a constant $C'>0$ such that $\EE_W[S^n]\le C' n^{-\gamma}$ for all sufficiently large $n$.
+\end{proof}
+
+\phantomsection\label{proof:spike_slab_rate}
+\propSpikeSlabRate*
+\begin{proof}[Proof of Proposition~\ref{prop:spike_slab_rate}]
+Let $q_n:=\EE_W[s_{\vx^*}^n]$. By Corollary~\ref{cor:poly_tail}, the stated
+tail condition on $W$ implies $q_n=O(n^{-\gamma})$. From the posterior formula
+\eqref{eq:z=1_posterior},
+\[
+\begin{aligned}
+1-\Pi(s_{\vx^*}=1\mid H_n(\vx^*))
+&=1-\frac{p}{p+(1-p)q_n}\\
+&=\frac{(1-p)q_n}{p+(1-p)q_n}\\
+&\le \frac{1-p}{p}\,q_n,
+\end{aligned}
+\]
+where $p>0$ by the spike-and-slab prior definition. Hence
+$1-\Pi(s_{\vx^*}=1\mid H_n(\vx^*))=O(n^{-\gamma})$.
+\end{proof}
+
+\subsection{Mixture of Finite Models}
+This subsection collects the MFM bounds used to prove
+Theorem~\ref{thm:K1_tight_rate_fixed}.
+
+\begin{lemma}[Two-sided bounds for $L_k(n)$ (fixed $\vx^*$)]\label{lem:Lk_twosided_fixed}
+Fix $\alpha>0$ as part of the data-generating model $\PP$, and let
+$\delta_k=\alpha(1-\tfrac1k)$. For each $k\ge 1$ and $n\ge 1$, define
+\[
+L_k(n)\;:=\;\PP(H_n(\vx^*)\mid K=k).
+\]
+This is well defined: under the symmetric prior, $L_k(n)$ does not depend on
+the choice of $\vx^*$. Then for all $n\ge 1$,
+\begin{align}
+\frac1k\left(\frac{\alpha/k}{\,n-1+\alpha/k\,}\right)^{\delta_k}
+\;\le\;
+L_k(n)
+\;\le\;
+\frac1k\left(\frac{1+\alpha}{\,n+\alpha\,}\right)^{\delta_k}.
+\label{eq:Lk_twosided_fixed}
+\end{align}
+\end{lemma}
+\begin{proof}\label{proof:Lk_twosided_fixed}
+Condition on $K=k$. Under the MFM prior, the basin-mass vector satisfies
+\[
+\begin{aligned}
+\vbasin=(s_1,\dots,s_k)
+&\sim\operatorname{Dirichlet}(a,\dots,a),\\
+a&=\alpha/k,
+\qquad \sum_{i=1}^k a=\alpha.
+\end{aligned}
+\]
+Identifying $\vx^*$ with (without loss of generality) label $1$, conditional on $\vbasin$ we have
+\[
+\begin{aligned}
+\PP(H_n(\vx^*)\mid \vbasin,K=k)
+&=\PP(y_1=\cdots=y_n=1\mid \vbasin)\\
+&=s_1^{n}.
+\end{aligned}
+\]
+Taking expectation over $\vbasin$ gives
+\[
+L_k(n)=\PP(H_n(\vx^*)\mid K=k)=\EE[s_1^{n}].
+\]
+By the Dirichlet moment formula,
+\[
+\EE[s_1^{n}]
+=\frac{\Gamma(\alpha)\Gamma(a+n)}{\Gamma(a)\Gamma(\alpha+n)}.
+\]
+Thus
+\begin{equation}\label{eq:Lk_gamma_form_fixed}
+L_k(n)
+=\frac{\Gamma(\alpha)\Gamma(a+n)}{\Gamma(a)\Gamma(\alpha+n)}.
+\end{equation}
+
+\emph{Step 1: Gamma form to product form.}
+Using $\Gamma(x+n)=\Gamma(x+1)\prod_{j=1}^{n-1}(x+j)$, we have
+\[
+\begin{aligned}
+\Gamma(a+n)
+&=\Gamma(a+1)\prod_{j=1}^{n-1}(a+j),\\
+\Gamma(\alpha+n)
+&=\Gamma(\alpha+1)\prod_{j=1}^{n-1}(\alpha+j).
+\end{aligned}
+\]
+Substituting into \eqref{eq:Lk_gamma_form_fixed} yields
+\[
+L_k(n)
+=\frac{\Gamma(\alpha)\Gamma(a+1)}{\Gamma(a)\Gamma(\alpha+1)}
+\prod_{j=1}^{n-1}\frac{j+a}{j+\alpha}.
+\]
+Using $\Gamma(a+1)=a\Gamma(a)$ and $\Gamma(\alpha+1)=\alpha\Gamma(\alpha)$,
+the prefactor simplifies to $\frac{a}{\alpha}=\frac1k$, hence
+\begin{equation}\label{eq:Lk_product_form_fixed}
+\begin{aligned}
+L_k(n)
+&=\frac1k\prod_{j=1}^{n-1}\frac{j+\alpha/k}{j+\alpha}\\
+&=\frac1k\prod_{j=1}^{n-1}
+\left(1-\frac{\delta_k}{j+\alpha}\right),\\
+\delta_k&:=\alpha\Bigl(1-\frac1k\Bigr).
+\end{aligned}
+\end{equation}
+
+\emph{Upper bound.}
+Using $\log(1-t)\le -t$ for $t\in(0,1)$ and \eqref{eq:Lk_product_form_fixed},
+\[
+\begin{aligned}
+\log L_k(n)
+&=-\log k
++\sum_{j=1}^{n-1}
+\log\!\left(1-\frac{\delta_k}{j+\alpha}\right)\\
+&\le -\log k
+-\delta_k\sum_{j=1}^{n-1}\frac{1}{j+\alpha}.
+\end{aligned}
+\]
+Since $x\mapsto 1/(x+\alpha)$ is decreasing,
+\[
+\sum_{j=1}^{n-1}\frac{1}{j+\alpha}\ge \int_{1}^{n}\frac{dx}{x+\alpha}
+=\log\!\left(\frac{n+\alpha}{1+\alpha}\right).
+\]
+Exponentiating gives
+\[
+L_k(n)\le \frac1k\left(\frac{1+\alpha}{n+\alpha}\right)^{\delta_k}.
+\]
+
+\emph{Lower bound.}
+Using $\log(1-t)\ge -\frac{t}{1-t}$ for $t\in(0,1)$,
+\[
+\log\!\left(1-\frac{\delta_k}{j+\alpha}\right)
+\ge -\frac{\delta_k}{j+\alpha-\delta_k}
+=-\frac{\delta_k}{j+\alpha/k}.
+\]
+Summing and using \eqref{eq:Lk_product_form_fixed} yields
+\[
+\log L_k(n)\ge -\log k-\delta_k\sum_{j=1}^{n-1}\frac{1}{j+\alpha/k}.
+\]
+Since $x\mapsto 1/(x+\alpha/k)$ is decreasing,
+\[
+\begin{aligned}
+\sum_{j=1}^{n-1}\frac{1}{j+\alpha/k}
+&\le \int_{0}^{n-1}\frac{dx}{x+\alpha/k}\\
+&=\log\!\left(\frac{n-1+\alpha/k}{\alpha/k}\right).
+\end{aligned}
+\]
+Exponentiating gives
+\[
+L_k(n)\ge \frac1k\left(\frac{\alpha/k}{n-1+\alpha/k}\right)^{\delta_k}.
+\]
+\end{proof}
+
+\begin{lemma}[Monotonicity of $L_k(n)$]\label{lem:Lk_monotone_fixed}
+For fixed $\alpha>0$ and $n\ge 1$, the map $k\mapsto L_k(n)$ is decreasing on
+$\{1,2,\dots\}$.
+\end{lemma}
+\begin{proof}
+Write $a_k=\alpha/k$. By the Dirichlet moment formula,
+\[
+L_k(n)=\frac{\Gamma(\alpha)\Gamma(a_k+n)}{\Gamma(a_k)\Gamma(\alpha+n)}.
+\]
+The map $a\mapsto \Gamma(a+n)/\Gamma(a)$ is increasing on $(0,\infty)$, since
+\[
+\begin{aligned}
+\frac{d}{da}\log\!\left(\frac{\Gamma(a+n)}{\Gamma(a)}\right)
+&=\psi(a+n)-\psi(a)\\
+&=\sum_{j=0}^{n-1}\frac{1}{a+j}>0.
+\end{aligned}
+\]
+Since $k\mapsto a_k$ is decreasing, $k\mapsto L_k(n)$ is decreasing.
+\end{proof}
+
+\thmKOneTightRateFixed*
+\begin{proof}\label{proof:K1_tight_fixed}
+Write $N_n:=\sum_{k\ge 2}\pi_k L_k(n)$, where $L_k(n)=\PP(H_n(\vx^*)\mid K=k)$ is as in
+Lemma~\ref{lem:Lk_twosided_fixed}. Then
+\[
+\begin{aligned}
+1-\PP(K=1\mid H_n(\vx^*))
+&=\frac{N_n}{\pi_1+N_n}.
+\end{aligned}
+\]
+
+\emph{Upper bound.}
+Since $\pi_1+N_n\ge \pi_1$,
+\[
+\begin{aligned}
+1-\PP(K=1\mid H_n(\vx^*))
+&\le \frac{N_n}{\pi_1}\\
+&=\sum_{k\ge 2}\frac{\pi_k}{\pi_1}L_k(n).
+\end{aligned}
+\]
+By Lemma~\ref{lem:Lk_monotone_fixed}, $L_k(n)\le L_2(n)$ for all $k\ge 2$, so
+\[
+1-\PP(K=1\mid H_n(\vx^*))\le \frac{1-\pi_1}{\pi_1}\,L_2(n).
+\]
+Apply the upper bound on $L_2(n)$ from Lemma~\ref{lem:Lk_twosided_fixed} with $k=2$:
+since $\delta_2=\alpha/2$,
+\[
+L_2(n)\le \frac12\left(\frac{1+\alpha}{n+\alpha}\right)^{\alpha/2}.
+\]
+
+\emph{Lower bound.}
+Since $\pi_1+N_n\le \pi_1+\sum_{k\ge 2}\pi_k=1$, we have
+\[
+\begin{aligned}
+1-\PP(K=1\mid H_n(\vx^*))
+&=\frac{N_n}{\pi_1+N_n}\\
+&\ge N_n\\
+&\ge \pi_2 L_2(n).
+\end{aligned}
+\]
+Apply the lower bound on $L_2(n)$ from Lemma~\ref{lem:Lk_twosided_fixed} with $k=2$:
+\[
+L_2(n)\ge \frac12\left(\frac{\alpha/2}{n-1+\alpha/2}\right)^{\alpha/2}.
+\]
+
+Finally, both bounds are of order $n^{-\alpha/2}$ as $n\to\infty$, hence
+$1-\PP(K=1\mid H_n(\vx^*))=\Theta(n^{-\alpha/2})$.
+\end{proof}

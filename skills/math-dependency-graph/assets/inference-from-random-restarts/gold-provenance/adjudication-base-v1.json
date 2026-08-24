@@ -1,0 +1,3396 @@
+{
+  "benchmark_version": 1,
+  "source": {
+    "archive_sha256": "3ae8dac2d58786a80761999a80d0304e19af74d7ee2132d714e3a7a043b7ab96",
+    "entrypoint_sha256": "7336d4488763e7c435fb8a3577564907b3e6747ff3b585fb6cc485a19e335003",
+    "files": [
+      {
+        "path": "sections/appendix-dynamics.tex",
+        "sha256": "07edff84dbf11191fb84831285444e8a29d6543c9520f12fdbfff4d5348b775e",
+        "lines": 422
+      },
+      {
+        "path": "sections/appendix-prevalence.tex",
+        "sha256": "ec6c3c60fb26e8942ca0dd3ca2b1b01145f231c257f74a47ad9a5336d50b4775",
+        "lines": 273
+      },
+      {
+        "path": "sections/appendix-bayes.tex",
+        "sha256": "d6d7f93ab04f9dd8db09610b1daa298e77222e86a743605bde5b4d553ec62753",
+        "lines": 549
+      },
+      {
+        "path": "sections/appendix-application.tex",
+        "sha256": "980ac1e0c9f31bb50b2a7ad367c3e510354611bd52b9b45a2258852d5c348546",
+        "lines": 59
+      }
+    ]
+  },
+  "nodes": [
+    {
+      "id": "gold:dyn.nagurney",
+      "source_key": "Theorem 2.5 of nagurney2012projected",
+      "scope": "referenced-outside-appendix",
+      "locations": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 43,
+          "end_line": 50
+        }
+      ],
+      "labels": [],
+      "environment": null,
+      "title": "Nagurney projected-system well-posedness theorem",
+      "node_class": "external-result",
+      "kind": "theorem",
+      "description": "Nagurney projected-system theorem gives global solutions and continuous dependence under one-sided Lipschitz and linear-growth conditions.",
+      "inclusion_reason": "Named external theorem directly used in the global-flow proof."
+    },
+    {
+      "id": "gold:dyn.global-flow",
+      "source_key": "lemma:global-lip-flow",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 34,
+          "end_line": 41
+        }
+      ],
+      "labels": [
+        "lemma:global-lip-flow"
+      ],
+      "environment": "lemma",
+      "title": "Global well-posedness under global Lipschitzness",
+      "node_class": "result",
+      "kind": "lemma",
+      "description": "A globally Lipschitz vector field on X admits a unique continuous global projected flow.",
+      "inclusion_reason": "Reusable formal lemma for global projected dynamics."
+    },
+    {
+      "id": "gold:dyn.mcshane",
+      "source_key": "McShane extension theorem",
+      "scope": "referenced-outside-appendix",
+      "locations": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 77,
+          "end_line": 86
+        }
+      ],
+      "labels": [],
+      "environment": null,
+      "title": "McShane extension theorem",
+      "node_class": "external-result",
+      "kind": "theorem",
+      "description": "Coordinatewise McShane extension extends the locally Lipschitz restriction on K_R to a globally Lipschitz map.",
+      "inclusion_reason": "Named external theorem directly used in localization."
+    },
+    {
+      "id": "gold:dyn.localized-systems",
+      "source_key": "lemma:localized-global-systems",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 69,
+          "end_line": 75
+        }
+      ],
+      "labels": [
+        "lemma:localized-global-systems"
+      ],
+      "environment": "lemma",
+      "title": "Lipschitz extensions on bounded regions",
+      "node_class": "result",
+      "kind": "lemma",
+      "description": "For locally Lipschitz Q, each bounded region has a globally Lipschitz extension agreeing with Q and a continuous global projected flow.",
+      "inclusion_reason": "Reusable localization lemma."
+    },
+    {
+      "id": "gold:dyn.exit-time",
+      "source_key": "sections/appendix-dynamics.tex:89",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 89,
+          "end_line": 99
+        }
+      ],
+      "labels": [],
+      "environment": null,
+      "title": "Localization exit times",
+      "node_class": "setup",
+      "kind": "definition",
+      "description": "Fixes localized flows and defines the first exit time sigma_{K_R}(x) from the localization ball.",
+      "inclusion_reason": "Reusable definition used in compatibility, patching, and regularity arguments."
+    },
+    {
+      "id": "gold:dyn.consistency",
+      "source_key": "lemma:localized-consistency",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 107,
+          "end_line": 117
+        }
+      ],
+      "labels": [
+        "lemma:localized-consistency"
+      ],
+      "environment": "lemma",
+      "title": "Agreement before exit",
+      "node_class": "result",
+      "kind": "lemma",
+      "description": "Before the smaller localization exits, it solves the original projected dynamics and agrees with larger localizations.",
+      "inclusion_reason": "Compatibility lemma directly used to patch flows."
+    },
+    {
+      "id": "gold:dyn.local-flow",
+      "source_key": "lemma:local-flow-construction",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 146,
+          "end_line": 162
+        }
+      ],
+      "labels": [
+        "lemma:local-flow-construction"
+      ],
+      "environment": "lemma",
+      "title": "Constructing the maximal local flow",
+      "node_class": "result",
+      "kind": "lemma",
+      "description": "The supremum of localized exit times defines a positive-lifetime local flow solving the original projected dynamics.",
+      "inclusion_reason": "Central local-flow construction."
+    },
+    {
+      "id": "gold:dyn.maximal-flow",
+      "source_key": "lemma:maximal-local-flow",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 179,
+          "end_line": 184
+        }
+      ],
+      "labels": [
+        "lemma:maximal-local-flow"
+      ],
+      "environment": "lemma",
+      "title": "Maximality and uniqueness",
+      "node_class": "result",
+      "kind": "lemma",
+      "description": "The patched lifetime is maximal and every local solution agrees with the unique maximal local solution map.",
+      "inclusion_reason": "Reusable uniqueness and maximality result."
+    },
+    {
+      "id": "gold:dyn.regularity",
+      "source_key": "lemma:lsc-flow-continuity",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 210,
+          "end_line": 214
+        }
+      ],
+      "labels": [
+        "lemma:lsc-flow-continuity"
+      ],
+      "environment": "lemma",
+      "title": "Regularity of tau and G",
+      "node_class": "result",
+      "kind": "lemma",
+      "description": "The maximal lifetime is lower semicontinuous and the local flow is continuous on its domain.",
+      "inclusion_reason": "Direct prerequisite for measurability."
+    },
+    {
+      "id": "gold:dyn.lipschitz-result",
+      "source_key": "lemma:Lipschitz",
+      "scope": "referenced-outside-appendix",
+      "locations": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 241,
+          "end_line": 250
+        }
+      ],
+      "labels": [
+        "lemma:Lipschitz"
+      ],
+      "environment": "restatable",
+      "title": "Local Lipschitzness implies well-behaved projected dynamics",
+      "node_class": "result",
+      "kind": "lemma",
+      "description": "If X is closed and convex and Q is locally Lipschitz, the projected dynamics are well behaved; under global Lipschitzness the maximal flow is global.",
+      "inclusion_reason": "The appendix supplies its proof and directly invokes preceding lemmas."
+    },
+    {
+      "id": "gold:dyn.measurability-result",
+      "source_key": "prop:measurable",
+      "scope": "referenced-outside-appendix",
+      "locations": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 255,
+          "end_line": 323
+        }
+      ],
+      "labels": [
+        "prop:measurable"
+      ],
+      "environment": "restatable",
+      "title": "Dynamic solvers are measurable",
+      "node_class": "result",
+      "kind": "proposition",
+      "description": "Every dynamic solver g_Q is measurable from X to X disjoint union {dagger}.",
+      "inclusion_reason": "The appendix supplies the full proof."
+    },
+    {
+      "id": "gold:dyn.terminal-partition",
+      "source_key": "sections/appendix-dynamics.tex:257",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 257,
+          "end_line": 267
+        }
+      ],
+      "labels": [],
+      "environment": null,
+      "title": "Terminal-behavior decomposition",
+      "node_class": "setup",
+      "kind": "terminal-behavior partition",
+      "description": "The cases C1 finite lifetime, C2 infinite nonconvergence, and C3 infinite convergence determine dagger versus trajectory limit.",
+      "inclusion_reason": "Indispensable decomposition in the measurability proof."
+    },
+    {
+      "id": "gold:dyn.infinite-survival",
+      "source_key": "sections/appendix-dynamics.tex:269",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 269,
+          "end_line": 274
+        }
+      ],
+      "labels": [],
+      "environment": null,
+      "title": "Infinite-survival set",
+      "node_class": "setup",
+      "kind": "definition",
+      "description": "A_infty is the countable intersection of open survival sets A_n and is Borel.",
+      "inclusion_reason": "Named measurable set reused in later measurability construction."
+    },
+    {
+      "id": "gold:dyn.limsup-liminf",
+      "source_key": "sections/appendix-dynamics.tex:276",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 276,
+          "end_line": 295
+        }
+      ],
+      "labels": [],
+      "environment": null,
+      "title": "Measurable asymptotic limsup and liminf",
+      "node_class": "setup",
+      "kind": "definition",
+      "description": "Rational-time coordinate limsup and liminf maps are measurable on A_infty and equal the real-time asymptotic limsup and liminf.",
+      "inclusion_reason": "Reusable coordinate construction for convergence and measurability."
+    },
+    {
+      "id": "gold:dyn.limit-map",
+      "source_key": "sections/appendix-dynamics.tex:297",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 297,
+          "end_line": 309
+        }
+      ],
+      "labels": [],
+      "environment": null,
+      "title": "Convergence set and limit map",
+      "node_class": "setup",
+      "kind": "definition",
+      "description": "The convergence set Xi is Borel; on Xi the coordinate limits define a Borel limit map L into X.",
+      "inclusion_reason": "Indispensable construction for the measurable solver."
+    },
+    {
+      "id": "gold:dyn.solver-pieces",
+      "source_key": "sections/appendix-dynamics.tex:311",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 311,
+          "end_line": 322
+        }
+      ],
+      "labels": [],
+      "environment": null,
+      "title": "Measurable solver pieces",
+      "node_class": "setup",
+      "kind": "measurable partition",
+      "description": "The condition sets C1, C2, C3 are Borel and give measurable preimages for g_Q.",
+      "inclusion_reason": "Final measurable-piece argument used to prove the solver's measurability."
+    },
+    {
+      "id": "gold:dyn.dct-cesaro",
+      "source_key": "dominated convergence theorem / Cesaro averaging",
+      "scope": "referenced-outside-appendix",
+      "locations": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 395,
+          "end_line": 410
+        }
+      ],
+      "labels": [],
+      "environment": null,
+      "title": "Dominated convergence / Cesaro averaging",
+      "node_class": "external-result",
+      "kind": "theorem",
+      "description": "Dominated convergence, equivalently Cesaro averaging, identifies the long-run time average with the limit value.",
+      "inclusion_reason": "Named proof tool directly used in root containment."
+    },
+    {
+      "id": "gold:dyn.containment",
+      "source_key": "lemma:containment",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 337,
+          "end_line": 342
+        }
+      ],
+      "labels": [
+        "lemma:containment"
+      ],
+      "environment": "lemma",
+      "title": "Terminal outcomes lie among projected roots",
+      "node_class": "result",
+      "kind": "lemma",
+      "description": "Every ordinary dynamic-solver outcome is a root of the projected vector field, while nonconvergent outcomes are dagger.",
+      "inclusion_reason": "Formal root-containment lemma reused by the prevalence conclusion."
+    },
+    {
+      "id": "gold:dyn.finite-rto-roots",
+      "source_key": "prop:finite-rto-roots",
+      "scope": "referenced-outside-appendix",
+      "locations": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 327,
+          "end_line": 329
+        }
+      ],
+      "labels": [
+        "prop:finite-rto-roots"
+      ],
+      "environment": "proposition",
+      "title": "Finite reachable outcomes exactly when projected roots are finite",
+      "node_class": "result",
+      "kind": "proposition",
+      "description": "A dynamic solver has finitely many reachable terminal outcomes exactly when its projected vector field has finitely many roots.",
+      "inclusion_reason": "The appendix supplies the nontrivial root-containment argument used by this body proposition."
+    },
+    {
+      "id": "gold:prev.attractors-result",
+      "source_key": "prop:e-submersion-finite-attractors",
+      "scope": "referenced-outside-appendix",
+      "locations": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 258,
+          "end_line": 272
+        }
+      ],
+      "labels": [
+        "prop:e-submersion-finite-attractors"
+      ],
+      "environment": "restatable",
+      "title": "Submersion probes imply prevalent finiteness of reachable terminal outcomes",
+      "node_class": "result",
+      "kind": "proposition",
+      "description": "Under convexity, root compactness, and submersion-probe hypotheses, prevalent dynamics have finitely many reachable terminal outcomes.",
+      "inclusion_reason": "The appendix supplies its proof."
+    },
+    {
+      "id": "gold:prev.ass-kkq",
+      "source_key": "ass:kkq",
+      "scope": "referenced-outside-appendix",
+      "locations": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 8,
+          "end_line": 9
+        }
+      ],
+      "labels": [
+        "ass:kkq"
+      ],
+      "environment": null,
+      "title": "Root compactness",
+      "node_class": "assumption",
+      "kind": "assumption",
+      "description": "The projected-root set lies in a common compact set, and the state space has the required C2 boundary regularity.",
+      "inclusion_reason": "Directly invoked in prevalence finiteness and boundary closedness arguments."
+    },
+    {
+      "id": "gold:prev.ass-convex",
+      "source_key": "ass:convex-closed",
+      "scope": "referenced-outside-appendix",
+      "locations": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 239,
+          "end_line": 243
+        }
+      ],
+      "labels": [
+        "ass:convex-closed"
+      ],
+      "environment": null,
+      "title": "Closed convex state space",
+      "node_class": "assumption",
+      "kind": "assumption",
+      "description": "The state space X is closed and convex.",
+      "inclusion_reason": "Direct hypothesis of the finite-root corollary."
+    },
+    {
+      "id": "gold:prev.boundary-decomposition",
+      "source_key": "sections/appendix-prevalence.tex:11",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 11,
+          "end_line": 26
+        }
+      ],
+      "labels": [],
+      "environment": "remark",
+      "title": "Interior and boundary projection formula",
+      "node_class": "setup",
+      "kind": "remark",
+      "description": "For C2 boundary, QTC equals Q in the interior and QTCP on the boundary, with QTCP using the positive normal component.",
+      "inclusion_reason": "Graph-relevant decomposition used by the boundary-root arguments."
+    },
+    {
+      "id": "gold:prev.closed-discrete",
+      "source_key": "lemma:closed-discrete-finite",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 30,
+          "end_line": 34
+        }
+      ],
+      "labels": [
+        "lemma:closed-discrete-finite"
+      ],
+      "environment": "lemma",
+      "title": "Closed discrete sets in compact sets are finite",
+      "node_class": "result",
+      "kind": "lemma",
+      "description": "A subset closed and discrete in a topological space is finite when contained in a compact set.",
+      "inclusion_reason": "Compactness lemma used to prove finite roots."
+    },
+    {
+      "id": "gold:prev.break-two",
+      "source_key": "lemma:break-into-two",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 48,
+          "end_line": 51
+        }
+      ],
+      "labels": [
+        "lemma:break-into-two"
+      ],
+      "environment": "lemma",
+      "title": "Projected roots split into interior and boundary roots",
+      "node_class": "result",
+      "kind": "lemma",
+      "description": "Projected-field roots are contained in roots of Q or QTCP, and those two root sets are closed in their domains.",
+      "inclusion_reason": "Decomposition and closedness result used by the finite-root corollary."
+    },
+    {
+      "id": "gold:prev.tilde-map",
+      "source_key": "sections/appendix-prevalence.tex:70",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 70,
+          "end_line": 77
+        }
+      ],
+      "labels": [],
+      "environment": null,
+      "title": "Boundary-root encoding",
+      "node_class": "setup",
+      "kind": "definition",
+      "description": "The boundary roots are encoded by the C1 map tilde Q(x,alpha)=Q(x)-alpha n(x).",
+      "inclusion_reason": "Reusable smooth encoding for boundary transversality."
+    },
+    {
+      "id": "gold:prev.discrete-preserves",
+      "source_key": "lemma:discrete-preserves",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 80,
+          "end_line": 82
+        }
+      ],
+      "labels": [
+        "lemma:discrete-preserves"
+      ],
+      "environment": "lemma",
+      "title": "Boundary transversality implies discrete roots",
+      "node_class": "result",
+      "kind": "lemma",
+      "description": "If tilde Q is transverse to zero, then the boundary projected-root set is discrete in the boundary.",
+      "inclusion_reason": "Boundary discreteness lemma used by the prevalence theorem."
+    },
+    {
+      "id": "gold:prev.parametric-submersion",
+      "source_key": "lem:parametric_submersion",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 105,
+          "end_line": 116
+        }
+      ],
+      "labels": [
+        "lem:parametric_submersion"
+      ],
+      "environment": "restatable",
+      "title": "Parametric transversality from a submersion",
+      "node_class": "result",
+      "kind": "lemma",
+      "description": "For a C^r submersion F on parameter-manifold product, almost every parameter fiber is transverse to zero.",
+      "inclusion_reason": "Central parametric transversality theorem used for prevalence."
+    },
+    {
+      "id": "gold:prev.parametric-regularity",
+      "source_key": "remark:parametric-regularity",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 118,
+          "end_line": 124
+        }
+      ],
+      "labels": [
+        "remark:parametric-regularity"
+      ],
+      "environment": "remark",
+      "title": "Regularity required for parametric transversality",
+      "node_class": "exposition",
+      "kind": "remark",
+      "description": "When dim Z equals n, C1 regularity suffices; higher regularity is required when dim Z exceeds n for Sard projection.",
+      "inclusion_reason": "Source-visible qualification of the parametric theorem."
+    },
+    {
+      "id": "gold:prev.guillemin",
+      "source_key": "GuilleminPollack1974",
+      "scope": "referenced-outside-appendix",
+      "locations": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 123,
+          "end_line": 123
+        }
+      ],
+      "labels": [],
+      "environment": null,
+      "title": "Guillemin–Pollack transversality reference",
+      "node_class": "external-result",
+      "kind": "citation",
+      "description": "Guillemin and Pollack is cited for the Sard regularity requirement.",
+      "inclusion_reason": "Citation directly supports the regularity remark."
+    },
+    {
+      "id": "gold:prev.preimage",
+      "source_key": "preimage theorem",
+      "scope": "referenced-outside-appendix",
+      "locations": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 131,
+          "end_line": 135
+        }
+      ],
+      "labels": [],
+      "environment": null,
+      "title": "Preimage theorem",
+      "node_class": "external-result",
+      "kind": "theorem",
+      "description": "The preimage theorem makes the zero set of the submersion a submanifold with tangent kernel.",
+      "inclusion_reason": "Named theorem directly used in the parametric-submersion proof."
+    },
+    {
+      "id": "gold:prev.sard",
+      "source_key": "Sard theorem",
+      "scope": "referenced-outside-appendix",
+      "locations": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 137,
+          "end_line": 141
+        }
+      ],
+      "labels": [],
+      "environment": null,
+      "title": "Sard's theorem",
+      "node_class": "external-result",
+      "kind": "theorem",
+      "description": "Sard theorem makes critical values of the projection measure zero.",
+      "inclusion_reason": "Named theorem directly used in the parametric-submersion proof."
+    },
+    {
+      "id": "gold:prev.rank-nullity",
+      "source_key": "rank-nullity theorem",
+      "scope": "referenced-outside-appendix",
+      "locations": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 155,
+          "end_line": 182
+        }
+      ],
+      "labels": [],
+      "environment": null,
+      "title": "Rank–nullity theorem",
+      "node_class": "external-result",
+      "kind": "theorem",
+      "description": "Rank-nullity relates projection rank and fiber-map rank in the parametric-submersion proof.",
+      "inclusion_reason": "Named theorem directly used in the parametric-submersion proof."
+    },
+    {
+      "id": "gold:prev.transversality-discrete",
+      "source_key": "sections/appendix-prevalence.tex:196",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 196,
+          "end_line": 198
+        }
+      ],
+      "labels": [],
+      "environment": "remark",
+      "title": "Transversality gives discrete zero sets",
+      "node_class": "exposition",
+      "kind": "remark",
+      "description": "When n equals dim Z, transversality to zero makes the zero set zero-dimensional and hence discrete.",
+      "inclusion_reason": "Graph-relevant bridge from transversality to discreteness."
+    },
+    {
+      "id": "gold:prev.evaluation-maps",
+      "source_key": "sections/appendix-prevalence.tex:203",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 203,
+          "end_line": 211
+        }
+      ],
+      "labels": [],
+      "environment": "definition",
+      "title": "Perturbed evaluation maps",
+      "node_class": "setup",
+      "kind": "definition",
+      "description": "The finite-dimensional probe evaluation maps e^Q and e^tildeQ are defined.",
+      "inclusion_reason": "Formal maps to which parametric submersion is applied."
+    },
+    {
+      "id": "gold:prev.prevalence",
+      "source_key": "theorem:prevalence_submersion_probe",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 215,
+          "end_line": 219
+        }
+      ],
+      "labels": [
+        "theorem:prevalence_submersion_probe"
+      ],
+      "environment": "theorem",
+      "title": "Prevalence via a submersion probe",
+      "node_class": "result",
+      "kind": "theorem",
+      "description": "If the perturbed evaluation maps are C1 submersions, prevalent dynamics have discrete interior and boundary root sets.",
+      "inclusion_reason": "Central prevalence theorem."
+    },
+    {
+      "id": "gold:prev.finite-roots",
+      "source_key": "cor:prevalent-finite-roots",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 238,
+          "end_line": 244
+        }
+      ],
+      "labels": [
+        "cor:prevalent-finite-roots"
+      ],
+      "environment": "corollary",
+      "title": "Prevalent finiteness of projected roots",
+      "node_class": "result",
+      "kind": "corollary",
+      "description": "Under convexity, compactness, and submersion-probe hypotheses, prevalent Q have finitely many roots of QTC.",
+      "inclusion_reason": "Finite-root conclusion used to bound reachable terminal outcomes."
+    },
+    {
+      "id": "gold:bayes.basin-setup",
+      "source_key": "sections/appendix-bayes.tex:3",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-bayes.tex",
+          "start_line": 3,
+          "end_line": 7
+        }
+      ],
+      "labels": [],
+      "environment": null,
+      "title": "Basin-Size Concentration",
+      "node_class": "setup",
+      "kind": "definition",
+      "description": "The subsection fixes A_epsilon={s_x* <= 1-epsilon} for posterior concentration of basin size.",
+      "inclusion_reason": "Reusable notation setup for the Bayesian bounds."
+    },
+    {
+      "id": "gold:bayes.eta-bound",
+      "source_key": "lem:eta_bound",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-bayes.tex",
+          "start_line": 9,
+          "end_line": 17
+        }
+      ],
+      "labels": [
+        "lem:eta_bound"
+      ],
+      "environment": "lemma",
+      "title": "Bayes denominator bound",
+      "node_class": "result",
+      "kind": "lemma",
+      "description": "Posterior probability of A_epsilon is bounded by likelihood-ratio and prior numerator and denominator factors.",
+      "inclusion_reason": "Formal bound reused by posterior-concentration proofs."
+    },
+    {
+      "id": "gold:bayes.support-tail",
+      "source_key": "lem:supp_tail",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-bayes.tex",
+          "start_line": 42,
+          "end_line": 45
+        }
+      ],
+      "labels": [
+        "lem:supp_tail"
+      ],
+      "environment": "lemma",
+      "title": "Support near one",
+      "node_class": "result",
+      "kind": "lemma",
+      "description": "If 1 is in support of Pi, every epsilon admits eta<epsilon with Pi(A_eta)<1.",
+      "inclusion_reason": "Support lemma used to choose the denominator parameter."
+    },
+    {
+      "id": "gold:bayes.eta-prop",
+      "source_key": "prop:eta-bound",
+      "scope": "referenced-outside-appendix",
+      "locations": [
+        {
+          "file": "sections/appendix-bayes.tex",
+          "start_line": 54,
+          "end_line": 67
+        }
+      ],
+      "labels": [
+        "prop:eta-bound"
+      ],
+      "environment": "restatable",
+      "title": "Support near one implies exponential posterior concentration",
+      "node_class": "result",
+      "kind": "proposition",
+      "description": "Support of the basin-size prior near one yields exponential decay of the posterior probability of A_epsilon.",
+      "inclusion_reason": "The appendix supplies its proof."
+    },
+    {
+      "id": "gold:bayes.posterior-size",
+      "source_key": "prop:basin-posterior-size",
+      "scope": "referenced-outside-appendix",
+      "locations": [
+        {
+          "file": "sections/appendix-bayes.tex",
+          "start_line": 69,
+          "end_line": 129
+        }
+      ],
+      "labels": [
+        "prop:basin-posterior-size"
+      ],
+      "environment": "restatable",
+      "title": "Dropping eta under a polynomial prior-density lower bound",
+      "node_class": "result",
+      "kind": "proposition",
+      "description": "A polynomial prior-density lower bound near one yields an explicit polynomial-times-exponential posterior bound for A_epsilon.",
+      "inclusion_reason": "The appendix supplies its proof."
+    },
+    {
+      "id": "gold:bayes.ass-poly-density",
+      "source_key": "ass:poly_density",
+      "scope": "referenced-outside-appendix",
+      "locations": [
+        {
+          "file": "sections/appendix-bayes.tex",
+          "start_line": 87,
+          "end_line": 94
+        }
+      ],
+      "labels": [
+        "ass:poly_density"
+      ],
+      "environment": null,
+      "title": "Polynomial prior-density lower bound near one",
+      "node_class": "assumption",
+      "kind": "assumption",
+      "description": "The basin-size prior density is bounded below by a polynomial rate near one.",
+      "inclusion_reason": "Directly invoked in the posterior-size proof."
+    },
+    {
+      "id": "gold:bayes.beta-prior",
+      "source_key": "prop:beta_prior",
+      "scope": "referenced-outside-appendix",
+      "locations": [
+        {
+          "file": "sections/appendix-bayes.tex",
+          "start_line": 132,
+          "end_line": 206
+        }
+      ],
+      "labels": [
+        "prop:beta_prior"
+      ],
+      "environment": "restatable",
+      "title": "Beta-prior posterior concentration",
+      "node_class": "result",
+      "kind": "proposition",
+      "description": "A Beta(alpha,beta) prior updates to Beta(alpha+n,beta), yielding an exponential posterior tail bound with a polynomial prefactor.",
+      "inclusion_reason": "The appendix supplies its proof."
+    },
+    {
+      "id": "gold:bayes.gautschi",
+      "source_key": "gautschi1959some",
+      "scope": "referenced-outside-appendix",
+      "locations": [
+        {
+          "file": "sections/appendix-bayes.tex",
+          "start_line": 186,
+          "end_line": 195
+        }
+      ],
+      "labels": [],
+      "environment": null,
+      "title": "Gautschi's inequality",
+      "node_class": "external-result",
+      "kind": "citation",
+      "description": "Gautschi inequality bounds the relevant Gamma ratio polynomially.",
+      "inclusion_reason": "Cited external inequality directly used in the beta-prior proof."
+    },
+    {
+      "id": "gold:bayes.spike-setup",
+      "source_key": "sections/appendix-bayes.tex:208",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-bayes.tex",
+          "start_line": 208,
+          "end_line": 225
+        }
+      ],
+      "labels": [],
+      "environment": null,
+      "title": "Spike-and-Slab Prior",
+      "node_class": "setup",
+      "kind": "definition",
+      "description": "Defines the spike-and-slab prior, q_n, and the posterior spike-mass formula.",
+      "inclusion_reason": "Reusable setup used by the spike-rate proof."
+    },
+    {
+      "id": "gold:bayes.master-moment",
+      "source_key": "lem:master_moment",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-bayes.tex",
+          "start_line": 227,
+          "end_line": 240
+        }
+      ],
+      "labels": [
+        "lem:master_moment"
+      ],
+      "environment": "lemma",
+      "title": "Moment bound from near--1 tail",
+      "node_class": "result",
+      "kind": "lemma",
+      "description": "E_W[S^n] is bounded by a near-one tail integral plus (1-delta)^n.",
+      "inclusion_reason": "Moment estimate reused by the polynomial-tail corollary."
+    },
+    {
+      "id": "gold:bayes.poly-tail",
+      "source_key": "cor:poly_tail",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-bayes.tex",
+          "start_line": 282,
+          "end_line": 291
+        }
+      ],
+      "labels": [
+        "cor:poly_tail"
+      ],
+      "environment": "corollary",
+      "title": "Polynomial tail implies polynomial moment decay",
+      "node_class": "result",
+      "kind": "corollary",
+      "description": "A polynomial upper bound on the near-one tail implies E_W[S^n] <= C n^{-gamma} eventually.",
+      "inclusion_reason": "Moment-rate result reused by the spike-and-slab proposition."
+    },
+    {
+      "id": "gold:bayes.spike-rate",
+      "source_key": "prop:spike_slab_rate",
+      "scope": "referenced-outside-appendix",
+      "locations": [
+        {
+          "file": "sections/appendix-bayes.tex",
+          "start_line": 335,
+          "end_line": 350
+        }
+      ],
+      "labels": [
+        "prop:spike_slab_rate"
+      ],
+      "environment": "restatable",
+      "title": "Spike-and-slab posterior rate",
+      "node_class": "result",
+      "kind": "proposition",
+      "description": "If the slab's near-one tail is O(u^gamma), posterior mass outside the spike is O(n^{-gamma}).",
+      "inclusion_reason": "The appendix supplies its proof."
+    },
+    {
+      "id": "gold:bayes.lk-two-sided",
+      "source_key": "lem:Lk_twosided_fixed",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-bayes.tex",
+          "start_line": 357,
+          "end_line": 373
+        }
+      ],
+      "labels": [
+        "lem:Lk_twosided_fixed",
+        "eq:Lk_twosided_fixed"
+      ],
+      "environment": "lemma",
+      "title": "Two-sided bounds for L_k(n) (fixed x*)",
+      "node_class": "result",
+      "kind": "lemma",
+      "description": "The MFM likelihood L_k(n) has explicit two-sided power bounds with exponent delta_k.",
+      "inclusion_reason": "Likelihood-rate lemma reused by the MFM theorem."
+    },
+    {
+      "id": "gold:bayes.dirichlet",
+      "source_key": "Dirichlet moment formula",
+      "scope": "referenced-outside-appendix",
+      "locations": [
+        {
+          "file": "sections/appendix-bayes.tex",
+          "start_line": 396,
+          "end_line": 400
+        }
+      ],
+      "labels": [],
+      "environment": null,
+      "title": "Dirichlet moment formula",
+      "node_class": "external-result",
+      "kind": "formula",
+      "description": "The Dirichlet moment formula gives E[s_1^n] as a Gamma ratio.",
+      "inclusion_reason": "Named formula directly used in MFM likelihood proofs."
+    },
+    {
+      "id": "gold:bayes.lk-monotone",
+      "source_key": "lem:Lk_monotone_fixed",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-bayes.tex",
+          "start_line": 482,
+          "end_line": 485
+        }
+      ],
+      "labels": [
+        "lem:Lk_monotone_fixed"
+      ],
+      "environment": "lemma",
+      "title": "Monotonicity of L_k(n)",
+      "node_class": "result",
+      "kind": "lemma",
+      "description": "For fixed alpha and n, L_k(n) decreases with k.",
+      "inclusion_reason": "Monotonicity lemma used by the MFM theorem."
+    },
+    {
+      "id": "gold:bayes.k1-theorem",
+      "source_key": "thm:K1_tight_rate_fixed",
+      "scope": "referenced-outside-appendix",
+      "locations": [
+        {
+          "file": "sections/appendix-bayes.tex",
+          "start_line": 502,
+          "end_line": 548
+        }
+      ],
+      "labels": [
+        "thm:K1_tight_rate_fixed"
+      ],
+      "environment": "restatable",
+      "title": "Rate-tight concentration of P(K=1 | H_n(x*))",
+      "node_class": "result",
+      "kind": "theorem",
+      "description": "Under the fixed-x* MFM assumptions, posterior mass outside K=1 is Theta(n^{-alpha/2}).",
+      "inclusion_reason": "The appendix supplies its proof."
+    },
+    {
+      "id": "gold:app.skerlos",
+      "source_key": "skerlos2010fixed",
+      "scope": "referenced-outside-appendix",
+      "locations": [
+        {
+          "file": "sections/appendix-application.tex",
+          "start_line": 7,
+          "end_line": 7
+        }
+      ],
+      "labels": [],
+      "environment": null,
+      "title": "Mixed-logit equilibrium price bounds",
+      "node_class": "external-result",
+      "kind": "citation",
+      "description": "Skerlos et al. supply lower and upper bounds for mixed-logit equilibrium prices.",
+      "inclusion_reason": "Cited external result directly used in the smooth-domain construction."
+    },
+    {
+      "id": "gold:app.smooth-domain",
+      "source_key": "appendix:application-smooth-domain",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-application.tex",
+          "start_line": 5,
+          "end_line": 30
+        }
+      ],
+      "labels": [
+        "appendix:application-smooth-domain"
+      ],
+      "environment": "subsection",
+      "title": "A smooth compact price domain",
+      "node_class": "setup",
+      "kind": "construction",
+      "description": "The l^{2p}-type set X_p contains the price box, is compact and convex, has smooth boundary, and lies in the positive orthant for large p.",
+      "inclusion_reason": "Reusable construction for the application domain."
+    },
+    {
+      "id": "gold:app.banach",
+      "source_key": "appendix:application-banach",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-application.tex",
+          "start_line": 32,
+          "end_line": 59
+        }
+      ],
+      "labels": [
+        "appendix:application-banach"
+      ],
+      "environment": "subsection",
+      "title": "A transported Banach structure",
+      "node_class": "setup",
+      "kind": "construction",
+      "description": "Transported operations and norm make the parametrized dynamics class a Banach space via a finite-dimensional linear isometry.",
+      "inclusion_reason": "Reusable construction for the application dynamics class."
+    },
+    {
+      "id": "gold:app.parametrization-injective",
+      "source_key": "sections/appendix-application.tex:45",
+      "scope": "appendix-owned",
+      "locations": [
+        {
+          "file": "sections/appendix-application.tex",
+          "start_line": 45,
+          "end_line": 45
+        }
+      ],
+      "labels": [],
+      "environment": null,
+      "title": "Injective dynamics parametrization",
+      "node_class": "assumption",
+      "kind": "local",
+      "description": "The parameter-to-dynamics map is injective, so transported operations and the transported norm are well defined.",
+      "inclusion_reason": "Explicit local assumption directly required by the Banach-space construction."
+    }
+  ],
+  "exclusions": [
+    {
+      "source_key": "ass:well-behaved-proj",
+      "location": {
+        "file": "sections/appendix-dynamics.tex",
+        "start_line": 30,
+        "end_line": 31
+      },
+      "reason": "Referenced as the body assumption whose requirements are verified, not as a prerequisite established by the appendix."
+    },
+    {
+      "source_key": "eq:eta_lemma",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 73,
+        "end_line": 77
+      },
+      "reason": "Displayed equation is a restatement of lem:eta_bound inside one proof, not an independently reusable node."
+    },
+    {
+      "source_key": "eq:pre_choice_eta",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 97,
+        "end_line": 102
+      },
+      "reason": "Intermediate inequality inside the posterior-size proof; retained as a reference decision, not a node."
+    },
+    {
+      "source_key": "eq:Lk_gamma_form_fixed",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 402,
+        "end_line": 405
+      },
+      "reason": "Internal displayed form inside the two-sided likelihood proof; dependency is represented by the Dirichlet formula edge."
+    },
+    {
+      "source_key": "eq:Lk_product_form_fixed",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 425,
+        "end_line": 433
+      },
+      "reason": "Internal product form inside the two-sided likelihood proof; not later used outside the proof except by local equation reference."
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge:dyn.nagurney-to-global",
+      "from": "gold:dyn.nagurney",
+      "to": "gold:dyn.global-flow",
+      "type": "supports",
+      "basis": "explicit-prose",
+      "evidence": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 43,
+          "end_line": 50
+        }
+      ],
+      "explicit_reference_labels": [],
+      "directness_reason": "The proof applies the cited theorem to obtain global solutions and continuity.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:dyn.global-to-localized",
+      "from": "gold:dyn.global-flow",
+      "to": "gold:dyn.localized-systems",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 85,
+          "end_line": 86
+        }
+      ],
+      "explicit_reference_labels": [
+        "lemma:global-lip-flow"
+      ],
+      "directness_reason": "The localization lemma concludes by applying the global-flow lemma.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:dyn.mcshane-to-localized",
+      "from": "gold:dyn.mcshane",
+      "to": "gold:dyn.localized-systems",
+      "type": "supports",
+      "basis": "explicit-prose",
+      "evidence": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 77,
+          "end_line": 86
+        }
+      ],
+      "explicit_reference_labels": [],
+      "directness_reason": "The proof constructs the required extension via McShane before applying global flow.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:dyn.localized-to-exit",
+      "from": "gold:dyn.localized-systems",
+      "to": "gold:dyn.exit-time",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 89,
+          "end_line": 90
+        }
+      ],
+      "explicit_reference_labels": [
+        "lemma:localized-global-systems"
+      ],
+      "directness_reason": "The exit-time setup fixes the maps and flows supplied by the localization lemma.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:dyn.exit-to-consistency",
+      "from": "gold:dyn.exit-time",
+      "to": "gold:dyn.consistency",
+      "type": "supports",
+      "basis": "proof-use",
+      "evidence": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 119,
+          "end_line": 124
+        }
+      ],
+      "explicit_reference_labels": [],
+      "directness_reason": "The proof uses T<sigma to keep the localized trajectory inside K_R.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:dyn.localized-to-consistency",
+      "from": "gold:dyn.localized-systems",
+      "to": "gold:dyn.consistency",
+      "type": "supports",
+      "basis": "proof-use",
+      "evidence": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 129,
+          "end_line": 138
+        }
+      ],
+      "explicit_reference_labels": [],
+      "directness_reason": "Agreement with the larger localized flow uses the larger globally Lipschitz system and its uniqueness.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:dyn.consistency-to-local",
+      "from": "gold:dyn.consistency",
+      "to": "gold:dyn.local-flow",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 168,
+          "end_line": 176
+        }
+      ],
+      "explicit_reference_labels": [
+        "lemma:localized-consistency"
+      ],
+      "directness_reason": "The patching proof invokes compatibility to make G well defined and solve the original dynamics.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:dyn.exit-to-local",
+      "from": "gold:dyn.exit-time",
+      "to": "gold:dyn.local-flow",
+      "type": "supports",
+      "basis": "explicit-prose",
+      "evidence": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 146,
+          "end_line": 161
+        }
+      ],
+      "explicit_reference_labels": [],
+      "directness_reason": "The local flow is defined by the supremum of localization exit times.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:dyn.local-to-maximal",
+      "from": "gold:dyn.local-flow",
+      "to": "gold:dyn.maximal-flow",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 180,
+          "end_line": 183
+        }
+      ],
+      "explicit_reference_labels": [
+        "lemma:local-flow-construction"
+      ],
+      "directness_reason": "The maximality statement is about the lifetime and flow constructed in the prior lemma.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:dyn.localized-to-maximal",
+      "from": "gold:dyn.localized-systems",
+      "to": "gold:dyn.maximal-flow",
+      "type": "supports",
+      "basis": "proof-use",
+      "evidence": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 186,
+          "end_line": 199
+        }
+      ],
+      "explicit_reference_labels": [],
+      "directness_reason": "The proof identifies any local solution with a unique solution of a localized globally Lipschitz system.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:dyn.local-to-regularity",
+      "from": "gold:dyn.local-flow",
+      "to": "gold:dyn.regularity",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 211,
+          "end_line": 214
+        }
+      ],
+      "explicit_reference_labels": [
+        "lemma:local-flow-construction"
+      ],
+      "directness_reason": "Regularity is stated for the constructed lifetime and local flow.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:dyn.localized-to-regularity",
+      "from": "gold:dyn.localized-systems",
+      "to": "gold:dyn.regularity",
+      "type": "supports",
+      "basis": "proof-use",
+      "evidence": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 227,
+          "end_line": 238
+        }
+      ],
+      "explicit_reference_labels": [],
+      "directness_reason": "Lower semicontinuity and continuity use continuity of the relevant localized global flow.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:dyn.global-to-lipschitz",
+      "from": "gold:dyn.global-flow",
+      "to": "gold:dyn.lipschitz-result",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 243,
+          "end_line": 244
+        }
+      ],
+      "explicit_reference_labels": [
+        "lemma:global-lip-flow"
+      ],
+      "directness_reason": "The proof of the Lipschitz lemma explicitly cites the global-flow case.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:dyn.localized-to-lipschitz",
+      "from": "gold:dyn.localized-systems",
+      "to": "gold:dyn.lipschitz-result",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 244,
+          "end_line": 245
+        }
+      ],
+      "explicit_reference_labels": [
+        "lemma:localized-global-systems"
+      ],
+      "directness_reason": "The proof of the Lipschitz lemma explicitly cites the localized systems.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:dyn.consistency-to-lipschitz",
+      "from": "gold:dyn.consistency",
+      "to": "gold:dyn.lipschitz-result",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 244,
+          "end_line": 246
+        }
+      ],
+      "explicit_reference_labels": [
+        "lemma:localized-consistency"
+      ],
+      "directness_reason": "The proof of the Lipschitz lemma explicitly cites compatibility of localizations.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:dyn.local-to-lipschitz",
+      "from": "gold:dyn.local-flow",
+      "to": "gold:dyn.lipschitz-result",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 246,
+          "end_line": 247
+        }
+      ],
+      "explicit_reference_labels": [
+        "lemma:local-flow-construction"
+      ],
+      "directness_reason": "The proof of the Lipschitz lemma cites the local-flow construction.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:dyn.maximal-to-lipschitz",
+      "from": "gold:dyn.maximal-flow",
+      "to": "gold:dyn.lipschitz-result",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 247,
+          "end_line": 248
+        }
+      ],
+      "explicit_reference_labels": [
+        "lemma:maximal-local-flow"
+      ],
+      "directness_reason": "The proof of the Lipschitz lemma cites maximality and uniqueness.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:dyn.regularity-to-lipschitz",
+      "from": "gold:dyn.regularity",
+      "to": "gold:dyn.lipschitz-result",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 248,
+          "end_line": 250
+        }
+      ],
+      "explicit_reference_labels": [
+        "lemma:lsc-flow-continuity"
+      ],
+      "directness_reason": "The proof of the Lipschitz lemma cites lower semicontinuity and continuity.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:dyn.regularity-to-survival",
+      "from": "gold:dyn.regularity",
+      "to": "gold:dyn.infinite-survival",
+      "type": "supports",
+      "basis": "proof-use",
+      "evidence": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 269,
+          "end_line": 274
+        }
+      ],
+      "explicit_reference_labels": [],
+      "directness_reason": "A_infty is Borel because A_n is open by lower semicontinuity of tau.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:dyn.survival-to-limsup",
+      "from": "gold:dyn.infinite-survival",
+      "to": "gold:dyn.limsup-liminf",
+      "type": "supports",
+      "basis": "explicit-prose",
+      "evidence": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 276,
+          "end_line": 291
+        }
+      ],
+      "explicit_reference_labels": [],
+      "directness_reason": "The limsup and liminf maps are defined on A_infty where all rational-time flow values exist.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:dyn.regularity-to-limsup",
+      "from": "gold:dyn.regularity",
+      "to": "gold:dyn.limsup-liminf",
+      "type": "supports",
+      "basis": "proof-use",
+      "evidence": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 288,
+          "end_line": 295
+        }
+      ],
+      "explicit_reference_labels": [],
+      "directness_reason": "Continuity of the local flow at rational times makes the coordinate maps measurable.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:dyn.limsup-to-limit",
+      "from": "gold:dyn.limsup-liminf",
+      "to": "gold:dyn.limit-map",
+      "type": "supports",
+      "basis": "explicit-prose",
+      "evidence": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 297,
+          "end_line": 309
+        }
+      ],
+      "explicit_reference_labels": [],
+      "directness_reason": "The convergence set and limit map are defined by equality of the limsup and liminf maps.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:dyn.terminal-to-pieces",
+      "from": "gold:dyn.terminal-partition",
+      "to": "gold:dyn.solver-pieces",
+      "type": "supports",
+      "basis": "explicit-prose",
+      "evidence": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 257,
+          "end_line": 267
+        }
+      ],
+      "explicit_reference_labels": [],
+      "directness_reason": "The final condition sets implement the terminal-behavior decomposition.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:dyn.survival-to-pieces",
+      "from": "gold:dyn.infinite-survival",
+      "to": "gold:dyn.solver-pieces",
+      "type": "supports",
+      "basis": "explicit-prose",
+      "evidence": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 311,
+          "end_line": 317
+        }
+      ],
+      "explicit_reference_labels": [],
+      "directness_reason": "C1 and C2 are defined from A_infty and Xi.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:dyn.limit-to-pieces",
+      "from": "gold:dyn.limit-map",
+      "to": "gold:dyn.solver-pieces",
+      "type": "supports",
+      "basis": "explicit-prose",
+      "evidence": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 317,
+          "end_line": 320
+        }
+      ],
+      "explicit_reference_labels": [],
+      "directness_reason": "The Borel preimage calculation uses g_Q restricted to C3 as the limit map L.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:dyn.pieces-to-measurability",
+      "from": "gold:dyn.solver-pieces",
+      "to": "gold:dyn.measurability-result",
+      "type": "supports",
+      "basis": "explicit-prose",
+      "evidence": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 319,
+          "end_line": 322
+        }
+      ],
+      "explicit_reference_labels": [],
+      "directness_reason": "The proof concludes measurability from the Borel preimage decomposition.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:dyn.dct-to-containment",
+      "from": "gold:dyn.dct-cesaro",
+      "to": "gold:dyn.containment",
+      "type": "supports",
+      "basis": "explicit-prose",
+      "evidence": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 395,
+          "end_line": 412
+        }
+      ],
+      "explicit_reference_labels": [],
+      "directness_reason": "The proof uses dominated convergence/Cesaro averaging to pass the time average to the limit.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:dyn.containment-to-finite-rto-roots",
+      "from": "gold:dyn.containment",
+      "to": "gold:dyn.finite-rto-roots",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 327,
+          "end_line": 342
+        }
+      ],
+      "explicit_reference_labels": [
+        "prop:finite-rto-roots"
+      ],
+      "directness_reason": "The appendix identifies the containment lemma as the nontrivial argument underlying the body proposition.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:prev.boundary-to-break",
+      "from": "gold:prev.boundary-decomposition",
+      "to": "gold:prev.break-two",
+      "type": "supports",
+      "basis": "proof-use",
+      "evidence": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 52,
+          "end_line": 58
+        }
+      ],
+      "explicit_reference_labels": [],
+      "directness_reason": "The proof splits roots by interior and boundary cases using the QTC/Q/QTCP decomposition.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:prev.kkq-to-break",
+      "from": "gold:prev.ass-kkq",
+      "to": "gold:prev.break-two",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 55,
+          "end_line": 58
+        }
+      ],
+      "explicit_reference_labels": [
+        "ass:kkq"
+      ],
+      "directness_reason": "The closedness of boundary roots uses C2 boundary from Assumption kkq.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:prev.boundary-to-tilde",
+      "from": "gold:prev.boundary-decomposition",
+      "to": "gold:prev.tilde-map",
+      "type": "supports",
+      "basis": "explicit-prose",
+      "evidence": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 70,
+          "end_line": 77
+        }
+      ],
+      "explicit_reference_labels": [],
+      "directness_reason": "The tilde map is introduced to avoid the nonsmooth positive-part term in QTCP.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:prev.tilde-to-discrete",
+      "from": "gold:prev.tilde-map",
+      "to": "gold:prev.discrete-preserves",
+      "type": "supports",
+      "basis": "explicit-prose",
+      "evidence": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 84,
+          "end_line": 100
+        }
+      ],
+      "explicit_reference_labels": [],
+      "directness_reason": "The proof relates QTCP roots to tilde-Q roots through alpha(x).",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:prev.preimage-to-parametric",
+      "from": "gold:prev.preimage",
+      "to": "gold:prev.parametric-submersion",
+      "type": "supports",
+      "basis": "proof-use",
+      "evidence": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 131,
+          "end_line": 135
+        }
+      ],
+      "explicit_reference_labels": [],
+      "directness_reason": "The proof uses the preimage theorem to form the zero-set submanifold.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:prev.preimage-to-transversality-discrete",
+      "from": "gold:prev.preimage",
+      "to": "gold:prev.transversality-discrete",
+      "type": "supports",
+      "basis": "explicit-prose",
+      "evidence": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 196,
+          "end_line": 198
+        }
+      ],
+      "explicit_reference_labels": [],
+      "directness_reason": "The remark explicitly applies the preimage theorem to obtain a zero-dimensional and therefore discrete root set.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:prev.sard-to-parametric",
+      "from": "gold:prev.sard",
+      "to": "gold:prev.parametric-submersion",
+      "type": "supports",
+      "basis": "proof-use",
+      "evidence": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 137,
+          "end_line": 141
+        }
+      ],
+      "explicit_reference_labels": [],
+      "directness_reason": "The proof uses Sard theorem for measure-zero critical values.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:prev.rank-to-parametric",
+      "from": "gold:prev.rank-nullity",
+      "to": "gold:prev.parametric-submersion",
+      "type": "supports",
+      "basis": "proof-use",
+      "evidence": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 155,
+          "end_line": 188
+        }
+      ],
+      "explicit_reference_labels": [],
+      "directness_reason": "The proof uses rank-nullity to equate regular projection values with transverse fibers.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:prev.guillemin-to-regularity",
+      "from": "gold:prev.guillemin",
+      "to": "gold:prev.parametric-regularity",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 121,
+          "end_line": 124
+        }
+      ],
+      "explicit_reference_labels": [
+        "GuilleminPollack1974"
+      ],
+      "directness_reason": "The citation supports the Sard regularity requirement stated in the remark.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:prev.eval-to-prevalence",
+      "from": "gold:prev.evaluation-maps",
+      "to": "gold:prev.prevalence",
+      "type": "supports",
+      "basis": "explicit-prose",
+      "evidence": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 215,
+          "end_line": 219
+        }
+      ],
+      "explicit_reference_labels": [],
+      "directness_reason": "The theorem hypotheses are stated for the perturbed evaluation maps.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:prev.parametric-to-prevalence",
+      "from": "gold:prev.parametric-submersion",
+      "to": "gold:prev.prevalence",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 221,
+          "end_line": 227
+        }
+      ],
+      "explicit_reference_labels": [
+        "lem:parametric_submersion"
+      ],
+      "directness_reason": "The proof applies parametric submersion to both evaluation maps.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:prev.discrete-to-prevalence",
+      "from": "gold:prev.discrete-preserves",
+      "to": "gold:prev.prevalence",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 231,
+          "end_line": 235
+        }
+      ],
+      "explicit_reference_labels": [
+        "lemma:discrete-preserves"
+      ],
+      "directness_reason": "The proof applies the boundary discreteness lemma.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:prev.prevalence-to-finite",
+      "from": "gold:prev.prevalence",
+      "to": "gold:prev.finite-roots",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 246,
+          "end_line": 248
+        }
+      ],
+      "explicit_reference_labels": [
+        "theorem:prevalence_submersion_probe"
+      ],
+      "directness_reason": "The finite-root proof begins with the prevalence theorem discreteness conclusion.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:prev.break-to-finite",
+      "from": "gold:prev.break-two",
+      "to": "gold:prev.finite-roots",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 248,
+          "end_line": 253
+        }
+      ],
+      "explicit_reference_labels": [
+        "lemma:break-into-two"
+      ],
+      "directness_reason": "The finite-root proof uses root decomposition and closedness from the break-into-two lemma.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:prev.closed-to-finite",
+      "from": "gold:prev.closed-discrete",
+      "to": "gold:prev.finite-roots",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 253,
+          "end_line": 255
+        }
+      ],
+      "explicit_reference_labels": [
+        "lemma:closed-discrete-finite"
+      ],
+      "directness_reason": "The proof applies the compact closed-discrete finiteness lemma.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:prev.kkq-to-finite",
+      "from": "gold:prev.ass-kkq",
+      "to": "gold:prev.finite-roots",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 252,
+          "end_line": 254
+        }
+      ],
+      "explicit_reference_labels": [
+        "ass:kkq"
+      ],
+      "directness_reason": "Compact containment comes from Assumption kkq.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:prev.convex-to-finite",
+      "from": "gold:prev.ass-convex",
+      "to": "gold:prev.finite-roots",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 239,
+          "end_line": 243
+        }
+      ],
+      "explicit_reference_labels": [
+        "ass:convex-closed"
+      ],
+      "directness_reason": "The corollary explicitly assumes the convex-closed condition.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:prev.finite-to-attractors",
+      "from": "gold:prev.finite-roots",
+      "to": "gold:prev.attractors-result",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 260,
+          "end_line": 264
+        }
+      ],
+      "explicit_reference_labels": [
+        "cor:prevalent-finite-roots"
+      ],
+      "directness_reason": "The attractor-finiteness proof invokes exactly the finite-root corollary's hypotheses.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:prev.containment-to-attractors",
+      "from": "gold:dyn.containment",
+      "to": "gold:prev.attractors-result",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 266,
+          "end_line": 270
+        }
+      ],
+      "explicit_reference_labels": [
+        "lemma:containment"
+      ],
+      "directness_reason": "The attractor-finiteness proof uses containment to bound terminal outcomes by finite roots plus dagger.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:bayes.setup-to-eta",
+      "from": "gold:bayes.basin-setup",
+      "to": "gold:bayes.eta-bound",
+      "type": "supports",
+      "basis": "explicit-prose",
+      "evidence": [
+        {
+          "file": "sections/appendix-bayes.tex",
+          "start_line": 9,
+          "end_line": 17
+        }
+      ],
+      "explicit_reference_labels": [],
+      "directness_reason": "The lemma is stated in terms of A_epsilon and A_eta fixed in the setup.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:bayes.setup-to-support",
+      "from": "gold:bayes.basin-setup",
+      "to": "gold:bayes.support-tail",
+      "type": "supports",
+      "basis": "explicit-prose",
+      "evidence": [
+        {
+          "file": "sections/appendix-bayes.tex",
+          "start_line": 42,
+          "end_line": 45
+        }
+      ],
+      "explicit_reference_labels": [],
+      "directness_reason": "The support lemma is stated using A_eta from the basin setup.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:bayes.support-to-eta-prop",
+      "from": "gold:bayes.support-tail",
+      "to": "gold:bayes.eta-prop",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-bayes.tex",
+          "start_line": 56,
+          "end_line": 58
+        }
+      ],
+      "explicit_reference_labels": [
+        "lem:supp_tail"
+      ],
+      "directness_reason": "The proposition proof uses the support lemma to choose eta.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:bayes.eta-to-eta-prop",
+      "from": "gold:bayes.eta-bound",
+      "to": "gold:bayes.eta-prop",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-bayes.tex",
+          "start_line": 58,
+          "end_line": 66
+        }
+      ],
+      "explicit_reference_labels": [
+        "lem:eta_bound"
+      ],
+      "directness_reason": "The proposition proof applies the Bayes denominator bound.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:bayes.eta-to-posterior-size",
+      "from": "gold:bayes.eta-bound",
+      "to": "gold:bayes.posterior-size",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-bayes.tex",
+          "start_line": 71,
+          "end_line": 77
+        }
+      ],
+      "explicit_reference_labels": [
+        "lem:eta_bound"
+      ],
+      "directness_reason": "The posterior-size proof starts from the eta-bound lemma.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:bayes.poly-density-to-posterior-size",
+      "from": "gold:bayes.ass-poly-density",
+      "to": "gold:bayes.posterior-size",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-bayes.tex",
+          "start_line": 87,
+          "end_line": 94
+        }
+      ],
+      "explicit_reference_labels": [
+        "ass:poly_density"
+      ],
+      "directness_reason": "The denominator lower bound directly uses the polynomial density assumption.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:bayes.gautschi-to-beta",
+      "from": "gold:bayes.gautschi",
+      "to": "gold:bayes.beta-prior",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-bayes.tex",
+          "start_line": 186,
+          "end_line": 205
+        }
+      ],
+      "explicit_reference_labels": [
+        "gautschi1959some"
+      ],
+      "directness_reason": "The beta-prior proof cites Gautschi inequality for the Gamma-ratio bound.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:bayes.master-to-poly-tail",
+      "from": "gold:bayes.master-moment",
+      "to": "gold:bayes.poly-tail",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-bayes.tex",
+          "start_line": 293,
+          "end_line": 300
+        }
+      ],
+      "explicit_reference_labels": [
+        "lem:master_moment"
+      ],
+      "directness_reason": "The corollary proof directly applies the master moment lemma.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:bayes.spike-setup-to-rate",
+      "from": "gold:bayes.spike-setup",
+      "to": "gold:bayes.spike-rate",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-bayes.tex",
+          "start_line": 338,
+          "end_line": 347
+        }
+      ],
+      "explicit_reference_labels": [
+        "eq:z=1_posterior"
+      ],
+      "directness_reason": "The spike-rate proof uses q_n and the posterior formula from the setup.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:bayes.poly-tail-to-rate",
+      "from": "gold:bayes.poly-tail",
+      "to": "gold:bayes.spike-rate",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-bayes.tex",
+          "start_line": 337,
+          "end_line": 340
+        }
+      ],
+      "explicit_reference_labels": [
+        "cor:poly_tail"
+      ],
+      "directness_reason": "The proof applies the polynomial-tail corollary to q_n.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:bayes.dirichlet-to-lk",
+      "from": "gold:bayes.dirichlet",
+      "to": "gold:bayes.lk-two-sided",
+      "type": "supports",
+      "basis": "explicit-prose",
+      "evidence": [
+        {
+          "file": "sections/appendix-bayes.tex",
+          "start_line": 392,
+          "end_line": 405
+        }
+      ],
+      "explicit_reference_labels": [],
+      "directness_reason": "The likelihood proof uses the Dirichlet moment formula to obtain the Gamma form.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:bayes.dirichlet-to-monotone",
+      "from": "gold:bayes.dirichlet",
+      "to": "gold:bayes.lk-monotone",
+      "type": "supports",
+      "basis": "explicit-prose",
+      "evidence": [
+        {
+          "file": "sections/appendix-bayes.tex",
+          "start_line": 487,
+          "end_line": 499
+        }
+      ],
+      "explicit_reference_labels": [],
+      "directness_reason": "The monotonicity proof writes L_k via the Dirichlet moment Gamma ratio.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:bayes.lk-to-k1",
+      "from": "gold:bayes.lk-two-sided",
+      "to": "gold:bayes.k1-theorem",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-bayes.tex",
+          "start_line": 504,
+          "end_line": 529
+        }
+      ],
+      "explicit_reference_labels": [
+        "lem:Lk_twosided_fixed"
+      ],
+      "directness_reason": "The MFM theorem uses the likelihood bounds for upper and lower rates.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:bayes.monotone-to-k1",
+      "from": "gold:bayes.lk-monotone",
+      "to": "gold:bayes.k1-theorem",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-bayes.tex",
+          "start_line": 522,
+          "end_line": 524
+        }
+      ],
+      "explicit_reference_labels": [
+        "lem:Lk_monotone_fixed"
+      ],
+      "directness_reason": "The MFM theorem uses monotonicity to bound all k>=2 by L_2.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:app.skerlos-to-domain",
+      "from": "gold:app.skerlos",
+      "to": "gold:app.smooth-domain",
+      "type": "supports",
+      "basis": "explicit-reference",
+      "evidence": [
+        {
+          "file": "sections/appendix-application.tex",
+          "start_line": 7,
+          "end_line": 7
+        }
+      ],
+      "explicit_reference_labels": [
+        "skerlos2010fixed"
+      ],
+      "directness_reason": "The construction starts from the price bounds supplied by the cited source.",
+      "confidence": "high"
+    },
+    {
+      "id": "edge:app.injectivity-to-banach",
+      "from": "gold:app.parametrization-injective",
+      "to": "gold:app.banach",
+      "type": "supports",
+      "basis": "explicit-prose",
+      "evidence": [
+        {
+          "file": "sections/appendix-application.tex",
+          "start_line": 45,
+          "end_line": 59
+        }
+      ],
+      "explicit_reference_labels": [],
+      "directness_reason": "Injectivity makes the transported vector operations and norm well defined, enabling the Banach-space construction.",
+      "confidence": "high"
+    }
+  ],
+  "reference_decisions": [
+    {
+      "reference_label": "sec:model",
+      "location": {
+        "file": "sections/appendix-dynamics.tex",
+        "start_line": 4,
+        "end_line": 4
+      },
+      "decision": "navigation",
+      "edge_ids": [],
+      "reason": "Section navigation only."
+    },
+    {
+      "reference_label": "lemma:Lipschitz",
+      "location": {
+        "file": "sections/appendix-dynamics.tex",
+        "start_line": 9,
+        "end_line": 10
+      },
+      "decision": "restatement",
+      "edge_ids": [],
+      "reason": "Intro identifies the body lemma proved later."
+    },
+    {
+      "reference_label": "lemma:Lipschitz",
+      "location": {
+        "file": "sections/appendix-dynamics.tex",
+        "start_line": 20,
+        "end_line": 20
+      },
+      "decision": "restatement",
+      "edge_ids": [],
+      "reason": "Subsection opening identifies the body lemma being proved."
+    },
+    {
+      "reference_label": "prop:finite-rto-roots",
+      "location": {
+        "file": "sections/appendix-dynamics.tex",
+        "start_line": 13,
+        "end_line": 14
+      },
+      "decision": "navigation",
+      "edge_ids": [],
+      "reason": "Intro identifies motivation for containment, not a prerequisite."
+    },
+    {
+      "reference_label": "ass:well-behaved-proj",
+      "location": {
+        "file": "sections/appendix-dynamics.tex",
+        "start_line": 30,
+        "end_line": 31
+      },
+      "decision": "restatement",
+      "edge_ids": [],
+      "reason": "The local-flow subsection aims to verify this body assumption."
+    },
+    {
+      "reference_label": "Theorem 2.5 of nagurney2012projected",
+      "location": {
+        "file": "sections/appendix-dynamics.tex",
+        "start_line": 43,
+        "end_line": 50
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:dyn.nagurney-to-global"
+      ],
+      "reason": "Named theorem supplies global projected-flow existence and continuity."
+    },
+    {
+      "reference_label": "ass:well-behaved-proj",
+      "location": {
+        "file": "sections/appendix-dynamics.tex",
+        "start_line": 51,
+        "end_line": 52
+      },
+      "decision": "restatement",
+      "edge_ids": [],
+      "reason": "Describes how the global case fits the body assumption."
+    },
+    {
+      "reference_label": "lemma:global-lip-flow",
+      "location": {
+        "file": "sections/appendix-dynamics.tex",
+        "start_line": 56,
+        "end_line": 57
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:dyn.global-to-localized"
+      ],
+      "reason": "Roadmap and proof use the global lemma for localization."
+    },
+    {
+      "reference_label": "lemma:localized-global-systems",
+      "location": {
+        "file": "sections/appendix-dynamics.tex",
+        "start_line": 58,
+        "end_line": 60
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:dyn.localized-to-exit"
+      ],
+      "reason": "Roadmap introduces the localized systems used to define exit times."
+    },
+    {
+      "reference_label": "lemma:localized-consistency",
+      "location": {
+        "file": "sections/appendix-dynamics.tex",
+        "start_line": 61,
+        "end_line": 62
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:dyn.consistency-to-local"
+      ],
+      "reason": "Roadmap marks compatibility as the patching prerequisite."
+    },
+    {
+      "reference_label": "lemma:local-flow-construction",
+      "location": {
+        "file": "sections/appendix-dynamics.tex",
+        "start_line": 64,
+        "end_line": 65
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:dyn.local-to-maximal"
+      ],
+      "reason": "Roadmap marks patching as prerequisite for maximality."
+    },
+    {
+      "reference_label": "lemma:maximal-local-flow",
+      "location": {
+        "file": "sections/appendix-dynamics.tex",
+        "start_line": 66,
+        "end_line": 67
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:dyn.local-to-maximal"
+      ],
+      "reason": "Roadmap identifies maximality as the final local-flow step."
+    },
+    {
+      "reference_label": "lemma:global-lip-flow",
+      "location": {
+        "file": "sections/appendix-dynamics.tex",
+        "start_line": 85,
+        "end_line": 86
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:dyn.global-to-localized"
+      ],
+      "reason": "Localization proof directly applies the lemma."
+    },
+    {
+      "reference_label": "lemma:localized-global-systems",
+      "location": {
+        "file": "sections/appendix-dynamics.tex",
+        "start_line": 89,
+        "end_line": 90
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:dyn.localized-to-exit"
+      ],
+      "reason": "Exit-time setup fixes objects from the localization lemma."
+    },
+    {
+      "reference_label": "lemma:localized-consistency",
+      "location": {
+        "file": "sections/appendix-dynamics.tex",
+        "start_line": 168,
+        "end_line": 168
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:dyn.consistency-to-local"
+      ],
+      "reason": "Local-flow proof directly invokes consistency for well-definedness."
+    },
+    {
+      "reference_label": "lemma:localized-consistency",
+      "location": {
+        "file": "sections/appendix-dynamics.tex",
+        "start_line": 174,
+        "end_line": 174
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:dyn.consistency-to-local"
+      ],
+      "reason": "Repeated proof use invokes consistency to show the patched flow solves the original dynamics."
+    },
+    {
+      "reference_label": "lemma:local-flow-construction",
+      "location": {
+        "file": "sections/appendix-dynamics.tex",
+        "start_line": 180,
+        "end_line": 183
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:dyn.local-to-maximal"
+      ],
+      "reason": "Maximality statement references the constructed lifetime."
+    },
+    {
+      "reference_label": "lemma:local-flow-construction",
+      "location": {
+        "file": "sections/appendix-dynamics.tex",
+        "start_line": 206,
+        "end_line": 207
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:dyn.local-to-maximal"
+      ],
+      "reason": "Maximality proof uses the constructed solution interval."
+    },
+    {
+      "reference_label": "lemma:local-flow-construction",
+      "location": {
+        "file": "sections/appendix-dynamics.tex",
+        "start_line": 211,
+        "end_line": 214
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:dyn.local-to-regularity"
+      ],
+      "reason": "Regularity statement references the construction."
+    },
+    {
+      "reference_label": "lemma:Lipschitz",
+      "location": {
+        "file": "sections/appendix-dynamics.tex",
+        "start_line": 242,
+        "end_line": 242
+      },
+      "decision": "restatement",
+      "edge_ids": [],
+      "reason": "Proof heading identifies the body lemma being proved."
+    },
+    {
+      "reference_label": "lemma:global-lip-flow",
+      "location": {
+        "file": "sections/appendix-dynamics.tex",
+        "start_line": 243,
+        "end_line": 244
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:dyn.global-to-lipschitz"
+      ],
+      "reason": "Body proof invokes the global-flow lemma."
+    },
+    {
+      "reference_label": "lemma:localized-global-systems",
+      "location": {
+        "file": "sections/appendix-dynamics.tex",
+        "start_line": 244,
+        "end_line": 245
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:dyn.localized-to-lipschitz"
+      ],
+      "reason": "Body proof invokes localization."
+    },
+    {
+      "reference_label": "lemma:localized-consistency",
+      "location": {
+        "file": "sections/appendix-dynamics.tex",
+        "start_line": 244,
+        "end_line": 246
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:dyn.consistency-to-lipschitz"
+      ],
+      "reason": "Body proof invokes compatibility."
+    },
+    {
+      "reference_label": "lemma:local-flow-construction",
+      "location": {
+        "file": "sections/appendix-dynamics.tex",
+        "start_line": 246,
+        "end_line": 247
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:dyn.local-to-lipschitz"
+      ],
+      "reason": "Body proof invokes patching."
+    },
+    {
+      "reference_label": "lemma:maximal-local-flow",
+      "location": {
+        "file": "sections/appendix-dynamics.tex",
+        "start_line": 247,
+        "end_line": 248
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:dyn.maximal-to-lipschitz"
+      ],
+      "reason": "Body proof invokes maximality."
+    },
+    {
+      "reference_label": "lemma:lsc-flow-continuity",
+      "location": {
+        "file": "sections/appendix-dynamics.tex",
+        "start_line": 248,
+        "end_line": 250
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:dyn.regularity-to-lipschitz"
+      ],
+      "reason": "Body proof invokes regularity."
+    },
+    {
+      "reference_label": "ass:well-behaved-proj",
+      "location": {
+        "file": "sections/appendix-dynamics.tex",
+        "start_line": 250,
+        "end_line": 250
+      },
+      "decision": "restatement",
+      "edge_ids": [],
+      "reason": "The proof identifies its conclusion with the body assumption requirements."
+    },
+    {
+      "reference_label": "prop:finite-rto-roots",
+      "location": {
+        "file": "sections/appendix-dynamics.tex",
+        "start_line": 327,
+        "end_line": 329
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:dyn.containment-to-finite-rto-roots"
+      ],
+      "reason": "Identifies the body proposition directly supported by the appendix containment lemma."
+    },
+    {
+      "reference_label": "preimage theorem",
+      "location": {
+        "file": "sections/appendix-prevalence.tex",
+        "start_line": 196,
+        "end_line": 198
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:prev.preimage-to-transversality-discrete"
+      ],
+      "reason": "The remark explicitly invokes the theorem to conclude zero-dimensional discreteness."
+    },
+    {
+      "reference_label": "dominated convergence theorem",
+      "location": {
+        "file": "sections/appendix-dynamics.tex",
+        "start_line": 403,
+        "end_line": 404
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:dyn.dct-to-containment"
+      ],
+      "reason": "Named theorem passes time averages to the limit."
+    },
+    {
+      "reference_label": "prop:e-submersion-finite-attractors",
+      "location": {
+        "file": "sections/appendix-prevalence.tex",
+        "start_line": 4,
+        "end_line": 4
+      },
+      "decision": "navigation",
+      "edge_ids": [],
+      "reason": "Section announces the body proposition proved later."
+    },
+    {
+      "reference_label": "ass:kkq",
+      "location": {
+        "file": "sections/appendix-prevalence.tex",
+        "start_line": 8,
+        "end_line": 9
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:prev.kkq-to-finite"
+      ],
+      "reason": "Intro says compact containment from this assumption gives finiteness."
+    },
+    {
+      "reference_label": "sec:model",
+      "location": {
+        "file": "sections/appendix-prevalence.tex",
+        "start_line": 43,
+        "end_line": 44
+      },
+      "decision": "navigation",
+      "edge_ids": [],
+      "reason": "Reports body context rather than appendix prerequisite."
+    },
+    {
+      "reference_label": "ass:kkq",
+      "location": {
+        "file": "sections/appendix-prevalence.tex",
+        "start_line": 55,
+        "end_line": 58
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:prev.kkq-to-break"
+      ],
+      "reason": "Break-into-two proof uses C2 boundary from kkq."
+    },
+    {
+      "reference_label": "ass:kkq",
+      "location": {
+        "file": "sections/appendix-prevalence.tex",
+        "start_line": 62,
+        "end_line": 63
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:prev.kkq-to-finite"
+      ],
+      "reason": "Roadmap says compact containment from kkq is needed for finiteness."
+    },
+    {
+      "reference_label": "lemma:closed-discrete-finite",
+      "location": {
+        "file": "sections/appendix-prevalence.tex",
+        "start_line": 63,
+        "end_line": 64
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:prev.closed-to-finite"
+      ],
+      "reason": "Roadmap invokes the compactness lemma."
+    },
+    {
+      "reference_label": "GuilleminPollack1974",
+      "location": {
+        "file": "sections/appendix-prevalence.tex",
+        "start_line": 123,
+        "end_line": 123
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:prev.guillemin-to-regularity"
+      ],
+      "reason": "Citation supports the Sard regularity remark."
+    },
+    {
+      "reference_label": "lem:parametric_submersion",
+      "location": {
+        "file": "sections/appendix-prevalence.tex",
+        "start_line": 223,
+        "end_line": 227
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:prev.parametric-to-prevalence"
+      ],
+      "reason": "Prevalence proof applies the parametric lemma."
+    },
+    {
+      "reference_label": "lemma:discrete-preserves",
+      "location": {
+        "file": "sections/appendix-prevalence.tex",
+        "start_line": 231,
+        "end_line": 232
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:prev.discrete-to-prevalence"
+      ],
+      "reason": "Prevalence proof applies boundary discreteness."
+    },
+    {
+      "reference_label": "ass:convex-closed",
+      "location": {
+        "file": "sections/appendix-prevalence.tex",
+        "start_line": 239,
+        "end_line": 243
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:prev.convex-to-finite"
+      ],
+      "reason": "Finite-root corollary assumes convex-closed X."
+    },
+    {
+      "reference_label": "ass:kkq",
+      "location": {
+        "file": "sections/appendix-prevalence.tex",
+        "start_line": 240,
+        "end_line": 243
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:prev.kkq-to-finite"
+      ],
+      "reason": "Finite-root corollary assumes kkq for compactness and regularity."
+    },
+    {
+      "reference_label": "theorem:prevalence_submersion_probe",
+      "location": {
+        "file": "sections/appendix-prevalence.tex",
+        "start_line": 246,
+        "end_line": 247
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:prev.prevalence-to-finite"
+      ],
+      "reason": "Finite-root proof invokes prevalence theorem."
+    },
+    {
+      "reference_label": "lemma:break-into-two",
+      "location": {
+        "file": "sections/appendix-prevalence.tex",
+        "start_line": 248,
+        "end_line": 248
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:prev.break-to-finite"
+      ],
+      "reason": "Finite-root proof invokes root decomposition."
+    },
+    {
+      "reference_label": "lemma:break-into-two",
+      "location": {
+        "file": "sections/appendix-prevalence.tex",
+        "start_line": 253,
+        "end_line": 253
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:prev.break-to-finite"
+      ],
+      "reason": "Repeated proof use invokes closedness of the two root sets."
+    },
+    {
+      "reference_label": "ass:kkq",
+      "location": {
+        "file": "sections/appendix-prevalence.tex",
+        "start_line": 253,
+        "end_line": 254
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:prev.kkq-to-finite"
+      ],
+      "reason": "Finite-root proof uses compact containment from kkq."
+    },
+    {
+      "reference_label": "lemma:closed-discrete-finite",
+      "location": {
+        "file": "sections/appendix-prevalence.tex",
+        "start_line": 254,
+        "end_line": 255
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:prev.closed-to-finite"
+      ],
+      "reason": "Finite-root proof applies closed-discrete finiteness."
+    },
+    {
+      "reference_label": "prop:e-submersion-finite-attractors",
+      "location": {
+        "file": "sections/appendix-prevalence.tex",
+        "start_line": 260,
+        "end_line": 260
+      },
+      "decision": "restatement",
+      "edge_ids": [],
+      "reason": "Proof heading identifies the body proposition."
+    },
+    {
+      "reference_label": "prop:e-submersion-finite-attractors",
+      "location": {
+        "file": "sections/appendix-prevalence.tex",
+        "start_line": 261,
+        "end_line": 261
+      },
+      "decision": "restatement",
+      "edge_ids": [],
+      "reason": "Repeated proof-target reference says the hypotheses are those of the body proposition."
+    },
+    {
+      "reference_label": "cor:prevalent-finite-roots",
+      "location": {
+        "file": "sections/appendix-prevalence.tex",
+        "start_line": 262,
+        "end_line": 264
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:prev.finite-to-attractors"
+      ],
+      "reason": "Body proposition proof uses the finite-root corollary."
+    },
+    {
+      "reference_label": "lemma:containment",
+      "location": {
+        "file": "sections/appendix-prevalence.tex",
+        "start_line": 266,
+        "end_line": 270
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:prev.containment-to-attractors"
+      ],
+      "reason": "Body proposition proof uses root containment."
+    },
+    {
+      "reference_label": "sec:applications",
+      "location": {
+        "file": "sections/appendix-application.tex",
+        "start_line": 3,
+        "end_line": 3
+      },
+      "decision": "navigation",
+      "edge_ids": [],
+      "reason": "Section navigation only."
+    },
+    {
+      "reference_label": "skerlos2010fixed",
+      "location": {
+        "file": "sections/appendix-application.tex",
+        "start_line": 7,
+        "end_line": 7
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:app.skerlos-to-domain"
+      ],
+      "reason": "Citation supplies the price bounds for the construction."
+    },
+    {
+      "reference_label": "sec:applications",
+      "location": {
+        "file": "sections/appendix-application.tex",
+        "start_line": 7,
+        "end_line": 7
+      },
+      "decision": "navigation",
+      "edge_ids": [],
+      "reason": "Application-context reference only."
+    },
+    {
+      "reference_label": "sec:inference",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 4,
+        "end_line": 5
+      },
+      "decision": "navigation",
+      "edge_ids": [],
+      "reason": "Section navigation only."
+    },
+    {
+      "reference_label": "prop:eta-bound",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 56,
+        "end_line": 56
+      },
+      "decision": "restatement",
+      "edge_ids": [],
+      "reason": "Proof heading identifies body proposition."
+    },
+    {
+      "reference_label": "lem:supp_tail",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 57,
+        "end_line": 58
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:bayes.support-to-eta-prop"
+      ],
+      "reason": "Eta proposition uses support lemma."
+    },
+    {
+      "reference_label": "lem:eta_bound",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 58,
+        "end_line": 64
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:bayes.eta-to-eta-prop"
+      ],
+      "reason": "Eta proposition applies denominator bound."
+    },
+    {
+      "reference_label": "lem:eta_bound",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 71,
+        "end_line": 77
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:bayes.eta-to-posterior-size"
+      ],
+      "reason": "Posterior-size proof starts from eta lemma."
+    },
+    {
+      "reference_label": "ass:poly_density",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 87,
+        "end_line": 94
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:bayes.poly-density-to-posterior-size"
+      ],
+      "reason": "Posterior-size proof uses polynomial density assumption."
+    },
+    {
+      "reference_label": "eq:eta_lemma",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 96,
+        "end_line": 102
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:bayes.eta-to-posterior-size"
+      ],
+      "reason": "Equation is the displayed form of the eta-bound lemma."
+    },
+    {
+      "reference_label": "eq:pre_choice_eta",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 104,
+        "end_line": 105
+      },
+      "decision": "non-graph",
+      "edge_ids": [],
+      "reason": "Internal equation navigation within one proof."
+    },
+    {
+      "reference_label": "eq:pre_choice_eta",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 116,
+        "end_line": 116
+      },
+      "decision": "non-graph",
+      "edge_ids": [],
+      "reason": "Internal equation navigation within one proof."
+    },
+    {
+      "reference_label": "eq:drop_eta_poly_bound",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 127,
+        "end_line": 128
+      },
+      "decision": "restatement",
+      "edge_ids": [],
+      "reason": "Points to the body proposition final bound."
+    },
+    {
+      "reference_label": "prop:beta_prior",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 134,
+        "end_line": 134
+      },
+      "decision": "restatement",
+      "edge_ids": [],
+      "reason": "Proof heading identifies body proposition."
+    },
+    {
+      "reference_label": "gautschi1959some",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 191,
+        "end_line": 195
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:bayes.gautschi-to-beta"
+      ],
+      "reason": "Cited inequality directly bounds the Gamma ratio."
+    },
+    {
+      "reference_label": "eq:basin_tail",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 204,
+        "end_line": 205
+      },
+      "decision": "restatement",
+      "edge_ids": [],
+      "reason": "Points to body proposition final bound."
+    },
+    {
+      "reference_label": "prop:spike_slab_rate",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 210,
+        "end_line": 210
+      },
+      "decision": "navigation",
+      "edge_ids": [],
+      "reason": "Subsection announces body proposition served by the setup."
+    },
+    {
+      "reference_label": "lem:master_moment",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 242,
+        "end_line": 242
+      },
+      "decision": "restatement",
+      "edge_ids": [],
+      "reason": "Proof heading identifies the lemma."
+    },
+    {
+      "reference_label": "cor:poly_tail",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 293,
+        "end_line": 299
+      },
+      "decision": "restatement",
+      "edge_ids": [],
+      "reason": "Proof heading identifies the corollary."
+    },
+    {
+      "reference_label": "lem:master_moment",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 294,
+        "end_line": 300
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:bayes.master-to-poly-tail"
+      ],
+      "reason": "Corollary proof applies the master moment lemma."
+    },
+    {
+      "reference_label": "prop:spike_slab_rate",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 337,
+        "end_line": 337
+      },
+      "decision": "restatement",
+      "edge_ids": [],
+      "reason": "Proof heading identifies body proposition."
+    },
+    {
+      "reference_label": "cor:poly_tail",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 338,
+        "end_line": 340
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:bayes.poly-tail-to-rate"
+      ],
+      "reason": "Spike-rate proof applies polynomial-tail corollary."
+    },
+    {
+      "reference_label": "eq:z=1_posterior",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 340,
+        "end_line": 347
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:bayes.spike-setup-to-rate"
+      ],
+      "reason": "Spike-rate proof uses the posterior formula from setup."
+    },
+    {
+      "reference_label": "thm:K1_tight_rate_fixed",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 355,
+        "end_line": 355
+      },
+      "decision": "navigation",
+      "edge_ids": [],
+      "reason": "Subsection announces body theorem served by MFM bounds."
+    },
+    {
+      "reference_label": "eq:Lk_gamma_form_fixed",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 417,
+        "end_line": 421
+      },
+      "decision": "non-graph",
+      "edge_ids": [],
+      "reason": "Internal equation navigation within the likelihood proof."
+    },
+    {
+      "reference_label": "eq:Lk_product_form_fixed",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 436,
+        "end_line": 444
+      },
+      "decision": "non-graph",
+      "edge_ids": [],
+      "reason": "Internal equation navigation within the likelihood proof."
+    },
+    {
+      "reference_label": "eq:Lk_product_form_fixed",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 464,
+        "end_line": 466
+      },
+      "decision": "non-graph",
+      "edge_ids": [],
+      "reason": "Internal equation navigation within the likelihood proof."
+    },
+    {
+      "reference_label": "lem:Lk_twosided_fixed",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 505,
+        "end_line": 505
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:bayes.lk-to-k1"
+      ],
+      "reason": "MFM theorem defines N_n using the likelihood lemma."
+    },
+    {
+      "reference_label": "lem:Lk_monotone_fixed",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 522,
+        "end_line": 524
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:bayes.monotone-to-k1"
+      ],
+      "reason": "MFM theorem uses monotonicity."
+    },
+    {
+      "reference_label": "lem:Lk_twosided_fixed",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 526,
+        "end_line": 529
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:bayes.lk-to-k1"
+      ],
+      "reason": "MFM theorem applies upper likelihood bound."
+    },
+    {
+      "reference_label": "lem:Lk_twosided_fixed",
+      "location": {
+        "file": "sections/appendix-bayes.tex",
+        "start_line": 542,
+        "end_line": 544
+      },
+      "decision": "edge",
+      "edge_ids": [
+        "edge:bayes.lk-to-k1"
+      ],
+      "reason": "MFM theorem applies lower likelihood bound."
+    }
+  ],
+  "ambiguities": [
+    {
+      "id": "ambiguity:proof-target-boundary-nodes",
+      "question": "Should proof blocks for body propositions and theorems stated outside the frozen appendix be boundary result nodes?",
+      "locations": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 241,
+          "end_line": 323
+        },
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 258,
+          "end_line": 272
+        },
+        {
+          "file": "sections/appendix-bayes.tex",
+          "start_line": 54,
+          "end_line": 206
+        }
+      ],
+      "options": [
+        "Include boundary nodes, because the appendix proves and sometimes reuses these body results.",
+        "Exclude target nodes, because the full statements are not in the frozen files."
+      ],
+      "recommended_resolution": "Include boundary nodes with descriptions limited to what the appendix proof context establishes."
+    }
+  ]
+}

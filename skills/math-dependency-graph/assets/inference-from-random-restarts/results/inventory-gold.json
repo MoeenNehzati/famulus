@@ -1,0 +1,3411 @@
+{
+  "ir_version": 3,
+  "chunk_id": "inference-random-restarts-inventory-gold",
+  "files": [
+    "sections/appendix-dynamics.tex",
+    "sections/appendix-prevalence.tex",
+    "sections/appendix-bayes.tex",
+    "sections/appendix-application.tex"
+  ],
+  "nodes": [
+    {
+      "local_id": "n1",
+      "statement_location": [
+        0,
+        43,
+        50
+      ],
+      "provenance": "explicit",
+      "type_hint": "external-result",
+      "summary": "Nagurney projected-system theorem gives global solutions and continuous dependence under one-sided Lipschitz and linear-growth conditions.",
+      "visible_title": "Nagurney projected-system well-posedness theorem",
+      "external_identity": {
+        "name": "Nagurney projected-system well-posedness theorem",
+        "citation_key": "nagurney2012projected",
+        "theorem": "2.5"
+      }
+    },
+    {
+      "local_id": "n2",
+      "statement_location": [
+        0,
+        34,
+        41
+      ],
+      "provenance": "explicit",
+      "type_hint": "result",
+      "summary": "A globally Lipschitz vector field on X admits a unique continuous global projected flow.",
+      "environment": "lemma",
+      "labels": [
+        "lemma:global-lip-flow"
+      ],
+      "visible_title": "Global well-posedness under global Lipschitzness"
+    },
+    {
+      "local_id": "n3",
+      "statement_location": [
+        0,
+        77,
+        86
+      ],
+      "provenance": "explicit",
+      "type_hint": "external-result",
+      "summary": "Coordinatewise McShane extension extends the locally Lipschitz restriction on K_R to a globally Lipschitz map.",
+      "visible_title": "McShane extension theorem",
+      "external_identity": {
+        "name": "McShane extension theorem"
+      }
+    },
+    {
+      "local_id": "n4",
+      "statement_location": [
+        0,
+        69,
+        75
+      ],
+      "provenance": "explicit",
+      "type_hint": "result",
+      "summary": "For locally Lipschitz Q, each bounded region has a globally Lipschitz extension agreeing with Q and a continuous global projected flow.",
+      "environment": "lemma",
+      "labels": [
+        "lemma:localized-global-systems"
+      ],
+      "visible_title": "Lipschitz extensions on bounded regions"
+    },
+    {
+      "local_id": "n5",
+      "statement_location": [
+        0,
+        89,
+        99
+      ],
+      "provenance": "explicit",
+      "type_hint": "setup",
+      "summary": "Fixes localized flows and defines the first exit time sigma_{K_R}(x) from the localization ball.",
+      "visible_title": "Localization exit times"
+    },
+    {
+      "local_id": "n6",
+      "statement_location": [
+        0,
+        107,
+        117
+      ],
+      "provenance": "explicit",
+      "type_hint": "result",
+      "summary": "Before the smaller localization exits, it solves the original projected dynamics and agrees with larger localizations.",
+      "environment": "lemma",
+      "labels": [
+        "lemma:localized-consistency"
+      ],
+      "visible_title": "Agreement before exit"
+    },
+    {
+      "local_id": "n7",
+      "statement_location": [
+        0,
+        146,
+        162
+      ],
+      "provenance": "explicit",
+      "type_hint": "result",
+      "summary": "The supremum of localized exit times defines a positive-lifetime local flow solving the original projected dynamics.",
+      "environment": "lemma",
+      "labels": [
+        "lemma:local-flow-construction"
+      ],
+      "visible_title": "Constructing the maximal local flow"
+    },
+    {
+      "local_id": "n8",
+      "statement_location": [
+        0,
+        179,
+        184
+      ],
+      "provenance": "explicit",
+      "type_hint": "result",
+      "summary": "The patched lifetime is maximal and every local solution agrees with the unique maximal local solution map.",
+      "environment": "lemma",
+      "labels": [
+        "lemma:maximal-local-flow"
+      ],
+      "visible_title": "Maximality and uniqueness"
+    },
+    {
+      "local_id": "n9",
+      "statement_location": [
+        0,
+        210,
+        214
+      ],
+      "provenance": "explicit",
+      "type_hint": "result",
+      "summary": "The maximal lifetime is lower semicontinuous and the local flow is continuous on its domain.",
+      "environment": "lemma",
+      "labels": [
+        "lemma:lsc-flow-continuity"
+      ],
+      "visible_title": "Regularity of tau and G"
+    },
+    {
+      "local_id": "n10",
+      "statement_location": [
+        0,
+        241,
+        241
+      ],
+      "provenance": "explicit",
+      "type_hint": "result",
+      "summary": "If X is closed and convex and Q is locally Lipschitz, the projected dynamics are well behaved; under global Lipschitzness the maximal flow is global.",
+      "environment": "lemma",
+      "labels": [
+        "lemma:Lipschitz"
+      ],
+      "visible_title": "Local Lipschitzness implies well-behaved projected dynamics"
+    },
+    {
+      "local_id": "n11",
+      "statement_location": [
+        0,
+        255,
+        255
+      ],
+      "provenance": "explicit",
+      "type_hint": "result",
+      "summary": "Every dynamic solver g_Q is measurable from X to X disjoint union {dagger}.",
+      "environment": "proposition",
+      "labels": [
+        "prop:measurable"
+      ],
+      "visible_title": "Dynamic solvers are measurable"
+    },
+    {
+      "local_id": "n17",
+      "statement_location": [
+        0,
+        395,
+        410
+      ],
+      "provenance": "explicit",
+      "type_hint": "external-result",
+      "summary": "Dominated convergence, equivalently Cesaro averaging, identifies the long-run time average with the limit value.",
+      "visible_title": "Dominated convergence / Cesaro averaging",
+      "external_identity": {
+        "name": "Dominated convergence / Cesaro averaging"
+      }
+    },
+    {
+      "local_id": "n18",
+      "statement_location": [
+        0,
+        337,
+        342
+      ],
+      "provenance": "explicit",
+      "type_hint": "result",
+      "summary": "Every ordinary dynamic-solver outcome is a root of the projected vector field, while nonconvergent outcomes are dagger.",
+      "environment": "lemma",
+      "labels": [
+        "lemma:containment"
+      ],
+      "visible_title": "Terminal outcomes lie among projected roots"
+    },
+    {
+      "local_id": "n19",
+      "statement_location": [
+        1,
+        43,
+        44
+      ],
+      "provenance": "explicit",
+      "type_hint": "result",
+      "summary": "A dynamic solver has finitely many reachable terminal outcomes exactly when its projected vector field has finitely many roots.",
+      "environment": "proposition",
+      "labels": [
+        "prop:finite-rto-roots"
+      ],
+      "visible_title": "Finite reachable outcomes exactly when projected roots are finite"
+    },
+    {
+      "local_id": "n20",
+      "statement_location": [
+        1,
+        259,
+        259
+      ],
+      "provenance": "explicit",
+      "type_hint": "result",
+      "summary": "Under convexity, root compactness, and submersion-probe hypotheses, prevalent dynamics have finitely many reachable terminal outcomes.",
+      "environment": "proposition",
+      "labels": [
+        "prop:e-submersion-finite-attractors"
+      ],
+      "visible_title": "Submersion probes imply prevalent finiteness of reachable terminal outcomes"
+    },
+    {
+      "local_id": "n21",
+      "statement_location": [
+        1,
+        55,
+        63
+      ],
+      "provenance": "explicit",
+      "type_hint": "assumption",
+      "summary": "The projected-root set lies in a common compact set, and the state space has the required C2 boundary regularity.",
+      "labels": [
+        "ass:kkq"
+      ],
+      "visible_title": "Root compactness",
+      "kind_hint": "standing"
+    },
+    {
+      "local_id": "n22",
+      "statement_location": [
+        1,
+        239,
+        243
+      ],
+      "provenance": "explicit",
+      "type_hint": "assumption",
+      "summary": "The state space X is closed and convex.",
+      "labels": [
+        "ass:convex-closed"
+      ],
+      "visible_title": "Closed convex state space",
+      "kind_hint": "standing"
+    },
+    {
+      "local_id": "n23",
+      "statement_location": [
+        1,
+        11,
+        26
+      ],
+      "provenance": "explicit",
+      "type_hint": "exposition",
+      "summary": "For C2 boundary, QTC equals Q in the interior and QTCP on the boundary, with QTCP using the positive normal component.",
+      "environment": "remark",
+      "visible_title": "Interior and boundary projection formula"
+    },
+    {
+      "local_id": "n24",
+      "statement_location": [
+        1,
+        30,
+        34
+      ],
+      "provenance": "explicit",
+      "type_hint": "result",
+      "summary": "A subset closed and discrete in a topological space is finite when contained in a compact set.",
+      "environment": "lemma",
+      "labels": [
+        "lemma:closed-discrete-finite"
+      ],
+      "visible_title": "Closed discrete sets in compact sets are finite"
+    },
+    {
+      "local_id": "n25",
+      "statement_location": [
+        1,
+        48,
+        51
+      ],
+      "provenance": "explicit",
+      "type_hint": "result",
+      "summary": "Projected-field roots are contained in roots of Q or QTCP, and those two root sets are closed in their domains.",
+      "environment": "lemma",
+      "labels": [
+        "lemma:break-into-two"
+      ],
+      "visible_title": "Projected roots split into interior and boundary roots"
+    },
+    {
+      "local_id": "n26",
+      "statement_location": [
+        1,
+        70,
+        77
+      ],
+      "provenance": "explicit",
+      "type_hint": "setup",
+      "summary": "The boundary roots are encoded by the C1 map tilde Q(x,alpha)=Q(x)-alpha n(x).",
+      "visible_title": "Boundary-root encoding"
+    },
+    {
+      "local_id": "n27",
+      "statement_location": [
+        1,
+        80,
+        82
+      ],
+      "provenance": "explicit",
+      "type_hint": "result",
+      "summary": "If tilde Q is transverse to zero, then the boundary projected-root set is discrete in the boundary.",
+      "environment": "lemma",
+      "labels": [
+        "lemma:discrete-preserves"
+      ],
+      "visible_title": "Boundary transversality implies discrete roots"
+    },
+    {
+      "local_id": "n28",
+      "statement_location": [
+        1,
+        105,
+        116
+      ],
+      "provenance": "explicit",
+      "type_hint": "result",
+      "summary": "For a C^r submersion F on parameter-manifold product, almost every parameter fiber is transverse to zero.",
+      "environment": "restatable",
+      "labels": [
+        "lem:parametric_submersion"
+      ],
+      "visible_title": "Parametric transversality from a submersion"
+    },
+    {
+      "local_id": "n29",
+      "statement_location": [
+        1,
+        118,
+        124
+      ],
+      "provenance": "explicit",
+      "type_hint": "exposition",
+      "summary": "When dim Z equals n, C1 regularity suffices; higher regularity is required when dim Z exceeds n for Sard projection.",
+      "environment": "remark",
+      "labels": [
+        "remark:parametric-regularity"
+      ],
+      "visible_title": "Regularity required for parametric transversality"
+    },
+    {
+      "local_id": "n30",
+      "statement_location": [
+        1,
+        131,
+        135
+      ],
+      "provenance": "explicit",
+      "type_hint": "external-result",
+      "summary": "The preimage theorem makes the zero set of the submersion a submanifold with tangent kernel.",
+      "visible_title": "Preimage theorem",
+      "external_identity": {
+        "name": "Preimage theorem"
+      }
+    },
+    {
+      "local_id": "n31",
+      "statement_location": [
+        1,
+        137,
+        141
+      ],
+      "provenance": "explicit",
+      "type_hint": "external-result",
+      "summary": "Sard theorem makes critical values of the projection measure zero.",
+      "visible_title": "Sard's theorem",
+      "external_identity": {
+        "name": "Sard's theorem",
+        "citation_key": "GuilleminPollack1974"
+      }
+    },
+    {
+      "local_id": "n32",
+      "statement_location": [
+        1,
+        155,
+        182
+      ],
+      "provenance": "explicit",
+      "type_hint": "external-result",
+      "summary": "Rank-nullity relates projection rank and fiber-map rank in the parametric-submersion proof.",
+      "visible_title": "Rank–nullity theorem",
+      "external_identity": {
+        "name": "Rank–nullity theorem"
+      }
+    },
+    {
+      "local_id": "n33",
+      "statement_location": [
+        1,
+        196,
+        198
+      ],
+      "provenance": "explicit",
+      "type_hint": "exposition",
+      "summary": "When n equals dim Z, transversality to zero makes the zero set zero-dimensional and hence discrete.",
+      "environment": "remark",
+      "visible_title": "Transversality gives discrete zero sets"
+    },
+    {
+      "local_id": "n34",
+      "statement_location": [
+        1,
+        203,
+        211
+      ],
+      "provenance": "explicit",
+      "type_hint": "setup",
+      "summary": "The finite-dimensional probe evaluation maps e^Q and e^tildeQ are defined.",
+      "environment": "definition",
+      "visible_title": "Perturbed evaluation maps"
+    },
+    {
+      "local_id": "n35",
+      "statement_location": [
+        1,
+        215,
+        219
+      ],
+      "provenance": "explicit",
+      "type_hint": "result",
+      "summary": "If the perturbed evaluation maps are C1 submersions, prevalent dynamics have discrete interior and boundary root sets.",
+      "environment": "theorem",
+      "labels": [
+        "theorem:prevalence_submersion_probe"
+      ],
+      "visible_title": "Prevalence via a submersion probe"
+    },
+    {
+      "local_id": "n36",
+      "statement_location": [
+        1,
+        238,
+        244
+      ],
+      "provenance": "explicit",
+      "type_hint": "result",
+      "summary": "Under convexity, compactness, and submersion-probe hypotheses, prevalent Q have finitely many roots of QTC.",
+      "environment": "corollary",
+      "labels": [
+        "cor:prevalent-finite-roots"
+      ],
+      "visible_title": "Prevalent finiteness of projected roots"
+    },
+    {
+      "local_id": "n37",
+      "statement_location": [
+        2,
+        3,
+        7
+      ],
+      "provenance": "explicit",
+      "type_hint": "setup",
+      "summary": "The subsection fixes A_epsilon={s_x* <= 1-epsilon} for posterior concentration of basin size.",
+      "visible_title": "Basin-Size Concentration"
+    },
+    {
+      "local_id": "n38",
+      "statement_location": [
+        2,
+        9,
+        17
+      ],
+      "provenance": "explicit",
+      "type_hint": "result",
+      "summary": "Posterior probability of A_epsilon is bounded by likelihood-ratio and prior numerator and denominator factors.",
+      "environment": "lemma",
+      "labels": [
+        "lem:eta_bound"
+      ],
+      "visible_title": "Bayes denominator bound"
+    },
+    {
+      "local_id": "n39",
+      "statement_location": [
+        2,
+        42,
+        45
+      ],
+      "provenance": "explicit",
+      "type_hint": "result",
+      "summary": "If 1 is in support of Pi, every epsilon admits eta<epsilon with Pi(A_eta)<1.",
+      "environment": "lemma",
+      "labels": [
+        "lem:supp_tail"
+      ],
+      "visible_title": "Support near one"
+    },
+    {
+      "local_id": "n40",
+      "statement_location": [
+        2,
+        55,
+        55
+      ],
+      "provenance": "explicit",
+      "type_hint": "result",
+      "summary": "Support of the basin-size prior near one yields exponential decay of the posterior probability of A_epsilon.",
+      "environment": "proposition",
+      "labels": [
+        "prop:eta-bound"
+      ],
+      "visible_title": "Support near one implies exponential posterior concentration"
+    },
+    {
+      "local_id": "n41",
+      "statement_location": [
+        2,
+        69,
+        69
+      ],
+      "provenance": "explicit",
+      "type_hint": "result",
+      "summary": "A polynomial prior-density lower bound near one yields an explicit polynomial-times-exponential posterior bound for A_epsilon.",
+      "environment": "proposition",
+      "labels": [
+        "prop:basin-posterior-size"
+      ],
+      "visible_title": "Dropping eta under a polynomial prior-density lower bound"
+    },
+    {
+      "local_id": "n42",
+      "statement_location": [
+        2,
+        87,
+        94
+      ],
+      "provenance": "explicit",
+      "type_hint": "assumption",
+      "summary": "The basin-size prior density is bounded below by a polynomial rate near one.",
+      "labels": [
+        "ass:poly_density"
+      ],
+      "visible_title": "Polynomial prior-density lower bound near one",
+      "kind_hint": "standing"
+    },
+    {
+      "local_id": "n43",
+      "statement_location": [
+        2,
+        132,
+        132
+      ],
+      "provenance": "explicit",
+      "type_hint": "result",
+      "summary": "A Beta(alpha,beta) prior updates to Beta(alpha+n,beta), yielding an exponential posterior tail bound with a polynomial prefactor.",
+      "environment": "proposition",
+      "labels": [
+        "prop:beta_prior"
+      ],
+      "visible_title": "Beta-prior posterior concentration"
+    },
+    {
+      "local_id": "n44",
+      "statement_location": [
+        2,
+        186,
+        195
+      ],
+      "provenance": "explicit",
+      "type_hint": "external-result",
+      "summary": "Gautschi inequality bounds the relevant Gamma ratio polynomially.",
+      "visible_title": "Gautschi's inequality",
+      "external_identity": {
+        "name": "Gautschi's inequality",
+        "citation_key": "gautschi1959some"
+      }
+    },
+    {
+      "local_id": "n45",
+      "statement_location": [
+        2,
+        208,
+        225
+      ],
+      "provenance": "explicit",
+      "type_hint": "setup",
+      "summary": "Defines the spike-and-slab prior, q_n, and the posterior spike-mass formula.",
+      "visible_title": "Spike-and-Slab Prior"
+    },
+    {
+      "local_id": "n46",
+      "statement_location": [
+        2,
+        227,
+        240
+      ],
+      "provenance": "explicit",
+      "type_hint": "result",
+      "summary": "E_W[S^n] is bounded by a near-one tail integral plus (1-delta)^n.",
+      "environment": "lemma",
+      "labels": [
+        "lem:master_moment"
+      ],
+      "visible_title": "Moment bound from near--1 tail"
+    },
+    {
+      "local_id": "n47",
+      "statement_location": [
+        2,
+        282,
+        291
+      ],
+      "provenance": "explicit",
+      "type_hint": "result",
+      "summary": "A polynomial upper bound on the near-one tail implies E_W[S^n] <= C n^{-gamma} eventually.",
+      "environment": "corollary",
+      "labels": [
+        "cor:poly_tail"
+      ],
+      "visible_title": "Polynomial tail implies polynomial moment decay"
+    },
+    {
+      "local_id": "n48",
+      "statement_location": [
+        2,
+        336,
+        336
+      ],
+      "provenance": "explicit",
+      "type_hint": "result",
+      "summary": "If the slab's near-one tail is O(u^gamma), posterior mass outside the spike is O(n^{-gamma}).",
+      "environment": "proposition",
+      "labels": [
+        "prop:spike_slab_rate"
+      ],
+      "visible_title": "Spike-and-slab posterior rate"
+    },
+    {
+      "local_id": "n49",
+      "statement_location": [
+        2,
+        357,
+        373
+      ],
+      "provenance": "explicit",
+      "type_hint": "result",
+      "summary": "The MFM likelihood L_k(n) has explicit two-sided power bounds with exponent delta_k.",
+      "environment": "lemma",
+      "labels": [
+        "lem:Lk_twosided_fixed",
+        "eq:Lk_twosided_fixed"
+      ],
+      "visible_title": "Two-sided bounds for L_k(n) (fixed x*)"
+    },
+    {
+      "local_id": "n50",
+      "statement_location": [
+        2,
+        396,
+        400
+      ],
+      "provenance": "explicit",
+      "type_hint": "external-result",
+      "summary": "The Dirichlet moment formula gives E[s_1^n] as a Gamma ratio.",
+      "visible_title": "Dirichlet moment formula",
+      "external_identity": {
+        "name": "Dirichlet moment formula"
+      }
+    },
+    {
+      "local_id": "n51",
+      "statement_location": [
+        2,
+        482,
+        485
+      ],
+      "provenance": "explicit",
+      "type_hint": "result",
+      "summary": "For fixed alpha and n, L_k(n) decreases with k.",
+      "environment": "lemma",
+      "labels": [
+        "lem:Lk_monotone_fixed"
+      ],
+      "visible_title": "Monotonicity of L_k(n)"
+    },
+    {
+      "local_id": "n52",
+      "statement_location": [
+        2,
+        502,
+        502
+      ],
+      "provenance": "explicit",
+      "type_hint": "result",
+      "summary": "Under the fixed-x* MFM assumptions, posterior mass outside K=1 is Theta(n^{-alpha/2}).",
+      "environment": "theorem",
+      "labels": [
+        "thm:K1_tight_rate_fixed"
+      ],
+      "visible_title": "Rate-tight concentration of P(K=1 | H_n(x*))"
+    },
+    {
+      "local_id": "n53",
+      "statement_location": [
+        3,
+        7,
+        7
+      ],
+      "provenance": "explicit",
+      "type_hint": "external-result",
+      "summary": "Skerlos et al. supply lower and upper bounds for mixed-logit equilibrium prices.",
+      "visible_title": "Mixed-logit equilibrium price bounds",
+      "external_identity": {
+        "name": "Mixed-logit equilibrium price bounds",
+        "citation_key": "skerlos2010fixed"
+      }
+    },
+    {
+      "local_id": "n54",
+      "statement_location": [
+        3,
+        5,
+        30
+      ],
+      "provenance": "explicit",
+      "type_hint": "setup",
+      "summary": "The l^{2p}-type set X_p contains the price box, is compact and convex, has smooth boundary, and lies in the positive orthant for large p.",
+      "environment": "subsection",
+      "labels": [
+        "appendix:application-smooth-domain"
+      ],
+      "visible_title": "A smooth compact price domain"
+    },
+    {
+      "local_id": "n55",
+      "statement_location": [
+        3,
+        32,
+        59
+      ],
+      "provenance": "explicit",
+      "type_hint": "setup",
+      "summary": "Transported operations and norm make the parametrized dynamics class a Banach space via a finite-dimensional linear isometry.",
+      "environment": "subsection",
+      "labels": [
+        "appendix:application-banach"
+      ],
+      "visible_title": "A transported Banach structure"
+    },
+    {
+      "local_id": "n56",
+      "statement_location": [
+        3,
+        45,
+        45
+      ],
+      "provenance": "explicit",
+      "type_hint": "assumption",
+      "summary": "The parameter-to-dynamics map is injective, so transported operations and the transported norm are well defined.",
+      "visible_title": "Injective dynamics parametrization",
+      "kind_hint": "local",
+      "scope_hint": {
+        "starts_at": [
+          3,
+          45,
+          45
+        ],
+        "ends_at": [
+          3,
+          59,
+          59
+        ]
+      }
+    },
+    {
+      "local_id": "n57",
+      "statement_location": [
+        0,
+        349,
+        354
+      ],
+      "provenance": "explicit",
+      "type_hint": "setup",
+      "summary": "Along the projected trajectory, Q(x(t)) minus its time derivative lies in the normal cone N_X(x(t)) for almost every t."
+    },
+    {
+      "local_id": "n59",
+      "statement_location": [
+        0,
+        42,
+        53
+      ],
+      "environment": "proof",
+      "provenance": "explicit",
+      "type_hint": "proof",
+      "summary": "Formal proof applies Nagurney's projected-system theorem after adjusting its sign convention, yielding unique global solutions and continuous flow dependence."
+    },
+    {
+      "local_id": "n60",
+      "statement_location": [
+        0,
+        76,
+        87
+      ],
+      "environment": "proof",
+      "provenance": "explicit",
+      "type_hint": "proof",
+      "summary": "Formal proof obtains a uniform Lipschitz constant on K_R, extends Q coordinatewise by McShane, and invokes global well-posedness for the extension."
+    },
+    {
+      "local_id": "n61",
+      "statement_location": [
+        0,
+        118,
+        144
+      ],
+      "environment": "proof",
+      "provenance": "explicit",
+      "type_hint": "proof",
+      "summary": "Formal proof keeps the localized trajectory inside K_R, where both extensions equal Q, and uses uniqueness for the larger global system to prove agreement."
+    },
+    {
+      "local_id": "n62",
+      "statement_location": [
+        0,
+        163,
+        177
+      ],
+      "environment": "proof",
+      "provenance": "explicit",
+      "type_hint": "proof",
+      "summary": "Formal proof uses continuity for positive exit time and localization consistency to make the patched flow well defined and solve the original dynamics."
+    },
+    {
+      "local_id": "n63",
+      "statement_location": [
+        0,
+        185,
+        208
+      ],
+      "environment": "proof",
+      "provenance": "explicit",
+      "type_hint": "proof",
+      "summary": "Formal proof embeds any bounded solution segment in one globally Lipschitz localization, uses uniqueness there, and compares its exit time with the patched lifetime."
+    },
+    {
+      "local_id": "n64",
+      "statement_location": [
+        0,
+        215,
+        239
+      ],
+      "environment": "proof",
+      "provenance": "explicit",
+      "type_hint": "proof",
+      "summary": "Formal proof expresses survival sets through localized exit times to prove lower semicontinuity, then locally identifies G with a continuous global flow."
+    },
+    {
+      "local_id": "n65",
+      "statement_location": [
+        0,
+        242,
+        251
+      ],
+      "environment": "proof",
+      "visible_title": "Proof of Local Lipschitzness implies well-behaved projected dynamics",
+      "provenance": "explicit",
+      "type_hint": "proof",
+      "summary": "Formal proof assembles the global-flow, localization, consistency, patching, maximality, and regularity lemmas to verify the well-behaved projected-dynamics assumption."
+    },
+    {
+      "local_id": "n66",
+      "statement_location": [
+        0,
+        256,
+        323
+      ],
+      "environment": "proof",
+      "provenance": "explicit",
+      "type_hint": "proof",
+      "summary": "Formal proof partitions initial conditions by lifetime and convergence, represents convergence through rational-time limsup and liminf, and checks Borel preimages."
+    },
+    {
+      "local_id": "n67",
+      "statement_location": [
+        0,
+        343,
+        422
+      ],
+      "environment": "proof",
+      "provenance": "explicit",
+      "type_hint": "proof",
+      "summary": "Formal proof integrates the normal-cone inequality, averages in time, and uses dominated convergence to show every convergent terminal point is a projected root."
+    },
+    {
+      "local_id": "n68",
+      "statement_location": [
+        1,
+        35,
+        41
+      ],
+      "environment": "proof",
+      "provenance": "explicit",
+      "type_hint": "proof",
+      "summary": "Formal proof makes the closed discrete subset compact, covers it by isolating singleton neighborhoods, and extracts a finite subcover."
+    },
+    {
+      "local_id": "n69",
+      "statement_location": [
+        1,
+        52,
+        59
+      ],
+      "environment": "proof",
+      "provenance": "explicit",
+      "type_hint": "proof",
+      "summary": "Formal proof splits a projected root into interior or boundary cases and uses continuity of Q and the C1 boundary normal to close both root sets."
+    },
+    {
+      "local_id": "n70",
+      "statement_location": [
+        1,
+        83,
+        101
+      ],
+      "environment": "proof",
+      "provenance": "explicit",
+      "type_hint": "proof",
+      "summary": "Formal proof embeds each boundary root as a zero of tilde Q and uses continuity of alpha to turn any boundary accumulation point into one for the discrete lifted zero set."
+    },
+    {
+      "local_id": "n71",
+      "statement_location": [
+        1,
+        131,
+        194
+      ],
+      "environment": "proof",
+      "provenance": "explicit",
+      "type_hint": "proof",
+      "summary": "Formal proof applies the preimage theorem to F^{-1}(0), Sard to its parameter projection, and rank-nullity to identify regular projection values with transverse fibers."
+    },
+    {
+      "local_id": "n72",
+      "statement_location": [
+        1,
+        221,
+        236
+      ],
+      "environment": "proof",
+      "provenance": "explicit",
+      "type_hint": "proof",
+      "summary": "Formal proof applies parametric transversality to both perturbed evaluation maps, transfers lifted boundary discreteness, and intersects the two full-measure probe sets."
+    },
+    {
+      "local_id": "n73",
+      "statement_location": [
+        1,
+        245,
+        256
+      ],
+      "environment": "proof",
+      "provenance": "explicit",
+      "type_hint": "proof",
+      "summary": "Formal proof combines prevalent discreteness, the interior-boundary root decomposition, compact containment, and compact closed-discrete finiteness."
+    },
+    {
+      "local_id": "n74",
+      "statement_location": [
+        1,
+        260,
+        273
+      ],
+      "environment": "proof",
+      "visible_title": "Proof of Submersion probes imply prevalent finiteness of reachable terminal outcomes",
+      "provenance": "explicit",
+      "type_hint": "proof",
+      "summary": "Formal proof invokes prevalent finiteness of projected roots and terminal-outcome containment to bound every reachable solver output by a finite set plus dagger."
+    },
+    {
+      "local_id": "n75",
+      "statement_location": [
+        2,
+        19,
+        40
+      ],
+      "environment": "proof",
+      "provenance": "explicit",
+      "type_hint": "proof",
+      "summary": "Formal proof upper-bounds the joint event on A_epsilon, lower-bounds the evidence on the complement of A_eta, and divides the two Bayes terms."
+    },
+    {
+      "local_id": "n76",
+      "statement_location": [
+        2,
+        47,
+        52
+      ],
+      "environment": "proof",
+      "provenance": "explicit",
+      "type_hint": "proof",
+      "summary": "Formal proof uses support at one to give positive prior mass to (1-eta,1], so A_eta cannot have full prior mass."
+    },
+    {
+      "local_id": "n77",
+      "statement_location": [
+        2,
+        56,
+        67
+      ],
+      "environment": "proof",
+      "visible_title": "Proof of Support near one implies exponential posterior concentration",
+      "provenance": "explicit",
+      "type_hint": "proof",
+      "summary": "Formal proof chooses eta by support near one, applies the denominator bound, and observes that the resulting likelihood ratio decays geometrically."
+    },
+    {
+      "local_id": "n78",
+      "statement_location": [
+        2,
+        70,
+        129
+      ],
+      "environment": "proof",
+      "provenance": "explicit",
+      "type_hint": "proof",
+      "summary": "Formal proof lower-bounds prior mass near one from the polynomial density, chooses eta=1/n, and converts the resulting polynomial-geometric bound to exponential form."
+    },
+    {
+      "local_id": "n79",
+      "statement_location": [
+        2,
+        134,
+        206
+      ],
+      "environment": "proof",
+      "visible_title": "Proof of Beta-prior posterior concentration",
+      "provenance": "explicit",
+      "type_hint": "proof",
+      "summary": "Formal proof derives the Beta posterior, changes variables in its lower tail, and combines a Gamma-ratio bound with an exponential inequality."
+    },
+    {
+      "local_id": "n80",
+      "statement_location": [
+        2,
+        242,
+        280
+      ],
+      "environment": "proof",
+      "visible_title": "Proof of Moment bound from near--1 tail",
+      "provenance": "explicit",
+      "type_hint": "proof",
+      "summary": "Formal proof writes the moment as a tail integral, changes to distance from one, bounds the kernel exponentially, and splits at delta."
+    },
+    {
+      "local_id": "n81",
+      "statement_location": [
+        2,
+        293,
+        333
+      ],
+      "environment": "proof",
+      "visible_title": "Proof of Polynomial tail implies polynomial moment decay",
+      "provenance": "explicit",
+      "type_hint": "proof",
+      "summary": "Formal proof inserts the polynomial tail bound into the moment estimate, evaluates the extended integral by the Gamma integral, and absorbs the exponential remainder."
+    },
+    {
+      "local_id": "n82",
+      "statement_location": [
+        2,
+        337,
+        351
+      ],
+      "environment": "proof",
+      "visible_title": "Proof of Spike-and-slab posterior rate",
+      "provenance": "explicit",
+      "type_hint": "proof",
+      "summary": "Formal proof applies polynomial moment decay to q_n and bounds the posterior slab probability by ((1-p)/p)q_n."
+    },
+    {
+      "local_id": "n83",
+      "statement_location": [
+        2,
+        374,
+        480
+      ],
+      "environment": "proof",
+      "provenance": "explicit",
+      "type_hint": "proof",
+      "summary": "Formal proof derives the Dirichlet Gamma-ratio likelihood, converts it to a product, and bounds its logarithm above and below by harmonic integrals."
+    },
+    {
+      "local_id": "n84",
+      "statement_location": [
+        2,
+        486,
+        500
+      ],
+      "environment": "proof",
+      "provenance": "explicit",
+      "type_hint": "proof",
+      "summary": "Formal proof writes L_k as a Gamma ratio, differentiates its logarithm to show increase in alpha/k, and concludes decrease in k."
+    },
+    {
+      "local_id": "n85",
+      "statement_location": [
+        2,
+        503,
+        549
+      ],
+      "environment": "proof",
+      "provenance": "explicit",
+      "type_hint": "proof",
+      "summary": "Formal proof sandwiches posterior mass outside K=1 between multiples of L_2 using monotonicity and then applies the two-sided likelihood bounds."
+    },
+    {
+      "local_id": "n86",
+      "statement_location": [
+        0,
+        20,
+        31
+      ],
+      "provenance": "explicit",
+      "type_hint": "proof",
+      "summary": "Sketch localizes Q on compact regions, invokes global projected flows for the extensions, patches them before exit, and inherits uniqueness and continuity for local well-posedness."
+    },
+    {
+      "local_id": "n87",
+      "statement_location": [
+        1,
+        126,
+        129
+      ],
+      "provenance": "explicit",
+      "type_hint": "proof",
+      "summary": "Sketch applies Sard's theorem to the projection of F^{-1}(0) onto parameter space and identifies regular projection values with transverse fibers."
+    },
+    {
+      "local_id": "n88",
+      "statement_location": [
+        2,
+        219,
+        224
+      ],
+      "visible_title": "Bayes' rule",
+      "provenance": "explicit",
+      "type_hint": "external-result",
+      "external_identity": {
+        "name": "Bayes' rule"
+      },
+      "summary": "Bayes' rule expresses the posterior spike mass as p divided by p plus (1-p) times the slab moment q_n."
+    },
+    {
+      "local_id": "n89",
+      "statement_location": [
+        2,
+        312,
+        319
+      ],
+      "visible_title": "Gamma integral",
+      "provenance": "explicit",
+      "type_hint": "external-result",
+      "external_identity": {
+        "name": "Gamma integral"
+      },
+      "summary": "The Gamma integral evaluates the rescaled exponential-power integral as (n-1)^(-(gamma+1)) Gamma(gamma+1)."
+    }
+  ],
+  "edges": [
+    {
+      "local_id": "d1",
+      "from": {
+        "local_node": "n1"
+      },
+      "to": {
+        "local_node": "n59"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        0,
+        43,
+        44
+      ],
+      "description": "The proof applies the cited theorem to obtain global solutions and continuity.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          0,
+          43,
+          44
+        ],
+        "locator": {
+          "citation_key": "nagurney2012projected"
+        }
+      }
+    },
+    {
+      "local_id": "d2",
+      "from": {
+        "local_node": "n2"
+      },
+      "to": {
+        "local_node": "n60"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        0,
+        85,
+        86
+      ],
+      "description": "The localization lemma concludes by applying the global-flow lemma.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          0,
+          85,
+          86
+        ],
+        "locator": {
+          "label": "lemma:global-lip-flow"
+        }
+      }
+    },
+    {
+      "local_id": "d3",
+      "from": {
+        "local_node": "n3"
+      },
+      "to": {
+        "local_node": "n60"
+      },
+      "type": "supports",
+      "basis": "explicit-prose",
+      "assertion": "explicit",
+      "location": [
+        0,
+        77,
+        86
+      ],
+      "description": "The proof constructs the required extension via McShane before applying global flow.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d4",
+      "from": {
+        "local_node": "n4"
+      },
+      "to": {
+        "local_node": "n5"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        0,
+        89,
+        90
+      ],
+      "description": "The exit-time setup fixes the maps and flows supplied by the localization lemma.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          0,
+          89,
+          90
+        ],
+        "locator": {
+          "label": "lemma:localized-global-systems"
+        }
+      }
+    },
+    {
+      "local_id": "d5",
+      "from": {
+        "local_node": "n5"
+      },
+      "to": {
+        "local_node": "n61"
+      },
+      "type": "supports",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        0,
+        119,
+        124
+      ],
+      "description": "The proof uses T<sigma to keep the localized trajectory inside K_R.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d6",
+      "from": {
+        "local_node": "n4"
+      },
+      "to": {
+        "local_node": "n61"
+      },
+      "type": "supports",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        0,
+        129,
+        138
+      ],
+      "description": "Agreement with the larger localized flow uses the larger globally Lipschitz system and its uniqueness.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d7",
+      "from": {
+        "local_node": "n6"
+      },
+      "to": {
+        "local_node": "n62"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        0,
+        168,
+        176
+      ],
+      "description": "The patching proof invokes compatibility to make G well defined and solve the original dynamics.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          0,
+          168,
+          176
+        ],
+        "locator": {
+          "label": "lemma:localized-consistency"
+        }
+      }
+    },
+    {
+      "local_id": "d8",
+      "from": {
+        "local_node": "n5"
+      },
+      "to": {
+        "local_node": "n62"
+      },
+      "type": "supports",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        0,
+        164,
+        166
+      ],
+      "description": "The proof uses continuity of a localized flow at time zero to show its exit time is positive.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d9",
+      "from": {
+        "local_node": "n7"
+      },
+      "to": {
+        "local_node": "n63"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        0,
+        206,
+        207
+      ],
+      "description": "The maximality proof invokes the constructed local solution on its full patched lifetime.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          0,
+          206,
+          207
+        ],
+        "locator": {
+          "label": "lemma:local-flow-construction"
+        }
+      }
+    },
+    {
+      "local_id": "d10",
+      "from": {
+        "local_node": "n4"
+      },
+      "to": {
+        "local_node": "n63"
+      },
+      "type": "supports",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        0,
+        186,
+        199
+      ],
+      "description": "The proof identifies any local solution with a unique solution of a localized globally Lipschitz system.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d11",
+      "from": {
+        "local_node": "n7"
+      },
+      "to": {
+        "local_node": "n64"
+      },
+      "type": "supports",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        0,
+        221,
+        223
+      ],
+      "description": "The regularity proof uses the supremum-of-exit-times definition of the constructed lifetime.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d12",
+      "from": {
+        "local_node": "n4"
+      },
+      "to": {
+        "local_node": "n64"
+      },
+      "type": "supports",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        0,
+        227,
+        238
+      ],
+      "description": "Lower semicontinuity and continuity use continuity of the relevant localized global flow.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d13",
+      "from": {
+        "local_node": "n2"
+      },
+      "to": {
+        "local_node": "n65"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        0,
+        243,
+        244
+      ],
+      "description": "The proof of the Lipschitz lemma explicitly cites the global-flow case.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          0,
+          243,
+          244
+        ],
+        "locator": {
+          "label": "lemma:global-lip-flow"
+        }
+      }
+    },
+    {
+      "local_id": "d14",
+      "from": {
+        "local_node": "n4"
+      },
+      "to": {
+        "local_node": "n65"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        0,
+        244,
+        245
+      ],
+      "description": "The proof of the Lipschitz lemma explicitly cites the localized systems.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          0,
+          244,
+          245
+        ],
+        "locator": {
+          "label": "lemma:localized-global-systems"
+        }
+      }
+    },
+    {
+      "local_id": "d15",
+      "from": {
+        "local_node": "n6"
+      },
+      "to": {
+        "local_node": "n65"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        0,
+        244,
+        246
+      ],
+      "description": "The proof of the Lipschitz lemma explicitly cites compatibility of localizations.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          0,
+          244,
+          246
+        ],
+        "locator": {
+          "label": "lemma:localized-consistency"
+        }
+      }
+    },
+    {
+      "local_id": "d16",
+      "from": {
+        "local_node": "n7"
+      },
+      "to": {
+        "local_node": "n65"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        0,
+        246,
+        247
+      ],
+      "description": "The proof of the Lipschitz lemma cites the local-flow construction.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          0,
+          246,
+          247
+        ],
+        "locator": {
+          "label": "lemma:local-flow-construction"
+        }
+      }
+    },
+    {
+      "local_id": "d17",
+      "from": {
+        "local_node": "n8"
+      },
+      "to": {
+        "local_node": "n65"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        0,
+        247,
+        248
+      ],
+      "description": "The proof of the Lipschitz lemma cites maximality and uniqueness.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          0,
+          247,
+          248
+        ],
+        "locator": {
+          "label": "lemma:maximal-local-flow"
+        }
+      }
+    },
+    {
+      "local_id": "d18",
+      "from": {
+        "local_node": "n9"
+      },
+      "to": {
+        "local_node": "n65"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        0,
+        248,
+        250
+      ],
+      "description": "The proof of the Lipschitz lemma cites lower semicontinuity and continuity.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          0,
+          248,
+          250
+        ],
+        "locator": {
+          "label": "lemma:lsc-flow-continuity"
+        }
+      }
+    },
+    {
+      "local_id": "d27",
+      "from": {
+        "local_node": "n17"
+      },
+      "to": {
+        "local_node": "n67"
+      },
+      "type": "supports",
+      "basis": "explicit-prose",
+      "assertion": "explicit",
+      "location": [
+        0,
+        395,
+        412
+      ],
+      "description": "The proof uses dominated convergence/Cesaro averaging to pass the time average to the limit.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d28",
+      "from": {
+        "local_node": "n18"
+      },
+      "to": {
+        "local_node": "n19"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        0,
+        327,
+        342
+      ],
+      "description": "The appendix identifies the containment lemma as the nontrivial argument underlying the body proposition.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          0,
+          327,
+          342
+        ],
+        "locator": {
+          "label": "prop:finite-rto-roots"
+        }
+      }
+    },
+    {
+      "local_id": "d29",
+      "from": {
+        "local_node": "n23"
+      },
+      "to": {
+        "local_node": "n69"
+      },
+      "type": "supports",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        1,
+        52,
+        58
+      ],
+      "description": "The proof splits roots by interior and boundary cases using the QTC/Q/QTCP decomposition.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d30",
+      "from": {
+        "local_node": "n21"
+      },
+      "to": {
+        "local_node": "n69"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        1,
+        55,
+        58
+      ],
+      "description": "The closedness of boundary roots uses C2 boundary from Assumption kkq.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          1,
+          55,
+          58
+        ],
+        "locator": {
+          "label": "ass:kkq"
+        }
+      }
+    },
+    {
+      "local_id": "d31",
+      "from": {
+        "local_node": "n23"
+      },
+      "to": {
+        "local_node": "n26"
+      },
+      "type": "supports",
+      "basis": "explicit-prose",
+      "assertion": "explicit",
+      "location": [
+        1,
+        70,
+        77
+      ],
+      "description": "The tilde map is introduced to avoid the nonsmooth positive-part term in QTCP.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d32",
+      "from": {
+        "local_node": "n26"
+      },
+      "to": {
+        "local_node": "n70"
+      },
+      "type": "supports",
+      "basis": "explicit-prose",
+      "assertion": "explicit",
+      "location": [
+        1,
+        84,
+        100
+      ],
+      "description": "The proof relates QTCP roots to tilde-Q roots through alpha(x).",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d33",
+      "from": {
+        "local_node": "n30"
+      },
+      "to": {
+        "local_node": "n71"
+      },
+      "type": "supports",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        1,
+        131,
+        135
+      ],
+      "description": "The proof uses the preimage theorem to form the zero-set submanifold.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d34",
+      "from": {
+        "local_node": "n30"
+      },
+      "to": {
+        "local_node": "n33"
+      },
+      "type": "supports",
+      "basis": "explicit-prose",
+      "assertion": "explicit",
+      "location": [
+        1,
+        196,
+        198
+      ],
+      "description": "The remark explicitly applies the preimage theorem to obtain a zero-dimensional and therefore discrete root set.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d35",
+      "from": {
+        "local_node": "n31"
+      },
+      "to": {
+        "local_node": "n71"
+      },
+      "type": "supports",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        1,
+        137,
+        141
+      ],
+      "description": "The proof uses Sard theorem for measure-zero critical values.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d36",
+      "from": {
+        "local_node": "n32"
+      },
+      "to": {
+        "local_node": "n71"
+      },
+      "type": "supports",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        1,
+        155,
+        188
+      ],
+      "description": "The proof uses rank-nullity to equate regular projection values with transverse fibers.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d37",
+      "from": {
+        "local_node": "n34"
+      },
+      "to": {
+        "local_node": "n72"
+      },
+      "type": "supports",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        1,
+        223,
+        230
+      ],
+      "description": "The proof applies parametric transversality to the two perturbed evaluation maps defined for the probe.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d38",
+      "from": {
+        "local_node": "n28"
+      },
+      "to": {
+        "local_node": "n72"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        1,
+        221,
+        227
+      ],
+      "description": "The proof applies parametric submersion to both evaluation maps.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          1,
+          221,
+          227
+        ],
+        "locator": {
+          "label": "lem:parametric_submersion"
+        }
+      }
+    },
+    {
+      "local_id": "d39",
+      "from": {
+        "local_node": "n27"
+      },
+      "to": {
+        "local_node": "n72"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        1,
+        231,
+        235
+      ],
+      "description": "The proof applies the boundary discreteness lemma.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          1,
+          231,
+          235
+        ],
+        "locator": {
+          "label": "lemma:discrete-preserves"
+        }
+      }
+    },
+    {
+      "local_id": "d40",
+      "from": {
+        "local_node": "n35"
+      },
+      "to": {
+        "local_node": "n73"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        1,
+        246,
+        248
+      ],
+      "description": "The finite-root proof begins with the prevalence theorem discreteness conclusion.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          1,
+          246,
+          248
+        ],
+        "locator": {
+          "label": "theorem:prevalence_submersion_probe"
+        }
+      }
+    },
+    {
+      "local_id": "d41",
+      "from": {
+        "local_node": "n25"
+      },
+      "to": {
+        "local_node": "n73"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        1,
+        248,
+        253
+      ],
+      "description": "The finite-root proof uses root decomposition and closedness from the break-into-two lemma.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          1,
+          248,
+          253
+        ],
+        "locator": {
+          "label": "lemma:break-into-two"
+        }
+      }
+    },
+    {
+      "local_id": "d42",
+      "from": {
+        "local_node": "n24"
+      },
+      "to": {
+        "local_node": "n73"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        1,
+        253,
+        255
+      ],
+      "description": "The proof applies the compact closed-discrete finiteness lemma.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          1,
+          253,
+          255
+        ],
+        "locator": {
+          "label": "lemma:closed-discrete-finite"
+        }
+      }
+    },
+    {
+      "local_id": "d43",
+      "from": {
+        "local_node": "n21"
+      },
+      "to": {
+        "local_node": "n73"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        1,
+        252,
+        254
+      ],
+      "description": "Compact containment comes from Assumption kkq.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          1,
+          252,
+          254
+        ],
+        "locator": {
+          "label": "ass:kkq"
+        }
+      }
+    },
+    {
+      "local_id": "d44",
+      "from": {
+        "local_node": "n22"
+      },
+      "to": {
+        "local_node": "n73"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        1,
+        239,
+        243
+      ],
+      "description": "The corollary explicitly assumes the convex-closed condition.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          1,
+          239,
+          243
+        ],
+        "locator": {
+          "label": "ass:convex-closed"
+        }
+      }
+    },
+    {
+      "local_id": "d45",
+      "from": {
+        "local_node": "n36"
+      },
+      "to": {
+        "local_node": "n74"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        1,
+        260,
+        264
+      ],
+      "description": "The attractor-finiteness proof invokes exactly the finite-root corollary's hypotheses.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          1,
+          260,
+          264
+        ],
+        "locator": {
+          "label": "cor:prevalent-finite-roots"
+        }
+      }
+    },
+    {
+      "local_id": "d46",
+      "from": {
+        "local_node": "n18"
+      },
+      "to": {
+        "local_node": "n74"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        1,
+        266,
+        270
+      ],
+      "description": "The attractor-finiteness proof uses containment to bound terminal outcomes by finite roots plus dagger.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          1,
+          266,
+          270
+        ],
+        "locator": {
+          "label": "lemma:containment"
+        }
+      }
+    },
+    {
+      "local_id": "d47",
+      "from": {
+        "local_node": "n37"
+      },
+      "to": {
+        "local_node": "n75"
+      },
+      "type": "supports",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        2,
+        20,
+        26
+      ],
+      "description": "The proof uses the definition of A_epsilon to bound the numerator event by (1-epsilon)^n times its prior mass.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d48",
+      "from": {
+        "local_node": "n37"
+      },
+      "to": {
+        "local_node": "n76"
+      },
+      "type": "supports",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        2,
+        48,
+        51
+      ],
+      "description": "The proof uses the basin event A_eta and support at one to show its complement has positive mass.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d49",
+      "from": {
+        "local_node": "n39"
+      },
+      "to": {
+        "local_node": "n77"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        2,
+        56,
+        58
+      ],
+      "description": "The proposition proof uses the support lemma to choose eta.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          2,
+          56,
+          58
+        ],
+        "locator": {
+          "label": "lem:supp_tail"
+        }
+      }
+    },
+    {
+      "local_id": "d50",
+      "from": {
+        "local_node": "n38"
+      },
+      "to": {
+        "local_node": "n77"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        2,
+        58,
+        66
+      ],
+      "description": "The proposition proof applies the Bayes denominator bound.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          2,
+          58,
+          66
+        ],
+        "locator": {
+          "label": "lem:eta_bound"
+        }
+      }
+    },
+    {
+      "local_id": "d51",
+      "from": {
+        "local_node": "n38"
+      },
+      "to": {
+        "local_node": "n78"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        2,
+        71,
+        77
+      ],
+      "description": "The posterior-size proof starts from the eta-bound lemma.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          2,
+          71,
+          77
+        ],
+        "locator": {
+          "label": "lem:eta_bound"
+        }
+      }
+    },
+    {
+      "local_id": "d52",
+      "from": {
+        "local_node": "n42"
+      },
+      "to": {
+        "local_node": "n78"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        2,
+        87,
+        94
+      ],
+      "description": "The denominator lower bound directly uses the polynomial density assumption.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          2,
+          87,
+          94
+        ],
+        "locator": {
+          "label": "ass:poly_density"
+        }
+      }
+    },
+    {
+      "local_id": "d53",
+      "from": {
+        "local_node": "n44"
+      },
+      "to": {
+        "local_node": "n79"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        2,
+        191,
+        195
+      ],
+      "description": "The beta-prior proof cites Gautschi's inequality to bound the Gamma ratio polynomially.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          2,
+          191,
+          195
+        ],
+        "locator": {
+          "citation_key": "gautschi1959some"
+        }
+      }
+    },
+    {
+      "local_id": "d54",
+      "from": {
+        "local_node": "n46"
+      },
+      "to": {
+        "local_node": "n81"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        2,
+        293,
+        300
+      ],
+      "description": "The corollary proof directly applies the master moment lemma.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          2,
+          293,
+          300
+        ],
+        "locator": {
+          "label": "lem:master_moment"
+        }
+      }
+    },
+    {
+      "local_id": "d55",
+      "from": {
+        "local_node": "n45"
+      },
+      "to": {
+        "local_node": "n82"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        2,
+        338,
+        347
+      ],
+      "description": "The spike-rate proof uses q_n and the posterior formula from the setup.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          2,
+          338,
+          347
+        ],
+        "locator": {
+          "label": "eq:z=1_posterior"
+        }
+      }
+    },
+    {
+      "local_id": "d56",
+      "from": {
+        "local_node": "n47"
+      },
+      "to": {
+        "local_node": "n82"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        2,
+        337,
+        340
+      ],
+      "description": "The proof applies the polynomial-tail corollary to q_n.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          2,
+          337,
+          340
+        ],
+        "locator": {
+          "label": "cor:poly_tail"
+        }
+      }
+    },
+    {
+      "local_id": "d57",
+      "from": {
+        "local_node": "n50"
+      },
+      "to": {
+        "local_node": "n83"
+      },
+      "type": "supports",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        2,
+        396,
+        400
+      ],
+      "description": "The proof applies the Dirichlet moment formula to express L_k(n) as a Gamma ratio.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d58",
+      "from": {
+        "local_node": "n50"
+      },
+      "to": {
+        "local_node": "n84"
+      },
+      "type": "supports",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        2,
+        487,
+        490
+      ],
+      "description": "The proof uses the Dirichlet moment formula to write L_k(n) as a Gamma ratio before comparing k.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d59",
+      "from": {
+        "local_node": "n49"
+      },
+      "to": {
+        "local_node": "n85"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        2,
+        526,
+        529
+      ],
+      "description": "The upper-rate argument applies the two-sided likelihood lemma at k=2.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          2,
+          504,
+          529
+        ],
+        "locator": {
+          "label": "lem:Lk_twosided_fixed"
+        }
+      }
+    },
+    {
+      "local_id": "d60",
+      "from": {
+        "local_node": "n51"
+      },
+      "to": {
+        "local_node": "n85"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        2,
+        522,
+        524
+      ],
+      "description": "The MFM theorem uses monotonicity to bound all k>=2 by L_2.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          2,
+          522,
+          524
+        ],
+        "locator": {
+          "label": "lem:Lk_monotone_fixed"
+        }
+      }
+    },
+    {
+      "local_id": "d61",
+      "from": {
+        "local_node": "n53"
+      },
+      "to": {
+        "local_node": "n54"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        3,
+        7,
+        7
+      ],
+      "description": "The construction starts from the price bounds supplied by the cited source.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          3,
+          7,
+          7
+        ],
+        "locator": {
+          "citation_key": "skerlos2010fixed"
+        }
+      }
+    },
+    {
+      "local_id": "d62",
+      "from": {
+        "local_node": "n56"
+      },
+      "to": {
+        "local_node": "n55"
+      },
+      "type": "supports",
+      "basis": "explicit-prose",
+      "assertion": "explicit",
+      "location": [
+        3,
+        45,
+        59
+      ],
+      "description": "Injectivity makes the transported vector operations and norm well defined, enabling the Banach-space construction.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d63",
+      "from": {
+        "local_node": "n28"
+      },
+      "to": {
+        "local_node": "n29"
+      },
+      "type": "supports",
+      "basis": "explicit-prose",
+      "assertion": "explicit",
+      "location": [
+        1,
+        118,
+        124
+      ],
+      "description": "The regularity remark specializes the parametric transversality lemma's Sard condition and explains when C1 regularity suffices.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d64",
+      "from": {
+        "local_node": "n9"
+      },
+      "to": {
+        "local_node": "n66"
+      },
+      "type": "supports",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        0,
+        273,
+        274
+      ],
+      "description": "Lower semicontinuity of tau makes every survival set A_n open, hence their countable intersection A_infinity is Borel.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d65",
+      "from": {
+        "local_node": "n59"
+      },
+      "to": {
+        "local_node": "n2"
+      },
+      "type": "proves",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        0,
+        42,
+        42
+      ],
+      "description": "This proof establishes Global well-posedness under global Lipschitzness.",
+      "confidence": "Verified"
+    },
+    {
+      "local_id": "d66",
+      "from": {
+        "local_node": "n60"
+      },
+      "to": {
+        "local_node": "n4"
+      },
+      "type": "proves",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        0,
+        76,
+        76
+      ],
+      "description": "This proof establishes Lipschitz extensions on bounded regions.",
+      "confidence": "Verified"
+    },
+    {
+      "local_id": "d67",
+      "from": {
+        "local_node": "n61"
+      },
+      "to": {
+        "local_node": "n6"
+      },
+      "type": "proves",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        0,
+        118,
+        118
+      ],
+      "description": "This proof establishes Agreement before exit.",
+      "confidence": "Verified"
+    },
+    {
+      "local_id": "d68",
+      "from": {
+        "local_node": "n62"
+      },
+      "to": {
+        "local_node": "n7"
+      },
+      "type": "proves",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        0,
+        163,
+        163
+      ],
+      "description": "This proof establishes Constructing the maximal local flow.",
+      "confidence": "Verified"
+    },
+    {
+      "local_id": "d69",
+      "from": {
+        "local_node": "n63"
+      },
+      "to": {
+        "local_node": "n8"
+      },
+      "type": "proves",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        0,
+        185,
+        185
+      ],
+      "description": "This proof establishes Maximality and uniqueness.",
+      "confidence": "Verified"
+    },
+    {
+      "local_id": "d70",
+      "from": {
+        "local_node": "n64"
+      },
+      "to": {
+        "local_node": "n9"
+      },
+      "type": "proves",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        0,
+        215,
+        215
+      ],
+      "description": "This proof establishes Regularity of tau and G.",
+      "confidence": "Verified"
+    },
+    {
+      "local_id": "d71",
+      "from": {
+        "local_node": "n65"
+      },
+      "to": {
+        "local_node": "n10"
+      },
+      "type": "proves",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        0,
+        242,
+        242
+      ],
+      "description": "This proof establishes Local Lipschitzness implies well-behaved projected dynamics.",
+      "confidence": "Verified"
+    },
+    {
+      "local_id": "d72",
+      "from": {
+        "local_node": "n66"
+      },
+      "to": {
+        "local_node": "n11"
+      },
+      "type": "proves",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        0,
+        255,
+        256
+      ],
+      "description": "This proof establishes Dynamic solvers are measurable.",
+      "confidence": "Verified"
+    },
+    {
+      "local_id": "d73",
+      "from": {
+        "local_node": "n57"
+      },
+      "to": {
+        "local_node": "n67"
+      },
+      "type": "supports",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        0,
+        349,
+        354
+      ],
+      "description": "The containment proof uses the normal-cone inclusion along the projected trajectory to derive its variational inequality.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d74",
+      "from": {
+        "local_node": "n67"
+      },
+      "to": {
+        "local_node": "n18"
+      },
+      "type": "proves",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        0,
+        343,
+        343
+      ],
+      "description": "This proof establishes Terminal outcomes lie among projected roots.",
+      "confidence": "Verified"
+    },
+    {
+      "local_id": "d75",
+      "from": {
+        "local_node": "n68"
+      },
+      "to": {
+        "local_node": "n24"
+      },
+      "type": "proves",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        1,
+        35,
+        35
+      ],
+      "description": "This proof establishes Closed discrete sets in compact sets are finite.",
+      "confidence": "Verified"
+    },
+    {
+      "local_id": "d76",
+      "from": {
+        "local_node": "n69"
+      },
+      "to": {
+        "local_node": "n25"
+      },
+      "type": "proves",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        1,
+        52,
+        52
+      ],
+      "description": "This proof establishes Projected roots split into interior and boundary roots.",
+      "confidence": "Verified"
+    },
+    {
+      "local_id": "d77",
+      "from": {
+        "local_node": "n33"
+      },
+      "to": {
+        "local_node": "n70"
+      },
+      "type": "supports",
+      "basis": "mathematical-inference",
+      "assertion": "inferred",
+      "location": [
+        1,
+        84,
+        85
+      ],
+      "description": "Transversality of the lifted boundary map makes its zero set discrete.",
+      "confidence": "High",
+      "reason": "The lifted domain and codomain have equal dimension, so transversality gives a zero-dimensional, hence discrete, zero set."
+    },
+    {
+      "local_id": "d78",
+      "from": {
+        "local_node": "n70"
+      },
+      "to": {
+        "local_node": "n27"
+      },
+      "type": "proves",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        1,
+        83,
+        83
+      ],
+      "description": "This proof establishes Boundary transversality implies discrete roots.",
+      "confidence": "Verified"
+    },
+    {
+      "local_id": "d79",
+      "from": {
+        "local_node": "n71"
+      },
+      "to": {
+        "local_node": "n28"
+      },
+      "type": "proves",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        1,
+        131,
+        131
+      ],
+      "description": "This proof establishes Parametric transversality from a submersion.",
+      "confidence": "Verified"
+    },
+    {
+      "local_id": "d80",
+      "from": {
+        "local_node": "n33"
+      },
+      "to": {
+        "local_node": "n72"
+      },
+      "type": "supports",
+      "basis": "mathematical-inference",
+      "assertion": "inferred",
+      "location": [
+        1,
+        223,
+        225
+      ],
+      "description": "Transversality of the perturbed interior evaluation map makes its root set discrete.",
+      "confidence": "High",
+      "reason": "For an equal-dimensional fiber map, transversality to zero makes the zero set zero-dimensional and therefore discrete."
+    },
+    {
+      "local_id": "d81",
+      "from": {
+        "local_node": "n72"
+      },
+      "to": {
+        "local_node": "n35"
+      },
+      "type": "proves",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        1,
+        221,
+        221
+      ],
+      "description": "This proof establishes Prevalence via a submersion probe.",
+      "confidence": "Verified"
+    },
+    {
+      "local_id": "d82",
+      "from": {
+        "local_node": "n73"
+      },
+      "to": {
+        "local_node": "n36"
+      },
+      "type": "proves",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        1,
+        245,
+        245
+      ],
+      "description": "This proof establishes Prevalent finiteness of projected roots.",
+      "confidence": "Verified"
+    },
+    {
+      "local_id": "d83",
+      "from": {
+        "local_node": "n74"
+      },
+      "to": {
+        "local_node": "n20"
+      },
+      "type": "proves",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        1,
+        259,
+        260
+      ],
+      "description": "This proof establishes Submersion probes imply prevalent finiteness of reachable terminal outcomes.",
+      "confidence": "Verified"
+    },
+    {
+      "local_id": "d84",
+      "from": {
+        "local_node": "n75"
+      },
+      "to": {
+        "local_node": "n38"
+      },
+      "type": "proves",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        2,
+        19,
+        19
+      ],
+      "description": "This proof establishes Bayes denominator bound.",
+      "confidence": "Verified"
+    },
+    {
+      "local_id": "d85",
+      "from": {
+        "local_node": "n76"
+      },
+      "to": {
+        "local_node": "n39"
+      },
+      "type": "proves",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        2,
+        47,
+        47
+      ],
+      "description": "This proof establishes Support near one.",
+      "confidence": "Verified"
+    },
+    {
+      "local_id": "d86",
+      "from": {
+        "local_node": "n77"
+      },
+      "to": {
+        "local_node": "n40"
+      },
+      "type": "proves",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        2,
+        54,
+        56
+      ],
+      "description": "This proof establishes Support near one implies exponential posterior concentration.",
+      "confidence": "Verified"
+    },
+    {
+      "local_id": "d87",
+      "from": {
+        "local_node": "n78"
+      },
+      "to": {
+        "local_node": "n41"
+      },
+      "type": "proves",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        2,
+        69,
+        70
+      ],
+      "description": "This proof establishes Dropping eta under a polynomial prior-density lower bound.",
+      "confidence": "Verified"
+    },
+    {
+      "local_id": "d88",
+      "from": {
+        "local_node": "n79"
+      },
+      "to": {
+        "local_node": "n43"
+      },
+      "type": "proves",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        2,
+        132,
+        134
+      ],
+      "description": "This proof establishes Beta-prior posterior concentration.",
+      "confidence": "Verified"
+    },
+    {
+      "local_id": "d90",
+      "from": {
+        "local_node": "n80"
+      },
+      "to": {
+        "local_node": "n46"
+      },
+      "type": "proves",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        2,
+        241,
+        242
+      ],
+      "description": "This proof establishes Moment bound from near--1 tail.",
+      "confidence": "Verified"
+    },
+    {
+      "local_id": "d91",
+      "from": {
+        "local_node": "n81"
+      },
+      "to": {
+        "local_node": "n47"
+      },
+      "type": "proves",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        2,
+        292,
+        293
+      ],
+      "description": "This proof establishes Polynomial tail implies polynomial moment decay.",
+      "confidence": "Verified"
+    },
+    {
+      "local_id": "d92",
+      "from": {
+        "local_node": "n82"
+      },
+      "to": {
+        "local_node": "n48"
+      },
+      "type": "proves",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        2,
+        335,
+        337
+      ],
+      "description": "This proof establishes Spike-and-slab posterior rate.",
+      "confidence": "Verified"
+    },
+    {
+      "local_id": "d93",
+      "from": {
+        "local_node": "n83"
+      },
+      "to": {
+        "local_node": "n49"
+      },
+      "type": "proves",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        2,
+        374,
+        374
+      ],
+      "description": "This proof establishes Two-sided bounds for L_k(n) (fixed x*).",
+      "confidence": "Verified"
+    },
+    {
+      "local_id": "d94",
+      "from": {
+        "local_node": "n84"
+      },
+      "to": {
+        "local_node": "n51"
+      },
+      "type": "proves",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        2,
+        486,
+        486
+      ],
+      "description": "This proof establishes Monotonicity of L_k(n).",
+      "confidence": "Verified"
+    },
+    {
+      "local_id": "d95",
+      "from": {
+        "local_node": "n85"
+      },
+      "to": {
+        "local_node": "n52"
+      },
+      "type": "proves",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        2,
+        502,
+        503
+      ],
+      "description": "This proof establishes Rate-tight concentration of P(K=1 | H_n(x*)).",
+      "confidence": "Verified"
+    },
+    {
+      "local_id": "d96",
+      "from": {
+        "local_node": "n86"
+      },
+      "to": {
+        "local_node": "n10"
+      },
+      "type": "proves",
+      "basis": "explicit-prose",
+      "assertion": "explicit",
+      "location": [
+        0,
+        20,
+        20
+      ],
+      "description": "The subsection explicitly identifies the sketch as proving the local-Lipschitz lemma.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d97",
+      "from": {
+        "local_node": "n4"
+      },
+      "to": {
+        "local_node": "n86"
+      },
+      "type": "supports",
+      "basis": "explicit-prose",
+      "assertion": "explicit",
+      "location": [
+        0,
+        22,
+        26
+      ],
+      "description": "The sketch uses globally Lipschitz extensions on compact regions and their global flows.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d98",
+      "from": {
+        "local_node": "n7"
+      },
+      "to": {
+        "local_node": "n86"
+      },
+      "type": "supports",
+      "basis": "explicit-prose",
+      "assertion": "explicit",
+      "location": [
+        0,
+        27,
+        27
+      ],
+      "description": "The sketch patches the localized flows into a maximal local flow.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d99",
+      "from": {
+        "local_node": "n8"
+      },
+      "to": {
+        "local_node": "n86"
+      },
+      "type": "supports",
+      "basis": "explicit-prose",
+      "assertion": "explicit",
+      "location": [
+        0,
+        28,
+        29
+      ],
+      "description": "The sketch obtains uniqueness from uniqueness of the localized global flows.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d100",
+      "from": {
+        "local_node": "n9"
+      },
+      "to": {
+        "local_node": "n86"
+      },
+      "type": "supports",
+      "basis": "explicit-prose",
+      "assertion": "explicit",
+      "location": [
+        0,
+        28,
+        30
+      ],
+      "description": "The sketch obtains continuity from the compatible continuous global flows on compact regions.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d101",
+      "from": {
+        "local_node": "n87"
+      },
+      "to": {
+        "local_node": "n28"
+      },
+      "type": "proves",
+      "basis": "explicit-prose",
+      "assertion": "explicit",
+      "location": [
+        1,
+        126,
+        129
+      ],
+      "description": "The prose announces the Sard-projection argument proving parametric transversality.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d102",
+      "from": {
+        "local_node": "n31"
+      },
+      "to": {
+        "local_node": "n87"
+      },
+      "type": "supports",
+      "basis": "explicit-prose",
+      "assertion": "explicit",
+      "location": [
+        1,
+        126,
+        129
+      ],
+      "description": "The sketch applies Sard's theorem to the zero-set projection.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d103",
+      "from": {
+        "local_node": "n88"
+      },
+      "to": {
+        "local_node": "n45"
+      },
+      "type": "supports",
+      "basis": "explicit-prose",
+      "assertion": "explicit",
+      "location": [
+        2,
+        219,
+        224
+      ],
+      "description": "Bayes' rule supplies the posterior spike-mass formula in the spike-and-slab setup.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d104",
+      "from": {
+        "local_node": "n88"
+      },
+      "to": {
+        "local_node": "n75"
+      },
+      "type": "supports",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        2,
+        34,
+        38
+      ],
+      "description": "The denominator-bound proof uses Bayes' ratio of the joint event to the evidence.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d105",
+      "from": {
+        "local_node": "n89"
+      },
+      "to": {
+        "local_node": "n81"
+      },
+      "type": "supports",
+      "basis": "proof-use",
+      "assertion": "explicit",
+      "location": [
+        2,
+        312,
+        319
+      ],
+      "description": "The polynomial-moment proof evaluates its extended exponential-power integral by the Gamma integral.",
+      "confidence": "High"
+    },
+    {
+      "local_id": "d106",
+      "from": {
+        "local_node": "n30"
+      },
+      "to": {
+        "local_node": "n54"
+      },
+      "type": "supports",
+      "basis": "mathematical-inference",
+      "assertion": "inferred",
+      "location": [
+        3,
+        26,
+        30
+      ],
+      "description": "The nonvanishing gradient makes the level-one boundary of X_p a smooth submanifold.",
+      "confidence": "High",
+      "reason": "Since 1 is a regular value of h, the preimage theorem yields a smooth boundary h^{-1}(1)."
+    },
+    {
+      "local_id": "d107",
+      "from": {
+        "local_node": "n31"
+      },
+      "to": {
+        "local_node": "n29"
+      },
+      "type": "supports",
+      "basis": "explicit-reference",
+      "assertion": "explicit",
+      "location": [
+        1,
+        121,
+        123
+      ],
+      "description": "The regularity remark cites Sard's theorem as requiring the stronger C^r assumption when the source dimension exceeds the target dimension.",
+      "confidence": "High",
+      "reference": {
+        "location": [
+          1,
+          121,
+          123
+        ],
+        "locator": {
+          "citation_key": "GuilleminPollack1974"
+        }
+      }
+    }
+  ],
+  "gaps": []
+}

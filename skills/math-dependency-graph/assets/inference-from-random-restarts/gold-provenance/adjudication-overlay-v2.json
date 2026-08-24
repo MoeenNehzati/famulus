@@ -1,0 +1,87 @@
+{
+  "benchmark": "arxiv-2602.13450v2-appendix",
+  "correction_version": 2,
+  "base_benchmark_version": 1,
+  "base_gold_sha256": "817b73e8a3652fd4869b7b6abe8b8ff367360080028b5809c6777eb8e5588258",
+  "status": "accepted-adjudicated-overlay",
+  "base_gold_preserved": true,
+  "adjudication": {
+    "independent_reports": [
+      "gold-adjudication-a.json",
+      "gold-adjudication-b.json"
+    ],
+    "tie_break_report": "gold-adjudication-tiebreak.json"
+  },
+  "operations": [
+    {
+      "operation": "delete-node",
+      "id": "gold:prev.guillemin",
+      "reason": "The citation is an expository pointer; Sard's theorem is the represented indispensable result."
+    },
+    {
+      "operation": "delete-edge",
+      "id": "edge:prev.guillemin-to-regularity",
+      "reason": "The deleted citation node is not a mathematical prerequisite."
+    },
+    {
+      "operation": "add-edge",
+      "id": "edge:prev.parametric-to-regularity",
+      "from": "gold:prev.parametric-submersion",
+      "to": "gold:prev.parametric-regularity",
+      "type": "supports",
+      "basis": "explicit-prose",
+      "evidence": [
+        {
+          "file": "sections/appendix-prevalence.tex",
+          "start_line": 118,
+          "end_line": 124
+        }
+      ]
+    },
+    {
+      "operation": "add-node-location",
+      "id": "gold:dyn.finite-rto-roots",
+      "location": {
+        "file": "sections/appendix-prevalence.tex",
+        "start_line": 43,
+        "end_line": 44
+      }
+    },
+    {
+      "operation": "add-node-location",
+      "id": "gold:prev.ass-kkq",
+      "location": {
+        "file": "sections/appendix-prevalence.tex",
+        "start_line": 55,
+        "end_line": 58
+      }
+    },
+    {
+      "operation": "add-edge",
+      "id": "edge:dyn.regularity-to-measurability",
+      "from": "gold:dyn.regularity",
+      "to": "gold:dyn.measurability-result",
+      "type": "supports",
+      "basis": "proof-use",
+      "evidence": [
+        {
+          "file": "sections/appendix-dynamics.tex",
+          "start_line": 269,
+          "end_line": 295
+        }
+      ]
+    }
+  ],
+  "rejected_operations": [
+    {
+      "operation": "add-edge",
+      "from": "gold:dyn.local-flow",
+      "to": "gold:dyn.measurability-result",
+      "reason": "Both independent adjudicators rejected the edge as an indirect route through represented proof components."
+    }
+  ],
+  "derived_counts": {
+    "nodes": 56,
+    "edges": 64
+  }
+}

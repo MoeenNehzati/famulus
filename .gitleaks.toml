@@ -1,0 +1,14 @@
+title = "Famulus secret scanning"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+
+[[rules.allowlists]]
+description = "Scholarly citation identifiers in the frozen inference benchmark"
+condition = "AND"
+regexTarget = "line"
+paths = ['''^skills/math-dependency-graph/assets/inference-from-random-restarts/(?:gold_contracts_test\.py|results/inventory-gold\.json|gold-provenance/adjudication-base-v1\.json)$''']
+regexes = ['''"(?:citation_key|source_key)"\s*:''']

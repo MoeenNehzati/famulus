@@ -1,0 +1,2825 @@
+{
+  "schema_version": 2,
+  "graph_kind": "math-dependency",
+  "categories": [
+    {
+      "id": "assumption",
+      "label": "Assumptions",
+      "shape": "hexagon",
+      "color": "#9c4f3d"
+    },
+    {
+      "id": "assumption:standing",
+      "label": "Standing assumption",
+      "parent": "assumption",
+      "shape": "hexagon",
+      "color": "#c0392b"
+    },
+    {
+      "id": "assumption:local",
+      "label": "Local assumption",
+      "parent": "assumption",
+      "shape": "hexagon",
+      "color": "#2e86c1"
+    },
+    {
+      "id": "setup",
+      "label": "Setup",
+      "shape": "rect",
+      "color": "#2471a3"
+    },
+    {
+      "id": "setup:definition",
+      "label": "Definition",
+      "parent": "setup",
+      "shape": "rect",
+      "color": "#2471a3"
+    },
+    {
+      "id": "setup:notation",
+      "label": "Notation",
+      "parent": "setup",
+      "shape": "rect",
+      "color": "#148f77"
+    },
+    {
+      "id": "result",
+      "label": "Results",
+      "shape": "roundrect",
+      "color": "#6c3483"
+    },
+    {
+      "id": "result:lemma",
+      "label": "Lemma",
+      "parent": "result",
+      "shape": "roundrect",
+      "color": "#1e8449"
+    },
+    {
+      "id": "result:proposition",
+      "label": "Proposition",
+      "parent": "result",
+      "shape": "roundrect",
+      "color": "#7d6608"
+    },
+    {
+      "id": "result:theorem",
+      "label": "Theorem",
+      "parent": "result",
+      "shape": "roundrect",
+      "color": "#6c3483"
+    },
+    {
+      "id": "result:corollary",
+      "label": "Corollary",
+      "parent": "result",
+      "shape": "roundrect",
+      "color": "#b7950b"
+    },
+    {
+      "id": "exposition",
+      "label": "Exposition",
+      "shape": "ellipse",
+      "color": "#616a6b"
+    },
+    {
+      "id": "exposition:remark",
+      "label": "Remark",
+      "parent": "exposition",
+      "shape": "ellipse",
+      "color": "#616a6b"
+    },
+    {
+      "id": "exposition:example",
+      "label": "Example",
+      "parent": "exposition",
+      "shape": "ellipse",
+      "color": "#117864"
+    },
+    {
+      "id": "external-result",
+      "label": "External result",
+      "shape": "diamond",
+      "color": "#566573"
+    }
+  ],
+  "edge_categories": [
+    {
+      "id": "supports",
+      "label": "Supports",
+      "description": "The source entity is directly needed to understand or establish the target."
+    },
+    {
+      "id": "illustrated-by",
+      "label": "Illustrated by",
+      "description": "The target example illustrates the source mathematical object without supporting its validity."
+    }
+  ],
+  "ui": {
+    "edge_styles": {
+      "supports": {
+        "color": "#2563eb"
+      },
+      "illustrated-by": {
+        "color": "#d97706"
+      }
+    },
+    "edge_presentation": {
+      "facets": [
+        {
+          "id": "provenance",
+          "label": "Provenance",
+          "field": "implicit",
+          "variants": [
+            {
+              "id": "explicit",
+              "equals": false,
+              "label": "Explicit",
+              "description": "The dependency is asserted by the document.",
+              "style": {
+                "line_pattern": "solid"
+              }
+            },
+            {
+              "id": "inferred",
+              "equals": true,
+              "label": "Inferred",
+              "description": "The dependency is inferred from the mathematical argument.",
+              "style": {
+                "line_pattern": "dashed"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "entities": [
+    {
+      "id": "gold:dyn.global-flow",
+      "type": "result",
+      "category": "result:lemma",
+      "short_title": "Global well-posedness under global Lipschitzness",
+      "position": 0,
+      "description": "A globally Lipschitz vector field on X admits a unique continuous global projected flow.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Global well-posedness under global Lipschitzness",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "lemma:global-lip-flow",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-dynamics.tex:34-41",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:dyn.localized-systems",
+          "type": "supports",
+          "description": "The localization lemma concludes by applying the global-flow lemma.",
+          "evidence": "sections/appendix-dynamics.tex:85-86",
+          "implicit": false,
+          "confidence": "High"
+        },
+        {
+          "to": "gold:dyn.lipschitz-result",
+          "type": "supports",
+          "description": "The proof of the Lipschitz lemma explicitly cites the global-flow case.",
+          "evidence": "sections/appendix-dynamics.tex:243-244",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "kind": "lemma",
+      "title": "Global well-posedness under global Lipschitzness",
+      "ref": "lemma:global-lip-flow"
+    },
+    {
+      "id": "gold:dyn.nagurney",
+      "type": "external-result",
+      "category": "external-result",
+      "short_title": "Nagurney projected-system well-posedness theorem",
+      "position": 1,
+      "description": "Nagurney projected-system theorem gives global solutions and continuous dependence under one-sided Lipschitz and linear-growth conditions.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Nagurney projected-system well-posedness theorem",
+                "format": "text"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-dynamics.tex:43-50",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:dyn.global-flow",
+          "type": "supports",
+          "description": "The proof applies the cited theorem to obtain global solutions and continuity.",
+          "evidence": "sections/appendix-dynamics.tex:43-44",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "title": "Nagurney projected-system well-posedness theorem"
+    },
+    {
+      "id": "gold:dyn.localized-systems",
+      "type": "result",
+      "category": "result:lemma",
+      "short_title": "Lipschitz extensions on bounded regions",
+      "position": 2,
+      "description": "For locally Lipschitz Q, each bounded region has a globally Lipschitz extension agreeing with Q and a continuous global projected flow.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Lipschitz extensions on bounded regions",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "lemma:localized-global-systems",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-dynamics.tex:69-75",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:dyn.exit-time",
+          "type": "supports",
+          "description": "The exit-time setup fixes the maps and flows supplied by the localization lemma.",
+          "evidence": "sections/appendix-dynamics.tex:89-90",
+          "implicit": false,
+          "confidence": "High"
+        },
+        {
+          "to": "gold:dyn.consistency",
+          "type": "supports",
+          "description": "Agreement with the larger localized flow uses the larger globally Lipschitz system and its uniqueness.",
+          "evidence": "sections/appendix-dynamics.tex:129-138",
+          "implicit": false,
+          "confidence": "High"
+        },
+        {
+          "to": "gold:dyn.maximal-flow",
+          "type": "supports",
+          "description": "The proof identifies any local solution with a unique solution of a localized globally Lipschitz system.",
+          "evidence": "sections/appendix-dynamics.tex:186-199",
+          "implicit": false,
+          "confidence": "High"
+        },
+        {
+          "to": "gold:dyn.regularity",
+          "type": "supports",
+          "description": "Lower semicontinuity and continuity use continuity of the relevant localized global flow.",
+          "evidence": "sections/appendix-dynamics.tex:227-238",
+          "implicit": false,
+          "confidence": "High"
+        },
+        {
+          "to": "gold:dyn.lipschitz-result",
+          "type": "supports",
+          "description": "The proof of the Lipschitz lemma explicitly cites the localized systems.",
+          "evidence": "sections/appendix-dynamics.tex:244-245",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "kind": "lemma",
+      "title": "Lipschitz extensions on bounded regions",
+      "ref": "lemma:localized-global-systems"
+    },
+    {
+      "id": "gold:dyn.mcshane",
+      "type": "external-result",
+      "category": "external-result",
+      "short_title": "McShane extension theorem",
+      "position": 3,
+      "description": "Coordinatewise McShane extension extends the locally Lipschitz restriction on K_R to a globally Lipschitz map.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "McShane extension theorem",
+                "format": "text"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-dynamics.tex:77-86",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:dyn.localized-systems",
+          "type": "supports",
+          "description": "The proof constructs the required extension via McShane before applying global flow.",
+          "evidence": "sections/appendix-dynamics.tex:77-86",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "title": "McShane extension theorem"
+    },
+    {
+      "id": "gold:dyn.exit-time",
+      "type": "setup",
+      "category": "setup:definition",
+      "short_title": "Localization exit times",
+      "position": 4,
+      "description": "Fixes localized flows and defines the first exit time sigma_{K_R}(x) from the localization ball.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Localization exit times",
+                "format": "text"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-dynamics.tex:89-99",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:dyn.consistency",
+          "type": "supports",
+          "description": "The proof uses T<sigma to keep the localized trajectory inside K_R.",
+          "evidence": "sections/appendix-dynamics.tex:119-124",
+          "implicit": false,
+          "confidence": "High"
+        },
+        {
+          "to": "gold:dyn.local-flow",
+          "type": "supports",
+          "description": "The local flow is defined by the supremum of localization exit times.",
+          "evidence": "sections/appendix-dynamics.tex:164-166",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "kind": "definition",
+      "title": "Localization exit times"
+    },
+    {
+      "id": "gold:dyn.consistency",
+      "type": "result",
+      "category": "result:lemma",
+      "short_title": "Agreement before exit",
+      "position": 5,
+      "description": "Before the smaller localization exits, it solves the original projected dynamics and agrees with larger localizations.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Agreement before exit",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "lemma:localized-consistency",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-dynamics.tex:107-117",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:dyn.local-flow",
+          "type": "supports",
+          "description": "The patching proof invokes compatibility to make G well defined and solve the original dynamics.",
+          "evidence": "sections/appendix-dynamics.tex:168-176",
+          "implicit": false,
+          "confidence": "High"
+        },
+        {
+          "to": "gold:dyn.lipschitz-result",
+          "type": "supports",
+          "description": "The proof of the Lipschitz lemma explicitly cites compatibility of localizations.",
+          "evidence": "sections/appendix-dynamics.tex:244-246",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "kind": "lemma",
+      "title": "Agreement before exit",
+      "ref": "lemma:localized-consistency"
+    },
+    {
+      "id": "gold:dyn.local-flow",
+      "type": "result",
+      "category": "result:lemma",
+      "short_title": "Constructing the maximal local flow",
+      "position": 6,
+      "description": "The supremum of localized exit times defines a positive-lifetime local flow solving the original projected dynamics.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Constructing the maximal local flow",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "lemma:local-flow-construction",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-dynamics.tex:146-162",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:dyn.maximal-flow",
+          "type": "supports",
+          "description": "The maximality statement is about the lifetime and flow constructed in the prior lemma.",
+          "evidence": "sections/appendix-dynamics.tex:206-207",
+          "implicit": false,
+          "confidence": "High"
+        },
+        {
+          "to": "gold:dyn.regularity",
+          "type": "supports",
+          "description": "Regularity is stated for the constructed lifetime and local flow.",
+          "evidence": "sections/appendix-dynamics.tex:221-223",
+          "implicit": false,
+          "confidence": "High"
+        },
+        {
+          "to": "gold:dyn.lipschitz-result",
+          "type": "supports",
+          "description": "The proof of the Lipschitz lemma cites the local-flow construction.",
+          "evidence": "sections/appendix-dynamics.tex:246-247",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "kind": "lemma",
+      "title": "Constructing the maximal local flow",
+      "ref": "lemma:local-flow-construction"
+    },
+    {
+      "id": "gold:dyn.maximal-flow",
+      "type": "result",
+      "category": "result:lemma",
+      "short_title": "Maximality and uniqueness",
+      "position": 7,
+      "description": "The patched lifetime is maximal and every local solution agrees with the unique maximal local solution map.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Maximality and uniqueness",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "lemma:maximal-local-flow",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-dynamics.tex:179-184",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:dyn.lipschitz-result",
+          "type": "supports",
+          "description": "The proof of the Lipschitz lemma cites maximality and uniqueness.",
+          "evidence": "sections/appendix-dynamics.tex:247-248",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "kind": "lemma",
+      "title": "Maximality and uniqueness",
+      "ref": "lemma:maximal-local-flow"
+    },
+    {
+      "id": "gold:dyn.regularity",
+      "type": "result",
+      "category": "result:lemma",
+      "short_title": "Regularity of tau and G",
+      "position": 8,
+      "description": "The maximal lifetime is lower semicontinuous and the local flow is continuous on its domain.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Regularity of tau and G",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "lemma:lsc-flow-continuity",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-dynamics.tex:210-214",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:dyn.lipschitz-result",
+          "type": "supports",
+          "description": "The proof of the Lipschitz lemma cites lower semicontinuity and continuity.",
+          "evidence": "sections/appendix-dynamics.tex:248-250",
+          "implicit": false,
+          "confidence": "High"
+        },
+        {
+          "to": "gold:dyn.measurability-result",
+          "type": "supports",
+          "description": "Lower semicontinuity opens the survival sets and flow continuity makes the rational-time coordinate maps measurable.",
+          "evidence": "sections/appendix-dynamics.tex:273-274",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "kind": "lemma",
+      "title": "Regularity of tau and G",
+      "ref": "lemma:lsc-flow-continuity"
+    },
+    {
+      "id": "gold:dyn.lipschitz-result",
+      "type": "result",
+      "category": "result:lemma",
+      "short_title": "Local Lipschitzness implies well-behaved projected dynamics",
+      "position": 9,
+      "description": "If X is closed and convex and Q is locally Lipschitz, the projected dynamics are well behaved; under global Lipschitzness the maximal flow is global.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Local Lipschitzness implies well-behaved projected dynamics",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "lemma:Lipschitz",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-dynamics.tex:241",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [],
+      "kind": "lemma",
+      "title": "Local Lipschitzness implies well-behaved projected dynamics",
+      "ref": "lemma:Lipschitz"
+    },
+    {
+      "id": "gold:dyn.measurability-result",
+      "type": "result",
+      "category": "result:proposition",
+      "short_title": "Dynamic solvers are measurable",
+      "position": 10,
+      "description": "Every dynamic solver g_Q is measurable from X to X disjoint union {dagger}.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Dynamic solvers are measurable",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "prop:measurable",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-dynamics.tex:255",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [],
+      "kind": "proposition",
+      "title": "Dynamic solvers are measurable",
+      "ref": "prop:measurable"
+    },
+    {
+      "id": "gold:dyn.containment",
+      "type": "result",
+      "category": "result:lemma",
+      "short_title": "Terminal outcomes lie among projected roots",
+      "position": 11,
+      "description": "Every ordinary dynamic-solver outcome is a root of the projected vector field, while nonconvergent outcomes are dagger.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Terminal outcomes lie among projected roots",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "lemma:containment",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-dynamics.tex:337-342",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:dyn.finite-rto-roots",
+          "type": "supports",
+          "description": "The appendix identifies the containment lemma as the nontrivial argument underlying the body proposition.",
+          "evidence": "sections/appendix-dynamics.tex:327-342",
+          "implicit": false,
+          "confidence": "High"
+        },
+        {
+          "to": "gold:prev.attractors-result",
+          "type": "supports",
+          "description": "The attractor-finiteness proof uses containment to bound terminal outcomes by finite roots plus dagger.",
+          "evidence": "sections/appendix-prevalence.tex:266-270",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "kind": "lemma",
+      "title": "Terminal outcomes lie among projected roots",
+      "ref": "lemma:containment"
+    },
+    {
+      "id": "gold:dyn.dct-cesaro",
+      "type": "external-result",
+      "category": "external-result",
+      "short_title": "Dominated convergence / Cesaro averaging",
+      "position": 12,
+      "description": "Dominated convergence, equivalently Cesaro averaging, identifies the long-run time average with the limit value.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Dominated convergence / Cesaro averaging",
+                "format": "text"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-dynamics.tex:395-410",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:dyn.containment",
+          "type": "supports",
+          "description": "The proof uses dominated convergence/Cesaro averaging to pass the time average to the limit.",
+          "evidence": "sections/appendix-dynamics.tex:395-412",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "title": "Dominated convergence / Cesaro averaging"
+    },
+    {
+      "id": "gold:prev.boundary-decomposition",
+      "type": "exposition",
+      "category": "exposition:remark",
+      "short_title": "Interior and boundary projection formula",
+      "position": 13,
+      "description": "For C2 boundary, QTC equals Q in the interior and QTCP on the boundary, with QTCP using the positive normal component.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Interior and boundary projection formula",
+                "format": "text"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-prevalence.tex:11-26",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:prev.break-two",
+          "type": "supports",
+          "description": "The proof splits roots by interior and boundary cases using the QTC/Q/QTCP decomposition.",
+          "evidence": "sections/appendix-prevalence.tex:52-58",
+          "implicit": false,
+          "confidence": "High"
+        },
+        {
+          "to": "gold:prev.tilde-map",
+          "type": "supports",
+          "description": "The tilde map is introduced to avoid the nonsmooth positive-part term in QTCP.",
+          "evidence": "sections/appendix-prevalence.tex:70-77",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "kind": "remark",
+      "title": "Interior and boundary projection formula"
+    },
+    {
+      "id": "gold:prev.closed-discrete",
+      "type": "result",
+      "category": "result:lemma",
+      "short_title": "Closed discrete sets in compact sets are finite",
+      "position": 14,
+      "description": "A subset closed and discrete in a topological space is finite when contained in a compact set.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Closed discrete sets in compact sets are finite",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "lemma:closed-discrete-finite",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-prevalence.tex:30-34",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:prev.finite-roots",
+          "type": "supports",
+          "description": "The proof applies the compact closed-discrete finiteness lemma.",
+          "evidence": "sections/appendix-prevalence.tex:253-255",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "kind": "lemma",
+      "title": "Closed discrete sets in compact sets are finite",
+      "ref": "lemma:closed-discrete-finite"
+    },
+    {
+      "id": "gold:dyn.finite-rto-roots",
+      "type": "result",
+      "category": "result:proposition",
+      "short_title": "Finite reachable outcomes exactly when projected roots are finite",
+      "position": 15,
+      "description": "A dynamic solver has finitely many reachable terminal outcomes exactly when its projected vector field has finitely many roots.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Finite reachable outcomes exactly when projected roots are finite",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "prop:finite-rto-roots",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-prevalence.tex:43-44",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [],
+      "kind": "proposition",
+      "title": "Finite reachable outcomes exactly when projected roots are finite",
+      "ref": "prop:finite-rto-roots"
+    },
+    {
+      "id": "gold:prev.break-two",
+      "type": "result",
+      "category": "result:lemma",
+      "short_title": "Projected roots split into interior and boundary roots",
+      "position": 16,
+      "description": "Projected-field roots are contained in roots of Q or QTCP, and those two root sets are closed in their domains.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Projected roots split into interior and boundary roots",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "lemma:break-into-two",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-prevalence.tex:48-51",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:prev.finite-roots",
+          "type": "supports",
+          "description": "The finite-root proof uses root decomposition and closedness from the break-into-two lemma.",
+          "evidence": "sections/appendix-prevalence.tex:248-253",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "kind": "lemma",
+      "title": "Projected roots split into interior and boundary roots",
+      "ref": "lemma:break-into-two"
+    },
+    {
+      "id": "gold:prev.ass-kkq",
+      "type": "assumption",
+      "category": "assumption:standing",
+      "short_title": "Root compactness",
+      "position": 17,
+      "description": "The projected-root set lies in a common compact set, and the state space has the required C2 boundary regularity.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Root compactness",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "ass:kkq",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-prevalence.tex:55-63",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:prev.break-two",
+          "type": "supports",
+          "description": "The closedness of boundary roots uses C2 boundary from Assumption kkq.",
+          "evidence": "sections/appendix-prevalence.tex:55-58",
+          "implicit": false,
+          "confidence": "High"
+        },
+        {
+          "to": "gold:prev.finite-roots",
+          "type": "supports",
+          "description": "Compact containment comes from Assumption kkq.",
+          "evidence": "sections/appendix-prevalence.tex:252-254",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "kind": "standing",
+      "title": "Root compactness",
+      "ref": "ass:kkq"
+    },
+    {
+      "id": "gold:prev.tilde-map",
+      "type": "setup",
+      "category": "setup:definition",
+      "short_title": "Boundary-root encoding",
+      "position": 18,
+      "description": "The boundary roots are encoded by the C1 map tilde Q(x,alpha)=Q(x)-alpha n(x).",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Boundary-root encoding",
+                "format": "text"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-prevalence.tex:70-77",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:prev.discrete-preserves",
+          "type": "supports",
+          "description": "The proof relates QTCP roots to tilde-Q roots through alpha(x).",
+          "evidence": "sections/appendix-prevalence.tex:84-100",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "kind": "definition",
+      "title": "Boundary-root encoding"
+    },
+    {
+      "id": "gold:prev.discrete-preserves",
+      "type": "result",
+      "category": "result:lemma",
+      "short_title": "Boundary transversality implies discrete roots",
+      "position": 19,
+      "description": "If tilde Q is transverse to zero, then the boundary projected-root set is discrete in the boundary.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Boundary transversality implies discrete roots",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "lemma:discrete-preserves",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-prevalence.tex:80-82",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:prev.prevalence",
+          "type": "supports",
+          "description": "The proof applies the boundary discreteness lemma.",
+          "evidence": "sections/appendix-prevalence.tex:231-235",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "kind": "lemma",
+      "title": "Boundary transversality implies discrete roots",
+      "ref": "lemma:discrete-preserves"
+    },
+    {
+      "id": "gold:prev.parametric-submersion",
+      "type": "result",
+      "category": "result:lemma",
+      "short_title": "Parametric transversality from a submersion",
+      "position": 20,
+      "description": "For a C^r submersion F on parameter-manifold product, almost every parameter fiber is transverse to zero.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Parametric transversality from a submersion",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "lem:parametric_submersion",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-prevalence.tex:105-116",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:prev.prevalence",
+          "type": "supports",
+          "description": "The proof applies parametric submersion to both evaluation maps.",
+          "evidence": "sections/appendix-prevalence.tex:221-227",
+          "implicit": false,
+          "confidence": "High"
+        },
+        {
+          "to": "gold:prev.parametric-regularity",
+          "type": "supports",
+          "description": "The remark specializes the parametric lemma's regularity threshold and explains the stronger Sard requirement when the source dimension is larger.",
+          "evidence": "sections/appendix-prevalence.tex:118-124",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "kind": "lemma",
+      "title": "Parametric transversality from a submersion",
+      "ref": "lem:parametric_submersion"
+    },
+    {
+      "id": "gold:prev.parametric-regularity",
+      "type": "exposition",
+      "category": "exposition:remark",
+      "short_title": "Regularity required for parametric transversality",
+      "position": 21,
+      "description": "When dim Z equals n, C1 regularity suffices; higher regularity is required when dim Z exceeds n for Sard projection.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Regularity required for parametric transversality",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "remark:parametric-regularity",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-prevalence.tex:118-124",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [],
+      "kind": "remark",
+      "title": "Regularity required for parametric transversality",
+      "ref": "remark:parametric-regularity"
+    },
+    {
+      "id": "gold:prev.preimage",
+      "type": "external-result",
+      "category": "external-result",
+      "short_title": "Preimage theorem",
+      "position": 22,
+      "description": "The preimage theorem makes the zero set of the submersion a submanifold with tangent kernel.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Preimage theorem",
+                "format": "text"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-prevalence.tex:131-135",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:prev.parametric-submersion",
+          "type": "supports",
+          "description": "The proof uses the preimage theorem to form the zero-set submanifold.",
+          "evidence": "sections/appendix-prevalence.tex:131-135",
+          "implicit": false,
+          "confidence": "High"
+        },
+        {
+          "to": "gold:prev.transversality-discrete",
+          "type": "supports",
+          "description": "The remark explicitly applies the preimage theorem to obtain a zero-dimensional and therefore discrete root set.",
+          "evidence": "sections/appendix-prevalence.tex:196-198",
+          "implicit": false,
+          "confidence": "High"
+        },
+        {
+          "to": "gold:app.smooth-domain",
+          "type": "supports",
+          "description": "Nonvanishing gradient on the unit level set makes the constructed domain boundary smooth by the regular-level-set theorem.",
+          "evidence": "sections/appendix-application.tex:26-30",
+          "implicit": true,
+          "confidence": "High"
+        }
+      ],
+      "title": "Preimage theorem"
+    },
+    {
+      "id": "gold:prev.sard",
+      "type": "external-result",
+      "category": "external-result",
+      "short_title": "Sard's theorem",
+      "position": 23,
+      "description": "Sard theorem makes critical values of the projection measure zero.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Sard's theorem",
+                "format": "text"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-prevalence.tex:137-141",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:prev.parametric-submersion",
+          "type": "supports",
+          "description": "The proof uses Sard theorem for measure-zero critical values.",
+          "evidence": "sections/appendix-prevalence.tex:137-141",
+          "implicit": false,
+          "confidence": "High"
+        },
+        {
+          "to": "gold:prev.parametric-regularity",
+          "type": "supports",
+          "description": "The regularity remark cites Sard's theorem to explain why the projection argument requires stronger C^r regularity when the source dimension exceeds the target dimension.",
+          "evidence": "sections/appendix-prevalence.tex:121-123",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "title": "Sard's theorem"
+    },
+    {
+      "id": "gold:prev.rank-nullity",
+      "type": "external-result",
+      "category": "external-result",
+      "short_title": "Rank–nullity theorem",
+      "position": 24,
+      "description": "Rank-nullity relates projection rank and fiber-map rank in the parametric-submersion proof.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Rank–nullity theorem",
+                "format": "text"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-prevalence.tex:155-182",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:prev.parametric-submersion",
+          "type": "supports",
+          "description": "The proof uses rank-nullity to equate regular projection values with transverse fibers.",
+          "evidence": "sections/appendix-prevalence.tex:155-188",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "title": "Rank–nullity theorem"
+    },
+    {
+      "id": "gold:prev.transversality-discrete",
+      "type": "exposition",
+      "category": "exposition:remark",
+      "short_title": "Transversality gives discrete zero sets",
+      "position": 25,
+      "description": "When n equals dim Z, transversality to zero makes the zero set zero-dimensional and hence discrete.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Transversality gives discrete zero sets",
+                "format": "text"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-prevalence.tex:196-198",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:prev.discrete-preserves",
+          "type": "supports",
+          "description": "The boundary proof uses the zero-dimensional consequence of transversality to conclude that the represented root set is discrete.",
+          "evidence": "sections/appendix-prevalence.tex:84-85",
+          "implicit": true,
+          "confidence": "High"
+        },
+        {
+          "to": "gold:prev.prevalence",
+          "type": "supports",
+          "description": "The prevalence proof uses transversality of the interior evaluation map to infer discreteness of its zero set.",
+          "evidence": "sections/appendix-prevalence.tex:223-225",
+          "implicit": true,
+          "confidence": "High"
+        }
+      ],
+      "kind": "remark",
+      "title": "Transversality gives discrete zero sets"
+    },
+    {
+      "id": "gold:prev.evaluation-maps",
+      "type": "setup",
+      "category": "setup:definition",
+      "short_title": "Perturbed evaluation maps",
+      "position": 26,
+      "description": "The finite-dimensional probe evaluation maps e^Q and e^tildeQ are defined.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Perturbed evaluation maps",
+                "format": "text"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-prevalence.tex:203-211",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:prev.prevalence",
+          "type": "supports",
+          "description": "The theorem hypotheses are stated for the perturbed evaluation maps.",
+          "evidence": "sections/appendix-prevalence.tex:223-230",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "kind": "definition",
+      "title": "Perturbed evaluation maps"
+    },
+    {
+      "id": "gold:prev.prevalence",
+      "type": "result",
+      "category": "result:theorem",
+      "short_title": "Prevalence via a submersion probe",
+      "position": 27,
+      "description": "If the perturbed evaluation maps are C1 submersions, prevalent dynamics have discrete interior and boundary root sets.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Prevalence via a submersion probe",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "theorem:prevalence_submersion_probe",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-prevalence.tex:215-219",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:prev.finite-roots",
+          "type": "supports",
+          "description": "The finite-root proof begins with the prevalence theorem discreteness conclusion.",
+          "evidence": "sections/appendix-prevalence.tex:246-248",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "kind": "theorem",
+      "title": "Prevalence via a submersion probe",
+      "ref": "theorem:prevalence_submersion_probe"
+    },
+    {
+      "id": "gold:prev.finite-roots",
+      "type": "result",
+      "category": "result:corollary",
+      "short_title": "Prevalent finiteness of projected roots",
+      "position": 28,
+      "description": "Under convexity, compactness, and submersion-probe hypotheses, prevalent Q have finitely many roots of QTC.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Prevalent finiteness of projected roots",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "cor:prevalent-finite-roots",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-prevalence.tex:238-244",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:prev.attractors-result",
+          "type": "supports",
+          "description": "The attractor-finiteness proof invokes exactly the finite-root corollary's hypotheses.",
+          "evidence": "sections/appendix-prevalence.tex:260-264",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "kind": "corollary",
+      "title": "Prevalent finiteness of projected roots",
+      "ref": "cor:prevalent-finite-roots"
+    },
+    {
+      "id": "gold:prev.ass-convex",
+      "type": "assumption",
+      "category": "assumption:standing",
+      "short_title": "Closed convex state space",
+      "position": 29,
+      "description": "The state space X is closed and convex.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Closed convex state space",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "ass:convex-closed",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-prevalence.tex:239-243",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:prev.finite-roots",
+          "type": "supports",
+          "description": "The corollary explicitly assumes the convex-closed condition.",
+          "evidence": "sections/appendix-prevalence.tex:239-243",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "kind": "standing",
+      "title": "Closed convex state space",
+      "ref": "ass:convex-closed"
+    },
+    {
+      "id": "gold:prev.attractors-result",
+      "type": "result",
+      "category": "result:proposition",
+      "short_title": "Submersion probes imply prevalent finiteness of reachable terminal outcomes",
+      "position": 30,
+      "description": "Under convexity, root compactness, and submersion-probe hypotheses, prevalent dynamics have finitely many reachable terminal outcomes.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Submersion probes imply prevalent finiteness of reachable terminal outcomes",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "prop:e-submersion-finite-attractors",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-prevalence.tex:259",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [],
+      "kind": "proposition",
+      "title": "Submersion probes imply prevalent finiteness of reachable terminal outcomes",
+      "ref": "prop:e-submersion-finite-attractors"
+    },
+    {
+      "id": "gold:bayes.basin-setup",
+      "type": "setup",
+      "category": "setup:definition",
+      "short_title": "Basin-Size Concentration",
+      "position": 31,
+      "description": "The subsection fixes A_epsilon={s_x* <= 1-epsilon} for posterior concentration of basin size.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Basin-Size Concentration",
+                "format": "text"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-bayes.tex:3-7",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:bayes.eta-bound",
+          "type": "supports",
+          "description": "The lemma is stated in terms of A_epsilon and A_eta fixed in the setup.",
+          "evidence": "sections/appendix-bayes.tex:20-26",
+          "implicit": false,
+          "confidence": "High"
+        },
+        {
+          "to": "gold:bayes.support-tail",
+          "type": "supports",
+          "description": "The support lemma is stated using A_eta from the basin setup.",
+          "evidence": "sections/appendix-bayes.tex:48-51",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "kind": "definition",
+      "title": "Basin-Size Concentration"
+    },
+    {
+      "id": "gold:bayes.eta-bound",
+      "type": "result",
+      "category": "result:lemma",
+      "short_title": "Bayes denominator bound",
+      "position": 32,
+      "description": "Posterior probability of A_epsilon is bounded by likelihood-ratio and prior numerator and denominator factors.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Bayes denominator bound",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "lem:eta_bound",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-bayes.tex:9-17",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:bayes.eta-prop",
+          "type": "supports",
+          "description": "The proposition proof applies the Bayes denominator bound.",
+          "evidence": "sections/appendix-bayes.tex:58-66",
+          "implicit": false,
+          "confidence": "High"
+        },
+        {
+          "to": "gold:bayes.posterior-size",
+          "type": "supports",
+          "description": "The posterior-size proof starts from the eta-bound lemma.",
+          "evidence": "sections/appendix-bayes.tex:71-77",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "kind": "lemma",
+      "title": "Bayes denominator bound",
+      "ref": "lem:eta_bound"
+    },
+    {
+      "id": "gold:bayes.support-tail",
+      "type": "result",
+      "category": "result:lemma",
+      "short_title": "Support near one",
+      "position": 33,
+      "description": "If 1 is in support of Pi, every epsilon admits eta<epsilon with Pi(A_eta)<1.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Support near one",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "lem:supp_tail",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-bayes.tex:42-45",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:bayes.eta-prop",
+          "type": "supports",
+          "description": "The proposition proof uses the support lemma to choose eta.",
+          "evidence": "sections/appendix-bayes.tex:56-58",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "kind": "lemma",
+      "title": "Support near one",
+      "ref": "lem:supp_tail"
+    },
+    {
+      "id": "gold:bayes.eta-prop",
+      "type": "result",
+      "category": "result:proposition",
+      "short_title": "Support near one implies exponential posterior concentration",
+      "position": 34,
+      "description": "Support of the basin-size prior near one yields exponential decay of the posterior probability of A_epsilon.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Support near one implies exponential posterior concentration",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "prop:eta-bound",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-bayes.tex:55",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [],
+      "kind": "proposition",
+      "title": "Support near one implies exponential posterior concentration",
+      "ref": "prop:eta-bound"
+    },
+    {
+      "id": "gold:bayes.posterior-size",
+      "type": "result",
+      "category": "result:proposition",
+      "short_title": "Dropping eta under a polynomial prior-density lower bound",
+      "position": 35,
+      "description": "A polynomial prior-density lower bound near one yields an explicit polynomial-times-exponential posterior bound for A_epsilon.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Dropping eta under a polynomial prior-density lower bound",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "prop:basin-posterior-size",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-bayes.tex:69",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [],
+      "kind": "proposition",
+      "title": "Dropping eta under a polynomial prior-density lower bound",
+      "ref": "prop:basin-posterior-size"
+    },
+    {
+      "id": "gold:bayes.ass-poly-density",
+      "type": "assumption",
+      "category": "assumption:standing",
+      "short_title": "Polynomial prior-density lower bound near one",
+      "position": 36,
+      "description": "The basin-size prior density is bounded below by a polynomial rate near one.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Polynomial prior-density lower bound near one",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "ass:poly_density",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-bayes.tex:87-94",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:bayes.posterior-size",
+          "type": "supports",
+          "description": "The denominator lower bound directly uses the polynomial density assumption.",
+          "evidence": "sections/appendix-bayes.tex:87-94",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "kind": "standing",
+      "title": "Polynomial prior-density lower bound near one",
+      "ref": "ass:poly_density"
+    },
+    {
+      "id": "gold:bayes.beta-prior",
+      "type": "result",
+      "category": "result:proposition",
+      "short_title": "Beta-prior posterior concentration",
+      "position": 37,
+      "description": "A Beta(alpha,beta) prior updates to Beta(alpha+n,beta), yielding an exponential posterior tail bound with a polynomial prefactor.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Beta-prior posterior concentration",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "prop:beta_prior",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-bayes.tex:132",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [],
+      "kind": "proposition",
+      "title": "Beta-prior posterior concentration",
+      "ref": "prop:beta_prior"
+    },
+    {
+      "id": "gold:bayes.gautschi",
+      "type": "external-result",
+      "category": "external-result",
+      "short_title": "Gautschi's inequality",
+      "position": 38,
+      "description": "Gautschi inequality bounds the relevant Gamma ratio polynomially.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Gautschi's inequality",
+                "format": "text"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-bayes.tex:186-195",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:bayes.beta-prior",
+          "type": "supports",
+          "description": "The beta-prior proof cites Gautschi inequality for the Gamma-ratio bound.",
+          "evidence": "sections/appendix-bayes.tex:191-195",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "title": "Gautschi's inequality"
+    },
+    {
+      "id": "gold:bayes.spike-setup",
+      "type": "setup",
+      "category": "setup:definition",
+      "short_title": "Spike-and-Slab Prior",
+      "position": 39,
+      "description": "Defines the spike-and-slab prior, q_n, and the posterior spike-mass formula.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Spike-and-Slab Prior",
+                "format": "text"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-bayes.tex:208-225",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:bayes.spike-rate",
+          "type": "supports",
+          "description": "The spike-rate proof uses q_n and the posterior formula from the setup.",
+          "evidence": "sections/appendix-bayes.tex:338-347",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "kind": "definition",
+      "title": "Spike-and-Slab Prior"
+    },
+    {
+      "id": "gold:bayes.bayes-rule",
+      "type": "external-result",
+      "category": "external-result",
+      "short_title": "Bayes' rule",
+      "position": 40,
+      "description": "Bayes' rule expresses posterior probabilities as the joint event probability divided by the observed-event probability.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Bayes' rule",
+                "format": "text"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-bayes.tex:219-224",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:bayes.eta-bound",
+          "type": "supports",
+          "description": "The denominator-bound proof uses Bayes' rule to divide the bounded joint event by the bounded observation probability.",
+          "evidence": "sections/appendix-bayes.tex:34-38",
+          "implicit": false,
+          "confidence": "High"
+        },
+        {
+          "to": "gold:bayes.spike-setup",
+          "type": "supports",
+          "description": "Bayes' rule gives the posterior spike-mass formula from the spike-and-slab prior and slab moment.",
+          "evidence": "sections/appendix-bayes.tex:219-224",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "title": "Bayes' rule"
+    },
+    {
+      "id": "gold:bayes.master-moment",
+      "type": "result",
+      "category": "result:lemma",
+      "short_title": "Moment bound from near--1 tail",
+      "position": 41,
+      "description": "E_W[S^n] is bounded by a near-one tail integral plus (1-delta)^n.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Moment bound from near--1 tail",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "lem:master_moment",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-bayes.tex:227-240",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:bayes.poly-tail",
+          "type": "supports",
+          "description": "The corollary proof directly applies the master moment lemma.",
+          "evidence": "sections/appendix-bayes.tex:293-300",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "kind": "lemma",
+      "title": "Moment bound from near--1 tail",
+      "ref": "lem:master_moment"
+    },
+    {
+      "id": "gold:bayes.poly-tail",
+      "type": "result",
+      "category": "result:corollary",
+      "short_title": "Polynomial tail implies polynomial moment decay",
+      "position": 42,
+      "description": "A polynomial upper bound on the near-one tail implies E_W[S^n] <= C n^{-gamma} eventually.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Polynomial tail implies polynomial moment decay",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "cor:poly_tail",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-bayes.tex:282-291",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:bayes.spike-rate",
+          "type": "supports",
+          "description": "The proof applies the polynomial-tail corollary to q_n.",
+          "evidence": "sections/appendix-bayes.tex:337-340",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "kind": "corollary",
+      "title": "Polynomial tail implies polynomial moment decay",
+      "ref": "cor:poly_tail"
+    },
+    {
+      "id": "gold:bayes.gamma-integral",
+      "type": "external-result",
+      "category": "external-result",
+      "short_title": "Gamma integral",
+      "position": 43,
+      "description": "The Gamma integral evaluates the exponentially weighted power integral after rescaling.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Gamma integral",
+                "format": "text"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-bayes.tex:312-319",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:bayes.poly-tail",
+          "type": "supports",
+          "description": "The corollary proof evaluates the rescaled exponential-power integral with the Gamma integral.",
+          "evidence": "sections/appendix-bayes.tex:312-319",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "title": "Gamma integral"
+    },
+    {
+      "id": "gold:bayes.spike-rate",
+      "type": "result",
+      "category": "result:proposition",
+      "short_title": "Spike-and-slab posterior rate",
+      "position": 44,
+      "description": "If the slab's near-one tail is O(u^gamma), posterior mass outside the spike is O(n^{-gamma}).",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Spike-and-slab posterior rate",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "prop:spike_slab_rate",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-bayes.tex:336",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [],
+      "kind": "proposition",
+      "title": "Spike-and-slab posterior rate",
+      "ref": "prop:spike_slab_rate"
+    },
+    {
+      "id": "gold:bayes.lk-two-sided",
+      "type": "result",
+      "category": "result:lemma",
+      "short_title": "Two-sided bounds for L_k(n) (fixed x*)",
+      "position": 45,
+      "description": "The MFM likelihood L_k(n) has explicit two-sided power bounds with exponent delta_k.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Two-sided bounds for L_k(n) (fixed x*)",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "lem:Lk_twosided_fixed",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-bayes.tex:357-373",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:bayes.k1-theorem",
+          "type": "supports",
+          "description": "The MFM theorem uses the likelihood bounds for upper and lower rates.",
+          "evidence": "sections/appendix-bayes.tex:526-529",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "kind": "lemma",
+      "title": "Two-sided bounds for L_k(n) (fixed x*)",
+      "ref": "lem:Lk_twosided_fixed"
+    },
+    {
+      "id": "gold:bayes.dirichlet",
+      "type": "external-result",
+      "category": "external-result",
+      "short_title": "Dirichlet moment formula",
+      "position": 46,
+      "description": "The Dirichlet moment formula gives E[s_1^n] as a Gamma ratio.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Dirichlet moment formula",
+                "format": "text"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-bayes.tex:396-400",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:bayes.lk-two-sided",
+          "type": "supports",
+          "description": "The likelihood proof uses the Dirichlet moment formula to obtain the Gamma form.",
+          "evidence": "sections/appendix-bayes.tex:396-400",
+          "implicit": false,
+          "confidence": "High"
+        },
+        {
+          "to": "gold:bayes.lk-monotone",
+          "type": "supports",
+          "description": "The monotonicity proof writes L_k via the Dirichlet moment Gamma ratio.",
+          "evidence": "sections/appendix-bayes.tex:487-490",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "title": "Dirichlet moment formula"
+    },
+    {
+      "id": "gold:bayes.lk-monotone",
+      "type": "result",
+      "category": "result:lemma",
+      "short_title": "Monotonicity of L_k(n)",
+      "position": 47,
+      "description": "For fixed alpha and n, L_k(n) decreases with k.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Monotonicity of L_k(n)",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "lem:Lk_monotone_fixed",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-bayes.tex:482-485",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:bayes.k1-theorem",
+          "type": "supports",
+          "description": "The MFM theorem uses monotonicity to bound all k>=2 by L_2.",
+          "evidence": "sections/appendix-bayes.tex:522-524",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "kind": "lemma",
+      "title": "Monotonicity of L_k(n)",
+      "ref": "lem:Lk_monotone_fixed"
+    },
+    {
+      "id": "gold:bayes.k1-theorem",
+      "type": "result",
+      "category": "result:theorem",
+      "short_title": "Rate-tight concentration of P(K=1 | H_n(x*))",
+      "position": 48,
+      "description": "Under the fixed-x* MFM assumptions, posterior mass outside K=1 is Theta(n^{-alpha/2}).",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Rate-tight concentration of P(K=1 | H_n(x*))",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "thm:K1_tight_rate_fixed",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-bayes.tex:502",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [],
+      "kind": "theorem",
+      "title": "Rate-tight concentration of P(K=1 | H_n(x*))",
+      "ref": "thm:K1_tight_rate_fixed"
+    },
+    {
+      "id": "gold:app.smooth-domain",
+      "type": "setup",
+      "category": "setup:definition",
+      "short_title": "A smooth compact price domain",
+      "position": 49,
+      "description": "The l^{2p}-type set X_p contains the price box, is compact and convex, has smooth boundary, and lies in the positive orthant for large p.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "A smooth compact price domain",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "appendix:application-smooth-domain",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-application.tex:5-30",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [],
+      "kind": "definition",
+      "title": "A smooth compact price domain",
+      "ref": "appendix:application-smooth-domain"
+    },
+    {
+      "id": "gold:app.skerlos",
+      "type": "external-result",
+      "category": "external-result",
+      "short_title": "Mixed-logit equilibrium price bounds",
+      "position": 50,
+      "description": "Skerlos et al. supply lower and upper bounds for mixed-logit equilibrium prices.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Mixed-logit equilibrium price bounds",
+                "format": "text"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-application.tex:7",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:app.smooth-domain",
+          "type": "supports",
+          "description": "The construction starts from the price bounds supplied by the cited source.",
+          "evidence": "sections/appendix-application.tex:7",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "title": "Mixed-logit equilibrium price bounds"
+    },
+    {
+      "id": "gold:app.banach",
+      "type": "setup",
+      "category": "setup:definition",
+      "short_title": "A transported Banach structure",
+      "position": 51,
+      "description": "Transported operations and norm make the parametrized dynamics class a Banach space via a finite-dimensional linear isometry.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "A transported Banach structure",
+                "format": "text"
+              },
+              {
+                "label": "Reference",
+                "value": "appendix:application-banach",
+                "format": "code"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-application.tex:32-59",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [],
+      "kind": "definition",
+      "title": "A transported Banach structure",
+      "ref": "appendix:application-banach"
+    },
+    {
+      "id": "gold:app.parametrization-injective",
+      "type": "assumption",
+      "category": "assumption:local",
+      "short_title": "Injective dynamics parametrization",
+      "position": 52,
+      "description": "The parameter-to-dynamics map is injective, so transported operations and the transported norm are well defined.",
+      "source": "explicit",
+      "details": {
+        "sections": [
+          {
+            "title": "Source",
+            "fields": [
+              {
+                "label": "Title",
+                "value": "Injective dynamics parametrization",
+                "format": "text"
+              },
+              {
+                "label": "Location",
+                "value": "sections/appendix-application.tex:45",
+                "format": "path"
+              },
+              {
+                "label": "Provenance",
+                "value": "explicit",
+                "format": "text"
+              }
+            ]
+          }
+        ]
+      },
+      "connects_to": [
+        {
+          "to": "gold:app.banach",
+          "type": "supports",
+          "description": "Injectivity makes the transported vector operations and norm well defined, enabling the Banach-space construction.",
+          "evidence": "sections/appendix-application.tex:45-59",
+          "implicit": false,
+          "confidence": "High"
+        }
+      ],
+      "kind": "local",
+      "title": "Injective dynamics parametrization"
+    }
+  ],
+  "document": {
+    "title": "Inference From Random Restarts appendix",
+    "source_file": "main.tex"
+  },
+  "metadata": {
+    "extraction": "Compiled from resolved semantic IR; direct dependencies only",
+    "semantic_exclusions": [],
+    "evidence_gaps": [],
+    "semantic_ir_sha256": "a94eac7d5e86e2f7b021e78f3fd6c98f23db18438ce6a3f88bee786537c1fd59"
+  },
+  "renderer_dependencies": [
+    {
+      "id": "mathjax",
+      "version": "3",
+      "configuration": {
+        "input": "tex",
+        "output": "svg"
+      }
+    }
+  ]
+}

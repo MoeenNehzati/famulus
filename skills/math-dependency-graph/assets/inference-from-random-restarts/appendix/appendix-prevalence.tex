@@ -1,0 +1,273 @@
+\section{Prevalence Arguments}
+\label{appendix:prevalence}
+
+This appendix proves Proposition~\ref{prop:e-submersion-finite-attractors}. The
+proof has three steps. First, we split roots of $\QTC$ into continuous interior
+and boundary root problems. Second, we use parametric transversality to show
+that these root sets are discrete for prevalent dynamics. Third, we combine
+discreteness with compact containment from Assumption~\ref{ass:kkq} to obtain
+finiteness.
+
+\begin{remark}
+    With $C^2$ boundary, the normal vector $\vn:\partial X \to \R^d$ is well-defined and $C^1$. So we can write $\QTC$ as:
+    \[
+        \QTC(\vx)=
+        \begin{cases}
+            \vQ(\vx) & \vx \in \inter X \\
+            \QTCP(\vx) & \vx \in \partial X
+        \end{cases}
+    \]
+    where, for $\vx\in\partial X$,
+    \[
+        \QTCP(\vx)=
+        \vQ(\vx) - \langle \vQ(\vx), \vn(\vx) \rangle_+ \vn(\vx),
+    \]
+    and the $+$ subscript denotes the positive part (maximum of the argument and zero).
+\end{remark}
+
+The final step of the argument uses the following compactness fact.
+
+\begin{lemma}[Closed discrete sets in compact sets are finite]\label{lemma:closed-discrete-finite}
+Let $Y$ be a topological space, and let $S\subseteq Y$ be closed in $Y$ and
+discrete in $Y$. If there is a compact set $K\subseteq Y$ such that
+$S\subseteq K$, then $S$ is finite.
+\end{lemma}
+\begin{proof}
+Since $S$ is closed in $Y$, $S\cap K=S$ is closed in $K$. Hence $S$ is compact
+in the subspace topology. Since $S$ is discrete, for each $s\in S$ there is an
+open set $U_s\subseteq Y$ such that $U_s\cap S=\{s\}$. The collection
+$\{U_s\cap S:s\in S\}$ is an open cover of the compact space $S$ by singletons,
+so it has a finite subcover. Hence $S$ is finite.
+\end{proof}
+
+In Section~\ref{sec:model}, we showed that $g_{\vQ}(X)$ is finite iff $\QTC$
+has finitely many roots. The useful fact about roots of a continuous function is
+that they form a closed set. Although $\QTC$ is not continuous, its roots are
+contained in the union of the roots of two continuous maps.
+
+\begin{lemma}\label{lemma:break-into-two}
+	   \[\mR(\QTC) \subseteq \mR(\vQ) \cup \mR(\QTCP)\]
+	   where $\mR(\vQ)$ is closed in $X$ and $\mR(\QTCP)$ is closed in $\partial X$.
+\end{lemma}
+\begin{proof}
+Take any $\vx\in \mR(\QTC)$, i.e. $\QTC(\vx)=0$. If $\vx\in \inter X$, then $\QTC(\vx)=\vQ(\vx)$, so $\vQ(\vx)=0$ and hence $\vx\in \mR(\vQ)$. If instead $\vx\in \partial X$, then $\vx\in \mR(\QTCP)$ by definition. Therefore $\mR(\QTC) \subseteq \mR(\vQ) \cup \mR(\QTCP)$.
+
+As $\vQ$ is continuous, $\mR(\vQ)$ is closed. Under Assumption~\ref{ass:kkq}, $X$ has $C^2$ boundary. For $\vx\in\partial X$,
+\[\QTCP(\vx) = \vQ(\vx) - \langle \vQ(\vx), \vn(\vx) \rangle_+ \vn(\vx)\]
+As the boundary is $C^2$, $\vn$ is $C^1$, making $\QTCP$ continuous on
+$\partial X$ and $\mR(\QTCP)$ closed in $\partial X$.
+\end{proof}
+
+What remains is having a condition that implies discreteness of these root sets.
+Once we have discreteness, Assumption~\ref{ass:kkq} provides compact containment
+and Lemma~\ref{lemma:closed-discrete-finite} gives finiteness. When a function
+$f$ is $C^1$, a sufficient condition for roots of $f$ to be isolated is
+transversality of $f$ to $0$: $f \pitchfork 0$. As transversality works well
+with prevalence, we phrase discreteness in terms of transversality to $0$. This
+works directly for $\vQ$, which is $C^1$. The boundary map $\QTCP$, however, is
+not $C^1$ because it involves $\langle \vQ(\vx), \vn(\vx) \rangle_+$.
+
+To avoid the nonsmooth positive-part term in $\QTCP$, we encode boundary roots
+using the following $C^1$ map:
+\[
+\begin{aligned}
+    \tilde{\vQ}:\partial X \times [0,\infty) \to \R^{d} \\
+    \tilde{\vQ}(\vx, \alpha) = \vQ(\vx) - \alpha \vn(\vx)
+\end{aligned}
+ \]
+The following lemma shows why $\tilde{\vQ} \pitchfork 0$ implies discreteness of $\mR(\QTCP)$.
+
+\begin{lemma}\label{lemma:discrete-preserves}
+    If $\tilde{\vQ} \pitchfork 0$, then $\mR(\QTCP)$ is discrete in $\partial X$.
+\end{lemma}
+\begin{proof}
+    If $\tilde{\vQ} \pitchfork 0$, then $\mR(\tilde{\vQ})$ is discrete in
+    $\partial X\times[0,\infty)$. Moreover, $\vx\in\mR(\QTCP)$ iff
+    \[
+    (\vx,\alpha(\vx))\in\mR(\tilde{\vQ}),
+    \qquad
+    \alpha(\vx):=\langle \vQ(\vx),\vn(\vx)\rangle_+.
+    \]
+
+    Suppose for contradiction that $\mR(\QTCP)$ is not discrete in $\partial X$.
+    Then there exists a sequence of distinct points $\vx_n\in \mR(\QTCP)$ and a limit point
+    $\vx^*=\lim_{n\to\infty} \vx_n\in \mR(\QTCP)$.
+    By continuity of $\alpha(\cdot)$,
+    $(\vx_n,\alpha(\vx_n))\to(\vx^*,\alpha(\vx^*))$. Each pair lies in
+    $\mR(\tilde{\vQ})$, and the pairs are distinct because the $\vx_n$ are
+    distinct. Thus $\mR(\tilde{\vQ})$ has an accumulation point, contradicting
+    discreteness.
+    Therefore $\mR(\QTCP)$ is discrete.
+\end{proof}
+
+So to prove discreteness of $\mR(\vQ)$ and $\mR(\QTCP)$, it suffices to prove $\vQ \pitchfork 0$ and $\tilde{\vQ} \pitchfork 0$. The following lemma connects prevalence and transversality.
+
+\begin{restatable}[Parametric transversality from a submersion]{lemma}{lemParametricSubmersion}\label{lem:parametric_submersion}
+Let $Z$ be a finite-dimensional $C^{r}$ manifold, possibly with boundary, and let
+$P$ be a finite-dimensional real vector space (identified with $\R^{m}$, with
+Lebesgue measure $\lambda_{P}$). Let $\vF:P \times Z\to \R^{n}$ be a $C^{r}$ map
+with $r>\max(\dim Z-n,0)$ such that $\vF$ is a submersion, i.e. for every $(\vp,z)\in P\times Z$,
+\[
+D\vF_{(\vp,z)}:T_{\vp}P\times T_{z}Z\to \R^{n}
+\quad\text{is surjective.}
+\]
+For each $\vp \in P$ write $\vF_{\vp}(z):=\vF(\vp,z)$.
+Then for $\lambda_{P}$-a.e.\ $\vp\in P$ we have $\vF_{\vp}\pitchfork 0$.
+\end{restatable}
+
+\begin{remark}\label{remark:parametric-regularity}
+    In particular, if $\dim Z=n$ then
+    $r>\max(\dim Z-n,0)$ reduces to $r>0$, so $C^{1}$ regularity suffices. This
+    is the typical case for the applications in this paper; when $\dim Z>n$ the
+    stronger $C^{r}$ assumption above is required to apply Sard's theorem to
+    the projection used in the proof (see \cite{GuilleminPollack1974}).
+\end{remark}
+
+The idea is to apply Sard's theorem to the projection from the zero set
+$M:=\vF^{-1}(0)$ onto the parameter space $P$. Regular values of this projection
+are exactly the parameters for which the fiber map $\vF_{\vp}$ is transverse to
+$0$.
+
+\begin{proof}\label{proof:parametric_submersion}
+Let $q:=\dim Z$. Since $\vF$ is a submersion, $0$ is a regular value of $\vF$.
+Using the preimage theorem, $M:=\vF^{-1}(0)\subset P\times Z$ is a
+$\dim(P)+q-n$-dimensional $C^{1}$ submanifold (possibly with boundary) with
+$T_M = \operatorname{ker}(D\vF)$.
+
+Let $\pi:P\times Z\to P$ be the projection $\pi(\vp,z)=\vp$ and set
+$\pi^{M}:=\pi|_{M}$. Intuitively, values of $\pi^{M}$ are $\vp$ such that for
+some $z$, $\vF(\vp,z)=0$. By Sard's theorem, the set of critical values of
+$\pi^{M}$ has $\lambda_{P}$-measure zero. We show that regular values of
+$\pi^{M}$ correspond exactly to $\vp$ such that $\vF_{\vp}\pitchfork 0$.
+
+\[
+\begin{aligned}
+\ker D \pi^{M}_{(\vp,z)}
+&=\{\vvec\in T_{(\vp,z)}M:D \pi^{M}_{(\vp,z)}(\vvec)=0\}\\
+&=\{(\vvec_{\vp},\vvec_{z})\in T_{(\vp,z)}M:\vvec_{\vp}=0\}\\
+&=\{(0,\vvec_{z})\in T_{(\vp,z)}M\}\\
+&=\{(0,\vvec_{z})\in\ker(D\vF_{(\vp,z)})\}\\
+&=\{(0,\vvec_{z}):D_{z}\vF_{(\vp,z)}(\vvec_{z})=0\}\\
+&=\{(0,\vvec_{z}):\vvec_{z}\in\ker(D_{z}\vF_{(\vp,z)})\}.
+\end{aligned}
+\]
+
+So $\dim(\ker D \pi^{M}_{(\vp,z)}) = \dim(\ker(D_{z} \vF_{(\vp,z)}))$.
+Using the rank-nullity theorem on $D \pi^{M}_{(\vp,z)}$, we have:
+\[
+\begin{aligned}
+&\rank(D \pi^{M}_{(\vp,z)})
++\dim(\ker D \pi^{M}_{(\vp,z)})\\
+&\qquad=\dim(T_{(\vp,z)}M).
+\end{aligned}
+\]
+\[
+\begin{aligned}
+&\Rightarrow \rank(D \pi^{M}_{(\vp,z)})
++\dim(\ker D \pi^{M}_{(\vp,z)})\\
+&\qquad=\dim(P)+q-n.
+\end{aligned}
+\]
+Doing the same on $D_{z} \vF$, we have:
+\[
+\begin{aligned}
+\rank(D_{z} \vF_{(\vp,z)})+\dim(\ker D_{z} \vF_{(\vp,z)})
+&=\dim(Z)\\
+&=q.
+\end{aligned}
+\]
+Subtracting the two equations cancels the kernels as they are equal giving us:
+\[
+\rank(D \pi^{M}_{(\vp,z)})-\rank(D_{z} \vF_{(\vp,z)})
+=\dim(P)-n.
+\]
+
+Now if $\vp$ is a regular value of $\pi^{M}$, then
+$\rank(D \pi^{M}_{(\vp,z)}) = \dim(P)$. Therefore
+$\rank(D_{z} \vF_{(\vp,z)}) = n$, which is equivalent to
+$\vF_{\vp} \pitchfork 0$.
+
+On the other hand, assume $\vF_{\vp} \pitchfork 0$. Then
+$\rank(D_{z} \vF_{(\vp,z)}) = n$. Using the previous equation, we have:
+\[\rank(D \pi^{M}_{(\vp,z)}) = \dim(P)\]
+So $D \pi^{M}_{(\vp,z)}$ is surjective, and hence $\vp$ is a regular value of $\pi^{M}$.
+\end{proof}
+
+\begin{remark}
+    When $n=\dim Z$, $\vF_{\vp} \pitchfork 0$ means $0$ is a regular value of $\vF_{\vp}$. Using the preimage theorem, we have $\dim(\vF_{\vp}^{-1}(0)) = \dim Z - n = 0$. This implies $\vF_{\vp}^{-1}(0)$, i.e. the roots of $\vF_{\vp}$, are discrete in $Z$.
+\end{remark}
+
+To obtain transversality prevalently, we perturb the dynamics along a
+finite-dimensional probe space.
+
+\begin{definition}
+    For a finite-dimensional subspace $P$ of $\mathcal{Q}$, for any $\vQ \in \mathcal{Q}$, define the following perturbed evaluation maps $e^{\vQ}:P\times X\to\R^{d}$ and $e^{\tilde{\vQ}}:P \times \partial X \times [0,\infty) \to \R^{d}$:
+    \[
+    \begin{aligned}[t]
+        e^{\vQ}(\vp,\vx)&:=(\vQ+\vp)(\vx)\\
+        e^{\tilde{\vQ}}(\vp,\vx,\alpha)&:=(\vQ+\vp)(\vx) - \alpha \vn(\vx)
+    \end{aligned}
+    \]
+\end{definition}
+
+We can use this to prove the following sufficient condition for prevalence of transversality.
+
+\begin{theorem}[Prevalence via a submersion probe]\label{theorem:prevalence_submersion_probe}
+Let $X$ have $C^2$ boundary. Let $\mathcal Q$ be a complete metric vector space of continuously differentiable functions from $X$ to $\R^d$ and let $P\subset \mathcal Q$ be a finite-dimensional subspace.
+
+If for all $\vQ\in\mathcal Q$, the maps $e^{\vQ}$ and $e^{\tilde{\vQ}}$ are $C^{1}$ submersions, then for prevalent $\vQ \in \mathcal{Q}$, $\mR(\vQ)$ is discrete in $X$ while $\mR(\QTCP)$ is discrete in $\partial X$.
+\end{theorem}
+
+\begin{proof}
+Fix any base dynamics $\vQ_0\in\mathcal Q$. Applying
+Lemma~\ref{lem:parametric_submersion} to $e^{\vQ_0}$ gives a full-measure set of
+perturbations $\vp\in P$ such that $(\vQ_0+\vp)(\cdot)\pitchfork 0$, and hence
+$\mR(\vQ_0+\vp)$ is discrete in $X$. Applying the same lemma to
+$e^{\tilde{\vQ}_0}$ gives a full-measure set of perturbations $\vp\in P$ such
+that
+\[
+(\vx,\alpha)\mapsto(\vQ_0+\vp)(\vx)-\alpha\vn(\vx)
+\]
+is transverse to $0$. By Lemma~\ref{lemma:discrete-preserves},
+$\mR((\vQ_0+\vp)^{\Pi_{\TC_X}}_{|\partial X})$ is discrete in $\partial X$ for
+these perturbations. Intersecting the two full-measure sets gives full measure
+in $P$. Since this holds for every base $\vQ_0\in\mathcal Q$, the set of
+dynamics for which both root sets are discrete is prevalent.
+\end{proof}
+
+\begin{corollary}\label{cor:prevalent-finite-roots}
+Assume $X$ satisfies Assumption~\ref{ass:convex-closed}, and let $\mathcal Q$
+satisfy Assumption~\ref{ass:kkq}. If there exists a finite-dimensional subspace
+$P\subseteq\mathcal Q$ such that, for every $\vQ\in\mathcal Q$, the perturbed
+evaluation maps $e^{\vQ}$ and $e^{\tilde{\vQ}}$ are $C^1$ submersions, then for
+prevalent $\vQ\in\mathcal Q$, $\QTC$ has finitely many roots.
+\end{corollary}
+\begin{proof}
+By Theorem~\ref{theorem:prevalence_submersion_probe}, for prevalent
+$\vQ\in\mathcal Q$, $\mR(\vQ)$ is discrete in $X$ and $\mR(\QTCP)$ is discrete
+in $\partial X$. By Lemma~\ref{lemma:break-into-two},
+\[
+\mR(\QTC)\subseteq \mR(\vQ)\cup \mR(\QTCP).
+\]
+The two root sets on the right are closed in their respective domains by
+Lemma~\ref{lemma:break-into-two}. Assumption~\ref{ass:kkq} places them inside
+compact sets. Lemma~\ref{lemma:closed-discrete-finite} therefore implies that
+both $\mR(\vQ)$ and $\mR(\QTCP)$ are finite. Hence $\mR(\QTC)$ is finite.
+\end{proof}
+
+\phantomsection\label{proof:e-submersion-finite-attractors}
+\propESubmersionFiniteAttractors*
+\begin{proof}[Proof of Proposition~\ref{prop:e-submersion-finite-attractors}]
+The hypotheses of Proposition~\ref{prop:e-submersion-finite-attractors} are
+exactly the hypotheses of Corollary~\ref{cor:prevalent-finite-roots}. Hence,
+for prevalent $\vQ\in\mathcal Q$, the projected dynamics $\QTC$ has finitely
+many roots.
+
+By Lemma~\ref{lemma:containment},
+\[
+g_{\vQ}(X)\subseteq \mR(\QTC)\cup\{\dagger\}.
+\]
+Thus $g_{\vQ}(X)$ is contained in a finite set, so $|g_{\vQ}(X)|<\infty$.
+Therefore, for prevalent $\vQ\in\mathcal Q$, the induced dynamic solver has
+finitely many reachable terminal outcomes.
+\end{proof}
