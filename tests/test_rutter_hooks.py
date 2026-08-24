@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
+import inspect
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,22 @@ class HookChild(rutter_public.Rutter):
 
     def define_evolutions(self) -> dict[str, object]:
         return {"done": rutter_public.Terminal(result=rutter_public.VoyageResult("checked", {}))}
+
+
+HOOK_CHILD = HookChild()
+
+
+class ExplicitChild(rutter_public.Rutter):
+    rutter_id = "explicit-hook-child"
+    definition_version = 1
+    initial_evolution_id = "done"
+
+    def define_evolutions(self) -> dict[str, object]:
+        return {
+            "done": rutter_public.Terminal(
+                result=rutter_public.VoyageResult("checked", {})
+            )
+        }
 
 
 def test_edge_match_constructors_cover_wildcard_and_exact_edges() -> None:
@@ -46,20 +63,23 @@ def test_edge_match_constructors_cover_wildcard_and_exact_edges() -> None:
         after("review").source = "draft"
 
 
-def test_case_maker_constructor_freezes_one_validated_hook_definition() -> None:
-    """Accepting an unstable ID, matcher, child, or Charter callback must fail."""
+def test_case_maker_constructor_freezes_contextual_rutter_constructor() -> None:
+    """Retaining a fixed child or accepting an unstable hook must fail."""
 
     assert hasattr(rutter_public, "TransitionHook")
     maker = rutter_public.TransitionHook(
         "review-check",
         on=rutter_public.after("review"),
-        child=HookChild,
+        rutter_constructor=lambda context: HOOK_CHILD,
         charter_constructor=lambda context: {"source": context.evolution.evolution_id},
     )
 
     assert maker.id == "review-check"
     assert maker.on == rutter_public.TransitionMatch(source="review")
-    assert maker.child is HookChild
+    assert tuple(inspect.signature(maker.rutter_constructor).parameters) == (
+        "context",
+    )
+    assert not hasattr(maker, "child")
     assert callable(maker.charter_constructor)
     assert not hasattr(maker, "charter")
     with pytest.raises(FrozenInstanceError):
@@ -68,9 +88,40 @@ def test_case_maker_constructor_freezes_one_validated_hook_definition() -> None:
         rutter_public.TransitionHook(
             "bad id",
             on=rutter_public.after("review"),
-            child=HookChild,
+            rutter_constructor=lambda context: HOOK_CHILD,
             charter_constructor=lambda context: {},
         )
+
+
+def test_binding_requires_one_context_argument_for_hook_rutter_constructor(
+    tmp_path: Path,
+) -> None:
+    """An uninspectable or differently shaped constructor cannot replay context."""
+
+    parent = rutter_public.Rutter(
+        id="bad-hook-constructor-parent",
+        version=1,
+        start="done",
+        evolutions={
+            "done": rutter_public.Terminal(
+                result=rutter_public.VoyageResult("complete", {})
+            )
+        },
+        hooks=(
+            rutter_public.TransitionHook(
+                "bad-constructor",
+                on=rutter_public.after("done"),
+                rutter_constructor=lambda: HOOK_CHILD,
+                charter_constructor=lambda context: {},
+            ),
+        ),
+    )
+
+    with pytest.raises(
+        rutter_public.RutterDefinitionError,
+        match="TransitionHook rutter_constructor",
+    ):
+        rutter_public.RutterRegistry({"parent": parent}, tmp_path)
 
 
 def _completed(run_id: str) -> CompletedRun:
@@ -177,7 +228,7 @@ def test_every_matcher_reuses_its_record_anchored_context_and_provenance(
                     next_on_outcome="invoke",
                 ),
                 "invoke": rutter_public.SubRutter(
-                    HookChild,
+                    ExplicitChild,
                     charter_constructor=lambda context: {"kind": "explicit"},
                     next_on_outcome="done",
                 ),
@@ -190,13 +241,13 @@ def test_every_matcher_reuses_its_record_anchored_context_and_provenance(
                 rutter_public.TransitionHook(
                     "after-review",
                     on=rutter_public.after("review"),
-                    child=HookChild,
+                    rutter_constructor=lambda context: HOOK_CHILD,
                     charter_constructor=remember("after-review"),
                 ),
                 rutter_public.TransitionHook(
                     "before-invoke",
                     on=rutter_public.before("invoke"),
-                    child=HookChild,
+                    rutter_constructor=lambda context: HOOK_CHILD,
                     charter_constructor=remember("before-invoke"),
                 ),
                 rutter_public.TransitionHook(
@@ -204,19 +255,19 @@ def test_every_matcher_reuses_its_record_anchored_context_and_provenance(
                     on=rutter_public.on_transition(
                         source="review", outcome="approved", target="invoke"
                     ),
-                    child=HookChild,
+                    rutter_constructor=lambda context: HOOK_CHILD,
                     charter_constructor=remember("exact-review"),
                 ),
                 rutter_public.TransitionHook(
                     "post-call",
                     on=rutter_public.after("invoke"),
-                    child=HookChild,
+                    rutter_constructor=lambda context: HOOK_CHILD,
                     charter_constructor=remember("post-call"),
                 ),
                 rutter_public.TransitionHook(
                     "post-done",
                     on=rutter_public.after("done"),
-                    child=HookChild,
+                    rutter_constructor=lambda context: HOOK_CHILD,
                     charter_constructor=remember("post-done"),
                 ),
             )
@@ -307,19 +358,19 @@ def test_multiple_selection_faults_with_every_maker_before_child_allocation(
                 rutter_public.TransitionHook(
                     "declined",
                     on=rutter_public.after("review"),
-                    child=HookChild,
+                    rutter_constructor=lambda context: HOOK_CHILD,
                     charter_constructor=choose("declined", None),
                 ),
                 rutter_public.TransitionHook(
                     "first",
                     on=rutter_public.after("review"),
-                    child=HookChild,
+                    rutter_constructor=lambda context: HOOK_CHILD,
                     charter_constructor=choose("first", {"case": "first"}),
                 ),
                 rutter_public.TransitionHook(
                     "second",
                     on=rutter_public.after("review"),
-                    child=HookChild,
+                    rutter_constructor=lambda context: HOOK_CHILD,
                     charter_constructor=choose("second", {"case": "second"}),
                 ),
             )
@@ -396,7 +447,7 @@ def test_case_callback_failure_preserves_accepted_source_as_stable_fault(
                 rutter_public.TransitionHook(
                     "failing-case",
                     on=rutter_public.after("review"),
-                    child=HookChild,
+                    rutter_constructor=lambda context: HOOK_CHILD,
                     charter_constructor=charter,
                 ),
             )
@@ -470,7 +521,7 @@ def test_prompt_attachment_reopens_after_attach_settle_and_return_boundaries(
                 rutter_public.TransitionHook(
                     "prompt-check",
                     on=rutter_public.after("review"),
-                    child=HookChild,
+                    rutter_constructor=lambda context: HOOK_CHILD,
                     charter_constructor=child_charter,
                 ),
             )
@@ -586,7 +637,7 @@ def test_pure_action_attachment_return_does_not_offer_or_replay_action(
                 rutter_public.TransitionHook(
                     "action-check",
                     on=rutter_public.after("review"),
-                    child=HookChild,
+                    rutter_constructor=lambda context: HOOK_CHILD,
                     charter_constructor=lambda context: {
                         "source": context.transition.source
                     },

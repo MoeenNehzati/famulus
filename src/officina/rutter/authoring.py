@@ -369,24 +369,30 @@ class TransitionMatch:
 
 @dataclass(frozen=True)
 class TransitionHook:
-    """A matching hook whose constructor also selects the child.
+    """A matching hook with replayable Charter and Rutter constructors.
 
     ``None`` declines selection; a JSON object constructs the selected child's
-    Charter.
+    Charter.  For the same immutable Charter, transition, record, and history
+    prefix, ``rutter_constructor`` must return an equivalent Rutter identity.
+    Within one Voyage, repeated selection of that identity must return the same
+    definition instance; a fresh registry may return a fresh equivalent object.
+    Constructors must not depend on mutable voyage state or external effects.
     """
 
     id: str
     _: KW_ONLY
     on: TransitionMatch
-    child: type[Rutter]
+    rutter_constructor: Callable[[TransitionContext], Rutter]
     charter_constructor: Callable[[TransitionContext], JsonObject | None]
 
     def __post_init__(self) -> None:
         _require_id(self.id, "TransitionHook", RutterDefinitionError)
         if not isinstance(self.on, TransitionMatch):
             raise RutterDefinitionError("TransitionHook on must be a TransitionMatch")
-        if not isinstance(self.child, type) or not issubclass(self.child, Rutter):
-            raise RutterDefinitionError("TransitionHook child must be a Rutter class")
+        if not callable(self.rutter_constructor):
+            raise RutterDefinitionError(
+                "TransitionHook rutter_constructor must be callable"
+            )
         if not callable(self.charter_constructor):
             raise RutterDefinitionError(
                 "TransitionHook charter_constructor must be callable"

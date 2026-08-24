@@ -21,6 +21,9 @@ class SequenceChild(rutter.Rutter):
         return {"done": rutter.Terminal(result=rutter.VoyageResult("checked", {}))}
 
 
+SEQUENCE_CHILD = SequenceChild()
+
+
 def _question() -> object:
     return rutter.QuestionCase(
         "sum-check",
@@ -890,7 +893,7 @@ def test_diagnose_answer_on_seals_extracted_answer_and_exact_evaluator_verdict()
 
     assert maker.id == "answer-check"
     assert maker.on == rutter.after("answer")
-    assert maker.child is rutter.DiagnoseAnswer
+    assert isinstance(maker.rutter_constructor(context), rutter.DiagnoseAnswer)
     assert maker.charter_constructor(context) == rutter.DiagnosisCase(
         _question(), "2", True, ask_for_fix=True
     ).to_json()
@@ -915,16 +918,17 @@ def test_ask_and_diagnose_on_resolves_question_into_explicit_child_charter() -> 
         seen.append(context)
         return _question()
 
+    hook_child = HookAsk()
     maker = rutter.ask_and_diagnose_on(
         id="fresh-check",
         on=rutter.after("answer"),
         question=question,
-        child=HookAsk,
+        rutter_constructor=lambda context: hook_child,
     )
     context = _edge_context()
 
     assert maker.id == "fresh-check"
-    assert maker.child is HookAsk
+    assert maker.rutter_constructor(context) is hook_child
     assert maker.charter_constructor(context) == _question().to_json()
     assert seen == [context]
 
@@ -938,7 +942,7 @@ def test_hook_sequence_after_snapshots_configuration_and_filters_source_state() 
         id="progressive-checks",
         after_evolutions=states,
         items=items,
-        child=SequenceChild,
+        rutter_constructor=lambda context: SEQUENCE_CHILD,
     )
     states.clear()
     items[0]["step"].append(99)
@@ -946,7 +950,7 @@ def test_hook_sequence_after_snapshots_configuration_and_filters_source_state() 
 
     assert maker.id == "progressive-checks"
     assert maker.on == rutter.TransitionMatch()
-    assert maker.child is SequenceChild
+    assert maker.rutter_constructor(_edge_context()) is SEQUENCE_CHILD
     assert maker.charter_constructor(_edge_context(source="answer")) == {"step": (1,)}
     assert maker.charter_constructor(_edge_context(source="other")) is None
     with pytest.raises(TypeError):
@@ -960,7 +964,7 @@ def test_hook_sequence_after_derives_position_exhaustion_and_overrun_from_attach
         id="progressive-checks",
         after_evolutions={"answer"},
         items=({"step": 1}, {"step": 2}),
-        child=SequenceChild,
+        rutter_constructor=lambda context: SEQUENCE_CHILD,
     )
 
     assert maker.charter_constructor(
@@ -984,7 +988,7 @@ def test_hook_sequence_after_rejects_duplicate_maker_edge_history() -> None:
         id="progressive-checks",
         after_evolutions={"answer"},
         items=({"step": 1}, {"step": 2}, {"step": 3}),
-        child=SequenceChild,
+        rutter_constructor=lambda context: SEQUENCE_CHILD,
     )
 
     with pytest.raises(
@@ -1010,7 +1014,7 @@ def test_hook_sequence_after_custom_builder_receives_frozen_item_and_rejects_mal
         id="custom-sequence",
         after_evolutions={"answer"},
         items=({"step": [1]},),
-        child=SequenceChild,
+        rutter_constructor=lambda context: SEQUENCE_CHILD,
         charter_constructor=build,
     )
 
@@ -1026,7 +1030,7 @@ def test_hook_sequence_after_custom_builder_receives_frozen_item_and_rejects_mal
         id="malformed-sequence",
         after_evolutions={"answer"},
         items=({},),
-        child=SequenceChild,
+        rutter_constructor=lambda context: SEQUENCE_CHILD,
         charter_constructor=lambda item, edge: {"unsupported": object()},
     )
     with pytest.raises(rutter.RutterDefinitionError, match="finite JSON"):
@@ -1042,7 +1046,7 @@ def test_non_diagnostic_sequence_advances_once_per_completed_attachment_across_r
         id="progressive-checks",
         after_evolutions={"first", "second"},
         items=({"step": 1}, {"step": 2}),
-        child=SequenceChild,
+        rutter_constructor=lambda context: SEQUENCE_CHILD,
     )
 
     class SequencedParent(rutter.Rutter):
@@ -1119,11 +1123,12 @@ def test_fresh_question_sequence_uses_application_evaluator_subclass(
             del context
             return actual == expected
 
+    fresh_child = FreshEvaluatorAsk()
     maker = rutter.hook_sequence_after(
         id="fresh-questions",
         after_evolutions={"prepare"},
         items=(_question().to_json(),),
-        child=FreshEvaluatorAsk,
+        rutter_constructor=lambda context: fresh_child,
     )
 
     class FreshQuestionParent(rutter.Rutter):

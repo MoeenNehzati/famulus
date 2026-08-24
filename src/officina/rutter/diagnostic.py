@@ -548,10 +548,16 @@ def diagnose_answer_on(
             ask_for_fix=ask_for_fix,
         ).to_json()
 
+    diagnostic = DiagnoseAnswer()
+
+    def construct(context: TransitionContext) -> Rutter:
+        del context
+        return diagnostic
+
     return TransitionHook(
         id,
         on=on,
-        child=DiagnoseAnswer,
+        rutter_constructor=construct,
         charter_constructor=build,
     )
 
@@ -561,12 +567,22 @@ def ask_and_diagnose_on(
     id: str,
     on: TransitionMatch,
     question: QuestionCase | Callable[[TransitionContext], QuestionCase],
-    child: type[AskAndDiagnose] = AskAndDiagnose,
+    rutter_constructor: Callable[[TransitionContext], Rutter] | None = None,
 ) -> TransitionHook:
-    if not isinstance(child, type) or not issubclass(child, AskAndDiagnose):
-        raise RutterDefinitionError(
-            "ask_and_diagnose_on child must be an AskAndDiagnose class"
+    if rutter_constructor is None:
+        child = AskAndDiagnose()
+
+        def construct(context: TransitionContext) -> Rutter:
+            del context
+            return child
+
+    else:
+        _require_callable_arity(
+            rutter_constructor,
+            1,
+            "ask_and_diagnose_on Rutter constructor",
         )
+        construct = rutter_constructor
     if isinstance(question, QuestionCase):
         fixed_question = QuestionCase.from_json(question.to_json())
 
@@ -586,7 +602,12 @@ def ask_and_diagnose_on(
             )
         return resolved.to_json()
 
-    return TransitionHook(id, on=on, child=child, charter_constructor=build)
+    return TransitionHook(
+        id,
+        on=on,
+        rutter_constructor=construct,
+        charter_constructor=build,
+    )
 
 
 def hook_sequence_after(
@@ -594,7 +615,7 @@ def hook_sequence_after(
     id: str,
     after_evolutions: Collection[str],
     items: Sequence[JsonObject],
-    child: type[Rutter],
+    rutter_constructor: Callable[[TransitionContext], Rutter],
     charter_constructor: (
         Callable[[JsonObject, TransitionContext], JsonObject] | None
     ) = None,
@@ -617,8 +638,11 @@ def hook_sequence_after(
     )
     if not frozen_items:
         raise RutterDefinitionError("items must not be empty")
-    if not isinstance(child, type) or not issubclass(child, Rutter):
-        raise RutterDefinitionError("sequence child must be a Rutter class")
+    _require_callable_arity(
+        rutter_constructor,
+        1,
+        "sequence Rutter constructor",
+    )
     if charter_constructor is not None:
         _require_callable_arity(
             charter_constructor,
@@ -654,7 +678,7 @@ def hook_sequence_after(
     return TransitionHook(
         id,
         on=TransitionMatch(),
-        child=child,
+        rutter_constructor=rutter_constructor,
         charter_constructor=build,
     )
 

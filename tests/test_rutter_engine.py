@@ -43,6 +43,7 @@ from officina.rutter.model import (
     VoyageResult,
     VoyageStatus,
     Turn,
+    TransitionHook,
     _EffectRecovery,
 )
 from officina.rutter.runtime import RutterRegistry
@@ -1409,3 +1410,70 @@ def test_voyage_exposes_advance_without_next_and_compass_lists_it(
         "dry_run",
     )
     assert voyage.compass_facing_methods == ("get_status", "validate", "advance")
+
+
+def test_transition_hook_constructs_the_child_selected_by_transition_context(
+    tmp_path: Path,
+) -> None:
+    """Binding one fixed hook child would persist the wrong contextual identity."""
+
+    approved_child = Rutter(
+        id="approved-hook-child",
+        version=2,
+        start="done",
+        evolutions={"done": Terminal(result=VoyageResult("approved", {}))},
+    )
+    rejected_child = Rutter(
+        id="rejected-hook-child",
+        version=3,
+        start="done",
+        evolutions={"done": Terminal(result=VoyageResult("rejected", {}))},
+    )
+    observed = []
+
+    def construct(context):
+        observed.append(context)
+        return {
+            "approved": approved_child,
+            "rejected": rejected_child,
+        }[context.transition.outcome]
+
+    parent = Rutter(
+        id="contextual-hook-parent",
+        version=1,
+        start="review",
+        evolutions={
+            "review": MachineStep(
+                lambda context: MachineResult(
+                    context.evolution.charter.data["outcome"], {}
+                ),
+                mode="pure",
+                next_on_outcome={"approved": "done", "rejected": "done"},
+            ),
+            "done": Terminal(result=VoyageResult("complete", {})),
+        },
+        hooks=(
+            TransitionHook(
+                "contextual-choice",
+                on=rutter_public.after("review"),
+                rutter_constructor=construct,
+                charter_constructor=lambda context: {},
+            ),
+        ),
+    )
+    voyage = RutterRegistry({"parent": parent}, tmp_path).create(
+        "parent", Path("contextual-choice.reckoning.json"), {"outcome": "rejected"}
+    )
+    assert observed == []
+
+    child = voyage.advance(continue_=False)
+
+    persisted = voyage._store.read().root.active_child
+    assert child.rutter_id == "rejected-hook-child"
+    assert persisted is not None
+    assert (persisted.run.rutter_id, persisted.run.definition_version) == (
+        "rejected-hook-child",
+        3,
+    )
+    assert len(observed) == 1
+    assert observed[0].transition.outcome == "rejected"

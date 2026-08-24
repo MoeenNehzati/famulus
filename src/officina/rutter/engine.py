@@ -8,7 +8,7 @@ from dataclasses import dataclass, replace
 from inspect import getdoc, signature
 from pathlib import Path
 from types import MappingProxyType
-from typing import ClassVar, Mapping, Protocol
+from typing import ClassVar, Mapping, Protocol, TypeAlias
 from uuid import uuid4
 
 from officina.rutter.authoring import (
@@ -29,6 +29,7 @@ from officina.rutter.evaluation import (
     build_llm_data,
     build_subrutter_charter,
     build_terminal_result,
+    construct_transition_hook_rutter,
     evaluate_llm_route,
     evaluate_machine_route,
     evaluate_subrutter_route,
@@ -164,6 +165,17 @@ class _BoundDefinition:
         return MappingProxyType(found)
 
 
+_ContextualDefinitionBinder: TypeAlias = Callable[
+    [
+        Rutter,
+        Mapping[tuple[str, int], _BoundDefinition],
+        tuple[tuple[str, int], ...],
+        tuple[str, int] | None,
+    ],
+    tuple[_BoundDefinition, Mapping[tuple[str, int], _BoundDefinition]],
+]
+
+
 @dataclass(frozen=True)
 class BoundRun:
     run: ActiveRun
@@ -255,20 +267,6 @@ def _call_child_definition(
         return voyage._definitions[identity]
     except KeyError as exc:
         raise RutterStateError("SubRutter child definition is unavailable") from exc
-
-
-def _hook_child_definition(
-    voyage: Voyage,
-    maker: TransitionHook,
-) -> _BoundDefinition:
-    identity = (
-        getattr(maker.child, "rutter_id", None),
-        getattr(maker.child, "definition_version", None),
-    )
-    try:
-        return voyage._definitions[identity]
-    except KeyError as exc:
-        raise RutterStateError("TransitionHook child definition is unavailable") from exc
 
 
 def _push_call(
@@ -589,7 +587,12 @@ def _continue_transition(
             reckoning,
             leaf.run.run_id,
             maker,
-            _hook_child_definition(voyage, maker),
+            voyage._resolve_contextual_hook(
+                reckoning,
+                leaf.run,
+                maker,
+                context,
+            ),
             charter,
             transition,
         )
@@ -1104,24 +1107,36 @@ class Voyage:
     def _open(
         cls,
         resolve_definition: Callable[[tuple[str, int]], _BoundDefinition],
+        bind_contextual_definition: _ContextualDefinitionBinder,
         path: Path,
     ) -> Voyage:
         store = ReckoningStore(path)
         reckoning = store.read()
         identity = (reckoning.root.rutter_id, reckoning.root.definition_version)
         definition = resolve_definition(identity)
-        return cls(definition, path, reckoning, create=False)
+        return cls(
+            definition,
+            bind_contextual_definition,
+            path,
+            reckoning,
+            create=False,
+        )
 
     def __init__(
         self,
         definition: _BoundDefinition,
+        bind_contextual_definition: _ContextualDefinitionBinder,
         path: Path,
         reckoning: Reckoning,
         *,
         create: bool,
     ) -> None:
         self._definition = definition
-        self._definitions = definition.reachable()
+        self._definitions = dict(definition.reachable())
+        self._bind_contextual_definition = bind_contextual_definition
+        self._contextual_hook_children: dict[
+            tuple[str, str, str], _BoundDefinition
+        ] = {}
         self._reckoning = reckoning
         self._store: _StoreIO = ReckoningStore(
             path, semantic_validator=self._validate_reckoning
@@ -1130,9 +1145,117 @@ class Voyage:
         if create:
             self._store.create(reckoning)
 
+    @staticmethod
+    def _transition_id_for_record(record: HistoryEntry) -> str:
+        if isinstance(record, SubRutterRecord):
+            return record.invocation_id
+        return record.record_id
+
+    def _active_ancestor_identities(
+        self,
+        reckoning: Reckoning,
+        parent_run_id: str,
+    ) -> tuple[tuple[str, int], ...]:
+        identities: list[tuple[str, int]] = []
+        run = reckoning.root
+        while True:
+            identities.append((run.rutter_id, run.definition_version))
+            if run.run_id == parent_run_id:
+                return tuple(identities)
+            if run.active_child is None:
+                break
+            run = run.active_child.run
+        raise RutterStateError("contextual hook parent is absent from active path")
+
+    def _resolve_contextual_hook(
+        self,
+        reckoning: Reckoning,
+        parent: ActiveRun,
+        hook: TransitionHook,
+        context: TransitionContext,
+        *,
+        expected_identity: tuple[str, int] | None = None,
+        reopening: bool = False,
+    ) -> _BoundDefinition:
+        key = (parent.run_id, hook.id, context.transition.transition_id)
+        cached = self._contextual_hook_children.get(key)
+        if cached is not None:
+            if expected_identity is not None and cached.identity != expected_identity:
+                raise RutterStateError(
+                    f"TransitionHook {hook.id!r} contextual child identity differs "
+                    "from persisted identity"
+                )
+            return cached
+        try:
+            source = construct_transition_hook_rutter(context, hook)
+            definition, closure = self._bind_contextual_definition(
+                source,
+                self._definitions,
+                self._active_ancestor_identities(reckoning, parent.run_id),
+                expected_identity,
+            )
+        except _RutterFault as exc:
+            if not reopening:
+                raise
+            raise RutterStateError(
+                f"TransitionHook {hook.id!r} contextual child construction failed"
+            ) from exc
+        except Exception as exc:
+            if reopening:
+                raise RutterStateError(
+                    f"TransitionHook {hook.id!r} contextual child construction "
+                    "or identity validation failed"
+                ) from exc
+            raise _RutterFault(
+                "hook-construction",
+                transition_hook_ids=(hook.id,),
+            ) from exc
+        self._definitions.update(closure)
+        self._contextual_hook_children[key] = definition
+        return definition
+
+    def _active_hook_context(
+        self,
+        reckoning: Reckoning,
+        parent: ActiveRun,
+        definition: _BoundDefinition,
+        child: ActiveChild,
+        hook: TransitionHook,
+        depth: int,
+    ) -> TransitionContext:
+        transition_id = child.attached_to_transition_id
+        assert transition_id is not None
+        records = tuple(
+            record
+            for record in parent.history
+            if self._transition_id_for_record(record) == transition_id
+        )
+        if len(records) != 1:
+            raise RutterStateError(
+                f"TransitionHook {hook.id!r} attached transition is unavailable"
+            )
+        record = records[0]
+        try:
+            transition, strict_prefix = _recorded_transition(
+                reckoning,
+                ActiveLeaf(parent, depth),
+                definition,
+                record,
+            )
+        except Exception as exc:
+            raise RutterStateError(
+                f"TransitionHook {hook.id!r} context reconstruction failed"
+            ) from exc
+        if transition.transition_id != transition_id:
+            raise RutterStateError(
+                f"TransitionHook {hook.id!r} attached transition differs from history"
+            )
+        return _transition_context(parent, strict_prefix, transition, record)
+
     def _validate_reckoning(self, reckoning: Reckoning) -> None:
         active: list[tuple[ActiveRun, _BoundDefinition]] = []
         run = reckoning.root
+        depth = 0
         while True:
             identity = (run.rutter_id, run.definition_version)
             definition = self._definitions.get(identity)
@@ -1157,9 +1280,42 @@ class Voyage:
                     is_leaf=run.active_child is None,
                 )
             active.append((run, definition))
-            if run.active_child is None:
+            child = run.active_child
+            if child is None:
                 break
-            run = run.active_child.run
+            if child.kind == "attached_case":
+                hook = definition.transition_hooks_by_id.get(child.site)
+                if hook is None:
+                    raise RutterStateError(
+                        "active attached child does not match a bound "
+                        "TransitionHook"
+                    )
+                context = self._active_hook_context(
+                    reckoning,
+                    run,
+                    definition,
+                    child,
+                    hook,
+                    depth,
+                )
+                child_identity = (
+                    child.run.rutter_id,
+                    child.run.definition_version,
+                )
+                expected = self._resolve_contextual_hook(
+                    reckoning,
+                    run,
+                    hook,
+                    context,
+                    expected_identity=child_identity,
+                    reopening=True,
+                )
+                if child_identity != expected.identity:
+                    raise RutterStateError(
+                        "active child identity differs from its bound definition"
+                    )
+            run = child.run
+            depth += 1
 
         leaf_run, leaf_definition = active[-1]
         leaf_evolution = leaf_definition.evolutions[
@@ -1199,7 +1355,16 @@ class Voyage:
                         "active attached child does not match a bound "
                         "TransitionHook"
                     )
-                expected = self._definition_identity(hook.child)
+                transition_id = child.attached_to_transition_id
+                assert transition_id is not None
+                contextual = self._contextual_hook_children.get(
+                    (parent.run_id, hook.id, transition_id)
+                )
+                if contextual is None:
+                    raise RutterStateError(
+                        "active attached child has no contextual definition"
+                    )
+                expected = contextual.identity
             if child_identity != expected:
                 raise RutterStateError(
                     "active child identity differs from its bound definition"

@@ -147,6 +147,18 @@ class _DefinitionBinder:
         self._source_by_id: dict[str, tuple[object, int]] = {}
         self._visiting: list[int] = []
 
+    def fork(self) -> _DefinitionBinder:
+        forked = _DefinitionBinder()
+        forked._by_source = dict(self._by_source)
+        forked._source_by_id = dict(self._source_by_id)
+        forked._visiting = list(self._visiting)
+        return forked
+
+    def adopt(self, forked: _DefinitionBinder) -> None:
+        self._by_source = forked._by_source
+        self._source_by_id = forked._source_by_id
+        self._visiting = forked._visiting
+
     def bind(self, source: _Registration) -> _BoundDefinition:
         source_id = id(source)
         cached = self._by_source.get(source_id)
@@ -182,7 +194,7 @@ class _DefinitionBinder:
                     "initial_evolution_id must name one declared evolution"
                 )
             hooks, hooks_by_id = self._freeze_transition_hooks(definition)
-            child_sources = self._validate_graph(evolutions, hooks)
+            child_sources = self._validate_graph(evolutions)
             response_validators = self._prepare_response_validators(evolutions)
             children = tuple(self.bind(child) for child in child_sources)
             bound = _BoundDefinition(
@@ -277,6 +289,11 @@ class _DefinitionBinder:
                     f"duplicate TransitionHook ID {hook_id!r}"
                 )
             _require_callback(
+                hook.rutter_constructor,
+                1,
+                "TransitionHook rutter_constructor",
+            )
+            _require_callback(
                 hook.charter_constructor,
                 1,
                 "TransitionHook charter_constructor",
@@ -287,7 +304,6 @@ class _DefinitionBinder:
     def _validate_graph(
         self,
         evolutions: Mapping[str, Evolution],
-        hooks: tuple[TransitionHook, ...],
     ) -> tuple[_Registration, ...]:
         children: list[_Registration] = []
         for evolution in evolutions.values():
@@ -337,7 +353,6 @@ class _DefinitionBinder:
                     1,
                     "Terminal result_constructor",
                 )
-        children.extend(hook.child for hook in hooks)
         return tuple(children)
 
     @staticmethod
@@ -410,6 +425,7 @@ class RutterRegistry:
                 )
             by_name[name] = definition
             by_identity[definition.identity] = definition
+        self._binder = binder
         self._by_name = MappingProxyType(by_name)
         self._by_identity = MappingProxyType(by_identity)
         self._reckoning_root = reckoning_root.absolute()
@@ -427,6 +443,38 @@ class RutterRegistry:
         definition.require_current_metadata()
         return definition
 
+    def _bind_contextual_definition(
+        self,
+        source: Rutter,
+        definitions: Mapping[tuple[str, int], _BoundDefinition],
+        active_ancestor_identities: tuple[tuple[str, int], ...],
+        expected_identity: tuple[str, int] | None,
+    ) -> tuple[_BoundDefinition, Mapping[tuple[str, int], _BoundDefinition]]:
+        if not isinstance(source, Rutter):
+            raise RutterDefinitionError(
+                "contextual Rutter constructor must return a Rutter"
+            )
+        forked = self._binder.fork()
+        definition = forked.bind(source)
+        closure = definition.reachable()
+        if expected_identity is not None and definition.identity != expected_identity:
+            raise RutterDefinitionError(
+                "contextual Rutter identity differs from persisted identity"
+            )
+        for identity, candidate in closure.items():
+            existing = definitions.get(identity)
+            if (
+                existing is not None
+                and existing.definition is not candidate.definition
+            ):
+                raise RutterDefinitionError(
+                    f"Rutter child identity conflict for {identity[0]!r}"
+                )
+        if any(identity in closure for identity in active_ancestor_identities):
+            raise RutterDefinitionError("recursive definition-call cycle")
+        self._binder.adopt(forked)
+        return definition, closure
+
     def create(
         self,
         name: str,
@@ -441,6 +489,7 @@ class RutterRegistry:
         reckoning = _create_reckoning(definition, charter)
         return Voyage(
             definition,
+            self._bind_contextual_definition,
             self._path(reckoning_path),
             reckoning,
             create=True,
@@ -448,4 +497,8 @@ class RutterRegistry:
 
     def open(self, reckoning_path: Path) -> Voyage:
         path = self._path(reckoning_path)
-        return Voyage._open(self._definition_for_identity, path)
+        return Voyage._open(
+            self._definition_for_identity,
+            self._bind_contextual_definition,
+            path,
+        )

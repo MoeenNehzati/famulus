@@ -10,6 +10,7 @@ from officina.rutter.authoring import (
     LLMStep,
     MachineContext,
     MachineStep,
+    Rutter,
     SubRutter,
     Terminal,
     TransitionContext,
@@ -151,6 +152,25 @@ def select_transition_hooks(
     return tuple(selected)
 
 
+def construct_transition_hook_rutter(
+    context: TransitionContext,
+    hook: TransitionHook,
+) -> Rutter:
+    try:
+        definition = hook.rutter_constructor(context)
+    except Exception as exc:
+        raise _RutterFault(
+            "hook-construction",
+            transition_hook_ids=(hook.id,),
+        ) from exc
+    if not isinstance(definition, Rutter):
+        raise _RutterFault(
+            "hook-construction",
+            transition_hook_ids=(hook.id,),
+        )
+    return definition
+
+
 def build_terminal_result(
     context: EvolutionContext,
     terminal: Terminal,
@@ -184,6 +204,7 @@ __all__ = (
     "build_llm_data",
     "build_subrutter_charter",
     "build_terminal_result",
+    "construct_transition_hook_rutter",
     "evaluate_llm_route",
     "evaluate_machine_route",
     "evaluate_subrutter_route",

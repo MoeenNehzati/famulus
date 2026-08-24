@@ -38,6 +38,9 @@ class _Child(Rutter):
         return {"done": Terminal(result=VoyageResult("complete", {}))}
 
 
+_CHILD = _Child()
+
+
 def _context() -> EvolutionContext:
     return EvolutionContext(Charter({}), "review", "entry-review", HistoryView(()))
 
@@ -201,13 +204,13 @@ def test_transition_hooks_preserve_order_and_ignore_none_charters() -> None:
         TransitionHook(
             "absent",
             on=CountingMatch(source="review"),
-            child=_Child,
+            rutter_constructor=lambda context: _CHILD,
             charter_constructor=absent,
         ),
         TransitionHook(
             "selected",
             on=CountingMatch(source="review"),
-            child=_Child,
+            rutter_constructor=lambda context: _CHILD,
             charter_constructor=selected,
         ),
     )
@@ -241,7 +244,7 @@ def test_transition_hook_matcher_rejects_non_boolean_as_typed_fault() -> None:
     hook = TransitionHook(
         "malformed",
         on=MalformedMatch(source="review"),
-        child=_Child,
+        rutter_constructor=lambda context: _CHILD,
         charter_constructor=lambda context: {},
     )
     transition = Transition(

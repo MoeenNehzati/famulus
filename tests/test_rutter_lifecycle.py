@@ -39,9 +39,11 @@ from officina.rutter.model import (
     VoyageResult,
     EvolutionContext,
     Turn,
+    TransitionHook,
     ValidationIssue,
     ValidationReport,
     _EffectRecovery,
+    after,
 )
 from officina.rutter.runtime import RutterRegistry
 from test_support.rutter_fixtures import (
@@ -2644,3 +2646,379 @@ def test_root_done_settlement_does_not_spend_an_extra_continuation_step(
     assert terminal.condition == "terminal"
     assert terminal.evolution_id == "complete"
     assert voyage._store.read().global_revision == 1
+
+
+def _terminal_rutter(rutter_id: str, version: int = 1) -> Rutter:
+    return Rutter(
+        id=rutter_id,
+        version=version,
+        start="done",
+        evolutions={"done": Terminal(result=VoyageResult("child-complete", {}))},
+    )
+
+
+def _hook_parent(
+    rutter_id: str,
+    rutter_constructor: Callable[[object], object],
+    *,
+    extra_evolutions: Mapping[str, object] | None = None,
+) -> Rutter:
+    evolutions: dict[str, object] = {
+        "review": MachineStep(
+            lambda context: MachineResult("approved", {}),
+            mode="pure",
+            next_on_outcome="done",
+        ),
+        "done": Terminal(result=VoyageResult("parent-complete", {})),
+    }
+    if extra_evolutions is not None:
+        evolutions.update(extra_evolutions)
+    return Rutter(
+        id=rutter_id,
+        version=1,
+        start="review",
+        evolutions=evolutions,
+        hooks=(
+            TransitionHook(
+                "contextual-child",
+                on=after("review"),
+                rutter_constructor=rutter_constructor,
+                charter_constructor=lambda context: {
+                    "transition": context.transition.transition_id
+                },
+            ),
+        ),
+    )
+
+
+def test_active_contextual_hook_child_reconstructs_once_in_fresh_registry(
+    tmp_path: Path,
+) -> None:
+    """A fresh registry must replay the hook context without rerunning parent work."""
+
+    parent_runs: list[str] = []
+    first_contexts: list[object] = []
+    reopened_contexts: list[object] = []
+    first_child = _terminal_rutter("replayed-hook-child", 7)
+
+    def first_constructor(context: object) -> Rutter:
+        first_contexts.append(context)
+        return first_child
+
+    def make_parent(constructor: Callable[[object], object]) -> Rutter:
+        return Rutter(
+            id="replayed-hook-parent",
+            version=1,
+            start="review",
+            evolutions={
+                "review": MachineStep(
+                    lambda context: (
+                        parent_runs.append(context.machine_id)
+                        or MachineResult("approved", {})
+                    ),
+                    mode="pure",
+                    next_on_outcome="done",
+                ),
+                "done": Terminal(result=VoyageResult("parent-complete", {})),
+            },
+            hooks=(
+                TransitionHook(
+                    "replayed-child",
+                    on=after("review"),
+                    rutter_constructor=constructor,
+                    charter_constructor=lambda context: {
+                        "transition": context.transition.transition_id
+                    },
+                ),
+            ),
+        )
+
+    path = Path("replayed-contextual-hook.reckoning.json")
+    first_registry = RutterRegistry({"parent": make_parent(first_constructor)}, tmp_path)
+    first = first_registry.create("parent", path, {})
+    first.advance(continue_=False)
+    persisted = first._store.read().root.active_child
+    assert persisted is not None
+    assert (persisted.run.rutter_id, persisted.run.definition_version) == (
+        "replayed-hook-child",
+        7,
+    )
+    assert len(first_contexts) == 1
+    assert len(parent_runs) == 1
+
+    fresh_child = _terminal_rutter("replayed-hook-child", 7)
+
+    def reopened_constructor(context: object) -> Rutter:
+        reopened_contexts.append(context)
+        return fresh_child
+
+    fresh_registry = RutterRegistry(
+        {"parent": make_parent(reopened_constructor)}, tmp_path
+    )
+    reopened = fresh_registry.open(path)
+
+    assert len(reopened_contexts) == 1
+    assert reopened_contexts[0].transition == first_contexts[0].transition
+    assert reopened._store.read().root.active_child.run.rutter_id == (
+        "replayed-hook-child"
+    )
+    terminal = reopened.advance(continue_=True)
+    assert terminal.rutter_id == "replayed-hook-parent"
+    assert terminal.condition == "terminal"
+    assert len(reopened_contexts) == 1
+    assert len(parent_runs) == 1
+
+
+@pytest.mark.parametrize("failure", ("raises", "non-rutter"))
+def test_hook_constructor_failure_faults_without_a_partial_child(
+    tmp_path: Path,
+    failure: str,
+) -> None:
+    """Leaking constructor failures or allocating a child would lose fault authority."""
+
+    def construct(context: object) -> object:
+        del context
+        if failure == "raises":
+            raise RuntimeError("private constructor detail")
+        return {"not": "a Rutter"}
+
+    path = Path(f"hook-construction-{failure}.reckoning.json")
+    voyage = RutterRegistry(
+        {"parent": _hook_parent(f"hook-construction-{failure}", construct)},
+        tmp_path,
+    ).create("parent", path, {})
+
+    faulted = voyage.advance(continue_=False)
+    persisted = voyage._store.read()
+
+    assert faulted.condition == "fault"
+    assert persisted.root.active_child is None
+    assert persisted.completed_runs == {}
+    assert len(persisted.root.history) == 1
+    _assert_fault(
+        persisted.fault,
+        category="hook-construction",
+        run_id=persisted.root.run_id,
+        evolution_id="review",
+        evolution_entry_id=persisted.root.entered_evolution.entry_id,
+        transition_hook_ids=("contextual-child",),
+    )
+    assert b"private constructor detail" not in (tmp_path / path).read_bytes()
+
+
+def test_hook_constructor_rejects_the_active_parent_identity_atomically(
+    tmp_path: Path,
+) -> None:
+    """Returning an active ancestor must not create a recursive attached call."""
+
+    definitions: dict[str, Rutter] = {}
+    parent = _hook_parent(
+        "recursive-hook-parent",
+        lambda context: definitions["parent"],
+    )
+    definitions["parent"] = parent
+    voyage = RutterRegistry({"parent": parent}, tmp_path).create(
+        "parent", Path("recursive-hook-parent.reckoning.json"), {}
+    )
+
+    faulted = voyage.advance(continue_=False)
+    persisted = voyage._store.read()
+
+    assert faulted.condition == "fault"
+    assert persisted.root.active_child is None
+    _assert_fault(
+        persisted.fault,
+        category="hook-construction",
+        run_id=persisted.root.run_id,
+        evolution_id="review",
+        evolution_entry_id=persisted.root.entered_evolution.entry_id,
+        transition_hook_ids=("contextual-child",),
+    )
+
+
+def test_hook_constructor_rejects_a_reachable_identity_collision_atomically(
+    tmp_path: Path,
+) -> None:
+    """A collision anywhere in the candidate closure must add no definitions."""
+
+    class BoundDescendant(Rutter):
+        rutter_id = "reserved-hook-descendant"
+        definition_version = 1
+        initial_evolution_id = "done"
+
+        def define_evolutions(self) -> Mapping[str, object]:
+            return {"done": Terminal(result=VoyageResult("bound", {}))}
+
+    class CollidingDescendant(Rutter):
+        rutter_id = "reserved-hook-descendant"
+        definition_version = 1
+        initial_evolution_id = "done"
+
+        def define_evolutions(self) -> Mapping[str, object]:
+            return {"done": Terminal(result=VoyageResult("collision", {}))}
+
+    candidate = Rutter(
+        id="contextual-closure",
+        version=1,
+        start="delegate",
+        evolutions={
+            "delegate": SubRutter(
+                CollidingDescendant,
+                charter_constructor=lambda context: {},
+                next_on_outcome="done",
+            ),
+            "done": Terminal(result=VoyageResult("candidate", {})),
+        },
+    )
+    parent = _hook_parent(
+        "closure-collision-parent",
+        lambda context: candidate,
+        extra_evolutions={
+            "reserved": SubRutter(
+                BoundDescendant,
+                charter_constructor=lambda context: {},
+                next_on_outcome="done",
+            )
+        },
+    )
+    voyage = RutterRegistry({"parent": parent}, tmp_path).create(
+        "parent", Path("closure-collision.reckoning.json"), {}
+    )
+
+    faulted = voyage.advance(continue_=False)
+    persisted = voyage._store.read()
+
+    assert faulted.condition == "fault"
+    assert persisted.root.active_child is None
+    assert ("contextual-closure", 1) not in voyage._definitions
+    _assert_fault(
+        persisted.fault,
+        category="hook-construction",
+        run_id=persisted.root.run_id,
+        evolution_id="review",
+        evolution_entry_id=persisted.root.entered_evolution.entry_id,
+        transition_hook_ids=("contextual-child",),
+    )
+
+
+def test_failed_contextual_binding_leaves_no_cache_before_corrected_retry(
+    tmp_path: Path,
+) -> None:
+    """A failed binder fork must not reserve the candidate identity in the registry."""
+
+    invalid = Rutter(
+        id="retry-hook-child",
+        version=1,
+        start="missing",
+        evolutions={"done": Terminal(result=VoyageResult("invalid", {}))},
+    )
+    corrected = _terminal_rutter("retry-hook-child")
+    candidate = [invalid]
+    parent = _hook_parent(
+        "retry-hook-parent",
+        lambda context: candidate[0],
+    )
+    registry = RutterRegistry({"parent": parent}, tmp_path)
+    first = registry.create("parent", Path("retry-invalid.reckoning.json"), {})
+
+    first_fault = first.advance(continue_=False)
+    assert first_fault.condition == "fault"
+    assert first._store.read().root.active_child is None
+    assert ("retry-hook-child", 1) not in first._definitions
+
+    candidate[0] = corrected
+    second = registry.create("parent", Path("retry-corrected.reckoning.json"), {})
+    child = second.advance(continue_=False)
+
+    assert child.rutter_id == "retry-hook-child"
+    assert second._store.read().root.active_child is not None
+
+
+def test_reopen_hook_construction_failure_is_read_only(
+    tmp_path: Path,
+) -> None:
+    """Reopen must identify the hook without publishing a construction fault."""
+
+    child = _terminal_rutter("reopen-contextual-child", 4)
+    path = Path("reopen-contextual-failure.reckoning.json")
+    first = RutterRegistry(
+        {
+            "parent": _hook_parent(
+                "reopen-contextual-parent", lambda context: child
+            )
+        },
+        tmp_path,
+    ).create("parent", path, {})
+    first.advance(continue_=False)
+    before = (tmp_path / path).read_bytes()
+
+    def fail(context: object) -> object:
+        del context
+        raise RuntimeError("private reopen constructor detail")
+
+    fresh_registry = RutterRegistry(
+        {"parent": _hook_parent("reopen-contextual-parent", fail)}, tmp_path
+    )
+
+    with pytest.raises(RutterStateError, match="contextual-child"):
+        fresh_registry.open(path)
+
+    assert (tmp_path / path).read_bytes() == before
+    assert b"private reopen constructor detail" not in before
+
+
+def test_reopen_rejects_a_different_contextual_child_identity_read_only(
+    tmp_path: Path,
+) -> None:
+    """A replayed constructor must not silently substitute another definition."""
+
+    path = Path("reopen-contextual-mismatch.reckoning.json")
+    first = RutterRegistry(
+        {
+            "parent": _hook_parent(
+                "reopen-mismatch-parent",
+                lambda context: _terminal_rutter("persisted-hook-child", 2),
+            )
+        },
+        tmp_path,
+    ).create("parent", path, {})
+    first.advance(continue_=False)
+    before = (tmp_path / path).read_bytes()
+    fresh_child = _terminal_rutter("different-hook-child", 2)
+    fresh_registry = RutterRegistry(
+        {
+            "parent": _hook_parent(
+                "reopen-mismatch-parent", lambda context: fresh_child
+            )
+        },
+        tmp_path,
+    )
+
+    with pytest.raises(RutterStateError, match="identity"):
+        fresh_registry.open(path)
+
+    assert (tmp_path / path).read_bytes() == before
+
+
+def test_completed_hook_attachment_skips_constructor_before_target_entry(
+    tmp_path: Path,
+) -> None:
+    """A completed hook must not replay authored construction merely to skip it."""
+
+    child = _terminal_rutter("completed-contextual-child")
+    constructions: list[object] = []
+
+    def construct(context: object) -> Rutter:
+        constructions.append(context)
+        return child
+
+    voyage = RutterRegistry(
+        {"parent": _hook_parent("completed-hook-parent", construct)}, tmp_path
+    ).create("parent", Path("completed-contextual-hook.reckoning.json"), {})
+    voyage.advance(continue_=False)
+    voyage.advance(continue_=False)
+    target = voyage.advance(continue_=False)
+
+    assert target.rutter_id == "completed-hook-parent"
+    assert target.evolution_id == "done"
+    assert len(constructions) == 1

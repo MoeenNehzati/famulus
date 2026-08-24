@@ -56,15 +56,16 @@ def child_charter(context: EvolutionContext) -> Mapping[str, object]:
 
 def transition_hook_probe(
     hook_id: str,
-    child: type[Rutter],
+    child: Rutter | type[Rutter],
     charter: Callable[[object], Mapping[str, object] | None],
 ) -> TransitionHook:
     """Build a wildcard TransitionHook for shared binding fixtures."""
 
+    child_definition = child if isinstance(child, Rutter) else child()
     return TransitionHook(
         hook_id,
         on=TransitionMatch(),
-        child=child,
+        rutter_constructor=lambda context: child_definition,
         charter_constructor=charter,
     )
 
@@ -108,6 +109,25 @@ class AttachedChildRutter(Rutter):
         }
 
 
+class StaticGrandchildCarrier(Rutter):
+    rutter_id = "static-grandchild-carrier"
+    definition_version = 1
+    initial_evolution_id = "delegate"
+
+    def define_evolutions(self):
+        return {
+            "delegate": SubRutter(
+                GrandchildRutter,
+                charter_constructor=child_charter,
+                next_on_outcome="complete",
+            ),
+            "complete": Terminal(result=VoyageResult("completed", {})),
+        }
+
+
+ATTACHED_CHILD_RUTTER = AttachedChildRutter()
+
+
 class DiscoveryRootRutter(Rutter):
     rutter_id = "discovery-root"
     definition_version = 1
@@ -120,6 +140,11 @@ class DiscoveryRootRutter(Rutter):
                 charter_constructor=child_charter,
                 next_on_outcome="complete",
             ),
+            "attached": SubRutter(
+                StaticGrandchildCarrier,
+                charter_constructor=child_charter,
+                next_on_outcome="complete",
+            ),
             "complete": Terminal(result=VoyageResult("completed", {})),
         }
 
@@ -127,7 +152,7 @@ class DiscoveryRootRutter(Rutter):
         return (
             transition_hook_probe(
                 "attached",
-                AttachedChildRutter,
+                ATTACHED_CHILD_RUTTER,
                 child_charter,
             ),
         )
