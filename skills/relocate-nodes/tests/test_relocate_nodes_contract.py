@@ -52,13 +52,14 @@ def test_adapter_requires_manifest() -> None:
         adapter.Interface().build_parser().parse_args([])
 
 
-def test_runtime_declares_authorized_graph_and_synchronizer_dependencies() -> None:
+def test_runtime_declares_authorized_graph_synchronizer_and_repository_dependencies() -> None:
     source = yaml.safe_load(
         (RTX_ROOT / "blueprints/rtx-relocate-nodes.yaml").read_text(encoding="utf-8")
     )
 
     assert source["uses_interfaces"] == [
         {"interface": "blueprints.interface.graph", "version": 1},
+        {"interface": "configuration.interface.repository", "version": 1},
         {"interface": "skill-maker._rtx.interface.sync-blueprints", "version": 1},
     ]
 

@@ -1,8 +1,10 @@
 content:
 - _relocate_nodes\.py
+- _relocation_addresses\.py
 - _relocation_closure\.py
 - _relocation_engine\.py
 - schemas/relocation\.schema\.json
+- tests/test_relocation_addresses\.py
 - tests/test_relocation_closure\.py
 - tests/test_relocation_engine\.py
 dependencies: []
@@ -16,13 +18,17 @@ interfaces:
   relocate-nodes._rtx.source.rtx-relocate-nodes.interface.relocate:
     content:
     - _relocate_nodes\.py
+    - _relocation_addresses\.py
     - _relocation_closure\.py
     - _relocation_engine\.py
     - schemas/relocation\.schema\.json
+    - tests/test_relocation_addresses\.py
     - tests/test_relocation_closure\.py
     - tests/test_relocation_engine\.py
     uses_interfaces:
     - interface: blueprints.interface.graph
+      version: 1
+    - interface: configuration.interface.repository
       version: 1
     - interface: skill-maker._rtx.interface.sync-blueprints
       version: 1
@@ -295,6 +301,8 @@ runtime_dependencies:
 schema_version: 6
 uses_interfaces:
 - interface: blueprints.interface.graph
+  version: 1
+- interface: configuration.interface.repository
   version: 1
 - interface: skill-maker._rtx.interface.sync-blueprints
   version: 1
