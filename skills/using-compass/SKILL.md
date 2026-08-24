@@ -9,10 +9,10 @@ description: Use when a user or another skill directs the agent to use a named c
 Catalog: assistant-operations; topics: task-automation, session-management; visibility: listed
 Activation: user-request, skill-workflow; persistent modifier: no
 
-Skill Version: 10
+Skill Version: 11
 
 Uses Interfaces:
-- `using-compass.source.gateway -> rutter.interface.dispenser@3`
+- `using-compass.source.gateway -> rutter.interface.dispenser@4`
 
 Public Interfaces:
 - `using-compass.interface.default`
@@ -23,7 +23,7 @@ Public Interfaces:
 Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `using-compass.interface.default` — Read the dispenser help, assign one agent per Voyage ID, and keep every agent scoped to its assigned Voyage.
+- `using-compass.interface.default` — Read the dispenser help, initialize or select one run prefix, assign one agent per returned Voyage ID, and keep every agent scoped to its assignment.
 <!-- END BLUEPRINT INTERFACES -->
 # Using Compass
 
@@ -33,9 +33,15 @@ Use one invoker-provided authorized `VoyageDispenser` process binding supplied
 with the activation request. If it is absent, report a public-interface gap and
 stop.
 
-First invoke `help` and follow the returned operating contract, then invoke
-`list`. Act as the controller: assign exactly one agent to each returned
-`voyage_id`, giving it the dispenser binding and its assigned `voyage_id`.
+First invoke `help` and follow the returned operating contract. If the activation
+supplies a run prefix, use that same prefix for both `list` and any required
+`initiate`; otherwise let `initiate` default the prefix to its selected mode.
+Invoke the appropriately scoped `list`. When that run is not initialized and
+the activation supplies the advertised mode arguments, invoke `modes`, then
+`initiate` exactly once and use only the IDs it returns. If initialization inputs
+are absent, report a public-interface gap instead of inventing them. Act as the
+controller: assign exactly one agent to each returned `voyage_id`, giving it the
+dispenser binding and its assigned `voyage_id`.
 Agents must not share or switch Voyage IDs. Do not start any Voyage agent until
 every returned ID has an assigned agent. If an independent agent cannot be
 assigned to every Voyage, report a public-interface gap and stop.

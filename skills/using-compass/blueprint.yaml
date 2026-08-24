@@ -9,7 +9,7 @@ node_type: module
 id: using-compass
 # @schema-doc path=version
 # @summary Human-managed interface contract version.
-version: 10
+version: 11
 # @schema-doc path=maturity
 # @summary The node's current readiness for use: stable or experimental.
 # @status required

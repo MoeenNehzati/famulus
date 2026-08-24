@@ -1,7 +1,7 @@
 schema_version: 6
 node_type: behavioral_source
 id: using-compass.source.gateway
-version: 10
+version: 11
 description: Defines the controller and one-agent-per-Voyage loops for an authorized
   VoyageDispenser process binding.
 gateway:
@@ -12,18 +12,18 @@ content:
 dependencies: []
 uses_interfaces:
 - interface: rutter.interface.dispenser
-  version: 3
+  version: 4
 interfaces:
   using-compass.source.gateway.interface.default:
     content:
     - SKILL\.md
     uses_interfaces:
     - interface: rutter.interface.dispenser
-      version: 3
-    version: 10
-    description: Read the dispenser help, assign one agent per Voyage ID, and keep
-      every agent scoped to its assigned Voyage.
-    usage: request=<Use compass on rutter-name>; binding=<one authorized VoyageDispenser process binding>
+      version: 4
+    version: 11
+    description: Read the dispenser help, initialize or select one run prefix, assign
+      one agent per returned Voyage ID, and keep every agent scoped to its assignment.
+    usage: request=<Use compass on rutter-name>; binding=<one authorized VoyageDispenser process binding>; run-prefix=<optional isolated run name>
     contract:
       arguments:
         request:
@@ -41,6 +41,13 @@ interfaces:
             kind: string
             description: Process interface and fixed dispenser arguments supplied
               by the authorized invoker.
+            sensitivity: user-private
+        run-prefix:
+          description: Optional run prefix supplied by the invoker and used consistently for list and initiate operations.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
             sensitivity: user-private
       preconditions: []
       interaction:
@@ -86,8 +93,8 @@ interfaces:
         state_effect: mutating
         lifecycle: finite
         consistency:
-            live: Help, list, and every Voyage operation use the same authorized
-              dispenser binding; exactly one agent owns each returned Voyage ID,
+            live: Help, run-scoped list and initialization, and every Voyage operation
+              use the same authorized dispenser binding; exactly one agent owns each returned Voyage ID,
               all assignments complete before any Voyage operation begins, and
               each terminal result is retained before its Voyage is released unless
               an explicit preservation reason is reported.
@@ -152,8 +159,8 @@ interfaces:
           medium: local-system
           access: execute
           system: rutter.interface.dispenser
-          content: The authorized dispenser's list, status, validate, and advance
-            process operations; durable traversal remains behind the interface.
+          content: The authorized dispenser's initiate, optionally run-scoped list,
+            status, validate, and advance operations; durable traversal remains behind the interface.
           formats:
           - process-interface
           sensitivity: user-private

@@ -27,7 +27,8 @@ def test_authored_body_assigns_one_agent_to_each_dispensed_voyage() -> None:
 
     assert "one invoker-provided authorized `VoyageDispenser` process binding" in text
     assert "invoke `help`" in text
-    assert "invoke `list`" in text
+    assert "Invoke the appropriately scoped `list`" in text
+    assert "same prefix for both `list` and any required `initiate`" in text
     assert "assign exactly one agent to each returned `voyage_id`" in text
     assert "assigned `voyage_id`" in text
     assert "must not share or switch" in text
@@ -59,14 +60,14 @@ def test_blueprint_consumes_the_voyage_dispenser_contract() -> None:
     contract = interface["contract"]
 
     assert root["schema_version"] == gateway["schema_version"] == 6
-    assert root["version"] == gateway["version"] == interface["version"] == 10
+    assert root["version"] == gateway["version"] == interface["version"] == 11
     assert gateway["uses_interfaces"] == [
-        {"interface": "rutter.interface.dispenser", "version": 3}
+        {"interface": "rutter.interface.dispenser", "version": 4}
     ]
     assert interface["uses_interfaces"] == [
-        {"interface": "rutter.interface.dispenser", "version": 3}
+        {"interface": "rutter.interface.dispenser", "version": 4}
     ]
-    assert set(contract["arguments"]) == {"request", "binding"}
+    assert set(contract["arguments"]) == {"request", "binding", "run-prefix"}
     binding = contract["arguments"]["binding"]
     assert binding["required"] is True
     assert "one authorized" in binding["description"]
@@ -80,7 +81,8 @@ def test_blueprint_consumes_the_voyage_dispenser_contract() -> None:
     }
     assert interface["usage"] == (
         "request=<Use compass on rutter-name>; "
-        "binding=<one authorized VoyageDispenser process binding>"
+        "binding=<one authorized VoyageDispenser process binding>; "
+        "run-prefix=<optional isolated run name>"
     )
     outcomes = {outcome["id"]: outcome for outcome in contract["outcomes"]}
     assert set(outcomes) == {"completed", "interface-gap"}

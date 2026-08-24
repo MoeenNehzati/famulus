@@ -6,6 +6,7 @@ import argparse
 from collections.abc import Callable, Sequence
 import json
 from pathlib import Path
+import re
 import sys
 from typing import Mapping
 
@@ -27,9 +28,10 @@ _USAGE_GUIDANCE = (
     "Workflow:\n"
     "  1. Invoke modes to inspect the available initialization modes and their "
     "explanations.\n"
-    "  2. Invoke list. If it reports not-initialized, invoke initiate [mode] "
-    "exactly once; omit the mode to use the default. Initiation returns every "
-    "voyage_id.\n"
+    "  2. Invoke list, optionally with --run-prefix. If the selected run reports "
+    "not-initialized, invoke initiate [mode] exactly once for that run; omit the "
+    "mode to use the default and omit --run-prefix to use the selected mode as "
+    "the prefix. Initiation returns that run's prefixed voyage_ids.\n"
     "  3. Assign exactly one agent to each Voyage.\n"
     "  4. Each agent uses only its assigned voyage_id with status, validate, "
     "and advance.\n"
@@ -90,7 +92,7 @@ class VoyageDispenser(PythonArgvMachineInterface):
         *,
         modes: Mapping[str, Mapping[str, object]],
         initiate_voyages: Callable[..., None],
-        get_voyage_ids: Callable[[], Sequence[str]],
+        get_voyage_ids: Callable[[str | None], Sequence[str]],
         open_voyage: Callable[[str], Voyage],
         release_voyage: Callable[[str], None],
     ) -> None:
@@ -130,6 +132,10 @@ class VoyageDispenser(PythonArgvMachineInterface):
                 raise RutterDefinitionError(
                     "mode arguments must use identifier names and non-empty descriptions"
                 )
+            if "run_prefix" in normalized:
+                raise RutterDefinitionError(
+                    "run_prefix is reserved by the Voyage dispenser"
+                )
             for name, argument_description in normalized.items():
                 prior = seen_arguments.setdefault(name, argument_description)
                 if prior != argument_description:
@@ -155,8 +161,27 @@ class VoyageDispenser(PythonArgvMachineInterface):
         self._open_voyage = open_voyage
         self._release_voyage = release_voyage
 
-    def _validated_voyage_ids(self, *, allow_empty: bool) -> tuple[str, ...]:
-        values = self._get_voyage_ids()
+    @staticmethod
+    def _validated_run_prefix(run_prefix: str) -> str:
+        if (
+            type(run_prefix) is not str
+            or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", run_prefix) is None
+        ):
+            raise InvalidVoyageModeArgumentsError(
+                "invalid Voyage run prefix: use letters, digits, dot, underscore, "
+                "or hyphen, starting with a letter or digit"
+            )
+        return run_prefix
+
+    def _validated_voyage_ids(
+        self,
+        run_prefix: str | None = None,
+        *,
+        allow_empty: bool,
+    ) -> tuple[str, ...]:
+        if run_prefix is not None:
+            run_prefix = self._validated_run_prefix(run_prefix)
+        values = self._get_voyage_ids(run_prefix)
         if isinstance(values, (str, bytes)) or not isinstance(values, Sequence):
             raise RutterDefinitionError(
                 "get_voyage_ids must return a sequence of Voyage IDs"
@@ -175,16 +200,27 @@ class VoyageDispenser(PythonArgvMachineInterface):
             raise RutterDefinitionError(
                 "get_voyage_ids must not return duplicate Voyage IDs"
             )
+        if run_prefix is not None and any(
+            not voyage_id.startswith(f"{run_prefix}-") for voyage_id in voyage_ids
+        ):
+            raise RutterDefinitionError(
+                "run-scoped Voyage IDs must be prefixed by their run prefix"
+            )
         if not voyage_ids and not allow_empty:
             raise VoyagesNotInitializedError(
-                "no initialized Voyages; invoke initiate first"
+                "no initialized Voyages"
+                + (
+                    "; invoke initiate first"
+                    if run_prefix is None
+                    else f" for run prefix {run_prefix!r}; invoke initiate first"
+                )
             )
         return voyage_ids
 
-    def get_voyage_ids(self) -> tuple[str, ...]:
-        """Return every Voyage ID this dispenser currently authorizes."""
+    def get_voyage_ids(self, run_prefix: str | None = None) -> tuple[str, ...]:
+        """Return every authorized Voyage ID, optionally scoped to one run."""
 
-        return self._validated_voyage_ids(allow_empty=False)
+        return self._validated_voyage_ids(run_prefix, allow_empty=False)
 
     def get_modes(self) -> dict[str, dict[str, object]]:
         """Return each initialization mode, explanation, and required arguments."""
@@ -205,6 +241,8 @@ class VoyageDispenser(PythonArgvMachineInterface):
     def initiate_voyages(
         self,
         mode: str | None = None,
+        *,
+        run_prefix: str | None = None,
         **mode_arguments: str,
     ) -> tuple[str, ...]:
         """Create this dispenser's durable Voyages in one declared mode."""
@@ -213,6 +251,9 @@ class VoyageDispenser(PythonArgvMachineInterface):
             mode = self.get_default_mode()
         if type(mode) is not str or mode not in self._modes:
             raise UnknownVoyageModeError(f"unknown Voyage mode {mode!r}")
+        selected_prefix = self._validated_run_prefix(
+            mode if run_prefix is None else run_prefix
+        )
         required = set(self._modes[mode]["arguments"])
         provided = set(mode_arguments)
         if missing := sorted(required - provided):
@@ -231,19 +272,31 @@ class VoyageDispenser(PythonArgvMachineInterface):
             raise InvalidVoyageModeArgumentsError(
                 "mode argument values must be non-empty strings"
             )
-        if self._validated_voyage_ids(allow_empty=True):
-            raise VoyagesAlreadyInitializedError("Voyages are already initialized")
-        self._initiate_voyages(mode, **mode_arguments)
-        return self.get_voyage_ids()
+        if self._validated_voyage_ids(selected_prefix, allow_empty=True):
+            raise VoyagesAlreadyInitializedError(
+                f"Voyage run prefix {selected_prefix!r} is already initialized"
+            )
+        self._initiate_voyages(
+            mode,
+            run_prefix=selected_prefix,
+            **mode_arguments,
+        )
+        return self.get_voyage_ids(selected_prefix)
 
     def initiate(
         self,
         mode: str | None = None,
+        *,
+        run_prefix: str | None = None,
         **mode_arguments: str,
     ) -> tuple[str, ...]:
         """Alias the concise CLI operation to :meth:`initiate_voyages`."""
 
-        return self.initiate_voyages(mode, **mode_arguments)
+        return self.initiate_voyages(
+            mode,
+            run_prefix=run_prefix,
+            **mode_arguments,
+        )
 
     def help(self) -> str:
         """Explain how agents must divide and operate this dispenser's Voyages."""
@@ -268,7 +321,10 @@ class VoyageDispenser(PythonArgvMachineInterface):
         )
 
     def _resolve(self, voyage_id: str) -> Voyage:
-        if type(voyage_id) is not str or voyage_id not in self.get_voyage_ids():
+        if (
+            type(voyage_id) is not str
+            or voyage_id not in self._validated_voyage_ids(allow_empty=True)
+        ):
             raise UnknownVoyageError(f"unknown Voyage ID {voyage_id!r}")
         voyage = self._open_voyage(voyage_id)
         if not isinstance(voyage, Voyage):
@@ -411,6 +467,10 @@ def _parser(dispenser: VoyageDispenser) -> argparse.ArgumentParser:
         nargs="?",
         choices=tuple(dispenser.get_modes()),
     )
+    initiate.add_argument(
+        "--run-prefix",
+        help="Isolate this run; defaults to the selected mode.",
+    )
     argument_descriptions: dict[str, str] = {}
     for config in dispenser.get_modes().values():
         argument_descriptions.update(config["arguments"])
@@ -420,7 +480,10 @@ def _parser(dispenser: VoyageDispenser) -> argparse.ArgumentParser:
             dest=name,
             help=description,
         )
-    commands.add_parser("list", help="List every authorized voyage_id.")
+    list_command = commands.add_parser(
+        "list", help="List every authorized voyage_id, optionally by run prefix."
+    )
+    list_command.add_argument("--run-prefix")
     status = commands.add_parser("status", help="Read one assigned Voyage.")
     status.add_argument("voyage_id")
     validate = commands.add_parser(
@@ -489,11 +552,17 @@ def voyage_dispenser_cli(
             }
             payload = {
                 "voyage_ids": dispenser.initiate_voyages(
-                    arguments.mode, **supplied
+                    arguments.mode,
+                    run_prefix=arguments.run_prefix,
+                    **supplied,
                 )
             }
         elif arguments.command == "list":
-            payload: object = {"voyage_ids": dispenser.get_voyage_ids()}
+            payload = {
+                "voyage_ids": dispenser.get_voyage_ids(arguments.run_prefix)
+            }
+            if arguments.run_prefix is not None:
+                payload["run_prefix"] = arguments.run_prefix
         elif arguments.command == "status":
             payload = _status_json(
                 arguments.voyage_id,

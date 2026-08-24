@@ -1,10 +1,10 @@
 schema_version: 6
 node_type: behavioral_source
 id: rutter.source.dispenser
-version: 3
-description: Declares and explains Voyage initialization modes, creates one durable
-  collection in the selected mode, exposes uniform ID-scoped operations, and releases
-  terminal Voyage working directories on request.
+version: 4
+description: Declares and explains Voyage initialization modes, creates isolated durable
+  run-prefix collections, exposes uniform ID-scoped operations, and releases terminal
+  Voyage working directories on request.
 gateway:
   path: dispenser.py
   language: Python
@@ -37,10 +37,11 @@ interfaces:
       version: 6
     - interface: rutter.source.values.interface.python-api
       version: 1
-    version: 3
-    description: Construct one VoyageDispenser from self-describing modes, durable
-      initialization, ID enumeration, Voyage resolution, and terminal release callbacks;
-      callers discover each mode's explanation and required arguments before initializing.
+    version: 4
+    description: Construct one VoyageDispenser from self-describing modes, run-scoped
+      durable initialization, optionally filtered ID enumeration, Voyage resolution,
+      and terminal release callbacks; callers discover each mode's explanation and
+      required arguments before initializing.
     contract:
       arguments:
         operation:
@@ -56,10 +57,10 @@ interfaces:
             - value: get-modes
               description: Return every supported initialization mode together with its explanation and required named arguments.
             - value: initiate-voyages
-              description: Create every durable Voyage in the selected mode, or
-                the first declared mode when omitted; exposed as the initiate CLI command.
+              description: Create every durable Voyage under one run prefix in the
+                selected mode, defaulting the prefix to that mode; exposed as the initiate CLI command.
             - value: get-voyage-ids
-              description: Return every currently authorized Voyage ID.
+              description: Return every currently authorized Voyage ID, or only IDs under a supplied run prefix.
             - value: get-status
               description: Read one selected Voyage's public status.
             - value: validate
@@ -86,9 +87,16 @@ interfaces:
           type:
             kind: string
             sensitivity: user-private
+        run-prefix:
+          description: Optional safe run name used to isolate initialization and prefix every created Voyage ID; omission uses the selected mode.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
         voyage-id:
-          description: Opaque ID returned by get-voyage-ids, assigned to one agent,
-            and required for every operation by that agent.
+          description: Run-prefixed opaque ID returned by get-voyage-ids, assigned
+            to one agent, and required for every operation by that agent.
           required: false
           sensitivity: user-private
           type:
@@ -151,7 +159,7 @@ interfaces:
         class: error
         outputs: []
         effects: []
-        caller_action: Use the existing Voyage IDs without changing their mode.
+        caller_action: Use the existing IDs for that run prefix or select a different prefix.
       - id: not-terminal
         class: error
         outputs: []
@@ -161,9 +169,10 @@ interfaces:
         state_effect: mutating
         lifecycle: finite
         consistency:
-          live: Mode discovery is always available; initiation persists Voyages,
-            each later operation resolves current durable IDs, and release removes
-            only an ID whose terminal result is available.
+          live: Mode discovery is always available; initiation persists Voyages under
+            one run prefix without blocking other prefixes, list may filter that prefix,
+            each later operation resolves current durable IDs globally, and release
+            removes only an ID whose terminal result is available.
         effects:
         - id: voyage-operation
           direct_io_ref: voyage
