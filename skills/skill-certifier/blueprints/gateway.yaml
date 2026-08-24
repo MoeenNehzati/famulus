@@ -12,7 +12,7 @@ node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
 - interface: skill-drift._rtx.interface.drift-status
-  version: 2
+  version: 3
 - interface: skill-certifier.source.audit-behavioral-source.interface.audit
   version: 1
 - interface: skill-certifier.source.audit-interface.interface.audit
@@ -21,5 +21,5 @@ uses_interfaces:
   version: 1
 - interface: skill-certifier._rtx.interface.certify
   version: 2
-version: 4
+version: 5
 maturity: stable

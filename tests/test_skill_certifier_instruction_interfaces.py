@@ -5,6 +5,10 @@ from pathlib import Path
 import yaml
 
 from officina.blueprints.graph import load_repository_blueprint_graph
+from officina.blueprints.process_binding import (
+    compile_gateway_invocation,
+    parse_caller_invocation,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -87,7 +91,7 @@ def test_certifier_gateway_orchestrates_audits_without_default_interface() -> No
     assert {
         use["interface"] for use in gateway["uses_interfaces"]
     } == expected_uses
-    assert module["version"] == gateway["version"] == 4
+    assert module["version"] == gateway["version"] == 5
     certifier_interface = "skill-certifier._rtx.interface.certify"
     certifier_source_interface = (
         "skill-certifier._rtx.source.rtx-certifier.interface.certify"
@@ -104,16 +108,16 @@ def test_certifier_gateway_orchestrates_audits_without_default_interface() -> No
     assert next(
         use for use in gateway["uses_interfaces"] if use["interface"] == certifier_interface
     )["version"] == certifier_interface_version
-    assert drift_module["version"] == drift_gateway["version"] == 3
+    assert drift_module["version"] == drift_gateway["version"] == 4
     drift_source_interface = (
         "skill-drift._rtx.source.rtx-check-drift-state.interface.drift-status"
     )
     drift_status_version = drift_source["interfaces"][drift_source_interface][
         "version"
     ]
-    assert drift_status_version == 2
-    assert drift_source["version"] == drift_runtime["version"] == 2
-    assert drift_module["namespace_exports"]["_rtx"]["version"] == 2
+    assert drift_status_version == 3
+    assert drift_source["version"] == drift_runtime["version"] == 3
+    assert drift_module["namespace_exports"]["_rtx"]["version"] == 3
     assert drift_module["namespace_exports"]["_rtx"]["surface"]["only"][
         drift_interface
     ] == drift_status_version
@@ -160,6 +164,31 @@ def test_certifier_gateway_orchestrates_audits_without_default_interface() -> No
     assert algorithm.index("audit-module") < algorithm.index(
         "mechanical `certify`"
     )
+
+
+def test_drift_repository_routes_supply_their_subcommands() -> None:
+    graph = load_repository_blueprint_graph(REPO_ROOT)
+
+    for interface_id, subcommand in (
+        ("skill-drift._rtx.interface.compute-hashes", "compute-hashes"),
+        ("skill-drift._rtx.interface.drift-status", "status"),
+    ):
+        export = graph.exports[interface_id]
+        parsed = parse_caller_invocation(
+            export,
+            ["--repo-root", str(REPO_ROOT), "--json"],
+            stdin_requested=False,
+        )
+        plan = compile_gateway_invocation(
+            graph.nodes[export.source_node_id], export, parsed
+        )
+
+        assert plan.argv == (
+            subcommand,
+            "--repo-root",
+            str(REPO_ROOT),
+            "--json",
+        )
 
 
 def test_drift_and_canonical_docs_describe_selective_v6_worklist() -> None:

@@ -456,7 +456,7 @@ def requested_skill_sources(args: argparse.Namespace) -> list[SkillSource]:
                 skills_root=skills_root,
             )
         ]
-    if args.repo_root != REPO_ROOT:
+    if args.repo_root is not None:
         root = args.repo_root.resolve()
         return [
             SkillSource(
@@ -937,13 +937,13 @@ def build_parser() -> argparse.ArgumentParser:
     status.add_argument("skills", nargs="*")
     status.add_argument("--all", action="store_true")
     status.add_argument("--json", action="store_true")
-    status.add_argument("--repo-root", type=Path, default=REPO_ROOT, help=argparse.SUPPRESS)
+    status.add_argument("--repo-root", type=Path, help=argparse.SUPPRESS)
     status.add_argument("--skill-root", type=Path)
     status.add_argument("--skills-root", type=Path, help=argparse.SUPPRESS)
     hashes = subparsers.add_parser("compute-hashes")
     hashes.add_argument("skills", nargs="*")
     hashes.add_argument("--json", action="store_true")
-    hashes.add_argument("--repo-root", type=Path, default=REPO_ROOT, help=argparse.SUPPRESS)
+    hashes.add_argument("--repo-root", type=Path, help=argparse.SUPPRESS)
     hashes.add_argument("--skill-root", type=Path)
     hashes.add_argument("--skills-root", type=Path, help=argparse.SUPPRESS)
     return parser

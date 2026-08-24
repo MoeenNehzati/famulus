@@ -10,11 +10,11 @@ description: >-
 Catalog: assistant-development; topics: assistant-assurance, assistant-architecture; visibility: listed
 Activation: user-request, skill-workflow; persistent modifier: no
 
-Skill Version: 3
+Skill Version: 4
 
 Uses Interfaces:
-- `skill-drift.source.gateway -> skill-drift._rtx.interface.compute-hashes@1`
-- `skill-drift.source.gateway -> skill-drift._rtx.interface.drift-status@2`
+- `skill-drift.source.gateway -> skill-drift._rtx.interface.compute-hashes@2`
+- `skill-drift.source.gateway -> skill-drift._rtx.interface.drift-status@3`
 
 Public Interfaces:
 - `skill-drift.interface.default`
@@ -34,6 +34,10 @@ certification-basis and node hashes.
 Both routes accept only canonical version-6 repository graphs. They derive state through the
 shared certification view and never create keys, sign payloads, append
 certificates, run validators, or execute target code.
+
+An exact `--repo-root` request selects the repository's complete canonical module
+graph. The route supplies its own `status` or `compute-hashes` subcommand; callers
+must not pass it.
 
 An exact `--skill-root` request selects the dependency closure rooted at that
 module's owned nodes. Named requests resolve matching installed copies across

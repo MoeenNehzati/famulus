@@ -10,14 +10,14 @@ description: >-
 Catalog: assistant-development; topics: assistant-assurance, assistant-architecture; visibility: listed
 Activation: user-request, skill-workflow; persistent modifier: no
 
-Skill Version: 4
+Skill Version: 5
 
 Uses Interfaces:
 - `skill-certifier.source.gateway -> skill-certifier._rtx.interface.certify@2`
 - `skill-certifier.source.gateway -> skill-certifier.source.audit-behavioral-source.interface.audit@1`
 - `skill-certifier.source.gateway -> skill-certifier.source.audit-interface.interface.audit@1`
 - `skill-certifier.source.gateway -> skill-certifier.source.audit-module.interface.audit@1`
-- `skill-certifier.source.gateway -> skill-drift._rtx.interface.drift-status@2`
+- `skill-certifier.source.gateway -> skill-drift._rtx.interface.drift-status@3`
 
 Public Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->

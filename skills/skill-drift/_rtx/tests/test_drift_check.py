@@ -912,7 +912,7 @@ def test_empty_active_plugin_graph_uses_schema_neutral_diagnostic(
         "load_repository_blueprint_graph",
         lambda *_args, **_kwargs: SimpleNamespace(nodes={}),
     )
-    args = SimpleNamespace(skills_root=None, repo_root=checker.REPO_ROOT)
+    args = SimpleNamespace(skills_root=None, repo_root=None)
 
     with pytest.raises(checker.DriftCheckError) as captured:
         checker.requested_skill_sources(args)
@@ -920,6 +920,29 @@ def test_empty_active_plugin_graph_uses_schema_neutral_diagnostic(
     message = str(captured.value)
     assert "installed blueprint graph has no registered nodes" in message
     assert "v4 nodes" not in message
+
+
+def test_explicit_repository_root_bypasses_installed_source_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        checker,
+        "observed_skill_sources",
+        lambda: (_ for _ in ()).throw(
+            AssertionError("explicit repository root reached installed discovery")
+        ),
+    )
+    args = SimpleNamespace(skills_root=None, repo_root=checker.REPO_ROOT)
+
+    sources = checker.requested_skill_sources(args)
+
+    assert sources == [
+        checker.SkillSource(
+            source="override",
+            package_root=checker.REPO_ROOT,
+            skills_root=checker.REPO_ROOT / "skills",
+        )
+    ]
 
 
 @pytest.mark.parametrize(
