@@ -24,7 +24,9 @@ from officina.rutter.model import (
     Terminal,
     TerminalRecord,
     EnteredEvolution,
+    EvolutionContext,
     KnownFault,
+    MachineResult,
     Message,
     LLMStep,
     Reckoning,
@@ -37,7 +39,7 @@ from officina.rutter.model import (
 )
 from officina.rutter.runtime import RutterRegistry
 from officina.rutter.storage import ReckoningStore
-from test_support.rutter_fixtures import (
+from officina.rutter.tests.fixtures import (
     AttachedChildRutter,
     DirectChildRutter,
     DiscoveryRootRutter,

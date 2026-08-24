@@ -28,6 +28,16 @@ from officina.rutter.diagnostic import (
     diagnose_answer_on,
     hook_sequence_after,
 )
+from officina.rutter.dispenser import (
+    InvalidVoyageModeArgumentsError,
+    UnknownVoyageError,
+    UnknownVoyageModeError,
+    VoyageDispenser,
+    VoyageNotTerminalError,
+    VoyagesAlreadyInitializedError,
+    VoyagesNotInitializedError,
+    voyage_dispenser_cli,
+)
 from officina.rutter.engine import Voyage
 from officina.rutter.history import (
     CompletedVoyageView,
@@ -73,6 +83,7 @@ __all__ = (
     "EvolutionView",
     "FaultSummary",
     "HistoryView",
+    "InvalidVoyageModeArgumentsError",
     "JsonObject",
     "JsonValue",
     "LLMResponseContext",
@@ -101,9 +112,15 @@ __all__ = (
     "TransitionHook",
     "TransitionMatch",
     "Turn",
+    "UnknownVoyageError",
+    "UnknownVoyageModeError",
     "ValidationIssue",
     "ValidationReport",
     "Voyage",
+    "VoyageDispenser",
+    "VoyageNotTerminalError",
+    "VoyagesAlreadyInitializedError",
+    "VoyagesNotInitializedError",
     "VoyageResult",
     "VoyageStatus",
     "after",
@@ -113,4 +130,5 @@ __all__ = (
     "empty_data",
     "hook_sequence_after",
     "on_transition",
+    "voyage_dispenser_cli",
 )

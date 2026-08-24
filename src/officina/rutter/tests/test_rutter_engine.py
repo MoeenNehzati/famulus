@@ -49,7 +49,7 @@ from officina.rutter.model import (
 )
 from officina.rutter.runtime import RutterRegistry
 from officina.rutter.storage import ReckoningStore
-from test_support.rutter_fixtures import (
+from officina.rutter.tests.fixtures import (
     ExampleRutter,
     response_schema as _response_schema,
     stable_rutter_constructor,

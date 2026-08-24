@@ -1,0 +1,224 @@
+schema_version: 6
+node_type: behavioral_source
+id: rutter.source.dispenser
+version: 3
+description: Declares and explains Voyage initialization modes, creates one durable
+  collection in the selected mode, exposes uniform ID-scoped operations, and releases
+  terminal Voyage working directories on request.
+gateway:
+  path: dispenser.py
+  language: Python
+content:
+- dispenser\.py
+dependencies:
+- source: rutter.source.engine
+  version: 3
+  blueprint:
+    base: module-root
+    path: blueprints/engine.yaml
+  reason: Delegates status, validation, and advancement to authorized Voyages.
+- source: rutter.source.values
+  version: 1
+  blueprint:
+    base: module-root
+    path: blueprints/values.yaml
+  reason: Projects public status and validation values without exposing callbacks.
+uses_interfaces:
+- interface: rutter.source.engine.interface.bound-operations
+  version: 6
+- interface: rutter.source.values.interface.python-api
+  version: 1
+interfaces:
+  rutter.source.dispenser.interface.python-api:
+    content:
+    - dispenser\.py
+    uses_interfaces:
+    - interface: rutter.source.engine.interface.bound-operations
+      version: 6
+    - interface: rutter.source.values.interface.python-api
+      version: 1
+    version: 3
+    description: Construct one VoyageDispenser from self-describing modes, durable
+      initialization, ID enumeration, Voyage resolution, and terminal release callbacks;
+      callers discover each mode's explanation and required arguments before initializing.
+    contract:
+      arguments:
+        operation:
+          description: Exact dispenser operation.
+          required: true
+          sensitivity: public
+          type:
+            kind: enum
+            values:
+            - value: help
+              description: Explain mode discovery, one-time initialization, and
+                one-agent-per-Voyage ownership.
+            - value: get-modes
+              description: Return every supported initialization mode together with its explanation and required named arguments.
+            - value: initiate-voyages
+              description: Create every durable Voyage in the selected mode, or
+                the first declared mode when omitted; exposed as the initiate CLI command.
+            - value: get-voyage-ids
+              description: Return every currently authorized Voyage ID.
+            - value: get-status
+              description: Read one selected Voyage's public status.
+            - value: validate
+              description: Validate one selected Voyage response without mutation.
+            - value: advance
+              description: Advance one selected Voyage without affecting another.
+            - value: release
+              description: Remove one selected Voyage after its terminal result has been read.
+            - value: cli
+              description: Map modes, initiate, list, status, validate, advance,
+                and release commands to finite JSON.
+        mode:
+          description: One exact mode returned by get-modes and consumed only by
+            initiate; omission selects the first declared mode.
+          required: false
+          sensitivity: public
+          type:
+            kind: string
+            sensitivity: public
+        mode-arguments:
+          description: Named string arguments required by the selected mode; unknown, missing, or extra names are rejected before initialization.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+        voyage-id:
+          description: Opaque ID returned by get-voyage-ids, assigned to one agent,
+            and required for every operation by that agent.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+        value:
+          description: Optional response and entrance correlation arguments.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+      preconditions: []
+      interaction:
+        mode: unattended
+      caller_warnings:
+      - external-side-effect: Advance may execute effects owned by the selected Voyage.
+      - external-side-effect: Release permanently removes the selected terminal Voyage's working directory.
+      outputs:
+      - id: result
+        audience: both
+        description: Self-describing mode configurations, initialized IDs, or one public Voyage operation result.
+        direct_io_ref: result
+        cardinality:
+          minimum: 1
+          maximum: 1
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        empty: Never empty on success.
+        type:
+          kind: string
+          sensitivity: derived-private
+      outcomes:
+      - id: completed
+        class: success
+        outputs:
+        - result
+        effects:
+        - voyage-operation
+        caller_action: Continue only from the returned public result.
+      - id: unknown-voyage
+        class: error
+        outputs: []
+        effects: []
+        caller_action: Refresh the authorized Voyage IDs and do not retry an absent ID.
+      - id: not-initialized
+        class: error
+        outputs: []
+        effects: []
+        caller_action: Inspect get-modes, choose one mode, and invoke initiate once.
+      - id: invalid-mode-arguments
+        class: error
+        outputs: []
+        effects: []
+        caller_action: Supply exactly the arguments advertised for the selected mode.
+      - id: already-initialized
+        class: error
+        outputs: []
+        effects: []
+        caller_action: Use the existing Voyage IDs without changing their mode.
+      - id: not-terminal
+        class: error
+        outputs: []
+        effects: []
+        caller_action: Read or advance the Voyage to a terminal result before releasing it.
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency:
+          live: Mode discovery is always available; initiation persists Voyages,
+            each later operation resolves current durable IDs, and release removes
+            only an ID whose terminal result is available.
+        effects:
+        - id: voyage-operation
+          direct_io_ref: voyage
+          action: execute
+          value_source:
+            kind: argument
+            argument_ref: voyage-id
+          may_occur_in_outcomes:
+          - completed
+          confirmation_evidence:
+            kind: output
+            output_ref: result
+          reversibility:
+            irreversible: The dispenser cannot roll back effects owned by a Voyage.
+        mutation_safety:
+          atomicity:
+            per_effect_only: Each selected Voyage owns its transaction boundary.
+          concurrent_invocations:
+            safe: Agents may operate distinct Voyages concurrently; exactly one agent
+              owns each Voyage for the duration of its run.
+          idempotency:
+            non_idempotent: Advance may mutate durable state or execute external effects.
+          on_uncertain_completion:
+            verify_then_decide: Read the selected Voyage status before retrying.
+          partial_effects_on_failure:
+            possible: A selected Voyage may report uncertain external work.
+          rollback_on_failure:
+            unavailable: External Voyage effects cannot be rolled back by the dispenser.
+        verification:
+        - method: output-schema
+          output_ref: result
+      helpers: []
+      direct_io:
+        reads: []
+        writes:
+        - id: voyage
+          medium: local-system
+          access: execute
+          system: rutter.source.engine.interface.bound-operations
+          content: One authorized Voyage resolved by opaque ID.
+          formats:
+          - python-object
+          sensitivity: user-private
+        - id: result
+          medium: local-system
+          access: write
+          content: Public IDs, status, or validation result.
+          formats:
+          - python-object
+          - json
+          sensitivity: derived-private
+        network: []
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+maturity: stable

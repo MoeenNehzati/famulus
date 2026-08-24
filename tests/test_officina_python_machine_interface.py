@@ -462,6 +462,29 @@ def test_load_interface_from_relative_file_spec(tmp_path: Path, monkeypatch: pyt
     assert interface.__class__.__name__ == "Interface"
 
 
+def test_load_interface_accepts_a_configured_interface_instance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Requiring a class would force every configured process adapter to subclass."""
+
+    runtime = tmp_path / "_rtx"
+    runtime.mkdir()
+    (runtime / "_demo.py").write_text(
+        "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
+        "class DemoInterface(PythonMachineInterface):\n"
+        "    def run(self, args):\n"
+        "        return 0\n"
+        "Interface = DemoInterface()\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    interface = load_interface("_rtx/_demo.py", "Interface")
+
+    assert interface.__class__.__name__ == "DemoInterface"
+
+
 def test_route_smoke_trace_supports_temporary_repository(tmp_path: Path) -> None:
     skill = tmp_path / "skills" / "demo-skill"
     runtime = skill / "_rtx"

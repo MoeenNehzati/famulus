@@ -17,7 +17,7 @@ from officina.rutter import (
     after,
     on_transition,
 )
-from test_support.rutter_fixtures import response_schema as _response_schema
+from officina.rutter.tests.fixtures import response_schema as _response_schema
 from officina.visualization.graph import Graph
 from officina.visualization.from_rutter import (
     RutterVisualizer,

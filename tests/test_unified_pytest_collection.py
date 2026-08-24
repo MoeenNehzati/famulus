@@ -10,6 +10,7 @@ CANONICAL_TEST_ROOTS = (
     "tests",
     "hooks/tests",
     "skills",
+    "src/officina/rutter/tests",
     "src/officina/wakeup/tests",
 )
 RUNTIME_TEST_ROOTS = (

@@ -9,7 +9,7 @@ import pytest
 
 import officina.rutter as rutter
 from officina.rutter.history import CompletedRun, SubRutterRecord, Transition
-from test_support.rutter_fixtures import response_schema as _response_schema
+from officina.rutter.tests.fixtures import response_schema as _response_schema
 
 
 class SequenceChild(rutter.Rutter):

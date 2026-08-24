@@ -10,7 +10,7 @@ import pytest
 
 import officina.rutter as rutter_public
 from officina.rutter.history import CompletedRun, SubRutterRecord, Transition
-from test_support.rutter_fixtures import (
+from officina.rutter.tests.fixtures import (
     response_schema as _response_schema,
     stable_rutter_constructor,
 )

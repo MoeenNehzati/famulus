@@ -9,14 +9,14 @@ node_type: module
 id: using-compass
 # @schema-doc path=version
 # @summary Human-managed interface contract version.
-version: 7
+version: 10
 # @schema-doc path=maturity
 # @summary The node's current readiness for use: stable or experimental.
 # @status required
 # @validator schema-shape
 maturity: experimental
 description: >-
-  Operates one authorized self-describing Voyage through its public interface.
+  Coordinates one agent per Voyage exposed by an authorized VoyageDispenser process binding.
 # @schema-doc path=gateway
 # @summary A whole-file gateway plus its language and optional alternative machine
 #   requirements.

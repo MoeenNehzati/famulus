@@ -1,9 +1,9 @@
 schema_version: 6
 node_type: behavioral_source
 id: using-compass.source.gateway
-version: 7
-description: Defines the thin bootstrap for operating one authorized,
-  self-describing Voyage.
+version: 10
+description: Defines the controller and one-agent-per-Voyage loops for an authorized
+  VoyageDispenser process binding.
 gateway:
   path: SKILL.md
   language: Markdown
@@ -11,19 +11,19 @@ content:
 - SKILL\.md
 dependencies: []
 uses_interfaces:
-- interface: rutter.interface.bound-operations
-  version: 6
+- interface: rutter.interface.dispenser
+  version: 3
 interfaces:
   using-compass.source.gateway.interface.default:
     content:
     - SKILL\.md
     uses_interfaces:
-    - interface: rutter.interface.bound-operations
-      version: 6
-    version: 7
-    description: Ask one authorized Voyage for its public operating interface and
-      follow only the methods it advertises.
-    usage: request=<Use compass on rutter-name>; binding=<one authorized Voyage>
+    - interface: rutter.interface.dispenser
+      version: 3
+    version: 10
+    description: Read the dispenser help, assign one agent per Voyage ID, and keep
+      every agent scoped to its assigned Voyage.
+    usage: request=<Use compass on rutter-name>; binding=<one authorized VoyageDispenser process binding>
     contract:
       arguments:
         request:
@@ -34,13 +34,13 @@ interfaces:
             kind: string
             sensitivity: user-private
         binding:
-          description: Invoker-provided runtime value containing one authorized,
-            self-describing Voyage.
+          description: Invoker-provided process binding for one authorized VoyageDispenser.
           required: true
           sensitivity: user-private
           type:
             kind: string
-            description: Voyage value supplied by the authorized invoker.
+            description: Process interface and fixed dispenser arguments supplied
+              by the authorized invoker.
             sensitivity: user-private
       preconditions: []
       interaction:
@@ -86,11 +86,14 @@ interfaces:
         state_effect: mutating
         lifecycle: finite
         consistency:
-            live: Help and every subsequently advertised operation come from the
-              same authorized Voyage.
+            live: Help, list, and every Voyage operation use the same authorized
+              dispenser binding; exactly one agent owns each returned Voyage ID,
+              all assignments complete before any Voyage operation begins, and
+              each terminal result is retained before its Voyage is released unless
+              an explicit preservation reason is reported.
         effects:
         - id: voyage-operation
-          direct_io_ref: voyage
+          direct_io_ref: voyage-dispenser
           action: execute
           value_source:
             kind: argument
@@ -145,14 +148,14 @@ interfaces:
           formats:
           - markdown
           sensitivity: derived-private
-        - id: voyage
+        - id: voyage-dispenser
           medium: local-system
           access: execute
-          system: rutter.interface.bound-operations
-          content: The authorized Voyage's self-described public operations; durable
-            traversal is encapsulated by the consumed interface.
+          system: rutter.interface.dispenser
+          content: The authorized dispenser's list, status, validate, and advance
+            process operations; durable traversal remains behind the interface.
           formats:
-          - python-object
+          - process-interface
           sensitivity: user-private
         network: []
 maturity: stable

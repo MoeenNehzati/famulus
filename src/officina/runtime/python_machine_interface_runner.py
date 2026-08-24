@@ -684,17 +684,21 @@ def load_interface(
                 logical_entrypoint=target.logical_entrypoint,
                 physical_package_prefix=physical_package_prefix,
             )
-        interface_type = getattr(module, target.process_entry, None)
-        if interface_type is None:
+        interface_entry = getattr(module, target.process_entry, None)
+        if interface_entry is None:
             raise InterfaceLoadError(
-                f"{target.gateway_path}: class "
+                f"{target.gateway_path}: interface entry "
                 f"`{target.process_entry}` not found"
             )
-        interface = interface_type()
+        interface = (
+            interface_entry
+            if isinstance(interface_entry, PythonMachineInterface)
+            else interface_entry()
+        )
         if not isinstance(interface, PythonMachineInterface):
             raise InterfaceLoadError(
-                f"{target.gateway_path}: class must inherit "
-                "PythonMachineInterface"
+                f"{target.gateway_path}: interface entry must be an instance "
+                "or constructor of PythonMachineInterface"
             )
         if active_sources:
             setattr(interface, _BOUND_PACKAGE_SOURCES_ATTRIBUTE, active_sources)

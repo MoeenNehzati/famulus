@@ -1,7 +1,7 @@
 schema_version: 6
 node_type: module
 id: rutter
-version: 4
+version: 7
 description: Direct Rutter definitions bound to immutable Charters and durably reduced
   Reckonings.
 gateway:
@@ -11,6 +11,7 @@ content:
 - __init__\.py
 - authoring\.py
 - diagnostic\.py
+- dispenser\.py
 - engine\.py
 - evaluation\.py
 - history\.py
@@ -18,6 +19,7 @@ content:
 - reducer\.py
 - runtime\.py
 - storage\.py
+- tests/.*
 - values\.py
 authority:
   owns_filesystem: []
@@ -30,6 +32,10 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/diagnostic.yaml
+  rutter.source.dispenser:
+    blueprint:
+      base: module-root
+      path: blueprints/dispenser.yaml
   rutter.source.engine:
     blueprint:
       base: module-root
@@ -84,6 +90,13 @@ exports:
       allow_all_modules: false
       allowed_callers:
       - math-dependency-graph._rtx
+  rutter.interface.dispenser:
+    source_interface: rutter.source.dispenser.interface.python-api
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - math-dependency-graph._rtx
+      - using-compass
   rutter.interface.model:
     source_interface: rutter.source.model.interface.python-api
     access:

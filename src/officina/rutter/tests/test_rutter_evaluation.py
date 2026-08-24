@@ -26,7 +26,7 @@ from officina.rutter.values import (
     ValidationReport,
     VoyageResult,
 )
-from test_support.rutter_fixtures import (
+from officina.rutter.tests.fixtures import (
     response_schema as _response_schema,
     stable_rutter_constructor,
 )

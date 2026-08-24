@@ -47,7 +47,7 @@ from officina.rutter.model import (
     ValidationReport,
     VoyageStatus,
 )
-from test_support.rutter_fixtures import (
+from officina.rutter.tests.fixtures import (
     ExampleRutter,
     example_message,
     stable_rutter_constructor,
@@ -1399,6 +1399,7 @@ def test_public_package_has_the_exact_narrow_new_vocabulary_surface() -> None:
         "EvolutionView",
         "FaultSummary",
         "HistoryView",
+        "InvalidVoyageModeArgumentsError",
         "JsonObject",
         "JsonValue",
         "LLMResponseContext",
@@ -1427,9 +1428,15 @@ def test_public_package_has_the_exact_narrow_new_vocabulary_surface() -> None:
         "TransitionHook",
         "TransitionMatch",
         "Turn",
+        "UnknownVoyageError",
+        "UnknownVoyageModeError",
         "ValidationIssue",
         "ValidationReport",
         "Voyage",
+        "VoyageDispenser",
+        "VoyageNotTerminalError",
+        "VoyagesAlreadyInitializedError",
+        "VoyagesNotInitializedError",
         "VoyageResult",
         "VoyageStatus",
         "after",
@@ -1439,6 +1446,7 @@ def test_public_package_has_the_exact_narrow_new_vocabulary_surface() -> None:
         "empty_data",
         "hook_sequence_after",
         "on_transition",
+        "voyage_dispenser_cli",
     )
     for private_name in (
         "ActiveChild",
