@@ -74,6 +74,36 @@ class DevLinkHooksTests(unittest.TestCase):
             self.assertNotIn(legacy_command, commands)
             self.assertTrue(any("--claude" in command for command in commands))
 
+    def test_reinstall_preserves_a_user_hook_added_to_a_managed_entry_group(self) -> None:
+        """Re-running install replaces its own hook objects, not the group.
+
+        An entry group is shared structure: a user hook parked alongside the
+        managed one must survive a reinstall, and the managed hook must not
+        be duplicated.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            claude_home = Path(tmp) / ".claude"
+            dev_link.install_claude_hooks(claude_home, self.repo_root, dry_run=False)
+            settings_file = claude_home / "settings.local.json"
+
+            payload = json.loads(settings_file.read_text(encoding="utf-8"))
+            payload["hooks"]["SessionStart"][0]["hooks"].append(
+                {"type": "command", "command": "echo my-own-hook"}
+            )
+            settings_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+            dev_link.install_claude_hooks(claude_home, self.repo_root, dry_run=False)
+
+            after = json.loads(settings_file.read_text(encoding="utf-8"))
+            commands = [
+                hook["command"]
+                for entry in after["hooks"]["SessionStart"]
+                for hook in entry["hooks"]
+            ]
+            self.assertIn("echo my-own-hook", commands)
+            managed = [c for c in commands if "inject_dispatcher_context.py" in c]
+            self.assertEqual(len(managed), 1, commands)
+
     def test_install_codex_hooks_writes_managed_block_for_registered_hooks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             codex_home = Path(tmp) / ".codex"

@@ -1820,6 +1820,71 @@ def test_removes_managed_claude_hook_preserving_user_hook(installed):
     assert after["permissions"] == {"allow": ["Bash(ls:*)"]}
 
 
+USER_HOOK_COMMAND = "echo user-hook"
+
+
+def _managed_session_start_group(settings_file: Path) -> tuple[dict, dict, str]:
+    """Return (payload, the installer's entry group, its hook command).
+
+    The managed group is identified by exclusion rather than by matching
+    the command text: which hook registry is importable depends on test
+    ordering, but the fixture always seeds exactly one user group.
+    """
+    payload = json.loads(settings_file.read_text(encoding="utf-8"))
+    groups = [
+        group
+        for group in payload["hooks"]["SessionStart"]
+        if all(hook["command"] != USER_HOOK_COMMAND for hook in group["hooks"])
+    ]
+    assert len(groups) == 1, groups
+    return payload, groups[0], groups[0]["hooks"][0]["command"]
+
+
+def _session_start_commands(settings_file: Path) -> list[str]:
+    payload = json.loads(settings_file.read_text(encoding="utf-8"))
+    return [
+        hook["command"]
+        for group in payload.get("hooks", {}).get("SessionStart", [])
+        for hook in group.get("hooks", [])
+    ]
+
+
+def test_managed_hook_removal_preserves_a_user_hook_in_the_same_entry_group(installed):
+    """Removal targets the managed hook object, not the entry group around it.
+
+    A user who adds their own hook alongside the managed one must keep it.
+    """
+    settings_file = installed["claude_home"] / "settings.local.json"
+    payload, group, managed_command = _managed_session_start_group(settings_file)
+    group["hooks"].append({"type": "command", "command": "echo my-own-hook"})
+    settings_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+    run_uninstall(installed)
+
+    commands = _session_start_commands(settings_file)
+    assert "echo my-own-hook" in commands
+    assert managed_command not in commands
+
+
+def test_report_names_a_recorded_managed_hook_that_is_no_longer_present(installed):
+    """An edited managed command is left behind; the report must say so.
+
+    Matching on raw command text cannot recognise the edited hook, so it
+    survives as an orphan invoking files uninstall has already removed.
+    Silently reporting "no managed entries found" hides that.
+    """
+    settings_file = installed["claude_home"] / "settings.local.json"
+    payload, group, _managed_command = _managed_session_start_group(settings_file)
+    group["hooks"][0]["command"] += " --user-edit"
+    settings_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+    result = run_uninstall(installed)
+
+    commands = _session_start_commands(settings_file)
+    assert any("--user-edit" in command for command in commands)
+    assert "no longer present" in result.stdout
+
+
 def _seed_legacy_config_dir_entry(installed: dict[str, Path]) -> Path:
     """Add an old tracked cloud-files config entry so uninstall preserves or purges it correctly."""
     config_dir = installed["home"] / ".config" / "cloud-files"

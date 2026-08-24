@@ -66,9 +66,9 @@ from officina.install.context import InstallationContext
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 if __package__:
-    from ._state_record import Manifest, manifest_path
+    from ._state_record import Manifest, manifest_path, strip_managed_hook_objects
 else:
-    from _state_record import Manifest, manifest_path
+    from _state_record import Manifest, manifest_path, strip_managed_hook_objects
 if __package__:
     from ._fs_links import make_link
 else:
@@ -417,14 +417,16 @@ def install_claude_hooks(claude_home: Path, repo_root: Path, dry_run: bool, mani
         event_hooks = hooks.get(event_name)
         if not isinstance(event_hooks, list):
             continue
-        filtered = [
-            entry for entry in event_hooks
-            if not any(
-                hook.get("command", "") in commands_to_replace
-                for hook in entry.get("hooks", [])
-                if isinstance(hook, dict)
+        # Replace this installer's own hook objects, never the entry group
+        # around them: a user hook sharing the group must survive a re-run.
+        replaced: set[str] = set()
+        filtered = []
+        for group in event_hooks:
+            surviving, _changed = strip_managed_hook_objects(
+                group, commands_to_replace, replaced
             )
-        ]
+            if surviving is not None:
+                filtered.append(surviving)
         if filtered:
             hooks[event_name] = filtered
         else:
