@@ -10,17 +10,17 @@ description: >-
 Catalog: research; topics: mathematical-reasoning, visualization, scholarly-documents; visibility: featured
 Activation: user-request, skill-workflow; persistent modifier: no
 
-Skill Version: 82
+Skill Version: 90
 
 Uses Interfaces:
-- `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-advance-extraction-phases@27`
-- `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-next-inventory-unit@3`
+- `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-advance-extraction-phases@28`
+- `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-next-inventory-unit@4`
 - `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-record-run-diagnostics@8`
 - `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator@5`
 - `math-dependency-graph.source.gateway -> math-dependency-graph.interface.extract@27`
-- `math-dependency-graph.source.gateway -> math-dependency-graph.interface.inventory@34`
+- `math-dependency-graph.source.gateway -> math-dependency-graph.interface.inventory@35`
 - `math-dependency-graph.source.gateway -> math-dependency-graph.interface.proof-reconciliation@3`
-- `math-dependency-graph.source.instructions-inventory -> math-dependency-graph._rtx.interface.scripts-next-inventory-unit@3`
+- `math-dependency-graph.source.instructions-inventory -> math-dependency-graph._rtx.interface.scripts-next-inventory-unit@4`
 
 Public Interfaces:
 - `math-dependency-graph.interface.default`
@@ -57,7 +57,7 @@ Use a fresh empty run directory and never reuse an earlier inventory, semantic I
 
    Retain the public wrapper's measured timing object from every actual setup and next response. `process_dispatch` measures immediately before the wrapper spawns its controlled child through child bootstrap entry; `total` measures through complete child stdout and exit. A fresh setup also reports `publication_observed: true` and measures `publication` immediately around atomic state replacement. Idempotent setup reuse reports `publication_observed: false` and omits publication; never substitute zero. These timings deliberately exclude outer gateway-to-dispatcher latency. Record the returned nonnegative values verbatim—never subtract, estimate, or fabricate a field. A worker returns its bounded next-call timing objects with its completed inventory path; no source or inventory prose belongs in timing data. After iterator completion and pooling have installed the durable internal iterator summary, the gateway invokes `math-dependency-graph._rtx.interface.scripts-record-run-diagnostics iterator-controller-timing <run-dir> setup --process-dispatch-ms <n> --total-ms <n> [--publication-ms <n>]` once for setup and the same operation with `next` and no publication once for every retained next-call measurement. Serialize these diagnostics calls. If a measured wrapper or diagnostics update fails, stop: the run is not successfully measured.
 
-   Immediately before a worker waits for or starts, invoke `math-dependency-graph._rtx.interface.scripts-record-run-diagnostics worker-queued <run-dir> <job-id> --phase inventory --model <exact-model-id>`. Immediately after successful worker creation, record `worker-started`. After termination, record `worker-finished` with success and the returned inventory path, or failure and an allowlisted error code. The gateway remains the sole writer of shared diagnostics. Fill available worker slots; retries reuse the same assignment paths and job id, add exactly one matching allowlisted retry code, and resume the durable outstanding lease rather than rebuilding units. After all workers report `complete`, continue with the iterator state directory; do not create an inventory manifest from worker-selected packets.
+   Immediately before a worker waits for or starts, invoke `math-dependency-graph._rtx.interface.scripts-record-run-diagnostics worker-queued <run-dir> <job-id> --phase inventory --model <exact-model-id>`. Immediately after successful worker creation, record `worker-started`. After termination, record `worker-finished` with success and the returned inventory path, or failure and an allowlisted error code. The gateway remains the sole writer of shared diagnostics. Fill available worker slots; retries reuse the same assignment paths and job id, add exactly one matching allowlisted retry code, and resume the durable outstanding lease rather than rebuilding units. A completed-worker correction is permitted only after the public `advance-inventory` call rejects a worker-attributed authenticated fragment and durably authorizes that exact worker. Launch only that worker with `validation-failed`; after correcting its bound artifact, it must re-acknowledge the same final unit with its original wrap choice and `--retry-code validation-failed`. A retry flag alone is not authorization. After all workers report `complete`, continue with the iterator state directory; do not create an inventory manifest from worker-selected packets.
 
 3. **Pool.** Invoke `math-dependency-graph._rtx.interface.scripts-advance-extraction-phases advance-inventory <iterator-state-dir> --run-dir <run-dir>`. Require the same diagnostics path. Pooling authenticates the completed worker inventories, installs their iterator summary, and records exact local and aggregate inventory-size ratios. Record all retained setup/next controller measurements through the public diagnostics operation now, before starting extraction. Size never rejects a fragment and never causes compaction. During skill evaluation, compare the ratios with the 50% local and 35% aggregate reference thresholds. Retry only the rejected worker when schema, ownership, anchor coverage, or record accounting identifies one; do not replace valid fragments or broaden assignments.
 

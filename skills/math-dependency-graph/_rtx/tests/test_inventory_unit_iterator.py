@@ -86,12 +86,47 @@ def _ack_rows(state_dir: Path) -> list[tuple]:
         ).fetchall()
 
 
+def _ack_authentication_rows(state_dir: Path) -> list[tuple]:
+    with sqlite3.connect(state_dir / "iterator.sqlite3") as connection:
+        return connection.execute(
+            "SELECT worker_index, unit_id, retry_code, prior_content_sha256, "
+            "content_sha256 FROM acknowledgement_reauthentications ORDER BY id"
+        ).fetchall()
+
+
 def _sequence_rows(state_dir: Path) -> list[tuple]:
     with sqlite3.connect(state_dir / "iterator.sqlite3") as connection:
         return connection.execute(
             "SELECT worker_index, first_unit_id, last_unit_id, closure_reason "
             "FROM attention_sequences ORDER BY id"
         ).fetchall()
+
+
+def _sequence_delta_rows(state_dir: Path) -> list[dict]:
+    with sqlite3.connect(state_dir / "iterator.sqlite3") as connection:
+        rows = connection.execute(
+            "SELECT sequence_id, before_snapshot_json, after_snapshot_json, "
+            "before_manifest_json, after_manifest_json, delta_json "
+            "FROM sequence_delta_artifacts ORDER BY sequence_id"
+        ).fetchall()
+    return [
+        {
+            "sequence_id": sequence_id,
+            "before": json.loads(before_snapshot),
+            "after": json.loads(after_snapshot),
+            "before_manifest": json.loads(before_manifest),
+            "after_manifest": json.loads(after_manifest),
+            "delta": json.loads(delta),
+        }
+        for (
+            sequence_id,
+            before_snapshot,
+            after_snapshot,
+            before_manifest,
+            after_manifest,
+            delta,
+        ) in rows
+    ]
 
 
 def _iterator_process_interface(name: str) -> tuple[BlueprintNode, InterfaceExport]:
@@ -142,7 +177,14 @@ def test_iterator_process_interfaces_compile_public_calls_in_runtime_argument_or
         next_interface,
         parse_caller_invocation(
             next_interface,
-            ["iterator-state", "1", "--ack", "u000001", "--wrap"],
+            [
+                "iterator-state",
+                "1",
+                "--ack",
+                "u000001",
+                "--retry-code",
+                "validation-failed",
+            ],
             stdin_requested=False,
         ),
     )
@@ -163,7 +205,8 @@ def test_iterator_process_interfaces_compile_public_calls_in_runtime_argument_or
         "1",
         "--ack",
         "u000001",
-        "--wrap",
+        "--retry-code",
+        "validation-failed",
     )
 
 
@@ -201,7 +244,7 @@ def test_iterator_cli_setup_and_next_emit_structured_atomic_responses(
         "scanner_version": 1,
         "inventory_schema_version": 3,
         "setup_interface_version": 5,
-        "next_interface_version": 3,
+        "next_interface_version": 4,
         "requested_workers": 1,
         "effective_workers": 1,
         "window_chars": 80,
@@ -954,7 +997,7 @@ def test_setup_reuses_only_an_exact_matching_configuration(
             packet, state_dir, requested_workers=1, window_chars=20
         )
     assert first["configuration"]["setup_interface_version"] == 5
-    assert first["configuration"]["next_interface_version"] == 3
+    assert first["configuration"]["next_interface_version"] == 4
     assert load_iterator_summary(state_dir) == first
     assert json.loads((state_dir / "inventory-assignments.json").read_text(encoding="utf-8"))[
         "requested_workers"
@@ -1318,6 +1361,49 @@ def test_next_closes_the_final_open_attention_sequence_automatically(tmp_path: P
     ]
 
 
+def test_closed_sequence_persists_authenticated_before_after_delta(tmp_path: Path) -> None:
+    """Dropping the immutable sequence artifact leaves the Rutter without source truth."""
+
+    state_dir = _iterator_with_units(tmp_path, units=1)
+    leased = next_inventory_unit(state_dir, 1)
+    before = _valid_inventory(state_dir, 1)
+    after = _valid_inventory(state_dir, 1)
+    after["nodes"] = [
+        {
+            "local_id": "n1",
+            "location": [0, 1, 1],
+            "provenance": "explicit",
+            "type_hint": "setup",
+            "summary": "A compactness hypothesis.",
+        }
+    ]
+    _inventory_path(state_dir, 1).write_text(json.dumps(after), encoding="utf-8")
+
+    assert next_inventory_unit(
+        state_dir, 1, ack=leased["unit"]["id"]
+    ) == {"state": "complete"}
+
+    [artifact] = _sequence_delta_rows(state_dir)
+    assert artifact["before"] == before
+    assert artifact["after"] == after
+    assert artifact["delta"]["nodes"] == {
+        "added": ["n1"],
+        "changed": [],
+        "deleted": [],
+        "unchanged": [],
+    }
+    for side in ("before", "after"):
+        expected_hash = hashlib.sha256(
+            json.dumps(
+                artifact[side],
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        assert artifact[f"{side}_manifest"]["payload_sha256"] == expected_hash
+
+
 def test_completed_inventory_verification_returns_acknowledged_fragment(
     tmp_path: Path,
 ) -> None:
@@ -1367,6 +1453,89 @@ def test_completed_inventory_verification_rejects_valid_post_ack_change(
 
     with pytest.raises(ValueError, match="does not match its final acknowledgement"):
         iterator.verify_completed_inventories(state_dir)
+
+
+def test_completed_inventory_reack_requires_controller_authorization(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A worker cannot authenticate a corrected final artifact on its own authority."""
+
+    state_dir = _iterator_with_units(tmp_path, units=1)
+    leased = next_inventory_unit(state_dir, 1)
+    original = _valid_inventory(state_dir, 1)
+    _inventory_path(state_dir, 1).write_text(json.dumps(original), encoding="utf-8")
+    assert next_inventory_unit(
+        state_dir, 1, ack=leased["unit"]["id"]
+    ) == {"state": "complete"}
+    with sqlite3.connect(state_dir / "iterator.sqlite3") as connection:
+        original_ack = connection.execute(
+            "SELECT unit_id, wrapped, content_sha256 FROM acknowledgements"
+        ).fetchone()
+        original_assignment = connection.execute(
+            "SELECT first_unit_id, last_unit_id, next_ordinal, complete FROM assignments"
+        ).fetchone()
+
+    corrected = _valid_inventory(state_dir, 1)
+    corrected["nodes"] = [
+        {
+            "local_id": "n1",
+            "location": [0, 1, 1],
+            "provenance": "explicit",
+            "type_hint": "setup",
+            "summary": "A corrected candidate retained after pooling validation.",
+        }
+    ]
+    _inventory_path(state_dir, 1).write_text(json.dumps(corrected), encoding="utf-8")
+
+    assert next_inventory_unit(
+        state_dir, 1, ack=leased["unit"]["id"]
+    ) == {"state": "complete"}
+    with pytest.raises(ValueError, match="does not match its final acknowledgement"):
+        iterator.verify_completed_inventories(state_dir)
+    conflicting = next_inventory_unit(
+        state_dir,
+        1,
+        ack=leased["unit"]["id"],
+        wrap=True,
+        retry_code="validation-failed",
+    )
+    assert conflicting["state"] == "failure"
+    assert conflicting["error"]["code"] == "conflicting-retry"
+    assert _ack_authentication_rows(state_dir) == []
+
+    iterator.main(
+        [
+            "next",
+            str(state_dir),
+            "1",
+            "--ack",
+            leased["unit"]["id"],
+            "--retry-code",
+            "validation-failed",
+        ]
+    )
+
+    unauthorized = json.loads(capsys.readouterr().out)
+    assert unauthorized["state"] == "failure"
+    assert unauthorized["error"]["code"] == "unauthorized-retry"
+    invalid_code = next_inventory_unit(
+        state_dir,
+        1,
+        ack=leased["unit"]["id"],
+        retry_code="worker-failed",
+    )
+    assert invalid_code["state"] == "failure"
+    assert invalid_code["error"]["code"] == "invalid-retry-code"
+    with pytest.raises(ValueError, match="does not match its final acknowledgement"):
+        iterator.verify_completed_inventories(state_dir)
+    with sqlite3.connect(state_dir / "iterator.sqlite3") as connection:
+        assert connection.execute(
+            "SELECT unit_id, wrapped, content_sha256 FROM acknowledgements"
+        ).fetchone() == original_ack
+        assert connection.execute(
+            "SELECT first_unit_id, last_unit_id, next_ordinal, complete FROM assignments"
+        ).fetchone() == original_assignment
+    assert _ack_authentication_rows(state_dir) == []
 
 
 def test_next_concurrently_leases_separate_worker_indices_with_real_sqlite(tmp_path: Path) -> None:

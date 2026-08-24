@@ -281,6 +281,134 @@ def test_advance_inventory_rejects_valid_content_changed_after_final_ack(
     assert all(stage["operation"] != "pooling" for stage in diagnostics["stages"])
 
 
+def test_advance_inventory_pools_completed_fragment_after_authorized_reack(
+    tmp_path: Path,
+) -> None:
+    """A public validation retry authenticates one corrected final worker artifact."""
+
+    run_dir, summary = _setup_prepared_run(tmp_path)
+    state_dir = Path(summary["assignments"][0]["inventory_path"]).parents[2]
+    assignment = summary["assignments"][0]
+    for other in summary["assignments"][1:]:
+        _complete_worker(state_dir, other["worker_index"])
+    first_unit = next(
+        unit for unit in summary["units"]
+        if unit["id"] == assignment["first_unit_id"]
+    )
+    coordinate = first_unit["coordinates"][0]
+    inventory_path = Path(assignment["inventory_path"])
+    rejected = json.loads(inventory_path.read_text(encoding="utf-8"))
+    rejected["nodes"] = [
+        {
+            "local_id": "n1",
+            "location": [
+                rejected["files"].index(coordinate["source"]),
+                coordinate["line"],
+                coordinate["line"],
+            ],
+            "provenance": "explicit",
+            "type_hint": "setup",
+            "summary": "The first candidate at a duplicated source anchor.",
+        },
+        {
+            "local_id": "n2",
+            "location": [
+                rejected["files"].index(coordinate["source"]),
+                coordinate["line"],
+                coordinate["line"],
+            ],
+            "provenance": "explicit",
+            "type_hint": "result",
+            "summary": "The duplicate candidate rejected during pooling.",
+        },
+    ]
+    _write_json(inventory_path, rejected)
+
+    response = next_inventory_unit(state_dir, assignment["worker_index"])
+    while response["state"] == "unit":
+        response = next_inventory_unit(
+            state_dir,
+            assignment["worker_index"],
+            ack=response["unit"]["id"],
+        )
+    assert response == {"state": "complete"}
+    with pytest.raises(ValueError, match="candidate anchor emitted more than once"):
+        driver.advance_inventory(state_dir, run_dir)
+
+    unchanged = next_inventory_unit(
+        state_dir,
+        assignment["worker_index"],
+        ack=assignment["last_unit_id"],
+        retry_code="validation-failed",
+    )
+    assert unchanged["state"] == "failure"
+    assert unchanged["error"]["code"] == "retry-artifact-unchanged"
+    conflicting = next_inventory_unit(
+        state_dir,
+        assignment["worker_index"],
+        ack=assignment["last_unit_id"],
+        wrap=True,
+        retry_code="validation-failed",
+    )
+    assert conflicting["state"] == "failure"
+    assert conflicting["error"]["code"] == "conflicting-retry"
+    other = summary["assignments"][1]
+    cross_worker = next_inventory_unit(
+        state_dir,
+        other["worker_index"],
+        ack=other["last_unit_id"],
+        retry_code="validation-failed",
+    )
+    assert cross_worker["state"] == "failure"
+    assert cross_worker["error"]["code"] == "unauthorized-retry"
+
+    corrected = {**rejected, "nodes": rejected["nodes"][:1]}
+    _write_json(inventory_path, corrected)
+    assert next_inventory_unit(
+        state_dir,
+        assignment["worker_index"],
+        ack=assignment["last_unit_id"],
+        retry_code="validation-failed",
+    ) == {"state": "complete"}
+    report = driver.advance_inventory(state_dir, run_dir)
+
+    assert report["inventory_ir"] == str((run_dir / "inventory-ir.json").resolve())
+    authenticated = json.loads(
+        (
+            run_dir
+            / "authenticated-inventory-fragments"
+            / f"iterator-worker-{assignment['worker_index']:03d}.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert authenticated == corrected
+    with sqlite3.connect(state_dir / "iterator.sqlite3") as connection:
+        original_ack = connection.execute(
+            "SELECT content_sha256 FROM acknowledgements WHERE worker_index = ?",
+            (assignment["worker_index"],),
+        ).fetchone()[0]
+        reauthentication = connection.execute(
+            "SELECT prior_content_sha256, content_sha256 "
+            "FROM acknowledgement_reauthentications WHERE worker_index = ?",
+            (assignment["worker_index"],),
+        ).fetchone()
+        authorization = connection.execute(
+            "SELECT unit_id, wrapped, retry_code, inventory_path, consumed_at, "
+            "replacement_content_sha256 FROM completed_retry_authorizations "
+            "WHERE worker_index = ?",
+            (assignment["worker_index"],),
+        ).fetchone()
+    assert reauthentication[0] == original_ack
+    assert reauthentication[1] != original_ack
+    assert authorization[:4] == (
+        assignment["last_unit_id"],
+        0,
+        "validation-failed",
+        str(inventory_path.resolve()),
+    )
+    assert authorization[4] is not None
+    assert authorization[5] == reauthentication[1]
+
+
 def test_advance_inventory_never_rereads_worker_files_after_authentication(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

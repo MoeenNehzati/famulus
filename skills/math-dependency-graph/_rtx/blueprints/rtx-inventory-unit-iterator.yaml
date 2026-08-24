@@ -1,10 +1,11 @@
 schema_version: 6
 node_type: behavioral_source
 id: math-dependency-graph._rtx.source.rtx-inventory-unit-iterator
-version: 5
+version: 7
 maturity: experimental
-description: Sets up durable, source-ordered inventory units once and advances one
-  worker cursor atomically without making mathematical graph decisions.
+description: Sets up durable, source-ordered inventory units once, advances one
+  worker cursor atomically, and records immutable authenticated attention-sequence
+  deltas without making mathematical graph decisions.
 gateway:
   language: Python>=3.11
   path: _inventory_unit_iterator.py
@@ -210,11 +211,11 @@ interfaces:
           sensitivity: derived-private
       preconditions: []
   math-dependency-graph._rtx.source.rtx-inventory-unit-iterator.interface.scripts-next-inventory-unit:
-    version: 3
+    version: 4
     description: Atomically lease one worker's next source unit or validate schema
       and source-span ownership before acknowledging its outstanding unit and returning
       the next unit or complete state.
-    usage: <state-dir> <worker-index> [--ack <unit-id>] [--wrap]
+    usage: <state-dir> <worker-index> [--ack <unit-id>] [--wrap] [--retry-code validation-failed]
     content:
     - _inventory_unit_iterator\.py
     uses_interfaces: []
@@ -237,10 +238,12 @@ interfaces:
         allowed_flags:
         - --ack
         - --wrap
+        - --retry-code
         required_flags:
         - --ack
         flag_patterns:
           --ack: ^u[0-9]{6}$
+          --retry-code: ^validation-failed$
     contract:
       arguments:
         state-dir:
@@ -270,6 +273,13 @@ interfaces:
           sensitivity: public
           type:
             kind: boolean
+            sensitivity: public
+        retry-code:
+          description: Controller-authorized validation retry for a corrected completed-worker artifact.
+          required: false
+          sensitivity: public
+          type:
+            kind: string
             sensitivity: public
       caller_warnings:
       - external-side-effect: A valid acknowledgement atomically updates shared iterator state after validating the worker inventory fragment.
@@ -331,7 +341,7 @@ interfaces:
           concurrent_invocations:
             safe: SQLite serializes state changes while workers retain disjoint inventory fragments.
           idempotency:
-            idempotent: Repeating a lease returns the outstanding unit, and an exact latest acknowledgement retry returns its recorded response.
+            idempotent: Repeating a lease returns the outstanding unit, an exact latest acknowledgement retry returns its recorded response, and a consumed controller-authorized correction replays only while its replacement hash remains unchanged.
           on_uncertain_completion:
             verify_then_decide: Retry the same call and inspect the returned unit or complete state.
           partial_effects_on_failure:
@@ -364,7 +374,7 @@ interfaces:
         - response
       - id: rejected-acknowledgement
         class: refusal
-        caller_action: Correct the worker-local inventory fragment or acknowledgement ID and retry without changing source order.
+        caller_action: Correct the worker-local inventory fragment or acknowledgement ID and retry without changing source order; a completed-worker correction requires the controller authorization created by its failed public pooling attempt.
         effects: []
         outputs:
         - response

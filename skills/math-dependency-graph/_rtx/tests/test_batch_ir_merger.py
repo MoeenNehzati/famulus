@@ -484,8 +484,12 @@ def test_pooler_rejects_duplicate_document_wide_candidate_anchors(tmp_path: Path
     duplicate["local_id"] = "n2"
     fragment["nodes"].append(duplicate)
 
-    with pytest.raises(ValueError, match="candidate anchor emitted more than once"):
+    with pytest.raises(
+        merger.InventoryFragmentValidationError,
+        match="candidate anchor emitted more than once",
+    ) as raised:
         _pool([fragment], _manifest(tmp_path, ["a.tex"]))
+    assert raised.value.chunk_id == "inventory-001"
 
 
 def test_pooler_distinguishes_nodes_with_same_start_and_different_spans(

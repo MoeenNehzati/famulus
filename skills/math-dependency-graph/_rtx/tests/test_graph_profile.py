@@ -32,12 +32,12 @@ def test_inventory_instruction_contract_uses_only_public_iterator_source_deliver
         "math-dependency-graph.source.instructions-inventory.interface.inventory"
     ]
 
-    assert inventory["version"] == 34
-    assert interface["version"] == 34
+    assert inventory["version"] == 35
+    assert interface["version"] == 35
     assert inventory["uses_interfaces"] == [
         {
             "interface": "math-dependency-graph._rtx.interface.scripts-next-inventory-unit",
-            "version": 3,
+            "version": 4,
         }
     ]
     assert interface["uses_interfaces"] == inventory["uses_interfaces"]
@@ -63,14 +63,19 @@ def test_inventory_instruction_contract_uses_only_public_iterator_source_deliver
         "worker-index",
         "ack",
         "wrap",
+        "retry-code",
     }
     assert next_interface["usage"] == (
-        "<state-dir> <worker-index> [--ack <unit-id>] [--wrap]"
+        "<state-dir> <worker-index> [--ack <unit-id>] [--wrap] "
+        "[--retry-code validation-failed]"
     )
     instruction_text = (
         RUNTIME_DIR.parent / "instructions" / "inventory.md"
     ).read_text(encoding="utf-8")
-    assert "`<state-dir> <worker-index> [--ack <unit-id>] [--wrap]`" in instruction_text
+    assert (
+        "`<state-dir> <worker-index> [--ack <unit-id>] [--wrap] "
+        "[--retry-code validation-failed]`"
+    ) in instruction_text
     assert "Those paths are your file responsibilities, never arguments to `next`." in instruction_text
     snapshot = interface["contract"]["execution"]["consistency"]["snapshot"]
     assert "retains the controlled-child timing returned by every actual next call" in snapshot
@@ -191,7 +196,7 @@ def test_gateway_contract_routes_inventory_through_iterator_and_measured_diagnos
         item["interface"]: item["version"] for item in gateway["uses_interfaces"]
     }
 
-    assert uses["math-dependency-graph.interface.inventory"] == 34
+    assert uses["math-dependency-graph.interface.inventory"] == 35
     assert uses["math-dependency-graph.interface.extract"] == 27
     assert uses["math-dependency-graph.interface.proof-reconciliation"] == 3
     assert uses[
@@ -199,7 +204,7 @@ def test_gateway_contract_routes_inventory_through_iterator_and_measured_diagnos
     ] == 5
     assert uses[
         "math-dependency-graph._rtx.interface.scripts-next-inventory-unit"
-    ] == 3
+    ] == 4
     assert uses[
         "math-dependency-graph._rtx.interface.scripts-record-run-diagnostics"
     ] == 8

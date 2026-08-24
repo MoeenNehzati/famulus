@@ -20,6 +20,7 @@ from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 try:
     from ._batch_ir_merger import (
         _load_fragment_manifest,
+        InventoryFragmentValidationError,
         ValidationReportError,
         WorkerFragmentLoadError,
         apply_semantic_repair,
@@ -31,6 +32,7 @@ try:
     from ._extraction_chunk_planner import plan_extract_packet
     from ._graph_builder import main as render_graph
     from ._inventory_unit_iterator import (
+        authorize_completed_inventory_retry,
         load_iterator_diagnostics,
         load_iterator_summary,
         verify_completed_inventories,
@@ -43,6 +45,7 @@ try:
 except ImportError:  # pragma: no cover - direct script execution
     from _batch_ir_merger import (
         _load_fragment_manifest,
+        InventoryFragmentValidationError,
         ValidationReportError,
         WorkerFragmentLoadError,
         apply_semantic_repair,
@@ -54,6 +57,7 @@ except ImportError:  # pragma: no cover - direct script execution
     from _extraction_chunk_planner import plan_extract_packet
     from _graph_builder import main as render_graph
     from _inventory_unit_iterator import (
+        authorize_completed_inventory_retry,
         load_iterator_diagnostics,
         load_iterator_summary,
         verify_completed_inventories,
@@ -704,6 +708,29 @@ def advance_inventory(iterator_state_dir: Path, run_dir: Path) -> dict:
                     chunk_manifest=chunk_manifest,
                 )
                 write_json_atomic(inventory, inventory_path)
+        except InventoryFragmentValidationError as error:
+            worker = next(
+                (
+                    assignment["worker_index"]
+                    for assignment in load_iterator_summary(iterator_state_dir)[
+                        "assignments"
+                    ]
+                    if f"iterator-worker-{assignment['worker_index']:03d}"
+                    == error.chunk_id
+                ),
+                None,
+            )
+            if worker is None:
+                raise ValueError(
+                    "pooling rejection does not identify an assigned inventory worker"
+                ) from error
+            authorize_completed_inventory_retry(
+                iterator_state_dir,
+                worker,
+                retry_code="validation-failed",
+            )
+            recoverable_pooling_failure = True
+            raise
         except ValueError:
             recoverable_pooling_failure = True
             raise

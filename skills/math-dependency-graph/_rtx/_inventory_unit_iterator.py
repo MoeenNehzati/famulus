@@ -39,7 +39,10 @@ except ImportError:  # pragma: no cover - supports direct script execution
 SCANNER_VERSION = 1
 SCHEMA_VERSION = 3
 SETUP_INTERFACE_VERSION = 5
-NEXT_INTERFACE_VERSION = 3
+NEXT_INTERFACE_VERSION = 4
+_COMPLETED_ACK_RETRY_CODE = "validation-failed"
+_SEQUENCE_DELTA_SCHEMA_VERSION = "1"
+_SEQUENCE_DELTA_SCHEMA_KEY = "sequence_delta_schema_version"
 _SOURCE_MARKER_RE = re.compile(r"^@@ source: (?P<source>.+)$")
 _SOURCE_LINE_RE = re.compile(r"^(?P<line>[0-9]+) \| ?(?P<text>.*)$")
 _BEGIN_RE = re.compile(r"\\begin\{(?P<name>[A-Za-z@][A-Za-z0-9@*:-]*)\}")
@@ -785,7 +788,8 @@ def _create_schema(connection: sqlite3.Connection) -> None:
             unit_id TEXT NOT NULL UNIQUE,
             leased_at TEXT NOT NULL,
             before_sha256 TEXT,
-            before_counts_json TEXT
+            before_counts_json TEXT,
+            before_snapshot_json TEXT
         );
         CREATE TABLE acknowledgements (
             id INTEGER PRIMARY KEY,
@@ -798,12 +802,36 @@ def _create_schema(connection: sqlite3.Connection) -> None:
             response_json TEXT NOT NULL,
             UNIQUE(worker_index, unit_id)
         );
+        CREATE TABLE acknowledgement_reauthentications (
+            id INTEGER PRIMARY KEY,
+            worker_index INTEGER NOT NULL,
+            unit_id TEXT NOT NULL,
+            retry_code TEXT NOT NULL,
+            prior_content_sha256 TEXT NOT NULL,
+            content_sha256 TEXT NOT NULL,
+            semantic_counts_json TEXT NOT NULL,
+            reauthenticated_at TEXT NOT NULL
+        );
+        CREATE TABLE completed_retry_authorizations (
+            id INTEGER PRIMARY KEY,
+            worker_index INTEGER NOT NULL,
+            unit_id TEXT NOT NULL,
+            wrapped INTEGER NOT NULL,
+            retry_code TEXT NOT NULL,
+            inventory_path TEXT NOT NULL,
+            prior_content_sha256 TEXT NOT NULL,
+            rejected_content_sha256 TEXT NOT NULL,
+            authorized_at TEXT NOT NULL,
+            consumed_at TEXT,
+            replacement_content_sha256 TEXT
+        );
         CREATE TABLE open_attention_sequences (
             worker_index INTEGER PRIMARY KEY,
             first_unit_id TEXT NOT NULL,
             opened_at TEXT NOT NULL,
             before_sha256 TEXT,
-            before_counts_json TEXT
+            before_counts_json TEXT,
+            before_snapshot_json TEXT
         );
         CREATE TABLE attention_sequences (
             id INTEGER PRIMARY KEY,
@@ -836,6 +864,81 @@ def _create_schema(connection: sqlite3.Connection) -> None:
         );
         """
     )
+    _ensure_sequence_delta_schema(connection)
+    connection.execute(
+        "INSERT INTO metadata (key, value) VALUES (?, ?)",
+        (_SEQUENCE_DELTA_SCHEMA_KEY, _SEQUENCE_DELTA_SCHEMA_VERSION),
+    )
+
+
+def _ensure_sequence_delta_schema(connection: sqlite3.Connection) -> None:
+    """Install additive snapshot storage and immutable sequence delta artifacts."""
+
+    required_columns = {
+        "leases": "before_snapshot_json TEXT",
+        "open_attention_sequences": "before_snapshot_json TEXT",
+    }
+    for table, definition in required_columns.items():
+        existing = {
+            row[1] for row in connection.execute(f"PRAGMA table_info({table})")
+        }
+        column = definition.split()[0]
+        if column not in existing:
+            connection.execute(f"ALTER TABLE {table} ADD COLUMN {definition}")
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS sequence_delta_artifacts ("
+        "sequence_id INTEGER PRIMARY KEY, before_snapshot_json TEXT NOT NULL, "
+        "after_snapshot_json TEXT NOT NULL, before_manifest_json TEXT NOT NULL, "
+        "after_manifest_json TEXT NOT NULL, delta_json TEXT NOT NULL)"
+    )
+    connection.execute(
+        "CREATE TRIGGER IF NOT EXISTS sequence_delta_artifacts_no_update "
+        "BEFORE UPDATE ON sequence_delta_artifacts BEGIN "
+        "SELECT RAISE(ABORT, 'sequence delta artifacts are immutable'); END"
+    )
+    connection.execute(
+        "CREATE TRIGGER IF NOT EXISTS sequence_delta_artifacts_no_delete "
+        "BEFORE DELETE ON sequence_delta_artifacts BEGIN "
+        "SELECT RAISE(ABORT, 'sequence delta artifacts are immutable'); END"
+    )
+    connection.execute(
+        "CREATE TRIGGER IF NOT EXISTS sequence_delta_artifacts_no_replace "
+        "BEFORE INSERT ON sequence_delta_artifacts WHEN EXISTS ("
+        "SELECT 1 FROM sequence_delta_artifacts WHERE sequence_id = NEW.sequence_id) "
+        "BEGIN SELECT RAISE(ABORT, 'sequence delta artifacts are immutable'); END"
+    )
+
+
+def _migrate_sequence_delta_schema(database: Path) -> None:
+    """Install the delta schema on iterator state created before this feature."""
+
+    with sqlite3.connect(database, timeout=10) as connection:
+        marker = connection.execute(
+            "SELECT value FROM metadata WHERE key = ?",
+            (_SEQUENCE_DELTA_SCHEMA_KEY,),
+        ).fetchone()
+        if marker == (_SEQUENCE_DELTA_SCHEMA_VERSION,):
+            return
+        if marker is not None:
+            raise ValueError(
+                f"unsupported sequence delta schema version: {marker[0]}"
+            )
+        connection.execute("BEGIN IMMEDIATE")
+        marker = connection.execute(
+            "SELECT value FROM metadata WHERE key = ?",
+            (_SEQUENCE_DELTA_SCHEMA_KEY,),
+        ).fetchone()
+        if marker == (_SEQUENCE_DELTA_SCHEMA_VERSION,):
+            return
+        if marker is not None:
+            raise ValueError(
+                f"unsupported sequence delta schema version: {marker[0]}"
+            )
+        _ensure_sequence_delta_schema(connection)
+        connection.execute(
+            "INSERT INTO metadata (key, value) VALUES (?, ?)",
+            (_SEQUENCE_DELTA_SCHEMA_KEY, _SEQUENCE_DELTA_SCHEMA_VERSION),
+        )
 
 
 def _validate_state(summary: dict, state_dir: Path) -> None:
@@ -1511,6 +1614,199 @@ def _inventory_snapshot(
     }
 
 
+def _canonical_snapshot_json(snapshot: dict) -> str:
+    """Encode one validated cumulative inventory snapshot for durable storage."""
+
+    return canonical_json_bytes(snapshot["payload"]).decode("utf-8")
+
+
+def _snapshot_manifest(snapshot: dict) -> dict:
+    """Return whole-payload and stable per-record hashes for one snapshot."""
+
+    records: dict[str, dict[str, str]] = {}
+    for kind in ("nodes", "edges", "gaps"):
+        records[kind] = {
+            record["local_id"]: hashlib.sha256(
+                canonical_json_bytes(record)
+            ).hexdigest()
+            for record in sorted(
+                snapshot["payload"][kind], key=lambda item: item["local_id"]
+            )
+        }
+    return {
+        "payload_sha256": snapshot["sha256"],
+        "counts": snapshot["counts"],
+        "records": records,
+    }
+
+
+def _delta_record_ids(before: list[dict], after: list[dict]) -> dict[str, list[str]]:
+    """Classify cumulative records by stable local identity."""
+
+    before_by_id = {record["local_id"]: record for record in before}
+    after_by_id = {record["local_id"]: record for record in after}
+    shared = before_by_id.keys() & after_by_id.keys()
+    return {
+        "added": sorted(after_by_id.keys() - before_by_id.keys()),
+        "changed": sorted(
+            record_id
+            for record_id in shared
+            if canonical_json_bytes(before_by_id[record_id])
+            != canonical_json_bytes(after_by_id[record_id])
+        ),
+        "deleted": sorted(before_by_id.keys() - after_by_id.keys()),
+        "unchanged": sorted(
+            record_id
+            for record_id in shared
+            if canonical_json_bytes(before_by_id[record_id])
+            == canonical_json_bytes(after_by_id[record_id])
+        ),
+    }
+
+
+def _endpoint_records(before: dict, after: dict) -> dict[str, dict]:
+    """Preserve both sides of every local edge endpoint used by a sequence."""
+
+    before_nodes = {record["local_id"]: record for record in before["nodes"]}
+    after_nodes = {record["local_id"]: record for record in after["nodes"]}
+    endpoint_ids: set[str] = set()
+    for snapshot in (before, after):
+        for edge in snapshot["edges"]:
+            for endpoint in (edge["from"], edge["to"]):
+                local_node = endpoint.get("local_node")
+                if local_node is not None:
+                    endpoint_ids.add(local_node)
+    result: dict[str, dict] = {}
+    for local_id in sorted(endpoint_ids):
+        sides: dict[str, dict] = {}
+        if local_id in before_nodes:
+            sides["before"] = before_nodes[local_id]
+        if local_id in after_nodes:
+            sides["after"] = after_nodes[local_id]
+        result[local_id] = sides
+    return result
+
+
+def _sequence_delta(before: dict, after: dict) -> dict:
+    """Derive a location-independent delta between cumulative inventories."""
+
+    return {
+        "nodes": _delta_record_ids(before["nodes"], after["nodes"]),
+        "edges": _delta_record_ids(before["edges"], after["edges"]),
+        "gaps": _delta_record_ids(before["gaps"], after["gaps"]),
+        "endpoint_records": _endpoint_records(before, after),
+    }
+
+
+def _ensure_completed_retry_schema(connection: sqlite3.Connection) -> None:
+    """Install append-only retry authorization tables for compatible old state."""
+
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS acknowledgement_reauthentications ("
+        "id INTEGER PRIMARY KEY, worker_index INTEGER NOT NULL, "
+        "unit_id TEXT NOT NULL, retry_code TEXT NOT NULL, "
+        "prior_content_sha256 TEXT NOT NULL, content_sha256 TEXT NOT NULL, "
+        "semantic_counts_json TEXT NOT NULL, reauthenticated_at TEXT NOT NULL)"
+    )
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS completed_retry_authorizations ("
+        "id INTEGER PRIMARY KEY, worker_index INTEGER NOT NULL, "
+        "unit_id TEXT NOT NULL, wrapped INTEGER NOT NULL, retry_code TEXT NOT NULL, "
+        "inventory_path TEXT NOT NULL, prior_content_sha256 TEXT NOT NULL, "
+        "rejected_content_sha256 TEXT NOT NULL, authorized_at TEXT NOT NULL, "
+        "consumed_at TEXT, replacement_content_sha256 TEXT)"
+    )
+
+
+def authorize_completed_inventory_retry(
+    state_dir: Path,
+    worker_index: int,
+    *,
+    retry_code: str,
+    utc_now: Callable[[], datetime] = _utc_now,
+) -> dict:
+    """Bind one controller-observed pooling rejection to a completed worker artifact."""
+
+    if retry_code != _COMPLETED_ACK_RETRY_CODE:
+        raise ValueError("completed inventory retry code is not allowed")
+    state_dir = state_dir.resolve()
+    database = state_dir / "iterator.sqlite3"
+    if not database.is_file():
+        raise ValueError("iterator completion state is unavailable")
+    with sqlite3.connect(database, timeout=10) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        _ensure_completed_retry_schema(connection)
+        assignment = connection.execute(
+            "SELECT first_unit_id, last_unit_id, complete FROM assignments "
+            "WHERE worker_index = ?",
+            (worker_index,),
+        ).fetchone()
+        if assignment is None or not assignment[2]:
+            raise ValueError("retry authorization requires a completed worker")
+        first_ordinal = connection.execute(
+            "SELECT ordinal FROM units WHERE id = ?", (assignment[0],)
+        ).fetchone()[0]
+        last_ordinal = connection.execute(
+            "SELECT ordinal FROM units WHERE id = ?", (assignment[1],)
+        ).fetchone()[0]
+        inventory_path = (
+            state_dir / "workers" / f"worker-{worker_index}" / "inventory.json"
+        ).resolve()
+        snapshot = _inventory_snapshot(
+            inventory_path,
+            worker_index,
+            _owned_sources(connection, first_ordinal, last_ordinal),
+            _owned_spans(connection, first_ordinal, last_ordinal),
+        )
+        acknowledgement = connection.execute(
+            "SELECT unit_id, wrapped, content_sha256 FROM acknowledgements "
+            "WHERE worker_index = ? AND unit_id = ?",
+            (worker_index, assignment[1]),
+        ).fetchone()
+        if acknowledgement is None:
+            raise ValueError("retry authorization requires a final acknowledgement")
+        accepted = connection.execute(
+            "SELECT content_sha256 FROM acknowledgement_reauthentications "
+            "WHERE worker_index = ? AND unit_id = ? ORDER BY id DESC LIMIT 1",
+            (worker_index, assignment[1]),
+        ).fetchone()
+        prior_sha256 = accepted[0] if accepted is not None else acknowledgement[2]
+        if snapshot["sha256"] != prior_sha256:
+            raise ValueError("retry authorization requires the authenticated artifact")
+        existing = connection.execute(
+            "SELECT id FROM completed_retry_authorizations "
+            "WHERE worker_index = ? AND consumed_at IS NULL ORDER BY id DESC LIMIT 1",
+            (worker_index,),
+        ).fetchone()
+        if existing is None:
+            cursor = connection.execute(
+                "INSERT INTO completed_retry_authorizations "
+                "(worker_index, unit_id, wrapped, retry_code, inventory_path, "
+                "prior_content_sha256, rejected_content_sha256, authorized_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    worker_index,
+                    assignment[1],
+                    int(acknowledgement[1]),
+                    retry_code,
+                    str(inventory_path),
+                    prior_sha256,
+                    snapshot["sha256"],
+                    _timestamp(utc_now()),
+                ),
+            )
+            authorization_id = int(cursor.lastrowid)
+        else:
+            authorization_id = int(existing[0])
+        connection.commit()
+    return {
+        "worker_index": worker_index,
+        "unit_id": assignment[1],
+        "retry_code": retry_code,
+        "authorization_id": authorization_id,
+    }
+
+
 def verify_completed_inventories(state_dir: Path) -> dict:
     """Authenticate completed worker fragments against their final acknowledgements.
 
@@ -1612,10 +1908,27 @@ def verify_completed_inventories(state_dir: Path) -> dict:
                     raise ValueError(
                         f"worker final acknowledgement is invalid: {worker_index}"
                     ) from error
-                if (
-                    snapshot["sha256"] != acknowledgement[0]
-                    or snapshot["counts"] != acknowledged_counts
-                ):
+                reauthentication_table = connection.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' "
+                    "AND name = 'acknowledgement_reauthentications'"
+                ).fetchone()
+                if reauthentication_table is not None:
+                    reauthentication = connection.execute(
+                        "SELECT content_sha256, semantic_counts_json "
+                        "FROM acknowledgement_reauthentications "
+                        "WHERE worker_index = ? AND unit_id = ? "
+                        "ORDER BY id DESC LIMIT 1",
+                        (worker_index, last_unit_id),
+                    ).fetchone()
+                    if reauthentication is not None:
+                        try:
+                            acknowledged_counts = json.loads(reauthentication[1])
+                        except (TypeError, json.JSONDecodeError) as error:
+                            raise ValueError(
+                                f"worker final reauthentication is invalid: {worker_index}"
+                            ) from error
+                        acknowledgement = reauthentication
+                if snapshot["sha256"] != acknowledgement[0] or snapshot["counts"] != acknowledged_counts:
                     raise ValueError(
                         "worker inventory does not match its final acknowledgement: "
                         f"{worker_index}"
@@ -1703,6 +2016,7 @@ def _open_or_close_sequence(
     unit_id: str,
     lease_before_sha256: str | None,
     lease_before_counts: str | None,
+    lease_before_snapshot: str | None,
     snapshot: dict,
     closure_reason: str | None,
     now: str,
@@ -1735,23 +2049,42 @@ def _open_or_close_sequence(
         constructs: "Builds the measured unit span persisted when an open attention sequence closes."
     """
     open_row = connection.execute(
-        "SELECT first_unit_id, opened_at, before_sha256, before_counts_json "
+        "SELECT first_unit_id, opened_at, before_sha256, before_counts_json, "
+        "before_snapshot_json "
         "FROM open_attention_sequences WHERE worker_index = ?",
         (worker_index,),
     ).fetchone()
     if open_row is None:
+        if lease_before_snapshot is None:
+            raise ValueError("attention sequence is missing its cumulative open snapshot")
         connection.execute(
             "INSERT INTO open_attention_sequences "
-            "(worker_index, first_unit_id, opened_at, before_sha256, before_counts_json) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (worker_index, unit_id, now, lease_before_sha256, lease_before_counts),
+            "(worker_index, first_unit_id, opened_at, before_sha256, "
+            "before_counts_json, before_snapshot_json) VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                worker_index,
+                unit_id,
+                now,
+                lease_before_sha256,
+                lease_before_counts,
+                lease_before_snapshot,
+            ),
         )
-        open_row = (unit_id, now, lease_before_sha256, lease_before_counts)
+        open_row = (
+            unit_id,
+            now,
+            lease_before_sha256,
+            lease_before_counts,
+            lease_before_snapshot,
+        )
+    first_unit_id, opened_at, before_sha256, before_counts, before_snapshot = open_row
+    if before_snapshot is None:
+        raise ValueError("attention sequence is missing its cumulative open snapshot")
     if closure_reason is None:
         return
-    first_unit_id, opened_at, before_sha256, before_counts = open_row
+    before_payload = json.loads(before_snapshot)
     unit_count, character_count = _sequence_totals(connection, first_unit_id, unit_id)
-    connection.execute(
+    sequence = connection.execute(
         "INSERT INTO attention_sequences "
         "(worker_index, first_unit_id, last_unit_id, unit_count, character_count, "
         "opened_at, closed_at, before_sha256, before_counts_json, after_sha256, "
@@ -1773,6 +2106,41 @@ def _open_or_close_sequence(
         ),
     )
     connection.execute(
+        "INSERT INTO sequence_delta_artifacts "
+        "(sequence_id, before_snapshot_json, after_snapshot_json, "
+        "before_manifest_json, after_manifest_json, delta_json) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            sequence.lastrowid,
+            before_snapshot,
+            _canonical_snapshot_json(snapshot),
+            json.dumps(
+                _snapshot_manifest(
+                    {
+                        "payload": before_payload,
+                        "sha256": before_sha256,
+                        "counts": json.loads(before_counts),
+                    }
+                ),
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            json.dumps(
+                _snapshot_manifest(snapshot),
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            json.dumps(
+                _sequence_delta(before_payload, snapshot["payload"]),
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+        ),
+    )
+    connection.execute(
         "DELETE FROM open_attention_sequences WHERE worker_index = ?", (worker_index,)
     )
 
@@ -1782,7 +2150,7 @@ def _lease_before_snapshot(
     worker_index: int,
     owned_sources: list[str],
     owned_spans: list[dict],
-) -> tuple[str | None, str | None]:
+) -> dict | None:
     """Capture optional inventory evidence before issuing a lease.
 
     Intent
@@ -1815,8 +2183,8 @@ def _lease_before_snapshot(
             path, worker_index, owned_sources, owned_spans
         )
     except ValueError:
-        return None, None
-    return snapshot["sha256"], json.dumps(snapshot["counts"], sort_keys=True)
+        return None
+    return snapshot
 
 
 @contextmanager
@@ -1941,6 +2309,7 @@ def _next_inventory_unit_core(
     *,
     ack: str | None = None,
     wrap: bool = False,
+    retry_code: str | None = None,
     clock_ns: Callable[[], int],
     utc_now: Callable[[], datetime],
     timings: dict[str, int],
@@ -2014,6 +2383,14 @@ def _next_inventory_unit_core(
             precondition_failure = _failure(
                 "wrap-requires-ack", "wrap is valid only with an acknowledgement"
             )
+        elif retry_code is not None and ack is None:
+            precondition_failure = _failure(
+                "retry-requires-ack", "retry code is valid only with an acknowledgement"
+            )
+        elif retry_code not in (None, _COMPLETED_ACK_RETRY_CODE):
+            precondition_failure = _failure(
+                "invalid-retry-code", "completed acknowledgement retry code is not allowed"
+            )
         elif not database.is_file():
             precondition_failure = _failure(
                 "missing-state", "iterator database is missing"
@@ -2028,6 +2405,7 @@ def _next_inventory_unit_core(
     now = _timestamp(utc_now())
     transaction_start = clock_ns()
     try:
+        _migrate_sequence_delta_schema(database)
         with sqlite3.connect(database, timeout=10) as connection:
             connection.execute("BEGIN IMMEDIATE")
 
@@ -2066,7 +2444,8 @@ def _next_inventory_unit_core(
                         / "inventory.json"
                     )
                     lease = connection.execute(
-                        "SELECT unit_id, before_sha256, before_counts_json "
+                        "SELECT unit_id, before_sha256, before_counts_json, "
+                        "before_snapshot_json "
                         "FROM leases WHERE worker_index = ?",
                         (worker_index,),
                     ).fetchone()
@@ -2094,26 +2473,37 @@ def _next_inventory_unit_core(
                                 "worker cursor is outside its assignment",
                             )
                         )
-                    before_sha256, before_counts = _lease_before_snapshot(
+                    before_snapshot = _lease_before_snapshot(
                         inventory_path, worker_index, sources, spans
                     )
                     connection.execute(
                         "INSERT INTO leases "
                         "(worker_index, unit_id, leased_at, before_sha256, "
-                        "before_counts_json) VALUES (?, ?, ?, ?, ?)",
+                        "before_counts_json, before_snapshot_json) "
+                        "VALUES (?, ?, ?, ?, ?, ?)",
                         (
                             worker_index,
                             unit["id"],
                             now,
-                            before_sha256,
-                            before_counts,
+                            None if before_snapshot is None else before_snapshot["sha256"],
+                            (
+                                None
+                                if before_snapshot is None
+                                else json.dumps(before_snapshot["counts"], sort_keys=True)
+                            ),
+                            (
+                                None
+                                if before_snapshot is None
+                                else _canonical_snapshot_json(before_snapshot)
+                            ),
                         ),
                     )
                     response = _lease_response(unit)
                 return commit_response(response)
 
             latest_ack = connection.execute(
-                "SELECT unit_id, wrapped, response_json FROM acknowledgements "
+                "SELECT unit_id, wrapped, response_json, content_sha256 "
+                "FROM acknowledgements "
                 "WHERE worker_index = ? ORDER BY id DESC LIMIT 1",
                 (worker_index,),
             ).fetchone()
@@ -2126,7 +2516,94 @@ def _next_inventory_unit_core(
                         )
                     )
                 details["retry"] = True
+                if retry_code is not None:
+                    if not complete or ack != last_unit_id:
+                        return commit_response(
+                            _failure(
+                                "retry-requires-completion",
+                                "validation retry can reauthenticate only the completed final unit",
+                            )
+                        )
+                    try:
+                        with _timed_iterator_call_part(timings, "validation", clock_ns):
+                            snapshot = _inventory_snapshot(
+                                inventory_path, worker_index, sources, spans
+                            )
+                    except ValueError as error:
+                        return commit_response(_failure("invalid-inventory", str(error)))
+                    _ensure_completed_retry_schema(connection)
+                    prior = connection.execute(
+                        "SELECT content_sha256 FROM acknowledgement_reauthentications "
+                        "WHERE worker_index = ? AND unit_id = ? ORDER BY id DESC LIMIT 1",
+                        (worker_index, ack),
+                    ).fetchone()
+                    prior_sha256 = prior[0] if prior is not None else latest_ack[3]
+                    authorization = connection.execute(
+                        "SELECT id, unit_id, wrapped, retry_code, inventory_path, "
+                        "prior_content_sha256, rejected_content_sha256, consumed_at, "
+                        "replacement_content_sha256 FROM completed_retry_authorizations "
+                        "WHERE worker_index = ? ORDER BY id DESC LIMIT 1",
+                        (worker_index,),
+                    ).fetchone()
+                    expected_authorization = (
+                        authorization is not None
+                        and authorization[1] == ack
+                        and bool(authorization[2]) == wrap
+                        and authorization[3] == retry_code
+                        and Path(authorization[4]).resolve() == inventory_path
+                        and authorization[5] == prior_sha256
+                    )
+                    if not expected_authorization:
+                        return commit_response(
+                            _failure(
+                                "unauthorized-retry",
+                                "completed acknowledgement retry is not controller-authorized",
+                            )
+                        )
+                    if authorization[7] is not None:
+                        if authorization[8] != snapshot["sha256"]:
+                            return commit_response(
+                                _failure(
+                                    "unauthorized-retry",
+                                    "consumed retry authorization does not match current inventory",
+                                )
+                            )
+                        return commit_response(json.loads(latest_ack[2]))
+                    if snapshot["sha256"] == authorization[6]:
+                        return commit_response(
+                            _failure(
+                                "retry-artifact-unchanged",
+                                "authorized retry requires a corrected inventory artifact",
+                            )
+                        )
+                    connection.execute(
+                        "INSERT INTO acknowledgement_reauthentications "
+                        "(worker_index, unit_id, retry_code, prior_content_sha256, "
+                        "content_sha256, semantic_counts_json, reauthenticated_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            worker_index,
+                            ack,
+                            retry_code,
+                            prior_sha256,
+                            snapshot["sha256"],
+                            json.dumps(snapshot["counts"], sort_keys=True),
+                            now,
+                        ),
+                    )
+                    connection.execute(
+                        "UPDATE completed_retry_authorizations SET consumed_at = ?, "
+                        "replacement_content_sha256 = ? WHERE id = ?",
+                        (now, snapshot["sha256"], authorization[0]),
+                    )
                 return commit_response(json.loads(latest_ack[2]))
+            if retry_code is not None:
+                return commit_response(
+                    _failure(
+                        "unexpected-retry",
+                        "validation retry does not match the completed final acknowledgement",
+                    )
+                )
             if lease is None or lease[0] != ack:
                 return commit_response(
                     _failure(
@@ -2147,18 +2624,26 @@ def _next_inventory_unit_core(
                 "SELECT ordinal FROM units WHERE id = ?", (ack,)
             ).fetchone()[0]
             final = unit_ordinal == last_ordinal
-            _open_or_close_sequence(
-                connection,
-                worker_index=worker_index,
-                unit_id=ack,
-                lease_before_sha256=lease[1],
-                lease_before_counts=lease[2],
-                snapshot=snapshot,
-                closure_reason=(
-                    "end-of-source" if final else ("worker-wrap" if wrap else None)
-                ),
-                now=now,
-            )
+            try:
+                _open_or_close_sequence(
+                    connection,
+                    worker_index=worker_index,
+                    unit_id=ack,
+                    lease_before_sha256=lease[1],
+                    lease_before_counts=lease[2],
+                    lease_before_snapshot=lease[3],
+                    snapshot=snapshot,
+                    closure_reason=(
+                        "end-of-source" if final else ("worker-wrap" if wrap else None)
+                    ),
+                    now=now,
+                )
+            except ValueError as error:
+                if str(error) == "attention sequence is missing its cumulative open snapshot":
+                    return commit_response(
+                        _failure("missing-sequence-baseline", str(error))
+                    )
+                raise
 
             next_ordinal = unit_ordinal + 1
             connection.execute(
@@ -2173,19 +2658,29 @@ def _next_inventory_unit_core(
                 )
             else:
                 unit = _unit_for_ordinal(connection, next_ordinal)
-                before_sha256, before_counts = _lease_before_snapshot(
+                before_snapshot = _lease_before_snapshot(
                     inventory_path, worker_index, sources, spans
                 )
                 connection.execute(
                     "INSERT INTO leases "
                     "(worker_index, unit_id, leased_at, before_sha256, "
-                    "before_counts_json) VALUES (?, ?, ?, ?, ?)",
+                    "before_counts_json, before_snapshot_json) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
                     (
                         worker_index,
                         unit["id"],
                         now,
-                        before_sha256,
-                        before_counts,
+                        None if before_snapshot is None else before_snapshot["sha256"],
+                        (
+                            None
+                            if before_snapshot is None
+                            else json.dumps(before_snapshot["counts"], sort_keys=True)
+                        ),
+                        (
+                            None
+                            if before_snapshot is None
+                            else _canonical_snapshot_json(before_snapshot)
+                        ),
                     ),
                 )
                 connection.execute(
@@ -2226,6 +2721,7 @@ def _next_inventory_unit_response(
     *,
     ack: str | None = None,
     wrap: bool = False,
+    retry_code: str | None = None,
     clock_ns: Callable[[], int] = time.monotonic_ns,
     utc_now: Callable[[], datetime] = _utc_now,
 ) -> _IteratorCallResponse:
@@ -2245,6 +2741,7 @@ def _next_inventory_unit_response(
         worker_index,
         ack=ack,
         wrap=wrap,
+        retry_code=retry_code,
         clock_ns=clock_ns,
         utc_now=utc_now,
         timings=timings,
@@ -2259,6 +2756,7 @@ def next_inventory_unit(
     *,
     ack: str | None = None,
     wrap: bool = False,
+    retry_code: str | None = None,
     clock_ns: Callable[[], int] = time.monotonic_ns,
     utc_now: Callable[[], datetime] = _utc_now,
 ) -> dict:
@@ -2269,6 +2767,7 @@ def next_inventory_unit(
         worker_index,
         ack=ack,
         wrap=wrap,
+        retry_code=retry_code,
         clock_ns=clock_ns,
         utc_now=utc_now,
     )
@@ -2445,6 +2944,7 @@ def main(
     next_unit.add_argument("worker_index", type=_positive_integer)
     next_unit.add_argument("--ack")
     next_unit.add_argument("--wrap", action="store_true")
+    next_unit.add_argument("--retry-code", choices=[_COMPLETED_ACK_RETRY_CODE])
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     if args.operation == "setup":
@@ -2460,7 +2960,11 @@ def main(
         if args.wrap and args.ack is None:
             parser.error("next --wrap requires --ack")
         boundary = _next_inventory_unit_response(
-            Path(args.state_dir), args.worker_index, ack=args.ack, wrap=args.wrap
+            Path(args.state_dir),
+            args.worker_index,
+            ack=args.ack,
+            wrap=args.wrap,
+            retry_code=args.retry_code,
         )
         sys.stdout.write(boundary.serialized)
         return 0

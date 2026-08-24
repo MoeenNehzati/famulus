@@ -55,7 +55,7 @@ namespace_exports:
       allowed_callers: []
     surface:
       only:
-        math-dependency-graph._rtx.interface.scripts-advance-extraction-phases: 27
+        math-dependency-graph._rtx.interface.scripts-advance-extraction-phases: 28
         math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph: 4
         math-dependency-graph._rtx.interface.scripts-compile-semantic-graph: 6
         math-dependency-graph._rtx.interface.scripts-extract-mathjax-macros: 1
@@ -64,7 +64,7 @@ namespace_exports:
         math-dependency-graph._rtx.interface.scripts-prepare-semantic-source: 4
         math-dependency-graph._rtx.interface.scripts-record-run-diagnostics: 8
         math-dependency-graph._rtx.interface.scripts-setup-inventory-iterator: 5
-        math-dependency-graph._rtx.interface.scripts-next-inventory-unit: 3
+        math-dependency-graph._rtx.interface.scripts-next-inventory-unit: 4
         math-dependency-graph._rtx.interface.scripts-normalize-proofs: 2
         math-dependency-graph._rtx.interface.scripts-serve-graph: 1
     interface_access:

@@ -1,7 +1,7 @@
 schema_version: 6
 node_type: behavioral_source
 id: math-dependency-graph._rtx.source.rtx-extraction-phase-driver
-version: 31
+version: 33
 description: Deterministically prepares inventory, preserves retryable diagnostics
   after worker-local inventory rejection, routes malformed or non-object extract output
   to a fresh normal extract retry, returns stable per-job progress-sidecar paths through
@@ -25,6 +25,12 @@ dependencies:
   reason: Validates and pools ordered inventory fragments.
   source: math-dependency-graph._rtx.source.rtx-batch-ir-merger
   version: 22
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-inventory-unit-iterator.yaml
+  reason: Authenticates completed worker artifacts and durably authorizes only the worker rejected during public pooling.
+  source: math-dependency-graph._rtx.source.rtx-inventory-unit-iterator
+  version: 7
 - blueprint:
     base: module-root
     path: blueprints/rtx-extraction-chunk-planner.yaml
@@ -74,7 +80,7 @@ interfaces:
     content:
     - _extraction_phase_driver\.py
     uses_interfaces: []
-    version: 27
+    version: 28
     description: Prepare one iterator setup assignment, keep worker-local inventory
       rejection open for durable retry, advance completed iterator state to one entrypoint-bearing extract
       packet, or validate extract output and return a progress-preserving fresh retry

@@ -71,6 +71,14 @@ class WorkerFragmentLoadError(ValidationReportError):
         )
 
 
+class InventoryFragmentValidationError(ValueError):
+    """Identify an inventory fragment whose validation failure can be retried."""
+
+    def __init__(self, chunk_id: str, message: str) -> None:
+        self.chunk_id = chunk_id
+        super().__init__(message)
+
+
 def _safe_schema_diagnostic(error: jsonschema.ValidationError, *, label: str) -> dict:
     """Project a library validation error without persisting its instance value."""
 
@@ -1138,7 +1146,10 @@ def pool_inventory_fragments(
                 disambiguate_end=candidate_start_counts[start_key] > 1,
             )
             if candidate_id in pooled_candidate_ids:
-                raise ValueError(f"candidate anchor emitted more than once: {candidate_id}")
+                raise InventoryFragmentValidationError(
+                    chunk_id,
+                    f"candidate anchor emitted more than once: {candidate_id}",
+                )
             pooled_candidate_ids.add(candidate_id)
             candidate_ids_by_local[node["local_id"]] = candidate_id
             evidence_id = add_evidence(node["location"], "statement")
