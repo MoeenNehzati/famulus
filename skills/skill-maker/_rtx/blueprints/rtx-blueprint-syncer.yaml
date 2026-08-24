@@ -55,7 +55,7 @@ interfaces:
           - json
           id: read-2
           medium: repository-filesystem
-          path: $repo/references/blueprint/*
+          path: $repo/references/blueprint-schema/*
           path_match: glob
           reason: Validate blueprint graphs and compare the generated runtime dependency
             manifest.
@@ -79,7 +79,7 @@ interfaces:
           - json
           id: write-2
           medium: repository-filesystem
-          path: $repo/references/blueprint/runtime_dependencies.json
+          path: $repo/references/blueprint-schema/runtime_dependencies.json
           path_match: exact
           reason: Refresh the deterministic runtime dependency manifest when --check
             is absent.

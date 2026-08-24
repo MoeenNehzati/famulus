@@ -162,16 +162,16 @@ def test_extract_standard_filters_standard_document_fields() -> None:
             "values": {
                 "title": "Python Module Standard",
                 "standard_version": "1.0.0",
-                    "revision": 19,
+                    "revision": 20,
             },
         }
     ]
 
 
 def test_extract_standard_rejects_a_stale_import_digest(tmp_path: Path) -> None:
-    standards_root = tmp_path / "references" / "standards"
+    standards_root = tmp_path / "references" / "standards-schema"
     node_standards_root = tmp_path / "references" / "node-standards"
-    shutil.copytree(REPO_ROOT / "references" / "standards", standards_root)
+    shutil.copytree(REPO_ROOT / "references" / "standards-schema", standards_root)
     shutil.copytree(
         REPO_ROOT / "references" / "node-standards", node_standards_root
     )

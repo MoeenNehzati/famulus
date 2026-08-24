@@ -124,12 +124,12 @@ def _closure_fixture(
         json.dumps(["src/officina/__init__.py"], indent=2) + "\n",
     )
     _write(tmp_path / "src/officina/__init__.py", officina_content)
-    _write(tmp_path / "references/blueprint/schema.json", "{}\n")
+    _write(tmp_path / "references/blueprint-schema/schema.json", "{}\n")
     if include_module_schema:
-        _write(tmp_path / "references/blueprint/module.schema.json", "{}\n")
+        _write(tmp_path / "references/blueprint-schema/module.schema.json", "{}\n")
     elif module_schema_directory:
         _write(
-            tmp_path / "references/blueprint/module.schema.json/placeholder",
+            tmp_path / "references/blueprint-schema/module.schema.json/placeholder",
             "not a schema file\n",
         )
     _write(
@@ -272,7 +272,7 @@ def test_stale_generated_artifact_is_synchronized_before_check_and_graph(
     """Synchronize stale generated output before the check-only and graph passes."""
 
     changes, manifest = _closure_fixture(tmp_path)
-    target = "references/blueprint/runtime_dependencies.json"
+    target = "references/blueprint-schema/runtime_dependencies.json"
     expected = _empty_runtime_dependencies()
     changes.write_text(target, "stale generated artifact\n")
     calls: list[str] = []
@@ -546,7 +546,7 @@ def test_partial_canonical_marker_requires_the_missing_closure_input(
 ) -> None:
     """A partial Officina fixture cannot silently skip a required closure step."""
 
-    _write(tmp_path / "references/blueprint/schema.json", "{}\n")
+    _write(tmp_path / "references/blueprint-schema/schema.json", "{}\n")
     changes = ChangeSet(tmp_path)
 
     with pytest.raises(
@@ -588,7 +588,7 @@ def test_partial_schema_cannot_fall_back_to_the_live_imported_checkout(
 
     with pytest.raises(
         MechanicalClosureError,
-        match=r"missing closure input: references/blueprint/module\.schema\.json",
+        match=r"missing closure input: references/blueprint-schema/module\.schema\.json",
     ):
         close_projected_relocation(changes, manifest)
 
@@ -655,7 +655,7 @@ def test_plan_absorbs_calculated_closure_categories_into_its_report(
     _write(tmp_path / "plain.py", "VALUE = 1\n")
     result = MechanicalClosureResult(
         certification_basis_changes=("references/certification/certification-basis-roots.json",),
-        generated_artifact_changes=("references/blueprint/runtime_dependencies.json",),
+        generated_artifact_changes=("references/blueprint-schema/runtime_dependencies.json",),
         validation_results=("repository blueprint graph",),
     )
     monkeypatch.setattr(
@@ -670,7 +670,7 @@ def test_plan_absorbs_calculated_closure_categories_into_its_report(
         "references/certification/certification-basis-roots.json"
     ]
     assert report["generated_artifact_changes"] == [
-        "references/blueprint/runtime_dependencies.json"
+        "references/blueprint-schema/runtime_dependencies.json"
     ]
     assert report["validation_results"] == ["repository blueprint graph"]
 
@@ -849,13 +849,13 @@ def _extractor_acceptance_manifest() -> RelocationManifest:
 def _write_extractor_acceptance_fixture(tmp_path: Path) -> dict[str, bytes]:
     """Create only the canonical inputs for one real Officina extractor relocation."""
 
-    for schema in (REPO_ROOT / "references/blueprint").glob("*.json"):
-        destination = tmp_path / "references/blueprint" / schema.name
+    for schema in (REPO_ROOT / "references/blueprint-schema").glob("*.json"):
+        destination = tmp_path / "references/blueprint-schema" / schema.name
         destination.parent.mkdir(parents=True, exist_ok=True)
         _write(destination, schema.read_text(encoding="utf-8"))
     _write(
-        tmp_path / "references/blueprint/config.yaml",
-        (REPO_ROOT / "references/blueprint/config.yaml").read_text(encoding="utf-8"),
+        tmp_path / "references/blueprint-schema/config.yaml",
+        (REPO_ROOT / "references/blueprint-schema/config.yaml").read_text(encoding="utf-8"),
     )
     _write(tmp_path / "src/officina/__init__.py", 'ORIGIN = "shadow"\n')
     _write(tmp_path / "src/officina/common/__init__.py", '"""Common fixture."""\n')
@@ -928,7 +928,7 @@ def _write_extractor_acceptance_fixture(tmp_path: Path) -> dict[str, bytes]:
         json.dumps(["src/officina/__init__.py"], indent=2) + "\n",
     )
     _write(
-        tmp_path / "references/blueprint/runtime_dependencies.json",
+        tmp_path / "references/blueprint-schema/runtime_dependencies.json",
         '{"stale": true}\n',
     )
     return {
@@ -940,7 +940,7 @@ def _write_extractor_acceptance_fixture(tmp_path: Path) -> dict[str, bytes]:
             "consumer.py",
             "unrelated-dirty.md",
             "references/certification/certification-basis-roots.json",
-            "references/blueprint/runtime_dependencies.json",
+            "references/blueprint-schema/runtime_dependencies.json",
         )
     }
 
@@ -953,7 +953,7 @@ def test_one_preflight_closes_real_extractor_relocation_and_is_idempotent(
     before = _write_extractor_acceptance_fixture(tmp_path)
 
     def synchronize(repository: Path, *, check: bool) -> None:
-        target = repository / "references/blueprint/runtime_dependencies.json"
+        target = repository / "references/blueprint-schema/runtime_dependencies.json"
         expected = _empty_runtime_dependencies()
         if not check:
             target.write_text(expected, encoding="utf-8")
@@ -997,14 +997,14 @@ def test_one_preflight_closes_real_extractor_relocation_and_is_idempotent(
         changes.read_text("references/certification/certification-basis-roots.json")
     ) == ["src/officina/__init__.py", "src/officina/standards/__init__.py"]
     runtime_dependencies = json.loads(
-        changes.read_text("references/blueprint/runtime_dependencies.json")
+        changes.read_text("references/blueprint-schema/runtime_dependencies.json")
     )
     assert json.dumps(runtime_dependencies, indent=2) + "\n" == _empty_runtime_dependencies()
     assert changes.report()["certification_basis_changes"] == [
         "references/certification/certification-basis-roots.json"
     ]
     assert changes.report()["generated_artifact_changes"] == [
-        "references/blueprint/runtime_dependencies.json"
+        "references/blueprint-schema/runtime_dependencies.json"
     ]
     assert changes.report()["validation_results"] == [
         "blueprint synchronizer check",

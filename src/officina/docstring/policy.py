@@ -1334,9 +1334,9 @@ def resolve_docstring_schema_path(path: str | Path | None = None) -> Path | None
             base / DOCSTRING_STANDARD_FILE,
             base / DOCSTRING_STANDARD_CANDIDATE_FILE,
             base / DOCSTRING_LEGACY_FORMAT_FILE,
-            base / "standards" / DOCSTRING_STANDARD_FILE,
-            base / "standards" / DOCSTRING_STANDARD_CANDIDATE_FILE,
-            base / "standards" / DOCSTRING_LEGACY_FORMAT_FILE,
+            base / "standards-schema" / DOCSTRING_STANDARD_FILE,
+            base / "standards-schema" / DOCSTRING_STANDARD_CANDIDATE_FILE,
+            base / "standards-schema" / DOCSTRING_LEGACY_FORMAT_FILE,
         ]
 
     module_path = Path(__file__).resolve()

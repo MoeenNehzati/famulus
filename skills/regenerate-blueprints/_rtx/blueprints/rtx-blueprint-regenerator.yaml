@@ -3,9 +3,9 @@ content:
 dependencies:
 - blueprint:
     base: repository-root
-    path: references/blueprint/blueprints/schema-annotated-draft.yaml
+    path: references/blueprint-schema/blueprints/schema-annotated-draft.yaml
   reason: Supplies schema documentation and validation rules for regenerated output.
-  source: blueprint.source.schema-annotated-draft
+  source: blueprint-schema.source.schema-annotated-draft
   version: 1
 description: Loads one existing skill root blueprint, selects its authoring schema,
   refreshes only generated YAML documentation comments, validates the preserved parsed
@@ -59,7 +59,7 @@ interfaces:
           - json
           id: read-2
           medium: local-filesystem
-          path: $repo/references/blueprint/*.schema.json
+          path: $repo/references/blueprint-schema/*.schema.json
           path_match: glob
           reason: Loads the selected authoring schema and every sibling schema needed
             to resolve local JSON Schema references.

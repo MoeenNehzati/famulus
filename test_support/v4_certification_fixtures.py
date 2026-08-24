@@ -383,7 +383,7 @@ def materialize_v4_repository(
         if root.is_dir()
         else GitTestRepository.create(root)
     )
-    schema_root = root / "references" / "blueprint"
+    schema_root = root / "references" / "blueprint-schema"
     shutil.copytree(SOURCE_SCHEMA_ROOT, schema_root)
     certification_root = root / "references" / "certification"
     certification_root.mkdir(parents=True)
@@ -427,7 +427,7 @@ def materialize_v4_repository(
     manifest.parent.mkdir(parents=True)
     manifest.write_text(
         "[\n"
-        '  "references/blueprint/**/*.schema.json",\n'
+        '  "references/blueprint-schema/**/*.schema.json",\n'
         '  "references/certification/node-hash-policy.yaml",\n'
         '  "references/certification/node-hash-policy.schema.json",\n'
         '  "skills/skill-certifier/SKILL.md",\n'
@@ -498,7 +498,7 @@ def create_v4_repository(
         computes: "Hashes the fixture certification basis."
     """
     commit = materialize_v4_repository(root, extra_modules=extra_modules)
-    schema_root = root / "references" / "blueprint"
+    schema_root = root / "references" / "blueprint-schema"
     graph = load_repository_blueprint_graph(
         root,
         schema_root=schema_root,

@@ -667,7 +667,7 @@ def test_projection_selects_generic_exports_and_helper_closure(tmp_path: Path) -
     }
     assert "type:string" in projection.vocabulary
     schema_validator(
-        load_schema("references/blueprint/interface-projection.schema.json")
+        load_schema("references/blueprint-schema/interface-projection.schema.json")
     ).validate(document)
     assert standalone_export_size(run) > 0
 
@@ -728,7 +728,7 @@ def test_projection_with_no_dependencies_is_empty_and_valid(tmp_path: Path) -> N
     assert projection.document["helper_interfaces"] == {}
     assert projection.vocabulary == frozenset()
     schema_validator(
-        load_schema("references/blueprint/interface-projection.schema.json")
+        load_schema("references/blueprint-schema/interface-projection.schema.json")
     ).validate(projection.document)
 
 

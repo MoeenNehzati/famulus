@@ -142,7 +142,7 @@ def validate(repo_root: Path) -> list[str]:
     ):
         return []
 
-    schema_root = repo_root / "references" / "blueprint"
+    schema_root = repo_root / "references" / "blueprint-schema"
     try:
         repository_graph = load_repository_blueprint_graph(
             repo_root,

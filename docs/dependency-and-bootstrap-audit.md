@@ -75,7 +75,7 @@ failure. Core installation creates no recurring jobs, so nothing in this table
 is exercised until a job is deliberately enabled.
 
 The blueprints remain the authoritative direct-dependency declarations. The
-existing blueprint sync generates `references/blueprint/runtime_dependencies.json`.
+existing blueprint sync generates `references/blueprint-schema/runtime_dependencies.json`.
 `scripts/generate-runtime-lock.py` pools every distinct core constraint, adds
 platform markers, and compiles one universal lock. Incompatible duplicate
 constraints fail resolution rather than using declaration order.

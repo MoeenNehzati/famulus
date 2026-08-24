@@ -71,15 +71,15 @@ def _make_skill(repo_root: Path, name: str, domain: str, description: str) -> No
 
 def _seed_docs(repo_root: Path) -> None:
     _write(
-        repo_root / "references/blueprint/config.yaml",
-        (REPO_ROOT / "references/blueprint/config.yaml").read_text(
+        repo_root / "references/blueprint-schema/config.yaml",
+        (REPO_ROOT / "references/blueprint-schema/config.yaml").read_text(
             encoding="utf-8"
         ),
     )
     for schema_name in ("common.schema.json", "module.schema.json"):
         _write(
-            repo_root / "references/blueprint" / schema_name,
-            (REPO_ROOT / "references/blueprint" / schema_name).read_text(
+            repo_root / "references/blueprint-schema" / schema_name,
+            (REPO_ROOT / "references/blueprint-schema" / schema_name).read_text(
                 encoding="utf-8"
             ),
         )
@@ -192,8 +192,8 @@ def _seed_docs(repo_root: Path) -> None:
                 "python3 repo_checks.py --suite validators",
                 ".githooks/pre-commit",
                 "docs/officina/skill-blueprints.md",
-                "references/blueprint/schema.json",
-                "references/blueprint/template.yaml",
+                "references/blueprint-schema/schema.json",
+                "references/blueprint-schema/template.yaml",
                 "docs/officina/scaffolding/README.md",
                 "docs/contributors/documentation-system.md",
                 "## Software Development",
@@ -222,10 +222,10 @@ def _seed_docs(repo_root: Path) -> None:
         ),
     )
     _write(repo_root / "docs/officina/scaffolding/README.md", "# Scaffolding\n")
-    _write(repo_root / "references/blueprint/README.md", "# Blueprint Reference\n")
+    _write(repo_root / "references/blueprint-schema/README.md", "# Blueprint Reference\n")
     _write(repo_root / "docs/officina/skill-blueprints.md", "# Skill Blueprints\n")
-    _write(repo_root / "references/blueprint/schema.json", "{}\n")
-    _write(repo_root / "references/blueprint/template.yaml", "discovery: {}\n")
+    _write(repo_root / "references/blueprint-schema/schema.json", "{}\n")
+    _write(repo_root / "references/blueprint-schema/template.yaml", "discovery: {}\n")
 
 
 def _make_repo(tmp_path: Path) -> Path:

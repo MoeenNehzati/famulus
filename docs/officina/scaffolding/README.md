@@ -43,7 +43,7 @@ are certification state.
 derives:
 
 - blueprint contract and interface blocks in `SKILL.md`;
-- `references/blueprint/runtime_dependencies.json`;
+- `references/blueprint-schema/runtime_dependencies.json`;
 - other registered generated documentation.
 
 Do not edit generated blocks by hand. Run the exported check:
@@ -119,5 +119,5 @@ When changing the architecture or schema:
 - [Skill blueprints](../skill-blueprints.md)
 - [Certification and drift](../certification_and_drift.md)
 - [Blueprint search](../blueprint_search.md)
-- [Blueprint schemas](../../../references/blueprint/README.md)
+- [Blueprint schemas](../../../references/blueprint-schema/README.md)
 - [Layered node standards](../../../references/node-standards/node.standard.yaml)

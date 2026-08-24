@@ -38,7 +38,7 @@ from officina.runtime.python_machine_interface_runner import (  # noqa: E402
     run_python_machine_interface,
 )
 
-SCHEMA_ROOT = Path(__file__).resolve().parents[1] / "references" / "blueprint"
+SCHEMA_ROOT = Path(__file__).resolve().parents[1] / "references" / "blueprint-schema"
 V4_SCHEMA_ROOT = Path(__file__).parent / "fixtures" / "blueprint_schemas" / "v4"
 
 
@@ -833,7 +833,7 @@ def test_route_smoke_schema_version_is_explicit_and_defaults_to_v6(
     )
 
     assert [command[-1] for command in commands] == ["6", "5"]
-    assert Path(commands[0][5]).name == "blueprint"
+    assert Path(commands[0][5]).name == "blueprint-schema"
     assert Path(commands[1][5]).name == "v5"
 
 

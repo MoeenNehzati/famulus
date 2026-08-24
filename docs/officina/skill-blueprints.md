@@ -1,7 +1,7 @@
 # Skill Blueprints
 
 This guide explains the live blueprint model. The schemas under
-[`references/blueprint/`](../../references/blueprint/) remain authoritative for
+[`references/blueprint-schema/`](../../references/blueprint-schema/) remain authoritative for
 field shapes and required values.
 
 ## Model
@@ -222,4 +222,4 @@ relationships.
 - [Certification and drift](certification_and_drift.md)
 - [Blueprint search](blueprint_search.md)
 - [Scaffolding](scaffolding/README.md)
-- [Blueprint schema reference](../../references/blueprint/README.md)
+- [Blueprint schema reference](../../references/blueprint-schema/README.md)

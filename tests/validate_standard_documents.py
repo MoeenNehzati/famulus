@@ -13,7 +13,7 @@ VALIDATOR_PATH = ROOT / "validators" / "standard_documents.py"
 CANONICAL = (
     "references/node-standards/refactoring.standard.yaml",
     "references/document-standards/document-profile.standard.yaml",
-    "references/standards/docstring.standard.yaml",
+    "references/standards-schema/docstring.standard.yaml",
 )
 
 
@@ -36,10 +36,10 @@ def _copy_standard_repo(tmp_path: Path) -> Path:
         if source_rendered.is_file():
             rendered.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source_rendered, rendered)
-    tooling = tmp_path / "references" / "standards"
+    tooling = tmp_path / "references" / "standards-schema"
     tooling.mkdir(parents=True, exist_ok=True)
     for name in ("standard-v6.schema.json", "validate_standard_v6.py", "render_standard_v6.py"):
-        shutil.copy2(ROOT / "references" / "standards" / name, tooling / name)
+        shutil.copy2(ROOT / "references" / "standards-schema" / name, tooling / name)
     return tmp_path
 
 
@@ -257,18 +257,18 @@ def test_rejects_canonical_path_mismatch_at_allowlisted_location(tmp_path):
 def test_fails_closed_when_standards_directory_is_missing(tmp_path):
     errors = _load_validator().validate(tmp_path)
 
-    assert errors == ["references/standards: missing standards tooling directory"]
+    assert errors == ["references/standards-schema: missing standards tooling directory"]
 
 
 def test_fails_closed_when_schema_or_tool_is_missing(tmp_path):
     repo = _copy_standard_repo(tmp_path)
-    (repo / "references/standards/standard-v6.schema.json").unlink()
-    (repo / "references/standards/render_standard_v6.py").unlink()
+    (repo / "references/standards-schema/standard-v6.schema.json").unlink()
+    (repo / "references/standards-schema/render_standard_v6.py").unlink()
 
     errors = _load_validator().validate(repo)
 
-    assert "references/standards/standard-v6.schema.json: missing standards tooling artifact" in errors
-    assert "references/standards/render_standard_v6.py: missing standards tooling artifact" in errors
+    assert "references/standards-schema/standard-v6.schema.json: missing standards tooling artifact" in errors
+    assert "references/standards-schema/render_standard_v6.py: missing standards tooling artifact" in errors
 
 
 def test_fails_closed_when_generated_view_is_missing(tmp_path):

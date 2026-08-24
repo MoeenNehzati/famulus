@@ -290,7 +290,7 @@ def load_catalog_vocabulary(repo_root: Path) -> CatalogVocabulary:
       why:
         constructs: "Supplies dependency position 1, CatalogVocabulary, while transforming repo root into the load catalog vocabulary value."
     """
-    config_path = repo_root / "references" / "blueprint" / "config.yaml"
+    config_path = repo_root / "references" / "blueprint-schema" / "config.yaml"
     if not config_path.is_file():
         raise ValueError(f"{config_path}: blueprint catalog configuration is missing")
     config = load_configuration(config_path)["blueprint_catalog"]
@@ -435,7 +435,7 @@ def load_catalog(repo_root: Path) -> list[SkillInfo]:
     vocabulary = load_catalog_vocabulary(repo_root)
     validate_blueprint = prepare_module_blueprint_loader(
         repo_root,
-        schema_root=repo_root / "references" / "blueprint",
+        schema_root=repo_root / "references" / "blueprint-schema",
         expected_schema_version=6,
     )
     skills: list[SkillInfo] = []

@@ -293,7 +293,7 @@ def validate(repo_root: Path) -> list[str]:
     if not skills_root.is_dir() or not any(skills_root.glob("*/blueprint.yaml")):
         return errors
 
-    schema_root = repo_root / "references" / "blueprint"
+    schema_root = repo_root / "references" / "blueprint-schema"
     try:
         graph = load_repository_blueprint_graph(
             repo_root,

@@ -23,8 +23,8 @@ if TYPE_CHECKING:
 
 
 _BASIS_PATH = "references/certification/certification-basis-roots.json"
-_SCHEMA_PREFIX = "references/blueprint/"
-_MODULE_SCHEMA_PATH = "references/blueprint/module.schema.json"
+_SCHEMA_PREFIX = "references/blueprint-schema/"
+_MODULE_SCHEMA_PATH = "references/blueprint-schema/module.schema.json"
 _SHADOW_EXCLUDED_PARTS = {
     ".agents",
     ".certificates",
@@ -194,7 +194,7 @@ def _require_closure_inputs(shadow_root: Path) -> None:
 
     required = (
         _BASIS_PATH,
-        "references/blueprint",
+        "references/blueprint-schema",
     )
     for relative in required:
         if not (shadow_root / relative).exists():
@@ -308,7 +308,7 @@ def _generated_skill_change(before: bytes, after: bytes, relative: str) -> bool:
 def _allowed_generated_change(relative: str, before: bytes, after: bytes) -> bool:
     """Return whether one synchronizer difference belongs to its narrow allowlist."""
 
-    if relative == "references/blueprint/runtime_dependencies.json":
+    if relative == "references/blueprint-schema/runtime_dependencies.json":
         return True
     parts = PurePosixPath(relative).parts
     return (
@@ -413,7 +413,7 @@ def close_projected_relocation(
         try:
             load_repository_blueprint_graph(
                 shadow_root,
-                schema_root=shadow_root / "references/blueprint",
+                schema_root=shadow_root / "references/blueprint-schema",
                 expected_schema_version=6,
             )
         except Exception as exc:

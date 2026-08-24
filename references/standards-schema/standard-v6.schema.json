@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "references/standards/standard-v6.schema.json",
+  "$id": "references/standards-schema/standard-v6.schema.json",
   "title": "Revised Simplified Standards Format v6",
   "definitions": {
     "fact-value": {

@@ -139,7 +139,7 @@ hash or the aggregate source hash.
 
 ## Certificate format
 
-`references/blueprint/certificate.schema.json` defines a closed envelope:
+`references/blueprint-schema/certificate.schema.json` defines a closed envelope:
 
 ```yaml
 payload:

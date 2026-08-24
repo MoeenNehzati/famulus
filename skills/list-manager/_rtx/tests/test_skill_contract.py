@@ -15,7 +15,7 @@ SKILL_ROOT = (
 )
 REPO_ROOT = SKILL_ROOT.parents[1]
 SCHEMA_VERSION = repository_schema_version(REPO_ROOT)
-SCHEMA_ROOT = REPO_ROOT / "references/blueprint"
+SCHEMA_ROOT = REPO_ROOT / "references/blueprint-schema"
 if SCHEMA_VERSION == 5:
     SCHEMA_ROOT = SCHEMA_ROOT / "v5"
 

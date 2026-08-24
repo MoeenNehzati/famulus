@@ -36,7 +36,7 @@ def validate(repo_root: Path) -> list[str]:
         or not any(skills_root.glob("*/blueprint.yaml"))
     ):
         return []
-    schema_root = repo_root / "references" / "blueprint"
+    schema_root = repo_root / "references" / "blueprint-schema"
     try:
         load_repository_blueprint_graph(
             repo_root,

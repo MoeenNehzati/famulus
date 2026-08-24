@@ -194,7 +194,7 @@
         "rule_kind": "repository-validation",
         "description": "Validate required fields, values, and unknown-field rejection through the selected version 6 JSON Schema.",
         "creation": "Render each module and behavioral-source document from its concrete schema and reject values outside that schema before graph construction.",
-        "validator": "references/blueprint/schema.json",
+        "validator": "references/blueprint-schema/schema.json",
         "tests": [
           "tests/test_nested_module_v5_schemas.py"
         ],
@@ -411,7 +411,7 @@
         "rule_kind": "repository-validation",
         "description": "Validate source-interface direct I/O as complete semantic evidence without treating it as subsystem confinement.",
         "creation": "Describe immediate source-interface reads, writes, and network actions without copying transitive tool I/O.",
-        "validator": "references/blueprint/direct-io.schema.json",
+        "validator": "references/blueprint-schema/direct-io.schema.json",
         "tests": [
           "tests/test_typed_blueprint_schemas.py",
           "tests/test_officina_blueprint_graph.py"
@@ -428,7 +428,7 @@
         "rule_kind": "repository-validation",
         "description": "Validate process-binding argv patterns without treating them as subsystem confinement.",
         "creation": "Declare only caller-visible accepted argument patterns under the source interface process binding.",
-        "validator": "references/blueprint/caller-contract.schema.json",
+        "validator": "references/blueprint-schema/caller-contract.schema.json",
         "tests": [
           "tests/test_typed_blueprint_schemas.py",
           "tests/test_process_binding_compiler.py"
@@ -495,7 +495,7 @@
         "rule_kind": "repository-validation",
         "description": "Require local-segment child registration and canonical dotted child identity.",
         "creation": "Register each physical direct child with an empty record keyed by its local directory segment.",
-        "validator": "references/blueprint/module.schema.json",
+        "validator": "references/blueprint-schema/module.schema.json",
         "tests": [
           "tests/test_nested_module_v5_schemas.py"
         ],
@@ -511,7 +511,7 @@
         "rule_kind": "repository-validation",
         "description": "Require each namespace route to use one explicit nonempty only surface.",
         "creation": "Declare exact canonical descendant interface IDs and versions under surface.only.",
-        "validator": "references/blueprint/module.schema.json",
+        "validator": "references/blueprint-schema/module.schema.json",
         "tests": [
           "tests/test_nested_module_v5_schemas.py"
         ],
@@ -527,7 +527,7 @@
         "rule_kind": "repository-validation",
         "description": "Accept only exact global module IDs or leading-dot relative module references with a nonempty suffix.",
         "creation": "Use a globally unique module ID or a relative reference such as ._rtx or ..parser.",
-        "validator": "references/blueprint/common.schema.json",
+        "validator": "references/blueprint-schema/common.schema.json",
         "tests": [
           "tests/test_nested_module_v5_schemas.py"
         ],

@@ -54,7 +54,7 @@ def _export(
 def test_repository_setup_order_is_explicit_and_dependency_first() -> None:
     graph = load_repository_blueprint_graph(
         ROOT,
-        schema_root=ROOT / "references" / "blueprint",
+        schema_root=ROOT / "references" / "blueprint-schema",
         expected_schema_version=6,
     )
 
@@ -195,7 +195,7 @@ def test_setup_requirements_reject_invalid_targets(
 def test_setup_exports_alias_existing_default_behavior() -> None:
     graph = load_repository_blueprint_graph(
         ROOT,
-        schema_root=ROOT / "references" / "blueprint",
+        schema_root=ROOT / "references" / "blueprint-schema",
         expected_schema_version=6,
     )
 

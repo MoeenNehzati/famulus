@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema#",
-  "$id": "https://officina/references/standards/docstring_format.schema.json",
+  "$id": "https://officina/references/standards-schema/docstring_format.schema.json",
   "title": "Docstring Format Schema",
   "description": "JSON Schema for the declarative docstring policy used by officina common docstring components.",
   "type": "object",

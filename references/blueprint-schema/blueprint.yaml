@@ -22,12 +22,12 @@ exports: {}
 gateway:
   language: JSON-Schema
   path: schema.json
-id: blueprint
+id: blueprint-schema
 namespace_exports: {}
 node_type: module
 schema_version: 6
 sources:
-  blueprint.source.schema-annotated-draft:
+  blueprint-schema.source.schema-annotated-draft:
     blueprint:
       base: module-root
       path: blueprints/schema-annotated-draft.yaml

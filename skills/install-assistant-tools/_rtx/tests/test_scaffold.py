@@ -35,7 +35,7 @@ def assigned_string(source: str, name: str) -> str:
 
 
 def write_runtime_dependencies_manifest(repo_root: Path, python_packages: list[str]) -> None:
-    manifest = repo_root / "references" / "blueprint" / "runtime_dependencies.json"
+    manifest = repo_root / "references" / "blueprint-schema" / "runtime_dependencies.json"
     manifest.parent.mkdir(parents=True)
     manifest.write_text(
         json.dumps(

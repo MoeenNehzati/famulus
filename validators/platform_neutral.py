@@ -121,11 +121,11 @@ def _is_allowed_platform_metadata_line(rel_path: Path, line: str) -> bool:
         return False
     if rel_path.name.endswith("blueprint.yaml") and _PLATFORM_METADATA_LINE_RE.search(line):
         return True
-    if rel_path == Path("references/blueprint/runtime_dependencies.json"):
+    if rel_path == Path("references/blueprint-schema/runtime_dependencies.json"):
         return _PLATFORM_METADATA_LINE_RE.search(line) is not None
     if rel_path == Path("references/runtime/requirements-core.lock"):
         return _PEP508_PLATFORM_MARKER_LINE_RE.search(line) is not None
-    if rel_path.parts[:2] == ("references", "blueprint"):
+    if rel_path.parts[:2] == ("references", "blueprint-schema"):
         return True
     if rel_path in _PLATFORM_METADATA_TOOLING_PATHS:
         return True
@@ -222,7 +222,7 @@ def _canonical_blueprint_paths(repo_root: Path) -> frozenset[Path]:
         constructs: "Builds the immutable resolved exclusion set."
     """
 
-    schema_root = repo_root / "references" / "blueprint"
+    schema_root = repo_root / "references" / "blueprint-schema"
     try:
         graph = load_repository_blueprint_graph(
             repo_root,

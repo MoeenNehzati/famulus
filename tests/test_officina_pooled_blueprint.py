@@ -14,7 +14,7 @@ from officina.blueprints.pooled import (
 )
 from test_support.v4_certification_fixtures import create_v4_repository
 
-SCHEMA_ROOT = Path(__file__).resolve().parents[1] / "references" / "blueprint"
+SCHEMA_ROOT = Path(__file__).resolve().parents[1] / "references" / "blueprint-schema"
 
 
 def test_pooled_review_does_not_expose_legacy_health_authority() -> None:

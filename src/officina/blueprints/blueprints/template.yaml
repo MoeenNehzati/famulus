@@ -81,7 +81,7 @@ interfaces:
           - json-schema
           id: schema-and-blueprint
           medium: repository-filesystem
-          path: <repository-root>/{skills/**/blueprint.yaml,references/blueprint/*.schema.json}
+          path: <repository-root>/{skills/**/blueprint.yaml,references/blueprint-schema/*.schema.json}
           path_match: glob
           sensitivity: user-private
         writes:

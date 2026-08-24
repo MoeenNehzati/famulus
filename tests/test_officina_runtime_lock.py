@@ -111,7 +111,7 @@ def test_render_runtime_requirements_pools_constraints_and_platforms(tmp_path: P
     _write_manifest(manifest)
 
     assert render_runtime_requirements(manifest) == (
-        "# Generated from references/blueprint/runtime_dependencies.json.\n"
+        "# Generated from references/blueprint-schema/runtime_dependencies.json.\n"
         "# Do not edit by hand.\n"
         "\n"
         "examplepkg<2\n"

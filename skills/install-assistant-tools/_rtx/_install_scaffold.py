@@ -64,7 +64,9 @@ def log(msg: str = "") -> None:
     print(msg, flush=True)
 
 
-RUNTIME_DEPENDENCIES_MANIFEST = Path("references") / "blueprint" / "runtime_dependencies.json"
+RUNTIME_DEPENDENCIES_MANIFEST = (
+    Path("references") / "blueprint-schema" / "runtime_dependencies.json"
+)
 
 
 def _platform_name() -> str | None:

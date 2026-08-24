@@ -40,8 +40,8 @@ def _write_yaml(path: Path, value: dict) -> None:
 
 def _copy_schemas(repo_root: Path) -> None:
     shutil.copytree(
-        _REPO_ROOT / "references" / "blueprint",
-        repo_root / "references" / "blueprint",
+        _REPO_ROOT / "references" / "blueprint-schema",
+        repo_root / "references" / "blueprint-schema",
         ignore=shutil.ignore_patterns("blueprint.yaml", "blueprints"),
     )
 

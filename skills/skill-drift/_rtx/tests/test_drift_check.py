@@ -625,7 +625,7 @@ def test_drift_derivation_delegates_schema_selection_to_canonical_owner(
 
     assert result[0] == "graph"
     expected_schema_root = (
-        tmp_path.resolve() / "references" / "blueprint"
+        tmp_path.resolve() / "references" / "blueprint-schema"
         if schema_version == 6
         else None
     )
@@ -672,7 +672,7 @@ def test_public_v6_drift_uses_live_schema_root(
 
     assert result.graph == "graph"
     assert observed[0]["schema_root"] == (
-        tmp_path / "references" / "blueprint"
+        tmp_path / "references" / "blueprint-schema"
     )
 
 

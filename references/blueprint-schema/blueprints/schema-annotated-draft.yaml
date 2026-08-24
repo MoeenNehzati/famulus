@@ -6,7 +6,7 @@ description: Provides the annotated JSON Schema draft consumed by blueprint sche
 gateway:
   language: JSON-Schema
   path: schema.annotated-draft.json
-id: blueprint.source.schema-annotated-draft
+id: blueprint-schema.source.schema-annotated-draft
 interfaces: {}
 node_type: behavioral_source
 schema_version: 6

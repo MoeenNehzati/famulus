@@ -1,6 +1,6 @@
 schema_version: 6
 standard_version: 2.0.0
-revision: 5
+revision: 6
 id: node-standards.refactoring
 canonical_path: references/node-standards/refactoring.standard.yaml
 title: Node Refactoring Standard
@@ -61,7 +61,7 @@ standards:
         title: Wrong or missing Category
         applies_when: *instruction-module
         children:
-          - {kind: definition, id: skill-refactoring.smells.wrong-or-missing-category.signal, term: Signal, meaning: "`category` missing from `blueprint.yaml`, or the value is not in the typed enum in `references/blueprint/schema.json`."}
+          - {kind: definition, id: skill-refactoring.smells.wrong-or-missing-category.signal, term: Signal, meaning: "`category` missing from `blueprint.yaml`, or the value is not in the typed enum in `references/blueprint-schema/schema.json`."}
       - kind: family
         id: skill-refactoring.smells.state-in-wrong-location
         title: State in wrong location
@@ -137,7 +137,7 @@ standards:
             applies_when: *instruction-module
             summary: Set or correct `category` in `blueprint.yaml`.
             ordered: true
-            steps: [{kind: step, id: set-category, instruction: "Use a typed enum value from `references/blueprint/schema.json`."}]
+            steps: [{kind: step, id: set-category, instruction: "Use a typed enum value from `references/blueprint-schema/schema.json`."}]
             invariants: []
             risk: {level: low, statement: "None."}
           - kind: procedure

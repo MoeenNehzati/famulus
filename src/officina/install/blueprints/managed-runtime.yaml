@@ -174,7 +174,7 @@ interfaces:
           argument_ref: manifest-path
           predicate: present
         unmet_outcome: unsupported-manifest
-        caller_action: Supply the real references/blueprint/runtime_dependencies.json
+        caller_action: Supply the real references/blueprint-schema/runtime_dependencies.json
           (schema v2).
       - id: verified-runtime-lock
         description: For build-candidate-release, lock-input-path and lock-path must

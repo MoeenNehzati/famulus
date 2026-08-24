@@ -354,7 +354,7 @@ def build_minimal_managed_runtime_release(
     paths = resolve_famulus_paths(platform=sys.platform, home=home)
     source_root = repo_root or REPO_ROOT
     info = load_install_info(source_root)
-    manifest = source_root / "references" / "blueprint" / "runtime_dependencies.json"
+    manifest = source_root / "references" / "blueprint-schema" / "runtime_dependencies.json"
     platform_name = {"darwin": "macos", "win32": "windows"}.get(sys.platform, "linux")
     build_candidate_release(
         runtime_root=paths.runtime_root,

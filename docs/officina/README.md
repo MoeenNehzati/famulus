@@ -178,14 +178,14 @@ provide: policy that a host applies to whatever roster it is given.
 
 ### Machine-readable contracts — [`references/`](../../references/)
 
-- [`blueprint/`](../../references/blueprint/) — the blueprint schema, its
+- [`blueprint/`](../../references/blueprint-schema/) — the blueprint schema, its
   metadata, and the authoring template
 - [`node-standards/`](../../references/node-standards/) — the layered node
   standards: `node` at the root, specialized into `module` and
   `behavioral-source`, then into instruction- and Python-specific variants,
   plus the refactoring standard, authority disposition, and semantic-review
   criteria
-- [`standards/`](../../references/standards/) — the standard-v6 schema, its
+- [`standards/`](../../references/standards-schema/) — the standard-v6 schema, its
   validator and renderer, and the docstring standard and grammar
 - [`skill-standards/`](../../references/skill-standards/) — skill-authoring
   guidelines

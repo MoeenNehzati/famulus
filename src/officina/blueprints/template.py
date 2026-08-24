@@ -218,16 +218,16 @@ def write_repository_managed_skill_blueprints(
         Path(schema_root)
         if schema_root is not None
         else (
-            root / "references" / "blueprint"
+            root / "references" / "blueprint-schema"
             if schema_version == 6
-            else root / "references" / "blueprint" / "migrations" / f"v{schema_version}"
+            else root / "references" / "blueprint-schema" / "migrations" / f"v{schema_version}"
         )
     )
     if not (selected_schema_root / "module.schema.json").is_file():
         canonical_schema_root = (
             Path(__file__).resolve().parents[3]
             / "references"
-            / "blueprint"
+            / "blueprint-schema"
         )
         selected_schema_root = (
             canonical_schema_root
@@ -366,7 +366,7 @@ def _default_schema_path(repo_root: Path, blueprint: object | None = None) -> Pa
         node_type = blueprint.get("node_type")
         schema_name = _AUTHORING_SCHEMA_BY_TYPE.get(node_type)
         if schema_name is not None:
-            schema_root = repo_root / "references" / "blueprint"
+            schema_root = repo_root / "references" / "blueprint-schema"
             if schema_version != 6:
                 schema_root = schema_root / "migrations" / f"v{schema_version}"
             return schema_root / schema_name

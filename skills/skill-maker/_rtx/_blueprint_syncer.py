@@ -4,7 +4,7 @@
 Blueprints are hand-authored YAML files under ``skills/<name>/blueprint.yaml``.
 This tool never rewrites blueprint files. It only validates them and syncs:
 
-- ``references/blueprint/runtime_dependencies.json``
+- ``references/blueprint-schema/runtime_dependencies.json``
 - the generated contract block near the top of ``SKILL.md``
 - the generated owner-facing dispatcher interface block in ``SKILL.md``
 
@@ -48,8 +48,8 @@ INTERFACES_START = "<!-- BEGIN BLUEPRINT INTERFACES -->"
 INTERFACES_END = "<!-- END BLUEPRINT INTERFACES -->"
 USED_INTERFACES_START = "<!-- BEGIN BLUEPRINT USED INTERFACES -->"
 USED_INTERFACES_END = "<!-- END BLUEPRINT USED INTERFACES -->"
-RUNTIME_DEPENDENCIES_PATH = REPO_ROOT / "references" / "blueprint" / "runtime_dependencies.json"
-BLUEPRINT_SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint"
+RUNTIME_DEPENDENCIES_PATH = REPO_ROOT / "references" / "blueprint-schema" / "runtime_dependencies.json"
+BLUEPRINT_SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint-schema"
 PLATFORM_NAMES = ("linux", "macos", "windows")
 RUNTIME_DEPENDENCY_KINDS = (
     "python-package",

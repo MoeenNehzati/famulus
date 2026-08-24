@@ -148,7 +148,7 @@ def render_runtime_requirements(
 
     body = "".join(f"{requirement}\n" for requirement in sorted(requirements, key=str.casefold))
     return (
-        "# Generated from references/blueprint/runtime_dependencies.json.\n"
+        "# Generated from references/blueprint-schema/runtime_dependencies.json.\n"
         "# Do not edit by hand.\n"
         "\n"
         f"{body}"

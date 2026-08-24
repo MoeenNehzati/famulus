@@ -22,8 +22,8 @@ SPEC.loader.exec_module(MOD)
 
 def _copy_schema_root(repo_root: Path) -> None:
     shutil.copytree(
-        REPO_ROOT / "references" / "blueprint",
-        repo_root / "references" / "blueprint",
+        REPO_ROOT / "references" / "blueprint-schema",
+        repo_root / "references" / "blueprint-schema",
         ignore=shutil.ignore_patterns("blueprint.yaml", "blueprints"),
     )
 
@@ -31,7 +31,7 @@ def _copy_schema_root(repo_root: Path) -> None:
 def _copy_v5_schema_root(repo_root: Path) -> None:
     shutil.copytree(
         REPO_ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v5",
-        repo_root / "references" / "blueprint" / "migrations" / "v5",
+        repo_root / "references" / "blueprint-schema" / "migrations" / "v5",
         dirs_exist_ok=True,
     )
 
@@ -56,7 +56,7 @@ def test_repository_schema_version_reads_canonical_bootstrap_marker(
     tmp_path: Path,
     version: int,
 ) -> None:
-    marker = tmp_path / "references" / "blueprint" / "blueprint.yaml"
+    marker = tmp_path / "references" / "blueprint-schema" / "blueprint.yaml"
     marker.parent.mkdir(parents=True)
     marker.write_text(
         f"schema_version: {version}\nnode_type: module\n",

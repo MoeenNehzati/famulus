@@ -22,8 +22,8 @@ from officina.common.python_source_cache import PythonSourceCache  # noqa: E402
 
 def _copy_module(repo_root: Path, source_name: str = "get-weather") -> Path:
     shutil.copytree(
-        REPO_ROOT / "references" / "blueprint",
-        repo_root / "references" / "blueprint",
+        REPO_ROOT / "references" / "blueprint-schema",
+        repo_root / "references" / "blueprint-schema",
         ignore=shutil.ignore_patterns("blueprint.yaml", "blueprints"),
     )
     target = repo_root / "skills" / source_name
@@ -498,8 +498,8 @@ def test_runner_reports_cross_platform_errors(tmp_path: Path) -> None:
     shutil.copytree(REPO_ROOT / "src", tmp_path / "src")
     _copy_module(tmp_path)
     shutil.copy2(
-        REPO_ROOT / "references" / "blueprint" / "blueprint.yaml",
-        tmp_path / "references" / "blueprint" / "blueprint.yaml",
+        REPO_ROOT / "references" / "blueprint-schema" / "blueprint.yaml",
+        tmp_path / "references" / "blueprint-schema" / "blueprint.yaml",
     )
     runtime = tmp_path / "skills" / "bad-skill" / "_rtx"
     runtime.mkdir(parents=True)

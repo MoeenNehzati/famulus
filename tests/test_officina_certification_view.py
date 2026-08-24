@@ -56,7 +56,7 @@ from test_support.git_repository import GitTestRepository
 
 
 CANONICAL_SCHEMA_ROOT = (
-    Path(__file__).resolve().parents[1] / "references" / "blueprint"
+    Path(__file__).resolve().parents[1] / "references" / "blueprint-schema"
 )
 SCHEMA_ROOT = (
     Path(__file__).parent

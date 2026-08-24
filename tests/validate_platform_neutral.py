@@ -422,14 +422,14 @@ def test_frozen_v4_blueprint_metadata_and_owned_content_are_line_checked(
 
 
 def test_blueprint_reference_docs_can_define_platform_metadata(tmp_path: Path) -> None:
-    refs = tmp_path / "references" / "blueprint"
+    refs = tmp_path / "references" / "blueprint-schema"
     refs.mkdir(parents=True)
     (refs / "README.md").write_text("Use `linux`/`macos`/`windows` booleans for support metadata.\n")
     assert validate(tmp_path) == []
 
 
 def test_blueprint_reference_docs_still_reject_host_names(tmp_path: Path) -> None:
-    refs = tmp_path / "references" / "blueprint"
+    refs = tmp_path / "references" / "blueprint-schema"
     refs.mkdir(parents=True)
     (refs / "README.md").write_text("Use Codex for this flow.\n")
     errors = validate(tmp_path)

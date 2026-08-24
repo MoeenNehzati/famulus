@@ -38,7 +38,7 @@ _REGULAR_GIT_MODES = {"100644", "100755"}
 def repository_schema_version(repo_root: Path) -> int:
     """Read the required canonical repository schema version."""
 
-    marker = repo_root / "references" / "blueprint" / "blueprint.yaml"
+    marker = repo_root / "references" / "blueprint-schema" / "blueprint.yaml"
     try:
         document = yaml.safe_load(marker.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
@@ -182,8 +182,8 @@ def preflight(
 
     errors: list[str] = []
     skills_root = repo_root / "skills"
-    blueprint_template = repo_root / "references" / "blueprint" / "template.yaml"
-    schema_root = repo_root / "references" / "blueprint"
+    blueprint_template = repo_root / "references" / "blueprint-schema" / "template.yaml"
+    schema_root = repo_root / "references" / "blueprint-schema"
     if expected_schema_version != 6:
         schema_root = (
             schema_root / "migrations" / f"v{expected_schema_version}"

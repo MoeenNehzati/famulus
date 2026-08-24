@@ -367,7 +367,7 @@ def certificate_log_path(node: BlueprintNode) -> Path:
 
 
 def _default_schema_root() -> Path:
-    return Path(__file__).resolve().parents[3] / "references" / "blueprint"
+    return Path(__file__).resolve().parents[3] / "references" / "blueprint-schema"
 
 
 def _relative_path(path: Path | None, repo_root: Path) -> str | None:
@@ -1110,9 +1110,9 @@ def derive_repository_certification_state(
         Path(schema_root)
         if schema_root is not None
         else (
-            root / "references" / "blueprint"
+            root / "references" / "blueprint-schema"
             if expected_schema_version == 6
-            else root / "references" / "blueprint" / "migrations" / f"v{expected_schema_version}"
+            else root / "references" / "blueprint-schema" / "migrations" / f"v{expected_schema_version}"
         )
     )
     try:
@@ -1276,7 +1276,7 @@ def _certifier_renewal_state_admissible(
         return False
     root = Path(repo_root).resolve()
     try:
-        schema_root = root / "references" / "blueprint"
+        schema_root = root / "references" / "blueprint-schema"
         validator = schema_validator(
             load_schema(schema_root / "certificate.schema.json")
         )

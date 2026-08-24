@@ -509,7 +509,7 @@ _STABLE_CHECK_FIELDS = ("id", "version", "passed", "findings")
 
 
 def _default_schema_root() -> Path:
-    return Path(__file__).resolve().parents[3] / "references" / "blueprint"
+    return Path(__file__).resolve().parents[3] / "references" / "blueprint-schema"
 
 
 

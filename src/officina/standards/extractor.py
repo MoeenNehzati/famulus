@@ -96,7 +96,7 @@ def _repository_path(repo_root: Path, path: Path) -> Path:
 def _validator_module(repo_root: Path):
     """Load the repository validator that owns schema and predicate semantics."""
 
-    path = repo_root / "references" / "standards" / "validate_standard_v6.py"
+    path = repo_root / "references" / "standards-schema" / "validate_standard_v6.py"
     if not path.is_file():
         raise ValueError(f"cannot load standard validator at {path}")
     module_name = (

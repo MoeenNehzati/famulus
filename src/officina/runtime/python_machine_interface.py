@@ -371,9 +371,9 @@ def trace_python_route_smoke_dependencies_batch(
         else Path(__file__).resolve().parents[2]
     )
     if schema_root is None:
-        candidate_schema_root = repository_root / "references" / "blueprint"
+        candidate_schema_root = repository_root / "references" / "blueprint-schema"
         package_schema_root = (
-            Path(__file__).resolve().parents[3] / "references" / "blueprint"
+            Path(__file__).resolve().parents[3] / "references" / "blueprint-schema"
         )
         if expected_schema_version in {4, 5}:
             candidate_schema_root = (

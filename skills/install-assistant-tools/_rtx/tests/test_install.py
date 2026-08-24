@@ -771,7 +771,7 @@ def test_interactive_install_prompts_for_optional_modules(
 
 
 def test_optional_module_prompt_names_packages_and_unavailable_estimates(monkeypatch, capsys):
-    manifest = Path(install.__file__).resolve().parents[3] / "references" / "blueprint" / "runtime_dependencies.json"
+    manifest = Path(install.__file__).resolve().parents[3] / "references" / "blueprint-schema" / "runtime_dependencies.json"
     monkeypatch.setattr("builtins.input", lambda _: "")
 
     assert install._prompt_optional_modules(manifest_path=manifest, platform_name="linux") == []
@@ -783,7 +783,7 @@ def test_optional_module_prompt_names_packages_and_unavailable_estimates(monkeyp
 
 
 def test_optional_module_prompt_reports_rough_known_total(monkeypatch, capsys):
-    manifest = Path(install.__file__).resolve().parents[3] / "references" / "blueprint" / "runtime_dependencies.json"
+    manifest = Path(install.__file__).resolve().parents[3] / "references" / "blueprint-schema" / "runtime_dependencies.json"
     monkeypatch.setattr("builtins.input", lambda _: "")
     monkeypatch.setattr(
         install.managed_runtime,

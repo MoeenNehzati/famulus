@@ -35,7 +35,7 @@ from test_support.uv_subprocess import FakeCompletedProcess, fake_uv_subprocess_
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-REAL_MANIFEST = Path(__file__).resolve().parents[1] / "references" / "blueprint" / "runtime_dependencies.json"
+REAL_MANIFEST = Path(__file__).resolve().parents[1] / "references" / "blueprint-schema" / "runtime_dependencies.json"
 UV_BIN = shutil.which("uv")
 # A real Path's str() renders with the host's native separators regardless
 # of the `platform=` string passed to build_candidate_release (that

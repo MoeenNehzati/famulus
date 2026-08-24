@@ -68,7 +68,7 @@ class _V4DerivedState:
 def _schema_root_for_version(root: Path, schema_version: int) -> Path | None:
     """Return the live schema root unless v5 selects its retired owner."""
 
-    return root / "references" / "blueprint" if schema_version in {4, 6} else None
+    return root / "references" / "blueprint-schema" if schema_version in {4, 6} else None
 
 
 def _v4_repository_state(
@@ -101,7 +101,7 @@ def _v4_repository_state(
         dict(derived.states),
         derived.source_commit,
         derived.certification_basis_hash,
-        root / "references" / "blueprint",
+        root / "references" / "blueprint-schema",
         dict(derived.certifier_identity),
     )
 
@@ -475,7 +475,7 @@ def requested_skill_sources(args: argparse.Namespace) -> list[SkillSource]:
         try:
             graph = load_repository_blueprint_graph(
                 source.package_root,
-                schema_root=source.package_root / "references" / "blueprint",
+                schema_root=source.package_root / "references" / "blueprint-schema",
             )
             if not graph.nodes:
                 raise DriftCheckError(

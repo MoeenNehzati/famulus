@@ -65,7 +65,7 @@ interfaces:
           - text
           id: read-2
           medium: repository-filesystem
-          path: $repo/{skills,references/blueprint,validators,tests,.git}/**
+          path: $repo/{skills,references/blueprint-schema,validators,tests,.git}/**
           path_match: glob
           reason: Derive the requested change from exact live contracts and preserve
             unrelated work.

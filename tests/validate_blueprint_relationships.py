@@ -23,8 +23,8 @@ SPEC.loader.exec_module(MOD)
 
 def _copy_schema_root(repo_root: Path) -> None:
     shutil.copytree(
-        REPO_ROOT / "references" / "blueprint",
-        repo_root / "references" / "blueprint",
+        REPO_ROOT / "references" / "blueprint-schema",
+        repo_root / "references" / "blueprint-schema",
         ignore=shutil.ignore_patterns("blueprint.yaml", "blueprints"),
     )
 

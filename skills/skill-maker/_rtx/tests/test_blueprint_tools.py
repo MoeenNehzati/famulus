@@ -19,7 +19,7 @@ from test_support.v5_blueprint_fixtures import copy_v5_fixture_tree
 
 
 SYNCER_PATH = REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py"
-BLUEPRINT_TEMPLATE = REPO_ROOT / "references" / "blueprint" / "template.yaml"
+BLUEPRINT_TEMPLATE = REPO_ROOT / "references" / "blueprint-schema" / "template.yaml"
 V5_SCHEMA_ROOT = REPO_ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v5"
 V5_AUTHORIZATION_FIXTURE = (
     REPO_ROOT / "tests" / "fixtures" / "blueprint_v5" / "authorization"
@@ -634,7 +634,7 @@ def test_sync_does_not_create_dispatch_routing_state(
         "---\nname: demo\ndescription: Test fixture.\n---\n\nInstructions.\n",
         encoding="utf-8",
     )
-    manifest = repo_root / "references" / "blueprint" / "runtime_dependencies.json"
+    manifest = repo_root / "references" / "blueprint-schema" / "runtime_dependencies.json"
     manifest.parent.mkdir(parents=True)
     monkeypatch.setattr(syncer, "REPO_ROOT", repo_root)
     monkeypatch.setattr(syncer, "SKILLS_ROOT", repo_root / "skills")

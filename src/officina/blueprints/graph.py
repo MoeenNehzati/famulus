@@ -2301,13 +2301,13 @@ def _load_module_blueprint(
     selected_schema_root = (
         Path(schema_root)
         if schema_root is not None
-        else repository / "references" / "blueprint"
+        else repository / "references" / "blueprint-schema"
     )
     if not (selected_schema_root / "module.schema.json").is_file():
         selected_schema_root = (
             Path(__file__).resolve().parents[3]
             / "references"
-            / "blueprint"
+            / "blueprint-schema"
         )
     errors = _declaration_schema_errors(
         marker,
@@ -6290,13 +6290,13 @@ def load_dispatch_blueprint_graph(
         selected_schema_root = (
             Path(schema_root)
             if schema_root is not None
-            else root / "references" / "blueprint"
+            else root / "references" / "blueprint-schema"
         )
         if not (selected_schema_root / "module.schema.json").is_file():
             selected_schema_root = (
                 Path(__file__).resolve().parents[3]
                 / "references"
-                / "blueprint"
+                / "blueprint-schema"
                 / "migrations"
                 / "v5"
             )
@@ -6384,16 +6384,16 @@ def load_repository_blueprint_graph(
         Path(schema_root)
         if schema_root is not None
         else (
-            root / "references" / "blueprint"
+            root / "references" / "blueprint-schema"
             if expected_schema_version == 6
-            else root / "references" / "blueprint" / "migrations" / f"v{expected_schema_version}"
+            else root / "references" / "blueprint-schema" / "migrations" / f"v{expected_schema_version}"
         )
     )
     if not (selected_schema_root / "module.schema.json").is_file():
         selected_schema_root = (
             Path(__file__).resolve().parents[3]
             / "references"
-            / "blueprint"
+            / "blueprint-schema"
             / (
                 Path()
                 if expected_schema_version == 6
@@ -6440,7 +6440,7 @@ def repository_schema_version(repo_root: Path) -> int:
     marker = (
         Path(repo_root)
         / "references"
-        / "blueprint"
+        / "blueprint-schema"
         / "blueprint.yaml"
     )
     try:

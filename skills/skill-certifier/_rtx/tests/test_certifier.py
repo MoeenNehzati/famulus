@@ -145,7 +145,7 @@ def _certify(
         "reviewed_commit": snapshot.commit,
         "certified_at": "2026-07-20T12:00:00Z",
         "expected_schema_version": 4,
-        "schema_root": repo / "references" / "blueprint",
+        "schema_root": repo / "references" / "blueprint-schema",
         "require_migration_review": True,
     }
     options.update(overrides)
@@ -322,7 +322,7 @@ def _add_cross_owner_contract(repo: Path):
     repository.git("commit", "-qm", "add contract source")
     return certifier.load_repository_blueprint_graph(
         repo,
-        schema_root=repo / "references" / "blueprint",
+        schema_root=repo / "references" / "blueprint-schema",
         expected_schema_version=4,
     )
 
@@ -2037,7 +2037,7 @@ def test_completeness_findings_block_structural_draft_signing(
     repository.git("commit", "-qm", "draft")
     graph = certifier.load_repository_blueprint_graph(
         tmp_path,
-        schema_root=tmp_path / "references" / "blueprint",
+        schema_root=tmp_path / "references" / "blueprint-schema",
         expected_schema_version=4,
     )
 
@@ -2154,7 +2154,7 @@ def test_public_certification_resolves_one_target_without_hash_dispatch(
     assert calls[0]["repo_root"] == tmp_path.resolve()
     assert calls[0]["allow_non_atomic"] is False
     assert calls[0]["expected_schema_version"] == 6
-    assert calls[0]["schema_root"] == tmp_path / "references" / "blueprint"
+    assert calls[0]["schema_root"] == tmp_path / "references" / "blueprint-schema"
     assert set(calls[0]["target_node_ids"]) == {
         node_id
         for node_id, node in graph.nodes.items()

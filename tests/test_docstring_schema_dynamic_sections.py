@@ -7,7 +7,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from officina.docstring.parser import check_graph_docstring, parse_graph_block  # noqa: E402
-from officina.docstring.policy import load_docstring_schema  # noqa: E402
+from officina.docstring.policy import (  # noqa: E402
+    load_docstring_schema,
+    resolve_docstring_schema_path,
+)
 from officina.validators.docstring_validator import validate_module_docstrings  # noqa: E402
 
 
@@ -95,6 +98,15 @@ module:
     syntax: "<owner_id>: <brief responsibility>"
     allows_multiple: true
 """
+
+
+def test_default_docstring_standard_uses_schema_named_reference_directory() -> None:
+    assert resolve_docstring_schema_path() == (
+        Path(__file__).resolve().parents[1]
+        / "references"
+        / "standards-schema"
+        / "docstring.standard.yaml"
+    )
 
 
 def _install_custom_format(tmp_path: Path, monkeypatch) -> None:
