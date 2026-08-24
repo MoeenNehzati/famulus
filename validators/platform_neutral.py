@@ -64,6 +64,7 @@ _PLATFORM_METADATA_TOOLING_PATHS = {
     Path("src/officina/install/runtime_lock.py"),
 }
 _BINDING_CROSS_HOST_ORCHESTRATION_PATHS = {
+    Path("skills/relocate-nodes/_rtx/_relocation_engine.py"),
     Path("src/officina/install/assistant_access.py"),
     Path("src/officina/install/context.py"),
     Path("src/officina/install/development_activation.py"),

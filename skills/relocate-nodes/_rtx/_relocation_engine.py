@@ -62,6 +62,7 @@ _TOP_LEVEL_KEYS = {
     "standard_digest_roots",
 }
 _SCHEMA_VERSION = 2
+_DEFAULT_INVENTORY_EXCLUSIONS = (".claude", ".codex", ".superpowers")
 
 
 class RelocationError(RuntimeError):
@@ -966,7 +967,11 @@ def plan_relocation(
         raise RelocationError(f"repository root does not exist: {root}")
     changes = ChangeSet(
         root=root,
-        inventory_exclusions=manifest.inventory_exclusions,
+        inventory_exclusions=tuple(
+            dict.fromkeys(
+                (*_DEFAULT_INVENTORY_EXCLUSIONS, *manifest.inventory_exclusions)
+            )
+        ),
     )
     _project_moves(changes, manifest)
     _project_blueprints(changes, manifest)

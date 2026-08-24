@@ -643,3 +643,30 @@ def test_plan_excludes_nested_worktree_metadata(tmp_path: Path) -> None:
         "worktrees" not in path and not path.startswith("build/")
         for path in changes.projected_files()
     )
+
+
+def test_plan_combines_default_and_manifest_inventory_exclusions(
+    tmp_path: Path,
+) -> None:
+    """Host projections and caller-selected trees stay outside inventory."""
+
+    _write(tmp_path / "src/pkg/domain.py", "VALUE = 1\n")
+    for directory in (".claude", ".codex", ".superpowers", ".scratch"):
+        _write(tmp_path / directory / "ignored.py", "VALUE = 2\n")
+    manifest = _manifest(
+        tmp_path / "move.yaml",
+        {
+            "schema_version": 2,
+            "inventory_exclusions": [".scratch"],
+        },
+    )
+
+    changes = plan_relocation(tmp_path, manifest)
+
+    projected = changes.projected_files()
+    ignored_roots = (".claude", ".codex", ".superpowers", ".scratch")
+    assert "src/pkg/domain.py" in projected
+    assert all(
+        not any(path == root or path.startswith(root + "/") for root in ignored_roots)
+        for path in projected
+    )
