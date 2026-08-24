@@ -3351,3 +3351,159 @@ def test_reopen_subrutter_construction_failure_is_read_only_and_atomic(
     assert _binder_state(fresh_registry) == binder_before
     assert (tmp_path / path).read_bytes() == before
     assert b"private explicit reopen detail" not in before
+
+
+def test_nested_reopen_adopts_contextual_bindings_only_after_full_validation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A deeper reopen failure must not reserve its valid ancestor child."""
+
+    original_leaf = _terminal_rutter("nested-open-leaf", 4)
+
+    def original_leaf_constructor(context: EvolutionContext) -> Rutter:
+        del context
+        return original_leaf
+
+    original_intermediate = _subrutter_parent(
+        "nested-open-intermediate",
+        original_leaf_constructor,
+    )
+
+    def original_intermediate_constructor(context: EvolutionContext) -> Rutter:
+        del context
+        return original_intermediate
+
+    original_post_open_leaf = _terminal_rutter("post-open-child", 2)
+
+    def original_post_open_constructor(context: EvolutionContext) -> Rutter:
+        del context
+        return original_post_open_leaf
+
+    def make_root(
+        intermediate_constructor: Callable[[EvolutionContext], Rutter],
+        post_open_constructor: Callable[[EvolutionContext], Rutter],
+    ) -> Rutter:
+        return Rutter(
+            id="nested-open-root",
+            version=1,
+            start="call",
+            evolutions={
+                "call": SubRutter(
+                    intermediate_constructor,
+                    charter_constructor=lambda context: {},
+                    next_on_outcome="post-open",
+                ),
+                "post-open": SubRutter(
+                    post_open_constructor,
+                    charter_constructor=lambda context: {},
+                    next_on_outcome="done",
+                ),
+                "done": Terminal(result=VoyageResult("root-complete", {})),
+            },
+        )
+
+    original_root = make_root(
+        original_intermediate_constructor,
+        original_post_open_constructor,
+    )
+    path = Path("nested-open-atomic.reckoning.json")
+    original = RutterRegistry({"root": original_root}, tmp_path).create(
+        "root", path, {}
+    )
+    original.advance(continue_=False)
+    original.advance(continue_=False)
+    before = (tmp_path / path).read_bytes()
+
+    failed_deep_contexts: list[EvolutionContext] = []
+
+    def fail_deep(context: EvolutionContext) -> Rutter:
+        failed_deep_contexts.append(context)
+        raise RuntimeError("private nested reopen detail")
+
+    invalid_intermediate = _subrutter_parent(
+        "nested-open-intermediate",
+        fail_deep,
+    )
+    replacement_leaf = _terminal_rutter("nested-open-leaf", 4)
+    corrected_deep_contexts: list[EvolutionContext] = []
+
+    def construct_replacement_leaf(context: EvolutionContext) -> Rutter:
+        corrected_deep_contexts.append(context)
+        return replacement_leaf
+
+    corrected_intermediate = _subrutter_parent(
+        "nested-open-intermediate",
+        construct_replacement_leaf,
+    )
+    assert corrected_intermediate is not invalid_intermediate
+    candidates = [invalid_intermediate]
+    root_contexts: list[EvolutionContext] = []
+
+    def construct_intermediate(context: EvolutionContext) -> Rutter:
+        root_contexts.append(context)
+        return candidates[0]
+
+    post_open_leaf = _terminal_rutter("post-open-child", 2)
+    post_open_contexts: list[EvolutionContext] = []
+
+    def construct_post_open_leaf(context: EvolutionContext) -> Rutter:
+        post_open_contexts.append(context)
+        return post_open_leaf
+
+    replacement_root = make_root(
+        construct_intermediate,
+        construct_post_open_leaf,
+    )
+    registry = RutterRegistry({"root": replacement_root}, tmp_path)
+    binder_before = _binder_state(registry)
+    failed_voyages: list[engine.Voyage] = []
+    resolve_call = engine.Voyage._resolve_contextual_call
+
+    def capture_voyage(
+        voyage: engine.Voyage,
+        *args,
+        **kwargs,
+    ):
+        if voyage not in failed_voyages:
+            failed_voyages.append(voyage)
+        return resolve_call(voyage, *args, **kwargs)
+
+    monkeypatch.setattr(engine.Voyage, "_resolve_contextual_call", capture_voyage)
+
+    with pytest.raises(RutterStateError, match="SubRutter.*call"):
+        registry.open(path)
+
+    assert (tmp_path / path).read_bytes() == before
+    assert _binder_state(registry) == binder_before
+    assert len(failed_voyages) == 1
+    failed = failed_voyages[0]
+    assert set(failed._definitions) == {("nested-open-root", 1)}
+    assert failed._contextual_call_children == {}
+    assert failed._contextual_hook_children == {}
+    assert len(root_contexts) == 1
+    assert len(failed_deep_contexts) == 1
+
+    candidates[0] = corrected_intermediate
+    opened = registry.open(path)
+
+    assert opened.rutter is replacement_root
+    assert opened._definitions[("nested-open-intermediate", 1)].definition is (
+        corrected_intermediate
+    )
+    assert opened._definitions[("nested-open-leaf", 4)].definition is replacement_leaf
+    assert len(opened._contextual_call_children) == 2
+    assert len(root_contexts) == 2
+    assert len(failed_deep_contexts) == 1
+    assert len(corrected_deep_contexts) == 1
+    assert (tmp_path / path).read_bytes() == before
+
+    terminal = opened.advance(continue_=True)
+
+    assert terminal.rutter_id == "nested-open-root"
+    assert terminal.condition == "terminal"
+    assert len(post_open_contexts) == 1
+    assert registry._binder._source_by_id["post-open-child"] == (
+        post_open_leaf,
+        2,
+    )

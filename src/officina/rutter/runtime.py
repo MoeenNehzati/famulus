@@ -454,11 +454,27 @@ class RutterRegistry:
         active_ancestor_identities: tuple[tuple[str, int], ...],
         expected_identity: tuple[str, int] | None,
     ) -> tuple[_BoundDefinition, Mapping[tuple[str, int], _BoundDefinition]]:
+        return self._bind_contextual_definition_with(
+            self._binder,
+            source,
+            definitions,
+            active_ancestor_identities,
+            expected_identity,
+        )
+
+    @staticmethod
+    def _bind_contextual_definition_with(
+        binder: _DefinitionBinder,
+        source: Rutter,
+        definitions: Mapping[tuple[str, int], _BoundDefinition],
+        active_ancestor_identities: tuple[tuple[str, int], ...],
+        expected_identity: tuple[str, int] | None,
+    ) -> tuple[_BoundDefinition, Mapping[tuple[str, int], _BoundDefinition]]:
         if not isinstance(source, Rutter):
             raise RutterDefinitionError(
                 "contextual Rutter constructor must return a Rutter"
             )
-        forked = self._binder.fork()
+        forked = binder.fork()
         definition = forked.bind(source)
         closure = definition.reachable()
         if expected_identity is not None and definition.identity != expected_identity:
@@ -476,7 +492,7 @@ class RutterRegistry:
                 )
         if any(identity in closure for identity in active_ancestor_identities):
             raise RutterDefinitionError("recursive definition-call cycle")
-        self._binder.adopt(forked)
+        binder.adopt(forked)
         return definition, closure
 
     def create(
@@ -501,8 +517,30 @@ class RutterRegistry:
 
     def open(self, reckoning_path: Path) -> Voyage:
         path = self._path(reckoning_path)
-        return Voyage._open(
+        staged_binder = self._binder.fork()
+
+        def bind_contextual_definition(
+            source: Rutter,
+            definitions: Mapping[tuple[str, int], _BoundDefinition],
+            active_ancestor_identities: tuple[tuple[str, int], ...],
+            expected_identity: tuple[str, int] | None,
+        ) -> tuple[
+            _BoundDefinition,
+            Mapping[tuple[str, int], _BoundDefinition],
+        ]:
+            return self._bind_contextual_definition_with(
+                staged_binder,
+                source,
+                definitions,
+                active_ancestor_identities,
+                expected_identity,
+            )
+
+        voyage = Voyage._open(
             self._definition_for_identity,
-            self._bind_contextual_definition,
+            bind_contextual_definition,
             path,
         )
+        self._binder.adopt(staged_binder)
+        voyage._bind_contextual_definition = self._bind_contextual_definition
+        return voyage

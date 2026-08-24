@@ -1131,7 +1131,13 @@ class Voyage:
         self._store: _StoreIO = ReckoningStore(
             path, semantic_validator=self._validate_reckoning
         )
-        self._validate_reckoning(reckoning)
+        try:
+            self._validate_reckoning(reckoning)
+        except Exception:
+            self._definitions = dict(definition.reachable())
+            self._contextual_hook_children = {}
+            self._contextual_call_children = {}
+            raise
         if create:
             self._store.create(reckoning)
 
