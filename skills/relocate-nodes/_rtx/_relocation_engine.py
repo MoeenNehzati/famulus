@@ -62,7 +62,7 @@ _TOP_LEVEL_KEYS = {
     "standard_digest_roots",
 }
 _SCHEMA_VERSION = 2
-_DEFAULT_INVENTORY_EXCLUSIONS = (".claude", ".codex", ".superpowers")
+_DEFAULT_INVENTORY_EXCLUSIONS = (".git", ".claude", ".codex", ".superpowers")
 
 
 class RelocationError(RuntimeError):
