@@ -35,7 +35,9 @@ def _callable_description(callback: object) -> str:
     return inspect.getdoc(callback) or "No explanation provided."
 
 
-def _rutter_label(rutter: object) -> str:
+def _rutter_label(rutter: object, *, contextual: bool) -> str:
+    if contextual:
+        return "Determined at runtime"
     if isinstance(rutter, Rutter):
         return rutter.rutter_id
     if isinstance(rutter, type) and issubclass(rutter, Rutter):
@@ -63,7 +65,8 @@ def _evolution_description(evolution: object) -> str:
     if isinstance(evolution, MachineStep):
         return _callable_description(evolution.run)
     if isinstance(evolution, SubRutter):
-        return f"Enter child Rutter '{_rutter_label(evolution.rutter_constructor)}'."
+        child = _rutter_label(evolution.rutter_constructor, contextual=True)
+        return f"Enter child Rutter '{child}'."
     assert isinstance(evolution, Terminal)
     if evolution.result_constructor is not None:
         return _callable_description(evolution.result_constructor)
@@ -135,7 +138,10 @@ def _evolution_sections(
         fields.append(
             {
                 "label": "Child Rutter",
-                "value": _rutter_label(evolution.rutter_constructor),
+                "value": _rutter_label(
+                    evolution.rutter_constructor,
+                    contextual=True,
+                ),
                 "format": "code",
             }
         )
@@ -203,7 +209,7 @@ def _transition(
             "value": [
                 (
                     f"{hook.id} -> "
-                    f"{_rutter_label(hook.rutter_constructor)}"
+                    f"{_rutter_label(hook.rutter_constructor, contextual=True)}"
                 )
                 for hook in hooks
             ],

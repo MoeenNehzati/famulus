@@ -180,6 +180,60 @@ def test_payload_exposes_prompts_response_formats_transitions_and_hooks() -> Non
     Graph().validate_graph(payload)
 
 
+def test_contextual_rutter_classes_remain_runtime_determined_without_execution() -> None:
+    """Treating a contextual Rutter class as a fixed child must fail."""
+    calls: list[str] = []
+
+    class ContextualChildRutter(Rutter):
+        rutter_id = "contextual-child"
+        definition_version = 1
+        initial_evolution_id = "done"
+
+        def __init__(self, context):
+            calls.append("contextual-child")
+
+        def define_evolutions(self):
+            return {"done": Terminal(result=VoyageResult("checked", {}))}
+
+    definition = Rutter(
+        id="contextual-parent",
+        version=1,
+        start="child",
+        evolutions={
+            "child": SubRutter(
+                ContextualChildRutter,
+                charter_constructor=lambda context: {},
+                next_on_outcome="done",
+            ),
+            "done": Terminal(result=VoyageResult("finished", {})),
+        },
+        hooks=(
+            TransitionHook(
+                "inspect-child",
+                on=after("child"),
+                rutter_constructor=ContextualChildRutter,
+                charter_constructor=lambda context: {},
+            ),
+        ),
+    )
+
+    payload = build_rutter_payload(definition)
+    child = payload["entities"][0]
+
+    assert calls == []
+    assert child["description"] == "Enter child Rutter 'Determined at runtime'."
+    assert child["details"]["sections"][0]["fields"][3] == {
+        "label": "Child Rutter",
+        "value": "Determined at runtime",
+        "format": "code",
+    }
+    assert child["connects_to"][0]["details"]["sections"][1]["fields"][0][
+        "value"
+    ] == ["inspect-child -> Determined at runtime"]
+    assert calls == []
+    Graph().validate_graph(payload)
+
+
 def test_callable_transition_uses_docstring_without_executing_callbacks() -> None:
     """Replacing dynamic-route explanation with execution must fail this test."""
     calls: list[str] = []
