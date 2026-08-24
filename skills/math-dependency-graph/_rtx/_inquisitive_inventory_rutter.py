@@ -27,7 +27,6 @@ from officina.rutter import (
     RutterRegistry,
     Terminal,
     TransitionContext,
-    TransitionHook,
     Turn,
     ValidationIssue,
     ValidationReport,
@@ -767,51 +766,56 @@ def _complete_result(context: EvolutionContext) -> VoyageResult:
     return VoyageResult("complete", {"iterations": completed})
 
 
-class InquisitiveInventoryRutter(Rutter):
-    rutter_id = _RUTTER_ID
-    definition_version = 5
-    initial_evolution_id = _REPORT_EVOLUTION
+_DIAGNOSIS_RUTTER = DiagnoseAnswer()
 
-    def define_evolutions(self) -> Mapping[str, object]:
-        return {
-            _REPORT_EVOLUTION: LLMStep(
-                _REPORT_TEXT,
-                response_schema={
-                    "type": "object",
-                    "properties": {
-                        "outcome": {"const": "reported"},
-                        "sequence_id": {"type": "integer", "minimum": 1},
-                        "inventory": {"type": "object"},
-                    },
-                    "required": ["outcome", "sequence_id", "inventory"],
-                    "additionalProperties": False,
+
+def _diagnosis_rutter(context: TransitionContext) -> Rutter:
+    del context
+    return _DIAGNOSIS_RUTTER
+
+
+INQUISITIVE_INVENTORY: Rutter = Rutter(
+    id=_RUTTER_ID,
+    version=5,
+    start=_REPORT_EVOLUTION,
+    evolutions={
+        _REPORT_EVOLUTION: LLMStep(
+            _REPORT_TEXT,
+            response_schema={
+                "type": "object",
+                "properties": {
+                    "outcome": {"const": "reported"},
+                    "sequence_id": {"type": "integer", "minimum": 1},
+                    "inventory": {"type": "object"},
                 },
-                data=_report_data,
-                assess_response=_assess_report,
-                next_on_outcome=_RECORD_EVOLUTION,
-            ),
-            _RECORD_EVOLUTION: MachineStep(
-                _record_iteration,
-                mode="repeat-safe",
-                next_on_outcome={"more": _REPORT_EVOLUTION, "done": "complete"},
-            ),
-            "complete": Terminal(result_constructor=_complete_result),
-        }
-
-    def define_transition_hooks(self) -> tuple[TransitionHook, ...]:
-        return (
-            hook_sequence_after(
-                id=_TRANSITION_HOOK_ID,
-                after_evolutions={_REPORT_EVOLUTION},
-                items=_INTERACTION_SLOTS,
-                child=DiagnoseAnswer,
-                charter_constructor=_diagnosis_charter,
-            ),
-        )
+                "required": ["outcome", "sequence_id", "inventory"],
+                "additionalProperties": False,
+            },
+            data=_report_data,
+            assess_response=_assess_report,
+            next_on_outcome=_RECORD_EVOLUTION,
+        ),
+        _RECORD_EVOLUTION: MachineStep(
+            _record_iteration,
+            mode="repeat-safe",
+            next_on_outcome={"more": _REPORT_EVOLUTION, "done": "complete"},
+        ),
+        "complete": Terminal(result_constructor=_complete_result),
+    },
+    hooks=(
+        hook_sequence_after(
+            id=_TRANSITION_HOOK_ID,
+            after_evolutions={_REPORT_EVOLUTION},
+            items=_INTERACTION_SLOTS,
+            rutter_constructor=_diagnosis_rutter,
+            charter_constructor=_diagnosis_charter,
+        ),
+    ),
+)
 
 
 def _registry(experiment_dir: Path) -> RutterRegistry:
-    return RutterRegistry({_RUTTER_NAME: InquisitiveInventoryRutter}, experiment_dir)
+    return RutterRegistry({_RUTTER_NAME: INQUISITIVE_INVENTORY}, experiment_dir)
 
 
 def _seal_source_cases(value: object) -> list[dict[str, object]]:

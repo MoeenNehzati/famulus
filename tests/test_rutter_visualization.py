@@ -10,6 +10,7 @@ from officina.rutter import (
     MachineResult,
     MachineStep,
     Rutter,
+    SubRutter,
     Terminal,
     TransitionHook,
     VoyageResult,
@@ -39,45 +40,6 @@ REVIEW_RESPONSE_SCHEMA = {
 }
 
 
-class ReviewRutter(Rutter):
-    rutter_id = "review"
-    definition_version = 3
-    initial_evolution_id = "review"
-
-    def define_evolutions(self):
-        return {
-            "review": LLMStep(
-                "Review the proposed change.",
-                response_schema=REVIEW_RESPONSE_SCHEMA,
-                next_on_outcome={"approved": "publish", "revise": "edit"},
-            ),
-            "edit": MachineStep(
-                record_requested_edits,
-                mode="pure",
-                next_on_outcome={"edited": "review"},
-            ),
-            "publish": Terminal(result=VoyageResult("published", {})),
-        }
-
-    def define_transition_hooks(self):
-        return (
-            TransitionHook(
-                "audit-review",
-                on=after("review"),
-                child=HookRutter,
-                charter_constructor=lambda context: {},
-            ),
-            TransitionHook(
-                "check-approval",
-                on=on_transition(
-                    source="review", outcome="approved", target="publish"
-                ),
-                child=HookRutter,
-                charter_constructor=lambda context: {},
-            ),
-        )
-
-
 class HookRutter(Rutter):
     rutter_id = "hook"
     definition_version = 1
@@ -92,12 +54,67 @@ def record_requested_edits(context) -> MachineResult:
     return MachineResult("edited", {})
 
 
+_CHILD_CONSTRUCTOR_CALLS: list[str] = []
+
+
+def construct_subrutter(context) -> Rutter:
+    _CHILD_CONSTRUCTOR_CALLS.append("subrutter")
+    return HookRutter()
+
+
+def construct_hook_rutter(context) -> Rutter:
+    _CHILD_CONSTRUCTOR_CALLS.append("hook")
+    return HookRutter()
+
+
+REVIEW_RUTTER = Rutter(
+    id="review",
+    version=3,
+    start="review",
+    evolutions={
+        "review": LLMStep(
+            "Review the proposed change.",
+            response_schema=REVIEW_RESPONSE_SCHEMA,
+            next_on_outcome={"approved": "verify", "revise": "edit"},
+        ),
+        "edit": MachineStep(
+            record_requested_edits,
+            mode="pure",
+            next_on_outcome={"edited": "review"},
+        ),
+        "verify": SubRutter(
+            construct_subrutter,
+            charter_constructor=lambda context: {},
+            next_on_outcome="publish",
+        ),
+        "publish": Terminal(result=VoyageResult("published", {})),
+    },
+    hooks=(
+        TransitionHook(
+            "audit-review",
+            on=after("review"),
+            rutter_constructor=construct_hook_rutter,
+            charter_constructor=lambda context: {},
+        ),
+        TransitionHook(
+            "check-approval",
+            on=on_transition(
+                source="review", outcome="approved", target="verify"
+            ),
+            rutter_constructor=construct_hook_rutter,
+            charter_constructor=lambda context: {},
+        ),
+    ),
+)
+
+
 def test_payload_exposes_prompts_response_formats_transitions_and_hooks() -> None:
     """Dropping authored interaction data must make the visual contract fail."""
-    payload = build_rutter_payload(ReviewRutter)
+    payload = build_rutter_payload(REVIEW_RUTTER)
     entities = {entity["id"]: entity for entity in payload["entities"]}
     review = entities["review"]
 
+    assert _CHILD_CONSTRUCTOR_CALLS == []
     assert payload["schema_version"] == 2
     assert payload["graph_kind"] == "rutter"
     assert payload["metadata"] == {
@@ -105,6 +122,12 @@ def test_payload_exposes_prompts_response_formats_transitions_and_hooks() -> Non
         "definition_version": 3,
         "initial_evolution_id": "review",
     }
+    assert [entity["id"] for entity in payload["entities"]] == [
+        "review",
+        "edit",
+        "verify",
+        "publish",
+    ]
     assert review["description"] == "Review the proposed change."
     assert review["details"]["sections"][0] == {
         "title": "LLM step",
@@ -123,7 +146,7 @@ def test_payload_exposes_prompts_response_formats_transitions_and_hooks() -> Non
         ],
     }
     edges = {edge["label"]: edge for edge in review["connects_to"]}
-    assert edges["approved"]["to"] == "publish"
+    assert edges["approved"]["to"] == "verify"
     assert edges["approved"]["description"] == (
         "Accepted answer outcome 'approved' selects this transition. "
         "Hooks: audit-review, check-approval."
@@ -131,6 +154,10 @@ def test_payload_exposes_prompts_response_formats_transitions_and_hooks() -> Non
     assert edges["approved"]["metadata"]["hook_ids"] == [
         "audit-review",
         "check-approval",
+    ]
+    assert edges["approved"]["details"]["sections"][1]["fields"][0]["value"] == [
+        "audit-review -> Determined at runtime",
+        "check-approval -> Determined at runtime",
     ]
     assert edges["revise"]["to"] == "edit"
     assert edges["revise"]["metadata"]["hook_ids"] == ["audit-review"]
@@ -141,6 +168,15 @@ def test_payload_exposes_prompts_response_formats_transitions_and_hooks() -> Non
     assert edit["connects_to"][0]["description"] == (
         "Machine outcome 'edited' selects this transition."
     )
+    verify = entities["verify"]
+    assert verify["description"] == "Enter child Rutter 'Determined at runtime'."
+    assert verify["details"]["sections"][0]["fields"][3] == {
+        "label": "Child Rutter",
+        "value": "Determined at runtime",
+        "format": "code",
+    }
+    assert verify["connects_to"][0]["to"] == "publish"
+    assert _CHILD_CONSTRUCTOR_CALLS == []
     Graph().validate_graph(payload)
 
 
@@ -225,7 +261,10 @@ def test_contextual_terminal_uses_constructor_docstring_without_execution() -> N
 
 def test_visualizer_writes_json_and_html_from_the_same_payload(tmp_path: Path) -> None:
     """Bypassing the shared renderer or omitting JSON must fail artifact output."""
-    paths = RutterVisualizer().build(ReviewRutter, output_dir=tmp_path)
+    paths = RutterVisualizer().build(
+        rutter_class=REVIEW_RUTTER,
+        output_dir=tmp_path,
+    )
 
     assert paths == [tmp_path / "review.json", tmp_path / "review.html"]
     assert all(path.is_file() for path in paths)

@@ -453,6 +453,16 @@ def _completed_iterator(tmp_path: Path) -> Path:
     return state_dir
 
 
+def test_inventory_definition_is_one_transparent_instance() -> None:
+    """Reintroducing a generated definition class must fail the authoring contract."""
+    definition = inventory.INQUISITIVE_INVENTORY
+
+    assert isinstance(definition, rutter.Rutter)
+    assert definition.rutter_id == "math-graph-inquisitive-inventory"
+    assert definition.definition_version == 5
+    assert list(definition.define_evolutions()) == ["report", "record", "complete"]
+
+
 def test_iterator_backed_setup_uses_authenticated_closed_sequence(tmp_path: Path) -> None:
     """Accepting caller-built source cases would bypass the iterator's durable trace."""
 
@@ -785,7 +795,7 @@ def test_equal_report_composes_child_ledger_and_next_parent_prompt(
     second_message = voyage.get_status().instruction
     ledger = inventory.validated_inventory_ledger(experiment_dir)
 
-    assert next_evolution.rutter_id == inventory.InquisitiveInventoryRutter.rutter_id
+    assert next_evolution.rutter_id == inventory.INQUISITIVE_INVENTORY.rutter_id
     assert next_evolution.evolution_id == "report"
     assert isinstance(second_message, rutter.Message)
     assert second_message.data["payload"]["interaction"]["sequence_id"] == 2
@@ -849,7 +859,7 @@ def test_different_report_reveals_gold_only_in_attached_diagnosis(
     )
     row = inventory.validated_inventory_ledger(experiment_dir)[0]
 
-    assert next_parent.rutter_id == inventory.InquisitiveInventoryRutter.rutter_id
+    assert next_parent.rutter_id == inventory.INQUISITIVE_INVENTORY.rutter_id
     assert next_parent.evolution_id == "report"
     assert row["message"] == _materialized_json(parent_message.to_json())
     assert row["response"] == wrong_response
@@ -904,7 +914,7 @@ def test_reopen_at_each_inventory_boundary_neither_repeats_nor_skips(
     ledger_action = inventory.open_experiment(experiment_dir).advance(
         continue_=False
     )
-    assert ledger_action.rutter_id == inventory.InquisitiveInventoryRutter.rutter_id
+    assert ledger_action.rutter_id == inventory.INQUISITIVE_INVENTORY.rutter_id
     assert ledger_action.evolution_id == "record"
     machine_instruction = inventory.open_experiment(experiment_dir).get_status().instruction
     machine_result = machine_instruction.run()

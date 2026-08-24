@@ -12,14 +12,14 @@ from .payload_builder import build_rutter_payload
 
 
 class RutterVisualizer:
-    """Write canonical JSON and interactive HTML for a Rutter class."""
+    """Write canonical JSON and interactive HTML for a Rutter definition."""
 
     def __init__(self, *, renderer: ElkHtmlRenderer | None = None) -> None:
         self.artifacts = GraphArtifactWriter(renderer or ElkHtmlRenderer())
 
     def build(
         self,
-        rutter_class: type[Rutter],
+        rutter_class: Rutter | type[Rutter],
         *,
         output_dir: str | Path,
         name: str | None = None,

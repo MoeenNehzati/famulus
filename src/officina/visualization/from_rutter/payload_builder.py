@@ -35,6 +35,14 @@ def _callable_description(callback: object) -> str:
     return inspect.getdoc(callback) or "No explanation provided."
 
 
+def _rutter_label(rutter: object) -> str:
+    if isinstance(rutter, Rutter):
+        return rutter.rutter_id
+    if isinstance(rutter, type) and issubclass(rutter, Rutter):
+        return rutter.rutter_id
+    return "Determined at runtime"
+
+
 def _evolution_kind(evolution: object) -> str:
     if isinstance(evolution, LLMStep):
         return "llm-step"
@@ -55,8 +63,7 @@ def _evolution_description(evolution: object) -> str:
     if isinstance(evolution, MachineStep):
         return _callable_description(evolution.run)
     if isinstance(evolution, SubRutter):
-        child_id = getattr(evolution.child, "rutter_id", evolution.child.__name__)
-        return f"Enter child Rutter '{child_id}'."
+        return f"Enter child Rutter '{_rutter_label(evolution.rutter_constructor)}'."
     assert isinstance(evolution, Terminal)
     if evolution.result_constructor is not None:
         return _callable_description(evolution.result_constructor)
@@ -128,9 +135,7 @@ def _evolution_sections(
         fields.append(
             {
                 "label": "Child Rutter",
-                "value": getattr(
-                    evolution.child, "rutter_id", evolution.child.__name__
-                ),
+                "value": _rutter_label(evolution.rutter_constructor),
                 "format": "code",
             }
         )
@@ -198,7 +203,7 @@ def _transition(
             "value": [
                 (
                     f"{hook.id} -> "
-                    f"{getattr(hook.child, 'rutter_id', hook.child.__name__)}"
+                    f"{_rutter_label(hook.rutter_constructor)}"
                 )
                 for hook in hooks
             ],
@@ -226,12 +231,16 @@ def _transition(
     }
 
 
-def build_rutter_payload(rutter_class: type[Rutter]) -> dict[str, Any]:
-    """Return schema-v2 graph JSON for one no-argument Rutter class."""
-    if not isinstance(rutter_class, type) or not issubclass(rutter_class, Rutter):
-        raise TypeError("rutter_class must be a Rutter class")
+def build_rutter_payload(rutter_class: Rutter | type[Rutter]) -> dict[str, Any]:
+    """Return schema-v2 graph JSON for one Rutter definition."""
+    if not isinstance(rutter_class, Rutter) and not (
+        isinstance(rutter_class, type) and issubclass(rutter_class, Rutter)
+    ):
+        raise TypeError("rutter_class must be a Rutter instance or class")
     try:
-        definition = rutter_class()
+        definition = (
+            rutter_class if isinstance(rutter_class, Rutter) else rutter_class()
+        )
         evolutions = definition.define_evolutions()
         transition_hooks = definition.define_transition_hooks()
     except Exception as exc:
