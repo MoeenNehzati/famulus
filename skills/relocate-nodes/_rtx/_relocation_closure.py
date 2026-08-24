@@ -12,6 +12,7 @@ import ast
 from dataclasses import dataclass
 import json
 from pathlib import Path, PurePosixPath
+import posixpath
 import stat
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Literal
@@ -138,9 +139,14 @@ def _materialize_projection(changes: ChangeSet, shadow_root: Path) -> None:
             try:
                 if link_text.is_absolute():
                     raise ValueError
-                resolved = (PurePosixPath(relative).parent / link_text).as_posix()
-                normalized = PurePosixPath(resolved)
-                if ".." in normalized.parts or normalized.as_posix() not in changes.projected_files():
+                normalized = posixpath.normpath(
+                    str(PurePosixPath(relative).parent / link_text)
+                )
+                projected = changes.projected_files()
+                target_exists = normalized in projected or any(
+                    item.startswith(normalized.rstrip("/") + "/") for item in projected
+                )
+                if normalized.startswith("../") or not target_exists:
                     raise ValueError
             except (RuntimeError, ValueError):
                 raise MechanicalClosureError(f"unsafe shadow symlink: {relative}") from None

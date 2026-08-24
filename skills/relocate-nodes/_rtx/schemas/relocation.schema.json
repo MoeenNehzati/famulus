@@ -124,7 +124,7 @@
             "byte_end": {"type": "integer", "minimum": 1},
             "ordinal": {"type": "integer", "minimum": 1},
             "match": {"type": "string", "minLength": 1},
-            "count": {"type": "integer", "minimum": 1},
+            "count": {"type": "integer", "const": 1},
             "disposition": {"const": "rewrite"},
             "text": {"type": "string", "minLength": 1},
             "replacement": {"type": "string"},
@@ -145,7 +145,7 @@
             "byte_end": {"type": "integer", "minimum": 1},
             "ordinal": {"type": "integer", "minimum": 1},
             "match": {"type": "string", "minLength": 1},
-            "count": {"type": "integer", "minimum": 1},
+            "count": {"type": "integer", "const": 1},
             "disposition": {"const": "preserve"},
             "text": {"type": "string", "minLength": 1},
             "reason": {"type": "string", "minLength": 1}

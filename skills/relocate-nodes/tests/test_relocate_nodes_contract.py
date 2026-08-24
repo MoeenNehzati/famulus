@@ -330,6 +330,11 @@ def test_runtime_contract_declares_per_file_not_repository_atomicity() -> None:
 
     assert "per_effect_only" in safety["atomicity"]
     assert "possible" in safety["partial_effects_on_failure"]
+    authored = (RTX_ROOT / "blueprints/rtx-relocate-nodes.yaml").read_text(encoding="utf-8")
+    assert "description: Atomically publish" not in authored
+    assert "Atomically published repository relocation change set" not in authored
+    assert "--apply atomically updates" not in authored
+    assert "atomically apply" not in authored
 
 
 def test_adapter_rejects_report_path_inside_selected_repository(

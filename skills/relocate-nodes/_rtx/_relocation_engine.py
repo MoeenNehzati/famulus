@@ -1032,8 +1032,7 @@ def _project_moves(changes: ChangeSet, manifest: RelocationManifest) -> None:
     for move in manifest.relocations:
         if any(item[0] == move for item in projections):
             changes.moves.append(move)
-    projected_paths = {source: target for _, _, source, target in projections}
-    for _move, source_file, source_relative, target_relative in projections:
+    for projected_move, source_file, source_relative, target_relative in projections:
         if source_file.is_symlink():
             link_text = source_file.readlink()
             try:
@@ -1041,21 +1040,29 @@ def _project_moves(changes: ChangeSet, manifest: RelocationManifest) -> None:
                     raise ValueError
                 resolved = (source_file.parent / link_text).resolve(strict=True)
                 resolved_relative = resolved.relative_to(changes.root).as_posix()
-                expected_target = projected_paths.get(
-                    resolved_relative, resolved_relative
-                )
+                source_prefix = projected_move.source.rstrip("/")
+                if resolved_relative == source_prefix:
+                    expected_target = projected_move.target
+                elif resolved_relative.startswith(source_prefix + "/"):
+                    expected_target = (
+                        projected_move.target.rstrip("/")
+                        + resolved_relative[len(source_prefix):]
+                    )
+                else:
+                    expected_target = resolved_relative
                 projected_link_target = posixpath.normpath(
                     str(PurePosixPath(target_relative).parent / link_text)
                 )
-                if (
-                    projected_link_target.startswith("../")
-                    or projected_link_target != expected_target
-                ):
-                    raise ValueError
+                projected_link_text = link_text.as_posix()
+                if projected_link_target != expected_target:
+                    projected_link_text = posixpath.relpath(
+                        expected_target,
+                        PurePosixPath(target_relative).parent.as_posix(),
+                    )
             except (OSError, RuntimeError, ValueError):
                 raise RelocationError(f"unsafe move symlink: {source_relative}") from None
             changes.expected.setdefault(target_relative, None)
-            changes.symlink_writes[target_relative] = link_text.as_posix()
+            changes.symlink_writes[target_relative] = projected_link_text
             changes.deletes.add(source_relative)
             continue
         changes.expected.setdefault(source_relative, source_file.read_bytes())
@@ -1450,40 +1457,88 @@ def _interface_command_replacements(
 ) -> str:
     """Rewrite only recognized injected-interface address arguments."""
 
+    def word_spans(line: str) -> list[tuple[str, int, int]]:
+        result: list[tuple[str, int, int]] = []
+        index = 0
+        while index < len(line):
+            while index < len(line) and line[index].isspace():
+                index += 1
+            if index >= len(line) or line[index] == "#":
+                break
+            start = index
+            quote: str | None = None
+            while index < len(line):
+                character = line[index]
+                if quote is None and (character.isspace() or character == "#"):
+                    break
+                if character == "\\":
+                    index += min(2, len(line) - index)
+                    continue
+                if character in {"'", '"'}:
+                    quote = None if quote == character else character if quote is None else quote
+                index += 1
+            raw = line[start:index]
+            try:
+                decoded = shlex.split(raw, comments=False)[0]
+            except (IndexError, ValueError):
+                return []
+            result.append((decoded, start, index))
+        return result
+
+    def rewritten_token(raw: str, old: str, new: str) -> str:
+        position = raw.find(old)
+        return raw if position < 0 else raw[:position] + new + raw[position + len(old):]
+
+    identity_lookup = {rename.old: rename.new for rename in identities}
+    path_lookup = {rename.old: rename.new for rename in paths}
+    value_flags = {"--manifest", "--report", "--repository-config", "--root"}
     result_lines: list[str] = []
     for line in text.splitlines(keepends=True):
         stripped = line.lstrip()
         if not stripped or stripped.startswith("#"):
             result_lines.append(line)
             continue
-        try:
-            tokens = shlex.split(line, comments=True)
-        except ValueError:
-            result_lines.append(line)
-            continue
+        spans = word_spans(line)
+        tokens = [value for value, _, _ in spans]
         command = "dispatch" + "er"
         if not tokens or PurePosixPath(tokens[0]).name != command or "--caller-skill" not in tokens:
             result_lines.append(line)
             continue
+        replacements: list[tuple[int, int, str]] = []
+        consumed: set[int] = set()
+        caller_index = tokens.index("--caller-skill")
+        if caller_index + 1 < len(tokens):
+            consumed.add(caller_index + 1)
+            value, start, end = spans[caller_index + 1]
+            replacement = identity_lookup.get(value)
+            if replacement is not None:
+                replacements.append((start, end, rewritten_token(line[start:end], value, replacement)))
+        interface_index: int | None = None
+        index = 1
+        while index < len(tokens):
+            value = tokens[index]
+            if value.startswith("--"):
+                if "=" not in value and index + 1 < len(tokens):
+                    consumed.add(index + 1)
+                    if value in value_flags:
+                        path_value, start, end = spans[index + 1]
+                        replacement = path_lookup.get(path_value)
+                        if replacement is not None:
+                            replacements.append((start, end, rewritten_token(line[start:end], path_value, replacement)))
+                    index += 2
+                    continue
+            elif index not in consumed and ".interface." in value:
+                interface_index = index
+                break
+            index += 1
+        if interface_index is not None:
+            value, start, end = spans[interface_index]
+            replacement = identity_lookup.get(value)
+            if replacement is not None:
+                replacements.append((start, end, rewritten_token(line[start:end], value, replacement)))
         updated = line
-        for rename in identities:
-            token = re.compile(
-                rf"(?<![A-Za-z0-9_.-]){re.escape(rename.old)}(?![A-Za-z0-9_.-])"
-            )
-            if ".interface." in rename.old:
-                updated = token.sub(rename.new, updated)
-            updated = re.sub(
-                rf"(?P<prefix>--caller-skill(?:=|[ \t]+)){re.escape(rename.old)}(?![A-Za-z0-9_.-])",
-                rf"\g<prefix>{rename.new}",
-                updated,
-            )
-        for rename in paths:
-            for flag in ("--manifest", "--report", "--repository-config", "--root"):
-                updated = re.sub(
-                    rf"(?P<prefix>{re.escape(flag)}(?:=|[ \t]+)){re.escape(rename.old)}(?=$|[ \t\r\n])",
-                    rf"\g<prefix>{rename.new}",
-                    updated,
-                )
+        for start, end, replacement in sorted(replacements, reverse=True):
+            updated = updated[:start] + replacement + updated[end:]
         result_lines.append(updated)
     return "".join(result_lines)
 
@@ -1892,6 +1947,10 @@ def _project_semantic_decisions(
     source_spans: list[tuple[str, int, int]] = []
     rewrite_spans: dict[str, list[tuple[int, int, bytes]]] = {}
     for decision in manifest.semantic_decisions:
+        if decision.count != 1:
+            raise RelocationError(
+                f"semantic decision count must be exactly 1: {decision.occurrence_id}"
+            )
         if not _decision_text_owns_one_match(decision):
             raise RelocationError(
                 f"semantic decision text must own exactly one occurrence: {decision.occurrence_id}"

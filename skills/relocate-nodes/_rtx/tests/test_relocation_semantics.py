@@ -60,6 +60,17 @@ def test_cross_root_physical_fragments_do_not_conflict_with_full_endpoint() -> N
     assert not any(old == "skills/foo" and new != "src/officina/foo" for old, new in candidates)
 
 
+def test_same_root_file_move_includes_divergent_filename_fragment() -> None:
+    """A file move exposes its paired filename without duplicating the full path."""
+
+    candidates = [(item.old, item.new) for item in _physical_mappings(
+        DerivedIdentityMap("src/old.py", "src/new.py")
+    )]
+
+    assert ("src/old.py", "src/new.py") in candidates
+    assert ("old.py", "new.py") in candidates
+
+
 def test_long_line_context_is_centered_on_the_occurrence() -> None:
     """Bounded decision context includes matches beyond the old column cutoff."""
     text = "x" * 320 + "old-address" + "y" * 320

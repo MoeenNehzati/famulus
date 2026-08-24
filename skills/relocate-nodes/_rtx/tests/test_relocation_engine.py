@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import stat
 import sys
 
@@ -988,6 +988,30 @@ def test_preserve_decision_owns_only_occurrences_inside_its_selected_span(tmp_pa
     assert not engine_module._is_accounted_final_occurrence(changes, occurrence, (decision,))
 
 
+def test_semantic_decision_count_must_be_exactly_one(tmp_path: Path) -> None:
+    """A complete occurrence selector cannot adjudicate repeated text as a group."""
+
+    with pytest.raises(RelocationError, match="invalid relocation manifest"):
+        _manifest(tmp_path / "manifest.yaml", {
+            "schema_version": 3,
+            "semantic_decisions": [{
+                "occurrence_id": "sha256:selector",
+                "mapping_kind": "physical_fragment",
+                "mapping_id": "old->new",
+                "path": "notes.md",
+                "original_digest": "sha256:" + "0" * 64,
+                "byte_start": 0,
+                "byte_end": 3,
+                "ordinal": 1,
+                "match": "old",
+                "count": 2,
+                "disposition": "preserve",
+                "text": "old",
+                "reason": "reviewed",
+            }],
+        })
+
+
 def test_projected_move_destinations_cannot_overlap(tmp_path: Path) -> None:
     """Two source files cannot silently project onto the same destination."""
     _write(tmp_path / "one/item.txt", "one\n")
@@ -1022,6 +1046,32 @@ def test_structural_projectors_ignore_untyped_yaml_and_noncommand_text(tmp_path:
     assert changes.read_text("run.sh") == "dispatcher --caller-skill new new.interface.default\n"
 
 
+def test_dispatcher_projection_rewrites_only_recognized_argument_tokens(tmp_path: Path) -> None:
+    """Comments and unrelated option values stay authored for semantic review."""
+
+    line = (
+        "dispatcher --caller-skill old --note old "
+        "old.interface.default # old old.interface.default\n"
+    )
+    _write(tmp_path / "run.sh", line)
+    changes = ChangeSet(tmp_path, derived_relocations=(DerivedIdentityMap(
+        "skills/old", "skills/new", source_node_id="old", target_node_id="new",
+        module_ids=(Rename("old", "new"),),
+        interface_ids=(Rename("old.interface.default", "new.interface.default"),),
+    ),))
+    manifest = _manifest(tmp_path / "manifest.yaml", {"schema_version": 3})
+
+    engine_module._project_structural_code(changes, manifest, changes.derived_relocations)
+
+    assert changes.read_text("run.sh") == (
+        "dispatcher --caller-skill new --note old "
+        "new.interface.default # old old.interface.default\n"
+    )
+    from .._relocation_semantics import SemanticScan
+    occurrences = [item for item in SemanticScan(changes).run().occurrences if item.path == "run.sh"]
+    assert len(occurrences) >= 2
+
+
 def test_move_preserves_safe_internal_symlink_without_dereferencing(tmp_path: Path) -> None:
     """A moved internal link remains a link with the same relative link text."""
     _write(tmp_path / "old/target.txt", "payload\n")
@@ -1034,6 +1084,31 @@ def test_move_preserves_safe_internal_symlink_without_dereferencing(tmp_path: Pa
     assert (tmp_path / "new/link.txt").is_symlink()
     assert os.readlink(tmp_path / "new/link.txt") == "target.txt"
     assert not (tmp_path / "old").exists()
+
+
+@pytest.mark.parametrize(
+    ("link_path", "link_text", "expected"),
+    (("old/link", "directory", "directory"), ("old/sub/link", "../target.txt", "../target.txt")),
+)
+def test_move_preserves_internal_directory_and_normalized_parent_links(
+    tmp_path: Path, link_path: str, link_text: str, expected: str
+) -> None:
+    """Moved directory targets and safe parent components remain symlinks."""
+
+    _write(tmp_path / "old/directory/item.txt", "payload\n")
+    _write(tmp_path / "old/target.txt", "target\n")
+    (tmp_path / PurePosixPath(link_path)).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / PurePosixPath(link_path)).symlink_to(link_text)
+    manifest = _manifest(tmp_path / "move.yaml", {
+        "schema_version": 3, "relocations": [{"from": "old", "to": "new"}],
+    })
+
+    changes = plan_relocation(tmp_path, manifest)
+    apply_change_set(changes)
+
+    moved = tmp_path / PurePosixPath(link_path.replace("old/", "new/", 1))
+    assert moved.is_symlink()
+    assert os.readlink(moved) == expected
 
 
 @pytest.mark.parametrize("link_text", ("missing.txt", "../../outside.txt"))

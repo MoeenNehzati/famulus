@@ -162,11 +162,22 @@ def _physical_mappings(relocation: DerivedIdentityMap) -> tuple[SemanticMapping,
     )
     old_parts = relocation.source_path.split("/")
     new_parts = relocation.target_path.split("/")
+    prefix = 0
+    while (
+        prefix < min(len(old_parts), len(new_parts))
+        and old_parts[prefix] == new_parts[prefix]
+    ):
+        prefix += 1
     suffix = 0
-    while suffix < min(len(old_parts), len(new_parts)) and old_parts[-1 - suffix] == new_parts[-1 - suffix]:
+    while (
+        suffix < min(len(old_parts), len(new_parts)) - prefix
+        and old_parts[-1 - suffix] == new_parts[-1 - suffix]
+    ):
         suffix += 1
-    old_core = old_parts[:-suffix] if suffix else old_parts
-    new_core = new_parts[:-suffix] if suffix else new_parts
+    old_end = len(old_parts) - suffix if suffix else len(old_parts)
+    new_end = len(new_parts) - suffix if suffix else len(new_parts)
+    old_core = old_parts[prefix:old_end]
+    new_core = new_parts[prefix:new_end]
     core_pairs = [Rename("/".join(old_core), "/".join(new_core))]
     if len(old_core) == len(new_core):
         core_pairs.extend(

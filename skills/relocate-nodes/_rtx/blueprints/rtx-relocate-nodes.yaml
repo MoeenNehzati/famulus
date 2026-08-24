@@ -77,14 +77,14 @@ interfaces:
             opaque_content: true
         apply:
           default: false
-          description: Atomically publish the accepted relocation change set.
+          description: Publish the accepted change set with atomic replacement per file.
           required: false
           sensitivity: public
           type:
             kind: flag
       caller_warnings:
-      - external-side-effect: --apply atomically updates the selected repository from
-          the validated change set.
+      - external-side-effect: --apply publishes validated files one at a time and may
+          leave earlier files applied if a later publication fails.
       direct_io:
         network: []
         reads:
@@ -146,7 +146,8 @@ interfaces:
           access: write
           path: <root>/**
           path_match: glob
-          content: Atomically published repository relocation change set.
+          content: Repository change set published with atomic replacement per file
+            and possible partial effects if publication fails.
           formats:
           - source-code
           - json
@@ -266,8 +267,8 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Preflight or atomically apply one manifest-driven registered-node
-      relocation.
+    description: Preflight or publish one manifest-driven registered-node relocation
+      with atomic replacement per file.
     process_binding:
       entry: Interface
       kind: process
