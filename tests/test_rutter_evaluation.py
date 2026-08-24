@@ -64,7 +64,7 @@ def test_llm_callbacks_return_exact_values_and_route_failures_are_typed() -> Non
         answer=AnswerSpec({"approved": {}}),
         data=lambda value: {"seen": value.evolution_id},
         validate=lambda value: ValidationReport(True),
-        then="done",
+        next_on_outcome="done",
     )
     response_context = LLMResponseContext(
         context,
@@ -117,7 +117,7 @@ def test_llm_data_normalizes_the_declared_json_object() -> None:
         "Review.",
         answer=AnswerSpec({"approved": {}}),
         data=lambda context: {"items": [{"ready": True}]},
-        then="done",
+        next_on_outcome="done",
     )
 
     assert evaluation.build_llm_data(_context(), step) == {
@@ -130,7 +130,7 @@ def test_llm_data_rejects_malformed_json_as_typed_fault() -> None:
         "Review.",
         answer=AnswerSpec({"approved": {}}),
         data=lambda context: {"bad": object()},
-        then="done",
+        next_on_outcome="done",
     )
 
     with pytest.raises(evaluation._RutterFault) as error:
@@ -144,7 +144,7 @@ def test_llm_validator_rejects_non_report_as_typed_fault() -> None:
         "Review.",
         answer=AnswerSpec({"approved": {}}),
         validate=lambda context: {"valid": True},
-        then="done",
+        next_on_outcome="done",
     )
     response_context = LLMResponseContext(
         _context(),
@@ -162,7 +162,7 @@ def test_subrutter_charter_normalizes_the_declared_json_object() -> None:
     step = SubRutter(
         _Child,
         charter=lambda context: {"items": [{"ready": True}]},
-        then="done",
+        next_on_outcome="done",
     )
 
     assert evaluation.build_subrutter_charter(_context(), step) == {
@@ -174,7 +174,7 @@ def test_subrutter_charter_rejects_malformed_json_as_typed_fault() -> None:
     step = SubRutter(
         _Child,
         charter=lambda context: {"bad": object()},
-        then="done",
+        next_on_outcome="done",
     )
 
     with pytest.raises(evaluation._RutterFault) as error:
@@ -277,7 +277,7 @@ def test_transition_hook_matcher_rejects_non_boolean_as_typed_fault() -> None:
                 MachineStep(
                     lambda context: (_ for _ in ()).throw(RuntimeError("boom")),
                     mode="pure",
-                    then="done",
+                    next_on_outcome="done",
                 ),
             ),
             "action-execution",
@@ -304,7 +304,7 @@ def test_machine_callback_returns_exact_domain_result() -> None:
     machine = MachineStep(
         lambda context: MachineResult("stored", {"machine": context.machine_id}),
         mode="pure",
-        then="done",
+        next_on_outcome="done",
     )
 
     assert evaluation.run_machine(

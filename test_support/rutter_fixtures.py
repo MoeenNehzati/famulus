@@ -91,7 +91,7 @@ class AttachedChildRutter(Rutter):
             "delegate": SubRutter(
                 GrandchildRutter,
                 charter=child_charter,
-                then="complete",
+                next_on_outcome="complete",
             ),
             "complete": Terminal(VoyageResult("completed", {})),
         }
@@ -107,7 +107,7 @@ class DiscoveryRootRutter(Rutter):
             "delegate": SubRutter(
                 DirectChildRutter,
                 charter=child_charter,
-                then="complete",
+                next_on_outcome="complete",
             ),
             "complete": Terminal(VoyageResult("completed", {})),
         }
@@ -133,7 +133,7 @@ class ExampleRutter(Rutter):
                 "Report.",
                 answer=AnswerSpec({"reported": {}}),
                 data=report_data,
-                then="complete",
+                next_on_outcome="complete",
             ),
             "complete": Terminal(VoyageResult("completed", {})),
         }

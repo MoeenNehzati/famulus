@@ -171,12 +171,12 @@ def test_every_matcher_reuses_its_record_anchored_context_and_provenance(
                 "review": rutter_public.MachineStep(
                     lambda context: rutter_public.MachineResult("approved", {}),
                     mode="pure",
-                    then="invoke",
+                    next_on_outcome="invoke",
                 ),
                 "invoke": rutter_public.SubRutter(
                     HookChild,
                     charter=lambda context: {"kind": "explicit"},
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "done": rutter_public.Terminal(
                     rutter_public.VoyageResult("finished", {"ok": True})
@@ -295,7 +295,7 @@ def test_multiple_selection_faults_with_every_maker_before_child_allocation(
                 "review": rutter_public.MachineStep(
                     lambda context: rutter_public.MachineResult("approved", {}),
                     mode="pure",
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "done": rutter_public.Terminal(rutter_public.VoyageResult("finished", {})),
             }
@@ -384,7 +384,7 @@ def test_case_callback_failure_preserves_accepted_source_as_stable_fault(
                 "review": rutter_public.MachineStep(
                     lambda context: rutter_public.MachineResult("approved", {}),
                     mode="pure",
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "done": rutter_public.Terminal(rutter_public.VoyageResult("finished", {})),
             }
@@ -444,7 +444,7 @@ def test_prompt_attachment_reopens_after_attach_settle_and_return_boundaries(
                 "review": rutter_public.LLMStep(
                     "Review.",
                     answer=rutter_public.AnswerSpec({"approved": {}}),
-                    then="publish",
+                    next_on_outcome="publish",
                 ),
                 "publish": rutter_public.Terminal(
                     rutter_public.VoyageResult("finished", {})
@@ -540,7 +540,7 @@ def test_pure_action_attachment_return_does_not_offer_or_replay_action(
                 "review": rutter_public.MachineStep(
                     approve,
                     mode="pure",
-                    then="publish",
+                    next_on_outcome="publish",
                 ),
                 "publish": rutter_public.Terminal(
                     rutter_public.VoyageResult("finished", {})

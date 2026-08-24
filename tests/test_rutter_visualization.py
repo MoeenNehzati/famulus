@@ -38,12 +38,12 @@ class ReviewRutter(Rutter):
                         "revise": {"requested_changes": ["string"]},
                     }
                 ),
-                then={"approved": "publish", "revise": "edit"},
+                next_on_outcome={"approved": "publish", "revise": "edit"},
             ),
             "edit": MachineStep(
                 record_requested_edits,
                 mode="pure",
-                then={"edited": "review"},
+                next_on_outcome={"edited": "review"},
             ),
             "publish": Terminal(VoyageResult("published", {})),
         }
@@ -165,7 +165,7 @@ def test_callable_transition_uses_docstring_without_executing_callbacks() -> Non
                     answer=AnswerSpec({"answered": {"choice": "string"}}),
                     data=lambda context: calls.append("data") or {},
                     validate=lambda context: calls.append("validate"),
-                    then=route,
+                    choose_next=route,
                 ),
                 "done": Terminal(VoyageResult("finished", {})),
             }

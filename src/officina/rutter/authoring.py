@@ -54,9 +54,7 @@ class Rutter:
         return ()
 
 
-def _freeze_then(value: object) -> object:
-    if callable(value):
-        return value
+def _freeze_next_on_outcome(value: str | Mapping[str, str]) -> str | Mapping[str, str]:
     if type(value) is str:
         return _require_id(value, "successor", RutterDefinitionError)
     if isinstance(value, Mapping):
@@ -66,7 +64,22 @@ def _freeze_then(value: object) -> object:
                 target, "successor", RutterDefinitionError
             )
         return MappingProxyType(routes)
-    raise RutterDefinitionError("then must be a evolution ID, outcome mapping, or callable")
+    raise RutterDefinitionError(
+        "next_on_outcome must be an evolution ID or outcome mapping"
+    )
+
+
+def _routing_modes(
+    next_on_outcome: str | Mapping[str, str] | None,
+    choose_next: Callable[..., str] | None,
+) -> tuple[str | Mapping[str, str] | None, Callable[..., str] | None]:
+    if (next_on_outcome is None) == (choose_next is None):
+        raise RutterDefinitionError("exactly one routing mode is required")
+    if next_on_outcome is not None:
+        return _freeze_next_on_outcome(next_on_outcome), None
+    if not callable(choose_next):
+        raise RutterDefinitionError("choose_next must be callable")
+    return None, choose_next
 
 
 @dataclass(frozen=True, init=False)
@@ -75,7 +88,8 @@ class LLMStep:
     answer: AnswerSpec
     data: Callable[[EvolutionContext], JsonObject]
     validate: Callable[[LLMResponseContext], ValidationReport]
-    then: object
+    next_on_outcome: str | Mapping[str, str] | None
+    choose_next: Callable[..., str] | None
 
     def __init__(
         self,
@@ -84,7 +98,8 @@ class LLMStep:
         answer: AnswerSpec,
         data: Callable[[EvolutionContext], JsonObject] = empty_data,
         validate: Callable[[LLMResponseContext], ValidationReport] = accept,
-        then: object,
+        next_on_outcome: str | Mapping[str, str] | None = None,
+        choose_next: Callable[..., str] | None = None,
     ) -> None:
         object.__setattr__(
             self,
@@ -98,7 +113,9 @@ class LLMStep:
         object.__setattr__(self, "answer", answer)
         object.__setattr__(self, "data", data)
         object.__setattr__(self, "validate", validate)
-        object.__setattr__(self, "then", _freeze_then(then))
+        next_on_outcome, choose_next = _routing_modes(next_on_outcome, choose_next)
+        object.__setattr__(self, "next_on_outcome", next_on_outcome)
+        object.__setattr__(self, "choose_next", choose_next)
 
 
 @dataclass(frozen=True)
@@ -106,14 +123,19 @@ class MachineStep:
     run: Callable[[MachineContext], MachineResult]
     _: KW_ONLY
     mode: str
-    then: object
+    next_on_outcome: str | Mapping[str, str] | None = None
+    choose_next: Callable[..., str] | None = None
 
     def __post_init__(self) -> None:
         if not callable(self.run):
             raise RutterDefinitionError("MachineStep run must be callable")
         if self.mode not in {"pure", "repeat-safe", "non-repeat-safe"}:
             raise RutterDefinitionError("MachineStep mode is invalid")
-        object.__setattr__(self, "then", _freeze_then(self.then))
+        next_on_outcome, choose_next = _routing_modes(
+            self.next_on_outcome, self.choose_next
+        )
+        object.__setattr__(self, "next_on_outcome", next_on_outcome)
+        object.__setattr__(self, "choose_next", choose_next)
 
 
 @dataclass(frozen=True)
@@ -121,14 +143,19 @@ class SubRutter:
     child: type[Rutter]
     _: KW_ONLY
     charter: Callable[[EvolutionContext], JsonObject]
-    then: object
+    next_on_outcome: str | Mapping[str, str] | None = None
+    choose_next: Callable[..., str] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.child, type) or not issubclass(self.child, Rutter):
             raise RutterDefinitionError("SubRutter child must be a Rutter class")
         if not callable(self.charter):
             raise RutterDefinitionError("SubRutter charter must be callable")
-        object.__setattr__(self, "then", _freeze_then(self.then))
+        next_on_outcome, choose_next = _routing_modes(
+            self.next_on_outcome, self.choose_next
+        )
+        object.__setattr__(self, "next_on_outcome", next_on_outcome)
+        object.__setattr__(self, "choose_next", choose_next)
 
 
 @dataclass(frozen=True)

@@ -796,12 +796,12 @@ class InquisitiveInventoryRutter(Rutter):
                 ),
                 data=_report_data,
                 validate=_validate_report,
-                then=_RECORD_EVOLUTION,
+                next_on_outcome=_RECORD_EVOLUTION,
             ),
             _RECORD_EVOLUTION: MachineStep(
                 _record_iteration,
                 mode="repeat-safe",
-                then={"more": _REPORT_EVOLUTION, "done": "complete"},
+                next_on_outcome={"more": _REPORT_EVOLUTION, "done": "complete"},
             ),
             "complete": Terminal(_complete_result),
         }

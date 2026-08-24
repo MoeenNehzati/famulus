@@ -349,7 +349,7 @@ class DiagnoseAnswer(Rutter):
             "route": MachineStep(
                 self._route,
                 mode="pure",
-                then={
+                next_on_outcome={
                     "equal": "complete-equal-evaluator",
                     "different": "explain",
                     "compare": "compare",
@@ -362,7 +362,7 @@ class DiagnoseAnswer(Rutter):
                 ),
                 answer=AnswerSpec({"yes": {}, "no": {}}),
                 data=self._prompt_data,
-                then={"yes": "complete-equal-llm", "no": "explain"},
+                next_on_outcome={"yes": "complete-equal-llm", "no": "explain"},
             ),
             "explain": LLMStep(
                 (
@@ -384,7 +384,7 @@ class DiagnoseAnswer(Rutter):
                 ),
                 data=self._prompt_data,
                 validate=self._validate_detail,
-                then="complete-different",
+                next_on_outcome="complete-different",
             ),
             "complete-equal-evaluator": Terminal(self._equal_evaluator),
             "complete-equal-llm": Terminal(self._equal_llm),
@@ -476,12 +476,12 @@ class AskAndDiagnose(Rutter):
                 answer=AnswerSpec({"answered": {"answer": "string"}}),
                 data=self._ask_data,
                 validate=self._validate_answer,
-                then="diagnose",
+                next_on_outcome="diagnose",
             ),
             "diagnose": SubRutter(
                 DiagnoseAnswer,
                 charter=self._diagnosis_charter,
-                then="complete",
+                next_on_outcome="complete",
             ),
             "complete": Terminal(self._forward_result),
         }

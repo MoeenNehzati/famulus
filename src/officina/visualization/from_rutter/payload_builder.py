@@ -110,8 +110,8 @@ def _evolution_sections(
     sections: list[dict[str, object]] = []
     if isinstance(evolution, LLMStep):
         sections.append(_llm_step_section(evolution))
-    if hasattr(evolution, "then") and callable(evolution.then):
-        sections.append(_dynamic_section(evolution.then))
+    if hasattr(evolution, "choose_next") and callable(evolution.choose_next):
+        sections.append(_dynamic_section(evolution.choose_next))
     fields: list[dict[str, object]] = [
         {"label": "Evolution ID", "value": evolution_id, "format": "code"},
         {"label": "Kind", "value": _evolution_kind(evolution), "format": "text"},
@@ -138,13 +138,15 @@ def _evolution_sections(
 
 
 def _routes(evolution: object) -> list[tuple[str, str]]:
-    then = getattr(evolution, "then", None)
-    if type(then) is str:
+    next_on_outcome = getattr(evolution, "next_on_outcome", None)
+    if type(next_on_outcome) is str:
         if isinstance(evolution, LLMStep):
-            return [(str(outcome), then) for outcome in evolution.answer.outcomes]
-        return [("any outcome", then)]
-    if isinstance(then, Mapping):
-        return [(str(outcome), str(target)) for outcome, target in then.items()]
+            return [(str(outcome), next_on_outcome) for outcome in evolution.answer.outcomes]
+        return [("any outcome", next_on_outcome)]
+    if isinstance(next_on_outcome, Mapping):
+        return [
+            (str(outcome), str(target)) for outcome, target in next_on_outcome.items()
+        ]
     return []
 
 

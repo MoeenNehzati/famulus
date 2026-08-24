@@ -44,10 +44,10 @@ class _RutterFault(Exception):
 
 def evaluate_llm_route(
     context: LLMResponseContext,
-    route: Callable[[LLMResponseContext], str],
+    choose_next: Callable[[LLMResponseContext], str],
 ) -> str:
     try:
-        target = route(context)
+        target = choose_next(context)
     except Exception as exc:
         raise _RutterFault("routing") from exc
     if type(target) is not str:
@@ -58,10 +58,10 @@ def evaluate_llm_route(
 def evaluate_machine_route(
     context: MachineContext,
     result: MachineResult,
-    route: Callable[[MachineContext, MachineResult], str],
+    choose_next: Callable[[MachineContext, MachineResult], str],
 ) -> str:
     try:
-        target = route(context, result)
+        target = choose_next(context, result)
     except Exception as exc:
         raise _RutterFault("routing") from exc
     if type(target) is not str:
@@ -72,10 +72,10 @@ def evaluate_machine_route(
 def evaluate_subrutter_route(
     context: EvolutionContext,
     result: VoyageResult,
-    route: Callable[[EvolutionContext, VoyageResult], str],
+    choose_next: Callable[[EvolutionContext, VoyageResult], str],
 ) -> str:
     try:
-        target = route(context, result)
+        target = choose_next(context, result)
     except Exception as exc:
         raise _RutterFault("routing") from exc
     if type(target) is not str:

@@ -251,19 +251,32 @@ class _DefinitionBinder:
                     )
                 _require_callback(evolution.data, 1, "LLMStep data")
                 _require_callback(evolution.validate, 1, "LLMStep validate")
-                self._validate_then(
-                    evolution.then,
+                self._validate_next_on_outcome(
+                    evolution.next_on_outcome,
                     evolutions,
-                    1,
-                    "LLMStep then",
+                    "LLMStep next_on_outcome",
                     outcomes=frozenset(evolution.answer.outcomes),
                 )
+                if evolution.choose_next is not None:
+                    _require_callback(evolution.choose_next, 1, "LLMStep choose_next")
             elif isinstance(evolution, MachineStep):
                 _require_callback(evolution.run, 1, "MachineStep run")
-                self._validate_then(evolution.then, evolutions, 2, "MachineStep then")
+                self._validate_next_on_outcome(
+                    evolution.next_on_outcome,
+                    evolutions,
+                    "MachineStep next_on_outcome",
+                )
+                if evolution.choose_next is not None:
+                    _require_callback(evolution.choose_next, 2, "MachineStep choose_next")
             elif isinstance(evolution, SubRutter):
                 _require_callback(evolution.charter, 1, "SubRutter charter")
-                self._validate_then(evolution.then, evolutions, 2, "SubRutter then")
+                self._validate_next_on_outcome(
+                    evolution.next_on_outcome,
+                    evolutions,
+                    "SubRutter next_on_outcome",
+                )
+                if evolution.choose_next is not None:
+                    _require_callback(evolution.choose_next, 2, "SubRutter choose_next")
                 children.append(evolution.child)
             elif isinstance(evolution, Terminal) and callable(evolution.result):
                 _require_callback(evolution.result, 1, "Terminal result")
@@ -271,27 +284,25 @@ class _DefinitionBinder:
         return tuple(children)
 
     @staticmethod
-    def _validate_then(
-        then: object,
+    def _validate_next_on_outcome(
+        next_on_outcome: str | Mapping[str, str] | None,
         evolutions: Mapping[str, Evolution],
-        callable_arity: int,
         label: str,
         *,
         outcomes: frozenset[str] | None = None,
     ) -> None:
         targets: tuple[object, ...]
-        if type(then) is str:
-            targets = (then,)
-        elif isinstance(then, Mapping):
-            if not then:
+        if type(next_on_outcome) is str:
+            targets = (next_on_outcome,)
+        elif isinstance(next_on_outcome, Mapping):
+            if not next_on_outcome:
                 raise RutterDefinitionError(f"{label} routes must not be empty")
-            if outcomes is not None and set(then) != outcomes:
+            if outcomes is not None and set(next_on_outcome) != outcomes:
                 raise RutterDefinitionError(
                     "LLMStep routes must exactly match declared outcomes"
                 )
-            targets = tuple(then.values())
-        elif callable(then):
-            _require_callback(then, callable_arity, label)
+            targets = tuple(next_on_outcome.values())
+        elif next_on_outcome is None:
             return
         else:
             raise RutterDefinitionError(f"{label} has invalid routing")

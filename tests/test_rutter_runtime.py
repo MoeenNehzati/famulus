@@ -176,7 +176,7 @@ def test_binding_rejects_duplicate_case_maker_ids(reckoning_root: Path) -> None:
             "start": LLMStep(
                 "Choose.",
                 answer=AnswerSpec({"yes": {}, "no": {}}),
-                then={"yes": "complete"},
+                next_on_outcome={"yes": "complete"},
             ),
             "complete": Terminal(VoyageResult("complete", {})),
         },
@@ -184,7 +184,7 @@ def test_binding_rejects_duplicate_case_maker_ids(reckoning_root: Path) -> None:
             "start": LLMStep(
                 "Choose.",
                 answer=AnswerSpec({"yes": {}}),
-                then={"yes": "complete", "unknown": "complete"},
+                next_on_outcome={"yes": "complete", "unknown": "complete"},
             ),
             "complete": Terminal(VoyageResult("complete", {})),
         },
@@ -203,21 +203,21 @@ def test_binding_rejects_prompt_routes_with_missing_or_undeclared_outcomes(
     (
         {
             "start": LLMStep(
-                "Continue.", answer=AnswerSpec({"yes": {}}), then="absent"
+                "Continue.", answer=AnswerSpec({"yes": {}}), next_on_outcome="absent"
             )
         },
         {
             "start": MachineStep(
                 lambda context: None,  # type: ignore[arg-type,return-value]
                 mode="pure",
-                then={"done": "absent"},
+                next_on_outcome={"done": "absent"},
             )
         },
         {
             "start": SubRutter(
                 DirectChildRutter,
                 charter=child_charter,
-                then="absent",
+                next_on_outcome="absent",
             )
         },
     ),
@@ -239,7 +239,7 @@ def test_binding_rejects_undeclared_literal_successors(
                     "Continue.",
                     answer=AnswerSpec({"yes": {}}),
                     data=lambda: {},
-                    then="complete",
+                    next_on_outcome="complete",
                 ),
                 "complete": Terminal(VoyageResult("complete", {})),
             },
@@ -251,7 +251,7 @@ def test_binding_rejects_undeclared_literal_successors(
                     "Continue.",
                     answer=AnswerSpec({"yes": {}}),
                     validate=lambda one, two: None,
-                    then="complete",
+                    next_on_outcome="complete",
                 ),
                 "complete": Terminal(VoyageResult("complete", {})),
             },
@@ -262,7 +262,7 @@ def test_binding_rejects_undeclared_literal_successors(
                 "start": MachineStep(
                     lambda: None,  # type: ignore[arg-type,return-value]
                     mode="pure",
-                    then="complete",
+                    next_on_outcome="complete",
                 ),
                 "complete": Terminal(VoyageResult("complete", {})),
             },
@@ -273,7 +273,7 @@ def test_binding_rejects_undeclared_literal_successors(
                 "start": SubRutter(
                     DirectChildRutter,
                     charter=lambda: {},
-                    then="complete",
+                    next_on_outcome="complete",
                 ),
                 "complete": Terminal(VoyageResult("complete", {})),
             },
@@ -345,8 +345,8 @@ def test_binding_rejects_child_identity_conflicts(reckoning_root: Path) -> None:
         pass
 
     states = {
-        "first": SubRutter(First, charter=child_charter, then="second"),
-        "second": SubRutter(Second, charter=child_charter, then="complete"),
+        "first": SubRutter(First, charter=child_charter, next_on_outcome="second"),
+        "second": SubRutter(Second, charter=child_charter, next_on_outcome="complete"),
         "complete": Terminal(VoyageResult("complete", {})),
     }
 
@@ -366,7 +366,7 @@ def test_binding_rejects_recursive_definition_call_cycles(
 
         def define_evolutions(self):
             return {
-                "call": SubRutter(Second, charter=child_charter, then="done"),
+                "call": SubRutter(Second, charter=child_charter, next_on_outcome="done"),
                 "done": Terminal(VoyageResult("done", {})),
             }
 
@@ -377,7 +377,7 @@ def test_binding_rejects_recursive_definition_call_cycles(
 
         def define_evolutions(self):
             return {
-                "call": SubRutter(First, charter=child_charter, then="done"),
+                "call": SubRutter(First, charter=child_charter, next_on_outcome="done"),
                 "done": Terminal(VoyageResult("done", {})),
             }
 
@@ -818,7 +818,7 @@ def test_open_rejects_open_prompt_turn_with_active_attached_child(
             "start": LLMStep(
                 "Report.",
                 answer=AnswerSpec({"reported": {}}),
-                then="complete",
+                next_on_outcome="complete",
             ),
             "complete": Terminal(VoyageResult("complete", {})),
         },
@@ -875,7 +875,7 @@ def test_open_accepts_accepted_prompt_turn_with_matching_attached_child(
             "start": LLMStep(
                 "Report.",
                 answer=AnswerSpec({"reported": {}}),
-                then="complete",
+                next_on_outcome="complete",
             ),
             "complete": Terminal(VoyageResult("complete", {})),
         },
@@ -965,7 +965,7 @@ def test_open_accepts_prompt_after_attached_child_return(
             "start": LLMStep(
                 "Report.",
                 answer=AnswerSpec({"reported": {}}),
-                then="complete",
+                next_on_outcome="complete",
             ),
             "complete": Terminal(VoyageResult("complete", {})),
         },
@@ -1025,7 +1025,7 @@ def test_open_accepts_historical_prompt_revision_with_open_prompt_child(
             "start": LLMStep(
                 "Report.",
                 answer=AnswerSpec({"reported": {}}),
-                then="complete",
+                next_on_outcome="complete",
             ),
             "complete": Terminal(VoyageResult("complete", {})),
         },

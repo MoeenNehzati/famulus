@@ -1060,12 +1060,12 @@ def test_non_diagnostic_sequence_advances_once_per_completed_attachment_across_r
                 "first": rutter.MachineStep(
                     lambda context: rutter.MachineResult("advanced", 1),
                     mode="pure",
-                    then="second",
+                    next_on_outcome="second",
                 ),
                 "second": rutter.MachineStep(
                     lambda context: rutter.MachineResult("advanced", 2),
                     mode="pure",
-                    then="complete",
+                    next_on_outcome="complete",
                 ),
                 "complete": rutter.Terminal(rutter.VoyageResult("finished", {})),
             }
@@ -1141,7 +1141,7 @@ def test_fresh_question_sequence_uses_application_evaluator_subclass(
                 "prepare": rutter.MachineStep(
                     lambda context: rutter.MachineResult("prepared", {}),
                     mode="pure",
-                    then="complete",
+                    next_on_outcome="complete",
                 ),
                 "complete": rutter.Terminal(rutter.VoyageResult("finished", {})),
             }
@@ -1217,7 +1217,7 @@ def test_diagnose_answer_on_failure_preserves_accepted_source_turn(
                 "answer": rutter.LLMStep(
                     "Answer.",
                     answer=rutter.AnswerSpec({"answered": {"answer": "string"}}),
-                    then="complete",
+                    next_on_outcome="complete",
                 ),
                 "complete": rutter.Terminal(rutter.VoyageResult("finished", {})),
             }

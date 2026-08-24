@@ -504,10 +504,94 @@ def test_answer_spec_preserves_none_empty_and_shaped_guidance() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("construct_static", "construct_callback"),
+    (
+        (
+            lambda: LLMStep(
+                "Report.",
+                answer=AnswerSpec({"reported": {}}),
+                next_on_outcome="done",
+            ),
+            lambda: LLMStep(
+                "Report.",
+                answer=AnswerSpec({"reported": {}}),
+                choose_next=lambda context: "done",
+            ),
+        ),
+        (
+            lambda: MachineStep(
+                lambda context: MachineResult("reported", {}),
+                mode="pure",
+                next_on_outcome="done",
+            ),
+            lambda: MachineStep(
+                lambda context: MachineResult("reported", {}),
+                mode="pure",
+                choose_next=lambda context, result: "done",
+            ),
+        ),
+        (
+            lambda: SubRutter(
+                ExampleRutter,
+                charter=lambda context: {},
+                next_on_outcome="done",
+            ),
+            lambda: SubRutter(
+                ExampleRutter,
+                charter=lambda context: {},
+                choose_next=lambda context, result: "done",
+            ),
+        ),
+    ),
+)
+def test_evolution_constructors_separate_static_and_callback_routing(
+    construct_static, construct_callback
+) -> None:
+    static = construct_static()
+    callback = construct_callback()
+
+    assert static.next_on_outcome == "done"
+    assert static.choose_next is None
+    assert callback.next_on_outcome is None
+    assert callable(callback.choose_next)
+
+
+@pytest.mark.parametrize(
+    "construct",
+    (
+        lambda: LLMStep("Report.", answer=AnswerSpec({"reported": {}})),
+        lambda: LLMStep(
+            "Report.",
+            answer=AnswerSpec({"reported": {}}),
+            next_on_outcome="done",
+            choose_next=lambda context: "done",
+        ),
+        lambda: MachineStep(lambda context: MachineResult("reported", {}), mode="pure"),
+        lambda: MachineStep(
+            lambda context: MachineResult("reported", {}),
+            mode="pure",
+            next_on_outcome="done",
+            choose_next=lambda context, result: "done",
+        ),
+        lambda: SubRutter(ExampleRutter, charter=lambda context: {}),
+        lambda: SubRutter(
+            ExampleRutter,
+            charter=lambda context: {},
+            next_on_outcome="done",
+            choose_next=lambda context, result: "done",
+        ),
+    ),
+)
+def test_evolution_constructors_require_exactly_one_routing_mode(construct) -> None:
+    with pytest.raises(RutterDefinitionError, match="exactly one routing mode"):
+        construct()
+
+
 def test_definition_values_keep_callbacks_in_process_only() -> None:
     prompt = ExampleRutter().define_evolutions()["report"]
-    action = MachineStep(lambda context: MachineResult("ok", {}), mode="pure", then="done")
-    call = SubRutter(ExampleRutter, charter=lambda context: {}, then="done")
+    action = MachineStep(lambda context: MachineResult("ok", {}), mode="pure", next_on_outcome="done")
+    call = SubRutter(ExampleRutter, charter=lambda context: {}, next_on_outcome="done")
     done = Terminal(VoyageResult("completed", {}))
 
     def execute_action() -> MachineResult:

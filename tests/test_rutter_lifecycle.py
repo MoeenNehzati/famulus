@@ -113,7 +113,7 @@ def test_pure_action_accepts_supplied_result_without_callback(
 
         def define_evolutions(self) -> Mapping[str, object]:
             return {
-                "calculate": MachineStep(execute, mode="pure", then=route),
+                "calculate": MachineStep(execute, mode="pure", choose_next=route),
                 "done": Terminal(VoyageResult("complete", {})),
             }
 
@@ -166,7 +166,7 @@ def test_omitted_action_result_runs_callback_once(
 
         def define_evolutions(self) -> Mapping[str, object]:
             return {
-                "calculate": MachineStep(execute, mode="pure", then="done"),
+                "calculate": MachineStep(execute, mode="pure", next_on_outcome="done"),
                 "done": Terminal(VoyageResult("complete", {})),
             }
 
@@ -208,7 +208,7 @@ def test_repeat_safe_instruction_persists_completed_recovery_before_return(
 
         def define_evolutions(self) -> Mapping[str, object]:
             return {
-                "store": MachineStep(execute, mode="repeat-safe", then="done"),
+                "store": MachineStep(execute, mode="repeat-safe", next_on_outcome="done"),
                 "done": Terminal(VoyageResult("complete", {})),
             }
 
@@ -276,7 +276,7 @@ def test_effectful_supplied_result_requires_completed_recovery(
 
         def define_evolutions(self) -> Mapping[str, object]:
             return {
-                "store": MachineStep(execute, mode="repeat-safe", then="done"),
+                "store": MachineStep(execute, mode="repeat-safe", next_on_outcome="done"),
                 "done": Terminal(VoyageResult("complete", {})),
             }
 
@@ -330,7 +330,7 @@ def test_omitted_repeat_safe_action_runs_and_consumes_the_same_wrapper(
 
         def define_evolutions(self) -> Mapping[str, object]:
             return {
-                "store": MachineStep(execute, mode="repeat-safe", then="done"),
+                "store": MachineStep(execute, mode="repeat-safe", next_on_outcome="done"),
                 "done": Terminal(VoyageResult("complete", {})),
             }
 
@@ -378,7 +378,7 @@ def test_non_repeat_safe_markers_precede_accepted_action(
 
         def define_evolutions(self) -> Mapping[str, object]:
             return {
-                "send": MachineStep(execute, mode="non-repeat-safe", then="done"),
+                "send": MachineStep(execute, mode="non-repeat-safe", next_on_outcome="done"),
                 "done": Terminal(VoyageResult("complete", {})),
             }
 
@@ -424,7 +424,7 @@ def test_non_repeat_safe_crash_windows_preserve_authoritative_boundaries(
                     "send": MachineStep(
                         execute,
                         mode="non-repeat-safe",
-                        then="done",
+                        next_on_outcome="done",
                     ),
                     "done": Terminal(VoyageResult("complete", {})),
                 }
@@ -567,12 +567,12 @@ def test_reopen_rejects_recovery_that_differs_from_the_bound_action(
                 "send": MachineStep(
                     lambda context: MachineResult("sent", {}),
                     mode="non-repeat-safe",
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "delegate": SubRutter(
                     DirectChildRutter,
                     charter=lambda context: {},
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "done": Terminal(VoyageResult("complete", {})),
             }
@@ -628,12 +628,12 @@ def test_every_effectful_target_and_self_loop_entrance_allocates_fresh_recovery(
                 "start": LLMStep(
                     "Start.",
                     answer=AnswerSpec({"go": {}}),
-                    then="store",
+                    next_on_outcome="store",
                 ),
                 "store": MachineStep(
                     execute,
                     mode="repeat-safe",
-                    then={"again": "store", "done": "done"},
+                    next_on_outcome={"again": "store", "done": "done"},
                 ),
                 "done": Terminal(VoyageResult("complete", {})),
             }
@@ -694,7 +694,7 @@ def test_nested_action_recovery_is_owned_by_the_deepest_leaf_across_reopen(
 
         def define_evolutions(self) -> Mapping[str, object]:
             return {
-                "work": MachineStep(execute, mode="repeat-safe", then="done"),
+                "work": MachineStep(execute, mode="repeat-safe", next_on_outcome="done"),
                 "done": Terminal(VoyageResult("child-complete", {})),
             }
 
@@ -708,7 +708,7 @@ def test_nested_action_recovery_is_owned_by_the_deepest_leaf_across_reopen(
                 "delegate": SubRutter(
                     ActionChild,
                     charter=lambda context: {},
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "done": Terminal(VoyageResult("parent-complete", {})),
             }
@@ -772,7 +772,7 @@ def test_effectful_instruction_callback_failure_persists_only_stable_fault_data(
 
         def define_evolutions(self) -> Mapping[str, object]:
             return {
-                "work": MachineStep(execute, mode=mode, then="done"),
+                "work": MachineStep(execute, mode=mode, next_on_outcome="done"),
                 "done": Terminal(VoyageResult("complete", {})),
             }
 
@@ -824,7 +824,7 @@ def test_dry_run_supplied_result_records_nothing(
                         or MachineResult("ready", {})
                     ),
                     mode="pure",
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "done": Terminal(VoyageResult("complete", {})),
             }
@@ -864,7 +864,7 @@ def test_dry_run_supplied_result_records_nothing(
                         or MachineResult("stored", {})
                     ),
                     mode="repeat-safe",
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "done": Terminal(VoyageResult("complete", {})),
             }
@@ -921,9 +921,9 @@ def test_continue_true_executes_action_entered_from_prompt(
                 "start": LLMStep(
                     "Start.",
                     answer=AnswerSpec({"go": {}}),
-                    then="work",
+                    next_on_outcome="work",
                 ),
-                "work": MachineStep(execute, mode=mode, then="done"),
+                "work": MachineStep(execute, mode=mode, next_on_outcome="done"),
                 "done": Terminal(VoyageResult("complete", {})),
             }
 
@@ -983,12 +983,12 @@ def test_accepted_action_record_survives_later_callback_fault_without_replay(
 
         def define_evolutions(self) -> Mapping[str, object]:
             return {
-                "store": MachineStep(execute, mode="repeat-safe", then=route),
+                "store": MachineStep(execute, mode="repeat-safe", choose_next=route),
                 "broken": LLMStep(
                     "Broken.",
                     answer=AnswerSpec({"ok": {}}),
                     data=materialize,
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "done": Terminal(VoyageResult("complete", {})),
             }
@@ -1051,7 +1051,7 @@ def test_repeat_safe_reopen_retries_planned_work_with_the_same_action_id(
 
         def define_evolutions(self) -> Mapping[str, object]:
             return {
-                "store": MachineStep(execute, mode="repeat-safe", then="done"),
+                "store": MachineStep(execute, mode="repeat-safe", next_on_outcome="done"),
                 "done": Terminal(VoyageResult("complete", {})),
             }
 
@@ -1231,7 +1231,7 @@ def test_contextual_prompt_validation_receives_frozen_current_context(
                     "Review.",
                     answer=AnswerSpec({"accepted": {}}),
                     validate=reject,
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "done": Terminal(VoyageResult("complete", {})),
             }
@@ -1325,7 +1325,7 @@ def test_prompt_self_loop_allocates_a_new_entrance_and_rerenders_from_history(
                     "Again?",
                     answer=AnswerSpec({"again": {}}),
                     data=payload,
-                    then="ask",
+                    next_on_outcome="ask",
                 )
             }
 
@@ -1373,13 +1373,13 @@ def test_target_prompt_render_failure_keeps_accepted_source_and_faults_in_place(
                 "source": LLMStep(
                     "Source.",
                     answer=AnswerSpec({"go": {}}),
-                    then="target",
+                    next_on_outcome="target",
                 ),
                 "target": LLMStep(
                     "Target.",
                     answer=AnswerSpec({"stop": {}}),
                     data=fail_data,
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "done": Terminal(VoyageResult("complete", {})),
             }
@@ -1437,7 +1437,7 @@ def test_prompt_routing_failure_preserves_the_accepted_turn_before_fault(
                 "source": LLMStep(
                     "Source.",
                     answer=AnswerSpec({"go": {}}),
-                    then=fail_route,
+                    choose_next=fail_route,
                 ),
                 "done": Terminal(VoyageResult("complete", {})),
             }
@@ -1522,13 +1522,13 @@ def test_prompt_and_done_dry_runs_preview_without_entering_or_writing(
                 "source": LLMStep(
                     "Source.",
                     answer=AnswerSpec({"go": {}}),
-                    then="target",
+                    next_on_outcome="target",
                 ),
                 "target": LLMStep(
                     "Target.",
                     answer=AnswerSpec({"finish": {}}),
                     data=target_data,
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "done": Terminal(VoyageResult("complete", {})),
             }
@@ -1617,7 +1617,7 @@ def test_call_push_keeps_parent_entered_and_exposes_the_child_leaf(
                 "delegate": SubRutter(
                     DirectChildRutter,
                     charter=child_charter,
-                    then="complete",
+                    next_on_outcome="complete",
                 ),
                 "complete": Terminal(VoyageResult("completed", {})),
             }
@@ -1679,12 +1679,12 @@ def test_active_leaf_rejects_child_from_another_call_entrance_before_mutation(
                 "first": SubRutter(
                     DirectChildRutter,
                     charter=lambda context: {"from": context.evolution_id},
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "second": SubRutter(
                     DirectChildRutter,
                     charter=lambda context: {"from": context.evolution_id},
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "done": Terminal(VoyageResult("complete", {})),
             }
@@ -1740,7 +1740,7 @@ def test_call_push_atomically_materializes_a_prompt_child_across_reopen(
                 "ask": LLMStep(
                     "Child question.",
                     answer=AnswerSpec({"answered": {}}),
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "done": Terminal(VoyageResult("child-complete", {})),
             }
@@ -1755,7 +1755,7 @@ def test_call_push_atomically_materializes_a_prompt_child_across_reopen(
                 "delegate": SubRutter(
                     PromptChild,
                     charter=lambda context: {"parent": context.evolution_id},
-                    then="complete",
+                    next_on_outcome="complete",
                 ),
                 "complete": Terminal(VoyageResult("complete", {})),
             }
@@ -1801,7 +1801,7 @@ def test_child_return_is_archived_before_the_parent_mapping_route(
                 "delegate": SubRutter(
                     DirectChildRutter,
                     charter=lambda context: {"site": context.evolution_id},
-                    then={"completed": "complete"},
+                    next_on_outcome={"completed": "complete"},
                 ),
                 "complete": Terminal(VoyageResult("parent-complete", {})),
             }
@@ -1880,7 +1880,7 @@ def test_continue_true_recursively_settles_nested_calls_with_one_revision(
                 "delegate": SubRutter(
                     DirectChildRutter,
                     charter=lambda context: {"from": context.evolution_id},
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "done": Terminal(VoyageResult("middle-complete", {})),
             }
@@ -1895,7 +1895,7 @@ def test_continue_true_recursively_settles_nested_calls_with_one_revision(
                 "delegate": SubRutter(
                     MiddleRutter,
                     charter=lambda context: {"from": context.evolution_id},
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "done": Terminal(VoyageResult("root-complete", {})),
             }
@@ -1968,7 +1968,7 @@ def test_nested_prompt_self_loop_reopens_with_one_global_revision(
                 "ask": LLMStep(
                     "Again?",
                     answer=AnswerSpec({"again": {}, "finish": {}}),
-                    then={"again": "ask", "finish": "done"},
+                    next_on_outcome={"again": "ask", "finish": "done"},
                 ),
                 "done": Terminal(VoyageResult("child-complete", {})),
             }
@@ -1983,12 +1983,12 @@ def test_nested_prompt_self_loop_reopens_with_one_global_revision(
                 "delegate": SubRutter(
                     PromptLoopChild,
                     charter=lambda context: {"from": context.evolution_id},
-                    then="after",
+                    next_on_outcome="after",
                 ),
                 "after": LLMStep(
                     "Parent question.",
                     answer=AnswerSpec({"done": {}}),
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "done": Terminal(VoyageResult("root-complete", {})),
             }
@@ -2062,7 +2062,7 @@ def test_call_self_loop_allocates_a_fresh_entrance_child_and_call_id(
                 "delegate": SubRutter(
                     DirectChildRutter,
                     charter=lambda context: {"entry": context.evolution_entry_id},
-                    then={"completed": "delegate"},
+                    next_on_outcome={"completed": "delegate"},
                 )
             }
 
@@ -2120,7 +2120,7 @@ def test_call_depth_limit_rejects_before_charter_or_id_allocation(
                 "delegate": SubRutter(
                     DirectChildRutter,
                     charter=child_charter,
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "done": Terminal(VoyageResult("complete", {})),
             }
@@ -2170,7 +2170,7 @@ def test_call_preview_without_a_returned_result_is_read_only_unavailable(
                 "delegate": SubRutter(
                     DirectChildRutter,
                     charter=child_charter,
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "done": Terminal(VoyageResult("complete", {})),
             }
@@ -2212,7 +2212,7 @@ def test_call_preview_uses_a_durable_result_for_callable_routing_without_writes(
                 "delegate": SubRutter(
                     DirectChildRutter,
                     charter=lambda context: {"from": context.evolution_id},
-                    then=route,
+                    choose_next=route,
                 ),
                 "done": Terminal(VoyageResult("complete", {})),
             }
@@ -2302,7 +2302,7 @@ def test_call_charter_failure_faults_in_place_without_partial_child(
                 "delegate": SubRutter(
                     DirectChildRutter,
                     charter=fail_charter,
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "done": Terminal(VoyageResult("complete", {})),
             }
@@ -2362,7 +2362,7 @@ def test_prompt_child_materialization_failure_leaves_no_partial_attachment(
                     "Child question.",
                     answer=AnswerSpec({"done": {}}),
                     data=fail_data,
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "done": Terminal(VoyageResult("child-complete", {})),
             }
@@ -2377,7 +2377,7 @@ def test_prompt_child_materialization_failure_leaves_no_partial_attachment(
                 "delegate": SubRutter(
                     PromptChild,
                     charter=lambda context: {"from": context.evolution_id},
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "done": Terminal(VoyageResult("complete", {})),
             }
@@ -2425,7 +2425,7 @@ def test_child_fault_retains_the_complete_active_parent_child_path(
                 "ask": LLMStep(
                     "Child question.",
                     answer=AnswerSpec({"done": {}}),
-                    then=fail_route,
+                    choose_next=fail_route,
                 ),
                 "done": Terminal(VoyageResult("child-complete", {})),
             }
@@ -2440,7 +2440,7 @@ def test_child_fault_retains_the_complete_active_parent_child_path(
                 "delegate": SubRutter(
                     PromptChild,
                     charter=lambda context: {"from": context.evolution_id},
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "done": Terminal(VoyageResult("complete", {})),
             }
@@ -2510,7 +2510,7 @@ def test_returned_child_record_survives_later_parent_routing_failure(
                 "delegate": SubRutter(
                     DirectChildRutter,
                     charter=lambda context: {"from": context.evolution_id},
-                    then=fail_route,
+                    choose_next=fail_route,
                 ),
                 "done": Terminal(VoyageResult("complete", {})),
             }
@@ -2567,7 +2567,7 @@ def test_dry_run_at_nested_terminal_does_not_return_or_route_the_child(
                 "delegate": SubRutter(
                     DirectChildRutter,
                     charter=lambda context: {"from": context.evolution_id},
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "done": Terminal(VoyageResult("complete", {})),
             }

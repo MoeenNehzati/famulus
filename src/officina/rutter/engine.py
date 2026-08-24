@@ -474,13 +474,16 @@ def _select_transition(
         )
     else:
         raise _RutterFault("routing")
-    routing = evolution.then
+    routing = evolution.next_on_outcome
     target: object
     if type(routing) is str:
         target = routing
     elif isinstance(routing, Mapping):
         target = routing.get(outcome)
     else:
+        choose_next = evolution.choose_next
+        if not callable(choose_next):
+            raise _RutterFault("routing")
         evolution_context = EvolutionContext(
             bound_run.run.charter,
             evolution_id,
@@ -495,21 +498,21 @@ def _select_transition(
                     record.message,
                     response,
                 ),
-                routing,
+                choose_next,
             )
         elif isinstance(evolution, MachineStep):
             assert isinstance(record, MachineRecord)
             target = evaluate_machine_route(
                 MachineContext(evolution_context, record.machine_id),
                 record.result,
-                routing,
+                choose_next,
             )
         else:
             assert call_result is not None
             target = evaluate_subrutter_route(
                 evolution_context,
                 call_result,
-                routing,
+                choose_next,
             )
     if type(target) is not str or target not in bound_run.definition.evolutions:
         raise _RutterFault(

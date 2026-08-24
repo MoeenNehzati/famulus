@@ -65,16 +65,16 @@ def current_model_scenarios() -> Mapping[str, _CurrentModelScenario]:
     """Provide in-memory current-model scenarios for later status projections."""
 
     result = VoyageResult("complete", {})
-    prompt = LLMStep("Review.", answer=AnswerSpec({"approved": {}}), then="done")
+    prompt = LLMStep("Review.", answer=AnswerSpec({"approved": {}}), next_on_outcome="done")
     pure = MachineStep(
         lambda context: MachineResult("calculated", {}),
         mode="pure",
-        then="done",
+        next_on_outcome="done",
     )
     effectful = MachineStep(
         lambda context: MachineResult("stored", {}),
         mode="repeat-safe",
-        then="done",
+        next_on_outcome="done",
     )
     done = Terminal(result)
 
@@ -454,22 +454,22 @@ def test_get_status_projects_one_coherent_read_without_authored_callbacks(
                     answer=AnswerSpec({"approved": {}}),
                     data=lambda context: note("llm-data", {}),
                     validate=lambda context: note("llm-validate", ValidationReport(True)),
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "action": MachineStep(
                     lambda context: note("pure-machine", MachineResult("calculated", {})),
                     mode="pure",
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "store": MachineStep(
                     lambda context: note("effect-machine", MachineResult("stored", {})),
                     mode="repeat-safe",
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "delegate": SubRutter(
                     StatusChild,
                     charter=lambda context: note("subrutter-charter", {}),
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "done": Terminal(
                     lambda context: note("root-terminal", VoyageResult("complete", {}))
@@ -601,7 +601,7 @@ def test_malformed_recovery_is_rejected_at_transaction_decode_before_callbacks(
                     validate=lambda context: (
                         authored.append("validate") or ValidationReport(True)
                     ),
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "done": Terminal(VoyageResult("complete", {})),
             }
@@ -676,12 +676,12 @@ def inactive_child_metadata_scenario() -> tuple[type[Rutter], type[Rutter]]:
                 "review": LLMStep(
                     "Review.",
                     answer=AnswerSpec({"approved": {}}),
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "delegate": SubRutter(
                     InactiveChild,
                     charter=lambda context: {"from": context.evolution_id},
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "done": Terminal(VoyageResult("root", {})),
             }
@@ -727,7 +727,7 @@ def test_reopen_rejects_malformed_known_fault_coordinates(tmp_path: Path) -> Non
                 "review": LLMStep(
                     "Review.",
                     answer=AnswerSpec({"approved": {}}),
-                    then=fail_route,
+                    choose_next=fail_route,
                 ),
                 "done": Terminal(VoyageResult("complete", {})),
             }
@@ -781,7 +781,7 @@ def test_opaque_legacy_fault_reopens_and_remains_blocked(tmp_path: Path) -> None
                 "review": LLMStep(
                     "Review.",
                     answer=AnswerSpec({"approved": {}}),
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "done": Terminal(VoyageResult("complete", {})),
             }
@@ -821,7 +821,7 @@ def test_pure_action_instruction_is_stable_read_only_and_zero_argument(
 
         def define_evolutions(self) -> Mapping[str, object]:
             return {
-                "calculate": MachineStep(run, mode="pure", then="done"),
+                "calculate": MachineStep(run, mode="pure", next_on_outcome="done"),
                 "done": Terminal(VoyageResult("complete", {})),
             }
 
@@ -889,7 +889,7 @@ def test_action_validation_requires_the_exact_action_result_envelope(
                 "calculate": MachineStep(
                     lambda context: MachineResult("calculated", {}),
                     mode="pure",
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "done": Terminal(VoyageResult("complete", {})),
             }
@@ -1023,7 +1023,7 @@ def test_initial_prompt_render_failure_creates_no_partial_authority(
                     "Start.",
                     answer=AnswerSpec({"go": {}}),
                     data=fail_data,
-                    then="done",
+                    next_on_outcome="done",
                 ),
                 "done": Terminal(VoyageResult("complete", {})),
             }
