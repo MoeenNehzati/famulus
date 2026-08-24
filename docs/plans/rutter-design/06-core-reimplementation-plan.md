@@ -116,7 +116,7 @@ categories alone:
 | `src/officina/rutter/engine.py` | `advance()` interleaves root transitions, diagnostic phases, and effect handling around state ID. | Write one small reducer around recursive active-leaf resolution and atomic operations: enter, accept/record, select edge, attach/settle child, resume edge, and enter target. Expose only the four methods. |
 | `src/officina/rutter/runtime.py` | It accepts only direct subclasses and resolves only the root Charter identity. | Bind a stateless definition graph transitively, reject definition-call cycles, and resolve only active definitions on reopen. Keep completed runs structural. |
 | `src/officina/rutter/__init__.py` | It exports obsolete `State`, `TerminalState`, and diagnostic-sidecar values. | Export the accepted author-facing primitives and stable exceptions; keep storage-private types private. |
-| `test_support/rutter_fixtures.py` | Fixtures author the obsolete `State`/`TerminalState` API and inspect `Fix.lifecycle`. | Replace with readable Prompt/Action/Call/Done Rutters, nested fixtures, hook fixtures, and version-3 Reckoning builders. |
+| `src/officina/rutter/tests/fixtures.py` | Fixtures author the obsolete `State`/`TerminalState` API and inspect `Fix.lifecycle`. | Replace with readable Prompt/Action/Call/Done Rutters, nested fixtures, hook fixtures, and version-3 Reckoning builders. |
 | `docs/officina/compass-rutter.md` and `skills/using-compass/` | They describe `advance()` and prototype message/status behavior. | Document and exercise Compass's use of the four public Rutter methods, two-part Messages, recursive current leaf, Rutter-owned automatic Python continuation, and blocking conditions. |
 | Rutter blueprints | Current interfaces and facets name the old model and reducer. | Regenerate ownership/interfaces only after source behavior and tests stabilize; describe the new public methods and storage authority exactly. |
 
@@ -126,9 +126,9 @@ categories alone:
 |---|---|---|
 | Edge matching and CaseMaker constructors | `src/officina/rutter/hooks.py` | Depend only on public model/context types. Produce ordinary `CaseMaker` values; add no persisted hook type beyond active/call provenance already in the core model. |
 | Standard diagnostic child Rutters and values | `src/officina/rutter/diagnostic.py` | Replace the prototype file entirely with `QuestionCase`, `DiagnosisCase`, `DiagnosisDetail`, `DiagnoseAnswer`, `AskAndDiagnose`, and the three documented constructors. Build them from Prompt/Action/Call/Done. |
-| Recursive lifecycle tests | `tests/test_rutter_lifecycle.py` | Specify entrance identity, open Turn atomicity, nested return settlement, history anchoring, continuation, dry-run, and restart boundaries independently of implementation helpers. |
-| Hook tests | `tests/test_rutter_hooks.py` | Specify matching, cardinality, stable order, same-edge replay skipping, and frozen-edge resumption. |
-| Inventory diagnostic adapter | `skills/math-dependency-graph/_rtx/_inquisitive_inventory_rutter.py` | Re-express the frozen example through `case_sequence_after` plus an application-owned repeat-safe ledger Action. Do not put inventory semantics in the core. |
+| Recursive lifecycle tests | `src/officina/rutter/tests/test_rutter_lifecycle.py` | Specify entrance identity, open Turn atomicity, nested return settlement, history anchoring, continuation, dry-run, and restart boundaries independently of implementation helpers. |
+| Hook tests | `src/officina/rutter/tests/test_rutter_hooks.py` | Specify matching, cardinality, stable order, same-edge replay skipping, and frozen-edge resumption. |
+| Inventory diagnostic adapter | `skills/math-dependency-graph/_rtx/_inventory_pipeline/_voyage_dispenser.py` | Re-express the frozen example through `case_sequence_after` plus an application-owned repeat-safe ledger Action. Do not put inventory semantics in the core. |
 
 ### Remove at cutover
 
@@ -152,13 +152,13 @@ not restate or replace that catalogue.
 
 | Normative requirement | Implementing task | Test ownership |
 |---|---|---|
-| Exact values, finite JSON, immutable complete/prefix `HistoryView`, and all `latest_*`/`require_latest_*` queries | Tasks 2-5 integrated core boundary | `tests/test_rutter_model.py`, `tests/test_rutter_lifecycle.py` |
-| Version-3 structure, effect-owner corruption matrix, completed-run/CallRecord bijection and acyclicity, post-Done restrictions | Tasks 3, 6, and 7 | `tests/test_rutter_storage.py`, `tests/test_rutter_lifecycle.py` |
-| Prompt entrance/open Turn, four-method behavior, global revision, rejection without mutation | Task 5 | `tests/test_rutter_lifecycle.py`, `tests/test_rutter_engine.py` |
-| Recursive Calls, Prompt/Call self-loops, nested stale responses, atomic return, result routing | Task 6 | `tests/test_rutter_lifecycle.py`, `tests/test_rutter_runtime.py` |
-| Pure/repeat-safe/non-repeat-safe Actions, Action self-loops, child Actions, and all recovery dispositions | Task 7 | `tests/test_rutter_engine.py`, `tests/test_rutter_lifecycle.py`, `tests/test_rutter_storage.py` |
-| Edge matching, cardinality, frozen-edge replay, post-Done settlement, and attachment provenance | Task 8 | `tests/test_rutter_hooks.py`, `tests/test_rutter_lifecycle.py` |
-| Standard diagnostic children and CaseMaker constructors | Task 9 | `tests/test_rutter_diagnostic.py`, `tests/test_rutter_hooks.py` |
+| Exact values, finite JSON, immutable complete/prefix `HistoryView`, and all `latest_*`/`require_latest_*` queries | Tasks 2-5 integrated core boundary | `src/officina/rutter/tests/test_rutter_model.py`, `src/officina/rutter/tests/test_rutter_lifecycle.py` |
+| Version-3 structure, effect-owner corruption matrix, completed-run/CallRecord bijection and acyclicity, post-Done restrictions | Tasks 3, 6, and 7 | `src/officina/rutter/tests/test_rutter_storage.py`, `src/officina/rutter/tests/test_rutter_lifecycle.py` |
+| Prompt entrance/open Turn, four-method behavior, global revision, rejection without mutation | Task 5 | `src/officina/rutter/tests/test_rutter_lifecycle.py`, `src/officina/rutter/tests/test_rutter_engine.py` |
+| Recursive Calls, Prompt/Call self-loops, nested stale responses, atomic return, result routing | Task 6 | `src/officina/rutter/tests/test_rutter_lifecycle.py`, `src/officina/rutter/tests/test_rutter_runtime.py` |
+| Pure/repeat-safe/non-repeat-safe Actions, Action self-loops, child Actions, and all recovery dispositions | Task 7 | `src/officina/rutter/tests/test_rutter_engine.py`, `src/officina/rutter/tests/test_rutter_lifecycle.py`, `src/officina/rutter/tests/test_rutter_storage.py` |
+| Edge matching, cardinality, frozen-edge replay, post-Done settlement, and attachment provenance | Task 8 | `src/officina/rutter/tests/test_rutter_hooks.py`, `src/officina/rutter/tests/test_rutter_lifecycle.py` |
+| Standard diagnostic children and CaseMaker constructors | Task 9 | `src/officina/rutter/tests/test_rutter_diagnostic.py`, `src/officina/rutter/tests/test_rutter_hooks.py` |
 | Ordinary Compass behavior, evaluator-backed fresh questions, non-diagnostic scheduled children, and frozen inventory trials | Tasks 10 and 11 | Compass and inventory integration suites named in those tasks |
 
 ---
@@ -243,8 +243,8 @@ public types merely to make an intermediate stage importable.
 
 **Files:**
 - Rewrite: `src/officina/rutter/model.py`
-- Rewrite: `tests/test_rutter_model.py`
-- Rewrite: `test_support/rutter_fixtures.py`
+- Rewrite: `src/officina/rutter/tests/test_rutter_model.py`
+- Rewrite: `src/officina/rutter/tests/fixtures.py`
 - Modify: `src/officina/rutter/__init__.py`
 
 **Interfaces:**
@@ -293,7 +293,7 @@ public types merely to make an intermediate stage importable.
 - [ ] **Step 2: Run the model tests and confirm old types fail the contract**
 
   ```bash
-  python3 -m pytest tests/test_rutter_model.py -q
+  python3 -m pytest src/officina/rutter/tests/test_rutter_model.py -q
   ```
 
   Expected: failures identify missing new types or obsolete shapes. If package
@@ -337,7 +337,7 @@ public types merely to make an intermediate stage importable.
 - [ ] **Step 4: Run the model probe**
 
   ```bash
-  python3 -m pytest tests/test_rutter_model.py -q
+  python3 -m pytest src/officina/rutter/tests/test_rutter_model.py -q
   ```
 
   Expected: value-level tests that can import the new model pass. Any remaining
@@ -355,7 +355,7 @@ public types merely to make an intermediate stage importable.
 **Files:**
 - Rewrite upper section: `src/officina/rutter/storage.py`
 - Preserve/adapt lower section: `src/officina/rutter/storage.py`
-- Rewrite: `tests/test_rutter_storage.py`
+- Rewrite: `src/officina/rutter/tests/test_rutter_storage.py`
 
 **Interfaces:**
 - Consumes: Task 2 `Reckoning` and record values.
@@ -389,7 +389,7 @@ public types merely to make an intermediate stage importable.
 - [ ] **Step 2: Run storage tests to establish the codec failure**
 
   ```bash
-  python3 -m pytest tests/test_rutter_storage.py -q
+  python3 -m pytest src/officina/rutter/tests/test_rutter_storage.py -q
   ```
 
   Expected: version-3 model/codec tests fail while confined path, lock, and
@@ -425,7 +425,7 @@ public types merely to make an intermediate stage importable.
 - [ ] **Step 5: Run storage and model suites**
 
   ```bash
-  python3 -m pytest tests/test_rutter_model.py tests/test_rutter_storage.py -q
+  python3 -m pytest src/officina/rutter/tests/test_rutter_model.py src/officina/rutter/tests/test_rutter_storage.py -q
   ```
 
   Expected: codec and model assertions pass when reached; obsolete package
@@ -436,8 +436,8 @@ public types merely to make an intermediate stage importable.
 
 **Files:**
 - Rewrite: `src/officina/rutter/runtime.py`
-- Rewrite: `tests/test_rutter_runtime.py`
-- Modify: `test_support/rutter_fixtures.py`
+- Rewrite: `src/officina/rutter/tests/test_rutter_runtime.py`
+- Modify: `src/officina/rutter/tests/fixtures.py`
 
 **Interfaces:**
 - Consumes: Task 2 author nodes/CaseMakers and Task 3 store.
@@ -480,7 +480,7 @@ public types merely to make an intermediate stage importable.
 - [ ] **Step 3: Run runtime tests to verify the old direct-only registry fails**
 
   ```bash
-  python3 -m pytest tests/test_rutter_runtime.py -q
+  python3 -m pytest src/officina/rutter/tests/test_rutter_runtime.py -q
   ```
 
 - [ ] **Step 4: Implement binding as a separate pure pass**
@@ -493,7 +493,7 @@ public types merely to make an intermediate stage importable.
 - [ ] **Step 5: Run focused model/storage/runtime tests**
 
   ```bash
-  python3 -m pytest tests/test_rutter_model.py tests/test_rutter_storage.py tests/test_rutter_runtime.py -q
+  python3 -m pytest src/officina/rutter/tests/test_rutter_model.py src/officina/rutter/tests/test_rutter_storage.py src/officina/rutter/tests/test_rutter_runtime.py -q
   ```
 
   Expected: binding-specific assertions pass when reached; any remaining
@@ -504,8 +504,8 @@ public types merely to make an intermediate stage importable.
 
 **Files:**
 - Rewrite: `src/officina/rutter/engine.py`
-- Create: `tests/test_rutter_lifecycle.py`
-- Rewrite focused portions: `tests/test_rutter_engine.py`
+- Create: `src/officina/rutter/tests/test_rutter_lifecycle.py`
+- Rewrite focused portions: `src/officina/rutter/tests/test_rutter_engine.py`
 - Complete cutover: `src/officina/rutter/__init__.py`
 
 **Interfaces:**
@@ -584,7 +584,7 @@ public types merely to make an intermediate stage importable.
 - [ ] **Step 5: Run lifecycle tests with restart after every write boundary**
 
   ```bash
-  python3 -m pytest tests/test_rutter_model.py tests/test_rutter_storage.py tests/test_rutter_runtime.py tests/test_rutter_lifecycle.py tests/test_rutter_engine.py -q
+  python3 -m pytest src/officina/rutter/tests/test_rutter_model.py src/officina/rutter/tests/test_rutter_storage.py src/officina/rutter/tests/test_rutter_runtime.py src/officina/rutter/tests/test_rutter_lifecycle.py src/officina/rutter/tests/test_rutter_engine.py -q
   ```
 
   Expected: Prompt/Done, self-loop, reopen, invalid response, routing fault,
@@ -599,7 +599,7 @@ public types merely to make an intermediate stage importable.
 **Files:**
 - Modify: `src/officina/rutter/engine.py`
 - Modify: `src/officina/rutter/model.py`
-- Modify: `tests/test_rutter_lifecycle.py`
+- Modify: `src/officina/rutter/tests/test_rutter_lifecycle.py`
 
 **Interfaces:**
 - Consumes: `Call`, `ActiveChild`, `CompletedRun`, `CallRecord`, `RunResult`.
@@ -651,16 +651,16 @@ public types merely to make an intermediate stage importable.
 - [ ] **Step 5: Run the recursive lifecycle suite**
 
   ```bash
-  python3 -m pytest tests/test_rutter_lifecycle.py tests/test_rutter_engine.py tests/test_rutter_runtime.py -q
+  python3 -m pytest src/officina/rutter/tests/test_rutter_lifecycle.py src/officina/rutter/tests/test_rutter_engine.py src/officina/rutter/tests/test_rutter_runtime.py -q
   ```
 
 ### Task 7: Add Actions and recovery-owned Python instructions
 
 **Files:**
 - Modify: `src/officina/rutter/engine.py`
-- Modify: `tests/test_rutter_engine.py`
-- Modify: `tests/test_rutter_lifecycle.py`
-- Modify: `tests/test_rutter_storage.py`
+- Modify: `src/officina/rutter/tests/test_rutter_engine.py`
+- Modify: `src/officina/rutter/tests/test_rutter_lifecycle.py`
+- Modify: `src/officina/rutter/tests/test_rutter_storage.py`
 
 **Interfaces:**
 - Consumes: Task 6 recursive active-leaf ownership plus `Action`,
@@ -717,7 +717,7 @@ public types merely to make an intermediate stage importable.
 - [ ] **Step 5: Run engine, lifecycle, and storage tests**
 
   ```bash
-  python3 -m pytest tests/test_rutter_engine.py tests/test_rutter_lifecycle.py tests/test_rutter_storage.py -q
+  python3 -m pytest src/officina/rutter/tests/test_rutter_engine.py src/officina/rutter/tests/test_rutter_lifecycle.py src/officina/rutter/tests/test_rutter_storage.py -q
   ```
 
 ### Task 8: Add transition hooks without adding reducer phases
@@ -725,7 +725,7 @@ public types merely to make an intermediate stage importable.
 **Files:**
 - Create: `src/officina/rutter/hooks.py`
 - Create: `src/officina/rutter/blueprints/hooks.yaml`
-- Create: `tests/test_rutter_hooks.py`
+- Create: `src/officina/rutter/tests/test_rutter_hooks.py`
 - Modify: `src/officina/rutter/engine.py`
 - Modify: `src/officina/rutter/model.py`
 - Modify: `src/officina/rutter/__init__.py`
@@ -784,14 +784,14 @@ public types merely to make an intermediate stage importable.
 - [ ] **Step 5: Run hook and lifecycle suites**
 
   ```bash
-  python3 -m pytest tests/test_rutter_hooks.py tests/test_rutter_lifecycle.py tests/test_rutter_engine.py -q
+  python3 -m pytest src/officina/rutter/tests/test_rutter_hooks.py src/officina/rutter/tests/test_rutter_lifecycle.py src/officina/rutter/tests/test_rutter_engine.py -q
   ```
 
 ### Task 9: Build the standard diagnostic library from ordinary Rutters
 
 **Files:**
 - Rewrite from scratch: `src/officina/rutter/diagnostic.py`
-- Rewrite: `tests/test_rutter_diagnostic.py`
+- Rewrite: `src/officina/rutter/tests/test_rutter_diagnostic.py`
 - Modify: `src/officina/rutter/__init__.py`
 
 **Interfaces:**
@@ -857,7 +857,7 @@ public types merely to make an intermediate stage importable.
 
   ```bash
   rg -n 'from officina\.rutter\.diagnostic|import officina\.rutter\.diagnostic' src/officina/rutter/engine.py src/officina/rutter/storage.py
-  python3 -m pytest tests/test_rutter_diagnostic.py tests/test_rutter_hooks.py -q
+  python3 -m pytest src/officina/rutter/tests/test_rutter_diagnostic.py src/officina/rutter/tests/test_rutter_hooks.py -q
   ```
 
   Expected: search has no matches and tests pass.
@@ -928,7 +928,7 @@ public types merely to make an intermediate stage importable.
 ### Task 11: Rebuild and exercise the inventory diagnostic example
 
 **Files:**
-- Rewrite: `skills/math-dependency-graph/_rtx/_inquisitive_inventory_rutter.py`
+- Rewrite: `skills/math-dependency-graph/_rtx/_inventory_pipeline/_voyage_dispenser.py`
 - Rewrite: `skills/math-dependency-graph/_rtx/_inquisitive_inventory_cli.py`
 - Rewrite: `skills/math-dependency-graph/_rtx/tests/test_inquisitive_inventory_rutter.py`
 - Rewrite: `skills/math-dependency-graph/_rtx/tests/test_inquisitive_inventory_cli.py`
@@ -1013,11 +1013,11 @@ public types merely to make an intermediate stage importable.
 - Update: `src/officina/rutter/blueprints/runtime.yaml`
 - Update/create: `src/officina/rutter/blueprints/diagnostic.yaml`
 - Update/create: `src/officina/rutter/blueprints/hooks.yaml`
-- Update: `test_support/rutter_fixtures.py`
+- Update: `src/officina/rutter/tests/fixtures.py`
 - Update: `docs/officina/compass-rutter.md`
 - Update: `skills/using-compass/SKILL.md`
 - Update: `skills/using-compass/tests/test_using_compass_instructions.py`
-- Update: `skills/math-dependency-graph/_rtx/_inquisitive_inventory_rutter.py`
+- Update: `skills/math-dependency-graph/_rtx/_inventory_pipeline/_voyage_dispenser.py`
 - Update: `skills/math-dependency-graph/_rtx/_inquisitive_inventory_cli.py`
 - Update: `skills/math-dependency-graph/_rtx/blueprints/rtx-inquisitive-inventory-rutter.yaml`
 - Update: `skills/math-dependency-graph/_rtx/blueprints/rtx-inquisitive-inventory-cli.yaml`
@@ -1042,7 +1042,7 @@ public types merely to make an intermediate stage importable.
 - [ ] **Step 1: Search for obsolete concepts**
 
   ```bash
-  rg -n '\.advance\(|def advance\b|current_state_id|Fix\.lifecycle|_DiagnosticFrame|_DiagnosticState|pending_message|case_queue|schedule_index' src/officina/rutter tests/test_rutter_* test_support/rutter_fixtures.py skills/using-compass skills/math-dependency-graph/_rtx docs/officina/compass-rutter.md
+  rg -n '\.advance\(|def advance\b|current_state_id|Fix\.lifecycle|_DiagnosticFrame|_DiagnosticState|pending_message|case_queue|schedule_index' src/officina/rutter src/officina/rutter/tests/test_rutter_* src/officina/rutter/tests/fixtures.py skills/using-compass skills/math-dependency-graph/_rtx docs/officina/compass-rutter.md
   rg -n -U 'interface: rutter\.interface\.bound-operations\n[[:space:]]+version: 2' src skills
   ```
 
@@ -1058,7 +1058,7 @@ public types merely to make an intermediate stage importable.
 - [ ] **Step 3: Run all focused Rutter and integration tests**
 
   ```bash
-  python3 -m pytest tests/test_rutter_model.py tests/test_rutter_storage.py tests/test_rutter_runtime.py tests/test_rutter_lifecycle.py tests/test_rutter_engine.py tests/test_rutter_hooks.py tests/test_rutter_diagnostic.py skills/using-compass/tests/test_using_compass_instructions.py skills/math-dependency-graph/_rtx/tests/test_inventory_unit_iterator.py skills/math-dependency-graph/_rtx/tests/test_inquisitive_inventory_rutter.py skills/math-dependency-graph/_rtx/tests/test_inquisitive_inventory_cli.py -q
+  python3 -m pytest src/officina/rutter/tests/test_rutter_model.py src/officina/rutter/tests/test_rutter_storage.py src/officina/rutter/tests/test_rutter_runtime.py src/officina/rutter/tests/test_rutter_lifecycle.py src/officina/rutter/tests/test_rutter_engine.py src/officina/rutter/tests/test_rutter_hooks.py src/officina/rutter/tests/test_rutter_diagnostic.py skills/using-compass/tests/test_using_compass_instructions.py skills/math-dependency-graph/_rtx/tests -q
   ```
 
 - [ ] **Step 4: Run the configured repository gate**

@@ -170,10 +170,10 @@ to a focused sibling module later without changing the Rutter API.
 | `src/officina/rutter/engine.py` | Materialize response schemas, correlate flat responses by evolution entrance, expose `advance`, enforce validation order, construct and bind contextual children, and expose `Voyage.rutter`. |
 | `src/officina/rutter/diagnostic.py` | Pass `rutter_constructor` through the diagnostic hook helpers without adding another hook abstraction. |
 | `src/officina/visualization/from_rutter/__init__.py` and `payload_builder.py` | Accept a Rutter instance directly; retain class compatibility. |
-| `skills/math-dependency-graph/_rtx/_inquisitive_inventory_rutter.py` | Replace only the `InquisitiveInventoryRutter` subclass declaration and its registry reference with the concrete instance. |
+| `skills/math-dependency-graph/_rtx/_inventory_pipeline/_voyage_dispenser.py` | Replace only the `InquisitiveInventoryRutter` subclass declaration and its registry reference with the concrete instance. |
 | `skills/math-dependency-graph/_rtx/_inquisitive_inventory_cli.py` | Rename its Rutter operation to `advance` and project the revised public values. |
 | `skills/math-dependency-graph/_rtx/_transparent_rutter_prototype.py` | Delete after the real constructor path passes the same acceptance behavior. |
-| `tests/test_rutter_model.py`, `tests/test_rutter_runtime.py`, `tests/test_rutter_visualization.py` | Specify construction, composition, Voyage ownership, compatibility, and visualization. |
+| `src/officina/rutter/tests/test_rutter_model.py`, `src/officina/rutter/tests/test_rutter_runtime.py`, `src/officina/rutter/tests/test_rutter_visualization.py` | Specify construction, composition, Voyage ownership, compatibility, and visualization. |
 | `skills/math-dependency-graph/_rtx/tests/test_inquisitive_inventory_rutter.py` | Prove the converted declaration retains the full inventory behavior. |
 | `docs/plans/rutter-design/01-core-design.md` and the affected Rutter source blueprints | Align only the changed authoring and public-value contracts after behavior is green. |
 
@@ -250,16 +250,16 @@ revisions, both closure audits reported no remaining blockers.
 - Modify: `src/officina/rutter/engine.py`
 - Modify: `src/officina/rutter/diagnostic.py`
 - Modify: `src/officina/visualization/from_rutter/payload_builder.py`
-- Modify: `test_support/rutter_fixtures.py`
-- Modify: `skills/math-dependency-graph/_rtx/_inquisitive_inventory_rutter.py`
-- Modify: `tests/test_rutter_model.py`
-- Modify: `tests/test_rutter_runtime.py`
-- Modify: `tests/test_rutter_evaluation.py`
-- Modify: `tests/test_rutter_engine.py`
-- Modify: `tests/test_rutter_hooks.py`
-- Modify: `tests/test_rutter_lifecycle.py`
-- Modify: `tests/test_rutter_diagnostic.py`
-- Modify: `tests/test_rutter_visualization.py`
+- Modify: `src/officina/rutter/tests/fixtures.py`
+- Modify: `skills/math-dependency-graph/_rtx/_inventory_pipeline/_voyage_dispenser.py`
+- Modify: `src/officina/rutter/tests/test_rutter_model.py`
+- Modify: `src/officina/rutter/tests/test_rutter_runtime.py`
+- Modify: `src/officina/rutter/tests/test_rutter_evaluation.py`
+- Modify: `src/officina/rutter/tests/test_rutter_engine.py`
+- Modify: `src/officina/rutter/tests/test_rutter_hooks.py`
+- Modify: `src/officina/rutter/tests/test_rutter_lifecycle.py`
+- Modify: `src/officina/rutter/tests/test_rutter_diagnostic.py`
+- Modify: `src/officina/rutter/tests/test_rutter_visualization.py`
 
 - [ ] Give `LLMStep`, `MachineStep`, and `SubRutter` separate keyword-only
   routing modes:
@@ -289,12 +289,12 @@ revisions, both closure audits reported no remaining blockers.
     src/officina/rutter/evaluation.py src/officina/rutter/engine.py \
     src/officina/rutter/diagnostic.py \
     src/officina/visualization/from_rutter/payload_builder.py \
-    test_support/rutter_fixtures.py \
-    skills/math-dependency-graph/_rtx/_inquisitive_inventory_rutter.py \
-    tests/test_rutter_model.py tests/test_rutter_runtime.py \
-    tests/test_rutter_evaluation.py tests/test_rutter_engine.py \
-    tests/test_rutter_hooks.py tests/test_rutter_lifecycle.py \
-    tests/test_rutter_diagnostic.py tests/test_rutter_visualization.py
+    src/officina/rutter/tests/fixtures.py \
+    skills/math-dependency-graph/_rtx/_inventory_pipeline/_voyage_dispenser.py \
+    src/officina/rutter/tests/test_rutter_model.py src/officina/rutter/tests/test_rutter_runtime.py \
+    src/officina/rutter/tests/test_rutter_evaluation.py src/officina/rutter/tests/test_rutter_engine.py \
+    src/officina/rutter/tests/test_rutter_hooks.py src/officina/rutter/tests/test_rutter_lifecycle.py \
+    src/officina/rutter/tests/test_rutter_diagnostic.py src/officina/rutter/tests/test_rutter_visualization.py
   git commit -m "refactor(rutter): clarify routing fields"
   ```
 
@@ -312,18 +312,18 @@ revisions, both closure audits reported no remaining blockers.
 - Modify: `src/officina/rutter/engine.py`
 - Modify: `src/officina/rutter/diagnostic.py`
 - Modify: `src/officina/visualization/from_rutter/payload_builder.py`
-- Modify: `test_support/rutter_fixtures.py`
-- Modify: `tests/test_rutter_model.py`
-- Modify: `tests/test_rutter_runtime.py`
-- Modify: `tests/test_rutter_evaluation.py`
-- Modify: `tests/test_rutter_engine.py`
-- Modify: `tests/test_rutter_hooks.py`
-- Modify: `tests/test_rutter_lifecycle.py`
-- Modify: `tests/test_rutter_diagnostic.py`
-- Modify: `tests/test_rutter_storage.py`
-- Modify: `tests/test_rutter_visualization.py`
+- Modify: `src/officina/rutter/tests/fixtures.py`
+- Modify: `src/officina/rutter/tests/test_rutter_model.py`
+- Modify: `src/officina/rutter/tests/test_rutter_runtime.py`
+- Modify: `src/officina/rutter/tests/test_rutter_evaluation.py`
+- Modify: `src/officina/rutter/tests/test_rutter_engine.py`
+- Modify: `src/officina/rutter/tests/test_rutter_hooks.py`
+- Modify: `src/officina/rutter/tests/test_rutter_lifecycle.py`
+- Modify: `src/officina/rutter/tests/test_rutter_diagnostic.py`
+- Modify: `src/officina/rutter/tests/test_rutter_storage.py`
+- Modify: `src/officina/rutter/tests/test_rutter_visualization.py`
 - Modify: `skills/math-dependency-graph/_rtx/_inquisitive_inventory_cli.py`
-- Modify: `skills/math-dependency-graph/_rtx/_inquisitive_inventory_rutter.py`
+- Modify: `skills/math-dependency-graph/_rtx/_inventory_pipeline/_voyage_dispenser.py`
 - Modify: `skills/math-dependency-graph/_rtx/tests/test_inquisitive_inventory_cli.py`
 - Modify: `skills/math-dependency-graph/_rtx/tests/test_inquisitive_inventory_rutter.py`
 
@@ -382,10 +382,10 @@ Run:
 
 ```bash
 python3 -m pytest -q \
-  tests/test_rutter_model.py \
-  tests/test_rutter_runtime.py \
-  tests/test_rutter_evaluation.py \
-  tests/test_rutter_engine.py
+  src/officina/rutter/tests/test_rutter_model.py \
+  src/officina/rutter/tests/test_rutter_runtime.py \
+  src/officina/rutter/tests/test_rutter_evaluation.py \
+  src/officina/rutter/tests/test_rutter_engine.py
 ```
 
 Expected: `response_schema`, `assess_response`, `responding_to`, and `advance`
@@ -513,13 +513,12 @@ Run:
 
 ```bash
 python3 -m pytest -q \
-  tests/test_rutter_model.py tests/test_rutter_runtime.py \
-  tests/test_rutter_evaluation.py tests/test_rutter_engine.py \
-  tests/test_rutter_hooks.py tests/test_rutter_lifecycle.py \
-  tests/test_rutter_diagnostic.py tests/test_rutter_storage.py \
-  tests/test_rutter_visualization.py \
-  skills/math-dependency-graph/_rtx/tests/test_inquisitive_inventory_rutter.py \
-  skills/math-dependency-graph/_rtx/tests/test_inquisitive_inventory_cli.py
+  src/officina/rutter/tests/test_rutter_model.py src/officina/rutter/tests/test_rutter_runtime.py \
+  src/officina/rutter/tests/test_rutter_evaluation.py src/officina/rutter/tests/test_rutter_engine.py \
+  src/officina/rutter/tests/test_rutter_hooks.py src/officina/rutter/tests/test_rutter_lifecycle.py \
+  src/officina/rutter/tests/test_rutter_diagnostic.py src/officina/rutter/tests/test_rutter_storage.py \
+  src/officina/rutter/tests/test_rutter_visualization.py \
+  skills/math-dependency-graph/_rtx/tests/test_inventory_voyage_dispenser.py
 ```
 
 Expected: stale entrance IDs and schema-invalid flat responses stop before
@@ -544,14 +543,14 @@ git add pyproject.toml src/officina/rutter/__init__.py \
   src/officina/rutter/evaluation.py src/officina/rutter/engine.py \
   src/officina/rutter/diagnostic.py \
   src/officina/visualization/from_rutter/payload_builder.py \
-  test_support/rutter_fixtures.py tests/test_rutter_model.py \
-  tests/test_rutter_runtime.py tests/test_rutter_evaluation.py \
-  tests/test_rutter_engine.py tests/test_rutter_hooks.py \
-  tests/test_rutter_lifecycle.py tests/test_rutter_diagnostic.py \
-  tests/test_rutter_storage.py \
-  tests/test_rutter_visualization.py \
+  src/officina/rutter/tests/fixtures.py src/officina/rutter/tests/test_rutter_model.py \
+  src/officina/rutter/tests/test_rutter_runtime.py src/officina/rutter/tests/test_rutter_evaluation.py \
+  src/officina/rutter/tests/test_rutter_engine.py src/officina/rutter/tests/test_rutter_hooks.py \
+  src/officina/rutter/tests/test_rutter_lifecycle.py src/officina/rutter/tests/test_rutter_diagnostic.py \
+  src/officina/rutter/tests/test_rutter_storage.py \
+  src/officina/rutter/tests/test_rutter_visualization.py \
   skills/math-dependency-graph/_rtx/_inquisitive_inventory_cli.py \
-  skills/math-dependency-graph/_rtx/_inquisitive_inventory_rutter.py \
+  skills/math-dependency-graph/_rtx/_inventory_pipeline/_voyage_dispenser.py \
   skills/math-dependency-graph/_rtx/tests/test_inquisitive_inventory_cli.py \
   skills/math-dependency-graph/_rtx/tests/test_inquisitive_inventory_rutter.py
 git commit -m "feat(rutter): validate LLM responses with JSON Schema"
@@ -565,11 +564,11 @@ git commit -m "feat(rutter): validate LLM responses with JSON Schema"
 - Modify: `src/officina/rutter/evaluation.py`
 - Modify: `src/officina/rutter/engine.py`
 - Modify: `src/officina/rutter/diagnostic.py`
-- Modify: `test_support/rutter_fixtures.py`
-- Modify: direct callers and focused tests in `tests/test_rutter_model.py`,
-  `tests/test_rutter_runtime.py`, `tests/test_rutter_engine.py`,
-  `tests/test_rutter_hooks.py`, `tests/test_rutter_diagnostic.py`, and
-  `tests/test_rutter_lifecycle.py`
+- Modify: `src/officina/rutter/tests/fixtures.py`
+- Modify: direct callers and focused tests in `src/officina/rutter/tests/test_rutter_model.py`,
+  `src/officina/rutter/tests/test_rutter_runtime.py`, `src/officina/rutter/tests/test_rutter_engine.py`,
+  `src/officina/rutter/tests/test_rutter_hooks.py`, `src/officina/rutter/tests/test_rutter_diagnostic.py`, and
+  `src/officina/rutter/tests/test_rutter_lifecycle.py`
 - Modify: direct `charter=` callers under
   `skills/math-dependency-graph/_rtx/`
 
@@ -612,9 +611,9 @@ Run:
 
 ```bash
 python3 -m pytest -q \
-  tests/test_rutter_model.py \
-  tests/test_rutter_engine.py \
-  tests/test_rutter_hooks.py
+  src/officina/rutter/tests/test_rutter_model.py \
+  src/officina/rutter/tests/test_rutter_engine.py \
+  src/officina/rutter/tests/test_rutter_hooks.py
 ```
 
 Expected: typed transition attribute access, explicit terminal modes,
@@ -711,9 +710,9 @@ Run:
 
 ```bash
 python3 -m pytest -q \
-  tests/test_rutter_model.py tests/test_rutter_engine.py \
-  tests/test_rutter_hooks.py tests/test_rutter_diagnostic.py \
-  tests/test_rutter_lifecycle.py tests/test_rutter_storage.py
+  src/officina/rutter/tests/test_rutter_model.py src/officina/rutter/tests/test_rutter_engine.py \
+  src/officina/rutter/tests/test_rutter_hooks.py src/officina/rutter/tests/test_rutter_diagnostic.py \
+  src/officina/rutter/tests/test_rutter_lifecycle.py src/officina/rutter/tests/test_rutter_storage.py
 ```
 
 Expected: authors use typed transition attributes, explicit terminal and
@@ -731,11 +730,11 @@ Commit only if explicitly authorized:
 git add src/officina/rutter/values.py src/officina/rutter/authoring.py \
   src/officina/rutter/runtime.py src/officina/rutter/evaluation.py \
   src/officina/rutter/engine.py src/officina/rutter/diagnostic.py \
-  test_support/rutter_fixtures.py tests/test_rutter_model.py \
-  tests/test_rutter_runtime.py tests/test_rutter_engine.py tests/test_rutter_hooks.py \
-  tests/test_rutter_diagnostic.py tests/test_rutter_lifecycle.py \
-  tests/test_rutter_storage.py \
-  skills/math-dependency-graph/_rtx/_inquisitive_inventory_rutter.py \
+  src/officina/rutter/tests/fixtures.py src/officina/rutter/tests/test_rutter_model.py \
+  src/officina/rutter/tests/test_rutter_runtime.py src/officina/rutter/tests/test_rutter_engine.py src/officina/rutter/tests/test_rutter_hooks.py \
+  src/officina/rutter/tests/test_rutter_diagnostic.py src/officina/rutter/tests/test_rutter_lifecycle.py \
+  src/officina/rutter/tests/test_rutter_storage.py \
+  skills/math-dependency-graph/_rtx/_inventory_pipeline/_voyage_dispenser.py \
   skills/math-dependency-graph/_rtx/tests/test_inquisitive_inventory_rutter.py
 git commit -m "refactor(rutter): clarify public value boundaries"
 ```
@@ -744,8 +743,8 @@ git commit -m "refactor(rutter): clarify public value boundaries"
 
 **Files:**
 - Modify: `src/officina/rutter/authoring.py`
-- Modify: `tests/test_rutter_model.py`
-- Modify: `tests/test_rutter_runtime.py`
+- Modify: `src/officina/rutter/tests/test_rutter_model.py`
+- Modify: `src/officina/rutter/tests/test_rutter_runtime.py`
 
 **Interfaces:**
 - Consumes: Task 3's explicit terminal contract and schema-backed `Evolution`
@@ -849,8 +848,8 @@ Run:
 
 ```bash
 python3 -m pytest -q \
-  tests/test_rutter_model.py::test_rutter_constructor_exposes_one_frozen_definition \
-  tests/test_rutter_model.py::test_legacy_no_argument_subclass_definition_remains_supported
+  src/officina/rutter/tests/test_rutter_model.py::test_rutter_constructor_exposes_one_frozen_definition \
+  src/officina/rutter/tests/test_rutter_model.py::test_legacy_no_argument_subclass_definition_remains_supported
 ```
 
 Expected: direct construction fails because `Rutter` has no constructor-backed
@@ -881,7 +880,7 @@ must remain the sole graph-validation boundary.
 Run:
 
 ```bash
-python3 -m pytest -q tests/test_rutter_model.py tests/test_rutter_runtime.py
+python3 -m pytest -q src/officina/rutter/tests/test_rutter_model.py src/officina/rutter/tests/test_rutter_runtime.py
 ```
 
 Expected: all tests pass, including the pre-existing class, instance, and
@@ -895,7 +894,7 @@ changed in this task. Commit only if explicitly authorized:
 
 ```bash
 git add src/officina/rutter/authoring.py \
-  tests/test_rutter_model.py tests/test_rutter_runtime.py
+  src/officina/rutter/tests/test_rutter_model.py src/officina/rutter/tests/test_rutter_runtime.py
 git commit -m "feat(rutter): construct definition instances directly"
 ```
 
@@ -907,12 +906,12 @@ git commit -m "feat(rutter): construct definition instances directly"
 - Modify: `src/officina/rutter/evaluation.py`
 - Modify: `src/officina/rutter/engine.py`
 - Modify: `src/officina/rutter/diagnostic.py`
-- Modify: `test_support/rutter_fixtures.py`
-- Modify: `tests/test_rutter_hooks.py`
-- Modify: `tests/test_rutter_evaluation.py`
-- Modify: `tests/test_rutter_engine.py`
-- Modify: `tests/test_rutter_lifecycle.py`
-- Modify: `tests/test_rutter_diagnostic.py`
+- Modify: `src/officina/rutter/tests/fixtures.py`
+- Modify: `src/officina/rutter/tests/test_rutter_hooks.py`
+- Modify: `src/officina/rutter/tests/test_rutter_evaluation.py`
+- Modify: `src/officina/rutter/tests/test_rutter_engine.py`
+- Modify: `src/officina/rutter/tests/test_rutter_lifecycle.py`
+- Modify: `src/officina/rutter/tests/test_rutter_diagnostic.py`
 
 **Interfaces:**
 - Consumes: Task 4 directly constructed `Rutter` definitions and the existing
@@ -952,10 +951,10 @@ Run:
 
 ```bash
 python3 -m pytest -q \
-  tests/test_rutter_hooks.py \
-  tests/test_rutter_evaluation.py \
-  tests/test_rutter_engine.py \
-  tests/test_rutter_lifecycle.py
+  src/officina/rutter/tests/test_rutter_hooks.py \
+  src/officina/rutter/tests/test_rutter_evaluation.py \
+  src/officina/rutter/tests/test_rutter_engine.py \
+  src/officina/rutter/tests/test_rutter_lifecycle.py
 ```
 
 Expected: the new constructor keyword and contextual child lifecycle fail
@@ -1048,13 +1047,13 @@ Run:
 
 ```bash
 python3 -m pytest -q \
-  tests/test_rutter_runtime.py \
-  tests/test_rutter_hooks.py \
-  tests/test_rutter_evaluation.py \
-  tests/test_rutter_engine.py \
-  tests/test_rutter_lifecycle.py \
-  tests/test_rutter_storage.py \
-  tests/test_rutter_diagnostic.py
+  src/officina/rutter/tests/test_rutter_runtime.py \
+  src/officina/rutter/tests/test_rutter_hooks.py \
+  src/officina/rutter/tests/test_rutter_evaluation.py \
+  src/officina/rutter/tests/test_rutter_engine.py \
+  src/officina/rutter/tests/test_rutter_lifecycle.py \
+  src/officina/rutter/tests/test_rutter_storage.py \
+  src/officina/rutter/tests/test_rutter_diagnostic.py
 ```
 
 Expected: contextual choice and reopen pass without further Reckoning or
@@ -1070,10 +1069,10 @@ explicitly authorized:
 ```bash
 git add src/officina/rutter/authoring.py src/officina/rutter/runtime.py \
   src/officina/rutter/evaluation.py src/officina/rutter/engine.py \
-  src/officina/rutter/diagnostic.py test_support/rutter_fixtures.py \
-  tests/test_rutter_hooks.py tests/test_rutter_diagnostic.py \
-  tests/test_rutter_evaluation.py tests/test_rutter_engine.py \
-  tests/test_rutter_lifecycle.py
+  src/officina/rutter/diagnostic.py src/officina/rutter/tests/fixtures.py \
+  src/officina/rutter/tests/test_rutter_hooks.py src/officina/rutter/tests/test_rutter_diagnostic.py \
+  src/officina/rutter/tests/test_rutter_evaluation.py src/officina/rutter/tests/test_rutter_engine.py \
+  src/officina/rutter/tests/test_rutter_lifecycle.py
 git commit -m "feat(rutter): construct hook children from context"
 ```
 
@@ -1084,13 +1083,13 @@ git commit -m "feat(rutter): construct hook children from context"
 - Modify: `src/officina/rutter/runtime.py`
 - Modify: `src/officina/rutter/engine.py`
 - Modify: `src/officina/rutter/diagnostic.py`
-- Modify: `test_support/rutter_fixtures.py`
-- Modify: `tests/test_rutter_model.py`
-- Modify: `tests/test_rutter_runtime.py`
-- Modify: `tests/test_rutter_evaluation.py`
-- Modify: `tests/test_rutter_hooks.py`
-- Modify: `tests/test_rutter_engine.py`
-- Modify: `tests/test_rutter_lifecycle.py`
+- Modify: `src/officina/rutter/tests/fixtures.py`
+- Modify: `src/officina/rutter/tests/test_rutter_model.py`
+- Modify: `src/officina/rutter/tests/test_rutter_runtime.py`
+- Modify: `src/officina/rutter/tests/test_rutter_evaluation.py`
+- Modify: `src/officina/rutter/tests/test_rutter_hooks.py`
+- Modify: `src/officina/rutter/tests/test_rutter_engine.py`
+- Modify: `src/officina/rutter/tests/test_rutter_lifecycle.py`
 
 **Interfaces:**
 - Consumes: Task 4 directly constructed definitions and Task 5's transactional
@@ -1161,9 +1160,9 @@ Run:
 
 ```bash
 python3 -m pytest -q \
-  tests/test_rutter_runtime.py \
-  tests/test_rutter_engine.py \
-  tests/test_rutter_lifecycle.py
+  src/officina/rutter/tests/test_rutter_runtime.py \
+  src/officina/rutter/tests/test_rutter_engine.py \
+  src/officina/rutter/tests/test_rutter_lifecycle.py
 ```
 
 Expected: the contextual constructor tests fail because `SubRutter` still
@@ -1214,12 +1213,12 @@ Run:
 
 ```bash
 python3 -m pytest -q \
-  tests/test_rutter_model.py \
-  tests/test_rutter_runtime.py \
-  tests/test_rutter_evaluation.py \
-  tests/test_rutter_hooks.py \
-  tests/test_rutter_engine.py \
-  tests/test_rutter_lifecycle.py
+  src/officina/rutter/tests/test_rutter_model.py \
+  src/officina/rutter/tests/test_rutter_runtime.py \
+  src/officina/rutter/tests/test_rutter_evaluation.py \
+  src/officina/rutter/tests/test_rutter_hooks.py \
+  src/officina/rutter/tests/test_rutter_engine.py \
+  src/officina/rutter/tests/test_rutter_lifecycle.py
 ```
 
 Expected: all contextual SubRutter, hook, instance, restart, and compatibility
@@ -1234,10 +1233,10 @@ Commit only if explicitly authorized:
 ```bash
 git add src/officina/rutter/authoring.py src/officina/rutter/runtime.py \
   src/officina/rutter/engine.py src/officina/rutter/diagnostic.py \
-  test_support/rutter_fixtures.py tests/test_rutter_model.py \
-  tests/test_rutter_runtime.py tests/test_rutter_evaluation.py \
-  tests/test_rutter_hooks.py tests/test_rutter_engine.py \
-  tests/test_rutter_lifecycle.py
+  src/officina/rutter/tests/fixtures.py src/officina/rutter/tests/test_rutter_model.py \
+  src/officina/rutter/tests/test_rutter_runtime.py src/officina/rutter/tests/test_rutter_evaluation.py \
+  src/officina/rutter/tests/test_rutter_hooks.py src/officina/rutter/tests/test_rutter_engine.py \
+  src/officina/rutter/tests/test_rutter_lifecycle.py
 git commit -m "feat(rutter): construct explicit children from context"
 ```
 
@@ -1246,8 +1245,8 @@ git commit -m "feat(rutter): construct explicit children from context"
 **Files:**
 - Modify: `src/officina/visualization/from_rutter/__init__.py`
 - Modify: `src/officina/visualization/from_rutter/payload_builder.py`
-- Modify: `tests/test_rutter_visualization.py`
-- Modify: `skills/math-dependency-graph/_rtx/_inquisitive_inventory_rutter.py`
+- Modify: `src/officina/rutter/tests/test_rutter_visualization.py`
+- Modify: `skills/math-dependency-graph/_rtx/_inventory_pipeline/_voyage_dispenser.py`
 - Modify: `skills/math-dependency-graph/_rtx/tests/test_inquisitive_inventory_rutter.py`
 - Delete: `skills/math-dependency-graph/_rtx/_transparent_rutter_prototype.py`
 
@@ -1275,7 +1274,7 @@ of source filtering performed inside `hook_sequence_after` callbacks.
 Run the new exact test with:
 
 ```bash
-python3 -m pytest -q tests/test_rutter_visualization.py
+python3 -m pytest -q src/officina/rutter/tests/test_rutter_visualization.py
 ```
 
 Expected: the instance case fails with `rutter_class must be a Rutter class`.
@@ -1318,7 +1317,7 @@ Run:
 python3 -m pytest -q \
   skills/math-dependency-graph/_rtx/tests/test_inquisitive_inventory_rutter.py \
   skills/math-dependency-graph/_rtx/tests/test_inquisitive_inventory_cli.py \
-  tests/test_rutter_visualization.py
+  src/officina/rutter/tests/test_rutter_visualization.py
 ```
 
 Expected: the equal-report, different-report, reopen-at-each-boundary,
@@ -1332,7 +1331,7 @@ Delete `_transparent_rutter_prototype.py`. Search the owned scope:
 ```bash
 rg -n "DeclaredRutter|def rutter\(|importlib|InquisitiveInventoryRutter" \
   src/officina/rutter src/officina/visualization/from_rutter \
-  skills/math-dependency-graph/_rtx tests/test_rutter_*.py
+  skills/math-dependency-graph/_rtx src/officina/rutter/tests/test_rutter_*.py
 ```
 
 Expected: no prototype adapter remains; any `importlib` match must be unrelated
@@ -1347,8 +1346,8 @@ and corresponding identity assertions. Commit only if explicitly authorized:
 ```bash
 git add src/officina/visualization/from_rutter/__init__.py \
   src/officina/visualization/from_rutter/payload_builder.py \
-  tests/test_rutter_visualization.py \
-  skills/math-dependency-graph/_rtx/_inquisitive_inventory_rutter.py \
+  src/officina/rutter/tests/test_rutter_visualization.py \
+  skills/math-dependency-graph/_rtx/_inventory_pipeline/_voyage_dispenser.py \
   skills/math-dependency-graph/_rtx/tests/test_inquisitive_inventory_rutter.py
 git commit -m "refactor(rutter): make inventory definition transparent"
 ```
@@ -1423,9 +1422,9 @@ Declare the `jsonschema` runtime dependency on the evaluation source.
 Regenerate derived blueprint output with:
 
 ```bash
-env PYTHONPATH=/home/moeen/Documents/AI/.worktrees/rutter-node-entry-core/src \
+env PYTHONPATH=src \
   python3 -m officina.dispatcher.cli \
-  --repository-config /home/moeen/Documents/AI/.worktrees/rutter-node-entry-core/officina.toml \
+  --repository-config officina.toml \
   --caller-skill skill-maker \
   skill-maker._rtx.interface.sync-blueprints
 ```
@@ -1438,10 +1437,10 @@ Run the Rutter suites:
 
 ```bash
 python3 -m pytest -q \
-  tests/test_rutter_model.py tests/test_rutter_runtime.py \
-  tests/test_rutter_evaluation.py tests/test_rutter_engine.py \
-  tests/test_rutter_hooks.py tests/test_rutter_lifecycle.py \
-  tests/test_rutter_diagnostic.py tests/test_rutter_visualization.py \
+  src/officina/rutter/tests/test_rutter_model.py src/officina/rutter/tests/test_rutter_runtime.py \
+  src/officina/rutter/tests/test_rutter_evaluation.py src/officina/rutter/tests/test_rutter_engine.py \
+  src/officina/rutter/tests/test_rutter_hooks.py src/officina/rutter/tests/test_rutter_lifecycle.py \
+  src/officina/rutter/tests/test_rutter_diagnostic.py src/officina/rutter/tests/test_rutter_visualization.py \
   skills/math-dependency-graph/_rtx/tests/test_inquisitive_inventory_rutter.py \
   skills/math-dependency-graph/_rtx/tests/test_inquisitive_inventory_cli.py
 ```
@@ -1449,9 +1448,9 @@ python3 -m pytest -q \
 Then run:
 
 ```bash
-env PYTHONPATH=/home/moeen/Documents/AI/.worktrees/rutter-node-entry-core/src \
+env PYTHONPATH=src \
   python3 -m officina.dispatcher.cli \
-  --repository-config /home/moeen/Documents/AI/.worktrees/rutter-node-entry-core/officina.toml \
+  --repository-config officina.toml \
   --caller-skill skill-maker \
   skill-maker._rtx.interface.sync-blueprints --check
 python3 repo_checks.py --suite precommit --jobs 8
@@ -1513,3 +1512,58 @@ git add docs/plans/rutter-design/01-core-design.md \
   src/officina/rutter/blueprint.yaml
 git commit -m "docs(rutter): document instance definitions"
 ```
+
+### Task 9: Expose collections of Voyages to Compass without serialization
+
+This user-approved follow-up expands the Task 8 minimality boundary. A Python
+Rutter or Voyage must not cross the prompt boundary. Instead, one configured
+`VoyageDispenser` enumerates opaque Voyage IDs, resolves each authorized ID to
+one live Voyage, and mirrors `get_status`, `validate`, and `advance` with a
+leading `voyage_id`. One shared CLI maps `list`, `status`, `validate`, and
+`advance` to finite JSON. `using-compass` consumes that versioned process
+binding directly; runtime `help()` discovery is removed because every dispenser
+has the same contract.
+
+**Files:**
+- Create: `src/officina/rutter/dispenser.py`
+- Create: `src/officina/rutter/blueprints/dispenser.yaml`
+- Create: `src/officina/rutter/tests/test_rutter_dispenser.py`
+- Modify: `src/officina/rutter/__init__.py`
+- Modify: `src/officina/rutter/blueprint.yaml`
+- Modify: `src/officina/runtime/python_machine_interface_runner.py`
+- Modify: `tests/test_officina_python_machine_interface.py`
+- Modify: `skills/using-compass/SKILL.md`
+- Modify: `skills/using-compass/blueprint.yaml`
+- Modify: `skills/using-compass/blueprints/gateway.yaml`
+- Modify: `skills/using-compass/tests/test_using_compass_instructions.py`
+- Modify: the inquisitive-inventory CLI source, blueprint, module versions, and
+  focused tests.
+
+- [x] Add failing tests proving that two real Voyages are enumerated and that
+  operations affect only the selected `voyage_id`.
+- [x] Implement `VoyageDispenser(get_voyage_ids=..., open_voyage=...)` and the
+  reusable `voyage_dispenser_cli(dispenser, argv)` mapper.
+- [x] Permit a registered Python process entry to be a configured
+  `PythonMachineInterface` instance as well as an existing constructor.
+- [x] Replace Compass's untransportable Python-Voyage/help bootstrap with the
+  authorized dispenser process loop.
+- [x] Demonstrate two-worker inventory enumeration and selection from sibling
+  experiment directories without exposing their paths as Voyage IDs.
+- [x] Run focused Rutter, dispatcher, Compass, inventory, blueprint, and diff
+  checks; confirm the final implementation agrees with this task. The scoped
+  tests pass. The broader blueprint test reaches and passes the new dispenser
+  ownership assertions, then stops on the checkout's unrelated pre-existing
+  inventory dependency mismatch; the global sync check likewise retains that
+  unrelated dirty manifest mismatch.
+
+### Task 10: Make the inventory Rutter module the dispenser entrypoint
+
+- [x] Move the configured `VoyageDispenser`, setup compatibility operations,
+  process `Interface`, and `main` into `_inquisitive_inventory_rutter.py`.
+- [x] Remove the redundant `_inquisitive_inventory_cli.py` implementation and
+  its separate behavioral-source blueprint.
+- [x] Make the Rutter source own the public experiment process binding and
+  preserve its two-file implementation boundary with
+  `_inquisitive_inventory_support.py`.
+- [x] Update focused behavior and blueprint-ownership tests and regenerate the
+  math-dependency-graph skill contract.
