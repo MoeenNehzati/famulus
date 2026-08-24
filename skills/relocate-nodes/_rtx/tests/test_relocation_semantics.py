@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from .._relocation_engine import ChangeSet, DerivedIdentityMap, RelocationError, Rename
-from .._relocation_semantics import SemanticScan, logical_fragment_mappings
+from .._relocation_semantics import SemanticScan, _context, _physical_mappings, logical_fragment_mappings
 
 
 def _write(path: Path, payload: bytes | str) -> None:
@@ -48,6 +48,24 @@ def test_logical_fragments_are_segment_aware_and_longest_first() -> None:
     assert [(item.old, item.new) for item in logical_fragment_mappings(top_level)] == [
         ("g-calendar", "online-calendar")
     ]
+
+
+def test_cross_root_physical_fragments_do_not_conflict_with_full_endpoint() -> None:
+    """Cross-root fragments preserve complete, unambiguous endpoint pairing."""
+    candidates = [(item.old, item.new) for item in _physical_mappings(
+        DerivedIdentityMap("skills/foo", "src/officina/foo")
+    )]
+    assert candidates.count(("skills/foo", "src/officina/foo")) == 1
+    assert ("skills", "src/officina") in candidates
+    assert not any(old == "skills/foo" and new != "src/officina/foo" for old, new in candidates)
+
+
+def test_long_line_context_is_centered_on_the_occurrence() -> None:
+    """Bounded decision context includes matches beyond the old column cutoff."""
+    text = "x" * 320 + "old-address" + "y" * 320
+    context = _context(text, 320, 331)
+    assert "old-address" in context
+    assert len(context) <= 240
 
 
 def test_semantic_scan_covers_all_text_and_only_exact_default_exclusions(

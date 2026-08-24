@@ -160,6 +160,19 @@ def _physical_mappings(relocation: DerivedIdentityMap) -> tuple[SemanticMapping,
         relocation.source_path,
         relocation.target_path,
     )
+    old_parts = relocation.source_path.split("/")
+    new_parts = relocation.target_path.split("/")
+    suffix = 0
+    while suffix < min(len(old_parts), len(new_parts)) and old_parts[-1 - suffix] == new_parts[-1 - suffix]:
+        suffix += 1
+    old_core = old_parts[:-suffix] if suffix else old_parts
+    new_core = new_parts[:-suffix] if suffix else new_parts
+    core_pairs = [Rename("/".join(old_core), "/".join(new_core))]
+    if len(old_core) == len(new_core):
+        core_pairs.extend(
+            Rename("/".join(old_core[:count]), "/".join(new_core[:count]))
+            for count in range(len(old_core) - 1, 0, -1)
+        )
     fragments = tuple(
         SemanticMapping(
             "physical_fragment",
@@ -168,9 +181,9 @@ def _physical_mappings(relocation: DerivedIdentityMap) -> tuple[SemanticMapping,
             item.old,
             item.new,
         )
-        for item in _divergent_fragments(
-            relocation.source_path, relocation.target_path, "/"
-        )
+        for item in core_pairs
+        if item.old != relocation.source_path
+        and item.old != item.new
     )
     return (full, *fragments)
 
@@ -260,7 +273,16 @@ def _context(text: str, start: int, end: int) -> str:
     line_end = text.find("\n", end)
     if line_end < 0:
         line_end = len(text)
-    return text[line_start:line_end][:240]
+    line = text[line_start:line_end]
+    relative_start = start - line_start
+    relative_end = end - line_start
+    if len(line) <= 240:
+        return line
+    window_start = max(0, min(relative_start - 100, len(line) - 240))
+    window_end = max(window_start + 240, relative_end)
+    window_end = min(window_end, len(line))
+    window_start = max(0, window_end - 240)
+    return line[window_start:window_end]
 
 
 def _generated_source(path: str, changes: ChangeSet, start: int, end: int) -> tuple[bool, str | None]:
@@ -298,7 +320,9 @@ class SemanticScan:
         skipped: list[SkippedTextFile] = []
         for path in semantic_inventory_entries(self.changes):
             disk_path = self.changes.root / path
-            if disk_path.is_symlink() and path not in self.changes.writes:
+            if path in self.changes.symlink_writes or (
+                disk_path.is_symlink() and path not in self.changes.writes
+            ):
                 skipped.append(SkippedTextFile(path, "symlink"))
                 continue
             try:

@@ -126,6 +126,7 @@ def _synthetic_repository(root: Path) -> dict[str, str]:
     )
     _write(
         root / "consumer.yaml",
+        "schema_version: 6\nid: fixture.consumer\nnode_type: behavioral_source\n"
         "uses_interfaces:\n- interface: relocate-source.interface.default\n  version: 1\n",
     )
     _write(
@@ -315,6 +316,20 @@ def test_runtime_engine_validates_manifest_with_its_adjacent_schema(
     loaded = engine.load_manifest(manifest)
 
     assert loaded.relocations == ()
+
+
+def test_runtime_contract_declares_per_file_not_repository_atomicity() -> None:
+    """Authored mutation safety must acknowledge possible partial publication."""
+
+    blueprint = yaml.safe_load(
+        (RTX_ROOT / "blueprints/rtx-relocate-nodes.yaml").read_text(encoding="utf-8")
+    )
+    safety = next(iter(blueprint["interfaces"].values()))["contract"]["execution"][
+        "mutation_safety"
+    ]
+
+    assert "per_effect_only" in safety["atomicity"]
+    assert "possible" in safety["partial_effects_on_failure"]
 
 
 def test_adapter_rejects_report_path_inside_selected_repository(

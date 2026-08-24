@@ -13,7 +13,9 @@ import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
+import posixpath
 import re
+import shlex
 import stat
 from typing import Any, Iterable, Literal, Mapping, Protocol
 
@@ -828,6 +830,7 @@ class ChangeSet:
     expected_absent_targets: tuple[str, ...] = ()
     moves: list[Move] = field(default_factory=list)
     writes: dict[str, bytes] = field(default_factory=dict)
+    symlink_writes: dict[str, str] = field(default_factory=dict)
     write_modes: dict[str, int] = field(default_factory=dict)
     deletes: set[str] = field(default_factory=set)
     expected: dict[str, bytes | None] = field(default_factory=dict)
@@ -876,6 +879,8 @@ class ChangeSet:
 
         if relative in self.writes:
             return self.writes[relative]
+        if relative in self.symlink_writes:
+            raise RelocationError(f"projected path is a symlink: {relative}")
         if relative in self.deletes:
             raise RelocationError(f"projected path does not exist: {relative}")
         value = self._disk_bytes(relative)
@@ -891,8 +896,8 @@ class ChangeSet:
     def exists(self, relative: str) -> bool:
         """Return whether a file exists in the projected tree."""
 
-        return relative in self.writes or (
-            relative not in self.deletes and (self.root / relative).is_file()
+        return relative in self.writes or relative in self.symlink_writes or (
+            relative not in self.deletes and _lexists(self.root / relative)
         )
 
     def write_bytes(self, relative: str, payload: bytes) -> None:
@@ -930,6 +935,7 @@ class ChangeSet:
         paths = set(self.base_files)
         paths.difference_update(self.deletes)
         paths.update(self.writes)
+        paths.update(self.symlink_writes)
         return paths
 
     def report(self) -> dict[str, object]:
@@ -940,7 +946,7 @@ class ChangeSet:
                 {"from": move.source, "to": move.target}
                 for move in sorted(self.moves, key=lambda item: (item.source, item.target))
             ],
-            "writes": sorted(self.writes),
+            "writes": sorted(set(self.writes) | set(self.symlink_writes)),
             "deletes": sorted(self.deletes),
             "blueprint_changes": sorted(self.blueprint_changes),
             "certification_basis_changes": sorted(self.certification_basis_changes),
@@ -978,18 +984,22 @@ class ChangeSet:
 
 def _eligible_files(root: Path, relative: str) -> list[Path]:
     path = root / relative
-    if path.is_file():
+    if path.is_symlink() or path.is_file():
         return [path]
     if not path.is_dir():
         return []
     return [
         child
         for child in sorted(path.rglob("*"))
-        if child.is_file() and not any(part in _CACHE_PARTS for part in child.relative_to(root).parts)
+        if (child.is_symlink() or child.is_file())
+        and not any(part in _CACHE_PARTS for part in child.relative_to(root).parts)
     ]
 
 
 def _project_moves(changes: ChangeSet, manifest: RelocationManifest) -> None:
+    projections: list[tuple[Move, Path, str, str]] = []
+    seen_sources: set[str] = set()
+    seen_targets: set[str] = set()
     for move in manifest.relocations:
         source_path = changes.root / move.source
         target_path = changes.root / move.target
@@ -1001,7 +1011,6 @@ def _project_moves(changes: ChangeSet, manifest: RelocationManifest) -> None:
             raise RelocationError(f"neither move endpoint exists: {move.source}, {move.target}")
         if not source_files:
             continue
-        changes.moves.append(move)
         source_is_dir = source_path.is_dir()
         for source_file in source_files:
             suffix = source_file.relative_to(source_path).as_posix() if source_is_dir else ""
@@ -1011,15 +1020,49 @@ def _project_moves(changes: ChangeSet, manifest: RelocationManifest) -> None:
                 else move.target
             )
             source_relative = source_file.relative_to(changes.root).as_posix()
-            if (changes.root / target_relative).exists():
+            if source_relative in seen_sources:
+                raise RelocationError(f"overlapping projected move source: {source_relative}")
+            if target_relative in seen_targets:
+                raise RelocationError(f"projected move target collision: {target_relative}")
+            if _lexists(changes.root / target_relative):
                 raise RelocationError(f"move target already exists: {target_relative}")
-            changes.expected.setdefault(source_relative, source_file.read_bytes())
+            seen_sources.add(source_relative)
+            seen_targets.add(target_relative)
+            projections.append((move, source_file, source_relative, target_relative))
+    for move in manifest.relocations:
+        if any(item[0] == move for item in projections):
+            changes.moves.append(move)
+    projected_paths = {source: target for _, _, source, target in projections}
+    for _move, source_file, source_relative, target_relative in projections:
+        if source_file.is_symlink():
+            link_text = source_file.readlink()
+            try:
+                if link_text.is_absolute():
+                    raise ValueError
+                resolved = (source_file.parent / link_text).resolve(strict=True)
+                resolved_relative = resolved.relative_to(changes.root).as_posix()
+                expected_target = projected_paths.get(
+                    resolved_relative, resolved_relative
+                )
+                projected_link_target = posixpath.normpath(
+                    str(PurePosixPath(target_relative).parent / link_text)
+                )
+                if (
+                    projected_link_target.startswith("../")
+                    or projected_link_target != expected_target
+                ):
+                    raise ValueError
+            except (OSError, RuntimeError, ValueError):
+                raise RelocationError(f"unsafe move symlink: {source_relative}") from None
             changes.expected.setdefault(target_relative, None)
-            changes.writes[target_relative] = source_file.read_bytes()
-            changes.write_modes[target_relative] = stat.S_IMODE(
-                source_file.stat().st_mode
-            )
+            changes.symlink_writes[target_relative] = link_text.as_posix()
             changes.deletes.add(source_relative)
+            continue
+        changes.expected.setdefault(source_relative, source_file.read_bytes())
+        changes.expected.setdefault(target_relative, None)
+        changes.writes[target_relative] = source_file.read_bytes()
+        changes.write_modes[target_relative] = stat.S_IMODE(source_file.stat().st_mode)
+        changes.deletes.add(source_relative)
 
 
 def _yaml_mapping(changes: ChangeSet, relative: str) -> dict[str, Any]:
@@ -1293,6 +1336,18 @@ def _project_derived_blueprints(
             document = _yaml_mapping(changes, relative)
         except (RelocationError, UnicodeDecodeError, yaml.YAMLError):
             continue
+        path = PurePosixPath(relative)
+        typed_contract = bool(
+            path.name == "blueprint.yaml"
+            or "/_rtx/blueprints/" in f"/{relative}"
+            or (
+                document.get("schema_version") == 6
+                and isinstance(document.get("id"), str)
+                and isinstance(document.get("node_type"), str)
+            )
+        )
+        if not typed_contract:
+            continue
         rewritten = _rewrite_blueprint_value(
             document,
             field_name=None,
@@ -1397,7 +1452,17 @@ def _interface_command_replacements(
 
     result_lines: list[str] = []
     for line in text.splitlines(keepends=True):
-        if "--caller-skill" not in line:
+        stripped = line.lstrip()
+        if not stripped or stripped.startswith("#"):
+            result_lines.append(line)
+            continue
+        try:
+            tokens = shlex.split(line, comments=True)
+        except ValueError:
+            result_lines.append(line)
+            continue
+        command = "dispatch" + "er"
+        if not tokens or PurePosixPath(tokens[0]).name != command or "--caller-skill" not in tokens:
             result_lines.append(line)
             continue
         updated = line
@@ -1443,6 +1508,8 @@ def _project_structural_code(
         for item in sorted(maps, key=lambda value: len(value.source_path), reverse=True)
     )
     for relative in sorted(changes.projected_files()):
+        if relative in changes.symlink_writes:
+            continue
         if not _text_file(relative, manifest.text_exclusions):
             continue
         try:
@@ -1455,13 +1522,16 @@ def _project_structural_code(
                 payload,
                 _python_import_replacements(text, python_renames),
             )
-        updated = _interface_command_replacements(
-            payload.decode("utf-8"),
-            identities=identity_renames,
-            paths=path_renames,
-        )
+        updated = payload.decode("utf-8")
+        if relative.endswith(".sh"):
+            updated = _interface_command_replacements(
+                updated, identities=identity_renames, paths=path_renames,
+            )
         if updated.encode("utf-8") != text.encode("utf-8"):
             changes.write_text(relative, updated)
+
+def _project_exact_rewrites(changes: ChangeSet, manifest: RelocationManifest) -> None:
+    """Apply exceptional non-address rewrites after semantic discovery."""
 
     for rewrite in manifest.exact_rewrites:
         text = changes.read_text(rewrite.path)
@@ -1697,7 +1767,11 @@ def _validate_projected_tree(changes: ChangeSet, manifest: RelocationManifest) -
     syntax: list[str] = []
     facades: list[str] = []
     for relative in sorted(changes.projected_files()):
-        if relative in excluded or not _text_file(relative, manifest.text_exclusions):
+        if (
+            relative in changes.symlink_writes
+            or relative in excluded
+            or not _text_file(relative, manifest.text_exclusions)
+        ):
             continue
         try:
             text = changes.read_text(relative)
@@ -1764,6 +1838,16 @@ def _enclosing_text_spans(payload: bytes, text: str) -> list[tuple[int, int]]:
         start = found + len(needle)
 
 
+def _decision_text_owns_one_match(decision: SemanticDecision) -> bool:
+    """Require each repeated enclosing span to own exactly one selected address."""
+
+    boundary = r"\w./-"
+    pattern = re.compile(
+        rf"(?<![{boundary}]){re.escape(decision.match)}(?![{boundary}])"
+    )
+    return sum(1 for _ in pattern.finditer(decision.text)) == 1
+
+
 def _target_side_decision_matches(
     changes: ChangeSet,
     decision: SemanticDecision,
@@ -1791,6 +1875,7 @@ def _target_side_decision_matches(
         )
     return (
         len(matching) >= 1
+        and _decision_text_owns_one_match(decision)
         and payload.count(decision.text.encode("utf-8")) == decision.count
     )
 
@@ -1807,6 +1892,10 @@ def _project_semantic_decisions(
     source_spans: list[tuple[str, int, int]] = []
     rewrite_spans: dict[str, list[tuple[int, int, bytes]]] = {}
     for decision in manifest.semantic_decisions:
+        if not _decision_text_owns_one_match(decision):
+            raise RelocationError(
+                f"semantic decision text must own exactly one occurrence: {decision.occurrence_id}"
+            )
         occurrence = by_id.get(decision.occurrence_id)
         if occurrence is None:
             if _target_side_decision_matches(changes, decision, occurrences):
@@ -1876,15 +1965,21 @@ def _is_accounted_final_occurrence(
     for decision in decisions:
         if decision.disposition != "preserve":
             continue
+        if not _decision_text_owns_one_match(decision):
+            continue
         if (
             getattr(occurrence, "path") == decision.path
             and getattr(occurrence, "mapping_kind") == decision.mapping_kind
             and getattr(occurrence, "mapping_id") == decision.mapping_id
             and getattr(occurrence, "match") == decision.match
-            and changes.read_bytes(decision.path).count(decision.text.encode("utf-8"))
-            == decision.count
         ):
-            return True
+            spans = _enclosing_text_spans(changes.read_bytes(decision.path), decision.text)
+            if len(spans) != decision.count:
+                continue
+            start = getattr(occurrence, "byte_start")
+            end = getattr(occurrence, "byte_end")
+            if any(span_start <= start and end <= span_end for span_start, span_end in spans):
+                return True
     return False
 
 
@@ -1925,6 +2020,22 @@ def plan_relocation(
     _project_catalogs(changes, manifest)
     _validate_package_boundary_declarations(changes, manifest)
     _project_standard_digests(changes, manifest)
+    from ._relocation_semantics import SemanticScan
+
+    if manifest.exact_rewrites:
+        pre_rewrite_semantic = SemanticScan(changes).run()
+        for rewrite in manifest.exact_rewrites:
+            for occurrence in pre_rewrite_semantic.occurrences:
+                if occurrence.path != rewrite.path:
+                    continue
+                for start, end in _enclosing_text_spans(
+                    changes.read_bytes(rewrite.path), rewrite.old
+                ):
+                    if occurrence.byte_start < end and occurrence.byte_end > start:
+                        raise RelocationError(
+                            f"exact rewrite targets semantic occurrence: {rewrite.path}"
+                        )
+        _project_exact_rewrites(changes, manifest)
     from ._relocation_closure import MechanicalClosureError, close_projected_relocation
 
     try:
@@ -1939,8 +2050,6 @@ def plan_relocation(
     changes.generated_artifact_changes.update(closure.generated_artifact_changes)
     changes.validation_results.update(closure.validation_results)
     _validate_projected_tree(changes, manifest)
-    from ._relocation_semantics import SemanticScan
-
     semantic = SemanticScan(changes).run()
     changes.semantic_occurrences.extend(semantic.occurrences)
     changes.skipped_text_files.extend(semantic.skipped_text_files)
@@ -2070,6 +2179,16 @@ def apply_change_set(changes: ChangeSet) -> None:
             if relative in changes.write_modes:
                 temporary.chmod(changes.write_modes[relative])
             staged[relative] = temporary
+        for relative, link_text in sorted(changes.symlink_writes.items()):
+            target = changes.root / relative
+            created_directories.update(_prepare_parent(target.parent, changes.root))
+            temporary = target.with_name(
+                f".{target.name}.officina-relocation-{hashlib.sha256(relative.encode()).hexdigest()[:12]}"
+            )
+            if _lexists(temporary):
+                raise RelocationError(f"staging path already exists: {temporary}")
+            temporary.symlink_to(link_text)
+            staged[relative] = temporary
         _validate_physical_baseline(
             changes,
             ignored_paths=(
@@ -2082,8 +2201,24 @@ def apply_change_set(changes: ChangeSet) -> None:
             os.replace(temporary, changes.root / relative)
         for relative in sorted(changes.deletes, reverse=True):
             path = changes.root / relative
-            if path.is_file():
+            if path.is_symlink() or path.is_file():
                 path.unlink()
+        source_directories = sorted(
+            {
+                changes.root / move.source
+                for move in changes.moves
+                if (changes.root / move.source).is_dir()
+                and not (changes.root / move.source).is_symlink()
+            },
+            key=lambda path: len(path.parts),
+            reverse=True,
+        )
+        for source in source_directories:
+            for directory, _, _ in os.walk(source, topdown=False):
+                try:
+                    Path(directory).rmdir()
+                except OSError:
+                    pass
     except Exception:
         for temporary in staged.values():
             if _lexists(temporary):

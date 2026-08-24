@@ -177,8 +177,8 @@ interfaces:
         state_effect: mutating
         mutation_safety:
           atomicity:
-            atomic: The validated change set is staged and published only after every
-              preflight snapshot still matches.
+            per_effect_only: Every file is staged and atomically replaced after the
+              complete change set passes preflight; publication is not repository-atomic.
           concurrent_invocations:
             unsafe: Concurrent relocation applications can invalidate each other's
               preflight snapshots.
@@ -189,8 +189,8 @@ interfaces:
             verify_then_decide: Rerun the same preflight and require every report
               category to be empty before retrying.
           partial_effects_on_failure:
-            impossible: The engine validates all planned changes before publishing
-              the complete file-level change set.
+            possible: A mid-publication failure can leave earlier per-file replacements
+              applied while later files remain unchanged.
           rollback_on_failure:
             unavailable: Preserve the report and use a reviewed compensating manifest
               rather than rewriting repository history.

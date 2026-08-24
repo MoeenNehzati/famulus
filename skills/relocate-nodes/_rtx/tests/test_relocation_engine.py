@@ -13,11 +13,16 @@ import yaml
 
 from .. import _relocation_engine as engine_module
 from .._relocation_engine import (
+    ChangeSet,
+    DerivedIdentityMap,
     RelocationError,
+    Rename,
+    SemanticDecision,
     apply_change_set,
     load_manifest,
     plan_relocation,
 )
+from .._relocation_semantics import SemanticOccurrence
 from .._relocate_nodes import Interface
 
 
@@ -479,6 +484,7 @@ def test_nested_node_projection_rewrites_only_structural_identities(
     )
     _write(
         tmp_path / "consumer.yaml",
+        "schema_version: 6\nid: fixture.consumer\nnode_type: behavioral_source\n"
         "uses_interfaces:\n- interface: a.b.c.interface.worker\n  version: 1\n",
     )
     untouched = {
@@ -759,7 +765,11 @@ def test_ownership_transfer_moves_blueprint_records_without_changing_contracts(
     _write(old_root / "blueprint.yaml", yaml.safe_dump(old_module, sort_keys=False))
     _write(target_root / "blueprint.yaml", yaml.safe_dump(target_module, sort_keys=False))
     _write(old_root / "blueprints/worker.yaml", yaml.safe_dump(sidecar, sort_keys=False))
-    _write(tmp_path / "consumer.yaml", "uses_interfaces:\n- interface: old.interface.worker\n  version: 1\n")
+    _write(
+        tmp_path / "consumer.yaml",
+        "schema_version: 6\nid: fixture.consumer\nnode_type: behavioral_source\n"
+        "uses_interfaces:\n- interface: old.interface.worker\n  version: 1\n",
+    )
     manifest = _manifest(
         tmp_path / "move.yaml",
         {
@@ -949,6 +959,94 @@ def test_exact_rewrite_precondition_fails_before_any_write(tmp_path: Path) -> No
     with pytest.raises(RelocationError, match="exact rewrite precondition"):
         plan_relocation(tmp_path, manifest)
     assert original.read_text(encoding="utf-8") == "VALUE = 1\n"
+
+
+def test_exact_rewrite_cannot_erase_a_semantic_occurrence(tmp_path: Path) -> None:
+    """Exceptional exact rewrites cannot bypass semantic adjudication."""
+    _write(tmp_path / "old.txt", "reference old.txt\n")
+    manifest = _manifest(tmp_path / "move.yaml", {
+        "schema_version": 3,
+        "relocations": [{"from": "old.txt", "to": "new.txt"}],
+        "exact_rewrites": [{"path": "new.txt", "from": "old.txt", "to": "new.txt"}],
+    })
+    with pytest.raises(RelocationError, match="exact rewrite targets semantic occurrence"):
+        plan_relocation(tmp_path, manifest)
+
+
+def test_preserve_decision_owns_only_occurrences_inside_its_selected_span(tmp_path: Path) -> None:
+    """One preserved context cannot conceal an identical unreviewed occurrence."""
+    _write(tmp_path / "notes.md", "review old and old here\nunreviewed old there\n")
+    changes = ChangeSet(tmp_path)
+    decision = SemanticDecision(
+        "selected", "physical_fragment", "move", "notes.md", "sha256:x",
+        7, 10, 1, "old", 1, "preserve", "review old and old here", "intentional",
+    )
+    occurrence = SemanticOccurrence(
+        "unreviewed", "physical_fragment", "move", "move", "notes.md",
+        "sha256:x", 15, 18, 1, 16, 2, "old", "new", "review old and old here",
+    )
+    assert not engine_module._is_accounted_final_occurrence(changes, occurrence, (decision,))
+
+
+def test_projected_move_destinations_cannot_overlap(tmp_path: Path) -> None:
+    """Two source files cannot silently project onto the same destination."""
+    _write(tmp_path / "one/item.txt", "one\n")
+    _write(tmp_path / "two/item.txt", "two\n")
+    manifest = _manifest(tmp_path / "move.yaml", {
+        "schema_version": 3,
+        "relocations": [
+            {"from": "one", "to": "out"},
+            {"from": "two/item.txt", "to": "out/item.txt"},
+        ],
+    })
+    with pytest.raises(RelocationError, match="projected move target collision"):
+        plan_relocation(tmp_path, manifest)
+
+
+def test_structural_projectors_ignore_untyped_yaml_and_noncommand_text(tmp_path: Path) -> None:
+    """Familiar keys and command-like prose remain for semantic review."""
+    _write(tmp_path / "data.yaml", "id: old.interface.default\n")
+    _write(tmp_path / "notes.md", "dispatcher --caller-skill old old.interface.default\n")
+    _write(tmp_path / "run.sh", "dispatcher --caller-skill old old.interface.default\n")
+    changes = ChangeSet(tmp_path)
+    mapping = DerivedIdentityMap(
+        "skills/old", "skills/new", source_node_id="old", target_node_id="new",
+        module_ids=(Rename("old", "new"),),
+        interface_ids=(Rename("old.interface.default", "new.interface.default"),),
+    )
+    manifest = _manifest(tmp_path / "manifest.yaml", {"schema_version": 3})
+    engine_module._project_derived_blueprints(changes, manifest, (mapping,))
+    engine_module._project_structural_code(changes, manifest, (mapping,))
+    assert changes.read_text("data.yaml") == "id: old.interface.default\n"
+    assert changes.read_text("notes.md") == "dispatcher --caller-skill old old.interface.default\n"
+    assert changes.read_text("run.sh") == "dispatcher --caller-skill new new.interface.default\n"
+
+
+def test_move_preserves_safe_internal_symlink_without_dereferencing(tmp_path: Path) -> None:
+    """A moved internal link remains a link with the same relative link text."""
+    _write(tmp_path / "old/target.txt", "payload\n")
+    (tmp_path / "old/link.txt").symlink_to("target.txt")
+    manifest = _manifest(tmp_path / "move.yaml", {
+        "schema_version": 3, "relocations": [{"from": "old", "to": "new"}],
+    })
+    changes = plan_relocation(tmp_path, manifest)
+    apply_change_set(changes)
+    assert (tmp_path / "new/link.txt").is_symlink()
+    assert os.readlink(tmp_path / "new/link.txt") == "target.txt"
+    assert not (tmp_path / "old").exists()
+
+
+@pytest.mark.parametrize("link_text", ("missing.txt", "../../outside.txt"))
+def test_move_rejects_unsafe_symlink(tmp_path: Path, link_text: str) -> None:
+    """Dangling and repository-escaping links are rejected, never followed."""
+    (tmp_path / "old").mkdir()
+    _write(tmp_path.parent / "outside.txt", "outside\n")
+    (tmp_path / "old/link.txt").symlink_to(link_text)
+    manifest = _manifest(tmp_path / "move.yaml", {
+        "schema_version": 3, "relocations": [{"from": "old", "to": "new"}],
+    })
+    with pytest.raises(RelocationError, match="unsafe move symlink"):
+        plan_relocation(tmp_path, manifest)
 
 
 def test_exact_rewrite_is_idempotent_when_replacement_contains_original(

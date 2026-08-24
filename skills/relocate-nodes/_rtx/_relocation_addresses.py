@@ -33,6 +33,14 @@ class AddressResolutionError(ValueError):
     """
 
 
+def _lexists(path: Path) -> bool:
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return False
+    return True
+
+
 class _RelocationEntry(Protocol):
     """Describe the move fields address derivation needs.
 
@@ -434,8 +442,8 @@ def derive_relocations(
             roots=configuration.module_roots,
             repository=repository,
         )
-        source_exists = repository.joinpath(*source_path.parts, "blueprint.yaml").is_file()
-        target_exists = repository.joinpath(*target_path.parts, "blueprint.yaml").is_file()
+        source_exists = _lexists(repository.joinpath(*source_path.parts))
+        target_exists = _lexists(repository.joinpath(*target_path.parts))
         if source_exists and target_exists:
             raise AddressResolutionError(
                 f"physical target collision: both source and target exist for "

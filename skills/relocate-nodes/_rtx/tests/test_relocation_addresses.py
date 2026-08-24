@@ -212,6 +212,15 @@ def test_rejects_a_physical_target_collision(tmp_path: Path) -> None:
         derive_relocations(repository, (Move("packages/foo", "lib/officina/foo"),))
 
 
+def test_empty_target_directory_counts_as_a_physical_collision(tmp_path: Path) -> None:
+    """Even an empty endpoint entry prevents relocation into that path."""
+    repository = _repository(tmp_path)
+    _registered_node(repository, "packages/foo")
+    (repository / "lib/officina/foo").mkdir()
+    with pytest.raises(AddressResolutionError, match="physical target collision"):
+        derive_relocations(repository, (Move("packages/foo", "lib/officina/foo"),))
+
+
 @pytest.mark.parametrize(
     ("source_name", "target_name"),
     [

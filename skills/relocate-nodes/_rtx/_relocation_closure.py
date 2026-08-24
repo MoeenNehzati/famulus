@@ -133,6 +133,20 @@ def _materialize_projection(changes: ChangeSet, shadow_root: Path) -> None:
             continue
         source = changes.root / relative
         target = shadow_root / relative
+        if relative in changes.symlink_writes:
+            link_text = Path(changes.symlink_writes[relative])
+            try:
+                if link_text.is_absolute():
+                    raise ValueError
+                resolved = (PurePosixPath(relative).parent / link_text).as_posix()
+                normalized = PurePosixPath(resolved)
+                if ".." in normalized.parts or normalized.as_posix() not in changes.projected_files():
+                    raise ValueError
+            except (RuntimeError, ValueError):
+                raise MechanicalClosureError(f"unsafe shadow symlink: {relative}") from None
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.symlink_to(link_text)
+            continue
         if source.is_symlink():
             if relative in changes.writes:
                 raise MechanicalClosureError(
