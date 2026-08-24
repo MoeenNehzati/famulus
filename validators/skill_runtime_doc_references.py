@@ -26,7 +26,7 @@ from validators.skill_runtime_files import (
 )
 from validators.skill_md_body import hand_authored_skill_body
 
-_EXCLUDED_PARTS = {"tests", "assets", ".system", RTX_DIR_NAME}
+_EXCLUDED_PARTS = {"tests", "assets", "_build", ".system", RTX_DIR_NAME}
 REQUIRES_BLUEPRINT_GRAPH = True
 BLUEPRINT_GRAPH_OPTIONAL = True
 _WORD = r"A-Za-z0-9_"

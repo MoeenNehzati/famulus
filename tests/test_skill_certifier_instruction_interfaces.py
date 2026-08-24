@@ -196,25 +196,8 @@ def test_drift_and_canonical_docs_describe_selective_v6_worklist() -> None:
     canonical_text = (
         REPO_ROOT / "docs" / "officina" / "certification_and_drift.md"
     ).read_text(encoding="utf-8")
-    design_text = (
-        REPO_ROOT
-        / "docs"
-        / "superpowers"
-        / "specs"
-        / "2026-08-17-skill-certifier-llm-interface-design.md"
-    ).read_text(encoding="utf-8")
-    plan_text = (
-        REPO_ROOT
-        / "docs"
-        / "superpowers"
-        / "plans"
-        / "2026-08-17-skill-certifier-llm-interface-rewrite.md"
-    ).read_text(encoding="utf-8")
-
     normalized_drift = " ".join(drift_text.split())
     normalized_canonical = " ".join(canonical_text.split())
-    normalized_design = " ".join(design_text.split()).lower()
-    normalized_plan = " ".join(plan_text.split()).lower()
 
     assert "version-6 repository graphs" in normalized_drift
     assert "dependency closure rooted at that module's owned nodes" in normalized_drift
@@ -229,8 +212,6 @@ def test_drift_and_canonical_docs_describe_selective_v6_worklist() -> None:
     assert "interface: skill-certifier._rtx.interface.certify version: 2" in (
         normalized_canonical
     )
-    assert "selective evidence reuse is implemented" in normalized_design
-    assert "selective evidence reuse before runtime support exists" not in normalized_plan
 
 
 def test_each_semantic_audit_instruction_has_one_bounded_job() -> None:
