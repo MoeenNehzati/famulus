@@ -58,8 +58,9 @@ def _evolution_description(evolution: object) -> str:
         child_id = getattr(evolution.child, "rutter_id", evolution.child.__name__)
         return f"Enter child Rutter '{child_id}'."
     assert isinstance(evolution, Terminal)
-    if callable(evolution.result):
-        return _callable_description(evolution.result)
+    if evolution.result_constructor is not None:
+        return _callable_description(evolution.result_constructor)
+    assert evolution.result is not None
     return f"Complete with outcome '{evolution.result.outcome}'."
 
 

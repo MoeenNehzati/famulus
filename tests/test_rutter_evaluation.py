@@ -35,7 +35,7 @@ class _Child(Rutter):
     initial_evolution_id = "done"
 
     def define_evolutions(self):
-        return {"done": Terminal(VoyageResult("complete", {}))}
+        return {"done": Terminal(result=VoyageResult("complete", {}))}
 
 
 def _context() -> EvolutionContext:
@@ -159,7 +159,7 @@ def test_llm_validator_rejects_non_report_as_typed_fault() -> None:
 def test_subrutter_charter_normalizes_the_declared_json_object() -> None:
     step = SubRutter(
         _Child,
-        charter=lambda context: {"items": [{"ready": True}]},
+        charter_constructor=lambda context: {"items": [{"ready": True}]},
         next_on_outcome="done",
     )
 
@@ -171,7 +171,7 @@ def test_subrutter_charter_normalizes_the_declared_json_object() -> None:
 def test_subrutter_charter_rejects_malformed_json_as_typed_fault() -> None:
     step = SubRutter(
         _Child,
-        charter=lambda context: {"bad": object()},
+        charter_constructor=lambda context: {"bad": object()},
         next_on_outcome="done",
     )
 
@@ -202,13 +202,13 @@ def test_transition_hooks_preserve_order_and_ignore_none_charters() -> None:
             "absent",
             on=CountingMatch(source="review"),
             child=_Child,
-            charter=absent,
+            charter_constructor=absent,
         ),
         TransitionHook(
             "selected",
             on=CountingMatch(source="review"),
             child=_Child,
-            charter=selected,
+            charter_constructor=selected,
         ),
     )
     transition = Transition(
@@ -224,7 +224,7 @@ def test_transition_hooks_preserve_order_and_ignore_none_charters() -> None:
         "review",
         VoyageResult("complete", {}),
     )
-    context = TransitionContext(_context(), transition.to_json(), record)
+    context = TransitionContext(_context(), transition, record)
 
     selected_hooks = evaluation.select_transition_hooks(context, transition, hooks)
 
@@ -242,7 +242,7 @@ def test_transition_hook_matcher_rejects_non_boolean_as_typed_fault() -> None:
         "malformed",
         on=MalformedMatch(source="review"),
         child=_Child,
-        charter=lambda context: {},
+        charter_constructor=lambda context: {},
     )
     transition = Transition(
         "transition-review",
@@ -257,7 +257,7 @@ def test_transition_hook_matcher_rejects_non_boolean_as_typed_fault() -> None:
         "review",
         VoyageResult("complete", {}),
     )
-    context = TransitionContext(_context(), transition.to_json(), record)
+    context = TransitionContext(_context(), transition, record)
 
     with pytest.raises(evaluation._RutterFault) as error:
         evaluation.select_transition_hooks(context, transition, (hook,))
@@ -283,7 +283,11 @@ def test_transition_hook_matcher_rejects_non_boolean_as_typed_fault() -> None:
         (
             lambda: evaluation.build_terminal_result(
                 _context(),
-                Terminal(lambda context: (_ for _ in ()).throw(RuntimeError("boom"))),
+                Terminal(
+                    result_constructor=lambda context: (_ for _ in ()).throw(
+                        RuntimeError("boom")
+                    )
+                ),
             ),
             "done-projection",
         ),

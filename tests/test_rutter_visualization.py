@@ -56,7 +56,7 @@ class ReviewRutter(Rutter):
                 mode="pure",
                 next_on_outcome={"edited": "review"},
             ),
-            "publish": Terminal(VoyageResult("published", {})),
+            "publish": Terminal(result=VoyageResult("published", {})),
         }
 
     def define_transition_hooks(self):
@@ -65,7 +65,7 @@ class ReviewRutter(Rutter):
                 "audit-review",
                 on=after("review"),
                 child=HookRutter,
-                charter=lambda context: {},
+                charter_constructor=lambda context: {},
             ),
             TransitionHook(
                 "check-approval",
@@ -73,7 +73,7 @@ class ReviewRutter(Rutter):
                     source="review", outcome="approved", target="publish"
                 ),
                 child=HookRutter,
-                charter=lambda context: {},
+                charter_constructor=lambda context: {},
             ),
         )
 
@@ -84,7 +84,7 @@ class HookRutter(Rutter):
     initial_evolution_id = "done"
 
     def define_evolutions(self):
-        return {"done": Terminal(VoyageResult("checked", {}))}
+        return {"done": Terminal(result=VoyageResult("checked", {}))}
 
 
 def record_requested_edits(context) -> MachineResult:
@@ -167,7 +167,7 @@ def test_callable_transition_uses_docstring_without_executing_callbacks() -> Non
                     assess_response=lambda context: calls.append("assess"),
                     choose_next=route,
                 ),
-                "done": Terminal(VoyageResult("finished", {})),
+                "done": Terminal(result=VoyageResult("finished", {})),
             }
 
     payload = build_rutter_payload(DynamicRutter)
@@ -194,6 +194,32 @@ def test_callable_transition_uses_docstring_without_executing_callbacks() -> Non
             },
         ],
     }
+    Graph().validate_graph(payload)
+
+
+def test_contextual_terminal_uses_constructor_docstring_without_execution() -> None:
+    """Dereferencing the absent fixed result or executing its constructor must fail."""
+    calls: list[str] = []
+
+    def complete(context) -> VoyageResult:
+        """Complete using the active evolution context."""
+        calls.append(context.evolution_id)
+        return VoyageResult("finished", {})
+
+    class ContextualTerminalRutter(Rutter):
+        rutter_id = "contextual-terminal"
+        definition_version = 1
+        initial_evolution_id = "done"
+
+        def define_evolutions(self):
+            return {"done": Terminal(result_constructor=complete)}
+
+    payload = build_rutter_payload(ContextualTerminalRutter)
+
+    assert calls == []
+    assert payload["entities"][0]["description"] == (
+        "Complete using the active evolution context."
+    )
     Graph().validate_graph(payload)
 
 

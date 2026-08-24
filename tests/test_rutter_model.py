@@ -45,6 +45,7 @@ from officina.rutter.model import (
     Turn,
     ValidationIssue,
     ValidationReport,
+    VoyageStatus,
 )
 from test_support.rutter_fixtures import (
     ExampleRutter,
@@ -1112,6 +1113,27 @@ def test_node_view_allows_missing_entrance_only_for_preview() -> None:
         EvolutionView("example", 2, "report", None, 0, "ready")
     with pytest.raises(RutterDefinitionError, match="entrance"):
         EvolutionView("example", 2, "report", "entry-report", 0, "preview")
+
+
+@pytest.mark.parametrize(
+    "current_evolution",
+    (
+        EvolutionView("example", 2, "report", "entry-report", 0, "ready"),
+        EvolutionView("example", 2, "report", "entry-report", 0, "fault"),
+        EvolutionView("example", 2, "report", "entry-report", 0, "uncertain"),
+        EvolutionView("example", 2, "report", None, 0, "preview"),
+    ),
+)
+def test_voyage_status_rejects_terminal_result_for_nonterminal_condition(
+    current_evolution: EvolutionView,
+) -> None:
+    with pytest.raises(RutterDefinitionError, match="terminal_result"):
+        VoyageStatus(
+            current_evolution,
+            None,
+            VoyageResult("complete", {}),
+            None,
+        )
 
 
 @pytest.mark.parametrize(

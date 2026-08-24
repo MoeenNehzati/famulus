@@ -461,6 +461,13 @@ class VoyageStatus:
             raise RutterDefinitionError(
                 "VoyageStatus terminal_result must be a VoyageResult or null"
             )
+        if (
+            self.terminal_result is not None
+            and self.current_evolution.condition != "terminal"
+        ):
+            raise RutterDefinitionError(
+                "VoyageStatus terminal_result requires a terminal current evolution"
+            )
         if self.fault is not None and not isinstance(self.fault, FaultSummary):
             raise RutterDefinitionError(
                 "VoyageStatus fault must be a FaultSummary or null"
