@@ -176,7 +176,7 @@ interfaces:
       outputs:
       - id: result
         audience: machine
-        description: Exact bound public Rutter voyage or validated ledger-row array.
+        description: Exact public Voyage instance or validated ledger-row array.
         direct_io_ref: return-value
         cardinality:
           minimum: 1
@@ -189,7 +189,7 @@ interfaces:
         empty: Never empty on success.
         type:
           kind: string
-          description: Bound Python Rutter value or finite ledger-row array.
+          description: Public Python Voyage instance or finite ledger-row array.
           sensitivity: user-private
       outcomes:
       - id: created
@@ -316,7 +316,7 @@ interfaces:
         - id: return-value
           medium: local-system
           access: write
-          content: Bound public Rutter voyage or validated ledger-row array.
+          content: Public Voyage instance or validated ledger-row array.
           formats:
           - python-object
           sensitivity: user-private

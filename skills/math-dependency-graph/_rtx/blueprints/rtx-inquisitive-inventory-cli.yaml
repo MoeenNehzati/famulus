@@ -1,9 +1,9 @@
 schema_version: 6
 node_type: behavioral_source
 id: math-dependency-graph._rtx.source.rtx-inquisitive-inventory-cli
-version: 7
+version: 8
 description: Exposes current-iterator, legacy-frozen-gold, or separately frozen setup,
-  show, next, and ledger operations without exposing Voyage internals.
+  show, advance, and ledger operations without exposing Voyage internals.
 gateway:
   language: Python>=3.11
   path: _inquisitive_inventory_cli.py
@@ -37,12 +37,13 @@ uses_interfaces:
   version: 2
 interfaces:
   math-dependency-graph._rtx.source.rtx-inquisitive-inventory-cli.interface.experiment:
-    version: 7
+    version: 8
     description: Operate one exact durable inventory experiment and emit one finite JSON result.
-    usage: <setup|show|next|ledger> --experiment-dir <path> [--source-cases-file
+    usage: <setup|show|advance|ledger> --experiment-dir <path> [--source-cases-file
       <path> | --iterator-state-dir <path> --worker-index <n>] [--gold-cases-file
       <path> | --inventory-fragment-file <path>... [--gold-annotation-file
-      <path> --gold-overlay-file <path>]] [--response-file <path>]
+      <path> --gold-overlay-file <path>]] [--response-file <path> --responding-to
+      <evolution-entry-id>]
     content:
     - _inquisitive_inventory_cli\.py
     uses_interfaces:
@@ -132,20 +133,22 @@ interfaces:
         - --experiment-dir
         flag_patterns:
           --experiment-dir: ^.+$
-      - name: next
+      - name: advance
         min_positionals: 1
         max_positionals: 1
         allow_stdin: false
         positional_patterns:
-          '0': ^next$
+          '0': ^advance$
         allowed_flags:
         - --experiment-dir
         - --response-file
+        - --responding-to
         required_flags:
         - --experiment-dir
         flag_patterns:
           --experiment-dir: ^.+$
           --response-file: ^.+$
+          --responding-to: ^.+$
       - name: ledger
         min_positionals: 1
         max_positionals: 1
@@ -171,7 +174,7 @@ interfaces:
               description: Create one experiment from separately frozen inputs.
             - value: show
               description: Reopen and show the current public atomic VoyageStatus projection.
-            - value: next
+            - value: advance
               description: Validate an optional response and continue the public voyage.
             - value: ledger
               description: Read sorted machine-ID-keyed ledger rows.
@@ -276,7 +279,7 @@ interfaces:
             relative_to: caller-cwd
             syntax: literal
         response-file:
-          description: Optional finite JSON response for next; omit only for automatic continuation or effect recovery.
+          description: Optional finite JSON response for advance; omit only for automatic continuation or effect recovery.
           direct_io_ref: response-read
           required: false
           sensitivity: user-private
@@ -289,11 +292,19 @@ interfaces:
             content_type:
               kind: string
               sensitivity: user-private
+        responding-to:
+          description: Exact Message evolution_entry_id authorizing the LLMStep response; omit with response-file for automatic continuation or effect recovery.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            description: Stable evolution entrance token passed separately from the flat response.
+            sensitivity: user-private
       preconditions: []
       interaction:
         mode: unattended
       caller_warnings:
-      - external-side-effect: Setup creates experiment state; next can publish transitions
+      - external-side-effect: Setup creates experiment state; advance can publish transitions
           and a repeat-safe ledger row.
       outputs:
       - id: result
@@ -415,7 +426,7 @@ interfaces:
           idempotency:
             non_idempotent: Setup rejects existing state; action recovery reuses its stable action ID.
           on_uncertain_completion:
-            verify_then_decide: Show current authority and ledger before retrying next.
+            verify_then_decide: Show current authority and ledger before retrying advance.
           partial_effects_on_failure:
             possible: A ledger effect can complete before its MachineStep result is accepted.
           rollback_on_failure:

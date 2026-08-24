@@ -551,25 +551,28 @@ def _continue_transition(
     record: HistoryEntry,
 ) -> Reckoning:
     context = _transition_context(leaf.run, strict_prefix, transition, record)
-    selected = select_transition_hooks(
-        context,
-        transition,
-        definition.transition_hooks,
-    )
-    if len(selected) > 1 and not definition.allow_multiple_hooks_per_transition:
-        raise _RutterFault(
-            "case-cardinality",
-            transition_hook_ids=tuple(maker.id for maker, _ in selected),
-        )
     completed = {
         (entry.transition_hook_id, entry.attached_to_transition_id)
         for entry in leaf.run.history
         if isinstance(entry, SubRutterRecord)
         and entry.transition_hook_id is not None
     }
+    pending_hooks = tuple(
+        maker
+        for maker in definition.transition_hooks
+        if (maker.id, transition.transition_id) not in completed
+    )
+    selected = select_transition_hooks(
+        context,
+        transition,
+        pending_hooks,
+    )
+    if len(selected) > 1 and not definition.allow_multiple_hooks_per_transition:
+        raise _RutterFault(
+            "case-cardinality",
+            transition_hook_ids=tuple(maker.id for maker, _ in selected),
+        )
     for maker, charter in selected:
-        if (maker.id, transition.transition_id) in completed:
-            continue
         return _push_hook(
             reckoning,
             leaf.run.run_id,

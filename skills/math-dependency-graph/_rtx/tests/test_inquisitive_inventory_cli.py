@@ -437,7 +437,8 @@ def test_source_blueprints_follow_live_v6_and_cli_pins_cutover_interfaces() -> N
     assert {"interface": "rutter.interface.model", "version": 2} in adapter[
         "uses_interfaces"
     ]
-    assert lifecycle["version"] == adapter["version"] == 7
+    assert lifecycle["version"] == 7
+    assert adapter["version"] == 8
     assert adapter["interfaces"][
         "math-dependency-graph._rtx.source.rtx-inquisitive-inventory-cli.interface.experiment"
     ]["process_binding"]["entry"] == "Interface"
@@ -449,6 +450,42 @@ def test_source_blueprints_follow_live_v6_and_cli_pins_cutover_interfaces() -> N
         item["value"]
         for item in lifecycle_contract["arguments"]["operation"]["type"]["values"]
     } == {"setup", "setup-iterator", "setup-frozen-gold", "open", "ledger"}
+
+
+def test_cli_blueprint_process_boundary_matches_live_parser() -> None:
+    """A stale operation or omitted correlation flag makes dispatch unusable."""
+
+    adapter = yaml.safe_load(
+        (RTX_ROOT / "blueprints/rtx-inquisitive-inventory-cli.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    interface = adapter["interfaces"][
+        "math-dependency-graph._rtx.source.rtx-inquisitive-inventory-cli."
+        "interface.experiment"
+    ]
+    parser = cli._parser()
+    mode_action = next(action for action in parser._actions if action.dest == "mode")
+    parser_modes = set(mode_action.choices)
+    declared_modes = {
+        pattern["positional_patterns"]["0"].removeprefix("^").removesuffix("$")
+        for pattern in interface["process_binding"]["patterns"]
+    }
+    contract_modes = {
+        item["value"]
+        for item in interface["contract"]["arguments"]["operation"]["type"]["values"]
+    }
+
+    assert declared_modes == contract_modes == parser_modes
+    advance_parser = mode_action.choices["advance"]
+    parser_flags = set(advance_parser._option_string_actions) - {"-h", "--help"}
+    advance_pattern = next(
+        pattern
+        for pattern in interface["process_binding"]["patterns"]
+        if pattern["name"] == "advance"
+    )
+    assert set(advance_pattern["allowed_flags"]) == parser_flags
+    assert "responding-to" in interface["contract"]["arguments"]
 
 
 def test_module_registers_only_the_two_owned_sources_and_cli_export() -> None:

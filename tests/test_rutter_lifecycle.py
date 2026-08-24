@@ -2659,6 +2659,7 @@ def _hook_parent(
     rutter_id: str,
     rutter_constructor: Callable[[object], object],
     *,
+    charter_constructor: Callable[[object], object] | None = None,
     extra_evolutions: Mapping[str, object] | None = None,
 ) -> Rutter:
     evolutions: dict[str, object] = {
@@ -2681,9 +2682,13 @@ def _hook_parent(
                 "contextual-child",
                 on=after("review"),
                 rutter_constructor=rutter_constructor,
-                charter_constructor=lambda context: {
-                    "transition": context.transition.transition_id
-                },
+                charter_constructor=(
+                    charter_constructor
+                    if charter_constructor is not None
+                    else lambda context: {
+                        "transition": context.transition.transition_id
+                    }
+                ),
             ),
         ),
     )
@@ -3087,17 +3092,29 @@ def test_reopen_rejects_a_different_contextual_child_identity_read_only(
 def test_completed_hook_attachment_skips_constructor_before_target_entry(
     tmp_path: Path,
 ) -> None:
-    """A completed hook must not replay authored construction merely to skip it."""
+    """A completed hook must not replay authored callbacks merely to skip it."""
 
     child = _terminal_rutter("completed-contextual-child")
     constructions: list[object] = []
+    charter_constructions: list[object] = []
 
     def construct(context: object) -> Rutter:
         constructions.append(context)
         return child
 
+    def construct_charter(context: object) -> dict[str, str]:
+        charter_constructions.append(context)
+        return {"selected": "once"}
+
     voyage = RutterRegistry(
-        {"parent": _hook_parent("completed-hook-parent", construct)}, tmp_path
+        {
+            "parent": _hook_parent(
+                "completed-hook-parent",
+                construct,
+                charter_constructor=construct_charter,
+            )
+        },
+        tmp_path,
     ).create("parent", Path("completed-contextual-hook.reckoning.json"), {})
     voyage.advance(continue_=False)
     voyage.advance(continue_=False)
@@ -3106,6 +3123,7 @@ def test_completed_hook_attachment_skips_constructor_before_target_entry(
     assert target.rutter_id == "completed-hook-parent"
     assert target.evolution_id == "done"
     assert len(constructions) == 1
+    assert len(charter_constructions) == 1
 
 
 def _subrutter_parent(
