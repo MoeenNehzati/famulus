@@ -2,8 +2,9 @@ schema_version: 6
 node_type: behavioral_source
 id: rutter.source.values
 version: 1
-description: Defines immutable JSON-safe Rutter values, operating projections, results,
-  validation reports, and errors without sibling dependencies.
+description: Defines immutable JSON-safe Charters, direct-property Messages, machine
+  and voyage results, validated fault and status projections, validation reports,
+  and errors without sibling dependencies.
 gateway:
   path: values.py
   language: Python
@@ -17,7 +18,8 @@ interfaces:
     content:
     - values\.py
     uses_interfaces: []
-    description: Constructs immutable Rutter operating values and finite JSON projections.
+    description: Constructs immutable Rutter operating values, direct-property
+      Messages, explicit terminal status values, and finite JSON projections.
 platform_support:
   linux: true
   macos: true

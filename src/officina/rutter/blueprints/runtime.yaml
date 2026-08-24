@@ -2,8 +2,9 @@ schema_version: 6
 node_type: behavioral_source
 id: rutter.source.runtime
 version: 3
-description: Resolves explicit Rutter registrations, confines Reckoning paths, and
-  delegates durable lifecycle ownership to Voyage.
+description: Resolves explicit Rutter definition sources, snapshots their authored
+  graphs, confines Reckoning paths, and delegates durable execution ownership to
+  Voyage.
 gateway:
   path: runtime.py
   language: Python
@@ -15,7 +16,8 @@ dependencies:
   blueprint:
     base: module-root
     path: blueprints/authoring.yaml
-  reason: Imports Rutter definitions, evolution types, and TransitionHooks for binding.
+  reason: Imports direct or legacy Rutter definitions, evolution types, and contextual
+    TransitionHooks for binding.
 - source: rutter.source.engine
   version: 3
   blueprint:
@@ -53,8 +55,8 @@ interfaces:
     - interface: rutter.source.values.interface.python-api
       version: 1
     version: 3
-    description: Creates a named bound Rutter or opens one from persisted Charter
-      identity.
+    description: Creates a named Voyage bound to one snapshotted Rutter definition
+      or opens one from persisted Charter identity.
     contract:
       arguments:
         operation:
@@ -69,12 +71,14 @@ interfaces:
             - value: registry-open
               description: Open one existing voyage from persisted identity.
         registry:
-          description: Explicit name-to-direct-subclass mapping and Reckoning root.
+          description: Explicit name-to-Rutter-definition-source mapping and Reckoning
+            root; direct instances are preferred while no-argument classes and factories
+            remain compatible.
           required: true
           sensitivity: user-private
           type:
             kind: string
-            description: Validated RutterRegistry Python value.
+            description: Validated RutterRegistry containing definition sources.
             sensitivity: user-private
         reckoning-path:
           description: Relative descendant ending with .reckoning.json; its lock appends
@@ -102,7 +106,8 @@ interfaces:
       outputs:
       - id: result
         audience: machine
-        description: One exact public Voyage instance.
+        description: One exact public Voyage instance owning execution and exposing
+          its bound Rutter through a read-only property.
         direct_io_ref: return-value
         cardinality:
           minimum: 1
@@ -115,8 +120,8 @@ interfaces:
         empty: Never empty on success.
         type:
           kind: string
-          description: Self-describing Voyage instance exposing help and its
-            advertised public methods.
+          description: Self-describing Voyage instance exposing its Rutter, help,
+            and advertised public methods.
           sensitivity: user-private
       outcomes:
       - id: created

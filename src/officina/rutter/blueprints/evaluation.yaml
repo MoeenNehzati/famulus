@@ -2,8 +2,9 @@ schema_version: 6
 node_type: behavioral_source
 id: rutter.source.evaluation
 version: 1
-description: Owns the controlled boundary for authored routing, hook, instruction,
-  terminal-result, and machine callbacks.
+description: Owns the controlled boundary for authored routing, post-schema response
+  assessment, instruction data, contextual child construction, terminal-result,
+  and machine callbacks.
 gateway:
   path: evaluation.py
   language: Python
@@ -47,10 +48,20 @@ interfaces:
       version: 1
     - interface: rutter.source.values.interface.python-api
       version: 1
-    description: Evaluates each concrete author callback and returns immutable values or typed faults.
+    description: Evaluates each concrete author callback after applicable engine
+      formatting, schema, and static outcome-map checks, then returns immutable
+      values or typed faults.
 platform_support:
   linux: true
   macos: true
   windows: true
-runtime_dependencies: []
+runtime_dependencies:
+- kind: python-package
+  name: jsonschema
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Validates complete flat LLMStep responses before contextual assessment.
+  version: '>=4,<5'
 maturity: stable

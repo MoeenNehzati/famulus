@@ -2,8 +2,8 @@ schema_version: 6
 node_type: behavioral_source
 id: rutter.source.authoring
 version: 1
-description: Defines immutable Rutter evolutions, author contexts, transition hooks,
-  and hook constructors.
+description: Defines directly constructible stateless Rutter definitions, immutable
+  evolutions, typed author contexts, and contextual child constructors.
 gateway:
   path: authoring.py
   language: Python
@@ -37,7 +37,9 @@ interfaces:
       version: 1
     - interface: rutter.source.values.interface.python-api
       version: 1
-    description: Constructs Rutter definitions, evolutions, contexts, and transition hooks.
+    description: Constructs snapshot-backed Rutter definitions, explicitly routed
+      evolutions, typed contexts, and transition hooks with named Rutter and Charter
+      constructors.
 platform_support:
   linux: true
   macos: true
