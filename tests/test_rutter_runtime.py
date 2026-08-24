@@ -364,6 +364,49 @@ def test_binding_rejects_bad_callback_signatures(
         RutterRegistry({"probe": _definition(states)}, reckoning_root)
 
 
+@pytest.mark.parametrize(
+    ("evolution", "callback_name"),
+    (
+        (
+            LLMStep(
+                "Continue.",
+                response_schema=_response_schema("yes"),
+                choose_next=lambda context, response: "complete",
+            ),
+            "LLMStep choose_next",
+        ),
+        (
+            MachineStep(
+                lambda context: MachineResult("complete", {}),
+                mode="pure",
+                choose_next=lambda context: "complete",
+            ),
+            "MachineStep choose_next",
+        ),
+        (
+            SubRutter(
+                stable_rutter_constructor(DirectChildRutter),
+                charter_constructor=child_charter,
+                choose_next=lambda context: "complete",
+            ),
+            "SubRutter choose_next",
+        ),
+    ),
+)
+def test_binding_rejects_bad_choose_next_signatures_for_each_evolution(
+    reckoning_root: Path,
+    evolution: object,
+    callback_name: str,
+) -> None:
+    states = {
+        "start": evolution,
+        "complete": Terminal(result=VoyageResult("complete", {})),
+    }
+
+    with pytest.raises(RutterDefinitionError, match=callback_name):
+        RutterRegistry({"probe": _definition(states)}, reckoning_root)
+
+
 def test_binding_rejects_bad_case_maker_callback_signature(
     reckoning_root: Path,
 ) -> None:

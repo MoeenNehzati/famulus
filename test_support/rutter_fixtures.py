@@ -74,7 +74,7 @@ def stable_rutter_constructor(
 def transition_hook_probe(
     hook_id: str,
     child: Rutter | type[Rutter],
-    charter: Callable[[object], Mapping[str, object] | None],
+    charter_constructor: Callable[[object], Mapping[str, object] | None],
 ) -> TransitionHook:
     """Build a wildcard TransitionHook for shared binding fixtures."""
 
@@ -83,7 +83,7 @@ def transition_hook_probe(
         hook_id,
         on=TransitionMatch(),
         rutter_constructor=lambda context: child_definition,
-        charter_constructor=charter,
+        charter_constructor=charter_constructor,
     )
 
 
