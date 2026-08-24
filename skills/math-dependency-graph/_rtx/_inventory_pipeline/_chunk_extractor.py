@@ -504,7 +504,7 @@ def main(argv: Iterable[str] | None = None) -> None:
     parser.add_argument("entrypoint", help="Root TeX document")
     parser.add_argument("--out-dir", required=True, help="Fresh run directory")
     parser.add_argument("--workers", type=int, default=1)
-    parser.add_argument("--packet-chars", type=int, default=12000)
+    parser.add_argument("--packet-chars", type=int, default=3000)
     args = parser.parse_args(list(argv) if argv is not None else None)
     started = time.monotonic()
     report = extract_inventory_chunks(

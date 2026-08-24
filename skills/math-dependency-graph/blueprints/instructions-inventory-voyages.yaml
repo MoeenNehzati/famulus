@@ -1,8 +1,8 @@
 schema_version: 6
 node_type: behavioral_source
 id: math-dependency-graph.source.instructions-inventory-voyages
-version: 2
-description: Initializes inventory Voyages from a document entrypoint and applies Compass to every dispensed Voyage ID.
+version: 4
+description: Initializes one run-prefixed inventory Voyage collection from a document entrypoint and applies Compass only to that run's dispensed IDs.
 gateway:
   language: Markdown
   path: instructions/inventory-voyages.md
@@ -11,30 +11,30 @@ content:
 dependencies: []
 uses_interfaces:
 - interface: math-dependency-graph._rtx.interface.inventory-voyage-dispenser
-  version: 2
+  version: 4
 - interface: using-compass.interface.default
-  version: 10
+  version: 11
 interfaces:
   math-dependency-graph.source.instructions-inventory-voyages.interface.inventory-voyages:
-    version: 2
-    description: Discover and initialize the inventory Voyage dispenser, then apply Compass to all returned Voyage IDs and collect their completed inventory paths.
+    version: 4
+    description: Discover and initialize one run-prefixed inventory Voyage collection, then apply Compass to only its returned IDs and collect their completed inventory paths.
     content:
     - instructions/inventory-voyages\.md
     uses_interfaces:
     - interface: math-dependency-graph._rtx.interface.inventory-voyage-dispenser
-      version: 2
+      version: 4
     - interface: using-compass.interface.default
-      version: 10
+      version: 11
     contract:
       arguments:
         request:
-          description: Document entrypoint, fresh run directory, requested positive chunk count, and any explicit mode selection with its required arguments.
+          description: Document entrypoint, requested positive chunk count, optional run prefix, and any explicit mode selection with its required arguments.
           required: true
           sensitivity: user-private
           type: {kind: string, sensitivity: user-private}
       preconditions: []
       caller_warnings:
-      - external-side-effect: Initialization creates durable Voyages and Compass advancement writes completed inventory fragments under the fresh run directory.
+      - external-side-effect: Initialization creates module-owned durable Voyages and Compass advancement writes completed inventory fragments beside them.
       interaction: {mode: unattended}
       outputs:
       - id: inventory-paths
@@ -62,7 +62,7 @@ interfaces:
         state_effect: read-only
         lifecycle: finite
         consistency:
-          snapshot: Every worker is bound to exactly one immutable Voyage created from the same document snapshot and initialization mode.
+          snapshot: Every worker is bound to exactly one immutable Voyage created under the same run prefix from one document snapshot and initialization mode.
         verification:
         - {method: output-schema, output_ref: inventory-paths}
       helpers: []

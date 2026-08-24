@@ -18,10 +18,12 @@ dispenser = importlib.import_module(
 def test_cli_describes_modes_and_rejects_incomplete_debug_setup(
     inventory_run: tuple[Path, Path],
     capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     doc_entrypoint, run_dir = inventory_run
+    monkeypatch.setattr(dispenser, "_STATE_ROOT", run_dir)
 
-    assert dispenser.main(["--run-dir", str(run_dir), "modes"]) == 0
+    assert dispenser.main(["modes"]) == 0
     modes = json.loads(capsys.readouterr().out)
     assert modes["default_mode"] == "default"
     assert modes["modes"]["default"]["arguments"] == {
@@ -33,8 +35,6 @@ def test_cli_describes_modes_and_rejects_incomplete_debug_setup(
 
     assert dispenser.main(
         [
-            "--run-dir",
-            str(run_dir),
             "initiate",
             "debug",
             "--doc-entrypoint",
@@ -51,28 +51,34 @@ def test_cli_describes_modes_and_rejects_incomplete_debug_setup(
 
 def test_default_voyage_iterates_packets_and_writes_cumulative_inventory(
     inventory_run: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     doc_entrypoint, run_dir = inventory_run
-    inventory_dispenser = dispenser.make_voyage_dispenser(run_dir)
-    assert inventory_dispenser.initiate_voyages(
+    monkeypatch.setattr(dispenser, "_STATE_ROOT", run_dir)
+    inventory_dispenser = dispenser.make_voyage_dispenser()
+    (voyage_id,) = inventory_dispenser.initiate_voyages(
         doc_entrypoint=str(doc_entrypoint),
         chunk_count="1",
-    ) == ("inventory-001",)
-    assert (run_dir / "artifacts" / "inventory-chunks.json").is_file()
+    )
+    assert voyage_id.startswith("default-voyage-")
+    assert dispenser.make_voyage_dispenser().get_voyage_ids() == (voyage_id,)
+    assert (
+        run_dir / "artifacts" / "default" / "inventory-chunks.json"
+    ).is_file()
 
     seen_packets: list[str] = []
     while True:
-        status = inventory_dispenser.get_status("inventory-001")
+        status = inventory_dispenser.get_status(voyage_id)
         if status.terminal_result is not None:
             break
         if status.instruction is None:
-            inventory_dispenser.advance("inventory-001")
+            inventory_dispenser.advance(voyage_id)
             continue
         assert isinstance(status.instruction, rutter.Message)
         packet_id = status.instruction.data["payload"]["packet"]["packet_id"]
         seen_packets.append(packet_id)
         inventory_dispenser.advance(
-            "inventory-001",
+            voyage_id,
             {
                 "outcome": "reported",
                 "packet_id": packet_id,
@@ -91,30 +97,34 @@ def test_default_voyage_iterates_packets_and_writes_cumulative_inventory(
     assert seen_packets == [
         "inventory-001-packet-001",
         "inventory-001-packet-002",
+        "inventory-001-packet-003",
+        "inventory-001-packet-004",
     ]
     assert status.terminal_result.outcome == "complete"
     inventory_path = Path(status.terminal_result.value["inventory_path"])
     assert inventory_path.is_file()
 
-    inventory_dispenser.release("inventory-001")
+    inventory_dispenser.release(voyage_id)
 
-    assert not (run_dir / "voyages" / "inventory-001").exists()
+    assert not (run_dir / "voyages" / "default" / voyage_id).exists()
     assert inventory_path.is_file()
 
 
 def test_debug_setup_freezes_supplied_gold_and_attaches_diagnosis(
     inventory_run: tuple[Path, Path],
     inventory_gold_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     doc_entrypoint, run_dir = inventory_run
-    inventory_dispenser = dispenser.make_voyage_dispenser(run_dir)
+    monkeypatch.setattr(dispenser, "_STATE_ROOT", run_dir)
+    inventory_dispenser = dispenser.make_voyage_dispenser()
 
-    assert inventory_dispenser.initiate_voyages(
+    (voyage_id,) = inventory_dispenser.initiate_voyages(
         "debug",
         doc_entrypoint=str(doc_entrypoint),
         chunk_count="1",
         inventory_gold_standard=str(inventory_gold_path),
-    ) == ("inventory-001",)
+    )
     assert [
         hook.id
         for hook in dispenser.DEBUG_INVENTORY_VOYAGE.define_transition_hooks()
@@ -124,7 +134,8 @@ def test_debug_setup_freezes_supplied_gold_and_attaches_diagnosis(
         (
             run_dir
             / "voyages"
-            / "inventory-001"
+            / "debug"
+            / voyage_id
             / "inventory-voyage.reckoning.json"
         ).read_text(encoding="utf-8")
     )
@@ -137,24 +148,65 @@ def test_debug_setup_freezes_supplied_gold_and_attaches_diagnosis(
 
 def test_requested_chunk_count_controls_dispensed_voyages(
     inventory_run: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     doc_entrypoint, run_dir = inventory_run
-    inventory_dispenser = dispenser.make_voyage_dispenser(run_dir)
+    monkeypatch.setattr(dispenser, "_STATE_ROOT", run_dir)
+    inventory_dispenser = dispenser.make_voyage_dispenser()
 
-    assert inventory_dispenser.initiate_voyages(
+    voyage_ids = inventory_dispenser.initiate_voyages(
         doc_entrypoint=str(doc_entrypoint),
         chunk_count="2",
-    ) == ("inventory-001", "inventory-002")
+    )
+    assert len(voyage_ids) == 2
+    assert len(set(voyage_ids)) == 2
+    assert all(
+        voyage_id.startswith("default-voyage-") for voyage_id in voyage_ids
+    )
+
+
+def test_run_prefixes_isolate_voyages_and_artifacts(
+    inventory_run: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A new prefixed run must coexist with unfinished Voyages from another run."""
+
+    doc_entrypoint, run_dir = inventory_run
+    monkeypatch.setattr(dispenser, "_STATE_ROOT", run_dir)
+    inventory_dispenser = dispenser.make_voyage_dispenser()
+
+    (baseline_id,) = inventory_dispenser.initiate_voyages(
+        run_prefix="baseline",
+        doc_entrypoint=str(doc_entrypoint),
+        chunk_count="1",
+    )
+    (retry_id,) = inventory_dispenser.initiate_voyages(
+        run_prefix="retry",
+        doc_entrypoint=str(doc_entrypoint),
+        chunk_count="1",
+    )
+
+    assert baseline_id.startswith("baseline-voyage-")
+    assert retry_id.startswith("retry-voyage-")
+    assert inventory_dispenser.get_voyage_ids("baseline") == (baseline_id,)
+    assert inventory_dispenser.get_voyage_ids("retry") == (retry_id,)
+    assert inventory_dispenser.get_voyage_ids() == (baseline_id, retry_id)
+    assert (run_dir / "voyages" / "baseline" / baseline_id).is_dir()
+    assert (run_dir / "voyages" / "retry" / retry_id).is_dir()
+    assert (run_dir / "artifacts" / "baseline" / "inventory-chunks.json").is_file()
+    assert (run_dir / "artifacts" / "retry" / "inventory-chunks.json").is_file()
 
 
 @pytest.mark.parametrize("chunk_count", ["0", "-1", "many"])
 def test_chunk_count_must_be_a_positive_integer(
     tmp_path: Path,
     chunk_count: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     source = tmp_path / "main.md"
     source.write_text("# Result\n", encoding="utf-8")
-    inventory_dispenser = dispenser.make_voyage_dispenser(tmp_path / "run")
+    monkeypatch.setattr(dispenser, "_STATE_ROOT", tmp_path / "run")
+    inventory_dispenser = dispenser.make_voyage_dispenser()
 
     with pytest.raises(ValueError, match="chunk_count must be a positive integer"):
         inventory_dispenser.initiate_voyages(

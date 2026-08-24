@@ -40,7 +40,7 @@ authority:
     network: []
 children: {}
 content:
-- _inventory_pipeline/.*
+- _inventory_pipeline/(?!artifacts(?:/.*)?$|voyages(?:/.*)?$).*
 - _semantic_pipeline/.*
 - __init__\.py
 - tests/.*
@@ -112,5 +112,5 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/rtx-semantic-ir-validator.yaml
-version: 75
+version: 78
 maturity: stable

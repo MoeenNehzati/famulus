@@ -3,13 +3,13 @@
 
 from __future__ import annotations
 
-import argparse
 import hashlib
 import json
 from pathlib import Path
 import shutil
 import sys
 from typing import Mapping, Sequence
+from uuid import uuid4
 
 from jsonschema import ValidationError
 from officina.rutter import (
@@ -43,6 +43,7 @@ _REPORT_EVOLUTION = "report"
 _RECORD_EVOLUTION = "record"
 
 _SKILL_ROOT = Path(__file__).resolve().parents[2]
+_STATE_ROOT = Path(__file__).resolve().parent
 _INVENTORY_INSTRUCTION_PATH = _SKILL_ROOT / "instructions" / "inventory.md"
 _INVENTORY_SCHEMA_PATH = _SKILL_ROOT / "schemas" / "inventory.schema.json"
 _REPORT_REQUEST = (
@@ -54,7 +55,7 @@ _REPORT_PROMPT = (
     f"{_INVENTORY_INSTRUCTION_PATH.read_text(encoding='utf-8')}\n\n"
     f"{_REPORT_REQUEST}"
 )
-_PACKET_CHARS = 12_000
+_PACKET_CHARS = 3_000
 _DOC_ENTRYPOINT_DESCRIPTION = "Path to the root TeX or Markdown document."
 _CHUNK_COUNT_DESCRIPTION = "Requested positive number of inventory chunks."
 _MODES = {
@@ -307,15 +308,6 @@ _RUTTERS = {
 }
 
 
-class _UsageError(Exception):
-    pass
-
-
-class _JsonArgumentParser(argparse.ArgumentParser):
-    def error(self, message: str) -> None:
-        raise _UsageError(message)
-
-
 def _write_json(stream: object, value: object) -> None:
     json.dump(value, stream, sort_keys=True, separators=(",", ":"))
     stream.write("\n")
@@ -364,6 +356,7 @@ def setup_run(
     chunk_manifest: Path,
     run_dir: Path,
     *,
+    run_prefix: str,
     mode: str = "default",
     inventory_gold_standard: Path | None = None,
 ) -> dict[str, object]:
@@ -389,64 +382,91 @@ def setup_run(
 
     manifest = load_chunk_manifest(chunk_manifest)
     run_dir = run_dir.resolve()
-    voyages_dir = run_dir / "voyages"
-    if voyages_dir.exists():
-        raise FileExistsError("inventory Voyages already exist")
-    voyages_dir.mkdir(parents=True)
+    voyages_dir = run_dir / "voyages" / run_prefix
+    if _voyage_paths(run_dir, run_prefix):
+        raise FileExistsError(
+            f"inventory Voyages already exist for run prefix {run_prefix!r}"
+        )
+    voyages_dir.mkdir(parents=True, exist_ok=True)
     voyage_ids: list[str] = []
     for chunk_value in manifest["chunks"]:
         if not isinstance(chunk_value, dict):
             raise ValueError("inventory chunk manifest contains a non-object chunk")
         chunk_id = chunk_value.get("chunk_id")
-        fragment_path = chunk_value.get("fragment_path")
-        if type(chunk_id) is not str or type(fragment_path) is not str:
+        if (
+            type(chunk_id) is not str
+            or type(chunk_value.get("fragment_path")) is not str
+        ):
             raise ValueError("inventory chunk manifest record is incomplete")
+        voyage_id = f"{run_prefix}-voyage-{uuid4().hex}"
         _support.setup_voyage(
             definition,
             _load_chunk(chunk_value),
-            voyages_dir / chunk_id,
-            Path(fragment_path),
+            voyages_dir / voyage_id,
+            run_dir
+            / "artifacts"
+            / run_prefix
+            / "inventories"
+            / f"{voyage_id}.json",
             rutter_name=rutter_name,
             run_dir=run_dir,
             inventory_instruction_path=_INVENTORY_INSTRUCTION_PATH,
             inventory_schema_path=_INVENTORY_SCHEMA_PATH,
             extra_charter_data=extra_charter_data,
         )
-        voyage_ids.append(chunk_id)
+        voyage_ids.append(voyage_id)
     return {
         "run_dir": str(run_dir),
         "chunk_manifest": str(chunk_manifest.resolve()),
         "mode": mode,
+        "run_prefix": run_prefix,
         "voyages": voyage_ids,
         "voyage_count": len(voyage_ids),
     }
 
 
-def _voyage_paths(root: Path) -> dict[str, Path]:
+def _voyage_paths(
+    root: Path,
+    run_prefix: str | None = None,
+) -> dict[str, Path]:
     root = root.resolve()
     reckoning = _support.reckoning_name()
     if (root / reckoning).is_file():
         return {root.name: root}
     voyages = root / "voyages"
-    collection = voyages if voyages.is_dir() else root
-    if not collection.is_dir():
+    if run_prefix is not None:
+        collection = voyages / run_prefix
+        if not collection.is_dir():
+            return {}
+        return {
+            child.name: child
+            for child in sorted(collection.iterdir(), key=lambda path: path.name)
+            if child.is_dir() and (child / reckoning).is_file()
+        }
+    if not voyages.is_dir():
         return {}
-    paths = {
-        child.name: child
-        for child in sorted(collection.iterdir(), key=lambda path: path.name)
-        if child.is_dir() and (child / reckoning).is_file()
-    }
+    paths: dict[str, Path] = {}
+    for child in sorted(voyages.iterdir(), key=lambda path: path.name):
+        if not child.is_dir():
+            continue
+        if (child / reckoning).is_file():
+            paths[child.name] = child
+            continue
+        for voyage_path in sorted(child.iterdir(), key=lambda path: path.name):
+            if voyage_path.is_dir() and (voyage_path / reckoning).is_file():
+                paths[voyage_path.name] = voyage_path
     return paths
 
 
-def make_voyage_dispenser(root: Path) -> VoyageDispenser:
-    """Chunk one document and expose its inventory Voyages under a run directory."""
+def make_voyage_dispenser() -> VoyageDispenser:
+    """Chunk one document and expose its inventory Voyages under module-owned state."""
 
-    root = root.resolve()
+    root = _STATE_ROOT.resolve()
 
     def initiate(
         mode: str,
         *,
+        run_prefix: str,
         doc_entrypoint: str,
         chunk_count: str,
         inventory_gold_standard: str | None = None,
@@ -462,13 +482,14 @@ def make_voyage_dispenser(root: Path) -> VoyageDispenser:
             raise ValueError("doc_entrypoint must be a .tex or .md file")
         report = extract_inventory_chunks(
             source,
-            root / "artifacts",
+            root / "artifacts" / run_prefix,
             workers=requested_chunks,
             packet_chars=_PACKET_CHARS,
         )
         setup_run(
             Path(str(report["manifest_path"])),
             root,
+            run_prefix=run_prefix,
             mode=mode,
             inventory_gold_standard=(
                 None
@@ -477,20 +498,25 @@ def make_voyage_dispenser(root: Path) -> VoyageDispenser:
             ),
         )
 
-    def paths() -> dict[str, Path]:
-        return _voyage_paths(root)
+    def paths(run_prefix: str | None = None) -> dict[str, Path]:
+        return _voyage_paths(root, run_prefix)
 
     def release(voyage_id: str) -> None:
         voyage_path = paths()[voyage_id]
         voyages_dir = (root / "voyages").resolve()
-        if voyage_path.is_symlink() or voyage_path.resolve().parent != voyages_dir:
+        relative = voyage_path.resolve().relative_to(voyages_dir)
+        if (
+            voyage_path.is_symlink()
+            or voyage_path.parent.is_symlink()
+            or len(relative.parts) not in {1, 2}
+        ):
             raise ValueError("inventory Voyage working directory is unsafe to release")
         shutil.rmtree(voyage_path)
 
     return VoyageDispenser(
         modes=_MODES,
         initiate_voyages=initiate,
-        get_voyage_ids=lambda: tuple(paths()),
+        get_voyage_ids=lambda run_prefix: tuple(paths(run_prefix)),
         open_voyage=lambda voyage_id: _support.open_voyage(
             _RUTTERS, paths()[voyage_id]
         ),
@@ -499,13 +525,7 @@ def make_voyage_dispenser(root: Path) -> VoyageDispenser:
 
 
 def _run_dispenser(argv: Sequence[str]) -> int:
-    parser = _JsonArgumentParser(add_help=False)
-    parser.add_argument("--run-dir", required=True)
-    binding, operation_argv = parser.parse_known_args(list(argv))
-    return voyage_dispenser_cli(
-        make_voyage_dispenser(Path(binding.run_dir)),
-        operation_argv,
-    )
+    return voyage_dispenser_cli(make_voyage_dispenser(), argv)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -514,10 +534,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     raw = list(argv) if argv is not None else list(sys.argv[1:])
     try:
         return _run_dispenser(raw)
-    except _UsageError as error:
-        payload = {"error": {"code": "usage-error", "message": str(error)}}
-        _write_json(sys.stderr, payload)
-        return 2
     except FileExistsError as error:
         payload = {"error": {"code": "state-error", "message": str(error)}}
         _write_json(sys.stderr, payload)

@@ -15,7 +15,7 @@ interfaces:
     - interface: math-dependency-graph.interface.inventory
       version: 36
     - interface: math-dependency-graph.interface.inventory-voyages
-      version: 2
+      version: 4
     - interface: math-dependency-graph.interface.extract
       version: 29
     - interface: math-dependency-graph.interface.proof-reconciliation
@@ -100,14 +100,14 @@ interfaces:
           sensitivity: derived-private
       preconditions: []
     description: Orchestrate a Voyage inventory, extract, normalize, and compile run.
-    version: 71
+    version: 73
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
 - interface: math-dependency-graph.interface.inventory
   version: 36
 - interface: math-dependency-graph.interface.inventory-voyages
-  version: 2
+  version: 4
 - interface: math-dependency-graph.interface.extract
   version: 29
 - interface: math-dependency-graph.interface.proof-reconciliation
@@ -118,5 +118,5 @@ uses_interfaces:
   version: 1
 - interface: math-dependency-graph._rtx.interface.scripts-semantic-to-canonical-json
   version: 1
-version: 78
+version: 80
 maturity: stable

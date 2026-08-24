@@ -10,18 +10,18 @@ description: >-
 Catalog: research; topics: mathematical-reasoning, visualization, scholarly-documents; visibility: featured
 Activation: user-request, skill-workflow; persistent modifier: no
 
-Skill Version: 102
+Skill Version: 105
 
 Uses Interfaces:
 - `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-apply-proof-digest@1`
 - `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-pool-inventory-chunks@1`
 - `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-semantic-to-canonical-json@1`
 - `math-dependency-graph.source.gateway -> math-dependency-graph.interface.extract@29`
-- `math-dependency-graph.source.gateway -> math-dependency-graph.interface.inventory-voyages@2`
+- `math-dependency-graph.source.gateway -> math-dependency-graph.interface.inventory-voyages@4`
 - `math-dependency-graph.source.gateway -> math-dependency-graph.interface.inventory@36`
 - `math-dependency-graph.source.gateway -> math-dependency-graph.interface.proof-reconciliation@3`
-- `math-dependency-graph.source.instructions-inventory-voyages -> math-dependency-graph._rtx.interface.inventory-voyage-dispenser@2`
-- `math-dependency-graph.source.instructions-inventory-voyages -> using-compass.interface.default@10`
+- `math-dependency-graph.source.instructions-inventory-voyages -> math-dependency-graph._rtx.interface.inventory-voyage-dispenser@4`
+- `math-dependency-graph.source.instructions-inventory-voyages -> using-compass.interface.default@11`
 
 Public Interfaces:
 - `math-dependency-graph.interface.default`
@@ -40,19 +40,19 @@ These interfaces are documented prompt surfaces. They are not executed through `
 - `math-dependency-graph.interface.default` — Orchestrate a Voyage inventory, extract, normalize, and compile run.
 - `math-dependency-graph.interface.extract` — Reconcile pooled inventory and the retained entrypoint into transitional notation-faithful entities, proof ownership, and direct relationships, or author one returned narrow repair.
 - `math-dependency-graph.interface.inventory` — Author one concise recall-first graph inventory fragment through one bounded-unit, signal-complete, validated forward loop.
-- `math-dependency-graph.interface.inventory-voyages` — Discover and initialize the inventory Voyage dispenser, then apply Compass to all returned Voyage IDs and collect their completed inventory paths.
+- `math-dependency-graph.interface.inventory-voyages` — Discover and initialize one run-prefixed inventory Voyage collection, then apply Compass to only its returned IDs and collect their completed inventory paths.
 - `math-dependency-graph.interface.proof-reconciliation` — Group complementary proof fragments, preserve alternative proofs, resolve source-grounded targets, and exhaustively decide every registered proof.
 <!-- END BLUEPRINT INTERFACES -->
 
 # Mathematical Dependency Graph
 
-The gateway orchestrates one canonical semantic pipeline: inventory -> extract -> optional proof reconciliation -> deterministic normalization -> compile. It invokes interfaces and schedules workers; it does not restate or perform the mathematical judgments owned by `inventory`, `extract`, and `proof-reconciliation`.
+The gateway orchestrates one canonical dependency-graph workflow: inventory -> extract -> optional proof reconciliation -> deterministic normalization -> compile. It invokes interfaces and schedules workers; it does not restate or perform the mathematical judgments owned by `inventory`, `extract`, and `proof-reconciliation`.
 
 Use a fresh empty run directory and never reuse an earlier inventory, semantic IR, or graph JSON artifact. Use only absolute paths returned by process-interface reports. A worker writes its assigned JSON directly; the gateway never generates semantic records with code or bulk transformations.
 
 ## Gateway algorithm
 
-1. Initialize the document inventory and apply Compass through `math-dependency-graph.interface.inventory-voyages`. Supply the TeX or Markdown entrypoint, a positive requested chunk count, and one fresh run directory. Use its default mode unless debug was explicitly requested with an inventory gold-standard path.
+1. Initialize the document inventory and apply Compass through `math-dependency-graph.interface.inventory-voyages`. Supply the TeX or Markdown entrypoint and a positive requested chunk count. Use its default mode unless debug was explicitly requested with an inventory gold-standard path; the dispenser owns durable run storage.
 2. Retain each schema-valid completed chunk inventory and pool them through `math-dependency-graph._rtx.interface.scripts-pool-inventory-chunks`. Retry only the Voyage whose validation failed; never replace a valid inventory or broaden its immutable chunk assignment.
 3. Pass the ordered inventory fragments and retained entrypoint to `math-dependency-graph.interface.extract`. If extraction identifies proof reconciliation work, invoke `math-dependency-graph.interface.proof-reconciliation` only on its bounded proof packet.
 4. Deterministically apply the proof digest through `math-dependency-graph._rtx.interface.scripts-apply-proof-digest`, convert the semantic IR through `math-dependency-graph._rtx.interface.scripts-semantic-to-canonical-json`, and verify that the final semantic IR and canonical JSON are nonempty and schema-valid. Report artifact paths, represented source scope, counts, and genuine unresolved gaps. Visualization and serving belong to the shared visualization layer.
