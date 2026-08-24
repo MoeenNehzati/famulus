@@ -1380,8 +1380,66 @@ def test_binding_rejects_malformed_or_external_response_schemas(
         RutterRegistry({"probe": definition}, tmp_path)
 
 
-def test_binding_allows_fragment_refs_and_uses_route_keys_as_static_outcomes(
+@pytest.mark.parametrize(
+    "response_schema",
+    (
+        {"$dynamicRef": "https://example.invalid/schema.json"},
+        {"$defs": {}, "$ref": "#/$defs/missing"},
+    ),
+    ids=("external-dynamic-ref", "unresolved-local-fragment"),
+)
+def test_binding_rejects_non_self_contained_response_schema_references(
     tmp_path: Path,
+    response_schema: Mapping[str, object],
+) -> None:
+    """Every accepted Draft 2020-12 reference must resolve within the schema."""
+
+    definition = _definition(
+        {
+            "start": LLMStep(
+                "Report.",
+                response_schema=response_schema,
+                next_on_outcome="done",
+            ),
+            "done": Terminal(VoyageResult("complete", {})),
+        }
+    )
+
+    with pytest.raises(
+        RutterDefinitionError,
+        match="^LLMStep response_schema must be self-contained$",
+    ):
+        RutterRegistry({"probe": definition}, tmp_path)
+
+
+@pytest.mark.parametrize(
+    "response_schema",
+    (
+        {
+            "$defs": {"response": {"type": "object"}},
+            "$ref": "#/$defs/response",
+            "properties": {
+                "outcome": {"const": "schema-only-outcome"},
+            },
+        },
+        {
+            "$defs": {
+                "response": {
+                    "$dynamicAnchor": "response",
+                    "type": "object",
+                }
+            },
+            "$dynamicRef": "#response",
+            "properties": {
+                "outcome": {"const": "schema-only-outcome"},
+            },
+        },
+    ),
+    ids=("json-pointer-ref", "dynamic-anchor-ref"),
+)
+def test_binding_allows_resolved_fragment_refs_and_uses_route_keys_as_outcomes(
+    tmp_path: Path,
+    response_schema: Mapping[str, object],
 ) -> None:
     """Schema introspection must not replace explicit static routing authority."""
 
@@ -1389,13 +1447,7 @@ def test_binding_allows_fragment_refs_and_uses_route_keys_as_static_outcomes(
         {
             "start": LLMStep(
                 "Report.",
-                response_schema={
-                    "$defs": {"response": {"type": "object"}},
-                    "$ref": "#/$defs/response",
-                    "properties": {
-                        "outcome": {"const": "schema-only-outcome"},
-                    },
-                },
+                response_schema=response_schema,
                 next_on_outcome={"mapped-outcome": "done"},
             ),
             "done": Terminal(VoyageResult("complete", {})),

@@ -8,8 +8,8 @@ import re
 from types import MappingProxyType
 from typing import Mapping, TypeAlias
 
-from jsonschema import Draft202012Validator
-from jsonschema.exceptions import SchemaError
+from jsonschema import Draft202012Validator, RefResolver
+from jsonschema.exceptions import RefResolutionError, SchemaError
 
 from officina.rutter.authoring import (
     Evolution,
@@ -87,16 +87,34 @@ def _plain_json(value: object) -> object:
     return value
 
 
-def _contains_external_ref(value: object) -> bool:
-    if isinstance(value, Mapping):
-        for key, item in value.items():
-            if key == "$ref" and isinstance(item, str) and not item.startswith("#"):
-                return True
-            if _contains_external_ref(item):
-                return True
-    elif isinstance(value, (list, tuple)):
-        return any(_contains_external_ref(item) for item in value)
-    return False
+_REFERENCE_KEYWORDS = frozenset({"$ref", "$dynamicRef"})
+
+
+def _validate_self_contained_references(schema: Mapping[str, object]) -> None:
+    def visit(value: object, resource: Mapping[str, object]) -> None:
+        if isinstance(value, Mapping):
+            current_resource = value if "$id" in value else resource
+            for key, item in value.items():
+                if key in _REFERENCE_KEYWORDS:
+                    if type(item) is not str or not item.startswith("#"):
+                        raise RutterDefinitionError(
+                            "LLMStep response_schema must be self-contained"
+                        )
+                    try:
+                        RefResolver.from_schema(
+                            current_resource,
+                            id_of=Draft202012Validator.ID_OF,
+                        ).resolve(item)
+                    except RefResolutionError as exc:
+                        raise RutterDefinitionError(
+                            "LLMStep response_schema must be self-contained"
+                        ) from exc
+                visit(item, current_resource)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                visit(item, resource)
+
+    visit(schema, schema)
 
 
 def _construct_definition(source: _Registration) -> Rutter:
@@ -316,17 +334,14 @@ class _DefinitionBinder:
             if not isinstance(evolution, LLMStep) or evolution.response_schema is None:
                 continue
             schema = _plain_json(evolution.response_schema)
-            if _contains_external_ref(schema):
-                raise RutterDefinitionError(
-                    "LLMStep response_schema must be self-contained"
-                )
             try:
                 Draft202012Validator.check_schema(schema)
-                validators[evolution_id] = Draft202012Validator(schema)
             except SchemaError as exc:
                 raise RutterDefinitionError(
                     "LLMStep response_schema must be valid Draft 2020-12 JSON Schema"
                 ) from exc
+            _validate_self_contained_references(schema)
+            validators[evolution_id] = Draft202012Validator(schema)
         return MappingProxyType(validators)
 
     @staticmethod
