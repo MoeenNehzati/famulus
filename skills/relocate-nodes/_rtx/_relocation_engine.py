@@ -69,6 +69,16 @@ class RelocationError(RuntimeError):
     """Signal an unsafe, ambiguous, or incomplete relocation."""
 
 
+@dataclass(frozen=True)
+class PhysicalEntry:
+    """Fingerprint one pre-projection filesystem entry."""
+
+    path: str
+    kind: Literal["regular", "directory", "symlink", "other"]
+    mode: int
+    digest: str | None
+
+
 class BlueprintSynchronizer(Protocol):
     """Synchronize or check generated blueprints in one projected repository."""
 
@@ -706,12 +716,110 @@ def _derive_identity_maps(root: Path, manifest: RelocationManifest) -> tuple[Der
     return tuple(results)
 
 
+def _excluded(relative: str, exclusions: Iterable[str]) -> bool:
+    """Return whether an inventory path is at or below one excluded boundary."""
+
+    return any(
+        relative == excluded or relative.startswith(excluded.rstrip("/") + "/")
+        for excluded in exclusions
+    )
+
+
+def _physical_entry(root: Path, path: Path) -> PhysicalEntry:
+    """Fingerprint one path without following symbolic links."""
+
+    before = path.lstat()
+    mode = stat.S_IMODE(before.st_mode)
+    digest: str | None = None
+    if stat.S_ISLNK(before.st_mode):
+        kind: Literal["regular", "directory", "symlink", "other"] = "symlink"
+        payload = os.fsencode(os.readlink(path))
+        digest = "sha256:" + hashlib.sha256(payload).hexdigest()
+    elif stat.S_ISREG(before.st_mode):
+        kind = "regular"
+        digest = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+    elif stat.S_ISDIR(before.st_mode):
+        kind = "directory"
+    else:
+        kind = "other"
+    after = path.lstat()
+    identity_before = (
+        before.st_dev,
+        before.st_ino,
+        before.st_mode,
+        before.st_size,
+        before.st_mtime_ns,
+    )
+    identity_after = (
+        after.st_dev,
+        after.st_ino,
+        after.st_mode,
+        after.st_size,
+        after.st_mtime_ns,
+    )
+    if identity_before != identity_after:
+        relative = path.relative_to(root).as_posix()
+        raise RelocationError(f"repository changed during preflight: {relative}")
+    return PhysicalEntry(path.relative_to(root).as_posix(), kind, mode, digest)
+
+
+def _physical_inventory(
+    root: Path,
+    *,
+    exclusions: Iterable[str],
+    ignored_paths: Iterable[str] = (),
+) -> tuple[PhysicalEntry, ...]:
+    """Capture included raw entries and each excluded boundary itself."""
+
+    excluded_paths = tuple(exclusions)
+    ignored = set(ignored_paths)
+    entries: list[PhysicalEntry] = []
+    for directory, directory_names, file_names in os.walk(root, followlinks=False):
+        base = Path(directory)
+        retained_directories: list[str] = []
+        for name in sorted(directory_names):
+            candidate = base / name
+            relative = candidate.relative_to(root).as_posix()
+            if relative in ignored:
+                continue
+            if _excluded(relative, excluded_paths):
+                if relative in excluded_paths:
+                    entries.append(_physical_entry(root, candidate))
+                continue
+            entries.append(_physical_entry(root, candidate))
+            if not candidate.is_symlink():
+                retained_directories.append(name)
+        directory_names[:] = retained_directories
+        for name in sorted(file_names):
+            candidate = base / name
+            relative = candidate.relative_to(root).as_posix()
+            if relative in ignored:
+                continue
+            if _excluded(relative, excluded_paths):
+                if relative in excluded_paths:
+                    entries.append(_physical_entry(root, candidate))
+                continue
+            entries.append(_physical_entry(root, candidate))
+    return tuple(sorted(entries, key=lambda entry: entry.path))
+
+
+def _lexists(path: Path) -> bool:
+    """Return whether a path entry exists, including a dangling symlink."""
+
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return False
+    return True
+
+
 @dataclass
 class ChangeSet:
     """Hold one validated projected repository change set."""
 
     root: Path
     inventory_exclusions: tuple[str, ...] = _DEFAULT_INVENTORY_EXCLUSIONS
+    expected_absent_targets: tuple[str, ...] = ()
     moves: list[Move] = field(default_factory=list)
     writes: dict[str, bytes] = field(default_factory=dict)
     write_modes: dict[str, int] = field(default_factory=dict)
@@ -729,10 +837,15 @@ class ChangeSet:
     unaccounted_semantic_occurrences: list[object] = field(default_factory=list)
     generated_spans: dict[str, tuple[tuple[int, int, str], ...]] = field(default_factory=dict)
     base_files: set[str] = field(init=False, repr=False)
+    physical_baseline: tuple[PhysicalEntry, ...] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         """Snapshot the repository inventory once for every projected-tree query."""
 
+        self.physical_baseline = _physical_inventory(
+            self.root,
+            exclusions=self.inventory_exclusions,
+        )
         self.base_files = set()
         for path in self.root.rglob("*"):
             if not path.is_file() and not path.is_symlink():
@@ -1788,6 +1901,15 @@ def plan_relocation(
                 (*_DEFAULT_INVENTORY_EXCLUSIONS, *manifest.inventory_exclusions)
             )
         ),
+        expected_absent_targets=tuple(
+            sorted(
+                {
+                    relocation.target
+                    for relocation in manifest.relocations
+                    if not _lexists(root / relocation.target)
+                }
+            )
+        ),
         derived_relocations=identity_maps,
     )
     _project_moves(changes, manifest)
@@ -1868,27 +1990,88 @@ def plan_relocation(
     return changes
 
 
-def apply_change_set(changes: ChangeSet) -> None:
-    """Publish one already validated change set with file-level atomic writes."""
+def _validate_physical_baseline(
+    changes: ChangeSet,
+    *,
+    ignored_paths: Iterable[str] = (),
+    created_directories: Iterable[Path] = (),
+) -> None:
+    """Reject any live physical inventory drift before the first publish."""
 
-    for relative, expected in changes.expected.items():
-        current = changes._disk_bytes(relative)
-        if current != expected:
+    try:
+        current = _physical_inventory(
+            changes.root,
+            exclusions=changes.inventory_exclusions,
+            ignored_paths=ignored_paths,
+        )
+    except OSError as exc:
+        raise RelocationError(
+            "repository changed after preflight while reading physical inventory"
+        ) from exc
+    expected_by_path = {entry.path: entry for entry in changes.physical_baseline}
+    current_by_path = {entry.path: entry for entry in current}
+    prepared_directories = {
+        path.relative_to(changes.root).as_posix() for path in created_directories
+    }
+    for relative in sorted(set(expected_by_path) | set(current_by_path)):
+        if (
+            relative in prepared_directories
+            and relative not in expected_by_path
+            and current_by_path.get(relative) is not None
+            and current_by_path[relative].kind == "directory"
+        ):
+            continue
+        if expected_by_path.get(relative) != current_by_path.get(relative):
             raise RelocationError(f"repository changed after preflight: {relative}")
+    for relative in changes.expected_absent_targets:
+        if _lexists(changes.root / relative) and relative not in prepared_directories:
+            raise RelocationError(f"repository changed after preflight: {relative}")
+    for relative, expected in changes.expected.items():
+        current_payload = changes._disk_bytes(relative)
+        if current_payload != expected:
+            raise RelocationError(f"repository changed after preflight: {relative}")
+
+
+def _prepare_parent(path: Path, root: Path) -> tuple[Path, ...]:
+    """Create a staging parent and return only directories created here."""
+
+    missing: list[Path] = []
+    candidate = path
+    while candidate != root and not _lexists(candidate):
+        missing.append(candidate)
+        candidate = candidate.parent
+    path.mkdir(parents=True, exist_ok=True)
+    return tuple(reversed(missing))
+
+
+def apply_change_set(changes: ChangeSet) -> None:
+    """Publish prevalidated changes with atomic replacement per file only."""
+
     staged: dict[str, Path] = {}
+    created_directories: set[Path] = set()
     try:
         for relative, payload in sorted(changes.writes.items()):
             target = changes.root / relative
-            target.parent.mkdir(parents=True, exist_ok=True)
+            created_directories.update(
+                _prepare_parent(target.parent, changes.root)
+            )
             temporary = target.with_name(
                 f".{target.name}.officina-relocation-{hashlib.sha256(relative.encode()).hexdigest()[:12]}"
             )
-            if temporary.exists():
+            if _lexists(temporary):
                 raise RelocationError(f"staging path already exists: {temporary}")
             temporary.write_bytes(payload)
             if relative in changes.write_modes:
                 temporary.chmod(changes.write_modes[relative])
             staged[relative] = temporary
+        _validate_physical_baseline(
+            changes,
+            ignored_paths=(
+                temporary.relative_to(changes.root).as_posix()
+                for temporary in staged.values()
+            ),
+            created_directories=created_directories,
+        )
         for relative, temporary in staged.items():
             os.replace(temporary, changes.root / relative)
         for relative in sorted(changes.deletes, reverse=True):
@@ -1897,8 +2080,15 @@ def apply_change_set(changes: ChangeSet) -> None:
                 path.unlink()
     except Exception:
         for temporary in staged.values():
-            if temporary.exists():
+            if _lexists(temporary):
                 temporary.unlink()
+        for directory in sorted(
+            created_directories, key=lambda path: len(path.parts), reverse=True
+        ):
+            try:
+                directory.rmdir()
+            except OSError:
+                pass
         raise
 
 

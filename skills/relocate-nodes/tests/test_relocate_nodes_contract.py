@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import re
 from pathlib import Path
+import subprocess
 import sys
 from types import ModuleType
 
@@ -31,6 +34,153 @@ def _load_runtime_module(name: str, path: Path):
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def _calendar_repository(root: Path) -> dict[str, str]:
+    """Create an isolated registered calendar subtree and diverse callers."""
+
+    _write(
+        root / "officina.toml",
+        'schema_version = 1\n\n[modules]\nroots = ["skills", "src/officina"]\n',
+    )
+    _write(
+        root / "skills/g-calendar/blueprint.yaml",
+        yaml.safe_dump(
+            {
+                "schema_version": 6,
+                "id": "g-calendar",
+                "node_type": "module",
+                "children": {"_rtx": {}},
+                "sources": {
+                    "g-calendar.source.gateway": {
+                        "blueprint": {
+                            "base": "module-root",
+                            "path": "blueprints/gateway.yaml",
+                        }
+                    }
+                },
+                "exports": {
+                    "g-calendar.interface.default": {
+                        "source_interface": "g-calendar.source.gateway.interface.default",
+                        "access": {
+                            "allow_all_modules": False,
+                            "allowed_callers": ["calendar-caller"],
+                        },
+                    }
+                },
+            },
+            sort_keys=False,
+        ),
+    )
+    _write(
+        root / "skills/g-calendar/blueprints/gateway.yaml",
+        yaml.safe_dump(
+            {
+                "schema_version": 6,
+                "id": "g-calendar.source.gateway",
+                "node_type": "behavioral_source",
+                "interfaces": {
+                    "g-calendar.source.gateway.interface.default": {
+                        "version": 1,
+                        "description": "Use the calendar.",
+                    }
+                },
+            },
+            sort_keys=False,
+        ),
+    )
+    _write(
+        root / "skills/g-calendar/_rtx/blueprint.yaml",
+        yaml.safe_dump(
+            {
+                "schema_version": 6,
+                "id": "g-calendar._rtx",
+                "node_type": "module",
+                "children": {},
+            },
+            sort_keys=False,
+        ),
+    )
+    _write(root / "skills/g-calendar/_rtx/client.py", "VALUE = 1\n")
+    _write(
+        root / "skills/calendar-caller/blueprint.yaml",
+        yaml.safe_dump(
+            {
+                "schema_version": 6,
+                "id": "calendar-caller",
+                "node_type": "module",
+                "children": {},
+                "dependencies": ["g-calendar"],
+            },
+            sort_keys=False,
+        ),
+    )
+    _write(
+        root / "caller.py",
+        "from calendar_api.old import VALUE\n",
+    )
+    _write(
+        root / "consumer.yaml",
+        "uses_interfaces:\n- interface: g-calendar.interface.default\n  version: 1\n",
+    )
+    _write(
+        root / "scripts/use-calendar.sh",
+        "dispatcher --caller-skill g-calendar g-calendar.interface.default\n",
+    )
+    nonstructural = {
+        "literal.py": (
+            'PATH = Path("skills") / "g-calendar"\n'
+            'NAME = "g-calendar"\n'
+        ),
+        "notes.md": "Use g-calendar for appointments.\n",
+        "proof.tex": "\\texttt{g-calendar}\n",
+        ".config/g-calendar/config.json": '{"namespace":"g-calendar"}\n',
+    }
+    for relative, text in nonstructural.items():
+        _write(root / relative, text)
+    _write(root / "src/officina/calendar_support.py", "VALUE = 1\n")
+    return nonstructural
+
+
+def _semantic_decision(
+    occurrence: dict[str, object], *, disposition: str
+) -> dict[str, object]:
+    """Convert one report occurrence into a complete reviewed selector."""
+
+    context = str(occurrence["context"])
+    match = str(occurrence["match"])
+    decision = {
+        key: occurrence[key]
+        for key in (
+            "occurrence_id",
+            "mapping_kind",
+            "mapping_id",
+            "path",
+            "original_digest",
+            "byte_start",
+            "byte_end",
+            "ordinal",
+            "match",
+        )
+    }
+    decision.update(
+        {
+            "count": 1,
+            "disposition": disposition,
+            "text": context,
+            "reason": "Reviewed isolated calendar namespace policy.",
+        }
+    )
+    if disposition == "rewrite":
+        decision["replacement"] = context.replace(
+            match, str(occurrence["candidate"]), 1
+        )
+    return decision
 
 
 def test_relocate_nodes_has_one_private_runtime_route() -> None:
@@ -86,6 +236,58 @@ def test_registered_route_is_the_only_live_relocation_entrypoint() -> None:
     assert "dispatcher --caller-skill relocate-nodes" in documentation
     assert "relocate-nodes._rtx.interface.relocate" in documentation
     assert "relocate_officina_sources.py" not in documentation
+
+
+def test_authored_workflow_requires_one_reviewed_schema_v3_relocation() -> None:
+    """The public skill recipe prevents segment moves and incomplete adjudication."""
+
+    skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+    normalized_skill = " ".join(skill.replace("`", "").split())
+    examples = re.findall(r"```yaml\n(.*?)```", skill, flags=re.DOTALL)
+    manifests = [yaml.safe_load(example) for example in examples]
+    nested = next(
+        (
+            value
+            for value in manifests
+            if isinstance(value, dict)
+            and value.get("relocations")
+            and value["relocations"][0].get("from") == "skills/a/b/c"
+        ),
+        None,
+    )
+
+    assert nested is not None
+    assert nested["schema_version"] == 3
+    assert nested["relocations"] == [
+        {"from": "skills/a/b/c", "to": "skills/a/d/e"}
+    ]
+    required_contract = (
+        "Preflight mechanical closure before adjudication",
+        "Review every occurrence ID across every reported file type",
+        "persisted state, compatibility, or behavior",
+        "nonempty reason",
+        "Never use blind global substitution",
+        "exact_rewrites cannot account for semantic occurrences",
+        "Rerun preflight",
+        "Apply the reviewed manifest",
+        "target-side postflight",
+    )
+    for clause in required_contract:
+        assert clause in normalized_skill
+
+    gateway = yaml.safe_load(
+        (SKILL_ROOT / "blueprints/gateway.yaml").read_text(encoding="utf-8")
+    )
+    contract = gateway["interfaces"][
+        "relocate-nodes.source.gateway.interface.default"
+    ]["contract"]
+    assert contract["interaction"]["mode"] == "interactive"
+    warnings = [next(iter(warning.values())) for warning in contract["caller_warnings"]]
+    assert any(
+        "per-file atomic" in warning
+        and "repository-wide transaction" in warning
+        for warning in warnings
+    )
 
 
 @pytest.mark.parametrize(
@@ -177,3 +379,152 @@ def test_adapter_gates_apply_but_not_preflight_on_unaccounted_occurrences(
     assert (root / "old.txt").is_file()
     assert not (root / "new.txt").exists()
     assert "unaccounted semantic occurrences" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("preserve_config_namespace", (True, False))
+def test_calendar_relocation_end_to_end_isolated_from_source_checkout(
+    tmp_path: Path,
+    preserve_config_namespace: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """One manifest closes, adjudicates, applies, and postflights in a temp repo."""
+
+    tracked = (
+        ADAPTER_PATH,
+        RTX_ROOT / "_relocation_engine.py",
+        SKILL_ROOT / "SKILL.md",
+    )
+    source_bytes = {path: path.read_bytes() for path in tracked}
+    source_status = subprocess.run(
+        ["git", "status", "--short"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    repository = tmp_path / "repository"
+    nonstructural = _calendar_repository(repository)
+    manifest_path = tmp_path / "calendar.yaml"
+    report_path = tmp_path / "calendar-report.json"
+    manifest: dict[str, object] = {
+        "schema_version": 3,
+        "relocations": [
+            {
+                "from": "skills/g-calendar",
+                "to": "skills/online-calendar",
+                "python_modules": [
+                    {"from": "calendar_api.old", "to": "calendar_api.new"}
+                ],
+            }
+        ],
+    }
+    manifest_path.write_text(
+        yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8"
+    )
+    interface = _load_adapter().Interface()
+    monkeypatch.setattr(interface, "_synchronize", lambda repository, *, check: None)
+
+    def invoke(*, apply: bool = False) -> tuple[int, dict[str, object]]:
+        arguments = [
+            "--root",
+            str(repository),
+            "--manifest",
+            str(manifest_path),
+            "--report",
+            str(report_path),
+        ]
+        if apply:
+            arguments.append("--apply")
+        result = interface.run(interface.build_parser().parse_args(arguments))
+        capsys.readouterr()
+        report = (
+            json.loads(report_path.read_text(encoding="utf-8"))
+            if report_path.exists()
+            else {}
+        )
+        return result, report
+
+    result, first = invoke()
+
+    assert result == 0
+    assert (repository / "notes.md").read_text(encoding="utf-8") == nonstructural[
+        "notes.md"
+    ]
+    assert "skills/online-calendar/blueprint.yaml" in first["writes"]
+    engine = _load_runtime_module(
+        f"{RUNTIME_PACKAGE}._relocation_engine", RTX_ROOT / "_relocation_engine.py"
+    )
+    changes = engine.plan_relocation(repository, engine.load_manifest(manifest_path))
+    assert yaml.safe_load(
+        changes.read_text("skills/online-calendar/blueprint.yaml")
+    )["id"] == "online-calendar"
+    assert changes.read_text("caller.py") == "from calendar_api.new import VALUE\n"
+    assert yaml.safe_load(
+        changes.read_text("skills/calendar-caller/blueprint.yaml")
+    )["dependencies"] == ["online-calendar"]
+    assert "online-calendar.interface.default" in changes.read_text("consumer.yaml")
+    assert (
+        changes.read_text("scripts/use-calendar.sh")
+        == "dispatcher --caller-skill online-calendar online-calendar.interface.default\n"
+    )
+    for relative, text in nonstructural.items():
+        assert changes.read_text(relative) == text
+    occurrence_paths = {item["path"] for item in first["semantic_occurrences"]}
+    assert {
+        "literal.py",
+        "notes.md",
+        "proof.tex",
+        ".config/g-calendar/config.json",
+    } <= occurrence_paths
+
+    manifest["semantic_decisions"] = [
+        _semantic_decision(
+            occurrence,
+            disposition=(
+                "preserve"
+                if preserve_config_namespace
+                and occurrence["path"] == ".config/g-calendar/config.json"
+                else "rewrite"
+            ),
+        )
+        for occurrence in first["semantic_occurrences"]
+    ]
+    manifest_path.write_text(
+        yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8"
+    )
+
+    result, decided = invoke()
+    assert result == 0
+    assert decided["unaccounted_semantic_occurrences"] == []
+    result, _ = invoke(apply=True)
+    assert result == 0
+    result, postflight = invoke()
+    assert result == 0
+    assert postflight["writes"] == []
+    assert postflight["deletes"] == []
+    assert postflight["unaccounted_semantic_occurrences"] == []
+    config = (repository / ".config/g-calendar/config.json").read_text(
+        encoding="utf-8"
+    )
+    if preserve_config_namespace:
+        assert config == nonstructural[".config/g-calendar/config.json"]
+        assert any(
+            item["path"] == ".config/g-calendar/config.json"
+            for item in postflight["semantic_occurrences"]
+        )
+    else:
+        assert config == '{"namespace":"online-calendar"}\n'
+        assert all(
+            item["match"] != "g-calendar"
+            for item in postflight["semantic_occurrences"]
+        )
+
+    assert {path: path.read_bytes() for path in tracked} == source_bytes
+    assert subprocess.run(
+        ["git", "status", "--short"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout == source_status

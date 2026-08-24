@@ -16,7 +16,10 @@ class Interface(PythonMachineInterface):
     """Expose the skill-owned relocation engine through the registered route."""
 
     prog = "relocate-nodes"
-    description = "Preflight or atomically apply one manifest-driven node relocation."
+    description = (
+        "Preflight or apply one manifest-driven node relocation with per-file "
+        "atomic replacement."
+    )
     dispatches = {
         "sync-blueprints": DispatchCall(
             caller_module_id="relocate-nodes._rtx",

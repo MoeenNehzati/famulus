@@ -109,6 +109,36 @@ def test_semantic_scan_covers_all_text_and_only_exact_default_exclusions(
     assert {"binary.bin", "nonutf8", "internal-link", "dangling-link", "escaping-link"} <= skipped
 
 
+def test_physical_baseline_is_distinct_from_projected_semantic_inventory(
+    tmp_path: Path,
+) -> None:
+    """Projection cannot replace the raw preflight concurrency baseline."""
+
+    _write(tmp_path / "source.txt", "source\n")
+    _write(tmp_path / "binary.bin", b"\xff\x00")
+    (tmp_path / "source-link").symlink_to("source.txt")
+    _write(tmp_path / ".scratch/ignored.txt", "ignored\n")
+    changes = ChangeSet(tmp_path, inventory_exclusions=(".scratch",))
+    changes.write_text("target.txt", "source\n")
+    changes.deletes.add("source.txt")
+
+    baseline = {entry.path: entry for entry in changes.physical_baseline}
+
+    assert set(baseline) == {
+        ".scratch",
+        "binary.bin",
+        "source-link",
+        "source.txt",
+    }
+    assert baseline[".scratch"].kind == "directory"
+    assert baseline["binary.bin"].kind == "regular"
+    assert baseline["binary.bin"].digest.startswith("sha256:")
+    assert baseline["source-link"].kind == "symlink"
+    assert baseline["source-link"].digest.startswith("sha256:")
+    assert "target.txt" in changes.projected_files()
+    assert "source.txt" not in changes.projected_files()
+
+
 def test_semantic_scan_fails_closed_on_conflicting_same_span_candidates(
     tmp_path: Path,
 ) -> None:

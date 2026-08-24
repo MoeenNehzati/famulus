@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import stat
 import sys
@@ -10,12 +11,14 @@ import sys
 import pytest
 import yaml
 
+from .. import _relocation_engine as engine_module
 from .._relocation_engine import (
     RelocationError,
     apply_change_set,
     load_manifest,
     plan_relocation,
 )
+from .._relocate_nodes import Interface
 
 
 def _write(path: Path, text: str) -> None:
@@ -26,6 +29,115 @@ def _write(path: Path, text: str) -> None:
 def _manifest(path: Path, value: dict[str, object]):
     _write(path, yaml.safe_dump(value, sort_keys=False))
     return load_manifest(path)
+
+
+@pytest.mark.parametrize(
+    "fault",
+    (
+        "change-preserved-file",
+        "add-included-text",
+        "add-empty-directory",
+        "remove-scanned-file",
+        "binary-becomes-utf8",
+        "symlink-becomes-file",
+        "change-exclusion-boundary",
+    ),
+)
+def test_apply_rejects_every_physical_inventory_change_before_publish(
+    tmp_path: Path,
+    fault: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The public apply route returns 2 before writing on physical inventory drift."""
+
+    repository = tmp_path / "repository"
+    _write(repository / "old.txt", "payload\n")
+    _write(repository / "preserved.md", "preserved\n")
+    _write(repository / "scanned.md", "scanned\n")
+    (repository / "binary.bin").write_bytes(b"\xff\x00")
+    (repository / "preserved-link").symlink_to("preserved.md")
+    _write(repository / ".scratch/ignored.md", "ignored\n")
+    manifest_path = tmp_path / "move.yaml"
+    _manifest(
+        manifest_path,
+        {
+            "schema_version": 3,
+            "relocations": [{"from": "old.txt", "to": "new.txt"}],
+            "inventory_exclusions": [".scratch"],
+        },
+    )
+    actual_apply = engine_module.apply_change_set
+
+    def inject_fault(changes: object) -> None:
+        if fault == "change-preserved-file":
+            _write(repository / "preserved.md", "changed\n")
+        elif fault == "add-included-text":
+            _write(repository / "added.md", "added\n")
+        elif fault == "add-empty-directory":
+            (repository / "added-directory").mkdir()
+        elif fault == "remove-scanned-file":
+            (repository / "scanned.md").unlink()
+        elif fault == "binary-becomes-utf8":
+            _write(repository / "binary.bin", "now text\n")
+        elif fault == "symlink-becomes-file":
+            (repository / "preserved-link").unlink()
+            _write(repository / "preserved-link", "preserved.md\n")
+        else:
+            os.rename(repository / ".scratch", repository / ".scratch-content")
+            (repository / ".scratch").symlink_to(".scratch-content")
+        actual_apply(changes)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(engine_module, "apply_change_set", inject_fault)
+    interface = Interface()
+    monkeypatch.setattr(interface, "_synchronize", lambda repository, *, check: None)
+    args = interface.build_parser().parse_args(
+        ["--root", str(repository), "--manifest", str(manifest_path), "--apply"]
+    )
+
+    assert interface.run(args) == 2
+    assert "repository changed after preflight" in capsys.readouterr().err
+    assert (repository / "old.txt").read_text(encoding="utf-8") == "payload\n"
+    assert not (repository / "new.txt").exists()
+
+
+def test_apply_documents_per_file_atomicity_without_repository_rollback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A mid-publish fault retains completed atomic files without rolling back."""
+
+    _write(tmp_path / "old-a.txt", "first\n")
+    _write(tmp_path / "old-b.txt", "second\n")
+    manifest = _manifest(
+        tmp_path / "move.yaml",
+        {
+            "schema_version": 3,
+            "relocations": [
+                {"from": "old-a.txt", "to": "new-a.txt"},
+                {"from": "old-b.txt", "to": "new-b.txt"},
+            ],
+        },
+    )
+    changes = plan_relocation(tmp_path, manifest)
+    original_replace = os.replace
+    replacements = 0
+
+    def fail_second_replace(source: Path, target: Path) -> None:
+        nonlocal replacements
+        replacements += 1
+        if replacements == 2:
+            raise OSError("injected mid-publish fault")
+        original_replace(source, target)
+
+    monkeypatch.setattr(os, "replace", fail_second_replace)
+
+    with pytest.raises(OSError, match="injected mid-publish fault"):
+        apply_change_set(changes)
+
+    assert (tmp_path / "new-a.txt").read_text(encoding="utf-8") == "first\n"
+    assert not (tmp_path / "new-b.txt").exists()
+    assert (tmp_path / "old-a.txt").is_file()
+    assert (tmp_path / "old-b.txt").is_file()
 
 
 def test_manifest_v3_loads_unified_relocations(tmp_path: Path) -> None:

@@ -1,8 +1,9 @@
 content:
 - SKILL\.md
 dependencies: []
-description: Directs a reviewed relocation preflight, application, and required empty
-  postflight through the private machine interface.
+description: Directs mechanical preflight, occurrence-by-occurrence semantic review,
+  accepted application, and target-side postflight through the private machine
+  interface.
 gateway:
   language: Markdown
   path: SKILL.md
@@ -24,8 +25,10 @@ interfaces:
             kind: string
             sensitivity: user-private
       caller_warnings:
-      - external-side-effect: Applying an accepted manifest atomically changes the
-          selected repository.
+      - external-side-effect: Applying an accepted manifest changes the selected
+          repository with per-file atomic replacements, not a repository-wide transaction
+          or rollback; persisted-state, compatibility, and behavioral choices require
+          explicit user review before a semantic decision is recorded.
       direct_io:
         network: []
         reads:
@@ -38,6 +41,18 @@ interfaces:
           - text
           sensitivity: user-private
         writes:
+        - id: repository-change
+          medium: repository-filesystem
+          system: selected repository
+          access: write
+          content: Reviewed per-file relocation replacements and deletions.
+          formats:
+          - yaml
+          - markdown
+          - python
+          - text
+          sensitivity: user-private
+          reason: Apply the explicitly reviewed relocation manifest.
         - id: response
           medium: prompt
           system: agent-runtime
@@ -50,25 +65,65 @@ interfaces:
         consistency:
           snapshot: Each response reflects the exact manifest and repository state
             observed by its delegated invocation.
+        effects:
+        - id: relocation-change
+          action: update
+          direct_io_ref: repository-change
+          may_occur_in_outcomes:
+          - completed
+          - failed
+          confirmation_evidence:
+            kind: output
+            output_ref: response
+          reversibility:
+            compensatable: Repair any reported partial publish from version-control
+              evidence; the route does not promise repository-wide rollback.
+          value_source:
+            kind: argument
+            argument_ref: request
         lifecycle: finite
-        state_effect: read-only
+        mutation_safety:
+          atomicity:
+            per_effect_only: Each file replacement is atomic, but the complete relocation
+              is not a repository-wide transaction.
+          concurrent_invocations:
+            unsafe: Any included physical inventory change after planning aborts before
+              publish; concurrent publish faults can still leave completed files.
+          idempotency:
+            non_idempotent: Apply only after reviewed preflight; use the identical manifest
+              without apply for target-side postflight.
+          on_uncertain_completion:
+            verify_then_decide: Inspect the report and repository state, then rerun the
+              identical manifest as read-only postflight before deciding on repair.
+          partial_effects_on_failure:
+            possible: A mid-publish fault may leave already replaced files in place.
+          rollback_on_failure:
+            unavailable: The route cleans staging files but does not roll back published
+              repository files.
+        state_effect: mutating
         verification:
         - method: output-schema
           output_ref: response
+        - method: direct-io-state
+          direct_io_ref: repository-change
       helpers: []
       interaction:
-        mode: unattended
+        channel: tty
+        mode: interactive
+        unattended_outcome: failed
       outcomes:
       - id: completed
         class: success
-        effects: []
+        effects:
+        - relocation-change
         outputs:
         - response
         caller_action: Review the report categories and use the private route only
           as prescribed by this workflow.
       - id: failed
         class: error
-        effects: []
+        effects:
+        - relocation-change
         outputs:
         - response
         caller_action: Correct the manifest or unresolved reference before retrying.
@@ -90,8 +145,8 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Require reviewed preflight, accepted application, and an empty second
-      preflight.
+    description: Require mechanical preflight, complete semantic occurrence adjudication,
+      accepted application, and an empty target-side postflight.
     version: 1
 node_type: behavioral_source
 schema_version: 6
