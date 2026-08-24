@@ -65,7 +65,7 @@ def transition_hook_probe(
         hook_id,
         on=TransitionMatch(),
         child=child,
-        charter=charter,
+        charter_constructor=charter,
     )
 
 
@@ -75,7 +75,7 @@ class DirectChildRutter(Rutter):
     initial_evolution_id = "complete"
 
     def define_evolutions(self):
-        return {"complete": Terminal(VoyageResult("completed", {}))}
+        return {"complete": Terminal(result=VoyageResult("completed", {}))}
 
 
 class GrandchildRutter(Rutter):
@@ -89,7 +89,7 @@ class GrandchildRutter(Rutter):
         type(self).constructions += 1
 
     def define_evolutions(self):
-        return {"complete": Terminal(VoyageResult("completed", {}))}
+        return {"complete": Terminal(result=VoyageResult("completed", {}))}
 
 
 class AttachedChildRutter(Rutter):
@@ -101,10 +101,10 @@ class AttachedChildRutter(Rutter):
         return {
             "delegate": SubRutter(
                 GrandchildRutter,
-                charter=child_charter,
+                charter_constructor=child_charter,
                 next_on_outcome="complete",
             ),
-            "complete": Terminal(VoyageResult("completed", {})),
+            "complete": Terminal(result=VoyageResult("completed", {})),
         }
 
 
@@ -117,10 +117,10 @@ class DiscoveryRootRutter(Rutter):
         return {
             "delegate": SubRutter(
                 DirectChildRutter,
-                charter=child_charter,
+                charter_constructor=child_charter,
                 next_on_outcome="complete",
             ),
-            "complete": Terminal(VoyageResult("completed", {})),
+            "complete": Terminal(result=VoyageResult("completed", {})),
         }
 
     def define_transition_hooks(self):
@@ -146,5 +146,5 @@ class ExampleRutter(Rutter):
                 data=report_data,
                 next_on_outcome="complete",
             ),
-            "complete": Terminal(VoyageResult("completed", {})),
+            "complete": Terminal(result=VoyageResult("completed", {})),
         }

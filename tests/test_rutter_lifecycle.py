@@ -117,7 +117,7 @@ def test_pure_action_accepts_supplied_result_without_callback(
         def define_evolutions(self) -> Mapping[str, object]:
             return {
                 "calculate": MachineStep(execute, mode="pure", choose_next=route),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     path = Path("pure-result.reckoning.json")
@@ -170,7 +170,7 @@ def test_omitted_action_result_runs_callback_once(
         def define_evolutions(self) -> Mapping[str, object]:
             return {
                 "calculate": MachineStep(execute, mode="pure", next_on_outcome="done"),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     path = Path("automatic-pure.reckoning.json")
@@ -212,7 +212,7 @@ def test_repeat_safe_instruction_persists_completed_recovery_before_return(
         def define_evolutions(self) -> Mapping[str, object]:
             return {
                 "store": MachineStep(execute, mode="repeat-safe", next_on_outcome="done"),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     path = Path("repeat-safe.reckoning.json")
@@ -280,7 +280,7 @@ def test_effectful_supplied_result_requires_completed_recovery(
         def define_evolutions(self) -> Mapping[str, object]:
             return {
                 "store": MachineStep(execute, mode="repeat-safe", next_on_outcome="done"),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     path = Path("exact-authority.reckoning.json")
@@ -334,7 +334,7 @@ def test_omitted_repeat_safe_action_runs_and_consumes_the_same_wrapper(
         def define_evolutions(self) -> Mapping[str, object]:
             return {
                 "store": MachineStep(execute, mode="repeat-safe", next_on_outcome="done"),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     path = Path("automatic-repeat.reckoning.json")
@@ -382,7 +382,7 @@ def test_non_repeat_safe_markers_precede_accepted_action(
         def define_evolutions(self) -> Mapping[str, object]:
             return {
                 "send": MachineStep(execute, mode="non-repeat-safe", next_on_outcome="done"),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     registry = RutterRegistry({"send": NonRepeatSafeRutter}, tmp_path)
@@ -429,7 +429,7 @@ def test_non_repeat_safe_crash_windows_preserve_authoritative_boundaries(
                         mode="non-repeat-safe",
                         next_on_outcome="done",
                     ),
-                    "done": Terminal(VoyageResult("complete", {})),
+                    "done": Terminal(result=VoyageResult("complete", {})),
                 }
 
         path = Path(f"{name}.reckoning.json")
@@ -574,10 +574,10 @@ def test_reopen_rejects_recovery_that_differs_from_the_bound_action(
                 ),
                 "delegate": SubRutter(
                     DirectChildRutter,
-                    charter=lambda context: {},
+                    charter_constructor=lambda context: {},
                     next_on_outcome="done",
                 ),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     path = Path(f"corrupt-{corruption}-{disposition}.reckoning.json")
@@ -638,7 +638,7 @@ def test_every_effectful_target_and_self_loop_entrance_allocates_fresh_recovery(
                     mode="repeat-safe",
                     next_on_outcome={"again": "store", "done": "done"},
                 ),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     path = Path("effect-loop.reckoning.json")
@@ -701,7 +701,7 @@ def test_nested_action_recovery_is_owned_by_the_deepest_leaf_across_reopen(
         def define_evolutions(self) -> Mapping[str, object]:
             return {
                 "work": MachineStep(execute, mode="repeat-safe", next_on_outcome="done"),
-                "done": Terminal(VoyageResult("child-complete", {})),
+                "done": Terminal(result=VoyageResult("child-complete", {})),
             }
 
     class ActionParent(Rutter):
@@ -713,10 +713,10 @@ def test_nested_action_recovery_is_owned_by_the_deepest_leaf_across_reopen(
             return {
                 "delegate": SubRutter(
                     ActionChild,
-                    charter=lambda context: {},
+                    charter_constructor=lambda context: {},
                     next_on_outcome="done",
                 ),
-                "done": Terminal(VoyageResult("parent-complete", {})),
+                "done": Terminal(result=VoyageResult("parent-complete", {})),
             }
 
     path = Path("nested-action.reckoning.json")
@@ -779,7 +779,7 @@ def test_effectful_instruction_callback_failure_persists_only_stable_fault_data(
         def define_evolutions(self) -> Mapping[str, object]:
             return {
                 "work": MachineStep(execute, mode=mode, next_on_outcome="done"),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     path = Path(f"failing-{mode}.reckoning.json")
@@ -832,7 +832,7 @@ def test_dry_run_supplied_result_records_nothing(
                     mode="pure",
                     next_on_outcome="done",
                 ),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     pure_path = Path("pure-preview.reckoning.json")
@@ -872,7 +872,7 @@ def test_dry_run_supplied_result_records_nothing(
                     mode="repeat-safe",
                     next_on_outcome="done",
                 ),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     effect_path = Path("effect-preview.reckoning.json")
@@ -930,7 +930,7 @@ def test_continue_true_executes_action_entered_from_prompt(
                     next_on_outcome="work",
                 ),
                 "work": MachineStep(execute, mode=mode, next_on_outcome="done"),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     path = Path(f"prompt-action-{mode}.reckoning.json")
@@ -999,7 +999,7 @@ def test_accepted_action_record_survives_later_callback_fault_without_replay(
                     data=materialize,
                     next_on_outcome="done",
                 ),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     path = Path(f"accepted-action-{failure}.reckoning.json")
@@ -1061,7 +1061,7 @@ def test_repeat_safe_reopen_retries_planned_work_with_the_same_action_id(
         def define_evolutions(self) -> Mapping[str, object]:
             return {
                 "store": MachineStep(execute, mode="repeat-safe", next_on_outcome="done"),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     path = Path("repeat-retry.reckoning.json")
@@ -1249,7 +1249,7 @@ def test_contextual_prompt_validation_receives_frozen_current_context(
                     assess_response=reject,
                     next_on_outcome="done",
                 ),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     root = tmp_path / "reckonings"
@@ -1400,7 +1400,7 @@ def test_target_prompt_render_failure_keeps_accepted_source_and_faults_in_place(
                     data=fail_data,
                     next_on_outcome="done",
                 ),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     root = tmp_path / "reckonings"
@@ -1463,7 +1463,7 @@ def test_prompt_routing_failure_preserves_the_accepted_turn_before_fault(
                     response_schema=_response_schema("go"),
                     choose_next=fail_route,
                 ),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     root = tmp_path / "reckonings"
@@ -1560,7 +1560,7 @@ def test_prompt_and_done_dry_runs_preview_without_entering_or_writing(
                     data=target_data,
                     next_on_outcome="done",
                 ),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     root = tmp_path / "reckonings"
@@ -1611,7 +1611,7 @@ def test_done_projection_failure_faults_without_a_done_record(
         initial_evolution_id = "done"
 
         def define_evolutions(self) -> Mapping[str, object]:
-            return {"done": Terminal(fail_result)}
+            return {"done": Terminal(result_constructor=fail_result)}
 
     root = tmp_path / "reckonings"
     path = Path("failing-done.reckoning.json")
@@ -1649,10 +1649,10 @@ def test_call_push_keeps_parent_entered_and_exposes_the_child_leaf(
             return {
                 "delegate": SubRutter(
                     DirectChildRutter,
-                    charter=child_charter,
+                    charter_constructor=child_charter,
                     next_on_outcome="complete",
                 ),
-                "complete": Terminal(VoyageResult("completed", {})),
+                "complete": Terminal(result=VoyageResult("completed", {})),
             }
 
     root = tmp_path / "reckonings"
@@ -1711,15 +1711,15 @@ def test_active_leaf_rejects_child_from_another_call_entrance_before_mutation(
             return {
                 "first": SubRutter(
                     DirectChildRutter,
-                    charter=lambda context: {"from": context.evolution_id},
+                    charter_constructor=lambda context: {"from": context.evolution_id},
                     next_on_outcome="done",
                 ),
                 "second": SubRutter(
                     DirectChildRutter,
-                    charter=lambda context: {"from": context.evolution_id},
+                    charter_constructor=lambda context: {"from": context.evolution_id},
                     next_on_outcome="done",
                 ),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     root = tmp_path / "reckonings"
@@ -1775,7 +1775,7 @@ def test_call_push_atomically_materializes_a_prompt_child_across_reopen(
                     response_schema=_response_schema("answered"),
                     next_on_outcome="done",
                 ),
-                "done": Terminal(VoyageResult("child-complete", {})),
+                "done": Terminal(result=VoyageResult("child-complete", {})),
             }
 
     class CallingRutter(Rutter):
@@ -1787,10 +1787,10 @@ def test_call_push_atomically_materializes_a_prompt_child_across_reopen(
             return {
                 "delegate": SubRutter(
                     PromptChild,
-                    charter=lambda context: {"parent": context.evolution_id},
+                    charter_constructor=lambda context: {"parent": context.evolution_id},
                     next_on_outcome="complete",
                 ),
-                "complete": Terminal(VoyageResult("complete", {})),
+                "complete": Terminal(result=VoyageResult("complete", {})),
             }
 
     root = tmp_path / "reckonings"
@@ -1833,10 +1833,10 @@ def test_child_return_is_archived_before_the_parent_mapping_route(
             return {
                 "delegate": SubRutter(
                     DirectChildRutter,
-                    charter=lambda context: {"site": context.evolution_id},
+                    charter_constructor=lambda context: {"site": context.evolution_id},
                     next_on_outcome={"completed": "complete"},
                 ),
-                "complete": Terminal(VoyageResult("parent-complete", {})),
+                "complete": Terminal(result=VoyageResult("parent-complete", {})),
             }
 
     root = tmp_path / "reckonings"
@@ -1912,10 +1912,10 @@ def test_continue_true_recursively_settles_nested_calls_with_one_revision(
             return {
                 "delegate": SubRutter(
                     DirectChildRutter,
-                    charter=lambda context: {"from": context.evolution_id},
+                    charter_constructor=lambda context: {"from": context.evolution_id},
                     next_on_outcome="done",
                 ),
-                "done": Terminal(VoyageResult("middle-complete", {})),
+                "done": Terminal(result=VoyageResult("middle-complete", {})),
             }
 
     class RootRutter(Rutter):
@@ -1927,10 +1927,10 @@ def test_continue_true_recursively_settles_nested_calls_with_one_revision(
             return {
                 "delegate": SubRutter(
                     MiddleRutter,
-                    charter=lambda context: {"from": context.evolution_id},
+                    charter_constructor=lambda context: {"from": context.evolution_id},
                     next_on_outcome="done",
                 ),
-                "done": Terminal(VoyageResult("root-complete", {})),
+                "done": Terminal(result=VoyageResult("root-complete", {})),
             }
 
     root = tmp_path / "reckonings"
@@ -2003,7 +2003,7 @@ def test_nested_prompt_self_loop_reopens_with_one_global_revision(
                     response_schema=_response_schema("again", "finish"),
                     next_on_outcome={"again": "ask", "finish": "done"},
                 ),
-                "done": Terminal(VoyageResult("child-complete", {})),
+                "done": Terminal(result=VoyageResult("child-complete", {})),
             }
 
     class RootRutter(Rutter):
@@ -2015,7 +2015,7 @@ def test_nested_prompt_self_loop_reopens_with_one_global_revision(
             return {
                 "delegate": SubRutter(
                     PromptLoopChild,
-                    charter=lambda context: {"from": context.evolution_id},
+                    charter_constructor=lambda context: {"from": context.evolution_id},
                     next_on_outcome="after",
                 ),
                 "after": LLMStep(
@@ -2023,7 +2023,7 @@ def test_nested_prompt_self_loop_reopens_with_one_global_revision(
                     response_schema=_response_schema("done"),
                     next_on_outcome="done",
                 ),
-                "done": Terminal(VoyageResult("root-complete", {})),
+                "done": Terminal(result=VoyageResult("root-complete", {})),
             }
 
     root = tmp_path / "reckonings"
@@ -2096,7 +2096,7 @@ def test_call_self_loop_allocates_a_fresh_entrance_child_and_call_id(
             return {
                 "delegate": SubRutter(
                     DirectChildRutter,
-                    charter=lambda context: {"entry": context.evolution_entry_id},
+                    charter_constructor=lambda context: {"entry": context.evolution_entry_id},
                     next_on_outcome={"completed": "delegate"},
                 )
             }
@@ -2154,10 +2154,10 @@ def test_call_depth_limit_rejects_before_charter_or_id_allocation(
             return {
                 "delegate": SubRutter(
                     DirectChildRutter,
-                    charter=child_charter,
+                    charter_constructor=child_charter,
                     next_on_outcome="done",
                 ),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     root = tmp_path / "reckonings"
@@ -2204,10 +2204,10 @@ def test_call_preview_without_a_returned_result_is_read_only_unavailable(
             return {
                 "delegate": SubRutter(
                     DirectChildRutter,
-                    charter=child_charter,
+                    charter_constructor=child_charter,
                     next_on_outcome="done",
                 ),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     root = tmp_path / "reckonings"
@@ -2246,10 +2246,10 @@ def test_call_preview_uses_a_durable_result_for_callable_routing_without_writes(
             return {
                 "delegate": SubRutter(
                     DirectChildRutter,
-                    charter=lambda context: {"from": context.evolution_id},
+                    charter_constructor=lambda context: {"from": context.evolution_id},
                     choose_next=route,
                 ),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     class InjectedCrash(RuntimeError):
@@ -2336,10 +2336,10 @@ def test_call_charter_failure_faults_in_place_without_partial_child(
             return {
                 "delegate": SubRutter(
                     DirectChildRutter,
-                    charter=fail_charter,
+                    charter_constructor=fail_charter,
                     next_on_outcome="done",
                 ),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     root = tmp_path / "reckonings"
@@ -2399,7 +2399,7 @@ def test_prompt_child_materialization_failure_leaves_no_partial_attachment(
                     data=fail_data,
                     next_on_outcome="done",
                 ),
-                "done": Terminal(VoyageResult("child-complete", {})),
+                "done": Terminal(result=VoyageResult("child-complete", {})),
             }
 
     class CallingRutter(Rutter):
@@ -2411,10 +2411,10 @@ def test_prompt_child_materialization_failure_leaves_no_partial_attachment(
             return {
                 "delegate": SubRutter(
                     PromptChild,
-                    charter=lambda context: {"from": context.evolution_id},
+                    charter_constructor=lambda context: {"from": context.evolution_id},
                     next_on_outcome="done",
                 ),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     root = tmp_path / "reckonings"
@@ -2462,7 +2462,7 @@ def test_child_fault_retains_the_complete_active_parent_child_path(
                     response_schema=_response_schema("done"),
                     choose_next=fail_route,
                 ),
-                "done": Terminal(VoyageResult("child-complete", {})),
+                "done": Terminal(result=VoyageResult("child-complete", {})),
             }
 
     class CallingRutter(Rutter):
@@ -2474,10 +2474,10 @@ def test_child_fault_retains_the_complete_active_parent_child_path(
             return {
                 "delegate": SubRutter(
                     PromptChild,
-                    charter=lambda context: {"from": context.evolution_id},
+                    charter_constructor=lambda context: {"from": context.evolution_id},
                     next_on_outcome="done",
                 ),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     root = tmp_path / "reckonings"
@@ -2547,10 +2547,10 @@ def test_returned_child_record_survives_later_parent_routing_failure(
             return {
                 "delegate": SubRutter(
                     DirectChildRutter,
-                    charter=lambda context: {"from": context.evolution_id},
+                    charter_constructor=lambda context: {"from": context.evolution_id},
                     choose_next=fail_route,
                 ),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     root = tmp_path / "reckonings"
@@ -2604,10 +2604,10 @@ def test_dry_run_at_nested_terminal_does_not_return_or_route_the_child(
             return {
                 "delegate": SubRutter(
                     DirectChildRutter,
-                    charter=lambda context: {"from": context.evolution_id},
+                    charter_constructor=lambda context: {"from": context.evolution_id},
                     next_on_outcome="done",
                 ),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     root = tmp_path / "reckonings"

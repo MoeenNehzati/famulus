@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import KW_ONLY, dataclass
+from inspect import Parameter, signature
 from types import MappingProxyType
 from typing import Callable, Mapping, TypeAlias
 
@@ -80,6 +81,33 @@ def _routing_modes(
     return None, choose_next
 
 
+def _require_callback_arity(callback: object, arity: int, label: str) -> None:
+    if not callable(callback):
+        raise RutterDefinitionError(f"{label} must be callable")
+    try:
+        parameters = tuple(signature(callback).parameters.values())
+    except (TypeError, ValueError) as exc:
+        raise RutterDefinitionError(
+            f"{label} must have an inspectable signature"
+        ) from exc
+    if (
+        len(parameters) != arity
+        or any(
+            parameter.kind
+            not in {
+                Parameter.POSITIONAL_ONLY,
+                Parameter.POSITIONAL_OR_KEYWORD,
+            }
+            or parameter.default is not Parameter.empty
+            for parameter in parameters
+        )
+    ):
+        noun = "argument" if arity == 1 else "arguments"
+        raise RutterDefinitionError(
+            f"{label} must accept exactly {arity} {noun}"
+        )
+
+
 @dataclass(frozen=True, init=False)
 class LLMStep:
     text: str
@@ -145,15 +173,17 @@ class MachineStep:
 class SubRutter:
     child: type[Rutter]
     _: KW_ONLY
-    charter: Callable[[EvolutionContext], JsonObject]
+    charter_constructor: Callable[[EvolutionContext], JsonObject]
     next_on_outcome: str | Mapping[str, str] | None = None
     choose_next: Callable[..., str] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.child, type) or not issubclass(self.child, Rutter):
             raise RutterDefinitionError("SubRutter child must be a Rutter class")
-        if not callable(self.charter):
-            raise RutterDefinitionError("SubRutter charter must be callable")
+        if not callable(self.charter_constructor):
+            raise RutterDefinitionError(
+                "SubRutter charter_constructor must be callable"
+            )
         next_on_outcome, choose_next = _routing_modes(
             self.next_on_outcome, self.choose_next
         )
@@ -163,11 +193,21 @@ class SubRutter:
 
 @dataclass(frozen=True)
 class Terminal:
-    result: VoyageResult | Callable[[EvolutionContext], VoyageResult]
+    _: KW_ONLY
+    result: VoyageResult | None = None
+    result_constructor: Callable[[EvolutionContext], VoyageResult] | None = None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.result, VoyageResult) and not callable(self.result):
-            raise RutterDefinitionError("Terminal result must be a VoyageResult or callable")
+        if (self.result is None) == (self.result_constructor is None):
+            raise RutterDefinitionError("Terminal requires exactly one result mode")
+        if self.result is not None and not isinstance(self.result, VoyageResult):
+            raise RutterDefinitionError("Terminal result must be a VoyageResult")
+        if self.result_constructor is not None:
+            _require_callback_arity(
+                self.result_constructor,
+                1,
+                "Terminal result_constructor",
+            )
 
 
 Evolution: TypeAlias = LLMStep | MachineStep | SubRutter | Terminal
@@ -225,11 +265,14 @@ class MachineContext:
 @dataclass(frozen=True)
 class TransitionContext:
     evolution: EvolutionContext
-    transition: JsonObject
+    transition: Transition
     record: HistoryEntry
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "transition", _freeze_object(self.transition, "transition"))
+        if type(self.transition) is not Transition:
+            raise RutterDefinitionError(
+                "TransitionContext transition must be a Transition"
+            )
         if not isinstance(self.record, (Turn, MachineRecord, SubRutterRecord, TerminalRecord)):
             raise RutterDefinitionError("TransitionContext record must be a history entry")
 
@@ -262,11 +305,17 @@ class TransitionMatch:
 
 @dataclass(frozen=True)
 class TransitionHook:
+    """A matching hook whose constructor also selects the child.
+
+    ``None`` declines selection; a JSON object constructs the selected child's
+    Charter.
+    """
+
     id: str
     _: KW_ONLY
     on: TransitionMatch
     child: type[Rutter]
-    charter: Callable[[TransitionContext], JsonObject | None]
+    charter_constructor: Callable[[TransitionContext], JsonObject | None]
 
     def __post_init__(self) -> None:
         _require_id(self.id, "TransitionHook", RutterDefinitionError)
@@ -274,8 +323,10 @@ class TransitionHook:
             raise RutterDefinitionError("TransitionHook on must be a TransitionMatch")
         if not isinstance(self.child, type) or not issubclass(self.child, Rutter):
             raise RutterDefinitionError("TransitionHook child must be a Rutter class")
-        if not callable(self.charter):
-            raise RutterDefinitionError("TransitionHook charter must be callable")
+        if not callable(self.charter_constructor):
+            raise RutterDefinitionError(
+                "TransitionHook charter_constructor must be callable"
+            )
 
 
 def after(source: str) -> TransitionMatch:

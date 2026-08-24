@@ -85,10 +85,10 @@ def _show(voyage: object) -> dict[str, object]:
             "condition": evolution.condition,
         },
         "instruction": _instruction(status.instruction),
-        "active_result": (
+        "terminal_result": (
             None
-            if status.active_result is None
-            else _plain_json(status.active_result.to_json())
+            if status.terminal_result is None
+            else _plain_json(status.terminal_result.to_json())
         ),
         "fault": (
             None

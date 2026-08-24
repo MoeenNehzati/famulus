@@ -112,7 +112,7 @@ def build_subrutter_charter(
     step: SubRutter,
 ) -> JsonObject:
     try:
-        authored = step.charter(context)
+        authored = step.charter_constructor(context)
         return _freeze_object(authored, "SubRutter charter")
     except Exception as exc:
         raise _RutterFault("child-charter") from exc
@@ -140,7 +140,7 @@ def select_transition_hooks(
         if not matches:
             continue
         try:
-            authored = hook.charter(context)
+            authored = hook.charter_constructor(context)
             if authored is not None:
                 selected.append((hook, Charter(authored)))
         except Exception as exc:
@@ -155,10 +155,11 @@ def build_terminal_result(
     context: EvolutionContext,
     terminal: Terminal,
 ) -> VoyageResult:
-    if isinstance(terminal.result, VoyageResult):
+    if terminal.result is not None:
         return terminal.result
+    assert terminal.result_constructor is not None
     try:
-        result = terminal.result(context)
+        result = terminal.result_constructor(context)
     except Exception as exc:
         raise _RutterFault("done-projection") from exc
     if not isinstance(result, VoyageResult):

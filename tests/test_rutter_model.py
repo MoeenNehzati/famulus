@@ -27,6 +27,7 @@ from officina.rutter.model import (
     CompletedRun,
     Terminal,
     TerminalRecord,
+    Transition,
     TransitionContext,
     EnteredEvolution,
     HistoryView,
@@ -553,12 +554,12 @@ def test_llm_step_snapshots_none_empty_and_shaped_response_schemas() -> None:
         (
             lambda: SubRutter(
                 ExampleRutter,
-                charter=lambda context: {},
+                charter_constructor=lambda context: {},
                 next_on_outcome="done",
             ),
             lambda: SubRutter(
                 ExampleRutter,
-                charter=lambda context: {},
+                charter_constructor=lambda context: {},
                 choose_next=lambda context, result: "done",
             ),
         ),
@@ -593,10 +594,10 @@ def test_evolution_constructors_separate_static_and_callback_routing(
             next_on_outcome="done",
             choose_next=lambda context, result: "done",
         ),
-        lambda: SubRutter(ExampleRutter, charter=lambda context: {}),
+        lambda: SubRutter(ExampleRutter, charter_constructor=lambda context: {}),
         lambda: SubRutter(
             ExampleRutter,
-            charter=lambda context: {},
+            charter_constructor=lambda context: {},
             next_on_outcome="done",
             choose_next=lambda context, result: "done",
         ),
@@ -607,11 +608,46 @@ def test_evolution_constructors_require_exactly_one_routing_mode(construct) -> N
         construct()
 
 
+def test_terminal_construction_names_fixed_and_contextual_result_modes() -> None:
+    result = VoyageResult("completed", {"artifact": "draft.md"})
+
+    fixed = Terminal(result=result)
+    contextual = Terminal(result_constructor=lambda context: result)
+
+    assert fixed.result is result
+    assert fixed.result_constructor is None
+    assert contextual.result is None
+    assert contextual.result_constructor is not None
+    with pytest.raises(RutterDefinitionError, match="exactly one"):
+        Terminal()
+    with pytest.raises(RutterDefinitionError, match="exactly one"):
+        Terminal(result=result, result_constructor=lambda context: result)
+    with pytest.raises(RutterDefinitionError, match="exactly 1 argument"):
+        Terminal(result_constructor=lambda: result)
+    with pytest.raises(TypeError):
+        Terminal(result)
+
+
+def test_child_definitions_name_only_their_charter_constructors() -> None:
+    call = SubRutter(
+        ExampleRutter,
+        charter_constructor=lambda context: {"artifact": "draft.md"},
+        next_on_outcome="done",
+    )
+
+    assert callable(call.charter_constructor)
+    assert not hasattr(call, "charter")
+
+
 def test_definition_values_keep_callbacks_in_process_only() -> None:
     prompt = ExampleRutter().define_evolutions()["report"]
     action = MachineStep(lambda context: MachineResult("ok", {}), mode="pure", next_on_outcome="done")
-    call = SubRutter(ExampleRutter, charter=lambda context: {}, next_on_outcome="done")
-    done = Terminal(VoyageResult("completed", {}))
+    call = SubRutter(
+        ExampleRutter,
+        charter_constructor=lambda context: {},
+        next_on_outcome="done",
+    )
+    done = Terminal(result=VoyageResult("completed", {}))
 
     def execute_action() -> MachineResult:
         return MachineResult("ok", {})
@@ -816,6 +852,51 @@ def test_fault_values_freeze_opaque_wire_and_export_only_safe_summary() -> None:
         Reckoning(3, 0, root, {}, None, opaque).to_json()
 
 
+@pytest.mark.parametrize(
+    "construct",
+    (
+        lambda: model_module.FaultSummary("", "review", "entry-review", None, ()),
+        lambda: model_module.FaultSummary(
+            "bad category", "review", "entry-review", None, ()
+        ),
+        lambda: model_module.FaultSummary("routing", "bad id", "entry-review", None, ()),
+        lambda: model_module.FaultSummary("routing", "review", "bad id", None, ()),
+        lambda: model_module.FaultSummary(
+            "routing", "review", "entry-review", "bad id", ()
+        ),
+        lambda: model_module.FaultSummary(
+            "routing", "review", "entry-review", None, ("bad id",)
+        ),
+        lambda: model_module.FaultSummary(
+            "routing", "review", "entry-review", None, "hook-1"
+        ),
+        lambda: model_module.FaultSummary(
+            "routing", "review", "entry-review", None, b"hook-1"
+        ),
+        lambda: model_module.FaultSummary(
+            "routing", "review", "entry-review", None, ["hook-1", "bad id"]
+        ),
+        lambda: model_module.FaultSummary("routing", "review", None, None, ()),
+        lambda: model_module.FaultSummary("routing", None, "entry-review", None, ()),
+        lambda: model_module.FaultSummary("routing", None, None, None, ()),
+        lambda: model_module.FaultSummary("opaque", "review", "entry-review", None, ()),
+        lambda: model_module.FaultSummary("opaque", None, None, "review", ()),
+        lambda: model_module.FaultSummary("opaque", None, None, None, ("hook-1",)),
+    ),
+)
+def test_fault_summary_rejects_malformed_public_coordinates(construct) -> None:
+    with pytest.raises(RutterDefinitionError):
+        construct()
+
+
+def test_fault_summary_freezes_and_validates_hook_id_iterables() -> None:
+    summary = model_module.FaultSummary(
+        "routing", "review", "entry-review", None, ["hook-1"]
+    )
+
+    assert summary.transition_hook_ids == ("hook-1",)
+
+
 def test_json_views_are_independent_and_deeply_immutable() -> None:
     source = {"items": ["A"], "nested": {"ok": True}}
     charter = Charter(source)
@@ -951,15 +1032,47 @@ def test_contexts_are_frozen_and_share_immutable_history() -> None:
     state = EvolutionContext(Charter({"artifact": "draft.md"}), "report", "entry-report", history)
     answer = LLMResponseContext(state, example_message(), {"outcome": "reported"})
     action = MachineContext(state, "save")
+    transition = Transition(
+        "transition-1",
+        "entry-report",
+        "report",
+        "reported",
+        "complete",
+    )
     edge = TransitionContext(
         state,
-        {"transition_id": "transition-1"},
+        transition,
         _accepted_turn(),
     )
 
     assert answer.evolution is state
     assert action.evolution is state
     assert edge.evolution.history.entries() == (_accepted_turn(),)
+    assert edge.transition is transition
+    assert (
+        edge.transition.source,
+        edge.transition.outcome,
+        edge.transition.target,
+        edge.transition.transition_id,
+    ) == ("report", "reported", "complete", "transition-1")
+    with pytest.raises(RutterDefinitionError, match="Transition"):
+        TransitionContext(state, transition.to_json(), _accepted_turn())
+
+    class DerivedTransition(Transition):
+        pass
+
+    with pytest.raises(RutterDefinitionError, match="Transition"):
+        TransitionContext(
+            state,
+            DerivedTransition(
+                "transition-2",
+                "entry-report",
+                "report",
+                "reported",
+                "complete",
+            ),
+            _accepted_turn(),
+        )
     with pytest.raises(FrozenInstanceError):
         state.evolution_id = "other"
 
@@ -1041,6 +1154,10 @@ def test_turn_v3_adapter_injects_revision_and_round_trips_response_schema(
 
     wire = turn.to_json()
 
+    assert message.text == "Report."
+    assert message.response_schema == response_schema
+    assert message.payload == {"chunk": "A"}
+    assert message.evolution_id == "report"
     assert message.evolution_entry_id == "entry-report"
     assert not hasattr(message, "revision")
     assert "revision" not in message.data["evolution"]

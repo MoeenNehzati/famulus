@@ -276,6 +276,32 @@ class Message:
         return _object_json(instructions=self.instructions, data=self.data)
 
     @property
+    def text(self) -> str:
+        text = self.instructions["text"]
+        assert isinstance(text, str)
+        return text
+
+    @property
+    def response_schema(self) -> JsonObject | None:
+        response_schema = self.instructions.get("response_schema")
+        assert response_schema is None or isinstance(response_schema, Mapping)
+        return response_schema
+
+    @property
+    def payload(self) -> JsonObject:
+        payload = self.data["payload"]
+        assert isinstance(payload, Mapping)
+        return payload
+
+    @property
+    def evolution_id(self) -> str:
+        evolution = self.data["evolution"]
+        assert isinstance(evolution, Mapping)
+        evolution_id = evolution["id"]
+        assert isinstance(evolution_id, str)
+        return evolution_id
+
+    @property
     def evolution_entry_id(self) -> str:
         evolution = self.data["evolution"]
         assert isinstance(evolution, Mapping)
@@ -316,11 +342,45 @@ class FaultSummary:
     transition_hook_ids: tuple[str, ...]
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self,
-            "transition_hook_ids",
-            tuple(self.transition_hook_ids),
-        )
+        _require_id(self.category, "fault category", RutterDefinitionError)
+        for value, label in (
+            (self.evolution_id, "fault evolution"),
+            (self.evolution_entry_id, "fault evolution entry"),
+            (self.target_evolution_id, "fault target evolution"),
+        ):
+            if value is not None:
+                _require_id(value, label, RutterDefinitionError)
+        if isinstance(self.transition_hook_ids, (str, bytes)):
+            raise RutterDefinitionError(
+                "FaultSummary transition_hook_ids must be an iterable of hook IDs"
+            )
+        try:
+            transition_hook_ids = tuple(self.transition_hook_ids)
+        except TypeError as exc:
+            raise RutterDefinitionError(
+                "FaultSummary transition_hook_ids must be an iterable of hook IDs"
+            ) from exc
+        for hook_id in transition_hook_ids:
+            _require_id(hook_id, "transition hook", RutterDefinitionError)
+        object.__setattr__(self, "transition_hook_ids", transition_hook_ids)
+        if (self.evolution_id is None) != (self.evolution_entry_id is None):
+            raise RutterDefinitionError(
+                "FaultSummary evolution coordinates must be present together"
+            )
+        if self.category == "opaque":
+            if (
+                self.evolution_id is not None
+                or self.evolution_entry_id is not None
+                or self.target_evolution_id is not None
+                or transition_hook_ids
+            ):
+                raise RutterDefinitionError(
+                    "opaque FaultSummary must not expose IDs"
+                )
+        elif self.evolution_id is None:
+            raise RutterDefinitionError(
+                "non-opaque FaultSummary requires evolution coordinates"
+            )
 
 
 @dataclass(frozen=True)
@@ -381,7 +441,7 @@ class EvolutionView:
 class VoyageStatus:
     current_evolution: EvolutionView
     instruction: Message | MachineInstruction | None
-    active_result: VoyageResult | None
+    terminal_result: VoyageResult | None
     fault: FaultSummary | None
 
     def __post_init__(self) -> None:
@@ -395,11 +455,11 @@ class VoyageStatus:
             raise RutterDefinitionError(
                 "VoyageStatus instruction must be a Message, MachineInstruction, or null"
             )
-        if self.active_result is not None and not isinstance(
-            self.active_result, VoyageResult
+        if self.terminal_result is not None and not isinstance(
+            self.terminal_result, VoyageResult
         ):
             raise RutterDefinitionError(
-                "VoyageStatus active_result must be a VoyageResult or null"
+                "VoyageStatus terminal_result must be a VoyageResult or null"
             )
         if self.fault is not None and not isinstance(self.fault, FaultSummary):
             raise RutterDefinitionError(

@@ -404,9 +404,11 @@ class DiagnoseAnswer(Rutter):
                 assess_response=self._validate_detail,
                 next_on_outcome="complete-different",
             ),
-            "complete-equal-evaluator": Terminal(self._equal_evaluator),
-            "complete-equal-llm": Terminal(self._equal_llm),
-            "complete-different": Terminal(self._different),
+            "complete-equal-evaluator": Terminal(
+                result_constructor=self._equal_evaluator
+            ),
+            "complete-equal-llm": Terminal(result_constructor=self._equal_llm),
+            "complete-different": Terminal(result_constructor=self._different),
         }
 
 
@@ -489,10 +491,10 @@ class AskAndDiagnose(Rutter):
             ),
             "diagnose": SubRutter(
                 DiagnoseAnswer,
-                charter=self._diagnosis_charter,
+                charter_constructor=self._diagnosis_charter,
                 next_on_outcome="complete",
             ),
-            "complete": Terminal(self._forward_result),
+            "complete": Terminal(result_constructor=self._forward_result),
         }
 
 
@@ -546,7 +548,12 @@ def diagnose_answer_on(
             ask_for_fix=ask_for_fix,
         ).to_json()
 
-    return TransitionHook(id, on=on, child=DiagnoseAnswer, charter=build)
+    return TransitionHook(
+        id,
+        on=on,
+        child=DiagnoseAnswer,
+        charter_constructor=build,
+    )
 
 
 def ask_and_diagnose_on(
@@ -579,7 +586,7 @@ def ask_and_diagnose_on(
             )
         return resolved.to_json()
 
-    return TransitionHook(id, on=on, child=child, charter=build)
+    return TransitionHook(id, on=on, child=child, charter_constructor=build)
 
 
 def hook_sequence_after(
@@ -588,7 +595,9 @@ def hook_sequence_after(
     after_evolutions: Collection[str],
     items: Sequence[JsonObject],
     child: type[Rutter],
-    charter: Callable[[JsonObject, TransitionContext], JsonObject] | None = None,
+    charter_constructor: (
+        Callable[[JsonObject, TransitionContext], JsonObject] | None
+    ) = None,
 ) -> TransitionHook:
     _require_id(id, "TransitionHook")
     if isinstance(after_evolutions, (str, bytes)) or not isinstance(
@@ -610,11 +619,15 @@ def hook_sequence_after(
         raise RutterDefinitionError("items must not be empty")
     if not isinstance(child, type) or not issubclass(child, Rutter):
         raise RutterDefinitionError("sequence child must be a Rutter class")
-    if charter is not None:
-        _require_callable_arity(charter, 2, "sequence Charter builder")
+    if charter_constructor is not None:
+        _require_callable_arity(
+            charter_constructor,
+            2,
+            "sequence Charter constructor",
+        )
 
     def build(context: TransitionContext) -> JsonObject | None:
-        source = context.transition.get("source")
+        source = context.transition.source
         if source not in frozen_evolutions:
             return None
         attached = context.evolution.history.subrutters(transition_hook_id=id)
@@ -631,14 +644,19 @@ def hook_sequence_after(
         if index == len(frozen_items):
             return None
         selected = frozen_items[index]
-        if charter is None:
+        if charter_constructor is None:
             return _freeze_object(selected, "sequence Charter")
         return _freeze_object(
-            charter(selected, context),
+            charter_constructor(selected, context),
             "sequence Charter",
         )
 
-    return TransitionHook(id, on=TransitionMatch(), child=child, charter=build)
+    return TransitionHook(
+        id,
+        on=TransitionMatch(),
+        child=child,
+        charter_constructor=build,
+    )
 
 
 __all__ = (

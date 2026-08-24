@@ -18,7 +18,7 @@ class HookChild(rutter_public.Rutter):
     initial_evolution_id = "done"
 
     def define_evolutions(self) -> dict[str, object]:
-        return {"done": rutter_public.Terminal(rutter_public.VoyageResult("checked", {}))}
+        return {"done": rutter_public.Terminal(result=rutter_public.VoyageResult("checked", {}))}
 
 
 def test_edge_match_constructors_cover_wildcard_and_exact_edges() -> None:
@@ -54,12 +54,14 @@ def test_case_maker_constructor_freezes_one_validated_hook_definition() -> None:
         "review-check",
         on=rutter_public.after("review"),
         child=HookChild,
-        charter=lambda context: {"source": context.evolution.evolution_id},
+        charter_constructor=lambda context: {"source": context.evolution.evolution_id},
     )
 
     assert maker.id == "review-check"
     assert maker.on == rutter_public.TransitionMatch(source="review")
     assert maker.child is HookChild
+    assert callable(maker.charter_constructor)
+    assert not hasattr(maker, "charter")
     with pytest.raises(FrozenInstanceError):
         maker.id = "other"
     with pytest.raises(rutter_public.RutterDefinitionError):
@@ -67,7 +69,7 @@ def test_case_maker_constructor_freezes_one_validated_hook_definition() -> None:
             "bad id",
             on=rutter_public.after("review"),
             child=HookChild,
-            charter=lambda context: {},
+            charter_constructor=lambda context: {},
         )
 
 
@@ -176,11 +178,10 @@ def test_every_matcher_reuses_its_record_anchored_context_and_provenance(
                 ),
                 "invoke": rutter_public.SubRutter(
                     HookChild,
-                    charter=lambda context: {"kind": "explicit"},
+                    charter_constructor=lambda context: {"kind": "explicit"},
                     next_on_outcome="done",
                 ),
-                "done": rutter_public.Terminal(
-                    rutter_public.VoyageResult("finished", {"ok": True})
+                "done": rutter_public.Terminal(result=rutter_public.VoyageResult("finished", {"ok": True})
                 ),
             }
 
@@ -190,13 +191,13 @@ def test_every_matcher_reuses_its_record_anchored_context_and_provenance(
                     "after-review",
                     on=rutter_public.after("review"),
                     child=HookChild,
-                    charter=remember("after-review"),
+                    charter_constructor=remember("after-review"),
                 ),
                 rutter_public.TransitionHook(
                     "before-invoke",
                     on=rutter_public.before("invoke"),
                     child=HookChild,
-                    charter=remember("before-invoke"),
+                    charter_constructor=remember("before-invoke"),
                 ),
                 rutter_public.TransitionHook(
                     "exact-review",
@@ -204,19 +205,19 @@ def test_every_matcher_reuses_its_record_anchored_context_and_provenance(
                         source="review", outcome="approved", target="invoke"
                     ),
                     child=HookChild,
-                    charter=remember("exact-review"),
+                    charter_constructor=remember("exact-review"),
                 ),
                 rutter_public.TransitionHook(
                     "post-call",
                     on=rutter_public.after("invoke"),
                     child=HookChild,
-                    charter=remember("post-call"),
+                    charter_constructor=remember("post-call"),
                 ),
                 rutter_public.TransitionHook(
                     "post-done",
                     on=rutter_public.after("done"),
                     child=HookChild,
-                    charter=remember("post-done"),
+                    charter_constructor=remember("post-done"),
                 ),
             )
 
@@ -265,7 +266,7 @@ def test_every_matcher_reuses_its_record_anchored_context_and_provenance(
             for context in seen[call.transition_hook_id]
         )
         assert all(
-            context.transition["transition_id"] == call.attached_to_transition_id
+            context.transition.transition_id == call.attached_to_transition_id
             for context in seen[call.transition_hook_id]
         )
 
@@ -298,7 +299,7 @@ def test_multiple_selection_faults_with_every_maker_before_child_allocation(
                     mode="pure",
                     next_on_outcome="done",
                 ),
-                "done": rutter_public.Terminal(rutter_public.VoyageResult("finished", {})),
+                "done": rutter_public.Terminal(result=rutter_public.VoyageResult("finished", {})),
             }
 
         def define_transition_hooks(self) -> tuple[object, ...]:
@@ -307,19 +308,19 @@ def test_multiple_selection_faults_with_every_maker_before_child_allocation(
                     "declined",
                     on=rutter_public.after("review"),
                     child=HookChild,
-                    charter=choose("declined", None),
+                    charter_constructor=choose("declined", None),
                 ),
                 rutter_public.TransitionHook(
                     "first",
                     on=rutter_public.after("review"),
                     child=HookChild,
-                    charter=choose("first", {"case": "first"}),
+                    charter_constructor=choose("first", {"case": "first"}),
                 ),
                 rutter_public.TransitionHook(
                     "second",
                     on=rutter_public.after("review"),
                     child=HookChild,
-                    charter=choose("second", {"case": "second"}),
+                    charter_constructor=choose("second", {"case": "second"}),
                 ),
             )
 
@@ -387,7 +388,7 @@ def test_case_callback_failure_preserves_accepted_source_as_stable_fault(
                     mode="pure",
                     next_on_outcome="done",
                 ),
-                "done": rutter_public.Terminal(rutter_public.VoyageResult("finished", {})),
+                "done": rutter_public.Terminal(result=rutter_public.VoyageResult("finished", {})),
             }
 
         def define_transition_hooks(self) -> tuple[object, ...]:
@@ -396,7 +397,7 @@ def test_case_callback_failure_preserves_accepted_source_as_stable_fault(
                     "failing-case",
                     on=rutter_public.after("review"),
                     child=HookChild,
-                    charter=charter,
+                    charter_constructor=charter,
                 ),
             )
 
@@ -435,6 +436,19 @@ def test_prompt_attachment_reopens_after_attach_settle_and_return_boundaries(
 ) -> None:
     """A returned hook must remain resumable without replaying the accepted LLMStep."""
 
+    seen: list[Transition] = []
+
+    def child_charter(
+        context: rutter_public.TransitionContext,
+    ) -> dict[str, object]:
+        seen.append(context.transition)
+        return {
+            "source": context.transition.source,
+            "outcome": context.transition.outcome,
+            "target": context.transition.target,
+            "transition_id": context.transition.transition_id,
+        }
+
     class PromptHookParent(rutter_public.Rutter):
         rutter_id = "prompt-hook-parent"
         definition_version = 1
@@ -447,8 +461,7 @@ def test_prompt_attachment_reopens_after_attach_settle_and_return_boundaries(
                     response_schema=_response_schema("approved"),
                     next_on_outcome="publish",
                 ),
-                "publish": rutter_public.Terminal(
-                    rutter_public.VoyageResult("finished", {})
+                "publish": rutter_public.Terminal(result=rutter_public.VoyageResult("finished", {})
                 ),
             }
 
@@ -458,7 +471,7 @@ def test_prompt_attachment_reopens_after_attach_settle_and_return_boundaries(
                     "prompt-check",
                     on=rutter_public.after("review"),
                     child=HookChild,
-                    charter=lambda context: {"source": context.transition["source"]},
+                    charter_constructor=child_charter,
                 ),
             )
 
@@ -474,6 +487,24 @@ def test_prompt_attachment_reopens_after_attach_settle_and_return_boundaries(
         continue_=False,
     )
     assert attached_child.rutter_id == HookChild.rutter_id
+    assert len(seen) == 1
+    assert isinstance(seen[0], Transition)
+    assert (
+        seen[0].source,
+        seen[0].outcome,
+        seen[0].target,
+        seen[0].transition_id,
+    ) == ("review", "approved", "publish", seen[0].transition_id)
+    active_child = voyage._store.read().root.active_child
+    assert active_child is not None
+    assert active_child.run.charter == rutter_public.Charter(
+        {
+            "source": "review",
+            "outcome": "approved",
+            "target": "publish",
+            "transition_id": seen[0].transition_id,
+        }
+    )
     reopened = registry.open(path)
     settled_child = reopened.advance(continue_=False)
     assert settled_child.condition == "terminal"
@@ -546,8 +577,7 @@ def test_pure_action_attachment_return_does_not_offer_or_replay_action(
                     mode="pure",
                     next_on_outcome="publish",
                 ),
-                "publish": rutter_public.Terminal(
-                    rutter_public.VoyageResult("finished", {})
+                "publish": rutter_public.Terminal(result=rutter_public.VoyageResult("finished", {})
                 ),
             }
 
@@ -557,7 +587,9 @@ def test_pure_action_attachment_return_does_not_offer_or_replay_action(
                     "action-check",
                     on=rutter_public.after("review"),
                     child=HookChild,
-                    charter=lambda context: {"source": context.transition["source"]},
+                    charter_constructor=lambda context: {
+                        "source": context.transition.source
+                    },
                 ),
             )
 

@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 import officina.rutter as rutter
-from officina.rutter.history import CompletedRun, SubRutterRecord
+from officina.rutter.history import CompletedRun, SubRutterRecord, Transition
 from test_support.rutter_fixtures import response_schema as _response_schema
 
 
@@ -18,7 +18,7 @@ class SequenceChild(rutter.Rutter):
     initial_evolution_id = "done"
 
     def define_evolutions(self) -> dict[str, object]:
-        return {"done": rutter.Terminal(rutter.VoyageResult("checked", {}))}
+        return {"done": rutter.Terminal(result=rutter.VoyageResult("checked", {}))}
 
 
 def _question() -> object:
@@ -73,13 +73,13 @@ def _edge_context(
             "entry-answer",
             rutter.HistoryView(()) if history is None else history,
         ),
-        {
-            "transition_id": turn.record_id,
-            "source_entry_id": turn.evolution_entry_id,
-            "source": source,
-            "outcome": outcome,
-            "target": target,
-        },
+        Transition(
+            turn.record_id,
+            turn.evolution_entry_id,
+            source,
+            outcome,
+            target,
+        ),
         turn,
     )
 
@@ -891,7 +891,7 @@ def test_diagnose_answer_on_seals_extracted_answer_and_exact_evaluator_verdict()
     assert maker.id == "answer-check"
     assert maker.on == rutter.after("answer")
     assert maker.child is rutter.DiagnoseAnswer
-    assert maker.charter(context) == rutter.DiagnosisCase(
+    assert maker.charter_constructor(context) == rutter.DiagnosisCase(
         _question(), "2", True, ask_for_fix=True
     ).to_json()
     assert seen == [context]
@@ -925,7 +925,7 @@ def test_ask_and_diagnose_on_resolves_question_into_explicit_child_charter() -> 
 
     assert maker.id == "fresh-check"
     assert maker.child is HookAsk
-    assert maker.charter(context) == _question().to_json()
+    assert maker.charter_constructor(context) == _question().to_json()
     assert seen == [context]
 
 
@@ -947,10 +947,10 @@ def test_hook_sequence_after_snapshots_configuration_and_filters_source_state() 
     assert maker.id == "progressive-checks"
     assert maker.on == rutter.TransitionMatch()
     assert maker.child is SequenceChild
-    assert maker.charter(_edge_context(source="answer")) == {"step": (1,)}
-    assert maker.charter(_edge_context(source="other")) is None
+    assert maker.charter_constructor(_edge_context(source="answer")) == {"step": (1,)}
+    assert maker.charter_constructor(_edge_context(source="other")) is None
     with pytest.raises(TypeError):
-        maker.charter(_edge_context(source="answer"))["step"] += (2,)
+        maker.charter_constructor(_edge_context(source="answer"))["step"] += (2,)
 
 
 def test_hook_sequence_after_derives_position_exhaustion_and_overrun_from_attached_calls() -> None:
@@ -963,17 +963,17 @@ def test_hook_sequence_after_derives_position_exhaustion_and_overrun_from_attach
         child=SequenceChild,
     )
 
-    assert maker.charter(
+    assert maker.charter_constructor(
         _edge_context(history=_sequence_history(1))
     ) == {"step": 2}
-    assert maker.charter(
+    assert maker.charter_constructor(
         _edge_context(history=_sequence_history(0, include_explicit_collision=True))
     ) == {"step": 1}
-    assert maker.charter(_edge_context(history=_sequence_history(2))) is None
+    assert maker.charter_constructor(_edge_context(history=_sequence_history(2))) is None
     with pytest.raises(
         rutter.RutterStateError, match="history-inconsistency"
     ) as overrun:
-        maker.charter(_edge_context(history=_sequence_history(3)))
+        maker.charter_constructor(_edge_context(history=_sequence_history(3)))
     assert overrun.value.category == "history-inconsistency"
 
 
@@ -990,7 +990,7 @@ def test_hook_sequence_after_rejects_duplicate_maker_edge_history() -> None:
     with pytest.raises(
         rutter.RutterStateError, match="history-inconsistency"
     ) as duplicate:
-        maker.charter(
+        maker.charter_constructor(
             _edge_context(history=_sequence_history(2, duplicate_edge=True))
         )
     assert duplicate.value.category == "history-inconsistency"
@@ -1003,7 +1003,7 @@ def test_hook_sequence_after_custom_builder_receives_frozen_item_and_rejects_mal
 
     def build(item: object, context: rutter.TransitionContext) -> object:
         seen.append((item, context))
-        return {"selected": item, "edge": context.transition["transition_id"]}
+        return {"selected": item, "edge": context.transition.transition_id}
 
     context = _edge_context(source="answer")
     maker = rutter.hook_sequence_after(
@@ -1011,10 +1011,10 @@ def test_hook_sequence_after_custom_builder_receives_frozen_item_and_rejects_mal
         after_evolutions={"answer"},
         items=({"step": [1]},),
         child=SequenceChild,
-        charter=build,
+        charter_constructor=build,
     )
 
-    assert maker.charter(context) == {
+    assert maker.charter_constructor(context) == {
         "selected": {"step": (1,)},
         "edge": "edge-answer",
     }
@@ -1027,10 +1027,10 @@ def test_hook_sequence_after_custom_builder_receives_frozen_item_and_rejects_mal
         after_evolutions={"answer"},
         items=({},),
         child=SequenceChild,
-        charter=lambda item, edge: {"unsupported": object()},
+        charter_constructor=lambda item, edge: {"unsupported": object()},
     )
     with pytest.raises(rutter.RutterDefinitionError, match="finite JSON"):
-        malformed.charter(context)
+        malformed.charter_constructor(context)
 
 
 def test_non_diagnostic_sequence_advances_once_per_completed_attachment_across_reopen(
@@ -1062,7 +1062,7 @@ def test_non_diagnostic_sequence_advances_once_per_completed_attachment_across_r
                     mode="pure",
                     next_on_outcome="complete",
                 ),
-                "complete": rutter.Terminal(rutter.VoyageResult("finished", {})),
+                "complete": rutter.Terminal(result=rutter.VoyageResult("finished", {})),
             }
 
         def define_transition_hooks(self) -> tuple[object, ...]:
@@ -1138,7 +1138,7 @@ def test_fresh_question_sequence_uses_application_evaluator_subclass(
                     mode="pure",
                     next_on_outcome="complete",
                 ),
-                "complete": rutter.Terminal(rutter.VoyageResult("finished", {})),
+                "complete": rutter.Terminal(result=rutter.VoyageResult("finished", {})),
             }
 
         def define_transition_hooks(self) -> tuple[object, ...]:
@@ -1211,7 +1211,7 @@ def test_diagnose_answer_on_failure_preserves_accepted_source_turn(
                     response_schema=_response_schema("answered"),
                     next_on_outcome="complete",
                 ),
-                "complete": rutter.Terminal(rutter.VoyageResult("finished", {})),
+                "complete": rutter.Terminal(result=rutter.VoyageResult("finished", {})),
             }
 
         def define_transition_hooks(self) -> tuple[object, ...]:

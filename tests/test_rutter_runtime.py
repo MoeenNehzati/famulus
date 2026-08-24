@@ -74,7 +74,7 @@ def _definition(
 
 
 def _done_states() -> Mapping[str, object]:
-    return {"start": Terminal(VoyageResult("complete", {}))}
+    return {"start": Terminal(result=VoyageResult("complete", {}))}
 
 
 def _prompt_message(
@@ -141,7 +141,7 @@ class _DuplicateStateMapping(Mapping[str, object]):
     def __getitem__(self, key: str) -> object:
         if key != "start":
             raise KeyError(key)
-        return Terminal(VoyageResult("complete", {}))
+        return Terminal(result=VoyageResult("complete", {}))
 
     def __iter__(self) -> Iterator[str]:
         return iter(("start", "start"))
@@ -180,7 +180,7 @@ def test_binding_rejects_duplicate_case_maker_ids(reckoning_root: Path) -> None:
                 response_schema=_response_schema("yes", "no"),
                 next_on_outcome={"yes": "complete"},
             ),
-            "complete": Terminal(VoyageResult("complete", {})),
+            "complete": Terminal(result=VoyageResult("complete", {})),
         },
         {
             "start": LLMStep(
@@ -188,7 +188,7 @@ def test_binding_rejects_duplicate_case_maker_ids(reckoning_root: Path) -> None:
                 response_schema=_response_schema("yes"),
                 next_on_outcome={"yes": "complete", "unknown": "complete"},
             ),
-            "complete": Terminal(VoyageResult("complete", {})),
+            "complete": Terminal(result=VoyageResult("complete", {})),
         },
     ),
 )
@@ -219,7 +219,7 @@ def test_binding_does_not_compare_prompt_routes_with_schema_outcomes(
         {
             "start": SubRutter(
                 DirectChildRutter,
-                charter=child_charter,
+                charter_constructor=child_charter,
                 next_on_outcome="absent",
             )
         },
@@ -244,7 +244,7 @@ def test_binding_rejects_undeclared_literal_successors(
                     data=lambda: {},
                     next_on_outcome="complete",
                 ),
-                "complete": Terminal(VoyageResult("complete", {})),
+                "complete": Terminal(result=VoyageResult("complete", {})),
             },
             "LLMStep data",
         ),
@@ -256,7 +256,7 @@ def test_binding_rejects_undeclared_literal_successors(
                     assess_response=lambda one, two: None,
                     next_on_outcome="complete",
                 ),
-                "complete": Terminal(VoyageResult("complete", {})),
+                "complete": Terminal(result=VoyageResult("complete", {})),
             },
             "LLMStep assess_response",
         ),
@@ -267,7 +267,7 @@ def test_binding_rejects_undeclared_literal_successors(
                     mode="pure",
                     next_on_outcome="complete",
                 ),
-                "complete": Terminal(VoyageResult("complete", {})),
+                "complete": Terminal(result=VoyageResult("complete", {})),
             },
             "MachineStep run",
         ),
@@ -275,16 +275,12 @@ def test_binding_rejects_undeclared_literal_successors(
             {
                 "start": SubRutter(
                     DirectChildRutter,
-                    charter=lambda: {},
+                    charter_constructor=lambda: {},
                     next_on_outcome="complete",
                 ),
-                "complete": Terminal(VoyageResult("complete", {})),
+                "complete": Terminal(result=VoyageResult("complete", {})),
             },
             "SubRutter charter",
-        ),
-        (
-            {"start": Terminal(lambda: VoyageResult("complete", {}))},
-            "Terminal result",
         ),
     ),
 )
@@ -348,9 +344,17 @@ def test_binding_rejects_child_identity_conflicts(reckoning_root: Path) -> None:
         pass
 
     states = {
-        "first": SubRutter(First, charter=child_charter, next_on_outcome="second"),
-        "second": SubRutter(Second, charter=child_charter, next_on_outcome="complete"),
-        "complete": Terminal(VoyageResult("complete", {})),
+        "first": SubRutter(
+            First,
+            charter_constructor=child_charter,
+            next_on_outcome="second",
+        ),
+        "second": SubRutter(
+            Second,
+            charter_constructor=child_charter,
+            next_on_outcome="complete",
+        ),
+        "complete": Terminal(result=VoyageResult("complete", {})),
     }
 
     with pytest.raises(RutterDefinitionError, match="identity conflict"):
@@ -369,8 +373,12 @@ def test_binding_rejects_recursive_definition_call_cycles(
 
         def define_evolutions(self):
             return {
-                "call": SubRutter(Second, charter=child_charter, next_on_outcome="done"),
-                "done": Terminal(VoyageResult("done", {})),
+                "call": SubRutter(
+                    Second,
+                    charter_constructor=child_charter,
+                    next_on_outcome="done",
+                ),
+                "done": Terminal(result=VoyageResult("done", {})),
             }
 
     class Second(Rutter):
@@ -380,8 +388,12 @@ def test_binding_rejects_recursive_definition_call_cycles(
 
         def define_evolutions(self):
             return {
-                "call": SubRutter(First, charter=child_charter, next_on_outcome="done"),
-                "done": Terminal(VoyageResult("done", {})),
+                "call": SubRutter(
+                    First,
+                    charter_constructor=child_charter,
+                    next_on_outcome="done",
+                ),
+                "done": Terminal(result=VoyageResult("done", {})),
             }
 
     with pytest.raises(RutterDefinitionError, match="definition-call cycle"):
@@ -424,7 +436,7 @@ def test_registry_freezes_mapping_graph_and_identity_metadata(
     reckoning_root: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    authored = {"start": Terminal(VoyageResult("complete", {}))}
+    authored = {"start": Terminal(result=VoyageResult("complete", {}))}
     instance = _definition(authored)()
     registrations: dict[str, object] = {"probe": instance}
     registry = RutterRegistry(registrations, reckoning_root)
@@ -559,9 +571,9 @@ def test_voyage_help_explains_the_message_response_handoff(
 
     for token in (
         "current_evolution.condition",
-        'instructions["text"]',
-        'instructions["response_schema"]',
-        'data["payload"]',
+        "text",
+        "response_schema",
+        "payload",
         "evolution_entry_id",
         "responding_to",
         '"outcome"',
@@ -825,7 +837,7 @@ def test_open_rejects_open_prompt_turn_with_active_attached_child(
                 response_schema=_response_schema("reported"),
                 next_on_outcome="complete",
             ),
-            "complete": Terminal(VoyageResult("complete", {})),
+            "complete": Terminal(result=VoyageResult("complete", {})),
         },
         transition_hooks=(
             transition_hook_probe("attached", DirectChildRutter, child_charter),
@@ -882,7 +894,7 @@ def test_open_accepts_accepted_prompt_turn_with_matching_attached_child(
                 response_schema=_response_schema("reported"),
                 next_on_outcome="complete",
             ),
-            "complete": Terminal(VoyageResult("complete", {})),
+            "complete": Terminal(result=VoyageResult("complete", {})),
         },
         transition_hooks=(
             transition_hook_probe("attached", DirectChildRutter, child_charter),
@@ -972,7 +984,7 @@ def test_open_accepts_prompt_after_attached_child_return(
                 response_schema=_response_schema("reported"),
                 next_on_outcome="complete",
             ),
-            "complete": Terminal(VoyageResult("complete", {})),
+            "complete": Terminal(result=VoyageResult("complete", {})),
         },
         transition_hooks=(
             transition_hook_probe("attached", DirectChildRutter, child_charter),
@@ -1032,7 +1044,7 @@ def test_open_accepts_historical_prompt_revision_with_open_prompt_child(
                 response_schema=_response_schema("reported"),
                 next_on_outcome="complete",
             ),
-            "complete": Terminal(VoyageResult("complete", {})),
+            "complete": Terminal(result=VoyageResult("complete", {})),
         },
         transition_hooks=(
             transition_hook_probe("attached", ExampleRutter, child_charter),
@@ -1164,7 +1176,7 @@ def test_open_accepts_current_done_with_matching_terminal_attached_child(
     reckoning_root: Path,
 ) -> None:
     definition = _definition(
-        {"start": Terminal(VoyageResult("complete", {}))},
+        {"start": Terminal(result=VoyageResult("complete", {}))},
         transition_hooks=(
             transition_hook_probe("attached", DirectChildRutter, child_charter),
         ),
@@ -1372,7 +1384,7 @@ def test_binding_rejects_malformed_or_external_response_schemas(
                 response_schema=response_schema,
                 next_on_outcome="done",
             ),
-            "done": Terminal(VoyageResult("complete", {})),
+            "done": Terminal(result=VoyageResult("complete", {})),
         }
     )
 
@@ -1401,7 +1413,7 @@ def test_binding_rejects_non_self_contained_response_schema_references(
                 response_schema=response_schema,
                 next_on_outcome="done",
             ),
-            "done": Terminal(VoyageResult("complete", {})),
+            "done": Terminal(result=VoyageResult("complete", {})),
         }
     )
 
@@ -1450,7 +1462,7 @@ def test_binding_allows_resolved_fragment_refs_and_uses_route_keys_as_outcomes(
                 response_schema=response_schema,
                 next_on_outcome={"mapped-outcome": "done"},
             ),
-            "done": Terminal(VoyageResult("complete", {})),
+            "done": Terminal(result=VoyageResult("complete", {})),
         }
     )
 
@@ -1478,7 +1490,7 @@ def test_binding_requires_one_argument_assessment_callback(
                 assess_response=assess_response,
                 next_on_outcome="done",
             ),
-            "done": Terminal(VoyageResult("complete", {})),
+            "done": Terminal(result=VoyageResult("complete", {})),
         }
     )
 

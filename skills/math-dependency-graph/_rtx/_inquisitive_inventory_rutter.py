@@ -795,7 +795,7 @@ class InquisitiveInventoryRutter(Rutter):
                 mode="repeat-safe",
                 next_on_outcome={"more": _REPORT_EVOLUTION, "done": "complete"},
             ),
-            "complete": Terminal(_complete_result),
+            "complete": Terminal(result_constructor=_complete_result),
         }
 
     def define_transition_hooks(self) -> tuple[TransitionHook, ...]:
@@ -805,7 +805,7 @@ class InquisitiveInventoryRutter(Rutter):
                 after_evolutions={_REPORT_EVOLUTION},
                 items=_INTERACTION_SLOTS,
                 child=DiagnoseAnswer,
-                charter=_diagnosis_charter,
+                charter_constructor=_diagnosis_charter,
             ),
         )
 

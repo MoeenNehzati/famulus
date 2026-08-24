@@ -78,7 +78,7 @@ def current_model_scenarios() -> Mapping[str, _CurrentModelScenario]:
         mode="repeat-safe",
         next_on_outcome="done",
     )
-    done = Terminal(result)
+    done = Terminal(result=result)
 
     def run(
         run_id: str,
@@ -359,7 +359,7 @@ class _CountingStatusStore:
         "depth",
         "condition",
         "instruction_kind",
-        "active_result",
+        "terminal_result",
         "fault",
     ),
     (
@@ -422,7 +422,7 @@ def test_get_status_projects_one_coherent_read_without_authored_callbacks(
     depth: int,
     condition: str,
     instruction_kind: str | None,
-    active_result: VoyageResult | None,
+    terminal_result: VoyageResult | None,
     fault: FaultSummary | None,
 ) -> None:
     authored: list[str] = []
@@ -439,7 +439,9 @@ def test_get_status_projects_one_coherent_read_without_authored_callbacks(
         def define_evolutions(self) -> Mapping[str, object]:
             return {
                 "done": Terminal(
-                    lambda context: note("child-terminal", VoyageResult("complete", {}))
+                    result_constructor=lambda context: note(
+                        "child-terminal", VoyageResult("complete", {})
+                    )
                 )
             }
 
@@ -471,11 +473,13 @@ def test_get_status_projects_one_coherent_read_without_authored_callbacks(
                 ),
                 "delegate": SubRutter(
                     StatusChild,
-                    charter=lambda context: note("subrutter-charter", {}),
+                    charter_constructor=lambda context: note("subrutter-charter", {}),
                     next_on_outcome="done",
                 ),
                 "done": Terminal(
-                    lambda context: note("root-terminal", VoyageResult("complete", {}))
+                    result_constructor=lambda context: note(
+                        "root-terminal", VoyageResult("complete", {})
+                    )
                 ),
             }
 
@@ -540,7 +544,8 @@ def test_get_status_projects_one_coherent_read_without_authored_callbacks(
         )
     else:
         assert status.instruction is None
-    assert status.active_result == active_result
+    assert status.terminal_result == terminal_result
+    assert not hasattr(status, "active_result")
     assert status.fault == fault
     assert (counting.transactions, counting.reads) == (1, 0)
     assert (leaf_calls, condition_calls) == (1, 1)
@@ -609,7 +614,7 @@ def test_malformed_recovery_is_rejected_at_transaction_decode_before_callbacks(
                     ),
                     next_on_outcome="done",
                 ),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     path = Path(f"malformed-recovery-{operation}.reckoning.json")
@@ -676,7 +681,7 @@ def inactive_child_metadata_scenario() -> tuple[type[Rutter], type[Rutter]]:
         initial_evolution_id = "done"
 
         def define_evolutions(self) -> Mapping[str, object]:
-            return {"done": Terminal(VoyageResult("child", {}))}
+            return {"done": Terminal(result=VoyageResult("child", {}))}
 
     class RootWithInactiveChild(Rutter):
         rutter_id = "root-with-inactive-child"
@@ -692,10 +697,10 @@ def inactive_child_metadata_scenario() -> tuple[type[Rutter], type[Rutter]]:
                 ),
                 "delegate": SubRutter(
                     InactiveChild,
-                    charter=lambda context: {"from": context.evolution_id},
+                    charter_constructor=lambda context: {"from": context.evolution_id},
                     next_on_outcome="done",
                 ),
-                "done": Terminal(VoyageResult("root", {})),
+                "done": Terminal(result=VoyageResult("root", {})),
             }
 
     return RootWithInactiveChild, InactiveChild
@@ -741,7 +746,7 @@ def test_reopen_rejects_malformed_known_fault_coordinates(tmp_path: Path) -> Non
                     response_schema=_response_schema("approved"),
                     choose_next=fail_route,
                 ),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     path = Path("malformed-known-fault.reckoning.json")
@@ -792,7 +797,7 @@ def test_opaque_legacy_fault_reopens_and_remains_blocked(tmp_path: Path) -> None
                     response_schema=_response_schema("approved"),
                     next_on_outcome="done",
                 ),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     path = Path("opaque-fault.reckoning.json")
@@ -831,7 +836,7 @@ def test_pure_action_instruction_is_stable_read_only_and_zero_argument(
         def define_evolutions(self) -> Mapping[str, object]:
             return {
                 "calculate": MachineStep(run, mode="pure", next_on_outcome="done"),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     path = Path("pure-action.reckoning.json")
@@ -900,7 +905,7 @@ def test_action_validation_requires_the_exact_action_result_envelope(
                     mode="pure",
                     next_on_outcome="done",
                 ),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     path = Path("validate-action.reckoning.json")
@@ -999,7 +1004,7 @@ def test_done_remains_terminal_after_its_attached_case_child_returns() -> None:
         None,
     )
 
-    assert engine._condition(reckoning, Terminal(result)) == "terminal"
+    assert engine._condition(reckoning, Terminal(result=result)) == "terminal"
 
 
 def test_every_operation_reloads_authoritative_reckoning(
@@ -1047,7 +1052,7 @@ def test_initial_prompt_render_failure_creates_no_partial_authority(
                     data=fail_data,
                     next_on_outcome="done",
                 ),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     path = Path("failing-start.reckoning.json")
@@ -1108,7 +1113,7 @@ def test_none_omits_and_empty_preserves_response_schema(
                     response_schema=response_schema,
                     next_on_outcome="done",
                 ),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     voyage = RutterRegistry({"prompt": SchemaPrompt}, tmp_path).create(
@@ -1162,7 +1167,7 @@ def test_complete_flat_response_is_schema_validated_before_assessment(
                     assess_response=assess,
                     next_on_outcome="done",
                 ),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     voyage = RutterRegistry({"prompt": FlatPrompt}, tmp_path).create(
@@ -1225,7 +1230,7 @@ def test_assessment_rejection_preserves_authored_issues_and_does_not_route(
                     assess_response=lambda context: ValidationReport(False, (issue,)),
                     next_on_outcome="done",
                 ),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     path = Path("assessment-rejection.reckoning.json")
@@ -1267,7 +1272,7 @@ def test_stale_response_entrance_is_rejected_after_same_step_reenters(
                     "Review.",
                     next_on_outcome={"again": "review", "done": "complete"},
                 ),
-                "complete": Terminal(VoyageResult("complete", {})),
+                "complete": Terminal(result=VoyageResult("complete", {})),
             }
 
     path = Path("stale-entrance.reckoning.json")
@@ -1321,7 +1326,7 @@ def test_reserved_revision_and_unmapped_outcome_stop_before_assessment(
                     ),
                     next_on_outcome={"accepted": "done"},
                 ),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     path = Path("mapped-outcome.reckoning.json")
@@ -1366,7 +1371,7 @@ def test_machine_results_forbid_response_correlation_tokens(tmp_path: Path) -> N
                     mode="pure",
                     next_on_outcome="done",
                 ),
-                "done": Terminal(VoyageResult("complete", {})),
+                "done": Terminal(result=VoyageResult("complete", {})),
             }
 
     voyage = RutterRegistry({"machine": MachineRutter}, tmp_path).create(

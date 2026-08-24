@@ -276,7 +276,11 @@ class _DefinitionBinder:
                 raise RutterDefinitionError(
                     f"duplicate TransitionHook ID {hook_id!r}"
                 )
-            _require_callback(hook.charter, 1, "TransitionHook charter")
+            _require_callback(
+                hook.charter_constructor,
+                1,
+                "TransitionHook charter_constructor",
+            )
             hooks[hook_id] = hook
         return tuple(authored), MappingProxyType(hooks)
 
@@ -311,7 +315,11 @@ class _DefinitionBinder:
                 if evolution.choose_next is not None:
                     _require_callback(evolution.choose_next, 2, "MachineStep choose_next")
             elif isinstance(evolution, SubRutter):
-                _require_callback(evolution.charter, 1, "SubRutter charter")
+                _require_callback(
+                    evolution.charter_constructor,
+                    1,
+                    "SubRutter charter_constructor",
+                )
                 self._validate_next_on_outcome(
                     evolution.next_on_outcome,
                     evolutions,
@@ -320,8 +328,15 @@ class _DefinitionBinder:
                 if evolution.choose_next is not None:
                     _require_callback(evolution.choose_next, 2, "SubRutter choose_next")
                 children.append(evolution.child)
-            elif isinstance(evolution, Terminal) and callable(evolution.result):
-                _require_callback(evolution.result, 1, "Terminal result")
+            elif (
+                isinstance(evolution, Terminal)
+                and evolution.result_constructor is not None
+            ):
+                _require_callback(
+                    evolution.result_constructor,
+                    1,
+                    "Terminal result_constructor",
+                )
         children.extend(hook.child for hook in hooks)
         return tuple(children)
 

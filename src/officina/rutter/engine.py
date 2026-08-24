@@ -551,7 +551,7 @@ def _transition_context(
             run.entered_evolution.entry_id,
             strict_prefix,
         ),
-        transition.to_json(),
+        transition,
         record,
     )
 
@@ -1295,10 +1295,10 @@ class Voyage:
                 "active LLMStep requires exactly one matching current Turn"
             )
         turn = turns[0]
-        expected_instructions: dict[str, object] = {"text": step.text}
-        if step.response_schema is not None:
-            expected_instructions["response_schema"] = step.response_schema
-        if turn.message.instructions != expected_instructions:
+        if (
+            turn.message.text != step.text
+            or turn.message.response_schema != step.response_schema
+        ):
             raise RutterStateError(
                 "active LLMStep Turn differs from the bound definition"
             )
@@ -1393,13 +1393,13 @@ class Voyage:
 
         Classify the result through ``current_evolution.condition``. For a ready
         status whose ``instruction`` is a Message, perform
-        ``instructions["text"]`` using ``data["payload"]`` and satisfy
-        its optional ``instructions["response_schema"]`` with one flat response
+        ``text`` using ``payload`` and satisfy
+        its optional ``response_schema`` with one flat response
         containing ``{"outcome": ...}``. Pass the Message's
         ``evolution_entry_id`` as
         ``responding_to``. If the instruction is absent or is a MachineInstruction, ask ``advance`` to
         settle it instead of executing it directly. A terminal status reports
-        ``active_result`` and stops; fault reports ``fault`` and stops; uncertain
+        ``terminal_result`` and stops; fault reports ``fault`` and stops; uncertain
         stops for manual reconciliation. Treat any unknown condition or malformed
         instruction as a public-interface gap. Read a fresh status after every
         successful advance.
@@ -1426,14 +1426,14 @@ class Voyage:
                 evolution,
                 condition,
             )
-            active_result = None
+            terminal_result = None
             if condition == "terminal":
                 terminal = HistoryView(
                     leaf.run.history,
                     reckoning.completed_runs,
                 ).terminal()
                 assert terminal is not None
-                active_result = terminal.result
+                terminal_result = terminal.result
             fault = reckoning.fault
             if isinstance(fault, KnownFault):
                 summary = FaultSummary(
@@ -1450,7 +1450,7 @@ class Voyage:
             return VoyageStatus(
                 current,
                 instruction,
-                active_result,
+                terminal_result,
                 summary,
             )
 

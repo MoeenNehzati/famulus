@@ -279,7 +279,7 @@ def test_setup_and_show_project_only_public_bound_operations(
         "depth": 0,
         "condition": "ready",
     }
-    assert shown["active_result"] is None
+    assert shown["terminal_result"] is None
     assert shown["fault"] is None
     assert shown["instruction"]["kind"] == "message"
     interaction = shown["instruction"]["data"]["payload"]["interaction"]
@@ -392,7 +392,7 @@ def test_equal_advance_and_ledger_persist_exact_public_trace(
     assert terminal["evolution"]["evolution_id"] == "complete"
     assert terminal["evolution"]["condition"] == "terminal"
     assert terminal["instruction"] is None
-    assert terminal["active_result"]["outcome"] == "complete"
+    assert terminal["terminal_result"]["outcome"] == "complete"
     assert terminal["fault"] is None
     assert len(ledger["rows"]) == 1
     row = ledger["rows"][0]
