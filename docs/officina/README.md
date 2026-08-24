@@ -149,9 +149,10 @@ from a dependency.
 - `certification/` — certificate hashing, records, and currentness views
 - `configuration/` — configured-schema and repository-configuration loading
 - `rutter/` — immutable authoring, history, and operating values; `Voyage`
-  lifecycle ownership; strict confined v3 persistence; and explicit name
-  binding through `RutterRegistry.create`/`open`, followed by the
-  self-describing interface returned by `Voyage.help()`
+  lifecycle ownership; strict confined v3 persistence; explicit name binding
+  through `RutterRegistry.create`/`open`; and the process-safe
+  `VoyageDispenser` interface for mode-aware initialization, run-scoped
+  discovery, operation by opaque Voyage ID, and terminal release
 - `credentials/` — Google credentials, OAuth JSON, and secret storage
 - `docstring/` — docstring parsing, policy, schema, and validation
 - `git/` — repository provenance and pinned Git snapshots
@@ -211,8 +212,9 @@ These skills exist to operate on the framework itself:
 - [`llm-wakeup`](../../skills/llm-wakeup/) — schedule and manage host sessions
   around usage resets; the instruction side of `src/officina/wakeup/`
 - [`using-compass`](../../skills/using-compass/) — the generic LLM-facing
-  Compass guide for operating a named Rutter through its public lifecycle;
-  each named Rutter owns its domain evolutions and public guide. See
+  Compass guide for initializing and operating a named Rutter through its
+  authorized `VoyageDispenser`; each named Rutter owns its modes, domain
+  evolutions, initialization arguments, and public guide. See
   [Compass and Rutter](compass-rutter.md) for the architecture and vocabulary.
 
 ## Where to go next
