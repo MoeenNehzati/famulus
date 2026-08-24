@@ -5,47 +5,48 @@ from __future__ import annotations
 import inspect
 from collections.abc import Iterator
 from pathlib import Path
-import sys
 from threading import Event, Thread
-from types import SimpleNamespace
 from typing import Mapping
 
 import pytest
 
+import officina.rutter.engine as engine_module
 import officina.rutter.runtime as runtime_module
+from officina.rutter.engine import Voyage
 from officina.rutter.model import (
-    Action,
+    MachineStep,
     ActiveChild,
     ActiveRun,
     AnswerSpec,
-    Call,
-    CallRecord,
+    SubRutter,
+    SubRutterRecord,
     Charter,
     CompletedRun,
-    Done,
-    DoneRecord,
-    EnteredNode,
+    Terminal,
+    TerminalRecord,
+    EnteredEvolution,
+    KnownFault,
     Message,
-    Prompt,
+    LLMStep,
     Reckoning,
     Response,
-    RunResult,
+    VoyageResult,
     Rutter,
     RutterDefinitionError,
     RutterStateError,
     Turn,
 )
 from officina.rutter.runtime import RutterRegistry
-from officina.rutter.storage import _ReckoningStore
+from officina.rutter.storage import ReckoningStore
 from test_support.rutter_fixtures import (
     AttachedChildRutter,
-    CaseMakerProbe,
     DirectChildRutter,
     DiscoveryRootRutter,
     ExampleRutter,
     GrandchildRutter,
     child_charter,
     example_message,
+    transition_hook_probe,
 )
 
 
@@ -54,26 +55,26 @@ def _definition(
     *,
     rutter_id: object = "probe",
     definition_version: object = 1,
-    start_state: object = "start",
-    allow_multiple_cases_at_once: object = False,
-    case_makers: tuple[object, ...] = (),
+    initial_evolution_id: object = "start",
+    allow_multiple_hooks_per_transition: object = False,
+    transition_hooks: tuple[object, ...] = (),
 ) -> type[Rutter]:
     class Definition(Rutter):
-        def define_states(self):
+        def define_evolutions(self):
             return states
 
-        def define_case_makers(self):
-            return case_makers
+        def define_transition_hooks(self):
+            return transition_hooks
 
     Definition.rutter_id = rutter_id  # type: ignore[assignment]
     Definition.definition_version = definition_version  # type: ignore[assignment]
-    Definition.start_state = start_state  # type: ignore[assignment]
-    Definition.allow_multiple_cases_at_once = allow_multiple_cases_at_once  # type: ignore[assignment]
+    Definition.initial_evolution_id = initial_evolution_id  # type: ignore[assignment]
+    Definition.allow_multiple_hooks_per_transition = allow_multiple_hooks_per_transition  # type: ignore[assignment]
     return Definition
 
 
 def _done_states() -> Mapping[str, object]:
-    return {"start": Done(RunResult("complete", {}))}
+    return {"start": Terminal(VoyageResult("complete", {}))}
 
 
 def _prompt_message(
@@ -84,7 +85,7 @@ def _prompt_message(
     return Message(
         instructions={"text": "Report.", "answer": {"reported": {}}},
         data={
-            "state": {
+            "evolution": {
                 "id": state_id,
                 "entry_id": entry_id,
                 "revision": revision,
@@ -104,55 +105,6 @@ def registry(reckoning_root: Path) -> RutterRegistry:
     return RutterRegistry({"friendly-example": ExampleRutter}, reckoning_root)
 
 
-@pytest.fixture(autouse=True)
-def _task_five_constructor_seam(monkeypatch: pytest.MonkeyPatch) -> None:
-    def create_reckoning(bound_definition: object, charter: Charter) -> Reckoning:
-        entry_id = "test-entry"
-        state_id = bound_definition.start_state
-        state = bound_definition.states[state_id]
-        history = ()
-        if isinstance(state, Prompt):
-            message = Message(
-                instructions={
-                    "text": state.text,
-                    "answer": state.answer.to_json(),
-                },
-                data={
-                    "state": {
-                        "id": state_id,
-                        "entry_id": entry_id,
-                        "revision": 0,
-                    },
-                    "payload": {},
-                },
-            )
-            history = (
-                Turn("test-turn", entry_id, state_id, 0, message, None),
-            )
-        return Reckoning(
-            3,
-            0,
-            ActiveRun(
-                "test-run",
-                bound_definition.rutter_id,
-                bound_definition.definition_version,
-                charter,
-                EnteredNode(entry_id, state_id),
-                history,
-                None,
-            ),
-            {},
-            None,
-            None,
-        )
-
-    monkeypatch.setitem(
-        sys.modules,
-        "officina.rutter.engine",
-        SimpleNamespace(_create_reckoning=create_reckoning),
-    )
-
-
 @pytest.mark.parametrize(
     ("attribute", "value", "message"),
     (
@@ -160,8 +112,8 @@ def _task_five_constructor_seam(monkeypatch: pytest.MonkeyPatch) -> None:
         ("rutter_id", "bad id", "Rutter ID"),
         ("definition_version", 0, "definition_version"),
         ("definition_version", True, "definition_version"),
-        ("start_state", "missing", "start_state"),
-        ("allow_multiple_cases_at_once", 1, "allow_multiple_cases_at_once"),
+        ("initial_evolution_id", "missing", "initial_evolution_id"),
+        ("allow_multiple_hooks_per_transition", 1, "allow_multiple_hooks_per_transition"),
     ),
 )
 def test_binding_rejects_invalid_definition_metadata(
@@ -173,8 +125,8 @@ def test_binding_rejects_invalid_definition_metadata(
     values = {
         "rutter_id": "probe",
         "definition_version": 1,
-        "start_state": "start",
-        "allow_multiple_cases_at_once": False,
+        "initial_evolution_id": "start",
+        "allow_multiple_hooks_per_transition": False,
     }
     values[attribute] = value
     definition = _definition(_done_states(), **values)
@@ -187,7 +139,7 @@ class _DuplicateStateMapping(Mapping[str, object]):
     def __getitem__(self, key: str) -> object:
         if key != "start":
             raise KeyError(key)
-        return Done(RunResult("complete", {}))
+        return Terminal(VoyageResult("complete", {}))
 
     def __iter__(self) -> Iterator[str]:
         return iter(("start", "start"))
@@ -196,8 +148,8 @@ class _DuplicateStateMapping(Mapping[str, object]):
         return 2
 
 
-def test_binding_rejects_duplicate_state_ids(reckoning_root: Path) -> None:
-    with pytest.raises(RutterDefinitionError, match="duplicate state ID"):
+def test_binding_rejects_duplicate_evolution_ids(reckoning_root: Path) -> None:
+    with pytest.raises(RutterDefinitionError, match="duplicate evolution ID"):
         RutterRegistry(
             {"probe": _definition(_DuplicateStateMapping())},
             reckoning_root,
@@ -206,13 +158,13 @@ def test_binding_rejects_duplicate_state_ids(reckoning_root: Path) -> None:
 
 def test_binding_rejects_duplicate_case_maker_ids(reckoning_root: Path) -> None:
     makers = (
-        CaseMakerProbe("same", DirectChildRutter, child_charter),
-        CaseMakerProbe("same", AttachedChildRutter, child_charter),
+        transition_hook_probe("same", DirectChildRutter, child_charter),
+        transition_hook_probe("same", AttachedChildRutter, child_charter),
     )
 
-    with pytest.raises(RutterDefinitionError, match="duplicate CaseMaker ID"):
+    with pytest.raises(RutterDefinitionError, match="duplicate TransitionHook ID"):
         RutterRegistry(
-            {"probe": _definition(_done_states(), case_makers=makers)},
+            {"probe": _definition(_done_states(), transition_hooks=makers)},
             reckoning_root,
         )
 
@@ -221,20 +173,20 @@ def test_binding_rejects_duplicate_case_maker_ids(reckoning_root: Path) -> None:
     "states",
     (
         {
-            "start": Prompt(
+            "start": LLMStep(
                 "Choose.",
                 answer=AnswerSpec({"yes": {}, "no": {}}),
                 then={"yes": "complete"},
             ),
-            "complete": Done(RunResult("complete", {})),
+            "complete": Terminal(VoyageResult("complete", {})),
         },
         {
-            "start": Prompt(
+            "start": LLMStep(
                 "Choose.",
                 answer=AnswerSpec({"yes": {}}),
                 then={"yes": "complete", "unknown": "complete"},
             ),
-            "complete": Done(RunResult("complete", {})),
+            "complete": Terminal(VoyageResult("complete", {})),
         },
     ),
 )
@@ -242,7 +194,7 @@ def test_binding_rejects_prompt_routes_with_missing_or_undeclared_outcomes(
     reckoning_root: Path,
     states: Mapping[str, object],
 ) -> None:
-    with pytest.raises(RutterDefinitionError, match="Prompt routes"):
+    with pytest.raises(RutterDefinitionError, match="LLMStep routes"):
         RutterRegistry({"probe": _definition(states)}, reckoning_root)
 
 
@@ -250,19 +202,19 @@ def test_binding_rejects_prompt_routes_with_missing_or_undeclared_outcomes(
     "states",
     (
         {
-            "start": Prompt(
+            "start": LLMStep(
                 "Continue.", answer=AnswerSpec({"yes": {}}), then="absent"
             )
         },
         {
-            "start": Action(
+            "start": MachineStep(
                 lambda context: None,  # type: ignore[arg-type,return-value]
                 mode="pure",
                 then={"done": "absent"},
             )
         },
         {
-            "start": Call(
+            "start": SubRutter(
                 DirectChildRutter,
                 charter=child_charter,
                 then="absent",
@@ -283,53 +235,53 @@ def test_binding_rejects_undeclared_literal_successors(
     (
         (
             {
-                "start": Prompt(
+                "start": LLMStep(
                     "Continue.",
                     answer=AnswerSpec({"yes": {}}),
                     data=lambda: {},
                     then="complete",
                 ),
-                "complete": Done(RunResult("complete", {})),
+                "complete": Terminal(VoyageResult("complete", {})),
             },
-            "Prompt data",
+            "LLMStep data",
         ),
         (
             {
-                "start": Prompt(
+                "start": LLMStep(
                     "Continue.",
                     answer=AnswerSpec({"yes": {}}),
                     validate=lambda one, two: None,
                     then="complete",
                 ),
-                "complete": Done(RunResult("complete", {})),
+                "complete": Terminal(VoyageResult("complete", {})),
             },
-            "Prompt validate",
+            "LLMStep validate",
         ),
         (
             {
-                "start": Action(
+                "start": MachineStep(
                     lambda: None,  # type: ignore[arg-type,return-value]
                     mode="pure",
                     then="complete",
                 ),
-                "complete": Done(RunResult("complete", {})),
+                "complete": Terminal(VoyageResult("complete", {})),
             },
-            "Action run",
+            "MachineStep run",
         ),
         (
             {
-                "start": Call(
+                "start": SubRutter(
                     DirectChildRutter,
                     charter=lambda: {},
                     then="complete",
                 ),
-                "complete": Done(RunResult("complete", {})),
+                "complete": Terminal(VoyageResult("complete", {})),
             },
-            "Call charter",
+            "SubRutter charter",
         ),
         (
-            {"start": Done(lambda: RunResult("complete", {}))},
-            "Done result",
+            {"start": Terminal(lambda: VoyageResult("complete", {}))},
+            "Terminal result",
         ),
     ),
 )
@@ -345,15 +297,15 @@ def test_binding_rejects_bad_callback_signatures(
 def test_binding_rejects_bad_case_maker_callback_signature(
     reckoning_root: Path,
 ) -> None:
-    maker = CaseMakerProbe(
+    maker = transition_hook_probe(
         "attached",
         DirectChildRutter,
         lambda one, two: {},
     )
 
-    with pytest.raises(RutterDefinitionError, match="CaseMaker charter"):
+    with pytest.raises(RutterDefinitionError, match="TransitionHook charter"):
         RutterRegistry(
-            {"probe": _definition(_done_states(), case_makers=(maker,))},
+            {"probe": _definition(_done_states(), transition_hooks=(maker,))},
             reckoning_root,
         )
 
@@ -368,15 +320,15 @@ def test_binding_rejects_run_state_on_definition_instances(
     class StatefulDefinition(Rutter):
         rutter_id = "stateful"
         definition_version = 1
-        start_state = "start"
+        initial_evolution_id = "start"
 
         def __init__(self) -> None:
             setattr(self, run_attribute, object())
 
-        def define_states(self):
+        def define_evolutions(self):
             return _done_states()
 
-    with pytest.raises(RutterDefinitionError, match="run state"):
+    with pytest.raises(RutterDefinitionError, match="voyage state"):
         RutterRegistry({"stateful": StatefulDefinition}, reckoning_root)
 
 
@@ -384,23 +336,23 @@ def test_binding_rejects_child_identity_conflicts(reckoning_root: Path) -> None:
     class First(Rutter):
         rutter_id = "conflict"
         definition_version = 1
-        start_state = "start"
+        initial_evolution_id = "start"
 
-        def define_states(self):
+        def define_evolutions(self):
             return _done_states()
 
     class Second(First):
         pass
 
     states = {
-        "first": Call(First, charter=child_charter, then="second"),
-        "second": Call(Second, charter=child_charter, then="complete"),
-        "complete": Done(RunResult("complete", {})),
+        "first": SubRutter(First, charter=child_charter, then="second"),
+        "second": SubRutter(Second, charter=child_charter, then="complete"),
+        "complete": Terminal(VoyageResult("complete", {})),
     }
 
     with pytest.raises(RutterDefinitionError, match="identity conflict"):
         RutterRegistry(
-            {"root": _definition(states, start_state="first")}, reckoning_root
+            {"root": _definition(states, initial_evolution_id="first")}, reckoning_root
         )
 
 
@@ -410,23 +362,23 @@ def test_binding_rejects_recursive_definition_call_cycles(
     class First(Rutter):
         rutter_id = "first"
         definition_version = 1
-        start_state = "call"
+        initial_evolution_id = "call"
 
-        def define_states(self):
+        def define_evolutions(self):
             return {
-                "call": Call(Second, charter=child_charter, then="done"),
-                "done": Done(RunResult("done", {})),
+                "call": SubRutter(Second, charter=child_charter, then="done"),
+                "done": Terminal(VoyageResult("done", {})),
             }
 
     class Second(Rutter):
         rutter_id = "second"
         definition_version = 1
-        start_state = "call"
+        initial_evolution_id = "call"
 
-        def define_states(self):
+        def define_evolutions(self):
             return {
-                "call": Call(First, charter=child_charter, then="done"),
-                "done": Done(RunResult("done", {})),
+                "call": SubRutter(First, charter=child_charter, then="done"),
+                "done": Terminal(VoyageResult("done", {})),
             }
 
     with pytest.raises(RutterDefinitionError, match="definition-call cycle"):
@@ -469,7 +421,7 @@ def test_registry_freezes_mapping_graph_and_identity_metadata(
     reckoning_root: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    authored = {"start": Done(RunResult("complete", {}))}
+    authored = {"start": Terminal(VoyageResult("complete", {}))}
     instance = _definition(authored)()
     registrations: dict[str, object] = {"probe": instance}
     registry = RutterRegistry(registrations, reckoning_root)
@@ -492,11 +444,34 @@ def test_definition_instances_remain_run_neutral_and_voyage_owns_authority(
 
     assert not vars(definition)
     assert voyage._reckoning.root.charter == Charter({"artifact": "draft.md"})
-    assert isinstance(voyage._store, _ReckoningStore)
+    assert isinstance(voyage._store, ReckoningStore)
     assert voyage._store._path == (reckoning_root / "bound.reckoning.json").absolute()
 
 
-def test_registry_and_bound_voyage_expose_only_the_frozen_construction_protocol(
+def test_voyage_layer_performs_the_single_open_read(
+    reckoning_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = RutterRegistry({"example": ExampleRutter}, reckoning_root)
+    path = Path("opened-by-voyage.reckoning.json")
+    registry.create("example", path, {})
+    reads = 0
+
+    class TrackedStore(ReckoningStore):
+        def read(self):
+            nonlocal reads
+            reads += 1
+            return super().read()
+
+    monkeypatch.setattr(engine_module, "ReckoningStore", TrackedStore)
+
+    opened = registry.open(path)
+
+    assert opened.get_status().current_evolution.condition == "ready"
+    assert reads == 1
+
+
+def test_registry_and_voyage_expose_only_the_public_operating_protocol(
     registry: RutterRegistry,
 ) -> None:
     voyage = registry.create("friendly-example", Path("api.reckoning.json"), {})
@@ -511,81 +486,154 @@ def test_registry_and_bound_voyage_expose_only_the_frozen_construction_protocol(
         "charter_data",
     )
     assert tuple(inspect.signature(registry.open).parameters) == ("reckoning_path",)
-    assert tuple(inspect.signature(voyage.get_instruction).parameters) == ()
+    assert type(voyage) is Voyage
+    assert tuple(inspect.signature(voyage.get_status).parameters) == ()
     assert tuple(inspect.signature(voyage.validate).parameters) == ("response",)
     assert tuple(inspect.signature(voyage.next).parameters) == (
         "response",
         "continue_",
         "dry_run",
     )
-    assert tuple(inspect.signature(voyage.get_current_node).parameters) == ()
+    assert tuple(inspect.signature(voyage.help).parameters) == ()
+    assert voyage.compass_facing_methods == ("get_status", "validate", "next")
     assert {
         name for name in dir(voyage) if not name.startswith("_")
-    } == {"get_instruction", "validate", "next", "get_current_node"}
-    for obsolete in ("get_instructions", "advance", "inspect", "start", "resume"):
+    } == {
+        "compass_facing_methods",
+        "get_status",
+        "help",
+        "next",
+        "validate",
+    }
+    for obsolete in (
+        "get_current_node",
+        "get_instruction",
+        "get_instructions",
+        "advance",
+        "inspect",
+        "start",
+        "resume",
+    ):
         assert not hasattr(voyage, obsolete)
 
 
-def test_bound_voyage_lazily_forwards_exact_operation_arguments_to_engine(
+def test_voyage_help_describes_only_allowlisted_bound_methods_in_order(
+    registry: RutterRegistry,
+) -> None:
+    """A stale handwritten Compass loop would no longer match the Voyage API."""
+
+    voyage = registry.create("friendly-example", Path("help.reckoning.json"), {})
+
+    help_text = voyage.help()
+
+    expected_entries = []
+    for name in voyage.compass_facing_methods:
+        method = getattr(voyage, name)
+        expected_entries.append(
+            f"{name}{inspect.signature(method)}\n{inspect.getdoc(method)}"
+        )
+    expected = "\n\n".join(expected_entries)
+    assert help_text == expected
+    assert "= MISSING" in help_text
+    assert "0x" not in help_text
+    assert "_open" not in help_text
+    assert "help()" not in help_text
+
+
+def test_voyage_help_explains_the_message_response_handoff(
+    registry: RutterRegistry,
+) -> None:
+    """Compass must be able to answer its first Message from help alone."""
+
+    voyage = registry.create(
+        "friendly-example", Path("message-help.reckoning.json"), {}
+    )
+    help_text = voyage.help()
+
+    for token in (
+        "current_evolution.condition",
+        'instructions["text"]',
+        'instructions["answer"]',
+        'data["payload"]',
+        'data["evolution"]["revision"]',
+        '"revision"',
+        '"outcome"',
+        '"evidence"',
+    ):
+        assert token in help_text
+
+
+@pytest.mark.parametrize(
+    ("methods", "message"),
+    (
+        (("missing",), "missing"),
+        (("_open",), "private"),
+        (("compass_facing_methods",), "callable"),
+    ),
+)
+def test_voyage_help_rejects_invalid_compass_facing_methods(
+    registry: RutterRegistry,
+    monkeypatch: pytest.MonkeyPatch,
+    methods: tuple[str, ...],
+    message: str,
+) -> None:
+    """Malformed advertised operations must fail instead of yielding partial help."""
+
+    voyage = registry.create("friendly-example", Path("bad-help.reckoning.json"), {})
+    monkeypatch.setattr(Voyage, "compass_facing_methods", methods)
+
+    with pytest.raises(RutterDefinitionError, match=message):
+        voyage.help()
+
+
+def test_voyage_help_rejects_undocumented_advertised_method(
     registry: RutterRegistry,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    voyage = registry.create("friendly-example", Path("delegated.reckoning.json"), {})
-    response = object()
-    instruction = object()
-    validation = object()
-    next_node = object()
-    current_node = object()
-    calls: list[tuple[object, ...]] = []
+    """An undocumented operation cannot silently become Compass authority."""
 
-    def get_instruction(bound: object) -> object:
-        calls.append(("get_instruction", bound))
-        return instruction
-
-    def validate(bound: object, supplied: object) -> object:
-        calls.append(("validate", bound, supplied))
-        return validation
-
-    def next_(
-        bound: object,
-        supplied: object,
-        *,
-        continue_: bool,
-        dry_run: bool,
-    ) -> object:
-        calls.append(("next", bound, supplied, continue_, dry_run))
-        return next_node
-
-    def get_current_node(bound: object) -> object:
-        calls.append(("get_current_node", bound))
-        return current_node
-
-    monkeypatch.setitem(
-        sys.modules,
-        "officina.rutter.engine",
-        SimpleNamespace(
-            _get_instruction=get_instruction,
-            _validate=validate,
-            _next=next_,
-            _get_current_node=get_current_node,
-        ),
+    voyage = registry.create(
+        "friendly-example", Path("undocumented-help.reckoning.json"), {}
     )
+    monkeypatch.setattr(Voyage, "undocumented", lambda self: None, raising=False)
+    monkeypatch.setattr(Voyage, "compass_facing_methods", ("undocumented",))
 
-    assert voyage.get_instruction() is instruction
-    assert voyage.validate(response) is validation
-    assert voyage.next(response, continue_=False, dry_run=True) is next_node
-    assert voyage.next() is next_node
-    assert voyage.get_current_node() is current_node
-    assert calls == [
-        ("get_instruction", voyage),
-        ("validate", voyage, response),
-        ("next", voyage, response, False, True),
-        ("next", voyage, runtime_module._MISSING, True, False),
-        ("get_current_node", voyage),
-    ]
+    with pytest.raises(RutterDefinitionError, match="docstring"):
+        voyage.help()
 
 
-def test_registry_create_lazily_delegates_complete_initial_reckoning_to_engine(
+def test_voyage_help_rejects_an_uninspectable_advertised_method(
+    registry: RutterRegistry,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A reflection failure must remain a clear public definition error."""
+
+    def uninspectable(self) -> None:
+        """An advertised operation with deliberately invalid signature metadata."""
+
+    uninspectable.__signature__ = object()  # type: ignore[attr-defined]
+    voyage = registry.create(
+        "friendly-example", Path("uninspectable-help.reckoning.json"), {}
+    )
+    monkeypatch.setattr(Voyage, "uninspectable", uninspectable, raising=False)
+    monkeypatch.setattr(Voyage, "compass_facing_methods", ("uninspectable",))
+
+    with pytest.raises(RutterDefinitionError, match="signature"):
+        voyage.help()
+
+
+def test_voyage_owns_concrete_engine_operations(
+    registry: RutterRegistry,
+) -> None:
+    voyage = registry.create("friendly-example", Path("owned.reckoning.json"), {})
+
+    assert voyage._definition is registry._by_name["friendly-example"]
+    assert type(voyage).get_status.__module__ == "officina.rutter.engine"
+    assert type(voyage).validate.__module__ == "officina.rutter.engine"
+    assert type(voyage).next.__module__ == "officina.rutter.engine"
+
+
+def test_registry_create_delegates_complete_initial_reckoning_to_engine(
     registry: RutterRegistry,
     reckoning_root: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -599,7 +647,7 @@ def test_registry_create_lazily_delegates_complete_initial_reckoning_to_engine(
             "example",
             1,
             charter,
-            EnteredNode("entry-report", "report"),
+            EnteredEvolution("entry-report", "report"),
             (
                 Turn(
                     "turn-report",
@@ -622,11 +670,7 @@ def test_registry_create_lazily_delegates_complete_initial_reckoning_to_engine(
         calls.append((bound_definition, supplied))
         return initial
 
-    monkeypatch.setitem(
-        sys.modules,
-        "officina.rutter.engine",
-        SimpleNamespace(_create_reckoning=create_reckoning),
-    )
+    monkeypatch.setattr(runtime_module, "_create_reckoning", create_reckoning)
 
     voyage = registry.create(
         "friendly-example",
@@ -636,7 +680,7 @@ def test_registry_create_lazily_delegates_complete_initial_reckoning_to_engine(
 
     assert voyage._reckoning is initial
     assert calls == [(registry._by_name["friendly-example"], charter)]
-    assert _ReckoningStore(
+    assert ReckoningStore(
         (reckoning_root / "engine-created.reckoning.json").absolute()
     ).read() == initial
 
@@ -648,11 +692,11 @@ def _unknown_completed_run() -> CompletedRun:
         9,
         Charter({}),
         (
-            DoneRecord(
+            TerminalRecord(
                 "archived-done",
                 "archived-entry",
                 "retired-done",
-                RunResult("complete", {}),
+                VoyageResult("complete", {}),
             ),
         ),
     )
@@ -702,7 +746,7 @@ def _unknown_completed_run() -> CompletedRun:
                         "answer": {"reported": {}},
                     },
                     data={
-                        "state": {
+                        "evolution": {
                             "id": "report",
                             "entry_id": "entry-report",
                             "revision": 1,
@@ -724,14 +768,14 @@ def test_open_rejects_missing_mismatched_duplicate_or_stranded_prompt_turn(
         "example",
         1,
         Charter({}),
-        EnteredNode("entry-report", "report"),
+        EnteredEvolution("entry-report", "report"),
         history,
         None,
     )
     path = (reckoning_root / "invalid-prompt.reckoning.json").absolute()
-    _ReckoningStore(path).create(Reckoning(3, 1, root, {}, None, None))
+    ReckoningStore(path).create(Reckoning(3, 1, root, {}, None, None))
 
-    with pytest.raises(RutterStateError, match="active Prompt"):
+    with pytest.raises(RutterStateError, match="active LLMStep"):
         RutterRegistry({"example": ExampleRutter}, reckoning_root).open(
             Path("invalid-prompt.reckoning.json")
         )
@@ -753,14 +797,14 @@ def test_open_rejects_unanswered_prompt_turn_with_stale_global_revision(
         "example",
         1,
         Charter({}),
-        EnteredNode("entry-report", "report"),
+        EnteredEvolution("entry-report", "report"),
         (turn,),
         None,
     )
     path = (reckoning_root / "stale-prompt-turn.reckoning.json").absolute()
-    _ReckoningStore(path).create(Reckoning(3, 2, root, {}, None, None))
+    ReckoningStore(path).create(Reckoning(3, 2, root, {}, None, None))
 
-    with pytest.raises(RutterStateError, match="active Prompt Turn revision"):
+    with pytest.raises(RutterStateError, match="active LLMStep Turn revision"):
         RutterRegistry({"example": ExampleRutter}, reckoning_root).open(
             Path("stale-prompt-turn.reckoning.json")
         )
@@ -771,15 +815,15 @@ def test_open_rejects_open_prompt_turn_with_active_attached_child(
 ) -> None:
     definition = _definition(
         {
-            "start": Prompt(
+            "start": LLMStep(
                 "Report.",
                 answer=AnswerSpec({"reported": {}}),
                 then="complete",
             ),
-            "complete": Done(RunResult("complete", {})),
+            "complete": Terminal(VoyageResult("complete", {})),
         },
-        case_makers=(
-            CaseMakerProbe("attached", DirectChildRutter, child_charter),
+        transition_hooks=(
+            transition_hook_probe("attached", DirectChildRutter, child_charter),
         ),
     )
     turn = Turn(
@@ -795,7 +839,7 @@ def test_open_rejects_open_prompt_turn_with_active_attached_child(
         "direct-child",
         1,
         Charter({}),
-        EnteredNode("entry-child", "complete"),
+        EnteredEvolution("entry-child", "complete"),
         (),
         None,
     )
@@ -804,7 +848,7 @@ def test_open_rejects_open_prompt_turn_with_active_attached_child(
         "probe",
         1,
         Charter({}),
-        EnteredNode("entry-root", "start"),
+        EnteredEvolution("entry-root", "start"),
         (turn,),
         ActiveChild(
             "attached-call",
@@ -815,9 +859,9 @@ def test_open_rejects_open_prompt_turn_with_active_attached_child(
         ),
     )
     path = (reckoning_root / "open-with-child.reckoning.json").absolute()
-    _ReckoningStore(path).create(Reckoning(3, 1, root, {}, None, None))
+    ReckoningStore(path).create(Reckoning(3, 1, root, {}, None, None))
 
-    with pytest.raises(RutterStateError, match="active Prompt"):
+    with pytest.raises(RutterStateError, match="active LLMStep"):
         RutterRegistry({"probe": definition}, reckoning_root).open(
             Path("open-with-child.reckoning.json")
         )
@@ -828,15 +872,15 @@ def test_open_accepts_accepted_prompt_turn_with_matching_attached_child(
 ) -> None:
     definition = _definition(
         {
-            "start": Prompt(
+            "start": LLMStep(
                 "Report.",
                 answer=AnswerSpec({"reported": {}}),
                 then="complete",
             ),
-            "complete": Done(RunResult("complete", {})),
+            "complete": Terminal(VoyageResult("complete", {})),
         },
-        case_makers=(
-            CaseMakerProbe("attached", DirectChildRutter, child_charter),
+        transition_hooks=(
+            transition_hook_probe("attached", DirectChildRutter, child_charter),
         ),
     )
     turn = Turn(
@@ -852,7 +896,7 @@ def test_open_accepts_accepted_prompt_turn_with_matching_attached_child(
         "direct-child",
         1,
         Charter({}),
-        EnteredNode("entry-child", "complete"),
+        EnteredEvolution("entry-child", "complete"),
         (),
         None,
     )
@@ -861,7 +905,7 @@ def test_open_accepts_accepted_prompt_turn_with_matching_attached_child(
         "probe",
         1,
         Charter({}),
-        EnteredNode("entry-root", "start"),
+        EnteredEvolution("entry-root", "start"),
         (turn,),
         ActiveChild(
             "attached-call",
@@ -873,7 +917,7 @@ def test_open_accepts_accepted_prompt_turn_with_matching_attached_child(
     )
     path = (reckoning_root / "accepted-with-child.reckoning.json").absolute()
     reckoning = Reckoning(3, 1, root, {}, None, None)
-    _ReckoningStore(path).create(reckoning)
+    ReckoningStore(path).create(reckoning)
 
     opened = RutterRegistry({"probe": definition}, reckoning_root).open(
         Path("accepted-with-child.reckoning.json")
@@ -898,13 +942,13 @@ def test_open_accepts_prompt_immediately_after_response_acceptance(
         "example",
         1,
         Charter({}),
-        EnteredNode("entry-report", "report"),
+        EnteredEvolution("entry-report", "report"),
         (turn,),
         None,
     )
     path = (reckoning_root / "accepted-prompt.reckoning.json").absolute()
     reckoning = Reckoning(3, 2, root, {}, None, None)
-    _ReckoningStore(path).create(reckoning)
+    ReckoningStore(path).create(reckoning)
 
     opened = RutterRegistry({"example": ExampleRutter}, reckoning_root).open(
         Path("accepted-prompt.reckoning.json")
@@ -918,15 +962,15 @@ def test_open_accepts_prompt_after_attached_child_return(
 ) -> None:
     definition = _definition(
         {
-            "start": Prompt(
+            "start": LLMStep(
                 "Report.",
                 answer=AnswerSpec({"reported": {}}),
                 then="complete",
             ),
-            "complete": Done(RunResult("complete", {})),
+            "complete": Terminal(VoyageResult("complete", {})),
         },
-        case_makers=(
-            CaseMakerProbe("attached", DirectChildRutter, child_charter),
+        transition_hooks=(
+            transition_hook_probe("attached", DirectChildRutter, child_charter),
         ),
     )
     turn = Turn(
@@ -938,10 +982,10 @@ def test_open_accepts_prompt_after_attached_child_return(
         Response(1, "reported", {}),
     )
     completed = _unknown_completed_run()
-    returned = CallRecord(
+    returned = SubRutterRecord(
         "attached-call",
         "entry-root",
-        "attached_case",
+        None,
         "attached",
         turn.record_id,
         completed.run_id,
@@ -951,7 +995,7 @@ def test_open_accepts_prompt_after_attached_child_return(
         "probe",
         1,
         Charter({}),
-        EnteredNode("entry-root", "start"),
+        EnteredEvolution("entry-root", "start"),
         (turn, returned),
         None,
     )
@@ -964,7 +1008,7 @@ def test_open_accepts_prompt_after_attached_child_return(
         None,
         None,
     )
-    _ReckoningStore(path).create(reckoning)
+    ReckoningStore(path).create(reckoning)
 
     opened = RutterRegistry({"probe": definition}, reckoning_root).open(
         Path("returned-prompt.reckoning.json")
@@ -978,15 +1022,15 @@ def test_open_accepts_historical_prompt_revision_with_open_prompt_child(
 ) -> None:
     definition = _definition(
         {
-            "start": Prompt(
+            "start": LLMStep(
                 "Report.",
                 answer=AnswerSpec({"reported": {}}),
                 then="complete",
             ),
-            "complete": Done(RunResult("complete", {})),
+            "complete": Terminal(VoyageResult("complete", {})),
         },
-        case_makers=(
-            CaseMakerProbe("attached", ExampleRutter, child_charter),
+        transition_hooks=(
+            transition_hook_probe("attached", ExampleRutter, child_charter),
         ),
     )
     parent_turn = Turn(
@@ -1010,7 +1054,7 @@ def test_open_accepts_historical_prompt_revision_with_open_prompt_child(
         "example",
         1,
         Charter({}),
-        EnteredNode("entry-child", "report"),
+        EnteredEvolution("entry-child", "report"),
         (child_turn,),
         None,
     )
@@ -1019,7 +1063,7 @@ def test_open_accepts_historical_prompt_revision_with_open_prompt_child(
         "probe",
         1,
         Charter({}),
-        EnteredNode("entry-root", "start"),
+        EnteredEvolution("entry-root", "start"),
         (parent_turn,),
         ActiveChild(
             "attached-call",
@@ -1031,7 +1075,7 @@ def test_open_accepts_historical_prompt_revision_with_open_prompt_child(
     )
     path = (reckoning_root / "nested-prompt.reckoning.json").absolute()
     reckoning = Reckoning(3, 2, root, {}, None, None)
-    _ReckoningStore(path).create(reckoning)
+    ReckoningStore(path).create(reckoning)
 
     opened = RutterRegistry({"probe": definition}, reckoning_root).open(
         Path("nested-prompt.reckoning.json")
@@ -1056,53 +1100,34 @@ def test_open_accepts_faulted_prompt_after_response_without_child(
         "example",
         1,
         Charter({}),
-        EnteredNode("entry-report", "report"),
+        EnteredEvolution("entry-report", "report"),
         (turn,),
         None,
     )
-    fault = {
-        "category": "routing",
-        "run_id": "root-run",
-        "state_id": "report",
-        "node_entry_id": "entry-report",
-    }
+    fault = KnownFault("routing", "root-run", "report", "entry-report", None, ())
     path = (reckoning_root / "faulted-prompt.reckoning.json").absolute()
     reckoning = Reckoning(3, 1, root, {}, None, fault)
-    _ReckoningStore(path).create(reckoning)
+    ReckoningStore(path).create(reckoning)
 
     opened = RutterRegistry({"example": ExampleRutter}, reckoning_root).open(
         Path("faulted-prompt.reckoning.json")
     )
 
     assert opened._reckoning == reckoning
+    assert type(opened._reckoning.fault).__name__ == "KnownFault"
 
 
 @pytest.mark.parametrize(
     "fault",
     (
-        {
-            "category": "routing",
-            "run_id": "other-run",
-            "state_id": "report",
-            "node_entry_id": "entry-report",
-        },
-        {
-            "category": "routing",
-            "run_id": "root-run",
-            "state_id": "other-state",
-            "node_entry_id": "entry-report",
-        },
-        {
-            "category": "routing",
-            "run_id": "root-run",
-            "state_id": "report",
-            "node_entry_id": "other-entry",
-        },
+        KnownFault("routing", "other-run", "report", "entry-report", None, ()),
+        KnownFault("routing", "root-run", "other-state", "entry-report", None, ()),
+        KnownFault("routing", "root-run", "report", "other-entry", None, ()),
     ),
 )
 def test_open_rejects_accepted_prompt_without_child_for_mismatched_fault(
     reckoning_root: Path,
-    fault: dict[str, object],
+    fault: KnownFault,
 ) -> None:
     turn = Turn(
         "turn-root",
@@ -1117,14 +1142,14 @@ def test_open_rejects_accepted_prompt_without_child_for_mismatched_fault(
         "example",
         1,
         Charter({}),
-        EnteredNode("entry-report", "report"),
+        EnteredEvolution("entry-report", "report"),
         (turn,),
         None,
     )
     path = (reckoning_root / "mismatched-fault.reckoning.json").absolute()
-    _ReckoningStore(path).create(Reckoning(3, 1, root, {}, None, fault))
+    ReckoningStore(path).create(Reckoning(3, 1, root, {}, None, fault))
 
-    with pytest.raises(RutterStateError, match="accepted active Prompt"):
+    with pytest.raises(RutterStateError, match="accepted active LLMStep"):
         RutterRegistry({"example": ExampleRutter}, reckoning_root).open(
             Path("mismatched-fault.reckoning.json")
         )
@@ -1134,23 +1159,23 @@ def test_open_accepts_current_done_with_matching_terminal_attached_child(
     reckoning_root: Path,
 ) -> None:
     definition = _definition(
-        {"start": Done(RunResult("complete", {}))},
-        case_makers=(
-            CaseMakerProbe("attached", DirectChildRutter, child_charter),
+        {"start": Terminal(VoyageResult("complete", {}))},
+        transition_hooks=(
+            transition_hook_probe("attached", DirectChildRutter, child_charter),
         ),
     )
-    done = DoneRecord(
+    done = TerminalRecord(
         "done-root",
         "entry-root",
         "start",
-        RunResult("complete", {}),
+        VoyageResult("complete", {}),
     )
     child = ActiveRun(
         "child-run",
         "direct-child",
         1,
         Charter({}),
-        EnteredNode("entry-child", "complete"),
+        EnteredEvolution("entry-child", "complete"),
         (),
         None,
     )
@@ -1159,7 +1184,7 @@ def test_open_accepts_current_done_with_matching_terminal_attached_child(
         "probe",
         1,
         Charter({}),
-        EnteredNode("entry-root", "start"),
+        EnteredEvolution("entry-root", "start"),
         (done,),
         ActiveChild(
             "attached-call",
@@ -1171,7 +1196,7 @@ def test_open_accepts_current_done_with_matching_terminal_attached_child(
     )
     path = (reckoning_root / "terminal-child.reckoning.json").absolute()
     reckoning = Reckoning(3, 1, root, {}, None, None)
-    _ReckoningStore(path).create(reckoning)
+    ReckoningStore(path).create(reckoning)
 
     opened = RutterRegistry({"probe": definition}, reckoning_root).open(
         Path("terminal-child.reckoning.json")
@@ -1189,13 +1214,13 @@ def test_open_does_not_require_definitions_for_archived_completed_runs(
         "example",
         1,
         Charter({}),
-        EnteredNode("root-entry", "report"),
+        EnteredEvolution("root-entry", "report"),
         (
-            CallRecord(
+            SubRutterRecord(
                 "archived-call",
                 "retired-entry",
-                "explicit_call",
                 "retired-site",
+                None,
                 None,
                 completed.run_id,
             ),
@@ -1212,7 +1237,7 @@ def test_open_does_not_require_definitions_for_archived_completed_runs(
     )
     reckoning = Reckoning(3, 1, root, {completed.run_id: completed}, None, None)
     path = (reckoning_root / "archived.reckoning.json").absolute()
-    _ReckoningStore(path).create(reckoning)
+    ReckoningStore(path).create(reckoning)
 
     opened = RutterRegistry({"example": ExampleRutter}, reckoning_root).open(
         Path("archived.reckoning.json")
@@ -1242,7 +1267,7 @@ def test_open_requires_every_definition_on_the_recursively_active_path(
         "missing-active-child",
         1,
         Charter({}),
-        EnteredNode("unknown-entry", "missing-state"),
+        EnteredEvolution("unknown-entry", "missing-state"),
         (),
         None,
     )
@@ -1251,12 +1276,12 @@ def test_open_requires_every_definition_on_the_recursively_active_path(
         "discovery-root",
         1,
         Charter({}),
-        EnteredNode("root-entry", "delegate"),
+        EnteredEvolution("root-entry", "delegate"),
         (),
         ActiveChild("active-call", "explicit_call", "delegate", None, unknown),
     )
     path = (reckoning_root / "active.reckoning.json").absolute()
-    _ReckoningStore(path).create(Reckoning(3, 0, root, {}, None, None))
+    ReckoningStore(path).create(Reckoning(3, 0, root, {}, None, None))
 
     with pytest.raises(RutterStateError, match="active Rutter definition"):
         RutterRegistry({"root": DiscoveryRootRutter}, reckoning_root).open(
@@ -1288,7 +1313,7 @@ def test_registry_open_waits_for_the_reckoning_lock(
     reckoning_root: Path,
 ) -> None:
     registry.create("friendly-example", Path("locked.reckoning.json"), {})
-    writer = _ReckoningStore((reckoning_root / "locked.reckoning.json").absolute())
+    writer = ReckoningStore((reckoning_root / "locked.reckoning.json").absolute())
     attempted = Event()
     opened: list[object] = []
 

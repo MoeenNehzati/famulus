@@ -1,0 +1,46 @@
+schema_version: 6
+node_type: behavioral_source
+id: rutter.source.authoring
+version: 1
+description: Defines immutable Rutter evolutions, author contexts, transition hooks,
+  and hook constructors.
+gateway:
+  path: authoring.py
+  language: Python
+content:
+- authoring\.py
+dependencies:
+- source: rutter.source.history
+  version: 1
+  blueprint:
+    base: module-root
+    path: blueprints/history.yaml
+  reason: Imports immutable history and transition projections used by author contexts.
+- source: rutter.source.values
+  version: 1
+  blueprint:
+    base: module-root
+    path: blueprints/values.yaml
+  reason: Imports Charters, results, validation values, and definition errors.
+uses_interfaces:
+- interface: rutter.source.history.interface.python-api
+  version: 1
+- interface: rutter.source.values.interface.python-api
+  version: 1
+interfaces:
+  rutter.source.authoring.interface.python-api:
+    version: 1
+    content:
+    - authoring\.py
+    uses_interfaces:
+    - interface: rutter.source.history.interface.python-api
+      version: 1
+    - interface: rutter.source.values.interface.python-api
+      version: 1
+    description: Constructs Rutter definitions, evolutions, contexts, and transition hooks.
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+maturity: stable

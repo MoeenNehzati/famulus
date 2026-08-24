@@ -1,50 +1,90 @@
 schema_version: 6
 node_type: behavioral_source
 id: rutter.source.engine
-version: 1
-description: Binds direct Rutter definitions and owns bound validation, reduction,
-  continuation, and effect recovery.
+version: 3
+description: Owns public Voyage transactions, bound validation, operational sequencing,
+  effect recovery, and durable publication around pure reduction and authored evaluation.
 gateway:
   path: engine.py
   language: Python
 content:
 - engine\.py
 dependencies:
-- source: rutter.source.model
+- source: rutter.source.authoring
   version: 1
   blueprint:
     base: module-root
-    path: blueprints/model.yaml
-  reason: Imports immutable authoring, authority, effect, and validation values.
-- source: rutter.source.storage
+    path: blueprints/authoring.yaml
+  reason: Imports concrete Rutter evolutions, contexts, and TransitionHooks.
+- source: rutter.source.evaluation
   version: 1
+  blueprint:
+    base: module-root
+    path: blueprints/evaluation.yaml
+  reason: Invokes author callbacks only through the controlled evaluation boundary.
+- source: rutter.source.history
+  version: 1
+  blueprint:
+    base: module-root
+    path: blueprints/history.yaml
+  reason: Imports durable records, aggregate authority, and history projections.
+- source: rutter.source.reducer
+  version: 1
+  blueprint:
+    base: module-root
+    path: blueprints/reducer.yaml
+  reason: Applies pure active-tree and child-voyage transformations.
+- source: rutter.source.storage
+  version: 2
   blueprint:
     base: module-root
     path: blueprints/storage.yaml
   reason: Imports strict read, transaction, and write operations for bound Reckonings.
+- source: rutter.source.values
+  version: 1
+  blueprint:
+    base: module-root
+    path: blueprints/values.yaml
+  reason: Imports public operating projections, results, validation values, and errors.
 uses_interfaces:
-- interface: rutter.source.model.interface.python-api
+- interface: rutter.source.authoring.interface.python-api
+  version: 1
+- interface: rutter.source.evaluation.interface.python-api
+  version: 1
+- interface: rutter.source.history.interface.python-api
+  version: 1
+- interface: rutter.source.reducer.interface.python-api
   version: 1
 - interface: rutter.source.storage.interface.read
-  version: 1
+  version: 2
 - interface: rutter.source.storage.interface.transaction
-  version: 1
+  version: 2
 - interface: rutter.source.storage.interface.write
+  version: 2
+- interface: rutter.source.values.interface.python-api
   version: 1
 interfaces:
   rutter.source.engine.interface.binding:
     content:
     - engine\.py
     uses_interfaces:
-    - interface: rutter.source.model.interface.python-api
+    - interface: rutter.source.authoring.interface.python-api
+      version: 1
+    - interface: rutter.source.evaluation.interface.python-api
+      version: 1
+    - interface: rutter.source.history.interface.python-api
+      version: 1
+    - interface: rutter.source.reducer.interface.python-api
       version: 1
     - interface: rutter.source.storage.interface.read
-      version: 1
+      version: 2
     - interface: rutter.source.storage.interface.transaction
-      version: 1
+      version: 2
     - interface: rutter.source.storage.interface.write
+      version: 2
+    - interface: rutter.source.values.interface.python-api
       version: 1
-    version: 1
+    version: 3
     description: Creates or opens one direct Rutter binding without granting registry
       discovery.
     contract:
@@ -57,7 +97,7 @@ interfaces:
             kind: enum
             values:
             - value: create
-              description: Validate, persist, and bind one initial Charter at its start-node entrance.
+              description: Validate, persist, and bind one initial Charter at its start-evolution entrance.
             - value: open
               description: Strictly load and bind one existing Reckoning.
         rutter-definition:
@@ -98,7 +138,7 @@ interfaces:
       outputs:
       - id: bound-rutter
         audience: machine
-        description: One exact bound direct Rutter instance.
+        description: One exact public self-describing Voyage instance.
         direct_io_ref: return-value
         cardinality:
           minimum: 1
@@ -111,7 +151,7 @@ interfaces:
         empty: Never empty on success.
         type:
           kind: string
-          description: Bound Rutter Python value.
+          description: Self-describing Voyage Python value.
           sensitivity: user-private
       outcomes:
       - id: created
@@ -191,7 +231,7 @@ interfaces:
         - id: return-value
           medium: local-system
           access: write
-          content: Bound direct Rutter
+          content: Public self-describing Voyage
           formats:
           - python-object
           sensitivity: user-private
@@ -200,42 +240,51 @@ interfaces:
     content:
     - engine\.py
     uses_interfaces:
-    - interface: rutter.source.model.interface.python-api
+    - interface: rutter.source.authoring.interface.python-api
+      version: 1
+    - interface: rutter.source.evaluation.interface.python-api
+      version: 1
+    - interface: rutter.source.history.interface.python-api
+      version: 1
+    - interface: rutter.source.reducer.interface.python-api
       version: 1
     - interface: rutter.source.storage.interface.read
-      version: 1
+      version: 2
     - interface: rutter.source.storage.interface.transaction
-      version: 1
+      version: 2
     - interface: rutter.source.storage.interface.write
+      version: 2
+    - interface: rutter.source.values.interface.python-api
       version: 1
-    version: 3
-    description: Exposes the four public bound-Rutter operations used by thin Compass
-      guidance and the inquisitive-inventory CLI without construction authority.
+    version: 5
+    description: Exposes the self-describing public Voyage operations used by thin
+      Compass guidance and the inquisitive-inventory CLI without construction authority.
     contract:
       arguments:
         operation:
-          description: Bound Rutter operation to perform.
+          description: Voyage operation to perform.
           required: true
           sensitivity: public
           type:
             kind: enum
             values:
-            - value: get-instruction
-              description: Return the active leaf's exact stored Message or no instruction.
+            - value: help
+              description: Describe the Compass-facing methods, bound signatures,
+                and public docstrings.
+            - value: get-status
+              description: Read one coherent VoyageStatus projection in one transaction.
             - value: validate
               description: Purely validate one proposed Response.
             - value: next
               description: Advance from the active leaf and optionally settle automatic
                 work.
-            - value: get-current-node
-              description: Return the immutable active-leaf NodeView.
         binding:
-          description: One invoker-provided bound Rutter instance.
+          description: One invoker-provided Voyage instance.
           required: true
           sensitivity: user-private
           type:
             kind: string
-            description: Bound direct Rutter Python value.
+            description: Voyage Python value.
             sensitivity: user-private
         response:
           description: Exact revision, outcome, and evidence envelope for validate
@@ -254,7 +303,7 @@ interfaces:
           type:
             kind: boolean
         dry-run:
-          description: Whether next previews only the immediate parent-edge destination
+          description: Whether next previews only the immediate parent-transition destination
             without mutation.
           required: false
           default: false
@@ -270,8 +319,7 @@ interfaces:
       outputs:
       - id: result
         audience: machine
-        description: Stored Message with exactly two top-level parts (instructions
-          and data), ValidationReport, immutable NodeView, or no instruction.
+        description: Help text, VoyageStatus, ValidationReport, or immutable EvolutionView.
         direct_io_ref: return-value
         cardinality:
           minimum: 1
@@ -284,17 +332,23 @@ interfaces:
         empty: Never empty on success.
         type:
           kind: string
-          description: Operation-specific Message, ValidationReport, NodeView, or
-            null public result.
+          description: Operation-specific help text, VoyageStatus, ValidationReport,
+            or EvolutionView.
           sensitivity: user-private
       outcomes:
+      - id: described
+        class: success
+        outputs:
+        - result
+        effects: []
+        caller_action: Follow only the returned Compass-facing method signatures
+          and docstrings.
       - id: observed
         class: success
         outputs:
         - result
         effects: []
-        caller_action: Use a Message only at a ready node; otherwise classify the
-          immutable active-leaf view without inferring a transition.
+        caller_action: Use the one coherent VoyageStatus without inferring another read.
       - id: validated
         class: success
         outputs:
@@ -306,7 +360,7 @@ interfaces:
         outputs:
         - result
         effects: []
-        caller_action: Inspect the immediate parent-edge preview without treating
+        caller_action: Inspect the immediate parent-transition preview without treating
           it as entered or as work authorization.
       - id: ready
         class: success
@@ -314,7 +368,7 @@ interfaces:
         - result
         effects:
         - reckoning-update
-        caller_action: Read the active leaf's exact stored Message.
+        caller_action: Read the returned EvolutionView or a fresh VoyageStatus.
       - id: terminal
         class: success
         outputs:
@@ -341,8 +395,8 @@ interfaces:
         outputs:
         - result
         effects: []
-        caller_action: 'On RutterValidationError: Prompt response is required, inspect
-          the current NodeView, call get_instruction, and perform the LLM instruction;
+        caller_action: 'On RutterValidationError: LLMStep response is required, inspect
+          VoyageStatus from get_status, and perform the LLM instruction;
           this boundary does not return a ValidationReport.'
       - id: invalid-input
         class: refusal
@@ -355,7 +409,7 @@ interfaces:
         state_effect: mutating
         lifecycle: finite
         consistency:
-          live: Every operation resolves the deepest active node; next revalidates
+          live: Every operation resolves the deepest active evolution; next revalidates
             accepted work under the bound Rutter's authority.
         effects:
         - id: reckoning-update
@@ -385,7 +439,7 @@ interfaces:
             non_idempotent: Accepted responses advance revision and automatic work
               may change an external system.
           on_uncertain_completion:
-            verify_then_decide: Read the public current-node condition and stop for
+            verify_then_decide: Read the public VoyageStatus condition and stop for
               manual reconciliation.
           partial_effects_on_failure:
             possible: External work may complete before post-effect validation or
@@ -401,7 +455,7 @@ interfaces:
         - id: bound-rutter
           medium: local-system
           access: execute
-          content: Invoker-provided bound Rutter public operations
+          content: Invoker-provided self-describing Voyage public operations
           formats:
           - python-object
           sensitivity: user-private
@@ -425,7 +479,7 @@ interfaces:
         - id: return-value
           medium: local-system
           access: write
-          content: Public bound-Rutter operation result
+          content: Public Voyage help text or operation result
           formats:
           - python-object
           sensitivity: user-private

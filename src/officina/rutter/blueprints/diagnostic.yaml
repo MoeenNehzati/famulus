@@ -1,46 +1,46 @@
 schema_version: 6
 node_type: behavioral_source
 id: rutter.source.diagnostic
-version: 2
-description: Defines exact diagnostic values, ordinary diagnostic child Rutters, and reusable CaseMaker constructors.
+version: 3
+description: Defines exact diagnostic values, ordinary diagnostic child Rutters, and reusable TransitionHook constructors.
 gateway:
   path: diagnostic.py
   language: Python
 content:
 - diagnostic\.py
 dependencies:
-- source: rutter.source.hooks
+- source: rutter.source.authoring
   version: 1
   blueprint:
     base: module-root
-    path: blueprints/hooks.yaml
-  reason: Imports immutable CaseMaker and EdgeMatch definitions.
-- source: rutter.source.model
+    path: blueprints/authoring.yaml
+  reason: Imports Rutter evolutions, contexts, TransitionHook, and hook match constructors.
+- source: rutter.source.values
   version: 1
   blueprint:
     base: module-root
-    path: blueprints/model.yaml
-  reason: Imports ordinary Rutter states, callback contexts, history, validation, and result values.
+    path: blueprints/values.yaml
+  reason: Imports immutable results, validation reports, and definition errors.
 uses_interfaces:
-- interface: rutter.source.hooks.interface.python-api
+- interface: rutter.source.authoring.interface.python-api
   version: 1
-- interface: rutter.source.model.interface.python-api
+- interface: rutter.source.values.interface.python-api
   version: 1
 interfaces:
   rutter.source.diagnostic.interface.python-api:
     content:
     - diagnostic\.py
     uses_interfaces:
-    - interface: rutter.source.hooks.interface.python-api
+    - interface: rutter.source.authoring.interface.python-api
       version: 1
-    - interface: rutter.source.model.interface.python-api
+    - interface: rutter.source.values.interface.python-api
       version: 1
-    version: 2
-    description: Constructs exact diagnostic cases, ordinary diagnostic child Rutters, and reusable CaseMakers.
+    version: 3
+    description: Constructs exact diagnostic cases, ordinary diagnostic child Rutters, and reusable TransitionHooks.
     contract:
       arguments:
         operation:
-          description: Diagnostic value, child definition, or CaseMaker construction to perform.
+          description: Diagnostic value, child definition, or TransitionHook construction to perform.
           required: true
           sensitivity: public
           type:
@@ -56,8 +56,8 @@ interfaces:
               description: Use the ordinary supplied-answer diagnostic child Rutter.
             - value: ask-and-diagnose
               description: Use the ordinary fresh-question diagnostic child Rutter.
-            - value: case-maker
-              description: Construct one reusable diagnostic or finite-sequence CaseMaker.
+            - value: transition-hook
+              description: Construct one reusable diagnostic or finite-sequence TransitionHook.
         value:
           description: Operation-specific immutable Python arguments.
           required: false
@@ -73,7 +73,7 @@ interfaces:
       outputs:
       - id: result
         audience: machine
-        description: One validated immutable diagnostic value, ordinary Rutter definition, or CaseMaker.
+        description: One validated immutable diagnostic value, ordinary Rutter definition, or TransitionHook.
         direct_io_ref: return-value
         cardinality:
           minimum: 1

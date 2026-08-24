@@ -10,26 +10,29 @@ import re
 from types import MappingProxyType
 from typing import Callable, Mapping
 
-from officina.rutter.hooks import CaseMaker, EdgeMatch
-from officina.rutter.model import (
-    Action,
-    ActionContext,
-    ActionResult,
-    AnswerContext,
+from officina.rutter.authoring import (
+    EvolutionContext,
+    LLMStep,
+    LLMResponseContext,
+    MachineContext,
+    MachineStep,
+    Rutter,
+    SubRutter,
+    Terminal,
+    TransitionContext,
+    TransitionHook,
+    TransitionMatch,
+)
+from officina.rutter.values import (
     AnswerSpec,
-    Call,
-    Done,
-    EdgeContext,
     JsonObject,
     JsonValue,
-    Prompt,
-    RunResult,
-    Rutter,
+    MachineResult,
     RutterDefinitionError,
     RutterStateError,
-    StateContext,
     ValidationIssue,
     ValidationReport,
+    VoyageResult,
 )
 
 
@@ -248,20 +251,20 @@ class DiagnosisDetail:
 
 class DiagnoseAnswer(Rutter):
     rutter_id = "diagnose-answer"
-    definition_version = 2
-    start_state = "route"
+    definition_version = 3
+    initial_evolution_id = "route"
 
     @staticmethod
-    def _route(context: ActionContext) -> ActionResult:
-        case = DiagnosisCase.from_json(context.state.charter.data)
+    def _route(context: MachineContext) -> MachineResult:
+        case = DiagnosisCase.from_json(context.evolution.charter.data)
         if case.precomputed_verdict is True:
-            return ActionResult("equal", None)
+            return MachineResult("equal", None)
         if case.precomputed_verdict is False:
-            return ActionResult("different", None)
-        return ActionResult("compare", None)
+            return MachineResult("different", None)
+        return MachineResult("compare", None)
 
     @staticmethod
-    def _prompt_data(context: StateContext) -> JsonObject:
+    def _prompt_data(context: EvolutionContext) -> JsonObject:
         case = DiagnosisCase.from_json(context.charter.data)
         return _freeze_object(
             {
@@ -276,7 +279,7 @@ class DiagnoseAnswer(Rutter):
         )
 
     @staticmethod
-    def _validate_detail(context: AnswerContext) -> ValidationReport:
+    def _validate_detail(context: LLMResponseContext) -> ValidationReport:
         try:
             DiagnosisDetail.from_json(context.response.evidence)
         except RutterStateError:
@@ -293,9 +296,9 @@ class DiagnoseAnswer(Rutter):
         return ValidationReport(True)
 
     @staticmethod
-    def _equal_evaluator(context: StateContext) -> RunResult:
+    def _equal_evaluator(context: EvolutionContext) -> VoyageResult:
         case = DiagnosisCase.from_json(context.charter.data)
-        return RunResult(
+        return VoyageResult(
             "equal",
             {
                 "case_id": case.question.case_id,
@@ -307,9 +310,9 @@ class DiagnoseAnswer(Rutter):
         )
 
     @staticmethod
-    def _equal_llm(context: StateContext) -> RunResult:
+    def _equal_llm(context: EvolutionContext) -> VoyageResult:
         case = DiagnosisCase.from_json(context.charter.data)
-        return RunResult(
+        return VoyageResult(
             "equal",
             {
                 "case_id": case.question.case_id,
@@ -321,12 +324,12 @@ class DiagnoseAnswer(Rutter):
         )
 
     @staticmethod
-    def _different(context: StateContext) -> RunResult:
+    def _different(context: EvolutionContext) -> VoyageResult:
         case = DiagnosisCase.from_json(context.charter.data)
         turn = context.history.require_latest_turn("explain")
         assert turn.response is not None
         detail = DiagnosisDetail.from_json(turn.response.evidence)
-        return RunResult(
+        return VoyageResult(
             "different",
             {
                 "case_id": case.question.case_id,
@@ -341,9 +344,9 @@ class DiagnoseAnswer(Rutter):
             },
         )
 
-    def define_states(self) -> Mapping[str, object]:
+    def define_evolutions(self) -> Mapping[str, object]:
         return {
-            "route": Action(
+            "route": MachineStep(
                 self._route,
                 mode="pure",
                 then={
@@ -352,7 +355,7 @@ class DiagnoseAnswer(Rutter):
                     "compare": "compare",
                 },
             ),
-            "compare": Prompt(
+            "compare": LLMStep(
                 (
                     "Decide whether the actual and expected answers are "
                     "semantically the same. Reply with explicit yes or no."
@@ -361,13 +364,14 @@ class DiagnoseAnswer(Rutter):
                 data=self._prompt_data,
                 then={"yes": "complete-equal-llm", "no": "explain"},
             ),
-            "explain": Prompt(
+            "explain": LLMStep(
                 (
                     "Explain the difference using separate mistake, reason, and "
                     "minimal_fix fields. The minimal_fix must satisfy the governing "
-                    "instructions. If ask_for_fix is true, return the complete "
-                    "corrected answer in minimal_fix, preserving the requested "
-                    "format."
+                    "instructions. If ask_for_fix is true, treat expected_answer as "
+                    "the revealed truth and adjust your subsequent reasoning and work "
+                    "path accordingly. Do not return that adjustment; return only the "
+                    "three diagnostic fields."
                 ),
                 answer=AnswerSpec(
                     {
@@ -382,20 +386,20 @@ class DiagnoseAnswer(Rutter):
                 validate=self._validate_detail,
                 then="complete-different",
             ),
-            "complete-equal-evaluator": Done(self._equal_evaluator),
-            "complete-equal-llm": Done(self._equal_llm),
-            "complete-different": Done(self._different),
+            "complete-equal-evaluator": Terminal(self._equal_evaluator),
+            "complete-equal-llm": Terminal(self._equal_llm),
+            "complete-different": Terminal(self._different),
         }
 
 
 class AskAndDiagnose(Rutter):
     rutter_id = "ask-and-diagnose"
     definition_version = 2
-    start_state = "ask"
-    evaluator: Callable[[str, str, StateContext], bool] | None = None
+    initial_evolution_id = "ask"
+    evaluator: Callable[[str, str, EvolutionContext], bool] | None = None
 
     @staticmethod
-    def _ask_data(context: StateContext) -> JsonObject:
+    def _ask_data(context: EvolutionContext) -> JsonObject:
         question = QuestionCase.from_json(context.charter.data)
         return _freeze_object(
             {
@@ -407,7 +411,7 @@ class AskAndDiagnose(Rutter):
         )
 
     @staticmethod
-    def _validate_answer(context: AnswerContext) -> ValidationReport:
+    def _validate_answer(context: LLMResponseContext) -> ValidationReport:
         evidence = context.response.evidence
         if set(evidence) == {"answer"} and type(evidence["answer"]) is str:
             return ValidationReport(True)
@@ -422,7 +426,7 @@ class AskAndDiagnose(Rutter):
             ),
         )
 
-    def _diagnosis_charter(self, context: StateContext) -> JsonObject:
+    def _diagnosis_charter(self, context: EvolutionContext) -> JsonObject:
         question = QuestionCase.from_json(context.charter.data)
         turn = context.history.require_latest_turn("ask")
         response = turn.response
@@ -433,7 +437,7 @@ class AskAndDiagnose(Rutter):
             or type(response.evidence["answer"]) is not str
         ):
             raise RutterDefinitionError(
-                "diagnose Call requires the latest accepted ask/answered Turn"
+                "diagnose SubRutter requires the latest accepted ask/answered Turn"
             )
         actual_answer = response.evidence["answer"]
         verdict = None
@@ -446,10 +450,12 @@ class AskAndDiagnose(Rutter):
         return DiagnosisCase(question, actual_answer, verdict).to_json()
 
     @staticmethod
-    def _forward_result(context: StateContext) -> RunResult:
-        return context.history.require_latest_call("diagnose").result
+    def _forward_result(context: EvolutionContext) -> VoyageResult:
+        return context.history.require_latest_subrutter(
+            origin_evolution_id="diagnose"
+        ).result
 
-    def define_states(self) -> Mapping[str, object]:
+    def define_evolutions(self) -> Mapping[str, object]:
         owner = type(self)
         if self.evaluator is not None and (
             "rutter_id" not in owner.__dict__
@@ -465,37 +471,37 @@ class AskAndDiagnose(Rutter):
                 "AskAndDiagnose evaluator",
             )
         return {
-            "ask": Prompt(
+            "ask": LLMStep(
                 "Answer the enquiry using the optional format hint.",
                 answer=AnswerSpec({"answered": {"answer": "string"}}),
                 data=self._ask_data,
                 validate=self._validate_answer,
                 then="diagnose",
             ),
-            "diagnose": Call(
+            "diagnose": SubRutter(
                 DiagnoseAnswer,
                 charter=self._diagnosis_charter,
                 then="complete",
             ),
-            "complete": Done(self._forward_result),
+            "complete": Terminal(self._forward_result),
         }
 
 
 def diagnose_answer_on(
     *,
     id: str,
-    on: EdgeMatch,
-    question: QuestionCase | Callable[[EdgeContext], QuestionCase],
-    actual_answer: Callable[[EdgeContext], str],
-    evaluator: Callable[[str, str, EdgeContext], bool] | None = None,
+    on: TransitionMatch,
+    question: QuestionCase | Callable[[TransitionContext], QuestionCase],
+    actual_answer: Callable[[TransitionContext], str],
+    evaluator: Callable[[str, str, TransitionContext], bool] | None = None,
     ask_for_fix: bool = False,
-) -> CaseMaker:
+) -> TransitionHook:
     if type(ask_for_fix) is not bool:
         raise RutterDefinitionError("ask_for_fix must be an exact Boolean")
     if isinstance(question, QuestionCase):
         fixed_question = QuestionCase.from_json(question.to_json())
 
-        def resolve_question(context: EdgeContext) -> QuestionCase:
+        def resolve_question(context: TransitionContext) -> QuestionCase:
             del context
             return fixed_question
 
@@ -506,7 +512,7 @@ def diagnose_answer_on(
     if evaluator is not None:
         _require_callable_arity(evaluator, 3, "diagnostic evaluator")
 
-    def build(context: EdgeContext) -> JsonObject:
+    def build(context: TransitionContext) -> JsonObject:
         resolved = resolve_question(context)
         if not isinstance(resolved, QuestionCase):
             raise RutterDefinitionError(
@@ -531,16 +537,16 @@ def diagnose_answer_on(
             ask_for_fix=ask_for_fix,
         ).to_json()
 
-    return CaseMaker(id, on=on, child=DiagnoseAnswer, charter=build)
+    return TransitionHook(id, on=on, child=DiagnoseAnswer, charter=build)
 
 
 def ask_and_diagnose_on(
     *,
     id: str,
-    on: EdgeMatch,
-    question: QuestionCase | Callable[[EdgeContext], QuestionCase],
+    on: TransitionMatch,
+    question: QuestionCase | Callable[[TransitionContext], QuestionCase],
     child: type[AskAndDiagnose] = AskAndDiagnose,
-) -> CaseMaker:
+) -> TransitionHook:
     if not isinstance(child, type) or not issubclass(child, AskAndDiagnose):
         raise RutterDefinitionError(
             "ask_and_diagnose_on child must be an AskAndDiagnose class"
@@ -548,7 +554,7 @@ def ask_and_diagnose_on(
     if isinstance(question, QuestionCase):
         fixed_question = QuestionCase.from_json(question.to_json())
 
-        def resolve_question(context: EdgeContext) -> QuestionCase:
+        def resolve_question(context: TransitionContext) -> QuestionCase:
             del context
             return fixed_question
 
@@ -556,7 +562,7 @@ def ask_and_diagnose_on(
         _require_callable_arity(question, 1, "question provider")
         resolve_question = question
 
-    def build(context: EdgeContext) -> JsonObject:
+    def build(context: TransitionContext) -> JsonObject:
         resolved = resolve_question(context)
         if not isinstance(resolved, QuestionCase):
             raise RutterDefinitionError(
@@ -564,27 +570,28 @@ def ask_and_diagnose_on(
             )
         return resolved.to_json()
 
-    return CaseMaker(id, on=on, child=child, charter=build)
+    return TransitionHook(id, on=on, child=child, charter=build)
 
 
-def case_sequence_after(
+def hook_sequence_after(
     *,
     id: str,
-    after_states: Collection[str],
+    after_evolutions: Collection[str],
     items: Sequence[JsonObject],
     child: type[Rutter],
-    charter: Callable[[JsonObject, EdgeContext], JsonObject] | None = None,
-) -> CaseMaker:
-    _require_id(id, "CaseMaker")
-    if isinstance(after_states, (str, bytes)) or not isinstance(
-        after_states, Collection
+    charter: Callable[[JsonObject, TransitionContext], JsonObject] | None = None,
+) -> TransitionHook:
+    _require_id(id, "TransitionHook")
+    if isinstance(after_evolutions, (str, bytes)) or not isinstance(
+        after_evolutions, Collection
     ):
-        raise RutterDefinitionError("after_states must be a collection of state IDs")
-    frozen_states = frozenset(
-        _require_id(state, "after state") for state in after_states
+        raise RutterDefinitionError("after_evolutions must be a collection of evolution IDs")
+    frozen_evolutions = frozenset(
+        _require_id(evolution, "after evolution")
+        for evolution in after_evolutions
     )
-    if not frozen_states:
-        raise RutterDefinitionError("after_states must not be empty")
+    if not frozen_evolutions:
+        raise RutterDefinitionError("after_evolutions must not be empty")
     if isinstance(items, (str, bytes)) or not isinstance(items, Sequence):
         raise RutterDefinitionError("items must be a sequence of JSON objects")
     frozen_items = tuple(
@@ -597,15 +604,15 @@ def case_sequence_after(
     if charter is not None:
         _require_callable_arity(charter, 2, "sequence Charter builder")
 
-    def build(context: EdgeContext) -> JsonObject | None:
-        source = context.edge.get("source")
-        if source not in frozen_states:
+    def build(context: TransitionContext) -> JsonObject | None:
+        source = context.transition.get("source")
+        if source not in frozen_evolutions:
             return None
-        attached = context.state.history.attached_calls(case_maker_id=id)
-        edge_ids = tuple(call.attached_to_edge_id for call in attached)
-        if len(set(edge_ids)) != len(edge_ids):
+        attached = context.evolution.history.subrutters(transition_hook_id=id)
+        transition_ids = tuple(call.attached_to_transition_id for call in attached)
+        if len(set(transition_ids)) != len(transition_ids):
             raise _HistoryInconsistency(
-                "history-inconsistency: duplicate CaseMaker and edge identity"
+                "history-inconsistency: duplicate TransitionHook and transition identity"
             )
         index = len(attached)
         if index > len(frozen_items):
@@ -622,7 +629,7 @@ def case_sequence_after(
             "sequence Charter",
         )
 
-    return CaseMaker(id, on=EdgeMatch(), child=child, charter=build)
+    return TransitionHook(id, on=TransitionMatch(), child=child, charter=build)
 
 
 __all__ = (
@@ -632,6 +639,6 @@ __all__ = (
     "DiagnosisDetail",
     "QuestionCase",
     "ask_and_diagnose_on",
-    "case_sequence_after",
+    "hook_sequence_after",
     "diagnose_answer_on",
 )

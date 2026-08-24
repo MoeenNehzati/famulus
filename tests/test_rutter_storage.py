@@ -10,18 +10,20 @@ from threading import Barrier, Event, Thread
 
 import pytest
 
+import officina.rutter.model as model_module
 from officina.common.atomic_files import AtomicWriteError
 from officina.rutter.model import (
+    MachineResult,
     ActiveChild,
     ActiveRun,
     Charter,
-    EnteredNode,
+    EnteredEvolution,
     Reckoning,
     RutterDefinitionError,
     RutterStateError,
 )
 from officina.rutter.storage import (
-    _ReckoningStore,
+    ReckoningStore,
     _canonical_reckoning_bytes,
     _confined_reckoning_path,
     _decode_reckoning,
@@ -33,7 +35,7 @@ def _active(
     *,
     run_id: str = "root-run",
     entry_id: str = "entry-root",
-    state_id: str = "review",
+    evolution_id: str = "review",
     history: tuple[object, ...] = (),
     active_child: ActiveChild | None = None,
 ) -> ActiveRun:
@@ -42,16 +44,18 @@ def _active(
         "example",
         1,
         Charter({"artifact": "draft.md"}),
-        EnteredNode(entry_id, state_id),
+        EnteredEvolution(entry_id, evolution_id),
         history,
         active_child,
     )
 
 
 def _example_reckoning(
-    *, global_revision: int = 0, state_id: str = "review"
+    *, global_revision: int = 0, evolution_id: str = "review"
 ) -> Reckoning:
-    return Reckoning(3, global_revision, _active(state_id=state_id), {}, None, None)
+    return Reckoning(
+        3, global_revision, _active(evolution_id=evolution_id), {}, None, None
+    )
 
 
 def _valid_mapping() -> dict[str, object]:
@@ -107,21 +111,21 @@ def _call(
     call_id: str,
     completed_run_id: str,
     *,
-    node_entry_id: str | None = None,
+    evolution_entry_id: str | None = None,
     site_kind: str = "explicit_call",
     site_id: str = "delegate",
-    edge_id: str | None = None,
+    transition_id: str | None = None,
 ) -> dict[str, object]:
-    if node_entry_id is None:
-        node_entry_id = (
+    if evolution_entry_id is None:
+        evolution_entry_id = (
             "entry-root" if site_kind == "attached_case" else f"entry-{site_id}"
         )
     return {
         "call_id": call_id,
-        "node_entry_id": node_entry_id,
+        "node_entry_id": evolution_entry_id,
         "site_kind": site_kind,
         "site_id": site_id,
-        "attached_to_edge_id": edge_id,
+        "attached_to_edge_id": transition_id,
         "completed_run_id": completed_run_id,
     }
 
@@ -129,20 +133,20 @@ def _call(
 def _turn(
     record_id: str = "turn-root",
     *,
-    node_entry_id: str = "entry-root",
-    state_id: str = "review",
+    evolution_entry_id: str = "entry-root",
+    evolution_id: str = "review",
 ) -> dict[str, object]:
     return {
         "record_id": record_id,
-        "node_entry_id": node_entry_id,
-        "state_id": state_id,
+        "node_entry_id": evolution_entry_id,
+        "state_id": evolution_id,
         "revision": 2,
         "message": {
             "instructions": {"text": "Review.", "answer": {"reviewed": {}}},
             "data": {
                 "state": {
-                    "id": state_id,
-                    "entry_id": node_entry_id,
+                    "id": evolution_id,
+                    "entry_id": evolution_entry_id,
                     "revision": 2,
                 },
                 "payload": {},
@@ -155,14 +159,14 @@ def _turn(
 def _action(
     record_id: str = "action-root",
     *,
-    node_entry_id: str = "entry-root",
-    state_id: str = "review",
+    evolution_entry_id: str = "entry-root",
+    evolution_id: str = "review",
 ) -> dict[str, object]:
     return {
         "record_id": record_id,
         "action_id": f"issued-{record_id}",
-        "node_entry_id": node_entry_id,
-        "state_id": state_id,
+        "node_entry_id": evolution_entry_id,
+        "state_id": evolution_id,
         "mode": "pure",
         "result": {"outcome": "stored", "value": {}},
     }
@@ -302,10 +306,8 @@ def test_encoder_rejects_an_active_path_that_cannot_be_reopened() -> None:
                 f"call-{index}", "explicit_call", "delegate", None, run
             ),
         )
-    reckoning = Reckoning(3, 0, run, {}, None, None)
-
     with pytest.raises(RutterStateError, match="nesting is too deep"):
-        _canonical_reckoning_bytes(reckoning)
+        Reckoning(3, 0, run, {}, None, None)
 
 
 def test_decode_rejects_wrong_active_effect_owner() -> None:
@@ -368,7 +370,7 @@ def test_decode_rejects_inconsistent_effect_recovery(
         _decode_reckoning(_bytes(mapping))
 
 
-def test_decode_preserves_valid_effect_and_opaque_fault_json() -> None:
+def test_decode_recovers_typed_effect_and_opaque_fault_values() -> None:
     mapping = _valid_mapping()
     effect = {
         "action_id": "action-1",
@@ -379,14 +381,171 @@ def test_decode_preserves_valid_effect_and_opaque_fault_json() -> None:
         "disposition": "uncertain",
         "result": None,
     }
-    fault = {"category": "callback", "coordinates": {"run": "root-run"}}
+    fault = {"legacy": {"coordinates": {"run": "root-run"}}}
     mapping["active_effect"] = effect
     mapping["fault"] = fault
 
     decoded = _decode_reckoning(_bytes(mapping))
 
-    assert decoded.active_effect == effect
-    assert decoded.fault == fault
+    assert type(decoded.active_effect).__name__ == "_EffectRecovery"
+    assert decoded.active_effect is not None
+    assert (
+        decoded.active_effect.machine_id,
+        decoded.active_effect.owner_run_id,
+        decoded.active_effect.evolution_entry_id,
+        decoded.active_effect.evolution_id,
+        decoded.active_effect.mode,
+        decoded.active_effect.disposition,
+        decoded.active_effect.result,
+    ) == (
+        "action-1",
+        "root-run",
+        "entry-root",
+        "review",
+        "non-repeat-safe",
+        "uncertain",
+        None,
+    )
+    assert type(decoded.fault).__name__ == "OpaqueFault"
+    assert decoded.fault.wire == fault
+
+
+@pytest.mark.parametrize(
+    "fault",
+    (
+        {"category": "routing"},
+        {
+            "category": "routing",
+            "run_id": "",
+            "state_id": "review",
+            "node_entry_id": "entry-root",
+        },
+        {
+            "category": "routing",
+            "run_id": "root-run",
+            "state_id": "review",
+            "node_entry_id": 3,
+        },
+        {
+            "category": "routing",
+            "run_id": "root-run",
+            "state_id": "review",
+            "node_entry_id": "entry-root",
+            "target_state_id": [],
+        },
+        {
+            "category": "routing",
+            "run_id": "root-run",
+            "state_id": "review",
+            "node_entry_id": "entry-root",
+            "target_state_id": None,
+        },
+        {
+            "category": "routing",
+            "run_id": "root-run",
+            "state_id": "review",
+            "node_entry_id": "entry-root",
+            "case_maker_ids": ["maker", 3],
+        },
+        {
+            "category": "routing",
+            "run_id": "root-run",
+            "state_id": "review",
+            "node_entry_id": "entry-root",
+            "case_maker_ids": [],
+        },
+    ),
+)
+def test_decode_rejects_malformed_known_fault_coordinates(
+    fault: dict[str, object],
+) -> None:
+    """Treating malformed current fault authority as opaque must fail."""
+
+    mapping = _valid_mapping()
+    mapping["fault"] = fault
+
+    with pytest.raises(RutterStateError, match="fault"):
+        _decode_reckoning(_bytes(mapping))
+
+
+def test_typed_recovery_and_known_fault_encode_to_exact_v3_bytes() -> None:
+    """Adding type tags or changing any established v3 key must fail."""
+
+    mapping = _valid_mapping()
+    mapping["active_effect"] = {
+        "action_id": "action-1",
+        "owner_run_id": "root-run",
+        "node_entry_id": "entry-root",
+        "state_id": "review",
+        "mode": "repeat-safe",
+        "disposition": "completed",
+        "result": {"outcome": "stored", "value": {"count": 2}},
+    }
+    mapping["fault"] = {
+        "category": "routing",
+        "run_id": "root-run",
+        "state_id": "review",
+        "node_entry_id": "entry-root",
+        "target_state_id": "done",
+        "case_maker_ids": ["maker-a", "maker-b"],
+    }
+    expected = (
+        json.dumps(mapping, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        + "\n"
+    ).encode("utf-8")
+
+    decoded = _decode_reckoning(expected)
+
+    assert type(decoded.active_effect).__name__ == "_EffectRecovery"
+    assert type(decoded.fault).__name__ == "KnownFault"
+    assert _canonical_reckoning_bytes(decoded) == expected
+
+
+def test_typed_recovery_and_known_fault_own_their_invariants() -> None:
+    """Malformed typed authority must fail at its construction boundary."""
+
+    with pytest.raises(RutterStateError, match="effect recovery"):
+        model_module._EffectRecovery(
+            "action-1",
+            "root-run",
+            "entry-root",
+            "review",
+            "repeat-safe",
+            "planned",
+            MachineResult("stored", {}),
+        )
+    with pytest.raises(RutterStateError, match="fault"):
+        model_module.KnownFault(
+            "routing",
+            "root-run",
+            "review",
+            "",
+            None,
+            (),
+        )
+
+
+def test_opaque_fault_reopen_and_rewrite_preserves_exact_bytes(tmp_path: Path) -> None:
+    """Discarding or normalizing private legacy payload during rewrite must fail."""
+
+    mapping = _valid_mapping()
+    mapping["fault"] = {
+        "legacy": {"detail": ["opaque", {"attempt": 2}]},
+        "vendor_flag": True,
+    }
+    expected = (
+        json.dumps(mapping, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        + "\n"
+    ).encode("utf-8")
+    target = tmp_path / "opaque-fault.reckoning.json"
+    target.write_bytes(expected)
+    store = ReckoningStore(target)
+
+    with store.transaction() as current:
+        assert type(current.fault).__name__ == "OpaqueFault"
+        store.replace(current, current)
+
+    assert target.read_bytes() == expected
 
 
 @pytest.mark.parametrize("disposition", ("planned", "completed", "uncertain"))
@@ -549,7 +708,7 @@ def test_decode_rejects_duplicate_active_entrance_ids() -> None:
         },
     }
 
-    with pytest.raises(RutterStateError, match="duplicate entrance ID"):
+    with pytest.raises(RutterStateError, match="entrance owner is not unique"):
         _decode_reckoning(_bytes(mapping))
 
 
@@ -576,7 +735,7 @@ def test_decode_rejects_more_than_one_done_record() -> None:
         }
     )
 
-    with pytest.raises(RutterStateError, match="DoneRecord"):
+    with pytest.raises(RutterStateError, match="TerminalRecord"):
         _decode_reckoning(_bytes(mapping))
 
 
@@ -601,7 +760,7 @@ def test_decode_rejects_completed_run_without_exactly_one_reference(
         _call(f"call-{index}", "child-run") for index in range(reference_count)
     ]
 
-    with pytest.raises(RutterStateError, match="exactly one CallRecord"):
+    with pytest.raises(RutterStateError, match="exactly one SubRutterRecord"):
         _decode_reckoning(_bytes(mapping))
 
 
@@ -617,7 +776,7 @@ def test_decode_rejects_cyclic_completed_run_references() -> None:
         _call(
             "call-grand",
             "grand-run",
-            node_entry_id="entry-child-delegate",
+            evolution_entry_id="entry-child-delegate",
         ),
     )
     completed["grand-run"] = {
@@ -629,7 +788,7 @@ def test_decode_rejects_cyclic_completed_run_references() -> None:
             _call(
                 "call-child",
                 "child-run",
-                node_entry_id="entry-grand-delegate",
+                evolution_entry_id="entry-grand-delegate",
             ),
             {
                 "record_id": "done-grand",
@@ -659,7 +818,7 @@ def test_decode_rejects_nonattached_record_after_done() -> None:
         }
     )
 
-    with pytest.raises(RutterStateError, match="DoneRecord"):
+    with pytest.raises(RutterStateError, match="TerminalRecord"):
         _decode_reckoning(_bytes(mapping))
 
 
@@ -695,14 +854,14 @@ def test_decode_rejects_duplicate_attachment_authority() -> None:
             "child-run",
             site_kind="attached_case",
             site_id="maker-1",
-            edge_id="edge-1",
+            transition_id="edge-1",
         ),
         _call(
             "call-grand",
             "grand-run",
             site_kind="attached_case",
             site_id="maker-1",
-            edge_id="edge-1",
+            transition_id="edge-1",
         ),
     ]
     completed["grand-run"] = {
@@ -740,7 +899,7 @@ def test_decode_accepts_attached_call_bound_to_valid_earlier_source(
         source = _call(
             "edge-source",
             "source-run",
-            node_entry_id="entry-root",
+            evolution_entry_id="entry-root",
             site_id="review",
         )
         completed["source-run"] = {
@@ -771,13 +930,13 @@ def test_decode_accepts_attached_call_bound_to_valid_earlier_source(
             "child-run",
             site_kind="attached_case",
             site_id="maker-1",
-            edge_id="edge-source",
+            transition_id="edge-source",
         ),
     ]
 
     decoded = _decode_reckoning(_bytes(mapping))
 
-    assert decoded.root.history[-1].attached_to_edge_id == "edge-source"
+    assert decoded.root.history[-1].attached_to_transition_id == "edge-source"
 
 
 def test_decode_rejects_dangling_attached_edge_source() -> None:
@@ -790,7 +949,7 @@ def test_decode_rejects_dangling_attached_edge_source() -> None:
             "child-run",
             site_kind="attached_case",
             site_id="maker-1",
-            edge_id="missing-edge",
+            transition_id="missing-edge",
         )
     ]
 
@@ -808,7 +967,7 @@ def test_decode_rejects_future_attached_edge_source() -> None:
             "child-run",
             site_kind="attached_case",
             site_id="maker-1",
-            edge_id="future-edge",
+            transition_id="future-edge",
         ),
         _turn("future-edge"),
     ]
@@ -827,7 +986,7 @@ def test_decode_rejects_wrong_run_attached_edge_source() -> None:
             "child-run",
             site_kind="attached_case",
             site_id="maker-1",
-            edge_id="done-child",
+            transition_id="done-child",
         )
     ]
 
@@ -844,10 +1003,10 @@ def test_decode_rejects_attached_edge_source_from_another_entrance() -> None:
         _call(
             "call-child",
             "child-run",
-            node_entry_id="entry-other",
+            evolution_entry_id="entry-other",
             site_kind="attached_case",
             site_id="maker-1",
-            edge_id="edge-source",
+            transition_id="edge-source",
         ),
     ]
 
@@ -881,14 +1040,14 @@ def test_decode_rejects_attached_call_as_an_edge_source() -> None:
             "child-run",
             site_kind="attached_case",
             site_id="maker-1",
-            edge_id="edge-source",
+            transition_id="edge-source",
         ),
         _call(
             "call-grand",
             "grand-run",
             site_kind="attached_case",
             site_id="maker-2",
-            edge_id="call-child",
+            transition_id="call-child",
         ),
     ]
 
@@ -908,7 +1067,7 @@ def test_decode_rejects_ambiguous_attached_edge_source() -> None:
             "child-run",
             site_kind="attached_case",
             site_id="maker-1",
-            edge_id="edge-source",
+            transition_id="edge-source",
         ),
     ]
 
@@ -942,14 +1101,14 @@ def test_decode_allows_multiple_attached_calls_from_one_source_entrance() -> Non
             "child-run",
             site_kind="attached_case",
             site_id="maker-1",
-            edge_id="edge-source",
+            transition_id="edge-source",
         ),
         _call(
             "call-grand",
             "grand-run",
             site_kind="attached_case",
             site_id="maker-2",
-            edge_id="edge-source",
+            transition_id="edge-source",
         ),
     ]
 
@@ -962,7 +1121,7 @@ def test_decode_rejects_one_entrance_with_conflicting_historical_states() -> Non
     mapping = _valid_mapping()
     root = mapping["root"]
     assert isinstance(root, dict)
-    root["history"].insert(0, _action(state_id="other-state"))
+    root["history"].insert(0, _action(evolution_id="other-state"))
 
     with pytest.raises(RutterStateError, match="entrance state"):
         _decode_reckoning(_bytes(mapping))
@@ -997,7 +1156,7 @@ def test_decode_accepts_active_attached_child_bound_to_parent_source(
         source = _call(
             "edge-source",
             "child-run",
-            node_entry_id="entry-root",
+            evolution_entry_id="entry-root",
             site_id="review",
         )
     else:
@@ -1014,7 +1173,7 @@ def test_decode_accepts_active_attached_child_bound_to_parent_source(
     decoded = _decode_reckoning(_bytes(mapping))
 
     assert decoded.root.active_child is not None
-    assert decoded.root.active_child.attached_to_edge_id == "edge-source"
+    assert decoded.root.active_child.attached_to_transition_id == "edge-source"
 
 
 def test_decode_rejects_active_attached_child_with_dangling_source() -> None:
@@ -1040,8 +1199,8 @@ def test_decode_rejects_active_attached_child_with_future_source() -> None:
         child_history=[
             _turn(
                 "future-edge",
-                node_entry_id="entry-active",
-                state_id="start",
+                evolution_entry_id="entry-active",
+                evolution_id="start",
             )
         ],
     )
@@ -1066,7 +1225,7 @@ def test_decode_rejects_active_attached_child_with_wrong_source_entrance() -> No
     root = mapping["root"]
     assert isinstance(root, dict)
     root["history"] = [
-        _turn("edge-source", node_entry_id="entry-past", state_id="past")
+        _turn("edge-source", evolution_entry_id="entry-past", evolution_id="past")
     ]
     root["active_child"] = _active_attached_child("edge-source")
 
@@ -1085,7 +1244,7 @@ def test_decode_rejects_active_attached_child_with_attached_source() -> None:
             "child-run",
             site_kind="attached_case",
             site_id="maker-1",
-            edge_id="edge-source",
+            transition_id="edge-source",
         ),
     ]
     root["active_child"] = _active_attached_child("call-child")
@@ -1117,7 +1276,7 @@ def test_decode_rejects_active_duplicate_attachment_authority() -> None:
             "child-run",
             site_kind="attached_case",
             site_id="maker-active",
-            edge_id="edge-source",
+            transition_id="edge-source",
         ),
     ]
     root["active_child"] = _active_attached_child("edge-source")
@@ -1145,7 +1304,7 @@ def test_decode_rejects_completed_explicit_call_with_conflicting_state() -> None
         _call(
             "call-grand",
             "grand-run",
-            node_entry_id="entry-child-done",
+            evolution_entry_id="entry-child-done",
             site_id="delegate",
         ),
     )
@@ -1177,7 +1336,7 @@ def test_decode_allows_explicit_call_sharing_its_state_entrance() -> None:
         _call(
             "call-child",
             "child-run",
-            node_entry_id="entry-root",
+            evolution_entry_id="entry-root",
             site_id="review",
         ),
     ]
@@ -1208,10 +1367,10 @@ def test_confined_path_requires_named_reckoning_json_suffix(tmp_path: Path) -> N
         _confined_reckoning_path(tmp_path, Path("paper.json"))
 
 
-def _store(tmp_path: Path) -> _ReckoningStore:
+def _store(tmp_path: Path) -> ReckoningStore:
     root = tmp_path / "reckonings"
     path = _confined_reckoning_path(root, Path("jobs/paper.reckoning.json"))
-    return _ReckoningStore(path)
+    return ReckoningStore(path)
 
 
 def test_store_create_read_and_lock_modes(tmp_path: Path) -> None:
@@ -1311,7 +1470,7 @@ def test_replace_requires_live_locked_predecessor(tmp_path: Path) -> None:
 def test_atomic_replace_reopens_as_one_complete_reckoning(tmp_path: Path) -> None:
     store = _store(tmp_path)
     previous = _example_reckoning()
-    replacement = _example_reckoning(global_revision=1, state_id="complete")
+    replacement = _example_reckoning(global_revision=1, evolution_id="complete")
     store.create(previous)
 
     with store.transaction() as loaded:
@@ -1323,14 +1482,36 @@ def test_atomic_replace_reopens_as_one_complete_reckoning(tmp_path: Path) -> Non
     assert target.read_bytes() == _canonical_reckoning_bytes(replacement)
 
 
+def test_identity_save_preserves_canonical_fixture_bytes(tmp_path: Path) -> None:
+    """A no-advance reopen/save must not rewrite canonical v3 authority bytes."""
+
+    reckoning_path = tmp_path / "reckonings/jobs/paper.reckoning.json"
+    reckoning_path.parent.mkdir(parents=True)
+    reckoning_path.write_bytes(
+        b'{"active_effect":null,"completed_runs":{},"fault":null,'
+        b'"global_revision":0,"root":{"active_child":null,'
+        b'"charter":{"artifact":"draft.md"},"definition_version":1,'
+        b'"entered_node":{"entry_id":"entry-root","state_id":"review"},'
+        b'"history":[],"run_id":"root-run","rutter_id":"example"},'
+        b'"storage_version":3}\n'
+    )
+    before = reckoning_path.read_bytes()
+
+    store = ReckoningStore(reckoning_path)
+    with store.transaction() as current:
+        store.replace(current, current)
+
+    assert reckoning_path.read_bytes() == before
+
+
 def test_two_store_instances_cannot_publish_one_predecessor_twice(
     tmp_path: Path,
 ) -> None:
     first = _store(tmp_path)
     second = _store(tmp_path)
     previous = _example_reckoning()
-    winner = _example_reckoning(global_revision=1, state_id="winner")
-    loser = _example_reckoning(global_revision=1, state_id="loser")
+    winner = _example_reckoning(global_revision=1, evolution_id="winner")
+    loser = _example_reckoning(global_revision=1, evolution_id="loser")
     first.create(previous)
 
     with first.transaction():
@@ -1349,14 +1530,14 @@ def test_concurrent_same_predecessor_publishes_exactly_one_successor(
     second = _store(tmp_path)
     previous = _example_reckoning()
     successors = (
-        _example_reckoning(global_revision=1, state_id="winner"),
-        _example_reckoning(global_revision=1, state_id="loser"),
+        _example_reckoning(global_revision=1, evolution_id="winner"),
+        _example_reckoning(global_revision=1, evolution_id="loser"),
     )
     first.create(previous)
     start = Barrier(3)
     outcomes: list[str] = []
 
-    def publish(store: _ReckoningStore, successor: Reckoning) -> None:
+    def publish(store: ReckoningStore, successor: Reckoning) -> None:
         start.wait()
         try:
             with store.transaction():

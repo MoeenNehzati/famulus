@@ -1,9 +1,9 @@
 schema_version: 6
 node_type: behavioral_source
 id: using-compass.source.gateway
-version: 5
-description: Defines thin LLM-facing rules for operating one authorized bound Rutter
-  through its four public operations and two-part Message.
+version: 7
+description: Defines the thin bootstrap for operating one authorized,
+  self-describing Voyage.
 gateway:
   path: SKILL.md
   language: Markdown
@@ -12,19 +12,18 @@ content:
 dependencies: []
 uses_interfaces:
 - interface: rutter.interface.bound-operations
-  version: 3
+  version: 5
 interfaces:
   using-compass.source.gateway.interface.default:
     content:
     - SKILL\.md
     uses_interfaces:
     - interface: rutter.interface.bound-operations
-      version: 3
-    version: 5
-    description: Settle one authorized bound Rutter to its deepest active leaf, follow
-      one two-part Message, and submit its Response through the sole advancing operation.
-    usage: request=<Use compass on rutter-name>; binding=<one authorized bound Rutter
-      instance>
+      version: 5
+    version: 7
+    description: Ask one authorized Voyage for its public operating interface and
+      follow only the methods it advertises.
+    usage: request=<Use compass on rutter-name>; binding=<one authorized Voyage>
     contract:
       arguments:
         request:
@@ -35,28 +34,28 @@ interfaces:
             kind: string
             sensitivity: user-private
         binding:
-          description: Invoker-provided runtime value containing one authorized bound
-            Rutter instance with four public operations.
+          description: Invoker-provided runtime value containing one authorized,
+            self-describing Voyage.
           required: true
           sensitivity: user-private
           type:
             kind: string
-            description: Bound Rutter value supplied by the authorized invoker.
+            description: Voyage value supplied by the authorized invoker.
             sensitivity: user-private
       preconditions: []
       interaction:
         mode: unattended
       caller_warnings:
       - external-side-effect: Normal continuation may execute automatic external work
-          through the bound Rutter; that work cannot be rolled back by Compass.
+          through the Voyage; that work cannot be rolled back by Compass.
       outputs:
       - id: response
         audience: both
         cardinality:
           minimum: 1
           maximum: 1
-        description: Current Message evidence, ready NodeView, terminal result, fault,
-          uncertainty, validation failure, or public-interface gap.
+        description: Result of following the Voyage's advertised public interface,
+          or a public-interface gap.
         direct_io_ref: response
         empty: Never empty.
         ordering: stable
@@ -68,51 +67,14 @@ interfaces:
           kind: string
           sensitivity: derived-private
       outcomes:
-      - id: ready
+      - id: completed
         class: success
         outputs:
         - response
         effects:
-        - bound-rutter-operation
-        caller_action: Read the exact two-part Message and submit its validated Response
-          through next.
-      - id: terminal
-        class: success
-        outputs:
-        - response
-        effects:
-        - bound-rutter-operation
-        caller_action: Stop and report the authoritative terminal status.
-      - id: faulted
-        class: error
-        outputs:
-        - response
-        effects:
-        - bound-rutter-operation
-        caller_action: Stop and report the authoritative fault diagnostics.
-      - id: uncertain
-        class: error
-        outputs:
-        - response
-        effects:
-        - bound-rutter-operation
-        caller_action: Stop for manual reconciliation without inventing a recovery
-          transition.
-      - id: response-required
-        class: refusal
-        outputs:
-        - response
-        effects: []
-        caller_action: 'On RutterValidationError: Prompt response is required, inspect
-          the current NodeView, call get_instruction, and perform the LLM instruction;
-          this boundary does not return a ValidationReport.'
-      - id: validation-failed
-        class: refusal
-        outputs:
-        - response
-        effects: []
-        caller_action: Repair only from the returned public issues; the current
-          active leaf remains unchanged.
+        - voyage-operation
+        caller_action: Return the result obtained by following the advertised public
+          interface.
       - id: interface-gap
         class: refusal
         outputs:
@@ -124,39 +86,35 @@ interfaces:
         state_effect: mutating
         lifecycle: finite
         consistency:
-          live: Every operation resolves the deepest active leaf through the same
-            bound Rutter; durable traversal remains encapsulated by that interface.
+            live: Help and every subsequently advertised operation come from the
+              same authorized Voyage.
         effects:
-        - id: bound-rutter-operation
-          direct_io_ref: bound-rutter
+        - id: voyage-operation
+          direct_io_ref: voyage
           action: execute
           value_source:
             kind: argument
             argument_ref: binding
           may_occur_in_outcomes:
-          - ready
-          - terminal
-          - faulted
-          - uncertain
+          - completed
           confirmation_evidence:
             kind: output
             output_ref: response
           reversibility:
             irreversible: The caller has no rollback authority for state or external
-              effects encapsulated by the bound Rutter interface.
+              effects encapsulated by the Voyage interface.
         mutation_safety:
           atomicity:
-            per_effect_only: Accepted traversal is durable, while external automatic
-              work may require separate completion evidence.
+            per_effect_only: Each advertised operation owns its own atomicity contract.
           concurrent_invocations:
-            safe: Cooperating bound Rutter callers serialize operations through the
+            safe: Cooperating Voyage callers serialize operations through the
               same Reckoning transaction.
           idempotency:
-            non_idempotent: An accepted Response or automatic continuation can advance
-              the durable revision and active node.
+            non_idempotent: Advertised operations may advance durable state or affect
+              external systems.
           on_uncertain_completion:
-            verify_then_decide: Read the public current-node condition and stop for
-              manual reconciliation.
+            verify_then_decide: Follow the Voyage's advertised public guidance and
+              stop if it does not establish a safe continuation.
           partial_effects_on_failure:
             possible: A late durability failure may leave a whole successor visible;
               an interrupted external effect may leave planned or uncertain recovery
@@ -173,7 +131,7 @@ interfaces:
           medium: prompt
           system: agent-runtime
           access: read
-          content: Literal Compass request for the bound Rutter undertaking.
+          content: Literal Compass request for the Voyage undertaking.
           formats:
           - text
           sensitivity: user-private
@@ -182,18 +140,17 @@ interfaces:
           medium: prompt
           system: agent-runtime
           access: write
-          content: Current Message evidence, validation issues, ready node, terminal
-            result, fault, uncertainty, or interface-gap report.
+          content: Result obtained through the advertised interface, or an
+            interface-gap report.
           formats:
           - markdown
           sensitivity: derived-private
-        - id: bound-rutter
+        - id: voyage
           medium: local-system
           access: execute
           system: rutter.interface.bound-operations
-          content: The authorized bound Rutter's get_instruction, validate, next,
-            and get_current_node operations; durable traversal is encapsulated by
-            the consumed interface.
+          content: The authorized Voyage's self-described public operations; durable
+            traversal is encapsulated by the consumed interface.
           formats:
           - python-object
           sensitivity: user-private

@@ -8,15 +8,16 @@ from pathlib import Path
 import pytest
 
 import officina.rutter as rutter
+from officina.rutter.history import CompletedRun, SubRutterRecord
 
 
 class SequenceChild(rutter.Rutter):
     rutter_id = "sequence-child"
     definition_version = 1
-    start_state = "done"
+    initial_evolution_id = "done"
 
-    def define_states(self) -> dict[str, object]:
-        return {"done": rutter.Done(rutter.RunResult("checked", {}))}
+    def define_evolutions(self) -> dict[str, object]:
+        return {"done": rutter.Terminal(rutter.VoyageResult("checked", {}))}
 
 
 def _question() -> object:
@@ -29,11 +30,11 @@ def _question() -> object:
     )
 
 
-def _completed_result(voyage: object) -> rutter.RunResult:
+def _completed_result(voyage: object) -> rutter.VoyageResult:
     reckoning = voyage._store.read()
     done = rutter.HistoryView(
         reckoning.root.history, reckoning.completed_runs
-    ).done()
+    ).terminal()
     assert done is not None
     return done.result
 
@@ -45,11 +46,11 @@ def _edge_context(
     target: str | None = "done",
     answer: str = "2",
     history: rutter.HistoryView | None = None,
-) -> rutter.EdgeContext:
+) -> rutter.TransitionContext:
     message = rutter.Message(
         instructions={"text": "Answer.", "answer": {"answered": {"answer": "string"}}},
         data={
-            "state": {"id": source, "entry_id": "entry-answer", "revision": 0},
+            "evolution": {"id": source, "entry_id": "entry-answer", "revision": 0},
             "payload": {},
         },
     )
@@ -61,16 +62,16 @@ def _edge_context(
         message,
         rutter.Response(0, outcome, {"answer": answer}),
     )
-    return rutter.EdgeContext(
-        rutter.StateContext(
+    return rutter.TransitionContext(
+        rutter.EvolutionContext(
             rutter.Charter({}),
             source,
             "entry-answer",
             rutter.HistoryView(()) if history is None else history,
         ),
         {
-            "edge_id": turn.record_id,
-            "source_entry_id": turn.node_entry_id,
+            "transition_id": turn.record_id,
+            "source_entry_id": turn.evolution_entry_id,
             "source": source,
             "outcome": outcome,
             "target": target,
@@ -86,67 +87,67 @@ def _sequence_history(
     duplicate_edge: bool = False,
 ) -> rutter.HistoryView:
     entries: list[object] = []
-    completed: dict[str, rutter.CompletedRun] = {}
+    completed: dict[str, CompletedRun] = {}
     for index in range(attached_count):
-        source = rutter.ActionRecord(
+        source = rutter.MachineRecord(
             f"edge-{index}",
             f"action-{index}",
             f"entry-{index}",
             "answer",
             "pure",
-            rutter.ActionResult("answered", {}),
+            rutter.MachineResult("answered", {}),
         )
         run_id = f"run-{index}"
         entries.extend(
             (
                 source,
-                rutter.CallRecord(
+                SubRutterRecord(
                     f"call-{index}",
-                    source.node_entry_id,
-                    "attached_case",
+                    source.evolution_entry_id,
+                    None,
                     "progressive-checks",
                     "edge-0" if duplicate_edge and index > 0 else source.record_id,
                     run_id,
                 ),
             )
         )
-        completed[run_id] = rutter.CompletedRun(
+        completed[run_id] = CompletedRun(
             run_id,
             SequenceChild.rutter_id,
             SequenceChild.definition_version,
             rutter.Charter({"step": index}),
             (
-                rutter.DoneRecord(
+                rutter.TerminalRecord(
                     f"done-{index}",
                     f"child-entry-{index}",
                     "done",
-                    rutter.RunResult("checked", {}),
+                    rutter.VoyageResult("checked", {}),
                 ),
             ),
         )
     if include_explicit_collision:
         run_id = "run-explicit"
         entries.append(
-            rutter.CallRecord(
+            SubRutterRecord(
                 "call-explicit",
                 "entry-explicit",
-                "explicit_call",
                 "progressive-checks",
+                None,
                 None,
                 run_id,
             )
         )
-        completed[run_id] = rutter.CompletedRun(
+        completed[run_id] = CompletedRun(
             run_id,
             SequenceChild.rutter_id,
             SequenceChild.definition_version,
             rutter.Charter({}),
             (
-                rutter.DoneRecord(
+                rutter.TerminalRecord(
                     "done-explicit",
                     "entry-child-explicit",
                     "done",
-                    rutter.RunResult("checked", {}),
+                    rutter.VoyageResult("checked", {}),
                 ),
             ),
         )
@@ -332,9 +333,9 @@ def test_diagnose_answer_true_verdict_completes_without_a_prompt(
 
     terminal = voyage.next(continue_=True)
 
-    assert terminal.state_id == "complete-equal-evaluator"
+    assert terminal.evolution_id == "complete-equal-evaluator"
     assert terminal.condition == "terminal"
-    assert _completed_result(voyage) == rutter.RunResult(
+    assert _completed_result(voyage) == rutter.VoyageResult(
         "equal",
         {
             "case_id": "sum-check",
@@ -358,15 +359,17 @@ def test_diagnose_answer_false_verdict_requests_exact_three_field_detail(
     ).create("diagnose", Path("different.reckoning.json"), case.to_json())
 
     explain = voyage.next(continue_=True)
-    message = voyage.get_instruction()
+    message = voyage.get_status().instruction
 
-    assert explain.state_id == "explain"
+    assert explain.evolution_id == "explain"
     assert message.instructions == {
         "text": (
             "Explain the difference using separate mistake, reason, and "
             "minimal_fix fields. The minimal_fix must satisfy the governing "
-            "instructions. If ask_for_fix is true, return the complete "
-            "corrected answer in minimal_fix, preserving the requested format."
+            "instructions. If ask_for_fix is true, treat expected_answer as "
+            "the revealed truth and adjust your subsequent reasoning and work "
+            "path accordingly. Do not return that adjustment; return only the "
+            "three diagnostic fields."
         ),
         "answer": {
             "diagnosed": {
@@ -384,7 +387,7 @@ def test_diagnose_answer_false_verdict_requests_exact_three_field_detail(
         "metadata": {"topic": "arithmetic"},
         "ask_for_fix": False,
     }
-    revision = message.data["state"]["revision"]
+    revision = message.data["evolution"]["revision"]
     terminal = voyage.next(
         {
             "revision": revision,
@@ -398,9 +401,9 @@ def test_diagnose_answer_false_verdict_requests_exact_three_field_detail(
         continue_=True,
     )
 
-    assert terminal.state_id == "complete-different"
+    assert terminal.evolution_id == "complete-different"
     assert terminal.condition == "terminal"
-    assert _completed_result(voyage) == rutter.RunResult(
+    assert _completed_result(voyage) == rutter.VoyageResult(
         "different",
         {
             "case_id": "sum-check",
@@ -416,10 +419,10 @@ def test_diagnose_answer_false_verdict_requests_exact_three_field_detail(
     )
 
 
-def test_diagnose_answer_ask_for_fix_requires_corrected_answer_in_minimal_fix(
+def test_diagnose_answer_ask_for_fix_directs_internal_adjustment_only(
     tmp_path: Path,
 ) -> None:
-    """Returning only advice when correction was requested would not fix the answer."""
+    """Requesting corrected output or adding a response field would violate the contract."""
 
     case = rutter.DiagnosisCase(_question(), "3", False, ask_for_fix=True)
     voyage = rutter.RutterRegistry(
@@ -427,10 +430,20 @@ def test_diagnose_answer_ask_for_fix_requires_corrected_answer_in_minimal_fix(
     ).create("diagnose", Path("fix-request.reckoning.json"), case.to_json())
 
     explain = voyage.next(continue_=True)
-    message = voyage.get_instruction()
+    message = voyage.get_status().instruction
 
-    assert explain.state_id == "explain"
-    assert "complete corrected answer" in message.instructions["text"]
+    assert explain.evolution_id == "explain"
+    assert "treat expected_answer as the revealed truth" in message.instructions["text"]
+    assert "adjust your subsequent reasoning and work path" in message.instructions["text"]
+    assert "Do not return that adjustment" in message.instructions["text"]
+    assert "corrected answer" not in message.instructions["text"]
+    assert message.instructions["answer"] == {
+        "diagnosed": {
+            "mistake": "nonempty string",
+            "reason": "nonempty string",
+            "minimal_fix": "nonempty string",
+        }
+    }
     assert message.data["payload"]["ask_for_fix"] is True
 
 
@@ -445,9 +458,9 @@ def test_diagnose_answer_without_evaluator_asks_exact_comparison_then_finishes_y
     ).create("diagnose", Path("compare-yes.reckoning.json"), case.to_json())
 
     compare = voyage.next(continue_=True)
-    message = voyage.get_instruction()
+    message = voyage.get_status().instruction
 
-    assert compare.state_id == "compare"
+    assert compare.evolution_id == "compare"
     assert message.instructions == {
         "text": (
             "Decide whether the actual and expected answers are semantically "
@@ -465,16 +478,16 @@ def test_diagnose_answer_without_evaluator_asks_exact_comparison_then_finishes_y
     }
     terminal = voyage.next(
         {
-            "revision": message.data["state"]["revision"],
+            "revision": message.data["evolution"]["revision"],
             "outcome": "yes",
             "evidence": {},
         },
         continue_=True,
     )
 
-    assert terminal.state_id == "complete-equal-llm"
+    assert terminal.evolution_id == "complete-equal-llm"
     assert terminal.condition == "terminal"
-    assert _completed_result(voyage) == rutter.RunResult(
+    assert _completed_result(voyage) == rutter.VoyageResult(
         "equal",
         {
             "case_id": "sum-check",
@@ -496,10 +509,10 @@ def test_diagnose_answer_no_flow_preserves_turns_across_invalid_replies_and_reop
     registry = rutter.RutterRegistry({"diagnose": rutter.DiagnoseAnswer}, tmp_path)
     voyage = registry.create("diagnose", path, case.to_json())
     voyage.next(continue_=True)
-    compare_message = voyage.get_instruction()
+    compare_message = voyage.get_status().instruction
     before_invalid_compare = (tmp_path / path).read_bytes()
     invalid_compare = {
-        "revision": compare_message.data["state"]["revision"],
+        "revision": compare_message.data["evolution"]["revision"],
         "outcome": "maybe",
         "evidence": {},
     }
@@ -512,16 +525,16 @@ def test_diagnose_answer_no_flow_preserves_turns_across_invalid_replies_and_reop
     voyage = registry.open(path)
     explain = voyage.next(
         {
-            "revision": compare_message.data["state"]["revision"],
+            "revision": compare_message.data["evolution"]["revision"],
             "outcome": "no",
             "evidence": {},
         },
         continue_=True,
     )
-    assert explain.state_id == "explain"
-    explain_message = voyage.get_instruction()
+    assert explain.evolution_id == "explain"
+    explain_message = voyage.get_status().instruction
     incomplete = {
-        "revision": explain_message.data["state"]["revision"],
+        "revision": explain_message.data["evolution"]["revision"],
         "outcome": "diagnosed",
         "evidence": {"mistake": "Wrong.", "reason": "Not equal."},
     }
@@ -537,7 +550,7 @@ def test_diagnose_answer_no_flow_preserves_turns_across_invalid_replies_and_reop
     voyage = registry.open(path)
     entered_done = voyage.next(
         {
-            "revision": explain_message.data["state"]["revision"],
+            "revision": explain_message.data["evolution"]["revision"],
             "outcome": "diagnosed",
             "evidence": {
                 "mistake": "The answer is too large.",
@@ -547,7 +560,7 @@ def test_diagnose_answer_no_flow_preserves_turns_across_invalid_replies_and_reop
         },
         continue_=False,
     )
-    assert entered_done.state_id == "complete-different"
+    assert entered_done.evolution_id == "complete-different"
     assert entered_done.condition == "ready"
 
     voyage = registry.open(path)
@@ -555,7 +568,7 @@ def test_diagnose_answer_no_flow_preserves_turns_across_invalid_replies_and_reop
     assert terminal.condition == "terminal"
     assert _completed_result(voyage).value["decided_by"] == "llm"
     history = rutter.HistoryView(voyage._store.read().root.history)
-    assert tuple(turn.state_id for turn in history.turns()) == ("compare", "explain")
+    assert tuple(turn.evolution_id for turn in history.turns()) == ("compare", "explain")
 
 
 def test_ask_and_diagnose_has_exact_ask_envelope_and_answer_validation(
@@ -567,7 +580,7 @@ def test_ask_and_diagnose_has_exact_ask_envelope_and_answer_validation(
     voyage = rutter.RutterRegistry(
         {"ask": rutter.AskAndDiagnose}, tmp_path
     ).create("ask", path, _question().to_json())
-    message = voyage.get_instruction()
+    message = voyage.get_status().instruction
 
     assert rutter.AskAndDiagnose.evaluator is None
     assert message.instructions == {
@@ -580,7 +593,7 @@ def test_ask_and_diagnose_has_exact_ask_envelope_and_answer_validation(
         "metadata": {"topic": "arithmetic"},
     }
     invalid = {
-        "revision": message.data["state"]["revision"],
+        "revision": message.data["evolution"]["revision"],
         "outcome": "answered",
         "evidence": {"answer": 2},
     }
@@ -598,27 +611,27 @@ def test_ask_and_diagnose_has_exact_ask_envelope_and_answer_validation(
 def test_ask_and_diagnose_builds_turn_based_child_call_and_forwards_result(
     tmp_path: Path,
 ) -> None:
-    """Hiding the Call or sourcing the answer outside the accepted Turn must fail."""
+    """Hiding the SubRutter or sourcing the answer outside the accepted Turn must fail."""
 
     path = Path("ask-call.reckoning.json")
     registry = rutter.RutterRegistry({"ask": rutter.AskAndDiagnose}, tmp_path)
     voyage = registry.create("ask", path, _question().to_json())
-    ask_message = voyage.get_instruction()
+    ask_message = voyage.get_status().instruction
     parent_call = voyage.next(
         {
-            "revision": ask_message.data["state"]["revision"],
+            "revision": ask_message.data["evolution"]["revision"],
             "outcome": "answered",
             "evidence": {"answer": "two"},
         },
         continue_=False,
     )
-    assert parent_call.state_id == "diagnose"
+    assert parent_call.evolution_id == "diagnose"
     assert parent_call.depth == 0
 
     child = registry.open(path).next(continue_=False)
     persisted = registry.open(path)._store.read()
     assert child.rutter_id == rutter.DiagnoseAnswer.rutter_id
-    assert child.state_id == "route"
+    assert child.evolution_id == "route"
     assert child.depth == 1
     assert persisted.root.active_child is not None
     assert persisted.root.active_child.kind == "explicit_call"
@@ -629,11 +642,11 @@ def test_ask_and_diagnose_builds_turn_based_child_call_and_forwards_result(
 
     voyage = registry.open(path)
     compare = voyage.next(continue_=True)
-    assert compare.state_id == "compare"
-    compare_message = voyage.get_instruction()
+    assert compare.evolution_id == "compare"
+    compare_message = voyage.get_status().instruction
     terminal = voyage.next(
         {
-            "revision": compare_message.data["state"]["revision"],
+            "revision": compare_message.data["evolution"]["revision"],
             "outcome": "yes",
             "evidence": {},
         },
@@ -641,10 +654,10 @@ def test_ask_and_diagnose_builds_turn_based_child_call_and_forwards_result(
     )
 
     assert terminal.rutter_id == rutter.AskAndDiagnose.rutter_id
-    assert terminal.state_id == "complete"
+    assert terminal.evolution_id == "complete"
     assert terminal.condition == "terminal"
     result = _completed_result(voyage)
-    assert result == rutter.RunResult(
+    assert result == rutter.VoyageResult(
         "equal",
         {
             "case_id": "sum-check",
@@ -658,7 +671,9 @@ def test_ask_and_diagnose_builds_turn_based_child_call_and_forwards_result(
         voyage._store.read().root.history,
         voyage._store.read().completed_runs,
     )
-    assert root_history.require_latest_call("diagnose").result == result
+    assert root_history.require_latest_subrutter(
+        origin_evolution_id="diagnose"
+    ).result == result
 
 
 def test_ask_and_diagnose_concrete_subclass_seals_exact_evaluator_verdict(
@@ -666,7 +681,7 @@ def test_ask_and_diagnose_concrete_subclass_seals_exact_evaluator_verdict(
 ) -> None:
     """Ignoring an application-owned evaluator or persisting it outside Charter must fail."""
 
-    seen: list[tuple[str, str, rutter.StateContext]] = []
+    seen: list[tuple[str, str, rutter.EvolutionContext]] = []
 
     class MechanicalAsk(rutter.AskAndDiagnose):
         rutter_id = "mechanical-ask"
@@ -676,7 +691,7 @@ def test_ask_and_diagnose_concrete_subclass_seals_exact_evaluator_verdict(
         def evaluator(
             actual_answer: str,
             expected_answer: str,
-            context: rutter.StateContext,
+            context: rutter.EvolutionContext,
         ) -> bool:
             seen.append((actual_answer, expected_answer, context))
             return actual_answer == expected_answer
@@ -684,10 +699,10 @@ def test_ask_and_diagnose_concrete_subclass_seals_exact_evaluator_verdict(
     voyage = rutter.RutterRegistry({"ask": MechanicalAsk}, tmp_path).create(
         "ask", Path("mechanical-ask.reckoning.json"), _question().to_json()
     )
-    message = voyage.get_instruction()
+    message = voyage.get_status().instruction
     terminal = voyage.next(
         {
-            "revision": message.data["state"]["revision"],
+            "revision": message.data["evolution"]["revision"],
             "outcome": "answered",
             "evidence": {"answer": "2"},
         },
@@ -698,12 +713,12 @@ def test_ask_and_diagnose_concrete_subclass_seals_exact_evaluator_verdict(
     assert terminal.condition == "terminal"
     assert len(seen) == 1
     assert seen[0][0:2] == ("2", "2")
-    assert seen[0][2].state_id == "diagnose"
+    assert seen[0][2].evolution_id == "diagnose"
     assert _completed_result(voyage).value["decided_by"] == "evaluator"
     reckoning = voyage._store.read()
     call = rutter.HistoryView(
         reckoning.root.history, reckoning.completed_runs
-    ).require_latest_call("diagnose")
+    ).require_latest_subrutter(origin_evolution_id="diagnose")
     assert call.completed.history.turns() == ()
     assert call.completed.history.entries()[0].result.outcome == "equal"
 
@@ -763,28 +778,29 @@ def test_truthy_evaluator_fault_preserves_the_accepted_ask_turn(
         definition_version = 1
 
         @staticmethod
-        def evaluator(actual: str, expected: str, context: rutter.StateContext) -> int:
+        def evaluator(actual: str, expected: str, context: rutter.EvolutionContext) -> int:
             del actual, expected, context
             return 1
 
     path = Path("truthy-evaluator.reckoning.json")
     registry = rutter.RutterRegistry({"ask": TruthyEvaluator}, tmp_path)
     voyage = registry.create("ask", path, _question().to_json())
-    message = voyage.get_instruction()
+    message = voyage.get_status().instruction
 
     fault = voyage.next(
         {
-            "revision": message.data["state"]["revision"],
+            "revision": message.data["evolution"]["revision"],
             "outcome": "answered",
             "evidence": {"answer": "2"},
         },
         continue_=True,
     )
 
-    assert fault.state_id == "diagnose"
+    assert fault.evolution_id == "diagnose"
     assert fault.condition == "fault"
     persisted = registry.open(path)._store.read()
-    assert persisted.fault["category"] == "child-charter"
+    assert persisted.fault is not None
+    assert persisted.fault.category == "child-charter"
     assert persisted.root.active_child is None
     assert persisted.completed_runs == {}
     turns = rutter.HistoryView(persisted.root.history).turns("ask")
@@ -792,7 +808,7 @@ def test_truthy_evaluator_fault_preserves_the_accepted_ask_turn(
     assert turns[0].response.evidence == {"answer": "2"}
 
 
-def test_ask_and_diagnose_reopens_at_child_push_done_and_return_boundaries(
+def test_terminal_child_diagnostic_stops_until_explicit_resumption(
     tmp_path: Path,
 ) -> None:
     """Combining any nested-call restart seam or replaying the evaluator must fail."""
@@ -804,7 +820,7 @@ def test_ask_and_diagnose_reopens_at_child_push_done_and_return_boundaries(
         definition_version = 1
 
         @staticmethod
-        def evaluator(actual: str, expected: str, context: rutter.StateContext) -> bool:
+        def evaluator(actual: str, expected: str, context: rutter.EvolutionContext) -> bool:
             del expected, context
             evaluations.append(actual)
             return True
@@ -812,25 +828,25 @@ def test_ask_and_diagnose_reopens_at_child_push_done_and_return_boundaries(
     path = Path("ask-reopen.reckoning.json")
     registry = rutter.RutterRegistry({"ask": ReopenAsk}, tmp_path)
     voyage = registry.create("ask", path, _question().to_json())
-    message = voyage.get_instruction()
+    message = voyage.get_status().instruction
     at_call = voyage.next(
         {
-            "revision": message.data["state"]["revision"],
+            "revision": message.data["evolution"]["revision"],
             "outcome": "answered",
             "evidence": {"answer": "2"},
         },
         continue_=False,
     )
-    assert at_call.state_id == "diagnose"
+    assert at_call.evolution_id == "diagnose"
 
     child_route = registry.open(path).next(continue_=False)
     assert child_route.rutter_id == rutter.DiagnoseAnswer.rutter_id
-    assert child_route.state_id == "route"
+    assert child_route.evolution_id == "route"
     assert evaluations == ["2"]
 
     child_done = registry.open(path).next(continue_=False)
     assert child_done.rutter_id == rutter.DiagnoseAnswer.rutter_id
-    assert child_done.state_id == "complete-equal-evaluator"
+    assert child_done.evolution_id == "complete-equal-evaluator"
     assert child_done.condition == "ready"
 
     child_terminal = registry.open(path).next(continue_=False)
@@ -839,7 +855,7 @@ def test_ask_and_diagnose_reopens_at_child_push_done_and_return_boundaries(
 
     parent_done = registry.open(path).next(continue_=False)
     assert parent_done.rutter_id == ReopenAsk.rutter_id
-    assert parent_done.state_id == "complete"
+    assert parent_done.evolution_id == "complete"
     assert parent_done.condition == "ready"
     assert evaluations == ["2"]
 
@@ -852,9 +868,9 @@ def test_ask_and_diagnose_reopens_at_child_push_done_and_return_boundaries(
 def test_diagnose_answer_on_seals_extracted_answer_and_exact_evaluator_verdict() -> None:
     """Deferring extraction/evaluation into the child or hiding parent work must fail."""
 
-    seen: list[rutter.EdgeContext] = []
+    seen: list[rutter.TransitionContext] = []
 
-    def actual_answer(context: rutter.EdgeContext) -> str:
+    def actual_answer(context: rutter.TransitionContext) -> str:
         assert isinstance(context.record, rutter.Turn)
         assert context.record.response is not None
         return context.record.response.evidence["answer"]
@@ -862,7 +878,7 @@ def test_diagnose_answer_on_seals_extracted_answer_and_exact_evaluator_verdict()
     def evaluator(
         actual: str,
         expected: str,
-        context: rutter.EdgeContext,
+        context: rutter.TransitionContext,
     ) -> bool:
         seen.append(context)
         return actual == expected
@@ -889,18 +905,18 @@ def test_diagnose_answer_on_seals_extracted_answer_and_exact_evaluator_verdict()
 def test_ask_and_diagnose_on_resolves_question_into_explicit_child_charter() -> None:
     """Using the base child or resolving the question after child start must fail."""
 
-    seen: list[rutter.EdgeContext] = []
+    seen: list[rutter.TransitionContext] = []
 
     class HookAsk(rutter.AskAndDiagnose):
         rutter_id = "hook-ask"
         definition_version = 1
 
         @staticmethod
-        def evaluator(actual: str, expected: str, context: rutter.StateContext) -> bool:
+        def evaluator(actual: str, expected: str, context: rutter.EvolutionContext) -> bool:
             del context
             return actual == expected
 
-    def question(context: rutter.EdgeContext) -> object:
+    def question(context: rutter.TransitionContext) -> object:
         seen.append(context)
         return _question()
 
@@ -918,14 +934,14 @@ def test_ask_and_diagnose_on_resolves_question_into_explicit_child_charter() -> 
     assert seen == [context]
 
 
-def test_case_sequence_after_snapshots_configuration_and_filters_source_state() -> None:
+def test_hook_sequence_after_snapshots_configuration_and_filters_source_state() -> None:
     """Reading mutable sources later or scheduling after an unselected state must fail."""
 
     states = {"answer", "revise"}
     items = [{"step": [1]}, {"step": [2]}]
-    maker = rutter.case_sequence_after(
+    maker = rutter.hook_sequence_after(
         id="progressive-checks",
-        after_states=states,
+        after_evolutions=states,
         items=items,
         child=SequenceChild,
     )
@@ -934,7 +950,7 @@ def test_case_sequence_after_snapshots_configuration_and_filters_source_state() 
     items.append({"step": [3]})
 
     assert maker.id == "progressive-checks"
-    assert maker.on == rutter.EdgeMatch()
+    assert maker.on == rutter.TransitionMatch()
     assert maker.child is SequenceChild
     assert maker.charter(_edge_context(source="answer")) == {"step": (1,)}
     assert maker.charter(_edge_context(source="other")) is None
@@ -942,12 +958,12 @@ def test_case_sequence_after_snapshots_configuration_and_filters_source_state() 
         maker.charter(_edge_context(source="answer"))["step"] += (2,)
 
 
-def test_case_sequence_after_derives_position_exhaustion_and_overrun_from_attached_calls() -> None:
+def test_hook_sequence_after_derives_position_exhaustion_and_overrun_from_attached_calls() -> None:
     """Counting explicit calls, repeating exhausted items, or hiding overrun must fail."""
 
-    maker = rutter.case_sequence_after(
+    maker = rutter.hook_sequence_after(
         id="progressive-checks",
-        after_states={"answer"},
+        after_evolutions={"answer"},
         items=({"step": 1}, {"step": 2}),
         child=SequenceChild,
     )
@@ -966,12 +982,12 @@ def test_case_sequence_after_derives_position_exhaustion_and_overrun_from_attach
     assert overrun.value.category == "history-inconsistency"
 
 
-def test_case_sequence_after_rejects_duplicate_maker_edge_history() -> None:
+def test_hook_sequence_after_rejects_duplicate_maker_edge_history() -> None:
     """Treating duplicate maker/edge results as two consumed items must fail."""
 
-    maker = rutter.case_sequence_after(
+    maker = rutter.hook_sequence_after(
         id="progressive-checks",
-        after_states={"answer"},
+        after_evolutions={"answer"},
         items=({"step": 1}, {"step": 2}, {"step": 3}),
         child=SequenceChild,
     )
@@ -985,19 +1001,19 @@ def test_case_sequence_after_rejects_duplicate_maker_edge_history() -> None:
     assert duplicate.value.category == "history-inconsistency"
 
 
-def test_case_sequence_after_custom_builder_receives_frozen_item_and_rejects_malformed_charter() -> None:
+def test_hook_sequence_after_custom_builder_receives_frozen_item_and_rejects_malformed_charter() -> None:
     """Passing mutable items or allowing nonfinite resolved Charter output must fail."""
 
-    seen: list[tuple[object, rutter.EdgeContext]] = []
+    seen: list[tuple[object, rutter.TransitionContext]] = []
 
-    def build(item: object, context: rutter.EdgeContext) -> object:
+    def build(item: object, context: rutter.TransitionContext) -> object:
         seen.append((item, context))
-        return {"selected": item, "edge": context.edge["edge_id"]}
+        return {"selected": item, "edge": context.transition["transition_id"]}
 
     context = _edge_context(source="answer")
-    maker = rutter.case_sequence_after(
+    maker = rutter.hook_sequence_after(
         id="custom-sequence",
-        after_states={"answer"},
+        after_evolutions={"answer"},
         items=({"step": [1]},),
         child=SequenceChild,
         charter=build,
@@ -1011,9 +1027,9 @@ def test_case_sequence_after_custom_builder_receives_frozen_item_and_rejects_mal
     with pytest.raises(TypeError):
         seen[0][0]["step"] += (2,)
 
-    malformed = rutter.case_sequence_after(
+    malformed = rutter.hook_sequence_after(
         id="malformed-sequence",
-        after_states={"answer"},
+        after_evolutions={"answer"},
         items=({},),
         child=SequenceChild,
         charter=lambda item, edge: {"unsupported": object()},
@@ -1027,9 +1043,9 @@ def test_non_diagnostic_sequence_advances_once_per_completed_attachment_across_r
 ) -> None:
     """Persisting an index or repeating/skipping a child across restart must fail."""
 
-    maker = rutter.case_sequence_after(
+    maker = rutter.hook_sequence_after(
         id="progressive-checks",
-        after_states={"first", "second"},
+        after_evolutions={"first", "second"},
         items=({"step": 1}, {"step": 2}),
         child=SequenceChild,
     )
@@ -1037,24 +1053,24 @@ def test_non_diagnostic_sequence_advances_once_per_completed_attachment_across_r
     class SequencedParent(rutter.Rutter):
         rutter_id = "sequenced-parent"
         definition_version = 1
-        start_state = "first"
+        initial_evolution_id = "first"
 
-        def define_states(self) -> dict[str, object]:
+        def define_evolutions(self) -> dict[str, object]:
             return {
-                "first": rutter.Action(
-                    lambda context: rutter.ActionResult("advanced", 1),
+                "first": rutter.MachineStep(
+                    lambda context: rutter.MachineResult("advanced", 1),
                     mode="pure",
                     then="second",
                 ),
-                "second": rutter.Action(
-                    lambda context: rutter.ActionResult("advanced", 2),
+                "second": rutter.MachineStep(
+                    lambda context: rutter.MachineResult("advanced", 2),
                     mode="pure",
                     then="complete",
                 ),
-                "complete": rutter.Done(rutter.RunResult("finished", {})),
+                "complete": rutter.Terminal(rutter.VoyageResult("finished", {})),
             }
 
-        def define_case_makers(self) -> tuple[object, ...]:
+        def define_transition_hooks(self) -> tuple[object, ...]:
             return (maker,)
 
     path = Path("non-diagnostic-sequence.reckoning.json")
@@ -1070,7 +1086,7 @@ def test_non_diagnostic_sequence_advances_once_per_completed_attachment_across_r
 
     second_parent = registry.open(path).next(continue_=False)
     assert second_parent.rutter_id == SequencedParent.rutter_id
-    assert second_parent.state_id == "second"
+    assert second_parent.evolution_id == "second"
     second_child = registry.open(path).next(continue_=False)
     assert second_child.rutter_id == SequenceChild.rutter_id
     assert registry.open(path)._store.read().root.active_child.run.charter == rutter.Charter(
@@ -1079,13 +1095,16 @@ def test_non_diagnostic_sequence_advances_once_per_completed_attachment_across_r
     assert registry.open(path).next(continue_=False).condition == "terminal"
 
     parent_done = registry.open(path).next(continue_=False)
-    assert parent_done.state_id == "complete"
+    assert parent_done.evolution_id == "complete"
     assert parent_done.condition == "ready"
     terminal = registry.open(path).next(continue_=False)
     assert terminal.condition == "terminal"
     reckoning = registry.open(path)._store.read()
     history = rutter.HistoryView(reckoning.root.history, reckoning.completed_runs)
-    assert tuple(call.site for call in history.attached_calls()) == (
+    assert tuple(
+        call.transition_hook_id
+        for call in history.subrutters(transition_hook_id="progressive-checks")
+    ) == (
         "progressive-checks",
         "progressive-checks",
     )
@@ -1101,13 +1120,13 @@ def test_fresh_question_sequence_uses_application_evaluator_subclass(
         definition_version = 1
 
         @staticmethod
-        def evaluator(actual: str, expected: str, context: rutter.StateContext) -> bool:
+        def evaluator(actual: str, expected: str, context: rutter.EvolutionContext) -> bool:
             del context
             return actual == expected
 
-    maker = rutter.case_sequence_after(
+    maker = rutter.hook_sequence_after(
         id="fresh-questions",
-        after_states={"prepare"},
+        after_evolutions={"prepare"},
         items=(_question().to_json(),),
         child=FreshEvaluatorAsk,
     )
@@ -1115,19 +1134,19 @@ def test_fresh_question_sequence_uses_application_evaluator_subclass(
     class FreshQuestionParent(rutter.Rutter):
         rutter_id = "fresh-question-parent"
         definition_version = 1
-        start_state = "prepare"
+        initial_evolution_id = "prepare"
 
-        def define_states(self) -> dict[str, object]:
+        def define_evolutions(self) -> dict[str, object]:
             return {
-                "prepare": rutter.Action(
-                    lambda context: rutter.ActionResult("prepared", {}),
+                "prepare": rutter.MachineStep(
+                    lambda context: rutter.MachineResult("prepared", {}),
                     mode="pure",
                     then="complete",
                 ),
-                "complete": rutter.Done(rutter.RunResult("finished", {})),
+                "complete": rutter.Terminal(rutter.VoyageResult("finished", {})),
             }
 
-        def define_case_makers(self) -> tuple[object, ...]:
+        def define_transition_hooks(self) -> tuple[object, ...]:
             return (maker,)
 
     path = Path("fresh-question-sequence.reckoning.json")
@@ -1135,14 +1154,14 @@ def test_fresh_question_sequence_uses_application_evaluator_subclass(
     voyage = registry.create("parent", path, {})
 
     child_prompt = voyage.next(continue_=True)
-    message = voyage.get_instruction()
+    message = voyage.get_status().instruction
     assert child_prompt.rutter_id == FreshEvaluatorAsk.rutter_id
-    assert child_prompt.state_id == "ask"
+    assert child_prompt.evolution_id == "ask"
     assert "expected_answer" not in message.data["payload"]
 
     terminal = voyage.next(
         {
-            "revision": message.data["state"]["revision"],
+            "revision": message.data["evolution"]["revision"],
             "outcome": "answered",
             "evidence": {"answer": "2"},
         },
@@ -1153,7 +1172,7 @@ def test_fresh_question_sequence_uses_application_evaluator_subclass(
     reckoning = voyage._store.read()
     attached = rutter.HistoryView(
         reckoning.root.history, reckoning.completed_runs
-    ).attached_calls(case_maker_id="fresh-questions")
+    ).subrutters(transition_hook_id="fresh-questions")
     assert len(attached) == 1
     assert attached[0].result.value["decided_by"] == "evaluator"
 
@@ -1165,14 +1184,14 @@ def test_diagnose_answer_on_failure_preserves_accepted_source_turn(
 ) -> None:
     """Rolling back accepted parent work after provider failure must fail."""
 
-    def actual_answer(context: rutter.EdgeContext) -> str:
+    def actual_answer(context: rutter.TransitionContext) -> str:
         if failure == "extractor":
             raise RuntimeError("private extractor detail")
         assert isinstance(context.record, rutter.Turn)
         assert context.record.response is not None
         return context.record.response.evidence["answer"]
 
-    def evaluator(actual: str, expected: str, context: rutter.EdgeContext) -> object:
+    def evaluator(actual: str, expected: str, context: rutter.TransitionContext) -> object:
         del context
         if failure == "evaluator":
             raise RuntimeError("private evaluator detail")
@@ -1191,39 +1210,40 @@ def test_diagnose_answer_on_failure_preserves_accepted_source_turn(
     class FailingProviderParent(rutter.Rutter):
         rutter_id = f"failing-provider-{failure}"
         definition_version = 1
-        start_state = "answer"
+        initial_evolution_id = "answer"
 
-        def define_states(self) -> dict[str, object]:
+        def define_evolutions(self) -> dict[str, object]:
             return {
-                "answer": rutter.Prompt(
+                "answer": rutter.LLMStep(
                     "Answer.",
                     answer=rutter.AnswerSpec({"answered": {"answer": "string"}}),
                     then="complete",
                 ),
-                "complete": rutter.Done(rutter.RunResult("finished", {})),
+                "complete": rutter.Terminal(rutter.VoyageResult("finished", {})),
             }
 
-        def define_case_makers(self) -> tuple[object, ...]:
+        def define_transition_hooks(self) -> tuple[object, ...]:
             return (maker,)
 
     path = Path(f"provider-{failure}.reckoning.json")
     registry = rutter.RutterRegistry({"parent": FailingProviderParent}, tmp_path)
     voyage = registry.create("parent", path, {})
-    message = voyage.get_instruction()
+    message = voyage.get_status().instruction
 
     fault = voyage.next(
         {
-            "revision": message.data["state"]["revision"],
+            "revision": message.data["evolution"]["revision"],
             "outcome": "answered",
             "evidence": {"answer": "2"},
         },
         continue_=True,
     )
 
-    assert fault.state_id == "answer"
+    assert fault.evolution_id == "answer"
     assert fault.condition == "fault"
     persisted = registry.open(path)._store.read()
-    assert persisted.fault["category"] == "case-charter"
+    assert persisted.fault is not None
+    assert persisted.fault.category == "case-charter"
     assert persisted.root.active_child is None
     assert persisted.completed_runs == {}
     turns = rutter.HistoryView(persisted.root.history).turns("answer")

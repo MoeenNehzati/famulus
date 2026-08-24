@@ -1,0 +1,45 @@
+schema_version: 6
+node_type: behavioral_source
+id: rutter.source.reducer
+version: 1
+description: Applies pure definition-independent transformations to immutable Reckonings.
+gateway:
+  path: reducer.py
+  language: Python
+content:
+- reducer\.py
+dependencies:
+- source: rutter.source.history
+  version: 1
+  blueprint:
+    base: module-root
+    path: blueprints/history.yaml
+  reason: Imports immutable run trees, records, and aggregate authority.
+- source: rutter.source.values
+  version: 1
+  blueprint:
+    base: module-root
+    path: blueprints/values.yaml
+  reason: Imports state errors for invalid structural operations.
+uses_interfaces:
+- interface: rutter.source.history.interface.python-api
+  version: 1
+- interface: rutter.source.values.interface.python-api
+  version: 1
+interfaces:
+  rutter.source.reducer.interface.python-api:
+    version: 1
+    content:
+    - reducer\.py
+    uses_interfaces:
+    - interface: rutter.source.history.interface.python-api
+      version: 1
+    - interface: rutter.source.values.interface.python-api
+      version: 1
+    description: Selects and replaces active runs and enters or returns child voyages purely.
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+maturity: stable

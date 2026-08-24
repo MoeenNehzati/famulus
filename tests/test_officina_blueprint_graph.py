@@ -1777,12 +1777,13 @@ def test_v6_rutter_operation_effects_are_outcome_specific() -> None:
     bound = engine["interfaces"][
         "rutter.source.engine.interface.bound-operations"
     ]
-    assert bound["version"] == 3
+    assert bound["version"] == 5
     assert "inquisitive-inventory CLI" in bound["description"]
     bound_contract = bound["contract"]
     bound_outcomes = {
         entry["id"]: entry for entry in bound_contract["outcomes"]
     }
+    assert bound_outcomes["described"]["effects"] == []
     assert bound_outcomes["previewed"]["effects"] == []
     for outcome in ("ready", "terminal", "faulted", "uncertain"):
         assert bound_outcomes[outcome]["effects"] == ["reckoning-update"]
@@ -1815,7 +1816,7 @@ def test_v6_rutter_operation_effects_are_outcome_specific() -> None:
 
 
 def test_v6_rutter_bound_operations_names_response_required_boundary() -> None:
-    """A missing Prompt response is a normal boundary, not invalid submitted input."""
+    """A missing LLMStep response is a boundary, not invalid submitted input."""
 
     repo_root = Path(__file__).resolve().parents[1]
     engine = yaml.safe_load(
@@ -1831,11 +1832,11 @@ def test_v6_rutter_bound_operations_names_response_required_boundary() -> None:
     response_required = outcomes["response-required"]
     assert response_required["class"] == "refusal"
     assert response_required["effects"] == []
-    assert "RutterValidationError: Prompt response is required" in response_required[
+    assert "RutterValidationError: LLMStep response is required" in response_required[
         "caller_action"
     ]
-    assert "current NodeView" in response_required["caller_action"]
-    assert "get_instruction" in response_required["caller_action"]
+    assert "VoyageStatus" in response_required["caller_action"]
+    assert "get_status" in response_required["caller_action"]
     assert "perform the LLM instruction" in response_required["caller_action"]
     assert "does not return a ValidationReport" in response_required["caller_action"]
     assert "ValidationReport" in outcomes["invalid-input"]["caller_action"]
@@ -1851,11 +1852,23 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
     )
     rutter_root = repo_root / "src/officina/rutter"
     module = yaml.safe_load((rutter_root / "blueprint.yaml").read_text(encoding="utf-8"))
+    source_names = (
+        "authoring",
+        "diagnostic",
+        "engine",
+        "evaluation",
+        "history",
+        "model",
+        "reducer",
+        "runtime",
+        "storage",
+        "values",
+    )
     sources = {
         name: yaml.safe_load(
             (rutter_root / "blueprints" / f"{name}.yaml").read_text(encoding="utf-8")
         )
-        for name in ("model", "hooks", "diagnostic", "engine", "storage", "runtime")
+        for name in source_names
     }
     common = yaml.safe_load(
         (rutter_root.parent / "common" / "blueprint.yaml").read_text(encoding="utf-8")
@@ -1863,35 +1876,37 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
 
     assert module["content"] == [
         r"__init__\.py",
+        r"authoring\.py",
         r"diagnostic\.py",
         r"engine\.py",
-        r"hooks\.py",
+        r"evaluation\.py",
+        r"history\.py",
         r"model\.py",
+        r"reducer\.py",
         r"runtime\.py",
         r"storage\.py",
+        r"values\.py",
     ]
     assert set(module["sources"]) == {
-        "rutter.source.model",
-        "rutter.source.hooks",
+        "rutter.source.authoring",
         "rutter.source.diagnostic",
         "rutter.source.engine",
-        "rutter.source.storage",
+        "rutter.source.evaluation",
+        "rutter.source.history",
+        "rutter.source.model",
+        "rutter.source.reducer",
         "rutter.source.runtime",
+        "rutter.source.storage",
+        "rutter.source.values",
     }
-    assert {
-        "rutter",
-        "rutter.source.model",
-        "rutter.source.hooks",
-        "rutter.source.diagnostic",
-        "rutter.source.engine",
-        "rutter.source.storage",
-        "rutter.source.runtime",
-    }.issubset(graph.nodes)
+    assert {"rutter", *(f"rutter.source.{name}" for name in source_names)}.issubset(
+        graph.nodes
+    )
+    assert "rutter.source.hooks" not in graph.nodes
     assert set(module["exports"]) == {
         "rutter.interface.binding",
         "rutter.interface.bound-operations",
         "rutter.interface.diagnostic",
-        "rutter.interface.hooks",
         "rutter.interface.model",
     }
     expected_callers = {
@@ -1901,7 +1916,6 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
             "using-compass",
         },
         "rutter.interface.diagnostic": {"math-dependency-graph._rtx"},
-        "rutter.interface.hooks": set(),
         "rutter.interface.model": {"math-dependency-graph._rtx"},
     }
     for interface_id, callers in expected_callers.items():
@@ -1913,44 +1927,116 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
         assert source["content"] == [rf"{name}\.py"]
         assert source["runtime_dependencies"] == []
 
-    assert set(sources["model"]["interfaces"]) == {
-        "rutter.source.model.interface.python-api"
+    expected_interfaces = {
+        "authoring": {"rutter.source.authoring.interface.python-api"},
+        "diagnostic": {"rutter.source.diagnostic.interface.python-api"},
+        "engine": {
+            "rutter.source.engine.interface.binding",
+            "rutter.source.engine.interface.bound-operations",
+        },
+        "evaluation": {"rutter.source.evaluation.interface.python-api"},
+        "history": {"rutter.source.history.interface.python-api"},
+        "model": {"rutter.source.model.interface.python-api"},
+        "reducer": {"rutter.source.reducer.interface.python-api"},
+        "runtime": {"rutter.source.runtime.interface.binding"},
+        "storage": {
+            "rutter.source.storage.interface.read",
+            "rutter.source.storage.interface.transaction",
+            "rutter.source.storage.interface.write",
+        },
+        "values": {"rutter.source.values.interface.python-api"},
     }
-    assert set(sources["hooks"]["interfaces"]) == {
-        "rutter.source.hooks.interface.python-api"
-    }
-    assert set(sources["diagnostic"]["interfaces"]) == {
-        "rutter.source.diagnostic.interface.python-api"
-    }
-    assert set(sources["engine"]["interfaces"]) == {
-        "rutter.source.engine.interface.binding",
-        "rutter.source.engine.interface.bound-operations",
-    }
-    assert set(sources["storage"]["interfaces"]) == {
-        "rutter.source.storage.interface.read",
-        "rutter.source.storage.interface.transaction",
-        "rutter.source.storage.interface.write",
-    }
-    assert set(sources["runtime"]["interfaces"]) == {
-        "rutter.source.runtime.interface.binding"
-    }
+    for name, interface_ids in expected_interfaces.items():
+        assert set(sources[name]["interfaces"]) == interface_ids
 
-    assert sources["model"]["dependencies"] == []
-    assert sources["model"]["uses_interfaces"] == []
-    assert [entry["source"] for entry in sources["hooks"]["dependencies"]] == [
-        "rutter.source.model",
-    ]
-    assert sources["hooks"]["uses_interfaces"] == [
-        {"interface": "rutter.source.model.interface.python-api", "version": 1},
-    ]
-    assert [entry["source"] for entry in sources["diagnostic"]["dependencies"]] == [
-        "rutter.source.hooks",
-        "rutter.source.model",
-    ]
-    assert sources["diagnostic"]["uses_interfaces"] == [
-        {"interface": "rutter.source.hooks.interface.python-api", "version": 1},
-        {"interface": "rutter.source.model.interface.python-api", "version": 1},
-    ]
+    expected_dependencies = {
+        "authoring": ["rutter.source.history", "rutter.source.values"],
+        "diagnostic": ["rutter.source.authoring", "rutter.source.values"],
+        "engine": [
+            "rutter.source.authoring",
+            "rutter.source.evaluation",
+            "rutter.source.history",
+            "rutter.source.reducer",
+            "rutter.source.storage",
+            "rutter.source.values",
+        ],
+        "evaluation": [
+            "rutter.source.authoring",
+            "rutter.source.history",
+            "rutter.source.values",
+        ],
+        "history": ["rutter.source.values"],
+        "model": [
+            "rutter.source.authoring",
+            "rutter.source.history",
+            "rutter.source.values",
+        ],
+        "reducer": ["rutter.source.history", "rutter.source.values"],
+        "runtime": [
+            "rutter.source.authoring",
+            "rutter.source.engine",
+            "rutter.source.storage",
+            "rutter.source.values",
+        ],
+        "storage": [
+            "rutter.source.history",
+            "rutter.source.values",
+            "common.source.atomic-files",
+        ],
+        "values": [],
+    }
+    expected_uses_interfaces = {
+        "authoring": [
+            {"interface": "rutter.source.history.interface.python-api", "version": 1},
+            {"interface": "rutter.source.values.interface.python-api", "version": 1},
+        ],
+        "diagnostic": [
+            {"interface": "rutter.source.authoring.interface.python-api", "version": 1},
+            {"interface": "rutter.source.values.interface.python-api", "version": 1},
+        ],
+        "engine": [
+            {"interface": "rutter.source.authoring.interface.python-api", "version": 1},
+            {"interface": "rutter.source.evaluation.interface.python-api", "version": 1},
+            {"interface": "rutter.source.history.interface.python-api", "version": 1},
+            {"interface": "rutter.source.reducer.interface.python-api", "version": 1},
+            {"interface": "rutter.source.storage.interface.read", "version": 2},
+            {"interface": "rutter.source.storage.interface.transaction", "version": 2},
+            {"interface": "rutter.source.storage.interface.write", "version": 2},
+            {"interface": "rutter.source.values.interface.python-api", "version": 1},
+        ],
+        "evaluation": [
+            {"interface": "rutter.source.authoring.interface.python-api", "version": 1},
+            {"interface": "rutter.source.history.interface.python-api", "version": 1},
+            {"interface": "rutter.source.values.interface.python-api", "version": 1},
+        ],
+        "history": [
+            {"interface": "rutter.source.values.interface.python-api", "version": 1},
+        ],
+        "model": [
+            {"interface": "rutter.source.authoring.interface.python-api", "version": 1},
+            {"interface": "rutter.source.history.interface.python-api", "version": 1},
+            {"interface": "rutter.source.values.interface.python-api", "version": 1},
+        ],
+        "reducer": [
+            {"interface": "rutter.source.history.interface.python-api", "version": 1},
+            {"interface": "rutter.source.values.interface.python-api", "version": 1},
+        ],
+        "runtime": [
+            {"interface": "rutter.source.authoring.interface.python-api", "version": 1},
+            {"interface": "rutter.source.engine.interface.binding", "version": 3},
+            {"interface": "rutter.source.values.interface.python-api", "version": 1},
+        ],
+        "storage": [
+            {"interface": "rutter.source.history.interface.python-api", "version": 1},
+            {"interface": "rutter.source.values.interface.python-api", "version": 1},
+            {"interface": "common.interface.atomic-files", "version": 1},
+        ],
+        "values": [],
+    }
+    for name, dependencies in expected_dependencies.items():
+        assert [entry["source"] for entry in sources[name]["dependencies"]] == dependencies
+        assert sources[name]["uses_interfaces"] == expected_uses_interfaces[name]
+
     diagnostic_contract = sources["diagnostic"]["interfaces"][
         "rutter.source.diagnostic.interface.python-api"
     ]["contract"]
@@ -1963,36 +2049,8 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
         "diagnosis-detail",
         "diagnose-answer",
         "ask-and-diagnose",
-        "case-maker",
+        "transition-hook",
     }
-    assert [entry["source"] for entry in sources["storage"]["dependencies"]] == [
-        "rutter.source.model",
-        "common.source.atomic-files",
-    ]
-    assert sources["storage"]["uses_interfaces"] == [
-        {"interface": "rutter.source.model.interface.python-api", "version": 1},
-        {"interface": "common.interface.atomic-files", "version": 1},
-    ]
-    assert [entry["source"] for entry in sources["engine"]["dependencies"]] == [
-        "rutter.source.model",
-        "rutter.source.storage",
-    ]
-    assert sources["engine"]["uses_interfaces"] == [
-        {"interface": "rutter.source.model.interface.python-api", "version": 1},
-        {"interface": "rutter.source.storage.interface.read", "version": 1},
-        {"interface": "rutter.source.storage.interface.transaction", "version": 1},
-        {"interface": "rutter.source.storage.interface.write", "version": 1},
-    ]
-    assert [entry["source"] for entry in sources["runtime"]["dependencies"]] == [
-        "rutter.source.engine",
-        "rutter.source.model",
-        "rutter.source.storage",
-    ]
-    assert sources["runtime"]["uses_interfaces"] == [
-        {"interface": "rutter.source.engine.interface.binding", "version": 1},
-        {"interface": "rutter.source.model.interface.python-api", "version": 1},
-        {"interface": "rutter.source.storage.interface.read", "version": 1},
-    ]
 
     inventory = yaml.safe_load(
         (
@@ -2018,7 +2076,7 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
 
     final_contract_text = "\n".join(
         (rutter_root / "blueprints" / f"{name}.yaml").read_text(encoding="utf-8")
-        for name in ("model", "storage", "engine", "runtime")
+        for name in source_names
     )
     assert "Fix" not in final_contract_text
     assert "BaseRutter" not in final_contract_text
@@ -2036,7 +2094,7 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
     bound = engine_interfaces[
         "rutter.source.engine.interface.bound-operations"
     ]
-    assert bound["version"] == 3
+    assert bound["version"] == 5
     assert "inquisitive-inventory CLI" in bound["description"]
     bound_contract = bound["contract"]
     assert set(bound_contract["arguments"]) == {
@@ -2054,25 +2112,25 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
         entry["id"]: entry for entry in bound_contract["outcomes"]
     }
     assert bound_operations == {
-        "get-instruction",
+        "help",
+        "get-status",
         "validate",
         "next",
-        "get-current-node",
     }
-    assert "exactly two top-level parts" in bound_contract["outputs"][0][
-        "description"
-    ]
+    assert "Help text" in bound_contract["outputs"][0]["description"]
+    assert bound_outcomes["described"]["effects"] == []
+    assert "VoyageStatus" in bound_contract["outputs"][0]["description"]
     assert bound_outcomes["observed"]["effects"] == []
     assert bound_outcomes["validated"]["effects"] == []
     assert bound_outcomes["previewed"]["effects"] == []
     response_required = bound_outcomes["response-required"]
     assert response_required["class"] == "refusal"
     assert response_required["effects"] == []
-    assert "RutterValidationError: Prompt response is required" in response_required[
+    assert "RutterValidationError: LLMStep response is required" in response_required[
         "caller_action"
     ]
-    assert "current NodeView" in response_required["caller_action"]
-    assert "get_instruction" in response_required["caller_action"]
+    assert "VoyageStatus" in response_required["caller_action"]
+    assert "get_status" in response_required["caller_action"]
     assert "perform the LLM instruction" in response_required["caller_action"]
     assert "does not return a ValidationReport" in response_required["caller_action"]
     assert bound_outcomes["invalid-input"]["effects"] == []

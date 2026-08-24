@@ -1,0 +1,56 @@
+schema_version: 6
+node_type: behavioral_source
+id: rutter.source.evaluation
+version: 1
+description: Owns the controlled boundary for authored routing, hook, instruction,
+  terminal-result, and machine callbacks.
+gateway:
+  path: evaluation.py
+  language: Python
+content:
+- evaluation\.py
+dependencies:
+- source: rutter.source.authoring
+  version: 1
+  blueprint:
+    base: module-root
+    path: blueprints/authoring.yaml
+  reason: Imports concrete authored evolutions, contexts, and transition hooks.
+- source: rutter.source.history
+  version: 1
+  blueprint:
+    base: module-root
+    path: blueprints/history.yaml
+  reason: Imports the immutable transition input used by hook evaluation.
+- source: rutter.source.values
+  version: 1
+  blueprint:
+    base: module-root
+    path: blueprints/values.yaml
+  reason: Imports exact callback result, validation, and JSON value types.
+uses_interfaces:
+- interface: rutter.source.authoring.interface.python-api
+  version: 1
+- interface: rutter.source.history.interface.python-api
+  version: 1
+- interface: rutter.source.values.interface.python-api
+  version: 1
+interfaces:
+  rutter.source.evaluation.interface.python-api:
+    version: 1
+    content:
+    - evaluation\.py
+    uses_interfaces:
+    - interface: rutter.source.authoring.interface.python-api
+      version: 1
+    - interface: rutter.source.history.interface.python-api
+      version: 1
+    - interface: rutter.source.values.interface.python-api
+      version: 1
+    description: Evaluates each concrete author callback and returns immutable values or typed faults.
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+maturity: stable

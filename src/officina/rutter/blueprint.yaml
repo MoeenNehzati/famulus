@@ -1,7 +1,7 @@
 schema_version: 6
 node_type: module
 id: rutter
-version: 2
+version: 4
 description: Direct Rutter definitions bound to immutable Charters and durably reduced
   Reckonings.
 gateway:
@@ -9,15 +9,23 @@ gateway:
   language: Python
 content:
 - __init__\.py
+- authoring\.py
 - diagnostic\.py
 - engine\.py
-- hooks\.py
+- evaluation\.py
+- history\.py
 - model\.py
+- reducer\.py
 - runtime\.py
 - storage\.py
+- values\.py
 authority:
   owns_filesystem: []
 sources:
+  rutter.source.authoring:
+    blueprint:
+      base: module-root
+      path: blueprints/authoring.yaml
   rutter.source.diagnostic:
     blueprint:
       base: module-root
@@ -26,14 +34,22 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/engine.yaml
-  rutter.source.hooks:
+  rutter.source.evaluation:
     blueprint:
       base: module-root
-      path: blueprints/hooks.yaml
+      path: blueprints/evaluation.yaml
+  rutter.source.history:
+    blueprint:
+      base: module-root
+      path: blueprints/history.yaml
   rutter.source.model:
     blueprint:
       base: module-root
       path: blueprints/model.yaml
+  rutter.source.reducer:
+    blueprint:
+      base: module-root
+      path: blueprints/reducer.yaml
   rutter.source.runtime:
     blueprint:
       base: module-root
@@ -42,6 +58,10 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/storage.yaml
+  rutter.source.values:
+    blueprint:
+      base: module-root
+      path: blueprints/values.yaml
 children: {}
 namespace_exports: {}
 exports:
@@ -64,11 +84,6 @@ exports:
       allow_all_modules: false
       allowed_callers:
       - math-dependency-graph._rtx
-  rutter.interface.hooks:
-    source_interface: rutter.source.hooks.interface.python-api
-    access:
-      allow_all_modules: false
-      allowed_callers: []
   rutter.interface.model:
     source_interface: rutter.source.model.interface.python-api
     access:

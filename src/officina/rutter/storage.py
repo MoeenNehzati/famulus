@@ -20,16 +20,18 @@ from typing import Callable, Iterator, Mapping, TypeAlias
 
 import officina.common.atomic_files as atomic_files
 
-from officina.rutter.model import (
-    ActionRecord,
-    ActionResult,
+from officina.rutter.history import (
     ActiveRun,
-    CallRecord,
-    DoneRecord,
+    CompletedRun,
+    KnownFault,
+    OpaqueFault,
     Reckoning,
+    _EffectRecovery,
+)
+from officina.rutter.values import (
+    MachineResult,
     RutterDefinitionError,
     RutterStateError,
-    Turn,
 )
 
 
@@ -56,7 +58,13 @@ _EFFECT_KEYS = frozenset(
         "result",
     }
 )
+_KNOWN_FAULT_REQUIRED_KEYS = frozenset(
+    {"category", "run_id", "state_id", "node_entry_id"}
+)
+_KNOWN_FAULT_OPTIONAL_KEYS = frozenset({"target_state_id", "case_maker_ids"})
+_KNOWN_FAULT_KEYS = _KNOWN_FAULT_REQUIRED_KEYS | _KNOWN_FAULT_OPTIONAL_KEYS
 _MAX_ACTIVE_DEPTH = 64
+_MAX_RECKONING_BYTES = 16 * 1024 * 1024
 _RECKONING_SUFFIX = ".reckoning.json"
 
 
@@ -125,210 +133,114 @@ def _preflight_mapping(value: object) -> Mapping[str, object]:
     return value
 
 
-def _history_identity(entry: object) -> str:
-    if isinstance(entry, CallRecord):
-        return entry.call_id
-    assert isinstance(entry, (Turn, ActionRecord, DoneRecord))
-    return entry.record_id
-
-
-def _validate_effect(
-    reckoning: Reckoning, leaf: ActiveRun, action_ids: set[str]
-) -> None:
-    effect = reckoning.active_effect
-    if effect is None:
-        return
-    if set(effect) != _EFFECT_KEYS:
+def _decode_effect(value: object) -> _EffectRecovery | None:
+    if value is None:
+        return None
+    if not isinstance(value, Mapping) or set(value) != _EFFECT_KEYS:
         raise RutterStateError("active effect recovery has invalid fields")
     string_fields = ("action_id", "owner_run_id", "node_entry_id", "state_id")
     if any(
-        type(effect[field]) is not str or not effect[field] for field in string_fields
+        type(value[field]) is not str or not value[field] for field in string_fields
     ):
         raise RutterStateError("active effect recovery has invalid identifiers")
-    if effect["mode"] not in {"repeat-safe", "non-repeat-safe"}:
+    mode = value["mode"]
+    if type(mode) is not str or mode not in {"repeat-safe", "non-repeat-safe"}:
         raise RutterStateError("active effect recovery has invalid mode")
-    disposition = effect["disposition"]
-    result = effect["result"]
-    if disposition not in {"planned", "completed", "uncertain"}:
+    disposition = value["disposition"]
+    result = value["result"]
+    if type(disposition) is not str or disposition not in {
+        "planned",
+        "completed",
+        "uncertain",
+    }:
         raise RutterStateError("active effect recovery has invalid disposition")
     if (disposition == "completed") != (result is not None):
         raise RutterStateError("active effect recovery has inconsistent result")
-    if result is not None:
-        ActionResult.from_json(result)
-    if effect["owner_run_id"] != leaf.run_id:
-        raise RutterStateError("active effect owner must be the deepest active run")
+    typed_result = None if result is None else MachineResult.from_json(result)
+    return _EffectRecovery(
+        value["action_id"],
+        value["owner_run_id"],
+        value["node_entry_id"],
+        value["state_id"],
+        mode,
+        disposition,
+        typed_result,
+    )
+
+
+def _decode_fault(value: object) -> KnownFault | OpaqueFault | None:
+    if value is None:
+        return None
+    if not isinstance(value, Mapping):
+        raise RutterStateError("fault must be a finite JSON object")
+    if not (set(value) & _KNOWN_FAULT_KEYS):
+        return OpaqueFault(value)
     if (
-        effect["node_entry_id"] != leaf.entered_node.entry_id
-        or effect["state_id"] != leaf.entered_node.state_id
+        not _KNOWN_FAULT_REQUIRED_KEYS <= set(value)
+        or not set(value) <= _KNOWN_FAULT_KEYS
     ):
-        raise RutterStateError("active effect recovery has stale node coordinates")
-    if effect["action_id"] in action_ids:
-        raise RutterStateError("active effect action ID was already consumed")
+        raise RutterStateError("known fault has invalid fields")
+    required = ("category", "run_id", "state_id", "node_entry_id")
+    if any(type(value[field]) is not str or not value[field] for field in required):
+        raise RutterStateError("known fault has invalid identifiers")
+    target = value.get("target_state_id")
+    if "target_state_id" in value and (type(target) is not str or not target):
+        raise RutterStateError("known fault has invalid target state")
+    maker_ids = value.get("case_maker_ids", ())
+    if not isinstance(maker_ids, (list, tuple)) or any(
+        type(maker_id) is not str or not maker_id for maker_id in maker_ids
+    ):
+        raise RutterStateError("known fault has invalid case maker IDs")
+    if "case_maker_ids" in value and not maker_ids:
+        raise RutterStateError("known fault has invalid case maker IDs")
+    return KnownFault(
+        value["category"],
+        value["run_id"],
+        value["state_id"],
+        value["node_entry_id"],
+        target,
+        tuple(maker_ids),
+    )
+
+
+def _encode_effect(effect: _EffectRecovery | None) -> object:
+    if effect is None:
+        return None
+    return {
+        "action_id": effect.machine_id,
+        "owner_run_id": effect.owner_run_id,
+        "node_entry_id": effect.evolution_entry_id,
+        "state_id": effect.evolution_id,
+        "mode": effect.mode,
+        "disposition": effect.disposition,
+        "result": None if effect.result is None else effect.result.to_json(),
+    }
+
+
+def _encode_fault(fault: KnownFault | OpaqueFault | None) -> object:
+    if fault is None:
+        return None
+    if isinstance(fault, OpaqueFault):
+        return fault.wire
+    encoded: dict[str, object] = {
+        "category": fault.category,
+        "run_id": fault.run_id,
+        "state_id": fault.evolution_id,
+        "node_entry_id": fault.evolution_entry_id,
+    }
+    if fault.target_evolution_id is not None:
+        encoded["target_state_id"] = fault.target_evolution_id
+    if fault.transition_hook_ids:
+        encoded["case_maker_ids"] = fault.transition_hook_ids
+    return encoded
 
 
 def _validate_reckoning(reckoning: Reckoning) -> None:
-    """Validate cross-record and recursive v3 invariants."""
+    """Delegate definition-independent validation to the aggregate owner."""
 
     if not isinstance(reckoning, Reckoning):
         raise RutterStateError("value must be a Reckoning")
-    if reckoning.storage_version != 3:
-        raise _unsupported_version()
-
-    active_runs: list[ActiveRun] = []
-    active_call_ids: list[str] = []
-    current = reckoning.root
-    while True:
-        active_runs.append(current)
-        if len(active_runs) > _MAX_ACTIVE_DEPTH:
-            raise RutterStateError("Reckoning active-child nesting is too deep")
-        if current.active_child is None:
-            break
-        active_call_ids.append(current.active_child.call_id)
-        current = current.active_child.run
-
-    run_ids = [run.run_id for run in active_runs]
-    run_ids.extend(reckoning.completed_runs)
-    if len(run_ids) != len(set(run_ids)):
-        raise RutterStateError("duplicate run IDs")
-    entrances = [run.entered_node.entry_id for run in active_runs]
-    if len(entrances) != len(set(entrances)):
-        raise RutterStateError("duplicate entrance ID")
-    entrance_authorities: dict[str, tuple[str, str]] = {}
-
-    def bind_entrance(entry_id: str, state_id: str, owner_id: str) -> None:
-        authority = entrance_authorities.get(entry_id)
-        if authority is None:
-            entrance_authorities[entry_id] = (owner_id, state_id)
-            return
-        authority_owner, authority_state = authority
-        if authority_owner != owner_id:
-            raise RutterStateError("entrance owner is not unique")
-        if authority_state != state_id:
-            raise RutterStateError("entrance state identity is inconsistent")
-
-    for run in active_runs:
-        bind_entrance(
-            run.entered_node.entry_id,
-            run.entered_node.state_id,
-            run.run_id,
-        )
-
-    call_ids = set(active_call_ids)
-    if len(call_ids) != len(active_call_ids):
-        raise RutterStateError("duplicate call ID")
-    history_ids: set[str] = set()
-    action_ids: set[str] = set()
-    references = {run_id: 0 for run_id in reckoning.completed_runs}
-    graph = {run_id: set() for run_id in reckoning.completed_runs}
-    attachment_authorities: set[tuple[str, str]] = set()
-
-    owners: list[tuple[str, tuple[object, ...], bool]] = [
-        (run.run_id, run.history, False) for run in active_runs
-    ]
-    owners.extend(
-        (run_id, run.history, True) for run_id, run in reckoning.completed_runs.items()
-    )
-    active_by_id = {run.run_id: run for run in active_runs}
-    for owner_id, history, owner_completed in owners:
-        seen_done = False
-        edge_sources: dict[str, Turn | ActionRecord | CallRecord | DoneRecord] = {}
-        for entry in history:
-            identity = _history_identity(entry)
-            if identity in history_ids:
-                raise RutterStateError("duplicate history record ID")
-            history_ids.add(identity)
-            if isinstance(entry, (Turn, ActionRecord, DoneRecord)):
-                bind_entrance(entry.node_entry_id, entry.state_id, owner_id)
-            if isinstance(entry, DoneRecord):
-                seen_done = True
-                edge_sources[entry.record_id] = entry
-                continue
-            if seen_done and not (
-                isinstance(entry, CallRecord) and entry.site_kind == "attached_case"
-            ):
-                raise RutterStateError("non-attached record follows DoneRecord")
-            if isinstance(entry, ActionRecord):
-                if entry.action_id in action_ids:
-                    raise RutterStateError("duplicate action ID")
-                action_ids.add(entry.action_id)
-                edge_sources[entry.record_id] = entry
-                continue
-            if isinstance(entry, Turn):
-                edge_sources[entry.record_id] = entry
-                continue
-            if not isinstance(entry, CallRecord):
-                continue
-            if entry.call_id in call_ids:
-                raise RutterStateError("duplicate call ID")
-            call_ids.add(entry.call_id)
-            if entry.completed_run_id not in references:
-                raise RutterStateError("CallRecord references unknown completed run")
-            references[entry.completed_run_id] += 1
-            if owner_completed:
-                graph[owner_id].add(entry.completed_run_id)
-            if entry.site_kind == "attached_case":
-                assert entry.attached_to_edge_id is not None
-                source = edge_sources.get(entry.attached_to_edge_id)
-                if source is None:
-                    raise RutterStateError(
-                        "attached edge source must name exactly one earlier "
-                        "record in the same run"
-                    )
-                if source.node_entry_id != entry.node_entry_id:
-                    raise RutterStateError(
-                        "attached CallRecord must share its source entrance"
-                    )
-                authority = (entry.site_id, entry.attached_to_edge_id)
-                if authority in attachment_authorities:
-                    raise RutterStateError("duplicate attachment authority")
-                attachment_authorities.add(authority)
-            else:
-                bind_entrance(entry.node_entry_id, entry.site_id, owner_id)
-                edge_sources[entry.call_id] = entry
-
-        active_owner = active_by_id.get(owner_id)
-        if active_owner is None or active_owner.active_child is None:
-            continue
-        active_child = active_owner.active_child
-        if active_child.kind != "attached_case":
-            continue
-        assert active_child.attached_to_edge_id is not None
-        source = edge_sources.get(active_child.attached_to_edge_id)
-        if source is None:
-            raise RutterStateError(
-                "active attached edge source must name exactly one prior "
-                "record in the same parent run"
-            )
-        if source.node_entry_id != active_owner.entered_node.entry_id:
-            raise RutterStateError(
-                "active attached child must share its source entrance"
-            )
-        authority = (active_child.site, active_child.attached_to_edge_id)
-        if authority in attachment_authorities:
-            raise RutterStateError("duplicate attachment authority")
-        attachment_authorities.add(authority)
-
-    if any(count != 1 for count in references.values()):
-        raise RutterStateError(
-            "every completed run must be referenced by exactly one CallRecord"
-        )
-
-    indegree = {run_id: 0 for run_id in graph}
-    for children in graph.values():
-        for child_id in children:
-            indegree[child_id] += 1
-    ready = [run_id for run_id, count in indegree.items() if count == 0]
-    visited = 0
-    while ready:
-        run_id = ready.pop()
-        visited += 1
-        for child_id in graph[run_id]:
-            indegree[child_id] -= 1
-            if indegree[child_id] == 0:
-                ready.append(child_id)
-    if visited != len(graph):
-        raise RutterStateError("completed-run references are cyclic")
-    _validate_effect(reckoning, active_runs[-1], action_ids)
+    reckoning.validate()
 
 
 def _reckoning_from_mapping(
@@ -339,8 +251,21 @@ def _reckoning_from_mapping(
     """Construct exact records, then apply internal and bound semantics."""
 
     raw = _preflight_mapping(value)
+    completed = raw["completed_runs"]
+    if not isinstance(completed, Mapping):
+        raise RutterStateError("Reckoning completed_runs must be an object")
     try:
-        reckoning = Reckoning.from_json(raw)
+        reckoning = Reckoning(
+            raw["storage_version"],
+            raw["global_revision"],
+            ActiveRun.from_json(raw["root"]),
+            {
+                run_id: CompletedRun.from_json(run)
+                for run_id, run in completed.items()
+            },
+            _decode_effect(raw["active_effect"]),
+            _decode_fault(raw["fault"]),
+        )
     except RecursionError as exc:
         raise RutterStateError("Reckoning active-child nesting is too deep") from exc
     _validate_reckoning(reckoning)
@@ -351,12 +276,27 @@ def _reckoning_from_mapping(
     return reckoning
 
 
+def _reckoning_mapping(reckoning: Reckoning) -> Mapping[str, object]:
+    """Project one typed Reckoning into its exact version-3 wire mapping."""
+
+    return {
+        "storage_version": reckoning.storage_version,
+        "global_revision": reckoning.global_revision,
+        "root": reckoning.root.to_json(),
+        "completed_runs": {
+            run_id: run.to_json() for run_id, run in reckoning.completed_runs.items()
+        },
+        "active_effect": _encode_effect(reckoning.active_effect),
+        "fault": _encode_fault(reckoning.fault),
+    }
+
+
 def _canonical_reckoning_bytes(reckoning: Reckoning) -> bytes:
     """Encode sorted compact UTF-8 JSON with exactly one trailing newline."""
 
     _validate_reckoning(reckoning)
-    mapping = _json_value(reckoning.to_json(), label="Reckoning")
-    return (
+    mapping = _json_value(_reckoning_mapping(reckoning), label="Reckoning")
+    encoded = (
         json.dumps(
             mapping,
             ensure_ascii=False,
@@ -366,6 +306,9 @@ def _canonical_reckoning_bytes(reckoning: Reckoning) -> bytes:
         )
         + "\n"
     ).encode("utf-8")
+    if len(encoded) > _MAX_RECKONING_BYTES:
+        raise RutterStateError("Reckoning JSON exceeds the size limit")
+    return encoded
 
 
 def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -391,6 +334,9 @@ def _decode_reckoning(
     semantic_validator: _SemanticValidator | None = None,
 ) -> Reckoning:
     """Decode strict UTF-8 JSON into one fully validated Reckoning."""
+
+    if len(data) > _MAX_RECKONING_BYTES:
+        raise RutterStateError("Reckoning JSON exceeds the size limit")
 
     try:
         value = json.loads(
@@ -423,7 +369,7 @@ def _confined_reckoning_path(root: Path, path: Path) -> Path:
     return Path(root).absolute() / path
 
 
-class _ReckoningStore:
+class ReckoningStore:
     """Operate one confined ``*.reckoning.json`` and its appended lock."""
 
     def __init__(

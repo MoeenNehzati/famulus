@@ -2,43 +2,46 @@
 
 from __future__ import annotations
 
+import ast
 from dataclasses import FrozenInstanceError, fields
 from math import inf, nan
+from pathlib import Path
 from types import MappingProxyType
 
 import pytest
 
 import officina.rutter as rutter_api
+import officina.rutter.model as model_module
 from officina.rutter.model import (
-    Action,
-    ActionContext,
-    ActionRecord,
-    ActionResult,
+    MachineStep,
+    MachineContext,
+    MachineRecord,
+    MachineResult,
     ActiveChild,
     ActiveRun,
-    AnswerContext,
+    LLMResponseContext,
     AnswerSpec,
-    Call,
-    CallRecord,
+    SubRutter,
+    SubRutterRecord,
     Charter,
     CompletedRun,
-    Done,
-    DoneRecord,
-    EdgeContext,
-    EnteredNode,
+    Terminal,
+    TerminalRecord,
+    TransitionContext,
+    EnteredEvolution,
     HistoryView,
     Message,
-    NodeView,
-    Prompt,
-    PythonInstruction,
+    EvolutionView,
+    LLMStep,
+    MachineInstruction,
     Reckoning,
     Response,
-    RunResult,
+    VoyageResult,
     Rutter,
     RutterDefinitionError,
     RutterStateError,
     RutterValidationError,
-    StateContext,
+    EvolutionContext,
     Turn,
     ValidationIssue,
     ValidationReport,
@@ -47,13 +50,13 @@ from test_support.rutter_fixtures import ExampleRutter, example_message
 
 
 def _done_record(
-    *, record_id: str = "done-1", node_entry_id: str = "entry-1"
-) -> DoneRecord:
-    return DoneRecord(
+    *, record_id: str = "done-1", evolution_entry_id: str = "entry-1"
+) -> TerminalRecord:
+    return TerminalRecord(
         record_id=record_id,
-        node_entry_id=node_entry_id,
-        state_id="complete",
-        result=RunResult("completed", {"artifact": "draft.md"}),
+        evolution_entry_id=evolution_entry_id,
+        evolution_id="complete",
+        result=VoyageResult("completed", {"artifact": "draft.md"}),
     )
 
 
@@ -70,35 +73,37 @@ def _completed_run(*, run_id: str = "child-run") -> CompletedRun:
 def _accepted_turn(*, record_id: str = "turn-1") -> Turn:
     return Turn(
         record_id=record_id,
-        node_entry_id="entry-report",
-        state_id="report",
+        evolution_entry_id="entry-report",
+        evolution_id="report",
         revision=1,
         message=example_message(),
         response=Response(1, "reported", {"ok": True}),
     )
 
 
-def _call_record(*, call_id: str = "call-1") -> CallRecord:
-    return CallRecord(
-        call_id=call_id,
-        node_entry_id="entry-call",
-        site_kind="explicit_call",
-        site_id="delegate",
-        attached_to_edge_id=None,
-        completed_run_id="child-run",
+def _call_record(*, invocation_id: str = "call-1") -> SubRutterRecord:
+    return SubRutterRecord(
+        invocation_id=invocation_id,
+        evolution_entry_id="entry-call",
+        origin_evolution_id="delegate",
+        transition_hook_id=None,
+        attached_to_transition_id=None,
+        completed_voyage_instance_id="child-run",
     )
 
 
 def _attached_call_record(
-    *, call_id: str = "call-attached", node_entry_id: str = "entry-1"
-) -> CallRecord:
-    return CallRecord(
-        call_id=call_id,
-        node_entry_id=node_entry_id,
-        site_kind="attached_case",
-        site_id="maker-1",
-        attached_to_edge_id="done-edge-1",
-        completed_run_id="nested-run",
+    *,
+    invocation_id: str = "call-attached",
+    evolution_entry_id: str = "entry-1",
+) -> SubRutterRecord:
+    return SubRutterRecord(
+        invocation_id=invocation_id,
+        evolution_entry_id=evolution_entry_id,
+        origin_evolution_id=None,
+        transition_hook_id="maker-1",
+        attached_to_transition_id="done-edge-1",
+        completed_voyage_instance_id="nested-run",
     )
 
 
@@ -106,7 +111,7 @@ def test_message_has_exact_instruction_and_data_parts() -> None:
     message = Message(
         instructions={"text": "Report.", "answer": {"reported": {}}},
         data={
-            "state": {"id": "report", "entry_id": "e1", "revision": 1},
+            "evolution": {"id": "report", "entry_id": "e1", "revision": 1},
             "payload": {"chunk": "A"},
         },
     )
@@ -115,38 +120,38 @@ def test_message_has_exact_instruction_and_data_parts() -> None:
     assert message.to_json() == {
         "instructions": {"text": "Report.", "answer": {"reported": {}}},
         "data": {
-            "state": {"id": "report", "entry_id": "e1", "revision": 1},
+            "evolution": {"id": "report", "entry_id": "e1", "revision": 1},
             "payload": {"chunk": "A"},
         },
     }
 
 
-def test_active_run_has_one_entered_node_and_recursive_child() -> None:
-    assert fields(ActiveRun)[4].name == "entered_node"
+def test_active_run_has_one_entered_evolution_and_recursive_child() -> None:
+    assert fields(ActiveRun)[4].name == "entered_evolution"
     assert tuple(field.name for field in fields(ActiveRun)) == (
         "run_id",
         "rutter_id",
         "definition_version",
         "charter",
-        "entered_node",
+        "entered_evolution",
         "history",
         "active_child",
     )
 
 
 def test_active_run_can_remain_entered_at_its_settled_done_node() -> None:
-    done = DoneRecord(
+    done = TerminalRecord(
         "done-terminal",
         "entry-terminal",
         "complete",
-        RunResult("completed", {"artifact": "draft.md"}),
+        VoyageResult("completed", {"artifact": "draft.md"}),
     )
     active = ActiveRun(
         "root-run",
         "example",
         1,
         Charter({}),
-        EnteredNode("entry-terminal", "complete"),
+        EnteredEvolution("entry-terminal", "complete"),
         (done,),
         None,
     )
@@ -164,28 +169,28 @@ def test_active_done_history_preserves_settled_attached_calls() -> None:
         "example",
         1,
         Charter({}),
-        EnteredNode("entry-1", "complete"),
+        EnteredEvolution("entry-1", "complete"),
         (done, attached),
         None,
     )
 
-    assert HistoryView(active.history).done() == done
+    assert HistoryView(active.history).terminal() == done
 
 
 @pytest.mark.parametrize(
     "done",
     (
-        DoneRecord(
+        TerminalRecord(
             "done-wrong-entry",
             "other-entry",
             "complete",
-            RunResult("completed", {}),
+            VoyageResult("completed", {}),
         ),
-        DoneRecord(
+        TerminalRecord(
             "done-wrong-state",
             "entry-terminal",
             "other-state",
-            RunResult("completed", {}),
+            VoyageResult("completed", {}),
         ),
     ),
 )
@@ -196,7 +201,7 @@ def test_active_done_must_match_current_entrance(done) -> None:
             "example",
             1,
             Charter({}),
-            EnteredNode("entry-terminal", "complete"),
+            EnteredEvolution("entry-terminal", "complete"),
             (done,),
             None,
         )
@@ -208,7 +213,7 @@ def test_active_done_can_own_attached_child_bound_to_done_record() -> None:
         "child",
         1,
         Charter({}),
-        EnteredNode("entry-child", "start"),
+        EnteredEvolution("entry-child", "start"),
         (),
         None,
     )
@@ -225,13 +230,13 @@ def test_active_done_can_own_attached_child_bound_to_done_record() -> None:
         "example",
         1,
         Charter({}),
-        EnteredNode("entry-terminal", "complete"),
+        EnteredEvolution("entry-terminal", "complete"),
         (
-            DoneRecord(
+            TerminalRecord(
                 "done-terminal",
                 "entry-terminal",
                 "complete",
-                RunResult("completed", {}),
+                VoyageResult("completed", {}),
             ),
         ),
         active_child,
@@ -254,7 +259,7 @@ def test_active_done_can_own_attached_child_bound_to_done_record() -> None:
                 "child",
                 1,
                 Charter({}),
-                EnteredNode("entry-explicit", "start"),
+                EnteredEvolution("entry-explicit", "start"),
                 (),
                 None,
             ),
@@ -269,7 +274,7 @@ def test_active_done_can_own_attached_child_bound_to_done_record() -> None:
                 "child",
                 1,
                 Charter({}),
-                EnteredNode("entry-attached", "start"),
+                EnteredEvolution("entry-attached", "start"),
                 (),
                 None,
             ),
@@ -277,19 +282,19 @@ def test_active_done_can_own_attached_child_bound_to_done_record() -> None:
     ),
 )
 def test_active_done_rejects_nonattached_or_wrong_edge_child(active_child) -> None:
-    with pytest.raises(RutterStateError, match="DoneRecord"):
+    with pytest.raises(RutterStateError, match="TerminalRecord"):
         ActiveRun(
             "root-run",
             "example",
             1,
             Charter({}),
-            EnteredNode("entry-terminal", "complete"),
+            EnteredEvolution("entry-terminal", "complete"),
             (
-                DoneRecord(
+                TerminalRecord(
                     "done-terminal",
                     "entry-terminal",
                     "complete",
-                    RunResult("completed", {}),
+                    VoyageResult("completed", {}),
                 ),
             ),
             active_child,
@@ -315,16 +320,16 @@ def test_validation_issue_path_accepts_string_and_integer_segments() -> None:
             {
                 "instructions": {"text": "Report.", "answer": {"reported": {}}},
                 "data": {
-                    "state": {"id": "report", "entry_id": "e1", "revision": 1},
+                    "evolution": {"id": "report", "entry_id": "e1", "revision": 1},
                     "payload": {},
                 },
                 "extra": None,
             },
         ),
         (Response.from_json, {"revision": 1, "outcome": "ok"}),
-        (RunResult.from_json, {"outcome": "ok", "value": {}, "extra": None}),
+        (VoyageResult.from_json, {"outcome": "ok", "value": {}, "extra": None}),
         (
-            EnteredNode.from_json,
+            EnteredEvolution.from_json,
             {"entry_id": "entry-1", "state_id": "ready", "extra": False},
         ),
     ),
@@ -351,19 +356,19 @@ def test_public_json_values_reject_nonfinite_or_non_json_data(invalid: object) -
     with pytest.raises(RutterDefinitionError, match="finite JSON"):
         Charter({"invalid": invalid})
     with pytest.raises(RutterDefinitionError, match="finite JSON"):
-        RunResult("done", invalid)
+        VoyageResult("done", invalid)
     with pytest.raises(RutterDefinitionError, match="finite JSON"):
-        ActionResult("done", invalid)
+        MachineResult("done", invalid)
 
 
 @pytest.mark.parametrize(
     "construct",
     (
-        lambda: EnteredNode("", "ready"),
-        lambda: EnteredNode("../entry", "ready"),
-        lambda: EnteredNode("entry-1", "bad/state"),
+        lambda: EnteredEvolution("", "ready"),
+        lambda: EnteredEvolution("../entry", "ready"),
+        lambda: EnteredEvolution("entry-1", "bad/state"),
         lambda: ActiveRun(
-            "run 1", "example", 1, Charter({}), EnteredNode("entry-1", "ready"), (), None
+            "run 1", "example", 1, Charter({}), EnteredEvolution("entry-1", "ready"), (), None
         ),
         lambda: CompletedRun(
             "child", "../child", 1, Charter({}), (_done_record(),)
@@ -381,9 +386,9 @@ def test_history_rejects_duplicate_record_ids() -> None:
 
 
 def test_completed_run_requires_one_final_done_authority() -> None:
-    with pytest.raises(RutterStateError, match="DoneRecord"):
+    with pytest.raises(RutterStateError, match="TerminalRecord"):
         CompletedRun("run-1", "example", 1, Charter({}), ())
-    with pytest.raises(RutterStateError, match="DoneRecord"):
+    with pytest.raises(RutterStateError, match="TerminalRecord"):
         CompletedRun(
             "run-1",
             "example",
@@ -405,34 +410,34 @@ def test_completed_run_projects_sole_done_before_attached_calls() -> None:
         (done, attached),
     )
 
-    assert completed.result == RunResult("completed", {"artifact": "draft.md"})
+    assert completed.result == VoyageResult("completed", {"artifact": "draft.md"})
     assert completed.history == (done, attached)
     assert CompletedRun.from_json(completed.to_json()) == completed
-    assert HistoryView((done, attached)).done() == done
+    assert HistoryView((done, attached)).terminal() == done
 
 
 @pytest.mark.parametrize(
     "post_done",
     (
         _accepted_turn(),
-        ActionRecord(
+        MachineRecord(
             "action-after-done",
             "save",
             "entry-1",
             "save",
             "pure",
-            ActionResult("saved", {}),
+            MachineResult("saved", {}),
         ),
-        _call_record(call_id="explicit-after-done"),
+        _call_record(invocation_id="explicit-after-done"),
         _attached_call_record(
-            call_id="attached-wrong-entry",
-            node_entry_id="other-entry",
+            invocation_id="attached-wrong-entry",
+            evolution_entry_id="other-entry",
         ),
         _done_record(record_id="done-2"),
     ),
 )
 def test_history_rejects_invalid_records_after_done(post_done) -> None:
-    with pytest.raises(RutterStateError, match="DoneRecord"):
+    with pytest.raises(RutterStateError, match="TerminalRecord"):
         HistoryView((_done_record(), post_done))
 
 
@@ -449,15 +454,15 @@ def test_history_rejects_invalid_records_after_done(post_done) -> None:
                 "child",
                 1,
                 Charter({}),
-                EnteredNode("entry-child", "start"),
+                EnteredEvolution("entry-child", "start"),
                 (),
                 None,
             ),
         ),
-        lambda: CallRecord(
+        lambda: SubRutterRecord(
             "call-1",
             "entry-call",
-            "attached_case",
+            None,
             "maker-1",
             None,
             "child-run",
@@ -465,7 +470,7 @@ def test_history_rejects_invalid_records_after_done(post_done) -> None:
     ),
 )
 def test_child_provenance_must_match_site_kind(construct) -> None:
-    with pytest.raises(RutterStateError, match="provenance"):
+    with pytest.raises(RutterStateError, match="provenance|transition"):
         construct()
 
 
@@ -475,7 +480,7 @@ def test_reckoning_rejects_active_and_completed_run_id_overlap() -> None:
         "example",
         1,
         Charter({}),
-        EnteredNode("entry-root", "report"),
+        EnteredEvolution("entry-root", "report"),
         (),
         None,
     )
@@ -500,19 +505,19 @@ def test_answer_spec_preserves_none_empty_and_shaped_guidance() -> None:
 
 
 def test_definition_values_keep_callbacks_in_process_only() -> None:
-    prompt = ExampleRutter().define_states()["report"]
-    action = Action(lambda context: ActionResult("ok", {}), mode="pure", then="done")
-    call = Call(ExampleRutter, charter=lambda context: {}, then="done")
-    done = Done(RunResult("completed", {}))
+    prompt = ExampleRutter().define_evolutions()["report"]
+    action = MachineStep(lambda context: MachineResult("ok", {}), mode="pure", then="done")
+    call = SubRutter(ExampleRutter, charter=lambda context: {}, then="done")
+    done = Terminal(VoyageResult("completed", {}))
 
-    def execute_action() -> ActionResult:
-        return ActionResult("ok", {})
+    def execute_action() -> MachineResult:
+        return MachineResult("ok", {})
 
     answer_format = {
         "outcome": "declared outcome",
         "value": {"type": "finite JSON"},
     }
-    instruction = PythonInstruction(
+    instruction = MachineInstruction(
         "action-1",
         "pure",
         execute_action,
@@ -520,14 +525,14 @@ def test_definition_values_keep_callbacks_in_process_only() -> None:
     )
     answer_format["value"]["type"] = "changed"  # type: ignore[index]
 
-    assert isinstance(prompt, Prompt)
+    assert isinstance(prompt, LLMStep)
     assert prompt.text == "Report."
     assert action.mode == "pure"
     assert call.child is ExampleRutter
-    assert done.result == RunResult("completed", {})
-    assert instruction.action_id == "action-1"
+    assert done.result == VoyageResult("completed", {})
+    assert instruction.machine_id == "action-1"
     assert instruction.mode == "pure"
-    assert instruction.run() == ActionResult("ok", {})
+    assert instruction.run() == MachineResult("ok", {})
     assert instruction.answer_format == {
         "outcome": "declared outcome",
         "value": {"type": "finite JSON"},
@@ -544,22 +549,22 @@ def test_definition_values_keep_callbacks_in_process_only() -> None:
 @pytest.mark.parametrize(
     "construct",
     (
-        lambda: PythonInstruction(
+        lambda: MachineInstruction(
             "action-1",
             "sometimes",
-            lambda: ActionResult("ok", {}),
+            lambda: MachineResult("ok", {}),
             {"outcome": "string", "value": {}},
         ),
-        lambda: PythonInstruction(
+        lambda: MachineInstruction(
             "action-1",
             "pure",
-            lambda context: ActionResult("ok", {}),
+            lambda context: MachineResult("ok", {}),
             {"outcome": "string", "value": {}},
         ),
-        lambda: PythonInstruction(
+        lambda: MachineInstruction(
             "action-1",
             "pure",
-            lambda: ActionResult("ok", {}),
+            lambda: MachineResult("ok", {}),
             {"outcome": "string", "value": nan},
         ),
     ),
@@ -569,25 +574,25 @@ def test_python_instruction_rejects_invalid_exact_values(construct) -> None:
         construct()
 
 
-def test_rutter_author_boundary_has_stable_identity_and_empty_case_makers() -> None:
+def test_rutter_author_boundary_has_stable_identity_and_empty_transition_hooks() -> None:
     definition = ExampleRutter()
 
     assert definition.rutter_id == "example"
     assert definition.definition_version == 1
-    assert definition.start_state == "report"
-    assert definition.allow_multiple_cases_at_once is False
-    assert definition.define_case_makers() == ()
-    assert set(definition.define_states()) == {"report", "complete"}
+    assert definition.initial_evolution_id == "report"
+    assert definition.allow_multiple_hooks_per_transition is False
+    assert definition.define_transition_hooks() == ()
+    assert set(definition.define_evolutions()) == {"report", "complete"}
 
 
 def test_json_round_trips_preserve_exact_persisted_values() -> None:
     message = example_message()
     response = Response(1, "reported", {"items": ["A", "B"]})
-    action_result = ActionResult("stored", {"count": 2})
-    run_result = RunResult("completed", {"artifact": "draft.md"})
-    entered = EnteredNode("entry-report", "report")
+    action_result = MachineResult("stored", {"count": 2})
+    run_result = VoyageResult("completed", {"artifact": "draft.md"})
+    entered = EnteredEvolution("entry-report", "report")
     turn = Turn("turn-1", "entry-report", "report", 1, message, response)
-    action_record = ActionRecord(
+    action_record = MachineRecord(
         "action-record-1",
         "save",
         "entry-2",
@@ -608,7 +613,7 @@ def test_json_round_trips_preserve_exact_persisted_values() -> None:
             "child",
             1,
             Charter({"item": "B"}),
-            EnteredNode("entry-child", "start"),
+            EnteredEvolution("entry-child", "start"),
             (),
             None,
         ),
@@ -638,13 +643,13 @@ def test_json_round_trips_preserve_exact_persisted_values() -> None:
         (ValidationReport, ValidationReport(False, (ValidationIssue((), "x", "x"),))),
         (Message, message),
         (Response, response),
-        (ActionResult, action_result),
-        (RunResult, run_result),
-        (EnteredNode, entered),
+        (MachineResult, action_result),
+        (VoyageResult, run_result),
+        (EnteredEvolution, entered),
         (Turn, turn),
-        (ActionRecord, action_record),
-        (CallRecord, call_record),
-        (DoneRecord, done_record),
+        (MachineRecord, action_record),
+        (SubRutterRecord, call_record),
+        (TerminalRecord, done_record),
         (CompletedRun, completed),
         (ActiveChild, active_child),
         (ActiveRun, active),
@@ -652,6 +657,62 @@ def test_json_round_trips_preserve_exact_persisted_values() -> None:
     )
     for value_type, value in pairs:
         assert value_type.from_json(value.to_json()) == value
+
+
+def test_private_effect_recovery_retains_all_seven_typed_fields() -> None:
+    """Dropping or reverting any v3 recovery authority field must fail."""
+
+    result = MachineResult("stored", {"count": 2})
+    recovery = model_module._EffectRecovery(
+        "action-1",
+        "run-1",
+        "entry-1",
+        "save",
+        "repeat-safe",
+        "completed",
+        result,
+    )
+
+    assert tuple(field.name for field in fields(recovery)) == (
+        "machine_id",
+        "owner_run_id",
+        "evolution_entry_id",
+        "evolution_id",
+        "mode",
+        "disposition",
+        "result",
+    )
+    assert recovery.result is result
+    with pytest.raises(FrozenInstanceError):
+        recovery.disposition = "planned"
+
+
+def test_fault_values_freeze_opaque_wire_and_export_only_safe_summary() -> None:
+    """Raw legacy authority stays private while its safe summary is public."""
+
+    source = {"legacy": {"items": ["A"]}}
+
+    opaque = model_module.OpaqueFault(source)
+    summary = model_module.FaultSummary("opaque", None, None, None, ())
+    source["legacy"]["items"].append("late")
+
+    assert opaque.wire == {"legacy": {"items": ("A",)}}
+    assert summary.category == "opaque"
+    assert rutter_api.FaultSummary is model_module.FaultSummary
+    with pytest.raises(FrozenInstanceError):
+        summary.category = "routing"
+
+    root = ActiveRun(
+        "root-run",
+        "example",
+        1,
+        Charter({}),
+        EnteredEvolution("entry-review", "review"),
+        (),
+        None,
+    )
+    with pytest.raises(RutterStateError, match="opaque fault wire is private"):
+        Reckoning(3, 0, root, {}, None, opaque).to_json()
 
 
 def test_json_views_are_independent_and_deeply_immutable() -> None:
@@ -679,19 +740,19 @@ def test_history_view_exposes_complete_immutable_query_contract() -> None:
         Message(
             {"text": "Next.", "answer": {"continued": {}}},
             {
-                "state": {"id": "next", "entry_id": "entry-next", "revision": 2},
+                "evolution": {"id": "next", "entry_id": "entry-next", "revision": 2},
                 "payload": {},
             },
         ),
         None,
     )
-    action = ActionRecord(
+    action = MachineRecord(
         "action-1",
         "save",
         "entry-save",
         "save",
         "pure",
-        ActionResult("saved", {"id": 7}),
+        MachineResult("saved", {"id": 7}),
     )
     call = _call_record()
     history = HistoryView(
@@ -709,28 +770,31 @@ def test_history_view_exposes_complete_immutable_query_contract() -> None:
     assert history.turns("report") == (_accepted_turn(),)
     assert history.turns("missing") == ()
     assert history.open_turn() == open_turn
-    assert history.actions() == (action,)
-    assert history.actions("save") == (action,)
-    assert history.calls() == (history.latest_call(),)
-    assert history.calls("delegate") == (history.latest_call("delegate"),)
-    assert history.calls("missing") == ()
-    assert history.done() is None
-    assert complete_history.done() == done
+    assert history.machines() == (action,)
+    assert history.machines("save") == (action,)
+    assert history.subrutters() == (history.latest_subrutter(),)
+    assert history.subrutters(origin_evolution_id="delegate") == (
+        history.latest_subrutter(origin_evolution_id="delegate"),
+    )
+    assert history.subrutters(origin_evolution_id="missing") == ()
+    assert history.terminal() is None
+    assert complete_history.terminal() == done
     assert history.latest_turn() == _accepted_turn()
     assert history.latest_turn("missing") is None
-    assert history.latest_action() == action
-    assert history.latest_action("missing") is None
-    assert history.latest_call() is not None
-    assert history.latest_call().call_id == "call-1"
-    assert history.latest_call().site == "delegate"
-    assert history.latest_call().completed.run_id == "child-run"
-    assert history.latest_call().result == RunResult(
+    assert history.latest_machine() == action
+    assert history.latest_machine("missing") is None
+    assert history.latest_subrutter() is not None
+    assert history.latest_subrutter().invocation_id == "call-1"
+    assert history.latest_subrutter().origin_evolution_id == "delegate"
+    assert history.latest_subrutter().transition_hook_id is None
+    assert history.latest_subrutter().completed.voyage_instance_id == "child-run"
+    assert history.latest_subrutter().result == VoyageResult(
         "completed", {"artifact": "draft.md"}
     )
-    assert history.latest_call("missing") is None
+    assert history.latest_subrutter(origin_evolution_id="missing") is None
     assert history.require_latest_turn() == _accepted_turn()
-    assert history.require_latest_action() == action
-    assert history.require_latest_call().call_id == "call-1"
+    assert history.require_latest_machine() == action
+    assert history.require_latest_subrutter().invocation_id == "call-1"
 
 
 def test_history_view_absence_behavior_is_stable() -> None:
@@ -739,25 +803,35 @@ def test_history_view_absence_behavior_is_stable() -> None:
     assert history.entries() == ()
     assert history.turns() == ()
     assert history.open_turn() is None
-    assert history.actions() == ()
-    assert history.calls() == ()
-    assert history.done() is None
+    assert history.machines() == ()
+    assert history.subrutters() == ()
+    assert history.terminal() is None
     assert history.latest_turn() is None
-    assert history.latest_action() is None
-    assert history.latest_call() is None
+    assert history.latest_machine() is None
+    assert history.latest_subrutter() is None
     with pytest.raises(RutterDefinitionError, match="history has no matching Turn") as error:
         history.require_latest_turn()
     assert error.value.category == "definition"
-    with pytest.raises(RutterDefinitionError, match="history has no matching ActionRecord"):
-        history.require_latest_action()
-    with pytest.raises(RutterDefinitionError, match="history has no matching CallRecord"):
-        history.require_latest_call()
+    with pytest.raises(RutterDefinitionError, match="history has no matching MachineRecord"):
+        history.require_latest_machine()
+    with pytest.raises(RutterDefinitionError, match="history has no matching SubRutterRecord"):
+        history.require_latest_subrutter()
+
+
+def test_history_view_rejects_mutually_exclusive_subrutter_filters() -> None:
+    history = HistoryView(())
+
+    with pytest.raises(RutterDefinitionError, match="mutually exclusive"):
+        history.subrutters(
+            origin_evolution_id="delegate",
+            transition_hook_id="hook-1",
+        )
 
 
 def test_history_prefix_excludes_the_source_record_and_later_entries() -> None:
     turn = _accepted_turn()
-    action = ActionRecord(
-        "action-1", "save", "entry-save", "save", "pure", ActionResult("saved", {})
+    action = MachineRecord(
+        "action-1", "save", "entry-save", "save", "pure", MachineResult("saved", {})
     )
     call = _call_record()
     full = HistoryView((turn, action, call), {"child-run": _completed_run()})
@@ -766,45 +840,49 @@ def test_history_prefix_excludes_the_source_record_and_later_entries() -> None:
 
     assert prefix.entries() == (turn,)
     assert prefix.latest_turn() == turn
-    assert prefix.latest_action() is None
-    assert prefix.latest_call() is None
+    assert prefix.latest_machine() is None
+    assert prefix.latest_subrutter() is None
     assert full.entries() == (turn, action, call)
 
 
 def test_contexts_are_frozen_and_share_immutable_history() -> None:
     history = HistoryView((_accepted_turn(),))
-    state = StateContext(Charter({"artifact": "draft.md"}), "report", "entry-report", history)
-    answer = AnswerContext(state, example_message(), Response(1, "reported", {}))
-    action = ActionContext(state, "save")
-    edge = EdgeContext(state, {"edge_id": "edge-1"}, _accepted_turn())
+    state = EvolutionContext(Charter({"artifact": "draft.md"}), "report", "entry-report", history)
+    answer = LLMResponseContext(state, example_message(), Response(1, "reported", {}))
+    action = MachineContext(state, "save")
+    edge = TransitionContext(
+        state,
+        {"transition_id": "transition-1"},
+        _accepted_turn(),
+    )
 
-    assert answer.state is state
-    assert action.state is state
-    assert edge.state.history.entries() == (_accepted_turn(),)
+    assert answer.evolution is state
+    assert action.evolution is state
+    assert edge.evolution.history.entries() == (_accepted_turn(),)
     with pytest.raises(FrozenInstanceError):
-        state.state_id = "other"
+        state.evolution_id = "other"
 
 
 def test_node_view_directly_identifies_an_entered_nested_node() -> None:
-    node = NodeView(
+    node = EvolutionView(
         rutter_id="example",
         definition_version=2,
-        state_id="report",
-        node_entry_id="entry-report",
+        evolution_id="report",
+        evolution_entry_id="entry-report",
         depth=1,
         condition="ready",
     )
 
-    assert tuple(field.name for field in fields(NodeView)) == (
+    assert tuple(field.name for field in fields(EvolutionView)) == (
         "rutter_id",
         "definition_version",
-        "state_id",
-        "node_entry_id",
+        "evolution_id",
+        "evolution_entry_id",
         "depth",
         "condition",
     )
-    assert node.state_id == "report"
-    assert node.node_entry_id == "entry-report"
+    assert node.evolution_id == "report"
+    assert node.evolution_entry_id == "entry-report"
     assert node.depth == 1
     assert not hasattr(node, "history")
     with pytest.raises(FrozenInstanceError):
@@ -812,14 +890,14 @@ def test_node_view_directly_identifies_an_entered_nested_node() -> None:
 
 
 def test_node_view_allows_missing_entrance_only_for_preview() -> None:
-    preview = NodeView("example", 2, "report", None, 0, "preview")
+    preview = EvolutionView("example", 2, "report", None, 0, "preview")
 
-    assert preview.node_entry_id is None
+    assert preview.evolution_entry_id is None
     assert preview.condition == "preview"
     with pytest.raises(RutterDefinitionError, match="entrance"):
-        NodeView("example", 2, "report", None, 0, "ready")
+        EvolutionView("example", 2, "report", None, 0, "ready")
     with pytest.raises(RutterDefinitionError, match="entrance"):
-        NodeView("example", 2, "report", "entry-report", 0, "preview")
+        EvolutionView("example", 2, "report", "entry-report", 0, "preview")
 
 
 @pytest.mark.parametrize(
@@ -836,7 +914,7 @@ def test_node_view_allows_missing_entrance_only_for_preview() -> None:
 )
 def test_node_view_rejects_invalid_exact_values(values) -> None:
     with pytest.raises(RutterDefinitionError):
-        NodeView(*values)
+        EvolutionView(*values)
 
 
 def test_public_operating_errors_have_stable_exports_and_categories() -> None:
@@ -852,6 +930,100 @@ def test_public_operating_errors_have_stable_exports_and_categories() -> None:
         assert isinstance(error, rutter_api.RutterError)
         assert error.category == category
         assert name in rutter_api.__all__
+
+
+def test_public_package_has_the_exact_narrow_new_vocabulary_surface() -> None:
+    assert rutter_api.__all__ == (
+        "AnswerSpec",
+        "AskAndDiagnose",
+        "Charter",
+        "CompletedVoyageView",
+        "DiagnoseAnswer",
+        "DiagnosisCase",
+        "DiagnosisDetail",
+        "Evolution",
+        "EvolutionContext",
+        "EvolutionView",
+        "FaultSummary",
+        "HistoryView",
+        "JsonObject",
+        "JsonValue",
+        "LLMResponseContext",
+        "LLMStep",
+        "MachineContext",
+        "MachineInstruction",
+        "MachineRecord",
+        "MachineResult",
+        "MachineStep",
+        "Message",
+        "NotApplicable",
+        "PreviewUnavailable",
+        "QuestionCase",
+        "Response",
+        "RunBlocked",
+        "Rutter",
+        "RutterDefinitionError",
+        "RutterError",
+        "RutterRegistry",
+        "RutterStateError",
+        "RutterValidationError",
+        "SubRutter",
+        "SubRutterRecordView",
+        "Terminal",
+        "TerminalRecord",
+        "TransitionContext",
+        "TransitionHook",
+        "TransitionMatch",
+        "Turn",
+        "ValidationIssue",
+        "ValidationReport",
+        "Voyage",
+        "VoyageResult",
+        "VoyageStatus",
+        "accept",
+        "after",
+        "ask_and_diagnose_on",
+        "before",
+        "diagnose_answer_on",
+        "empty_data",
+        "hook_sequence_after",
+        "on_transition",
+    )
+    for private_name in (
+        "ActiveChild",
+        "ActiveRun",
+        "KnownFault",
+        "OpaqueFault",
+        "Reckoning",
+        "ReckoningStore",
+        "_EffectRecovery",
+    ):
+        assert not hasattr(rutter_api, private_name)
+
+
+def test_focused_model_sources_preserve_one_way_import_boundaries() -> None:
+    source_root = Path(model_module.__file__).parent
+
+    def sibling_imports(name: str) -> set[str]:
+        tree = ast.parse((source_root / f"{name}.py").read_text(encoding="utf-8"))
+        return {
+            node.module.removeprefix("officina.rutter.")
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom)
+            and node.module is not None
+            and node.module.startswith("officina.rutter.")
+        }
+
+    assert sibling_imports("values") == set()
+    assert sibling_imports("history") == {"values"}
+    assert sibling_imports("authoring") == {"history", "values"}
+    assert sibling_imports("model") == {"authoring", "history", "values"}
+
+    facade = ast.parse((source_root / "model.py").read_text(encoding="utf-8"))
+    assert not any(
+        isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+        for node in facade.body
+    )
 
 
 def test_validation_error_categories_are_stable() -> None:

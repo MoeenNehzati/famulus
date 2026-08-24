@@ -1,35 +1,98 @@
+# Generated documentation comments.
+# Blueprint values are editable; comments are regenerated from the schema.
+# Do not store durable notes in this file's comments.
+# @schema-doc path=$
+# @summary Closed version 7 contract for path-derived module identity, explicit child
+#   registration, namespace routing, and source-owned exports.
 schema_version: 6
 node_type: module
 id: using-compass
-version: 5
-description: Operates one authorized bound Rutter through its four public operations
-  and current two-part Message.
+# @schema-doc path=version
+# @summary Human-managed interface contract version.
+version: 7
+# @schema-doc path=maturity
+# @summary The node's current readiness for use: stable or experimental.
+# @status required
+# @validator schema-shape
+maturity: experimental
+description: >-
+  Operates one authorized self-describing Voyage through its public interface.
+# @schema-doc path=gateway
+# @summary A whole-file gateway plus its language and optional alternative machine
+#   requirements.
 gateway:
+  # @schema-doc path=gateway.path
+  # @summary Relative path without parent traversal. Filesystem validators additionally
+  #   require the expected file type.
+  # @status required
+  # @validator gateway-file
   path: SKILL.md
+  # @schema-doc path=gateway.language
+  # @summary A language or machine requirement: a name, an exact version, or a comma-
+  #   separated intersection of version constraints.
+  # @status required
+  # @validator schema-shape
   language: Markdown
+# @schema-doc path=content
+# @summary Case-sensitive Python regular expressions matched with re.fullmatch against
+#   normalized POSIX paths under the node ownership root.
 content:
-- (?:SKILL\.md|tests/test_using_compass_instructions\.py)
+  - (?:SKILL\.md|tests/test_using_compass_instructions\.py)
+# @schema-doc path=discovery
+# @status optional
+# @validator schema-shape
+discovery:
+  # @schema-doc path=discovery.mechanism
+  # @summary The host discovery convention used to find this module.
+  mechanism: skill
+  catalog:
+    # @schema-doc path=discovery.catalog.domain
+    # @summary The single configured documentation domain matching the module's primary
+    #   direct user outcome.
+    domain: assistant-operations
+    topics:
+      - task-automation
+      - session-management
+    # @schema-doc path=discovery.catalog.visibility
+    # @summary The configured generated-documentation prominence of this discoverable
+    #   module.
+    visibility: listed
+  # @schema-doc path=discovery.activated_by
+  # @summary Every supported class of initiator that can directly activate this skill.
+  activated_by:
+    - user-request
+    - skill-workflow
+  # @schema-doc path=discovery.persistent_modifier
+  # @summary Whether invocation intentionally changes assistant behavior beyond the
+  #   activating invocation; true requires the reasoning-control topic.
+  persistent_modifier: false
+# @schema-doc path=installation_tier
+# @summary The default installation tier for a discoverable module.
+# @status optional
+# @validator schema-shape
+installation_tier: core
+# @schema-doc path=personal_preference
+# @status optional
+# @validator schema-shape
+personal_preference:
+  applies: false
 authority:
   owns_filesystem: []
   suggested_permissions:
     bash: []
     network: []
-discovery:
-  mechanism: skill
-  catalog:
-    domain: assistant-operations
-    topics:
-    - task-automation
-    - session-management
-    visibility: listed
-  activated_by:
-  - user-request
-  - skill-workflow
-  persistent_modifier: false
 sources:
   using-compass.source.gateway:
     blueprint:
+      # @schema-doc path=sources.using-compass.source.gateway.blueprint.base
+      # @status required
+      # @validator gateway-file
       base: module-root
+      # @schema-doc path=sources.using-compass.source.gateway.blueprint.path
+      # @summary Relative path without parent traversal. Filesystem validators
+      #   additionally require the expected file type.
+      # @status required
+      # @validator gateway-file
       path: blueprints/gateway.yaml
 children: {}
 namespace_exports: {}
@@ -39,7 +102,3 @@ exports:
     access:
       allow_all_modules: true
       allowed_callers: []
-maturity: experimental
-installation_tier: core
-personal_preference:
-  applies: false

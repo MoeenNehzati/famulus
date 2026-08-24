@@ -8,39 +8,39 @@ from pathlib import Path
 import pytest
 
 import officina.rutter as rutter_public
-from officina.rutter.engine import Edge
+from officina.rutter.history import CompletedRun, SubRutterRecord, Transition
 
 
 class HookChild(rutter_public.Rutter):
     rutter_id = "hook-child"
     definition_version = 1
-    start_state = "done"
+    initial_evolution_id = "done"
 
-    def define_states(self) -> dict[str, object]:
-        return {"done": rutter_public.Done(rutter_public.RunResult("checked", {}))}
+    def define_evolutions(self) -> dict[str, object]:
+        return {"done": rutter_public.Terminal(rutter_public.VoyageResult("checked", {}))}
 
 
 def test_edge_match_constructors_cover_wildcard_and_exact_edges() -> None:
     """Changing a matcher field or treating a wildcard as exact must fail."""
 
-    assert hasattr(rutter_public, "EdgeMatch")
+    assert hasattr(rutter_public, "TransitionMatch")
     assert hasattr(rutter_public, "after")
     assert hasattr(rutter_public, "before")
-    assert hasattr(rutter_public, "on_edge")
+    assert hasattr(rutter_public, "on_transition")
     after = rutter_public.after
     before = rutter_public.before
-    on_edge = rutter_public.on_edge
-    edge = Edge("record-review", "entry-review", "review", "approved", "publish")
+    on_transition = rutter_public.on_transition
+    edge = Transition("record-review", "entry-review", "review", "approved", "publish")
 
     assert after("review").matches(edge)
     assert before("publish").matches(edge)
-    assert on_edge(outcome="approved").matches(edge)
-    assert on_edge(
+    assert on_transition(outcome="approved").matches(edge)
+    assert on_transition(
         source="review", outcome="approved", target="publish"
     ).matches(edge)
     assert not after("draft").matches(edge)
     assert not before("archive").matches(edge)
-    assert not on_edge(outcome="rejected").matches(edge)
+    assert not on_transition(outcome="rejected").matches(edge)
     with pytest.raises(FrozenInstanceError):
         after("review").source = "draft"
 
@@ -48,21 +48,21 @@ def test_edge_match_constructors_cover_wildcard_and_exact_edges() -> None:
 def test_case_maker_constructor_freezes_one_validated_hook_definition() -> None:
     """Accepting an unstable ID, matcher, child, or Charter callback must fail."""
 
-    assert hasattr(rutter_public, "CaseMaker")
-    maker = rutter_public.CaseMaker(
+    assert hasattr(rutter_public, "TransitionHook")
+    maker = rutter_public.TransitionHook(
         "review-check",
         on=rutter_public.after("review"),
         child=HookChild,
-        charter=lambda context: {"source": context.state.state_id},
+        charter=lambda context: {"source": context.evolution.evolution_id},
     )
 
     assert maker.id == "review-check"
-    assert maker.on == rutter_public.EdgeMatch(source="review")
+    assert maker.on == rutter_public.TransitionMatch(source="review")
     assert maker.child is HookChild
     with pytest.raises(FrozenInstanceError):
         maker.id = "other"
     with pytest.raises(rutter_public.RutterDefinitionError):
-        rutter_public.CaseMaker(
+        rutter_public.TransitionHook(
             "bad id",
             on=rutter_public.after("review"),
             child=HookChild,
@@ -70,15 +70,15 @@ def test_case_maker_constructor_freezes_one_validated_hook_definition() -> None:
         )
 
 
-def _completed(run_id: str) -> rutter_public.CompletedRun:
-    result = rutter_public.RunResult("checked", {"run": run_id})
-    return rutter_public.CompletedRun(
+def _completed(run_id: str) -> CompletedRun:
+    result = rutter_public.VoyageResult("checked", {"run": run_id})
+    return CompletedRun(
         run_id,
         "hook-child",
         1,
         rutter_public.Charter({}),
         (
-            rutter_public.DoneRecord(
+            rutter_public.TerminalRecord(
                 f"done-{run_id}",
                 f"entry-{run_id}",
                 "done",
@@ -89,28 +89,28 @@ def _completed(run_id: str) -> rutter_public.CompletedRun:
 
 
 def test_attached_calls_filters_exact_provenance_not_colliding_explicit_sites() -> None:
-    """Filtering calls by site alone must not treat an explicit Call as a hook."""
+    """Filtering calls by site alone must not treat an explicit SubRutter as a hook."""
 
-    source = rutter_public.ActionRecord(
+    source = rutter_public.MachineRecord(
         "edge-review",
         "action-review",
         "entry-review",
         "review",
         "pure",
-        rutter_public.ActionResult("approved", {}),
+        rutter_public.MachineResult("approved", {}),
     )
-    explicit = rutter_public.CallRecord(
+    explicit = SubRutterRecord(
         "call-explicit",
         "entry-review",
-        "explicit_call",
         "review-check",
+        None,
         None,
         "run-explicit",
     )
-    attached = rutter_public.CallRecord(
+    attached = SubRutterRecord(
         "call-attached",
         "entry-review",
-        "attached_case",
+        None,
         "review-check",
         source.record_id,
         "run-attached",
@@ -123,16 +123,27 @@ def test_attached_calls_filters_exact_provenance_not_colliding_explicit_sites() 
         },
     )
 
-    assert len(history.calls("review-check")) == 2
-    assert history.attached_calls() == (history.calls("review-check")[1],)
-    assert history.attached_calls(case_maker_id="review-check") == (
-        history.calls("review-check")[1],
+    assert history.subrutters() == (
+        history.latest_subrutter(origin_evolution_id="review-check"),
+        history.latest_subrutter(transition_hook_id="review-check"),
     )
-    assert history.attached_calls(edge_id="edge-review") == (
-        history.calls("review-check")[1],
+    assert history.subrutters(origin_evolution_id="review-check") == (
+        history.subrutters()[0],
     )
-    assert history.attached_calls(case_maker_id="other") == ()
-    assert history.attached_calls(edge_id="edge-other") == ()
+    assert history.subrutters(transition_hook_id="review-check") == (
+        history.subrutters()[1],
+    )
+    assert history.hook_runs(
+        transition_hook_id="review-check",
+        transition_id="edge-review",
+    ) == (
+        history.subrutters()[1],
+    )
+    assert history.subrutters(transition_hook_id="other") == ()
+    assert history.hook_runs(
+        transition_hook_id="review-check",
+        transition_id="edge-other",
+    ) == ()
 
 
 def test_every_matcher_reuses_its_record_anchored_context_and_provenance(
@@ -140,10 +151,10 @@ def test_every_matcher_reuses_its_record_anchored_context_and_provenance(
 ) -> None:
     """Rebuilding a hook edge from later attached calls must not shift its context."""
 
-    seen: dict[str, list[rutter_public.EdgeContext]] = {}
+    seen: dict[str, list[rutter_public.TransitionContext]] = {}
 
     def remember(maker_id: str):
-        def build(context: rutter_public.EdgeContext) -> dict[str, object]:
+        def build(context: rutter_public.TransitionContext) -> dict[str, object]:
             seen.setdefault(maker_id, []).append(context)
             return {"maker": maker_id}
 
@@ -152,55 +163,55 @@ def test_every_matcher_reuses_its_record_anchored_context_and_provenance(
     class HookedParent(rutter_public.Rutter):
         rutter_id = "hooked-parent"
         definition_version = 1
-        start_state = "review"
-        allow_multiple_cases_at_once = True
+        initial_evolution_id = "review"
+        allow_multiple_hooks_per_transition = True
 
-        def define_states(self) -> dict[str, object]:
+        def define_evolutions(self) -> dict[str, object]:
             return {
-                "review": rutter_public.Action(
-                    lambda context: rutter_public.ActionResult("approved", {}),
+                "review": rutter_public.MachineStep(
+                    lambda context: rutter_public.MachineResult("approved", {}),
                     mode="pure",
                     then="invoke",
                 ),
-                "invoke": rutter_public.Call(
+                "invoke": rutter_public.SubRutter(
                     HookChild,
                     charter=lambda context: {"kind": "explicit"},
                     then="done",
                 ),
-                "done": rutter_public.Done(
-                    rutter_public.RunResult("finished", {"ok": True})
+                "done": rutter_public.Terminal(
+                    rutter_public.VoyageResult("finished", {"ok": True})
                 ),
             }
 
-        def define_case_makers(self) -> tuple[object, ...]:
+        def define_transition_hooks(self) -> tuple[object, ...]:
             return (
-                rutter_public.CaseMaker(
+                rutter_public.TransitionHook(
                     "after-review",
                     on=rutter_public.after("review"),
                     child=HookChild,
                     charter=remember("after-review"),
                 ),
-                rutter_public.CaseMaker(
+                rutter_public.TransitionHook(
                     "before-invoke",
                     on=rutter_public.before("invoke"),
                     child=HookChild,
                     charter=remember("before-invoke"),
                 ),
-                rutter_public.CaseMaker(
+                rutter_public.TransitionHook(
                     "exact-review",
-                    on=rutter_public.on_edge(
+                    on=rutter_public.on_transition(
                         source="review", outcome="approved", target="invoke"
                     ),
                     child=HookChild,
                     charter=remember("exact-review"),
                 ),
-                rutter_public.CaseMaker(
+                rutter_public.TransitionHook(
                     "post-call",
                     on=rutter_public.after("invoke"),
                     child=HookChild,
                     charter=remember("post-call"),
                 ),
-                rutter_public.CaseMaker(
+                rutter_public.TransitionHook(
                     "post-done",
                     on=rutter_public.after("done"),
                     child=HookChild,
@@ -214,14 +225,17 @@ def test_every_matcher_reuses_its_record_anchored_context_and_provenance(
 
     terminal = voyage.next(continue_=True)
 
-    assert terminal.state_id == "done"
+    assert terminal.evolution_id == "done"
     assert terminal.condition == "terminal"
     reckoning = voyage._store.read()
     history = rutter_public.HistoryView(
         reckoning.root.history, reckoning.completed_runs
     )
-    attached = history.attached_calls()
-    assert tuple(call.site for call in attached) == (
+    attached = tuple(
+        call for call in history.subrutters()
+        if call.transition_hook_id is not None
+    )
+    assert tuple(call.transition_hook_id for call in attached) == (
         "after-review",
         "before-invoke",
         "exact-review",
@@ -229,25 +243,29 @@ def test_every_matcher_reuses_its_record_anchored_context_and_provenance(
         "post-done",
     )
     source_by_edge = {
-        (entry.call_id if isinstance(entry, rutter_public.CallRecord) else entry.record_id): entry
+        (entry.invocation_id if isinstance(entry, SubRutterRecord) else entry.record_id): entry
         for entry in reckoning.root.history
         if not (
-            isinstance(entry, rutter_public.CallRecord)
-            and entry.site_kind == "attached_case"
+            isinstance(entry, SubRutterRecord)
+            and entry.transition_hook_id is not None
         )
     }
     for call in attached:
-        assert call.attached_to_edge_id in source_by_edge
-        source = source_by_edge[call.attached_to_edge_id]
-        assert all(context.record == source for context in seen[call.site])
+        assert call.transition_hook_id is not None
+        assert call.attached_to_transition_id in source_by_edge
+        source = source_by_edge[call.attached_to_transition_id]
         assert all(
-            context.state.history.entries()
-            == history.strict_prefix(source).entries()
-            for context in seen[call.site]
+            context.record == source
+            for context in seen[call.transition_hook_id]
         )
         assert all(
-            context.edge["edge_id"] == call.attached_to_edge_id
-            for context in seen[call.site]
+            context.evolution.history.entries()
+            == history.strict_prefix(source).entries()
+            for context in seen[call.transition_hook_id]
+        )
+        assert all(
+            context.transition["transition_id"] == call.attached_to_transition_id
+            for context in seen[call.transition_hook_id]
         )
 
 
@@ -260,7 +278,7 @@ def test_multiple_selection_faults_with_every_maker_before_child_allocation(
     selected_in_order: list[str] = []
 
     def choose(maker_id: str, value: dict[str, object] | None):
-        def build(context: rutter_public.EdgeContext):
+        def build(context: rutter_public.TransitionContext):
             del context
             selected_in_order.append(maker_id)
             return value
@@ -270,33 +288,33 @@ def test_multiple_selection_faults_with_every_maker_before_child_allocation(
     class SingleCaseParent(rutter_public.Rutter):
         rutter_id = "single-case-parent"
         definition_version = 1
-        start_state = "review"
+        initial_evolution_id = "review"
 
-        def define_states(self) -> dict[str, object]:
+        def define_evolutions(self) -> dict[str, object]:
             return {
-                "review": rutter_public.Action(
-                    lambda context: rutter_public.ActionResult("approved", {}),
+                "review": rutter_public.MachineStep(
+                    lambda context: rutter_public.MachineResult("approved", {}),
                     mode="pure",
                     then="done",
                 ),
-                "done": rutter_public.Done(rutter_public.RunResult("finished", {})),
+                "done": rutter_public.Terminal(rutter_public.VoyageResult("finished", {})),
             }
 
-        def define_case_makers(self) -> tuple[object, ...]:
+        def define_transition_hooks(self) -> tuple[object, ...]:
             return (
-                rutter_public.CaseMaker(
+                rutter_public.TransitionHook(
                     "declined",
                     on=rutter_public.after("review"),
                     child=HookChild,
                     charter=choose("declined", None),
                 ),
-                rutter_public.CaseMaker(
+                rutter_public.TransitionHook(
                     "first",
                     on=rutter_public.after("review"),
                     child=HookChild,
                     charter=choose("first", {"case": "first"}),
                 ),
-                rutter_public.CaseMaker(
+                rutter_public.TransitionHook(
                     "second",
                     on=rutter_public.after("review"),
                     child=HookChild,
@@ -322,13 +340,15 @@ def test_multiple_selection_faults_with_every_maker_before_child_allocation(
 
     assert fault.condition == "fault"
     persisted = voyage._store.read()
-    assert persisted.fault == {
-        "category": "case-cardinality",
-        "run_id": persisted.root.run_id,
-        "state_id": "review",
-        "node_entry_id": persisted.root.entered_node.entry_id,
-        "case_maker_ids": ("first", "second"),
-    }
+    assert persisted.fault is not None
+    assert persisted.fault.category == "case-cardinality"
+    assert persisted.fault.run_id == persisted.root.run_id
+    assert persisted.fault.evolution_id == "review"
+    assert (
+        persisted.fault.evolution_entry_id
+        == persisted.root.entered_evolution.entry_id
+    )
+    assert persisted.fault.transition_hook_ids == ("first", "second")
     assert selected_in_order == ["declined", "first", "second"]
     assert allocated == ["record"]
     assert persisted.root.active_child is None
@@ -348,7 +368,7 @@ def test_case_callback_failure_preserves_accepted_source_as_stable_fault(
 ) -> None:
     """Leaking callback errors or rolling back accepted work must fail."""
 
-    def charter(context: rutter_public.EdgeContext) -> dict[str, object]:
+    def charter(context: rutter_public.TransitionContext) -> dict[str, object]:
         del context
         if failure == "charter":
             raise RuntimeError("private Charter detail")
@@ -357,21 +377,21 @@ def test_case_callback_failure_preserves_accepted_source_as_stable_fault(
     class FailingCaseParent(rutter_public.Rutter):
         rutter_id = f"failing-case-{failure}"
         definition_version = 1
-        start_state = "review"
+        initial_evolution_id = "review"
 
-        def define_states(self) -> dict[str, object]:
+        def define_evolutions(self) -> dict[str, object]:
             return {
-                "review": rutter_public.Action(
-                    lambda context: rutter_public.ActionResult("approved", {}),
+                "review": rutter_public.MachineStep(
+                    lambda context: rutter_public.MachineResult("approved", {}),
                     mode="pure",
                     then="done",
                 ),
-                "done": rutter_public.Done(rutter_public.RunResult("finished", {})),
+                "done": rutter_public.Terminal(rutter_public.VoyageResult("finished", {})),
             }
 
-        def define_case_makers(self) -> tuple[object, ...]:
+        def define_transition_hooks(self) -> tuple[object, ...]:
             return (
-                rutter_public.CaseMaker(
+                rutter_public.TransitionHook(
                     "failing-case",
                     on=rutter_public.after("review"),
                     child=HookChild,
@@ -387,21 +407,23 @@ def test_case_callback_failure_preserves_accepted_source_as_stable_fault(
             del self, edge
             raise RuntimeError("private matcher detail")
 
-        monkeypatch.setattr(rutter_public.EdgeMatch, "matches", fail_match)
+        monkeypatch.setattr(rutter_public.TransitionMatch, "matches", fail_match)
 
     fault = voyage.next(continue_=True)
 
     assert fault.condition == "fault"
     persisted = voyage._store.read()
-    assert persisted.fault == {
-        "category": category,
-        "run_id": persisted.root.run_id,
-        "state_id": "review",
-        "node_entry_id": persisted.root.entered_node.entry_id,
-        "case_maker_ids": ("failing-case",),
-    }
+    assert persisted.fault is not None
+    assert persisted.fault.category == category
+    assert persisted.fault.run_id == persisted.root.run_id
+    assert persisted.fault.evolution_id == "review"
+    assert (
+        persisted.fault.evolution_entry_id
+        == persisted.root.entered_evolution.entry_id
+    )
+    assert persisted.fault.transition_hook_ids == ("failing-case",)
     assert len(persisted.root.history) == 1
-    assert isinstance(persisted.root.history[0], rutter_public.ActionRecord)
+    assert isinstance(persisted.root.history[0], rutter_public.MachineRecord)
     assert persisted.root.active_child is None
     assert persisted.completed_runs == {}
 
@@ -410,32 +432,32 @@ def test_prompt_attachment_reopens_after_attach_settle_and_return_boundaries(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A returned hook must remain resumable without replaying the accepted Prompt."""
+    """A returned hook must remain resumable without replaying the accepted LLMStep."""
 
     class PromptHookParent(rutter_public.Rutter):
         rutter_id = "prompt-hook-parent"
         definition_version = 1
-        start_state = "review"
+        initial_evolution_id = "review"
 
-        def define_states(self) -> dict[str, object]:
+        def define_evolutions(self) -> dict[str, object]:
             return {
-                "review": rutter_public.Prompt(
+                "review": rutter_public.LLMStep(
                     "Review.",
                     answer=rutter_public.AnswerSpec({"approved": {}}),
                     then="publish",
                 ),
-                "publish": rutter_public.Done(
-                    rutter_public.RunResult("finished", {})
+                "publish": rutter_public.Terminal(
+                    rutter_public.VoyageResult("finished", {})
                 ),
             }
 
-        def define_case_makers(self) -> tuple[object, ...]:
+        def define_transition_hooks(self) -> tuple[object, ...]:
             return (
-                rutter_public.CaseMaker(
+                rutter_public.TransitionHook(
                     "prompt-check",
                     on=rutter_public.after("review"),
                     child=HookChild,
-                    charter=lambda context: {"source": context.edge["source"]},
+                    charter=lambda context: {"source": context.transition["source"]},
                 ),
             )
 
@@ -469,19 +491,22 @@ def test_prompt_attachment_reopens_after_attach_settle_and_return_boundaries(
 
     returned = registry.open(path)
     persisted = returned._store.read()
-    assert persisted.root.entered_node.state_id == "review"
+    assert persisted.root.entered_evolution.evolution_id == "review"
     assert persisted.root.active_child is None
     history = rutter_public.HistoryView(
         persisted.root.history, persisted.completed_runs
     )
     assert len(history.turns("review")) == 1
-    assert tuple(call.site for call in history.attached_calls()) == (
+    assert tuple(
+        call.transition_hook_id
+        for call in history.subrutters(transition_hook_id="prompt-check")
+    ) == (
         "prompt-check",
     )
 
     before = (tmp_path / path).read_bytes()
-    assert returned.get_current_node().state_id == "review"
-    assert returned.get_instruction() is None
+    assert returned.get_status().current_evolution.evolution_id == "review"
+    assert returned.get_status().instruction is None
     with pytest.raises(rutter_public.NotApplicable):
         returned.validate(
             {"revision": 0, "outcome": "approved", "evidence": {}}
@@ -489,7 +514,7 @@ def test_prompt_attachment_reopens_after_attach_settle_and_return_boundaries(
     assert (tmp_path / path).read_bytes() == before
 
     target = returned.next(continue_=False)
-    assert target.state_id == "publish"
+    assert target.evolution_id == "publish"
     assert target.condition == "ready"
 
 
@@ -497,38 +522,38 @@ def test_pure_action_attachment_return_does_not_offer_or_replay_action(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A returned hook must expose only continuation from an accepted Action."""
+    """A returned hook must expose only continuation from an accepted MachineStep."""
 
     executions: list[str] = []
 
-    def approve(context: rutter_public.ActionContext) -> rutter_public.ActionResult:
-        executions.append(context.action_id)
-        return rutter_public.ActionResult("approved", {})
+    def approve(context: rutter_public.MachineContext) -> rutter_public.MachineResult:
+        executions.append(context.machine_id)
+        return rutter_public.MachineResult("approved", {})
 
     class ActionHookParent(rutter_public.Rutter):
         rutter_id = "action-hook-parent"
         definition_version = 1
-        start_state = "review"
+        initial_evolution_id = "review"
 
-        def define_states(self) -> dict[str, object]:
+        def define_evolutions(self) -> dict[str, object]:
             return {
-                "review": rutter_public.Action(
+                "review": rutter_public.MachineStep(
                     approve,
                     mode="pure",
                     then="publish",
                 ),
-                "publish": rutter_public.Done(
-                    rutter_public.RunResult("finished", {})
+                "publish": rutter_public.Terminal(
+                    rutter_public.VoyageResult("finished", {})
                 ),
             }
 
-        def define_case_makers(self) -> tuple[object, ...]:
+        def define_transition_hooks(self) -> tuple[object, ...]:
             return (
-                rutter_public.CaseMaker(
+                rutter_public.TransitionHook(
                     "action-check",
                     on=rutter_public.after("review"),
                     child=HookChild,
-                    charter=lambda context: {"source": context.edge["source"]},
+                    charter=lambda context: {"source": context.transition["source"]},
                 ),
             )
 
@@ -561,14 +586,14 @@ def test_pure_action_attachment_return_does_not_offer_or_replay_action(
 
     returned = registry.open(path)
     before = (tmp_path / path).read_bytes()
-    assert returned.get_current_node().state_id == "review"
-    assert returned.get_instruction() is None
+    assert returned.get_status().current_evolution.evolution_id == "review"
+    assert returned.get_status().instruction is None
     with pytest.raises(rutter_public.NotApplicable):
-        returned.validate(rutter_public.ActionResult("approved", {}))
+        returned.validate(rutter_public.MachineResult("approved", {}))
     assert executions == [accepted_action_id]
     assert (tmp_path / path).read_bytes() == before
 
     target = returned.next(continue_=False)
-    assert target.state_id == "publish"
+    assert target.evolution_id == "publish"
     assert target.condition == "ready"
     assert executions == [accepted_action_id]

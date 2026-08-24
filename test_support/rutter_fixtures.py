@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Callable, Mapping
 
 from officina.rutter.model import (
     AnswerSpec,
-    Call,
+    SubRutter,
     Charter,
-    Done,
+    Terminal,
     Message,
-    Prompt,
-    RunResult,
+    LLMStep,
+    VoyageResult,
     Rutter,
-    StateContext,
+    TransitionHook,
+    TransitionMatch,
+    EvolutionContext,
 )
 
 
@@ -22,7 +23,7 @@ def example_message() -> Message:
     return Message(
         instructions={"text": "Report.", "answer": {"reported": {}}},
         data={
-            "state": {
+            "evolution": {
                 "id": "report",
                 "entry_id": "entry-report",
                 "revision": 1,
@@ -32,82 +33,88 @@ def example_message() -> Message:
     )
 
 
-def report_data(context: StateContext) -> Mapping[str, object]:
+def report_data(context: EvolutionContext) -> Mapping[str, object]:
     del context
     return {"chunk": "A"}
 
 
-def child_charter(context: StateContext) -> Mapping[str, object]:
+def child_charter(context: EvolutionContext) -> Mapping[str, object]:
     del context
     return {"scope": "child"}
 
 
-@dataclass(frozen=True)
-class CaseMakerProbe:
-    """Stand in for the Task 8 public CaseMaker value at the binding seam."""
+def transition_hook_probe(
+    hook_id: str,
+    child: type[Rutter],
+    charter: Callable[[object], Mapping[str, object] | None],
+) -> TransitionHook:
+    """Build a wildcard TransitionHook for shared binding fixtures."""
 
-    id: str
-    child: type[Rutter]
-    charter: Callable[[object], Mapping[str, object] | None]
+    return TransitionHook(
+        hook_id,
+        on=TransitionMatch(),
+        child=child,
+        charter=charter,
+    )
 
 
 class DirectChildRutter(Rutter):
     rutter_id = "direct-child"
     definition_version = 1
-    start_state = "complete"
+    initial_evolution_id = "complete"
 
-    def define_states(self):
-        return {"complete": Done(RunResult("completed", {}))}
+    def define_evolutions(self):
+        return {"complete": Terminal(VoyageResult("completed", {}))}
 
 
 class GrandchildRutter(Rutter):
     rutter_id = "grandchild"
     definition_version = 1
-    start_state = "complete"
+    initial_evolution_id = "complete"
 
     constructions = 0
 
     def __init__(self) -> None:
         type(self).constructions += 1
 
-    def define_states(self):
-        return {"complete": Done(RunResult("completed", {}))}
+    def define_evolutions(self):
+        return {"complete": Terminal(VoyageResult("completed", {}))}
 
 
 class AttachedChildRutter(Rutter):
     rutter_id = "attached-child"
     definition_version = 1
-    start_state = "delegate"
+    initial_evolution_id = "delegate"
 
-    def define_states(self):
+    def define_evolutions(self):
         return {
-            "delegate": Call(
+            "delegate": SubRutter(
                 GrandchildRutter,
                 charter=child_charter,
                 then="complete",
             ),
-            "complete": Done(RunResult("completed", {})),
+            "complete": Terminal(VoyageResult("completed", {})),
         }
 
 
 class DiscoveryRootRutter(Rutter):
     rutter_id = "discovery-root"
     definition_version = 1
-    start_state = "delegate"
+    initial_evolution_id = "delegate"
 
-    def define_states(self):
+    def define_evolutions(self):
         return {
-            "delegate": Call(
+            "delegate": SubRutter(
                 DirectChildRutter,
                 charter=child_charter,
                 then="complete",
             ),
-            "complete": Done(RunResult("completed", {})),
+            "complete": Terminal(VoyageResult("completed", {})),
         }
 
-    def define_case_makers(self):
+    def define_transition_hooks(self):
         return (
-            CaseMakerProbe(
+            transition_hook_probe(
                 "attached",
                 AttachedChildRutter,
                 child_charter,
@@ -118,15 +125,15 @@ class DiscoveryRootRutter(Rutter):
 class ExampleRutter(Rutter):
     rutter_id = "example"
     definition_version = 1
-    start_state = "report"
+    initial_evolution_id = "report"
 
-    def define_states(self):
+    def define_evolutions(self):
         return {
-            "report": Prompt(
+            "report": LLMStep(
                 "Report.",
                 answer=AnswerSpec({"reported": {}}),
                 data=report_data,
                 then="complete",
             ),
-            "complete": Done(RunResult("completed", {})),
+            "complete": Terminal(VoyageResult("completed", {})),
         }

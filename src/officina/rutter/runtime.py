@@ -1,39 +1,35 @@
-"""Bind stateless Rutter definitions to one durable Reckoning authority."""
+"""Bind stateless Rutter definitions and construct durable Voyages."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-import importlib
 import inspect
 from pathlib import Path
 import re
 from types import MappingProxyType
 from typing import Mapping, TypeAlias
 
-from officina.rutter.model import (
-    Action,
-    ActiveRun,
-    Call,
-    Charter,
-    Done,
-    JsonValue,
-    NodeView,
-    Prompt,
-    Reckoning,
+from officina.rutter.authoring import (
+    Evolution,
+    LLMStep,
+    MachineStep,
     Rutter,
+    SubRutter,
+    Terminal,
+    TransitionHook,
+)
+from officina.rutter.engine import Voyage, _BoundDefinition, _create_reckoning
+from officina.rutter.storage import _confined_reckoning_path
+from officina.rutter.values import (
+    Charter,
+    JsonValue,
     RutterDefinitionError,
     RutterStateError,
-    State,
-    Turn,
-    ValidationReport,
 )
-from officina.rutter.storage import _ReckoningStore, _confined_reckoning_path
 
 
 __all__ = ("RutterRegistry",)
 
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
-_MISSING = object()
 _Registration: TypeAlias = type[Rutter] | Rutter | object
 _RUN_STATE_NAMES = frozenset(
     {
@@ -43,6 +39,8 @@ _RUN_STATE_NAMES = frozenset(
         "revision",
         "run",
         "run_data",
+        "voyage",
+        "voyage_data",
         "charter",
         "fix",
     }
@@ -100,52 +98,8 @@ def _construct_definition(source: _Registration) -> Rutter:
     return definition
 
 
-@dataclass(frozen=True)
-class _BoundDefinition:
-    definition: Rutter
-    rutter_id: str
-    definition_version: int
-    start_state: str
-    allow_multiple_cases_at_once: bool
-    states: Mapping[str, State]
-    case_makers: tuple[object, ...]
-    case_makers_by_id: Mapping[str, object]
-    children: tuple[_BoundDefinition, ...]
-
-    @property
-    def identity(self) -> tuple[str, int]:
-        return self.rutter_id, self.definition_version
-
-    def require_current_metadata(self) -> None:
-        current = (
-            getattr(self.definition, "rutter_id", None),
-            getattr(self.definition, "definition_version", None),
-            getattr(self.definition, "start_state", None),
-            getattr(self.definition, "allow_multiple_cases_at_once", None),
-        )
-        frozen = (
-            self.rutter_id,
-            self.definition_version,
-            self.start_state,
-            self.allow_multiple_cases_at_once,
-        )
-        if current != frozen:
-            raise RutterDefinitionError("Rutter metadata changed after binding")
-
-    def reachable(self) -> Mapping[tuple[str, int], _BoundDefinition]:
-        found: dict[tuple[str, int], _BoundDefinition] = {}
-        pending = [self]
-        while pending:
-            definition = pending.pop()
-            if definition.identity in found:
-                continue
-            found[definition.identity] = definition
-            pending.extend(definition.children)
-        return MappingProxyType(found)
-
-
 class _DefinitionBinder:
-    """Construct and validate each definition once without executing callbacks."""
+    """Construct and validate each definition once without running authored work."""
 
     def __init__(self) -> None:
         self._by_source: dict[int, tuple[object, _BoundDefinition]] = {}
@@ -164,7 +118,12 @@ class _DefinitionBinder:
         try:
             definition = _construct_definition(source)
             metadata = self._metadata(definition)
-            rutter_id, definition_version, start_state, allow_multiple = metadata
+            (
+                rutter_id,
+                definition_version,
+                initial_evolution_id,
+                allow_multiple,
+            ) = metadata
             existing = self._source_by_id.get(rutter_id)
             if existing is not None and existing[0] is not source:
                 raise RutterDefinitionError(
@@ -176,23 +135,23 @@ class _DefinitionBinder:
                 )
             self._source_by_id[rutter_id] = (source, definition_version)
 
-            states = self._freeze_states(definition)
-            if start_state not in states:
+            evolutions = self._freeze_evolutions(definition)
+            if initial_evolution_id not in evolutions:
                 raise RutterDefinitionError(
-                    "start_state must name one declared state"
+                    "initial_evolution_id must name one declared evolution"
                 )
-            case_makers, makers_by_id = self._freeze_case_makers(definition)
-            child_sources = self._validate_graph(states, case_makers)
+            hooks, hooks_by_id = self._freeze_transition_hooks(definition)
+            child_sources = self._validate_graph(evolutions, hooks)
             children = tuple(self.bind(child) for child in child_sources)
             bound = _BoundDefinition(
                 definition,
                 rutter_id,
                 definition_version,
-                start_state,
+                initial_evolution_id,
                 allow_multiple,
-                states,
-                case_makers,
-                makers_by_id,
+                evolutions,
+                hooks,
+                hooks_by_id,
                 children,
             )
             self._by_source[source_id] = (source, bound)
@@ -208,106 +167,113 @@ class _DefinitionBinder:
             raise RutterDefinitionError(
                 "definition_version must be an exact positive integer"
             )
-        start_state = _require_id(
-            getattr(definition, "start_state", None), "start_state"
+        initial_evolution_id = _require_id(
+            getattr(definition, "initial_evolution_id", None),
+            "initial_evolution_id",
         )
         allow_multiple = getattr(
-            definition, "allow_multiple_cases_at_once", False
+            definition,
+            "allow_multiple_hooks_per_transition",
+            False,
         )
         if type(allow_multiple) is not bool:
             raise RutterDefinitionError(
-                "allow_multiple_cases_at_once must be an exact Boolean"
+                "allow_multiple_hooks_per_transition must be an exact Boolean"
             )
         for attribute in vars(definition):
             if attribute.lstrip("_") in _RUN_STATE_NAMES:
                 raise RutterDefinitionError(
-                    f"Rutter definition stores run state in {attribute!r}"
+                    f"Rutter definition stores voyage state in {attribute!r}"
                 )
-        return rutter_id, definition_version, start_state, allow_multiple
+        return rutter_id, definition_version, initial_evolution_id, allow_multiple
 
     @staticmethod
-    def _freeze_states(definition: Rutter) -> Mapping[str, State]:
+    def _freeze_evolutions(definition: Rutter) -> Mapping[str, Evolution]:
         try:
-            authored = definition.define_states()
+            authored = definition.define_evolutions()
         except Exception as exc:
-            raise RutterDefinitionError("define_states() failed") from exc
+            raise RutterDefinitionError("define_evolutions() failed") from exc
         if not isinstance(authored, Mapping):
-            raise RutterDefinitionError("define_states() must return a mapping")
-        states: dict[str, State] = {}
-        for state_id, state in authored.items():
-            state_id = _require_id(state_id, "state ID")
-            if state_id in states:
-                raise RutterDefinitionError(f"duplicate state ID {state_id!r}")
-            if not isinstance(state, (Prompt, Action, Call, Done)):
+            raise RutterDefinitionError("define_evolutions() must return a mapping")
+        evolutions: dict[str, Evolution] = {}
+        for evolution_id, evolution in authored.items():
+            evolution_id = _require_id(evolution_id, "evolution ID")
+            if evolution_id in evolutions:
                 raise RutterDefinitionError(
-                    f"state {state_id!r} must be Prompt, Action, Call, or Done"
+                    f"duplicate evolution ID {evolution_id!r}"
                 )
-            states[state_id] = state
-        if not states:
-            raise RutterDefinitionError("state mapping must not be empty")
-        return MappingProxyType(states)
+            if not isinstance(evolution, (LLMStep, MachineStep, SubRutter, Terminal)):
+                raise RutterDefinitionError(
+                    f"evolution {evolution_id!r} must be LLMStep, MachineStep, "
+                    "SubRutter, or Terminal"
+                )
+            evolutions[evolution_id] = evolution
+        if not evolutions:
+            raise RutterDefinitionError("evolution mapping must not be empty")
+        return MappingProxyType(evolutions)
 
     @staticmethod
-    def _freeze_case_makers(
+    def _freeze_transition_hooks(
         definition: Rutter,
-    ) -> tuple[tuple[object, ...], Mapping[str, object]]:
+    ) -> tuple[tuple[TransitionHook, ...], Mapping[str, TransitionHook]]:
         try:
-            authored = definition.define_case_makers()
+            authored = definition.define_transition_hooks()
         except Exception as exc:
-            raise RutterDefinitionError("define_case_makers() failed") from exc
+            raise RutterDefinitionError("define_transition_hooks() failed") from exc
         if type(authored) is not tuple:
-            raise RutterDefinitionError("define_case_makers() must return a tuple")
-        makers: dict[str, object] = {}
-        for maker in authored:
-            maker_id = _require_id(getattr(maker, "id", None), "CaseMaker ID")
-            if maker_id in makers:
-                raise RutterDefinitionError(f"duplicate CaseMaker ID {maker_id!r}")
-            child = getattr(maker, "child", None)
-            if not isinstance(child, type) or not issubclass(child, Rutter):
-                raise RutterDefinitionError("CaseMaker child must be a Rutter class")
-            _require_callback(
-                getattr(maker, "charter", None), 1, "CaseMaker charter"
-            )
-            makers[maker_id] = maker
-        return tuple(authored), MappingProxyType(makers)
+            raise RutterDefinitionError("define_transition_hooks() must return a tuple")
+        hooks: dict[str, TransitionHook] = {}
+        for hook in authored:
+            if not isinstance(hook, TransitionHook):
+                raise RutterDefinitionError(
+                    "define_transition_hooks() entries must be TransitionHook values"
+                )
+            hook_id = _require_id(hook.id, "TransitionHook ID")
+            if hook_id in hooks:
+                raise RutterDefinitionError(
+                    f"duplicate TransitionHook ID {hook_id!r}"
+                )
+            _require_callback(hook.charter, 1, "TransitionHook charter")
+            hooks[hook_id] = hook
+        return tuple(authored), MappingProxyType(hooks)
 
     def _validate_graph(
         self,
-        states: Mapping[str, State],
-        case_makers: tuple[object, ...],
+        evolutions: Mapping[str, Evolution],
+        hooks: tuple[TransitionHook, ...],
     ) -> tuple[_Registration, ...]:
         children: list[_Registration] = []
-        for state in states.values():
-            if isinstance(state, Prompt):
-                if not state.answer.outcomes:
+        for evolution in evolutions.values():
+            if isinstance(evolution, LLMStep):
+                if not evolution.answer.outcomes:
                     raise RutterDefinitionError(
-                        "Prompt answer must declare at least one outcome"
+                        "LLMStep answer must declare at least one outcome"
                     )
-                _require_callback(state.data, 1, "Prompt data")
-                _require_callback(state.validate, 1, "Prompt validate")
+                _require_callback(evolution.data, 1, "LLMStep data")
+                _require_callback(evolution.validate, 1, "LLMStep validate")
                 self._validate_then(
-                    state.then,
-                    states,
+                    evolution.then,
+                    evolutions,
                     1,
-                    "Prompt then",
-                    outcomes=frozenset(state.answer.outcomes),
+                    "LLMStep then",
+                    outcomes=frozenset(evolution.answer.outcomes),
                 )
-            elif isinstance(state, Action):
-                _require_callback(state.run, 1, "Action run")
-                self._validate_then(state.then, states, 2, "Action then")
-            elif isinstance(state, Call):
-                _require_callback(state.charter, 1, "Call charter")
-                self._validate_then(state.then, states, 2, "Call then")
-                children.append(state.child)
-            elif isinstance(state, Done) and callable(state.result):
-                _require_callback(state.result, 1, "Done result")
-        children.extend(getattr(maker, "child") for maker in case_makers)
+            elif isinstance(evolution, MachineStep):
+                _require_callback(evolution.run, 1, "MachineStep run")
+                self._validate_then(evolution.then, evolutions, 2, "MachineStep then")
+            elif isinstance(evolution, SubRutter):
+                _require_callback(evolution.charter, 1, "SubRutter charter")
+                self._validate_then(evolution.then, evolutions, 2, "SubRutter then")
+                children.append(evolution.child)
+            elif isinstance(evolution, Terminal) and callable(evolution.result):
+                _require_callback(evolution.result, 1, "Terminal result")
+        children.extend(hook.child for hook in hooks)
         return tuple(children)
 
     @staticmethod
     def _validate_then(
         then: object,
-        states: Mapping[str, State],
+        evolutions: Mapping[str, Evolution],
         callable_arity: int,
         label: str,
         *,
@@ -321,7 +287,7 @@ class _DefinitionBinder:
                 raise RutterDefinitionError(f"{label} routes must not be empty")
             if outcomes is not None and set(then) != outcomes:
                 raise RutterDefinitionError(
-                    "Prompt routes must exactly match declared outcomes"
+                    "LLMStep routes must exactly match declared outcomes"
                 )
             targets = tuple(then.values())
         elif callable(then):
@@ -330,188 +296,14 @@ class _DefinitionBinder:
         else:
             raise RutterDefinitionError(f"{label} has invalid routing")
         for target in targets:
-            if target not in states:
+            if target not in evolutions:
                 raise RutterDefinitionError(
                     f"{label} names undeclared successor {target!r}"
                 )
 
 
-class _BoundVoyage:
-    """Own one store/Reckoning pair and the Task 5 operating seam."""
-
-    def __init__(
-        self,
-        definition: _BoundDefinition,
-        path: Path,
-        reckoning: Reckoning,
-        *,
-        create: bool,
-    ) -> None:
-        self._definition = definition
-        self._definitions = definition.reachable()
-        self._reckoning = reckoning
-        self._store = _ReckoningStore(
-            path,
-            semantic_validator=self._validate_reckoning,
-        )
-        self._validate_reckoning(reckoning)
-        if create:
-            self._store.create(reckoning)
-
-    def _validate_reckoning(self, reckoning: Reckoning) -> None:
-        active: list[tuple[ActiveRun, _BoundDefinition]] = []
-        run = reckoning.root
-        while True:
-            identity = (run.rutter_id, run.definition_version)
-            definition = self._definitions.get(identity)
-            if definition is None:
-                raise RutterStateError(
-                    f"active Rutter definition {identity!r} is unavailable"
-                )
-            definition.require_current_metadata()
-            state = definition.states.get(run.entered_node.state_id)
-            if state is None:
-                raise RutterStateError(
-                    "active state is absent from its bound Rutter definition"
-                )
-            if isinstance(state, Prompt):
-                self._validate_prompt_authority(
-                    run,
-                    state,
-                    reckoning.global_revision,
-                    reckoning.fault,
-                    is_leaf=run.active_child is None,
-                )
-            active.append((run, definition))
-            if run.active_child is None:
-                break
-            run = run.active_child.run
-
-        for parent, definition in active:
-            active_child = parent.active_child
-            if active_child is None:
-                continue
-            child_identity = (
-                active_child.run.rutter_id,
-                active_child.run.definition_version,
-            )
-            if active_child.kind == "explicit_call":
-                site = definition.states.get(active_child.site)
-                if not isinstance(site, Call):
-                    raise RutterStateError(
-                        "active explicit child does not match a bound Call state"
-                    )
-                expected = self._definition_identity(site.child)
-            else:
-                maker = definition.case_makers_by_id.get(active_child.site)
-                if maker is None:
-                    raise RutterStateError(
-                        "active attached child does not match a bound CaseMaker"
-                    )
-                expected = self._definition_identity(getattr(maker, "child"))
-            if child_identity != expected:
-                raise RutterStateError(
-                    "active child identity differs from its bound definition"
-                )
-
-    @staticmethod
-    def _validate_prompt_authority(
-        run: ActiveRun,
-        prompt: Prompt,
-        global_revision: int,
-        fault: Mapping[str, JsonValue] | None,
-        *,
-        is_leaf: bool,
-    ) -> None:
-        entered = run.entered_node
-        turns = tuple(
-            entry
-            for entry in run.history
-            if isinstance(entry, Turn)
-            and entry.node_entry_id == entered.entry_id
-            and entry.state_id == entered.state_id
-        )
-        if len(turns) != 1:
-            raise RutterStateError(
-                "active Prompt requires exactly one matching current Turn"
-            )
-        turn = turns[0]
-        if (
-            turn.message.instructions["text"] != prompt.text
-            or turn.message.instructions["answer"] != prompt.answer.outcomes
-        ):
-            raise RutterStateError(
-                "active Prompt Turn differs from the bound Prompt definition"
-            )
-        child = run.active_child
-        if turn.response is None:
-            if is_leaf and turn.revision != global_revision:
-                raise RutterStateError(
-                    "active Prompt Turn revision differs from Reckoning revision"
-                )
-            if child is not None:
-                raise RutterStateError(
-                    "active Prompt with an open Turn cannot own an active child"
-                )
-            return
-        if turn.response.outcome not in prompt.answer.outcomes:
-            raise RutterStateError(
-                "active Prompt Turn has an undeclared accepted outcome"
-            )
-        if child is None:
-            if fault is None or (
-                fault.get("run_id") == run.run_id
-                and fault.get("state_id") == entered.state_id
-                and fault.get("node_entry_id") == entered.entry_id
-            ):
-                return
-            raise RutterStateError(
-                "accepted active Prompt Turn has mismatched fault authority"
-            )
-        if (
-            child.kind != "attached_case"
-            or child.attached_to_edge_id != turn.record_id
-        ):
-            raise RutterStateError(
-                "accepted active Prompt Turn requires its matching attached child"
-            )
-
-    def _definition_identity(self, source: object) -> tuple[str, int]:
-        for definition in self._definitions.values():
-            if type(definition.definition) is source:
-                return definition.identity
-        raise RutterStateError("active child source is absent from the bound graph")
-
-    def get_instruction(self) -> object | None:
-        engine = importlib.import_module("officina.rutter.engine")
-        return engine._get_instruction(self)
-
-    def validate(self, response: object) -> ValidationReport:
-        engine = importlib.import_module("officina.rutter.engine")
-        return engine._validate(self, response)
-
-    def next(
-        self,
-        response: object = _MISSING,
-        *,
-        continue_: bool = True,
-        dry_run: bool = False,
-    ) -> NodeView:
-        engine = importlib.import_module("officina.rutter.engine")
-        return engine._next(
-            self,
-            response,
-            continue_=continue_,
-            dry_run=dry_run,
-        )
-
-    def get_current_node(self) -> NodeView:
-        engine = importlib.import_module("officina.rutter.engine")
-        return engine._get_current_node(self)
-
-
 class RutterRegistry:
-    """Freeze named stateless definitions and bind them to confined stores."""
+    """Freeze named stateless definitions and construct confined Voyages."""
 
     def __init__(
         self,
@@ -544,32 +336,35 @@ class RutterRegistry:
     def _path(self, reckoning_path: Path) -> Path:
         return _confined_reckoning_path(self._reckoning_root, reckoning_path)
 
+    def _definition_for_identity(
+        self,
+        identity: tuple[str, int],
+    ) -> _BoundDefinition:
+        definition = self._by_identity.get(identity)
+        if definition is None:
+            raise RutterStateError(f"unknown Rutter identity {identity!r}")
+        definition.require_current_metadata()
+        return definition
+
     def create(
         self,
         name: str,
         reckoning_path: Path,
         charter_data: Mapping[str, JsonValue],
-    ) -> _BoundVoyage:
+    ) -> Voyage:
         if type(name) is not str or name not in self._by_name:
             raise RutterStateError(f"unknown Rutter {name!r}")
         definition = self._by_name[name]
         definition.require_current_metadata()
         charter = Charter(charter_data)
-        engine = importlib.import_module("officina.rutter.engine")
-        reckoning = engine._create_reckoning(definition, charter)
-        return _BoundVoyage(
+        reckoning = _create_reckoning(definition, charter)
+        return Voyage(
             definition,
             self._path(reckoning_path),
             reckoning,
             create=True,
         )
 
-    def open(self, reckoning_path: Path) -> _BoundVoyage:
+    def open(self, reckoning_path: Path) -> Voyage:
         path = self._path(reckoning_path)
-        reckoning = _ReckoningStore(path).read()
-        identity = (reckoning.root.rutter_id, reckoning.root.definition_version)
-        definition = self._by_identity.get(identity)
-        if definition is None:
-            raise RutterStateError(f"unknown Rutter identity {identity!r}")
-        definition.require_current_metadata()
-        return _BoundVoyage(definition, path, reckoning, create=False)
+        return Voyage._open(self._definition_for_identity, path)

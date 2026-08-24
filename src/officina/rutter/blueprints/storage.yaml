@@ -1,8 +1,9 @@
 schema_version: 6
 node_type: behavioral_source
 id: rutter.source.storage
-version: 1
-description: Encodes strict Reckonings and provides separate confined read, transaction,
+version: 2
+description: Converts exact version-3 wire dictionaries to focused typed history and
+  value authorities without wire changes, and provides confined read, transaction,
   and atomic write contracts.
 gateway:
   path: storage.py
@@ -10,13 +11,18 @@ gateway:
 content:
 - storage\.py
 dependencies:
-- source: rutter.source.model
+- source: rutter.source.history
   version: 1
   blueprint:
     base: module-root
-    path: blueprints/model.yaml
-  reason: Imports the recursive Reckoning, entered-node and history authorities,
-    effect recovery values, and exact model errors.
+    path: blueprints/history.yaml
+  reason: Imports Reckoning, durable run records, and typed recovery and fault authority.
+- source: rutter.source.values
+  version: 1
+  blueprint:
+    base: module-root
+    path: blueprints/values.yaml
+  reason: Imports machine results and exact definition and state errors.
 - source: common.source.atomic-files
   version: 1
   blueprint:
@@ -25,7 +31,9 @@ dependencies:
   reason: Imports confined regular-file reads, atomic create and replace, and sidecar
     locking.
 uses_interfaces:
-- interface: rutter.source.model.interface.python-api
+- interface: rutter.source.history.interface.python-api
+  version: 1
+- interface: rutter.source.values.interface.python-api
   version: 1
 - interface: common.interface.atomic-files
   version: 1
@@ -34,12 +42,15 @@ interfaces:
     content:
     - storage\.py
     uses_interfaces:
-    - interface: rutter.source.model.interface.python-api
+    - interface: rutter.source.history.interface.python-api
+      version: 1
+    - interface: rutter.source.values.interface.python-api
       version: 1
     - interface: common.interface.atomic-files
       version: 1
-    version: 1
-    description: Strictly decodes one complete Reckoning without changing storage.
+    version: 2
+    description: Strictly decodes one complete Reckoning into typed recovery and fault
+      authority without changing storage.
     contract:
       arguments:
         path:
@@ -61,7 +72,8 @@ interfaces:
       outputs:
       - id: reckoning
         audience: machine
-        description: One strictly decoded complete Reckoning.
+        description: One strictly decoded complete Reckoning whose recovery and fault
+          authority are private typed values; opaque legacy fault payload stays private.
         direct_io_ref: return-value
         cardinality:
           minimum: 1
@@ -123,11 +135,13 @@ interfaces:
     content:
     - storage\.py
     uses_interfaces:
-    - interface: rutter.source.model.interface.python-api
+    - interface: rutter.source.history.interface.python-api
+      version: 1
+    - interface: rutter.source.values.interface.python-api
       version: 1
     - interface: common.interface.atomic-files
       version: 1
-    version: 1
+    version: 2
     description: Appends .lock to one confined .reckoning.json path and reloads authoritative
       Reckoning bytes under that stable sidecar.
     contract:
@@ -217,11 +231,13 @@ interfaces:
     content:
     - storage\.py
     uses_interfaces:
-    - interface: rutter.source.model.interface.python-api
+    - interface: rutter.source.history.interface.python-api
+      version: 1
+    - interface: rutter.source.values.interface.python-api
       version: 1
     - interface: common.interface.atomic-files
       version: 1
-    version: 1
+    version: 2
     description: Atomically creates or compare-and-replaces one complete Reckoning
       and returns no value.
     contract:

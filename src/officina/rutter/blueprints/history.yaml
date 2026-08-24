@@ -1,0 +1,36 @@
+schema_version: 6
+node_type: behavioral_source
+id: rutter.source.history
+version: 1
+description: Owns durable Rutter records, aggregate invariants, v3 record projections,
+  and immutable history queries.
+gateway:
+  path: history.py
+  language: Python
+content:
+- history\.py
+dependencies:
+- source: rutter.source.values
+  version: 1
+  blueprint:
+    base: module-root
+    path: blueprints/values.yaml
+  reason: Imports immutable JSON values, results, messages, and state errors.
+uses_interfaces:
+- interface: rutter.source.values.interface.python-api
+  version: 1
+interfaces:
+  rutter.source.history.interface.python-api:
+    version: 1
+    content:
+    - history\.py
+    uses_interfaces:
+    - interface: rutter.source.values.interface.python-api
+      version: 1
+    description: Constructs durable records, Reckonings, and immutable history projections.
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+maturity: stable

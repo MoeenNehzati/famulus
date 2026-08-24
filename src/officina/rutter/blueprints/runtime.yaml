@@ -1,54 +1,58 @@
 schema_version: 6
 node_type: behavioral_source
 id: rutter.source.runtime
-version: 1
-description: Resolves explicit Rutter registrations and binds voyages beneath one
-  Reckoning root.
+version: 3
+description: Resolves explicit Rutter registrations, confines Reckoning paths, and
+  delegates durable lifecycle ownership to Voyage.
 gateway:
   path: runtime.py
   language: Python
 content:
 - runtime\.py
 dependencies:
-- source: rutter.source.engine
+- source: rutter.source.authoring
   version: 1
+  blueprint:
+    base: module-root
+    path: blueprints/authoring.yaml
+  reason: Imports Rutter definitions, evolution types, and TransitionHooks for binding.
+- source: rutter.source.engine
+  version: 3
   blueprint:
     base: module-root
     path: blueprints/engine.yaml
-  reason: Imports the bound Rutter protocol and its create and open construction routes.
-- source: rutter.source.model
-  version: 1
-  blueprint:
-    base: module-root
-    path: blueprints/model.yaml
-  reason: Imports immutable Charter data, finite JSON types, and definition and state
-    errors.
+  reason: Imports the concrete Voyage, immutable bound-definition snapshot, and initial authority constructor.
 - source: rutter.source.storage
-  version: 1
+  version: 2
   blueprint:
     base: module-root
     path: blueprints/storage.yaml
-  reason: Strictly reads persisted identity and confines caller paths beneath the
-    Reckoning root.
+  reason: Confines caller paths beneath the Reckoning root.
+- source: rutter.source.values
+  version: 1
+  blueprint:
+    base: module-root
+    path: blueprints/values.yaml
+  reason: Imports Charter, finite JSON types, and definition and state errors.
 uses_interfaces:
+- interface: rutter.source.authoring.interface.python-api
+  version: 1
 - interface: rutter.source.engine.interface.binding
-  version: 1
-- interface: rutter.source.model.interface.python-api
-  version: 1
-- interface: rutter.source.storage.interface.read
+  version: 3
+- interface: rutter.source.values.interface.python-api
   version: 1
 interfaces:
   rutter.source.runtime.interface.binding:
     content:
     - runtime\.py
     uses_interfaces:
+    - interface: rutter.source.authoring.interface.python-api
+      version: 1
     - interface: rutter.source.engine.interface.binding
+      version: 3
+    - interface: rutter.source.values.interface.python-api
       version: 1
-    - interface: rutter.source.model.interface.python-api
-      version: 1
-    - interface: rutter.source.storage.interface.read
-      version: 1
-    version: 1
+    version: 3
     description: Creates a named bound Rutter or opens one from persisted Charter
       identity.
     contract:
@@ -98,7 +102,7 @@ interfaces:
       outputs:
       - id: result
         audience: machine
-        description: One exact bound Rutter instance.
+        description: One exact public Voyage instance.
         direct_io_ref: return-value
         cardinality:
           minimum: 1
@@ -111,7 +115,8 @@ interfaces:
         empty: Never empty on success.
         type:
           kind: string
-          description: Bound Rutter instance exposing the four public operations.
+          description: Self-describing Voyage instance exposing help and its
+            advertised public methods.
           sensitivity: user-private
       outcomes:
       - id: created
@@ -200,7 +205,7 @@ interfaces:
         - id: return-value
           medium: local-system
           access: write
-          content: Bound direct Rutter instance
+          content: Public Voyage instance
           formats:
           - python-object
           sensitivity: user-private

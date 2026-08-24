@@ -148,10 +148,10 @@ from a dependency.
   process bindings, projections, and search
 - `certification/` — certificate hashing, records, and currentness views
 - `configuration/` — configured-schema and repository-configuration loading
-- `rutter/` — immutable Charter/Fix/Reckoning values in `model.py`, direct
-  reduction in `engine.py`, strict confined persistence in `storage.py`, and
-  explicit name binding in `runtime.py`: registry `create`/`open`, then bound
-  `get_instruction`, `validate`, and `advance`
+- `rutter/` — immutable authoring, history, and operating values; `Voyage`
+  lifecycle ownership; strict confined v3 persistence; and explicit name
+  binding through `RutterRegistry.create`/`open`, followed by the
+  self-describing interface returned by `Voyage.help()`
 - `credentials/` — Google credentials, OAuth JSON, and secret storage
 - `docstring/` — docstring parsing, policy, schema, and validation
 - `git/` — repository provenance and pinned Git snapshots
@@ -212,7 +212,7 @@ These skills exist to operate on the framework itself:
   around usage resets; the instruction side of `src/officina/wakeup/`
 - [`using-compass`](../../skills/using-compass/) — the generic LLM-facing
   Compass guide for operating a named Rutter through its public lifecycle;
-  each named Rutter owns its domain states and public guide. See
+  each named Rutter owns its domain evolutions and public guide. See
   [Compass and Rutter](compass-rutter.md) for the architecture and vocabulary.
 
 ## Where to go next

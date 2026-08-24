@@ -1,146 +1,176 @@
-"""Reduce bound Rutter voyages across durable Prompt and Done operations."""
+"""Reduce bound Rutter voyages across durable LLMStep and Terminal operations."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, replace
-from typing import Callable, Mapping, Protocol, cast
+from inspect import getdoc, signature
+from pathlib import Path
+from types import MappingProxyType
+from typing import ClassVar, Mapping, Protocol
 from uuid import uuid4
 
-from officina.rutter.model import (
-    Action,
-    ActionContext,
-    ActionRecord,
-    ActionResult,
+from officina.rutter.authoring import (
+    Evolution,
+    EvolutionContext,
+    LLMResponseContext,
+    LLMStep,
+    MachineContext,
+    MachineStep,
+    Rutter,
+    SubRutter,
+    Terminal,
+    TransitionContext,
+    TransitionHook,
+)
+from officina.rutter.evaluation import (
+    _RutterFault,
+    build_llm_data,
+    build_subrutter_charter,
+    build_terminal_result,
+    evaluate_llm_route,
+    evaluate_machine_route,
+    evaluate_subrutter_route,
+    run_machine,
+    select_transition_hooks,
+    validate_llm_response,
+)
+from officina.rutter.history import (
     ActiveChild,
     ActiveRun,
-    AnswerContext,
-    Charter,
-    Call,
-    CallRecord,
-    CompletedRun,
-    Done,
-    DoneRecord,
-    EdgeContext,
-    EnteredNode,
+    EnteredEvolution,
     HistoryEntry,
     HistoryView,
-    Message,
-    NodeView,
-    NotApplicable,
-    Prompt,
-    PreviewUnavailable,
-    PythonInstruction,
+    KnownFault,
+    MachineRecord,
+    OpaqueFault,
     Reckoning,
+    SubRutterRecord,
+    TerminalRecord,
+    Transition,
+    Turn,
+    _EffectRecovery,
+)
+from officina.rutter.reducer import (
+    ActiveLeaf,
+    _replace_in_tree,
+    _require_child_capacity,
+    deepest_active_leaf,
+    enter_child,
+    enter_evolution,
+    replace_active_run,
+    return_active_child,
+)
+from officina.rutter.storage import ReckoningStore
+from officina.rutter.values import (
+    Charter,
+    EvolutionView,
+    FaultSummary,
+    MachineInstruction,
+    MachineResult,
+    Message,
+    NotApplicable,
+    PreviewUnavailable,
     Response,
     RunBlocked,
-    RunResult,
+    RutterDefinitionError,
     RutterStateError,
     RutterValidationError,
-    State,
-    StateContext,
-    Turn,
     ValidationIssue,
     ValidationReport,
+    VoyageResult,
+    VoyageStatus,
 )
-from officina.rutter.runtime import _MISSING
-from officina.rutter.storage import _MAX_ACTIVE_DEPTH
 
 
 _OPERATION_LIMIT = 100
-_ACTION_RESULT_FORMAT = {
+_MACHINE_RESULT_FORMAT = {
     "outcome": "declared outcome",
     "value": {"type": "finite JSON"},
 }
 
 
-class _BoundDefinitionLike(Protocol):
-    rutter_id: str
-    definition_version: int
-    start_state: str
-    allow_multiple_cases_at_once: bool
-    states: Mapping[str, State]
-    case_makers: tuple[object, ...]
+class _Missing:
+    def __repr__(self) -> str:
+        return "MISSING"
 
 
-class _EdgeMatchLike(Protocol):
-    def matches(self, edge: object) -> bool: ...
+MISSING = _Missing()
 
 
-class _CaseMakerLike(Protocol):
-    id: str
-    on: _EdgeMatchLike
-    child: type
-    charter: Callable[[EdgeContext], Mapping[str, object] | None]
+class _StoreIO(Protocol):
+    def read(self) -> Reckoning: ...
 
+    def create(self, reckoning: Reckoning) -> None: ...
 
-class _StoreLike(Protocol):
-    def transaction(self): ...
+    def transaction(self) -> AbstractContextManager[Reckoning]: ...
 
-
-class _BoundVoyageLike(Protocol):
-    _definition: _BoundDefinitionLike
-    _definitions: Mapping[tuple[str, int], _BoundDefinitionLike]
-    _reckoning: Reckoning
-    _store: _StoreLike
+    def replace(self, previous: Reckoning, replacement: Reckoning) -> None: ...
 
 
 @dataclass(frozen=True)
-class ActiveLeaf:
-    run: ActiveRun
-    depth: int
+class _BoundDefinition:
+    definition: Rutter
+    rutter_id: str
+    definition_version: int
+    initial_evolution_id: str
+    allow_multiple_hooks_per_transition: bool
+    evolutions: Mapping[str, Evolution]
+    transition_hooks: tuple[TransitionHook, ...]
+    transition_hooks_by_id: Mapping[str, TransitionHook]
+    children: tuple[_BoundDefinition, ...]
+
+    @property
+    def identity(self) -> tuple[str, int]:
+        return self.rutter_id, self.definition_version
+
+    def require_current_metadata(self) -> None:
+        current = (
+            getattr(self.definition, "rutter_id", None),
+            getattr(self.definition, "definition_version", None),
+            getattr(self.definition, "initial_evolution_id", None),
+            getattr(
+                self.definition,
+                "allow_multiple_hooks_per_transition",
+                None,
+            ),
+        )
+        frozen = (
+            self.rutter_id,
+            self.definition_version,
+            self.initial_evolution_id,
+            self.allow_multiple_hooks_per_transition,
+        )
+        if current != frozen:
+            raise RutterDefinitionError("Rutter metadata changed after binding")
+
+    def reachable(self) -> Mapping[tuple[str, int], _BoundDefinition]:
+        found: dict[tuple[str, int], _BoundDefinition] = {}
+        pending = [self]
+        while pending:
+            definition = pending.pop()
+            if definition.identity in found:
+                continue
+            found[definition.identity] = definition
+            pending.extend(definition.children)
+        return MappingProxyType(found)
 
 
 @dataclass(frozen=True)
 class BoundRun:
     run: ActiveRun
-    definition: _BoundDefinitionLike
-
-
-@dataclass(frozen=True)
-class Edge:
-    edge_id: str
-    source_entry_id: str
-    source: str
-    outcome: str
-    target: str | None
-
-
-class _EngineFault(Exception):
-    def __init__(
-        self,
-        category: str,
-        *,
-        target: str | None = None,
-        case_maker_ids: tuple[str, ...] = (),
-    ) -> None:
-        super().__init__(category)
-        self.category = category
-        self.target = target
-        self.case_maker_ids = case_maker_ids
+    definition: _BoundDefinition
 
 
 def _new_id(prefix: str) -> str:
     return f"{prefix}-{uuid4().hex}"
 
 
-def _active_leaf(reckoning: Reckoning) -> ActiveLeaf:
-    run = reckoning.root
-    depth = 0
-    while run.active_child is not None:
-        child = run.active_child
-        if child.kind == "explicit_call" and child.site != run.entered_node.state_id:
-            raise RutterStateError(
-                "active explicit Call child does not match the parent entered state"
-            )
-        run = child.run
-        depth += 1
-    return ActiveLeaf(run, depth)
-
-
 def _leaf_definition(
-    voyage: _BoundVoyageLike,
+    voyage: Voyage,
     leaf: ActiveLeaf,
-) -> _BoundDefinitionLike:
+) -> _BoundDefinition:
     identity = (leaf.run.rutter_id, leaf.run.definition_version)
     try:
         return voyage._definitions[identity]
@@ -148,18 +178,24 @@ def _leaf_definition(
         raise RutterStateError("active Rutter definition is unavailable") from exc
 
 
-def _condition(reckoning: Reckoning, state: State) -> str:
+def _condition(
+    reckoning: Reckoning,
+    evolution: Evolution,
+    *,
+    leaf: ActiveLeaf | None = None,
+) -> str:
     if reckoning.fault is not None:
         return "fault"
     effect = reckoning.active_effect
-    if effect is not None and effect.get("disposition") == "uncertain":
+    if effect is not None and effect.disposition == "uncertain":
         return "uncertain"
-    leaf = _active_leaf(reckoning)
-    if isinstance(state, Done):
-        done = HistoryView(leaf.run.history, reckoning.completed_runs).done()
+    if leaf is None:
+        leaf = deepest_active_leaf(reckoning)
+    if isinstance(evolution, Terminal):
+        done = HistoryView(leaf.run.history, reckoning.completed_runs).terminal()
         if done is not None and (
-            done.node_entry_id == leaf.run.entered_node.entry_id
-            and done.state_id == leaf.run.entered_node.state_id
+            done.evolution_entry_id == leaf.run.entered_evolution.entry_id
+            and done.evolution_id == leaf.run.entered_evolution.evolution_id
         ):
             return "terminal"
     return "ready"
@@ -168,17 +204,24 @@ def _condition(reckoning: Reckoning, state: State) -> str:
 def _node_view(
     reckoning: Reckoning,
     leaf: ActiveLeaf,
-    state: State,
+    evolution: Evolution,
     *,
     preview: bool = False,
-) -> NodeView:
-    return NodeView(
+    condition: str | None = None,
+) -> EvolutionView:
+    if preview:
+        projected_condition = "preview"
+    elif condition is None:
+        projected_condition = _condition(reckoning, evolution)
+    else:
+        projected_condition = condition
+    return EvolutionView(
         leaf.run.rutter_id,
         leaf.run.definition_version,
-        leaf.run.entered_node.state_id,
-        None if preview else leaf.run.entered_node.entry_id,
+        leaf.run.entered_evolution.evolution_id,
+        None if preview else leaf.run.entered_evolution.entry_id,
         leaf.depth,
-        "preview" if preview else _condition(reckoning, state),
+        projected_condition,
     )
 
 
@@ -188,36 +231,15 @@ def _invalid(code: str, path: tuple[str | int, ...], message: str) -> Validation
 
 def _prompt_turn(reckoning: Reckoning, run: ActiveRun) -> Turn:
     turn = HistoryView(run.history, reckoning.completed_runs).open_turn()
-    if turn is None or turn.node_entry_id != run.entered_node.entry_id:
-        raise RutterStateError("entered Prompt has no matching open Turn")
+    if turn is None or turn.evolution_entry_id != run.entered_evolution.entry_id:
+        raise RutterStateError("entered LLMStep has no matching open Turn")
     return turn
 
 
-def _replace_active_run(
-    run: ActiveRun, run_id: str, replacement: ActiveRun
-) -> ActiveRun:
-    if run.run_id == run_id:
-        return replacement
-    child = run.active_child
-    if child is None:
-        raise RutterStateError("active run is absent from the Reckoning")
-    replaced_child = _replace_active_run(child.run, run_id, replacement)
-    return replace(run, active_child=replace(child, run=replaced_child))
-
-
-def _replace_run(
-    reckoning: Reckoning, run_id: str, replacement: ActiveRun
-) -> Reckoning:
-    return replace(
-        reckoning,
-        root=_replace_active_run(reckoning.root, run_id, replacement),
-    )
-
-
 def _call_child_definition(
-    voyage: _BoundVoyageLike,
-    call: Call,
-) -> _BoundDefinitionLike:
+    voyage: Voyage,
+    call: SubRutter,
+) -> _BoundDefinition:
     identity = (
         getattr(call.child, "rutter_id", None),
         getattr(call.child, "definition_version", None),
@@ -225,13 +247,13 @@ def _call_child_definition(
     try:
         return voyage._definitions[identity]
     except KeyError as exc:
-        raise RutterStateError("Call child definition is unavailable") from exc
+        raise RutterStateError("SubRutter child definition is unavailable") from exc
 
 
-def _case_child_definition(
-    voyage: _BoundVoyageLike,
-    maker: _CaseMakerLike,
-) -> _BoundDefinitionLike:
+def _hook_child_definition(
+    voyage: Voyage,
+    maker: TransitionHook,
+) -> _BoundDefinition:
     identity = (
         getattr(maker.child, "rutter_id", None),
         getattr(maker.child, "definition_version", None),
@@ -239,55 +261,54 @@ def _case_child_definition(
     try:
         return voyage._definitions[identity]
     except KeyError as exc:
-        raise RutterStateError("CaseMaker child definition is unavailable") from exc
+        raise RutterStateError("TransitionHook child definition is unavailable") from exc
 
 
 def _push_call(
     reckoning: Reckoning,
     run_id: str,
-    call: Call,
-    child_definition: _BoundDefinitionLike,
+    call: SubRutter,
+    child_definition: _BoundDefinition,
 ) -> Reckoning:
-    leaf = _active_leaf(reckoning)
+    leaf = deepest_active_leaf(reckoning)
     if leaf.run.run_id != run_id:
-        raise RutterStateError("only the active leaf may push a Call child")
-    if leaf.depth + 2 > _MAX_ACTIVE_DEPTH:
-        raise RutterStateError("maximum active-child depth reached")
-    try:
-        child_charter = Charter(
-            call.charter(_state_context(leaf.run, reckoning))
+        raise RutterStateError("only the active leaf may push a SubRutter child")
+    _require_child_capacity(reckoning, run_id)
+    child_charter = Charter(
+        build_subrutter_charter(
+            _evolution_context(leaf.run, reckoning),
+            call,
         )
-    except Exception as exc:
-        raise _EngineFault("child-charter") from exc
+    )
     child_run = ActiveRun(
         _new_id("run"),
         child_definition.rutter_id,
         child_definition.definition_version,
         child_charter,
-        EnteredNode(_new_id("entry"), child_definition.start_state),
+        EnteredEvolution(_new_id("entry"), child_definition.initial_evolution_id),
         (),
         None,
     )
-    child_state = child_definition.states[child_definition.start_state]
-    if isinstance(child_state, Prompt):
+    child_state = child_definition.evolutions[child_definition.initial_evolution_id]
+    if isinstance(child_state, LLMStep):
         try:
             turn = _render_prompt(reckoning, child_run, child_state)
         except Exception as exc:
-            raise _EngineFault("child-materialization") from exc
+            raise _RutterFault("child-materialization") from exc
         child_run = replace(child_run, history=(turn,))
-    parent = replace(
-        leaf.run,
-        active_child=ActiveChild(
+    pushed = enter_child(
+        reckoning,
+        run_id,
+        ActiveChild(
             _new_id("call"),
             "explicit_call",
-            leaf.run.entered_node.state_id,
+            leaf.run.entered_evolution.evolution_id,
             None,
             child_run,
         ),
     )
-    pushed = _replace_run(reckoning, run_id, parent)
-    if isinstance(child_state, Action) and child_state.mode != "pure":
-        child_leaf = _active_leaf(pushed)
+    if isinstance(child_state, MachineStep) and child_state.mode != "pure":
+        child_leaf = deepest_active_leaf(pushed)
         pushed = replace(
             pushed,
             active_effect=_planned_effect(child_leaf.run, child_state),
@@ -295,107 +316,61 @@ def _push_call(
     return pushed
 
 
-def _push_case(
+def _push_hook(
     reckoning: Reckoning,
     run_id: str,
-    maker: _CaseMakerLike,
-    child_definition: _BoundDefinitionLike,
+    maker: TransitionHook,
+    child_definition: _BoundDefinition,
     child_charter: Charter,
-    edge: Edge,
+    transition: Transition,
 ) -> Reckoning:
-    leaf = _active_leaf(reckoning)
+    leaf = deepest_active_leaf(reckoning)
     if leaf.run.run_id != run_id:
         raise RutterStateError("only the active leaf may push an attached child")
-    if leaf.depth + 2 > _MAX_ACTIVE_DEPTH:
-        raise RutterStateError("maximum active-child depth reached")
+    _require_child_capacity(reckoning, run_id)
     child_run = ActiveRun(
         _new_id("run"),
         child_definition.rutter_id,
         child_definition.definition_version,
         child_charter,
-        EnteredNode(_new_id("entry"), child_definition.start_state),
+        EnteredEvolution(_new_id("entry"), child_definition.initial_evolution_id),
         (),
         None,
     )
-    child_state = child_definition.states[child_definition.start_state]
-    if isinstance(child_state, Prompt):
+    child_state = child_definition.evolutions[child_definition.initial_evolution_id]
+    if isinstance(child_state, LLMStep):
         try:
             turn = _render_prompt(reckoning, child_run, child_state)
         except Exception as exc:
-            raise _EngineFault("child-materialization") from exc
+            raise _RutterFault("child-materialization") from exc
         child_run = replace(child_run, history=(turn,))
-    parent = replace(
-        leaf.run,
-        active_child=ActiveChild(
+    pushed = enter_child(
+        reckoning,
+        run_id,
+        ActiveChild(
             _new_id("call"),
             "attached_case",
             maker.id,
-            edge.edge_id,
+            transition.transition_id,
             child_run,
         ),
     )
-    pushed = _replace_run(reckoning, run_id, parent)
-    if isinstance(child_state, Action) and child_state.mode != "pure":
-        child_leaf = _active_leaf(pushed)
+    if isinstance(child_state, MachineStep) and child_state.mode != "pure":
+        child_leaf = deepest_active_leaf(pushed)
         pushed = replace(
             pushed,
             active_effect=_planned_effect(child_leaf.run, child_state),
         )
     return pushed
-
-
-def _parent_of_run(root: ActiveRun, run_id: str) -> tuple[ActiveRun, ActiveChild]:
-    parent = root
-    while parent.active_child is not None:
-        child = parent.active_child
-        if child.run.run_id == run_id:
-            return parent, child
-        parent = child.run
-    raise RutterStateError("active child has no parent run")
-
-
-def _return_call(reckoning: Reckoning, run_id: str) -> Reckoning:
-    leaf = _active_leaf(reckoning)
-    if leaf.run.run_id != run_id or leaf.run.active_child is not None:
-        raise RutterStateError("only the completed active leaf may return")
-    parent, child = _parent_of_run(reckoning.root, run_id)
-    completed = CompletedRun(
-        leaf.run.run_id,
-        leaf.run.rutter_id,
-        leaf.run.definition_version,
-        leaf.run.charter,
-        leaf.run.history,
-    )
-    record = CallRecord(
-        child.call_id,
-        parent.entered_node.entry_id,
-        child.kind,
-        child.site,
-        child.attached_to_edge_id,
-        completed.run_id,
-    )
-    returned_parent = replace(
-        parent,
-        history=parent.history + (record,),
-        active_child=None,
-    )
-    returned = _replace_run(reckoning, parent.run_id, returned_parent)
-    completed_runs = dict(returned.completed_runs)
-    completed_runs[completed.run_id] = completed
-    return replace(
-        returned,
-        global_revision=returned.global_revision + 1,
-        completed_runs=completed_runs,
-    )
 
 
 def _accept_prompt(
     reckoning: Reckoning,
     response: Response,
 ) -> Reckoning:
-    """Fill the active Prompt's exact open Turn and advance the global revision."""
+    """Fill the active LLMStep's exact open Turn and advance the global revision."""
 
-    leaf = _active_leaf(reckoning)
+    leaf = deepest_active_leaf(reckoning)
     turn = _prompt_turn(reckoning, leaf.run)
     history = tuple(
         replace(entry, response=response) if entry is turn else entry
@@ -403,249 +378,234 @@ def _accept_prompt(
     )
     accepted_run = replace(leaf.run, history=history)
     return replace(
-        _replace_run(reckoning, leaf.run.run_id, accepted_run),
+        replace_active_run(reckoning, accepted_run),
         global_revision=reckoning.global_revision + 1,
     )
 
 
-def _accept_action(
+def _accept_machine(
     reckoning: Reckoning,
-    action: Action,
-    action_id: str,
-    result: ActionResult,
+    machine: MachineStep,
+    machine_id: str,
+    result: MachineResult,
 ) -> Reckoning:
-    leaf = _active_leaf(reckoning)
-    record = ActionRecord(
+    leaf = deepest_active_leaf(reckoning)
+    record = MachineRecord(
         _new_id("record"),
-        action_id,
-        leaf.run.entered_node.entry_id,
-        leaf.run.entered_node.state_id,
-        action.mode,
+        machine_id,
+        leaf.run.entered_evolution.entry_id,
+        leaf.run.entered_evolution.evolution_id,
+        machine.mode,
         result,
     )
     accepted_run = replace(leaf.run, history=leaf.run.history + (record,))
     return replace(
-        _replace_run(reckoning, leaf.run.run_id, accepted_run),
+        reckoning,
+        root=_replace_in_tree(
+            reckoning.root,
+            accepted_run.run_id,
+            accepted_run,
+        ),
         global_revision=reckoning.global_revision + 1,
         active_effect=None,
     )
 
 
-def _source_record(run: ActiveRun, entered_node: EnteredNode) -> HistoryEntry | None:
+def _source_record(run: ActiveRun, entered_evolution: EnteredEvolution) -> HistoryEntry | None:
     for record in reversed(run.history):
         if (
-            record.node_entry_id == entered_node.entry_id
+            record.evolution_entry_id == entered_evolution.entry_id
             and not (
-                isinstance(record, CallRecord)
-                and record.site_kind == "attached_case"
+                isinstance(record, SubRutterRecord)
+                and record.transition_hook_id is not None
             )
         ):
             return record
     return None
 
 
-def _is_recorded_source(state: State, record: HistoryEntry | None) -> bool:
+def _is_recorded_source(evolution: Evolution, record: HistoryEntry | None) -> bool:
     return (
-        isinstance(state, Prompt)
+        isinstance(evolution, LLMStep)
         and isinstance(record, Turn)
         and record.response is not None
     ) or (
-        isinstance(state, Action) and isinstance(record, ActionRecord)
+        isinstance(evolution, MachineStep) and isinstance(record, MachineRecord)
     ) or (
-        isinstance(state, Call)
-        and isinstance(record, CallRecord)
-        and record.site_kind == "explicit_call"
+        isinstance(evolution, SubRutter)
+        and isinstance(record, SubRutterRecord)
+        and record.origin_evolution_id is not None
     ) or (
-        isinstance(state, Done) and isinstance(record, DoneRecord)
+        isinstance(evolution, Terminal) and isinstance(record, TerminalRecord)
     )
 
 
-def _select_edge(
+def _select_transition(
     bound_run: BoundRun,
     strict_prefix: HistoryView,
     record: HistoryEntry,
     *,
-    call_result: RunResult | None = None,
-) -> Edge:
-    state_id = bound_run.run.entered_node.state_id
-    state = bound_run.definition.states[state_id]
-    if isinstance(state, Prompt) and isinstance(record, Turn):
+    call_result: VoyageResult | None = None,
+) -> Transition:
+    evolution_id = bound_run.run.entered_evolution.evolution_id
+    evolution = bound_run.definition.evolutions[evolution_id]
+    if isinstance(evolution, LLMStep) and isinstance(record, Turn):
         response = record.response
         if response is None:
-            raise _EngineFault("routing")
+            raise _RutterFault("routing")
         outcome = response.outcome
-    elif isinstance(state, Action) and isinstance(record, ActionRecord):
+    elif isinstance(evolution, MachineStep) and isinstance(record, MachineRecord):
         response = None
         outcome = record.result.outcome
     elif (
-        isinstance(state, Call)
-        and isinstance(record, CallRecord)
+        isinstance(evolution, SubRutter)
+        and isinstance(record, SubRutterRecord)
         and call_result is not None
     ):
         response = None
         outcome = call_result.outcome
-    elif isinstance(state, Done) and isinstance(record, DoneRecord):
-        return Edge(
+    elif isinstance(evolution, Terminal) and isinstance(record, TerminalRecord):
+        return Transition(
             record.record_id,
-            bound_run.run.entered_node.entry_id,
-            state_id,
+            bound_run.run.entered_evolution.entry_id,
+            evolution_id,
             record.result.outcome,
             None,
         )
     else:
-        raise _EngineFault("routing")
-    routing = state.then
+        raise _RutterFault("routing")
+    routing = evolution.then
     target: object
     if type(routing) is str:
         target = routing
     elif isinstance(routing, Mapping):
         target = routing.get(outcome)
     else:
-        state_context = StateContext(
+        evolution_context = EvolutionContext(
             bound_run.run.charter,
-            state_id,
-            bound_run.run.entered_node.entry_id,
+            evolution_id,
+            bound_run.run.entered_evolution.entry_id,
             strict_prefix,
         )
-        try:
-            if isinstance(state, Prompt):
-                assert isinstance(record, Turn) and response is not None
-                target = routing(  # type: ignore[operator]
-                    AnswerContext(state_context, record.message, response)
-                )
-            elif isinstance(state, Action):
-                assert isinstance(record, ActionRecord)
-                target = routing(  # type: ignore[operator]
-                    ActionContext(state_context, record.action_id),
-                    record.result,
-                )
-            else:
-                target = routing(state_context, call_result)  # type: ignore[operator]
-        except Exception as exc:
-            raise _EngineFault("routing") from exc
-    if type(target) is not str or target not in bound_run.definition.states:
-        raise _EngineFault(
+        if isinstance(evolution, LLMStep):
+            assert isinstance(record, Turn) and response is not None
+            target = evaluate_llm_route(
+                LLMResponseContext(
+                    evolution_context,
+                    record.message,
+                    response,
+                ),
+                routing,
+            )
+        elif isinstance(evolution, MachineStep):
+            assert isinstance(record, MachineRecord)
+            target = evaluate_machine_route(
+                MachineContext(evolution_context, record.machine_id),
+                record.result,
+                routing,
+            )
+        else:
+            assert call_result is not None
+            target = evaluate_subrutter_route(
+                evolution_context,
+                call_result,
+                routing,
+            )
+    if type(target) is not str or target not in bound_run.definition.evolutions:
+        raise _RutterFault(
             "routing",
-            target=target if type(target) is str else None,
+            target_evolution_id=target if type(target) is str else None,
         )
-    return Edge(
-        record.call_id if isinstance(record, CallRecord) else record.record_id,
-        bound_run.run.entered_node.entry_id,
-        state_id,
+    return Transition(
+        record.invocation_id if isinstance(record, SubRutterRecord) else record.record_id,
+        bound_run.run.entered_evolution.entry_id,
+        evolution_id,
         outcome,
         target,
     )
 
 
-def _edge_context(
+def _transition_context(
     run: ActiveRun,
     strict_prefix: HistoryView,
-    edge: Edge,
+    transition: Transition,
     record: HistoryEntry,
-) -> EdgeContext:
-    return EdgeContext(
-        StateContext(
+) -> TransitionContext:
+    return TransitionContext(
+        EvolutionContext(
             run.charter,
-            run.entered_node.state_id,
-            run.entered_node.entry_id,
+            run.entered_evolution.evolution_id,
+            run.entered_evolution.entry_id,
             strict_prefix,
         ),
-        {
-            "edge_id": edge.edge_id,
-            "source_entry_id": edge.source_entry_id,
-            "source": edge.source,
-            "outcome": edge.outcome,
-            "target": edge.target,
-        },
+        transition.to_json(),
         record,
     )
 
 
-def _selected_cases(
-    definition: _BoundDefinitionLike,
-    context: EdgeContext,
-    edge: Edge,
-) -> tuple[tuple[_CaseMakerLike, Charter], ...]:
-    selected: list[tuple[_CaseMakerLike, Charter]] = []
-    for authored in definition.case_makers:
-        maker = cast(_CaseMakerLike, authored)
-        try:
-            matches = maker.on.matches(edge)
-        except Exception as exc:
-            raise _EngineFault(
-                "case-matcher", case_maker_ids=(maker.id,)
-            ) from exc
-        if not matches:
-            continue
-        try:
-            charter = maker.charter(context)
-            if charter is not None:
-                selected.append((maker, Charter(charter)))
-        except Exception as exc:
-            raise _EngineFault(
-                "case-charter", case_maker_ids=(maker.id,)
-            ) from exc
-    return tuple(selected)
-
-
-def _continue_edge(
-    voyage: _BoundVoyageLike,
+def _continue_transition(
+    voyage: Voyage,
     reckoning: Reckoning,
     leaf: ActiveLeaf,
-    definition: _BoundDefinitionLike,
-    edge: Edge,
+    definition: _BoundDefinition,
+    transition: Transition,
     strict_prefix: HistoryView,
     record: HistoryEntry,
 ) -> Reckoning:
-    context = _edge_context(leaf.run, strict_prefix, edge, record)
-    selected = _selected_cases(definition, context, edge)
-    if len(selected) > 1 and not definition.allow_multiple_cases_at_once:
-        raise _EngineFault(
+    context = _transition_context(leaf.run, strict_prefix, transition, record)
+    selected = select_transition_hooks(
+        context,
+        transition,
+        definition.transition_hooks,
+    )
+    if len(selected) > 1 and not definition.allow_multiple_hooks_per_transition:
+        raise _RutterFault(
             "case-cardinality",
-            case_maker_ids=tuple(maker.id for maker, _ in selected),
+            transition_hook_ids=tuple(maker.id for maker, _ in selected),
         )
     completed = {
-        (entry.site_id, entry.attached_to_edge_id)
+        (entry.transition_hook_id, entry.attached_to_transition_id)
         for entry in leaf.run.history
-        if isinstance(entry, CallRecord) and entry.site_kind == "attached_case"
+        if isinstance(entry, SubRutterRecord)
+        and entry.transition_hook_id is not None
     }
     for maker, charter in selected:
-        if (maker.id, edge.edge_id) in completed:
+        if (maker.id, transition.transition_id) in completed:
             continue
-        return _push_case(
+        return _push_hook(
             reckoning,
             leaf.run.run_id,
             maker,
-            _case_child_definition(voyage, maker),
+            _hook_child_definition(voyage, maker),
             charter,
-            edge,
+            transition,
         )
-    if edge.target is None:
+    if transition.target is None:
         return reckoning
-    return _enter_node(
+    return _enter_evolution(
         reckoning,
         leaf.run.run_id,
-        edge.target,
+        transition.target,
         definition=definition,
     )
 
 
-def _recorded_edge(
+def _recorded_transition(
     reckoning: Reckoning,
     leaf: ActiveLeaf,
-    definition: _BoundDefinitionLike,
+    definition: _BoundDefinition,
     record: HistoryEntry,
-) -> tuple[Edge, HistoryView]:
-    call_result: RunResult | None = None
-    if isinstance(record, CallRecord):
+) -> tuple[Transition, HistoryView]:
+    call_result: VoyageResult | None = None
+    if isinstance(record, SubRutterRecord):
         try:
-            call_result = reckoning.completed_runs[record.completed_run_id].result
+            call_result = reckoning.completed_runs[record.completed_voyage_instance_id].result
         except KeyError as exc:
-            raise RutterStateError("CallRecord completed run is unavailable") from exc
+            raise RutterStateError("SubRutterRecord completed run is unavailable") from exc
     history = HistoryView(leaf.run.history, reckoning.completed_runs)
     strict_prefix = history.strict_prefix(record)
     return (
-        _select_edge(
+        _select_transition(
             BoundRun(leaf.run, definition),
             strict_prefix,
             record,
@@ -655,59 +615,65 @@ def _recorded_edge(
     )
 
 
-def _continue_recorded_edge(
-    voyage: _BoundVoyageLike,
+def _continue_recorded_transition(
+    voyage: Voyage,
     reckoning: Reckoning,
     leaf: ActiveLeaf,
-    definition: _BoundDefinitionLike,
+    definition: _BoundDefinition,
     record: HistoryEntry,
 ) -> Reckoning:
-    edge, strict_prefix = _recorded_edge(reckoning, leaf, definition, record)
-    return _continue_edge(
+    transition, strict_prefix = _recorded_transition(reckoning, leaf, definition, record)
+    return _continue_transition(
         voyage,
         reckoning,
         leaf,
         definition,
-        edge,
+        transition,
         strict_prefix,
         record,
     )
 
 
-def _enter_node(
+def _enter_evolution(
     reckoning: Reckoning,
     run_id: str,
     target: str,
     *,
-    definition: _BoundDefinitionLike,
+    definition: _BoundDefinition,
 ) -> Reckoning:
-    """Enter one target; Prompt entrance and open-Turn creation are atomic."""
+    """Enter one target; LLMStep entrance and open-Turn creation are atomic."""
 
-    leaf = _active_leaf(reckoning)
+    leaf = deepest_active_leaf(reckoning)
     if leaf.run.run_id != run_id:
-        raise RutterStateError("only the active leaf may enter a node")
+        raise RutterStateError("only the active leaf may enter an evolution")
     try:
-        target_state = definition.states[target]
+        target_state = definition.evolutions[target]
     except KeyError as exc:
-        raise _EngineFault("routing", target=target) from exc
-    entered_run = replace(
-        leaf.run,
-        entered_node=EnteredNode(_new_id("entry"), target),
+        raise _RutterFault(
+            "routing",
+            target_evolution_id=target,
+        ) from exc
+    entered = enter_evolution(
+        reckoning,
+        run_id,
+        EnteredEvolution(_new_id("entry"), target),
     )
-    entered = _replace_run(reckoning, run_id, entered_run)
-    if isinstance(target_state, Prompt):
-        entered_leaf = _active_leaf(entered)
+    if isinstance(target_state, LLMStep):
+        entered_leaf = deepest_active_leaf(entered)
         try:
             turn = _render_prompt(entered, entered_leaf.run, target_state)
         except Exception as exc:
-            raise _EngineFault("target-materialization", target=target) from exc
+            raise _RutterFault(
+                "target-materialization",
+                target_evolution_id=target,
+            ) from exc
         entered_run = replace(
             entered_leaf.run,
             history=entered_leaf.run.history + (turn,),
         )
-        entered = _replace_run(entered, run_id, entered_run)
-    elif isinstance(target_state, Action) and target_state.mode != "pure":
-        entered_leaf = _active_leaf(entered)
+        entered = replace_active_run(entered, entered_run)
+    elif isinstance(target_state, MachineStep) and target_state.mode != "pure":
+        entered_leaf = deepest_active_leaf(entered)
         entered = replace(
             entered,
             active_effect=_planned_effect(entered_leaf.run, target_state),
@@ -715,33 +681,32 @@ def _enter_node(
     return entered
 
 
-def _settle_done(reckoning: Reckoning, run_id: str, result: RunResult) -> Reckoning:
-    leaf = _active_leaf(reckoning)
+def _settle_terminal(reckoning: Reckoning, run_id: str, result: VoyageResult) -> Reckoning:
+    leaf = deepest_active_leaf(reckoning)
     if leaf.run.run_id != run_id:
-        raise RutterStateError("only the active leaf may settle Done")
-    record = DoneRecord(
+        raise RutterStateError("only the active leaf may settle Terminal")
+    record = TerminalRecord(
         _new_id("done"),
-        leaf.run.entered_node.entry_id,
-        leaf.run.entered_node.state_id,
+        leaf.run.entered_evolution.entry_id,
+        leaf.run.entered_evolution.evolution_id,
         result,
     )
     settled = replace(leaf.run, history=leaf.run.history + (record,))
     return replace(
-        _replace_run(reckoning, run_id, settled),
+        replace_active_run(reckoning, settled),
         global_revision=reckoning.global_revision + 1,
     )
 
 
-def _project_done(reckoning: Reckoning, run: ActiveRun, state: Done) -> RunResult:
-    if isinstance(state.result, RunResult):
-        return state.result
-    try:
-        result = state.result(_state_context(run, reckoning))
-    except Exception as exc:
-        raise _EngineFault("done-projection") from exc
-    if not isinstance(result, RunResult):
-        raise _EngineFault("done-projection")
-    return result
+def _project_terminal(
+    reckoning: Reckoning,
+    run: ActiveRun,
+    evolution: Terminal,
+) -> VoyageResult:
+    return build_terminal_result(
+        _evolution_context(run, reckoning),
+        evolution,
+    )
 
 
 def _fault_reckoning(
@@ -749,26 +714,26 @@ def _fault_reckoning(
     leaf: ActiveLeaf,
     category: str,
     *,
-    target: str | None = None,
-    case_maker_ids: tuple[str, ...] = (),
+    target_evolution_id: str | None = None,
+    transition_hook_ids: tuple[str, ...] = (),
 ) -> Reckoning:
-    fault: dict[str, object] = {
-        "category": category,
-        "run_id": leaf.run.run_id,
-        "state_id": leaf.run.entered_node.state_id,
-        "node_entry_id": leaf.run.entered_node.entry_id,
-    }
-    if target is not None:
-        fault["target_state_id"] = target
-    if case_maker_ids:
-        fault["case_maker_ids"] = case_maker_ids
-    return replace(reckoning, fault=fault)
+    return replace(
+        reckoning,
+        fault=KnownFault(
+            category,
+            leaf.run.run_id,
+            leaf.run.entered_evolution.evolution_id,
+            leaf.run.entered_evolution.entry_id,
+            target_evolution_id,
+            transition_hook_ids,
+        ),
+    )
 
 
 def _validate_prompt(
     reckoning: Reckoning,
     run: ActiveRun,
-    prompt: Prompt,
+    prompt: LLMStep,
     value: object,
 ) -> ValidationReport:
     if not isinstance(value, Mapping) or set(value) != {
@@ -799,7 +764,7 @@ def _validate_prompt(
         return _invalid(
             "unknown-outcome",
             ("outcome",),
-            "response outcome is not declared by this Prompt",
+            "response outcome is not declared by this LLMStep",
         )
     if not isinstance(value["evidence"], Mapping):
         return _invalid(
@@ -816,23 +781,19 @@ def _validate_prompt(
             "response evidence must be finite JSON",
         )
     turn = _prompt_turn(reckoning, run)
-    try:
-        report = prompt.validate(
-            AnswerContext(_state_context(run, reckoning), turn.message, response)
-        )
-    except Exception as exc:
-        raise _EngineFault("contextual-validation") from exc
-    if not isinstance(report, ValidationReport):
-        return _invalid(
-            "invalid-validator-result",
-            (),
-            "Prompt validator must return a ValidationReport",
-        )
+    report = validate_llm_response(
+        LLMResponseContext(
+            _evolution_context(run, reckoning),
+            turn.message,
+            response,
+        ),
+        prompt,
+    )
     return report
 
 
-def _validate_action_result(value: object) -> ValidationReport:
-    if isinstance(value, ActionResult):
+def _validate_machine_result(value: object) -> ValidationReport:
+    if isinstance(value, MachineResult):
         return ValidationReport(True, ())
     if not isinstance(value, Mapping) or set(value) != {"outcome", "value"}:
         return _invalid(
@@ -841,7 +802,7 @@ def _validate_action_result(value: object) -> ValidationReport:
             "action result must contain exactly outcome and value",
         )
     try:
-        ActionResult.from_json(value)
+        MachineResult.from_json(value)
     except RutterStateError as exc:
         if "finite JSON" in str(exc):
             return _invalid(
@@ -857,174 +818,139 @@ def _validate_action_result(value: object) -> ValidationReport:
     return ValidationReport(True, ())
 
 
-def _state_context(
+def _evolution_context(
     run: ActiveRun,
     reckoning: Reckoning,
     *,
     history: tuple[HistoryEntry, ...] | None = None,
-) -> StateContext:
+) -> EvolutionContext:
     if history is None:
-        current_entry = run.entered_node.entry_id
+        current_entry = run.entered_evolution.entry_id
         boundary = next(
             (
                 index
                 for index, entry in enumerate(run.history)
-                if entry.node_entry_id == current_entry
+                if entry.evolution_entry_id == current_entry
             ),
             len(run.history),
         )
         entries = run.history[:boundary]
     else:
         entries = history
-    return StateContext(
+    return EvolutionContext(
         run.charter,
-        run.entered_node.state_id,
-        run.entered_node.entry_id,
+        run.entered_evolution.evolution_id,
+        run.entered_evolution.entry_id,
         HistoryView(entries, reckoning.completed_runs),
     )
 
 
-def _action_id(run: ActiveRun) -> str:
-    return f"action-{run.entered_node.entry_id}"
+def _machine_id(run: ActiveRun) -> str:
+    return f"action-{run.entered_evolution.entry_id}"
 
 
-def _planned_effect(run: ActiveRun, action: Action) -> dict[str, object]:
-    return {
-        "action_id": _action_id(run),
-        "owner_run_id": run.run_id,
-        "node_entry_id": run.entered_node.entry_id,
-        "state_id": run.entered_node.state_id,
-        "mode": action.mode,
-        "disposition": "planned",
-        "result": None,
-    }
+def _planned_effect(run: ActiveRun, action: MachineStep) -> _EffectRecovery:
+    return _EffectRecovery(
+        _machine_id(run),
+        run.run_id,
+        run.entered_evolution.entry_id,
+        run.entered_evolution.evolution_id,
+        action.mode,
+        "planned",
+        None,
+    )
 
 
-def _action_effect(
-    reckoning: Reckoning,
-    leaf: ActiveLeaf,
-    action: Action,
-) -> Mapping[str, object]:
+def _machine_effect(reckoning: Reckoning) -> _EffectRecovery:
     effect = reckoning.active_effect
     if effect is None:
-        raise RutterStateError("effectful Action has no recovery authority")
-    if (
-        effect["owner_run_id"] != leaf.run.run_id
-        or effect["node_entry_id"] != leaf.run.entered_node.entry_id
-        or effect["state_id"] != leaf.run.entered_node.state_id
-        or effect["mode"] != action.mode
-    ):
-        raise RutterStateError("active effect recovery does not match the Action")
+        raise RutterStateError("effectful MachineStep has no recovery authority")
     return effect
 
 
-def _validate_action_authority(
-    reckoning: Reckoning,
-    leaf: ActiveLeaf,
-    state: State,
-) -> None:
-    if reckoning.active_effect is not None:
-        if not isinstance(state, Action) or state.mode == "pure":
-            raise RutterStateError(
-                "active effect recovery does not match the Action"
-            )
-        _action_effect(reckoning, leaf, state)
-        return
-    if isinstance(state, Action) and state.mode != "pure":
-        record = _source_record(leaf.run, leaf.run.entered_node)
-        if not isinstance(record, ActionRecord):
-            raise RutterStateError("effectful Action has no recovery authority")
-
-
-def _pure_action_instruction(
+def _pure_machine_instruction(
     reckoning: Reckoning,
     run: ActiveRun,
-    action: Action,
-) -> PythonInstruction:
-    action_id = _action_id(run)
-    context = ActionContext(_state_context(run, reckoning), action_id)
+    machine: MachineStep,
+) -> MachineInstruction:
+    machine_id = _machine_id(run)
+    context = MachineContext(_evolution_context(run, reckoning), machine_id)
 
-    def execute() -> ActionResult:
-        return action.run(context)
+    def execute() -> MachineResult:
+        return run_machine(context, machine)
 
-    return PythonInstruction(
-        action_id,
-        action.mode,
+    return MachineInstruction(
+        machine_id,
+        machine.mode,
         execute,
-        _ACTION_RESULT_FORMAT,
+        _MACHINE_RESULT_FORMAT,
     )
 
 
-def _effectful_action_instruction(
-    voyage: _BoundVoyageLike,
-    action_id: str,
+def _effectful_machine_instruction(
+    voyage: Voyage,
+    machine_id: str,
     mode: str,
-) -> PythonInstruction:
-    def execute() -> ActionResult:
+) -> MachineInstruction:
+    def execute() -> MachineResult:
         with voyage._store.transaction() as reckoning:
             voyage._reckoning = reckoning
-            leaf = _active_leaf(reckoning)
+            leaf = deepest_active_leaf(reckoning)
             definition = _leaf_definition(voyage, leaf)
-            state = definition.states[leaf.run.entered_node.state_id]
-            if not isinstance(state, Action) or state.mode == "pure":
-                raise RutterStateError("Action instruction is stale")
-            if _condition(reckoning, state) in {"fault", "uncertain"}:
+            evolution = definition.evolutions[leaf.run.entered_evolution.evolution_id]
+            if not isinstance(evolution, MachineStep) or evolution.mode == "pure":
+                raise RutterStateError("MachineStep instruction is stale")
+            if _condition(reckoning, evolution) in {"fault", "uncertain"}:
                 raise RunBlocked("the voyage is blocked")
-            effect = _action_effect(reckoning, leaf, state)
-            if effect["action_id"] != action_id:
-                raise RutterStateError("Action instruction is stale")
+            effect = _machine_effect(reckoning)
+            if effect.machine_id != machine_id:
+                raise RutterStateError("MachineStep instruction is stale")
             try:
-                _, result = _run_effectful_action(
+                _, result = _run_effectful_machine(
                     voyage,
                     reckoning,
                     leaf,
-                    state,
+                    evolution,
                     effect,
                 )
-            except _EngineFault as fault:
+            except _RutterFault as fault:
                 current = voyage._reckoning
                 _fault_and_publish(voyage, current, current, fault)
-                raise RunBlocked("Action execution failed") from None
+                raise RunBlocked("MachineStep execution failed") from None
             return result
 
-    return PythonInstruction(
-        action_id,
+    return MachineInstruction(
+        machine_id,
         mode,
         execute,
-        _ACTION_RESULT_FORMAT,
+        _MACHINE_RESULT_FORMAT,
     )
 
 
-def _run_effectful_action(
-    voyage: _BoundVoyageLike,
+def _run_effectful_machine(
+    voyage: Voyage,
     reckoning: Reckoning,
     leaf: ActiveLeaf,
-    action: Action,
-    effect: Mapping[str, object],
-) -> tuple[Reckoning, ActionResult]:
-    if effect["disposition"] == "completed":
-        return reckoning, ActionResult.from_json(effect["result"])
-    if effect["disposition"] != "planned":
+    machine: MachineStep,
+    effect: _EffectRecovery,
+) -> tuple[Reckoning, MachineResult]:
+    if effect.disposition == "completed":
+        assert effect.result is not None
+        return reckoning, effect.result
+    if effect.disposition != "planned":
         raise RunBlocked("the voyage is blocked")
-    action_id = str(effect["action_id"])
-    if action.mode == "non-repeat-safe":
-        uncertain_effect = dict(effect)
-        uncertain_effect["disposition"] = "uncertain"
+    machine_id = effect.machine_id
+    if machine.mode == "non-repeat-safe":
+        uncertain_effect = replace(effect, disposition="uncertain")
         uncertain = replace(reckoning, active_effect=uncertain_effect)
         _publish(voyage, reckoning, uncertain)
         reckoning = uncertain
         effect = uncertain_effect
-    try:
-        result = action.run(
-            ActionContext(_state_context(leaf.run, reckoning), action_id)
-        )
-    except Exception:
-        raise _EngineFault("action-execution") from None
-    if not isinstance(result, ActionResult):
-        raise _EngineFault("action-result")
-    completed_effect = dict(effect)
-    completed_effect["disposition"] = "completed"
-    completed_effect["result"] = result.to_json()
+    result = run_machine(
+        MachineContext(_evolution_context(leaf.run, reckoning), machine_id),
+        machine,
+    )
+    completed_effect = replace(effect, disposition="completed", result=result)
     completed = replace(reckoning, active_effect=completed_effect)
     _publish(voyage, reckoning, completed)
     return completed, result
@@ -1033,24 +959,24 @@ def _run_effectful_action(
 def _render_prompt(
     reckoning: Reckoning,
     run: ActiveRun,
-    prompt: Prompt,
+    prompt: LLMStep,
 ) -> Turn:
-    context = _state_context(run, reckoning)
+    context = _evolution_context(run, reckoning)
     message = Message(
         instructions={"text": prompt.text, "answer": prompt.answer.outcomes},
         data={
-            "state": {
-                "id": run.entered_node.state_id,
-                "entry_id": run.entered_node.entry_id,
+            "evolution": {
+                "id": run.entered_evolution.evolution_id,
+                "entry_id": run.entered_evolution.entry_id,
                 "revision": reckoning.global_revision,
             },
-            "payload": prompt.data(context),
+            "payload": build_llm_data(context, prompt),
         },
     )
     return Turn(
         _new_id("turn"),
-        run.entered_node.entry_id,
-        run.entered_node.state_id,
+        run.entered_evolution.entry_id,
+        run.entered_evolution.evolution_id,
         reckoning.global_revision,
         message,
         None,
@@ -1058,12 +984,12 @@ def _render_prompt(
 
 
 def _create_reckoning(
-    definition: _BoundDefinitionLike,
+    definition: _BoundDefinition,
     charter: Charter,
 ) -> Reckoning:
-    """Create one initial entrance, including a Prompt's exact open Turn."""
+    """Create one initial entrance, including a LLMStep's exact open Turn."""
 
-    entered = EnteredNode(_new_id("entry"), definition.start_state)
+    entered = EnteredEvolution(_new_id("entry"), definition.initial_evolution_id)
     run = ActiveRun(
         _new_id("run"),
         definition.rutter_id,
@@ -1074,225 +1000,617 @@ def _create_reckoning(
         None,
     )
     reckoning = Reckoning(3, 0, run, {}, None, None)
-    state = definition.states[definition.start_state]
-    if isinstance(state, Prompt):
+    evolution = definition.evolutions[definition.initial_evolution_id]
+    if isinstance(evolution, LLMStep):
         try:
-            turn = _render_prompt(reckoning, run, state)
+            turn = _render_prompt(reckoning, run, evolution)
         except Exception as exc:
-            raise RutterStateError("Prompt materialization failed") from exc
+            raise RutterStateError("LLMStep materialization failed") from exc
         run = ActiveRun(
             run.run_id,
             run.rutter_id,
             run.definition_version,
             run.charter,
-            run.entered_node,
+            run.entered_evolution,
             (turn,),
             None,
         )
         reckoning = Reckoning(3, 0, run, {}, None, None)
-    elif isinstance(state, Action) and state.mode != "pure":
-        reckoning = replace(reckoning, active_effect=_planned_effect(run, state))
+    elif isinstance(evolution, MachineStep) and evolution.mode != "pure":
+        reckoning = replace(reckoning, active_effect=_planned_effect(run, evolution))
     return reckoning
 
 
-def _get_instruction(voyage: _BoundVoyageLike) -> object | None:
-    with voyage._store.transaction() as reckoning:
-        voyage._reckoning = reckoning
-        leaf = _active_leaf(reckoning)
-        state = _leaf_definition(voyage, leaf).states[leaf.run.entered_node.state_id]
-        _validate_action_authority(reckoning, leaf, state)
-        if _condition(reckoning, state) != "ready":
-            return None
-        source = _source_record(leaf.run, leaf.run.entered_node)
-        if _is_recorded_source(state, source):
-            return None
-        if isinstance(state, Prompt):
-            return _prompt_turn(reckoning, leaf.run).message
-        if isinstance(state, Action) and state.mode == "pure":
-            return _pure_action_instruction(reckoning, leaf.run, state)
-        if isinstance(state, Action):
-            effect = _action_effect(reckoning, leaf, state)
-            return _effectful_action_instruction(
-                voyage,
-                str(effect["action_id"]),
-                state.mode,
+class Voyage:
+    """Own one bound definition snapshot and its durable lifecycle."""
+
+    compass_facing_methods: ClassVar[tuple[str, ...]] = (
+        "get_status",
+        "validate",
+        "next",
+    )
+
+    @classmethod
+    def _open(
+        cls,
+        resolve_definition: Callable[[tuple[str, int]], _BoundDefinition],
+        path: Path,
+    ) -> Voyage:
+        store = ReckoningStore(path)
+        reckoning = store.read()
+        identity = (reckoning.root.rutter_id, reckoning.root.definition_version)
+        definition = resolve_definition(identity)
+        return cls(definition, path, reckoning, create=False)
+
+    def __init__(
+        self,
+        definition: _BoundDefinition,
+        path: Path,
+        reckoning: Reckoning,
+        *,
+        create: bool,
+    ) -> None:
+        self._definition = definition
+        self._definitions = definition.reachable()
+        self._reckoning = reckoning
+        self._store: _StoreIO = ReckoningStore(
+            path, semantic_validator=self._validate_reckoning
+        )
+        self._validate_reckoning(reckoning)
+        if create:
+            self._store.create(reckoning)
+
+    def _validate_reckoning(self, reckoning: Reckoning) -> None:
+        active: list[tuple[ActiveRun, _BoundDefinition]] = []
+        run = reckoning.root
+        while True:
+            identity = (run.rutter_id, run.definition_version)
+            definition = self._definitions.get(identity)
+            if definition is None:
+                raise RutterStateError(
+                    f"active Rutter definition {identity!r} is unavailable"
+                )
+            definition.require_current_metadata()
+            evolution = definition.evolutions.get(
+                run.entered_evolution.evolution_id
             )
+            if evolution is None:
+                raise RutterStateError(
+                    "active evolution is absent from its bound Rutter definition"
+                )
+            if isinstance(evolution, LLMStep):
+                self._validate_llm_authority(
+                    run,
+                    evolution,
+                    reckoning.global_revision,
+                    reckoning.fault,
+                    is_leaf=run.active_child is None,
+                )
+            active.append((run, definition))
+            if run.active_child is None:
+                break
+            run = run.active_child.run
+
+        leaf_run, leaf_definition = active[-1]
+        leaf_evolution = leaf_definition.evolutions[
+            leaf_run.entered_evolution.evolution_id
+        ]
+        self._validate_fault_authority(
+            reckoning,
+            leaf_run,
+            leaf_definition,
+        )
+        self._validate_effect_authority(
+            reckoning,
+            leaf_run,
+            leaf_evolution,
+        )
+
+        for parent, definition in active:
+            child = parent.active_child
+            if child is None:
+                continue
+            child_identity = (
+                child.run.rutter_id,
+                child.run.definition_version,
+            )
+            if child.kind == "explicit_call":
+                site = definition.evolutions.get(child.site)
+                if not isinstance(site, SubRutter):
+                    raise RutterStateError(
+                        "active explicit child does not match a bound "
+                        "SubRutter evolution"
+                    )
+                expected = self._definition_identity(site.child)
+            else:
+                hook = definition.transition_hooks_by_id.get(child.site)
+                if hook is None:
+                    raise RutterStateError(
+                        "active attached child does not match a bound "
+                        "TransitionHook"
+                    )
+                expected = self._definition_identity(hook.child)
+            if child_identity != expected:
+                raise RutterStateError(
+                    "active child identity differs from its bound definition"
+                )
+
+    @staticmethod
+    def _validate_fault_authority(
+        reckoning: Reckoning,
+        leaf: ActiveRun,
+        definition: _BoundDefinition,
+    ) -> None:
+        fault = reckoning.fault
+        if fault is None or isinstance(fault, OpaqueFault):
+            return
+        if (
+            fault.run_id != leaf.run_id
+            or fault.evolution_id != leaf.entered_evolution.evolution_id
+            or fault.evolution_entry_id != leaf.entered_evolution.entry_id
+        ):
+            raise RutterStateError(
+                "known fault coordinates do not match the active evolution"
+            )
+        if (
+            fault.target_evolution_id is not None
+            and fault.target_evolution_id not in definition.evolutions
+        ):
+            raise RutterStateError(
+                "known fault target is absent from its bound definition"
+            )
+        if any(
+            hook_id not in definition.transition_hooks_by_id
+            for hook_id in fault.transition_hook_ids
+        ):
+            raise RutterStateError(
+                "known fault TransitionHook is absent from its bound definition"
+            )
+
+    @staticmethod
+    def _validate_effect_authority(
+        reckoning: Reckoning,
+        leaf: ActiveRun,
+        evolution: Evolution,
+    ) -> None:
+        effect = reckoning.active_effect
+        if effect is not None:
+            if not isinstance(evolution, MachineStep) or evolution.mode == "pure":
+                raise RutterStateError(
+                    "active effect recovery does not match the MachineStep"
+                )
+            if (
+                effect.machine_id != _machine_id(leaf)
+                or effect.mode != evolution.mode
+            ):
+                raise RutterStateError(
+                    "active effect recovery does not match the MachineStep"
+                )
+            return
+        if not isinstance(evolution, MachineStep) or evolution.mode == "pure":
+            return
+        source = _source_record(leaf, leaf.entered_evolution)
+        if not isinstance(source, MachineRecord):
+            raise RutterStateError(
+                "effectful MachineStep has no recovery authority"
+            )
+        if (
+            source.machine_id != _machine_id(leaf)
+            or source.evolution_id != leaf.entered_evolution.evolution_id
+            or source.mode != evolution.mode
+        ):
+            raise RutterStateError(
+                "accepted effectful MachineRecord has invalid authority"
+            )
+
+    @staticmethod
+    def _validate_llm_authority(
+        run: ActiveRun,
+        step: LLMStep,
+        global_revision: int,
+        fault: KnownFault | OpaqueFault | None,
+        *,
+        is_leaf: bool,
+    ) -> None:
+        entered = run.entered_evolution
+        turns = tuple(
+            entry
+            for entry in run.history
+            if isinstance(entry, Turn)
+            and entry.evolution_entry_id == entered.entry_id
+            and entry.evolution_id == entered.evolution_id
+        )
+        if len(turns) != 1:
+            raise RutterStateError(
+                "active LLMStep requires exactly one matching current Turn"
+            )
+        turn = turns[0]
+        if (
+            (type(step.text) is str and turn.message.instructions["text"] != step.text)
+            or turn.message.instructions["answer"] != step.answer.outcomes
+        ):
+            raise RutterStateError(
+                "active LLMStep Turn differs from the bound definition"
+            )
+        child = run.active_child
+        if turn.response is None:
+            if is_leaf and turn.revision != global_revision:
+                raise RutterStateError(
+                    "active LLMStep Turn revision differs from Reckoning revision"
+                )
+            if child is not None:
+                raise RutterStateError(
+                    "active LLMStep with an open Turn cannot own an active child"
+                )
+            return
+        if turn.response.outcome not in step.answer.outcomes:
+            raise RutterStateError(
+                "active LLMStep Turn has an undeclared accepted outcome"
+            )
+        if child is None:
+            if fault is None or isinstance(fault, OpaqueFault):
+                return
+            if (
+                fault.run_id == run.run_id
+                and fault.evolution_id == entered.evolution_id
+                and fault.evolution_entry_id == entered.entry_id
+            ):
+                return
+            raise RutterStateError(
+                "accepted active LLMStep Turn has mismatched fault authority"
+            )
+        if (
+            child.kind != "attached_case"
+            or child.attached_to_transition_id != turn.record_id
+        ):
+            raise RutterStateError(
+                "accepted active LLMStep Turn requires its matching "
+                "attached child"
+            )
+
+    def _definition_identity(self, source: object) -> tuple[str, int]:
+        for definition in self._definitions.values():
+            if type(definition.definition) is source:
+                return definition.identity
+        raise RutterStateError(
+            "active child source is absent from the bound graph"
+        )
+
+    def help(self) -> str:
+        """Describe the public methods authorized for Compass operation."""
+
+        entries: list[str] = []
+        for name in self.compass_facing_methods:
+            if not isinstance(name, str) or not name:
+                raise RutterDefinitionError(
+                    "Compass-facing method names must be nonempty strings"
+                )
+            if name.startswith("_"):
+                raise RutterDefinitionError(
+                    f"Compass-facing method {name!r} must not be private"
+                )
+            if not hasattr(self, name):
+                raise RutterDefinitionError(
+                    f"Compass-facing method {name!r} is missing"
+                )
+            method = getattr(self, name)
+            if not callable(method):
+                raise RutterDefinitionError(
+                    f"Compass-facing method {name!r} must be callable"
+                )
+            documentation = getdoc(method)
+            if not documentation:
+                raise RutterDefinitionError(
+                    f"Compass-facing method {name!r} requires a docstring"
+                )
+            try:
+                bound_signature = signature(method)
+            except (TypeError, ValueError) as exc:
+                raise RutterDefinitionError(
+                    f"Compass-facing method {name!r} requires an inspectable signature"
+                ) from exc
+            entries.append(f"{name}{bound_signature}\n{documentation}")
+        return "\n\n".join(entries)
+
+    def get_status(self) -> VoyageStatus:
+        """Read one atomic status before deciding what the Voyage permits next.
+
+        Classify the result through ``current_evolution.condition``. For a ready
+        status whose ``instruction`` is a Message, perform
+        ``instructions["text"]`` using ``data["payload"]`` and satisfy
+        ``instructions["answer"]`` with ``{"revision":
+        data["evolution"]["revision"], "outcome": ..., "evidence": ...}``.
+        If the instruction is absent or is a MachineInstruction, ask ``next`` to
+        settle it instead of executing it directly. A terminal status reports
+        ``active_result`` and stops; fault reports ``fault`` and stops; uncertain
+        stops for manual reconciliation. Treat any unknown condition or malformed
+        instruction as a public-interface gap. Read a fresh status after every
+        successful advance.
+        """
+
+        with self._store.transaction() as reckoning:
+            self._reckoning = reckoning
+            leaf = deepest_active_leaf(reckoning)
+            definition = _leaf_definition(self, leaf)
+            evolution = definition.evolutions[
+                leaf.run.entered_evolution.evolution_id
+            ]
+            condition = _condition(reckoning, evolution, leaf=leaf)
+            current = _node_view(
+                reckoning,
+                leaf,
+                evolution,
+                condition=condition,
+            )
+            instruction = _instruction_for(
+                self,
+                reckoning,
+                leaf,
+                evolution,
+                condition,
+            )
+            active_result = None
+            if condition == "terminal":
+                terminal = HistoryView(
+                    leaf.run.history,
+                    reckoning.completed_runs,
+                ).terminal()
+                assert terminal is not None
+                active_result = terminal.result
+            fault = reckoning.fault
+            if isinstance(fault, KnownFault):
+                summary = FaultSummary(
+                    fault.category,
+                    fault.evolution_id,
+                    fault.evolution_entry_id,
+                    fault.target_evolution_id,
+                    fault.transition_hook_ids,
+                )
+            elif isinstance(fault, OpaqueFault):
+                summary = FaultSummary("opaque", None, None, None, ())
+            else:
+                summary = None
+            return VoyageStatus(
+                current,
+                instruction,
+                active_result,
+                summary,
+            )
+
+    def validate(self, response: object) -> ValidationReport:
+        """Validate a proposed Message response without changing the Voyage.
+
+        Before passing a response to ``next``, require a valid report. Repair an
+        invalid response only from its public issues and validate it again; stop
+        with a public-interface gap if those issues cannot guide a valid repair.
+        """
+
+        return _validate(self, response)
+
+    def next(
+        self,
+        response: object = MISSING,
+        *,
+        continue_: bool = True,
+        dry_run: bool = False,
+    ) -> EvolutionView:
+        """Advance once, optionally settling automatic and nested work.
+
+        Pass a Message response only after ``validate`` accepts that same value.
+        With no response, continuation settles ready non-LLM work. Continuation
+        returns only the final entered EvolutionView; durable history owns every
+        intermediate traversal. ``dry_run=True`` previews only the immediate
+        parent transition, performs no work, grants no authority, and is outside
+        the normal Compass loop. Read ``get_status`` after a real advance.
+        """
+
+        return _next(
+            self,
+            response,
+            continue_=continue_,
+            dry_run=dry_run,
+        )
+
+
+def _instruction_for(
+    voyage: Voyage,
+    reckoning: Reckoning,
+    leaf: ActiveLeaf,
+    evolution: Evolution,
+    condition: str,
+) -> Message | MachineInstruction | None:
+    if condition != "ready":
         return None
+    source = _source_record(leaf.run, leaf.run.entered_evolution)
+    if _is_recorded_source(evolution, source):
+        return None
+    if isinstance(evolution, LLMStep):
+        return _prompt_turn(reckoning, leaf.run).message
+    if isinstance(evolution, MachineStep) and evolution.mode == "pure":
+        return _pure_machine_instruction(reckoning, leaf.run, evolution)
+    if isinstance(evolution, MachineStep):
+        effect = _machine_effect(reckoning)
+        return _effectful_machine_instruction(
+            voyage,
+            effect.machine_id,
+            evolution.mode,
+        )
+    return None
 
 
-def _validate(voyage: _BoundVoyageLike, response: object) -> ValidationReport:
+def _validate(voyage: Voyage, response: object) -> ValidationReport:
     with voyage._store.transaction() as reckoning:
         voyage._reckoning = reckoning
-        leaf = _active_leaf(reckoning)
-        state = _leaf_definition(voyage, leaf).states[leaf.run.entered_node.state_id]
-        _validate_action_authority(reckoning, leaf, state)
-        condition = _condition(reckoning, state)
+        leaf = deepest_active_leaf(reckoning)
+        evolution = _leaf_definition(voyage, leaf).evolutions[leaf.run.entered_evolution.evolution_id]
+        condition = _condition(reckoning, evolution)
         if condition in {"fault", "uncertain"}:
             raise RunBlocked("the voyage is blocked")
-        source = _source_record(leaf.run, leaf.run.entered_node)
-        if _is_recorded_source(state, source):
+        source = _source_record(leaf.run, leaf.run.entered_evolution)
+        if _is_recorded_source(evolution, source):
             raise NotApplicable("an accepted node does not accept another response")
-        if isinstance(state, Action):
-            return _validate_action_result(response)
-        if not isinstance(state, Prompt):
+        if isinstance(evolution, MachineStep):
+            return _validate_machine_result(response)
+        if not isinstance(evolution, LLMStep):
             raise NotApplicable("the current node does not accept a response")
         try:
-            return _validate_prompt(reckoning, leaf.run, state, response)
-        except _EngineFault:
+            return _validate_prompt(reckoning, leaf.run, evolution, response)
+        except _RutterFault:
             return _invalid(
                 "contextual-validation-failed",
                 (),
-                "Prompt contextual validation failed",
+                "LLMStep contextual validation failed",
             )
 
 
 def _is_missing(value: object) -> bool:
-    return value is _MISSING
+    return value is MISSING
 
 
 def _publish(
-    voyage: _BoundVoyageLike,
+    voyage: Voyage,
     previous: Reckoning,
     replacement: Reckoning,
 ) -> Reckoning:
-    voyage._store.replace(previous, replacement)  # type: ignore[attr-defined]
+    voyage._store.replace(previous, replacement)
     voyage._reckoning = replacement
     return replacement
 
 
 def _fault_and_publish(
-    voyage: _BoundVoyageLike,
+    voyage: Voyage,
     previous: Reckoning,
     fault_base: Reckoning,
-    fault: _EngineFault,
-) -> NodeView:
+    fault: _RutterFault,
+) -> EvolutionView:
     anchored = replace(
         fault_base,
         global_revision=previous.global_revision,
     )
-    leaf = _active_leaf(anchored)
+    leaf = deepest_active_leaf(anchored)
     faulted = _fault_reckoning(
         anchored,
         leaf,
         fault.category,
-        target=fault.target,
-        case_maker_ids=fault.case_maker_ids,
+        target_evolution_id=fault.target_evolution_id,
+        transition_hook_ids=fault.transition_hook_ids,
     )
     _publish(voyage, previous, faulted)
-    state = _leaf_definition(voyage, leaf).states[leaf.run.entered_node.state_id]
-    return _node_view(faulted, leaf, state)
+    evolution = _leaf_definition(voyage, leaf).evolutions[leaf.run.entered_evolution.evolution_id]
+    return _node_view(faulted, leaf, evolution)
 
 
 def _advance_call(
-    voyage: _BoundVoyageLike,
+    voyage: Voyage,
     reckoning: Reckoning,
     leaf: ActiveLeaf,
-    definition: _BoundDefinitionLike,
-    state: Call,
+    definition: _BoundDefinition,
+    evolution: SubRutter,
 ) -> Reckoning:
-    record = _source_record(leaf.run, leaf.run.entered_node)
-    if isinstance(record, CallRecord):
-        return _continue_recorded_edge(
+    record = _source_record(leaf.run, leaf.run.entered_evolution)
+    if isinstance(record, SubRutterRecord):
+        return _continue_recorded_transition(
             voyage,
             reckoning,
             leaf,
             definition,
             record,
         )
-    child_definition = _call_child_definition(voyage, state)
+    child_definition = _call_child_definition(voyage, evolution)
     return _push_call(
         reckoning,
         leaf.run.run_id,
-        state,
+        evolution,
         child_definition,
     )
 
 
-def _call_edge(
+def _call_transition(
     reckoning: Reckoning,
     leaf: ActiveLeaf,
-    definition: _BoundDefinitionLike,
-    state: Call,
-) -> Edge | None:
-    record = _source_record(leaf.run, leaf.run.entered_node)
-    if not isinstance(record, CallRecord):
+    definition: _BoundDefinition,
+    evolution: SubRutter,
+) -> Transition | None:
+    record = _source_record(leaf.run, leaf.run.entered_evolution)
+    if not isinstance(record, SubRutterRecord):
         return None
-    edge, _ = _recorded_edge(reckoning, leaf, definition, record)
-    return edge
+    transition, _ = _recorded_transition(reckoning, leaf, definition, record)
+    return transition
 
 
-def _preview_action(
+def _preview_machine(
     reckoning: Reckoning,
     leaf: ActiveLeaf,
-    definition: _BoundDefinitionLike,
-    action: Action,
+    definition: _BoundDefinition,
+    action: MachineStep,
     response: object,
-) -> NodeView:
+) -> EvolutionView:
     if action.mode == "pure":
         if _is_missing(response):
-            raise PreviewUnavailable("Action result is not supplied")
-        action_id = _action_id(leaf.run)
+            raise PreviewUnavailable("MachineStep result is not supplied")
+        machine_id = _machine_id(leaf.run)
     else:
-        effect = _action_effect(reckoning, leaf, action)
-        if effect["disposition"] != "completed":
-            raise PreviewUnavailable("Action result is not yet available")
-        action_id = str(effect["action_id"])
-        authority = ActionResult.from_json(effect["result"])
+        effect = _machine_effect(reckoning)
+        if effect.disposition != "completed":
+            raise PreviewUnavailable("MachineStep result is not yet available")
+        machine_id = effect.machine_id
+        assert effect.result is not None
+        authority = effect.result
         if _is_missing(response):
             response = authority
-    report = _validate_action_result(response)
+    report = _validate_machine_result(response)
     if not report.valid:
-        raise RutterValidationError("Action result was rejected")
+        raise RutterValidationError("MachineStep result was rejected")
     result = (
         response
-        if isinstance(response, ActionResult)
-        else ActionResult.from_json(response)
+        if isinstance(response, MachineResult)
+        else MachineResult.from_json(response)
     )
     if action.mode != "pure" and result != authority:
         raise RutterValidationError(
-            "Action result does not match completed recovery"
+            "MachineStep result does not match completed recovery"
         )
-    record = ActionRecord(
-        f"preview-{action_id}",
-        action_id,
-        leaf.run.entered_node.entry_id,
-        leaf.run.entered_node.state_id,
+    record = MachineRecord(
+        f"preview-{machine_id}",
+        machine_id,
+        leaf.run.entered_evolution.entry_id,
+        leaf.run.entered_evolution.evolution_id,
         action.mode,
         result,
     )
     preview_run = replace(leaf.run, history=leaf.run.history + (record,))
     history = HistoryView(preview_run.history, reckoning.completed_runs)
     try:
-        edge = _select_edge(
+        transition = _select_transition(
             BoundRun(preview_run, definition),
             history.strict_prefix(record),
             record,
         )
-    except _EngineFault as fault:
-        raise RutterValidationError("Action routing failed") from fault
-    assert edge.target is not None
-    return NodeView(
+    except _RutterFault as fault:
+        raise RutterValidationError("MachineStep routing failed") from fault
+    assert transition.target is not None
+    return EvolutionView(
         leaf.run.rutter_id,
         leaf.run.definition_version,
-        edge.target,
+        transition.target,
         None,
         leaf.depth,
         "preview",
     )
 
 
-def _advance_action(
-    voyage: _BoundVoyageLike,
+def _advance_machine(
+    voyage: Voyage,
     reckoning: Reckoning,
     leaf: ActiveLeaf,
-    definition: _BoundDefinitionLike,
-    action: Action,
+    definition: _BoundDefinition,
+    action: MachineStep,
     response: object,
     *,
     dry_run: bool,
-) -> tuple[Reckoning, NodeView | None]:
+) -> tuple[Reckoning, EvolutionView | None]:
     if dry_run:
-        return reckoning, _preview_action(
+        return reckoning, _preview_machine(
             reckoning,
             leaf,
             definition,
@@ -1301,16 +1619,15 @@ def _advance_action(
         )
     omitted = _is_missing(response)
     if action.mode == "pure":
-        action_id = _action_id(leaf.run)
+        machine_id = _machine_id(leaf.run)
         if omitted:
             try:
-                response = _pure_action_instruction(
+                response = _pure_machine_instruction(
                     reckoning,
                     leaf.run,
                     action,
                 ).run()
-            except Exception:
-                fault = _EngineFault("action-execution")
+            except _RutterFault as fault:
                 view = _fault_and_publish(
                     voyage,
                     reckoning,
@@ -1318,8 +1635,8 @@ def _advance_action(
                     fault,
                 )
                 return voyage._reckoning, view
-            if not isinstance(response, ActionResult):
-                fault = _EngineFault("action-result")
+            if not isinstance(response, MachineResult):
+                fault = _RutterFault("action-result")
                 view = _fault_and_publish(
                     voyage,
                     reckoning,
@@ -1328,18 +1645,18 @@ def _advance_action(
                 )
                 return voyage._reckoning, view
     else:
-        effect = _action_effect(reckoning, leaf, action)
-        action_id = str(effect["action_id"])
+        effect = _machine_effect(reckoning)
+        machine_id = effect.machine_id
         if omitted:
             try:
-                reckoning, response = _run_effectful_action(
+                reckoning, response = _run_effectful_machine(
                     voyage,
                     reckoning,
                     leaf,
                     action,
                     effect,
                 )
-            except _EngineFault as fault:
+            except _RutterFault as fault:
                 current = voyage._reckoning
                 view = _fault_and_publish(
                     voyage,
@@ -1348,50 +1665,51 @@ def _advance_action(
                     fault,
                 )
                 return voyage._reckoning, view
-            effect = _action_effect(reckoning, leaf, action)
-        if effect["disposition"] != "completed":
-            raise RutterValidationError("completed Action recovery is required")
-    report = _validate_action_result(response)
+            effect = _machine_effect(reckoning)
+        if effect.disposition != "completed":
+            raise RutterValidationError("completed MachineStep recovery is required")
+    report = _validate_machine_result(response)
     if not report.valid:
-        raise RutterValidationError("Action result was rejected")
+        raise RutterValidationError("MachineStep result was rejected")
     normalized = (
         response
-        if isinstance(response, ActionResult)
-        else ActionResult.from_json(response)
+        if isinstance(response, MachineResult)
+        else MachineResult.from_json(response)
     )
     if action.mode != "pure":
-        authority = ActionResult.from_json(effect["result"])
+        assert effect.result is not None
+        authority = effect.result
         if normalized != authority:
             raise RutterValidationError(
-                "Action result does not match completed recovery"
+                "MachineStep result does not match completed recovery"
             )
         normalized = authority
-    accepted = _accept_action(reckoning, action, action_id, normalized)
-    accepted_leaf = _active_leaf(accepted)
-    record = _source_record(accepted_leaf.run, accepted_leaf.run.entered_node)
-    assert isinstance(record, ActionRecord)
+    accepted = _accept_machine(reckoning, action, machine_id, normalized)
+    accepted_leaf = deepest_active_leaf(accepted)
+    record = _source_record(accepted_leaf.run, accepted_leaf.run.entered_evolution)
+    assert isinstance(record, MachineRecord)
     history = HistoryView(accepted_leaf.run.history, accepted.completed_runs)
     try:
-        edge = _select_edge(
+        transition = _select_transition(
             BoundRun(accepted_leaf.run, definition),
             history.strict_prefix(record),
             record,
         )
-    except _EngineFault as fault:
+    except _RutterFault as fault:
         view = _fault_and_publish(voyage, reckoning, accepted, fault)
         return voyage._reckoning, view
-    assert edge.target is not None
+    assert transition.target is not None
     try:
-        entered = _continue_edge(
+        entered = _continue_transition(
             voyage,
             accepted,
             accepted_leaf,
             definition,
-            edge,
+            transition,
             history.strict_prefix(record),
             record,
         )
-    except _EngineFault as fault:
+    except _RutterFault as fault:
         view = _fault_and_publish(voyage, reckoning, accepted, fault)
         return voyage._reckoning, view
     _publish(voyage, reckoning, entered)
@@ -1399,208 +1717,206 @@ def _advance_action(
 
 
 def _next(
-    voyage: _BoundVoyageLike,
-    response: object = _MISSING,
+    voyage: Voyage,
+    response: object = MISSING,
     *,
     continue_: bool = True,
     dry_run: bool = False,
-) -> NodeView:
+) -> EvolutionView:
     with voyage._store.transaction() as reckoning:
         voyage._reckoning = reckoning
-        leaf = _active_leaf(reckoning)
+        leaf = deepest_active_leaf(reckoning)
         definition = _leaf_definition(voyage, leaf)
-        state = definition.states[leaf.run.entered_node.state_id]
-        _validate_action_authority(reckoning, leaf, state)
-        condition = _condition(reckoning, state)
+        evolution = definition.evolutions[leaf.run.entered_evolution.evolution_id]
+        condition = _condition(reckoning, evolution)
         if condition in {"fault", "uncertain"}:
             raise RunBlocked("the voyage is blocked")
         if condition == "terminal":
             if not _is_missing(response):
                 raise NotApplicable("a terminal voyage does not accept a response")
             if dry_run:
-                return _node_view(reckoning, leaf, state)
+                return _node_view(reckoning, leaf, evolution)
 
-        source = _source_record(leaf.run, leaf.run.entered_node)
-        recorded = _is_recorded_source(state, source)
+        source = _source_record(leaf.run, leaf.run.entered_evolution)
+        recorded = _is_recorded_source(evolution, source)
         if recorded:
             if not _is_missing(response):
                 raise NotApplicable("an accepted node does not accept another response")
             if dry_run:
                 assert source is not None
                 try:
-                    edge, _ = _recorded_edge(reckoning, leaf, definition, source)
-                except _EngineFault as fault:
+                    transition, _ = _recorded_transition(reckoning, leaf, definition, source)
+                except _RutterFault as fault:
                     raise RutterValidationError("routing failed") from fault
-                if edge.target is None:
-                    return _node_view(reckoning, leaf, state)
-                return NodeView(
+                if transition.target is None:
+                    return _node_view(reckoning, leaf, evolution)
+                return EvolutionView(
                     leaf.run.rutter_id,
                     leaf.run.definition_version,
-                    edge.target,
+                    transition.target,
                     None,
                     leaf.depth,
                     "preview",
                 )
-        elif isinstance(state, Prompt):
+        elif isinstance(evolution, LLMStep):
             if _is_missing(response):
-                raise RutterValidationError("Prompt response is required")
+                raise RutterValidationError("LLMStep response is required")
             try:
-                report = _validate_prompt(reckoning, leaf.run, state, response)
-            except _EngineFault as fault:
+                report = _validate_prompt(reckoning, leaf.run, evolution, response)
+            except _RutterFault as fault:
                 if dry_run:
-                    raise RutterValidationError("Prompt validation failed") from fault
+                    raise RutterValidationError("LLMStep validation failed") from fault
                 return _fault_and_publish(voyage, reckoning, reckoning, fault)
             if not report.valid:
-                raise RutterValidationError("Prompt response was rejected")
+                raise RutterValidationError("LLMStep response was rejected")
             normalized = Response.from_json(response)
             accepted = _accept_prompt(reckoning, normalized)
-            accepted_leaf = _active_leaf(accepted)
-            record = _source_record(accepted_leaf.run, accepted_leaf.run.entered_node)
+            accepted_leaf = deepest_active_leaf(accepted)
+            record = _source_record(accepted_leaf.run, accepted_leaf.run.entered_evolution)
             assert isinstance(record, Turn)
             history = HistoryView(
                 accepted_leaf.run.history,
                 accepted.completed_runs,
             )
             try:
-                edge = _select_edge(
+                transition = _select_transition(
                     BoundRun(accepted_leaf.run, definition),
                     history.strict_prefix(record),
                     record,
                 )
-            except _EngineFault as fault:
+            except _RutterFault as fault:
                 if dry_run:
-                    raise RutterValidationError("Prompt routing failed") from fault
+                    raise RutterValidationError("LLMStep routing failed") from fault
                 return _fault_and_publish(voyage, reckoning, accepted, fault)
-            assert edge.target is not None
+            assert transition.target is not None
             if dry_run:
-                return NodeView(
+                return EvolutionView(
                     accepted_leaf.run.rutter_id,
                     accepted_leaf.run.definition_version,
-                    edge.target,
+                    transition.target,
                     None,
                     accepted_leaf.depth,
                     "preview",
                 )
 
             try:
-                entered = _continue_edge(
+                entered = _continue_transition(
                     voyage,
                     accepted,
                     accepted_leaf,
                     definition,
-                    edge,
+                    transition,
                     history.strict_prefix(record),
                     record,
                 )
-            except _EngineFault as fault:
+            except _RutterFault as fault:
                 return _fault_and_publish(voyage, reckoning, accepted, fault)
             _publish(voyage, reckoning, entered)
             reckoning = entered
             if not continue_:
-                entered_leaf = _active_leaf(reckoning)
+                entered_leaf = deepest_active_leaf(reckoning)
                 entered_definition = _leaf_definition(voyage, entered_leaf)
-                entered_state = entered_definition.states[
-                    entered_leaf.run.entered_node.state_id
+                entered_state = entered_definition.evolutions[
+                    entered_leaf.run.entered_evolution.evolution_id
                 ]
                 return _node_view(reckoning, entered_leaf, entered_state)
-        elif isinstance(state, Call):
+        elif isinstance(evolution, SubRutter):
             if not _is_missing(response):
-                raise NotApplicable("Call does not accept a response")
-        elif isinstance(state, Action):
-            reckoning, stopped = _advance_action(
+                raise NotApplicable("SubRutter does not accept a response")
+        elif isinstance(evolution, MachineStep):
+            reckoning, stopped = _advance_machine(
                 voyage,
                 reckoning,
                 leaf,
                 definition,
-                state,
+                evolution,
                 response,
                 dry_run=dry_run,
             )
             if stopped is not None:
                 return stopped
             if not continue_:
-                entered_leaf = _active_leaf(reckoning)
+                entered_leaf = deepest_active_leaf(reckoning)
                 entered_definition = _leaf_definition(voyage, entered_leaf)
-                entered_state = entered_definition.states[
-                    entered_leaf.run.entered_node.state_id
+                entered_state = entered_definition.evolutions[
+                    entered_leaf.run.entered_evolution.evolution_id
                 ]
                 return _node_view(reckoning, entered_leaf, entered_state)
-        elif not isinstance(state, Done):
+        elif not isinstance(evolution, Terminal):
             raise NotApplicable("the current node does not accept a response")
         elif not _is_missing(response):
-            raise NotApplicable("Done does not accept a response")
+            raise NotApplicable("Terminal does not accept a response")
 
         for _ in range(_OPERATION_LIMIT):
-            leaf = _active_leaf(reckoning)
+            leaf = deepest_active_leaf(reckoning)
             definition = _leaf_definition(voyage, leaf)
-            state = definition.states[leaf.run.entered_node.state_id]
-            _validate_action_authority(reckoning, leaf, state)
-            source = _source_record(leaf.run, leaf.run.entered_node)
-            if _is_recorded_source(state, source):
+            evolution = definition.evolutions[leaf.run.entered_evolution.evolution_id]
+            source = _source_record(leaf.run, leaf.run.entered_evolution)
+            if _is_recorded_source(evolution, source):
                 assert source is not None
                 try:
-                    advanced = _continue_recorded_edge(
+                    advanced = _continue_recorded_transition(
                         voyage,
                         reckoning,
                         leaf,
                         definition,
                         source,
                     )
-                except _EngineFault as fault:
+                except _RutterFault as fault:
                     return _fault_and_publish(voyage, reckoning, reckoning, fault)
                 if advanced is not reckoning:
                     _publish(voyage, reckoning, advanced)
                     reckoning = advanced
                     if not continue_:
-                        advanced_leaf = _active_leaf(reckoning)
+                        advanced_leaf = deepest_active_leaf(reckoning)
                         advanced_state = _leaf_definition(
                             voyage, advanced_leaf
-                        ).states[advanced_leaf.run.entered_node.state_id]
+                        ).evolutions[advanced_leaf.run.entered_evolution.evolution_id]
                         return _node_view(reckoning, advanced_leaf, advanced_state)
                     continue
-                if not isinstance(state, Done):
-                    raise RutterStateError("recorded edge did not advance")
+                if not isinstance(evolution, Terminal):
+                    raise RutterStateError("recorded transition did not advance")
                 if leaf.depth == 0:
-                    return _node_view(reckoning, leaf, state)
-                returned = _return_call(reckoning, leaf.run.run_id)
+                    return _node_view(reckoning, leaf, evolution)
+                returned = return_active_child(reckoning, leaf.run.run_id)
                 _publish(voyage, reckoning, returned)
                 reckoning = returned
                 continue
-            if isinstance(state, Prompt):
-                return _node_view(reckoning, leaf, state)
-            if isinstance(state, Action):
-                reckoning, stopped = _advance_action(
+            if isinstance(evolution, LLMStep):
+                return _node_view(reckoning, leaf, evolution)
+            if isinstance(evolution, MachineStep):
+                reckoning, stopped = _advance_machine(
                     voyage,
                     reckoning,
                     leaf,
                     definition,
-                    state,
-                    _MISSING,
+                    evolution,
+                    MISSING,
                     dry_run=False,
                 )
                 if stopped is not None:
                     return stopped
                 if not continue_:
-                    advanced_leaf = _active_leaf(reckoning)
+                    advanced_leaf = deepest_active_leaf(reckoning)
                     advanced_definition = _leaf_definition(voyage, advanced_leaf)
-                    advanced_state = advanced_definition.states[
-                        advanced_leaf.run.entered_node.state_id
+                    advanced_state = advanced_definition.evolutions[
+                        advanced_leaf.run.entered_evolution.evolution_id
                     ]
                     return _node_view(reckoning, advanced_leaf, advanced_state)
                 continue
-            if isinstance(state, Call):
+            if isinstance(evolution, SubRutter):
                 if dry_run:
                     try:
-                        edge = _call_edge(reckoning, leaf, definition, state)
-                    except _EngineFault as fault:
-                        raise RutterValidationError("Call routing failed") from fault
-                    if edge is None:
-                        raise PreviewUnavailable("Call result is not yet available")
-                    assert edge.target is not None
-                    return NodeView(
+                        transition = _call_transition(reckoning, leaf, definition, evolution)
+                    except _RutterFault as fault:
+                        raise RutterValidationError("SubRutter routing failed") from fault
+                    if transition is None:
+                        raise PreviewUnavailable("SubRutter result is not yet available")
+                    assert transition.target is not None
+                    return EvolutionView(
                         leaf.run.rutter_id,
                         leaf.run.definition_version,
-                        edge.target,
+                        transition.target,
                         None,
                         leaf.depth,
                         "preview",
@@ -1611,61 +1927,56 @@ def _next(
                         reckoning,
                         leaf,
                         definition,
-                        state,
+                        evolution,
                     )
-                except _EngineFault as fault:
+                except _RutterFault as fault:
                     return _fault_and_publish(voyage, reckoning, reckoning, fault)
                 _publish(voyage, reckoning, advanced)
                 reckoning = advanced
                 if not continue_:
-                    advanced_leaf = _active_leaf(reckoning)
+                    advanced_leaf = deepest_active_leaf(reckoning)
                     advanced_state = _leaf_definition(
                         voyage, advanced_leaf
-                    ).states[advanced_leaf.run.entered_node.state_id]
+                    ).evolutions[advanced_leaf.run.entered_evolution.evolution_id]
                     return _node_view(reckoning, advanced_leaf, advanced_state)
                 continue
-            if not isinstance(state, Done):
-                return _node_view(reckoning, leaf, state)
+            if not isinstance(evolution, Terminal):
+                return _node_view(reckoning, leaf, evolution)
             try:
-                result = _project_done(reckoning, leaf.run, state)
-            except _EngineFault as fault:
+                result = _project_terminal(reckoning, leaf.run, evolution)
+            except _RutterFault as fault:
                 if dry_run:
-                    raise RutterValidationError("Done projection failed") from fault
+                    raise RutterValidationError("Terminal projection failed") from fault
                 return _fault_and_publish(voyage, reckoning, reckoning, fault)
             if dry_run:
-                return _node_view(reckoning, leaf, state, preview=True)
-            settled = _settle_done(reckoning, leaf.run.run_id, result)
+                return _node_view(reckoning, leaf, evolution, preview=True)
+            settled = _settle_terminal(reckoning, leaf.run.run_id, result)
             _publish(voyage, reckoning, settled)
             reckoning = settled
-            settled_leaf = _active_leaf(reckoning)
+            settled_leaf = deepest_active_leaf(reckoning)
             if not continue_:
-                return _node_view(reckoning, settled_leaf, state)
+                return _node_view(reckoning, settled_leaf, evolution)
             if settled_leaf.depth == 0:
                 source = _source_record(
-                    settled_leaf.run, settled_leaf.run.entered_node
+                    settled_leaf.run, settled_leaf.run.entered_evolution
                 )
-                assert isinstance(source, DoneRecord)
+                assert isinstance(source, TerminalRecord)
                 try:
-                    advanced = _continue_recorded_edge(
+                    advanced = _continue_recorded_transition(
                         voyage,
                         reckoning,
                         settled_leaf,
                         definition,
                         source,
                     )
-                except _EngineFault as fault:
+                except _RutterFault as fault:
                     return _fault_and_publish(voyage, reckoning, reckoning, fault)
                 if advanced is reckoning:
-                    return _node_view(reckoning, settled_leaf, state)
+                    return _node_view(reckoning, settled_leaf, evolution)
                 _publish(voyage, reckoning, advanced)
                 reckoning = advanced
         raise RutterStateError("automatic continuation limit exhausted")
 
 
-def _get_current_node(voyage: _BoundVoyageLike) -> NodeView:
-    with voyage._store.transaction() as reckoning:
-        voyage._reckoning = reckoning
-        leaf = _active_leaf(reckoning)
-        state = _leaf_definition(voyage, leaf).states[leaf.run.entered_node.state_id]
-        _validate_action_authority(reckoning, leaf, state)
-        return _node_view(reckoning, leaf, state)
+
+__all__ = ("MISSING", "Voyage")

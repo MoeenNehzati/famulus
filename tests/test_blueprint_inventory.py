@@ -770,58 +770,52 @@ def test_v6_inventory_registers_exact_rutter_module_and_source_files() -> None:
     by_id = {document.node_id: document for document in result.documents}
 
     module = by_id["rutter"]
-    diagnostic = by_id["rutter.source.diagnostic"]
-    hooks = by_id["rutter.source.hooks"]
-    model = by_id["rutter.source.model"]
-    engine = by_id["rutter.source.engine"]
-    storage = by_id["rutter.source.storage"]
-    runtime = by_id["rutter.source.runtime"]
+    source_names = (
+        "authoring",
+        "diagnostic",
+        "engine",
+        "evaluation",
+        "history",
+        "model",
+        "reducer",
+        "runtime",
+        "storage",
+        "values",
+    )
+    sources = {
+        name: by_id[f"rutter.source.{name}"]
+        for name in source_names
+    }
 
     assert module.relative_path.as_posix() == "src/officina/rutter/blueprint.yaml"
     assert module.declaration["content"] == [
         r"__init__\.py",
+        r"authoring\.py",
         r"diagnostic\.py",
         r"engine\.py",
-        r"hooks\.py",
+        r"evaluation\.py",
+        r"history\.py",
         r"model\.py",
+        r"reducer\.py",
         r"runtime\.py",
         r"storage\.py",
+        r"values\.py",
     ]
     assert set(module.declaration["sources"]) == {
-        "rutter.source.engine",
+        "rutter.source.authoring",
         "rutter.source.diagnostic",
-        "rutter.source.hooks",
+        "rutter.source.engine",
+        "rutter.source.evaluation",
+        "rutter.source.history",
         "rutter.source.model",
+        "rutter.source.reducer",
         "rutter.source.runtime",
         "rutter.source.storage",
+        "rutter.source.values",
     }
-    assert model.declaration["gateway"] == {
-        "path": "model.py",
-        "language": "Python",
-    }
-    assert model.declaration["content"] == [r"model\.py"]
-    assert hooks.declaration["gateway"] == {
-        "path": "hooks.py",
-        "language": "Python",
-    }
-    assert hooks.declaration["content"] == [r"hooks\.py"]
-    assert diagnostic.declaration["gateway"] == {
-        "path": "diagnostic.py",
-        "language": "Python",
-    }
-    assert diagnostic.declaration["content"] == [r"diagnostic\.py"]
-    assert engine.declaration["gateway"] == {
-        "path": "engine.py",
-        "language": "Python",
-    }
-    assert engine.declaration["content"] == [r"engine\.py"]
-    assert storage.declaration["gateway"] == {
-        "path": "storage.py",
-        "language": "Python",
-    }
-    assert storage.declaration["content"] == [r"storage\.py"]
-    assert runtime.declaration["gateway"] == {
-        "path": "runtime.py",
-        "language": "Python",
-    }
-    assert runtime.declaration["content"] == [r"runtime\.py"]
+    for name, source in sources.items():
+        assert source.declaration["gateway"] == {
+            "path": f"{name}.py",
+            "language": "Python",
+        }
+        assert source.declaration["content"] == [rf"{name}\.py"]
