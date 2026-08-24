@@ -231,7 +231,7 @@ def test_rejects_aliasing_case_or_unicode_target_names_when_the_platform_aliases
     source = repository / "packages" / source_name
     target = repository / "packages" / target_name
     if not target.exists():
-        # famulus-skip: category=platform; reason=filesystem keeps the candidate spellings distinct; alternate=the preceding existence probe runs on every platform
+        # famulus-skip: category=platform-contract; reason=filesystem keeps the candidate spellings distinct; alternate=the preceding existence probe runs on every platform
         pytest.skip("filesystem keeps the candidate spellings distinct")
 
     with pytest.raises(AddressResolutionError):

@@ -40,16 +40,10 @@ These interfaces are documented prompt surfaces. They are not executed through `
 
    Add scoped `python_modules` only when the Python import mapping cannot be
    proved from repository configuration and parsed imports.
-2. **Preflight mechanical closure before adjudication.** Invoke the private
-   route without `--apply`, with the report outside the selected repository:
-
-   ```console
-   dispatcher --caller-skill relocate-nodes \
-     relocate-nodes._rtx.interface.relocate \
-     --root /absolute/repository \
-     --manifest /tmp/relocation.yaml \
-     --report /tmp/relocation-report.json
-   ```
+2. **Preflight mechanical closure before adjudication.** Invoke the injected
+   relocation interface for a read-only preflight with the exact repository
+   root, schema-v3 manifest, and a report path outside the selected repository.
+   Leave apply disabled.
 
 3. Review every occurrence ID across every reported file type, including
    Python strings, Markdown, TeX, extensionless files, and persisted config.
@@ -68,9 +62,9 @@ These interfaces are documented prompt surfaces. They are not executed through `
 7. **Rerun preflight** with the reviewed manifest. Continue only when
    `unaccounted_semantic_occurrences` and all error categories are empty and
    every planned mechanical or decision write is intended.
-8. **Apply the reviewed manifest** by rerunning that command with `--apply`.
-   Publication uses atomic replacement per file, not a repository-wide
-   transaction or rollback.
+8. **Apply the reviewed manifest** through the same injected relocation
+   interface with apply enabled. Publication uses atomic replacement per file,
+   not a repository-wide transaction or rollback.
 9. Run the identical manifest as a **target-side postflight** without
    `--apply`. Require no planned writes or deletes, no unaccounted occurrences,
    and no error categories. Preserve decisions may remain in the raw occurrence

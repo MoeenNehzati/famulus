@@ -20,6 +20,8 @@ from typing import Any, Iterable, Literal, Mapping, Protocol
 import jsonschema
 import yaml
 
+from officina.common import toml_io
+
 
 _CACHE_PARTS = {
     ".git",
@@ -651,7 +653,11 @@ def _derive_identity_maps(root: Path, manifest: RelocationManifest) -> tuple[Der
         source_node = source.is_dir() and (source / "blueprint.yaml").is_file()
         target_node = target.is_dir() and (target / "blueprint.yaml").is_file()
         if not source_node and not target_node:
-            configuration_present = (root / "officina.toml").is_file()
+            try:
+                with toml_io.open(root, "officina.toml"):
+                    configuration_present = True
+            except FileNotFoundError:
+                configuration_present = False
             existing_relative = (
                 relocation.source if source.is_file() else relocation.target
             )
@@ -1381,17 +1387,17 @@ def _apply_byte_replacements(payload: bytes, replacements: Iterable[tuple[int, i
     return result
 
 
-def _dispatcher_replacements(
+def _interface_command_replacements(
     text: str,
     *,
     identities: tuple[Rename, ...],
     paths: tuple[Rename, ...],
 ) -> str:
-    """Rewrite only recognized dispatcher address arguments."""
+    """Rewrite only recognized injected-interface address arguments."""
 
     result_lines: list[str] = []
     for line in text.splitlines(keepends=True):
-        if "dispatcher" not in line:
+        if "--caller-skill" not in line:
             result_lines.append(line)
             continue
         updated = line
@@ -1449,7 +1455,7 @@ def _project_structural_code(
                 payload,
                 _python_import_replacements(text, python_renames),
             )
-        updated = _dispatcher_replacements(
+        updated = _interface_command_replacements(
             payload.decode("utf-8"),
             identities=identity_renames,
             paths=path_renames,

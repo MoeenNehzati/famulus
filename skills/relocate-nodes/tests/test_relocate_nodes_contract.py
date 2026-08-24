@@ -41,23 +41,23 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-def _calendar_repository(root: Path) -> dict[str, str]:
-    """Create an isolated registered calendar subtree and diverse callers."""
+def _synthetic_repository(root: Path) -> dict[str, str]:
+    """Create an isolated registered relocation fixture and diverse callers."""
 
     _write(
         root / "officina.toml",
         'schema_version = 1\n\n[modules]\nroots = ["skills", "src/officina"]\n',
     )
     _write(
-        root / "skills/g-calendar/blueprint.yaml",
+        root / "skills/relocate-source/blueprint.yaml",
         yaml.safe_dump(
             {
                 "schema_version": 6,
-                "id": "g-calendar",
+                "id": "relocate-source",
                 "node_type": "module",
                 "children": {"_rtx": {}},
                 "sources": {
-                    "g-calendar.source.gateway": {
+                    "relocate-source.source.gateway": {
                         "blueprint": {
                             "base": "module-root",
                             "path": "blueprints/gateway.yaml",
@@ -65,11 +65,11 @@ def _calendar_repository(root: Path) -> dict[str, str]:
                     }
                 },
                 "exports": {
-                    "g-calendar.interface.default": {
-                        "source_interface": "g-calendar.source.gateway.interface.default",
+                    "relocate-source.interface.default": {
+                        "source_interface": "relocate-source.source.gateway.interface.default",
                         "access": {
                             "allow_all_modules": False,
-                            "allowed_callers": ["calendar-caller"],
+                            "allowed_callers": ["relocate-consumer"],
                         },
                     }
                 },
@@ -78,16 +78,16 @@ def _calendar_repository(root: Path) -> dict[str, str]:
         ),
     )
     _write(
-        root / "skills/g-calendar/blueprints/gateway.yaml",
+        root / "skills/relocate-source/blueprints/gateway.yaml",
         yaml.safe_dump(
             {
                 "schema_version": 6,
-                "id": "g-calendar.source.gateway",
+                "id": "relocate-source.source.gateway",
                 "node_type": "behavioral_source",
                 "interfaces": {
-                    "g-calendar.source.gateway.interface.default": {
+                    "relocate-source.source.gateway.interface.default": {
                         "version": 1,
-                        "description": "Use the calendar.",
+                        "description": "Use the synthetic fixture.",
                     }
                 },
             },
@@ -95,55 +95,55 @@ def _calendar_repository(root: Path) -> dict[str, str]:
         ),
     )
     _write(
-        root / "skills/g-calendar/_rtx/blueprint.yaml",
+        root / "skills/relocate-source/_rtx/blueprint.yaml",
         yaml.safe_dump(
             {
                 "schema_version": 6,
-                "id": "g-calendar._rtx",
+                "id": "relocate-source._rtx",
                 "node_type": "module",
                 "children": {},
             },
             sort_keys=False,
         ),
     )
-    _write(root / "skills/g-calendar/_rtx/client.py", "VALUE = 1\n")
+    _write(root / "skills/relocate-source/_rtx/client.py", "VALUE = 1\n")
     _write(
-        root / "skills/calendar-caller/blueprint.yaml",
+        root / "skills/relocate-consumer/blueprint.yaml",
         yaml.safe_dump(
             {
                 "schema_version": 6,
-                "id": "calendar-caller",
+                "id": "relocate-consumer",
                 "node_type": "module",
                 "children": {},
-                "dependencies": ["g-calendar"],
+                "dependencies": ["relocate-source"],
             },
             sort_keys=False,
         ),
     )
     _write(
         root / "caller.py",
-        "from calendar_api.old import VALUE\n",
+        "from relocate_fixture.old import VALUE\n",
     )
     _write(
         root / "consumer.yaml",
-        "uses_interfaces:\n- interface: g-calendar.interface.default\n  version: 1\n",
+        "uses_interfaces:\n- interface: relocate-source.interface.default\n  version: 1\n",
     )
     _write(
-        root / "scripts/use-calendar.sh",
-        "dispatcher --caller-skill g-calendar g-calendar.interface.default\n",
+        root / "scripts/use-relocation.sh",
+        "dispatcher --caller-skill relocate-source relocate-source.interface.default\n",
     )
     nonstructural = {
         "literal.py": (
-            'PATH = Path("skills") / "g-calendar"\n'
-            'NAME = "g-calendar"\n'
+            'PATH = Path("skills") / "relocate-source"\n'
+            'NAME = "relocate-source"\n'
         ),
-        "notes.md": "Use g-calendar for appointments.\n",
-        "proof.tex": "\\texttt{g-calendar}\n",
-        ".config/g-calendar/config.json": '{"namespace":"g-calendar"}\n',
+        "notes.md": "Use relocate-source for fixtures.\n",
+        "proof.tex": "\\texttt{relocate-source}\n",
+        ".config/relocate-source/config.json": '{"namespace":"relocate-source"}\n',
     }
     for relative, text in nonstructural.items():
         _write(root / relative, text)
-    _write(root / "src/officina/calendar_support.py", "VALUE = 1\n")
+    _write(root / "src/officina/relocation_support.py", "VALUE = 1\n")
     return nonstructural
 
 
@@ -173,7 +173,7 @@ def _semantic_decision(
             "count": 1,
             "disposition": disposition,
             "text": context,
-            "reason": "Reviewed isolated calendar namespace policy.",
+            "reason": "Reviewed isolated synthetic namespace policy.",
         }
     )
     if disposition == "rewrite":
@@ -382,7 +382,7 @@ def test_adapter_gates_apply_but_not_preflight_on_unaccounted_occurrences(
 
 
 @pytest.mark.parametrize("preserve_config_namespace", (True, False))
-def test_calendar_relocation_end_to_end_isolated_from_source_checkout(
+def test_node_relocation_end_to_end_isolated_from_source_checkout(
     tmp_path: Path,
     preserve_config_namespace: bool,
     monkeypatch: pytest.MonkeyPatch,
@@ -396,6 +396,7 @@ def test_calendar_relocation_end_to_end_isolated_from_source_checkout(
         SKILL_ROOT / "SKILL.md",
     )
     source_bytes = {path: path.read_bytes() for path in tracked}
+    # famulus-raw-git: category=validator-isolation; reason=the isolated E2E snapshots source-worktree status to prove it stays unchanged
     source_status = subprocess.run(
         ["git", "status", "--short"],
         cwd=REPO_ROOT,
@@ -404,17 +405,17 @@ def test_calendar_relocation_end_to_end_isolated_from_source_checkout(
         text=True,
     ).stdout
     repository = tmp_path / "repository"
-    nonstructural = _calendar_repository(repository)
-    manifest_path = tmp_path / "calendar.yaml"
-    report_path = tmp_path / "calendar-report.json"
+    nonstructural = _synthetic_repository(repository)
+    manifest_path = tmp_path / "relocation.yaml"
+    report_path = tmp_path / "relocation-report.json"
     manifest: dict[str, object] = {
         "schema_version": 3,
         "relocations": [
             {
-                "from": "skills/g-calendar",
-                "to": "skills/online-calendar",
+                "from": "skills/relocate-source",
+                "to": "skills/relocate-target",
                 "python_modules": [
-                    {"from": "calendar_api.old", "to": "calendar_api.new"}
+                    {"from": "relocate_fixture.old", "to": "relocate_fixture.new"}
                 ],
             }
         ],
@@ -451,22 +452,22 @@ def test_calendar_relocation_end_to_end_isolated_from_source_checkout(
     assert (repository / "notes.md").read_text(encoding="utf-8") == nonstructural[
         "notes.md"
     ]
-    assert "skills/online-calendar/blueprint.yaml" in first["writes"]
+    assert "skills/relocate-target/blueprint.yaml" in first["writes"]
     engine = _load_runtime_module(
         f"{RUNTIME_PACKAGE}._relocation_engine", RTX_ROOT / "_relocation_engine.py"
     )
     changes = engine.plan_relocation(repository, engine.load_manifest(manifest_path))
     assert yaml.safe_load(
-        changes.read_text("skills/online-calendar/blueprint.yaml")
-    )["id"] == "online-calendar"
-    assert changes.read_text("caller.py") == "from calendar_api.new import VALUE\n"
+        changes.read_text("skills/relocate-target/blueprint.yaml")
+    )["id"] == "relocate-target"
+    assert changes.read_text("caller.py") == "from relocate_fixture.new import VALUE\n"
     assert yaml.safe_load(
-        changes.read_text("skills/calendar-caller/blueprint.yaml")
-    )["dependencies"] == ["online-calendar"]
-    assert "online-calendar.interface.default" in changes.read_text("consumer.yaml")
+        changes.read_text("skills/relocate-consumer/blueprint.yaml")
+    )["dependencies"] == ["relocate-target"]
+    assert "relocate-target.interface.default" in changes.read_text("consumer.yaml")
     assert (
-        changes.read_text("scripts/use-calendar.sh")
-        == "dispatcher --caller-skill online-calendar online-calendar.interface.default\n"
+        changes.read_text("scripts/use-relocation.sh")
+        == "dispatcher --caller-skill relocate-target relocate-target.interface.default\n"
     )
     for relative, text in nonstructural.items():
         assert changes.read_text(relative) == text
@@ -475,7 +476,7 @@ def test_calendar_relocation_end_to_end_isolated_from_source_checkout(
         "literal.py",
         "notes.md",
         "proof.tex",
-        ".config/g-calendar/config.json",
+        ".config/relocate-source/config.json",
     } <= occurrence_paths
 
     manifest["semantic_decisions"] = [
@@ -484,7 +485,7 @@ def test_calendar_relocation_end_to_end_isolated_from_source_checkout(
             disposition=(
                 "preserve"
                 if preserve_config_namespace
-                and occurrence["path"] == ".config/g-calendar/config.json"
+                and occurrence["path"] == ".config/relocate-source/config.json"
                 else "rewrite"
             ),
         )
@@ -504,23 +505,24 @@ def test_calendar_relocation_end_to_end_isolated_from_source_checkout(
     assert postflight["writes"] == []
     assert postflight["deletes"] == []
     assert postflight["unaccounted_semantic_occurrences"] == []
-    config = (repository / ".config/g-calendar/config.json").read_text(
+    config = (repository / ".config/relocate-source/config.json").read_text(
         encoding="utf-8"
     )
     if preserve_config_namespace:
-        assert config == nonstructural[".config/g-calendar/config.json"]
+        assert config == nonstructural[".config/relocate-source/config.json"]
         assert any(
-            item["path"] == ".config/g-calendar/config.json"
+            item["path"] == ".config/relocate-source/config.json"
             for item in postflight["semantic_occurrences"]
         )
     else:
-        assert config == '{"namespace":"online-calendar"}\n'
+        assert config == '{"namespace":"relocate-target"}\n'
         assert all(
-            item["match"] != "g-calendar"
+            item["match"] != "relocate-source"
             for item in postflight["semantic_occurrences"]
         )
 
     assert {path: path.read_bytes() for path in tracked} == source_bytes
+    # famulus-raw-git: category=validator-isolation; reason=the isolated E2E verifies source-worktree status stayed unchanged
     assert subprocess.run(
         ["git", "status", "--short"],
         cwd=REPO_ROOT,
