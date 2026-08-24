@@ -98,6 +98,57 @@ def test_recurring_module_owns_shared_job_schema_source() -> None:
     )
 
 
+def test_reference_schema_and_certification_policy_are_registered_nodes() -> None:
+    """Reference policy bundles remain hashable through ordinary graph nodes."""
+
+    repository = Path(__file__).resolve().parents[1]
+    graph = load_repository_blueprint_graph(repository, expected_schema_version=6)
+
+    expected_sources = {
+        "standards-schema": {
+            "standards-schema.source.standard-validator",
+            "standards-schema.source.standard-renderer",
+            "standards-schema.source.docstring-schema",
+        },
+        "certification-policy": {
+            "certification-policy.source.node-hash-policy",
+            "certification-policy.source.certification-basis",
+        },
+    }
+    for module_id, source_ids in expected_sources.items():
+        module = graph.nodes[module_id]
+        assert set(module.declaration["sources"]) == source_ids
+
+    expected_content = {
+        "standards-schema.source.standard-validator": {
+            "standard-v6.schema.json",
+            "validate_standard_v6.py",
+        },
+        "standards-schema.source.standard-renderer": {
+            "render_standard_v6.py",
+        },
+        "standards-schema.source.docstring-schema": {
+            "docstring.standard.lark",
+            "docstring.standard.yaml",
+            "docstring_format.schema.json",
+            "docstring_format.yaml",
+        },
+        "certification-policy.source.node-hash-policy": {
+            "node-hash-policy.schema.json",
+            "node-hash-policy.yaml",
+        },
+        "certification-policy.source.certification-basis": {
+            "certification-basis-roots.json",
+        },
+    }
+    for source_id, relative_paths in expected_content.items():
+        source = graph.nodes[source_id]
+        assert {
+            path.relative_to(source.module_root).as_posix()
+            for path in resolved_node_content_paths(source, repository)
+        } == relative_paths
+
+
 def _write_yaml(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")

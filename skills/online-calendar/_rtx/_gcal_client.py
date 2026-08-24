@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal Google Calendar CLI for the g-calendar skill.
+"""Minimal Google Calendar CLI for the online-calendar skill.
 
 This stdlib-only runtime replaces the previous shell implementation, whose
 curl/jq/date dependencies were not guaranteed present on every platform. It
@@ -22,7 +22,7 @@ from typing import Any
 
 from officina.runtime.python_machine_interface import PythonMachineInterface
 
-CONFIG_DIR_NAME = "g-calendar"
+CONFIG_DIR_NAME = "online-calendar"
 API_BASE = "https://www.googleapis.com/calendar/v3"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 MAX_CALENDAR_WORKERS = 8

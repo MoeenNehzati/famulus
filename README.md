@@ -226,7 +226,7 @@ Connect Famulus to Google.
 
 Famulus recommends Drive, Calendar, and Gmail, while letting you connect only
 the subset you want. `connect-google` guides you through creating a Google
-Cloud project and Desktop OAuth client, then cloud-files, g-calendar, and
+Cloud project and Desktop OAuth client, then cloud-files, online-calendar, and
 email-client perform and own their respective authorizations. Never commit the
 client JSON to GitHub. Each service keeps its resulting user tokens in its own
 local credential storage.

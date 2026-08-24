@@ -1,5 +1,5 @@
 ---
-name: g-calendar
+name: online-calendar
 description: >-
   Use when the user asks to view or change their Google Calendar. Do not use for daily planning.
 ---
@@ -13,18 +13,18 @@ Activation: user-request, skill-workflow; persistent modifier: no
 Skill Version: 2
 
 Uses Interfaces:
-- `g-calendar.source.gateway -> connect-google.interface.default@1`
-- `g-calendar.source.gateway -> g-calendar._rtx.interface.scripts-gcal@1`
+- `online-calendar.source.gateway -> connect-google.interface.default@1`
+- `online-calendar.source.gateway -> online-calendar._rtx.interface.scripts-gcal@1`
 
 Setup Requires Setup Of:
 - `connect-google.interface.setup@1`
 Setup Order:
 1. `connect-google.interface.setup`
-2. `g-calendar.interface.setup`
+2. `online-calendar.interface.setup`
 
 Public Interfaces:
-- `g-calendar.interface.default`
-- `g-calendar.interface.setup`
+- `online-calendar.interface.default`
+- `online-calendar.interface.setup`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -32,12 +32,12 @@ Public Interfaces:
 Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `g-calendar.interface.default` — Primary LLM-facing skill instructions.
-- `g-calendar.interface.setup` — Primary LLM-facing skill instructions.
+- `online-calendar.interface.default` — Primary LLM-facing skill instructions.
+- `online-calendar.interface.setup` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->
 # Google Calendar
 
-Use `g-calendar._rtx.interface.scripts-gcal` for calendar reads and writes. Invoke one
+Use `online-calendar._rtx.interface.scripts-gcal` for calendar reads and writes. Invoke one
 interface call per operation, minimize network round trips, and issue independent calls
 in parallel. Use the public process contract for complete subcommand and option shapes;
 do not improvise invocation forms. Prefer the `--all-calendars` mode for schedule-wide
@@ -66,7 +66,7 @@ interface for repeated use.
 
 ## Verify writes
 
-Through `g-calendar._rtx.interface.scripts-gcal`, verify every create and delete and every
+Through `online-calendar._rtx.interface.scripts-gcal`, verify every create and delete and every
 nontrivial update. The only exception is a metadata-only update limited to summary,
 description, or location.
 

@@ -11,7 +11,7 @@ REPO_SRC = Path(__file__).resolve().parents[4] / "src"
 if str(REPO_SRC) not in sys.path:
     sys.path.insert(0, str(REPO_SRC))
 
-# cloud-files and g-calendar each have their own _rtx/_ensure_oauth.py.
+# cloud-files and online-calendar each have their own _rtx/_ensure_oauth.py.
 # A bare `import ensure_oauth` after sys.path.insert would collide: whichever
 # test module imports it first wins the sys.modules["ensure_oauth"] cache
 # slot, silently reusing the wrong skill's file for the other's tests. Load

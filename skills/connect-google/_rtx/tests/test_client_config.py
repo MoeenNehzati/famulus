@@ -256,7 +256,7 @@ def test_client_status_discovers_valid_legacy_service_clients_without_copying(
 ) -> None:
     home = tmp_path / "home"
     drive = home / ".config" / "cloud-files" / "client.json"
-    calendar = home / ".config" / "g-calendar" / "client.json"
+    calendar = home / ".config" / "online-calendar" / "client.json"
     drive.parent.mkdir(parents=True)
     calendar.parent.mkdir(parents=True)
     write_json(drive, desktop_client("shared"))
@@ -266,7 +266,7 @@ def test_client_status_discovers_valid_legacy_service_clients_without_copying(
 
     assert result["legacy_candidates"] == [
         {"service": "cloud-files", "path": str(drive)},
-        {"service": "g-calendar", "path": str(calendar)},
+        {"service": "online-calendar", "path": str(calendar)},
     ]
     assert result["legacy_candidates_match"] is True
     assert not canonical(home).exists()
@@ -278,7 +278,7 @@ def test_client_status_reports_conflicting_legacy_clients_and_ignores_invalid(
 ) -> None:
     home = tmp_path / "home"
     drive = home / ".config" / "cloud-files" / "client.json"
-    calendar = home / ".config" / "g-calendar" / "client.json"
+    calendar = home / ".config" / "online-calendar" / "client.json"
     drive.parent.mkdir(parents=True)
     calendar.parent.mkdir(parents=True)
     write_json(drive, desktop_client("drive"))

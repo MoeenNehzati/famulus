@@ -1,6 +1,6 @@
 """Canonical Google client discovery, secret-store client-secret storage,
 and per-account credential registry shared across connect-google's service
-consumers (cloud-files, g-calendar, email-client).
+consumers (cloud-files, online-calendar, email-client).
 
 The installed Google Desktop OAuth client JSON keeps the shape Google's
 Cloud Console actually exports (a top-level ``installed`` object). This

@@ -132,7 +132,7 @@ Famulus — the skill library that happens to be built on Officina.
 
 One distinction matters when reading this list. Many Famulus skills import
 `officina` in order to reach the dispatcher or the runtime. **That makes them
-consumers of the framework, not parts of it.** `email-client`, `g-calendar`,
+consumers of the framework, not parts of it.** `email-client`, `online-calendar`,
 and `daily-plan` all import `officina`; none of them is Officina. Membership
 follows from what a component is *for*, not from what it depends on — the same
 reasoning principle 4.1 applies to authority, which is likewise not inherited
@@ -185,11 +185,11 @@ provide: policy that a host applies to whatever roster it is given.
   `behavioral-source`, then into instruction- and Python-specific variants,
   plus the refactoring standard, authority disposition, and semantic-review
   criteria
-- [`standards/`](../../references/standards-schema/) — the standard-v6 schema, its
+- [`standards-schema/`](../../references/standards-schema/) — the standard-v6 schema, its
   validator and renderer, and the docstring standard and grammar
 - [`skill-standards/`](../../references/skill-standards/) — skill-authoring
   guidelines
-- [`certification/`](../../references/certification/) — node-hash policy and
+- [`certification-policy/`](../../references/certification-policy/) — node-hash policy and
   the certification-basis roots
 - [`runtime/`](../../references/runtime/) — the core requirement set and the
   hash-locked resolution of it that every managed runtime is built from

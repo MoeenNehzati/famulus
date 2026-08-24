@@ -339,7 +339,7 @@ The fixed resolver injects the validated `--runtime-root ROOT` after resolving
 - Create: `tests/test_install_context_consumers.py`
 - Modify focused tests under:
   - `skills/cloud-files/_rtx/tests/`
-  - `skills/g-calendar/_rtx/tests/`
+  - `skills/online-calendar/_rtx/tests/`
   - `skills/email-client/_rtx/tests/`
   - `skills/email-triage/_rtx/tests/`
   - `skills/list-manager/_rtx/tests/`
@@ -362,7 +362,7 @@ The fixed resolver injects the validated `--runtime-root ROOT` after resolving
   standard, deliberately development-isolated, process-local override, or a
   leak. Keep the inventory in named parametrized test cases, not a new runtime
   registry.
-- [ ] Run connect-google, cloud-files, g-calendar, email-client, email-triage,
+- [ ] Run connect-google, cloud-files, online-calendar, email-client, email-triage,
   and list-manager path probes under both contexts. Place stable canary files in
   each host path and prove development neither reads nor writes them. Verify
   service-owned binding configuration as well as shared Google descriptors.

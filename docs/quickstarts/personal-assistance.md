@@ -24,7 +24,7 @@ connecting an account or scheduling a job.
 | Plan the day or review today's plan | `daily-plan` |
 | Process the whole inbox for possible actions | `email-triage` |
 | Read, reply to, send, or otherwise manage specific email | `email-client` |
-| View or change calendar events without making a daily plan | `g-calendar` |
+| View or change calendar events without making a daily plan | `online-calendar` |
 | Check weather without making a daily plan | `get-weather` |
 | Schedule daily planning, inbox triage, or another assistant job | [`recurring-tasks`](automation.md) |
 | Preserve decisions and lessons from a substantial work session | `prepare-handoff` |

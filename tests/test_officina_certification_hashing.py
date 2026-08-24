@@ -231,7 +231,7 @@ def test_v5_check_registry_and_canonical_basis_are_selected() -> None:
         )
     }
     assert Path(
-        "references/certification/certification-basis-roots.json"
+        "references/certification-policy/certification-basis-roots.json"
     ) in basis
     assert Path("src/officina/blueprints/authorization.py") in basis
     validator_paths = {

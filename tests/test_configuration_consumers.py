@@ -35,7 +35,7 @@ def _load_module(name: str, path: Path):
     [
         "src/officina/docstring/config.yaml",
         "references/blueprint-schema/config.yaml",
-        "references/certification/node-hash-policy.yaml",
+        "references/certification-policy/node-hash-policy.yaml",
         "src/officina/recurring/default_jobs.yaml",
     ],
 )

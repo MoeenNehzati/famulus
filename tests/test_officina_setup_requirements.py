@@ -68,8 +68,8 @@ def test_repository_setup_order_is_explicit_and_dependency_first() -> None:
     assert setup_order(graph, "cloud-files.interface.setup") == expected + (
         "cloud-files.interface.setup",
     )
-    assert setup_order(graph, "g-calendar.interface.setup") == expected + (
-        "g-calendar.interface.setup",
+    assert setup_order(graph, "online-calendar.interface.setup") == expected + (
+        "online-calendar.interface.setup",
     )
     assert setup_order(graph, "list-manager.interface.setup") == expected + (
         "list-manager.interface.setup",
@@ -203,7 +203,7 @@ def test_setup_exports_alias_existing_default_behavior() -> None:
         "install-assistant-tools",
         "connect-google",
         "cloud-files",
-        "g-calendar",
+        "online-calendar",
         "list-manager",
     ):
         assert (

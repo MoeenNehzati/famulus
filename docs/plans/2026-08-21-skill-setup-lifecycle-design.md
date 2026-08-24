@@ -52,7 +52,7 @@ deduplicated, dependency-first `Setup Order`.
 
 - `install-assistant-tools.interface.setup` has no prerequisite.
 - `connect-google.interface.setup` has no prerequisite.
-- `cloud-files.interface.setup`, `g-calendar.interface.setup`, and
+- `cloud-files.interface.setup`, `online-calendar.interface.setup`, and
   `list-manager.interface.setup` require `connect-google.interface.setup`.
 
 For this initial refactor, each setup export aliases that skill's existing

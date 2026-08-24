@@ -20,23 +20,23 @@ discovery:
   - skill-workflow
   persistent_modifier: false
 exports:
-  g-calendar.interface.default:
+  online-calendar.interface.default:
     access:
       allow_all_modules: true
       allowed_callers: []
-    source_interface: g-calendar.source.gateway.interface.default
-  g-calendar.interface.setup:
+    source_interface: online-calendar.source.gateway.interface.default
+  online-calendar.interface.setup:
     access:
       allow_all_modules: true
       allowed_callers: []
-    source_interface: g-calendar.source.gateway.interface.default
+    source_interface: online-calendar.source.gateway.interface.default
     setup_requires_setup_of:
     - interface: connect-google.interface.setup
       version: 1
 gateway:
   language: Markdown
   path: SKILL.md
-id: g-calendar
+id: online-calendar
 namespace_exports:
   _rtx:
     version: 1
@@ -45,27 +45,27 @@ namespace_exports:
       allowed_callers: []
     surface:
       only:
-        g-calendar._rtx.interface.ensure-oauth: 1
-        g-calendar._rtx.interface.scripts-gcal: 1
-        g-calendar._rtx.interface.setup-oauth: 1
-        g-calendar._rtx.interface.use-google-credential: 1
-        g-calendar._rtx.interface.use-google-credential-file: 1
+        online-calendar._rtx.interface.ensure-oauth: 1
+        online-calendar._rtx.interface.scripts-gcal: 1
+        online-calendar._rtx.interface.setup-oauth: 1
+        online-calendar._rtx.interface.use-google-credential: 1
+        online-calendar._rtx.interface.use-google-credential-file: 1
     interface_access:
-      g-calendar._rtx.interface.ensure-oauth:
+      online-calendar._rtx.interface.ensure-oauth:
         allow_all_modules: false
         allowed_callers: []
-      g-calendar._rtx.interface.scripts-gcal:
+      online-calendar._rtx.interface.scripts-gcal:
         allow_all_modules: false
         allowed_callers:
         - daily-plan
         - daily-plan._rtx
-      g-calendar._rtx.interface.setup-oauth:
+      online-calendar._rtx.interface.setup-oauth:
         allow_all_modules: false
         allowed_callers: []
-      g-calendar._rtx.interface.use-google-credential:
+      online-calendar._rtx.interface.use-google-credential:
         allow_all_modules: false
         allowed_callers: []
-      g-calendar._rtx.interface.use-google-credential-file:
+      online-calendar._rtx.interface.use-google-credential-file:
         allow_all_modules: false
         allowed_callers:
         - connect-google
@@ -73,7 +73,7 @@ namespace_exports:
 node_type: module
 schema_version: 6
 sources:
-  g-calendar.source.gateway:
+  online-calendar.source.gateway:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml

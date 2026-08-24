@@ -120,7 +120,7 @@ def _closure_fixture(
     """Build the smallest projected tree that exercises mechanical closure."""
 
     _write(
-        tmp_path / "references/certification/certification-basis-roots.json",
+        tmp_path / "references/certification-policy/certification-basis-roots.json",
         json.dumps(["src/officina/__init__.py"], indent=2) + "\n",
     )
     _write(tmp_path / "src/officina/__init__.py", officina_content)
@@ -348,11 +348,11 @@ def test_readme_only_officina_catalog_initializers_join_certification_basis(
     result = close_projected_relocation(changes, manifest)
 
     basis = json.loads(
-        changes.read_text("references/certification/certification-basis-roots.json")
+        changes.read_text("references/certification-policy/certification-basis-roots.json")
     )
     assert basis == ["src/officina/__init__.py", "src/officina/catalog/__init__.py"]
     assert result.certification_basis_changes == (
-        "references/certification/certification-basis-roots.json",
+        "references/certification-policy/certification-basis-roots.json",
     )
 
 
@@ -551,7 +551,7 @@ def test_partial_canonical_marker_requires_the_missing_closure_input(
 
     with pytest.raises(
         MechanicalClosureError,
-        match=r"missing closure input: references/certification/certification-basis-roots\.json",
+        match=r"missing closure input: references/certification-policy/certification-basis-roots\.json",
     ):
         close_projected_relocation(changes, RelocationManifest())
 
@@ -654,7 +654,7 @@ def test_plan_absorbs_calculated_closure_categories_into_its_report(
 
     _write(tmp_path / "plain.py", "VALUE = 1\n")
     result = MechanicalClosureResult(
-        certification_basis_changes=("references/certification/certification-basis-roots.json",),
+        certification_basis_changes=("references/certification-policy/certification-basis-roots.json",),
         generated_artifact_changes=("references/blueprint-schema/runtime_dependencies.json",),
         validation_results=("repository blueprint graph",),
     )
@@ -667,7 +667,7 @@ def test_plan_absorbs_calculated_closure_categories_into_its_report(
     report = plan_relocation(tmp_path, RelocationManifest()).report()
 
     assert report["certification_basis_changes"] == [
-        "references/certification/certification-basis-roots.json"
+        "references/certification-policy/certification-basis-roots.json"
     ]
     assert report["generated_artifact_changes"] == [
         "references/blueprint-schema/runtime_dependencies.json"
@@ -924,7 +924,7 @@ def _write_extractor_acceptance_fixture(tmp_path: Path) -> dict[str, bytes]:
     )
     _write(tmp_path / "unrelated-dirty.md", "do not relocate\n")
     _write(
-        tmp_path / "references/certification/certification-basis-roots.json",
+        tmp_path / "references/certification-policy/certification-basis-roots.json",
         json.dumps(["src/officina/__init__.py"], indent=2) + "\n",
     )
     _write(
@@ -939,7 +939,7 @@ def _write_extractor_acceptance_fixture(tmp_path: Path) -> dict[str, bytes]:
             "src/officina/common/blueprint.yaml",
             "consumer.py",
             "unrelated-dirty.md",
-            "references/certification/certification-basis-roots.json",
+            "references/certification-policy/certification-basis-roots.json",
             "references/blueprint-schema/runtime_dependencies.json",
         )
     }
@@ -994,14 +994,14 @@ def test_one_preflight_closes_real_extractor_relocation_and_is_idempotent(
     assert "common.source.standard-extractor" not in json.dumps(standards)
     assert "standard_extractor.py" not in json.dumps(extractor)
     assert json.loads(
-        changes.read_text("references/certification/certification-basis-roots.json")
+        changes.read_text("references/certification-policy/certification-basis-roots.json")
     ) == ["src/officina/__init__.py", "src/officina/standards/__init__.py"]
     runtime_dependencies = json.loads(
         changes.read_text("references/blueprint-schema/runtime_dependencies.json")
     )
     assert json.dumps(runtime_dependencies, indent=2) + "\n" == _empty_runtime_dependencies()
     assert changes.report()["certification_basis_changes"] == [
-        "references/certification/certification-basis-roots.json"
+        "references/certification-policy/certification-basis-roots.json"
     ]
     assert changes.report()["generated_artifact_changes"] == [
         "references/blueprint-schema/runtime_dependencies.json"

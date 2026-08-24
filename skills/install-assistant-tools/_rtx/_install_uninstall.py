@@ -30,7 +30,7 @@ failure, and prints a final report of what was removed, skipped, left
 behind, or FAILED (with the reason). Exits non-zero if anything failed.
 
 Never removed, with or without --purge: OAuth credentials and service
-configs under ~/.config/cloud-files and ~/.config/g-calendar. Their
+configs under ~/.config/cloud-files and ~/.config/online-calendar. Their
 manifest entries are never settled either, so the manifest itself always
 survives and every run reports it as holding unresolved entries.
 

@@ -321,7 +321,7 @@ def test_real_blueprint_refresh_preserves_loaded_values() -> None:
     schema = load_schema(Path("references/blueprint-schema/schema.annotated-draft.json"))
     for path in [
         Path("skills/list-manager/blueprint.yaml"),
-        Path("skills/g-calendar/blueprint.yaml"),
+        Path("skills/online-calendar/blueprint.yaml"),
         Path("skills/email-triage/blueprint.yaml"),
     ]:
         original = path.read_text(encoding="utf-8")

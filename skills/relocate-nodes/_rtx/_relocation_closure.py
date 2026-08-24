@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from ._relocation_engine import BlueprintSynchronizer, ChangeSet, RelocationManifest
 
 
-_BASIS_PATH = "references/certification/certification-basis-roots.json"
+_BASIS_PATH = "references/certification-policy/certification-basis-roots.json"
 _SCHEMA_PREFIX = "references/blueprint-schema/"
 _MODULE_SCHEMA_PATH = "references/blueprint-schema/module.schema.json"
 _SHADOW_EXCLUDED_PARTS = {

@@ -5,16 +5,16 @@ dependencies:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: g-calendar._rtx.source.rtx-init
+  source: online-calendar._rtx.source.rtx-init
   version: 1
 description: Runs the installed-app OAuth browser flow and writes regenerated Google
   Calendar credentials to the canonical private file.
 gateway:
   language: Python
   path: _oauth_bootstrap.py
-id: g-calendar._rtx.source.rtx-oauth-bootstrap
+id: online-calendar._rtx.source.rtx-oauth-bootstrap
 interfaces:
-  g-calendar._rtx.source.rtx-oauth-bootstrap.interface.setup-oauth:
+  online-calendar._rtx.source.rtx-oauth-bootstrap.interface.setup-oauth:
     content:
     - _oauth_bootstrap\.py
     uses_interfaces:
@@ -40,7 +40,7 @@ interfaces:
             sensitivity: secret
         from-json:
           description: Optional OAuth client JSON path; defaults to the canonical
-            g-calendar client file.
+            online-calendar client file.
           direct_io_ref: read-2
           required: false
           sensitivity: secret
@@ -112,7 +112,7 @@ interfaces:
           - json
           id: read-1
           medium: local-filesystem
-          path: $home/.config/g-calendar/client.json
+          path: $home/.config/online-calendar/client.json
           path_match: exact
           sensitivity: secret
           system: filesystem
@@ -136,7 +136,7 @@ interfaces:
           - json
           id: write-1
           medium: local-filesystem
-          path: $home/.config/g-calendar/credentials.json
+          path: $home/.config/online-calendar/credentials.json
           path_match: exact
           sensitivity: secret
           system: filesystem

@@ -5,7 +5,7 @@ dependencies:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: g-calendar._rtx.source.rtx-init
+  source: online-calendar._rtx.source.rtx-init
   version: 1
 description: Implements the agenda, search, list, create, update, and delete operations
   of the Google Calendar command interface. A present credential_file is authoritative
@@ -15,9 +15,9 @@ description: Implements the agenda, search, list, create, update, and delete ope
 gateway:
   language: Python
   path: _gcal_client.py
-id: g-calendar._rtx.source.rtx-gcal-client
+id: online-calendar._rtx.source.rtx-gcal-client
 interfaces:
-  g-calendar._rtx.source.rtx-gcal-client.interface.scripts-gcal:
+  online-calendar._rtx.source.rtx-gcal-client.interface.scripts-gcal:
     content:
     - _gcal_client\.py
     uses_interfaces:
@@ -111,7 +111,7 @@ interfaces:
           - json
           id: read-2
           medium: local-filesystem
-          path: $home/.config/g-calendar/credentials.json
+          path: $home/.config/online-calendar/credentials.json
           path_match: exact
           sensitivity: secret
           system: filesystem
@@ -121,7 +121,7 @@ interfaces:
           - json
           id: read-3
           medium: local-filesystem
-          path: $home/.config/g-calendar/config.json
+          path: $home/.config/online-calendar/config.json
           path_match: exact
           sensitivity: user-private
           system: filesystem

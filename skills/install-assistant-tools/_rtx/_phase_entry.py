@@ -10,7 +10,7 @@ repo root implied by wherever this script itself is running from (the
 plugin-cache checkout), which is a reasonable default there because there is
 no separate "live checkout" concept to get wrong in plugin mode.
 
-Does NOT handle connecting remotes (cloud-files/g-calendar/email-client) or
+Does NOT handle connecting remotes (cloud-files/online-calendar/email-client) or
 recurring-tasks automation — see SKILL.md for that conversational Phase 2,
 which happens after this script exits successfully.
 

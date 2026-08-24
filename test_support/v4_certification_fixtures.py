@@ -40,7 +40,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_SCHEMA_ROOT = (
     PROJECT_ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v4"
 )
-SOURCE_CERTIFICATION_ROOT = PROJECT_ROOT / "references" / "certification"
+SOURCE_CERTIFICATION_ROOT = PROJECT_ROOT / "references" / "certification-policy"
 CHECKS = expected_certifier_checks(expected_schema_version=4)
 
 
@@ -394,6 +394,16 @@ def materialize_v4_repository(
     shutil.copy2(
         SOURCE_CERTIFICATION_ROOT / "node-hash-policy.schema.json",
         certification_root / "node-hash-policy.schema.json",
+    )
+    current_policy_root = root / "references" / "certification-policy"
+    current_policy_root.mkdir(parents=True)
+    shutil.copy2(
+        SOURCE_CERTIFICATION_ROOT / "node-hash-policy.yaml",
+        current_policy_root / "node-hash-policy.yaml",
+    )
+    shutil.copy2(
+        SOURCE_CERTIFICATION_ROOT / "node-hash-policy.schema.json",
+        current_policy_root / "node-hash-policy.schema.json",
     )
     _write_module(
         root,

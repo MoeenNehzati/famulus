@@ -36,11 +36,11 @@ def service_modules():
         ),
         calendar_bind=_load_module(
             "google_file_e2e_calendar_bind",
-            SKILLS_ROOT / "g-calendar" / "_rtx" / "_ensure_oauth.py",
+            SKILLS_ROOT / "online-calendar" / "_rtx" / "_ensure_oauth.py",
         ),
         calendar_runtime=_load_module(
             "google_file_e2e_calendar_runtime",
-            SKILLS_ROOT / "g-calendar" / "_rtx" / "_gcal_client.py",
+            SKILLS_ROOT / "online-calendar" / "_rtx" / "_gcal_client.py",
         ),
         drive_bind=_load_module(
             "google_file_e2e_drive_bind",
@@ -155,7 +155,7 @@ def integration_env(
     monkeypatch.setattr(service_modules.email_accounts, "CONFIG_DIR", email_dir)
     monkeypatch.setattr(service_modules.email_accounts, "ACCOUNTS_FILE", email_path)
 
-    calendar_config = tmp_path / ".config" / "g-calendar" / "config.json"
+    calendar_config = tmp_path / ".config" / "online-calendar" / "config.json"
     calendar_config.parent.mkdir(parents=True)
     calendar_config.write_text(json.dumps({"calendar": "primary"}), encoding="utf-8")
     drive_config = tmp_path / ".config" / "cloud-files" / "config.json"

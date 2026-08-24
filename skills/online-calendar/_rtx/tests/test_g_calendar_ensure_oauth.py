@@ -11,7 +11,7 @@ REPO_SRC = Path(__file__).resolve().parents[4] / "src"
 if str(REPO_SRC) not in sys.path:
     sys.path.insert(0, str(REPO_SRC))
 
-# g-calendar and cloud-files each have their own _rtx/_ensure_oauth.py.
+# online-calendar and cloud-files each have their own _rtx/_ensure_oauth.py.
 # A bare `import ensure_oauth` after sys.path.insert would collide: whichever
 # test module imports it first wins the sys.modules["ensure_oauth"] cache
 # slot, silently reusing the wrong skill's file for the other's tests. Load
@@ -26,8 +26,8 @@ _SPEC.loader.exec_module(ensure_oauth)
 
 def test_already_configured_when_credentials_exist(tmp_path):
     home = tmp_path / "home"
-    (home / ".config" / "g-calendar").mkdir(parents=True)
-    (home / ".config" / "g-calendar" / "credentials.json").write_text("{}")
+    (home / ".config" / "online-calendar").mkdir(parents=True)
+    (home / ".config" / "online-calendar" / "credentials.json").write_text("{}")
 
     status = ensure_oauth.run(home=home, dry_run=False, stdin_isatty=False)
 
@@ -36,7 +36,7 @@ def test_already_configured_when_credentials_exist(tmp_path):
 
 def test_needs_client_json_when_missing_non_interactive(tmp_path, capsys):
     home = tmp_path / "home"
-    (home / ".config" / "g-calendar").mkdir(parents=True)
+    (home / ".config" / "online-calendar").mkdir(parents=True)
 
     status = ensure_oauth.run(home=home, dry_run=False, stdin_isatty=False)
 
@@ -97,7 +97,7 @@ def test_use_google_credential_stores_only_credential_id(tmp_path, fake_registry
 
     ensure_oauth.use_google_credential(credential_id=credential_id, home=tmp_path, platform=PLATFORM)
 
-    config_path = tmp_path / ".config" / "g-calendar" / "config.json"
+    config_path = tmp_path / ".config" / "online-calendar" / "config.json"
     config = json.loads(config_path.read_text())
     assert config["credential_id"] == credential_id
     assert "client_secret" not in config
@@ -114,7 +114,7 @@ def test_use_google_credential_rejects_insufficient_scope(tmp_path, fake_registr
     with pytest.raises(SystemExit):
         ensure_oauth.use_google_credential(credential_id=credential_id, home=tmp_path, platform=PLATFORM)
 
-    config_path = tmp_path / ".config" / "g-calendar" / "config.json"
+    config_path = tmp_path / ".config" / "online-calendar" / "config.json"
     assert not config_path.exists()
 
 
@@ -122,13 +122,13 @@ def test_use_google_credential_preserves_unrelated_config_fields(tmp_path, fake_
     # Regression test for the bug class cloud-files' review caught: two
     # config-writing functions using inconsistent merge strategies (one
     # rebuilding its payload from an explicit allow-list) can silently drop
-    # fields the other wrote. g-calendar only has one config field today
+    # fields the other wrote. online-calendar only has one config field today
     # (credential_id), so simulate a second/future writer having already put
     # an unrelated field in config.json and confirm use_google_credential's
     # merge-based _merge_and_write_config preserves it rather than replacing
     # the whole payload.
     credential_id = fake_registry_with_calendar_scope
-    config_dir = tmp_path / ".config" / "g-calendar"
+    config_dir = tmp_path / ".config" / "online-calendar"
     config_dir.mkdir(parents=True)
     (config_dir / "config.json").write_text(json.dumps({"some_future_field": "keep-me"}))
 

@@ -1,0 +1,14 @@
+schema_version: 6
+node_type: behavioral_source
+id: certification-policy.source.certification-basis
+version: 1
+maturity: stable
+description: Declares the canonical inputs that determine certification semantics.
+gateway:
+  path: certification-basis-roots.json
+  language: JSON
+content:
+- certification-basis-roots\.json
+dependencies: []
+uses_interfaces: []
+interfaces: {}

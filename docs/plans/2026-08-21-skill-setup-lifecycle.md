@@ -25,7 +25,7 @@ existing skill behavior.
   source interface with no prerequisite.
 - Export `connect-google.interface.setup` as an alias of its default source
   interface with no setup prerequisite.
-- Export setup aliases for `cloud-files`, `g-calendar`, and `list-manager`, each
+- Export setup aliases for `cloud-files`, `online-calendar`, and `list-manager`, each
   requiring Google setup.
 - Do not edit the functional instruction bodies.
 

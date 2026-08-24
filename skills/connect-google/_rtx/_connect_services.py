@@ -22,7 +22,7 @@ from officina.runtime.python_machine_interface import (
 SERVICE_DISPATCHES = {
     "calendar": DispatchCall(
         caller_module_id="connect-google._rtx",
-        target_module_id="g-calendar._rtx",
+        target_module_id="online-calendar._rtx",
         interface="use-google-credential-file",
         smoke_args=(
             "--credential-file",

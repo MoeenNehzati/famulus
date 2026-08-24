@@ -38,9 +38,9 @@ design detail; they are not verified execution instructions.
 ### 1. Terms
 
 - **System kind:** A named resource grammar shared by conforming instances, such as `calendar-account`.
-- **System instance:** A stable project key naming one logical binding slot, such as `g-calendar`.
+- **System instance:** A stable project key naming one logical binding slot, such as `online-calendar`.
 - **Resource type:** The object class inferred from the instance kind and matched path, such as `calendar-event`. It is not repeated in a blueprint entry.
-- **Resource URI:** One concrete logical object address, such as `resource://g-calendar/calendars/work/events/abc123`.
+- **Resource URI:** One concrete logical object address, such as `resource://online-calendar/calendars/work/events/abc123`.
 - **Resource pattern:** A URI-shaped set of possible resource URIs containing `{}` variables.
 - **Resource snippet:** A registry-owned, named path pattern that authors can reuse consistently.
 - **Active binding:** Existing service-owned configuration that connects an instance key to its operational filesystem, root, or credential set.
@@ -63,7 +63,7 @@ Examples:
 ```text
 resource://local/$repo/docs/report.md
 resource://cloud-files/plans/7-17-26.md
-resource://g-calendar/calendars/work@example.com/events/a1b2c3
+resource://online-calendar/calendars/work@example.com/events/a1b2c3
 ```
 
 Concrete values containing reserved URI characters are percent-encoded within their segment. Matching operates on canonical decoded segment values, while `/` always remains the hierarchy separator.
@@ -124,8 +124,8 @@ $tmp/{path...}
 $home/.config/cloud-files/client.json
 $home/.config/cloud-files/credentials.json
 $home/.config/cloud-files/config.json
-$home/.config/g-calendar/client.json
-$home/.config/g-calendar/credentials.json
+$home/.config/online-calendar/client.json
+$home/.config/online-calendar/credentials.json
 $home/.cache/datalab/models/{path...}
 $repo/skills/{skill}/blueprint.yaml
 $repo/references/blueprint/schema.annotated-draft.json
@@ -154,9 +154,9 @@ A calendar-account instance represents one authenticated account binding. It can
 The current canonical patterns are:
 
 ```text
-resource://g-calendar/calendars
-resource://g-calendar/calendars/{calendar}
-resource://g-calendar/calendars/{calendar}/events/{event}
+resource://online-calendar/calendars
+resource://online-calendar/calendars/{calendar}
+resource://online-calendar/calendars/{calendar}/events/{event}
 ```
 
 ### 5. Project System Instances
@@ -175,13 +175,13 @@ system_instances:
     owner: cloud-files
     provider: google-drive
 
-  g-calendar:
+  online-calendar:
     kind: calendar-account
-    owner: g-calendar
+    owner: online-calendar
     provider: google-calendar
 ```
 
-`local` is evaluated from the current host plus `$repo`, `$home`, `$tmp`, or concrete caller arguments. `cloud-files` means the single OAuth account and configured remote LLM root owned by the current `cloud-files` service. `g-calendar` means the single active calendar account currently supported by `g-calendar`. The registry records only these logical identities; credentials, account addresses, absolute roots, and remote folder IDs remain in service-owned configuration.
+`local` is evaluated from the current host plus `$repo`, `$home`, `$tmp`, or concrete caller arguments. `cloud-files` means the single OAuth account and configured remote LLM root owned by the current `cloud-files` service. `online-calendar` means the single active calendar account currently supported by `online-calendar`. The registry records only these logical identities; credentials, account addresses, absolute roots, and remote folder IDs remain in service-owned configuration.
 
 Adding another Drive root or calendar account creates another stable instance key. Replacing the operational account behind an existing key is a deliberate rebind of that logical slot; every interface using the key moves together.
 
@@ -242,14 +242,14 @@ Examples:
 
 ```text
 resource://{account:calendar-account}/calendars/{calendar}/events/{event}
-resource://g-calendar/calendars/work/events/{event}
+resource://online-calendar/calendars/work/events/{event}
 ```
 
-overlap because `g-calendar` is a `calendar-account` and `work` can bind `{calendar}`.
+overlap because `online-calendar` is a `calendar-account` and `work` can bind `{calendar}`.
 
 ```text
-resource://g-calendar/calendars/work/events/{event}
-resource://g-calendar/calendars/personal/events/{event}
+resource://online-calendar/calendars/work/events/{event}
+resource://online-calendar/calendars/personal/events/{event}
 ```
 
 do not overlap.
@@ -321,10 +321,10 @@ relation: implicit_dependence
 source: reader.interface.id
 target: writer.interface.id
 evidence:
-  reader_resource: resource://g-calendar/calendars/work/events/{event}
+  reader_resource: resource://online-calendar/calendars/work/events/{event}
   writer_resource: resource://{account:calendar-account}/calendars/{calendar}/events/{event}
   instance_constraints:
-    account: g-calendar
+    account: online-calendar
   certainty: resolved
 ```
 
@@ -350,7 +350,7 @@ The design separates normative explanation, machine vocabulary, and operational 
 1. `references/skill-standards/logical-resources.standard.yaml` is the canonical version-6 prose standard. Its generated Markdown view is `references/skill-standards/logical-resources.md`.
 2. `references/resources/resource-registry.yaml` is the canonical machine vocabulary containing system kinds, inferred resource types, snippets, and project instance identities. The approved content begins from `docs/plans/logical-resource-registry.yaml`.
 3. `references/resources/resource-registry.schema.json` validates the registry's structural shape.
-4. Existing skill-owned files remain the operational bindings: `cloud-files` owns its OAuth account and configured Drive root; `g-calendar` owns its one active calendar account; the shared evaluator receives local host roots from runtime context. No second credential registry is introduced.
+4. Existing skill-owned files remain the operational bindings: `cloud-files` owns its OAuth account and configured Drive root; `online-calendar` owns its one active calendar account; the shared evaluator receives local host roots from runtime context. No second credential registry is introduced.
 
 Enforcement has four layers:
 
@@ -393,7 +393,7 @@ This enforcement proves that declarations are well-formed, mutually interpretabl
 
 **Interfaces:**
 - Consumes: the approved `docs/plans/logical-resource-registry.yaml` draft.
-- Produces: the exact version-1 registry containing `local-filesystem`, `google-drive-root`, `calendar-account`, their five resource types, all current snippets, and instances `local`, `cloud-files`, and `g-calendar`.
+- Produces: the exact version-1 registry containing `local-filesystem`, `google-drive-root`, `calendar-account`, their five resource types, all current snippets, and instances `local`, `cloud-files`, and `online-calendar`.
 
 - [ ] **Step 1:** Write failing schema tests for the approved registry, unknown kinds, duplicate keys, invalid variable forms, ambiguous resource-type patterns, invalid snippets, secret-bearing fields, absolute host paths, and unsupported versions.
 - [ ] **Step 2:** Run `pytest tests/test_officina_resource_registry.py -v`; expect failure because canonical registry files do not exist.
@@ -485,7 +485,7 @@ This enforcement proves that declarations are well-formed, mutually interpretabl
 - Modify through `skill-maker`: `skills/cloud-files/blueprint.yaml`
 - Modify through `skill-maker`: `skills/daily-plan/blueprint.yaml`
 - Modify through `skill-maker`: `skills/email-client/blueprint.yaml`
-- Modify through `skill-maker`: `skills/g-calendar/blueprint.yaml`
+- Modify through `skill-maker`: `skills/online-calendar/blueprint.yaml`
 - Modify through `skill-maker`: `skills/list-manager/blueprint.yaml`
 - Modify through `skill-maker`: `skills/pdf-to-markdown/blueprint.yaml`
 - Modify through `skill-maker`: `skills/regenerate-blueprints/blueprint.yaml`
@@ -493,7 +493,7 @@ This enforcement proves that declarations are well-formed, mutually interpretabl
 - Create: `tests/test_logical_resource_migration.py`
 
 **Interfaces:**
-- Produces: resource declarations for every current local-filesystem, cloud-files Google Drive, and g-calendar access found by the canonical blueprint extractor.
+- Produces: resource declarations for every current local-filesystem, cloud-files Google Drive, and online-calendar access found by the canonical blueprint extractor.
 - Consumes: compatibility-phase blueprint validation and the exact snippets in the canonical registry.
 
 - [ ] **Step 1:** Generate the inventory with `scripts/search_blueprints.py`, preserving interface paths and classifying each entry as fixed, variable, inherited through `uses_interfaces`, or non-resource transport.

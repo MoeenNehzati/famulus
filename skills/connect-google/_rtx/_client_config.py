@@ -66,7 +66,7 @@ def _require_nonempty_string(installed: dict[str, object], field: str) -> None:
 
 
 def _require_client_secret_or_ref(installed: dict[str, object]) -> None:
-    # A freshly downloaded client (legacy discovery of cloud-files/g-calendar
+    # A freshly downloaded client (legacy discovery of cloud-files/online-calendar
     # client.json, or a file the user is about to install) carries a plaintext
     # client_secret. Once google_credentials.install_client has run, the
     # canonical client.json instead carries client_secret_ref (the secret
@@ -187,7 +187,7 @@ def _result(status: str, client_type: str, path: Path) -> dict[str, object]:
 def _legacy_candidates(home: Path) -> tuple[list[dict[str, str]], list[dict[str, object]]]:
     candidates: list[dict[str, str]] = []
     payloads: list[dict[str, object]] = []
-    for service in ("cloud-files", "g-calendar"):
+    for service in ("cloud-files", "online-calendar"):
         path = Path(home) / ".config" / service / "client.json"
         if path.is_symlink():
             continue

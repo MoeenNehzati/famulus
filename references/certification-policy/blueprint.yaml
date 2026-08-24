@@ -1,0 +1,27 @@
+schema_version: 6
+node_type: module
+id: certification-policy
+version: 1
+maturity: stable
+description: Owns the canonical node-hash and certification-basis policies.
+gateway:
+  path: node-hash-policy.yaml
+  language: YAML
+content:
+- certification-basis-roots\.json
+- node-hash-policy\.schema\.json
+- node-hash-policy\.yaml
+authority:
+  owns_filesystem: []
+sources:
+  certification-policy.source.node-hash-policy:
+    blueprint:
+      base: module-root
+      path: blueprints/node-hash-policy.yaml
+  certification-policy.source.certification-basis:
+    blueprint:
+      base: module-root
+      path: blueprints/certification-basis.yaml
+children: {}
+namespace_exports: {}
+exports: {}

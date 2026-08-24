@@ -1,0 +1,36 @@
+schema_version: 6
+node_type: behavioral_source
+id: standards-schema.source.standard-validator
+version: 1
+maturity: stable
+description: Validates standard-v6 documents and their pinned repository-bound closure.
+gateway:
+  path: validate_standard_v6.py
+  language: Python
+content:
+- standard-v6\.schema\.json
+- validate_standard_v6\.py
+dependencies: []
+uses_interfaces: []
+interfaces: {}
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies:
+- kind: python-package
+  name: PyYAML
+  version: any
+  reason: Parses standard YAML documents.
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+- kind: python-package
+  name: jsonschema
+  version: any
+  reason: Validates standard documents and referenced schema authorities.
+  platforms:
+    linux: true
+    macos: true
+    windows: true

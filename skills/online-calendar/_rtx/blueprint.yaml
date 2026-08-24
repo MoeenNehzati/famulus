@@ -1,16 +1,16 @@
 authority:
   owns_filesystem:
   - allowed_readers:
-    - g-calendar._rtx.interface.ensure-oauth
-    - g-calendar._rtx.interface.scripts-gcal
+    - online-calendar._rtx.interface.ensure-oauth
+    - online-calendar._rtx.interface.scripts-gcal
     match: exact
-    path: $home/.config/g-calendar/credentials.json
+    path: $home/.config/online-calendar/credentials.json
     reason: setup-oauth is the declared writer for regenerated calendar OAuth credentials.
   - allowed_readers:
-    - g-calendar._rtx.interface.scripts-gcal
+    - online-calendar._rtx.interface.scripts-gcal
     match: exact
-    path: $home/.config/g-calendar/config.json
-    reason: use-google-credential is the declared writer for the g-calendar config.
+    path: $home/.config/online-calendar/config.json
+    reason: use-google-credential is the declared writer for the online-calendar config.
   suggested_permissions:
     bash:
     - command:
@@ -35,63 +35,63 @@ content:
 - __init__\.py
 - _oauth_bootstrap\.py
 - tests/.*
-description: Code module for the g-calendar skill.
+description: Code module for the online-calendar skill.
 exports:
-  g-calendar._rtx.interface.ensure-oauth:
+  online-calendar._rtx.interface.ensure-oauth:
     access:
       allow_all_modules: false
       allowed_callers:
-      - g-calendar
-    source_interface: g-calendar._rtx.source.rtx-ensure-oauth.interface.ensure-oauth
-  g-calendar._rtx.interface.scripts-gcal:
+      - online-calendar
+    source_interface: online-calendar._rtx.source.rtx-ensure-oauth.interface.ensure-oauth
+  online-calendar._rtx.interface.scripts-gcal:
     access:
       allow_all_modules: false
       allowed_callers:
       - daily-plan
       - daily-plan._rtx
-      - g-calendar
-    source_interface: g-calendar._rtx.source.rtx-gcal-client.interface.scripts-gcal
-  g-calendar._rtx.interface.setup-oauth:
+      - online-calendar
+    source_interface: online-calendar._rtx.source.rtx-gcal-client.interface.scripts-gcal
+  online-calendar._rtx.interface.setup-oauth:
     access:
       allow_all_modules: false
       allowed_callers:
-      - g-calendar
-    source_interface: g-calendar._rtx.source.rtx-oauth-bootstrap.interface.setup-oauth
-  g-calendar._rtx.interface.use-google-credential:
+      - online-calendar
+    source_interface: online-calendar._rtx.source.rtx-oauth-bootstrap.interface.setup-oauth
+  online-calendar._rtx.interface.use-google-credential:
     access:
       allow_all_modules: false
       allowed_callers:
-      - g-calendar
-    source_interface: g-calendar._rtx.source.rtx-ensure-oauth.interface.use-google-credential
-  g-calendar._rtx.interface.use-google-credential-file:
+      - online-calendar
+    source_interface: online-calendar._rtx.source.rtx-ensure-oauth.interface.use-google-credential
+  online-calendar._rtx.interface.use-google-credential-file:
     access:
       allow_all_modules: false
       allowed_callers:
       - connect-google
       - connect-google._rtx
-      - g-calendar
-    source_interface: g-calendar._rtx.source.rtx-ensure-oauth.interface.use-google-credential-file
+      - online-calendar
+    source_interface: online-calendar._rtx.source.rtx-ensure-oauth.interface.use-google-credential-file
 gateway:
   language: Python>=3.11
   path: __init__.py
-id: g-calendar._rtx
+id: online-calendar._rtx
 namespace_exports: {}
 node_type: module
 schema_version: 6
 sources:
-  g-calendar._rtx.source.rtx-ensure-oauth:
+  online-calendar._rtx.source.rtx-ensure-oauth:
     blueprint:
       base: module-root
       path: blueprints/rtx-ensure-oauth.yaml
-  g-calendar._rtx.source.rtx-gcal-client:
+  online-calendar._rtx.source.rtx-gcal-client:
     blueprint:
       base: module-root
       path: blueprints/rtx-gcal-client.yaml
-  g-calendar._rtx.source.rtx-init:
+  online-calendar._rtx.source.rtx-init:
     blueprint:
       base: module-root
       path: blueprints/rtx-init.yaml
-  g-calendar._rtx.source.rtx-oauth-bootstrap:
+  online-calendar._rtx.source.rtx-oauth-bootstrap:
     blueprint:
       base: module-root
       path: blueprints/rtx-oauth-bootstrap.yaml

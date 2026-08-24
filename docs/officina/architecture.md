@@ -57,10 +57,10 @@ does not separately declare which content is hash-relevant.
 
 The certifier derives each node's certification inputs from ownership, Git
 state, non-configurable safety rules, and one projectwide ordered policy at
-`references/certification/node-hash-policy.yaml`. The policy is validated by
+`references/certification-policy/node-hash-policy.yaml`. The policy is validated by
 the central `src/officina/configuration/schema.json`; its exact syntax
 and examples belong in the existing `docs/officina/certification_and_drift.md`. The old
-`references/certification/node-hash-policy.schema.json` remains only as frozen
+`references/certification-policy/node-hash-policy.schema.json` remains only as frozen
 certification-basis evidence for historical records.
 
 The certifier loads and validates the policy once per repository. It checks

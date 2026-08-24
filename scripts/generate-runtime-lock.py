@@ -39,7 +39,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.check and args.uv is None:
         raise SystemExit("--uv is required unless --check is used")
 
-    manifest_path = REPO_ROOT / "references" / "blueprint" / "runtime_dependencies.json"
+    manifest_path = REPO_ROOT / "references" / "blueprint-schema" / "runtime_dependencies.json"
     input_path = REPO_ROOT / "references" / "runtime" / "requirements-core.in"
     lock_path = REPO_ROOT / "references" / "runtime" / "requirements-core.lock"
     try:

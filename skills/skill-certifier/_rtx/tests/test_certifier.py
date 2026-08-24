@@ -548,13 +548,13 @@ def test_selected_legacy_writer_issues_current_payload(
     policy_source = (
         MODULE_PATH.parents[3]
         / "references"
-        / "certification"
+        / "certification-policy"
         / "node-hash-policy.yaml"
     )
     policy_path = (
         tmp_path
         / "references"
-        / "certification"
+        / "certification-policy"
         / "node-hash-policy.yaml"
     )
     policy_path.parent.mkdir(parents=True)
@@ -1078,7 +1078,7 @@ def test_batched_readiness_matches_canonical_per_path_decisions(
     paths = (
         tmp_path / "skills" / "demo-skill" / "SKILL.md",
         tmp_path / "skills" / "demo-skill" / "blueprint.yaml",
-        tmp_path / "references" / "certification" / "node-hash-policy.yaml",
+        tmp_path / "references" / "certification-policy" / "node-hash-policy.yaml",
     )
     expected_hashes = certifier._expected_file_hashes(snapshot, paths)
     target = paths[0]
@@ -1116,7 +1116,7 @@ def test_batched_readiness_uses_fixed_git_process_count(
     paths = (
         tmp_path / "skills" / "demo-skill" / "SKILL.md",
         tmp_path / "skills" / "demo-skill" / "blueprint.yaml",
-        tmp_path / "references" / "certification" / "node-hash-policy.yaml",
+        tmp_path / "references" / "certification-policy" / "node-hash-policy.yaml",
     )
     expected_hashes = certifier._expected_file_hashes(snapshot, paths)
     operations: list[tuple[str, ...]] = []
@@ -1932,7 +1932,7 @@ def test_private_writer_rechecks_forced_untracked_input_after_append(
     module_declaration["content"].append(r"local\.txt")
     write_yaml(module_blueprint, module_declaration)
     policy_path = (
-        tmp_path / "references" / "certification" / "node-hash-policy.yaml"
+        tmp_path / "references" / "certification-policy" / "node-hash-policy.yaml"
     )
     policy = yaml.safe_load(policy_path.read_text(encoding="utf-8"))
     policy["rules"].append(

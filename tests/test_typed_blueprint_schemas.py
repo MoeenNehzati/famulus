@@ -14,7 +14,7 @@ SCHEMA_ROOT = (
     REPO_ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v4"
 )
 LIVE_V6_SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint-schema"
-CERTIFICATION_ROOT = REPO_ROOT / "references" / "certification"
+CERTIFICATION_ROOT = REPO_ROOT / "references" / "certification-policy"
 
 
 def _load(name: str) -> dict:

@@ -5,22 +5,22 @@ dependencies:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
-  source: g-calendar._rtx.source.rtx-init
+  source: online-calendar._rtx.source.rtx-init
   version: 1
 - blueprint:
     base: module-root
     path: blueprints/rtx-oauth-bootstrap.yaml
   reason: Executes the sibling OAuth bootstrap gateway when credentials are absent.
-  source: g-calendar._rtx.source.rtx-oauth-bootstrap
+  source: online-calendar._rtx.source.rtx-oauth-bootstrap
   version: 1
 description: Checks calendar credential status and either reports readiness, prints
   setup guidance, or launches delegated setup when authorized.
 gateway:
   language: Python
   path: _ensure_oauth.py
-id: g-calendar._rtx.source.rtx-ensure-oauth
+id: online-calendar._rtx.source.rtx-ensure-oauth
 interfaces:
-  g-calendar._rtx.source.rtx-ensure-oauth.interface.ensure-oauth:
+  online-calendar._rtx.source.rtx-ensure-oauth.interface.ensure-oauth:
     content:
     - _ensure_oauth\.py
     uses_interfaces:
@@ -36,7 +36,7 @@ interfaces:
           type:
             kind: flag
         home:
-          description: Home directory used to resolve g-calendar client and credentials
+          description: Home directory used to resolve online-calendar client and credentials
             files.
           required: true
           sensitivity: user-private
@@ -103,7 +103,7 @@ interfaces:
           - json
           id: read-1
           medium: local-filesystem
-          path: <home>/.config/g-calendar/credentials.json
+          path: <home>/.config/online-calendar/credentials.json
           path_match: exact
           sensitivity: secret
           system: filesystem
@@ -113,7 +113,7 @@ interfaces:
           - json
           id: read-2
           medium: local-filesystem
-          path: <home>/.config/g-calendar/client.json
+          path: <home>/.config/online-calendar/client.json
           path_match: exact
           sensitivity: secret
           system: filesystem
@@ -123,7 +123,7 @@ interfaces:
           - json
           id: read-3
           medium: local-filesystem
-          path: $home/.config/g-calendar/client.json
+          path: $home/.config/online-calendar/client.json
           path_match: exact
           sensitivity: secret
           system: filesystem
@@ -144,7 +144,7 @@ interfaces:
           - json
           id: write-2
           medium: local-filesystem
-          path: $home/.config/g-calendar/credentials.json
+          path: $home/.config/online-calendar/credentials.json
           path_match: exact
           sensitivity: secret
           system: filesystem
@@ -250,9 +250,9 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Check g-calendar OAuth status; print setup guidance or launch browser
+    description: Check online-calendar OAuth status; print setup guidance or launch browser
       authorization as needed. Relocated from install-assistant-tools — invoke directly
-      (caller-skill g-calendar) as part of connecting remotes.
+      (caller-skill online-calendar) as part of connecting remotes.
     process_binding:
       args_prefix:
       - ensure-oauth
@@ -267,12 +267,12 @@ interfaces:
           --home: ^.+$
         max_positionals: 0
         min_positionals: 0
-        notes: Check OAuth status and guide setup for g-calendar.
+        notes: Check OAuth status and guide setup for online-calendar.
         required_flags:
         - --home
     usage: --home <dir> [--dry-run]
     version: 1
-  g-calendar._rtx.source.rtx-ensure-oauth.interface.use-google-credential-file:
+  online-calendar._rtx.source.rtx-ensure-oauth.interface.use-google-credential-file:
     content:
     - _ensure_oauth\.py
     uses_interfaces:
@@ -293,7 +293,7 @@ interfaces:
             relative_to: caller-cwd
             syntax: literal
         home:
-          description: Home directory under which g-calendar config is written.
+          description: Home directory under which online-calendar config is written.
           required: true
           sensitivity: user-private
           type:
@@ -340,7 +340,7 @@ interfaces:
           - json
           id: read-config
           medium: local-filesystem
-          path: $home/.config/g-calendar/config.json
+          path: $home/.config/online-calendar/config.json
           path_match: exact
           sensitivity: user-private
           system: filesystem
@@ -351,7 +351,7 @@ interfaces:
           - json
           id: write-config-file
           medium: local-filesystem
-          path: $home/.config/g-calendar/config.json
+          path: $home/.config/online-calendar/config.json
           path_match: exact
           sensitivity: user-private
           system: filesystem
@@ -438,7 +438,7 @@ interfaces:
           sensitivity: user-private
       preconditions: []
     description: Validate and live-probe a Calendar credential descriptor before
-      storing only its normalized absolute path in g-calendar config.
+      storing only its normalized absolute path in online-calendar config.
     process_binding:
       args_prefix:
       - use-google-credential-file
@@ -459,7 +459,7 @@ interfaces:
         - --home
     usage: --credential-file <path> --home <dir> [--allow-account-change]
     version: 1
-  g-calendar._rtx.source.rtx-ensure-oauth.interface.use-google-credential:
+  online-calendar._rtx.source.rtx-ensure-oauth.interface.use-google-credential:
     content:
     - _ensure_oauth\.py
     uses_interfaces:
@@ -475,7 +475,7 @@ interfaces:
           type:
             kind: string
         home:
-          description: Home directory under which g-calendar config is written
+          description: Home directory under which online-calendar config is written
           required: true
           sensitivity: user-private
           type:
@@ -484,8 +484,8 @@ interfaces:
       interaction:
         mode: unattended
       caller_warnings:
-      - external-side-effect: Replaces g-calendar config.json's credential_id, binding
-          g-calendar to the shared credential going forward.
+      - external-side-effect: Replaces online-calendar config.json's credential_id, binding
+          online-calendar to the shared credential going forward.
       outputs: []
       outcomes:
       - id: bound
@@ -548,7 +548,7 @@ interfaces:
           - json
           id: read-1
           medium: local-filesystem
-          path: $home/.config/g-calendar/config.json
+          path: $home/.config/online-calendar/config.json
           path_match: exact
           sensitivity: user-private
           system: filesystem
@@ -559,13 +559,13 @@ interfaces:
           - json
           id: write-1
           medium: local-filesystem
-          path: $home/.config/g-calendar/config.json
+          path: $home/.config/online-calendar/config.json
           path_match: exact
           sensitivity: user-private
           system: filesystem
-    description: Bind g-calendar to a shared connect-google credential_id after validating
+    description: Bind online-calendar to a shared connect-google credential_id after validating
       it carries Calendar scope, storing only the opaque identifier (never the client
-      secret or refresh token) in g-calendar's own config.json. The pre-existing per-service
+      secret or refresh token) in online-calendar's own config.json. The pre-existing per-service
       OAuth path (ensure-oauth) remains the unchanged fallback for callers who have
       not adopted the shared credential.
     process_binding:
@@ -583,7 +583,7 @@ interfaces:
           --home: ^.+$
         max_positionals: 0
         min_positionals: 0
-        notes: Bind g-calendar to a shared Google credential_id.
+        notes: Bind online-calendar to a shared Google credential_id.
         required_flags:
         - --credential-id
         - --home

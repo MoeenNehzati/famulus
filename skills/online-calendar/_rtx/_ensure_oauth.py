@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ensure_oauth.py — Check g-calendar OAuth status and guide setup if needed.
+ensure_oauth.py — Check online-calendar OAuth status and guide setup if needed.
 
 Relocated from install-assistant-tools' shared Google-OAuth chooser — see
 cloud-files/_rtx/_ensure_oauth.py for the sibling implementation and the
@@ -20,8 +20,8 @@ from typing import Callable
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
-CONFIG_DIR_NAME = "g-calendar"
-LABEL = "Google Calendar (g-calendar)"
+CONFIG_DIR_NAME = "online-calendar"
+LABEL = "Google Calendar (online-calendar)"
 CALENDAR_PROBE_URL = (
     "https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=1"
 )
@@ -60,7 +60,7 @@ def run(*, home: Path, dry_run: bool, stdin_isatty: bool | None = None) -> str:
 
     if dry_run:
         if client_json.exists():
-            log(f"Would run g-calendar OAuth setup: {sys.executable} setup_oauth.py")
+            log(f"Would run online-calendar OAuth setup: {sys.executable} setup_oauth.py")
             return "would_run"
         for line in setup_lines:
             log(line)
@@ -72,17 +72,17 @@ def run(*, home: Path, dry_run: bool, stdin_isatty: bool | None = None) -> str:
         if stdin_isatty is None:
             stdin_isatty = sys.stdin.isatty()
         if not stdin_isatty:
-            log("  g-calendar OAuth skipped for now: client.json is still missing.")
+            log("  online-calendar OAuth skipped for now: client.json is still missing.")
             return "needs_client_json"
         reply = input(
             f"Press Enter after saving {client_json.name} to launch browser authorization, "
             "or type 'skip' to continue without it: "
         ).strip().lower()
         if reply == "skip":
-            log("  g-calendar OAuth skipped.")
+            log("  online-calendar OAuth skipped.")
             return "skipped"
         if not client_json.exists():
-            log("  g-calendar OAuth skipped: client.json is still missing.")
+            log("  online-calendar OAuth skipped: client.json is still missing.")
             return "needs_client_json"
 
     log("Launching Google Calendar browser authorization...")
@@ -90,7 +90,7 @@ def run(*, home: Path, dry_run: bool, stdin_isatty: bool | None = None) -> str:
     result = subprocess.run([sys.executable, str(script)])
     if result.returncode == 0:
         return "configured"
-    log(f"Warning: g-calendar OAuth setup exited {result.returncode}.")
+    log(f"Warning: online-calendar OAuth setup exited {result.returncode}.")
     return "failed"
 
 
@@ -142,7 +142,7 @@ def _merge_and_write_config(
     payload.update(patch)
 
     if dry_run:
-        log(dry_run_message or f"Would write g-calendar config {config_path}")
+        log(dry_run_message or f"Would write online-calendar config {config_path}")
         return
 
     config_dir.mkdir(parents=True, exist_ok=True)
@@ -150,12 +150,10 @@ def _merge_and_write_config(
 
 
 def use_google_credential(*, credential_id: str, home: Path, platform: str = sys.platform) -> None:
-    """Bind g-calendar to a shared connect-google credential.
+    """Bind online-calendar to a shared connect-google credential.
 
-    Validates the credential grants Calendar scope *before* writing
-    anything, then stores only the opaque ``credential_id`` in g-calendar's
-    own config.json — never the client secret or refresh token, which stay
-    in officina.credentials.google' registry/secret store.
+    Validate Calendar scope, then store only the opaque ``credential_id`` in
+    online-calendar's config. Secrets remain in the shared credential store.
     """
     from officina.credentials.google import SERVICE_SCOPES, GoogleCredentialError, load_credential
 

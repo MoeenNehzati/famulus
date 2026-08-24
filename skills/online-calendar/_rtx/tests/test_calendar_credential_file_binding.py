@@ -111,7 +111,7 @@ def test_bind_normalizes_probes_then_preserves_config(
     successful_probe,
 ) -> None:
     home = google_file_fakes.home
-    config_dir = home / ".config" / "g-calendar"
+    config_dir = home / ".config" / "online-calendar"
     config_dir.mkdir(parents=True)
     config_path = config_dir / "config.json"
     config_path.write_text(json.dumps({"calendar": "work"}), encoding="utf-8")
@@ -149,7 +149,7 @@ def test_scope_or_probe_failure_never_writes(
     descriptor = google_file_fakes.add(
         home / "credentials" / "wrong-scope.json", scoped=False
     )
-    config_path = home / ".config" / "g-calendar" / "config.json"
+    config_path = home / ".config" / "online-calendar" / "config.json"
 
     with pytest.raises(ensure_oauth.CredentialFileBindingError) as exc_info:
         ensure_oauth.use_google_credential_file(
@@ -202,7 +202,7 @@ def test_different_subject_same_email_rebind_requires_explicit_approval(
     new_file = google_file_fakes.add(
         home / "credentials" / "new.json", subject="new-google-subject"
     )
-    config_dir = home / ".config" / "g-calendar"
+    config_dir = home / ".config" / "online-calendar"
     config_dir.mkdir(parents=True)
     config_path = config_dir / "config.json"
     config_path.write_text(
@@ -241,7 +241,7 @@ def test_same_subject_changed_email_rebind_needs_no_approval(
     new_file = google_file_fakes.add(
         home / "credentials" / "new.json", account="new@example.com"
     )
-    config_path = home / ".config" / "g-calendar" / "config.json"
+    config_path = home / ".config" / "online-calendar" / "config.json"
     config_path.parent.mkdir(parents=True)
     config_path.write_text(
         json.dumps({"credential_file": str(old_file)}), encoding="utf-8"
@@ -268,7 +268,7 @@ def test_unprovable_legacy_identity_requires_approval_then_can_be_replaced(
 
     home = google_file_fakes.home
     descriptor = google_file_fakes.add(home / "credentials" / "new.json")
-    config_path = home / ".config" / "g-calendar" / "config.json"
+    config_path = home / ".config" / "online-calendar" / "config.json"
     config_path.parent.mkdir(parents=True)
     config_path.write_text(json.dumps({"credential_id": "legacy-id"}), encoding="utf-8")
     before = config_path.read_bytes()
@@ -336,7 +336,7 @@ def test_present_invalid_file_binding_never_falls_back(
     tmp_path: Path,
     value,
 ) -> None:
-    config_dir = tmp_path / ".config" / "g-calendar"
+    config_dir = tmp_path / ".config" / "online-calendar"
     config_dir.mkdir(parents=True)
     (config_dir / "config.json").write_text(
         json.dumps({"credential_file": value, "credential_id": "legacy-id"}),
@@ -366,7 +366,7 @@ def test_malformed_service_config_is_terminal(
 ) -> None:
     home = google_file_fakes.home
     descriptor = google_file_fakes.add(home / "credentials" / "calendar.json")
-    config_dir = home / ".config" / "g-calendar"
+    config_dir = home / ".config" / "online-calendar"
     config_dir.mkdir(parents=True)
     config_path = config_dir / "config.json"
     config_path.write_bytes(contents)
@@ -408,7 +408,7 @@ def test_present_non_file_service_config_is_terminal(
 ) -> None:
     home = google_file_fakes.home
     descriptor = google_file_fakes.add(home / "credentials" / "calendar.json")
-    config_path = home / ".config" / "g-calendar" / "config.json"
+    config_path = home / ".config" / "online-calendar" / "config.json"
     config_path.parent.mkdir(parents=True)
     if kind == "directory":
         config_path.mkdir()

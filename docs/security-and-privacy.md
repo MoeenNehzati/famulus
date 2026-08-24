@@ -49,7 +49,7 @@ personal-assistant workflows.
 | --- | --- | --- |
 | `connect-google` | A Google Desktop OAuth client and the Google identity returned during authorization | Stores the OAuth client secret and refresh-token references; coordinates grants for selected Google services |
 | `cloud-files` | Files below the configured Drive root | Reads, creates, replaces, and deletes files in the `lists/` and `plans/` subdirectories exposed to LLM callers |
-| `g-calendar` | Calendar lists, events, and availability | Creates, updates, moves, and deletes events within its public interface |
+| `online-calendar` | Calendar lists, events, and availability | Creates, updates, moves, and deletes events within its public interface |
 | `email-client` | Account metadata, messages, headers, bodies, and attachments | Sends mail, saves requested attachments locally, and adds, changes, or removes local account records |
 | `email-triage` | New mail and the `todo` and `triage` lists | Classifies messages and writes list entries; it does not send mail or create calendar events |
 | `list-manager` | Cloud-backed lists | Adds, changes, completes, rejects, and deletes list entries through `cloud-files` |
@@ -148,7 +148,7 @@ paths listed below still do.
 | Google refresh token for a descriptor | Python `keyring`, service `Famulus:connect-google`, username `credential-file:<descriptor-stem>:refresh-token` | Raw refresh token |
 | Google refresh token for a registry record | Python `keyring`, service `Famulus:connect-google`, username referenced by the registry, normally `google-refresh:<uuid>` (older records may use `<credential-id>:refresh-token`) | Raw refresh token |
 | Drive binding | `~/.config/cloud-files/config.json` | Remote root, timeout, and credential descriptor or ID reference |
-| Calendar binding | `~/.config/g-calendar/config.json` | Credential descriptor or ID reference |
+| Calendar binding | `~/.config/online-calendar/config.json` | Credential descriptor or ID reference |
 | Email account registry | `~/.config/email-client/accounts.json` | Email address, display name, server settings, auth mode, and credential reference; no new-route password or refresh token |
 | IMAP/SMTP app passwords | Python `keyring`, service `Famulus:email-client`, usernames `<nickname>:imap` and `<nickname>:smtp` | Raw app passwords |
 | Legacy email OAuth secrets | Python `keyring`, service `Famulus:email-client`, usernames `<nickname>:oauth:client-secret` and `<nickname>:oauth:refresh-token` | Raw client secret and refresh token |
@@ -162,7 +162,7 @@ matters.
 Canonical client and descriptor files are written with owner-only file modes
 on POSIX and reject symbolic-link destinations. Access tokens are normally
 short-lived values obtained during a request and are not persisted by the
-canonical path. The `g-calendar` executable does have an explicit `token` mode
+canonical path. The `online-calendar` executable does have an explicit `token` mode
 that prints an access token to standard output; its skill instructions reserve
 that mode for explicitly requested direct API access.
 
@@ -172,8 +172,8 @@ The runtime still accepts older files at:
 
 - `~/.config/cloud-files/client.json`
 - `~/.config/cloud-files/credentials.json`
-- `~/.config/g-calendar/client.json`
-- `~/.config/g-calendar/credentials.json`
+- `~/.config/online-calendar/client.json`
+- `~/.config/online-calendar/credentials.json`
 
 Those files may contain raw OAuth client secrets and refresh tokens. They are
 migration compatibility, not the recommended setup. Their continued support is
@@ -343,7 +343,7 @@ keyring backend have their own logging and retention behavior.
 The audit identified these unresolved items:
 
 1. Google scopes are broader than the public runtime operations.
-2. `g-calendar` has a token-to-standard-output mode.
+2. `online-calendar` has a token-to-standard-output mode.
 3. Disconnect, server-side revocation, local secret cleanup, uninstall, and
    purge are not one complete lifecycle.
 4. Legacy plaintext OAuth credential files remain readable.

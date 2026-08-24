@@ -2112,78 +2112,6 @@
       },
       "interfaces": {}
     },
-    "g-calendar": {
-      "maturity": "experimental",
-      "installation_tier": "core",
-      "personal_preference": {
-        "applies": false
-      },
-      "interfaces": {
-        "g-calendar._rtx.interface.ensure-oauth": {
-          "dependencies": [
-            {
-              "kind": "python-package",
-              "name": "keyring",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
-            }
-          ]
-        },
-        "g-calendar._rtx.interface.scripts-gcal": {
-          "dependencies": [
-            {
-              "kind": "python-package",
-              "name": "keyring",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
-            }
-          ]
-        },
-        "g-calendar._rtx.interface.setup-oauth": {
-          "dependencies": []
-        },
-        "g-calendar._rtx.interface.use-google-credential": {
-          "dependencies": [
-            {
-              "kind": "python-package",
-              "name": "keyring",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
-            }
-          ]
-        },
-        "g-calendar._rtx.interface.use-google-credential-file": {
-          "dependencies": [
-            {
-              "kind": "python-package",
-              "name": "keyring",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
-            }
-          ]
-        }
-      }
-    },
     "get-weather": {
       "maturity": "stable",
       "installation_tier": "core",
@@ -4872,6 +4800,78 @@
         "applies": false
       },
       "interfaces": {}
+    },
+    "online-calendar": {
+      "maturity": "experimental",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {
+        "online-calendar._rtx.interface.ensure-oauth": {
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
+        },
+        "online-calendar._rtx.interface.scripts-gcal": {
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
+        },
+        "online-calendar._rtx.interface.setup-oauth": {
+          "dependencies": []
+        },
+        "online-calendar._rtx.interface.use-google-credential": {
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
+        },
+        "online-calendar._rtx.interface.use-google-credential-file": {
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
+        }
+      }
     },
     "pdf-to-markdown": {
       "maturity": "stable",

@@ -35,7 +35,7 @@ _CONSUMER_ROOTS = (
     "skills/milestone-logging/_rtx/_agent_timeline.py",
     "skills/connect-google/_rtx",
     "skills/cloud-files/_rtx",
-    "skills/g-calendar/_rtx",
+    "skills/online-calendar/_rtx",
     "skills/email-client/_rtx",
     "skills/email-triage/_rtx",
     "skills/list-manager/_rtx",
@@ -68,10 +68,10 @@ _INVENTORY = {
     ("skills/cloud-files/_rtx/_ensure_oauth.py", "use_google_credential_file"): "process override",
     ("skills/cloud-files/_rtx/_ensure_oauth.py", "_existing_binding_subject"): "process override",
     ("skills/cloud-files/_rtx/_ensure_oauth.py", "main"): "process override",
-    ("skills/g-calendar/_rtx/_oauth_bootstrap.py", "<module>"): "development-isolated",
-    ("skills/g-calendar/_rtx/_gcal_client.py", "get_access_token"): "development-isolated",
-    ("skills/g-calendar/_rtx/_ensure_oauth.py", "use_google_credential_file"): "process override",
-    ("skills/g-calendar/_rtx/_ensure_oauth.py", "main"): "process override",
+    ("skills/online-calendar/_rtx/_oauth_bootstrap.py", "<module>"): "development-isolated",
+    ("skills/online-calendar/_rtx/_gcal_client.py", "get_access_token"): "development-isolated",
+    ("skills/online-calendar/_rtx/_ensure_oauth.py", "use_google_credential_file"): "process override",
+    ("skills/online-calendar/_rtx/_ensure_oauth.py", "main"): "process override",
     ("skills/email-client/_rtx/_email_accounts.py", "<module>"): "development-isolated",
     ("skills/email-client/_rtx/_email_accounts.py", "accounts_use_google_credential_file"): "process override",
     ("skills/email-client/_rtx/_email_accounts.py", "cmd_use_google_credential_file"): "process override",
@@ -508,7 +508,7 @@ def test_service_loaders_and_writers_are_context_isolated(
 
     foreign_canaries = [
         foreign_home / ".config/cloud-files/config.json",
-        foreign_home / ".config/g-calendar/config.json",
+        foreign_home / ".config/online-calendar/config.json",
         foreign_home / ".config/email-client/accounts.json",
         foreign_home / ".local/state/famulus/email-triage/status.json",
         foreign_home / ".local/state/famulus/list-manager/locks/review.lock",
@@ -544,7 +544,7 @@ def test_service_loaders_and_writers_are_context_isolated(
         json.dumps({"remote_llm_root": "selected/", "timeout_seconds": 17}),
         encoding="utf-8",
     )
-    calendar_config = selected_home / ".config/g-calendar/config.json"
+    calendar_config = selected_home / ".config/online-calendar/config.json"
     calendar_config.parent.mkdir(parents=True)
     calendar_config.write_text(json.dumps({"credential_id": "google:selected"}), encoding="utf-8")
 
@@ -558,14 +558,14 @@ def test_service_loaders_and_writers_are_context_isolated(
         "consumer_cloud_binding" + suffix,
         "skills/cloud-files/_rtx/_ensure_oauth.py",
     )
-    calendar = _load_source("consumer_calendar" + suffix, "skills/g-calendar/_rtx/_gcal_client.py")
+    calendar = _load_source("consumer_calendar" + suffix, "skills/online-calendar/_rtx/_gcal_client.py")
     calendar_bootstrap = _load_source(
         "consumer_calendar_bootstrap" + suffix,
-        "skills/g-calendar/_rtx/_oauth_bootstrap.py",
+        "skills/online-calendar/_rtx/_oauth_bootstrap.py",
     )
     calendar_binding = _load_source(
         "consumer_calendar_binding" + suffix,
-        "skills/g-calendar/_rtx/_ensure_oauth.py",
+        "skills/online-calendar/_rtx/_ensure_oauth.py",
     )
     monkeypatch.syspath_prepend(str(ROOT / "skills/email-client/_rtx"))
     email = _load_source("consumer_email" + suffix, "skills/email-client/_rtx/_email_accounts.py")
@@ -672,7 +672,7 @@ def test_standard_consumers_resolve_normal_home(
     monkeypatch.delenv("LLM_WAKEUP_CODEX_DIR", raising=False)
     monkeypatch.delenv("LLM_WAKEUP_CLAUDE_DIR", raising=False)
     cloud = _load_source("standard_cloud", "skills/cloud-files/_rtx/_drive_gateway.py")
-    calendar = _load_source("standard_calendar", "skills/g-calendar/_rtx/_gcal_client.py")
+    calendar = _load_source("standard_calendar", "skills/online-calendar/_rtx/_gcal_client.py")
     notify = _load_source("standard_notify", "skills/recurring-tasks/_rtx/_assistant_desktop_notify.py")
     assert cloud.default_config_path().is_relative_to(home)
     assert calendar._config_path(Path.home()).is_relative_to(home)
@@ -817,7 +817,7 @@ def test_real_installer_apply_manifest_excludes_google_credentials(
     forbidden_roots = (
         context.paths.config_root / "connect-google",
         selected_home / ".config/cloud-files",
-        selected_home / ".config/g-calendar",
+        selected_home / ".config/online-calendar",
         selected_home / ".config/email-client",
     )
     for entry in manifest["entries"]:

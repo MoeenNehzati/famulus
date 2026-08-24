@@ -123,7 +123,7 @@ def test_google_service_gateways_delegate_setup_only_to_connect_google(
     blueprint_loader: BlueprintLoader,
 ) -> None:
     forbidden = ("setup-oauth", "ensure-oauth", "use-google-credential")
-    for skill in ("cloud-files", "g-calendar", "email-client"):
+    for skill in ("cloud-files", "online-calendar", "email-client"):
         _root, gateway, _ = exported_interface(
             skill, f"{skill}.interface.default", blueprint_loader
         )
@@ -151,7 +151,7 @@ def test_coordinator_contract_hands_file_to_service_owners(
 
     expected = {
         "cloud-files": "cloud-files._rtx.interface.use-google-credential-file",
-        "g-calendar": "g-calendar._rtx.interface.use-google-credential-file",
+        "online-calendar": "online-calendar._rtx.interface.use-google-credential-file",
         "email-client": "email-client._rtx.interface.accounts-use-google-credential-file",
     }
     for skill, interface_id in expected.items():
@@ -199,12 +199,12 @@ def test_calendar_gateway_declares_complete_oauth_route_invariants(
     blueprint_loader: BlueprintLoader,
 ) -> None:
     _, gateway, _ = exported_interface(
-        "g-calendar", "g-calendar.interface.default", blueprint_loader
+        "online-calendar", "online-calendar.interface.default", blueprint_loader
     )
 
     assert {edge["interface"] for edge in gateway["uses_interfaces"]} == {
         "connect-google.interface.default",
-        "g-calendar._rtx.interface.scripts-gcal",
+        "online-calendar._rtx.interface.scripts-gcal",
     }
 
 
@@ -219,7 +219,7 @@ def test_legacy_setup_exports_still_exist_for_compatibility(
 ) -> None:
     expected = {
         "cloud-files": "cloud-files._rtx.interface.setup-oauth",
-        "g-calendar": "g-calendar._rtx.interface.setup-oauth",
+        "online-calendar": "online-calendar._rtx.interface.setup-oauth",
         "email-client": "email-client._rtx.interface.accounts-setup-oauth",
     }
     for skill, interface in expected.items():

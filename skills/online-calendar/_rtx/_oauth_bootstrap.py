@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""One-time OAuth2 setup for the g-calendar skill.
+"""One-time OAuth2 setup for the online-calendar skill.
 
-Two files live at ~/.config/g-calendar/ (both mode 600, never git-tracked):
+Two files live at ~/.config/online-calendar/ (both mode 600, never git-tracked):
   client.json      — original Google Cloud Console OAuth client JSON
                      (client_id + client_secret). Kept permanently; never
                      overwritten by this script. Source of truth for re-auth.
@@ -10,7 +10,7 @@ Two files live at ~/.config/g-calendar/ (both mode 600, never git-tracked):
                      on every run. Used by gcal.py to mint access tokens.
 
 Usage:
-    setup_oauth.py                              # reads ~/.config/g-calendar/client.json
+    setup_oauth.py                              # reads ~/.config/online-calendar/client.json
     setup_oauth.py --from-json /path/to/client_secret_*.json
     setup_oauth.py --client-id ID --client-secret SECRET [--port 8765]
 
@@ -36,8 +36,8 @@ SCOPE = "https://www.googleapis.com/auth/calendar"
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 CALENDAR_VERIFY_URL = "https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=1"
-CLIENT_PATH = os.path.expanduser("~/.config/g-calendar/client.json")
-CREDS_PATH = os.path.expanduser("~/.config/g-calendar/credentials.json")
+CLIENT_PATH = os.path.expanduser("~/.config/online-calendar/client.json")
+CREDS_PATH = os.path.expanduser("~/.config/online-calendar/credentials.json")
 
 
 def verify_access_token(access_token: str) -> None:

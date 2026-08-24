@@ -30,7 +30,7 @@ These interfaces are documented prompt surfaces. They are not executed through `
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, invoke `orchestrate`. To force regeneration of an existing plan, pass `--forced`.
 
-Data sources: `g-calendar` (schedule), `get-weather` (forecast), `list-manager` (todo/triage), `cloud-files` (plan persistence).
+Data sources: `online-calendar` (schedule), `get-weather` (forecast), `list-manager` (todo/triage), `cloud-files` (plan persistence).
 
 Two files per day in cloud storage:
 - `plans/M-D-YY.md` - human-readable rendered plan with injected list sections

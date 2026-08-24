@@ -1,0 +1,27 @@
+schema_version: 6
+node_type: behavioral_source
+id: standards-schema.source.standard-renderer
+version: 1
+maturity: stable
+description: Renders validated standard-v6 documents into deterministic Markdown views.
+gateway:
+  path: render_standard_v6.py
+  language: Python
+content:
+- render_standard_v6\.py
+dependencies: []
+uses_interfaces: []
+interfaces: {}
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies:
+- kind: python-package
+  name: PyYAML
+  version: any
+  reason: Parses standard YAML documents supplied to the renderer.
+  platforms:
+    linux: true
+    macos: true
+    windows: true

@@ -295,7 +295,7 @@ def test_cmd_move_uses_destination_query(monkeypatch, capsys):
 
 
 def test_get_access_token_uses_shared_credential_when_present(tmp_path):
-    config_dir = tmp_path / ".config" / "g-calendar"
+    config_dir = tmp_path / ".config" / "online-calendar"
     config_dir.mkdir(parents=True)
     (config_dir / "config.json").write_text(json.dumps({"credential_id": "google:sub1"}))
 
@@ -321,7 +321,7 @@ def test_get_access_token_uses_shared_credential_when_present(tmp_path):
 
 
 def test_get_access_token_falls_back_to_legacy_credentials_file(tmp_path):
-    config_dir = tmp_path / ".config" / "g-calendar"
+    config_dir = tmp_path / ".config" / "online-calendar"
     config_dir.mkdir(parents=True)
     (config_dir / "credentials.json").write_text(
         json.dumps({"client_id": "cid", "client_secret": "csecret", "refresh_token": "rtoken"})

@@ -162,7 +162,7 @@ SUMMARY_OVERRIDES = {
     "fix-bisync": "Diagnose and repair rclone bisync failures",
     "formal-prose-review": "Polish grammar, tone, and concision in technical prose without touching the math",
     "proof-audit": "Audit a proof for soundness, coherence, hidden assumptions, and redundancy",
-    "g-calendar": "Read and modify Google Calendar via a local OAuth CLI",
+    "online-calendar": "Read and modify Google Calendar via a local OAuth CLI",
     "get-weather": "Fetch weather for a location, day, or date range",
     "git-workflow": "Branch-safety checks and commit hygiene for any repo",
     "hook-maker": "Design cross-host assistant hooks with one purpose and per-host bindings",

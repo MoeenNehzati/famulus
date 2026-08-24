@@ -43,10 +43,10 @@ V4_CERTIFICATION_BASIS_MANIFEST = Path(
     "skills/skill-drift/references/certification-basis-roots.json"
 )
 CERTIFICATION_BASIS_MANIFEST = Path(
-    "references/certification/certification-basis-roots.json"
+    "references/certification-policy/certification-basis-roots.json"
 )
 CANONICAL_NODE_HASH_POLICY = Path(
-    "references/certification/node-hash-policy.yaml"
+    "references/certification-policy/node-hash-policy.yaml"
 )
 CERTIFIER_NODE_ID = "skill-certifier"
 CERTIFIER_INTERFACE_ID = "skill-certifier.interface.certify"

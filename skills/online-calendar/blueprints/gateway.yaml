@@ -6,15 +6,15 @@ description: Interprets calendar requests, invokes the calendar client, and rout
 gateway:
   language: Markdown
   path: SKILL.md
-id: g-calendar.source.gateway
+id: online-calendar.source.gateway
 interfaces:
-  g-calendar.source.gateway.interface.default:
+  online-calendar.source.gateway.interface.default:
     content:
     - SKILL\.md
     uses_interfaces:
     - interface: connect-google.interface.default
       version: 1
-    - interface: g-calendar._rtx.interface.scripts-gcal
+    - interface: online-calendar._rtx.interface.scripts-gcal
       version: 1
     contract:
       arguments:
@@ -107,7 +107,7 @@ schema_version: 6
 uses_interfaces:
 - interface: connect-google.interface.default
   version: 1
-- interface: g-calendar._rtx.interface.scripts-gcal
+- interface: online-calendar._rtx.interface.scripts-gcal
   version: 1
 version: 2
 maturity: experimental
