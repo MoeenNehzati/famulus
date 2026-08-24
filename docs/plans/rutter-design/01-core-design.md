@@ -71,7 +71,7 @@ Direct `Rutter(...)` construction is preferred. It snapshots the authored
 evolution mapping and transition-hook sequence into a stateless, run-neutral
 definition object; a bound Voyage owns the Charter, Reckoning, storage, and all
 execution state. Callbacks may be module functions or bound methods on a
-stateless definition object. Binding validates, before a Voyage starts:
+stateless definition object. Before a Voyage starts, root binding validates:
 
 - nonempty stable `rutter_id` and positive `definition_version`;
 - exact-Boolean `allow_multiple_hooks_per_transition`;
@@ -79,9 +79,17 @@ stateless definition object. Binding validates, before a Voyage starts:
 - unique evolution and transition-hook IDs;
 - every referenced local successor ID;
 - LLMStep, MachineStep, and SubRutter routes;
-- transition-hook identities and child constructors;
-- callable signatures; and
-- transitively referenced child identities and versions.
+- transition-hook identities;
+- callback and contextual-constructor signatures; and
+- every authored response schema.
+
+Root binding does not invoke a SubRutter or transition-hook
+`rutter_constructor`. When its evolution is reached or its hook is selected,
+the runtime invokes that constructor and atomically validates the returned
+definition's identity, version, local graph, referenced closure, identity
+collisions, and active-ancestor cycles before adopting it. On reopen, only
+persisted active contextual children are reconstructed, and each returned
+identity must match the persisted identity.
 
 Definition instances are stateless and run-neutral. Per-run data belongs only
 to the Charter, contexts, and durable Reckoning. Changing executable behavior,
@@ -92,8 +100,9 @@ Legacy subclasses remain compatible: they may declare metadata and implement
 `define_evolutions()` and `define_transition_hooks()`, and the registry still
 accepts no-argument class or factory sources.
 
-Ordinary evolution loops are allowed. Only cycles in the graph of Rutter
-definitions calling other Rutter definitions are rejected initially.
+Ordinary evolution loops are allowed. Active Rutter definition-call cycles are
+rejected when the contextual child is constructed, not by eagerly executing
+constructors during initial binding.
 
 ## Author-facing primitives
 
@@ -361,9 +370,9 @@ property. `help()` describes the three Compass-facing operations:
 
 ```python
 voyage.get_status() -> VoyageStatus
-voyage.validate(response, *, responding_to=None) -> ValidationReport
+voyage.validate(value, *, responding_to=None) -> ValidationReport
 voyage.advance(
-    response=MISSING,
+    value=MISSING,
     *,
     responding_to=None,
     continue_=True,
@@ -378,9 +387,11 @@ voyage.advance(
   or `None`. Its terminal-only value is `terminal_result`; its optional
   `FaultSummary` validates stable IDs and exposes evolution coordinates
   together, except that the `opaque` category exposes none.
+- For `validate()` and `advance()`, `value` is either a complete flat LLMStep
+  response or the active MachineStep's `MachineResult`.
 - `validate()` is read-only. For an LLMStep, it checks the exact
   `responding_to` entrance and the complete flat response before contextual
-  assessment. For a MachineStep, it validates a MachineResult and rejects a
+  assessment. For a MachineStep, it validates the MachineResult and rejects a
   response-correlation token.
 - `advance()` is the sole advancing operation. It revalidates under lock,
   records accepted work, selects the transition, runs selected hook children,

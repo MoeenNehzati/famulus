@@ -428,7 +428,7 @@ def test_source_blueprints_follow_live_v6_and_cli_pins_cutover_interfaces() -> N
         assert len(blueprint["interfaces"]) == 1
     assert {
         "interface": "rutter.interface.bound-operations",
-        "version": 5,
+        "version": 6,
     } in adapter["uses_interfaces"]
     assert {
         "interface": "rutter.interface.binding",

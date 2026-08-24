@@ -12,14 +12,14 @@ content:
 dependencies: []
 uses_interfaces:
 - interface: rutter.interface.bound-operations
-  version: 5
+  version: 6
 interfaces:
   using-compass.source.gateway.interface.default:
     content:
     - SKILL\.md
     uses_interfaces:
     - interface: rutter.interface.bound-operations
-      version: 5
+      version: 6
     version: 7
     description: Ask one authorized Voyage for its public operating interface and
       follow only the methods it advertises.

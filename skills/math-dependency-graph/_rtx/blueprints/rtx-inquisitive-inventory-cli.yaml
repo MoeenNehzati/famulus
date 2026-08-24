@@ -21,7 +21,7 @@ dependencies:
   blueprint:
     base: repository-root
     path: src/officina/rutter/blueprints/engine.yaml
-  reason: Uses only the public Voyage validation, next, and atomic status operations.
+  reason: Uses only the public Voyage validation, advance, and atomic status operations.
 - source: rutter.source.model
   version: 2
   blueprint:
@@ -32,7 +32,7 @@ uses_interfaces:
 - interface: math-dependency-graph._rtx.source.rtx-inquisitive-inventory-rutter.interface.experiment-lifecycle
   version: 7
 - interface: rutter.interface.bound-operations
-  version: 5
+  version: 6
 - interface: rutter.interface.model
   version: 2
 interfaces:
@@ -49,7 +49,7 @@ interfaces:
     - interface: math-dependency-graph._rtx.source.rtx-inquisitive-inventory-rutter.interface.experiment-lifecycle
       version: 7
     - interface: rutter.interface.bound-operations
-      version: 5
+      version: 6
     - interface: rutter.interface.model
       version: 2
     process_binding:

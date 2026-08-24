@@ -263,7 +263,7 @@ interfaces:
       version: 2
     - interface: rutter.source.values.interface.python-api
       version: 1
-    version: 5
+    version: 6
     description: Exposes the self-describing public Voyage status, entrance-correlated
       validation, and advancement operations used by thin Compass guidance and
       the inquisitive-inventory CLI without construction authority.
@@ -282,8 +282,9 @@ interfaces:
             - value: get-status
               description: Read one coherent VoyageStatus projection in one transaction.
             - value: validate
-              description: Purely validate one complete flat response in entrance,
-                formatting, schema, static outcome-map, and contextual-assessment order.
+              description: Purely validate the operation-specific flat LLMStep response
+                or MachineResult in entrance, formatting, schema, static outcome-map,
+                and contextual-assessment order.
             - value: advance
               description: Advance from the active leaf and optionally settle automatic
                 machine, child, terminal, or continuation work.
@@ -295,14 +296,17 @@ interfaces:
             kind: string
             description: Voyage Python value.
             sensitivity: user-private
-        response:
-          description: Complete flat finite JSON mapping for LLMStep validate or
-            advance; it contains an outcome but no public revision or evidence wrapper.
+        value:
+          description: Operation-specific value comprising a complete flat finite
+            JSON mapping for LLMStep validate or advance, or a MachineResult for
+            MachineStep validate or advance. The LLMStep form contains an outcome
+            but no public revision or evidence wrapper.
           required: false
           sensitivity: user-private
           type:
             kind: string
-            description: Finite JSON-compatible Python mapping.
+            description: Flat finite JSON-compatible Python mapping or immutable
+              MachineResult Python value.
             sensitivity: user-private
         responding-to:
           description: Exact Message evolution_entry_id that authorizes an LLMStep
@@ -374,8 +378,8 @@ interfaces:
         outputs:
         - result
         effects: []
-        caller_action: Call advance with the same flat response and responding-to
-          token only when the returned report is valid.
+        caller_action: Call advance with the same value only when the returned report
+          is valid; preserve responding-to for an LLMStep and omit it for a MachineStep.
       - id: previewed
         class: success
         outputs:

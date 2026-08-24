@@ -1777,7 +1777,7 @@ def test_v6_rutter_operation_effects_are_outcome_specific() -> None:
     bound = engine["interfaces"][
         "rutter.source.engine.interface.bound-operations"
     ]
-    assert bound["version"] == 5
+    assert bound["version"] == 6
     assert "inquisitive-inventory CLI" in bound["description"]
     bound_contract = bound["contract"]
     bound_outcomes = {
@@ -1922,10 +1922,30 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
         access = module["exports"][interface_id]["access"]
         assert access["allow_all_modules"] is False
         assert set(access["allowed_callers"]) == callers
+    expected_runtime_dependencies = {
+        "evaluation": [
+            {
+                "kind": "python-package",
+                "name": "jsonschema",
+                "platforms": {
+                    "linux": True,
+                    "macos": True,
+                    "windows": True,
+                },
+                "reason": (
+                    "Validates complete flat LLMStep responses before contextual "
+                    "assessment."
+                ),
+                "version": ">=4,<5",
+            }
+        ]
+    }
     for name, source in sources.items():
         assert source["gateway"] == {"path": f"{name}.py", "language": "Python"}
         assert source["content"] == [rf"{name}\.py"]
-        assert source["runtime_dependencies"] == []
+        assert source["runtime_dependencies"] == expected_runtime_dependencies.get(
+            name, []
+        )
 
     expected_interfaces = {
         "authoring": {"rutter.source.authoring.interface.python-api"},
@@ -2095,13 +2115,14 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
     bound = engine_interfaces[
         "rutter.source.engine.interface.bound-operations"
     ]
-    assert bound["version"] == 5
+    assert bound["version"] == 6
     assert "inquisitive-inventory CLI" in bound["description"]
     bound_contract = bound["contract"]
     assert set(bound_contract["arguments"]) == {
         "operation",
         "binding",
-        "response",
+        "value",
+        "responding-to",
         "continue",
         "dry-run",
     }
@@ -2116,7 +2137,7 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
         "help",
         "get-status",
         "validate",
-        "next",
+        "advance",
     }
     assert "Help text" in bound_contract["outputs"][0]["description"]
     assert bound_outcomes["described"]["effects"] == []

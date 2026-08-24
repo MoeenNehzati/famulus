@@ -59,7 +59,7 @@ def test_authored_body_does_not_duplicate_voyage_operating_contract() -> None:
     assert not [token for token in forbidden if token in text]
 
 
-def test_blueprint_consumes_v5_self_describing_bound_operations() -> None:
+def test_blueprint_consumes_v6_self_describing_bound_operations() -> None:
     """Generated guidance must authorize help without duplicating operation details."""
 
     root = yaml.safe_load(BLUEPRINT_PATH.read_text(encoding="utf-8"))
@@ -72,10 +72,10 @@ def test_blueprint_consumes_v5_self_describing_bound_operations() -> None:
     assert root["schema_version"] == gateway["schema_version"] == 6
     assert root["version"] == gateway["version"] == interface["version"] == 7
     assert gateway["uses_interfaces"] == [
-        {"interface": "rutter.interface.bound-operations", "version": 5}
+        {"interface": "rutter.interface.bound-operations", "version": 6}
     ]
     assert interface["uses_interfaces"] == [
-        {"interface": "rutter.interface.bound-operations", "version": 5}
+        {"interface": "rutter.interface.bound-operations", "version": 6}
     ]
     assert set(contract["arguments"]) == {"request", "binding"}
     binding = contract["arguments"]["binding"]
