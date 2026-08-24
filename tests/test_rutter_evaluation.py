@@ -26,7 +26,10 @@ from officina.rutter.values import (
     ValidationReport,
     VoyageResult,
 )
-from test_support.rutter_fixtures import response_schema as _response_schema
+from test_support.rutter_fixtures import (
+    response_schema as _response_schema,
+    stable_rutter_constructor,
+)
 
 
 class _Child(Rutter):
@@ -161,7 +164,7 @@ def test_llm_validator_rejects_non_report_as_typed_fault() -> None:
 
 def test_subrutter_charter_normalizes_the_declared_json_object() -> None:
     step = SubRutter(
-        _Child,
+        stable_rutter_constructor(_CHILD),
         charter_constructor=lambda context: {"items": [{"ready": True}]},
         next_on_outcome="done",
     )
@@ -173,7 +176,7 @@ def test_subrutter_charter_normalizes_the_declared_json_object() -> None:
 
 def test_subrutter_charter_rejects_malformed_json_as_typed_fault() -> None:
     step = SubRutter(
-        _Child,
+        stable_rutter_constructor(_CHILD),
         charter_constructor=lambda context: {"bad": object()},
         next_on_outcome="done",
     )

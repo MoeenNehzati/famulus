@@ -46,10 +46,12 @@ from officina.rutter.model import (
     after,
 )
 from officina.rutter.runtime import RutterRegistry
+from officina.rutter.storage import ReckoningStore
 from test_support.rutter_fixtures import (
     DirectChildRutter,
     ExampleRutter,
     response_schema as _response_schema,
+    stable_rutter_constructor,
 )
 
 
@@ -575,7 +577,7 @@ def test_reopen_rejects_recovery_that_differs_from_the_bound_action(
                     next_on_outcome="done",
                 ),
                 "delegate": SubRutter(
-                    DirectChildRutter,
+                    stable_rutter_constructor(DirectChildRutter),
                     charter_constructor=lambda context: {},
                     next_on_outcome="done",
                 ),
@@ -714,7 +716,7 @@ def test_nested_action_recovery_is_owned_by_the_deepest_leaf_across_reopen(
         def define_evolutions(self) -> Mapping[str, object]:
             return {
                 "delegate": SubRutter(
-                    ActionChild,
+                    stable_rutter_constructor(ActionChild),
                     charter_constructor=lambda context: {},
                     next_on_outcome="done",
                 ),
@@ -1650,7 +1652,7 @@ def test_call_push_keeps_parent_entered_and_exposes_the_child_leaf(
         def define_evolutions(self) -> Mapping[str, object]:
             return {
                 "delegate": SubRutter(
-                    DirectChildRutter,
+                    stable_rutter_constructor(DirectChildRutter),
                     charter_constructor=child_charter,
                     next_on_outcome="complete",
                 ),
@@ -1699,7 +1701,7 @@ def test_call_push_keeps_parent_entered_and_exposes_the_child_leaf(
     assert charter_contexts[0].history.entries() == ()
 
 
-def test_active_leaf_rejects_child_from_another_call_entrance_before_mutation(
+def test_open_rejects_child_from_another_call_entrance_without_mutation(
     tmp_path: Path,
 ) -> None:
     """Following a child from the wrong SubRutter entrance can settle it durably."""
@@ -1712,12 +1714,12 @@ def test_active_leaf_rejects_child_from_another_call_entrance_before_mutation(
         def define_evolutions(self) -> Mapping[str, object]:
             return {
                 "first": SubRutter(
-                    DirectChildRutter,
+                    stable_rutter_constructor(DirectChildRutter),
                     charter_constructor=lambda context: {"from": context.evolution_id},
                     next_on_outcome="done",
                 ),
                 "second": SubRutter(
-                    DirectChildRutter,
+                    stable_rutter_constructor(DirectChildRutter),
                     charter_constructor=lambda context: {"from": context.evolution_id},
                     next_on_outcome="done",
                 ),
@@ -1730,7 +1732,8 @@ def test_active_leaf_rejects_child_from_another_call_entrance_before_mutation(
     voyage = registry.create("root", path, {})
     voyage.advance(continue_=False)
 
-    with voyage._store.transaction() as current:
+    bare_store = ReckoningStore(root / path)
+    with bare_store.transaction() as current:
         corrupted = replace(
             current,
             root=replace(
@@ -1741,22 +1744,16 @@ def test_active_leaf_rejects_child_from_another_call_entrance_before_mutation(
                     ),
             ),
         )
-        voyage._store.replace(current, corrupted)
+        bare_store.replace(current, corrupted)
 
-    reopened = registry.open(path)
     before = (root / path).read_bytes()
 
     with pytest.raises(
         RutterStateError,
-        match="active explicit SubRutter child does not match the parent entered evolution",
+        match="active explicit child does not match a bound SubRutter evolution",
     ):
-        reopened.advance(continue_=False)
+        registry.open(path)
 
-    persisted = reopened._store.read()
-    assert persisted == corrupted
-    assert persisted.global_revision == 0
-    assert persisted.root.active_child is not None
-    assert persisted.root.active_child.run.history == ()
     assert (root / path).read_bytes() == before
 
 
@@ -1788,7 +1785,7 @@ def test_call_push_atomically_materializes_a_prompt_child_across_reopen(
         def define_evolutions(self) -> Mapping[str, object]:
             return {
                 "delegate": SubRutter(
-                    PromptChild,
+                    stable_rutter_constructor(PromptChild),
                     charter_constructor=lambda context: {"parent": context.evolution_id},
                     next_on_outcome="complete",
                 ),
@@ -1834,7 +1831,7 @@ def test_child_return_is_archived_before_the_parent_mapping_route(
         def define_evolutions(self) -> Mapping[str, object]:
             return {
                 "delegate": SubRutter(
-                    DirectChildRutter,
+                    stable_rutter_constructor(DirectChildRutter),
                     charter_constructor=lambda context: {"site": context.evolution_id},
                     next_on_outcome={"completed": "complete"},
                 ),
@@ -1913,7 +1910,7 @@ def test_continue_true_recursively_settles_nested_calls_with_one_revision(
         def define_evolutions(self) -> Mapping[str, object]:
             return {
                 "delegate": SubRutter(
-                    DirectChildRutter,
+                    stable_rutter_constructor(DirectChildRutter),
                     charter_constructor=lambda context: {"from": context.evolution_id},
                     next_on_outcome="done",
                 ),
@@ -1928,7 +1925,7 @@ def test_continue_true_recursively_settles_nested_calls_with_one_revision(
         def define_evolutions(self) -> Mapping[str, object]:
             return {
                 "delegate": SubRutter(
-                    MiddleRutter,
+                    stable_rutter_constructor(MiddleRutter),
                     charter_constructor=lambda context: {"from": context.evolution_id},
                     next_on_outcome="done",
                 ),
@@ -2016,7 +2013,7 @@ def test_nested_prompt_self_loop_reopens_with_one_global_revision(
         def define_evolutions(self) -> Mapping[str, object]:
             return {
                 "delegate": SubRutter(
-                    PromptLoopChild,
+                    stable_rutter_constructor(PromptLoopChild),
                     charter_constructor=lambda context: {"from": context.evolution_id},
                     next_on_outcome="after",
                 ),
@@ -2097,7 +2094,7 @@ def test_call_self_loop_allocates_a_fresh_entrance_child_and_call_id(
         def define_evolutions(self) -> Mapping[str, object]:
             return {
                 "delegate": SubRutter(
-                    DirectChildRutter,
+                    stable_rutter_constructor(DirectChildRutter),
                     charter_constructor=lambda context: {"entry": context.evolution_entry_id},
                     next_on_outcome={"completed": "delegate"},
                 )
@@ -2155,7 +2152,7 @@ def test_call_depth_limit_rejects_before_charter_or_id_allocation(
         def define_evolutions(self) -> Mapping[str, object]:
             return {
                 "delegate": SubRutter(
-                    DirectChildRutter,
+                    stable_rutter_constructor(DirectChildRutter),
                     charter_constructor=child_charter,
                     next_on_outcome="done",
                 ),
@@ -2205,7 +2202,7 @@ def test_call_preview_without_a_returned_result_is_read_only_unavailable(
         def define_evolutions(self) -> Mapping[str, object]:
             return {
                 "delegate": SubRutter(
-                    DirectChildRutter,
+                    stable_rutter_constructor(DirectChildRutter),
                     charter_constructor=child_charter,
                     next_on_outcome="done",
                 ),
@@ -2247,7 +2244,7 @@ def test_call_preview_uses_a_durable_result_for_callable_routing_without_writes(
         def define_evolutions(self) -> Mapping[str, object]:
             return {
                 "delegate": SubRutter(
-                    DirectChildRutter,
+                    stable_rutter_constructor(DirectChildRutter),
                     charter_constructor=lambda context: {"from": context.evolution_id},
                     choose_next=route,
                 ),
@@ -2337,7 +2334,7 @@ def test_call_charter_failure_faults_in_place_without_partial_child(
         def define_evolutions(self) -> Mapping[str, object]:
             return {
                 "delegate": SubRutter(
-                    DirectChildRutter,
+                    stable_rutter_constructor(DirectChildRutter),
                     charter_constructor=fail_charter,
                     next_on_outcome="done",
                 ),
@@ -2412,7 +2409,7 @@ def test_prompt_child_materialization_failure_leaves_no_partial_attachment(
         def define_evolutions(self) -> Mapping[str, object]:
             return {
                 "delegate": SubRutter(
-                    PromptChild,
+                    stable_rutter_constructor(PromptChild),
                     charter_constructor=lambda context: {"from": context.evolution_id},
                     next_on_outcome="done",
                 ),
@@ -2475,7 +2472,7 @@ def test_child_fault_retains_the_complete_active_parent_child_path(
         def define_evolutions(self) -> Mapping[str, object]:
             return {
                 "delegate": SubRutter(
-                    PromptChild,
+                    stable_rutter_constructor(PromptChild),
                     charter_constructor=lambda context: {"from": context.evolution_id},
                     next_on_outcome="done",
                 ),
@@ -2548,7 +2545,7 @@ def test_returned_child_record_survives_later_parent_routing_failure(
         def define_evolutions(self) -> Mapping[str, object]:
             return {
                 "delegate": SubRutter(
-                    DirectChildRutter,
+                    stable_rutter_constructor(DirectChildRutter),
                     charter_constructor=lambda context: {"from": context.evolution_id},
                     choose_next=fail_route,
                 ),
@@ -2605,7 +2602,7 @@ def test_dry_run_at_nested_terminal_does_not_return_or_route_the_child(
         def define_evolutions(self) -> Mapping[str, object]:
             return {
                 "delegate": SubRutter(
-                    DirectChildRutter,
+                    stable_rutter_constructor(DirectChildRutter),
                     charter_constructor=lambda context: {"from": context.evolution_id},
                     next_on_outcome="done",
                 ),
@@ -2836,10 +2833,10 @@ def test_hook_constructor_rejects_the_active_parent_identity_atomically(
     )
 
 
-def test_hook_constructor_rejects_a_reachable_identity_collision_atomically(
+def test_hook_constructor_rejects_a_registered_identity_collision_atomically(
     tmp_path: Path,
 ) -> None:
-    """A collision anywhere in the candidate closure must add no definitions."""
+    """A collision already reserved in the shared binder must remain atomic."""
 
     class BoundDescendant(Rutter):
         rutter_id = "reserved-hook-descendant"
@@ -2849,39 +2846,22 @@ def test_hook_constructor_rejects_a_reachable_identity_collision_atomically(
         def define_evolutions(self) -> Mapping[str, object]:
             return {"done": Terminal(result=VoyageResult("bound", {}))}
 
-    class CollidingDescendant(Rutter):
-        rutter_id = "reserved-hook-descendant"
-        definition_version = 1
-        initial_evolution_id = "done"
-
-        def define_evolutions(self) -> Mapping[str, object]:
-            return {"done": Terminal(result=VoyageResult("collision", {}))}
-
     candidate = Rutter(
-        id="contextual-closure",
+        id="reserved-hook-descendant",
         version=1,
-        start="delegate",
+        start="done",
         evolutions={
-            "delegate": SubRutter(
-                CollidingDescendant,
-                charter_constructor=lambda context: {},
-                next_on_outcome="done",
-            ),
-            "done": Terminal(result=VoyageResult("candidate", {})),
+            "done": Terminal(result=VoyageResult("collision", {})),
         },
     )
     parent = _hook_parent(
         "closure-collision-parent",
         lambda context: candidate,
-        extra_evolutions={
-            "reserved": SubRutter(
-                BoundDescendant,
-                charter_constructor=lambda context: {},
-                next_on_outcome="done",
-            )
-        },
     )
-    voyage = RutterRegistry({"parent": parent}, tmp_path).create(
+    voyage = RutterRegistry(
+        {"parent": parent, "reserved": BoundDescendant},
+        tmp_path,
+    ).create(
         "parent", Path("closure-collision.reckoning.json"), {}
     )
 
@@ -2890,7 +2870,7 @@ def test_hook_constructor_rejects_a_reachable_identity_collision_atomically(
 
     assert faulted.condition == "fault"
     assert persisted.root.active_child is None
-    assert ("contextual-closure", 1) not in voyage._definitions
+    assert ("reserved-hook-descendant", 1) not in voyage._definitions
     _assert_fault(
         persisted.fault,
         category="hook-construction",
@@ -3022,3 +3002,352 @@ def test_completed_hook_attachment_skips_constructor_before_target_entry(
     assert target.rutter_id == "completed-hook-parent"
     assert target.evolution_id == "done"
     assert len(constructions) == 1
+
+
+def _subrutter_parent(
+    rutter_id: str,
+    rutter_constructor: Callable[[EvolutionContext], object],
+) -> Rutter:
+    return Rutter(
+        id=rutter_id,
+        version=1,
+        start="call",
+        evolutions={
+            "call": SubRutter(
+                rutter_constructor,
+                charter_constructor=lambda context: {
+                    "entry": context.evolution_entry_id
+                },
+                next_on_outcome="done",
+            ),
+            "done": Terminal(result=VoyageResult("parent-complete", {})),
+        },
+    )
+
+
+def _binder_state(registry: RutterRegistry) -> tuple[dict, dict, tuple]:
+    return (
+        dict(registry._binder._by_source),
+        dict(registry._binder._source_by_id),
+        tuple(registry._binder._visiting),
+    )
+
+
+def test_active_contextual_subrutter_reconstructs_once_in_fresh_registry(
+    tmp_path: Path,
+) -> None:
+    first_child = _terminal_rutter("replayed-explicit-child", 7)
+    first_contexts: list[EvolutionContext] = []
+
+    def first_constructor(context: EvolutionContext) -> Rutter:
+        first_contexts.append(context)
+        return first_child
+
+    first_parent = _subrutter_parent(
+        "replayed-explicit-parent",
+        first_constructor,
+    )
+    path = Path("replayed-contextual-subrutter.reckoning.json")
+    first = RutterRegistry({"parent": first_parent}, tmp_path).create(
+        "parent", path, {}
+    )
+
+    pushed = first.advance(continue_=False)
+
+    assert pushed.rutter_id == "replayed-explicit-child"
+    assert len(first_contexts) == 1
+    persisted_child = first._store.read().root.active_child
+    assert persisted_child is not None
+    assert (persisted_child.run.rutter_id, persisted_child.run.definition_version) == (
+        "replayed-explicit-child",
+        7,
+    )
+
+    replacement_child = _terminal_rutter("replayed-explicit-child", 7)
+    reopened_contexts: list[EvolutionContext] = []
+    parent_routes: list[tuple[EvolutionContext, VoyageResult]] = []
+
+    def reopened_constructor(context: EvolutionContext) -> Rutter:
+        reopened_contexts.append(context)
+        return replacement_child
+
+    def reopened_route(
+        context: EvolutionContext,
+        result: VoyageResult,
+    ) -> str:
+        parent_routes.append((context, result))
+        return "done"
+
+    replacement_parent = Rutter(
+        id="replayed-explicit-parent",
+        version=1,
+        start="call",
+        evolutions={
+            "call": SubRutter(
+                reopened_constructor,
+                charter_constructor=lambda context: {
+                    "entry": context.evolution_entry_id
+                },
+                choose_next=reopened_route,
+            ),
+            "done": Terminal(result=VoyageResult("parent-complete", {})),
+        },
+    )
+    opened = RutterRegistry({"parent": replacement_parent}, tmp_path).open(path)
+
+    assert opened.rutter is replacement_parent
+    with pytest.raises(AttributeError):
+        opened.rutter = first_parent  # type: ignore[misc]
+    assert reopened_contexts == first_contexts
+
+    terminal = opened.advance(continue_=True)
+
+    assert terminal.rutter_id == "replayed-explicit-parent"
+    assert terminal.evolution_id == "done"
+    assert terminal.condition == "terminal"
+    assert len(reopened_contexts) == 1
+    assert len(parent_routes) == 1
+    assert parent_routes[0][1] == VoyageResult("child-complete", {})
+    assert len(opened._store.read().completed_runs) == 1
+
+
+@pytest.mark.parametrize("failure", ("raises", "non-rutter"))
+def test_subrutter_constructor_failure_faults_without_binding_or_partial_child(
+    tmp_path: Path,
+    failure: str,
+) -> None:
+    def construct(context: EvolutionContext) -> object:
+        del context
+        if failure == "raises":
+            raise RuntimeError("private explicit constructor detail")
+        return {"not": "a Rutter"}
+
+    parent = _subrutter_parent(f"explicit-construction-{failure}", construct)
+    registry = RutterRegistry({"parent": parent}, tmp_path)
+    voyage = registry.create(
+        "parent",
+        Path(f"explicit-construction-{failure}.reckoning.json"),
+        {},
+    )
+    binder_before = _binder_state(registry)
+    definitions_before = dict(voyage._definitions)
+    cache_before = dict(voyage._contextual_call_children)
+
+    faulted = voyage.advance(continue_=False)
+    persisted = voyage._store.read()
+
+    assert faulted.condition == "fault"
+    assert persisted.root.active_child is None
+    assert persisted.root.history == ()
+    assert persisted.completed_runs == {}
+    assert _binder_state(registry) == binder_before
+    assert voyage._definitions == definitions_before
+    assert voyage._contextual_call_children == cache_before
+    _assert_fault(
+        persisted.fault,
+        category="child-construction",
+        run_id=persisted.root.run_id,
+        evolution_id="call",
+        evolution_entry_id=persisted.root.entered_evolution.entry_id,
+    )
+    assert b"private explicit constructor detail" not in (
+        tmp_path / f"explicit-construction-{failure}.reckoning.json"
+    ).read_bytes()
+
+
+def test_subrutter_constructor_rejects_active_parent_identity_atomically(
+    tmp_path: Path,
+) -> None:
+    definitions: dict[str, Rutter] = {}
+
+    def construct_parent(context: EvolutionContext) -> Rutter:
+        del context
+        return definitions["parent"]
+
+    parent = _subrutter_parent("recursive-explicit-parent", construct_parent)
+    definitions["parent"] = parent
+    registry = RutterRegistry({"parent": parent}, tmp_path)
+    voyage = registry.create(
+        "parent", Path("recursive-explicit-parent.reckoning.json"), {}
+    )
+    binder_before = _binder_state(registry)
+    definitions_before = dict(voyage._definitions)
+    cache_before = dict(voyage._contextual_call_children)
+
+    faulted = voyage.advance(continue_=False)
+    persisted = voyage._store.read()
+
+    assert faulted.condition == "fault"
+    assert persisted.root.active_child is None
+    assert _binder_state(registry) == binder_before
+    assert voyage._definitions == definitions_before
+    assert voyage._contextual_call_children == cache_before
+    _assert_fault(
+        persisted.fault,
+        category="child-construction",
+        run_id=persisted.root.run_id,
+        evolution_id="call",
+        evolution_entry_id=persisted.root.entered_evolution.entry_id,
+    )
+
+
+def test_subrutter_constructor_rejects_identity_collision_atomically(
+    tmp_path: Path,
+) -> None:
+    first_child = _terminal_rutter("reserved-explicit-child")
+    colliding_child = _terminal_rutter("reserved-explicit-child")
+
+    def construct_first(context: EvolutionContext) -> Rutter:
+        del context
+        return first_child
+
+    def construct_collision(context: EvolutionContext) -> Rutter:
+        del context
+        return colliding_child
+
+    parent = Rutter(
+        id="explicit-collision-parent",
+        version=1,
+        start="bind",
+        evolutions={
+            "bind": SubRutter(
+                construct_first,
+                charter_constructor=lambda context: {},
+                next_on_outcome="collide",
+            ),
+            "collide": SubRutter(
+                construct_collision,
+                charter_constructor=lambda context: {},
+                next_on_outcome="done",
+            ),
+            "done": Terminal(result=VoyageResult("parent-complete", {})),
+        },
+    )
+    registry = RutterRegistry({"parent": parent}, tmp_path)
+    voyage = registry.create(
+        "parent", Path("explicit-collision.reckoning.json"), {}
+    )
+    voyage.advance(continue_=False)
+    voyage.advance(continue_=False)
+    entered_collision = voyage.advance(continue_=False)
+    assert entered_collision.evolution_id == "collide"
+    binder_before = _binder_state(registry)
+    definitions_before = dict(voyage._definitions)
+    cache_before = dict(voyage._contextual_call_children)
+
+    faulted = voyage.advance(continue_=False)
+    persisted = voyage._store.read()
+
+    assert faulted.condition == "fault"
+    assert persisted.root.active_child is None
+    assert _binder_state(registry) == binder_before
+    assert voyage._definitions == definitions_before
+    assert voyage._contextual_call_children == cache_before
+    _assert_fault(
+        persisted.fault,
+        category="child-construction",
+        run_id=persisted.root.run_id,
+        evolution_id="collide",
+        evolution_entry_id=persisted.root.entered_evolution.entry_id,
+    )
+
+
+def test_failed_subrutter_binding_leaves_no_cache_before_corrected_retry(
+    tmp_path: Path,
+) -> None:
+    invalid = Rutter(
+        id="retry-explicit-child",
+        version=1,
+        start="missing",
+        evolutions={"done": Terminal(result=VoyageResult("invalid", {}))},
+    )
+    corrected = _terminal_rutter("retry-explicit-child")
+    candidate = [invalid]
+    charter_contexts: list[EvolutionContext] = []
+
+    def construct(context: EvolutionContext) -> Rutter:
+        del context
+        return candidate[0]
+
+    parent = Rutter(
+        id="retry-explicit-parent",
+        version=1,
+        start="call",
+        evolutions={
+            "call": SubRutter(
+                construct,
+                charter_constructor=lambda context: (
+                    charter_contexts.append(context) or {}
+                ),
+                next_on_outcome="done",
+            ),
+            "done": Terminal(result=VoyageResult("parent-complete", {})),
+        },
+    )
+    registry = RutterRegistry({"parent": parent}, tmp_path)
+    first = registry.create(
+        "parent", Path("retry-explicit-invalid.reckoning.json"), {}
+    )
+    binder_before = _binder_state(registry)
+    definitions_before = dict(first._definitions)
+    cache_before = dict(first._contextual_call_children)
+
+    first_fault = first.advance(continue_=False)
+
+    assert first_fault.condition == "fault"
+    assert first._store.read().root.active_child is None
+    assert _binder_state(registry) == binder_before
+    assert first._definitions == definitions_before
+    assert first._contextual_call_children == cache_before
+    assert ("retry-explicit-child", 1) not in first._definitions
+    assert charter_contexts == []
+
+    candidate[0] = corrected
+    second = registry.create(
+        "parent", Path("retry-explicit-corrected.reckoning.json"), {}
+    )
+    child = second.advance(continue_=False)
+
+    assert child.rutter_id == "retry-explicit-child"
+    assert second._store.read().root.active_child is not None
+    assert len(charter_contexts) == 1
+
+
+@pytest.mark.parametrize("failure", ("raises", "non-rutter", "identity"))
+def test_reopen_subrutter_construction_failure_is_read_only_and_atomic(
+    tmp_path: Path,
+    failure: str,
+) -> None:
+    child = _terminal_rutter("reopen-explicit-child", 4)
+
+    def first_constructor(context: EvolutionContext) -> Rutter:
+        del context
+        return child
+
+    parent = _subrutter_parent(
+        "reopen-explicit-parent",
+        first_constructor,
+    )
+    path = Path(f"reopen-explicit-{failure}.reckoning.json")
+    first = RutterRegistry({"parent": parent}, tmp_path).create("parent", path, {})
+    first.advance(continue_=False)
+    before = (tmp_path / path).read_bytes()
+
+    def fail(context: EvolutionContext) -> object:
+        del context
+        if failure == "raises":
+            raise RuntimeError("private explicit reopen detail")
+        if failure == "non-rutter":
+            return {"not": "a Rutter"}
+        return _terminal_rutter("different-explicit-child", 4)
+
+    replacement_parent = _subrutter_parent("reopen-explicit-parent", fail)
+    fresh_registry = RutterRegistry({"parent": replacement_parent}, tmp_path)
+    binder_before = _binder_state(fresh_registry)
+
+    with pytest.raises(RutterStateError, match="SubRutter.*call"):
+        fresh_registry.open(path)
+
+    assert _binder_state(fresh_registry) == binder_before
+    assert (tmp_path / path).read_bytes() == before
+    assert b"private explicit reopen detail" not in before

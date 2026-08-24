@@ -412,6 +412,9 @@ class DiagnoseAnswer(Rutter):
         }
 
 
+_DIAGNOSE_ANSWER = DiagnoseAnswer()
+
+
 class AskAndDiagnose(Rutter):
     rutter_id = "ask-and-diagnose"
     definition_version = 3
@@ -459,6 +462,11 @@ class AskAndDiagnose(Rutter):
             origin_evolution_id="diagnose"
         ).result
 
+    @staticmethod
+    def _diagnose_rutter(context: EvolutionContext) -> Rutter:
+        del context
+        return _DIAGNOSE_ANSWER
+
     def define_evolutions(self) -> Mapping[str, object]:
         owner = type(self)
         if self.evaluator is not None and (
@@ -490,7 +498,7 @@ class AskAndDiagnose(Rutter):
                 next_on_outcome="diagnose",
             ),
             "diagnose": SubRutter(
-                DiagnoseAnswer,
+                self._diagnose_rutter,
                 charter_constructor=self._diagnosis_charter,
                 next_on_outcome="complete",
             ),

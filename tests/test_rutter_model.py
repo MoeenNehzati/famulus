@@ -50,6 +50,7 @@ from officina.rutter.model import (
 from test_support.rutter_fixtures import (
     ExampleRutter,
     example_message,
+    stable_rutter_constructor,
     response_schema as _response_schema,
 )
 
@@ -554,12 +555,12 @@ def test_llm_step_snapshots_none_empty_and_shaped_response_schemas() -> None:
         ),
         (
             lambda: SubRutter(
-                ExampleRutter,
+                stable_rutter_constructor(ExampleRutter),
                 charter_constructor=lambda context: {},
                 next_on_outcome="done",
             ),
             lambda: SubRutter(
-                ExampleRutter,
+                stable_rutter_constructor(ExampleRutter),
                 charter_constructor=lambda context: {},
                 choose_next=lambda context, result: "done",
             ),
@@ -595,9 +596,12 @@ def test_evolution_constructors_separate_static_and_callback_routing(
             next_on_outcome="done",
             choose_next=lambda context, result: "done",
         ),
-        lambda: SubRutter(ExampleRutter, charter_constructor=lambda context: {}),
         lambda: SubRutter(
-            ExampleRutter,
+            stable_rutter_constructor(ExampleRutter),
+            charter_constructor=lambda context: {},
+        ),
+        lambda: SubRutter(
+            stable_rutter_constructor(ExampleRutter),
             charter_constructor=lambda context: {},
             next_on_outcome="done",
             choose_next=lambda context, result: "done",
@@ -630,13 +634,21 @@ def test_terminal_construction_names_fixed_and_contextual_result_modes() -> None
 
 
 def test_child_definitions_name_only_their_charter_constructors() -> None:
+    child = ExampleRutter()
+
+    def construct_child(context: EvolutionContext) -> Rutter:
+        del context
+        return child
+
     call = SubRutter(
-        ExampleRutter,
+        construct_child,
         charter_constructor=lambda context: {"artifact": "draft.md"},
         next_on_outcome="done",
     )
 
+    assert call.rutter_constructor is construct_child
     assert callable(call.charter_constructor)
+    assert not hasattr(call, "child")
     assert not hasattr(call, "charter")
 
 
@@ -644,7 +656,7 @@ def test_definition_values_keep_callbacks_in_process_only() -> None:
     prompt = ExampleRutter().define_evolutions()["report"]
     action = MachineStep(lambda context: MachineResult("ok", {}), mode="pure", next_on_outcome="done")
     call = SubRutter(
-        ExampleRutter,
+        stable_rutter_constructor(ExampleRutter),
         charter_constructor=lambda context: {},
         next_on_outcome="done",
     )
@@ -668,7 +680,7 @@ def test_definition_values_keep_callbacks_in_process_only() -> None:
     assert isinstance(prompt, LLMStep)
     assert prompt.text == "Report."
     assert action.mode == "pure"
-    assert call.child is ExampleRutter
+    assert callable(call.rutter_constructor)
     assert done.result == VoyageResult("completed", {})
     assert instruction.machine_id == "action-1"
     assert instruction.mode == "pure"

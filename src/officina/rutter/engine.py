@@ -255,25 +255,12 @@ def _prompt_turn(reckoning: Reckoning, run: ActiveRun) -> Turn:
     return turn
 
 
-def _call_child_definition(
-    voyage: Voyage,
-    call: SubRutter,
-) -> _BoundDefinition:
-    identity = (
-        getattr(call.child, "rutter_id", None),
-        getattr(call.child, "definition_version", None),
-    )
-    try:
-        return voyage._definitions[identity]
-    except KeyError as exc:
-        raise RutterStateError("SubRutter child definition is unavailable") from exc
-
-
 def _push_call(
     reckoning: Reckoning,
     run_id: str,
     call: SubRutter,
     child_definition: _BoundDefinition,
+    context: EvolutionContext,
 ) -> Reckoning:
     leaf = deepest_active_leaf(reckoning)
     if leaf.run.run_id != run_id:
@@ -281,7 +268,7 @@ def _push_call(
     _require_child_capacity(reckoning, run_id)
     child_charter = Charter(
         build_subrutter_charter(
-            _evolution_context(leaf.run, reckoning),
+            context,
             call,
         )
     )
@@ -1137,6 +1124,9 @@ class Voyage:
         self._contextual_hook_children: dict[
             tuple[str, str, str], _BoundDefinition
         ] = {}
+        self._contextual_call_children: dict[
+            tuple[str, str], _BoundDefinition
+        ] = {}
         self._reckoning = reckoning
         self._store: _StoreIO = ReckoningStore(
             path, semantic_validator=self._validate_reckoning
@@ -1165,7 +1155,57 @@ class Voyage:
             if run.active_child is None:
                 break
             run = run.active_child.run
-        raise RutterStateError("contextual hook parent is absent from active path")
+        raise RutterStateError("contextual child parent is absent from active path")
+
+    def _resolve_contextual_call(
+        self,
+        reckoning: Reckoning,
+        parent: ActiveRun,
+        call: SubRutter,
+        context: EvolutionContext,
+        *,
+        expected_identity: tuple[str, int] | None = None,
+        reopening: bool = False,
+    ) -> _BoundDefinition:
+        key = (parent.run_id, context.evolution_entry_id)
+        cached = self._contextual_call_children.get(key)
+        if cached is not None:
+            if expected_identity is not None and cached.identity != expected_identity:
+                raise RutterStateError(
+                    f"SubRutter {context.evolution_id!r} contextual child identity "
+                    "differs from persisted identity"
+                )
+            return cached
+        try:
+            try:
+                source = call.rutter_constructor(context)
+            except Exception as exc:
+                raise _RutterFault("child-construction") from exc
+            if not isinstance(source, Rutter):
+                raise _RutterFault("child-construction")
+            definition, closure = self._bind_contextual_definition(
+                source,
+                self._definitions,
+                self._active_ancestor_identities(reckoning, parent.run_id),
+                expected_identity,
+            )
+        except _RutterFault as exc:
+            if not reopening:
+                raise
+            raise RutterStateError(
+                f"SubRutter {context.evolution_id!r} contextual child "
+                "construction failed"
+            ) from exc
+        except Exception as exc:
+            if reopening:
+                raise RutterStateError(
+                    f"SubRutter {context.evolution_id!r} contextual child "
+                    "construction or identity validation failed"
+                ) from exc
+            raise _RutterFault("child-construction") from exc
+        self._definitions.update(closure)
+        self._contextual_call_children[key] = definition
+        return definition
 
     def _resolve_contextual_hook(
         self,
@@ -1283,7 +1323,32 @@ class Voyage:
             child = run.active_child
             if child is None:
                 break
-            if child.kind == "attached_case":
+            child_identity = (
+                child.run.rutter_id,
+                child.run.definition_version,
+            )
+            if child.kind == "explicit_call":
+                if (
+                    not isinstance(evolution, SubRutter)
+                    or child.site != run.entered_evolution.evolution_id
+                ):
+                    raise RutterStateError(
+                        "active explicit child does not match a bound "
+                        "SubRutter evolution"
+                    )
+                expected = self._resolve_contextual_call(
+                    reckoning,
+                    run,
+                    evolution,
+                    _evolution_context(run, reckoning),
+                    expected_identity=child_identity,
+                    reopening=True,
+                )
+                if child_identity != expected.identity:
+                    raise RutterStateError(
+                        "active child identity differs from its bound definition"
+                    )
+            elif child.kind == "attached_case":
                 hook = definition.transition_hooks_by_id.get(child.site)
                 if hook is None:
                     raise RutterStateError(
@@ -1297,10 +1362,6 @@ class Voyage:
                     child,
                     hook,
                     depth,
-                )
-                child_identity = (
-                    child.run.rutter_id,
-                    child.run.definition_version,
                 )
                 expected = self._resolve_contextual_hook(
                     reckoning,
@@ -1347,7 +1408,14 @@ class Voyage:
                         "active explicit child does not match a bound "
                         "SubRutter evolution"
                     )
-                expected = self._definition_identity(site.child)
+                contextual = self._contextual_call_children.get(
+                    (parent.run_id, parent.entered_evolution.entry_id)
+                )
+                if contextual is None:
+                    raise RutterStateError(
+                        "active explicit child has no contextual definition"
+                    )
+                expected = contextual.identity
             else:
                 hook = definition.transition_hooks_by_id.get(child.site)
                 if hook is None:
@@ -1509,13 +1577,9 @@ class Voyage:
                 "attached child"
             )
 
-    def _definition_identity(self, source: object) -> tuple[str, int]:
-        for definition in self._definitions.values():
-            if type(definition.definition) is source:
-                return definition.identity
-        raise RutterStateError(
-            "active child source is absent from the bound graph"
-        )
+    @property
+    def rutter(self) -> Rutter:
+        return self._definition.definition
 
     def help(self) -> str:
         """Describe the public methods authorized for Compass operation."""
@@ -1784,12 +1848,19 @@ def _advance_call(
             definition,
             record,
         )
-    child_definition = _call_child_definition(voyage, evolution)
+    context = _evolution_context(leaf.run, reckoning)
+    child_definition = voyage._resolve_contextual_call(
+        reckoning,
+        leaf.run,
+        evolution,
+        context,
+    )
     return _push_call(
         reckoning,
         leaf.run.run_id,
         evolution,
         child_definition,
+        context,
     )
 
 

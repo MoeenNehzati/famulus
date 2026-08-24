@@ -235,15 +235,25 @@ class MachineStep:
 
 @dataclass(frozen=True)
 class SubRutter:
-    child: type[Rutter]
+    """A contextual explicit child call with replayable Rutter construction.
+
+    For the same immutable Charter, evolution entry, and history prefix,
+    ``rutter_constructor`` must return an equivalent Rutter identity. Within
+    one Voyage, repeated resolution must return the same definition instance;
+    a fresh registry may return a fresh equivalent object.
+    """
+
+    rutter_constructor: Callable[[EvolutionContext], Rutter]
     _: KW_ONLY
     charter_constructor: Callable[[EvolutionContext], JsonObject]
     next_on_outcome: str | Mapping[str, str] | None = None
     choose_next: Callable[..., str] | None = None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.child, type) or not issubclass(self.child, Rutter):
-            raise RutterDefinitionError("SubRutter child must be a Rutter class")
+        if not callable(self.rutter_constructor):
+            raise RutterDefinitionError(
+                "SubRutter rutter_constructor must be callable"
+            )
         if not callable(self.charter_constructor):
             raise RutterDefinitionError(
                 "SubRutter charter_constructor must be callable"

@@ -31,6 +31,7 @@ from officina.rutter.model import (
     Message,
     OpaqueFault,
     LLMStep,
+    EvolutionContext,
     MachineInstruction,
     Reckoning,
     Rutter,
@@ -51,7 +52,96 @@ from officina.rutter.storage import ReckoningStore
 from test_support.rutter_fixtures import (
     ExampleRutter,
     response_schema as _response_schema,
+    stable_rutter_constructor,
 )
+
+
+def test_subrutter_constructs_the_child_selected_by_evolution_context(
+    tmp_path: Path,
+) -> None:
+    first_child = Rutter(
+        id="context-first-child",
+        version=1,
+        start="done",
+        evolutions={"done": Terminal(result=VoyageResult("first", {}))},
+    )
+    second_child = Rutter(
+        id="context-second-child",
+        version=3,
+        start="done",
+        evolutions={"done": Terminal(result=VoyageResult("second", {}))},
+    )
+    constructions: list[EvolutionContext] = []
+    charters: list[EvolutionContext] = []
+    routes: list[tuple[EvolutionContext, VoyageResult]] = []
+
+    def choose_child(context: EvolutionContext) -> Rutter:
+        constructions.append(context)
+        if context.charter.data["selection"] == "second":
+            return second_child
+        return first_child
+
+    def build_charter(context: EvolutionContext) -> Mapping[str, object]:
+        charters.append(context)
+        return {"source_entry": context.evolution_entry_id}
+
+    def route_parent(
+        context: EvolutionContext,
+        result: VoyageResult,
+    ) -> str:
+        routes.append((context, result))
+        return "done"
+
+    parent = Rutter(
+        id="context-choice-parent",
+        version=1,
+        start="call",
+        evolutions={
+            "call": SubRutter(
+                choose_child,
+                charter_constructor=build_charter,
+                choose_next=route_parent,
+            ),
+            "done": Terminal(result=VoyageResult("parent-complete", {})),
+        },
+    )
+    voyage = RutterRegistry({"parent": parent}, tmp_path).create(
+        "parent",
+        Path("context-choice.reckoning.json"),
+        {"selection": "second"},
+    )
+
+    child = voyage.advance(continue_=False)
+    active = voyage._store.read().root.active_child
+
+    assert child.rutter_id == "context-second-child"
+    assert child.definition_version == 3
+    assert active is not None
+    assert (active.run.rutter_id, active.run.definition_version) == (
+        "context-second-child",
+        3,
+    )
+    assert len(constructions) == 1
+    assert len(charters) == 1
+    assert constructions[0] == charters[0]
+
+    voyage.get_status()
+    child_terminal = voyage.advance(continue_=False)
+    parent_target = voyage.advance(continue_=False)
+    persisted = voyage._store.read()
+
+    assert child_terminal.rutter_id == "context-second-child"
+    assert child_terminal.condition == "terminal"
+    assert parent_target.rutter_id == "context-choice-parent"
+    assert parent_target.evolution_id == "done"
+    assert len(constructions) == 1
+    assert len(charters) == 1
+    assert len(routes) == 1
+    assert routes[0][1] == VoyageResult("second", {})
+    assert persisted.root.active_child is None
+    assert len(persisted.root.history) == 1
+    assert isinstance(persisted.root.history[0], SubRutterRecord)
+    assert len(persisted.completed_runs) == 1
 
 
 @dataclass(frozen=True)
@@ -473,7 +563,7 @@ def test_get_status_projects_one_coherent_read_without_authored_callbacks(
                     next_on_outcome="done",
                 ),
                 "delegate": SubRutter(
-                    StatusChild,
+                    stable_rutter_constructor(StatusChild),
                     charter_constructor=lambda context: note("subrutter-charter", {}),
                     next_on_outcome="done",
                 ),
@@ -697,7 +787,7 @@ def inactive_child_metadata_scenario() -> tuple[type[Rutter], type[Rutter]]:
                     next_on_outcome="done",
                 ),
                 "delegate": SubRutter(
-                    InactiveChild,
+                    stable_rutter_constructor(InactiveChild),
                     charter_constructor=lambda context: {"from": context.evolution_id},
                     next_on_outcome="done",
                 ),

@@ -54,6 +54,23 @@ def child_charter(context: EvolutionContext) -> Mapping[str, object]:
     return {"scope": "child"}
 
 
+def stable_rutter_constructor(
+    source: Rutter | type[Rutter],
+) -> Callable[[EvolutionContext], Rutter]:
+    """Return one lazy, stable definition from a named context callback."""
+
+    definition = source if isinstance(source, Rutter) else None
+
+    def construct(context: EvolutionContext) -> Rutter:
+        nonlocal definition
+        del context
+        if definition is None:
+            definition = source()
+        return definition
+
+    return construct
+
+
 def transition_hook_probe(
     hook_id: str,
     child: Rutter | type[Rutter],
@@ -101,7 +118,7 @@ class AttachedChildRutter(Rutter):
     def define_evolutions(self):
         return {
             "delegate": SubRutter(
-                GrandchildRutter,
+                stable_rutter_constructor(GrandchildRutter),
                 charter_constructor=child_charter,
                 next_on_outcome="complete",
             ),
@@ -117,7 +134,7 @@ class StaticGrandchildCarrier(Rutter):
     def define_evolutions(self):
         return {
             "delegate": SubRutter(
-                GrandchildRutter,
+                stable_rutter_constructor(GrandchildRutter),
                 charter_constructor=child_charter,
                 next_on_outcome="complete",
             ),
@@ -136,12 +153,12 @@ class DiscoveryRootRutter(Rutter):
     def define_evolutions(self):
         return {
             "delegate": SubRutter(
-                DirectChildRutter,
+                stable_rutter_constructor(DirectChildRutter),
                 charter_constructor=child_charter,
                 next_on_outcome="complete",
             ),
             "attached": SubRutter(
-                StaticGrandchildCarrier,
+                stable_rutter_constructor(StaticGrandchildCarrier),
                 charter_constructor=child_charter,
                 next_on_outcome="complete",
             ),

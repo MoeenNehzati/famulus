@@ -332,6 +332,11 @@ class _DefinitionBinder:
                     _require_callback(evolution.choose_next, 2, "MachineStep choose_next")
             elif isinstance(evolution, SubRutter):
                 _require_callback(
+                    evolution.rutter_constructor,
+                    1,
+                    "SubRutter rutter_constructor",
+                )
+                _require_callback(
                     evolution.charter_constructor,
                     1,
                     "SubRutter charter_constructor",
@@ -343,7 +348,6 @@ class _DefinitionBinder:
                 )
                 if evolution.choose_next is not None:
                     _require_callback(evolution.choose_next, 2, "SubRutter choose_next")
-                children.append(evolution.child)
             elif (
                 isinstance(evolution, Terminal)
                 and evolution.result_constructor is not None

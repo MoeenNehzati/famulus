@@ -45,6 +45,7 @@ from test_support.rutter_fixtures import (
     GrandchildRutter,
     child_charter,
     example_message,
+    stable_rutter_constructor,
     transition_hook_probe,
     response_schema as _response_schema,
 )
@@ -105,6 +106,76 @@ def reckoning_root(tmp_path: Path) -> Path:
 @pytest.fixture
 def registry(reckoning_root: Path) -> RutterRegistry:
     return RutterRegistry({"friendly-example": ExampleRutter}, reckoning_root)
+
+
+def test_subrutter_constructs_child_from_evolution_context(
+    reckoning_root: Path,
+) -> None:
+    child = Rutter(
+        id="instance-child",
+        version=1,
+        start="done",
+        evolutions={"done": Terminal(result=VoyageResult("complete", {}))},
+    )
+    contexts: list[object] = []
+
+    def make_child(context: EvolutionContext) -> Rutter:
+        contexts.append(context)
+        assert context.evolution_id == "call"
+        return child
+
+    parent = Rutter(
+        id="instance-parent",
+        version=1,
+        start="call",
+        evolutions={
+            "call": SubRutter(
+                make_child,
+                charter_constructor=lambda context: {},
+                next_on_outcome="done",
+            ),
+            "done": Terminal(result=VoyageResult("complete", {})),
+        },
+    )
+
+    voyage = RutterRegistry({"parent": parent}, reckoning_root).create(
+        "parent", Path("instance.reckoning.json"), {}
+    )
+
+    assert voyage.rutter is parent
+    assert contexts == []
+
+
+@pytest.mark.parametrize(
+    "rutter_constructor",
+    (
+        lambda: DirectChildRutter(),
+        lambda first, second: DirectChildRutter(),
+    ),
+)
+def test_binding_requires_one_context_argument_for_subrutter_constructor(
+    reckoning_root: Path,
+    rutter_constructor,
+) -> None:
+    parent = Rutter(
+        id="invalid-subrutter-constructor",
+        version=1,
+        start="call",
+        evolutions={
+            "call": SubRutter(
+                rutter_constructor,
+                charter_constructor=lambda context: {},
+                next_on_outcome="done",
+            ),
+            "done": Terminal(result=VoyageResult("complete", {})),
+        },
+    )
+
+    with pytest.raises(
+        RutterDefinitionError,
+        match="SubRutter rutter_constructor must accept exactly 1 argument",
+    ):
+        RutterRegistry({"parent": parent}, reckoning_root)
 
 
 @pytest.mark.parametrize(
@@ -218,7 +289,7 @@ def test_binding_does_not_compare_prompt_routes_with_schema_outcomes(
         },
         {
             "start": SubRutter(
-                DirectChildRutter,
+                stable_rutter_constructor(DirectChildRutter),
                 charter_constructor=child_charter,
                 next_on_outcome="absent",
             )
@@ -274,7 +345,7 @@ def test_binding_rejects_undeclared_literal_successors(
         (
             {
                 "start": SubRutter(
-                    DirectChildRutter,
+                    stable_rutter_constructor(DirectChildRutter),
                     charter_constructor=lambda: {},
                     next_on_outcome="complete",
                 ),
@@ -331,7 +402,9 @@ def test_binding_rejects_run_state_on_definition_instances(
         RutterRegistry({"stateful": StatefulDefinition}, reckoning_root)
 
 
-def test_binding_rejects_child_identity_conflicts(reckoning_root: Path) -> None:
+def test_binding_does_not_resolve_contextual_child_identity_conflicts(
+    reckoning_root: Path,
+) -> None:
     class First(Rutter):
         rutter_id = "conflict"
         definition_version = 1
@@ -343,29 +416,47 @@ def test_binding_rejects_child_identity_conflicts(reckoning_root: Path) -> None:
     class Second(First):
         pass
 
+    first = First()
+    second = Second()
+    constructions: list[str] = []
+
+    def construct_first(context: EvolutionContext) -> Rutter:
+        del context
+        constructions.append("first")
+        return first
+
+    def construct_second(context: EvolutionContext) -> Rutter:
+        del context
+        constructions.append("second")
+        return second
+
     states = {
         "first": SubRutter(
-            First,
+            construct_first,
             charter_constructor=child_charter,
             next_on_outcome="second",
         ),
         "second": SubRutter(
-            Second,
+            construct_second,
             charter_constructor=child_charter,
             next_on_outcome="complete",
         ),
         "complete": Terminal(result=VoyageResult("complete", {})),
     }
 
-    with pytest.raises(RutterDefinitionError, match="identity conflict"):
-        RutterRegistry(
-            {"root": _definition(states, initial_evolution_id="first")}, reckoning_root
-        )
+    RutterRegistry(
+        {"root": _definition(states, initial_evolution_id="first")},
+        reckoning_root,
+    )
+
+    assert constructions == []
 
 
-def test_binding_rejects_recursive_definition_call_cycles(
+def test_binding_does_not_resolve_contextual_definition_call_cycles(
     reckoning_root: Path,
 ) -> None:
+    constructions: list[str] = []
+
     class First(Rutter):
         rutter_id = "first"
         definition_version = 1
@@ -374,7 +465,7 @@ def test_binding_rejects_recursive_definition_call_cycles(
         def define_evolutions(self):
             return {
                 "call": SubRutter(
-                    Second,
+                    construct_second,
                     charter_constructor=child_charter,
                     next_on_outcome="done",
                 ),
@@ -389,18 +480,32 @@ def test_binding_rejects_recursive_definition_call_cycles(
         def define_evolutions(self):
             return {
                 "call": SubRutter(
-                    First,
+                    construct_first,
                     charter_constructor=child_charter,
                     next_on_outcome="done",
                 ),
                 "done": Terminal(result=VoyageResult("done", {})),
             }
 
-    with pytest.raises(RutterDefinitionError, match="definition-call cycle"):
-        RutterRegistry({"first": First}, reckoning_root)
+    first = First()
+    second = Second()
+
+    def construct_first(context: EvolutionContext) -> Rutter:
+        del context
+        constructions.append("first")
+        return first
+
+    def construct_second(context: EvolutionContext) -> Rutter:
+        del context
+        constructions.append("second")
+        return second
+
+    RutterRegistry({"first": First}, reckoning_root)
+
+    assert constructions == []
 
 
-def test_binding_discovers_call_hook_and_grandchild_definitions_once(
+def test_binding_does_not_construct_contextual_call_or_hook_grandchildren(
     reckoning_root: Path,
 ) -> None:
     GrandchildRutter.constructions = 0
@@ -409,7 +514,7 @@ def test_binding_discovers_call_hook_and_grandchild_definitions_once(
     registry.create("root", Path("first.reckoning.json"), {})
     registry.open(Path("first.reckoning.json"))
 
-    assert GrandchildRutter.constructions == 1
+    assert GrandchildRutter.constructions == 0
 
 
 def test_registry_accepts_class_legacy_instance_direct_instance_and_factory(
@@ -530,6 +635,7 @@ def test_registry_and_voyage_expose_only_the_public_operating_protocol(
         "get_status",
         "help",
         "advance",
+        "rutter",
         "validate",
     }
     for obsolete in (
@@ -1308,7 +1414,10 @@ def test_open_requires_every_definition_on_the_recursively_active_path(
     path = (reckoning_root / "active.reckoning.json").absolute()
     ReckoningStore(path).create(Reckoning(3, 0, root, {}, None, None))
 
-    with pytest.raises(RutterStateError, match="active Rutter definition"):
+    with pytest.raises(
+        RutterStateError,
+        match="SubRutter.*identity validation",
+    ):
         RutterRegistry({"root": DiscoveryRootRutter}, reckoning_root).open(
             Path("active.reckoning.json")
         )

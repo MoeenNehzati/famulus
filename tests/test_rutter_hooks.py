@@ -10,7 +10,10 @@ import pytest
 
 import officina.rutter as rutter_public
 from officina.rutter.history import CompletedRun, SubRutterRecord, Transition
-from test_support.rutter_fixtures import response_schema as _response_schema
+from test_support.rutter_fixtures import (
+    response_schema as _response_schema,
+    stable_rutter_constructor,
+)
 
 
 class HookChild(rutter_public.Rutter):
@@ -228,7 +231,7 @@ def test_every_matcher_reuses_its_record_anchored_context_and_provenance(
                     next_on_outcome="invoke",
                 ),
                 "invoke": rutter_public.SubRutter(
-                    ExplicitChild,
+                    stable_rutter_constructor(ExplicitChild),
                     charter_constructor=lambda context: {"kind": "explicit"},
                     next_on_outcome="done",
                 ),
