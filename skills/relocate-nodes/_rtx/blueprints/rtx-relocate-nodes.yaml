@@ -11,7 +11,8 @@ content:
 - tests/test_relocation_semantics\.py
 dependencies: []
 description: Owns schema-v3 relocation projection, semantic-decision preflight, and
-  gated atomic application through the relocate-nodes skill runtime.
+  gated per-file atomic publication with possible partial effects on mid-publish
+  failure.
 gateway:
   language: Python>=3.11
   path: _relocate_nodes.py

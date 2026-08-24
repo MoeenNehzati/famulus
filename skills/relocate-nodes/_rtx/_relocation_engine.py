@@ -1039,17 +1039,22 @@ def _project_moves(changes: ChangeSet, manifest: RelocationManifest) -> None:
                 if link_text.is_absolute():
                     raise ValueError
                 resolved = (source_file.parent / link_text).resolve(strict=True)
-                resolved_relative = resolved.relative_to(changes.root).as_posix()
+                resolved.relative_to(changes.root)
+                immediate_relative = posixpath.normpath(
+                    str(PurePosixPath(source_relative).parent / link_text)
+                )
+                if immediate_relative.startswith("../"):
+                    raise ValueError
                 source_prefix = projected_move.source.rstrip("/")
-                if resolved_relative == source_prefix:
+                if immediate_relative == source_prefix:
                     expected_target = projected_move.target
-                elif resolved_relative.startswith(source_prefix + "/"):
+                elif immediate_relative.startswith(source_prefix + "/"):
                     expected_target = (
                         projected_move.target.rstrip("/")
-                        + resolved_relative[len(source_prefix):]
+                        + immediate_relative[len(source_prefix):]
                     )
                 else:
-                    expected_target = resolved_relative
+                    expected_target = immediate_relative
                 projected_link_target = posixpath.normpath(
                     str(PurePosixPath(target_relative).parent / link_text)
                 )

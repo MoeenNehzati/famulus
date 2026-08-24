@@ -1086,6 +1086,24 @@ def test_move_preserves_safe_internal_symlink_without_dereferencing(tmp_path: Pa
     assert not (tmp_path / "old").exists()
 
 
+def test_move_preserves_immediate_symlink_chain_topology(tmp_path: Path) -> None:
+    """Moving a link chain keeps each link aimed at its immediate target."""
+
+    _write(tmp_path / "old/file.txt", "payload\n")
+    (tmp_path / "old/b").symlink_to("file.txt")
+    (tmp_path / "old/a").symlink_to("b")
+    manifest = _manifest(tmp_path / "move.yaml", {
+        "schema_version": 3, "relocations": [{"from": "old", "to": "new"}],
+    })
+
+    changes = plan_relocation(tmp_path, manifest)
+    apply_change_set(changes)
+
+    assert os.readlink(tmp_path / "new/a") == "b"
+    assert os.readlink(tmp_path / "new/b") == "file.txt"
+    assert (tmp_path / "new/a").read_text(encoding="utf-8") == "payload\n"
+
+
 @pytest.mark.parametrize(
     ("link_path", "link_text", "expected"),
     (("old/link", "directory", "directory"), ("old/sub/link", "../target.txt", "../target.txt")),

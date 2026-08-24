@@ -8,7 +8,8 @@ authority:
       - officina.runtime.python_machine_interface_runner
       - _relocate_nodes.py
       - Interface
-      reason: Preflight or atomically apply one exact relocation manifest.
+      reason: Prevalidate one exact manifest, then publish with atomic replacement
+        per file and possible partial effects if a later publication fails.
     network: []
 children: {}
 content:
