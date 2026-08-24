@@ -11,8 +11,7 @@ INTRO_SNIPPETS = (
 )
 REQUIRED_SNIPPETS = (
     "install the plugin",
-    "run the workstation installer",
-    "No promoted stable release",
+    "Install the assistant tools",
     "https://moeennehzati.github.io/famulus/",
     "https://github.com/MoeenNehzati/famulus/issues",
     "docs/officina/installation.md",
