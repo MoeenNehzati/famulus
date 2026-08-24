@@ -64,8 +64,11 @@ transition, hook, recovery, and Compass semantics remain normative.
 - Preserve existing Rutter subclasses as a compatibility authoring path during
   this change; do not migrate unrelated test-only or diagnostic subclasses.
 - Preserve the existing binder as the single definition-validation boundary.
-- Preserve storage version 3, Reckoning JSON, history, recovery, Compass, and
-  engine transition semantics exactly.
+- Preserve storage version 3, Reckoning JSON, recovery, Compass, and engine
+  transition semantics. Preserve canonical bytes for losslessly representable
+  v3 history values; reject legacy response evidence containing reserved
+  `outcome` or `revision` keys, and do not claim semantic reopening across
+  changed Rutter definition versions.
 - Do not modify or stage unrelated dirty files.
 - Do not commit, amend, stage, or push unless the user explicitly authorizes
   that Git operation.
@@ -88,7 +91,7 @@ def _diagnosis_rutter(context: TransitionContext) -> Rutter:
 
 INQUISITIVE_INVENTORY = Rutter(
     id=_RUTTER_ID,
-    version=3,
+    version=5,
     start=_REPORT_EVOLUTION,
     evolutions={
         _REPORT_EVOLUTION: LLMStep(
@@ -161,7 +164,7 @@ to a focused sibling module later without changing the Rutter API.
 | `pyproject.toml` | Declare the existing repository-standard `jsonschema` 4.x package as a runtime dependency. |
 | `src/officina/rutter/values.py` | Remove `AnswerSpec` and `Response`, expose meaningful `Message` fields directly, rename the terminal status result, and complete `FaultSummary` invariants. |
 | `src/officina/rutter/authoring.py` | Rename authored routing and Charter-constructor fields, expose `response_schema` and `assess_response`, flatten response contexts, make transition and terminal contracts explicit, make `Rutter` directly constructible, and replace fixed SubRutter and hook children with `rutter_constructor`. |
-| `src/officina/rutter/history.py` and `storage.py` | Keep revision internal and project flat public responses through the unchanged storage-v3 wire envelope. |
+| `src/officina/rutter/history.py` | Keep revision internal and project public Messages and flat responses through the unchanged storage-v3 wire envelope. |
 | `src/officina/rutter/runtime.py` | Rename binder routing access and provide one binder validation service for contextual SubRutter and hook results. |
 | `src/officina/rutter/evaluation.py` | Validate response bodies against JSON Schema before calling contextual assessment. |
 | `src/officina/rutter/engine.py` | Materialize response schemas, correlate flat responses by evolution entrance, expose `advance`, enforce validation order, construct and bind contextual children, and expose `Voyage.rutter`. |
@@ -217,6 +220,18 @@ constructor modes, name Charter constructors as constructors, expose direct
 read-only `Message` properties, name the terminal-only status result, and
 enforce the declared `FaultSummary` invariants.
 
+Two new independent audits then reviewed those later routing, response, and
+public-value additions. They confirmed that the direction simplifies the
+author declaration, but found an inaccurate visualization label, an
+underspecified two-mode routing constructor, unmapped-outcome regression,
+ambiguous machine validation signature, incomplete fault-summary invariants,
+stale canonical-document boundaries, and unconditional v3 compatibility
+claims. A focused codec adjudication resolved the hard conflict in favor of
+the user's flat response: preserve storage v3 for losslessly representable
+values, reject reserved legacy evidence collisions deterministically, add a
+Turn-aware Message adapter, and bump definitions whose LLM authority changes.
+Tasks 1-3 and 8 below incorporate those findings.
+
 Two follow-up subagent audits reviewed the contextual-hook task. The
 transparency audit required the dynamic boundary to remain explicit in the
 declaration and visualization; the minimality/runtime audit required atomic
@@ -229,14 +244,59 @@ revisions, both closure audits reported no remaining blockers.
 ### Task 1: Rename authored routing fields
 
 **Files:**
-- Modify: the `LLMStep`, `MachineStep`, and `SubRutter` definitions and their
-  direct runtime, visualization, test, fixture, and inventory-Rutter callers.
+- Modify: `src/officina/rutter/authoring.py`
+- Modify: `src/officina/rutter/runtime.py`
+- Modify: `src/officina/rutter/evaluation.py`
+- Modify: `src/officina/rutter/engine.py`
+- Modify: `src/officina/rutter/diagnostic.py`
+- Modify: `src/officina/visualization/from_rutter/payload_builder.py`
+- Modify: `test_support/rutter_fixtures.py`
+- Modify: `skills/math-dependency-graph/_rtx/_inquisitive_inventory_rutter.py`
+- Modify: `tests/test_rutter_model.py`
+- Modify: `tests/test_rutter_runtime.py`
+- Modify: `tests/test_rutter_evaluation.py`
+- Modify: `tests/test_rutter_engine.py`
+- Modify: `tests/test_rutter_hooks.py`
+- Modify: `tests/test_rutter_lifecycle.py`
+- Modify: `tests/test_rutter_diagnostic.py`
+- Modify: `tests/test_rutter_visualization.py`
 
-- [ ] Rename static string-or-map routing from `then` to `next_on_outcome`.
-- [ ] Rename callable routing from `then` to `choose_next`.
-- [ ] Update direct attribute accesses and callers mechanically, without aliases
-  or routing behavior changes.
+- [ ] Give `LLMStep`, `MachineStep`, and `SubRutter` separate keyword-only
+  routing modes:
+
+  ```python
+  next_on_outcome: str | Mapping[str, str] | None = None
+  choose_next: Callable[..., str] | None = None
+  ```
+
+  Require exactly one mode, snapshot only the static string-or-map mode, and
+  validate the callback with the evolution kind's existing routing arity.
+- [ ] Rename static string-or-map routing from `then` to `next_on_outcome` and
+  callable routing from `then` to `choose_next`. Internally normalizing the two
+  modes to one private routing union is permitted when it keeps runtime changes
+  mechanical.
+- [ ] Add failing constructor tests for static and callback routing and for the
+  invalid both/neither cases on all three evolution types, then update direct
+  attribute accesses and callers without aliases or routing behavior changes.
 - [ ] Run the existing Rutter and inventory-Rutter tests.
+- [ ] Search the owned paths for authored `then=`, `.then`, or `"then"`
+  routing fields. Every remaining match must be unrelated prose rather than a
+  Rutter routing contract.
+- [ ] Review and commit the exact owned rename checkpoint:
+
+  ```bash
+  git add src/officina/rutter/authoring.py src/officina/rutter/runtime.py \
+    src/officina/rutter/evaluation.py src/officina/rutter/engine.py \
+    src/officina/rutter/diagnostic.py \
+    src/officina/visualization/from_rutter/payload_builder.py \
+    test_support/rutter_fixtures.py \
+    skills/math-dependency-graph/_rtx/_inquisitive_inventory_rutter.py \
+    tests/test_rutter_model.py tests/test_rutter_runtime.py \
+    tests/test_rutter_evaluation.py tests/test_rutter_engine.py \
+    tests/test_rutter_hooks.py tests/test_rutter_lifecycle.py \
+    tests/test_rutter_diagnostic.py tests/test_rutter_visualization.py
+  git commit -m "refactor(rutter): clarify routing fields"
+  ```
 
 ### Task 2: Make response submission flat, schema-backed, and explicitly advancing
 
@@ -248,7 +308,6 @@ revisions, both closure audits reported no remaining blockers.
 - Modify: `src/officina/rutter/authoring.py`
 - Modify: `src/officina/rutter/runtime.py`
 - Modify: `src/officina/rutter/history.py`
-- Modify: `src/officina/rutter/storage.py`
 - Modify: `src/officina/rutter/evaluation.py`
 - Modify: `src/officina/rutter/engine.py`
 - Modify: `src/officina/rutter/diagnostic.py`
@@ -261,6 +320,7 @@ revisions, both closure audits reported no remaining blockers.
 - Modify: `tests/test_rutter_hooks.py`
 - Modify: `tests/test_rutter_lifecycle.py`
 - Modify: `tests/test_rutter_diagnostic.py`
+- Modify: `tests/test_rutter_storage.py`
 - Modify: `tests/test_rutter_visualization.py`
 - Modify: `skills/math-dependency-graph/_rtx/_inquisitive_inventory_cli.py`
 - Modify: `skills/math-dependency-graph/_rtx/_inquisitive_inventory_rutter.py`
@@ -275,7 +335,7 @@ revisions, both closure audits reported no remaining blockers.
   assess_response: Callable[[LLMResponseContext], ValidationReport] =
   _accept_response, ...)` using self-contained JSON Schema Draft 2020-12
   documents; `LLMResponseContext.response: JsonObject`;
-  `Voyage.validate(response, *, responding_to: str)`; and
+  `Voyage.validate(value, *, responding_to: str | None = None)`; and
   `Voyage.advance(value=MISSING, *, responding_to: str | None = None,
   continue_=True, dry_run=False)`.
 
@@ -299,13 +359,22 @@ Add exact cases proving:
 - a schema-valid response calls `assess_response` exactly once;
 - an assessment rejection retains its authored issues and does not route;
 - a malformed schema and any non-fragment `$ref` fail during definition
-  binding; and
+  binding;
 - `next_on_outcome` mapping keys, rather than schema introspection, define the
   statically handled outcomes;
 - `Voyage.next` is absent, `Voyage.advance` is Compass-facing, and the
-  inventory CLI exposes `advance` rather than `next`; and
-- storage v3 round-trips byte-equivalent legacy response envelopes while the
-  public model remains flat and revision-free.
+  inventory CLI exposes `advance` rather than `next`;
+- mapping-based `next_on_outcome` rejects an unmapped response outcome as
+  ordinary invalid input before assessment and without persisting a fault;
+- storage v3 canonically round-trips legacy response envelopes whose evidence
+  has no reserved-key collision, and rejects legacy evidence containing either
+  `outcome` or `revision` with one stable `RutterStateError` before callbacks or
+  mutation;
+- the Message-v3 adapter injects and strips the enclosing Turn revision,
+  rejects duplicated-coordinate mismatches, and round-trips `response_schema`
+  through wire `instructions.answer` as `None`/`{}`/nonempty schema; and
+- machine-result validation accepts omitted `responding_to` and rejects a
+  supplied token.
 
 - [ ] **Step 2: Run the focused tests and verify the new fields fail**
 
@@ -330,7 +399,8 @@ In `LLMStep`, replace `answer` with a snapshotted
 `assess_response`. Remove `AnswerSpec` and `Response` from `values.py`, public
 exports, model re-exports, direct callers, and tests without compatibility
 aliases. Change `LLMResponseContext.response` and `Turn.response` to frozen
-flat `JsonObject` values.
+flat `JsonObject` values. `Turn.response` receives a dedicated v3 projection in
+`history.py`; do not introduce a private replacement response record.
 
 Keep the existing default acceptance behavior in a private
 `_accept_response`; remove public `accept`. `None` means no schema is included
@@ -347,9 +417,14 @@ are definition errors. Validate `assess_response` as an inspectable
 one-argument callback.
 
 Do not infer possible outcomes from arbitrary JSON Schema. For mapping-based
-`next_on_outcome`, retain nonempty route and declared-target validation but
-remove the old `AnswerSpec` exact-key comparison. A schema-valid outcome absent
-from the mapping fails through the existing routing fault boundary at runtime.
+`next_on_outcome`, retain nonempty route and declared-target validation, treat
+the mapping keys as the accepted outcomes, and reject an absent outcome before
+`assess_response` as ordinary response invalidity. String routing and
+`choose_next` accept any formatting-valid, schema-valid, contextually accepted
+stable outcome.
+
+Convert schema failures to stable repository-owned issue codes and messages;
+do not expose version-sensitive `jsonschema` exception prose.
 
 - [ ] **Step 5: Flatten responses and correlate them by evolution entrance**
 
@@ -373,7 +448,8 @@ the same public boundary. On LLM response submission:
 same identity and formatting checks without mutation. `Voyage.advance`
 requires it when accepting an LLM response, rejects it for unrelated machine
 or continuation operations, and retains the existing `continue_` and
-`dry_run` behavior.
+`dry_run` behavior. `Voyage.validate` likewise accepts omitted `responding_to`
+for a machine result and rejects a non-`None` token there.
 
 Sort schema errors deterministically by absolute response path and schema path,
 then convert them to `ValidationIssue` values rooted directly at the flat
@@ -383,17 +459,37 @@ errors and must not reach authored assessment.
 
 Keep `Reckoning.global_revision` and `Turn.revision` as internal v3 storage
 authority for this change, but remove revision from the public Message and
-response contracts. At the v3 codec boundary, encode a flat accepted response
-`{outcome, ...fields}` as the existing
-`{revision: turn.revision, outcome, evidence: {...fields}}` wire object and
-decode that object back to the flat public response. Preserve canonical bytes
-for equivalent historical values and do not bump `storage_version`.
+response contracts. Implement both projections in `Turn.to_json` /
+`Turn.from_json` and their `history.py` helpers:
+
+- encode a flat accepted response `{outcome, ...fields}` as the existing
+  `{revision: turn.revision, outcome, evidence: {...fields}}` wire object;
+- decode legacy evidence only when it contains neither reserved key `outcome`
+  nor `revision`, producing `{outcome: wire.outcome, **wire.evidence}`;
+- reject either collision with one stable `RutterStateError` before callbacks
+  or mutation, leaving the persisted file untouched;
+- pass the enclosing Turn revision to Message encoding, insert it only into
+  wire `data.state`, and strip it from the public Message on decode;
+- verify the duplicated wire state ID, entry ID, and revision against the
+  enclosing Turn coordinates during decode; and
+- keep wire `instructions.answer`, encoding absent `response_schema` as JSON
+  `null` and otherwise encoding the schema object, then invert that projection
+  on decode. `{}` remains distinct from absence.
+
+Preserve canonical bytes for historical values without reserved evidence-key
+collisions and do not bump `storage_version`. Do not claim that a live Turn
+created under an old `AnswerSpec` definition can reopen under a changed schema
+definition with the same identity version.
 
 - [ ] **Step 6: Update visualization and the supplied inventory declaration**
 
 Visualization statically emits the frozen `response_schema` and never compiles
 or executes it. For a string `next_on_outcome`, render one edge labeled
-`any schema-valid outcome`; for a mapping, render its explicit outcome keys.
+`any accepted outcome`; for a mapping, render its explicit accepted outcome
+keys. Cover no-schema responses, schema success followed by assessment
+rejection, and schema-plus-assessment success as fixtures whose assessment
+callbacks static visualization never invokes; the graph only labels routing
+after runtime acceptance.
 
 In the inventory Rutter, replace `AnswerSpec(...)` with the concrete flat
 schema in the success example and rename `_validate_report` to
@@ -403,6 +499,13 @@ their basic JSON types into the schema. Update callbacks from
 `response["inventory"]`. Keep sequence identity, history exhaustion,
 inventory-domain shape, and semantic checks in `_assess_report`; remove its
 now-redundant `outcome == "reported"` and basic field-presence checks.
+
+Bump every durable Rutter definition whose LLM contract changes rather than
+silently rebinding old active prompts: inventory version 4 to 5,
+`DiagnoseAnswer` version 3 to 4, and `AskAndDiagnose` version 2 to 3. This is a
+definition-version change, not a storage-version bump. Existing voyages require
+their matching old definitions; this task does not add multi-version registry
+support or a semantic prompt migrator.
 
 - [ ] **Step 7: Run response, visualization, diagnostic, and inventory tests**
 
@@ -427,14 +530,17 @@ routing, persistence, and restart behavior through `advance`.
 
 Reject any replacement response wrapper, parallel response-spec class,
 schema-to-Python generator, schema outcome inference, remote reference loader,
-public revision, storage-version change, or alias for `next` or `accept`.
+public revision, storage-version change, claim that old `AnswerSpec` prompts
+reopen under new schemas, or alias for `next` or `accept`. Permit only the
+narrow Turn response/Message v3 adapters and stable reserved-key collision
+rejection described above.
 Commit only if explicitly authorized:
 
 ```bash
 git add pyproject.toml src/officina/rutter/__init__.py \
   src/officina/rutter/model.py src/officina/rutter/values.py \
   src/officina/rutter/authoring.py src/officina/rutter/history.py \
-  src/officina/rutter/storage.py src/officina/rutter/runtime.py \
+  src/officina/rutter/runtime.py \
   src/officina/rutter/evaluation.py src/officina/rutter/engine.py \
   src/officina/rutter/diagnostic.py \
   src/officina/visualization/from_rutter/payload_builder.py \
@@ -442,6 +548,7 @@ git add pyproject.toml src/officina/rutter/__init__.py \
   tests/test_rutter_runtime.py tests/test_rutter_evaluation.py \
   tests/test_rutter_engine.py tests/test_rutter_hooks.py \
   tests/test_rutter_lifecycle.py tests/test_rutter_diagnostic.py \
+  tests/test_rutter_storage.py \
   tests/test_rutter_visualization.py \
   skills/math-dependency-graph/_rtx/_inquisitive_inventory_cli.py \
   skills/math-dependency-graph/_rtx/_inquisitive_inventory_rutter.py \
@@ -494,8 +601,10 @@ Add exact cases proving:
 - `VoyageStatus.terminal_result` contains exactly the value previously exposed
   as `active_result`, and `active_result` is absent; and
 - `FaultSummary` rejects an invalid category, invalid optional evolution or
-  target IDs, invalid hook IDs, and a non-tuple iterable containing invalid
-  values.
+  target IDs, invalid hook IDs, a bare string/bytes hook-ID collection, and a
+  non-tuple iterable containing invalid values;
+- evolution ID and entry ID must be present together; every non-opaque summary
+  requires both, while an opaque summary requires all IDs and hook IDs empty.
 
 - [ ] **Step 2: Run the focused tests and verify the explicit contracts fail**
 
@@ -558,9 +667,9 @@ def evolution_entry_id(self) -> str: ...
 
 Use these properties in author-facing context consumers and definition
 authority checks where they replace nested dictionary access cleanly. Preserve
-Task 2's revision-free public projection and exact storage-version-3 wire
-representation; do not add `MessageInstructions`, `MessageData`, or another
-protocol object.
+Task 2's revision-free public projection and qualified storage-version-3
+compatibility boundary; do not add `MessageInstructions`, `MessageData`, or
+another protocol object.
 
 - [ ] **Step 6: Name child Charter constructors explicitly**
 
@@ -588,9 +697,13 @@ persisted `TerminalRecord` exists. Do not add an alias.
 
 Require `category` to be a nonempty stable token; validate every non-`None`
 evolution, entry, and target ID; freeze `transition_hook_ids` to a tuple and
-validate every member as a stable hook ID. Do not introduce a closed category
-enum or expose private fault authority. Preserve the opaque projection
-`FaultSummary("opaque", None, None, None, ())`.
+validate every member as a stable hook ID, rejecting bare string and bytes
+collections. Require `evolution_id` and `evolution_entry_id` together. Every
+non-opaque summary requires both coordinates; category `opaque` requires both
+coordinates, `target_evolution_id`, and hook IDs to be empty. Keep
+`target_evolution_id` optional for non-opaque summaries. Do not introduce a
+closed category enum or expose private fault authority. Preserve the opaque
+projection `FaultSummary("opaque", None, None, None, ())`.
 
 - [ ] **Step 9: Run focused behavior and persistence tests**
 
@@ -1185,7 +1298,9 @@ Replace `class InquisitiveInventoryRutter(Rutter)` with the
 `INQUISITIVE_INVENTORY = Rutter(...)` declaration in this plan's success
 example, using `_REPORT_EVOLUTION`, `_RECORD_EVOLUTION`,
 `_TRANSITION_HOOK_ID`, and `_RUTTER_ID` rather than duplicating their literal
-values. Define one stable `_DIAGNOSIS_RUTTER = DiagnoseAnswer()` instance and
+values. Preserve the Task 2 definition-version bumps: inventory version 5 and
+`DiagnoseAnswer` version 4. Define one stable
+`_DIAGNOSIS_RUTTER = DiagnoseAnswer()` instance and
 the adjacent ordinary `_diagnosis_rutter(context) -> Rutter` hook constructor
 shown in the success example; it returns that instance and performs no IO.
 Change `_registry()` to register the inventory object. Update assertions that read
@@ -1247,6 +1362,7 @@ git commit -m "refactor(rutter): make inventory definition transparent"
 - Modify: `src/officina/rutter/blueprints/evaluation.yaml`
 - Modify: `src/officina/rutter/blueprints/runtime.yaml`
 - Modify: `src/officina/rutter/blueprints/engine.yaml`
+- Modify: `src/officina/rutter/blueprints/model.yaml`
 - Regenerate: `src/officina/rutter/blueprint.yaml`
 
 **Interfaces:**
@@ -1261,13 +1377,13 @@ git commit -m "refactor(rutter): make inventory definition transparent"
   `VoyageStatus.terminal_result`, validated fault summaries, and ownership
   metadata with no claim that a specific Rutter requires a subclass.
 
-- [ ] **Step 1: Update only class-versus-instance authoring statements**
+- [ ] **Step 1: Update the exact canonical public contracts changed here**
 
-In `01-core-design.md`, change only the definition-lifecycle and author-facing
+In `01-core-design.md`, update the definition-lifecycle and author-facing
 primitive sections: state that a Rutter is a stateless definition object whose
 authored mappings are snapshotted, a Voyage owns its execution, and direct
 construction is preferred. Retain legacy subclass compatibility in one concise
-note. In the same author-facing primitive sections, replace the routing
+note. Replace the routing
 parameter `then` with `next_on_outcome` for static routing and `choose_next` for
 callback routing; replace `AnswerSpec` and `validate` with `response_schema`
 and `assess_response`; replace `Voyage.next` with `Voyage.advance`; specify the
@@ -1275,11 +1391,26 @@ flat response and `responding_to=evolution_entry_id` contract; remove the
 public `Response`, revision, evidence wrapper, and `accept`; replace fixed
 transition-hook children with the explicit `rutter_constructor(context) ->
 Rutter` contract shared by SubRutter and transition hooks; and name child
-Charter callbacks `charter_constructor`. Do not edit the stale
-pre-cutover examples in
-`04-examples.md` and do not rewrite lifecycle, storage, recovery, or Compass
-operating instructions. Document the Task 3 boundary changes only where those
-public values are already specified.
+Charter callbacks `charter_constructor`.
+
+Apply narrow mechanical corrections wherever the canonical document currently
+states those public APIs, including its existing “Messages and responses,”
+“Contexts and purity,” “Public operating interface,” operation table, and
+Compass call spelling. Show both normal advance forms:
+`advance(response, responding_to=message.evolution_entry_id, ...)` for LLM
+submission and `advance(...)` for machine or continuation work. State that
+omitting `assess_response` accepts every response that passes engine formatting,
+mapping-key acceptance, and the optional schema. For transition hooks, state
+that `charter_constructor(context) -> JsonObject | None` returns `None` to
+suppress the hook and a JSON object to both select it and construct its child
+Charter.
+
+Do not edit the stale pre-cutover examples in `04-examples.md`, and do not
+rewrite lifecycle, storage, recovery, or Compass semantics. Document the Task 3
+boundary changes only where those public values are already specified. Search
+the canonical document and owned blueprints for stale `AnswerSpec`, public
+`Response`, `active_result`, public `Voyage.next`, and the old public response
+envelope; every remaining match must be explicitly historical or out of scope.
 
 - [ ] **Step 2: Update and regenerate owned blueprint descriptions**
 
@@ -1340,8 +1471,9 @@ The final owned diff may contain only:
 3. `AnswerSpec` and `Response` removal, flat revision-free public responses,
    `response_schema` validation, `assess_response`, private default acceptance,
    and the `jsonschema` runtime dependency;
-4. the narrow v3 codec projection between flat public responses and the
-   unchanged persisted `{revision, outcome, evidence}` envelope;
+4. the narrow Turn-aware v3 Message and response projections, stable rejection
+   of reserved legacy evidence-key collisions, and unchanged persisted
+   `{revision, outcome, evidence}` response envelope;
 5. typed `TransitionContext.transition`, explicit `Terminal` result modes,
    `charter_constructor`, direct `Message` properties,
    `VoyageStatus.terminal_result`, and `FaultSummary` invariant checks;
@@ -1358,9 +1490,10 @@ The final owned diff may contain only:
     boundaries, child-constructor,
     and class-versus-instance documentation and blueprint wording.
 
-Reject storage-version or persisted-wire changes beyond the narrow response
-codec projection; changes to Reckoning revision semantics; and unrelated
-history, Compass-loop, handler, setup, semantic-comparison, ledger, or
+Reject storage-version or persisted-wire changes beyond the narrow Message and
+response projections; any claim that old `AnswerSpec` prompts semantically
+reopen under new schema definitions; changes to Reckoning revision semantics;
+and unrelated Compass-loop, handler, setup, semantic-comparison, ledger, or
 refactoring changes.
 
 - [ ] **Step 5: Record the final checkpoint**
@@ -1370,5 +1503,13 @@ commit, stage only the exact owned documentation, blueprint, and test files and
 commit with:
 
 ```bash
+git add docs/plans/rutter-design/01-core-design.md \
+  src/officina/rutter/blueprints/authoring.yaml \
+  src/officina/rutter/blueprints/values.yaml \
+  src/officina/rutter/blueprints/evaluation.yaml \
+  src/officina/rutter/blueprints/runtime.yaml \
+  src/officina/rutter/blueprints/engine.yaml \
+  src/officina/rutter/blueprints/model.yaml \
+  src/officina/rutter/blueprint.yaml
 git commit -m "docs(rutter): document instance definitions"
 ```
