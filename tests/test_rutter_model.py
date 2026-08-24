@@ -714,7 +714,25 @@ def test_python_instruction_rejects_invalid_exact_values(construct) -> None:
         construct()
 
 
-def test_rutter_author_boundary_has_stable_identity_and_empty_transition_hooks() -> None:
+def test_rutter_constructor_exposes_one_frozen_definition() -> None:
+    evolutions = {"done": Terminal(result=VoyageResult("complete", {}))}
+    definition = Rutter(
+        id="direct",
+        version=1,
+        start="done",
+        evolutions=evolutions,
+    )
+    evolutions.clear()
+
+    assert definition.rutter_id == "direct"
+    assert definition.definition_version == 1
+    assert definition.initial_evolution_id == "done"
+    assert set(definition.define_evolutions()) == {"done"}
+    assert isinstance(definition.define_evolutions(), MappingProxyType)
+    assert definition.define_transition_hooks() == ()
+
+
+def test_legacy_no_argument_subclass_definition_remains_supported() -> None:
     definition = ExampleRutter()
 
     assert definition.rutter_id == "example"
@@ -723,6 +741,62 @@ def test_rutter_author_boundary_has_stable_identity_and_empty_transition_hooks()
     assert definition.allow_multiple_hooks_per_transition is False
     assert definition.define_transition_hooks() == ()
     assert set(definition.define_evolutions()) == {"report", "complete"}
+
+
+def test_rutter_constructor_snapshots_hook_sequence() -> None:
+    hooks = []
+    definition = Rutter(
+        id="direct",
+        version=1,
+        start="done",
+        evolutions={"done": Terminal(result=VoyageResult("complete", {}))},
+        hooks=hooks,
+    )
+    hooks.append(object())
+
+    assert definition.define_transition_hooks() == ()
+
+
+def test_constructor_modes_are_disjoint() -> None:
+    with pytest.raises(RutterDefinitionError):
+        Rutter()
+    with pytest.raises(RutterDefinitionError):
+        ExampleRutter(
+            id="hybrid",
+            version=1,
+            start="done",
+            evolutions={"done": Terminal(result=VoyageResult("complete", {}))},
+        )
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    (
+        {"id": "partial"},
+        {"id": "bad", "version": 1, "start": "done", "evolutions": []},
+        {
+            "id": "bad",
+            "version": 1,
+            "start": "done",
+            "evolutions": {
+                "done": Terminal(result=VoyageResult("complete", {}))
+            },
+            "hooks": "audit",
+        },
+        {
+            "id": "bad",
+            "version": 1,
+            "start": "done",
+            "evolutions": {
+                "done": Terminal(result=VoyageResult("complete", {}))
+            },
+            "allow_multiple_hooks_per_transition": 1,
+        },
+    ),
+)
+def test_rutter_constructor_rejects_invalid_definition_shape(arguments) -> None:
+    with pytest.raises(RutterDefinitionError):
+        Rutter(**arguments)
 
 
 def test_json_round_trips_preserve_exact_persisted_values() -> None:

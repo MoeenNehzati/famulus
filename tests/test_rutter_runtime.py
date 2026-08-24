@@ -412,10 +412,16 @@ def test_binding_discovers_call_hook_and_grandchild_definitions_once(
     assert GrandchildRutter.constructions == 1
 
 
-def test_registry_accepts_class_instance_and_no_argument_factory(
+def test_registry_accepts_class_legacy_instance_direct_instance_and_factory(
     reckoning_root: Path,
 ) -> None:
     instance = ExampleRutter()
+    direct = Rutter(
+        id="direct",
+        version=1,
+        start="done",
+        evolutions={"done": Terminal(result=VoyageResult("complete", {}))},
+    )
     factory_calls: list[None] = []
 
     def factory() -> Rutter:
@@ -424,10 +430,12 @@ def test_registry_accepts_class_instance_and_no_argument_factory(
 
     class_registry = RutterRegistry({"class": DirectChildRutter}, reckoning_root)
     instance_registry = RutterRegistry({"instance": instance}, reckoning_root)
+    direct_registry = RutterRegistry({"direct": direct}, reckoning_root)
     factory_registry = RutterRegistry({"factory": factory}, reckoning_root)
 
     assert class_registry.create("class", Path("class.reckoning.json"), {})
     assert instance_registry.create("instance", Path("instance.reckoning.json"), {})
+    assert direct_registry.create("direct", Path("direct.reckoning.json"), {})
     assert factory_registry.create("factory", Path("factory.reckoning.json"), {})
     assert factory_calls == [None]
 

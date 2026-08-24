@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import KW_ONLY, dataclass
 from inspect import Parameter, signature
 from types import MappingProxyType
@@ -40,17 +41,80 @@ def empty_data(context: EvolutionContext) -> JsonObject:
     return MappingProxyType({})
 
 
+_OMITTED = object()
+
+
 class Rutter:
     rutter_id: str
     definition_version: int
     initial_evolution_id: str
     allow_multiple_hooks_per_transition: bool = False
 
+    def __init__(
+        self,
+        *,
+        id: str | object = _OMITTED,
+        version: int | object = _OMITTED,
+        start: str | object = _OMITTED,
+        evolutions: Mapping[
+            str, LLMStep | MachineStep | SubRutter | Terminal
+        ]
+        | object = _OMITTED,
+        hooks: Sequence[TransitionHook] | object = _OMITTED,
+        allow_multiple_hooks_per_transition: bool | object = _OMITTED,
+    ) -> None:
+        arguments = (
+            id,
+            version,
+            start,
+            evolutions,
+            hooks,
+            allow_multiple_hooks_per_transition,
+        )
+        if type(self) is not Rutter:
+            if any(argument is not _OMITTED for argument in arguments):
+                raise RutterDefinitionError(
+                    "direct definition arguments are unavailable to Rutter subclasses"
+                )
+            return
+        if all(argument is _OMITTED for argument in arguments):
+            raise RutterDefinitionError("Rutter requires a complete direct definition")
+        if any(
+            argument is _OMITTED for argument in (id, version, start, evolutions)
+        ):
+            raise RutterDefinitionError(
+                "direct Rutter construction requires id, version, start, and evolutions"
+            )
+        if not isinstance(evolutions, Mapping):
+            raise RutterDefinitionError("evolutions must be a mapping")
+        if hooks is _OMITTED:
+            hooks = ()
+        if isinstance(hooks, (str, bytes)) or not isinstance(hooks, Sequence):
+            raise RutterDefinitionError("hooks must be a sequence")
+        if allow_multiple_hooks_per_transition is _OMITTED:
+            allow_multiple_hooks_per_transition = False
+        if type(allow_multiple_hooks_per_transition) is not bool:
+            raise RutterDefinitionError(
+                "allow_multiple_hooks_per_transition must be an exact Boolean"
+            )
+
+        self.rutter_id = id  # type: ignore[assignment]
+        self.definition_version = version  # type: ignore[assignment]
+        self.initial_evolution_id = start  # type: ignore[assignment]
+        self.allow_multiple_hooks_per_transition = (
+            allow_multiple_hooks_per_transition
+        )
+        self._evolutions = MappingProxyType(dict(evolutions))
+        self._transition_hooks = tuple(hooks)
+
     def define_evolutions(self) -> Mapping[str, LLMStep | MachineStep | SubRutter | Terminal]:
-        raise NotImplementedError
+        try:
+            return self._evolutions
+        except AttributeError as exc:
+            raise NotImplementedError from exc
 
     def define_transition_hooks(self) -> tuple[TransitionHook, ...]:
-        return ()
+        return getattr(self, "_transition_hooks", ())
 
 
 def _freeze_next_on_outcome(value: str | Mapping[str, str]) -> str | Mapping[str, str]:
