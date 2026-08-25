@@ -1140,7 +1140,8 @@ def _launcher_repo(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     (repo / "pyproject.toml").write_text(
-        '[build-system]\nrequires = ["setuptools"]\nbuild-backend = "setuptools.build_meta"\n',
+        '[build-system]\nrequires = ["setuptools"]\nbuild-backend = "setuptools.build_meta"\n'
+        '\n[project]\nname = "famulus-officina"\nversion = "7.8.9"\n',
         encoding="utf-8",
     )
     return repo

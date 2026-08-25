@@ -2,10 +2,33 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 import subprocess
+from typing import Mapping
 
 from officina.git.provenance import run_git
+
+
+def isolated_git_environment(
+    additions: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    """Return a child environment without ambient Git repository routing."""
+
+    environment = os.environ.copy()
+    for name in tuple(environment):
+        if name.startswith("GIT_"):
+            environment.pop(name, None)
+    environment.update(
+        {
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_TERMINAL_PROMPT": "0",
+        }
+    )
+    if additions is not None:
+        environment.update(additions)
+    return environment
 
 
 @dataclass(frozen=True)

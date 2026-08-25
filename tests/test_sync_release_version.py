@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import json
 import importlib.util
+import os
 from pathlib import Path
 import subprocess
 import sys
 
 import pytest
 
-from test_support.git_repository import GitTestRepository
+from test_support.git_repository import GitTestRepository, isolated_git_environment
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -52,6 +53,7 @@ def _run(repository: GitTestRepository) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, str(SCRIPT)],
         cwd=repository.root,
+        env=isolated_git_environment(),
         capture_output=True,
         text=True,
         check=False,
@@ -64,6 +66,7 @@ def _index_json(repository: GitTestRepository, path: Path) -> dict[str, object]:
 
 def test_sync_uses_staged_version_and_preserves_staged_and_unstaged_views(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Catch whole-file staging that absorbs unrelated working-tree edits."""
 
@@ -86,6 +89,7 @@ def test_sync_uses_staged_version_and_preserves_staged_and_unstaged_views(
     (repository.root / "unrelated.txt").write_text("staged unrelated\n", encoding="utf-8")
     repository.git("add", "unrelated.txt")
     unrelated_index_before = repository.git("show", ":unrelated.txt").stdout
+    monkeypatch.setenv("GIT_INDEX_FILE", str(tmp_path / "ambient.index"))
 
     completed = _run(repository)
 
@@ -263,6 +267,9 @@ def test_sync_rolls_back_working_files_when_second_replace_fails(
         real_replace(path, data)
 
     monkeypatch.setattr(module, "_atomic_replace", fail_second_once)
+    for name in tuple(os.environ):
+        if name.startswith("GIT_"):
+            monkeypatch.delenv(name)
 
     with pytest.raises(OSError, match="injected second replacement failure"):
         module.synchronize()

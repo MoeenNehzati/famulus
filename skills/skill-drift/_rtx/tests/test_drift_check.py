@@ -789,7 +789,7 @@ def test_installed_sources_ignore_codex_plugin_cache_without_active_registry(
         "stale-skill",
     )
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
-    monkeypatch.setenv("CLAUDE_HOME", str(claude_home))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_home))
 
     sources = checker.observed_skill_sources()
 
@@ -824,7 +824,7 @@ def test_installed_sources_use_only_registry_named_plugin_versions(
         },
     )
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
-    monkeypatch.setenv("CLAUDE_HOME", str(claude_home))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_home))
 
     sources = checker.observed_skill_sources()
 
@@ -884,7 +884,7 @@ def test_active_plugin_with_malformed_version_metadata_fails_with_remediation(
         },
     )
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
-    monkeypatch.setenv("CLAUDE_HOME", str(claude_home))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_home))
 
     with pytest.raises(checker.SkillSourceDiscoveryError) as captured:
         checker.observed_skill_sources()
@@ -981,7 +981,7 @@ def test_unsupported_active_plugin_never_reaches_certification_derivation(
         },
     )
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
-    monkeypatch.setenv("CLAUDE_HOME", str(claude_home))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_home))
     monkeypatch.setattr(
         checker,
         "derive_repository_certification_state",
@@ -1032,7 +1032,7 @@ def test_active_v4_plugin_is_rejected_after_canonical_v5_cutover(
         },
     )
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
-    monkeypatch.setenv("CLAUDE_HOME", str(claude_home))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_home))
 
     exit_code = checker.main(["compute-hashes", "--json"])
 
@@ -1055,7 +1055,7 @@ def test_malformed_plugin_registry_fails_with_remediation(
         {"version": 1, "plugins": {}},
     )
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
-    monkeypatch.setenv("CLAUDE_HOME", str(claude_home))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_home))
 
     exit_code = checker.main(["status", "--json"])
 

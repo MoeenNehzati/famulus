@@ -1226,10 +1226,11 @@ def test_precommit_hook_uses_the_combined_root_suite() -> None:
 def test_precommit_hook_commits_synchronized_plugin_versions(
     tmp_path: Path,
     commit_only: bool,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Catch a hook that leaves the two committed plugin versions stale."""
 
-    from test_support.git_repository import GitTestRepository
+    from test_support.git_repository import GitTestRepository, isolated_git_environment
 
     repository = GitTestRepository.create(tmp_path / "repository")
     (repository.root / "pyproject.toml").write_text(
@@ -1272,6 +1273,7 @@ def test_precommit_hook_commits_synchronized_plugin_versions(
     fake_gitleaks = fake_bin / ("gitleaks.exe" if os.name == "nt" else "gitleaks")
     shutil.copy2(true_binary, fake_gitleaks)
     fake_gitleaks.chmod(0o755)
+    monkeypatch.setenv("GIT_INDEX_FILE", str(tmp_path / "ambient.index"))
 
     # famulus-raw-git: category=hook-contract; reason=the test must exercise Git's real pre-commit index and hook environment
     command = [
@@ -1289,7 +1291,9 @@ def test_precommit_hook_commits_synchronized_plugin_versions(
         command.extend(("--only", "pyproject.toml"))
     completed = subprocess.run(
         command,
-        env={**os.environ, "PATH": os.pathsep.join((str(fake_bin), os.environ["PATH"]))},
+        env=isolated_git_environment(
+            {"PATH": os.pathsep.join((str(fake_bin), os.environ["PATH"]))}
+        ),
         capture_output=True,
         text=True,
         check=False,

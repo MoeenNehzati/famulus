@@ -362,6 +362,9 @@ _ALLOWED_LEFTOVERS = {
     ".local/state/famulus/install/assistant-access.lock",
     "Library/Application Support/Famulus/state/install/assistant-access.lock",
     "AppData/Local/Famulus/state/install/assistant-access.lock",
+    ".local/state/famulus/recurring-tasks/lifecycle.lock",
+    "Library/Application Support/Famulus/state/recurring-tasks/lifecycle.lock",
+    "AppData/Local/Famulus/state/recurring-tasks/lifecycle.lock",
 }
 
 

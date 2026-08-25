@@ -39,7 +39,7 @@ def _isolate_unrelated_apply_stages(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(probe.phase_entry, "render_diagnostic_text", lambda _report: "")
     monkeypatch.setattr(
         probe.install_uninstall,
-        "_recurring_preflight",
+        "_teardown_recurring_context",
         lambda *_args, **_kwargs: True,
     )
 
