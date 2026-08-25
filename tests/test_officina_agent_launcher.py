@@ -579,3 +579,49 @@ def test_development_agent_launches_use_exact_live_resources_without_legacy_sele
     assert [command[0] for command in launched] == ["claude"] * 4
     assert all(str(checkout / "profiles") in " ".join(command) for command in launched)
     assert os.environ["FAMULUS_LAUNCHER_RESOURCES"] == str(checkout)
+
+
+def test_development_agent_launch_derives_its_own_environment_from_the_pointer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A development launch must work from an ordinary, unprepared shell.
+
+    The generated user-bin shim knows only the resolver path and the target
+    module, so it hands the launcher the caller's ambient environment. Earlier
+    coverage pre-applied build_interactive_environment() before calling main(),
+    which supplied exactly what the shim never sets -- so every real invocation
+    failed context validation while the suite stayed green.
+    """
+    context, checkout, host_home = _write_active_development_launcher(tmp_path)
+    local_root = checkout / ".famulus"
+
+    monkeypatch.setenv("HOME", str(host_home))
+    # A real shell leaks this from the user's profile; it must be overridden.
+    monkeypatch.setenv("CODEX_HOME", str(host_home / ".codex"))
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+
+    launched: list[list[str]] = []
+    monkeypatch.setattr(
+        agent_module, "_launch_command", lambda command: launched.append(command) or 0
+    )
+
+    assert agent_module.main(
+        ["--runtime-root", str(context.paths.runtime_root),
+         "--agent", "background_run", "--local"]
+    ) == 0
+
+    assert [command[0] for command in launched] == ["claude"]
+    assert os.environ["HOME"] == str(local_root / "home")
+    assert os.environ["CLAUDE_CONFIG_DIR"] == str(local_root / "homes" / "claude")
+    assert os.environ["CODEX_HOME"] == str(local_root / "homes" / "codex")
+
+
+def test_standard_agent_launch_leaves_the_ambient_environment_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Environment derivation is development-only; standard must be a no-op."""
+    context, _home = _write_active_standard_launcher(tmp_path)
+    before = dict(os.environ)
+    agent_module._apply_context_environment(context.paths.runtime_root)
+    for name in ("HOME", "CODEX_HOME", "CLAUDE_CONFIG_DIR"):
+        assert os.environ.get(name) == before.get(name)

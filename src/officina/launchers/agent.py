@@ -15,12 +15,17 @@ from typing import Literal, Mapping, Protocol
 
 from officina.common.atomic_files import atomic_replace_bytes
 import officina.common.toml_io as toml_io
-from officina.install.context import InstallationContext, load_context_from_pointer
+from officina.install.context import (
+    InstallationContext,
+    build_development_environment,
+    load_context_from_pointer,
+)
 from officina.install.runtime_pointer import (
     RuntimePointer,
     RuntimePointerError,
     load_deployed_resolver_trusted_roots,
     load_current_pointer,
+    load_installed_context_record,
 )
 
 Backend = Literal["claude", "codex"]
@@ -144,6 +149,36 @@ def select_backend(
                 )
             return value  # type: ignore[return-value]
     return configuration.default_backend
+
+
+def _apply_context_environment(runtime_root: Path) -> None:
+    """Adopt the selected installation's own environment before validation.
+
+    The user-bin shim intentionally knows only the resolver path and the target
+    module, so a development launch arrives carrying the caller's ambient
+    environment. The pointer already records ``development_root``, so the exact
+    child environment is derivable here rather than demanded from the caller.
+    Without this, every development launch fails validation, and a launch that
+    skipped validation would still hand the backend the caller's real home.
+    """
+    pointer = load_current_pointer(
+        runtime_root=runtime_root,
+        trusted_interpreter_roots=load_deployed_resolver_trusted_roots(
+            runtime_root=runtime_root
+        ),
+    )
+    if pointer.installation_context is None:
+        return
+    record = load_installed_context_record(pointer.installation_context)
+    if record.mode != "development":
+        return
+    if record.development_root is None:
+        raise RuntimePointerError("development pointer is missing development_root")
+    os.environ.update(
+        build_development_environment(
+            record.development_root, environ=os.environ, platform=sys.platform
+        )
+    )
 
 
 def _active_context(
@@ -275,6 +310,7 @@ def main(argv: list[str] | None = None) -> int:
     action.add_argument("--agent", choices=sorted(_AGENTS))
     action.add_argument("--invoke-skill")
     known, remaining = parser.parse_known_args(argv)
+    _apply_context_environment(known.runtime_root)
     environ = _managed_launch_environment(os.environ)
     for name in _MANAGED_STATE_OVERRIDES:
         os.environ.pop(name, None)
