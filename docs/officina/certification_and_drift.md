@@ -254,9 +254,13 @@ A certificate is current only when all of the following hold:
 - its facet set, local hashes, input manifests, and facet dependency claims
   exactly match the reconstructed facets;
 - its dependency set exactly matches the derived direct dependencies, every
-  target version and node hash matches, and every dependency certificate is
-  current;
-- its `certifier` fields match the current certifier;
+  target version and hash matches, and every ordinary recursive dependency
+  certificate is current;
+- for a certifier-bearing schema-v6 graph, its `certified-under` interface
+  dependencies exactly match the current mechanical certifier and the semantic
+  audit interface for each module, source remainder, or interface facet;
+  generic graphs without structured evidence retain the aggregate certifier
+  identity check;
 - its `certification_basis_hash` equals the current basis hash;
 - its signed checks exactly match the current versioned check registry and all
   are recorded as passed without findings;
@@ -273,6 +277,12 @@ and remainder facets it distinguishes local-hash, input-manifest, and direct-
 dependency mismatches. Input-manifest causes name added, removed, and changed
 files. Dependency causes cover all direct facet dependencies: interface uses
 name the interface id, while other relations name their relation and target.
+The evidence-only `certified-under` relation identifies the exact mechanical,
+interface-audit, source-audit, or module-audit interface whose hash changed;
+it participates in hash comparison and drift reporting but not recursive
+currentness, cycle, postorder, or route-smoke traversal. Old or partial v6
+certificates report missing structured dependencies and require recertification;
+there is no compatibility fallback to the certifier module hash.
 Certificate, basis, graph, or other non-facet concerns remain node-scoped. This
 worklist is diagnostic evidence for selective bottom-up semantic review, not
 authority to sign.
@@ -288,14 +298,20 @@ is_current(x):
         and certificate.payload.node_hash == node_hash(x)
         and certificate.payload.facets == current_facet_claims(x)
         and certificate.payload.dependencies == current_dependency_claims(x)
-        and all(is_current(d) for d in direct_dependencies(x))
-        and certificate.payload.certifier == current_certifier_identity()
+        and all(is_current(d) for d in recursive_direct_dependencies(x))
+        and project_certifier_identity(certificate.payload.certifier, x)
+            == project_certifier_identity(current_certifier_identity(), x)
         and certificate.payload.certification_basis_hash
             == current_certification_basis_hash()
         and certificate.payload.checks == expected_passed_checks()
         and valid_history_link(certificate)
     )
 ```
+
+`recursive_direct_dependencies` excludes `certified-under` evidence. For a
+certifier-bearing schema-v6 graph, `project_certifier_identity` excludes the
+aggregate certifier node hash because the structured interface records carry
+that identity.
 
 When drift exists, certification uses the stale worklist for selective
 bottom-up semantic review: stale leaf interfaces first, then affected
@@ -306,6 +322,12 @@ still matches canonical state; wider evidence is read only after
 the certificate's whole-node semantic-review pass. Selective reuse interprets
 that pass as covering each included unchanged facet; it is not an independent
 per-facet semantic attestation.
+Selectivity applies only while `certification_basis_hash` matches. Because the
+aggregate hash does not identify which basis input changed, a basis mismatch
+remains semantically invalidating until the separate node/interface-only basis
+migration. Semantic audit instruction-body changes are the current localized
+case; basis-listed mechanical, gateway, blueprint, hashing, and view inputs
+remain global.
 After each repair the certifier discards the prior review snapshot, reloads the
 blueprint and graph, and reruns the checks. It then recomputes currentness,
 skips nodes already current, route-smokes the remaining stale worklist, and

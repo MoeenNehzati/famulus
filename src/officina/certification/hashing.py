@@ -52,6 +52,12 @@ CERTIFIER_NODE_ID = "skill-certifier"
 CERTIFIER_INTERFACE_ID = "skill-certifier.interface.certify"
 V6_CERTIFIER_INTERFACE_ID = "skill-certifier._rtx.interface.certify"
 CERTIFIER_INTERFACE_VERSION = 2
+CERTIFIER_AUDIT_INTERFACES = {
+    "interface": "skill-certifier.source.audit-interface.interface.audit",
+    "remainder": "skill-certifier.source.audit-behavioral-source.interface.audit",
+    "module": "skill-certifier.source.audit-module.interface.audit",
+}
+EVIDENCE_ONLY_RELATIONS = frozenset({"certified-under"})
 CERTIFIER_CHECK_REGISTRY: Mapping[str, tuple[str, int]] = {
     "deterministic": ("v4-deterministic", 1),
     "route-smoke": ("route-smoke-dependencies", 1),
@@ -163,6 +169,8 @@ def certification_target_postorder(
         dependencies: list[tuple[str, str, int]] = []
         for dependency in state.dependency_hashes:
             relation = dependency.get("relation")
+            if relation in EVIDENCE_ONLY_RELATIONS:
+                continue
             target = dependency.get("target")
             version = dependency.get("version")
             if (
@@ -320,6 +328,8 @@ def map_route_smoke_dependencies(
                 )
             fields = set(dependency)
             relation = dependency.get("relation")
+            if relation in EVIDENCE_ONLY_RELATIONS:
+                continue
             target_id = dependency.get("target")
             version = dependency.get("version")
             target = (
@@ -1736,6 +1746,39 @@ def _compute_node_hash_states(
                 )
             )
 
+        if CERTIFIER_NODE_ID in graph.nodes:
+            versions = {V6_CERTIFIER_INTERFACE_ID: CERTIFIER_INTERFACE_VERSION}
+            versions.update(
+                (interface_id, 1)
+                for interface_id in CERTIFIER_AUDIT_INTERFACES.values()
+            )
+            try:
+                certified_under = {
+                    interface_id: (
+                        "certified-under",
+                        str(extract_interface_from_blueprint(
+                            graph, interface_id, version
+                        )["source_node"]),
+                        interface_id,
+                        version,
+                        interface_hashes[interface_id],
+                    )
+                    for interface_id, version in versions.items()
+                }
+            except (CertificationHashError, KeyError) as exc:
+                raise CertificationHashError(
+                    "canonical certifier interfaces are incomplete"
+                ) from exc
+            for node_id, node in graph.nodes.items():
+                facet_type = "module" if node.node_type == "module" else "remainder"
+                selected = {
+                    certified_under[V6_CERTIFIER_INTERFACE_ID],
+                    certified_under[CERTIFIER_AUDIT_INTERFACES[facet_type]],
+                }
+                if facet_type == "remainder" and node.declaration.get("interfaces"):
+                    selected.add(certified_under[CERTIFIER_AUDIT_INTERFACES["interface"]])
+                interface_dependencies_by_node[node_id].update(selected)
+
     visiting: list[str] = []
     visited: set[str] = set()
 
@@ -1757,6 +1800,7 @@ def _compute_node_hash_states(
             (relation, target_id, version)
             for relation, target_id, _interface_id, version, _interface_hash
             in interface_dependencies_by_node[node_id]
+            if relation not in EVIDENCE_ONLY_RELATIONS
         )
         for _relation, target_id, _version in sorted(
             dependency_targets,
@@ -1828,6 +1872,10 @@ def _compute_node_hash_states(
             }
             populated: list[CertificationFacetHashState] = []
             for facet in local_facets:
+                certifier_interfaces = {
+                    V6_CERTIFIER_INTERFACE_ID,
+                    CERTIFIER_AUDIT_INTERFACES[facet.facet_type],
+                }
                 if facet.facet_type == "interface":
                     declared_uses = set(
                         graph.interface_uses.get(facet.facet_id, ())
@@ -1839,10 +1887,14 @@ def _compute_node_hash_states(
                                     dependency
                                     for dependency in interface_dependency_hashes
                                     if (
+                                        dependency["relation"] == "certified-under"
+                                        and dependency["interface"]
+                                        in certifier_interfaces
+                                    )
+                                    or (
                                         dependency["interface"],
                                         dependency["version"],
-                                    )
-                                    in declared_uses
+                                    ) in declared_uses
                                 ),
                                 *(
                                     dependency
@@ -1868,6 +1920,10 @@ def _compute_node_hash_states(
                     facet_dependencies = tuple(
                         dependency
                         for dependency in dependency_hashes
+                        if (
+                            dependency["relation"] != "certified-under"
+                            or dependency["interface"] in certifier_interfaces
+                        )
                         if not (
                             "interface" in dependency
                             and (

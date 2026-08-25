@@ -20,6 +20,7 @@ from .hashing import (
     compute_certification_basis_hash,
     compute_node_hash_states,
     derive_certifier_identity,
+    EVIDENCE_ONLY_RELATIONS,
     expected_certifier_checks,
     normalize_node_checks,
     resolve_certification_basis_paths,
@@ -401,11 +402,13 @@ def _expected_checks(
 
 def _certifier_currentness_identity(
     certifier_identity: Mapping[str, object],
+    *,
+    structured: bool = False,
 ) -> dict[str, object]:
     return {
         key: value
         for key, value in certifier_identity.items()
-        if key != "source_commit"
+        if key != "source_commit" and (key != "node_hash" or not structured)
     }
 
 
@@ -972,9 +975,16 @@ def evaluate_certificate_currentness(
             if payload.get("certification_basis_hash") != state.certification_basis_hash:
                 concerns.append("certification-basis-mismatch")
             payload_certifier = payload.get("certifier")
+            structured_certifier = graph.schema_version == 6 and any(
+                dependency.get("relation") in EVIDENCE_ONLY_RELATIONS
+                for dependency in state.dependency_hashes
+            )
+            currentness_identity = lambda identity: _certifier_currentness_identity(
+                identity, structured=structured_certifier
+            )
             if not isinstance(payload_certifier, Mapping) or (
-                _certifier_currentness_identity(payload_certifier)
-                != _certifier_currentness_identity(certifier_identity)
+                currentness_identity(payload_certifier)
+                != currentness_identity(certifier_identity)
             ):
                 concerns.append("certifier-mismatch")
             if payload.get("checks") != _expected_checks(node_id, checks_by_node):
@@ -997,6 +1007,8 @@ def evaluate_certificate_currentness(
         if node_id not in children or not isinstance(state, NodeHashState):
             continue
         for dependency in state.dependency_hashes:
+            if dependency.get("relation") in EVIDENCE_ONLY_RELATIONS:
+                continue
             target = dependency.get("target") if isinstance(dependency, Mapping) else None
             if isinstance(target, str) and target in children:
                 children[node_id].add(target)
@@ -1204,7 +1216,8 @@ def _certifier_target_postorder(
     """Return the exact dependency-first order for the certifier module target."""
 
     module_ids = [CERTIFIER_NODE_ID]
-    runtime_node_id = f"{CERTIFIER_NODE_ID}-rtx"
+    suffix = "._rtx" if state.graph.schema_version == 6 else "-rtx"
+    runtime_node_id = f"{CERTIFIER_NODE_ID}{suffix}"
     if runtime_node_id in state.graph.nodes:
         module_ids.append(runtime_node_id)
     roots = {

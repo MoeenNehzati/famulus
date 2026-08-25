@@ -113,7 +113,7 @@
       "additionalProperties": false,
       "properties": {
         "relation": {
-          "enum": ["uses-private-interface", "uses-export"]
+          "enum": ["uses-private-interface", "uses-export", "certified-under"]
         },
         "target": {
           "$ref": "common.schema.json#/definitions/behavioralSourceId"

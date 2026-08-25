@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
+import shutil
 import subprocess
 
 import pytest
@@ -14,6 +15,7 @@ import officina.runtime.python_machine_interface as python_interface
 from officina.certification.hashing import (
     CertificationHashError,
     NodeHashState,
+    certification_target_postorder,
     compute_node_hash_states,
     map_route_smoke_dependencies,
     route_smoke_trace_signature,
@@ -30,6 +32,7 @@ from test_support.v5_blueprint_fixtures import copy_v5_fixture_tree
 CANONICAL_SCHEMA_ROOT = (
     Path(__file__).resolve().parents[1] / "references" / "blueprint-schema"
 )
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_ROOT = Path(__file__).parent / "fixtures" / "blueprint_schemas" / "v4"
 V5_SCHEMA_ROOT = Path(__file__).parent / "fixtures" / "blueprint_schemas" / "v5"
 V5_AUTHORIZATION_FIXTURE = (
@@ -303,6 +306,40 @@ def _v6_repository(tmp_path: Path) -> tuple[Path, Path]:
     repository.git("add", ".")
     repository.git("commit", "-qm", "v6 fixture")
     return tmp_path, policy
+
+
+def _v6_certifier_repository(tmp_path: Path) -> tuple[Path, Path]:
+    root, policy = _v6_repository(tmp_path)
+    certifier_root = root / "skills" / "skill-certifier"
+    shutil.copytree(REPOSITORY_ROOT / "skills" / "skill-certifier", certifier_root)
+
+    gateway_blueprint_path = certifier_root / "blueprints" / "gateway.yaml"
+    gateway_blueprint = yaml.safe_load(
+        gateway_blueprint_path.read_text(encoding="utf-8")
+    )
+    gateway_blueprint["uses_interfaces"] = [
+        dependency
+        for dependency in gateway_blueprint["uses_interfaces"]
+        if dependency["interface"] != "skill-drift._rtx.interface.drift-status"
+    ]
+    _write_yaml(gateway_blueprint_path, gateway_blueprint)
+
+    mechanical_blueprint_path = (
+        certifier_root / "_rtx" / "blueprints" / "rtx-certifier.yaml"
+    )
+    mechanical_blueprint = yaml.safe_load(
+        mechanical_blueprint_path.read_text(encoding="utf-8")
+    )
+    mechanical_blueprint["uses_interfaces"] = []
+    mechanical_blueprint["interfaces"][
+        "skill-certifier._rtx.source.rtx-certifier.interface.certify"
+    ]["uses_interfaces"] = []
+    _write_yaml(mechanical_blueprint_path, mechanical_blueprint)
+
+    repository = GitTestRepository(root)
+    repository.git("add", ".")
+    repository.git("commit", "-qm", "add canonical certifier")
+    return root, policy
 
 
 def _v6_states(root: Path, policy: Path) -> dict[str, NodeHashState]:
@@ -672,6 +709,144 @@ def test_v6_interface_dependency_hash_changes_with_used_contract(
 
 def _facet(state: NodeHashState, facet_id: str):
     return next(facet for facet in state.facets if facet.facet_id == facet_id)
+
+
+def _certified_under_interfaces(
+    dependencies: tuple[dict[str, object], ...],
+) -> set[str]:
+    return {
+        str(dependency["interface"])
+        for dependency in dependencies
+        if dependency["relation"] == "certified-under"
+    }
+
+
+@pytest.fixture
+def v6_certifier_state(tmp_path: Path):
+    root, policy = _v6_certifier_repository(tmp_path)
+    graph = load_repository_blueprint_graph(
+        root,
+        schema_root=CANONICAL_SCHEMA_ROOT,
+        expected_schema_version=6,
+    )
+    states = compute_node_hash_states(
+        graph,
+        repo_root=root,
+        policy_path=policy,
+        certification_basis_hash="sha256:" + "b" * 64,
+    )
+    return root, policy, graph, states
+
+
+def test_v6_certifier_dependencies_are_exact_and_evidence_only(
+    v6_certifier_state,
+) -> None:
+    root, policy, graph, states = v6_certifier_state
+    source_id = "provider-skill.source.gateway"
+    interface_id = f"{source_id}.interface.run"
+
+    assert _certified_under_interfaces(
+        _facet(states[source_id], interface_id).dependency_hashes
+    ) == {
+        "skill-certifier._rtx.interface.certify",
+        "skill-certifier.source.audit-interface.interface.audit",
+    }
+    assert _certified_under_interfaces(
+        _facet(states[source_id], source_id).dependency_hashes
+    ) == {
+        "skill-certifier._rtx.interface.certify",
+        "skill-certifier.source.audit-behavioral-source.interface.audit",
+    }
+    assert _certified_under_interfaces(states["provider-skill"].dependency_hashes) == {
+        "skill-certifier._rtx.interface.certify",
+        "skill-certifier.source.audit-module.interface.audit",
+    }
+
+    assert certification_target_postorder(graph, states, (source_id,)) == (source_id,)
+    assert map_route_smoke_dependencies(
+        graph,
+        states,
+        source_node_id="consumer-skill.source.gateway",
+        loaded_paths=(root / "skills/provider-skill/_rtx/worker.py",),
+        certification_basis_paths=(),
+        repo_root=root,
+    )[0].target_node_id == source_id
+
+    def scopes(current, certifier_interface):
+        dependencies = {
+            "source": current[source_id].dependency_hashes,
+            "interface": _facet(current[source_id], interface_id).dependency_hashes,
+            "remainder": _facet(current[source_id], source_id).dependency_hashes,
+            "module": current["provider-skill"].dependency_hashes,
+        }
+        return {
+            scope: next(
+                (item["interface_hash"] for item in items
+                 if item.get("interface") == certifier_interface),
+                None,
+            )
+            for scope, items in dependencies.items()
+        }
+
+    certifier_root = root / "skills/skill-certifier"
+    audits = certification_hashing.CERTIFIER_AUDIT_INTERFACES
+    cases = (
+        (
+            certification_hashing.V6_CERTIFIER_INTERFACE_ID,
+            "_rtx/_node_certifier.py",
+            {"source", "interface", "remainder", "module"},
+        ),
+        (
+            audits["interface"],
+            "instructions/audit-interface.md",
+            {"source", "interface"},
+        ),
+        (
+            audits["remainder"],
+            "instructions/audit-behavioral-source.md",
+            {"source", "remainder"},
+        ),
+        (
+            audits["module"],
+            "instructions/audit-module.md",
+            {"module"},
+        ),
+    )
+    for audit_id, relative_path, expected_scopes in cases:
+        path = certifier_root / relative_path
+        original = path.read_text(encoding="utf-8")
+        try:
+            path.write_text(original + "\nChanged.\n", encoding="utf-8")
+            changed = _v6_states(root, policy)
+        finally:
+            path.write_text(original, encoding="utf-8")
+        before_hashes = scopes(states, audit_id)
+        after_hashes = scopes(changed, audit_id)
+        assert {
+            scope
+            for scope in before_hashes
+            if before_hashes[scope] != after_hashes[scope]
+        } == expected_scopes
+
+    source_path = root / "skills/skill-certifier/blueprints/instructions-audit-module.yaml"
+    source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+    source["interfaces"] = {}
+    _write_yaml(source_path, source)
+    gateway_path = root / "skills/skill-certifier/blueprints/gateway.yaml"
+    gateway = yaml.safe_load(gateway_path.read_text(encoding="utf-8"))
+    gateway["uses_interfaces"] = [
+        dependency
+        for dependency in gateway["uses_interfaces"]
+        if dependency["interface"]
+        != "skill-certifier.source.audit-module.interface.audit"
+    ]
+    _write_yaml(gateway_path, gateway)
+
+    with pytest.raises(
+        CertificationHashError,
+        match="canonical certifier interfaces are incomplete",
+    ):
+        _v6_states(root, policy)
 
 
 def test_v6_claimed_file_changes_only_its_interface_facet(

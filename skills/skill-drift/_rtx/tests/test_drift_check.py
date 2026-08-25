@@ -226,9 +226,9 @@ def test_status_payload_and_text_expose_structured_drift_and_worklist(
     )
     dependency_delta = checker.CertificateDependencyDelta(
         change="modified",
-        relation="uses-export",
-        target="provider.source.gateway",
-        interface="provider.interface.run",
+        relation="certified-under",
+        target="skill-certifier.source.audit-interface",
+        interface="skill-certifier.source.audit-interface.interface.audit",
         certified={"interface_hash": "sha256:" + "c" * 64},
         current={"interface_hash": "sha256:" + "d" * 64},
     )
@@ -279,7 +279,7 @@ def test_status_payload_and_text_expose_structured_drift_and_worklist(
     }
     assert node["facet_drift"][0]["dependencies"][0][
         "interface"
-    ] == "provider.interface.run"
+    ] == "skill-certifier.source.audit-interface.interface.audit"
     assert node["facet_drift"][0]["dependencies"][1]["target"] == (
         "contract.source.owner"
     )
@@ -290,7 +290,10 @@ def test_status_payload_and_text_expose_structured_drift_and_worklist(
     assert payload["skills"][0]["stale_worklist"] == payload["stale_worklist"]
     assert text.index("provider.source.gateway") < text.index("demo.source.gateway")
     assert "modified input skills/demo/worker.py" in text
-    assert "modified interface dependency provider.interface.run" in text
+    assert (
+        "modified interface dependency "
+        "skill-certifier.source.audit-interface.interface.audit"
+    ) in text
     assert (
         "modified dependency references-cross-owner-contract "
         "contract.source.owner"
