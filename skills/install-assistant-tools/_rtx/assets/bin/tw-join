@@ -75,5 +75,9 @@ _tw_main() {
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+        echo "Usage: tw-join"
+        exit 0
+    fi
     _tw_main "$@"
 fi

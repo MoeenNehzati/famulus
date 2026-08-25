@@ -401,6 +401,37 @@ def test_tw_selection_installs_the_complete_workspace_bundle(tmp_path):
     assert (bin_dir / "tmux-workspace").resolve() == (bin_dir / "tw").resolve()
 
 
+@pytest.mark.parametrize("command", ("tw-break", "tw-join", "tw-monitor"))
+@pytest.mark.parametrize("flag", ("-h", "--help"))
+def test_tw_action_helper_help_does_not_invoke_tmux(tmp_path, command, flag):
+    sentinel = tmp_path / "invoked"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    for dependency in ("tmux", "btop"):
+        executable = fake_bin / dependency
+        executable.write_text(
+            "#!/bin/sh\nprintf '%s\\n' \"$0\" >> \"$TW_SENTINEL\"\nexit 99\n"
+        )
+        executable.chmod(0o755)
+
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["TW_SENTINEL"] = str(sentinel)
+    source_bin = Path(__file__).resolve().parents[1] / "assets" / "bin"
+
+    result = subprocess.run(
+        [str(source_bin / command), flag],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert f"Usage: {command}" in result.stdout
+    assert not sentinel.exists()
+
+
 def test_tw_verification_fails_when_any_bundle_command_is_missing(tmp_path):
     if sys.platform == "win32" or not hasattr(os, "symlink"):
         # famulus-skip: category=platform-contract; reason=tw bundle is Unix-only; alternate=Windows launcher tests cover supported Windows commands
