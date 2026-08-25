@@ -126,9 +126,10 @@ the schedule descriptor by hand.
 
 ## Removal
 
-Before installer uninstall or purge, disable this context's enabled jobs and
-run `scripts-remove-context`. Confirm status reports no registrations for its
-installation ID. The installer observes this state but never deletes it.
+Installer uninstall or purge automatically delegates this context's native
+registration and sentinel teardown here before removing installer artifacts.
+Direct `scripts-remove-context` remains available for standalone teardown and
+recovery. Both paths fail closed unless native removal can be verified.
 
 Context removal preserves recurring configuration and history. Delete those
 only in a separately authorized data-retention operation.

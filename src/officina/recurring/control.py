@@ -8,14 +8,14 @@ from pathlib import Path
 
 import yaml
 
-from officina.common.atomic_files import atomic_replace_bytes
+from officina.common.atomic_files import atomic_replace_bytes, exclusive_file_lock
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 from .healthcheck import run as run_healthcheck
 from .native import load_jobs, remove_context, status, sync, trigger
 from .jobs import confined_child, validate_jobs_payload, validate_job_name
 from .records import read_record
-from .runtime import ManagedSchedule, load_managed_schedule
+from .runtime import ManagedSchedule, lifecycle_lock_path, load_managed_schedule
 from .state import cleanup_legacy_agent_environment, prepare_context_state
 
 
@@ -64,7 +64,7 @@ def _view_logs(schedule: ManagedSchedule, name: str, lines: int) -> None:
         print(line)
 
 
-def run_operation(schedule: ManagedSchedule, *, operation: str, name: str | None, lines: int) -> int:
+def _run_operation_unlocked(schedule: ManagedSchedule, *, operation: str, name: str | None, lines: int) -> int:
     if operation == "setup":
         prepare_context_state(schedule)
         sync(schedule)
@@ -91,6 +91,24 @@ def run_operation(schedule: ManagedSchedule, *, operation: str, name: str | None
     elif operation == "remove-context":
         remove_context(schedule)
     return 0
+
+
+def run_operation(schedule: ManagedSchedule, *, operation: str, name: str | None, lines: int) -> int:
+    if operation not in {"setup", "sync", "enable", "disable", "remove-context"}:
+        return _run_operation_unlocked(
+            schedule, operation=operation, name=name, lines=lines
+        )
+    schedule.state_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with exclusive_file_lock(
+        lifecycle_lock_path(schedule.state_root), allowed_root=schedule.state_root
+    ):
+        schedule = load_managed_schedule(
+            runtime_root=schedule.runtime_root,
+            descriptor_path=schedule.descriptor_path,
+        )
+        return _run_operation_unlocked(
+            schedule, operation=operation, name=name, lines=lines
+        )
 
 
 def _parser() -> argparse.ArgumentParser:

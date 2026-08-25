@@ -12,7 +12,9 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Mapping
 
-from .runtime import ManagedSchedule
+from officina.install.context import InstallationContext
+
+from .runtime import ManagedSchedule, native_registration_root
 from officina.common.atomic_files import atomic_replace_bytes
 from .jobs import confined_child, validate_job, validate_job_name, validate_jobs_payload
 
@@ -786,13 +788,40 @@ def sync(schedule: ManagedSchedule) -> None:
     _settle_registration_summary(schedule, selected_names)
 
 
+@dataclass(frozen=True)
+class _RegistrationTeardownContext:
+    installation_id: str
+    jobs_file: Path
+    state_root: Path
+    native_registration_root: Path
+
+
+def remove_installation_context(
+    context: InstallationContext, platform: str
+) -> None:
+    """Remove native recurring state for one explicit installation context."""
+    schedule = _RegistrationTeardownContext(
+        installation_id=context.installation_id,
+        jobs_file=context.paths.recurring_config_root / "jobs.yaml",
+        state_root=context.paths.recurring_state_root,
+        native_registration_root=native_registration_root(context, platform),
+    )
+    _remove_context(schedule, platform)
+
+
 def remove_context(schedule: ManagedSchedule) -> None:
+    _remove_context(schedule, sys.platform)
+
+
+def _remove_context(
+    schedule: ManagedSchedule | _RegistrationTeardownContext, platform: str
+) -> None:
     root = schedule.native_registration_root
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     candidates = _teardown_candidates(schedule)
     _write_registration_state(schedule, sorted(candidates), pending=True)
     remaining: set[str] = set()
-    if sys.platform.startswith("linux"):
+    if platform.startswith("linux"):
         prefix = f"ai-{registration_token(schedule.installation_id)}"
         session_environment = linux_session_environment()
         inventory = _systemd_unit_inventory(
@@ -905,7 +934,7 @@ def remove_context(schedule: ManagedSchedule) -> None:
                     name = _context_job(unit, prefix, suffix, schedule.installation_id)
                     if name is not None:
                         remaining.add(name)
-    elif sys.platform == "darwin":
+    elif platform == "darwin":
         prefix = f"ai-{registration_token(schedule.installation_id)}"
         target = f"gui/{os.getuid()}"
         inventory = _launchd_label_inventory(schedule.installation_id)
@@ -948,7 +977,7 @@ def remove_context(schedule: ManagedSchedule) -> None:
                     name = label[len(label_prefix):]
                     if name:
                         remaining.add(name)
-    elif sys.platform == "win32":
+    elif platform == "win32":
         prefix = windows_task_name("", schedule.installation_id)
         inventory = _windows_task_inventory()
         if not inventory.available:
@@ -998,10 +1027,10 @@ def remove_context(schedule: ManagedSchedule) -> None:
                 if (root / windows_wrapper_name(name, schedule.installation_id)).exists():
                     remaining.add(name)
     else:
-        raise RuntimeError(f"unsupported scheduler platform: {sys.platform}")
+        raise RuntimeError(f"unsupported scheduler platform: {platform}")
     if remaining:
         _teardown_incomplete(schedule, remaining)
-    if sys.platform.startswith("linux"):
+    if platform.startswith("linux"):
         try:
             _update_sentinel(schedule, remove=True)
             marker = _sentinel_marker(schedule.installation_id)
@@ -1047,4 +1076,4 @@ def trigger(schedule: ManagedSchedule, job_name: str) -> bool:
     return subprocess.run(command, **kwargs).returncode == 0
 
 
-__all__ = ["RegistrationNamespaceStatus", "executor_argv", "inspect_registration_namespace", "linux_session_environment", "load_jobs", "remove_context", "render_linux_service", "render_linux_timer", "render_macos_plist", "render_windows_wrapper", "status", "sync", "trigger", "windows_executor_argv", "write_registration_summary"]
+__all__ = ["RegistrationNamespaceStatus", "executor_argv", "inspect_registration_namespace", "linux_session_environment", "load_jobs", "remove_context", "remove_installation_context", "render_linux_service", "render_linux_timer", "render_macos_plist", "render_windows_wrapper", "status", "sync", "trigger", "windows_executor_argv", "write_registration_summary"]

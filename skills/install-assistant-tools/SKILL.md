@@ -120,11 +120,11 @@ Use narrower interfaces only for a demonstrated targeted repair:
 
 Do not run development repair for a standard installation.
 
-Before uninstall or purge, require `recurring-tasks` to disable jobs and run
-its `scripts-remove-context` operation for the exact context. The installer
-must refuse while registrations remain and must never delete recurring-owned
-state itself. Ordinary uninstall removes only unchanged manifest-owned
-artifacts. Purge additionally removes exact-identity immutable
+Before replaying uninstall or purge artifacts, the installer automatically
+delegates exact-context registration, sentinel, and owner teardown to the
+recurring runtime. It must stop before artifact replay when native inventory or
+teardown verification is uncertain. Ordinary uninstall removes only unchanged
+manifest-owned artifacts. Purge additionally removes exact-identity immutable
 runtime/bootstrap, launcher, and generated profile artifacts. Neither operation
 recursively deletes mutable configuration, credentials, or recurring history,
 revokes remote credentials, or deletes arbitrary mutable user data.

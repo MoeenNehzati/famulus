@@ -4,12 +4,14 @@ import json
 import os
 import subprocess
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
 import yaml
 
-from officina.recurring import control, executor, native, state
+from officina.install.context import resolve_installation_context
+from officina.recurring import control, executor, native, runtime as recurring_runtime, state
 from officina.recurring.jobs import validate_jobs_payload
 from officina.recurring.records import RunRecord, write_record
 from officina.recurring.runtime import ManagedSchedule
@@ -50,6 +52,83 @@ def _schedule(root: Path, installation_id: str = "standard") -> ManagedSchedule:
     )
 
 
+def test_control_serializes_each_mutating_operation_with_context_lifecycle_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    schedule = _schedule(tmp_path)
+    events: list[tuple[str, object]] = []
+
+    @contextmanager
+    def fake_lock(path: Path, *, allowed_root: Path):
+        events.append(("enter", (path, allowed_root)))
+        yield
+        events.append(("exit", (path, allowed_root)))
+
+    monkeypatch.setattr(control, "exclusive_file_lock", fake_lock, raising=False)
+    monkeypatch.setattr(control, "prepare_context_state", lambda _schedule: events.append(("mutate", "prepare")))
+    monkeypatch.setattr(control, "sync", lambda _schedule: events.append(("mutate", "sync")))
+    monkeypatch.setattr(control, "cleanup_legacy_agent_environment", lambda _schedule: events.append(("mutate", "cleanup")))
+    monkeypatch.setattr(control, "_set_enabled", lambda _schedule, name, enabled: events.append(("mutate", (name, enabled))))
+    monkeypatch.setattr(control, "remove_context", lambda _schedule: events.append(("mutate", "remove")))
+    monkeypatch.setattr(
+        control,
+        "load_managed_schedule",
+        lambda **_kwargs: events.append(("revalidate", schedule)) or schedule,
+    )
+
+    for operation, name in (
+        ("setup", None),
+        ("sync", None),
+        ("enable", "demo"),
+        ("disable", "demo"),
+        ("remove-context", None),
+    ):
+        events.clear()
+        assert control.run_operation(schedule, operation=operation, name=name, lines=50) == 0
+        assert events[0] == (
+            "enter",
+            (schedule.state_root / "lifecycle.lock", schedule.state_root),
+        )
+        assert events[1] == ("revalidate", schedule)
+        assert events[-1] == (
+            "exit",
+            (schedule.state_root / "lifecycle.lock", schedule.state_root),
+        )
+        assert any(kind == "mutate" for kind, _detail in events[1:-1])
+
+
+def test_control_aborts_mutation_when_locked_revalidation_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    schedule = _schedule(tmp_path)
+    events: list[str] = []
+
+    @contextmanager
+    def fake_lock(path: Path, *, allowed_root: Path):
+        events.append("lock-enter")
+        yield
+        events.append("lock-exit")
+
+    def stale_after_uninstall(**_kwargs):
+        events.append("revalidate")
+        raise recurring_runtime.RecurringRuntimeError("descriptor was removed")
+
+    monkeypatch.setattr(control, "exclusive_file_lock", fake_lock)
+    monkeypatch.setattr(control, "load_managed_schedule", stale_after_uninstall)
+    monkeypatch.setattr(
+        control,
+        "sync",
+        lambda _schedule: (_ for _ in ()).throw(
+            AssertionError("stale schedule must not mutate registrations")
+        ),
+    )
+
+    with pytest.raises(recurring_runtime.RecurringRuntimeError, match="descriptor was removed"):
+        control.run_operation(schedule, operation="sync", name=None, lines=50)
+
+    assert events == ["lock-enter", "revalidate"]
+
+
 def _default_jobs(path: Path) -> Path:
     path.write_text(
         "jobs:\n- name: fresh\n  command: invoke-skill fresh\n"
@@ -57,6 +136,44 @@ def _default_jobs(path: Path) -> Path:
         encoding="utf-8",
     )
     return path
+
+
+def test_installation_context_teardown_adapter_uses_only_explicit_context_paths(
+    tmp_path, monkeypatch
+):
+    source = tmp_path / "source"
+    source.mkdir()
+    home = tmp_path / "home"
+    home.mkdir()
+    context = resolve_installation_context(
+        mode="standard",
+        source_root=source,
+        development_root=None,
+        platform="linux",
+        home=home,
+        environ={},
+    )
+    adapter = getattr(native, "remove_installation_context", None)
+    assert adapter is not None
+    captured = []
+    monkeypatch.setattr(recurring_runtime, "_posix_account_home", lambda: home)
+    monkeypatch.setattr(
+        native,
+        "_remove_context",
+        lambda schedule, platform: captured.append((schedule, platform)),
+        raising=False,
+    )
+
+    adapter(context, "linux")
+
+    assert len(captured) == 1
+    schedule, platform = captured[0]
+    assert platform == "linux"
+    assert schedule.installation_id == "standard"
+    assert schedule.jobs_file == context.paths.recurring_config_root / "jobs.yaml"
+    assert schedule.state_root == context.paths.recurring_state_root
+    assert schedule.native_registration_root == home / ".config/systemd/user"
+    assert not (context.paths.recurring_config_root / "schedule-descriptor.json").exists()
 
 
 @pytest.mark.parametrize(
@@ -789,6 +906,15 @@ def test_standard_and_two_development_contexts_complete_managed_lifecycle_withou
             f"history:{installation}".encode()
         )
         schedules.append(schedule)
+
+    schedules_by_descriptor = {
+        schedule.descriptor_path: schedule for schedule in schedules
+    }
+    monkeypatch.setattr(
+        control,
+        "load_managed_schedule",
+        lambda *, runtime_root, descriptor_path: schedules_by_descriptor[descriptor_path],
+    )
 
     defaults = tmp_path / "default_jobs.yaml"
     defaults.write_text(

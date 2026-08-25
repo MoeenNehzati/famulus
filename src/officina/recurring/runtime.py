@@ -22,6 +22,11 @@ class RecurringPrerequisiteError(RecurringRuntimeError):
     pass
 
 
+def lifecycle_lock_path(state_root: Path) -> Path:
+    """Return the stable per-installation recurring lifecycle lock."""
+    return Path(state_root) / "lifecycle.lock"
+
+
 _BACKENDS = ("claude", "codex")
 _FIELDS = {
     "schema_version", "installation_id", "runtime_root", "runtime_resolver",
@@ -325,4 +330,4 @@ def load_public_schedule(*, runtime_root: Path, environ: Mapping[str, str]) -> M
     return load_managed_schedule(runtime_root=runtime_root, descriptor_path=context.paths.recurring_config_root / "schedule-descriptor.json", environ=environ)
 
 
-__all__ = ["ManagedSchedule", "RecurringPrerequisiteError", "RecurringRuntimeError", "discover_runtime_root", "load_managed_schedule", "load_public_schedule", "native_registration_root", "resolve_managed_schedule_authority", "write_managed_schedule"]
+__all__ = ["ManagedSchedule", "RecurringPrerequisiteError", "RecurringRuntimeError", "discover_runtime_root", "lifecycle_lock_path", "load_managed_schedule", "load_public_schedule", "native_registration_root", "resolve_managed_schedule_authority", "write_managed_schedule"]

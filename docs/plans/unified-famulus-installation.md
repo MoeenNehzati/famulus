@@ -359,7 +359,7 @@ descriptor-rendered commands.
 | launcher resources | immutable release copy | exact live checkout path |
 | launcher selection | context `launchers.json` | isolated `launchers.json` |
 | install/update/repair | idempotent common `apply` | same `apply` |
-| uninstall/purge | refuse active registrations, then context manifest replay | same contract, `.famulus` containment |
+| uninstall/purge | exact-context recurring teardown, then context manifest replay | same contract, `.famulus` containment |
 | skill/hook projection | existing plugin/host behavior | checkout-only isolated projection |
 | Git hooks | existing host/plugin behavior | identity-tracked checkout-local setting |
 | assistant authentication | existing host state | fresh isolated on-disk state; ambient credentials may be reused |
@@ -489,9 +489,9 @@ descriptor-rendered commands.
   values, shell blocks, launchers, and generated configuration.
 - [ ] Resolve the target context explicitly for uninstall; never choose a
   manifest by cwd, plugin cache, or ambient environment.
-- [ ] Refuse uninstall/purge before mutation while that context has recurring
-  registrations. Direct the user to recurring-owned `remove-context`; after it
-  succeeds, preserve recurring jobs/descriptors/history during manifest replay.
+- [ ] Delegate exact-context teardown to the recurring owner before installer
+  artifact mutation. After verified removal, preserve recurring
+  jobs/descriptors/history during manifest replay.
 - [ ] Test ordinary uninstall versus purge exactly as defined above, including
   modified config, retained mutable state, install ID, stable canaries,
   interruption, repeated replay, symlink/junction escape, and conflict-safe

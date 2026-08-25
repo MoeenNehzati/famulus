@@ -42,6 +42,12 @@ dependencies:
   source: install.source.doctor
   version: 1
 - blueprint:
+    base: repository-root
+    path: src/officina/recurring/blueprints/runtime.yaml
+  reason: Uninstall delegates exact-context native registration and sentinel teardown to the recurring runtime owner before replaying installer artifacts.
+  source: recurring.source.runtime
+  version: 1
+- blueprint:
     base: module-root
     path: blueprints/rtx-assistant-access-config.yaml
   reason: Uninstall reuses the assistant-access JSON ownership helpers and marker constants.
@@ -68,6 +74,8 @@ uses_interfaces:
 - interface: install.interface.context
   version: 1
 - interface: install.interface.doctor
+  version: 1
+- interface: recurring.interface.context-teardown
   version: 1
 - interface: install-assistant-tools._rtx.source.rtx-assistant-access-config.interface.python-api
   version: 1

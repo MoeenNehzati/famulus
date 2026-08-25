@@ -16,7 +16,7 @@ import sys
 import stat
 import types
 from argparse import Namespace
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -917,7 +917,9 @@ def test_access_replay_preserves_full_file_mode_on_rewrite(tmp_path: Path) -> No
     assert stat.S_IMODE(claude.stat().st_mode) == 0o1640
 
 
-def test_context_uninstall_refuses_active_recurring_registration_before_mutation(tmp_path):
+def test_context_uninstall_auto_tears_down_recurring_before_manifest_replay(
+    tmp_path, monkeypatch
+):
     context = _standard_context(tmp_path)
     owned = context.paths.user_bin / "dispatcher"
     owned.parent.mkdir(parents=True)
@@ -931,6 +933,24 @@ def test_context_uninstall_refuses_active_recurring_registration_before_mutation
         json.dumps({"schema_version": 1, "installation_id": "standard", "registrations": ["daily"]}),
         encoding="utf-8",
     )
+    statuses = iter(
+        (
+            recurring_native.RegistrationNamespaceStatus(
+                True, True, ("daily",)
+            ),
+            recurring_native.RegistrationNamespaceStatus(True, False),
+        )
+    )
+    monkeypatch.setattr(
+        uninstall, "inspect_registration_namespace", lambda **_kwargs: next(statuses)
+    )
+    teardown_calls = []
+    monkeypatch.setattr(
+        uninstall,
+        "remove_installation_context",
+        lambda selected, platform: teardown_calls.append((selected, platform)),
+        raising=False,
+    )
 
     report = uninstall.uninstall_context(
         context=context,
@@ -943,9 +963,312 @@ def test_context_uninstall_refuses_active_recurring_registration_before_mutation
         no_git_hooks=True,
     )
 
+    assert not report.failed
+    assert teardown_calls == [(context, sys.platform)]
+    assert not owned.exists()
+    assert any(
+        status == "removed" and "recurring registrations" in action
+        for status, action, _detail in report.items
+    )
+
+
+def test_context_uninstall_holds_lifecycle_lock_through_teardown_and_replay(
+    tmp_path, monkeypatch
+):
+    context = _standard_context(tmp_path)
+    owned = context.paths.user_bin / "dispatcher"
+    owned.parent.mkdir(parents=True)
+    owned.write_text("owned\n", encoding="utf-8")
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(mode="standard", installation_id="standard")
+    manifest.record("file", path=str(owned))
+    statuses = iter(
+        (
+            recurring_native.RegistrationNamespaceStatus(True, True, ("daily",)),
+            recurring_native.RegistrationNamespaceStatus(True, False),
+        )
+    )
+    events = []
+
+    @contextmanager
+    def fake_lock(path, *, allowed_root):
+        label = "recurring" if path.name == "lifecycle.lock" else "assistant"
+        events.append(f"{label}-enter")
+        yield
+        events.append(f"{label}-exit")
+
+    monkeypatch.setattr(uninstall, "exclusive_file_lock", fake_lock, raising=False)
+    monkeypatch.setattr(
+        uninstall, "inspect_registration_namespace", lambda **_kwargs: next(statuses)
+    )
+    monkeypatch.setattr(
+        uninstall,
+        "remove_installation_context",
+        lambda _selected, _platform: events.append("teardown"),
+    )
+    monkeypatch.setattr(
+        uninstall,
+        "_replay_manifest_unlocked",
+        lambda *_args, **_kwargs: events.append("replay"),
+    )
+
+    report = uninstall.uninstall_context(
+        context=context, platform=sys.platform, home=tmp_path / "home", environ={},
+        purge=False, dry_run=False, no_pip=True, no_git_hooks=True,
+    )
+
+    assert not report.failed
+    assert events == [
+        "recurring-enter",
+        "assistant-enter",
+        "teardown",
+        "replay",
+        "assistant-exit",
+        "recurring-exit",
+    ]
+
+
+def test_context_uninstall_revalidates_manifest_after_lifecycle_lock(
+    tmp_path, monkeypatch
+):
+    context = _standard_context(tmp_path)
+    owned = context.paths.user_bin / "dispatcher"
+    owned.parent.mkdir(parents=True)
+    owned.write_text("owned\n", encoding="utf-8")
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(mode="standard", installation_id="standard")
+    manifest.record("file", path=str(owned))
+
+    @contextmanager
+    def replace_manifest_on_lock(path, *, allowed_root):
+        if path.name == "lifecycle.lock":
+            replacement = Manifest(manifest.path)
+            replacement.installation["installation_id"] = "foreign"
+            replacement.save()
+        yield
+
+    monkeypatch.setattr(
+        uninstall, "exclusive_file_lock", replace_manifest_on_lock, raising=False
+    )
+    monkeypatch.setattr(
+        uninstall,
+        "inspect_registration_namespace",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("inventory must follow locked manifest validation")
+        ),
+    )
+
+    report = uninstall.uninstall_context(
+        context=context, platform=sys.platform, home=tmp_path / "home", environ={},
+        purge=False, dry_run=False, no_pip=True, no_git_hooks=True,
+    )
+
+    assert report.failed
+    assert owned.read_text(encoding="utf-8") == "owned\n"
+
+
+def test_context_uninstall_aborts_manifest_replay_when_auto_teardown_fails(
+    tmp_path, monkeypatch
+):
+    context = _standard_context(tmp_path)
+    owned = context.paths.user_bin / "dispatcher"
+    owned.parent.mkdir(parents=True)
+    owned.write_text("owned\n", encoding="utf-8")
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(mode="standard", installation_id="standard")
+    manifest.record("file", path=str(owned))
+    before = manifest.path.read_bytes()
+    monkeypatch.setattr(
+        uninstall,
+        "inspect_registration_namespace",
+        lambda **_kwargs: recurring_native.RegistrationNamespaceStatus(
+            True, True, ("daily",)
+        ),
+    )
+    teardown_calls = []
+
+    def fail_teardown(selected, platform):
+        teardown_calls.append((selected, platform))
+        raise RuntimeError("scheduler teardown failed")
+
+    monkeypatch.setattr(
+        uninstall, "remove_installation_context", fail_teardown, raising=False
+    )
+
+    report = uninstall.uninstall_context(
+        context=context, platform=sys.platform, home=tmp_path / "home", environ={},
+        purge=False, dry_run=False, no_pip=True, no_git_hooks=True,
+    )
+
+    assert teardown_calls == [(context, sys.platform)]
+    assert report.failed
+    assert owned.read_text(encoding="utf-8") == "owned\n"
+    assert manifest.path.read_bytes() == before
+    assert any(
+        "scheduler teardown failed" in detail
+        for status, _action, detail in report.items
+        if status == "FAILED"
+    )
+
+
+def test_context_uninstall_requires_empty_namespace_after_auto_teardown(
+    tmp_path, monkeypatch
+):
+    context = _standard_context(tmp_path)
+    owned = context.paths.user_bin / "dispatcher"
+    owned.parent.mkdir(parents=True)
+    owned.write_text("owned\n", encoding="utf-8")
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(mode="standard", installation_id="standard")
+    manifest.record("file", path=str(owned))
+    status = recurring_native.RegistrationNamespaceStatus(
+        True, True, ("daily",)
+    )
+    monkeypatch.setattr(
+        uninstall, "inspect_registration_namespace", lambda **_kwargs: status
+    )
+    monkeypatch.setattr(
+        uninstall,
+        "remove_installation_context",
+        lambda _selected, _platform: None,
+        raising=False,
+    )
+
+    report = uninstall.uninstall_context(
+        context=context, platform=sys.platform, home=tmp_path / "home", environ={},
+        purge=False, dry_run=False, no_pip=True, no_git_hooks=True,
+    )
+
     assert report.failed
     assert owned.exists()
-    assert any("remove-context" in detail for _status, _action, detail in report.items)
+    assert any(
+        "still present" in detail
+        for status, _action, detail in report.items
+        if status == "FAILED"
+    )
+
+
+def test_context_uninstall_aborts_when_auto_teardown_postcheck_is_uncertain(
+    tmp_path, monkeypatch
+):
+    context = _standard_context(tmp_path)
+    owned = context.paths.user_bin / "dispatcher"
+    owned.parent.mkdir(parents=True)
+    owned.write_text("owned\n", encoding="utf-8")
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(mode="standard", installation_id="standard")
+    manifest.record("file", path=str(owned))
+    statuses = iter(
+        (
+            recurring_native.RegistrationNamespaceStatus(
+                True, True, ("daily",)
+            ),
+            recurring_native.RegistrationNamespaceStatus(
+                False, True, detail="scheduler inventory unavailable"
+            ),
+        )
+    )
+    monkeypatch.setattr(
+        uninstall, "inspect_registration_namespace", lambda **_kwargs: next(statuses)
+    )
+    monkeypatch.setattr(
+        uninstall,
+        "remove_installation_context",
+        lambda _selected, _platform: None,
+    )
+
+    report = uninstall.uninstall_context(
+        context=context, platform=sys.platform, home=tmp_path / "home", environ={},
+        purge=False, dry_run=False, no_pip=True, no_git_hooks=True,
+    )
+
+    assert report.failed
+    assert owned.exists()
+    assert any(
+        "scheduler inventory unavailable" in detail
+        for status, _action, detail in report.items
+        if status == "FAILED"
+    )
+
+
+def test_context_uninstall_checks_development_containment_before_teardown(
+    tmp_path, monkeypatch
+):
+    context = _development_context(tmp_path)
+    outside = tmp_path / "outside-owned"
+    outside.write_text("owned\n", encoding="utf-8")
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(
+        mode="development",
+        installation_id=context.installation_id,
+        development_root=context.development_root,
+    )
+    manifest.record("file", path=str(outside))
+
+    def must_not_inspect(**_kwargs):
+        raise AssertionError("containment must precede recurring inventory")
+
+    def must_not_teardown(_selected, _platform):
+        raise AssertionError("containment must precede recurring teardown")
+
+    monkeypatch.setattr(uninstall, "inspect_registration_namespace", must_not_inspect)
+    monkeypatch.setattr(uninstall, "remove_installation_context", must_not_teardown)
+
+    report = uninstall.uninstall_context(
+        context=context,
+        platform=sys.platform,
+        home=tmp_path / "stable-home",
+        environ={},
+        purge=False,
+        dry_run=False,
+        no_pip=True,
+        no_git_hooks=True,
+    )
+
+    assert report.failed
+    assert outside.read_text(encoding="utf-8") == "owned\n"
+
+
+def test_context_uninstall_dry_run_reports_recurring_teardown_without_calling_it(
+    tmp_path, monkeypatch
+):
+    context = _standard_context(tmp_path)
+    owned = context.paths.user_bin / "dispatcher"
+    owned.parent.mkdir(parents=True)
+    owned.write_text("owned\n", encoding="utf-8")
+    manifest = Manifest(context.paths.install_state_root / "install-manifest.json")
+    manifest.bind_context(mode="standard", installation_id="standard")
+    manifest.record("file", path=str(owned))
+    before = manifest.path.read_bytes()
+    monkeypatch.setattr(
+        uninstall,
+        "inspect_registration_namespace",
+        lambda **_kwargs: recurring_native.RegistrationNamespaceStatus(
+            True, True, ("daily",)
+        ),
+    )
+
+    def must_not_teardown(_selected, _platform):
+        raise AssertionError("dry-run must not tear down recurring state")
+
+    monkeypatch.setattr(
+        uninstall, "remove_installation_context", must_not_teardown, raising=False
+    )
+
+    report = uninstall.uninstall_context(
+        context=context, platform=sys.platform, home=tmp_path / "home", environ={},
+        purge=False, dry_run=True, no_pip=True, no_git_hooks=True,
+    )
+
+    assert not report.failed
+    assert owned.read_text(encoding="utf-8") == "owned\n"
+    assert manifest.path.read_bytes() == before
+    assert any(
+        status == "removed"
+        and "recurring registrations" in action
+        and detail == "(dry-run)"
+        for status, action, detail in report.items
+    )
 
 
 def test_context_uninstall_accepts_empty_registration_summary(tmp_path):

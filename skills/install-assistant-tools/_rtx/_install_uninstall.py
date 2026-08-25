@@ -67,9 +67,13 @@ from officina.install.context import (
     resolve_installation_context,
     validate_development_boundaries,
 )
-from officina.recurring.native import inspect_registration_namespace
-from officina.recurring.runtime import native_registration_root
+from officina.recurring.native import (
+    inspect_registration_namespace,
+    remove_installation_context,
+)
+from officina.recurring.runtime import lifecycle_lock_path, native_registration_root
 from officina.common import codex_toml, toml_io
+from officina.common.atomic_files import exclusive_file_lock
 
 if not __package__:
     sys.path.insert(0, str(Path(__file__).parent))
@@ -1130,8 +1134,12 @@ def _manifest_matches_context(manifest: Manifest, context: InstallationContext) 
     return manifest.installation == expected
 
 
-def _recurring_preflight(
-    context: InstallationContext, report: Report, *, platform: str
+def _teardown_recurring_context(
+    context: InstallationContext,
+    report: Report,
+    *,
+    platform: str,
+    dry_run: bool,
 ) -> bool:
     status = inspect_registration_namespace(
         installation_id=context.installation_id,
@@ -1147,13 +1155,44 @@ def _recurring_preflight(
             + "; no installer artifacts were changed",
         )
         return False
-    if status.registrations_present:
+    if not status.registrations_present:
+        return True
+    action = f"recurring registrations for {context.installation_id}"
+    if dry_run:
+        report.add("removed", action, "(dry-run)")
+        return True
+    try:
+        remove_installation_context(context, platform)
+    except Exception as exc:
         report.add(
             "FAILED",
-            f"recurring registrations for {context.installation_id}",
-            "run recurring-tasks remove-context for this installation ID before uninstall or purge",
+            action,
+            f"automatic context teardown failed: {exc}; retry uninstall",
         )
         return False
+    verified = inspect_registration_namespace(
+        installation_id=context.installation_id,
+        state_root=context.paths.recurring_state_root,
+        native_registration_root=native_registration_root(context, platform),
+        platform=platform,
+    )
+    if not verified.certain:
+        report.add(
+            "FAILED",
+            action,
+            (verified.detail or "native scheduler inventory unavailable")
+            + "; automatic teardown could not be verified; retry uninstall",
+        )
+        return False
+    if verified.registrations_present:
+        report.add(
+            "FAILED",
+            action,
+            "recurring registrations are still present after automatic teardown; "
+            "retry uninstall",
+        )
+        return False
+    report.add("removed", action, "automatic context teardown completed")
     return True
 
 
@@ -1169,6 +1208,51 @@ def _development_entry_is_contained(entry: dict, context: InstallationContext) -
     else:
         path = raw_path.resolve(strict=False)
     return path == local_root or local_root in path.parents
+
+
+def _validate_loaded_manifest(
+    manifest: Manifest, context: InstallationContext, report: Report
+) -> bool:
+    if not manifest.entries:
+        report.add(
+            "FAILED",
+            f"manifest: {manifest.path}",
+            "no install manifest found; run apply for this exact context first",
+        )
+        return False
+    if not _manifest_matches_context(manifest, context):
+        report.add(
+            "FAILED",
+            f"manifest: {manifest.path}",
+            "manifest belongs to a different or legacy unbound installation context",
+        )
+        return False
+    if context.mode == "development" and any(
+        not _development_entry_is_contained(entry, context)
+        for entry in manifest.entries
+    ):
+        report.add(
+            "FAILED",
+            f"manifest: {manifest.path}",
+            "manifest contains an artifact outside the selected checkout .famulus boundary",
+        )
+        return False
+    return True
+
+
+def _exclude_development_install_id(
+    manifest: Manifest, context: InstallationContext
+) -> None:
+    if context.mode != "development" or context.development_root is None:
+        return
+    install_id_path = (
+        context.development_root / ".famulus" / "install-id"
+    ).resolve(strict=False)
+    manifest.entries = [
+        entry
+        for entry in manifest.entries
+        if Path(entry.get("path", "")).resolve(strict=False) != install_id_path
+    ]
 
 
 def uninstall_context(
@@ -1201,37 +1285,58 @@ def uninstall_context(
     except InstallManifestError as exc:
         report.add("FAILED", "install manifest preflight", str(exc))
         return report
-    if not manifest.entries:
-        report.add("FAILED", f"manifest: {manifest.path}", "no install manifest found; run apply for this exact context first")
+    if not _validate_loaded_manifest(manifest, context, report):
         return report
-    if not _manifest_matches_context(manifest, context):
-        report.add("FAILED", f"manifest: {manifest.path}", "manifest belongs to a different or legacy unbound installation context")
-        return report
-    if not _recurring_preflight(context, report, platform=platform):
-        return report
-    if context.mode == "development" and any(
-        not _development_entry_is_contained(entry, context) for entry in manifest.entries
-    ):
-        report.add("FAILED", f"manifest: {manifest.path}", "manifest contains an artifact outside the selected checkout .famulus boundary")
-        return report
-    if context.mode == "development" and context.development_root is not None:
-        install_id_path = (context.development_root / ".famulus" / "install-id").resolve(
-            strict=False
+
+    if dry_run:
+        if not _teardown_recurring_context(
+            context, report, platform=platform, dry_run=True
+        ):
+            return report
+        _exclude_development_install_id(manifest, context)
+        _replay_manifest_unlocked(
+            manifest,
+            report,
+            dry_run=True,
+            purge=purge,
+            no_pip=no_pip,
+            no_git_hooks=no_git_hooks,
+            context=context,
         )
-        manifest.entries = [
-            entry
-            for entry in manifest.entries
-            if Path(entry.get("path", "")).resolve(strict=False) != install_id_path
-        ]
-    replay_manifest(
-        manifest,
-        report,
-        dry_run=dry_run,
-        purge=purge,
-        no_pip=no_pip,
-        no_git_hooks=no_git_hooks,
-        context=context,
-    )
+        return report
+
+    recurring_lock_root = context.paths.recurring_state_root
+    recurring_lock_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    install_lock_root = context.paths.install_state_root
+    install_lock_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with exclusive_file_lock(
+        lifecycle_lock_path(recurring_lock_root), allowed_root=recurring_lock_root
+    ):
+        with exclusive_file_lock(
+            install_lock_root / "assistant-access.lock",
+            allowed_root=install_lock_root,
+        ):
+            try:
+                manifest.reload()
+            except InstallManifestError as exc:
+                report.add("FAILED", "install manifest preflight", str(exc))
+                return report
+            if not _validate_loaded_manifest(manifest, context, report):
+                return report
+            if not _teardown_recurring_context(
+                context, report, platform=platform, dry_run=False
+            ):
+                return report
+            _exclude_development_install_id(manifest, context)
+            _replay_manifest_unlocked(
+                manifest,
+                report,
+                dry_run=False,
+                purge=purge,
+                no_pip=no_pip,
+                no_git_hooks=no_git_hooks,
+                context=context,
+            )
     return report
 
 

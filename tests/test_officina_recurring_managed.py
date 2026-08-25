@@ -430,6 +430,7 @@ def test_managed_enable_disable_edit_only_canonical_jobs_and_sync(tmp_path, monk
     schedule.jobs_file.parent.mkdir(parents=True, exist_ok=True)
     schedule.jobs_file.write_text(yaml.safe_dump({"jobs": [{"name": "demo", "schedule": "0 * * * *", "command": "codex", "enabled": False}]}), encoding="utf-8")
     synced = []
+    monkeypatch.setattr(control, "load_managed_schedule", lambda **_kwargs: schedule)
     monkeypatch.setattr(control, "sync", lambda selected: synced.append(selected))
 
     assert control.run_operation(schedule, operation="enable", name="demo", lines=50) == 0

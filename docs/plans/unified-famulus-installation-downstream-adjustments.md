@@ -540,11 +540,10 @@ dispatcher --caller-skill install-assistant-tools install-assistant-tools._rtx.i
   plugin source, moved development checkout, and modified user configuration.
   Assert recovery uses `apply`/repair without adopting or deleting another
   context.
-- [ ] Add `recurring-tasks remove-context` as the sole owner of native
-  registration, sentinel, and owner-record teardown. It preserves canonical
-  jobs, descriptor, and run history. Installer uninstall/purge performs a
-  read-only preflight and refuses while that context has registrations, naming
-  the removal command; once cleared it proceeds without deleting recurring
+- [ ] Keep recurring runtime code as the sole owner of native registration,
+  sentinel, and owner-record teardown. It preserves canonical jobs, descriptor,
+  and run history. Installer uninstall/purge delegates exact-context teardown,
+  verifies the namespace is empty, and then proceeds without deleting recurring
   mutable state. Test failed/repeated teardown and no cross-context deletion.
 - [ ] Add Linux, macOS, and Windows CI coverage for path spaces/Unicode,
   launcher selection, descriptor escaping, scheduler identifiers, and
@@ -576,8 +575,8 @@ This downstream migration is complete only when:
   fixed context resolver;
 - standard scheduler state migrates without losing job configuration, enabled
   state, owner identity, or run history;
-- installer uninstall refuses active registrations and recurring-owned
-  `remove-context` clears only that context while preserving its mutable data;
+- installer uninstall delegates active-registration teardown to the recurring
+  owner, which clears only that context while preserving its mutable data;
 - milestone logs and every tested `FamulusPaths` consumer stay inside the active
   context;
 - Google setup remains independent and credentials remain outside installer

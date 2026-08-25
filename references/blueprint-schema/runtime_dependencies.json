@@ -2171,11 +2171,34 @@
                 "windows": true
               },
               "reason": "Configures repository hook settings during development installs."
+            },
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Parses canonical recurring jobs configuration."
             }
           ]
         },
         "install-assistant-tools._rtx.interface.scripts-doctor": {
-          "dependencies": []
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Parses canonical recurring jobs configuration."
+            }
+          ]
         },
         "install-assistant-tools._rtx.interface.scripts-install": {
           "dependencies": [
@@ -2189,14 +2212,49 @@
                 "windows": true
               },
               "reason": "Configures repository hook settings during development installs."
+            },
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Parses canonical recurring jobs configuration."
             }
           ]
         },
         "install-assistant-tools._rtx.interface.scripts-launchers": {
-          "dependencies": []
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Parses canonical recurring jobs configuration."
+            }
+          ]
         },
         "install-assistant-tools._rtx.interface.scripts-scaffold": {
-          "dependencies": []
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Parses canonical recurring jobs configuration."
+            }
+          ]
         }
       }
     },
