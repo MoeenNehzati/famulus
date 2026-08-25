@@ -52,6 +52,10 @@ def _schedule(root: Path, installation_id: str = "standard") -> ManagedSchedule:
     )
 
 
+def test_linux_calendar_renders_stepped_hours_with_a_systemd_start_value() -> None:
+    assert native.cron_to_systemd("0 */3 * * *") == "*-*-* 00/3:00:00"
+
+
 def test_control_serializes_each_mutating_operation_with_context_lifecycle_lock(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

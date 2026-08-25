@@ -70,7 +70,8 @@ def cron_to_systemd(value: str) -> str:
     if minute.startswith("*/"):
         clock = f"*:00/{int(minute[2:])}:00"
     else:
-        clock = f"{hour if hour != '*' else '*'}:{int(minute):02d}:00"
+        rendered_hour = f"00/{int(hour[2:])}" if hour.startswith("*/") else hour
+        clock = f"{rendered_hour if rendered_hour != '*' else '*'}:{int(minute):02d}:00"
     return f"{day}*-*-* {clock}"
 
 
