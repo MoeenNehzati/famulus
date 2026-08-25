@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -1219,6 +1220,108 @@ def test_precommit_hook_uses_the_combined_root_suite() -> None:
     )
     assert '"$REPO_ROOT/validators/runner.py"' not in hook
     assert '"$REPO_ROOT/scripts/run-python-tests.py"' not in hook
+
+
+@pytest.mark.parametrize("commit_only", (False, True))
+def test_precommit_hook_commits_synchronized_plugin_versions(
+    tmp_path: Path,
+    commit_only: bool,
+) -> None:
+    """Catch a hook that leaves the two committed plugin versions stale."""
+
+    from test_support.git_repository import GitTestRepository
+
+    repository = GitTestRepository.create(tmp_path / "repository")
+    (repository.root / "pyproject.toml").write_text(
+        '[project]\nname = "famulus-officina"\nversion = "0.1.0"\n',
+        encoding="utf-8",
+    )
+    for directory in (".claude-plugin", ".codex-plugin"):
+        target = repository.root / directory / "plugin.json"
+        target.parent.mkdir(parents=True)
+        target.write_text(
+            '{\n  "name": "famulus",\n  "version": "0.1.0"\n}\n',
+            encoding="utf-8",
+        )
+    hooks = repository.root / ".githooks"
+    scripts = repository.root / "scripts"
+    hooks.mkdir()
+    scripts.mkdir()
+    shutil.copy2(REPO_ROOT / ".githooks" / "pre-commit", hooks / "pre-commit")
+    shutil.copy2(
+        REPO_ROOT / "scripts" / "sync-release-version.py",
+        scripts / "sync-release-version.py",
+    )
+    (repository.root / "repo_checks.py").write_text(
+        "raise SystemExit(0)\n",
+        encoding="utf-8",
+    )
+    repository.git("add", ".")
+    repository.git("commit", "--quiet", "-m", "baseline")
+    repository.git("config", "core.hooksPath", ".githooks")
+
+    (repository.root / "pyproject.toml").write_text(
+        '[project]\nname = "famulus-officina"\nversion = "1.2.3"\n',
+        encoding="utf-8",
+    )
+    repository.git("add", "pyproject.toml")
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    true_binary = shutil.which("true")
+    assert true_binary is not None
+    fake_gitleaks = fake_bin / ("gitleaks.exe" if os.name == "nt" else "gitleaks")
+    shutil.copy2(true_binary, fake_gitleaks)
+    fake_gitleaks.chmod(0o755)
+
+    # famulus-raw-git: category=hook-contract; reason=the test must exercise Git's real pre-commit index and hook environment
+    command = [
+        "git",
+        "-c",
+        "commit.gpgSign=false",
+        "-C",
+        str(repository.root),
+        "commit",
+        "--quiet",
+        "-m",
+        "bump version",
+    ]
+    if commit_only:
+        command.extend(("--only", "pyproject.toml"))
+    completed = subprocess.run(
+        command,
+        env={**os.environ, "PATH": os.pathsep.join((str(fake_bin), os.environ["PATH"]))},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    if commit_only:
+        assert completed.returncode != 0
+        assert "partial-path commits cannot synchronize a version change" in completed.stderr
+        assert b'version = "0.1.0"' in repository.git(
+            "show", "HEAD:pyproject.toml"
+        ).stdout
+        assert b'version = "1.2.3"' in repository.git(
+            "show", ":pyproject.toml"
+        ).stdout
+    else:
+        assert completed.returncode == 0, completed.stdout + completed.stderr
+        assert b'version = "1.2.3"' in repository.git(
+            "show", "HEAD:pyproject.toml"
+        ).stdout
+    for directory in (".claude-plugin", ".codex-plugin"):
+        committed = json.loads(
+            repository.git("show", f"HEAD:{directory}/plugin.json").stdout
+        )
+        staged = json.loads(
+            repository.git("show", f":{directory}/plugin.json").stdout
+        )
+        expected = "0.1.0" if commit_only else "1.2.3"
+        assert committed["version"] == expected
+        assert staged["version"] == expected
+        assert json.loads(
+            (repository.root / directory / "plugin.json").read_text(encoding="utf-8")
+        )["version"] == expected
 
 
 def test_skill_hooks_select_validators_through_root_checks() -> None:

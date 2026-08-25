@@ -31,7 +31,10 @@ from officina.install.managed_runtime import (
 )
 from officina.install.runtime_lock import render_runtime_requirements
 from test_support.git_repository import GitTestRepository
-from test_support.uv_subprocess import FakeCompletedProcess, fake_uv_subprocess_run
+from test_support.uv_subprocess import (
+    FakeCompletedProcess,
+    fake_uv_subprocess_run,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -994,6 +997,10 @@ def test_repo_candidate_installs_verified_officina_wheel_before_activation(monke
     repo_root.mkdir()
     (repo_root / "skills").mkdir()
     (repo_root / "src" / "officina").mkdir(parents=True)
+    (repo_root / "pyproject.toml").write_text(
+        '[project]\nname = "famulus-officina"\nversion = "7.8.9"\n',
+        encoding="utf-8",
+    )
     (repo_root / "officina.toml").write_text(
         'schema_version = 1\n[modules]\nroots = ["skills", "src/officina"]\n',
         encoding="utf-8",
@@ -1033,7 +1040,7 @@ def test_repo_candidate_installs_verified_officina_wheel_before_activation(monke
         assert "PYTHONPATH" not in call_kwargs[index]["env"]
         assert call_kwargs[index]["env"]["PYTHONNOUSERSITE"] == "1"
     metadata = json.loads((pointer.runtime_source / "artifact.json").read_text())
-    assert metadata["wheel"] == "famulus_officina-0.1.0-py3-none-any.whl"
+    assert metadata["wheel"] == "famulus_officina-7.8.9-py3-none-any.whl"
     assert len(metadata["wheel_sha256"]) == 64
     assert metadata["source_revision"] == "a" * 40
     assert metadata["schema_version"] == 3

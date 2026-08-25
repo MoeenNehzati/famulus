@@ -3,6 +3,15 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import tomllib
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _project_version(repo_root: Path) -> str:
+    with (repo_root / "pyproject.toml").open("rb") as stream:
+        return tomllib.load(stream)["project"]["version"]
 
 
 class FakeCompletedProcess:
@@ -71,7 +80,12 @@ def fake_uv_subprocess_run(calls: list, *, trusted_python_dir: Path, windows: bo
         elif cmd[1] == "build":
             artifact_dir = Path(cmd[cmd.index("--out-dir") + 1])
             artifact_dir.mkdir(parents=True, exist_ok=True)
-            (artifact_dir / "famulus_officina-0.1.0-py3-none-any.whl").write_bytes(b"wheel")
+            source_root = Path(cmd[-1])
+            version_root = source_root if (source_root / "pyproject.toml").is_file() else REPO_ROOT
+            wheel = artifact_dir / (
+                f"famulus_officina-{_project_version(version_root)}-py3-none-any.whl"
+            )
+            wheel.write_bytes(b"wheel")
         return FakeCompletedProcess()
 
     return fake_run

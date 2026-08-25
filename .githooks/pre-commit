@@ -37,6 +37,9 @@ if [ -f "$REPO_ROOT/scripts/generate-previews.py" ]; then
     echo "✓ Regenerated local README preview in _build/README-preview.html"
 fi
 
+# Synchronize the two committed plugin versions from staged pyproject.toml.
+python3 "$REPO_ROOT/scripts/sync-release-version.py"
+
 # Secret scan on staged changes
 if command -v gitleaks >/dev/null 2>&1; then
     gitleaks protect --staged --redact

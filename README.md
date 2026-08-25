@@ -41,7 +41,7 @@ for version mismatches, hallucinated metadata, and newer available versions.
 
 ## Requirements
 
-Famulus is on the `0.1.0` development line. The research and writing skills need
+Famulus is under active development. The research and writing skills need
 no credentials and are the easiest place to start. The Google integrations and
 unattended recurring jobs are the newest parts and the ones that ask most of
 your trust, so read [security and privacy](docs/security-and-privacy.md) before
