@@ -827,6 +827,46 @@ def test_probe_task_environment_is_copied_per_child_without_parent_mutation(
     assert os.environ["PYTHONPYCACHEPREFIX"] == str(tmp_path / "ambient-cache")
 
 
+def test_process_runner_removes_hook_git_routing_from_child_environment(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    received = []
+
+    class FakeProcess:
+        def __init__(self, _command, **kwargs):
+            received.append(kwargs["env"])
+
+        def wait(self):
+            return 0
+
+    routing_variables = (
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_COMMON_DIR",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "GIT_NAMESPACE",
+    )
+    for name in routing_variables:
+        monkeypatch.setenv(name, f"hostile-{name.lower()}")
+    monkeypatch.setenv("UNRELATED_ENVIRONMENT_VALUE", "retained")
+    monkeypatch.setattr(runner.subprocess, "Popen", FakeProcess)
+
+    assert runner._run_process(
+        ["check"],
+        cwd=tmp_path,
+        task_id="git-environment-probe",
+        pycache_prefix=tmp_path.parent / f"{tmp_path.name}-pycache",
+    ) == 0
+
+    child_environment = received[0]
+    assert all(name not in child_environment for name in routing_variables)
+    assert child_environment["UNRELATED_ENVIRONMENT_VALUE"] == "retained"
+    assert all(name in os.environ for name in routing_variables)
+
+
 def test_native_smoke_opt_ins_are_scoped_to_their_child_processes(
     tmp_path: Path,
     monkeypatch,

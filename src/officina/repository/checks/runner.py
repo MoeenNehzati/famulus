@@ -1865,7 +1865,7 @@ def _run_process(
     ):
         raise ValueError("pycache prefix must be outside the execution root")
     resolved_pycache_prefix.mkdir(parents=True, exist_ok=True)
-    child_environment = os.environ.copy()
+    child_environment = _validator_snapshot._source_git_environment()
     child_environment.pop("PYTHONDONTWRITEBYTECODE", None)
     child_environment["PYTHONPYCACHEPREFIX"] = str(resolved_pycache_prefix)
     source_root = str(cwd / "src")
