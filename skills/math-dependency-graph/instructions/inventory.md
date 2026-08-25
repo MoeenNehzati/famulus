@@ -26,6 +26,7 @@ Start at the first assigned source line and move monotonically to the final assi
 - one prose paragraph;
 - one displayed statement;
 - one complete explicitly delimited theorem-like environment, such as an assumption, definition, lemma, proposition, theorem, corollary, remark, example, or document-defined equivalent; or
+- one standalone document-defined or otherwise opaque TeX command that may denote an author-visible mathematical object; or
 - one prose paragraph or displayed statement inside a proof.
 
 A LaTeX section or subsection command and a Markdown heading supply context for the units that follow; neither is itself a graph-reading unit, and neither makes the whole section one unit. Split a proof into its successive paragraphs and displays while retaining the result being proved as their owner. Boundary context may explain an owned unit but never owns a record. Do not read the whole chunk first, prepare a separate census, or return for a second semantic pass.
@@ -47,6 +48,13 @@ Candidate blocks include author-visible assumptions, definitions, lemmas, propos
 - A restatement or proof-only block identifies its owning result and the prerequisites used in that proof; it is not automatically a separate proof node.
 
 TeX environment delimiters, Markdown mathematical block annotations, labels, theorem names, and proof headers are strong structural signals.
+
+A standalone document-defined or otherwise opaque TeX command is a bounded discovery signal even when its expansion is unavailable and it is not a paragraph, display, or delimited environment. Look only in the same bounded context for corroborating source-visible cues: an adjacent proof header, exact label or reference, author-visible title, or explanatory prose identifying it as a mathematical result.
+
+- With corroboration, make an explicit candidate-or-gap decision; never silently dismiss the invocation as a technical wrapper.
+- If corroboration establishes exactly one result identity but hides the substantive statement, emit a minimal identity-only result at the invocation line and a precise unavailable-expansion gap whose subject is that local node. Do not infer conditions or conclusions from the macro name. Retain an adjacent substantive proof separately and connect its `proves` edge to the identity-only result.
+- If corroboration establishes mathematical relevance but not one unique identity, emit an identity or coverage gap with an unresolved subject. Create no result candidate and no guessed `proves` target.
+- Omit the invocation only when there is no corroborating mathematical cue or when a separately source-visible inner statement would be duplicated.
 
 ### Slot 2: reusable prose setup
 
@@ -109,6 +117,20 @@ Potential nodes include reusable notation and constructions, assumptions, defini
 
 Once a local endpoint has a node, use its local handle in later edges. Use the same shortest source-faithful identity whenever an unresolved endpoint recurs.
 
+### Reconcile forward local identities
+
+After every node closure, and again at each checkpoint and finalization, reconcile every unresolved endpoint already saved in a cumulative edge against the cumulative local node table. Use only saved records and the newly closed node; do not reread source, inspect iterator state, consult another worker's artifact, gold, or diagnostic output.
+
+Test identity in this precedence order:
+
+1. an exact source-visible label or other exact locator shared with the closed node;
+2. the same source-visible identity with compatible mathematical type and scope;
+3. a clearly equivalent mathematical statement with compatible type and scope.
+
+Replace an unresolved endpoint with `{"local_node": "<closed-local-id>"}` only when exactly one local node represents the same entity. A related, stronger, weaker, or merely thematic result is not a match. If there is no match or more than one plausible match, preserve the unresolved endpoint unchanged.
+
+The substitution is an identity-only exception to the prohibition on later rewriting: it may not change the edge's local id, direction, type, evidence location, reference, description, assertion, basis, confidence, semantic content, or ownership, and it may not create a relationship that was not already recorded. After substitution, retain records with distinct source evidence. Remove a duplicate only when prerequisite, dependent, relationship type, location, reference, description, assertion, basis, and confidence are all identical; keep the earlier local id. The schema has no multi-evidence field, so never merge distinct evidence into one record.
+
 ## Encode a direct dependency
 
 Add an edge during the unit where the direct use is stated or occurs.
@@ -120,7 +142,7 @@ Add an edge during the unit where the direct use is stated or occurs.
 
 Use a local node handle when available. Otherwise use an inline unresolved endpoint and keep scanning. Forward references and cross-file labels remain unresolved. Prefer a source-grounded low-confidence lead to silent omission; extract later checks identity and directness.
 
-When several nearby dependents are possible, use the proof header, statement identity, explicit label, and declared scope—not proximity—to determine ownership. Coalesce repeated evidence for the same prerequisite-dependent pair.
+When several nearby dependents are possible, use the proof header, statement identity, explicit label, and declared scope—not proximity—to determine ownership. Apply the exact-duplicate rule from forward reconciliation: preserve evidence-distinct records for the same prerequisite-dependent pair, and remove only records whose endpoint pair, relationship type, location, reference, description, assertion, basis, and confidence are all identical, keeping the earlier local id.
 
 ## Use gaps sparingly
 
@@ -132,6 +154,7 @@ After every four closed nodes, or after 120 assigned source lines since the prev
 
 1. write every completed node, encountered edge, and gap to the cumulative JSON;
 2. verify that `files` is correct; locations are owned, in range, increasing, and inclusive; local ids are unique; local endpoints exist; every edge is prerequisite-to-dependent; and every graph-relevant annotated block, reference, citation, or named result seen so far is accounted for;
+   Before this verification, perform the forward local-identity reconciliation above.
 3. validate the entire cumulative object against `inventory.schema.json`;
 4. only after validation, append a `scan-checkpoint` progress line with a fresh clock timestamp, cursor file/line, and node/edge/gap counts.
 
@@ -150,6 +173,7 @@ Write the completed record concisely when first encountered. Do not perform a la
 At the final owned line:
 
 1. close any complete open node or record a precise gap for an incomplete one;
+   Then perform the final forward local-identity reconciliation above.
 2. verify that `files` exactly matches the assigned source paths and that the cursor is the final line of the final assigned span;
 3. save all records and validate the full final JSON against `inventory.schema.json`;
 4. append `output-written` with a newly read timestamp, the final cursor, and final counts.

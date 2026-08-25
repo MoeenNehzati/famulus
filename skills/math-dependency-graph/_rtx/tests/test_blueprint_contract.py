@@ -24,7 +24,7 @@ def test_inventory_voyage_dispenser_accepts_implicit_default_initialization() ->
             "math-dependency-graph._rtx.interface."
             "inventory-voyage-dispenser"
         ),
-        target_version=4,
+        target_version=7,
         args=[
             "initiate",
             "--doc-entrypoint",
@@ -57,7 +57,7 @@ def test_inventory_voyage_dispenser_routes_run_prefix_options() -> None:
             "math-dependency-graph._rtx.interface."
             "inventory-voyage-dispenser"
         ),
-        target_version=4,
+        target_version=7,
         args=[
             "initiate",
             "--run-prefix",
@@ -75,7 +75,7 @@ def test_inventory_voyage_dispenser_routes_run_prefix_options() -> None:
             "math-dependency-graph._rtx.interface."
             "inventory-voyage-dispenser"
         ),
-        target_version=4,
+        target_version=7,
         args=["list", "--run-prefix", "baseline"],
         repository_config=REPOSITORY_ROOT / "officina.toml",
     )
@@ -108,7 +108,7 @@ def test_inventory_voyage_dispenser_declares_its_exact_dependencies() -> None:
         ("rutter.source.engine", 3),
         ("rutter.source.model", 2),
         ("rutter.source.dispenser", 4),
-        ("rutter.source.diagnostic", 3),
+        ("rutter.source.diagnostic", 4),
         (
             "math-dependency-graph._rtx.source.rtx-inventory-chunk-extractor",
             8,
@@ -161,3 +161,95 @@ def test_runtime_module_does_not_own_persisted_voyage_state() -> None:
         )
         for pattern in patterns
     )
+
+
+def test_inventory_v37_and_debug_v7_propagate_to_public_route() -> None:
+    """A partial bump must not leave workers or Compass on old contracts."""
+
+    skill_root = REPOSITORY_ROOT / "skills/math-dependency-graph"
+    source = yaml.safe_load(
+        (skill_root / "_rtx/blueprints/rtx-inventory-voyage-dispenser.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    runtime_module = yaml.safe_load(
+        (skill_root / "_rtx/blueprint.yaml").read_text(encoding="utf-8")
+    )
+    instruction = yaml.safe_load(
+        (skill_root / "blueprints/instructions-inventory-voyages.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    inventory_instruction = yaml.safe_load(
+        (skill_root / "blueprints/instructions-inventory.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    gateway = yaml.safe_load(
+        (skill_root / "blueprints/gateway.yaml").read_text(encoding="utf-8")
+    )
+    module = yaml.safe_load(
+        (skill_root / "blueprint.yaml").read_text(encoding="utf-8")
+    )
+
+    source_interface = source["interfaces"][
+        "math-dependency-graph._rtx.source."
+        "rtx-inventory-voyage-dispenser.interface.inventory-voyages"
+    ]
+    instruction_interface = instruction["interfaces"][
+        "math-dependency-graph.source.instructions-inventory-voyages."
+        "interface.inventory-voyages"
+    ]
+    assert source["version"] == 7
+    assert source_interface["version"] == 7
+    assert any(
+        "archives" in warning["external-side-effect"]
+        and "diagnostic reckoning" in warning["external-side-effect"]
+        for warning in source_interface["contract"]["caller_warnings"]
+    )
+    assert runtime_module["version"] == 81
+    assert inventory_instruction["version"] == 37
+    assert inventory_instruction["interfaces"][
+        "math-dependency-graph.source.instructions-inventory.interface.inventory"
+    ]["version"] == 37
+    assert instruction["version"] == 7
+    assert instruction_interface["version"] == 7
+    assert instruction["uses_interfaces"][0] == {
+        "interface": "math-dependency-graph._rtx.interface.inventory-voyage-dispenser",
+        "version": 7,
+    }
+    assert instruction_interface["uses_interfaces"][0] == {
+        "interface": "math-dependency-graph._rtx.interface.inventory-voyage-dispenser",
+        "version": 7,
+    }
+    assert gateway["version"] == 83
+    assert gateway["interfaces"][
+        "math-dependency-graph.source.gateway.interface.default"
+    ]["version"] == 76
+    assert {
+        "interface": "math-dependency-graph.interface.inventory",
+        "version": 37,
+    } in gateway["uses_interfaces"]
+    assert {
+        "interface": "math-dependency-graph.interface.inventory-voyages",
+        "version": 7,
+    } in gateway["uses_interfaces"]
+    assert module["version"] == 108
+    assert module["namespace_exports"]["_rtx"]["version"] == 81
+    assert module["namespace_exports"]["_rtx"]["surface"]["only"][
+        "math-dependency-graph._rtx.interface.inventory-voyage-dispenser"
+    ] == 7
+
+    skill_text = (skill_root / "SKILL.md").read_text(encoding="utf-8")
+    assert (
+        "math-dependency-graph.source.gateway -> "
+        "math-dependency-graph.interface.inventory-voyages@7"
+    ) in skill_text
+    assert (
+        "math-dependency-graph.source.instructions-inventory-voyages -> "
+        "math-dependency-graph._rtx.interface.inventory-voyage-dispenser@7"
+    ) in skill_text
+    assert (
+        "math-dependency-graph.source.gateway -> "
+        "math-dependency-graph.interface.inventory@37"
+    ) in skill_text

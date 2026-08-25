@@ -1,7 +1,7 @@
 schema_version: 6
 node_type: module
 id: rutter
-version: 8
+version: 9
 description: Direct Rutter definitions bound to immutable Charters and durably reduced
   Reckonings.
 gateway:

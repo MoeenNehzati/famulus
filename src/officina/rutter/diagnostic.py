@@ -218,39 +218,115 @@ class DiagnosisCase:
 
 @dataclass(frozen=True)
 class DiagnosisDetail:
-    mistake: str
+    attribution: str
+    difference: str
     reason: str
     minimal_fix: str
+    gold_challenge: JsonObject | None
 
     def __post_init__(self) -> None:
-        _require_text(self.mistake, "mistake")
+        _require_text(self.attribution, "attribution")
+        if self.attribution not in {
+            "worker_error",
+            "gold_error",
+            "both_wrong",
+            "allowed_difference",
+            "unresolved",
+        }:
+            raise RutterDefinitionError("attribution has an invalid value")
+        _require_text(self.difference, "difference")
         _require_text(self.reason, "reason")
         _require_text(self.minimal_fix, "minimal_fix")
+        if self.gold_challenge is None:
+            if self.attribution in {"gold_error", "both_wrong"}:
+                raise RutterDefinitionError(
+                    "gold_challenge is required when attribution challenges gold"
+                )
+            return
+        if self.attribution not in {"gold_error", "both_wrong"}:
+            raise RutterDefinitionError(
+                "gold_challenge is only allowed when attribution challenges gold"
+            )
+        challenge = _freeze_object(self.gold_challenge, "gold_challenge")
+        if set(challenge) != {
+            "target",
+            "coordinates",
+            "policy",
+            "actual_support",
+            "owner",
+        }:
+            raise RutterDefinitionError("gold_challenge has invalid fields")
+        _require_text(challenge["target"], "gold_challenge.target")
+        _require_text(challenge["policy"], "gold_challenge.policy")
+        _require_text(challenge["actual_support"], "gold_challenge.actual_support")
+        _require_text(challenge["owner"], "gold_challenge.owner")
+        if challenge["owner"] not in {"gold", "evaluator"}:
+            raise RutterDefinitionError("gold_challenge.owner has an invalid value")
+        coordinates = challenge["coordinates"]
+        if not isinstance(coordinates, Sequence) or isinstance(coordinates, str):
+            raise RutterDefinitionError(
+                "gold_challenge.coordinates must be a nonempty array"
+            )
+        if not coordinates:
+            raise RutterDefinitionError(
+                "gold_challenge.coordinates must be a nonempty array"
+            )
+        for coordinate in coordinates:
+            if not isinstance(coordinate, Mapping) or set(coordinate) != {
+                "source_file",
+                "line",
+            }:
+                raise RutterDefinitionError(
+                    "gold_challenge coordinate has invalid fields"
+                )
+            _require_text(
+                coordinate["source_file"],
+                "gold_challenge coordinate source_file",
+            )
+            if type(coordinate["line"]) is not int or coordinate["line"] < 1:
+                raise RutterDefinitionError(
+                    "gold_challenge coordinate line must be a positive integer"
+                )
+        object.__setattr__(self, "gold_challenge", challenge)
 
     def to_json(self) -> JsonObject:
         return _freeze_object(
             {
-                "mistake": self.mistake,
+                "attribution": self.attribution,
+                "difference": self.difference,
                 "reason": self.reason,
                 "minimal_fix": self.minimal_fix,
+                "gold_challenge": self.gold_challenge,
             },
             "DiagnosisDetail",
         )
 
     @classmethod
     def from_json(cls, value: object) -> DiagnosisDetail:
-        expected = {"mistake", "reason", "minimal_fix"}
+        expected = {
+            "attribution",
+            "difference",
+            "reason",
+            "minimal_fix",
+            "gold_challenge",
+        }
         if not isinstance(value, Mapping) or set(value) != expected:
             raise RutterStateError("DiagnosisDetail has invalid fields")
         try:
-            return cls(value["mistake"], value["reason"], value["minimal_fix"])
+            return cls(
+                value["attribution"],
+                value["difference"],
+                value["reason"],
+                value["minimal_fix"],
+                value["gold_challenge"],
+            )
         except (RutterDefinitionError, TypeError, ValueError) as exc:
             raise RutterStateError(str(exc)) from exc
 
 
 class DiagnoseAnswer(Rutter):
     rutter_id = "diagnose-answer"
-    definition_version = 4
+    definition_version = 5
     initial_evolution_id = "route"
 
     @staticmethod
@@ -294,7 +370,7 @@ class DiagnoseAnswer(Rutter):
                     ValidationIssue(
                         (),
                         "invalid-diagnosis",
-                        "diagnosis must contain nonempty mistake, reason, and minimal_fix strings",
+                        "diagnosis must contain a valid attribution, nonempty difference, reason, and minimal_fix strings, and the conditional gold_challenge",
                     ),
                 ),
             )
@@ -368,8 +444,10 @@ class DiagnoseAnswer(Rutter):
             ),
             "compare": LLMStep(
                 (
-                    "Decide whether the actual and expected answers are "
-                    "semantically the same. Reply with explicit yes or no."
+                    "The expected_answer was supplied by an alternative source. "
+                    "It is not authoritative and may be wrong. Decide whether "
+                    "actual_answer and expected_answer are semantically the same. "
+                    "Reply with explicit yes or no."
                 ),
                 response_schema={
                     "type": "object",
@@ -382,22 +460,85 @@ class DiagnoseAnswer(Rutter):
             ),
             "explain": LLMStep(
                 (
-                    "Explain the difference using separate mistake, reason, and "
-                    "minimal_fix fields. The minimal_fix must satisfy the governing "
-                    "instructions. If ask_for_fix is true, treat expected_answer as "
-                    "the revealed truth and adjust your subsequent reasoning and work "
-                    "path accordingly. Do not return that adjustment; return only the "
-                    "three diagnostic fields."
+                    "Diagnose the difference with attribution, difference, reason, "
+                    "minimal_fix, and gold_challenge fields. The reason is a concise, "
+                    "provisional post-comparison hypothesis, not a hidden-reasoning "
+                    "transcript; use any pre-reference decision_basis in metadata as "
+                    "evidence. Set gold_challenge to a structured objection only for "
+                    "gold_error or both_wrong, and otherwise set it to null. The "
+                    "minimal_fix must satisfy the governing instructions. If "
+                    "ask_for_fix is true, this diagnosis is archive-only: do not alter "
+                    "the completed work or claim that later work learned from it."
                 ),
                 response_schema={
                     "type": "object",
                     "properties": {
                         "outcome": {"const": "diagnosed"},
-                        "mistake": {"type": "string", "minLength": 1},
+                        "attribution": {
+                            "enum": [
+                                "worker_error",
+                                "gold_error",
+                                "both_wrong",
+                                "allowed_difference",
+                                "unresolved",
+                            ]
+                        },
+                        "difference": {"type": "string", "minLength": 1},
                         "reason": {"type": "string", "minLength": 1},
                         "minimal_fix": {"type": "string", "minLength": 1},
+                        "gold_challenge": {
+                            "anyOf": [
+                                {"type": "null"},
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "target": {"type": "string", "minLength": 1},
+                                        "coordinates": {
+                                            "type": "array",
+                                            "minItems": 1,
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "source_file": {
+                                                        "type": "string",
+                                                        "minLength": 1,
+                                                    },
+                                                    "line": {
+                                                        "type": "integer",
+                                                        "minimum": 1,
+                                                    },
+                                                },
+                                                "required": ["source_file", "line"],
+                                                "additionalProperties": False,
+                                            },
+                                        },
+                                        "policy": {"type": "string", "minLength": 1},
+                                        "actual_support": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                        },
+                                        "owner": {"enum": ["gold", "evaluator"]},
+                                    },
+                                    "required": [
+                                        "target",
+                                        "coordinates",
+                                        "policy",
+                                        "actual_support",
+                                        "owner",
+                                    ],
+                                    "additionalProperties": False,
+                                },
+                            ]
+                        },
                     },
-                    "required": ["outcome", "mistake", "reason", "minimal_fix"],
+                    "required": [
+                        "outcome",
+                        "attribution",
+                        "difference",
+                        "reason",
+                        "minimal_fix",
+                        "gold_challenge",
+                    ],
                     "additionalProperties": False,
                 },
                 data=self._prompt_data,
@@ -417,7 +558,7 @@ _DIAGNOSE_ANSWER = DiagnoseAnswer()
 
 class AskAndDiagnose(Rutter):
     rutter_id = "ask-and-diagnose"
-    definition_version = 3
+    definition_version = 4
     initial_evolution_id = "ask"
     evaluator: Callable[[str, str, EvolutionContext], bool] | None = None
 

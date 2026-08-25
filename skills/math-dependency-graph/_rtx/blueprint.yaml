@@ -112,5 +112,5 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/rtx-semantic-ir-validator.yaml
-version: 78
+version: 81
 maturity: stable

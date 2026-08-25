@@ -1,8 +1,8 @@
 schema_version: 6
 node_type: behavioral_source
 id: rutter.source.diagnostic
-version: 3
-description: Defines exact diagnostic values, ordinary diagnostic child Rutters, and reusable TransitionHook constructors.
+version: 4
+description: Defines exact attributed diagnostic values, ordinary diagnostic child Rutters, and reusable TransitionHook constructors.
 gateway:
   path: diagnostic.py
   language: Python
@@ -35,8 +35,8 @@ interfaces:
       version: 1
     - interface: rutter.source.values.interface.python-api
       version: 1
-    version: 3
-    description: Constructs exact diagnostic cases, ordinary diagnostic child Rutters, and reusable TransitionHooks.
+    version: 4
+    description: Constructs exact attributed diagnostic cases, ordinary diagnostic child Rutters, and reusable TransitionHooks.
     contract:
       arguments:
         operation:
@@ -51,7 +51,7 @@ interfaces:
             - value: diagnosis-case
               description: Construct one exact supplied-answer diagnosis contract.
             - value: diagnosis-detail
-              description: Construct one exact mistake, reason, and minimal-fix detail.
+              description: Construct one exact five-way attributed detail with a conditional structured gold challenge.
             - value: diagnose-answer
               description: Use the ordinary supplied-answer diagnostic child Rutter.
             - value: ask-and-diagnose

@@ -1,1 +1,1 @@
-Use `using-compass` on `math-dependency-graph._rtx.interface.inventory-voyage-dispenser@4`.
+Use `using-compass` on `math-dependency-graph._rtx.interface.inventory-voyage-dispenser@7`. Release each terminal Voyage after collecting its inventory path. In debug mode, each inventory response must include its concise pre-reference `decision_basis`; complete any attributed diagnosis, including a structured gold challenge when required, before release preserves the complete diagnostic reckoning under the run's `artifacts/<run-prefix>/diagnostics/` directory.

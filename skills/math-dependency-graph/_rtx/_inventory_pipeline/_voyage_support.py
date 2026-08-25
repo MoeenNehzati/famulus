@@ -120,6 +120,7 @@ def report_data(context: EvolutionContext) -> JsonObject:
         raise RutterDefinitionError("inventory schema snapshot is invalid") from error
     return {
         "chunk_id": _chunk(context)["chunk_id"],
+        "inventory_instruction": _frozen_text(context, "inventory_instruction"),
         "packet": packet,
         "packet_count": len(packets),
         "prior_inventory": _prior_inventory(context),

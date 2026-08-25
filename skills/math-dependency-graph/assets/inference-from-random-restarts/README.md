@@ -17,6 +17,9 @@ This ignored directory contains local source evidence and adjudicated results us
 - `gold-provenance/adjudication-base-v1.json` and `gold-provenance/adjudication-overlay-v2.json` are
   the authenticated adjudication inputs from which the three stage artifacts
   were derived; they are provenance records, not additional gold interfaces.
+- `gold-provenance/source-aliases-v1.json` maps the frozen gold source names to
+  the entrypoint-relative source names emitted by the inventory chunker. It
+  reconciles source identity for debug projection without modifying frozen gold.
 
 The legacy iterator database and authenticated worker fragments are experiment evidence, not gold or paper source, and remain outside this immutable asset bundle.
 
@@ -36,5 +39,6 @@ The source was extracted from `arXiv-2602.13450v2.tar.gz`. Its SHA-256 is `3ae8d
 | `results/final-gold.json` | `5855f5a301956b2d94dfedd3f5001a02f3efdcafb86f3288bacc4518d7b70dcb` |
 | `gold-provenance/adjudication-base-v1.json` | `817b73e8a3652fd4869b7b6abe8b8ff367360080028b5809c6777eb8e5588258` |
 | `gold-provenance/adjudication-overlay-v2.json` | `e631215b4c212c416b51d19e60aa891d8a7a5670e30826ca2b6ec757a630778b` |
+| `gold-provenance/source-aliases-v1.json` | `52c1513182beaadd6cea93f6d37a6b1f24937b7a50615bc45c6381b1bc504c47` |
 
 Do not overwrite these files in place. A revised annotation or source snapshot should be added as a new versioned bundle with its own provenance record.

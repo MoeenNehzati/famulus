@@ -2,8 +2,9 @@ content:
 - instructions/inventory\.md
 dependencies: []
 description: Authors one recall-first version-3 mathematical discovery fragment through
-  a single forward pass over bounded paragraphs, displays, and delimited formal blocks,
-  checking fixed discovery signals at every unit while headings supply context only.
+  a single forward pass over bounded source units, reconciling uniquely resolved forward
+  local identities; a uniquely identified opaque macro with hidden content emits an
+  identity-only candidate and attached gap, while nonunique identity emits a gap only.
 gateway:
   language: Markdown
   path: instructions/inventory.md
@@ -109,9 +110,12 @@ interfaces:
           snapshot: Candidate findings derive from exactly one monotone bounded-source-unit
             pass through every owned span; sections and Markdown headings supply context
             only, proofs split into successive paragraphs and displays, every reading
-            unit checks the fixed discovery-signal slots, and every explicitly delimited
-            TeX or Markdown mathematical block receives an explicit candidate-or-omission
-            decision, complete multi-paragraph nodes and every encountered direct
+            unit checks the fixed discovery-signal slots, every explicitly delimited
+            mathematical block and corroborated opaque command receives an explicit
+            candidate-or-gap decision, a uniquely identified opaque command with hidden
+            content emits both an identity-only candidate and an attached gap while a
+            nonuniquely identified command emits a gap only, uniquely resolved forward local endpoints are
+            substituted without changing their evidence, complete multi-paragraph nodes and every encountered direct
             prerequisite-to-owning-dependent lead are persisted and schema-validated
             at bounded source-cursor checkpoints, and every assigned span has an exact
             completion cursor before return; each node summary is one sentence, each
@@ -215,10 +219,12 @@ interfaces:
           sensitivity: derived-private
       preconditions: []
     description: Author one concise recall-first graph inventory fragment through
-      one bounded-unit, signal-complete, validated forward loop.
-    version: 36
+      one bounded-unit, signal-complete, forward-reconciling validated loop that
+      preserves opaque results as an identity-only candidate plus attached gap when
+      unique, or a gap only when identity is nonunique.
+    version: 37
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces: []
-version: 36
+version: 37
 maturity: stable

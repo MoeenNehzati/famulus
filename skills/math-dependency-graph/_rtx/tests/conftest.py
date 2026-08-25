@@ -56,7 +56,7 @@ def inventory_gold_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
             {
                 "ir_version": 3,
                 "chunk_id": "gold",
-                "files": ["main.tex"],
+                "files": ["main.md"],
                 "nodes": [],
                 "edges": [],
                 "gaps": [],

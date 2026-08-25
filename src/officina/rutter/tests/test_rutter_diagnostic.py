@@ -302,30 +302,221 @@ def test_diagnosis_case_round_trips_exact_ask_for_fix_flag() -> None:
     assert rutter.DiagnosisCase.from_json(case.to_json()) == case
 
 
-def test_diagnosis_detail_requires_three_nonempty_exact_fields() -> None:
-    """Collapsing, omitting, or accepting an empty diagnosis field must fail."""
+def test_diagnosis_detail_requires_exact_nonempty_fields() -> None:
+    """Omitting, adding, or accepting an empty diagnosis field must fail."""
 
-    detail = rutter.DiagnosisDetail(
-        "It adds three numbers.",
-        "The enquiry asks for two addends.",
-        "Add only one and one.",
-    )
-    expected = {
-        "mistake": "It adds three numbers.",
-        "reason": "The enquiry asks for two addends.",
-        "minimal_fix": "Add only one and one.",
-    }
-
-    assert detail.to_json() == expected
-    assert rutter.DiagnosisDetail.from_json(expected) == detail
     with pytest.raises(rutter.RutterDefinitionError):
-        rutter.DiagnosisDetail("mistake", " ", "fix")
-    with pytest.raises(rutter.RutterStateError):
-        rutter.DiagnosisDetail.from_json({"mistake": "m", "reason": "r"})
+        rutter.DiagnosisDetail("worker_error", "difference", " ", "fix", None)
     with pytest.raises(rutter.RutterStateError):
         rutter.DiagnosisDetail.from_json(
-            {"mistake": "m", "reason": "r", "minimal_fix": "f", "extra": "x"}
+            {"mistake": "m", "reason": "r", "minimal_fix": "f"}
         )
+    with pytest.raises(rutter.RutterStateError):
+        rutter.DiagnosisDetail.from_json(
+            {
+                "attribution": "worker_error",
+                "difference": "d",
+                "reason": "r",
+                "minimal_fix": "f",
+            }
+        )
+    with pytest.raises(rutter.RutterStateError):
+        rutter.DiagnosisDetail.from_json(
+            {
+                "attribution": "worker_error",
+                "difference": "d",
+                "reason": "r",
+                "minimal_fix": "f",
+                "gold_challenge": None,
+                "extra": "x",
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    ("attribution", "gold_challenge"),
+    (
+        ("worker_error", None),
+        ("allowed_difference", None),
+        ("unresolved", None),
+        (
+            "gold_error",
+            {
+                "target": "expected edge d1",
+                "coordinates": [
+                    {"source_file": "appendix/example.tex", "line": 12}
+                ],
+                "policy": "Inventory only source-visible direct dependencies.",
+                "actual_support": "The visible proof does not use the expected edge.",
+                "owner": "gold",
+            },
+        ),
+        (
+            "both_wrong",
+            {
+                "target": "expected node n1",
+                "coordinates": [
+                    {"source_file": "appendix/example.tex", "line": 18}
+                ],
+                "policy": "Result statements require visible source support.",
+                "actual_support": "The actual node also overstates the visible source.",
+                "owner": "evaluator",
+            },
+        ),
+    ),
+)
+def test_attributed_diagnosis_detail_round_trips_exact_contract(
+    attribution: str,
+    gold_challenge: dict[str, object] | None,
+) -> None:
+    """Dropping attribution or accepting an unstructured gold challenge loses provenance."""
+
+    detail = rutter.DiagnosisDetail(
+        attribution,
+        "The answers differ semantically.",
+        "The worker applied a provisional decision rule.",
+        "Change the smallest owning rule.",
+        gold_challenge,
+    )
+
+    expected_challenge = (
+        None
+        if gold_challenge is None
+        else {
+            **gold_challenge,
+            "coordinates": tuple(gold_challenge["coordinates"]),
+        }
+    )
+    expected = {
+        "attribution": attribution,
+        "difference": "The answers differ semantically.",
+        "reason": "The worker applied a provisional decision rule.",
+        "minimal_fix": "Change the smallest owning rule.",
+        "gold_challenge": expected_challenge,
+    }
+    assert detail.to_json() == expected
+    assert rutter.DiagnosisDetail.from_json(expected) == detail
+
+
+def test_attributed_diagnosis_detail_rejects_invalid_attribution_and_challenge() -> None:
+    """Unknown attribution or a challenge on the wrong branch must fail closed."""
+
+    with pytest.raises(rutter.RutterDefinitionError):
+        rutter.DiagnosisDetail("maybe", "d", "r", "f", None)
+    with pytest.raises(rutter.RutterDefinitionError):
+        rutter.DiagnosisDetail([], "d", "r", "f", None)  # type: ignore[arg-type]
+    with pytest.raises(rutter.RutterDefinitionError):
+        rutter.DiagnosisDetail("gold_error", "d", "r", "f", None)
+    with pytest.raises(rutter.RutterDefinitionError):
+        rutter.DiagnosisDetail(
+            "worker_error",
+            "d",
+            "r",
+            "f",
+            {
+                "target": "expected edge",
+                "coordinates": [
+                    {"source_file": "appendix/example.tex", "line": 12}
+                ],
+                "policy": "policy",
+                "actual_support": "support",
+                "owner": "gold",
+            },
+        )
+    with pytest.raises(rutter.RutterDefinitionError):
+        rutter.DiagnosisDetail(
+            "gold_error",
+            "d",
+            "r",
+            "f",
+            {
+                "target": "expected edge",
+                "coordinates": [
+                    {"source_file": "appendix/example.tex", "line": 12}
+                ],
+                "policy": "policy",
+                "actual_support": "support",
+                "owner": [],
+            },
+        )
+    with pytest.raises(rutter.RutterDefinitionError):
+        rutter.DiagnosisDetail(
+            "gold_error",
+            "d",
+            "r",
+            "f",
+            {
+                "target": "expected edge",
+                "coordinates": [
+                    {"source_file": "appendix/example.tex", "line": 0}
+                ],
+                "policy": "policy",
+                "actual_support": "support",
+                "owner": "gold",
+            },
+        )
+
+
+@pytest.mark.parametrize(
+    "attribution",
+    (
+        "worker_error",
+        "gold_error",
+        "both_wrong",
+        "allowed_difference",
+        "unresolved",
+    ),
+)
+def test_diagnose_answer_retains_each_attribution_in_terminal_result(
+    tmp_path: Path,
+    attribution: str,
+) -> None:
+    """Every allowed attribution must survive the unequal route exactly."""
+
+    challenge = None
+    if attribution in {"gold_error", "both_wrong"}:
+        challenge = {
+            "target": "expected answer",
+            "coordinates": [
+                {"source_file": "appendix/example.tex", "line": 12}
+            ],
+            "policy": "Use only visible evidence.",
+            "actual_support": "The actual answer follows the visible statement.",
+            "owner": "gold",
+        }
+    voyage = rutter.RutterRegistry(
+        {"diagnose": rutter.DiagnoseAnswer}, tmp_path
+    ).create(
+        "diagnose",
+        Path(f"{attribution}.reckoning.json"),
+        rutter.DiagnosisCase(_question(), "3", False).to_json(),
+    )
+    voyage.advance(continue_=True)
+    message = voyage.get_status().instruction
+    terminal = voyage.advance(
+        {
+            "outcome": "diagnosed",
+            "attribution": attribution,
+            "difference": "The answers differ.",
+            "reason": "A provisional cause.",
+            "minimal_fix": "Apply the smallest owning correction.",
+            "gold_challenge": challenge,
+        },
+        responding_to=message.evolution_entry_id,
+        continue_=True,
+    )
+
+    assert terminal.condition == "terminal"
+    detail = _completed_result(voyage).value["detail"]
+    assert detail["attribution"] == attribution
+    assert detail["gold_challenge"] == (
+        None
+        if challenge is None
+        else {
+            **challenge,
+            "coordinates": tuple(challenge["coordinates"]),
+        }
+    )
 
 
 def test_diagnose_answer_true_verdict_completes_without_a_prompt(
@@ -355,7 +546,7 @@ def test_diagnose_answer_true_verdict_completes_without_a_prompt(
     assert rutter.HistoryView(voyage._store.read().root.history).turns() == ()
 
 
-def test_diagnose_answer_false_verdict_requests_exact_three_field_detail(
+def test_diagnose_answer_false_verdict_requests_attributed_detail(
     tmp_path: Path,
 ) -> None:
     """Comparing again or completing inequality without full detail must fail."""
@@ -369,27 +560,28 @@ def test_diagnose_answer_false_verdict_requests_exact_three_field_detail(
     message = voyage.get_status().instruction
 
     assert explain.evolution_id == "explain"
-    assert message.instructions == {
-        "text": (
-            "Explain the difference using separate mistake, reason, and "
-            "minimal_fix fields. The minimal_fix must satisfy the governing "
-            "instructions. If ask_for_fix is true, treat expected_answer as "
-            "the revealed truth and adjust your subsequent reasoning and work "
-            "path accordingly. Do not return that adjustment; return only the "
-            "three diagnostic fields."
-        ),
-        "response_schema": {
-            "type": "object",
-            "properties": {
-                "outcome": {"const": "diagnosed"},
-                "mistake": {"type": "string", "minLength": 1},
-                "reason": {"type": "string", "minLength": 1},
-                "minimal_fix": {"type": "string", "minLength": 1},
-            },
-            "required": ("outcome", "mistake", "reason", "minimal_fix"),
-            "additionalProperties": False,
-        },
+    assert "provisional post-comparison hypothesis" in message.instructions["text"]
+    assert "pre-reference decision_basis" in message.instructions["text"]
+    schema = message.instructions["response_schema"]
+    assert schema["required"] == (
+        "outcome",
+        "attribution",
+        "difference",
+        "reason",
+        "minimal_fix",
+        "gold_challenge",
+    )
+    assert schema["properties"]["attribution"]["enum"] == (
+        "worker_error",
+        "gold_error",
+        "both_wrong",
+        "allowed_difference",
+        "unresolved",
+    )
+    assert schema["properties"]["gold_challenge"]["anyOf"][0] == {
+        "type": "null"
     }
+    assert schema["additionalProperties"] is False
     assert message.data["payload"] == {
         "enquiry": "What is one plus one?",
         "actual_answer": "3",
@@ -401,9 +593,11 @@ def test_diagnose_answer_false_verdict_requests_exact_three_field_detail(
     terminal = voyage.advance(
         {
             "outcome": "diagnosed",
-            "mistake": "The answer is too large.",
+            "attribution": "worker_error",
+            "difference": "The answer is too large.",
             "reason": "One plus one equals two.",
             "minimal_fix": "Replace 3 with 2.",
+            "gold_challenge": None,
         },
         responding_to=message.evolution_entry_id,
         continue_=True,
@@ -419,15 +613,17 @@ def test_diagnose_answer_false_verdict_requests_exact_three_field_detail(
             "expected_answer": "2",
             "decided_by": "evaluator",
             "detail": {
-                "mistake": "The answer is too large.",
+                "attribution": "worker_error",
+                "difference": "The answer is too large.",
                 "reason": "One plus one equals two.",
                 "minimal_fix": "Replace 3 with 2.",
+                "gold_challenge": None,
             },
         },
     )
 
 
-def test_diagnose_answer_ask_for_fix_directs_internal_adjustment_only(
+def test_diagnose_answer_ask_for_fix_is_archive_only(
     tmp_path: Path,
 ) -> None:
     """Requesting corrected output or adding a response field would violate the contract."""
@@ -441,15 +637,16 @@ def test_diagnose_answer_ask_for_fix_directs_internal_adjustment_only(
     message = voyage.get_status().instruction
 
     assert explain.evolution_id == "explain"
-    assert "treat expected_answer as the revealed truth" in message.instructions["text"]
-    assert "adjust your subsequent reasoning and work path" in message.instructions["text"]
-    assert "Do not return that adjustment" in message.instructions["text"]
-    assert "corrected answer" not in message.instructions["text"]
+    assert "this diagnosis is archive-only" in message.instructions["text"]
+    assert "do not alter the completed work" in message.instructions["text"]
+    assert "learned from it" in message.instructions["text"]
     assert message.instructions["response_schema"]["required"] == (
         "outcome",
-        "mistake",
+        "attribution",
+        "difference",
         "reason",
         "minimal_fix",
+        "gold_challenge",
     )
     assert message.instructions["response_schema"]["additionalProperties"] is False
     assert message.data["payload"]["ask_for_fix"] is True
@@ -471,8 +668,10 @@ def test_diagnose_answer_without_evaluator_asks_exact_comparison_then_finishes_y
     assert compare.evolution_id == "compare"
     assert message.instructions == {
         "text": (
-            "Decide whether the actual and expected answers are semantically "
-            "the same. Reply with explicit yes or no."
+            "The expected_answer was supplied by an alternative source. It is "
+            "not authoritative and may be wrong. Decide whether actual_answer "
+            "and expected_answer are semantically the same. Reply with explicit "
+            "yes or no."
         ),
         "response_schema": {
             "type": "object",
@@ -542,7 +741,8 @@ def test_diagnose_answer_no_flow_preserves_turns_across_invalid_replies_and_reop
     explain_message = voyage.get_status().instruction
     incomplete = {
         "outcome": "diagnosed",
-        "mistake": "Wrong.",
+        "attribution": "worker_error",
+        "difference": "Wrong.",
         "reason": "Not equal.",
     }
     before_incomplete = (tmp_path / path).read_bytes()
@@ -551,7 +751,8 @@ def test_diagnose_answer_no_flow_preserves_turns_across_invalid_replies_and_reop
         incomplete, responding_to=explain_message.evolution_entry_id
     )
     assert report.valid is False
-    assert tuple(issue.code for issue in report.issues) == ("response-schema",)
+    assert report.issues
+    assert {issue.code for issue in report.issues} == {"response-schema"}
     with pytest.raises(rutter.RutterValidationError):
         voyage.advance(
             incomplete, responding_to=explain_message.evolution_entry_id
@@ -562,9 +763,11 @@ def test_diagnose_answer_no_flow_preserves_turns_across_invalid_replies_and_reop
     entered_done = voyage.advance(
         {
             "outcome": "diagnosed",
-            "mistake": "The answer is too large.",
+            "attribution": "worker_error",
+            "difference": "The answer is too large.",
             "reason": "One plus one equals two.",
             "minimal_fix": "Replace 3 with 2.",
+            "gold_challenge": None,
         },
         responding_to=explain_message.evolution_entry_id,
         continue_=False,
@@ -681,6 +884,35 @@ def test_ask_and_diagnose_builds_turn_based_child_call_and_forwards_result(
     assert root_history.require_latest_subrutter(
         origin_evolution_id="diagnose"
     ).result == result
+
+
+def test_ask_and_diagnose_version_seals_changed_diagnostic_child(
+    tmp_path: Path,
+) -> None:
+    """An old parent identity must not silently acquire the changed child contract."""
+
+    class LegacyAskAndDiagnose(rutter.AskAndDiagnose):
+        rutter_id = rutter.AskAndDiagnose.rutter_id
+        definition_version = 3
+
+    path = Path("legacy-ask.reckoning.json")
+    legacy = rutter.RutterRegistry({"ask": LegacyAskAndDiagnose}, tmp_path)
+    created = legacy.create("ask", path, _question().to_json())
+
+    assert created.get_status().current_evolution.definition_version == 3
+    current = rutter.RutterRegistry({"ask": rutter.AskAndDiagnose}, tmp_path)
+    with pytest.raises(rutter.RutterStateError):
+        current.open(path)
+
+    fresh = current.create("ask", Path("current-ask.reckoning.json"), _question().to_json())
+    message = fresh.get_status().instruction
+    child = fresh.advance(
+        {"outcome": "answered", "answer": "two"},
+        responding_to=message.evolution_entry_id,
+        continue_=True,
+    )
+    assert child.rutter_id == rutter.DiagnoseAnswer.rutter_id
+    assert child.definition_version == 5
 
 
 def test_ask_and_diagnose_concrete_subclass_seals_exact_evaluator_verdict(

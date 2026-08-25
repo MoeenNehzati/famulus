@@ -1,8 +1,8 @@
 schema_version: 6
 node_type: behavioral_source
 id: math-dependency-graph.source.instructions-inventory-voyages
-version: 4
-description: Initializes one run-prefixed inventory Voyage collection from a document entrypoint and applies Compass only to that run's dispensed IDs.
+version: 7
+description: Initializes one run-prefixed inventory Voyage collection from a document entrypoint, applies Compass only to that run's dispensed IDs, and preserves pre-reference decision bases and terminal attributed debug diagnoses through release.
 gateway:
   language: Markdown
   path: instructions/inventory-voyages.md
@@ -11,18 +11,18 @@ content:
 dependencies: []
 uses_interfaces:
 - interface: math-dependency-graph._rtx.interface.inventory-voyage-dispenser
-  version: 4
+  version: 7
 - interface: using-compass.interface.default
   version: 11
 interfaces:
   math-dependency-graph.source.instructions-inventory-voyages.interface.inventory-voyages:
-    version: 4
-    description: Discover and initialize one run-prefixed inventory Voyage collection, then apply Compass to only its returned IDs and collect their completed inventory paths.
+    version: 7
+    description: Discover and initialize one run-prefixed inventory Voyage collection, apply Compass to only its returned IDs, collect their completed inventory paths, and release terminal Voyages while retaining debug pre-reference decision bases and attributed diagnostic reckonings under the run artifacts.
     content:
     - instructions/inventory-voyages\.md
     uses_interfaces:
     - interface: math-dependency-graph._rtx.interface.inventory-voyage-dispenser
-      version: 4
+      version: 7
     - interface: using-compass.interface.default
       version: 11
     contract:
@@ -35,6 +35,7 @@ interfaces:
       preconditions: []
       caller_warnings:
       - external-side-effect: Initialization creates module-owned durable Voyages and Compass advancement writes completed inventory fragments beside them.
+      - external-side-effect: Releasing a terminal debug Voyage deletes its working directory after archiving the complete diagnostic reckoning under that run's artifacts.
       interaction: {mode: unattended}
       outputs:
       - id: inventory-paths

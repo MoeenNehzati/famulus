@@ -134,6 +134,11 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
         (rutter_root.parent / "common" / "blueprint.yaml").read_text(encoding="utf-8")
     )
 
+    assert module["version"] == 9
+    assert sources["diagnostic"]["version"] == 4
+    assert sources["diagnostic"]["interfaces"][
+        "rutter.source.diagnostic.interface.python-api"
+    ]["version"] == 4
     assert module["content"] == [
         r"__init__\.py",
         r"authoring\.py",
