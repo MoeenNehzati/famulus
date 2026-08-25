@@ -782,6 +782,45 @@ def test_optional_module_prompt_names_packages_and_unavailable_estimates(monkeyp
     assert "estimate unavailable" in output
 
 
+def test_optional_module_prompt_all_selects_every_module(monkeypatch):
+    modules = (
+        {"id": "pdf-to-markdown", "packages": ()},
+        {"id": "example-helper", "packages": ()},
+    )
+    monkeypatch.setattr(
+        install.managed_runtime,
+        "optional_runtime_modules",
+        lambda manifest_path, *, platform: modules,
+    )
+    monkeypatch.setattr("builtins.input", lambda _: "ALL")
+
+    selected = install._prompt_optional_modules(
+        manifest_path=Path("unused.json"), platform_name="linux"
+    )
+
+    assert selected == ["example-helper", "pdf-to-markdown"]
+
+
+def test_optional_module_prompt_advertises_all_option(monkeypatch):
+    prompts = []
+    monkeypatch.setattr(
+        install.managed_runtime,
+        "optional_runtime_modules",
+        lambda manifest_path, *, platform: (
+            {"id": "pdf-to-markdown", "packages": ()},
+        ),
+    )
+    monkeypatch.setattr(
+        "builtins.input", lambda prompt: prompts.append(prompt) or ""
+    )
+
+    install._prompt_optional_modules(
+        manifest_path=Path("unused.json"), platform_name="linux"
+    )
+
+    assert "'all' for all" in prompts[0]
+
+
 def test_optional_module_prompt_reports_rough_known_total(monkeypatch, capsys):
     manifest = Path(install.__file__).resolve().parents[3] / "references" / "blueprint-schema" / "runtime_dependencies.json"
     monkeypatch.setattr("builtins.input", lambda _: "")

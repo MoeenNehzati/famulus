@@ -270,9 +270,14 @@ def _prompt_optional_modules(*, manifest_path: Path, platform_name: str) -> list
         if estimates:
             suffix = f"; {unavailable_count} package size(s) unavailable" if unavailable_count else ""
             log(f"  rough download estimate: {known_total} bytes{suffix}")
-    reply = input("Optional module IDs to install (comma-separated, blank for core only): ").strip()
+    reply = input(
+        "Optional module IDs to install "
+        "(comma-separated, 'all' for all, blank for core only): "
+    ).strip()
     if not reply:
         return []
+    if reply.casefold() == "all":
+        return sorted(module["id"] for module in modules)
     requested = [module_id.strip() for module_id in reply.split(",") if module_id.strip()]
     available = {module["id"] for module in modules}
     unknown = sorted(set(requested) - available)
