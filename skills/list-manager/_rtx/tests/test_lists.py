@@ -1043,6 +1043,7 @@ def test_cloud_concurrent_writers_are_serialized_across_processes(tmp_path):
     cloud_dir = tmp_path / "cloud"
     cloud_dir.mkdir()
     (cloud_dir / "todo.yaml").write_text(TODO_YAML)
+    ready_file = tmp_path / "writer1-inside-cloud-lock"
 
     env_base = os.environ.copy()
     env_base["PYTHONPATH"] = os.pathsep.join([str(REPO_SRC), str(SCRIPTS_DIR)])
@@ -1052,6 +1053,7 @@ def test_cloud_concurrent_writers_are_serialized_across_processes(tmp_path):
 
     env1 = env_base.copy()
     env1["LIST_MANAGER_TEST_RACE_DELAY"] = "1.0"
+    env1["LIST_MANAGER_TEST_RACE_READY_FILE"] = str(ready_file)
     writer1 = subprocess.Popen(
         [sys.executable, str(LISTS_PY), "update", "todo", "--cloud", "--expected-revision", "0"],
         stdin=subprocess.PIPE,
@@ -1060,10 +1062,26 @@ def test_cloud_concurrent_writers_are_serialized_across_processes(tmp_path):
         text=True,
         env=env1,
     )
-    # Give writer1 time to acquire the cloud lock, download, and pass
-    # check_revision before writer2 starts -- so their windows genuinely
-    # overlap rather than merely running one after the other.
-    time.sleep(0.3)
+    # Wait until writer1 has acquired the cloud lock and passed
+    # check_revision. If writer2 gets the lock first, it waits for stdin while
+    # writer1 waits for the lock and the parent waits on writer1 -- a deadlock
+    # that no larger communicate timeout can resolve.
+    ready_deadline = time.monotonic() + 15
+    while not ready_file.exists():
+        if writer1.poll() is not None:
+            out1, err1 = writer1.communicate()
+            pytest.fail(
+                "writer1 exited before reaching its cloud-locked critical section: "
+                f"stdout={out1!r}, stderr={err1!r}"
+            )
+        if time.monotonic() >= ready_deadline:
+            writer1.kill()
+            out1, err1 = writer1.communicate()
+            pytest.fail(
+                "writer1 did not reach its cloud-locked critical section within 15s: "
+                f"stdout={out1!r}, stderr={err1!r}"
+            )
+        time.sleep(0.01)
 
     env2 = env_base.copy()
     writer2 = subprocess.Popen(
