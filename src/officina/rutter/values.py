@@ -258,7 +258,7 @@ def _validate_message_parts(instructions: object, data: object) -> tuple[JsonObj
         raise RutterDefinitionError("Message evolution has invalid fields")
     _require_id(evolution["id"], "evolution", RutterDefinitionError)
     _require_id(evolution["entry_id"], "entry", RutterDefinitionError)
-    _freeze_object(data_object["payload"], "Message payload")
+    _freeze_json(data_object["payload"])
     return instruction_object, data_object
 
 
@@ -288,10 +288,8 @@ class Message:
         return response_schema
 
     @property
-    def payload(self) -> JsonObject:
-        payload = self.data["payload"]
-        assert isinstance(payload, Mapping)
-        return payload
+    def payload(self) -> JsonValue:
+        return self.data["payload"]
 
     @property
     def evolution_id(self) -> str:

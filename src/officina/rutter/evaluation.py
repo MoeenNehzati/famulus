@@ -20,9 +20,11 @@ from officina.rutter.history import Transition
 from officina.rutter.values import (
     Charter,
     JsonObject,
+    JsonValue,
     MachineResult,
     ValidationReport,
     VoyageResult,
+    _freeze_json,
     _freeze_object,
 )
 
@@ -87,10 +89,10 @@ def evaluate_subrutter_route(
 def build_llm_data(
     context: EvolutionContext,
     step: LLMStep,
-) -> JsonObject:
+) -> JsonValue:
     try:
         authored = step.data(context)
-        return _freeze_object(authored, "LLMStep data")
+        return _freeze_json(authored)
     except Exception as exc:
         raise _RutterFault("materialization") from exc
 

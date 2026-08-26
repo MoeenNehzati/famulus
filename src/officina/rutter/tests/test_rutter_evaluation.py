@@ -129,6 +129,17 @@ def test_llm_data_normalizes_the_declared_json_object() -> None:
     }
 
 
+def test_llm_data_accepts_an_exact_string_payload() -> None:
+    step = LLMStep(
+        "Review.",
+        response_schema=_response_schema("approved"),
+        data=lambda context: "000001 | source text\n",
+        next_on_outcome="done",
+    )
+
+    assert evaluation.build_llm_data(_context(), step) == "000001 | source text\n"
+
+
 def test_llm_data_rejects_malformed_json_as_typed_fault() -> None:
     step = LLMStep(
         "Review.",

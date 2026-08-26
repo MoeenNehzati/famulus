@@ -1284,6 +1284,30 @@ def test_turn_v3_adapter_injects_revision_and_round_trips_response_schema(
     assert set(turn.response) == {"outcome", "items"}
 
 
+def test_turn_v3_round_trips_a_string_message_payload() -> None:
+    message = Message(
+        {"text": "Read the packet."},
+        {
+            "evolution": {"id": "report", "entry_id": "entry-report"},
+            "payload": "000001 | source text\n",
+        },
+    )
+    turn = Turn(
+        "turn-1",
+        "entry-report",
+        "report",
+        7,
+        message,
+        None,
+    )
+
+    assert message.payload == "000001 | source text\n"
+    assert turn.to_json()["message"]["data"]["payload"] == (
+        "000001 | source text\n"
+    )
+    assert Turn.from_json(turn.to_json()) == turn
+
+
 @pytest.mark.parametrize("reserved", ("outcome", "revision"))
 def test_turn_v3_rejects_legacy_evidence_reserved_key_collisions(
     reserved: str,

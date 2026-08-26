@@ -20,6 +20,7 @@ from officina.rutter.history import (
 from officina.rutter.values import (
     Charter,
     JsonObject,
+    JsonValue,
     MachineResult,
     Message,
     RutterDefinitionError,
@@ -176,7 +177,7 @@ def _require_callback_arity(callback: object, arity: int, label: str) -> None:
 class LLMStep:
     text: str
     response_schema: JsonObject | None
-    data: Callable[[EvolutionContext], JsonObject]
+    data: Callable[[EvolutionContext], JsonValue]
     assess_response: Callable[[LLMResponseContext], ValidationReport]
     next_on_outcome: str | Mapping[str, str] | None
     choose_next: Callable[..., str] | None
@@ -186,7 +187,7 @@ class LLMStep:
         text: str,
         *,
         response_schema: JsonObject | None = None,
-        data: Callable[[EvolutionContext], JsonObject] = empty_data,
+        data: Callable[[EvolutionContext], JsonValue] = empty_data,
         assess_response: Callable[[LLMResponseContext], ValidationReport] = _accept_response,
         next_on_outcome: str | Mapping[str, str] | None = None,
         choose_next: Callable[..., str] | None = None,
