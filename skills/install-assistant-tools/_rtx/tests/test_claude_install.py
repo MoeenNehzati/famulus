@@ -2,7 +2,7 @@
 """Cross-platform isolated install test for the Claude plugin packaging.
 
 This test is intentionally stronger than a manifest-only check:
-- it uses a temporary HOME/CLAUDE_HOME
+- it uses a temporary HOME/CLAUDE_CONFIG_DIR
 - adds the local marketplace
 - installs the plugin through Claude's plugin manager
 - verifies the installed cache contents, not just command success
@@ -81,6 +81,7 @@ class ClaudeInstallTests(unittest.TestCase):
             claude_home = home / ".claude"
             home.mkdir()
             plugin_env = claude_env(home, claude_home, tmp_root)
+            plugin_env["CLAUDE_CONFIG_DIR"] = str(claude_home)
 
             run_command(["claude", "plugins", "validate", str(plugin_manifest)], env=plugin_env)
             run_command(["claude", "plugins", "validate", str(marketplace_manifest)], env=plugin_env)

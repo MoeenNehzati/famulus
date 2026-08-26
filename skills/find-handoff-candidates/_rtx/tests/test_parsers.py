@@ -14,13 +14,14 @@ def _load(name):
 
 def test_claude_parser_home_dir_respects_env_override(monkeypatch):
     mod = _load("claude_parser")
-    monkeypatch.setenv("CLAUDE_HOME", "/tmp/fake-claude-home")
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", "/tmp/fake-claude-home")
     parser = mod.ClaudeParser()
     assert parser.home_dir() == "/tmp/fake-claude-home"
 
 
 def test_claude_parser_home_dir_default(monkeypatch):
     mod = _load("claude_parser")
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     monkeypatch.delenv("CLAUDE_HOME", raising=False)
     parser = mod.ClaudeParser()
     assert parser.home_dir().endswith("/.claude")
