@@ -1,0 +1,144 @@
+content:
+- _artifact_contract\.py
+- _artifact_contract_interface\.py
+- _runtime_compatibility\.py
+dependencies: []
+description: Parses typed distillation artifacts from one invocation-wide byte snapshot, binds workflow and delivery identity, enforces typed success and cross-stage foreign keys, strictly confines public runtime discovery, and checks logic-captured claims against current versioned public Rutter bindings before routing.
+gateway:
+  language: Python>=3.11
+  path: _artifact_contract_interface.py
+id: distill-to-rutters._rtx.source.artifact-contract
+interfaces:
+  distill-to-rutters._rtx.source.artifact-contract.interface.validate-and-route:
+    content:
+    - _artifact_contract\.py
+    - _artifact_contract_interface\.py
+    uses_interfaces: []
+    contract:
+      arguments:
+        artifact-path:
+          description: Repository-contained Markdown artifact with the exact fixed basename for its expected stage, or source Markdown for source-preflight.
+          direct_io_ref: read-1
+          required: true
+          sensitivity: user-private
+          type:
+            access: read
+            content_type: {kind: string, sensitivity: user-private}
+            kind: file
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+        expected-stage:
+          description: Exact artifact stage, or source-preflight for the initial source check.
+          required: true
+          sensitivity: public
+          type: {kind: string, sensitivity: public}
+        approved-digest:
+          description: User-approved lowercase SHA-256 for a post-bootstrap artifact; empty only during source preflight.
+          required: true
+          sensitivity: derived-private
+          type: {kind: string, sensitivity: derived-private}
+        user-decision:
+          description: Explicit approve or reject decision for the exact artifact tuple.
+          required: true
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: Exact fixed artifact basename, artifact bytes, typed contract blocks, schemas, recursive explicit prerequisites, and implicit governed context bytes, each snapshotted once and rehashed before acceptance.
+          formats: [markdown, yaml, json, binary]
+          id: read-1
+          medium: local-filesystem
+          path: <repository>/<artifact-and-recursive-prerequisites>
+          path_match: glob
+          reason: Validate the stage-to-basename mapping, shape, exact-byte identity, repository containment, and transitive freshness.
+          sensitivity: user-private
+          system: filesystem
+        - access: read
+          content: Current public Rutter and Compass exports, strictly confined root and source-interface locators, public Python exports, operation vocabulary, nominal construction and execution profiles, and versioned semantic binding and rejection-result contracts.
+          formats: [yaml]
+          id: read-2
+          medium: repository-filesystem
+          path: <repository>/{src/officina/rutter,skills/using-compass}/{blueprint.yaml,blueprints/*.yaml}
+          path_match: glob
+          reason: Verify logic-captured bindings and design-ready compatibility against the exact contained public APIs in the artifact repository.
+          sensitivity: public
+          system: filesystem
+        writes:
+        - access: write
+          content: Deterministic route decision.
+          formats: [json]
+          id: write-1
+          medium: stdout
+          sensitivity: derived-private
+          system: agent-runtime
+      execution:
+        consistency:
+          live: The decision is derived from one snapshot of artifact bytes, recursive explicit and implicit dependencies, and public Rutter and Compass declarations in the same repository; every consulted file is rehashed before acceptance.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: route-decision
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes:
+      - {id: accepted, class: success, effects: [], outputs: [route-decision], caller_action: 'Invoke only the authorized next stage, or stop after accepted verification.'}
+      - {id: gap, class: partial, effects: [], outputs: [route-decision], caller_action: Invoke only the authorized owning-stage repair.}
+      - {id: partial, class: partial, effects: [], outputs: [route-decision], caller_action: Stop until incomplete work is resolved or the owning stage is explicitly restarted.}
+      - {id: rejected, class: refusal, effects: [], outputs: [route-decision], caller_action: Invoke only the current owning-stage repair.}
+      - {id: stale, class: partial, effects: [], outputs: [route-decision], caller_action: Invoke only the earliest owning-stage repair named by the result.}
+      - {id: failed, class: error, effects: [], outputs: [route-decision], caller_action: 'Correct the malformed artifact, unknown outcome, cycle, or product failure without advancing.'}
+      - {id: blocked, class: refusal, effects: [], outputs: [route-decision], caller_action: Stop until the named external capability or environment prerequisite changes.}
+      outputs:
+      - audience: both
+        cardinality: {minimum: 1, maximum: 1}
+        description: JSON containing status, artifact_digest, outcome, authorized_route, and earliest_stale_prerequisite.
+        direct_io_ref: write-1
+        empty: Never empty.
+        id: route-decision
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        type:
+          format: {named: json}
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Validate one source or exact-fixed-basename typed artifact and authorize no more than one deterministic route.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - min_positionals: 0
+        max_positionals: 0
+        allow_stdin: false
+        allowed_flags: [--artifact-path, --expected-stage, --approved-digest, --user-decision]
+        required_flags: [--artifact-path, --expected-stage, --approved-digest, --user-decision]
+        flag_patterns:
+          --artifact-path: ^.+$
+          --expected-stage: ^(?:source-preflight|breakdown|assign-rutters|extract-evolutions|validate-logic|design-implementation|implement|finalize|verify)$
+          --approved-digest: ^(?:[0-9a-f]{64})?$
+          --user-decision: ^(?:approve|reject)$
+    usage: --artifact-path PATH --expected-stage STAGE --approved-digest SHA256 --user-decision approve|reject
+    version: 1
+node_type: behavioral_source
+platform_support: {linux: true, macos: true, windows: true}
+runtime_dependencies:
+- kind: python-package
+  name: PyYAML
+  version: '>=6'
+  platforms: {linux: true, macos: true, windows: true}
+  reason: Parses envelope and distill-contract YAML with duplicate-key rejection.
+- kind: python-package
+  name: jsonschema
+  version: '>=4'
+  platforms: {linux: true, macos: true, windows: true}
+  reason: Validates envelope and stage-body contracts against their JSON Schemas.
+schema_version: 6
+uses_interfaces: []
+version: 1
+maturity: experimental

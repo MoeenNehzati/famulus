@@ -64,6 +64,7 @@ These skills own assistant modules, standards, and their lifecycle.
 <!-- BEGIN AUTO-GENERATED DOCS: assistant-development -->
 > Generated from live blueprints. Do not edit this block by hand.
 
+- `distill-to-rutters` — An existing Markdown skill instruction should be transformed into transparent Rutters and an operable Voyage dispenser
 - `hook-maker` — Design cross-host assistant hooks with one purpose and per-host bindings
 - `refactor-node` — Refactor whole repository nodes or owned sub-scopes by gateway language
 - `regenerate-blueprints` — An existing skill blueprint needs regeneration, whether requested directly or required by another skill

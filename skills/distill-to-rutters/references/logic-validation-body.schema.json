@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "logic-validation-body.schema.json",
+  "title": "Logic Enforcement Matrix Contract Body",
+  "type": "object",
+  "required": ["enforcement_matrix"],
+  "additionalProperties": false,
+  "properties": {
+    "enforcement_matrix": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["obligation_id", "original_decision_owner", "automation_permission", "public_runtime_capability", "public_runtime_version", "public_binding_contract_version", "capability_verified", "owning_evolution", "exact_mechanism", "precondition", "postcondition", "failure_result", "observable_evidence", "positive_trace", "negative_trace"],
+        "additionalProperties": false,
+        "properties": {
+          "obligation_id": {"type": "string", "minLength": 1},
+          "original_decision_owner": {"enum": ["rutter", "human", "llm", "external"]},
+          "automation_permission": {"enum": ["deterministic", "request-owner-decision", "forbidden"]},
+          "public_runtime_capability": {"type": "string", "minLength": 1},
+          "public_runtime_version": {"type": "integer", "minimum": 1},
+          "public_binding_contract_version": {"type": "integer", "minimum": 1},
+          "capability_verified": {"type": "boolean"},
+          "capability_gap": {
+            "type": "object",
+            "required": ["absent_binding_contract", "exact_repair"],
+            "additionalProperties": false,
+            "properties": {
+              "absent_binding_contract": {"type": "string", "minLength": 1},
+              "exact_repair": {"type": "string", "minLength": 1}
+            }
+          },
+          "owning_evolution": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*/[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+          },
+          "exact_mechanism": {
+            "type": "object",
+            "required": ["enforcement_class", "request", "validation", "transition"],
+            "additionalProperties": false,
+            "properties": {
+              "enforcement_class": {
+                "enum": [
+                  "rutter-state-transition",
+                  "prompt-only",
+                  "operation-name-only",
+                  "wrapper-constraint",
+                  "schema-only"
+                ]
+              },
+              "request": {
+                "oneOf": [
+                  {"type": "null"},
+                  {
+                    "type": "object",
+                    "required": ["operation", "owner", "owner_ref", "evidence_ref"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "operation": {"type": "string", "minLength": 1},
+                      "owner": {"enum": ["human", "llm", "external"]},
+                      "owner_ref": {"type": "string", "minLength": 1},
+                      "evidence_ref": {"type": "string", "minLength": 1}
+                    }
+                  }
+                ]
+              },
+              "validation": {
+                "type": "object",
+                "required": ["operation", "input_ref", "evidence_ref", "validator_ref", "validator_binding_ref", "output_ref"],
+                "additionalProperties": false,
+                "properties": {
+                  "operation": {"type": ["string", "null"], "minLength": 1},
+                  "input_ref": {"type": "string", "minLength": 1},
+                  "evidence_ref": {"type": "string", "minLength": 1},
+                  "validator_ref": {"type": ["string", "null"], "minLength": 1},
+                  "validator_binding_ref": {"type": "string", "minLength": 1},
+                  "output_ref": {"type": "string", "minLength": 1}
+                }
+              },
+              "transition": {
+                "type": "object",
+                "required": ["operation", "input_ref", "evidence_ref", "authority", "owning_evolution_ref", "authority_ref", "successor_ref"],
+                "additionalProperties": false,
+                "properties": {
+                  "operation": {"type": ["string", "null"], "minLength": 1},
+                  "input_ref": {"type": "string", "minLength": 1},
+                  "evidence_ref": {"type": "string", "minLength": 1},
+                  "authority": {"type": ["string", "null"], "minLength": 1},
+                  "owning_evolution_ref": {"type": "string", "minLength": 1},
+                  "authority_ref": {"type": "string", "minLength": 1},
+                  "successor_ref": {"type": "string", "minLength": 1}
+                }
+              }
+            }
+          },
+          "precondition": {"type": "string", "minLength": 1},
+          "postcondition": {"type": "string", "minLength": 1},
+          "failure_result": {"type": "string", "minLength": 1},
+          "observable_evidence": {"$ref": "#/$defs/observableEvidence"},
+          "positive_trace": {"$ref": "#/$defs/trace"},
+          "negative_trace": {"$ref": "#/$defs/trace"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "observableEvidence": {
+      "type": "object",
+      "required": ["operation", "evidence_ref", "output_ref"],
+      "additionalProperties": false,
+      "properties": {
+        "operation": {"type": "string", "minLength": 1},
+        "evidence_ref": {"type": "string", "minLength": 1},
+        "output_ref": {"type": "string", "minLength": 1}
+      }
+    },
+    "trace": {
+      "type": "object",
+      "required": ["operation", "input_ref", "evidence_ref", "outcome", "expected"],
+      "additionalProperties": false,
+      "properties": {
+        "operation": {"type": "string", "minLength": 1},
+        "input_ref": {"type": "string", "minLength": 1},
+        "evidence_ref": {"type": "string", "minLength": 1},
+        "outcome": {"type": "string", "minLength": 1},
+        "expected": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["kind", "state", "result_ref"],
+              "additionalProperties": false,
+              "properties": {
+                "kind": {"const": "successor"},
+                "state": {"type": "string", "minLength": 1},
+                "result_ref": {"type": "string", "minLength": 1}
+              }
+            },
+            {
+              "type": "object",
+              "required": ["kind", "rejection_code"],
+              "additionalProperties": false,
+              "properties": {
+                "kind": {"const": "rejection"},
+                "rejection_code": {"type": "string", "minLength": 1}
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

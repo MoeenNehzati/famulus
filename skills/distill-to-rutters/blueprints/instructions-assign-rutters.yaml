@@ -1,0 +1,60 @@
+content: [instructions/assign\-rutters\.md]
+dependencies: []
+description: Maps every and only approved breakdown part to a Voyage and an identical-logic-shareable Rutter definition while preserving graph foreign-key identities.
+gateway: {language: Markdown, path: instructions/assign-rutters.md}
+id: distill-to-rutters.source.assign-rutters
+interfaces:
+  distill-to-rutters.source.assign-rutters.interface.assign-rutters:
+    content: [instructions/assign\-rutters\.md]
+    uses_interfaces: []
+    contract:
+      arguments:
+        request: {description: 'Input, approved preceding artifacts, live repository context, and corrections.', required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+      caller_warnings: [{external-side-effect: Creates or revises 02_rutter_assignment.md.}]
+      direct_io:
+        network: []
+        reads:
+        - {id: source, medium: repository-filesystem, access: read, content: 'Common root input, approved breakdown-ready artifact, exact part IDs, owning declarations, interfaces, tests, and diff required by this stage', formats: [markdown, yaml, json, python, git-metadata, text], sensitivity: user-private}
+        writes:
+        - {id: artifact, medium: local-filesystem, access: write, content: 02_rutter_assignment.md stage artifact, formats: [markdown], path: '<input-directory>/<source-stem>_distillation/02_rutter_assignment.md', path_match: exact, sensitivity: derived-private, system: filesystem}
+        - {id: response, medium: prompt, access: write, content: Artifact path and validation request, formats: [markdown], sensitivity: derived-private, system: agent-runtime}
+      execution:
+        consistency: {snapshot: 'Every consulted file is read once; the assignment must equal the approved breakdown part set exactly and all consulted paths are rehashed before acceptance.'}
+        effects:
+        - id: artifact-write
+          direct_io_ref: artifact
+          action: update
+          value_source: {kind: argument, argument_ref: request}
+          may_occur_in_outcomes: [assignment-ready, assignment-gap, partial, failed]
+          confirmation_evidence: {kind: direct-io, direct_io_ref: artifact}
+          reversibility: {reversible: Delete or revise this unapproved artifact without changing approved preceding artifacts.}
+        lifecycle: finite
+        mutation_safety:
+          atomicity: {per_effect_only: Only the current stage artifact is written.}
+          concurrent_invocations: {unsafe: Concurrent revisions can overwrite the same artifact.}
+          idempotency: {idempotent: Unchanged inputs and correction authority produce the same artifact content.}
+          on_uncertain_completion: {verify_then_decide: Read the artifact before retrying.}
+          partial_effects_on_failure: {possible: The artifact may be written before the response is returned.}
+          rollback_on_failure: {available: Remove only the incomplete current artifact.}
+        state_effect: mutating
+        verification: [{method: direct-io-state, direct_io_ref: artifact}]
+      helpers: []
+      interaction: {mode: interactive, channel: tty, unattended_outcome: approval-required}
+      outcomes:
+      - {id: assignment-ready, class: success, outputs: [artifact, response], effects: [artifact-write], caller_action: Validate this artifact before authorizing graph extraction.}
+      - {id: assignment-gap, class: partial, outputs: [artifact, response], effects: [artifact-write], caller_action: Validate the gap artifact before an assignment repair.}
+      - {id: partial, class: partial, outputs: [artifact, response], effects: [artifact-write], caller_action: Resolve incomplete assignment work without advancing.}
+      - {id: approval-required, class: refusal, outputs: [response], effects: [], caller_action: Supply the missing stage authority or requested correction.}
+      - {id: failed, class: error, outputs: [artifact, response], effects: [artifact-write], caller_action: Resolve the recorded failure without advancing.}
+      outputs:
+      - {id: artifact, audience: both, description: 02_rutter_assignment.md stage artifact., direct_io_ref: artifact, cardinality: {minimum: 0, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Empty only on refusal or failure., type: {kind: string, sensitivity: derived-private}}
+      - {id: response, audience: human, description: 'Artifact path, validation request, or gap.', direct_io_ref: response, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty., type: {kind: string, sensitivity: derived-private}}
+      preconditions: []
+    description: Assign every and only approved part to Rutter-owned execution, preserve exact Rutter, Voyage, workflow, obligation, and coordinator identities, and require coordinator authorization for multi-Voyage policy.
+    usage: <input-markdown> <approved-breakdown> [correction]
+    version: 1
+node_type: behavioral_source
+schema_version: 6
+uses_interfaces: []
+version: 1
+maturity: experimental

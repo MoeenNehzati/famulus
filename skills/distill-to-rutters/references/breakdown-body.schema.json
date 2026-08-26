@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "breakdown-body.schema.json",
+  "title": "Breakdown Contract Body",
+  "type": "object",
+  "required": ["context_closure", "conflicts", "parts"],
+  "additionalProperties": false,
+  "properties": {
+    "context_closure": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["obligation_id", "path", "availability", "digest", "authority", "provenance", "why_behavior_defining", "resolution"],
+        "additionalProperties": false,
+        "properties": {
+          "obligation_id": {"type": "string", "minLength": 1},
+          "path": {"type": "string", "minLength": 1},
+          "availability": {"enum": ["present", "missing", "unreadable"]},
+          "digest": {
+            "oneOf": [
+              {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+              {"type": "null"}
+            ]
+          },
+          "authority": {"enum": ["normative", "informative"]},
+          "provenance": {"enum": ["source", "generated projection"]},
+          "why_behavior_defining": {"type": "string", "minLength": 1},
+          "resolution": {"enum": ["resolved", "unresolved", "conflict"]},
+          "governing_source": {"type": "string", "minLength": 1}
+        },
+        "allOf": [
+          {
+            "if": {
+              "required": ["availability"],
+              "properties": {"availability": {"const": "present"}}
+            },
+            "then": {
+              "properties": {
+                "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+              }
+            }
+          },
+          {
+            "if": {
+              "required": ["availability"],
+              "properties": {
+                "availability": {"enum": ["missing", "unreadable"]}
+              }
+            },
+            "then": {
+              "properties": {
+                "digest": {"const": null},
+                "resolution": {"const": "unresolved"}
+              }
+            }
+          },
+          {
+            "if": {
+              "required": ["provenance"],
+              "properties": {"provenance": {"const": "generated projection"}}
+            },
+            "then": {"required": ["governing_source"]}
+          }
+        ]
+      }
+    },
+    "conflicts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["conflict_id", "paths", "resolution"],
+        "additionalProperties": false,
+        "properties": {
+          "conflict_id": {"type": "string", "minLength": 1},
+          "paths": {"type": "array", "minItems": 2, "items": {"type": "string", "minLength": 1}},
+          "resolution": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "parts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["part_id", "obligation_ids", "independence", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "part_id": {"type": "string", "minLength": 1},
+          "obligation_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+          "independence": {"enum": ["independent", "inseparable"]},
+          "reason": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

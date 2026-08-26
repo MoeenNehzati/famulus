@@ -1,0 +1,40 @@
+authority:
+  owns_filesystem: []
+  suggested_permissions:
+    bash:
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _artifact_contract_interface.py
+      - Interface
+      reason: Validate one exact distillation artifact and return its authorized route.
+    network: []
+children: {}
+content:
+- __init__\.py
+- _artifact_contract\.py
+- _artifact_contract_interface\.py
+- _runtime_compatibility\.py
+description: Deterministic parser, invocation-wide byte snapshot, typed success, runtime compatibility, freshness, schema-validation, and routing runtime for distill-to-rutters artifacts.
+exports:
+  distill-to-rutters._rtx.interface.validate-and-route:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - distill-to-rutters
+    source_interface: distill-to-rutters._rtx.source.artifact-contract.interface.validate-and-route
+gateway:
+  language: Python>=3.11
+  path: __init__.py
+id: distill-to-rutters._rtx
+namespace_exports: {}
+node_type: module
+schema_version: 6
+sources:
+  distill-to-rutters._rtx.source.artifact-contract:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-artifact-contract.yaml
+version: 1
+maturity: experimental

@@ -1001,6 +1001,41 @@
         }
       }
     },
+    "distill-to-rutters": {
+      "maturity": "experimental",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {
+        "distill-to-rutters._rtx.interface.validate-and-route": {
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": ">=6",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Parses envelope and distill-contract YAML with duplicate-key rejection."
+            },
+            {
+              "kind": "python-package",
+              "name": "jsonschema",
+              "version": ">=4",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Validates envelope and stage-body contracts against their JSON Schemas."
+            }
+          ]
+        }
+      }
+    },
     "email-client": {
       "maturity": "stable",
       "installation_tier": "core",

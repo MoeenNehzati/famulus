@@ -1,0 +1,109 @@
+scenario: multipart
+capability_honesty:
+  public_runtime_capability: rutter.interface.bound-operations
+  public_runtime_version: 1
+  public_binding_contract_version: 1
+  capability_verified: false
+  enforcement_class: operation-name-only
+  absent_binding_contract: rutter.interface.bound-operations semantic_enforcement@1
+  exact_repair: Expose versioned request, validation, transition, successor, and rejection-code bindings.
+assignments:
+  part-left:
+    voyage_id: voyage-left
+    rutter_definition_id: fetch-worker
+    inseparability: independent
+    independent_workflows:
+      voyage-right: coordinate
+    graph_evolutions: [fetch]
+  part-right:
+    voyage_id: voyage-right
+    rutter_definition_id: fetch-worker
+    inseparability: independent
+    independent_workflows:
+      voyage-left: coordinate
+    graph_evolutions: [fetch]
+  part-coordinator:
+    voyage_id: voyage-coordinator
+    rutter_definition_id: coordinator
+    inseparability: independent
+    independent_workflows:
+      voyage-left: coordinate
+      voyage-right: coordinate
+    graph_evolutions: [coordinate]
+rutter_definitions:
+  fetch-worker:
+    evolutions: [fetch]
+  coordinator:
+    evolutions: [coordinate]
+orchestration:
+  mode: coordinated
+  coordinator_rutter_id: coordinator
+  retry_owner: coordinator
+  required_rules:
+    starts:
+      obl-join:
+        owning_transition: coordinate
+        evidence: Both worker charters are ready.
+    dependencies:
+      obl-join:
+        owning_transition: coordinate
+        evidence: The aggregate depends on both worker results.
+    joins:
+      obl-join:
+        owning_transition: coordinate
+        evidence: Both worker results validate before the join.
+    aggregate_results:
+      obl-join:
+        owning_transition: coordinate
+        evidence: The aggregate contains the two validated results.
+    partial_failure:
+      obl-join:
+        owning_transition: coordinate
+        evidence: One failed worker blocks release.
+    retries:
+      obl-join:
+        owning_transition: coordinate
+        evidence: Retry evidence names the failed worker.
+    cancellation:
+      obl-join:
+        owning_transition: coordinate
+        evidence: Cancellation is recorded before propagation.
+    failure_propagation:
+      obl-join:
+        owning_transition: coordinate
+        evidence: Worker failure reaches the coordinator result.
+    authorization:
+      obl-join:
+        owning_transition: coordinate
+        evidence: The coordinator transition exclusively authorizes release.
+    release:
+      obl-join:
+        owning_transition: coordinate
+        evidence: Joined evidence exists before aggregate release.
+obligations:
+  obl-fetch:
+    owning_evolution: fetch-worker/fetch
+    decision_owner: rutter
+    validator: validate_fetch
+    logic_validator: validate_fetch
+    automation_permission: deterministic
+    request_owner: null
+    positive:
+      outcome: fetched
+      state: complete
+    negative:
+      outcome: invalid
+      rejection_code: invalid-fetch-evidence
+  obl-join:
+    owning_evolution: coordinator/coordinate
+    decision_owner: rutter
+    validator: validate_join
+    logic_validator: validate_join
+    automation_permission: deterministic
+    request_owner: null
+    positive:
+      outcome: joined
+      state: complete
+    negative:
+      outcome: incomplete
+      rejection_code: invalid-join-evidence

@@ -1,0 +1,54 @@
+content: [instructions/breakdown\.md]
+dependencies: []
+description: Closes the recursive behavior-defining reference closure, binds every present row as a contained raw-byte dependency, and blocks ready status on any unresolved authority before partitioning one Markdown instruction.
+gateway: {language: Markdown, path: instructions/breakdown.md}
+id: distill-to-rutters.source.breakdown
+interfaces:
+  distill-to-rutters.source.breakdown.interface.breakdown:
+    content: [instructions/breakdown\.md]
+    uses_interfaces: []
+    contract:
+      arguments:
+        request: {description: 'Input Markdown, owning module, workspace, and corrections.', required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+      caller_warnings: [{external-side-effect: Creates or revises the functional-breakdown artifact.}]
+      direct_io:
+        network: []
+        reads:
+        - {id: source, medium: repository-filesystem, access: read, content: 'Input Markdown, owning module declaration, and the repository-contained raw bytes of the recursive behavior-defining reference closure, including generated normative projections and their governing sources.', formats: [markdown, yaml, json], sensitivity: user-private}
+        writes:
+        - {id: artifact, medium: local-filesystem, access: write, content: Functional breakdown, formats: [markdown], path: '<input-directory>/<source-stem>_distillation/01_breakdown.md', path_match: exact, sensitivity: derived-private, system: filesystem}
+        - {id: response, medium: prompt, access: write, content: Artifact path and validation request, formats: [markdown], sensitivity: derived-private, system: agent-runtime}
+      execution: &stage_execution
+        consistency: {snapshot: Every consulted file is read once; all present closure digests bind those exact bytes and every consulted path is rehashed before acceptance.}
+        effects:
+        - {id: artifact-write, direct_io_ref: artifact, action: update, value_source: {kind: argument, argument_ref: request}, may_occur_in_outcomes: [breakdown-ready, breakdown-gap, partial, failed], confirmation_evidence: {kind: direct-io, direct_io_ref: artifact}, reversibility: {reversible: Delete or revise this unapproved artifact without changing the input.}}
+        lifecycle: finite
+        mutation_safety:
+          atomicity: {per_effect_only: Only the current artifact is written.}
+          concurrent_invocations: {unsafe: Concurrent revisions can overwrite the same artifact.}
+          idempotency: {idempotent: Unchanged input and correction authority produce the same artifact content.}
+          on_uncertain_completion: {verify_then_decide: Read the artifact before retrying.}
+          partial_effects_on_failure: {possible: The artifact may be written before the response is returned.}
+          rollback_on_failure: {available: Remove only the incomplete current artifact.}
+        state_effect: mutating
+        verification: [{method: direct-io-state, direct_io_ref: artifact}]
+      helpers: []
+      interaction: &stage_interaction {mode: interactive, channel: tty, unattended_outcome: approval-required}
+      outcomes: &stage_outcomes
+      - {id: breakdown-ready, class: success, outputs: [artifact, response], effects: [artifact-write], caller_action: Validate this artifact before authorizing assignment.}
+      - {id: breakdown-gap, class: partial, outputs: [artifact, response], effects: [artifact-write], caller_action: Validate the gap artifact before a breakdown repair.}
+      - {id: partial, class: partial, outputs: [artifact, response], effects: [artifact-write], caller_action: Resolve incomplete context without advancing.}
+      - {id: approval-required, class: refusal, outputs: [response], effects: [], caller_action: Supply the missing stage authority or requested correction.}
+      - {id: failed, class: error, outputs: [artifact, response], effects: [artifact-write], caller_action: Resolve the recorded failure without advancing.}
+      outputs:
+      - &artifact_output {id: artifact, audience: both, description: 01_breakdown.md functional-breakdown artifact., direct_io_ref: artifact, cardinality: {minimum: 0, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Empty only on refusal or failure., type: {kind: string, sensitivity: derived-private}}
+      - &response_output {id: response, audience: human, description: 'Artifact path, validation request, or gap.', direct_io_ref: response, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty., type: {kind: string, sensitivity: derived-private}}
+      preconditions: []
+    description: Close recursive contained behavior-defining context, include every generated projection's governing source, reject ready status for missing, unreadable, unresolved, conflicting, or changed rows, and identify behaviorally inseparable work.
+    usage: <input-markdown> <owning-module> <workspace> [correction]
+    version: 1
+node_type: behavioral_source
+schema_version: 6
+uses_interfaces: []
+version: 1
+maturity: experimental
