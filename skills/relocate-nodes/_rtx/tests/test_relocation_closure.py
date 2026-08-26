@@ -729,40 +729,22 @@ def _extractor_acceptance_manifest() -> RelocationManifest:
     """Build the narrow declarations needed for one complete source transfer."""
 
     return RelocationManifest(
-        moves=(
+        relocations=(
             Move(
                 "src/officina/common/standard_extractor.py",
                 "src/officina/standards/extractor.py",
+                (
+                    Rename(
+                        "officina.common.standard_extractor",
+                        "officina.standards.extractor",
+                    ),
+                ),
             ),
             Move(
                 "src/officina/common/blueprints/standard-extractor.yaml",
                 "src/officina/standards/blueprints/extractor.yaml",
             ),
         ),
-        renames={
-            "python_modules": (
-                Rename(
-                    "officina.common.standard_extractor",
-                    "officina.standards.extractor",
-                ),
-            ),
-            "source_ids": (
-                Rename(
-                    "common.source.standard-extractor",
-                    "standards.source.extractor",
-                ),
-            ),
-            "interface_ids": (
-                Rename(
-                    "common.source.standard-extractor.interface.python-api",
-                    "standards.source.extractor.interface.python-api",
-                ),
-                Rename(
-                    "common.interface.standard-extractor",
-                    "standards.interface.extractor",
-                ),
-            ),
-        },
         blueprint_documents=(
             (
                 "src/officina/standards/blueprint.yaml",

@@ -4,20 +4,25 @@
   "additionalProperties": false,
   "required": ["schema_version"],
   "properties": {
-    "schema_version": {"const": 2},
+    "schema_version": {"const": 3},
     "package_boundaries": {
       "type": "array",
       "items": {"$ref": "#/$defs/package_boundary"}
     },
-    "moves": {"type": "array", "items": {"$ref": "#/$defs/rename"}},
-    "renames": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "paths": {"type": "array", "items": {"$ref": "#/$defs/rename"}},
-        "python_modules": {"type": "array", "items": {"$ref": "#/$defs/rename"}},
-        "source_ids": {"type": "array", "items": {"$ref": "#/$defs/rename"}},
-        "interface_ids": {"type": "array", "items": {"$ref": "#/$defs/rename"}}
+    "relocations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["from", "to"],
+        "properties": {
+          "from": {"type": "string", "minLength": 1},
+          "to": {"type": "string", "minLength": 1},
+          "python_modules": {
+            "type": "array",
+            "items": {"$ref": "#/$defs/rename"}
+          }
+        }
       }
     },
     "blueprint_documents": {
@@ -71,6 +76,10 @@
         }
       }
     },
+    "semantic_decisions": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/semantic_decision"}
+    },
     "package_catalogs": {
       "type": "array",
       "items": {
@@ -99,6 +108,51 @@
       "properties": {"from": {"type": "string"}, "to": {"type": "string"}}
     },
     "strings": {"type": "array", "items": {"type": "string"}},
+    "semantic_decision": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["occurrence_id", "mapping_kind", "mapping_id", "path", "original_digest", "byte_start", "byte_end", "ordinal", "match", "count", "disposition", "text", "replacement", "reason"],
+          "properties": {
+            "occurrence_id": {"type": "string", "minLength": 1},
+            "mapping_kind": {"enum": ["logical_fragment", "physical_path", "physical_fragment", "python_module"]},
+            "mapping_id": {"type": "string", "minLength": 1},
+            "path": {"type": "string", "minLength": 1},
+            "original_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+            "byte_start": {"type": "integer", "minimum": 0},
+            "byte_end": {"type": "integer", "minimum": 1},
+            "ordinal": {"type": "integer", "minimum": 1},
+            "match": {"type": "string", "minLength": 1},
+            "count": {"type": "integer", "const": 1},
+            "disposition": {"const": "rewrite"},
+            "text": {"type": "string", "minLength": 1},
+            "replacement": {"type": "string"},
+            "reason": {"type": "string", "minLength": 1}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["occurrence_id", "mapping_kind", "mapping_id", "path", "original_digest", "byte_start", "byte_end", "ordinal", "match", "count", "disposition", "text", "reason"],
+          "properties": {
+            "occurrence_id": {"type": "string", "minLength": 1},
+            "mapping_kind": {"enum": ["logical_fragment", "physical_path", "physical_fragment", "python_module"]},
+            "mapping_id": {"type": "string", "minLength": 1},
+            "path": {"type": "string", "minLength": 1},
+            "original_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+            "byte_start": {"type": "integer", "minimum": 0},
+            "byte_end": {"type": "integer", "minimum": 1},
+            "ordinal": {"type": "integer", "minimum": 1},
+            "match": {"type": "string", "minLength": 1},
+            "count": {"type": "integer", "const": 1},
+            "disposition": {"const": "preserve"},
+            "text": {"type": "string", "minLength": 1},
+            "reason": {"type": "string", "minLength": 1}
+          }
+        }
+      ]
+    },
     "package_boundary": {
       "oneOf": [
         {

@@ -4,8 +4,8 @@ children:
   _rtx: {}
 content:
 - SKILL\.md
-description: Owns the manifest-driven workflow for safely relocating registered Officina
-  nodes and their files.
+description: Owns the reviewed schema-v3 workflow for mechanically projecting and
+  semantically adjudicating registered Officina node and owned-file relocations.
 discovery:
   mechanism: skill
   catalog:
@@ -38,7 +38,7 @@ namespace_exports:
       - relocate-nodes
     surface:
       only:
-        relocate-nodes._rtx.interface.relocate: 1
+        relocate-nodes._rtx.interface.relocate: 2
     interface_access:
       relocate-nodes._rtx.interface.relocate:
         allow_all_modules: false
