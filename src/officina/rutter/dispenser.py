@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import sys
 from typing import Mapping
+from uuid import uuid4
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
@@ -28,19 +29,19 @@ _USAGE_GUIDANCE = (
     "Workflow:\n"
     "  1. Invoke modes to inspect the available initialization modes and their "
     "explanations.\n"
-    "  2. Invoke list, optionally with --run-prefix. If the selected run reports "
-    "not-initialized, invoke initiate [mode] exactly once for that run; omit the "
-    "mode to use the default and omit --run-prefix to use the selected mode as "
-    "the prefix. Initiation returns that run's prefixed voyage_ids.\n"
+    "  2. Invoke initiate [mode] for each new run; omit the mode to use the "
+    "default. Optional --run-prefix groups runs under a caller-selected label. "
+    "Each initiation creates a fresh run_id and returns only that run's "
+    "voyage_ids; invoke list to rediscover them.\n"
     "  3. Assign exactly one agent to each Voyage.\n"
     "  4. Each agent uses only its assigned voyage_id with status, validate, "
     "and advance.\n"
     "  5. Keep that assignment until the Voyage becomes terminal or faulted; "
     "agents must not share or switch Voyage IDs.\n"
-    "  6. After capturing a terminal result, invoke release unless there is an "
-    "explicit reason to preserve that Voyage's working directory. Do not release "
-    "a ready, faulted, or uncertain Voyage unless intentionally abandoning it "
-    "with release --force."
+    "  6. After capturing terminal results, invoke release with a voyage_id or "
+    "run_id unless there is an explicit reason to preserve its working state. "
+    "Do not release ready, faulted, or uncertain Voyages unless intentionally "
+    "abandoning them with release --force."
 )
 
 
@@ -202,7 +203,7 @@ class VoyageDispenser(PythonArgvMachineInterface):
                 "get_voyage_ids must not return duplicate Voyage IDs"
             )
         if run_prefix is not None and any(
-            not voyage_id.startswith(f"{run_prefix}-") for voyage_id in voyage_ids
+            not voyage_id.startswith(f"{run_prefix}/") for voyage_id in voyage_ids
         ):
             raise RutterDefinitionError(
                 "run-scoped Voyage IDs must be prefixed by their run prefix"
@@ -252,8 +253,8 @@ class VoyageDispenser(PythonArgvMachineInterface):
             mode = self.get_default_mode()
         if type(mode) is not str or mode not in self._modes:
             raise UnknownVoyageModeError(f"unknown Voyage mode {mode!r}")
-        selected_prefix = self._validated_run_prefix(
-            mode if run_prefix is None else run_prefix
+        selected_prefix = (
+            None if run_prefix is None else self._validated_run_prefix(run_prefix)
         )
         required = set(self._modes[mode]["arguments"])
         provided = set(mode_arguments)
@@ -273,16 +274,38 @@ class VoyageDispenser(PythonArgvMachineInterface):
             raise InvalidVoyageModeArgumentsError(
                 "mode argument values must be non-empty strings"
             )
-        if self._validated_voyage_ids(selected_prefix, allow_empty=True):
-            raise VoyagesAlreadyInitializedError(
-                f"Voyage run prefix {selected_prefix!r} is already initialized"
-            )
+        run_name = f"r-{uuid4().hex}"
+        run_id = (
+            run_name
+            if selected_prefix is None
+            else f"{selected_prefix}/{run_name}"
+        )
         self._initiate_voyages(
             mode,
-            run_prefix=selected_prefix,
+            run_id=run_id,
             **mode_arguments,
         )
-        return self.get_voyage_ids(selected_prefix)
+        voyage_ids = tuple(
+            voyage_id
+            for voyage_id in self._validated_voyage_ids(allow_empty=False)
+            if voyage_id.rsplit("/", 1)[0] == run_id
+        )
+        try:
+            voyage_ids = tuple(
+                sorted(voyage_ids, key=lambda value: int(value.rsplit("/", 1)[1]))
+            )
+        except ValueError as error:
+            raise RutterDefinitionError(
+                "initiate_voyages must create numeric Voyage indexes"
+            ) from error
+        expected = tuple(
+            f"{run_id}/{index}" for index in range(1, len(voyage_ids) + 1)
+        )
+        if voyage_ids != expected:
+            raise RutterDefinitionError(
+                "initiate_voyages must create sequential voyage IDs under run_id"
+            )
+        return voyage_ids
 
     def initiate(
         self,
@@ -376,23 +399,35 @@ class VoyageDispenser(PythonArgvMachineInterface):
             dry_run=dry_run,
         )
 
-    def release(self, voyage_id: str, *, force: bool = False) -> None:
-        """Release one Voyage, requiring a terminal result unless forced."""
+    def release(self, target_id: str, *, force: bool = False) -> None:
+        """Release one Voyage or every Voyage in one run."""
 
-        if force:
-            if (
-                type(voyage_id) is not str
-                or voyage_id not in self._validated_voyage_ids(allow_empty=True)
-            ):
-                raise UnknownVoyageError(f"unknown Voyage ID {voyage_id!r}")
-        elif self._resolve(voyage_id).get_status().terminal_result is None:
-            raise VoyageNotTerminalError(
-                f"Voyage {voyage_id!r} is not terminal; use --force to release it"
+        voyage_ids = self._validated_voyage_ids(allow_empty=True)
+        targets = (
+            (target_id,)
+            if type(target_id) is str and target_id in voyage_ids
+            else tuple(
+                voyage_id
+                for voyage_id in voyage_ids
+                if type(target_id) is str
+                and voyage_id.rsplit("/", 1)[0] == target_id
             )
-        self._release_voyage(voyage_id)
-        if voyage_id in self._validated_voyage_ids(allow_empty=True):
+        )
+        if not targets:
+            raise UnknownVoyageError(f"unknown Voyage or run ID {target_id!r}")
+        if not force:
+            for voyage_id in targets:
+                if self._resolve(voyage_id).get_status().terminal_result is None:
+                    raise VoyageNotTerminalError(
+                        f"Voyage {voyage_id!r} is not terminal; "
+                        "use --force to release it"
+                    )
+        for voyage_id in targets:
+            self._release_voyage(voyage_id)
+        remaining = self._validated_voyage_ids(allow_empty=True)
+        if any(voyage_id in remaining for voyage_id in targets):
             raise RutterDefinitionError(
-                "release_voyage must remove the released Voyage ID"
+                "release_voyage must remove every released Voyage ID"
             )
 
     def run(self, argv: list[str]) -> int:
@@ -508,13 +543,13 @@ def _parser(dispenser: VoyageDispenser) -> argparse.ArgumentParser:
     advance.add_argument("--responding-to")
     release = commands.add_parser(
         "release",
-        help="Delete one terminal Voyage, or any Voyage with --force.",
+        help="Delete one Voyage or run, requiring terminal results unless forced.",
     )
-    release.add_argument("voyage_id")
+    release.add_argument("target_id")
     release.add_argument(
         "--force",
         action="store_true",
-        help="Delete the Voyage even when it has no terminal result.",
+        help="Delete the Voyage or run even when it has no terminal result.",
     )
     return parser
 
@@ -590,9 +625,9 @@ def voyage_dispenser_cli(
                 "validation": report.to_json(),
             }
         elif arguments.command == "release":
-            dispenser.release(arguments.voyage_id, force=arguments.force)
+            dispenser.release(arguments.target_id, force=arguments.force)
             payload = {
-                "voyage_id": arguments.voyage_id,
+                "target_id": arguments.target_id,
                 "released": True,
             }
             if arguments.force:

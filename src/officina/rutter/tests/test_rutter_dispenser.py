@@ -18,7 +18,10 @@ from officina.rutter import (
 )
 
 
-def _voyages(tmp_path: Path):
+def _voyages(
+    tmp_path: Path,
+    voyage_ids: tuple[str, ...] = ("worker-1", "worker-2"),
+):
     definition = Rutter(
         id="dispenser-example",
         version=1,
@@ -44,7 +47,7 @@ def _voyages(tmp_path: Path):
             Path(f"{voyage_id}.reckoning.json"),
             {},
         )
-        for voyage_id in ("worker-1", "worker-2")
+        for voyage_id in voyage_ids
     }
     return voyages
 
@@ -58,7 +61,7 @@ def _dispenser(tmp_path: Path) -> VoyageDispenser:
                 "arguments": {},
             }
         },
-        initiate_voyages=lambda mode, *, run_prefix: None,
+        initiate_voyages=lambda mode, *, run_id: None,
         get_voyage_ids=lambda run_prefix=None: tuple(voyages),
         open_voyage=voyages.__getitem__,
         release_voyage=voyages.__delitem__,
@@ -75,7 +78,7 @@ def test_dispenser_rejects_listing_before_voyages_are_initialized() -> None:
                 "arguments": {},
             }
         },
-        initiate_voyages=lambda mode, *, run_prefix: None,
+        initiate_voyages=lambda mode, *, run_id: None,
         get_voyage_ids=lambda run_prefix=None: (),
         open_voyage=lambda voyage_id: None,
         release_voyage=lambda voyage_id: None,
@@ -101,7 +104,7 @@ def test_dispenser_exposes_modes_before_voyages_are_initialized() -> None:
                 },
             },
         },
-        initiate_voyages=lambda mode, *, run_prefix: None,
+        initiate_voyages=lambda mode, *, run_id: None,
         get_voyage_ids=lambda run_prefix=None: (),
         open_voyage=lambda voyage_id: None,
         release_voyage=lambda voyage_id: None,
@@ -133,7 +136,7 @@ def test_cli_lists_modes_before_voyages_are_initialized(
                 "arguments": {},
             }
         },
-        initiate_voyages=lambda mode, *, run_prefix: None,
+        initiate_voyages=lambda mode, *, run_id: None,
         get_voyage_ids=lambda run_prefix=None: (),
         open_voyage=lambda voyage_id: None,
         release_voyage=lambda voyage_id: None,
@@ -159,9 +162,12 @@ def test_cli_initiate_omits_mode_to_select_default(
     selected_modes: list[str] = []
     voyage_ids: list[str] = []
 
-    def initiate(mode: str, *, run_prefix: str) -> None:
+    initiated_runs: list[str] = []
+
+    def initiate(mode: str, *, run_id: str) -> None:
         selected_modes.append(mode)
-        voyage_ids.append(f"{run_prefix}-voyage-1")
+        initiated_runs.append(run_id)
+        voyage_ids.append(f"{run_id}/1")
 
     dispenser = VoyageDispenser(
         modes={
@@ -178,7 +184,7 @@ def test_cli_initiate_omits_mode_to_select_default(
 
     assert voyage_dispenser_cli(dispenser, ["initiate"]) == 0
     assert json.loads(capsys.readouterr().out) == {
-        "voyage_ids": ["normal-voyage-1"]
+        "voyage_ids": [f"{initiated_runs[0]}/1"]
     }
     assert selected_modes == ["normal"]
 
@@ -194,11 +200,11 @@ def test_cli_exposes_and_requires_selected_mode_arguments(
     def initiate(
         mode: str,
         *,
-        run_prefix: str,
+        run_id: str,
         inventory_gold_standard: str,
     ) -> None:
         initiated.append((mode, inventory_gold_standard))
-        voyage_ids.append(f"{run_prefix}-voyage-1")
+        voyage_ids.append(f"{run_id}/1")
 
     dispenser = VoyageDispenser(
         modes={
@@ -243,9 +249,9 @@ def test_cli_exposes_and_requires_selected_mode_arguments(
             "/tmp/inventory-gold.json",
         ],
     ) == 0
-    assert json.loads(capsys.readouterr().out) == {
-        "voyage_ids": ["debug-voyage-1"]
-    }
+    returned = json.loads(capsys.readouterr().out)["voyage_ids"]
+    assert len(returned) == 1
+    assert returned[0].startswith("r-") and returned[0].endswith("/1")
     assert initiated == [("debug", "/tmp/inventory-gold.json")]
 
 
@@ -255,11 +261,12 @@ def test_dispenser_initiates_one_declared_mode_and_returns_discovered_ids() -> N
     selected_modes: list[str] = []
     voyage_ids: list[str] = []
 
-    def initiate(mode: str, *, run_prefix: str) -> None:
+    initiated_runs: list[str] = []
+
+    def initiate(mode: str, *, run_id: str) -> None:
         selected_modes.append(mode)
-        voyage_ids.extend(
-            (f"{run_prefix}-voyage-1", f"{run_prefix}-voyage-2")
-        )
+        initiated_runs.append(run_id)
+        voyage_ids.extend((f"{run_id}/1", f"{run_id}/2"))
 
     dispenser = VoyageDispenser(
         modes={
@@ -278,9 +285,8 @@ def test_dispenser_initiates_one_declared_mode_and_returns_discovered_ids() -> N
         release_voyage=lambda voyage_id: None,
     )
 
-    assert dispenser.initiate_voyages("debug") == (
-        "debug-voyage-1",
-        "debug-voyage-2",
+    assert dispenser.initiate_voyages("debug") == tuple(
+        f"{initiated_runs[0]}/{index}" for index in (1, 2)
     )
     assert selected_modes == ["debug"]
 
@@ -291,9 +297,12 @@ def test_dispenser_uses_first_declared_mode_when_initiate_omits_mode() -> None:
     selected_modes: list[str] = []
     voyage_ids: list[str] = []
 
-    def initiate(mode: str, *, run_prefix: str) -> None:
+    initiated_runs: list[str] = []
+
+    def initiate(mode: str, *, run_id: str) -> None:
         selected_modes.append(mode)
-        voyage_ids.append(f"{run_prefix}-voyage-1")
+        initiated_runs.append(run_id)
+        voyage_ids.append(f"{run_id}/1")
 
     dispenser = VoyageDispenser(
         modes={
@@ -312,7 +321,7 @@ def test_dispenser_uses_first_declared_mode_when_initiate_omits_mode() -> None:
         release_voyage=lambda voyage_id: None,
     )
 
-    assert dispenser.initiate() == ("normal-voyage-1",)
+    assert dispenser.initiate() == (f"{initiated_runs[0]}/1",)
     assert selected_modes == ["normal"]
 
 
@@ -327,7 +336,7 @@ def test_dispenser_rejects_unknown_mode_without_initializing() -> None:
                 "arguments": {},
             }
         },
-        initiate_voyages=lambda mode, *, run_prefix: initiated.append(mode),
+        initiate_voyages=lambda mode, *, run_id: initiated.append(mode),
         get_voyage_ids=lambda run_prefix=None: (),
         open_voyage=lambda voyage_id: None,
         release_voyage=lambda voyage_id: None,
@@ -338,10 +347,25 @@ def test_dispenser_rejects_unknown_mode_without_initializing() -> None:
     assert initiated == []
 
 
-def test_dispenser_rejects_reinitializing_existing_voyages() -> None:
-    """Reinitialization could overwrite the mode bound into durable authority."""
+def test_dispenser_reinitializes_one_prefix_as_distinct_runs() -> None:
+    """Reusing a label must create new Voyages without returning the old run."""
 
+    voyages: list[str] = []
     initiated: list[str] = []
+
+    def initiate(mode: str, *, run_id: str) -> None:
+        initiated.append(run_id)
+        voyages.extend((f"{run_id}/1", f"{run_id}/2"))
+
+    def get_voyage_ids(run_prefix: str | None = None) -> tuple[str, ...]:
+        if run_prefix is None:
+            return tuple(voyages)
+        return tuple(
+            voyage_id
+            for voyage_id in voyages
+            if voyage_id.startswith(f"{run_prefix}/")
+        )
+
     dispenser = VoyageDispenser(
         modes={
             "normal": {
@@ -349,59 +373,68 @@ def test_dispenser_rejects_reinitializing_existing_voyages() -> None:
                 "arguments": {},
             }
         },
-        initiate_voyages=lambda mode, *, run_prefix: initiated.append(mode),
-        get_voyage_ids=lambda run_prefix=None: (
-            ("normal-voyage-1",)
-            if run_prefix in {None, "normal"}
-            else ()
-        ),
-        open_voyage=lambda voyage_id: None,
-        release_voyage=lambda voyage_id: None,
-    )
-
-    with pytest.raises(ValueError, match="run prefix 'normal' is already initialized"):
-        dispenser.initiate("normal")
-    assert initiated == []
-
-
-def test_dispenser_defaults_run_prefix_to_mode_and_isolates_initialization() -> None:
-    """A prior mode's Voyages must not block a differently prefixed run."""
-
-    voyages: dict[str, list[str]] = {}
-
-    def initiate(mode: str, *, run_prefix: str) -> None:
-        voyages.setdefault(run_prefix, []).append(f"{run_prefix}-voyage-001")
-
-    def get_voyage_ids(run_prefix: str | None = None) -> tuple[str, ...]:
-        if run_prefix is not None:
-            return tuple(voyages.get(run_prefix, ()))
-        return tuple(
-            voyage_id
-            for prefix_voyages in voyages.values()
-            for voyage_id in prefix_voyages
-        )
-
-    dispenser = VoyageDispenser(
-        modes={
-            "normal": {"description": "Run without hooks.", "arguments": {}},
-            "debug": {"description": "Attach hooks.", "arguments": {}},
-        },
         initiate_voyages=initiate,
         get_voyage_ids=get_voyage_ids,
         open_voyage=lambda voyage_id: None,
         release_voyage=lambda voyage_id: None,
     )
 
-    assert dispenser.initiate_voyages("normal") == ("normal-voyage-001",)
-    assert dispenser.initiate_voyages("debug") == ("debug-voyage-001",)
-    assert dispenser.get_voyage_ids() == (
-        "normal-voyage-001",
-        "debug-voyage-001",
-    )
-    assert dispenser.get_voyage_ids("debug") == ("debug-voyage-001",)
+    first = dispenser.initiate("normal", run_prefix="study")
+    second = dispenser.initiate("normal", run_prefix="study")
 
-    with pytest.raises(ValueError, match="run prefix 'normal' is already initialized"):
-        dispenser.initiate_voyages("normal")
+    assert first == tuple(f"{initiated[0]}/{index}" for index in (1, 2))
+    assert second == tuple(f"{initiated[1]}/{index}" for index in (1, 2))
+    assert initiated[0].startswith("study/r-")
+    assert initiated[1].startswith("study/r-")
+    assert initiated[0] != initiated[1]
+
+
+def test_dispenser_creates_an_unprefixed_run_when_prefix_is_omitted() -> None:
+    """Omitting the optional label must not silently substitute the mode name."""
+
+    voyage_ids: list[str] = []
+
+    def initiate(mode: str, *, run_id: str) -> None:
+        voyage_ids.append(f"{run_id}/1")
+
+    dispenser = VoyageDispenser(
+        modes={"normal": {"description": "Run normally.", "arguments": {}}},
+        initiate_voyages=initiate,
+        get_voyage_ids=lambda run_prefix=None: tuple(voyage_ids),
+        open_voyage=lambda voyage_id: None,
+        release_voyage=lambda voyage_id: None,
+    )
+
+    (voyage_id,) = dispenser.initiate()
+
+    run_id, index = voyage_id.split("/")
+    assert run_id.startswith("r-")
+    assert index == "1"
+
+
+def test_dispenser_returns_voyages_in_numeric_index_order() -> None:
+    """Lexical discovery must not place Voyage 10 before Voyage 2."""
+
+    voyage_ids: list[str] = []
+
+    def initiate(mode: str, *, run_id: str) -> None:
+        voyage_ids.extend(
+            sorted(f"{run_id}/{index}" for index in range(1, 11))
+        )
+
+    dispenser = VoyageDispenser(
+        modes={"normal": {"description": "Run normally.", "arguments": {}}},
+        initiate_voyages=initiate,
+        get_voyage_ids=lambda run_prefix=None: tuple(voyage_ids),
+        open_voyage=lambda voyage_id: None,
+        release_voyage=lambda voyage_id: None,
+    )
+
+    created = dispenser.initiate()
+
+    assert tuple(_id.rsplit("/", 1)[1] for _id in created) == tuple(
+        str(index) for index in range(1, 11)
+    )
 
 
 def test_cli_accepts_custom_run_prefix_and_filters_list(
@@ -410,8 +443,8 @@ def test_cli_accepts_custom_run_prefix_and_filters_list(
     """Ignoring list's prefix would mix independent controller assignments."""
 
     voyages = {
-        "baseline": ["baseline-voyage-001"],
-        "diagnostic": ["diagnostic-voyage-001", "diagnostic-voyage-002"],
+        "baseline": ["baseline/r-base/1"],
+        "diagnostic": ["diagnostic/r-diag/1", "diagnostic/r-diag/2"],
     }
 
     def get_voyage_ids(run_prefix: str | None = None) -> tuple[str, ...]:
@@ -425,7 +458,7 @@ def test_cli_accepts_custom_run_prefix_and_filters_list(
 
     dispenser = VoyageDispenser(
         modes={"normal": {"description": "Run normally.", "arguments": {}}},
-        initiate_voyages=lambda mode, *, run_prefix: None,
+        initiate_voyages=lambda mode, *, run_id: None,
         get_voyage_ids=get_voyage_ids,
         open_voyage=lambda voyage_id: None,
         release_voyage=lambda voyage_id: None,
@@ -434,9 +467,9 @@ def test_cli_accepts_custom_run_prefix_and_filters_list(
     assert voyage_dispenser_cli(dispenser, ["list"]) == 0
     assert json.loads(capsys.readouterr().out) == {
         "voyage_ids": [
-            "baseline-voyage-001",
-            "diagnostic-voyage-001",
-            "diagnostic-voyage-002",
+                "baseline/r-base/1",
+                "diagnostic/r-diag/1",
+                "diagnostic/r-diag/2",
         ]
     }
 
@@ -445,7 +478,7 @@ def test_cli_accepts_custom_run_prefix_and_filters_list(
     ) == 0
     assert json.loads(capsys.readouterr().out) == {
         "run_prefix": "diagnostic",
-        "voyage_ids": ["diagnostic-voyage-001", "diagnostic-voyage-002"],
+        "voyage_ids": ["diagnostic/r-diag/1", "diagnostic/r-diag/2"],
     }
 
 
@@ -459,7 +492,7 @@ def test_dispenser_rejects_unsafe_run_prefixes(run_prefix: str) -> None:
     initiated: list[str] = []
     dispenser = VoyageDispenser(
         modes={"normal": {"description": "Run normally.", "arguments": {}}},
-        initiate_voyages=lambda mode, *, run_prefix: initiated.append(run_prefix),
+        initiate_voyages=lambda mode, *, run_id: initiated.append(run_id),
         get_voyage_ids=lambda run_prefix=None: (),
         open_voyage=lambda voyage_id: None,
         release_voyage=lambda voyage_id: None,
@@ -477,9 +510,12 @@ def test_cli_initiates_selected_mode_and_reports_ids(
 
     voyage_ids: list[str] = []
 
-    def initiate(mode: str, *, run_prefix: str) -> None:
+    initiated_runs: list[str] = []
+
+    def initiate(mode: str, *, run_id: str) -> None:
         assert mode == "debug"
-        voyage_ids.append(f"{run_prefix}-voyage-1")
+        initiated_runs.append(run_id)
+        voyage_ids.append(f"{run_id}/1")
 
     dispenser = VoyageDispenser(
         modes={
@@ -500,7 +536,7 @@ def test_cli_initiates_selected_mode_and_reports_ids(
 
     assert voyage_dispenser_cli(dispenser, ["initiate", "debug"]) == 0
     assert json.loads(capsys.readouterr().out) == {
-        "voyage_ids": ["debug-voyage-1"]
+        "voyage_ids": [f"{initiated_runs[0]}/1"]
     }
 
 
@@ -555,7 +591,7 @@ def test_cli_requires_force_to_release_a_nonterminal_voyage(
                 "arguments": {},
             }
         },
-        initiate_voyages=lambda mode, *, run_prefix: None,
+        initiate_voyages=lambda mode, *, run_id: None,
         get_voyage_ids=lambda run_prefix=None: tuple(voyages),
         open_voyage=voyages.__getitem__,
         release_voyage=release,
@@ -573,7 +609,7 @@ def test_cli_requires_force_to_release_a_nonterminal_voyage(
     assert json.loads(capsys.readouterr().out) == {
         "forced": True,
         "released": True,
-        "voyage_id": "worker-1",
+        "target_id": "worker-1",
     }
     assert released == ["worker-1"]
 
@@ -587,9 +623,46 @@ def test_cli_requires_force_to_release_a_nonterminal_voyage(
     assert voyage_dispenser_cli(dispenser, ["release", "worker-2"]) == 0
     assert json.loads(capsys.readouterr().out) == {
         "released": True,
-        "voyage_id": "worker-2",
+        "target_id": "worker-2",
     }
     assert released == ["worker-1", "worker-2"]
+    assert voyages == {}
+
+
+def test_release_run_preflights_every_voyage_before_deleting(
+    tmp_path: Path,
+) -> None:
+    """A nonterminal sibling must prevent a partially released run."""
+
+    run_id = "study/r-abc123"
+    voyage_ids = (f"{run_id}/1", f"{run_id}/2")
+    voyages = _voyages(tmp_path, voyage_ids)
+    released: list[str] = []
+
+    def release(voyage_id: str) -> None:
+        released.append(voyage_id)
+        del voyages[voyage_id]
+
+    dispenser = VoyageDispenser(
+        modes={"normal": {"description": "Run normally.", "arguments": {}}},
+        initiate_voyages=lambda mode, *, run_id: None,
+        get_voyage_ids=lambda run_prefix=None: tuple(voyages),
+        open_voyage=voyages.__getitem__,
+        release_voyage=release,
+    )
+    first = dispenser.get_status(voyage_ids[0])
+    dispenser.advance(
+        voyage_ids[0],
+        {"outcome": "answered"},
+        responding_to=first.instruction.evolution_entry_id,
+    )
+
+    with pytest.raises(ValueError, match="is not terminal"):
+        dispenser.release(run_id)
+    assert released == []
+
+    dispenser.release(run_id, force=True)
+    assert released == list(voyage_ids)
     assert voyages == {}
 
 
@@ -611,7 +684,7 @@ def test_forced_release_does_not_open_unreadable_voyage_state() -> None:
                 "arguments": {},
             }
         },
-        initiate_voyages=lambda mode, *, run_prefix: None,
+        initiate_voyages=lambda mode, *, run_id: None,
         get_voyage_ids=lambda run_prefix=None: tuple(voyage_ids),
         open_voyage=fail_if_opened,
         release_voyage=release,
@@ -666,9 +739,8 @@ def test_cli_help_explains_one_agent_per_voyage(
     assert "modes" in help_text
     assert "initiate [mode]" in help_text
     assert "--run-prefix" in help_text
-    assert "selected mode as the prefix" in help_text
+    assert "Each initiation creates a fresh run_id" in help_text
     assert "omit the mode to use the default" in help_text
-    assert "not-initialized" in help_text
     assert "list" in help_text
     assert "assigned voyage_id" in help_text
     assert "status" in help_text

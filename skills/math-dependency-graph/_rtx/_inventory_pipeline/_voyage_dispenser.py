@@ -187,7 +187,7 @@ def make_voyage_dispenser() -> VoyageDispenser:
     def initiate(
         mode: str,
         *,
-        run_prefix: str,
+        run_id: str,
         doc_entrypoint: str,
         chunk_count: str,
         inventory_gold_standard: str | None = None,
@@ -196,7 +196,7 @@ def make_voyage_dispenser() -> VoyageDispenser:
         _support.initiate_run(
             root,
             mode=mode,
-            run_prefix=run_prefix,
+            run_id=run_id,
             doc_entrypoint=doc_entrypoint,
             chunk_count=chunk_count,
             packet_chars=_PACKET_CHARS,

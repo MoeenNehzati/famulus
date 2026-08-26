@@ -1,7 +1,7 @@
 schema_version: 6
 node_type: behavioral_source
 id: math-dependency-graph._rtx.source.rtx-inventory-voyage-dispenser
-version: 10
+version: 11
 description: Defines default and debug inventory Rutter modes, initializes one durable module-owned Voyage per immutable chunk, introduces the frozen instruction plus cumulative packet and worker-owned inventory paths once, appends each packet before delivering that exact string, validates packet-local report deltas against the cumulative inventory, and maps coordinates at finalization.
 gateway:
   language: Python>=3.11
@@ -23,7 +23,7 @@ dependencies:
   blueprint: {base: repository-root, path: src/officina/rutter/blueprints/model.yaml}
   reason: Declares the Rutter, LLM step, machine step, and terminal result.
 - source: rutter.source.dispenser
-  version: 4
+  version: 5
   blueprint: {base: repository-root, path: src/officina/rutter/blueprints/dispenser.yaml}
   reason: Routes standard operations to authorized chunk Voyages by ID.
 - source: rutter.source.diagnostic
@@ -38,13 +38,13 @@ uses_interfaces:
 - {interface: common.interface.atomic-files, version: 1}
 - {interface: rutter.interface.bound-operations, version: 6}
 - {interface: rutter.interface.model, version: 2}
-- {interface: rutter.interface.dispenser, version: 4}
+- {interface: rutter.interface.dispenser, version: 5}
 - {interface: math-dependency-graph._rtx.source.rtx-inventory-chunk-extractor.interface.scripts-extract-inventory-chunks, version: 1}
 interfaces:
   math-dependency-graph._rtx.source.rtx-inventory-voyage-dispenser.interface.inventory-voyages:
-    version: 10
+    version: 11
     description: Discover and initialize inventory Voyages, introduce the frozen instruction plus cumulative_packets_file and inventory_file paths once, append each packet before delivering its exact source string, validate each packet-local report delta against the worker-owned cumulative inventory, and map row coordinates at finalization.
-    usage: <help|modes> | list [--run-prefix <prefix>] | initiate [default] [--run-prefix <prefix>] --doc-entrypoint <path> --chunk-count <positive-integer> | initiate debug [--run-prefix <prefix>] --doc-entrypoint <path> --chunk-count <positive-integer> --inventory-gold-standard <path> --inventory-source-aliases <path> | <status|validate|advance> <voyage-id> [--response-file <path> --responding-to <entry-id>] | release <voyage-id> [--force]
+    usage: <help|modes> | list [--run-prefix <prefix>] | initiate [default] [--run-prefix <prefix>] --doc-entrypoint <path> --chunk-count <positive-integer> | initiate debug [--run-prefix <prefix>] --doc-entrypoint <path> --chunk-count <positive-integer> --inventory-gold-standard <path> --inventory-source-aliases <path> | <status|validate|advance> <voyage-id> [--response-file <path> --responding-to <entry-id>] | release <voyage-id|run-id> [--force]
     content:
     - _inventory_pipeline/_voyage_dispenser\.py
     - _inventory_pipeline/_voyage_support\.py
@@ -52,7 +52,7 @@ interfaces:
     - {interface: common.interface.atomic-files, version: 1}
     - {interface: rutter.interface.bound-operations, version: 6}
     - {interface: rutter.interface.model, version: 2}
-    - {interface: rutter.interface.dispenser, version: 4}
+    - {interface: rutter.interface.dispenser, version: 5}
     - {interface: math-dependency-graph._rtx.source.rtx-inventory-chunk-extractor.interface.scripts-extract-inventory-chunks, version: 1}
     process_binding:
       kind: process
@@ -138,18 +138,23 @@ interfaces:
           sensitivity: user-private
           type: {kind: file, access: read, must_exist: true, relative_to: caller-cwd, syntax: literal, content_type: {kind: string, sensitivity: user-private, format: {named: json}}}
         run-prefix:
-          description: Safe run name used as the storage namespace and Voyage ID prefix; defaults to the selected mode.
+          description: Optional safe label placed before the freshly generated run ID.
+          required: false
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+        run-id:
+          description: Fresh identifier returned implicitly as the parent of each initialized Voyage ID and accepted by release.
           required: false
           sensitivity: user-private
           type: {kind: string, sensitivity: user-private}
         voyage-id:
-          description: Opaque chunk Voyage ID returned by list.
+          description: Indexed Voyage ID under the freshly generated run ID.
           required: false
           sensitivity: user-private
           type: {kind: string, sensitivity: user-private}
       preconditions: []
       caller_warnings:
-      - external-side-effect: Setup creates durable Voyages, advance appends cumulative source text and may write a completed chunk inventory, and release deletes one terminal Voyage working directory; --force explicitly permits deleting a nonterminal Voyage. Debug release first archives its diagnostic reckoning under the run artifacts.
+      - external-side-effect: Setup creates a fresh run of durable Voyages, advance appends cumulative source text and may write a completed chunk inventory, and release deletes one terminal Voyage or run; --force explicitly permits deleting nonterminal Voyages. Debug release first archives each diagnostic reckoning under the run artifacts.
       interaction: {mode: unattended}
       outputs:
       - id: result
@@ -177,7 +182,7 @@ interfaces:
         state_effect: mutating
         lifecycle: finite
         consistency:
-          snapshot: Initialization reads one document snapshot and freezes its chunks, inventory instruction, and inventory schema under one isolated run prefix; one introductory LLM turn receives the frozen instruction and cumulative_packets_file path and acknowledges them, then before every report a repeat-safe machine step verifies and appends the current packet's raw text to the exact cumulative immutable-packet prefix and the report receives the packet as raw content without source-coordinate metadata or repeated run-wide fields. Debug also freezes the supplied gold standard, source aliases, validated gold-to-inventory source map, and each report's decision basis before revealing the projected gold answer.
+          snapshot: Initialization reads one document snapshot and freezes its chunks, inventory instruction, and inventory schema under one fresh run ID; one introductory LLM turn receives the frozen instruction and cumulative_packets_file path and acknowledges them, then before every report a repeat-safe machine step verifies and appends the current packet's raw text to the exact cumulative immutable-packet prefix and the report receives the packet as raw content without source-coordinate metadata or repeated run-wide fields. Debug also freezes the supplied gold standard, source aliases, validated gold-to-inventory source map, and each report's decision basis before revealing the projected gold answer.
         effects:
         - id: voyage-state
           direct_io_ref: voyage-state

@@ -24,7 +24,7 @@ def test_inventory_voyage_dispenser_accepts_implicit_default_initialization() ->
             "math-dependency-graph._rtx.interface."
             "inventory-voyage-dispenser"
         ),
-        target_version=10,
+        target_version=11,
         args=[
             "initiate",
             "--doc-entrypoint",
@@ -57,7 +57,7 @@ def test_inventory_voyage_dispenser_routes_run_prefix_options() -> None:
             "math-dependency-graph._rtx.interface."
             "inventory-voyage-dispenser"
         ),
-        target_version=10,
+        target_version=11,
         args=[
             "initiate",
             "--run-prefix",
@@ -75,7 +75,7 @@ def test_inventory_voyage_dispenser_routes_run_prefix_options() -> None:
             "math-dependency-graph._rtx.interface."
             "inventory-voyage-dispenser"
         ),
-        target_version=10,
+        target_version=11,
         args=["list", "--run-prefix", "baseline"],
         repository_config=REPOSITORY_ROOT / "officina.toml",
     )
@@ -101,12 +101,12 @@ def test_inventory_voyage_dispenser_routes_forced_release() -> None:
             "math-dependency-graph._rtx.interface."
             "inventory-voyage-dispenser"
         ),
-        target_version=10,
-        args=["release", "spark1-voyage-123", "--force"],
+        target_version=11,
+        args=["release", "spark/r-abc123", "--force"],
         repository_config=REPOSITORY_ROOT / "officina.toml",
     )
 
-    assert metadata.command == ["release", "spark1-voyage-123", "--force"]
+    assert metadata.command == ["release", "spark/r-abc123", "--force"]
 
 
 def test_inventory_voyage_dispenser_declares_its_exact_dependencies() -> None:
@@ -124,7 +124,7 @@ def test_inventory_voyage_dispenser_declares_its_exact_dependencies() -> None:
         ("common.source.atomic-files", 1),
         ("rutter.source.engine", 3),
         ("rutter.source.model", 2),
-        ("rutter.source.dispenser", 4),
+        ("rutter.source.dispenser", 5),
         ("rutter.source.diagnostic", 4),
         (
             "math-dependency-graph._rtx.source.rtx-inventory-chunk-extractor",
@@ -135,7 +135,7 @@ def test_inventory_voyage_dispenser_declares_its_exact_dependencies() -> None:
         {"interface": "common.interface.atomic-files", "version": 1},
         {"interface": "rutter.interface.bound-operations", "version": 6},
         {"interface": "rutter.interface.model", "version": 2},
-        {"interface": "rutter.interface.dispenser", "version": 4},
+        {"interface": "rutter.interface.dispenser", "version": 5},
         {
             "interface": (
                 "math-dependency-graph._rtx.source."
@@ -150,6 +150,7 @@ def test_inventory_voyage_dispenser_declares_its_exact_dependencies() -> None:
         "math-dependency-graph._rtx.source."
         "rtx-inventory-voyage-dispenser.interface.inventory-voyages"
     ]
+    assert interface["version"] == 11
     assert interface["uses_interfaces"] == expected_interfaces
 
 
@@ -217,54 +218,54 @@ def test_inventory_v37_and_voyage_v9_propagate_to_public_route() -> None:
         "math-dependency-graph.source.instructions-inventory-voyages."
         "interface.inventory-voyages"
     ]
-    assert source["version"] == 10
-    assert source_interface["version"] == 10
+    assert source["version"] == 11
+    assert source_interface["version"] == 11
     assert any(
         "archives" in warning["external-side-effect"]
         and "diagnostic reckoning" in warning["external-side-effect"]
         for warning in source_interface["contract"]["caller_warnings"]
     )
-    assert runtime_module["version"] == 84
+    assert runtime_module["version"] == 85
     assert inventory_instruction["version"] == 38
     assert inventory_instruction["interfaces"][
         "math-dependency-graph.source.instructions-inventory.interface.inventory"
     ]["version"] == 38
-    assert instruction["version"] == 10
-    assert instruction_interface["version"] == 10
+    assert instruction["version"] == 11
+    assert instruction_interface["version"] == 11
     assert instruction["uses_interfaces"][0] == {
         "interface": "math-dependency-graph._rtx.interface.inventory-voyage-dispenser",
-        "version": 10,
+        "version": 11,
     }
     assert instruction_interface["uses_interfaces"][0] == {
         "interface": "math-dependency-graph._rtx.interface.inventory-voyage-dispenser",
-        "version": 10,
+        "version": 11,
     }
-    assert gateway["version"] == 86
+    assert gateway["version"] == 87
     assert gateway["interfaces"][
         "math-dependency-graph.source.gateway.interface.default"
-    ]["version"] == 78
+    ]["version"] == 79
     assert {
         "interface": "math-dependency-graph.interface.inventory",
         "version": 38,
     } in gateway["uses_interfaces"]
     assert {
         "interface": "math-dependency-graph.interface.inventory-voyages",
-        "version": 10,
+        "version": 11,
     } in gateway["uses_interfaces"]
-    assert module["version"] == 111
-    assert module["namespace_exports"]["_rtx"]["version"] == 84
+    assert module["version"] == 112
+    assert module["namespace_exports"]["_rtx"]["version"] == 85
     assert module["namespace_exports"]["_rtx"]["surface"]["only"][
         "math-dependency-graph._rtx.interface.inventory-voyage-dispenser"
-    ] == 10
+    ] == 11
 
     skill_text = (skill_root / "SKILL.md").read_text(encoding="utf-8")
     assert (
         "math-dependency-graph.source.gateway -> "
-        "math-dependency-graph.interface.inventory-voyages@10"
+        "math-dependency-graph.interface.inventory-voyages@11"
     ) in skill_text
     assert (
         "math-dependency-graph.source.instructions-inventory-voyages -> "
-        "math-dependency-graph._rtx.interface.inventory-voyage-dispenser@10"
+        "math-dependency-graph._rtx.interface.inventory-voyage-dispenser@11"
     ) in skill_text
     assert (
         "math-dependency-graph.source.gateway -> "

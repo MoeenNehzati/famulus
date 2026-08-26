@@ -8,7 +8,6 @@ import json
 from pathlib import Path
 import shutil
 from typing import Mapping, Sequence, TextIO
-from uuid import uuid4
 
 from jsonschema import ValidationError, validate as validate_json
 from officina.common.atomic_files import (
@@ -1084,7 +1083,7 @@ def initiate_run(
     root: Path,
     *,
     mode: str,
-    run_prefix: str,
+    run_id: str,
     doc_entrypoint: str,
     chunk_count: str,
     packet_chars: int,
@@ -1122,7 +1121,7 @@ def initiate_run(
     root = root.resolve()
     report = extract_inventory_chunks(
         source,
-        root / "artifacts" / run_prefix,
+        root / "artifacts" / run_id,
         workers=requested_chunks,
         packet_chars=packet_chars,
     )
@@ -1159,23 +1158,26 @@ def initiate_run(
         charter_data["inventory_gold_source_map_sha256"] = hashlib.sha256(
             source_map_text.encode("utf-8")
         ).hexdigest()
-    voyages_dir = root / "voyages" / run_prefix
-    if voyage_paths(root, run_prefix):
+    voyages_dir = root / "voyages" / run_id
+    if any(
+        voyage_id.rsplit("/", 1)[0] == run_id
+        for voyage_id in voyage_paths(root)
+    ):
         raise FileExistsError(
-            f"inventory Voyages already exist for run prefix {run_prefix!r}"
+            f"inventory Voyages already exist for run ID {run_id!r}"
         )
     voyages_dir.mkdir(parents=True, exist_ok=True)
-    artifacts_dir = root / "artifacts" / run_prefix
-    for chunk_value in manifest["chunks"]:
+    artifacts_dir = root / "artifacts" / run_id
+    for index, chunk_value in enumerate(manifest["chunks"], start=1):
         if not isinstance(chunk_value, dict):
             raise ValueError("inventory chunk manifest contains a non-object chunk")
-        voyage_id = f"{run_prefix}-voyage-{uuid4().hex}"
+        voyage_id = f"{run_id}/{index}"
         _create_voyage(
             definition,
             _load_chunk(chunk_value),
-            voyages_dir / voyage_id,
-            artifacts_dir / "inventories" / f"{voyage_id}.json",
-            artifacts_dir / "source-packets" / f"{voyage_id}.txt",
+            voyages_dir / str(index),
+            artifacts_dir / "inventories" / f"{index}.json",
+            artifacts_dir / "source-packets" / f"{index}.txt",
             rutter_name=rutter_name,
             run_dir=root,
             charter_data=charter_data,
@@ -1191,27 +1193,17 @@ def voyage_paths(
     if (root / reckoning).is_file():
         return {root.name: root}
     voyages = root / "voyages"
-    if run_prefix is not None:
-        collection = voyages / run_prefix
-        if not collection.is_dir():
-            return {}
-        return {
-            child.name: child
-            for child in sorted(collection.iterdir(), key=lambda path: path.name)
-            if child.is_dir() and (child / reckoning).is_file()
-        }
     if not voyages.is_dir():
         return {}
     paths: dict[str, Path] = {}
-    for child in sorted(voyages.iterdir(), key=lambda path: path.name):
-        if not child.is_dir():
+    for reckoning_path in sorted(voyages.rglob(reckoning)):
+        voyage_path = reckoning_path.parent
+        relative = voyage_path.relative_to(voyages)
+        if len(relative.parts) not in {1, 2, 3}:
             continue
-        if (child / reckoning).is_file():
-            paths[child.name] = child
-            continue
-        for voyage_path in sorted(child.iterdir(), key=lambda path: path.name):
-            if voyage_path.is_dir() and (voyage_path / reckoning).is_file():
-                paths[voyage_path.name] = voyage_path
+        voyage_id = relative.as_posix()
+        if run_prefix is None or voyage_id.startswith(f"{run_prefix}/"):
+            paths[voyage_id] = voyage_path
     return paths
 
 
@@ -1222,7 +1214,11 @@ def release_voyage(root: Path, voyage_id: str, *, debug_rutter_id: str) -> None:
     if (
         voyage_path.is_symlink()
         or voyage_path.parent.is_symlink()
-        or len(relative.parts) not in {1, 2}
+        or any(
+            voyages_dir.joinpath(*relative.parts[:depth]).is_symlink()
+            for depth in range(1, len(relative.parts))
+        )
+        or len(relative.parts) not in {1, 2, 3}
     ):
         raise ValueError("inventory Voyage working directory is unsafe to release")
     reckoning_path = voyage_path / _RECKONING_NAME
@@ -1235,10 +1231,8 @@ def release_voyage(root: Path, voyage_id: str, *, debug_rutter_id: str) -> None:
     if type(rutter_id) is not str:
         raise ValueError("inventory Voyage reckoning has no Rutter identity")
     if rutter_id == debug_rutter_id:
-        if len(relative.parts) != 2:
-            raise ValueError("debug inventory Voyage is not run-prefixed")
         artifacts_root = root / "artifacts"
-        run_artifacts = artifacts_root / relative.parts[0]
+        run_artifacts = artifacts_root.joinpath(*relative.parts[:-1])
         if (
             artifacts_root.is_symlink()
             or not artifacts_root.is_dir()
@@ -1251,9 +1245,12 @@ def release_voyage(root: Path, voyage_id: str, *, debug_rutter_id: str) -> None:
         if diagnostics_dir.is_symlink() or not diagnostics_dir.is_dir():
             raise ValueError("debug inventory diagnostics directory is unsafe")
         atomic_replace_bytes(
-            diagnostics_dir / f"{voyage_id}.reckoning.json",
+            diagnostics_dir / f"{relative.parts[-1]}.reckoning.json",
             reckoning_bytes,
             allowed_root=run_artifacts,
             mode=0o600,
         )
     shutil.rmtree(voyage_path)
+    run_path = voyage_path.parent
+    if len(relative.parts) >= 2 and run_path.is_dir() and not any(run_path.iterdir()):
+        run_path.rmdir()

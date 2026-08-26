@@ -28,8 +28,22 @@ def _empty_inventory(**extra: object) -> dict[str, object]:
     }
 
 
-def _worker_inventory_path(run_dir: Path, voyage_id: str, prefix: str = "default") -> Path:
-    return run_dir / "artifacts" / prefix / "inventories" / f"{voyage_id}.json"
+def _run_id(voyage_id: str) -> str:
+    return voyage_id.rsplit("/", 1)[0]
+
+
+def _voyage_index(voyage_id: str) -> str:
+    return voyage_id.rsplit("/", 1)[1]
+
+
+def _worker_inventory_path(run_dir: Path, voyage_id: str) -> Path:
+    return (
+        run_dir
+        / "artifacts"
+        / _run_id(voyage_id)
+        / "inventories"
+        / f"{_voyage_index(voyage_id)}.json"
+    )
 
 
 def _write_worker_inventory(path: Path, inventory: dict[str, object]) -> None:
@@ -292,16 +306,16 @@ def test_voyage_introduces_inventory_contract_once_before_packet_reports(
         "cumulative_packets_file": str(
             run_dir
             / "artifacts"
-            / "default"
+            / _run_id(voyage_id)
             / "source-packets"
-            / f"{voyage_id}.txt"
+            / f"{_voyage_index(voyage_id)}.txt"
         ),
         "inventory_file": str(
             run_dir
             / "artifacts"
-            / "default"
+            / _run_id(voyage_id)
             / "inventories"
-            / f"{voyage_id}.json"
+            / f"{_voyage_index(voyage_id)}.json"
         ),
     }
     _write_worker_inventory(
@@ -344,10 +358,10 @@ def test_default_voyage_iterates_packets_and_writes_cumulative_inventory(
         doc_entrypoint=str(doc_entrypoint),
         chunk_count="1",
     )
-    assert voyage_id.startswith("default-voyage-")
+    assert voyage_id.startswith("r-") and voyage_id.endswith("/1")
     assert dispenser.make_voyage_dispenser().get_voyage_ids() == (voyage_id,)
     assert (
-        run_dir / "artifacts" / "default" / "inventory-chunks.json"
+        run_dir / "artifacts" / _run_id(voyage_id) / "inventory-chunks.json"
     ).is_file()
 
     seen_packets: list[str] = []
@@ -403,10 +417,12 @@ def test_default_voyage_iterates_packets_and_writes_cumulative_inventory(
 
     inventory_dispenser.release(voyage_id)
 
-    assert not (run_dir / "voyages" / "default" / voyage_id).exists()
+    assert not (run_dir / "voyages" / voyage_id).exists()
     assert inventory_path.is_file()
     assert source_packets_path.read_text(encoding="utf-8") == cumulative_source
-    assert not (run_dir / "artifacts" / "default" / "diagnostics").exists()
+    assert not (
+        run_dir / "artifacts" / _run_id(voyage_id) / "diagnostics"
+    ).exists()
 
 
 def test_cumulative_inventory_keeps_cross_packet_ids_and_maps_coordinates(
@@ -696,7 +712,7 @@ def test_debug_release_archives_the_exact_terminal_reckoning(
         inventory_source_aliases=str(aliases_path),
     )
     _finish_empty_debug_voyage(inventory_dispenser, voyage_id)
-    voyage_dir = run_dir / "voyages" / run_prefix / voyage_id
+    voyage_dir = run_dir / "voyages" / voyage_id
     reckoning_path = voyage_dir / "inventory-voyage.reckoning.json"
     expected = reckoning_path.read_bytes()
 
@@ -705,9 +721,9 @@ def test_debug_release_archives_the_exact_terminal_reckoning(
     archive = (
         run_dir
         / "artifacts"
-        / run_prefix
+        / _run_id(voyage_id)
         / "diagnostics"
-        / f"{voyage_id}.reckoning.json"
+        / f"{_voyage_index(voyage_id)}.reckoning.json"
     )
     assert archive.read_bytes() == expected
     assert not voyage_dir.exists()
@@ -788,9 +804,9 @@ def test_debug_release_archives_full_attributed_unequal_diagnosis(
         (
             run_dir
             / "artifacts"
-            / run_prefix
+            / _run_id(voyage_id)
             / "diagnostics"
-            / f"{voyage_id}.reckoning.json"
+            / f"{_voyage_index(voyage_id)}.reckoning.json"
         ).read_text(encoding="utf-8")
     )
     diagnostic_runs = [
@@ -846,7 +862,7 @@ def test_debug_release_preserves_working_state_when_archival_fails(
         inventory_source_aliases=str(aliases_path),
     )
     _finish_empty_debug_voyage(inventory_dispenser, voyage_id)
-    voyage_dir = run_dir / "voyages" / run_prefix / voyage_id
+    voyage_dir = run_dir / "voyages" / voyage_id
     reckoning_path = voyage_dir / "inventory-voyage.reckoning.json"
     expected = reckoning_path.read_bytes()
 
@@ -890,7 +906,6 @@ def test_debug_setup_freezes_supplied_gold_and_attaches_diagnosis(
         (
             run_dir
             / "voyages"
-            / "debug"
             / voyage_id
             / "inventory-voyage.reckoning.json"
         ).read_text(encoding="utf-8")
@@ -1333,7 +1348,6 @@ def test_debug_setup_freezes_explicit_source_aliases(
         (
             run_dir
             / "voyages"
-            / "debug"
             / voyage_id
             / "inventory-voyage.reckoning.json"
         ).read_text(encoding="utf-8")
@@ -1362,9 +1376,10 @@ def test_requested_chunk_count_controls_dispensed_voyages(
     )
     assert len(voyage_ids) == 2
     assert len(set(voyage_ids)) == 2
-    assert all(
-        voyage_id.startswith("default-voyage-") for voyage_id in voyage_ids
-    )
+    run_ids = {_run_id(voyage_id) for voyage_id in voyage_ids}
+    assert len(run_ids) == 1
+    assert next(iter(run_ids)).startswith("r-")
+    assert tuple(_voyage_index(voyage_id) for voyage_id in voyage_ids) == ("1", "2")
 
 
 def test_run_prefixes_isolate_voyages_and_artifacts(
@@ -1388,15 +1403,71 @@ def test_run_prefixes_isolate_voyages_and_artifacts(
         chunk_count="1",
     )
 
-    assert baseline_id.startswith("baseline-voyage-")
-    assert retry_id.startswith("retry-voyage-")
+    assert baseline_id.startswith("baseline/r-") and baseline_id.endswith("/1")
+    assert retry_id.startswith("retry/r-") and retry_id.endswith("/1")
     assert inventory_dispenser.get_voyage_ids("baseline") == (baseline_id,)
     assert inventory_dispenser.get_voyage_ids("retry") == (retry_id,)
     assert inventory_dispenser.get_voyage_ids() == (baseline_id, retry_id)
-    assert (run_dir / "voyages" / "baseline" / baseline_id).is_dir()
-    assert (run_dir / "voyages" / "retry" / retry_id).is_dir()
-    assert (run_dir / "artifacts" / "baseline" / "inventory-chunks.json").is_file()
-    assert (run_dir / "artifacts" / "retry" / "inventory-chunks.json").is_file()
+    assert (run_dir / "voyages" / baseline_id).is_dir()
+    assert (run_dir / "voyages" / retry_id).is_dir()
+    assert (
+        run_dir / "artifacts" / _run_id(baseline_id) / "inventory-chunks.json"
+    ).is_file()
+    assert (
+        run_dir / "artifacts" / _run_id(retry_id) / "inventory-chunks.json"
+    ).is_file()
+
+
+def test_reusing_run_prefix_creates_isolated_runs(
+    inventory_run: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A fresh initialization must not overwrite an earlier run's manifest."""
+
+    doc_entrypoint, run_dir = inventory_run
+    monkeypatch.setattr(dispenser, "_STATE_ROOT", run_dir)
+    inventory_dispenser = dispenser.make_voyage_dispenser()
+
+    first = inventory_dispenser.initiate_voyages(
+        run_prefix="repeat",
+        doc_entrypoint=str(doc_entrypoint),
+        chunk_count="2",
+    )
+    second = inventory_dispenser.initiate_voyages(
+        run_prefix="repeat",
+        doc_entrypoint=str(doc_entrypoint),
+        chunk_count="2",
+    )
+
+    first_run = first[0].rsplit("/", 1)[0]
+    second_run = second[0].rsplit("/", 1)[0]
+    assert first == (f"{first_run}/1", f"{first_run}/2")
+    assert second == (f"{second_run}/1", f"{second_run}/2")
+    assert first_run.startswith("repeat/r-")
+    assert second_run.startswith("repeat/r-")
+    assert first_run != second_run
+    assert (run_dir / "artifacts" / first_run / "inventory-chunks.json").is_file()
+    assert (run_dir / "artifacts" / second_run / "inventory-chunks.json").is_file()
+
+
+def test_forced_run_release_removes_run_state_but_retains_artifacts(
+    inventory_run: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    doc_entrypoint, run_dir = inventory_run
+    monkeypatch.setattr(dispenser, "_STATE_ROOT", run_dir)
+    inventory_dispenser = dispenser.make_voyage_dispenser()
+    voyage_ids = inventory_dispenser.initiate_voyages(
+        run_prefix="discard",
+        doc_entrypoint=str(doc_entrypoint),
+        chunk_count="2",
+    )
+    run_id = _run_id(voyage_ids[0])
+
+    inventory_dispenser.release(run_id, force=True)
+
+    assert not (run_dir / "voyages" / run_id).exists()
+    assert (run_dir / "artifacts" / run_id / "inventory-chunks.json").is_file()
 
 
 @pytest.mark.parametrize("chunk_count", ["0", "-1", "many"])

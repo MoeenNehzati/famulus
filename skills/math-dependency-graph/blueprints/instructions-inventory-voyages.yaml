@@ -1,8 +1,8 @@
 schema_version: 6
 node_type: behavioral_source
 id: math-dependency-graph.source.instructions-inventory-voyages
-version: 10
-description: Initializes one run-prefixed inventory Voyage collection from a document entrypoint, introduces each Voyage's inventory instruction and cumulative packet-file path once before applying Compass to its packet reports, collects completed inventory and cumulative source-packet paths, and preserves pre-reference decision bases and terminal attributed debug diagnoses through release.
+version: 11
+description: Initializes one uniquely identified inventory Voyage run from a document entrypoint, introduces each Voyage's inventory instruction and cumulative packet-file path once before applying Compass to its packet reports, collects completed inventory and cumulative source-packet paths, and preserves pre-reference decision bases and terminal attributed debug diagnoses through release.
 gateway:
   language: Markdown
   path: instructions/inventory-voyages.md
@@ -11,20 +11,20 @@ content:
 dependencies: []
 uses_interfaces:
 - interface: math-dependency-graph._rtx.interface.inventory-voyage-dispenser
-  version: 10
-- interface: using-compass.interface.default
   version: 11
+- interface: using-compass.interface.default
+  version: 12
 interfaces:
   math-dependency-graph.source.instructions-inventory-voyages.interface.inventory-voyages:
-    version: 10
-    description: Discover and initialize one run-prefixed inventory Voyage collection, acknowledge each Voyage's one-time inventory instruction and cumulative_packets_file introduction, apply Compass to only its subsequent packet reports, collect completed inventory and cumulative source-packet paths, and release terminal Voyages while retaining those artifacts, debug pre-reference decision bases, and attributed diagnostic reckonings under the run artifacts.
+    version: 11
+    description: Initialize one fresh inventory Voyage run, acknowledge each Voyage's one-time inventory instruction and cumulative_packets_file introduction, apply Compass to only its subsequent packet reports, collect completed inventory and cumulative source-packet paths, and release terminal Voyages while retaining those artifacts, debug pre-reference decision bases, and attributed diagnostic reckonings under the run artifacts.
     content:
     - instructions/inventory-voyages\.md
     uses_interfaces:
     - interface: math-dependency-graph._rtx.interface.inventory-voyage-dispenser
-      version: 10
-    - interface: using-compass.interface.default
       version: 11
+    - interface: using-compass.interface.default
+      version: 12
     contract:
       arguments:
         request:
@@ -63,7 +63,7 @@ interfaces:
         state_effect: read-only
         lifecycle: finite
         consistency:
-          snapshot: Every worker is bound to exactly one immutable Voyage created under the same run prefix from one document snapshot and initialization mode.
+          snapshot: Every worker is bound to exactly one indexed Voyage created under the same fresh run ID from one document snapshot and initialization mode.
         verification:
         - {method: output-schema, output_ref: inventory-paths}
       helpers: []
