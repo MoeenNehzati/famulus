@@ -89,8 +89,21 @@ changed.
 ## Job definitions
 
 Each job has a unique name, description, command, restricted cron schedule,
-enabled flag, and optional success contract. The accepted cron subset is `*`,
-`*/N`, or one bare integer per field; ranges and comma lists are rejected.
+enabled flag, and optional success contract. The platform-neutral job schema
+does not promise one identical Cartesian cron grammar across managed hosts.
+
+Linux accepts exactly five fields. Minute and hour each accept `*`, `*/N` for
+positive `N`, or one bounded bare integer (minute `0` through `59`, hour `0`
+through `23`); day-of-month and month must each be `*`; weekday accepts `*` or
+one bare integer from `0` through `7` (`0` and `7` are Sunday). Ranges and
+comma lists are rejected.
+
+macOS currently supports that same component-wise five-field subset, including
+the Cartesian combinations of accepted minute and hour values. Windows supports
+all-wildcard schedules; `*/N * * * *` for positive `N`; `M * * * *` for a
+bounded minute `M`; and `M H * * D` for bounded `M`, bounded hour `H`, and an
+optional weekday `D` (`*` or `0` through `7`). It does not support stepped or
+wildcard minutes combined with a fixed hour or weekday, nor a stepped hour.
 
 A missing success contract means exit-code-only success. If the job writes its
 own status, require the expected inner status. Tolerated transient failures

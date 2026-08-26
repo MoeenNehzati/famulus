@@ -56,6 +56,194 @@ def test_linux_calendar_renders_stepped_hours_with_a_systemd_start_value() -> No
     assert native.cron_to_systemd("0 */3 * * *") == "*-*-* 00/3:00:00"
 
 
+def test_linux_calendar_collapses_a_full_minute_cycle_to_zero() -> None:
+    assert native.cron_to_systemd("*/60 * * * *") == "*-*-* *:00:00"
+
+
+def test_linux_calendar_collapses_a_full_hour_cycle_to_zero() -> None:
+    assert native.cron_to_systemd("0 */24 * * *") == "*-*-* 0:00:00"
+
+
+@pytest.mark.parametrize(
+    ("cron", "calendar"),
+    (
+        ("*/15 9 * * *", "*-*-* 9:00/15:00"),
+        ("* 9 * * *", "*-*-* 9:*:00"),
+        ("*/15 */2 * * *", "*-*-* 00/2:00/15:00"),
+        ("* */2 * * 0", "Sun *-*-* 00/2:*:00"),
+        ("* */2 * * 7", "Sun *-*-* 00/2:*:00"),
+    ),
+)
+def test_linux_calendar_renders_minute_and_hour_constraints_independently(
+    cron: str, calendar: str
+) -> None:
+    assert native.cron_to_systemd(cron) == calendar
+
+
+@pytest.mark.parametrize(
+    "cron",
+    (
+        "0 * * *",
+        "*/0 * * * *",
+        "0 */-1 * * *",
+        "*/one * * * *",
+        "0 */1.5 * * *",
+        "60 * * * *",
+        "0 24 * * *",
+        "1-2 * * * *",
+        "1,2 * * * *",
+        "0 1 1 * *",
+        "0 1 * 1 *",
+        "0 1 * * 8",
+        "0 1 * * -1",
+    ),
+)
+def test_linux_calendar_rejects_outside_the_managed_subset(cron: str) -> None:
+    with pytest.raises(ValueError):
+        native.cron_to_systemd(cron)
+
+
+def test_healthcheck_sentinel_composes_the_exact_managed_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    schedule = ManagedSchedule(
+        **{
+            **_schedule(tmp_path).__dict__,
+            "environment": {"HOME": "/home/alice", "PATH": "/opt/famulus/bin"},
+        }
+    )
+    monkeypatch.setattr(native.os, "getuid", lambda: 1234)
+
+    assert native._sentinel_line(schedule) == (
+        "0 */4 * * * HOME=/home/alice PATH=/opt/famulus/bin "
+        f"{schedule.runtime_resolver} -m officina.recurring.healthcheck "
+        f"--descriptor {schedule.descriptor_path} --log-root {schedule.log_root} "
+        f"--cron >> {schedule.log_root / 'healthcheck' / 'run.log'} 2>&1 || "
+        "XDG_RUNTIME_DIR=/run/user/1234 "
+        "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1234/bus "
+        "/usr/bin/notify-send --urgency=critical 'Recurring tasks need attention' "
+        f"\"$(cat {schedule.log_root / 'healthcheck' / 'last-failure.txt'} "
+        "2>/dev/null || echo 'The recurring health check could not run.')\" "
+        "# ai-recurring-healthcheck"
+    )
+
+
+def test_healthcheck_sentinel_replaces_once_and_preserves_unrelated_crontab(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    schedule = _schedule(tmp_path)
+    current = {
+        "value": (
+            'MAILTO=""\n'
+            "15 * * * * unrelated-command\n"
+            "0 */4 * * * stale # ai-recurring-healthcheck\n"
+        )
+    }
+    writes: list[str] = []
+
+    monkeypatch.setattr(native, "_read_crontab", lambda: current["value"])
+
+    def write_crontab(value: str) -> None:
+        writes.append(value)
+        current["value"] = value
+
+    monkeypatch.setattr(native, "_write_crontab", write_crontab)
+
+    native._update_sentinel(schedule, remove=False)
+    expected = (
+        'MAILTO=""\n'
+        "15 * * * * unrelated-command\n"
+        f"{native._sentinel_line(schedule)}\n"
+    )
+    assert current["value"] == expected
+
+    native._update_sentinel(schedule, remove=False)
+    assert current["value"] == expected
+    assert writes == [expected]
+
+
+def test_healthcheck_sentinel_refuses_to_overwrite_an_unreadable_crontab(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[list[str]] = []
+
+    def unreadable_crontab(argv: list[str], **_kwargs: object):
+        calls.append(argv)
+        return subprocess.CompletedProcess(
+            argv,
+            1,
+            stdout="",
+            stderr="crontab: user is not allowed to use this program",
+        )
+
+    monkeypatch.setattr(native.subprocess, "run", unreadable_crontab)
+
+    with pytest.raises(RuntimeError, match="refusing to rewrite unreadable crontab"):
+        native._update_sentinel(_schedule(tmp_path), remove=False)
+    assert calls == [["crontab", "-l"]]
+
+
+def test_linux_service_invokes_the_managed_executor_without_a_shell(
+    tmp_path: Path,
+) -> None:
+    schedule = ManagedSchedule(**{**_schedule(tmp_path).__dict__, "environment": {}})
+    service = native.render_linux_service(
+        schedule,
+        {
+            "name": "demo",
+            "description": "Managed demo",
+            "command": "invoke-skill demo",
+            "schedule": "0 * * * *",
+            "enabled": True,
+        },
+    )
+
+    assert service.splitlines()[-1] == (
+        f'ExecStart="{schedule.runtime_resolver}" "-m" '
+        '"officina.recurring.executor" "--descriptor" '
+        f'"{schedule.descriptor_path}" "--job" "demo" "--log-root" '
+        f'"{schedule.log_root}"'
+    )
+    assert all(
+        fragment not in service
+        for fragment in ("/bin/bash", "bash -c", '"bash" "-c"', ">>", "2>&1", " < ")
+    )
+
+
+def test_windows_wrapper_uses_crlf_for_environment_and_command_lines(
+    tmp_path: Path,
+) -> None:
+    schedule = ManagedSchedule(
+        **{
+            **_schedule(tmp_path).__dict__,
+            "bootstrap_python": Path("/opt/famulus/python.exe"),
+            "environment": {"HOME": "/home/alice", "PATH": "/opt/famulus/bin"},
+        }
+    )
+    wrapper = native.render_windows_wrapper(
+        schedule,
+        {
+            "name": "demo",
+            "command": "invoke-skill demo",
+            "schedule": "0 * * * *",
+            "enabled": True,
+        },
+    )
+    lines = wrapper.splitlines(keepends=True)
+
+    assert lines and all(line.endswith("\r\n") for line in lines)
+    assert 'set "HOME=/home/alice"\r\n' in lines
+    assert 'set "PATH=/opt/famulus/bin"\r\n' in lines
+    assert (
+        f'"{schedule.bootstrap_python}" "{schedule.runtime_resolver}" "-m" '
+        '"officina.recurring.executor" "--descriptor" '
+        f'"{schedule.descriptor_path}" "--job" "demo" "--log-root" '
+        f'"{schedule.log_root}" >> '
+        f'"{schedule.log_root / "demo" / "scheduler.log"}" 2>&1\r\n'
+    ) in lines
+    assert lines[-1] == "exit /b %errorlevel%\r\n"
+
+
 def test_control_serializes_each_mutating_operation_with_context_lifecycle_lock(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

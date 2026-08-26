@@ -40,18 +40,7 @@ class WindowsPythonNotFoundError(RuntimeError):
 
 
 def _resolve_python_interpreter() -> str:
-    """Resolve a concrete, absolute path to a python interpreter on PATH.
-
-    Tries ``python`` then falls back to the ``py`` launcher, raising a clear
-    error if neither is found rather than silently baking a bare,
-    unqualified name into the generated dispatcher.bat that Windows can't
-    validate without relying on ambient PATH resolution at run time.
-
-    Mirrors ``_schedule_backend._windows_backend._resolve_python_interpreter``
-    (recurring-tasks' equivalent fix for the same underlying problem); not
-    imported directly since install-assistant-tools and recurring-tasks keep
-    their ``_rtx`` internals independent of one another.
-    """
+    """Resolve an absolute Python interpreter path for generated launchers."""
     resolved = shutil.which("python") or shutil.which("py")
     if not resolved:
         raise WindowsPythonNotFoundError(

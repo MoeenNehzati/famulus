@@ -65,7 +65,6 @@ NATIVE_KEYRING_TESTS = {
     "test_default_backend_native_roundtrip_when_available"
 }
 NATIVE_SCHEDULER_TESTS = {
-    "skills/recurring-tasks/_rtx/tests/test_scheduler_live_smoke.py",
     "tests/test_officina_recurring_managed.py",
 }
 PRECOMMIT_EXCLUDED_TESTS = {
@@ -84,7 +83,7 @@ PORTABILITY_TESTS = (
     "tests/test_officina_atomic_files.py::test_windows_native_secure_create_replace_append_and_acl",
     "tests/test_dispatcher_direct_authorization.py::test_direct_python_process_target_keeps_gateway_and_entry_separate",
     "tests/test_officina_git_provenance.py::test_git_test_repository_preserves_exact_bytes_under_ambient_autocrlf",
-    "skills/recurring-tasks/_rtx/tests/test_schedule_backend.py::test_linux_sync_writes_units_and_enables_timer",
+    "tests/test_officina_recurring_managed.py::test_native_renderers_preserve_only_exact_bounded_environment",
     "tests/test_officina_blueprint_graph.py::test_content_ownership_accepts_equivalent_repository_alias",
     "tests/test_repository_validator_checks.py::test_run_all_isolates_unmerged_index_and_restores_git_environment",
 )

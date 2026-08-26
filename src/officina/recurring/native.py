@@ -62,17 +62,58 @@ def _environment(schedule: ManagedSchedule) -> list[tuple[str, str]]:
 
 
 def cron_to_systemd(value: str) -> str:
-    minute, hour, dom, month, dow = value.split()
+    fields = value.split()
+    if len(fields) != 5:
+        raise ValueError("systemd calendar requires exactly five cron fields")
+    minute, hour, dom, month, dow = fields
     if dom != "*" or month != "*":
         raise ValueError("only wildcard day-of-month and month are supported")
+
+    def render_time_field(field: str, upper: int, name: str, padded: bool) -> str:
+        """Render one validated cron time field for a systemd calendar.
+
+        Intent
+        ------
+        Convert one supported cron time field into systemd calendar syntax.
+
+        Rationale
+        ---------
+        Keep the accepted cron subset explicit while preserving the rendered
+        schedule's intended time values.
+
+        Pseudocode
+        ----------
+        - set rendered_time_field = wildcard, supported step, or bounded integer representation
+        - return rendered_time_field
+
+        Wraps
+        -----
+        - none
+        """
+        if field == "*":
+            return "*"
+        step = re.fullmatch(r"\*/([0-9]+)", field)
+        if step:
+            interval = int(step.group(1))
+            if interval > 0:
+                if interval >= upper + 1:
+                    return f"{0:02d}" if padded else "0"
+                return f"00/{interval}"
+        elif re.fullmatch(r"[0-9]+", field):
+            selected = int(field)
+            if selected <= upper:
+                return f"{selected:02d}" if padded else str(selected)
+        raise ValueError(f"unsupported {name}: {field}")
+
     weekdays = {"0": "Sun", "1": "Mon", "2": "Tue", "3": "Wed", "4": "Thu", "5": "Fri", "6": "Sat", "7": "Sun"}
-    day = "" if dow == "*" else weekdays[dow] + " "
-    if minute.startswith("*/"):
-        clock = f"*:00/{int(minute[2:])}:00"
-    else:
-        rendered_hour = f"00/{int(hour[2:])}" if hour.startswith("*/") else hour
-        clock = f"{rendered_hour if rendered_hour != '*' else '*'}:{int(minute):02d}:00"
-    return f"{day}*-*-* {clock}"
+    day = "" if dow == "*" else weekdays.get(dow)
+    if day is None:
+        raise ValueError(f"invalid day of week: {dow}")
+    return (
+        f"{day + ' ' if day else ''}*-*-* "
+        f"{render_time_field(hour, 23, 'hour', False)}:"
+        f"{render_time_field(minute, 59, 'minute', True)}:00"
+    )
 
 
 def linux_names(job_name: str, installation_id: str) -> tuple[str, str]:

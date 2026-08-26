@@ -4,8 +4,6 @@ from pathlib import Path
 
 import yaml
 
-from . import test_sync_units as sync_tests
-
 SKILL_DIR = Path(__file__).resolve().parents[1]
 RUNTIME_DIR = (
     SKILL_DIR
@@ -45,11 +43,3 @@ def test_recurring_tasks_blueprint_has_no_shell_runtime_interfaces():
 def test_recurring_tasks_runtime_tree_has_no_posix_shell_files():
     shell_files = sorted(path.name for path in RUNTIME_DIR.glob("*.sh"))
     assert shell_files == []
-
-
-def test_generated_services_do_not_use_posix_shell(tmp_path):
-    sync_tests._run_sync(sync_tests.JOBS_ONE_ENABLED, str(tmp_path))
-    service = (tmp_path / "ai-test-job.service").read_text(encoding="utf-8")
-    assert "/bin/bash" not in service
-    assert "bash -c" not in service
-    assert ">>" not in service
