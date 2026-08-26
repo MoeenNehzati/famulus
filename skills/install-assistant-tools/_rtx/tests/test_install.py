@@ -105,13 +105,17 @@ def test_dev_mode_requires_repo_path_non_interactively(tmp_path, monkeypatch):
 
 def test_dev_mode_with_repo_path_chains_dev_link(tmp_path, monkeypatch):
     calls = []
+    runtime_calls = []
     monkeypatch.setattr(install.scaffold, "run", lambda **kw: calls.append(("scaffold", kw)))
     monkeypatch.setattr(install.dev_link, "run", lambda **kw: calls.append(("dev_link", kw)))
     monkeypatch.setattr(install.launchers, "run", lambda **kw: calls.append(("launchers", kw)))
-    repo_path = tmp_path / "myrepo"
+    monkeypatch.setattr(
+        install.managed_runtime, "build_candidate_release", lambda **kw: runtime_calls.append(kw)
+    )
+    repo_path = Path(install.__file__).resolve().parents[3]
 
     status = install.run(
-        home=tmp_path, dry_run=True, non_interactive=True,
+        home=tmp_path, dry_run=False, non_interactive=True,
         dev_mode=True, repo_path=repo_path, agents=["assistant"], default_llm="codex",
     )
 
@@ -120,6 +124,7 @@ def test_dev_mode_with_repo_path_chains_dev_link(tmp_path, monkeypatch):
     assert names == ["scaffold", "dev_link", "launchers"]
     dev_link_kwargs = dict(calls[1][1])
     assert dev_link_kwargs["repo_root"] == repo_path
+    assert runtime_calls[0]["editable"] is True
     launchers_kwargs = dict(calls[2][1])
     assert launchers_kwargs["agents"] == ["assistant"]
     assert launchers_kwargs["default_llm"] == "codex"
@@ -178,6 +183,7 @@ def test_non_interactive_install_uses_checked_in_core_lock(tmp_path, monkeypatch
     assert calls[0]["lock_input_path"].name == "requirements-core.in"
     assert calls[0]["lock_path"].name == "requirements-core.lock"
     assert calls[0]["uv_version"] == "0.11.29"
+    assert calls[0]["editable"] is False
 
 
 def test_non_interactive_install_rejects_optional_selection(tmp_path, monkeypatch):

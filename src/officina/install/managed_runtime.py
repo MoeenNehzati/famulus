@@ -3,7 +3,8 @@
 The blueprint-derived dependency manifest is accepted only with its matching
 generated, exact, hash-checked core lock. Candidate construction uses the
 pinned managed Python patch, installs the lock with hash enforcement, and
-installs the locally built Officina wheel without resolving dependencies.
+installs either the locally built Officina wheel or an explicit repository
+editably without resolving dependencies.
 
 `build_candidate_release` is called from `_phase_entry.py`, ahead of
 `scaffold.run`, so a real managed-runtime release (and the dependency-free
@@ -280,9 +281,10 @@ def _create_release_venv(*, uv_bin: Path, venv_dir: Path, python_version: str) -
 
 
 def _run_dependency_install(
-    *, uv_bin: Path, python_bin: Path, packages: tuple[str, ...], no_deps: bool = False
+    *, uv_bin: Path, python_bin: Path, packages: tuple[str, ...], no_deps: bool = False,
+    editable: bool = False,
 ) -> None:
-    """Install the supplied local artifact(s) in one atomic uv batch call.
+    """Install supplied local artifact(s) in one atomic uv batch call.
 
     Fails fast: any non-zero exit raises ManagedRuntimeError, unlike the
     previous per-package WARN-and-continue loop.
@@ -292,6 +294,8 @@ def _run_dependency_install(
     argv = [str(uv_bin), "pip", "install", "--python", str(python_bin)]
     if no_deps:
         argv.append("--no-deps")
+    if editable:
+        argv.extend(("--no-build-isolation", "--editable"))
     result = _run_uv(
         [*argv, *packages],
         timeout=_dependency_install_timeout_seconds(),
@@ -671,6 +675,7 @@ def build_candidate_release(
     python_version: str,
     repo_root: Path | None = None,
     optional_module_ids: tuple[str, ...] = (),
+    editable: bool = False,
 ) -> RuntimePointer:
     """Create a new release directory, provision its managed interpreter,
     install its locked Python dependencies, install Officina, verify the
@@ -680,11 +685,11 @@ def build_candidate_release(
     value from install-info.toml (see officina.install.install_info); it is
     passed straight through to ``uv venv --python``.
 
-    Production callers pass ``repo_root`` explicitly. That path is validated,
-    built as a wheel, installed, probed in isolation, and recorded by wheel
-    digest plus Git revision or copied-source fingerprint. The omitted-root
-    compatibility path retains the target branch's direct package-copy
-    behavior for low-level callers.
+    Production callers pass ``repo_root`` explicitly. That path is validated
+    and built as a wheel. By default the retained wheel is installed; editable
+    candidates install the explicit repository instead. Editable mode requires
+    an explicit ``repo_root``. The omitted-root compatibility path retains the
+    target branch's direct package-copy behavior for low-level callers.
 
     Core-only candidates use the checked-in universal lock.  A requested
     optional module selection is compiled into a release-local hash-checked
@@ -697,6 +702,9 @@ def build_candidate_release(
     resolver and its trust sidecar are deployed *before* activation for exactly
     this reason: a deployment failure must prevent activation, not follow it.
     """
+    if editable and repo_root is None:
+        raise ManagedRuntimeError("editable managed runtime requires explicit repo_root")
+
     selected_module_ids = tuple(sorted(set(optional_module_ids)))
     selected_lock_input_path = lock_input_path
     selected_lock_path = lock_path
@@ -764,8 +772,9 @@ def build_candidate_release(
         _run_dependency_install(
             uv_bin=uv_bin,
             python_bin=python_bin,
-            packages=(str(wheel),),
+            packages=(str(repo_root) if editable else str(wheel),),
             no_deps=True,
+            editable=editable,
         )
         _validate_candidate_runtime(python_bin=python_bin)
         python_identity = _candidate_python_identity(python_bin=python_bin)

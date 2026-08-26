@@ -31,8 +31,8 @@ dependencies:
   reason: Imports Python source from _rtx/_install_scaffold.py.
   source: install-assistant-tools._rtx.source.rtx-install-scaffold
   version: 1
-description: Runs the phase-one installer sequence after obtaining the development-mode
-  choice from the caller.
+description: Runs the phase-one installer sequence and forwards the caller's development-mode
+  choice to managed-runtime candidate construction.
 gateway:
   language: Python
   path: _phase_entry.py

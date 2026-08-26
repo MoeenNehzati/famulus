@@ -17,7 +17,8 @@ dependencies:
   version: 1
 description: Pools runtime_dependencies.json schema v2 into a generated universal lock,
   validates exact pins and hashes, and builds a versioned managed-runtime candidate
-  containing that lock and a verified first-party Officina wheel before atomic activation.
+  containing that lock and either a first-party Officina wheel or an editable explicit
+  repository checkout before atomic activation.
 gateway:
   language: Python
   path: managed_runtime.py
@@ -110,7 +111,7 @@ interfaces:
             access: read-write
         repo-root:
           description: Canonical repository root containing the Officina source artifact
-            and validated officina.toml configuration.
+            and validated officina.toml configuration; required when editable is true.
           required: false
           sensitivity: user-private
           direct_io_ref: repository-blueprints
@@ -120,6 +121,13 @@ interfaces:
             relative_to: caller-cwd
             must_exist: true
             access: read
+        editable:
+          description: Install the explicit repo-root editably instead of installing the
+            retained wheel. Defaults to false.
+          required: false
+          sensitivity: public
+          type:
+            kind: boolean
         uv-bin:
           description: Path to the managed uv binary used to run the batch dependency
             install, used only for build-candidate-release.

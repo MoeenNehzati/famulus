@@ -653,7 +653,10 @@ def test_deploy_resolver_writes_through_atomic_replace_bytes_not_plain_copy(monk
     assert os.access(resolver_path, os.X_OK)
 
 
-def test_repo_candidate_installs_verified_officina_wheel_before_activation(monkeypatch, tmp_path):
+@pytest.mark.parametrize("editable", [False, True])
+def test_repo_candidate_installs_selected_officina_source_before_activation(
+    monkeypatch, tmp_path, editable
+):
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
     (repo_root / "skills").mkdir()
@@ -684,6 +687,7 @@ def test_repo_candidate_installs_verified_officina_wheel_before_activation(monke
         uv_bin=FAKE_UV_BIN,
         python_version="3.11",
         repo_root=repo_root,
+        editable=editable,
     )
 
     build_index = next(i for i, call in enumerate(calls) if call[1] == "build")
@@ -691,8 +695,15 @@ def test_repo_candidate_installs_verified_officina_wheel_before_activation(monke
     probe_indices = [i for i, call in enumerate(calls) if len(call) > 1 and call[1] == "-I"]
     assert install_indices[0] < build_index < install_indices[1] < min(probe_indices)
     assert "--require-hashes" in calls[install_indices[0]]
-    assert any(value.endswith(".whl") for value in calls[install_indices[1]])
-    assert "--no-deps" in calls[install_indices[1]]
+    officina_install = calls[install_indices[1]]
+    assert "--no-deps" in officina_install
+    if editable:
+        assert officina_install[-4:] == [
+            "--no-deps", "--no-build-isolation", "--editable", str(repo_root.resolve()),
+        ]
+    else:
+        assert any(value.endswith(".whl") for value in officina_install)
+        assert "--editable" not in officina_install
     for index in probe_indices:
         assert "PYTHONPATH" not in call_kwargs[index]["env"]
         assert call_kwargs[index]["env"]["PYTHONNOUSERSITE"] == "1"

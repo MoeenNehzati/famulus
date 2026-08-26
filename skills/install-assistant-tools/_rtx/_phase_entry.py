@@ -141,7 +141,7 @@ def _ensure_managed_uv(*, info, paths, platform_name: str) -> int:
 
 
 def _build_managed_runtime_candidate(
-    *, repo_root: Path, home: Path, optional_module_ids: tuple[str, ...]
+    *, repo_root: Path, home: Path, optional_module_ids: tuple[str, ...], editable: bool
 ) -> int:
     """Build and activate a managed-runtime candidate release before scaffold
     runs, so the dispatcher/invoke-skill launchers scaffold.run installs have
@@ -187,6 +187,7 @@ def _build_managed_runtime_candidate(
             python_version=info.managed_python,
             repo_root=repo_root,
             optional_module_ids=optional_module_ids,
+            editable=editable,
         )
     except (managed_runtime.ManagedRuntimeError, runtime_pointer.RuntimePointerError) as exc:
         log(f"Managed-runtime candidate build failed: {exc}")
@@ -346,7 +347,10 @@ def run(
         log("(dry-run) Would build and activate a managed-runtime candidate release.")
     else:
         candidate_status = _build_managed_runtime_candidate(
-            repo_root=repo_root, home=home, optional_module_ids=optional_module_ids
+            repo_root=repo_root,
+            home=home,
+            optional_module_ids=optional_module_ids,
+            editable=dev_mode,
         )
         if candidate_status:
             log()
