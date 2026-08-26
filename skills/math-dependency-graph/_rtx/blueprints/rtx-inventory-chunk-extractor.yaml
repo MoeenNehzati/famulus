@@ -192,5 +192,5 @@ platform_support:
 runtime_dependencies: []
 schema_version: 6
 uses_interfaces: []
-version: 8
+version: 9
 maturity: stable

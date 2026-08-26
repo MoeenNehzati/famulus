@@ -130,6 +130,7 @@ class SourceRow:
     source_file: str
     line: int
     text: str
+    chunk_row: int
 
 
 @dataclass(frozen=True)
@@ -140,6 +141,7 @@ class DocumentSource:
     files: tuple[Path, ...]
     rows: tuple[SourceRow, ...]
     anchors: tuple[dict[str, object], ...]
+    packet_anchors: tuple[dict[str, object], ...]
     unresolved: tuple[str, ...]
     cycles: tuple[str, ...]
 
@@ -194,7 +196,7 @@ def collect_document_source(entrypoint: Path) -> DocumentSource:
         searchable_by_path.setdefault(path, searchable)
         label = source_label(path, project_root)
         for line_number, text in enumerate(searchable, start=1):
-            rows.append(SourceRow(label, line_number, text))
+            rows.append(SourceRow(label, line_number, text, len(rows) + 1))
             for match in SOURCE_INCLUDE_RE.finditer(text):
                 include_name = match.group("braced") or match.group("plain") or ""
                 child = resolve_source_include(include_name, path, project_root)
@@ -228,11 +230,29 @@ def collect_document_source(entrypoint: Path) -> DocumentSource:
             if wrapper is not None:
                 anchor["wrapper"] = wrapper
             anchors.append(anchor)
+    packet_anchors = list(anchors)
+    for path in discovered:
+        label = source_label(path, project_root)
+        lines = searchable_by_path[path]
+        starts: list[int] = []
+        for line_number, text in enumerate(lines, start=1):
+            if re.search(r"\\begin\{proof\}", text):
+                starts.append(line_number)
+            if re.search(r"\\end\{proof\}", text) and starts:
+                packet_anchors.append(
+                    {
+                        "source_file": label,
+                        "start_line": starts.pop(),
+                        "end_line": line_number,
+                        "environment": "proof",
+                    }
+                )
     return DocumentSource(
         entrypoint=entrypoint,
         files=tuple(discovered),
         rows=tuple(rows),
         anchors=tuple(anchors),
+        packet_anchors=tuple(packet_anchors),
         unresolved=tuple(unresolved),
         cycles=tuple(cycles),
     )
@@ -253,6 +273,23 @@ def _inside_anchor_boundary(
     )
 
 
+def _at_anchor_boundary(
+    previous: SourceRow,
+    current: SourceRow,
+    anchors: tuple[dict[str, object], ...],
+) -> bool:
+    if previous.source_file != current.source_file:
+        return False
+    return any(
+        anchor["source_file"] == current.source_file
+        and (
+            int(anchor["start_line"]) == current.line
+            or int(anchor["end_line"]) == previous.line
+        )
+        for anchor in anchors
+    )
+
+
 def _packet_rows(
     rows: tuple[SourceRow, ...],
     anchors: tuple[dict[str, object], ...],
@@ -267,11 +304,18 @@ def _packet_rows(
     active_chars = 0
     for row in rows:
         row_chars = len(row.text) + 1
-        if (
+        file_boundary = bool(active and active[-1].source_file != row.source_file)
+        size_boundary = bool(
             active
             and active_chars + row_chars > packet_chars
+            and (
+                not active[-1].text.strip()
+                or _at_anchor_boundary(active[-1], row, anchors)
+                or bool(re.match(r"\s*(?:#{1,6}\s|\\(?:sub)*section\b)", row.text))
+            )
             and not _inside_anchor_boundary(active[-1], row, anchors)
-        ):
+        )
+        if file_boundary or size_boundary:
             packets.append(active)
             active = []
             active_chars = 0
@@ -285,13 +329,7 @@ def _packet_rows(
 
 
 def _render_packet(rows: list[SourceRow]) -> str:
-    rendered: list[str] = []
-    current_source: str | None = None
-    for row in rows:
-        if row.source_file != current_source:
-            rendered.append(f"@@ source: {row.source_file}")
-            current_source = row.source_file
-        rendered.append(f"{row.line:04d} | {row.text}")
+    rendered = [f"{row.chunk_row:06d} | {row.text}" for row in rows]
     return "\n".join(rendered) + "\n"
 
 
@@ -399,12 +437,28 @@ def extract_inventory_chunks(
     source = collect_document_source(entrypoint)
     if source.unresolved:
         raise ValueError("unresolved TeX inputs: " + "; ".join(source.unresolved))
-    packets = _packet_rows(source.rows, source.anchors, packet_chars)
+    packets = _packet_rows(source.rows, source.packet_anchors, packet_chars)
     assignments = _partition_packets(packets, workers)
     output_dir = output_dir.resolve()
     chunks: list[dict[str, object]] = []
     for chunk_number, assigned_packets in enumerate(assignments, start=1):
         chunk_id = f"inventory-{chunk_number:03d}"
+        next_chunk_row = 1
+        normalized_packets: list[list[SourceRow]] = []
+        for packet in assigned_packets:
+            normalized_packet: list[SourceRow] = []
+            for row in packet:
+                normalized_packet.append(
+                    SourceRow(
+                        row.source_file,
+                        row.line,
+                        row.text,
+                        next_chunk_row,
+                    )
+                )
+                next_chunk_row += 1
+            normalized_packets.append(normalized_packet)
+        assigned_packets = normalized_packets
         all_rows = [row for packet in assigned_packets for row in packet]
         spans = _spans(all_rows)
         files = list(dict.fromkeys(row.source_file for row in all_rows))
@@ -417,7 +471,11 @@ def extract_inventory_chunks(
                     "packet_index": packet_number,
                     "text": text,
                     "coordinates": [
-                        {"source_file": row.source_file, "line": row.line}
+                        {
+                            "chunk_row": row.chunk_row,
+                            "source_file": row.source_file,
+                            "line": row.line,
+                        }
                         for row in packet_rows
                     ],
                     "source_bytes": len(text.encode("utf-8")),
@@ -441,12 +499,6 @@ def extract_inventory_chunks(
                 "chunk_id": chunk_id,
                 "chunk_path": str(chunk_path.resolve()),
                 "chunk_sha256": hashlib.sha256(chunk_bytes).hexdigest(),
-                "fragment_path": str(
-                    (output_dir / "inventories" / f"{chunk_id}.json").resolve()
-                ),
-                "progress_path": str(
-                    (output_dir / "progress" / f"{chunk_id}.progress.md").resolve()
-                ),
                 "files": files,
                 "spans": spans,
                 "anchors": list(chunk_payload["anchors"]),

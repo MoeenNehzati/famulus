@@ -6,18 +6,57 @@ Make one concise, recall-first inventory of possible nodes and direct dependency
 
 Inventory is discovery, not final graph construction. Retain uncertain but source-grounded mathematics concisely; the extract pass resolves identities, merges duplicates, and prunes indirect or irrelevant material. Never invent a node or edge merely to improve coverage.
 
+## How you receive source
+
+You never open source files. The assigned source reaches you as **packets**. Each
+report presents exactly one text string whose rows are numbered
+`NNNNNN | <source text>`. The numbers are opaque chunk-local coordinates, not
+source-file line numbers. Use them in every location as `[start_row, end_row]`.
+You neither know nor construct source-file identities; transport maps the row
+coordinates after submission.
+
+`cumulative_packets_file` holds every packet you have been shown so far, in order.
+It never contains source ahead of your cursor, and it is your only record of
+packets you have already passed. `inventory_file` is your durable cumulative
+inventory and your final output. You, not transport, create and update it.
+
+Your **cursor** is the reading unit you are currently on. It advances one unit
+at a time and never moves backward.
+
+The current packet and `cumulative_packets_file` are your only authorized views
+of the source. Never inspect repository files, schemas, gold answers, baselines,
+transport state, or any other artifact.
+
 ## Output contract
 
-Read `inventory.schema.json` completely before reading source. Maintain one cumulative schema-valid JSON object with:
+Keep one cumulative JSON object in `inventory_file`:
 
-- `ir_version: 3`;
-- the packet's exact `chunk_id`;
-- `files`: every distinct owned source path, in first-appearance order;
-- cumulative `nodes`, `edges`, and `gaps` arrays.
+```json
+{"nodes":[],"edges":[],"gaps":[]}
+```
 
-Write only to the supplied output and progress paths. The final JSON must validate against `inventory.schema.json`.
+Create it before the first packet report. After each packet, update that file
+first. Retain prior IDs and records, except for uniquely justified forward
+endpoint reconciliation, and append newly discovered records. Transport maps
+opaque row coordinates to canonical source locations only after your final
+update.
 
-Before the semantic pass, scan only the packet's assigned-span markers to build `files`. Write and validate the empty cumulative fragment. Then append an `initialized` progress line with a timestamp read from an available clock at append time. This marker scan is not a source-reading pass.
+The report is separate diagnostic evidence. Return only the records newly
+appended while processing the current packet:
+
+The response has this top-level shape:
+
+```json
+{"outcome":"reported","nodes":[],"edges":[],"gaps":[]}
+```
+
+Every location, including locations nested in assumption scopes and references,
+is exactly `[start_row, end_row]`, with positive row numbers, `start_row <=
+end_row`, and both endpoints have already been displayed. Use cumulative local
+IDs `n1`, `n2`, ... for nodes, `d1`, `d2`, ... for edges, and `g1`, `g2`, ...
+for gaps. A resolved endpoint is `{"local_node":"nN"}`. The records returned
+in a report must equal the new suffix appended to the corresponding arrays in
+`inventory_file`. Additional properties are forbidden.
 
 ## The single forward loop
 
@@ -29,14 +68,15 @@ Start at the first assigned source line and move monotonically to the final assi
 - one standalone document-defined or otherwise opaque TeX command that may denote an author-visible mathematical object; or
 - one prose paragraph or displayed statement inside a proof.
 
-A LaTeX section or subsection command and a Markdown heading supply context for the units that follow; neither is itself a graph-reading unit, and neither makes the whole section one unit. Split a proof into its successive paragraphs and displays while retaining the result being proved as their owner. Boundary context may explain an owned unit but never owns a record. Do not read the whole chunk first, prepare a separate census, or return for a second semantic pass.
+A LaTeX section or subsection command and a Markdown heading supply context for the units that follow; neither is itself a graph-reading unit, and neither makes the whole section one unit. Split a proof into its successive paragraphs and displays while retaining the result being proved as their owner. Boundary context may explain an owned unit but never owns a record. Do not read the whole chunk before starting, do not prepare a separate census before the loop, and do not make a second semantic pass over the chunk. Bounded look-back into `cumulative_packets_file`, described under Looking back, is not a second pass.
 
-Keep at most one unfinished node spanning adjacent units. At every reading unit, perform these steps in order before advancing:
+Keep at most one unfinished node spanning adjacent units. At every reading unit,
+perform these steps in order before advancing:
 
 1. **Recognize the unit.** Identify its owning mathematical object or result. A proof or restatement belongs to the result it establishes, including a result declared outside this chunk.
 2. **Handle a bounded formal block first.** If the unit is an explicitly delimited TeX environment, Markdown mathematical admonition, or document-defined mathematical block, make an explicit candidate-or-omission decision. Theorem-like and definition-like blocks default to candidates. Omit only a purely navigational block or a technical wrapper duplicating an inner author-visible statement.
 3. **Check all six discovery slots.** Formal claim; reusable prose setup; assumption or hypothesis; named mathematical tool; proof use; exposition or application. One unit may fill several slots. Finding one signal does not end the check.
-4. **Record direct prerequisites.** Emit one lead for every distinct premise stated or used for the owning result. Use the invariant direction prerequisite `from` -> dependent `to`. Do not replace several premises with one vague lead.
+4. **Record direct prerequisites.** Emit one lead for every distinct premise stated or used. Its dependent is the owning proof entity when one is retained, otherwise the directly using result. Use the invariant direction prerequisite `from` -> dependent `to`. Do not replace several premises with one vague lead.
 5. **Account and advance.** Every observed signal must now appear as a node, edge, or precise gap. Use `none` only if all six slots are absent.
 
 ### Slot 1: formal claim or bounded formal block
@@ -62,21 +102,40 @@ Retain a named or defined map, set, event, partition, correspondence, objective,
 
 ### Slot 3: assumption or hypothesis
 
-Retain standing assumptions, scoped conditions, theorem hypotheses, and explicitly imposed properties. If the current result directly invokes one, add an assumption-to-result lead. Preserve standing/local kind and local scope when the schema requires them.
+Retain standing assumptions, scoped conditions, theorem hypotheses, and explicitly imposed properties. Ambient assumptions must not disappear: add an assumption lead to every result or proof that directly uses one, whether or not the dependent restates it and whether or not the assumption was declared in the current unit. Preserve standing/local kind and local scope when the schema requires them.
 
 ### Slot 4: named mathematical tool
 
-Retain a cited or named theorem, lemma, inequality, formula, identity, convergence principle, or other external result when its mathematical content is used. Signals include citations and phrases such as “by,” “using,” “applying,” “from,” and “it follows from.” Attach the tool to the result whose proof or construction uses it, not to the nearest sentence.
+Retain a cited or named theorem, lemma, inequality, formula, identity, convergence principle, or other external result when its mathematical content is used. Signals include citations and phrases such as “by,” “using,” “applying,” “from,” and “it follows from.” When the source gives the tool a unique identity, append one `external-result` node and use its local handle in the dependency edge. An unresolved endpoint is not a substitute for that node. Attach the tool to the result or proof that uses it, not to the nearest sentence.
 
 ### Slot 5: proof use
 
-For each proof paragraph, first identify the result being proved. Then add one prerequisite-to-result lead for every directly used earlier result, definition, setup, assumption, named tool, or indispensable condition. Direct prose use counts even without a reference command. Do not add adjacency or transitive edges.
+For each proof paragraph, first identify the result being proved and its retained proof entity. Add one prerequisite-to-proof lead for every directly used earlier result, definition, setup, assumption, named tool, or indispensable condition; the proof entity then proves the result. If no proof entity is retained, attach a direct use to the owning result only when the source states that dependence directly. Do not add adjacency or transitive edges.
 
 ### Slot 6: exposition or application
 
 Retain examples, substantive remarks, application conclusions, and constructions that explain, instantiate, establish, or refute graph-relevant mathematics. Use `illustrated-by` from a mathematical object to its example. Use `supports` from a premise or construction to the result it directly enables.
 
 The phrases above are clues, not a closed vocabulary. Apply the same semantic tests to equivalent research prose and custom environments.
+
+### Edge triggers
+
+Check these independently at every reading unit, even when the unit creates no
+node:
+
+- **E1 — explicit reference:** every substantive reference or citation in a use
+  position contributes an `explicit-reference` edge from the referenced object
+  to the owning result or proof. Keep an unresolved endpoint when the target has
+  not been seen; do not drop the edge.
+- **E2 — proof use:** every directly used prerequisite in a proof contributes a
+  `proof-use` edge to the retained proof entity. Emit it where the use occurs.
+- **E3 — prose use:** every direct use stated in words such as “by,” “using,”
+  “applying,” “from,” or “it follows from” contributes an `explicit-prose` edge
+  to the owning result or proof.
+
+Each trigger records a direct use only. Do not add adjacency or transitive
+edges, and do not suppress a triggered edge merely because the current unit
+creates no node.
 
 ### Proof candidates and ownership
 
@@ -100,6 +159,25 @@ Use the smallest exact proof-use span where the proof actually invokes the prere
 
 Do not create a proof candidate for motivation, navigation, restatement, local algebra, intuition without an argument, or a temporary proof-local claim that does not independently satisfy the ordinary graph-entity policy. Separate an informal explanation and a formal proof as distinct proof candidates when each contains substantive inferential work; inventory does not decide whether they are complementary presentations or alternative proofs.
 
+## Looking back
+
+Consult `cumulative_packets_file` by searching it, never by reading it whole:
+
+```
+grep -n 'label{prop:measurable}' <cumulative_packets_file>
+sed -n '118,137p' <cumulative_packets_file>
+```
+
+Read back at most 20 lines in one `sed` range, and look back at most three times
+per reading unit. If three reads have not settled the question, keep the edge
+with its unresolved endpoint and a confidence that reflects the doubt; do not
+convert it into a gap.
+
+A look-back may only improve the edge you are emitting at your cursor: the
+`title`, `statement`, `type_hint`, and `locators` of its unresolved endpoint. It
+never creates a node for an earlier unit, revises a closed record, resolves an
+endpoint to a hidden prior-packet node, or moves your cursor.
+
 ## Encode a node
 
 For each reading unit choose exactly one node action:
@@ -109,17 +187,24 @@ For each reading unit choose exactly one node action:
 - `extend`: continue the one open node;
 - `close`: finish the open node and append its record.
 
-A node may span several paragraphs or nested source constructs. Use the smallest complete inclusive location covering its statement, qualifications, and scope. As soon as it closes, append a complete record with local ids `n1`, `n2`, ... in closing order.
+A node may span several paragraphs or nested source constructs. Use the smallest
+complete inclusive location covering its statement, qualifications, and scope.
+As soon as it closes, append a complete record with local ids `n1`, `n2`, ...
+in closing order.
 
 Write one short source-faithful summary sentence: what the object, premise, claim, or result establishes, plus only qualifications needed to distinguish it. Preserve author-visible environment, labels, and title. Fill the provisional type, provenance, assumption kind/scope, and external identity required by the schema.
 
 Potential nodes include reusable notation and constructions, assumptions, definitions, examples with mathematical force, formal results, substantive remarks, application conclusions, reusable prose claims, and indispensable named external results. Equations, algebraic steps, temporary variables, and proof-local conditions are normally edge evidence, not nodes; promote one only when named and reused as a unit or stated as an author-visible result.
 
-Once a local endpoint has a node, use its local handle in later edges. Use the same shortest source-faithful identity whenever an unresolved endpoint recurs.
+Once an endpoint has a node, use its `local_node` handle in later edges. Use the
+same shortest source-faithful identity whenever an unresolved endpoint recurs.
 
 ### Reconcile forward local identities
 
-After every node closure, and again at each checkpoint and finalization, reconcile every unresolved endpoint already saved in a cumulative edge against the cumulative local node table. Use only saved records and the newly closed node; do not reread source, inspect iterator state, consult another worker's artifact, gold, or diagnostic output.
+After every node closure and again before submitting a packet, reconcile every
+unresolved endpoint already saved in the cumulative inventory against its local
+node table. Use only saved records and the newly closed node; do not inspect
+transport state, another worker's artifact, gold, or diagnostic output.
 
 Test identity in this precedence order:
 
@@ -127,20 +212,34 @@ Test identity in this precedence order:
 2. the same source-visible identity with compatible mathematical type and scope;
 3. a clearly equivalent mathematical statement with compatible type and scope.
 
-Replace an unresolved endpoint with `{"local_node": "<closed-local-id>"}` only when exactly one local node represents the same entity. A related, stronger, weaker, or merely thematic result is not a match. If there is no match or more than one plausible match, preserve the unresolved endpoint unchanged.
+Replace an unresolved endpoint with `{"local_node":"<local-id>"}` only when
+exactly one cumulative node represents the same entity. A related, stronger,
+weaker, or merely thematic result is not a match. If there is no unique match,
+preserve the unresolved endpoint unchanged.
 
-The substitution is an identity-only exception to the prohibition on later rewriting: it may not change the edge's local id, direction, type, evidence location, reference, description, assertion, basis, confidence, semantic content, or ownership, and it may not create a relationship that was not already recorded. After substitution, retain records with distinct source evidence. Remove a duplicate only when prerequisite, dependent, relationship type, location, reference, description, assertion, basis, and confidence are all identical; keep the earlier local id. The schema has no multi-evidence field, so never merge distinct evidence into one record.
+The substitution is identity-only: it may not change direction, type, evidence
+location, reference, description, assertion, basis, confidence, semantic
+content, or ownership, and it may not create a relationship that was not
+already recorded. Retain records with distinct source evidence. Remove a
+duplicate only when prerequisite, dependent, relationship type, location,
+reference, description, assertion, basis, and confidence are all identical.
+The schema has no multi-evidence field, so never merge distinct evidence into
+one record.
 
 ## Encode a direct dependency
 
 Add an edge during the unit where the direct use is stated or occurs.
 
 - `from`: prerequisite or supporting source;
-- `to`: owning dependent result;
+- `to`: owning proof entity when retained, otherwise the directly using result;
 - location: smallest span supporting that direct use;
 - description: one short clause saying how the prerequisite is used.
 
-Use a local node handle when available. Otherwise use an inline unresolved endpoint and keep scanning. Forward references and cross-file labels remain unresolved. Prefer a source-grounded low-confidence lead to silent omission; extract later checks identity and directness.
+Use a local node handle when available. Otherwise use an inline unresolved
+endpoint and keep scanning. Forward references remain unresolved until a later
+node closes and forward reconciliation uniquely identifies them. Prefer a
+source-grounded low-confidence lead to silent omission; extract later checks
+identity and directness.
 
 When several nearby dependents are possible, use the proof header, statement identity, explicit label, and declared scope—not proximity—to determine ownership. Apply the exact-duplicate rule from forward reconciliation: preserve evidence-distinct records for the same prerequisite-dependent pair, and remove only records whose endpoint pair, relationship type, location, reference, description, assertion, basis, and confidence are all identical, keeping the earlier local id.
 
@@ -148,34 +247,34 @@ When several nearby dependents are possible, use the proof header, statement ide
 
 Record a gap only when uncertainty at the current cursor could materially change node identity, scope, coverage, or a dependency lead. A gap is not a substitute for recording a source-grounded uncertain candidate.
 
-## Checkpoint while scanning
+## Check before each packet report
 
-After every four closed nodes, or after 120 assigned source lines since the previous checkpoint, whichever comes first:
-
-1. write every completed node, encountered edge, and gap to the cumulative JSON;
-2. verify that `files` is correct; locations are owned, in range, increasing, and inclusive; local ids are unique; local endpoints exist; every edge is prerequisite-to-dependent; and every graph-relevant annotated block, reference, citation, or named result seen so far is accounted for;
-   Before this verification, perform the forward local-identity reconciliation above.
-3. validate the entire cumulative object against `inventory.schema.json`;
-4. only after validation, append a `scan-checkpoint` progress line with a fresh clock timestamp, cursor file/line, and node/edge/gap counts.
-
-The saved artifact is the progress evidence. Do not keep finished records only in reasoning or write all checkpoints at the end. A checkpoint excludes the unfinished open node.
-
-At the end of each assigned span, close any complete open node, save and validate, and append `span-complete` with that span's exact final owned line and current counts. Do this even if the counts did not change. Process spans in packet order; boundary context gets no completion line.
+The packet boundary is the checkpoint. Before submitting, update
+`inventory_file`, then verify that every
+location uses displayed rows, is increasing, inclusive, and row-contiguous;
+local IDs are unique and sequential; every `local_node` endpoint exists in the
+cumulative inventory; every edge is prerequisite-to-dependent; and every
+graph-relevant annotated block, reference, citation, or named result seen so far
+is accounted for. In particular, every E1, E2, and E3 sighting has an edge, and
+every uniquely identified named tool whose mathematical content is used has an
+`external-result` node rather than only an unresolved endpoint. Perform forward
+local-identity reconciliation first.
+Transport validates the cumulative file and the packet-local report separately.
 
 ## Keep records concise
 
 Spend words on recall, exact locations, identity, directness, and the explanation required by the schema. Use one sentence for a node summary, one short clause for an edge description, and the shortest stable identity for an unresolved endpoint. Do not copy source paragraphs, repeat endpoint prose, or add general justification.
 
-Write the completed record concisely when first encountered. Do not perform a later rewriting or compaction pass.
+Write each completed record concisely when first encountered. Do not perform a
+later rewriting or compaction pass.
 
 ## Finish
 
-At the final owned line:
+At the final row of each packet:
 
-1. close any complete open node or record a precise gap for an incomplete one;
-   Then perform the final forward local-identity reconciliation above.
-2. verify that `files` exactly matches the assigned source paths and that the cursor is the final line of the final assigned span;
-3. save all records and validate the full final JSON against `inventory.schema.json`;
-4. append `output-written` with a newly read timestamp, the final cursor, and final counts.
-
-Do not write `output-written` before every span has a `span-complete` line. If any invariant or schema validation fails, correct the cumulative artifact before returning. Return only the completed output path.
+1. close every source-visible candidate that is complete within this packet;
+2. retain an unfinished node only when its source clearly continues into the next
+   packet; do not invent completion;
+3. perform forward local-identity reconciliation; and
+4. atomically update `inventory_file`; and
+5. return only the newly appended nodes, edges, and gaps for this packet.

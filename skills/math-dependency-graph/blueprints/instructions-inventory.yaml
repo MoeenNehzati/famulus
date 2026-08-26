@@ -1,10 +1,9 @@
 content:
 - instructions/inventory\.md
 dependencies: []
-description: Authors one recall-first version-3 mathematical discovery fragment through
-  a single forward pass over bounded source units, reconciling uniquely resolved forward
-  local identities; a uniquely identified opaque macro with hidden content emits an
-  identity-only candidate and attached gap, while nonunique identity emits a gap only.
+description: Maintains one cumulative mathematical inventory while reading marker-free
+  source packets as exact strings with opaque row coordinates, forward identity
+  reconciliation, direct dependency evidence, and explicit proof ownership.
 gateway:
   language: Markdown
   path: instructions/inventory.md
@@ -222,9 +221,9 @@ interfaces:
       one bounded-unit, signal-complete, forward-reconciling validated loop that
       preserves opaque results as an identity-only candidate plus attached gap when
       unique, or a gap only when identity is nonunique.
-    version: 37
+    version: 38
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces: []
-version: 37
+version: 38
 maturity: stable

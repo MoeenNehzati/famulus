@@ -13,6 +13,128 @@ from officina import rutter
 dispenser = importlib.import_module(
     "skills.math-dependency-graph._rtx._inventory_pipeline._voyage_dispenser"
 )
+support = importlib.import_module(
+    "skills.math-dependency-graph._rtx._inventory_pipeline._voyage_support"
+)
+
+
+def _empty_inventory(**extra: object) -> dict[str, object]:
+    return {
+        "outcome": "reported",
+        "nodes": [],
+        "edges": [],
+        "gaps": [],
+        **extra,
+    }
+
+
+def _worker_inventory_path(run_dir: Path, voyage_id: str, prefix: str = "default") -> Path:
+    return run_dir / "artifacts" / prefix / "inventories" / f"{voyage_id}.json"
+
+
+def _write_worker_inventory(path: Path, inventory: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(inventory) + "\n", encoding="utf-8")
+
+
+def test_worker_owns_cumulative_inventory_file_and_reports_only_new_records(
+    inventory_run: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    doc_entrypoint, run_dir = inventory_run
+    monkeypatch.setattr(dispenser, "_STATE_ROOT", run_dir)
+    inventory_dispenser = dispenser.make_voyage_dispenser()
+    (voyage_id,) = inventory_dispenser.initiate_voyages(
+        doc_entrypoint=str(doc_entrypoint), chunk_count="1"
+    )
+
+    introduction = inventory_dispenser.get_status(voyage_id)
+    inventory_file = Path(introduction.instruction.data["payload"]["inventory_file"])
+    inventory_dispenser.advance(
+        voyage_id,
+        {"outcome": "ready"},
+        responding_to=introduction.current_evolution.evolution_entry_id,
+    )
+    report = _advance_to_message(inventory_dispenser, voyage_id)
+    row = int(report.instruction.data["payload"].split(" | ", 1)[0])
+    node = {
+        "local_id": "n1",
+        "statement_location": [row, row],
+        "provenance": "explicit",
+        "type_hint": "result",
+        "summary": "The packet states a result.",
+    }
+    inventory_file.parent.mkdir(parents=True, exist_ok=True)
+    inventory_file.write_text(
+        json.dumps({"nodes": [node], "edges": [], "gaps": []}) + "\n",
+        encoding="utf-8",
+    )
+
+    validation = inventory_dispenser.validate(
+        voyage_id,
+        {"outcome": "reported", "nodes": [node], "edges": [], "gaps": []},
+        responding_to=report.current_evolution.evolution_entry_id,
+    )
+
+    assert validation.valid, validation.issues
+
+
+def test_report_accepts_packet_local_diagnostic_while_payload_stays_text(
+    inventory_run: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The durable file, not the diagnostic response, owns cumulative state."""
+
+    doc_entrypoint, run_dir = inventory_run
+    monkeypatch.setattr(dispenser, "_STATE_ROOT", run_dir)
+    inventory_dispenser = dispenser.make_voyage_dispenser()
+    (voyage_id,) = inventory_dispenser.initiate_voyages(
+        doc_entrypoint=str(doc_entrypoint), chunk_count="1"
+    )
+    report = _advance_to_message(inventory_dispenser, voyage_id)
+
+    assert isinstance(report.instruction.data["payload"], str)
+    validation = inventory_dispenser.validate(
+        voyage_id,
+        _empty_inventory(),
+        responding_to=report.current_evolution.evolution_entry_id,
+    )
+    assert validation.valid, validation.issues
+
+
+def _advance_to_message(
+    inventory_dispenser: rutter.VoyageDispenser,
+    voyage_id: str,
+) -> rutter.VoyageStatus:
+    """Settle engine-owned machine work and return the next public message."""
+
+    while True:
+        status = inventory_dispenser.get_status(voyage_id)
+        if status.terminal_result is not None or isinstance(
+            status.instruction, rutter.Message
+        ):
+            if (
+                status.terminal_result is None
+                and status.current_evolution.evolution_id
+                == dispenser._INTRODUCE_EVOLUTION
+            ):
+                inventory_file = Path(
+                    status.instruction.data["payload"]["inventory_file"]
+                )
+                _write_worker_inventory(
+                    inventory_file, {"nodes": [], "edges": [], "gaps": []}
+                )
+                inventory_dispenser.advance(
+                    voyage_id,
+                    {"outcome": "ready"},
+                    responding_to=status.current_evolution.evolution_entry_id,
+                )
+                continue
+            return status
+        assert status.instruction is None or isinstance(
+            status.instruction, rutter.MachineInstruction
+        )
+        inventory_dispenser.advance(voyage_id)
 
 
 def _gold_inventory(
@@ -42,6 +164,31 @@ def _gold_inventory(
     }
 
 
+def test_diagnosis_expected_answer_contains_only_current_packet_additions() -> None:
+    previous = {
+        "ir_version": 3,
+        "chunk_id": "inventory-001",
+        "files": ["main.md"],
+        "nodes": [{"local_id": "n1"}],
+        "edges": [],
+        "gaps": [],
+    }
+    current = {
+        **previous,
+        "nodes": [{"local_id": "n1"}, {"local_id": "n2"}],
+        "edges": [{"local_id": "d1"}],
+    }
+
+    assert support._new_projection_records(current, previous) == {
+        "ir_version": 3,
+        "chunk_id": "inventory-001",
+        "files": ["main.md"],
+        "nodes": [{"local_id": "n2"}],
+        "edges": [{"local_id": "d1"}],
+        "gaps": [],
+    }
+
+
 def _finish_empty_debug_voyage(
     inventory_dispenser: rutter.VoyageDispenser,
     voyage_id: str,
@@ -52,27 +199,28 @@ def _finish_empty_debug_voyage(
         status = inventory_dispenser.get_status(voyage_id)
         if status.terminal_result is not None:
             return
-        if status.instruction is None:
+        if status.instruction is None or isinstance(
+            status.instruction, rutter.MachineInstruction
+        ):
             inventory_dispenser.advance(voyage_id)
             continue
+        if status.current_evolution.evolution_id == dispenser._INTRODUCE_EVOLUTION:
+            _write_worker_inventory(
+                Path(status.instruction.data["payload"]["inventory_file"]),
+                {"nodes": [], "edges": [], "gaps": []},
+            )
+            inventory_dispenser.advance(
+                voyage_id,
+                {"outcome": "ready"},
+                responding_to=status.current_evolution.evolution_entry_id,
+            )
+            continue
         if status.current_evolution.rutter_id == dispenser._DEBUG_RUTTER_ID:
-            payload = status.instruction.data["payload"]
-            packet = payload["packet"]
-            response = {
-                "outcome": "reported",
-                "packet_id": packet["packet_id"],
-                "decision_basis": (
+            response = _empty_inventory(
+                decision_basis=(
                     "No source-visible graph entity appears in this packet."
-                ),
-                "inventory": {
-                    "ir_version": 3,
-                    "chunk_id": payload["chunk_id"],
-                    "files": payload["prior_inventory"]["files"],
-                    "nodes": [],
-                    "edges": [],
-                    "gaps": [],
-                },
-            }
+                )
+            )
         else:
             assert status.current_evolution.rutter_id == "diagnose-answer"
             assert status.current_evolution.evolution_id == "compare"
@@ -118,6 +266,73 @@ def test_cli_describes_modes_and_rejects_incomplete_debug_setup(
     assert not (run_dir / "voyages").exists()
 
 
+def test_voyage_introduces_inventory_contract_once_before_packet_reports(
+    inventory_run: tuple[Path, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Repeating the instruction or cumulative path in report payloads wastes context."""
+
+    doc_entrypoint, run_dir = inventory_run
+    instruction_path = tmp_path / "inventory.md"
+    instruction_text = "# Inventory contract\nRead cumulative source evidence.\n"
+    instruction_path.write_text(instruction_text, encoding="utf-8")
+    monkeypatch.setattr(dispenser, "_STATE_ROOT", run_dir)
+    monkeypatch.setattr(dispenser, "_INVENTORY_INSTRUCTION_PATH", instruction_path)
+    inventory_dispenser = dispenser.make_voyage_dispenser()
+    (voyage_id,) = inventory_dispenser.initiate_voyages(
+        doc_entrypoint=str(doc_entrypoint),
+        chunk_count="1",
+    )
+
+    introduction = inventory_dispenser.get_status(voyage_id)
+    assert isinstance(introduction.instruction, rutter.Message)
+    assert introduction.instruction.data["payload"] == {
+        "inventory_instruction": instruction_text,
+        "cumulative_packets_file": str(
+            run_dir
+            / "artifacts"
+            / "default"
+            / "source-packets"
+            / f"{voyage_id}.txt"
+        ),
+        "inventory_file": str(
+            run_dir
+            / "artifacts"
+            / "default"
+            / "inventories"
+            / f"{voyage_id}.json"
+        ),
+    }
+    _write_worker_inventory(
+        Path(introduction.instruction.data["payload"]["inventory_file"]),
+        {"nodes": [], "edges": [], "gaps": []},
+    )
+    inventory_dispenser.advance(
+        voyage_id,
+        {"outcome": "ready"},
+        responding_to=introduction.current_evolution.evolution_entry_id,
+    )
+
+    report = _advance_to_message(inventory_dispenser, voyage_id)
+    payload = report.instruction.data["payload"]
+    assert isinstance(payload, str)
+    validation = inventory_dispenser.validate(
+        voyage_id,
+        _empty_inventory(),
+        responding_to=report.current_evolution.evolution_entry_id,
+    )
+    assert validation.valid, validation.issues
+    inventory_dispenser.advance(
+        voyage_id,
+        _empty_inventory(),
+        responding_to=report.current_evolution.evolution_entry_id,
+    )
+    second_report = _advance_to_message(inventory_dispenser, voyage_id)
+    second_payload = second_report.instruction.data["payload"]
+    assert isinstance(second_payload, str)
+
+
 def test_default_voyage_iterates_packets_and_writes_cumulative_inventory(
     inventory_run: tuple[Path, Path],
     monkeypatch: pytest.MonkeyPatch,
@@ -136,48 +351,233 @@ def test_default_voyage_iterates_packets_and_writes_cumulative_inventory(
     ).is_file()
 
     seen_packets: list[str] = []
+    cumulative_source = ""
+    source_packets_path: Path | None = None
+    inventory_file: Path | None = None
     while True:
         status = inventory_dispenser.get_status(voyage_id)
         if status.terminal_result is not None:
             break
-        if status.instruction is None:
+        if status.instruction is None or isinstance(
+            status.instruction, rutter.MachineInstruction
+        ):
             inventory_dispenser.advance(voyage_id)
             continue
         assert isinstance(status.instruction, rutter.Message)
-        packet_id = status.instruction.data["payload"]["packet"]["packet_id"]
-        seen_packets.append(packet_id)
+        if status.current_evolution.evolution_id == dispenser._INTRODUCE_EVOLUTION:
+            source_packets_path = Path(
+                status.instruction.data["payload"]["cumulative_packets_file"]
+            )
+            inventory_file = Path(status.instruction.data["payload"]["inventory_file"])
+            _write_worker_inventory(
+                inventory_file, {"nodes": [], "edges": [], "gaps": []}
+            )
+            inventory_dispenser.advance(
+                voyage_id,
+                {"outcome": "ready"},
+                responding_to=status.current_evolution.evolution_entry_id,
+            )
+            continue
+        payload = status.instruction.data["payload"]
+        assert isinstance(payload, str)
+        packet = payload
+        seen_packets.append(packet)
+        cumulative_source += packet
+        assert source_packets_path is not None
+        assert source_packets_path.read_text(encoding="utf-8") == cumulative_source
         inventory_dispenser.advance(
             voyage_id,
-            {
-                "outcome": "reported",
-                "packet_id": packet_id,
-                "inventory": {
-                    "ir_version": 3,
-                    "chunk_id": "inventory-001",
-                        "files": ["main.md"],
-                    "nodes": [],
-                    "edges": [],
-                    "gaps": [],
-                },
-            },
+            _empty_inventory(),
             responding_to=status.current_evolution.evolution_entry_id,
         )
 
-    assert seen_packets == [
-        "inventory-001-packet-001",
-        "inventory-001-packet-002",
-        "inventory-001-packet-003",
-        "inventory-001-packet-004",
-    ]
+    assert len(seen_packets) == 2
+    assert all("@@ source:" not in packet for packet in seen_packets)
     assert status.terminal_result.outcome == "complete"
     inventory_path = Path(status.terminal_result.value["inventory_path"])
     assert inventory_path.is_file()
+    assert source_packets_path is not None
+    assert status.terminal_result.value["source_packets_path"] == str(
+        source_packets_path
+    )
 
     inventory_dispenser.release(voyage_id)
 
     assert not (run_dir / "voyages" / "default" / voyage_id).exists()
     assert inventory_path.is_file()
+    assert source_packets_path.read_text(encoding="utf-8") == cumulative_source
     assert not (run_dir / "artifacts" / "default" / "diagnostics").exists()
+
+
+def test_cumulative_inventory_keeps_cross_packet_ids_and_maps_coordinates(
+    inventory_run: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    doc_entrypoint, run_dir = inventory_run
+    monkeypatch.setattr(dispenser, "_STATE_ROOT", run_dir)
+    inventory_dispenser = dispenser.make_voyage_dispenser()
+    (voyage_id,) = inventory_dispenser.initiate_voyages(
+        doc_entrypoint=str(doc_entrypoint),
+        chunk_count="1",
+    )
+
+    first = _advance_to_message(inventory_dispenser, voyage_id)
+    first_row = int(first.instruction.data["payload"].split(" | ", 1)[0])
+    first_node = {
+        "local_id": "n1",
+        "statement_location": [first_row, first_row],
+        "provenance": "explicit",
+        "type_hint": "result",
+        "summary": "The first packet states a result.",
+    }
+    inventory_path = _worker_inventory_path(run_dir, voyage_id)
+    _write_worker_inventory(
+        inventory_path, {"nodes": [first_node], "edges": [], "gaps": []}
+    )
+    inventory_dispenser.advance(
+        voyage_id,
+        {
+            "outcome": "reported",
+            "nodes": [first_node],
+            "edges": [],
+            "gaps": [],
+        },
+        responding_to=first.current_evolution.evolution_entry_id,
+    )
+    second = _advance_to_message(inventory_dispenser, voyage_id)
+    second_row = int(second.instruction.data["payload"].split(" | ", 1)[0])
+    second_node = {
+        "local_id": "n2",
+        "statement_location": [second_row, second_row],
+        "provenance": "explicit",
+        "type_hint": "result",
+        "summary": "The second packet states a result.",
+    }
+    edge = {
+                        "local_id": "d1",
+                        "from": {"local_node": "n1"},
+                        "to": {"local_node": "n2"},
+                        "type": "supports",
+                        "basis": "explicit-prose",
+                        "assertion": "explicit",
+                        "location": [second_row, second_row],
+                        "description": "The first result supports the second.",
+                        "confidence": "High",
+                    }
+    _write_worker_inventory(
+        inventory_path,
+        {"nodes": [first_node, second_node], "edges": [edge], "gaps": []},
+    )
+    inventory_dispenser.advance(
+        voyage_id,
+        {
+            "outcome": "reported",
+            "nodes": [second_node],
+            "edges": [edge],
+            "gaps": [],
+        },
+        responding_to=second.current_evolution.evolution_entry_id,
+    )
+    terminal = _advance_to_message(inventory_dispenser, voyage_id)
+    assert terminal.terminal_result is not None
+    inventory = json.loads(
+        Path(terminal.terminal_result.value["inventory_path"]).read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert [node["local_id"] for node in inventory["nodes"]] == ["n1", "n2"]
+    assert inventory["edges"][0]["local_id"] == "d1"
+    assert inventory["edges"][0]["to"] == {"local_node": "n2"}
+    assert inventory["edges"][0]["from"] == {"local_node": "n1"}
+    assert inventory["nodes"][0]["statement_location"][0] == 0
+
+
+def test_later_report_cannot_drop_prior_cumulative_records(
+    inventory_run: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    doc_entrypoint, run_dir = inventory_run
+    monkeypatch.setattr(dispenser, "_STATE_ROOT", run_dir)
+    inventory_dispenser = dispenser.make_voyage_dispenser()
+    (voyage_id,) = inventory_dispenser.initiate_voyages(
+        doc_entrypoint=str(doc_entrypoint), chunk_count="1"
+    )
+
+    first = _advance_to_message(inventory_dispenser, voyage_id)
+    first_row = int(first.instruction.data["payload"].split(" | ", 1)[0])
+    first_inventory = {
+        "outcome": "reported",
+        "nodes": [
+                {
+                    "local_id": "n1",
+                    "statement_location": [first_row, first_row],
+                    "provenance": "explicit",
+                    "type_hint": "result",
+                    "summary": "The first packet states a result.",
+                }
+        ],
+        "edges": [],
+        "gaps": [],
+    }
+    inventory_path = _worker_inventory_path(run_dir, voyage_id)
+    _write_worker_inventory(
+        inventory_path,
+        {
+            "nodes": list(first_inventory["nodes"]),
+            "edges": [],
+            "gaps": [],
+        },
+    )
+    inventory_dispenser.advance(
+        voyage_id,
+        first_inventory,
+        responding_to=first.current_evolution.evolution_entry_id,
+    )
+    second = _advance_to_message(inventory_dispenser, voyage_id)
+    _write_worker_inventory(
+        inventory_path, {"nodes": [], "edges": [], "gaps": []}
+    )
+
+    validation = inventory_dispenser.validate(
+        voyage_id,
+        _empty_inventory(),
+        responding_to=second.current_evolution.evolution_entry_id,
+    )
+
+    assert not validation.valid
+    assert validation.issues[0].code == "invalid-inventory"
+    assert "dropped prior nodes" in validation.issues[0].message
+
+
+def test_prepared_report_reload_does_not_duplicate_source_content(
+    inventory_run: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    doc_entrypoint, run_dir = inventory_run
+    monkeypatch.setattr(dispenser, "_STATE_ROOT", run_dir)
+    inventory_dispenser = dispenser.make_voyage_dispenser()
+    (voyage_id,) = inventory_dispenser.initiate_voyages(
+        doc_entrypoint=str(doc_entrypoint),
+        chunk_count="1",
+    )
+    introduction = inventory_dispenser.get_status(voyage_id)
+    source_packets_path = Path(
+        introduction.instruction.data["payload"]["cumulative_packets_file"]
+    )
+    inventory_dispenser.advance(
+        voyage_id,
+        {"outcome": "ready"},
+        responding_to=introduction.current_evolution.evolution_entry_id,
+    )
+    first = inventory_dispenser.get_status(voyage_id)
+    assert isinstance(first.instruction, rutter.Message)
+    expected = source_packets_path.read_bytes()
+
+    second = dispenser.make_voyage_dispenser().get_status(voyage_id)
+
+    assert second.instruction == first.instruction
+    assert source_packets_path.read_bytes() == expected
 
 
 def test_default_report_uses_sealed_instruction_after_live_file_drift(
@@ -208,50 +608,57 @@ def test_default_report_uses_sealed_instruction_after_live_file_drift(
 
     status = inventory_dispenser.get_status(voyage_id)
 
-    assert status.current_evolution.definition_version == 2
+    assert status.current_evolution.definition_version == 7
     assert status.instruction.data["payload"]["inventory_instruction"] == (
         sealed_instruction
     )
-    assert status.instruction.instructions["response_schema"]["required"] == (
-        "outcome",
-        "packet_id",
-        "inventory",
+    _write_worker_inventory(
+        Path(status.instruction.data["payload"]["inventory_file"]),
+        {"nodes": [], "edges": [], "gaps": []},
     )
-    payload = status.instruction.data["payload"]
     inventory_dispenser.advance(
         voyage_id,
-        {
-            "outcome": "reported",
-            "packet_id": payload["packet"]["packet_id"],
-            "inventory": payload["prior_inventory"],
-        },
+        {"outcome": "ready"},
         responding_to=status.current_evolution.evolution_entry_id,
     )
-    continued = inventory_dispenser.get_status(voyage_id)
-    assert continued.instruction.data["payload"]["inventory_instruction"] == (
-        sealed_instruction
+    status = _advance_to_message(inventory_dispenser, voyage_id)
+    assert "inventory_instruction" not in status.instruction.data["payload"]
+    assert status.instruction.instructions["response_schema"]["required"] == (
+        "outcome",
+        "nodes",
+        "edges",
+        "gaps",
     )
+    payload = status.instruction.data["payload"]
+    assert isinstance(payload, str)
+    inventory_dispenser.advance(
+        voyage_id,
+        _empty_inventory(),
+        responding_to=status.current_evolution.evolution_entry_id,
+    )
+    continued = _advance_to_message(inventory_dispenser, voyage_id)
+    assert "inventory_instruction" not in continued.instruction.data["payload"]
 
 
 @pytest.mark.parametrize(
     "current",
     (dispenser.INVENTORY_VOYAGE, dispenser.DEBUG_INVENTORY_VOYAGE),
 )
-def test_v2_inventory_roots_reject_v1_reckonings(
+def test_v6_inventory_roots_reject_v5_reckonings(
     tmp_path: Path,
     current: rutter.Rutter,
 ) -> None:
-    """A persisted v1 root must not silently acquire either changed report contract."""
+    """A persisted v5 root must not silently acquire string packet transport."""
 
     legacy = rutter.Rutter(
         id=current.rutter_id,
-        version=1,
+        version=5,
         start="complete",
         evolutions={
             "complete": rutter.Terminal(result=rutter.VoyageResult("complete", None))
         },
     )
-    path = Path(f"{current.rutter_id}-v1.reckoning.json")
+    path = Path(f"{current.rutter_id}-v5.reckoning.json")
     rutter.RutterRegistry({"inventory": legacy}, tmp_path).create(
         "inventory", path, {}
     )
@@ -335,16 +742,14 @@ def test_debug_release_archives_full_attributed_unequal_diagnosis(
         inventory_source_aliases=str(aliases_path),
     )
 
-    report = inventory_dispenser.get_status(voyage_id)
+    report = _advance_to_message(inventory_dispenser, voyage_id)
     payload = report.instruction.data["payload"]
+    assert isinstance(payload, str)
     inventory_dispenser.advance(
         voyage_id,
-        {
-            "outcome": "reported",
-            "packet_id": payload["packet"]["packet_id"],
-            "inventory": payload["prior_inventory"],
-            "decision_basis": "Only source-visible content was inventoried.",
-        },
+        _empty_inventory(
+            decision_basis="Only source-visible content was inventoried."
+        ),
         responding_to=report.current_evolution.evolution_entry_id,
     )
     comparison = inventory_dispenser.get_status(voyage_id)
@@ -393,7 +798,12 @@ def test_debug_release_archives_full_attributed_unequal_diagnosis(
         for run in archive["completed_runs"].values()
         if run["rutter_id"] == "diagnose-answer"
     ]
-    assert archive["root"]["history"][0]["response"]["evidence"][
+    report_record = next(
+        record
+        for record in archive["root"]["history"]
+        if record["state_id"] == "report"
+    )
+    assert report_record["response"]["evidence"][
         "decision_basis"
     ] == "Only source-visible content was inventoried."
     assert len(diagnostic_runs) == 1
@@ -444,7 +854,7 @@ def test_debug_release_preserves_working_state_when_archival_fails(
         del args, kwargs
         raise OSError("archive failed")
 
-    monkeypatch.setattr(dispenser, "atomic_replace_bytes", fail_archive)
+    monkeypatch.setattr(support, "atomic_replace_bytes", fail_archive)
 
     with pytest.raises(OSError, match="archive failed"):
         inventory_dispenser.release(voyage_id)
@@ -521,18 +931,19 @@ def test_debug_report_requires_pre_reference_decision_basis_without_changing_def
         inventory_source_aliases=str(aliases_path),
     )
 
-    default_schema = inventory_dispenser.get_status(
-        default_id
+    default_schema = _advance_to_message(
+        inventory_dispenser, default_id
     ).instruction.instructions["response_schema"]
-    debug_status = inventory_dispenser.get_status(debug_id)
+    debug_status = _advance_to_message(inventory_dispenser, debug_id)
     debug_schema = debug_status.instruction.instructions["response_schema"]
 
-    assert default_schema["required"] == ("outcome", "packet_id", "inventory")
+    assert default_schema["required"] == ("outcome", "nodes", "edges", "gaps")
     assert "decision_basis" not in default_schema["properties"]
     assert debug_schema["required"] == (
         "outcome",
-        "packet_id",
-        "inventory",
+        "nodes",
+        "edges",
+        "gaps",
         "decision_basis",
     )
     assert debug_schema["properties"]["decision_basis"] == {
@@ -540,14 +951,10 @@ def test_debug_report_requires_pre_reference_decision_basis_without_changing_def
         "minLength": 1,
     }
     payload = debug_status.instruction.data["payload"]
+    assert isinstance(payload, str)
     invalid = inventory_dispenser.validate(
         debug_id,
-        {
-            "outcome": "reported",
-            "packet_id": payload["packet"]["packet_id"],
-            "inventory": payload["prior_inventory"],
-            "decision_basis": "   ",
-        },
+        _empty_inventory(decision_basis="   "),
         responding_to=debug_status.current_evolution.evolution_entry_id,
     )
     assert invalid.valid is False
@@ -574,8 +981,9 @@ def test_debug_diagnosis_freezes_basis_and_supplies_attribution_guidance(
         inventory_gold_standard=str(inventory_gold_path),
         inventory_source_aliases=str(aliases_path),
     )
-    report_status = inventory_dispenser.get_status(voyage_id)
+    report_status = _advance_to_message(inventory_dispenser, voyage_id)
     payload = report_status.instruction.data["payload"]
+    assert isinstance(payload, str)
     decision_basis = (
         "I retained only entities whose identity and mathematical content were "
         "visible in this packet."
@@ -583,12 +991,7 @@ def test_debug_diagnosis_freezes_basis_and_supplies_attribution_guidance(
 
     inventory_dispenser.advance(
         voyage_id,
-        {
-            "outcome": "reported",
-            "packet_id": payload["packet"]["packet_id"],
-            "inventory": payload["prior_inventory"],
-            "decision_basis": decision_basis,
-        },
+        _empty_inventory(decision_basis=decision_basis),
         responding_to=report_status.current_evolution.evolution_entry_id,
     )
     comparison = inventory_dispenser.get_status(voyage_id)
@@ -604,8 +1007,8 @@ def test_debug_diagnosis_freezes_basis_and_supplies_attribution_guidance(
         "diagnosis_guidance",
     }
     assert metadata["decision_basis"] == decision_basis
-    assert metadata["packet_id"] == payload["packet"]["packet_id"]
-    assert metadata["diagnosis_guidance"] == dispenser._DIAGNOSIS_GUIDANCE
+    assert metadata["packet_id"] == "inventory-001-packet-001"
+    assert metadata["diagnosis_guidance"] == support._DIAGNOSIS_GUIDANCE
     visibility_rule = next(
         rule
         for rule in metadata["diagnosis_guidance"]
@@ -639,13 +1042,12 @@ def test_debug_diagnosis_freezes_basis_and_supplies_attribution_guidance(
         "actual_support",
         "owner",
     )
-    coordinate = payload["packet"]["coordinates"][0]
     challenge = {
         "target": "gold node hidden behind an opaque macro",
         "coordinates": [
             {
-                "source_file": coordinate["source_file"],
-                "line": coordinate["line"],
+                "source_file": "main.md",
+                "line": 1,
             }
         ],
         "policy": "Inventory workers may not invent hidden macro expansion content.",
@@ -669,7 +1071,7 @@ def test_debug_diagnosis_freezes_basis_and_supplies_attribution_guidance(
 
 def test_disjoint_gold_sources_require_explicit_aliases() -> None:
     with pytest.raises(ValueError, match="does not map to an inventory source"):
-        dispenser._resolve_gold_source_map(
+        support._resolve_gold_source_map(
             ["sections/main.md"],
             ["appendix/main.md"],
             {},
@@ -678,13 +1080,13 @@ def test_disjoint_gold_sources_require_explicit_aliases() -> None:
 
 def test_gold_source_map_rejects_ambiguous_or_non_bijective_matches() -> None:
     with pytest.raises(ValueError, match="maps ambiguously"):
-        dispenser._resolve_gold_source_map(
+        support._resolve_gold_source_map(
             ["main.md"],
             ["first/main.md", "second/main.md"],
             {},
         )
     with pytest.raises(ValueError, match="must be one-to-one"):
-        dispenser._resolve_gold_source_map(
+        support._resolve_gold_source_map(
             ["sections/first.md", "sections/second.md"],
             ["appendix/shared.md"],
             {
@@ -696,13 +1098,13 @@ def test_gold_source_map_rejects_ambiguous_or_non_bijective_matches() -> None:
 
 def test_gold_projection_uses_validated_source_aliases() -> None:
     gold = _gold_inventory(files=["sections/main.md"], with_node=True)
-    source_map = dispenser._resolve_gold_source_map(
+    source_map = support._resolve_gold_source_map(
         gold["files"],
         ["appendix/main.md"],
         {"sections/main.md": "appendix/main.md"},
     )
 
-    projected = dispenser._project_gold(
+    projected = support._project_gold(
         gold,
         {("appendix/main.md", 1)},
         source_map,
@@ -754,7 +1156,7 @@ def test_gold_projection_requires_complete_primary_and_nested_locations() -> Non
         ("source/first.md", 2),
     }
 
-    projected = dispenser._project_gold(
+    projected = support._project_gold(
         gold,
         partial,
         source_map,
@@ -775,7 +1177,7 @@ def test_gold_projection_requires_complete_primary_and_nested_locations() -> Non
         *(("source/second.md", line) for line in range(189, 209)),
         ("source/first.md", 3),
     }
-    projected = dispenser._project_gold(
+    projected = support._project_gold(
         gold,
         complete,
         source_map,
@@ -796,7 +1198,7 @@ def test_gold_projection_requires_complete_primary_and_nested_locations() -> Non
 def test_gold_projection_uses_exact_mapped_source_identity() -> None:
     gold = _gold_inventory(files=["gold/main.md"], with_node=True)
 
-    projected = dispenser._project_gold(
+    projected = support._project_gold(
         gold,
         {("draft/appendix/main.md", 1)},
         {"gold/main.md": "appendix/main.md"},
@@ -878,7 +1280,7 @@ def test_gold_projection_closes_nested_edge_and_gap_dependencies() -> None:
     }
     source_map = {"gold/main.md": "source/main.md"}
 
-    projected = dispenser._project_gold(
+    projected = support._project_gold(
         gold,
         {("source/main.md", line) for line in (1, 2, 4, 6, 8)},
         source_map,
@@ -890,7 +1292,7 @@ def test_gold_projection_closes_nested_edge_and_gap_dependencies() -> None:
     assert projected["edges"] == []
     assert projected["gaps"] == []
 
-    projected = dispenser._project_gold(
+    projected = support._project_gold(
         gold,
         {("source/main.md", line) for line in range(1, 10)},
         source_map,

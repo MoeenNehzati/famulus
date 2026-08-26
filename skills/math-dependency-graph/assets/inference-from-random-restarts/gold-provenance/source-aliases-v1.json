@@ -1,0 +1,6 @@
+{
+  "sections/appendix-dynamics.tex": "appendix/appendix-dynamics.tex",
+  "sections/appendix-prevalence.tex": "appendix/appendix-prevalence.tex",
+  "sections/appendix-bayes.tex": "appendix/appendix-bayes.tex",
+  "sections/appendix-application.tex": "appendix/appendix-application.tex"
+}

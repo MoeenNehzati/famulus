@@ -59,13 +59,13 @@ gateway:
 id: math-dependency-graph
 namespace_exports:
   _rtx:
-    version: 81
+    version: 84
     access:
       allow_all_modules: true
       allowed_callers: []
     surface:
       only:
-        math-dependency-graph._rtx.interface.inventory-voyage-dispenser: 7
+        math-dependency-graph._rtx.interface.inventory-voyage-dispenser: 10
         math-dependency-graph._rtx.interface.scripts-apply-proof-digest: 1
         math-dependency-graph._rtx.interface.scripts-extract-inventory-chunks: 1
         math-dependency-graph._rtx.interface.scripts-pool-inventory-chunks: 1
@@ -109,7 +109,7 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/instructions-proof-reconciliation.yaml
-version: 108
+version: 111
 maturity: stable
 installation_tier: core
 personal_preference:

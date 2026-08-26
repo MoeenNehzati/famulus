@@ -24,7 +24,7 @@ def test_inventory_voyage_dispenser_accepts_implicit_default_initialization() ->
             "math-dependency-graph._rtx.interface."
             "inventory-voyage-dispenser"
         ),
-        target_version=7,
+        target_version=10,
         args=[
             "initiate",
             "--doc-entrypoint",
@@ -57,7 +57,7 @@ def test_inventory_voyage_dispenser_routes_run_prefix_options() -> None:
             "math-dependency-graph._rtx.interface."
             "inventory-voyage-dispenser"
         ),
-        target_version=7,
+        target_version=10,
         args=[
             "initiate",
             "--run-prefix",
@@ -75,7 +75,7 @@ def test_inventory_voyage_dispenser_routes_run_prefix_options() -> None:
             "math-dependency-graph._rtx.interface."
             "inventory-voyage-dispenser"
         ),
-        target_version=7,
+        target_version=10,
         args=["list", "--run-prefix", "baseline"],
         repository_config=REPOSITORY_ROOT / "officina.toml",
     )
@@ -90,6 +90,23 @@ def test_inventory_voyage_dispenser_routes_run_prefix_options() -> None:
         "1",
     ]
     assert listed.command == ["list", "--run-prefix", "baseline"]
+
+
+def test_inventory_voyage_dispenser_routes_forced_release() -> None:
+    """The public route must preserve an explicit nonterminal deletion request."""
+
+    metadata = _resolve_host_dispatch_metadata(
+        caller_skill="math-dependency-graph",
+        target=(
+            "math-dependency-graph._rtx.interface."
+            "inventory-voyage-dispenser"
+        ),
+        target_version=10,
+        args=["release", "spark1-voyage-123", "--force"],
+        repository_config=REPOSITORY_ROOT / "officina.toml",
+    )
+
+    assert metadata.command == ["release", "spark1-voyage-123", "--force"]
 
 
 def test_inventory_voyage_dispenser_declares_its_exact_dependencies() -> None:
@@ -111,7 +128,7 @@ def test_inventory_voyage_dispenser_declares_its_exact_dependencies() -> None:
         ("rutter.source.diagnostic", 4),
         (
             "math-dependency-graph._rtx.source.rtx-inventory-chunk-extractor",
-            8,
+            9,
         ),
     ]
     expected_interfaces = [
@@ -163,7 +180,7 @@ def test_runtime_module_does_not_own_persisted_voyage_state() -> None:
     )
 
 
-def test_inventory_v37_and_debug_v7_propagate_to_public_route() -> None:
+def test_inventory_v37_and_voyage_v9_propagate_to_public_route() -> None:
     """A partial bump must not leave workers or Compass on old contracts."""
 
     skill_root = REPOSITORY_ROOT / "skills/math-dependency-graph"
@@ -200,56 +217,56 @@ def test_inventory_v37_and_debug_v7_propagate_to_public_route() -> None:
         "math-dependency-graph.source.instructions-inventory-voyages."
         "interface.inventory-voyages"
     ]
-    assert source["version"] == 7
-    assert source_interface["version"] == 7
+    assert source["version"] == 10
+    assert source_interface["version"] == 10
     assert any(
         "archives" in warning["external-side-effect"]
         and "diagnostic reckoning" in warning["external-side-effect"]
         for warning in source_interface["contract"]["caller_warnings"]
     )
-    assert runtime_module["version"] == 81
-    assert inventory_instruction["version"] == 37
+    assert runtime_module["version"] == 84
+    assert inventory_instruction["version"] == 38
     assert inventory_instruction["interfaces"][
         "math-dependency-graph.source.instructions-inventory.interface.inventory"
-    ]["version"] == 37
-    assert instruction["version"] == 7
-    assert instruction_interface["version"] == 7
+    ]["version"] == 38
+    assert instruction["version"] == 10
+    assert instruction_interface["version"] == 10
     assert instruction["uses_interfaces"][0] == {
         "interface": "math-dependency-graph._rtx.interface.inventory-voyage-dispenser",
-        "version": 7,
+        "version": 10,
     }
     assert instruction_interface["uses_interfaces"][0] == {
         "interface": "math-dependency-graph._rtx.interface.inventory-voyage-dispenser",
-        "version": 7,
+        "version": 10,
     }
-    assert gateway["version"] == 83
+    assert gateway["version"] == 86
     assert gateway["interfaces"][
         "math-dependency-graph.source.gateway.interface.default"
-    ]["version"] == 76
+    ]["version"] == 78
     assert {
         "interface": "math-dependency-graph.interface.inventory",
-        "version": 37,
+        "version": 38,
     } in gateway["uses_interfaces"]
     assert {
         "interface": "math-dependency-graph.interface.inventory-voyages",
-        "version": 7,
+        "version": 10,
     } in gateway["uses_interfaces"]
-    assert module["version"] == 108
-    assert module["namespace_exports"]["_rtx"]["version"] == 81
+    assert module["version"] == 111
+    assert module["namespace_exports"]["_rtx"]["version"] == 84
     assert module["namespace_exports"]["_rtx"]["surface"]["only"][
         "math-dependency-graph._rtx.interface.inventory-voyage-dispenser"
-    ] == 7
+    ] == 10
 
     skill_text = (skill_root / "SKILL.md").read_text(encoding="utf-8")
     assert (
         "math-dependency-graph.source.gateway -> "
-        "math-dependency-graph.interface.inventory-voyages@7"
+        "math-dependency-graph.interface.inventory-voyages@10"
     ) in skill_text
     assert (
         "math-dependency-graph.source.instructions-inventory-voyages -> "
-        "math-dependency-graph._rtx.interface.inventory-voyage-dispenser@7"
+        "math-dependency-graph._rtx.interface.inventory-voyage-dispenser@10"
     ) in skill_text
     assert (
         "math-dependency-graph.source.gateway -> "
-        "math-dependency-graph.interface.inventory@37"
+        "math-dependency-graph.interface.inventory@38"
     ) in skill_text

@@ -3,31 +3,17 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
-import shutil
 import sys
-from typing import Mapping, Sequence
-from uuid import uuid4
+from typing import Sequence
 
-from jsonschema import ValidationError
-from officina.common.atomic_files import atomic_replace_bytes, read_regular_file_bytes
 from officina.rutter import (
-    DiagnosisCase,
-    DiagnoseAnswer,
-    LLMResponseContext,
     LLMStep,
     MachineStep,
-    QuestionCase,
     Rutter,
-    RutterDefinitionError,
     Terminal,
-    TransitionContext,
     TransitionHook,
-    Turn,
-    ValidationIssue,
-    ValidationReport,
     VoyageDispenser,
     after,
     voyage_dispenser_cli,
@@ -35,7 +21,6 @@ from officina.rutter import (
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 from . import _voyage_support as _support
-from ._chunk_extractor import extract_inventory_chunks, load_chunk_manifest
 
 
 _RUTTER_ID = "math-graph-inventory-voyage"
@@ -43,6 +28,8 @@ _DEBUG_RUTTER_ID = "math-graph-inventory-voyage-debug"
 _DEFAULT_RUTTER_NAME = "inventory-voyage"
 _DEBUG_RUTTER_NAME = "inventory-voyage-debug"
 _DIAGNOSIS_HOOK_ID = "inventory-diagnosis"
+_INTRODUCE_EVOLUTION = "introduce"
+_PREPARE_EVOLUTION = "prepare-packet"
 _REPORT_EVOLUTION = "report"
 _RECORD_EVOLUTION = "record"
 
@@ -50,15 +37,19 @@ _SKILL_ROOT = Path(__file__).resolve().parents[2]
 _STATE_ROOT = Path(__file__).resolve().parent
 _INVENTORY_INSTRUCTION_PATH = _SKILL_ROOT / "instructions" / "inventory.md"
 _INVENTORY_SCHEMA_PATH = _SKILL_ROOT / "schemas" / "inventory.schema.json"
+_INVENTORY_REPORT_SCHEMA = _support.inventory_report_schema(
+    json.loads(_INVENTORY_SCHEMA_PATH.read_text(encoding="utf-8"))
+)
 _REPORT_REQUEST = (
-    "Read the displayed packet from your immutable chunk. Update the prior "
-    "cumulative inventory and return the complete inventory snapshot for the "
-    "chunk through this packet."
+    "Read the displayed packet string, update inventory_file, and return only "
+    "the nodes, edges, and gaps newly appended for this packet."
 )
-_REPORT_PROMPT = (
-    "Follow the sealed inventory_instruction supplied in the payload. "
-    f"{_REPORT_REQUEST}"
+_INTRODUCTION_PROMPT = (
+    "Read and retain the supplied inventory_instruction and "
+    "the cumulative_packets_file and inventory_file paths for all subsequent "
+    "packet reports."
 )
+_REPORT_PROMPT = f"Apply the retained inventory instruction. {_REPORT_REQUEST}"
 _DEBUG_REPORT_PROMPT = (
     f"{_REPORT_PROMPT}\n\n"
     "Before any comparison with a reference answer, include decision_basis: one "
@@ -93,40 +84,30 @@ _MODES = {
         },
     },
 }
-_DIAGNOSIS_GUIDANCE = (
-    "Compare only gold records whose every source location is completely covered "
-    "by the packets processed so far.",
-    "Treat local IDs as opaque; compare mathematical entities and dependencies.",
-    "Make any proposed fix paper-independent. Target inventory.md only for a "
-    "worker-instruction error; evaluator, source-identity, or gold errors must "
-    "name their actual owning component and leave inventory.md unchanged.",
-    "If expected content was worker-invisible, including mathematical content "
-    "hidden behind an opaque macro, do not presume worker_error. Use gold_error "
-    "when the expected record violates the visible-source policy, "
-    "allowed_difference when both records comply with policy, or unresolved when "
-    "the visible evidence cannot decide. Use both_wrong only when the actual and "
-    "expected records have distinct policy errors. For gold_error or both_wrong, "
-    "identify the challenged target and source coordinates, the inventory policy, "
-    "the actual source-visible support, and the gold or evaluator owner in the "
-    "structured gold_challenge; substantive mathematical correctness remains for "
-    "later adjudication.",
-)
-
-
-def _evolutions() -> dict[str, object]:
-    return {
-        _REPORT_EVOLUTION: LLMStep(
-            _REPORT_PROMPT,
+INVENTORY_VOYAGE = Rutter(
+    id=_RUTTER_ID,
+    version=7,
+    start=_INTRODUCE_EVOLUTION,
+    evolutions={
+        _INTRODUCE_EVOLUTION: LLMStep(
+            _INTRODUCTION_PROMPT,
             response_schema={
                 "type": "object",
-                "properties": {
-                    "outcome": {"const": "reported"},
-                    "packet_id": {"type": "string", "minLength": 1},
-                    "inventory": {"type": "object"},
-                },
-                "required": ["outcome", "packet_id", "inventory"],
+                "properties": {"outcome": {"const": "ready"}},
+                "required": ["outcome"],
                 "additionalProperties": False,
             },
+            data=_support.introduction_data,
+            next_on_outcome=_PREPARE_EVOLUTION,
+        ),
+        _PREPARE_EVOLUTION: MachineStep(
+            _support.prepare_packet,
+            mode="repeat-safe",
+            next_on_outcome=_REPORT_EVOLUTION,
+        ),
+        _REPORT_EVOLUTION: LLMStep(
+            _REPORT_PROMPT,
+            response_schema=_INVENTORY_REPORT_SCHEMA,
             data=_support.report_data,
             assess_response=_support.assess_report,
             next_on_outcome=_RECORD_EVOLUTION,
@@ -134,683 +115,68 @@ def _evolutions() -> dict[str, object]:
         _RECORD_EVOLUTION: MachineStep(
             _support.record_iteration,
             mode="repeat-safe",
-            next_on_outcome={"more": _REPORT_EVOLUTION, "done": "complete"},
+            next_on_outcome={"more": _PREPARE_EVOLUTION, "done": "complete"},
         ),
         "complete": Terminal(result_constructor=_support.complete_result),
-    }
+    },
+)
 
-
-def _assess_debug_report(context: LLMResponseContext) -> ValidationReport:
-    basis = context.response.get("decision_basis")
-    if type(basis) is not str or not basis.strip():
-        return ValidationReport(
-            False,
-            (
-                ValidationIssue(
-                    ("decision_basis",),
-                    "empty-decision-basis",
-                    "decision_basis must be a nonempty pre-reference account",
-                ),
-            ),
-        )
-    return _support.assess_report(context)
-
-
-def _debug_evolutions() -> dict[str, object]:
-    """Keep diagnostic report evidence outside the production report contract."""
-
-    return {
+DEBUG_INVENTORY_VOYAGE = Rutter(
+    id=_DEBUG_RUTTER_ID,
+    version=7,
+    start=_INTRODUCE_EVOLUTION,
+    evolutions={
+        _INTRODUCE_EVOLUTION: LLMStep(
+            _INTRODUCTION_PROMPT,
+            response_schema={
+                "type": "object",
+                "properties": {"outcome": {"const": "ready"}},
+                "required": ["outcome"],
+                "additionalProperties": False,
+            },
+            data=_support.introduction_data,
+            next_on_outcome=_PREPARE_EVOLUTION,
+        ),
+        _PREPARE_EVOLUTION: MachineStep(
+            _support.prepare_packet,
+            mode="repeat-safe",
+            next_on_outcome=_REPORT_EVOLUTION,
+        ),
         _REPORT_EVOLUTION: LLMStep(
             _DEBUG_REPORT_PROMPT,
             response_schema={
-                "type": "object",
+                **_INVENTORY_REPORT_SCHEMA,
                 "properties": {
-                    "outcome": {"const": "reported"},
-                    "packet_id": {"type": "string", "minLength": 1},
-                    "inventory": {"type": "object"},
+                    **_INVENTORY_REPORT_SCHEMA["properties"],
                     "decision_basis": {"type": "string", "minLength": 1},
                 },
-                "required": [
-                    "outcome",
-                    "packet_id",
-                    "inventory",
-                    "decision_basis",
-                ],
-                "additionalProperties": False,
+                "required": [*_INVENTORY_REPORT_SCHEMA["required"], "decision_basis"],
             },
             data=_support.report_data,
-            assess_response=_assess_debug_report,
+            assess_response=_support.assess_debug_report,
             next_on_outcome=_RECORD_EVOLUTION,
         ),
         _RECORD_EVOLUTION: MachineStep(
             _support.record_iteration,
             mode="repeat-safe",
-            next_on_outcome={"more": _REPORT_EVOLUTION, "done": "complete"},
+            next_on_outcome={"more": _PREPARE_EVOLUTION, "done": "complete"},
         ),
         "complete": Terminal(result_constructor=_support.complete_result),
-    }
-
-
-def _plain_json(value: object) -> object:
-    if isinstance(value, Mapping):
-        return {str(key): _plain_json(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_plain_json(item) for item in value]
-    return value
-
-
-def _canonical_text(value: object) -> str:
-    return json.dumps(
-        _plain_json(value),
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-
-
-def _frozen_gold(context: TransitionContext) -> dict[str, object]:
-    text = context.evolution.charter.data.get("inventory_gold_standard_text")
-    digest = context.evolution.charter.data.get(
-        "inventory_gold_standard_sha256"
-    )
-    if type(text) is not str or type(digest) is not str:
-        raise RutterDefinitionError("debug inventory Voyage has no frozen gold")
-    if hashlib.sha256(text.encode("utf-8")).hexdigest() != digest:
-        raise RutterDefinitionError("debug inventory gold snapshot hash is invalid")
-    try:
-        value = json.loads(text)
-    except json.JSONDecodeError as error:
-        raise RutterDefinitionError("debug inventory gold snapshot is invalid") from error
-    if not isinstance(value, dict):
-        raise RutterDefinitionError("debug inventory gold must be a JSON object")
-    return value
-
-
-def _frozen_gold_source_map(context: TransitionContext) -> dict[str, str]:
-    text = context.evolution.charter.data.get("inventory_gold_source_map_text")
-    digest = context.evolution.charter.data.get(
-        "inventory_gold_source_map_sha256"
-    )
-    if type(text) is not str or type(digest) is not str:
-        raise RutterDefinitionError("debug inventory Voyage has no gold source map")
-    if hashlib.sha256(text.encode("utf-8")).hexdigest() != digest:
-        raise RutterDefinitionError("debug inventory gold source map hash is invalid")
-    try:
-        value = json.loads(text)
-    except json.JSONDecodeError as error:
-        raise RutterDefinitionError(
-            "debug inventory gold source map is invalid"
-        ) from error
-    if not isinstance(value, dict) or any(
-        type(key) is not str or type(item) is not str
-        for key, item in value.items()
-    ):
-        raise RutterDefinitionError(
-            "debug inventory gold source map must be a string mapping"
-        )
-    return value
-
-
-def _same_source(left: str, right: str) -> bool:
-    return (
-        left == right
-        or left.endswith("/" + right)
-        or right.endswith("/" + left)
-    )
-
-
-def _project_gold(
-    gold: Mapping[str, object],
-    coverage: set[tuple[str, int]],
-    source_map: Mapping[str, str],
-    *,
-    chunk_id: str,
-    files: Sequence[str],
-) -> dict[str, object]:
-    gold_files = gold.get("files")
-    if not isinstance(gold_files, list) or any(
-        type(path) is not str for path in gold_files
-    ):
-        raise RutterDefinitionError("debug inventory gold files are invalid")
-    if type(chunk_id) is not str or not chunk_id:
-        raise RutterDefinitionError("debug inventory chunk ID is invalid")
-    if (
-        isinstance(files, (str, bytes))
-        or not isinstance(files, Sequence)
-        or any(type(path) is not str for path in files)
-    ):
-        raise RutterDefinitionError("debug inventory chunk files are invalid")
-    chunk_files = list(files)
-    if len(set(chunk_files)) != len(chunk_files):
-        raise RutterDefinitionError("debug inventory chunk files are not unique")
-    chunk_file_indexes = {
-        source: file_index for file_index, source in enumerate(chunk_files)
-    }
-    location_keys = {"statement_location", "location", "starts_at", "ends_at"}
-
-    def location_parts(location: object) -> tuple[str, int, int]:
-        if (
-            not isinstance(location, list)
-            or len(location) != 3
-            or any(type(value) is not int for value in location)
-        ):
-            raise RutterDefinitionError(
-                "debug inventory gold record location is invalid"
-            )
-        file_index, start, end = location
-        if (
-            file_index < 0
-            or file_index >= len(gold_files)
-            or start < 1
-            or end < start
-        ):
-            raise RutterDefinitionError(
-                "debug inventory gold record location is outside its files"
-            )
-        source = gold_files[file_index]
-        mapped_source = source_map.get(source)
-        if mapped_source is None:
-            raise RutterDefinitionError(
-                f"debug inventory gold source is unmapped: {source}"
-            )
-        return mapped_source, start, end
-
-    def embedded_locations(
-        value: object,
-        *,
-        key: str | None = None,
-    ) -> list[object]:
-        if key in location_keys:
-            return [value]
-        if isinstance(value, Mapping):
-            locations: list[object] = []
-            for nested_key, nested_value in value.items():
-                locations.extend(
-                    embedded_locations(nested_value, key=str(nested_key))
-                )
-            return locations
-        if isinstance(value, list):
-            locations = []
-            for nested_value in value:
-                locations.extend(embedded_locations(nested_value))
-            return locations
-        return []
-
-    def location_is_covered(location: object) -> bool:
-        mapped_source, start, end = location_parts(location)
-        return all(
-            (mapped_source, line) in coverage for line in range(start, end + 1)
-        )
-
-    def remap_locations(value: object, *, key: str | None = None) -> object:
-        if key in location_keys:
-            mapped_source, start, end = location_parts(value)
-            if mapped_source not in chunk_file_indexes:
-                raise RutterDefinitionError(
-                    "debug inventory mapped gold source is outside its chunk: "
-                    f"{mapped_source}"
-                )
-            return [chunk_file_indexes[mapped_source], start, end]
-        if isinstance(value, Mapping):
-            return {
-                str(nested_key): remap_locations(
-                    nested_value,
-                    key=str(nested_key),
-                )
-                for nested_key, nested_value in value.items()
-            }
-        if isinstance(value, list):
-            return [remap_locations(nested_value) for nested_value in value]
-        return value
-
-    def project_records(
-        section: str,
-        primary_location: str,
-    ) -> list[dict[str, object]]:
-        records = gold.get(section)
-        if not isinstance(records, list):
-            raise RutterDefinitionError(
-                f"debug inventory gold {section} must be an array"
-            )
-        projected_records: list[dict[str, object]] = []
-        for record in records:
-            if not isinstance(record, Mapping):
-                raise RutterDefinitionError("debug inventory gold record is invalid")
-            if primary_location not in record:
-                raise RutterDefinitionError(
-                    "debug inventory gold record location is invalid"
-                )
-            locations = embedded_locations(record)
-            if not locations or not all(
-                location_is_covered(item) for item in locations
-            ):
-                continue
-            remapped = remap_locations(record)
-            if not isinstance(remapped, dict):
-                raise RutterDefinitionError("debug inventory gold record is invalid")
-            projected_records.append(remapped)
-        return projected_records
-
-    projected_nodes = project_records("nodes", "statement_location")
-    node_ids = {
-        node.get("local_id")
-        for node in projected_nodes
-        if type(node.get("local_id")) is str
-    }
-
-    def endpoint_is_available(endpoint: object) -> bool:
-        if not isinstance(endpoint, Mapping):
-            raise RutterDefinitionError("debug inventory gold endpoint is invalid")
-        local_node = endpoint.get("local_node")
-        return local_node is None or (
-            type(local_node) is str and local_node in node_ids
-        )
-
-    projected_edges = [
-        edge
-        for edge in project_records("edges", "location")
-        if endpoint_is_available(edge.get("from"))
-        and endpoint_is_available(edge.get("to"))
-    ]
-    projected_gaps = [
-        gap
-        for gap in project_records("gaps", "location")
-        if "subject" not in gap or endpoint_is_available(gap["subject"])
-    ]
-    projected: dict[str, object] = {
-        "ir_version": gold.get("ir_version"),
-        "chunk_id": chunk_id,
-        "files": chunk_files,
-        "nodes": projected_nodes,
-        "edges": projected_edges,
-        "gaps": projected_gaps,
-    }
-    return projected
-
-
-_DIAGNOSIS_RUTTER = DiagnoseAnswer()
-
-
-def _diagnosis_rutter(context: TransitionContext) -> Rutter:
-    del context
-    return _DIAGNOSIS_RUTTER
-
-
-def _diagnosis_charter(context: TransitionContext):
-    if not isinstance(context.record, Turn) or context.record.response is None:
-        raise RutterDefinitionError("inventory diagnosis requires an accepted report")
-    chunk = context.evolution.charter.data.get("chunk")
-    if not isinstance(chunk, Mapping):
-        raise RutterDefinitionError("inventory diagnosis chunk is unavailable")
-    packets = chunk.get("packets")
-    if not isinstance(packets, (list, tuple)):
-        raise RutterDefinitionError("inventory diagnosis packets are unavailable")
-    completed = len(context.evolution.history.turns(_REPORT_EVOLUTION)) + 1
-    coverage: set[tuple[str, int]] = set()
-    for packet in packets[:completed]:
-        if not isinstance(packet, Mapping):
-            raise RutterDefinitionError("inventory diagnosis packet is invalid")
-        coordinates = packet.get("coordinates")
-        if not isinstance(coordinates, (list, tuple)):
-            raise RutterDefinitionError(
-                "inventory diagnosis packet coordinates are unavailable"
-            )
-        for coordinate in coordinates:
-            if not isinstance(coordinate, Mapping):
-                raise RutterDefinitionError(
-                    "inventory diagnosis coordinate is invalid"
-                )
-            source = coordinate.get("source_file")
-            line = coordinate.get("line")
-            if type(source) is not str or type(line) is not int:
-                raise RutterDefinitionError(
-                    "inventory diagnosis coordinate is invalid"
-                )
-            coverage.add((source, line))
-    chunk_id = chunk.get("chunk_id")
-    chunk_files = chunk.get("files")
-    if type(chunk_id) is not str or not isinstance(chunk_files, (list, tuple)):
-        raise RutterDefinitionError("inventory diagnosis chunk identity is invalid")
-    expected = _project_gold(
-        _frozen_gold(context),
-        coverage,
-        _frozen_gold_source_map(context),
-        chunk_id=chunk_id,
-        files=chunk_files,
-    )
-    actual = context.record.response.get("inventory")
-    if not isinstance(actual, Mapping):
-        raise RutterDefinitionError("inventory diagnosis requires reported inventory")
-    packet_id = context.record.response.get("packet_id")
-    decision_basis = context.record.response.get("decision_basis")
-    if type(decision_basis) is not str or not decision_basis.strip():
-        raise RutterDefinitionError(
-            "inventory diagnosis requires a pre-reference decision basis"
-        )
-    question = QuestionCase(
-        f"inventory-{packet_id}",
-        "Which inventory entities and direct dependency edges are recovered so far?",
-        _canonical_text(expected),
-        format_hint={
-            "ir_version": 3,
-            "chunk_id": "...",
-            "files": [],
-            "nodes": [],
-            "edges": [],
-            "gaps": [],
-        },
-        metadata={
-            "packet_id": packet_id,
-            "decision_basis": decision_basis,
-            "covered_coordinates": [
-                {"source_file": source, "line": line}
-                for source, line in sorted(coverage)
-            ],
-            "diagnosis_guidance": _DIAGNOSIS_GUIDANCE,
-        },
-    )
-    return DiagnosisCase(
-        question,
-        _canonical_text(actual),
-        ask_for_fix=True,
-    ).to_json()
-
-
-INVENTORY_VOYAGE = Rutter(
-    id=_RUTTER_ID,
-    version=2,
-    start=_REPORT_EVOLUTION,
-    evolutions=_evolutions(),
-)
-
-DEBUG_INVENTORY_VOYAGE = Rutter(
-    id=_DEBUG_RUTTER_ID,
-    version=2,
-    start=_REPORT_EVOLUTION,
-    evolutions=_debug_evolutions(),
+    },
     hooks=(
         TransitionHook(
             _DIAGNOSIS_HOOK_ID,
             on=after(_REPORT_EVOLUTION),
-            rutter_constructor=_diagnosis_rutter,
-            charter_constructor=_diagnosis_charter,
+            rutter_constructor=_support.diagnosis_rutter,
+            charter_constructor=_support.diagnosis_charter,
         ),
     ),
 )
 
-_RUTTERS = {
+_RUTTERS_BY_NAME = {
     _DEFAULT_RUTTER_NAME: INVENTORY_VOYAGE,
     _DEBUG_RUTTER_NAME: DEBUG_INVENTORY_VOYAGE,
 }
-
-
-def _write_json(stream: object, value: object) -> None:
-    json.dump(value, stream, sort_keys=True, separators=(",", ":"))
-    stream.write("\n")
-
-
-def _load_chunk(record: dict[str, object]) -> dict[str, object]:
-    chunk_path = Path(str(record.get("chunk_path", ""))).resolve()
-    expected = record.get("chunk_sha256")
-    if (
-        not chunk_path.is_file()
-        or type(expected) is not str
-        or hashlib.sha256(chunk_path.read_bytes()).hexdigest() != expected
-    ):
-        raise ValueError(
-            f"inventory chunk identity is invalid: {record.get('chunk_id')}"
-        )
-    value = json.loads(chunk_path.read_text(encoding="utf-8"))
-    if not isinstance(value, dict) or value.get("chunk_id") != record.get("chunk_id"):
-        raise ValueError("inventory chunk file does not match its manifest")
-    return value
-
-
-def _gold_charter_data(path: Path) -> dict[str, object]:
-    try:
-        text = path.read_bytes().decode("utf-8")
-        value = json.loads(text)
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise ValueError(
-            "inventory gold standard must be readable UTF-8 JSON"
-        ) from error
-    if not isinstance(value, dict):
-        raise ValueError("inventory gold standard must be a JSON object")
-    try:
-        _support.validate_inventory_fragment(value)
-    except (TypeError, ValueError, ValidationError) as error:
-        raise ValueError("inventory gold standard is schema-invalid") from error
-    return {
-        "inventory_gold_standard_text": text,
-        "inventory_gold_standard_sha256": hashlib.sha256(
-            text.encode("utf-8")
-        ).hexdigest(),
-    }
-
-
-def _source_aliases_charter_data(
-    path: Path,
-) -> tuple[dict[str, str], dict[str, object]]:
-    try:
-        text = path.read_bytes().decode("utf-8")
-        value = json.loads(text)
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise ValueError(
-            "inventory source aliases must be readable UTF-8 JSON"
-        ) from error
-    if not isinstance(value, dict) or any(
-        type(key) is not str
-        or not key
-        or type(item) is not str
-        or not item
-        for key, item in value.items()
-    ):
-        raise ValueError("inventory source aliases must be a string mapping")
-    return value, {
-        "inventory_source_aliases_text": text,
-        "inventory_source_aliases_sha256": hashlib.sha256(
-            text.encode("utf-8")
-        ).hexdigest(),
-    }
-
-
-def _resolve_gold_source_map(
-    gold_sources: object,
-    inventory_sources: object,
-    aliases: Mapping[str, str],
-) -> dict[str, str]:
-    if not isinstance(gold_sources, list) or any(
-        type(source) is not str for source in gold_sources
-    ):
-        raise ValueError("inventory gold files are invalid")
-    if not isinstance(inventory_sources, list) or any(
-        type(source) is not str for source in inventory_sources
-    ):
-        raise ValueError("inventory source manifest is invalid")
-    gold_set = set(gold_sources)
-    inventory_set = set(inventory_sources)
-    unknown_gold = sorted(set(aliases) - gold_set)
-    if unknown_gold:
-        raise ValueError(
-            "inventory source aliases contain unknown gold paths: "
-            + ", ".join(unknown_gold)
-        )
-    unknown_inventory = sorted(set(aliases.values()) - inventory_set)
-    if unknown_inventory:
-        raise ValueError(
-            "inventory source aliases contain unknown inventory paths: "
-            + ", ".join(unknown_inventory)
-        )
-
-    resolved: dict[str, str] = {}
-    for gold_source in gold_sources:
-        if gold_source in aliases:
-            matches = [aliases[gold_source]]
-        else:
-            matches = [
-                inventory_source
-                for inventory_source in inventory_sources
-                if _same_source(gold_source, inventory_source)
-            ]
-        if not matches:
-            raise ValueError(
-                f"inventory gold source does not map to an inventory source: "
-                f"{gold_source}"
-            )
-        if len(matches) > 1:
-            raise ValueError(
-                f"inventory gold source maps ambiguously: {gold_source}"
-            )
-        resolved[gold_source] = matches[0]
-    if len(set(resolved.values())) != len(resolved):
-        raise ValueError("inventory gold source map must be one-to-one")
-    return resolved
-
-
-def _manifest_sources(manifest: Mapping[str, object]) -> list[str]:
-    records = manifest.get("source_files")
-    if not isinstance(records, list):
-        raise ValueError("inventory source manifest is invalid")
-    sources: list[str] = []
-    for record in records:
-        if (
-            not isinstance(record, Mapping)
-            or type(record.get("source_file")) is not str
-        ):
-            raise ValueError("inventory source manifest is invalid")
-        sources.append(record["source_file"])
-    return sources
-
-
-def setup_run(
-    chunk_manifest: Path,
-    run_dir: Path,
-    *,
-    run_prefix: str,
-    mode: str = "default",
-    inventory_gold_standard: Path | None = None,
-    inventory_source_aliases: Path | None = None,
-) -> dict[str, object]:
-    """Create one durable inventory Voyage for every manifest chunk."""
-
-    if mode not in _MODES:
-        raise ValueError(f"unknown inventory Voyage mode {mode!r}")
-    if mode == "debug" and inventory_gold_standard is None:
-        raise ValueError("debug mode requires an inventory gold standard")
-    if mode == "debug" and inventory_source_aliases is None:
-        raise ValueError("debug mode requires inventory source aliases")
-    if mode == "default" and (
-        inventory_gold_standard is not None or inventory_source_aliases is not None
-    ):
-        raise ValueError(
-            "default mode does not accept inventory gold or source aliases"
-        )
-    definition = (
-        INVENTORY_VOYAGE if mode == "default" else DEBUG_INVENTORY_VOYAGE
-    )
-    rutter_name = (
-        _DEFAULT_RUTTER_NAME if mode == "default" else _DEBUG_RUTTER_NAME
-    )
-
-    manifest = load_chunk_manifest(chunk_manifest)
-    extra_charter_data: dict[str, object] = {}
-    if inventory_gold_standard is not None and inventory_source_aliases is not None:
-        gold_data = _gold_charter_data(inventory_gold_standard.resolve())
-        aliases, alias_data = _source_aliases_charter_data(
-            inventory_source_aliases.resolve()
-        )
-        gold = json.loads(str(gold_data["inventory_gold_standard_text"]))
-        source_map = _resolve_gold_source_map(
-            gold.get("files"),
-            _manifest_sources(manifest),
-            aliases,
-        )
-        source_map_text = _canonical_text(source_map)
-        extra_charter_data.update(gold_data)
-        extra_charter_data.update(alias_data)
-        extra_charter_data.update(
-            {
-                "inventory_gold_source_map_text": source_map_text,
-                "inventory_gold_source_map_sha256": hashlib.sha256(
-                    source_map_text.encode("utf-8")
-                ).hexdigest(),
-            }
-        )
-    run_dir = run_dir.resolve()
-    voyages_dir = run_dir / "voyages" / run_prefix
-    if _voyage_paths(run_dir, run_prefix):
-        raise FileExistsError(
-            f"inventory Voyages already exist for run prefix {run_prefix!r}"
-        )
-    voyages_dir.mkdir(parents=True, exist_ok=True)
-    voyage_ids: list[str] = []
-    for chunk_value in manifest["chunks"]:
-        if not isinstance(chunk_value, dict):
-            raise ValueError("inventory chunk manifest contains a non-object chunk")
-        chunk_id = chunk_value.get("chunk_id")
-        if (
-            type(chunk_id) is not str
-            or type(chunk_value.get("fragment_path")) is not str
-        ):
-            raise ValueError("inventory chunk manifest record is incomplete")
-        voyage_id = f"{run_prefix}-voyage-{uuid4().hex}"
-        _support.setup_voyage(
-            definition,
-            _load_chunk(chunk_value),
-            voyages_dir / voyage_id,
-            run_dir
-            / "artifacts"
-            / run_prefix
-            / "inventories"
-            / f"{voyage_id}.json",
-            rutter_name=rutter_name,
-            run_dir=run_dir,
-            inventory_instruction_path=_INVENTORY_INSTRUCTION_PATH,
-            inventory_schema_path=_INVENTORY_SCHEMA_PATH,
-            extra_charter_data=extra_charter_data,
-        )
-        voyage_ids.append(voyage_id)
-    return {
-        "run_dir": str(run_dir),
-        "chunk_manifest": str(chunk_manifest.resolve()),
-        "mode": mode,
-        "run_prefix": run_prefix,
-        "voyages": voyage_ids,
-        "voyage_count": len(voyage_ids),
-    }
-
-
-def _voyage_paths(
-    root: Path,
-    run_prefix: str | None = None,
-) -> dict[str, Path]:
-    root = root.resolve()
-    reckoning = _support.reckoning_name()
-    if (root / reckoning).is_file():
-        return {root.name: root}
-    voyages = root / "voyages"
-    if run_prefix is not None:
-        collection = voyages / run_prefix
-        if not collection.is_dir():
-            return {}
-        return {
-            child.name: child
-            for child in sorted(collection.iterdir(), key=lambda path: path.name)
-            if child.is_dir() and (child / reckoning).is_file()
-        }
-    if not voyages.is_dir():
-        return {}
-    paths: dict[str, Path] = {}
-    for child in sorted(voyages.iterdir(), key=lambda path: path.name):
-        if not child.is_dir():
-            continue
-        if (child / reckoning).is_file():
-            paths[child.name] = child
-            continue
-        for voyage_path in sorted(child.iterdir(), key=lambda path: path.name):
-            if voyage_path.is_dir() and (voyage_path / reckoning).is_file():
-                paths[voyage_path.name] = voyage_path
-    return paths
 
 
 def make_voyage_dispenser() -> VoyageDispenser:
@@ -827,107 +193,37 @@ def make_voyage_dispenser() -> VoyageDispenser:
         inventory_gold_standard: str | None = None,
         inventory_source_aliases: str | None = None,
     ) -> None:
-        try:
-            requested_chunks = int(chunk_count)
-        except (TypeError, ValueError) as error:
-            raise ValueError("chunk_count must be a positive integer") from error
-        if requested_chunks < 1:
-            raise ValueError("chunk_count must be a positive integer")
-        source = Path(doc_entrypoint).resolve()
-        if source.suffix.lower() not in {".tex", ".md"}:
-            raise ValueError("doc_entrypoint must be a .tex or .md file")
-        report = extract_inventory_chunks(
-            source,
-            root / "artifacts" / run_prefix,
-            workers=requested_chunks,
-            packet_chars=_PACKET_CHARS,
-        )
-        setup_run(
-            Path(str(report["manifest_path"])),
+        _support.initiate_run(
             root,
-            run_prefix=run_prefix,
             mode=mode,
-            inventory_gold_standard=(
-                None
-                if inventory_gold_standard is None
-                else Path(inventory_gold_standard)
-            ),
-            inventory_source_aliases=(
-                None
-                if inventory_source_aliases is None
-                else Path(inventory_source_aliases)
-            ),
+            run_prefix=run_prefix,
+            doc_entrypoint=doc_entrypoint,
+            chunk_count=chunk_count,
+            packet_chars=_PACKET_CHARS,
+            definitions={
+                "default": (INVENTORY_VOYAGE, _DEFAULT_RUTTER_NAME),
+                "debug": (DEBUG_INVENTORY_VOYAGE, _DEBUG_RUTTER_NAME),
+            },
+            inventory_instruction_path=_INVENTORY_INSTRUCTION_PATH,
+            inventory_schema_path=_INVENTORY_SCHEMA_PATH,
+            inventory_gold_standard=inventory_gold_standard,
+            inventory_source_aliases=inventory_source_aliases,
         )
 
     def paths(run_prefix: str | None = None) -> dict[str, Path]:
-        return _voyage_paths(root, run_prefix)
-
-    def release(voyage_id: str) -> None:
-        voyage_path = paths()[voyage_id]
-        voyages_dir = (root / "voyages").resolve()
-        relative = voyage_path.resolve().relative_to(voyages_dir)
-        if (
-            voyage_path.is_symlink()
-            or voyage_path.parent.is_symlink()
-            or len(relative.parts) not in {1, 2}
-        ):
-            raise ValueError("inventory Voyage working directory is unsafe to release")
-        reckoning_path = voyage_path / _support.reckoning_name()
-        reckoning_bytes = read_regular_file_bytes(
-            reckoning_path,
-            allowed_root=voyage_path,
-        )
-        reckoning = json.loads(reckoning_bytes)
-        reckoning_root = reckoning.get("root") if isinstance(reckoning, Mapping) else None
-        rutter_id = (
-            reckoning_root.get("rutter_id")
-            if isinstance(reckoning_root, Mapping)
-            else None
-        )
-        if type(rutter_id) is not str:
-            raise ValueError("inventory Voyage reckoning has no Rutter identity")
-        if rutter_id == _DEBUG_RUTTER_ID:
-            if len(relative.parts) != 2:
-                raise ValueError("debug inventory Voyage is not run-prefixed")
-            run_prefix = relative.parts[0]
-            artifacts_root = root / "artifacts"
-            run_artifacts = artifacts_root / run_prefix
-            if (
-                artifacts_root.is_symlink()
-                or not artifacts_root.is_dir()
-                or run_artifacts.is_symlink()
-                or not run_artifacts.is_dir()
-            ):
-                raise ValueError(
-                    "debug inventory diagnostics directory is unsafe"
-                )
-            diagnostics_dir = run_artifacts / "diagnostics"
-            diagnostics_dir.mkdir(exist_ok=True)
-            if diagnostics_dir.is_symlink() or not diagnostics_dir.is_dir():
-                raise ValueError(
-                    "debug inventory diagnostics directory is unsafe"
-                )
-            atomic_replace_bytes(
-                diagnostics_dir / f"{voyage_id}.reckoning.json",
-                reckoning_bytes,
-                allowed_root=run_artifacts,
-                mode=0o600,
-            )
-        shutil.rmtree(voyage_path)
+        return _support.voyage_paths(root, run_prefix)
 
     return VoyageDispenser(
         modes=_MODES,
         initiate_voyages=initiate,
         get_voyage_ids=lambda run_prefix: tuple(paths(run_prefix)),
         open_voyage=lambda voyage_id: _support.open_voyage(
-            _RUTTERS, paths()[voyage_id]
+            _RUTTERS_BY_NAME, paths()[voyage_id]
         ),
-        release_voyage=release,
+        release_voyage=lambda voyage_id: _support.release_voyage(
+            root, voyage_id, debug_rutter_id=_DEBUG_RUTTER_ID
+        ),
     )
-
-
-def _run_dispenser(argv: Sequence[str]) -> int:
-    return voyage_dispenser_cli(make_voyage_dispenser(), argv)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -935,14 +231,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     raw = list(argv) if argv is not None else list(sys.argv[1:])
     try:
-        return _run_dispenser(raw)
+        return voyage_dispenser_cli(make_voyage_dispenser(), raw)
     except FileExistsError as error:
         payload = {"error": {"code": "state-error", "message": str(error)}}
-        _write_json(sys.stderr, payload)
+        _support.write_json(sys.stderr, payload)
         return 5
     except (OSError, ValueError, json.JSONDecodeError) as error:
         payload = {"error": {"code": "input-error", "message": str(error)}}
-        _write_json(sys.stderr, payload)
+        _support.write_json(sys.stderr, payload)
         return 3
 
 

@@ -1,8 +1,8 @@
 schema_version: 6
 node_type: behavioral_source
 id: math-dependency-graph._rtx.source.rtx-inventory-voyage-dispenser
-version: 7
-description: Defines default and debug inventory Rutter modes, chunks a TeX or Markdown entrypoint, initializes one durable module-owned Voyage per requested chunk under an isolated run prefix, delivers the hash-verified frozen inventory instruction in every report payload, captures a pre-reference decision basis in debug reports, projects debug gold records only after complete chunk-local source coverage, and archives each terminal debug reckoning before release.
+version: 10
+description: Defines default and debug inventory Rutter modes, initializes one durable module-owned Voyage per immutable chunk, introduces the frozen instruction plus cumulative packet and worker-owned inventory paths once, appends each packet before delivering that exact string, validates packet-local report deltas against the cumulative inventory, and maps coordinates at finalization.
 gateway:
   language: Python>=3.11
   path: _inventory_pipeline/_voyage_dispenser.py
@@ -13,7 +13,7 @@ dependencies:
 - source: common.source.atomic-files
   version: 1
   blueprint: {base: repository-root, path: src/officina/common/blueprints/atomic-files.yaml}
-  reason: Writes cumulative chunk inventories and frozen Voyage inputs atomically.
+  reason: Writes cumulative source packets and chunk inventories atomically.
 - source: rutter.source.engine
   version: 3
   blueprint: {base: repository-root, path: src/officina/rutter/blueprints/engine.yaml}
@@ -31,7 +31,7 @@ dependencies:
   blueprint: {base: repository-root, path: src/officina/rutter/blueprints/diagnostic.yaml}
   reason: Attaches the supplied-answer inventory-diagnosis child Rutter in debug mode.
 - source: math-dependency-graph._rtx.source.rtx-inventory-chunk-extractor
-  version: 8
+  version: 9
   blueprint: {base: module-root, path: blueprints/rtx-inventory-chunk-extractor.yaml}
   reason: Resolves and packets the supplied document entrypoint into internal immutable chunks.
 uses_interfaces:
@@ -42,9 +42,9 @@ uses_interfaces:
 - {interface: math-dependency-graph._rtx.source.rtx-inventory-chunk-extractor.interface.scripts-extract-inventory-chunks, version: 1}
 interfaces:
   math-dependency-graph._rtx.source.rtx-inventory-voyage-dispenser.interface.inventory-voyages:
-    version: 7
-    description: Discover default and debug modes together with their required arguments, initialize module-owned inventory Voyages under a safe run prefix from a TeX or Markdown entrypoint and requested chunk count, deliver the hash-verified frozen inventory instruction in each report payload, optionally list only that prefix, collect completed chunk inventories, and release terminal Voyage working directories. The prefix defaults to the selected mode. Default has no hooks; debug requires a pre-reference decision basis, attaches attributed inventory diagnosis with structured gold challenges, requires gold-standard and source-alias JSON paths, compares only completely covered chunk-local gold records, and archives the terminal diagnostic reckoning under the run artifacts before release.
-    usage: <help|modes> | list [--run-prefix <prefix>] | initiate [default] [--run-prefix <prefix>] --doc-entrypoint <path> --chunk-count <positive-integer> | initiate debug [--run-prefix <prefix>] --doc-entrypoint <path> --chunk-count <positive-integer> --inventory-gold-standard <path> --inventory-source-aliases <path> | <status|validate|advance> <voyage-id> [--response-file <path> --responding-to <entry-id>] | release <voyage-id>
+    version: 10
+    description: Discover and initialize inventory Voyages, introduce the frozen instruction plus cumulative_packets_file and inventory_file paths once, append each packet before delivering its exact source string, validate each packet-local report delta against the worker-owned cumulative inventory, and map row coordinates at finalization.
+    usage: <help|modes> | list [--run-prefix <prefix>] | initiate [default] [--run-prefix <prefix>] --doc-entrypoint <path> --chunk-count <positive-integer> | initiate debug [--run-prefix <prefix>] --doc-entrypoint <path> --chunk-count <positive-integer> --inventory-gold-standard <path> --inventory-source-aliases <path> | <status|validate|advance> <voyage-id> [--response-file <path> --responding-to <entry-id>] | release <voyage-id> [--force]
     content:
     - _inventory_pipeline/_voyage_dispenser\.py
     - _inventory_pipeline/_voyage_support\.py
@@ -104,7 +104,7 @@ interfaces:
         min_positionals: 2
         max_positionals: 2
         positional_patterns: {'0': ^release$}
-        allowed_flags: []
+        allowed_flags: [--force]
         required_flags: []
         flag_patterns: {}
     contract:
@@ -149,7 +149,7 @@ interfaces:
           type: {kind: string, sensitivity: user-private}
       preconditions: []
       caller_warnings:
-      - external-side-effect: Setup creates durable Voyages, advance may write a completed chunk inventory, and release deletes one terminal Voyage working directory; debug release first archives its diagnostic reckoning under the run artifacts.
+      - external-side-effect: Setup creates durable Voyages, advance appends cumulative source text and may write a completed chunk inventory, and release deletes one terminal Voyage working directory; --force explicitly permits deleting a nonterminal Voyage. Debug release first archives its diagnostic reckoning under the run artifacts.
       interaction: {mode: unattended}
       outputs:
       - id: result
@@ -177,7 +177,7 @@ interfaces:
         state_effect: mutating
         lifecycle: finite
         consistency:
-          snapshot: Initialization reads one document snapshot and freezes its chunks, inventory instruction, and inventory schema under one isolated run prefix; every report receives the hash-verified frozen instruction rather than live file content, and debug also freezes the supplied gold standard, source aliases, validated gold-to-inventory source map, and each report's decision basis before revealing the projected gold answer.
+          snapshot: Initialization reads one document snapshot and freezes its chunks, inventory instruction, and inventory schema under one isolated run prefix; one introductory LLM turn receives the frozen instruction and cumulative_packets_file path and acknowledges them, then before every report a repeat-safe machine step verifies and appends the current packet's raw text to the exact cumulative immutable-packet prefix and the report receives the packet as raw content without source-coordinate metadata or repeated run-wide fields. Debug also freezes the supplied gold standard, source aliases, validated gold-to-inventory source map, and each report's decision basis before revealing the projected gold answer.
         effects:
         - id: voyage-state
           direct_io_ref: voyage-state
@@ -201,7 +201,7 @@ interfaces:
         - {id: read-2, medium: local-filesystem, access: read, system: filesystem, content: Inventory gold standard used only by debug diagnosis hooks, formats: [json], sensitivity: user-private, path: <inventory-gold-standard>, path_match: exact}
         - {id: read-3, medium: local-filesystem, access: read, system: filesystem, content: Gold-to-inventory source aliases used only to validate and project debug gold records, formats: [json], sensitivity: user-private, path: <inventory-source-aliases>, path_match: exact}
         writes:
-        - {id: voyage-state, medium: local-filesystem, access: write, system: filesystem, content: 'Run-prefixed durable inventory Voyages, completed chunk inventories, pre-reference debug decision bases, and terminal attributed diagnostic reckonings', formats: [json], sensitivity: derived-private, path: '<module-root>/_inventory_pipeline/{voyages,artifacts}/<run-prefix>', path_match: glob}
+        - {id: voyage-state, medium: local-filesystem, access: write, system: filesystem, content: 'Run-prefixed durable inventory Voyages, cumulative raw source-packet text, completed chunk inventories, pre-reference debug decision bases, and terminal attributed diagnostic reckonings', formats: [json, text], sensitivity: derived-private, path: '<module-root>/_inventory_pipeline/{voyages,artifacts}/<run-prefix>', path_match: glob}
         - {id: stdout, medium: stdout, access: write, content: Operation result, formats: [json], sensitivity: derived-private}
         network: []
 platform_support: {linux: true, macos: true, windows: true}
