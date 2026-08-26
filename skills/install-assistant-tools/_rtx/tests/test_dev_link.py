@@ -219,7 +219,9 @@ class SetupSymlinksTests(unittest.TestCase):
             self.assertEqual(milestone.returncode, 0, milestone.stderr)
             milestone_path = Path(milestone.stdout.strip())
             self.assertTrue(
-                milestone_path.is_relative_to(Path(environment["ASSISTANT_LOGS"])),
+                milestone_path.resolve().is_relative_to(
+                    Path(environment["ASSISTANT_LOGS"]).resolve()
+                ),
                 milestone.stdout,
             )
 

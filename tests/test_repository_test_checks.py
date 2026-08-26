@@ -1311,7 +1311,7 @@ def test_precommit_hook_commits_synchronized_plugin_versions(
     true_binary = shutil.which("true")
     assert true_binary is not None
     fake_gitleaks = fake_bin / ("gitleaks.exe" if os.name == "nt" else "gitleaks")
-    shutil.copy2(true_binary, fake_gitleaks)
+    shutil.copyfile(true_binary, fake_gitleaks)
     fake_gitleaks.chmod(0o755)
     monkeypatch.setenv("GIT_INDEX_FILE", str(tmp_path / "ambient.index"))
 
