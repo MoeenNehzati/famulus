@@ -56,7 +56,7 @@ from test_support.git_repository import GitTestRepository
 
 
 CANONICAL_SCHEMA_ROOT = (
-    Path(__file__).resolve().parents[1] / "references" / "blueprint"
+    Path(__file__).resolve().parents[1] / "references" / "blueprint-schema"
 )
 SCHEMA_ROOT = (
     Path(__file__).parent
@@ -228,6 +228,7 @@ def test_v5_certifier_bootstrap_roots_parent_runtime_child_and_sources(
         capture_postorder,
     )
     graph = SimpleNamespace(
+        schema_version=5,
         nodes={
             "skill-certifier": object(),
             "skill-certifier-rtx": object(),
@@ -255,6 +256,42 @@ def test_v5_certifier_bootstrap_roots_parent_runtime_child_and_sources(
         "skill-certifier.source.gateway",
         "skill-certifier-rtx.source.certifier",
     }
+
+
+def test_v6_certifier_bootstrap_uses_the_runtime_child_node_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed = []
+
+    def capture_postorder(graph, states, requested):
+        observed.append(tuple(requested))
+        return ("ordered",)
+
+    monkeypatch.setattr(
+        certification_view_module,
+        "certification_target_postorder",
+        capture_postorder,
+    )
+    graph = SimpleNamespace(
+        schema_version=6,
+        nodes={
+            "skill-certifier": object(),
+            "skill-certifier._rtx": object(),
+            "skill-certifier.source.gateway": object(),
+            "skill-certifier._rtx.source.rtx-certifier": object(),
+        },
+        module_sources={
+            "skill-certifier": ("skill-certifier.source.gateway",),
+            "skill-certifier._rtx": (
+                "skill-certifier._rtx.source.rtx-certifier",
+            ),
+        },
+    )
+
+    assert certification_view_module._certifier_target_postorder(
+        SimpleNamespace(graph=graph, states={})
+    ) == ("ordered",)
+    assert set(observed[0]) == set(graph.nodes)
 
 
 def _contract() -> dict[str, object]:
@@ -872,6 +909,140 @@ def _v6_facet_fixture(
     return graph, states, commit, public_key_root, key, node_id, interface_id
 
 
+@pytest.fixture
+def v6_structured_certifier_fixture(tmp_path: Path):
+    fixture = _v6_facet_fixture(tmp_path)
+    graph, states, _commit, _public_key_root, _key, node_id, interface_id = fixture
+    audit_interface = {
+        "relation": "certified-under",
+        "target": "skill-certifier.source.audit-interface",
+        "interface": "skill-certifier.source.audit-interface.interface.audit",
+        "version": 1,
+        "interface_hash": "sha256:" + "5" * 64,
+    }
+    state = states[node_id]
+    states[node_id] = replace(
+        state,
+        dependency_hashes=(audit_interface,),
+        facets=tuple(
+            replace(
+                facet,
+                dependency_hashes=(audit_interface,)
+                if facet.facet_id == interface_id
+                else (),
+            )
+            for facet in state.facets
+        ),
+    )
+    return fixture
+
+
+def _v6_structured_payload(
+    root: Path,
+    fixture,
+) -> dict[str, object]:
+    graph, states, commit, _public_key_root, key, node_id, _interface_id = fixture
+    payload = _payload(root, graph, states, node_id, commit, key.key_id)
+    payload["certificate_schema_version"] = 3
+    payload["facets"] = [
+        dict(claim) for claim in certification_facet_claims(states[node_id])
+    ]
+    return payload
+
+
+def test_v6_structured_certifier_evidence_is_authoritative(
+    tmp_path: Path,
+    v6_structured_certifier_fixture,
+) -> None:
+    fixture = v6_structured_certifier_fixture
+    graph, states, commit, public_key_root, _key, node_id, interface_id = fixture
+
+    def write_and_evaluate(payload, target_id=node_id):
+        _write_log(graph, target_id, [sign_certificate_payload(payload, _key)])
+        return evaluate_certificate_currentness(
+            graph,
+            states,
+            repo_root=tmp_path,
+            public_key_root=public_key_root,
+            source_commit=commit,
+            certifier_identity={**CERTIFIER, "node_hash": "sha256:" + "d" * 64},
+            checks_by_node={current_id: CHECKS for current_id in graph.nodes},
+            certification_basis_paths=(),
+            schema_root=CANONICAL_SCHEMA_ROOT,
+            allow_non_atomic=True,
+        ).nodes[target_id]
+
+    payload = _v6_structured_payload(tmp_path, fixture)
+    facet = next(item for item in payload["facets"] if item["id"] == interface_id)
+    dependency = next(
+        item
+        for item in facet["dependencies"]
+        if item["interface"]
+        == "skill-certifier.source.audit-interface.interface.audit"
+    )
+    dependency["interface_hash"] = "sha256:" + "7" * 64
+    top_level = next(
+        item
+        for item in payload["dependencies"]
+        if item["interface"] == dependency["interface"]
+    )
+    top_level["interface_hash"] = dependency["interface_hash"]
+    status = write_and_evaluate(payload)
+    drift = next(item for item in status.facet_drift if item.facet_id == interface_id)
+    delta = next(
+        item
+        for item in drift.dependencies
+        if item.interface == "skill-certifier.source.audit-interface.interface.audit"
+    )
+
+    assert delta.relation == "certified-under"
+    assert delta.certified["interface_hash"] == "sha256:" + "7" * 64
+    assert delta.current["interface_hash"] == "sha256:" + "5" * 64
+    assert not status.current
+    assert "dependency-mismatch" in status.concerns
+    assert "certifier-mismatch" not in status.concerns
+
+    payload = _v6_structured_payload(tmp_path, fixture)
+    payload["dependencies"] = []
+    for facet in payload["facets"]:
+        facet["dependencies"] = []
+    status = write_and_evaluate(payload)
+
+    assert "dependency-mismatch" in status.concerns
+    assert "certifier-mismatch" not in status.concerns
+    assert any(
+        dependency.relation == "certified-under"
+        for facet in status.facet_drift
+        for dependency in facet.dependencies
+    )
+
+    module_id = "demo-skill"
+    module_dependency = {
+        "relation": "certified-under",
+        "target": "skill-certifier.source.audit-module",
+        "interface": "skill-certifier.source.audit-module.interface.audit",
+        "version": 1,
+        "interface_hash": "sha256:" + "5" * 64,
+    }
+    states[module_id] = replace(
+        states[module_id],
+        dependency_hashes=(module_dependency,),
+    )
+    payload = _payload(tmp_path, graph, states, module_id, commit, _key.key_id)
+    payload["certificate_schema_version"] = 3
+    payload["dependencies"][0]["interface_hash"] = "sha256:" + "7" * 64
+    status = write_and_evaluate(payload, module_id)
+    delta = status.dependencies[0]
+
+    assert delta.interface == module_dependency["interface"]
+    assert delta.relation == "certified-under"
+    assert delta.certified["interface_hash"] == "sha256:" + "7" * 64
+    assert delta.current["interface_hash"] == "sha256:" + "5" * 64
+    assert not status.current
+    assert "dependency-mismatch" in status.concerns
+    assert "certifier-mismatch" not in status.concerns
+
+
 @pytest.mark.parametrize(
     ("facet_type", "field", "replacement", "concern_template"),
     [
@@ -1352,8 +1523,15 @@ def test_node_level_drift_reports_input_delta_and_blueprint_cause(
         commit,
         key.key_id,
     )
-    certified_entry = dict(payload["input_manifest"][0])
-    payload["input_manifest"][0] = {
+    blueprint_path = graph.nodes[node_id].blueprint_path.relative_to(
+        tmp_path
+    ).as_posix()
+    entry_index, certified_entry = next(
+        (index, dict(entry))
+        for index, entry in enumerate(payload["input_manifest"])
+        if entry["path"] != blueprint_path
+    )
+    payload["input_manifest"][entry_index] = {
         **certified_entry,
         "digest": "sha256:" + "9" * 64,
     }

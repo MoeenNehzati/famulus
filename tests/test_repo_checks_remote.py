@@ -85,10 +85,22 @@ class FakeGh:
                         "url": "https://github.example/jobs/1",
                     },
                     {
-                        "name": "test (macos-latest, combined)",
+                        "name": "test (macos-latest, validators)",
                         "status": "completed",
                         "conclusion": "success",
                         "url": "https://github.example/jobs/4",
+                    },
+                    {
+                        "name": "test (macos-latest, tests:shared)",
+                        "status": "completed",
+                        "conclusion": "success",
+                        "url": "https://github.example/jobs/8",
+                    },
+                    {
+                        "name": "test (macos-latest, tests:performance)",
+                        "status": "completed",
+                        "conclusion": "success",
+                        "url": "https://github.example/jobs/9",
                     },
                     {
                         "name": "test (windows-latest, validators)",
@@ -107,6 +119,12 @@ class FakeGh:
                         "status": "completed",
                         "conclusion": "success",
                         "url": "https://github.example/jobs/6",
+                    },
+                    {
+                        "name": "test (windows-latest, tests:browser)",
+                        "status": "completed",
+                        "conclusion": "success",
+                        "url": "https://github.example/jobs/7",
                     },
                     {
                         "name": f"probe ({self.probe_os}, {self.probe_task})",
@@ -181,12 +199,15 @@ def test_remote_matrix_dispatches_collects_and_reports_every_job(
     assert report["overall_green"] is False
     assert [(item["os"], item["task"]) for item in report["elements"]] == [
         ("ubuntu-latest", "combined"),
-        ("macos-latest", "combined"),
+        ("macos-latest", "validators"),
+        ("macos-latest", "tests:shared"),
+        ("macos-latest", "tests:performance"),
         ("windows-latest", "validators"),
         ("windows-latest", "tests:shared"),
         ("windows-latest", "tests:performance"),
+        ("windows-latest", "tests:browser"),
     ]
-    assert report["elements"][3]["failed_selectors"] == [
+    assert report["elements"][5]["failed_selectors"] == [
         "tests/test_broken.py"
     ]
     assert json.loads((tmp_path / "run-report.json").read_text(encoding="utf-8")) == report

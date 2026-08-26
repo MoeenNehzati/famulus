@@ -3,8 +3,8 @@
 This pipeline keeps docstring parsing/validation explicit and machine-checkable.
 
 ## 1) Policy + Syntax inputs
-- `references/standards/docstring.standard.yaml`: semantic policy (`required` sections, lengths, checks, toggles).
-- `references/standards/docstring.standard.lark`: parser grammar for docstring micro-syntax (edges, wraps, module dependencies, strict pseudocode bullets).
+- `references/standards-schema/docstring.standard.yaml`: semantic policy (`required` sections, lengths, checks, toggles).
+- `references/standards-schema/docstring.standard.lark`: parser grammar for docstring micro-syntax (edges, wraps, module dependencies, strict pseudocode bullets).
 - `src/officina/docstring/config.yaml`: repo-local config (`allowed_abs`, dependency section names, syntax toggles, and ordered path profiles).
 - Keep behavior policy in YAML; keep punctuation/shape syntax in `.lark`.
 - Users should not edit Python to tune docstring policy; repo-specific knobs belong in `config.yaml`.

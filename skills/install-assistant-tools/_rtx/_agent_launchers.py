@@ -4,9 +4,9 @@ launchers.py — Install per-agent bin launchers, profiles, and worker dirs.
 
 For each agent in --agents (assistant, collab, coauthor, tw): symlinks its
 bin launcher, copies its profile config into Codex/Claude homes, creates its
-worker directory, and links its Claude settings file. Also sets
-ASSISTANT_DEFAULT (this subcommand's one rc-block var — PATH belongs to
-scaffold.py, AI belongs to dev_link.py).
+worker directory, and links its Claude settings file. Durable backend selection
+lives in launchers.json; backend environment variables remain process-local
+overrides and are never written to shell or registry state.
 
 The copied profile config's `model_instructions_file` is rewritten to an
 absolute path pointing at the repo's own agents/<agent>.md, instead of the
@@ -26,7 +26,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Literal, Sequence
+from typing import Literal, Mapping, Sequence
 
 InstallMode = Literal["development", "plugin"]
 
@@ -38,6 +38,8 @@ if not __package__:
 
 import officina.common.toml_io as toml_io
 from officina.common.famulus_paths import resolve_famulus_paths
+from officina.install.context import InstallationContext
+from officina.launchers.agent import ensure_launcher_configuration
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 if __package__:
@@ -52,17 +54,12 @@ if __package__:
     from ._fs_links import log, make_link, default_bin_dir
 else:
     from _fs_links import log, make_link, default_bin_dir
-if __package__:
-    from ._shell_block import ensure_rc_vars
-else:
-    from _shell_block import ensure_rc_vars
-
 _MODEL_INSTRUCTIONS_RE = re.compile(r'^model_instructions_file\s*=\s*".*"$', re.MULTILINE)
 
 ALL_AGENTS = ["assistant", "collab", "coauthor", "background_run", "tw"]
 
 # tw is a bin-dir alias for tmux-workspace; it has no separate worker dir,
-# profile, or ASSISTANT_DEFAULT relevance (tmux-workspace isn't an LLM backend).
+# profile, or durable backend-selection relevance (tmux-workspace isn't an LLM backend).
 #
 # background_run is the agent the scheduler uses, and it is a separate agent
 # precisely so its configuration is separate: an unattended run needs its own
@@ -92,7 +89,18 @@ def launcher_closure(selected_agents: Sequence[str], *, install_invoke_skill: bo
     return tuple(agents)
 
 
-def install_agent_launcher_files(source_bin_dir: Path, bin_dir: Path, agent: str, dry_run: bool, manifest: Manifest | None) -> None:
+def install_agent_launcher_files(
+    source_bin_dir: Path,
+    bin_dir: Path,
+    agent: str,
+    dry_run: bool,
+    manifest: Manifest | None,
+    *,
+    home: Path | None = None,
+    environ: Mapping[str, str],
+    runtime_root: Path | None = None,
+) -> None:
+    home = home or Path.home()
     if not dry_run:
         bin_dir.mkdir(parents=True, exist_ok=True)
     installer = platform_launcher_installer()
@@ -102,10 +110,19 @@ def install_agent_launcher_files(source_bin_dir: Path, bin_dir: Path, agent: str
         agent=agent,
         dry_run=dry_run,
         manifest=manifest,
+        home=home,
+        environ=environ,
+        runtime_root=runtime_root,
     )
 
 
-def worker_root_for_mode(mode: InstallMode, repo_root: Path, home: Path) -> Path:
+def worker_root_for_mode(
+    mode: InstallMode,
+    repo_root: Path,
+    home: Path,
+    *,
+    environ: Mapping[str, str],
+) -> Path:
     """Resolve the parent dir workers are created under, by install mode.
 
     Plugin-mode installs run from an immutable/public plugin-cache checkout,
@@ -115,7 +132,9 @@ def worker_root_for_mode(mode: InstallMode, repo_root: Path, home: Path) -> Path
     correct there — it's a live checkout, not a public/immutable tree.
     """
     if mode == "plugin":
-        return resolve_famulus_paths(platform=sys.platform, home=home).worker_root
+        return resolve_famulus_paths(
+            platform=sys.platform, home=home, environ=environ
+        ).worker_root
     return repo_root / "workers"
 
 
@@ -126,11 +145,19 @@ def install_worker_dir(
     *,
     mode: InstallMode = "development",
     home: Path | None = None,
+    environ: Mapping[str, str] | None = None,
+    context: InstallationContext | None = None,
 ) -> Path | None:
     if agent not in WORKER_AGENTS:
         return None
     home = home or Path.home()
-    wdir = worker_root_for_mode(mode, repo_root, home) / agent
+    wdir = (
+        context.paths.worker_root
+        if context is not None
+        else worker_root_for_mode(
+            mode, repo_root, home, environ=os.environ if environ is None else environ
+        )
+    ) / agent
     if dry_run:
         log(f"Would create worker dir {wdir}")
     else:
@@ -183,7 +210,7 @@ def write_profile_config_with_absolute_agent_path(
         f.write(content)
     log(f"  Wrote (absolute agent path): {dst}")
     if manifest is not None:
-        manifest.record("file", path=str(dst))
+        manifest.record("file", path=str(dst), purge_only=True)
 
 
 def install_profile_for_agent(repo_root: Path, profiles_dir: Path, codex_home: Path, claude_home: Path, agent: str, dry_run: bool, manifest: Manifest | None) -> None:
@@ -226,21 +253,6 @@ def remove_legacy_coder_links(source_bin_dir: Path, profiles_dir: Path, bin_dir:
                 legacy.unlink()
 
 
-def _ensure_assistant_default_windows(default_llm: str, dry_run: bool, manifest: Manifest | None) -> None:
-    if dry_run:
-        log(f"  Would set ASSISTANT_DEFAULT={default_llm}")
-        return
-    import winreg
-    with winreg.OpenKey(
-        winreg.HKEY_CURRENT_USER, "Environment", 0,
-        winreg.KEY_READ | winreg.KEY_WRITE,
-    ) as key:
-        winreg.SetValueEx(key, "ASSISTANT_DEFAULT", 0, winreg.REG_SZ, default_llm)
-    log(f"  Set ASSISTANT_DEFAULT={default_llm}")
-    if manifest is not None:
-        manifest.record("registry_env", path="ASSISTANT_DEFAULT", names=["ASSISTANT_DEFAULT"])
-
-
 def verify_install(bin_dir: Path, agents: list[str]) -> bool:
     """Run --help on each installed agent command and report results.
 
@@ -248,22 +260,33 @@ def verify_install(bin_dir: Path, agents: list[str]) -> bool:
     fixed VERIFY_CMDS list) — installing a subset shouldn't report FAIL for
     agents that were never asked for.
 
-    On Windows, tmux-workspace is skipped (tmux is not available) and .bat
-    wrappers are used for assistant/collab/coauthor because extension-less
-    scripts cannot be executed directly by Windows.
+    On Windows, tmux-workspace is skipped (tmux is not available) and every
+    supported agent is verified through its runnable ``.bat`` wrapper.
+
+    Verification remains advisory because installation is intentionally
+    non-transactional; callers receive exact failed targets without implying
+    that earlier filesystem and profile writes were rolled back.
     """
     log("")
     log("Verifying installation...")
     ok = True
     is_windows = sys.platform == "win32"
 
+    commands: list[str] = []
     for agent in agents:
-        name = "tw" if agent == "tw" else agent
-        if is_windows and name == "tw":
+        commands.extend(
+            ["tmux-workspace", "tw", "tw-break", "tw-join", "tw-monitor", "tw-help"]
+            if agent == "tw"
+            else [agent]
+        )
+    for name in commands:
+        if is_windows and name in {
+            "tmux-workspace", "tw", "tw-break", "tw-join", "tw-monitor", "tw-help"
+        }:
             log("  SKIP: tw (tmux not available on Windows)")
             continue
 
-        if is_windows and name in ("assistant", "collab", "coauthor"):
+        if is_windows:
             dst = bin_dir / f"{name}.bat"
         else:
             dst = bin_dir / name
@@ -290,21 +313,39 @@ def verify_install(bin_dir: Path, agents: list[str]) -> bool:
 
 def run(
     *,
-    repo_root: Path,
+    context: InstallationContext | None = None,
+    environ: Mapping[str, str] | None = None,
+    repo_root: Path | None = None,
     agents: list[str],
     home: Path | None = None,
     bin_dir: Path | None = None,
     codex_home: Path | None = None,
     claude_home: Path | None = None,
     shell_rc: Path | None = None,
-    default_llm: str = "claude",
+    default_llm: str | None = None,
     dry_run: bool = False,
     manifest: Manifest | None = None,
     mode: InstallMode = "development",
     install_invoke_skill: bool = False,
-) -> None:
+) -> bool:
+    selected_environ = os.environ if environ is None else environ
+    if context is not None:
+        repo_root = context.source_root
+        home = (
+            context.development_root / ".famulus" / "home"
+            if context.mode == "development" and context.development_root is not None
+            else (home or Path.home())
+        )
+        bin_dir = context.paths.user_bin
+        codex_home = context.codex_home
+        claude_home = context.claude_home
+        mode = "development" if context.mode == "development" else "plugin"
+    if repo_root is None:
+        raise ValueError("repo_root is required when context is omitted")
     home = home or Path.home()
-    bin_dir = bin_dir or default_bin_dir(home=home)
+    bin_dir = bin_dir or resolve_famulus_paths(
+        platform=sys.platform, home=home, environ=selected_environ
+    ).user_bin
     source_bin_dir = repo_root / "skills" / "install-assistant-tools" / "_rtx/assets/bin"
     profiles_dir = repo_root / "profiles"
     codex_home = codex_home or home / ".codex"
@@ -317,37 +358,56 @@ def run(
     if dry_run:
         manifest = None
 
+    paths = resolve_famulus_paths(
+        platform=sys.platform, home=home, environ=selected_environ
+    ) if context is None else context.paths
+    if dry_run:
+        log(
+            f"  Would ensure durable launcher selection at "
+            f"{paths.config_root / 'launchers.json'}"
+        )
+    else:
+        ensure_launcher_configuration(
+            config_root=paths.config_root,
+            default_backend=default_llm,
+            manifest=manifest,
+        )
+
     for agent in agents:
-        install_agent_launcher_files(source_bin_dir, bin_dir, agent, dry_run, manifest)
-        install_worker_dir(repo_root, agent, dry_run, mode=mode, home=home)
+        install_agent_launcher_files(
+            source_bin_dir,
+            bin_dir,
+            agent,
+            dry_run,
+            manifest,
+            home=home,
+            environ=selected_environ,
+            runtime_root=context.paths.runtime_root if context is not None else None,
+        )
+        install_worker_dir(
+            repo_root,
+            agent,
+            dry_run,
+            mode=mode,
+            home=home,
+            environ=selected_environ,
+            context=context,
+        )
         install_profile_for_agent(repo_root, profiles_dir, codex_home, claude_home, agent, dry_run, manifest)
 
     remove_legacy_coder_links(source_bin_dir, profiles_dir, bin_dir, codex_home, claude_home, dry_run)
 
-    if agents:
-        if sys.platform == "win32":
-            _ensure_assistant_default_windows(default_llm, dry_run, manifest)
-        else:
-            if shell_rc is None:
-                detected_shell = os.environ.get("SHELL", "")
-                shell_rc = home / (".zshrc" if "zsh" in detected_shell else ".bashrc")
-            ensure_rc_vars(
-                shell_rc,
-                {"ASSISTANT_DEFAULT": f"export ASSISTANT_DEFAULT={default_llm}"},
-                dry_run,
-                manifest,
-                label="user",
-            )
-
     if manifest is not None:
         manifest.save()
 
+    verified = True
     if not dry_run and agents:
-        verify_install(bin_dir, agents)
+        verified = verify_install(bin_dir, agents)
 
     log("")
     log("Launchers complete.")
     log(f"  Agents installed: {', '.join(agents) if agents else '(none)'}")
+    return verified
 
 
 class Interface(PythonArgvMachineInterface):
@@ -367,7 +427,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--codex-home", metavar="DIR")
     parser.add_argument("--claude-home", metavar="DIR")
     parser.add_argument("--shell-rc", metavar="FILE")
-    parser.add_argument("--default-llm", choices=["claude", "codex"], default="claude")
+    parser.add_argument("--default-llm", choices=["claude", "codex"])
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--mode", choices=["development", "plugin"], default="development",
         help="development: worker dirs live under --repo-root/workers (live checkout). "

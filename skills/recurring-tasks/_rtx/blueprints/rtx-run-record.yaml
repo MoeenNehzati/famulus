@@ -20,7 +20,7 @@ interfaces:
     - _run_record\.py
     uses_interfaces:
     - interface: common.interface.atomic-files
-      version: 1
+      version: 2
     contract:
       arguments:
         operation:
@@ -214,6 +214,6 @@ runtime_dependencies: []
 schema_version: 6
 uses_interfaces:
 - interface: common.interface.atomic-files
-  version: 1
+  version: 2
 version: 1
 maturity: experimental

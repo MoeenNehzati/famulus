@@ -15,12 +15,6 @@ dependencies:
   version: 1
 - blueprint:
     base: module-root
-    path: blueprints/rtx-google-onboarding.yaml
-  reason: Imports Python source from _rtx/_google_onboarding.py.
-  source: install-assistant-tools._rtx.source.rtx-google-onboarding
-  version: 1
-- blueprint:
-    base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
   source: install-assistant-tools._rtx.source.rtx-init
@@ -31,8 +25,21 @@ dependencies:
   reason: Imports Python source from _rtx/_install_scaffold.py.
   source: install-assistant-tools._rtx.source.rtx-install-scaffold
   version: 1
-description: Runs the phase-one installer sequence and forwards the caller's development-mode
-  choice to managed-runtime candidate construction.
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-assistant-access-config.yaml
+  reason: Reconciles the context-derived Codex and Claude access policy during apply.
+  source: install-assistant-tools._rtx.source.rtx-assistant-access-config
+  version: 1
+- blueprint:
+    base: repository-root
+    path: src/officina/install/blueprints/assistant-access.yaml
+  reason: Resolves and previews the exact narrow writable-root allowlist.
+  source: install.source.assistant-access
+  version: 1
+description: Resolves one installation context and runs the confirmed five-stage
+  idempotent apply workflow, deriving managed-runtime editability from development
+  mode and including recoverable user-level Codex and Claude access reconciliation.
 gateway:
   language: Python
   path: _phase_entry.py
@@ -46,6 +53,14 @@ interfaces:
       version: 1
     - interface: install.interface.install-info
       version: 1
+    - interface: install.interface.context
+      version: 1
+    - interface: install.interface.assistant-access
+      version: 1
+    - interface: install-assistant-tools._rtx.source.rtx-assistant-access-config.interface.python-api
+      version: 1
+    - interface: install.interface.doctor
+      version: 1
     - interface: install.interface.managed-runtime
       version: 1
     - interface: install.interface.uv-bootstrap
@@ -53,8 +68,8 @@ interfaces:
     contract:
       arguments:
         options:
-          description: Development-mode selection and optional repository and agent
-            and host target paths plus dry-run and interaction choices.
+          description: Explicit mode, optional development checkout, helpers, backend,
+            dry-run, interaction, and confirmation choices.
           required: false
           sensitivity: user-private
           type:
@@ -63,6 +78,8 @@ interfaces:
       caller_warnings:
       - external-side-effect: Non-dry-run execution can install launchers and bridge
           live development configuration across multiple installer phases.
+      - external-side-effect: Apply reconciles separate owned values in user-level
+          Codex and Claude settings; the recurring config root grants scheduled-command authority.
       direct_io:
         network: []
         reads:
@@ -75,7 +92,8 @@ interfaces:
           sensitivity: user-private
         writes:
         - access: configure
-          content: managed assistant installation state
+          content: managed assistant installation state, including a separately marked
+            Codex writable_roots block and recorded Claude additionalDirectories values
           formats:
           - files
           - symlinks
@@ -95,8 +113,8 @@ interfaces:
           sensitivity: derived-private
       execution:
         consistency:
-          per_source: Scaffold and bridge and launcher phases observe target state
-            when each phase runs.
+          per_source: Candidate, scaffold, projections, helpers, and doctor share one resolved context;
+            candidate editability is derived from that context's mode.
         effects:
         - action: configure
           confirmation_evidence:
@@ -137,15 +155,14 @@ interfaces:
         mode: interactive
         unattended_outcome: mode-required
       outcomes:
-      - caller_action: Review every reported phase and verify installed commands.
+      - caller_action: Review the five stages and diagnostic report.
         class: success
         effects:
         - installation-state
         id: installed
         outputs:
         - status
-      - caller_action: Pass an explicit development-mode choice for non-interactive
-          execution.
+      - caller_action: Pass explicit mode, required development checkout, and --yes for non-interactive execution.
         class: refusal
         effects: []
         id: mode-required
@@ -163,7 +180,7 @@ interfaces:
         cardinality:
           maximum: null
           minimum: 1
-        description: Development-mode decision and ordered phase results.
+        description: Exactly five user-visible stages and the final diagnostic result.
         direct_io_ref: write-2
         empty: Never empty.
         id: status
@@ -176,16 +193,30 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: 'Phase-1 orchestrator: asks the dev-mode question, then runs scaffold,
-      optionally dev-link, then launchers.'
+    description: Choose mode, confirm choices, apply once, diagnose the same context, and explain optional next steps without invoking them.
     process_binding:
       entry: Interface
       kind: process
       patterns:
-      - name: owner
-    usage: '[--dry-run] [--non-interactive] [--dev-mode|--no-dev-mode] [--repo-path
-      DIR] [--agents LIST] [--default-llm {claude,codex}] [--home DIR] [--bin-dir
-      DIR] [--shell-rc FILE] [--codex-home DIR] [--claude-home DIR]'
+      - allowed_flags: [--dry-run, --non-interactive, --yes, --dev-mode, --no-dev-mode,
+          --repo-path, --agents, --default-llm, --optional-modules, --home, --bin-dir,
+          --shell-rc, --codex-home, --claude-home]
+        flag_patterns:
+          --repo-path: ^.+$
+          --agents: ^.*$
+          --default-llm: ^(claude|codex)$
+          --optional-modules: ^.*$
+          --home: ^.+$
+          --bin-dir: ^.+$
+          --shell-rc: ^.+$
+          --codex-home: ^.+$
+          --claude-home: ^.+$
+        max_positionals: 0
+        min_positionals: 0
+        name: owner
+    usage: '[--dry-run] [--non-interactive --yes] [--dev-mode --repo-path DIR|--no-dev-mode]
+      [--agents LIST] [--default-llm {claude,codex}] [--optional-modules LIST]
+      [--home DIR] [--bin-dir DIR] [--shell-rc FILE] [--codex-home DIR] [--claude-home DIR]'
     version: 2
 node_type: behavioral_source
 platform_support:
@@ -204,6 +235,14 @@ runtime_dependencies:
 schema_version: 6
 uses_interfaces:
 - interface: common.interface.famulus-paths
+  version: 1
+- interface: install.interface.context
+  version: 1
+- interface: install.interface.assistant-access
+  version: 1
+- interface: install-assistant-tools._rtx.source.rtx-assistant-access-config.interface.python-api
+  version: 1
+- interface: install.interface.doctor
   version: 1
 - interface: install.interface.install-info
   version: 1

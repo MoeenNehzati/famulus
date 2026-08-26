@@ -13,11 +13,10 @@ Activation: user-request, skill-workflow, scheduled-job; persistent modifier: no
 Skill Version: 3
 
 Uses Interfaces:
-- `recurring-tasks.source.gateway -> install-assistant-tools.interface.default@2`
 - `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-disable@1`
 - `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-enable@1`
-- `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-ensure-agent-env@1`
 - `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-healthcheck@1`
+- `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-remove-context@1`
 - `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-setup@1`
 - `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-status@1`
 - `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-sync@1`
@@ -39,254 +38,111 @@ These interfaces are documented prompt surfaces. They are not executed through `
 
 # Recurring Tasks
 
-Manages AI-driven recurring job automation through the host's **native
-per-user scheduler**. `jobs.yaml` is the single source of truth; a
-platform-specific implementation translates it into that host's own scheduler
-entries. Command parsing, logging, and success evaluation are shared across
-hosts — only how a job gets triggered and launched differs.
+Manage explicitly authorized recurring AI jobs through the active installation
+context and its native per-user scheduler. Installation only makes this skill
+available; it does not create, enable, or run a job.
 
-## Process
+## Context and ownership
 
-This is the whole skill. Everything else is per-platform rendering, a CLI,
-and an installer. Read this before changing anything here; if a change does
-not fit this shape, the shape is probably right and the change is probably
-wrong.
+Load the active installation before every operation. If no valid active
+context exists, complete or repair installation before recurring setup.
 
-```
-DATA
-  jobs.yaml       one entry per job: name, command, schedule, enabled, success?
-  registration    the host scheduler's own entry for a job
-  outcome record  logs/<job>/latest.json — what the last run actually did
-  output log      logs/<job>/run.log — that run's output
+Each context owns an independent namespace keyed by `installation_id`:
 
-RENDER(job) -> registration
-    derived from jobs.yaml and the install layout ONLY.
-    never from the calling process's environment.
-    the install layout includes the OWNER: the one checkout these
-    registrations were installed from, recorded beside them.
+- native scheduler registrations and healthcheck registration;
+- mutable job definitions;
+- run logs, outcome records, and in-flight state; and
+- the recorded scheduler owner.
 
-SYNC()                                    # user-invoked
-    refuse unless this checkout is the owner   # adopt only when nothing
-                                               # is installed and none is recorded
-    for each enabled job:      write RENDER(job)
-    for each registration with no enabled job:   remove it
-    reload the scheduler; activate the enabled registrations
-    record this checkout as the owner            # after the writes succeed
+Standard and multiple development contexts may coexist. Never infer ownership
+from the current checkout or process environment. Render registrations only
+from the validated schedule descriptor and context-owned job configuration.
 
-RUN(job)                                  # scheduler-invoked
-    mark in-flight
-    execute job.command, bounded by a timeout, output -> output log
-    outcome := EVALUATE(exit code, status written during THIS run, job.success)
-    write outcome record (outcome, started_at, finished_at)
-    clear in-flight
-
-EVALUATE(exit_code, inner_status, contract) -> ok | failed(reason)
-    the single definition of success. RUN owns it; CHECK never re-derives it.
-
-CHECK()                            # invoked outside the scheduler it inspects
-    fail unless the scheduler is reachable
-    fail unless the scheduler can resolve the agent command
-    for each enabled job:
-        if a recorded owner exists and is not this checkout:
-            say so and do not judge the registration   # never "stale"
-        else:
-            fail unless installed registration == RENDER(job)
-            fail unless what the registration invokes still exists
-        if a run is in flight:
-            fail if it started longer ago than the job timeout
-        else:
-            fail unless an outcome record exists
-            fail unless the record is newer than 2 x the schedule interval
-            fail unless the record says ok
-        fail unless the registration is active
-    exit nonzero if anything failed    # the caller turns that into a notification
-```
-
-**Invariants.** Each one exists because violating it caused a real outage:
-
-1. **One definition of success.** `EVALUATE` decides; `CHECK` only reads what
-   was recorded. A second, looser notion of success in `CHECK` is how a job
-   that produced nothing stayed green for days.
-2. **One source of truth per question.** "Did it run recently?" is answered by
-   the outcome record's timestamps — never by a log file's modification time.
-   A killed run refreshes that timestamp without ever completing.
-3. **One renderer.** `SYNC` and `CHECK` both call `RENDER`. When `CHECK`
-   re-derived the expected registration from ambient `PATH` instead, every
-   externally invoked run reported drift that did not exist — 12 consecutive false
-   alarms.
-4. **`CHECK` runs outside the scheduler it inspects**, driven by an
-   independent timer, so it still reports when the scheduler itself is what
-   has failed.
-5. **One checkout owns the installation, and it is recorded — not inferred.**
-   The host has one installation and as many copies of this skill as there are
-   checkouts. Every module used to derive the answer from its own `__file__`,
-   so a sync from any copy silently repointed the installation at that copy. A
-   sync from a worktree repointed the sentinel, which then rendered its
-   expectation from the worktree and reported `service unit stale` for every
-   job, four-hourly, against an installation that was healthy. Taking ownership
-   is refused from a temporary copy however it is reached, and a *missing*
-   record authorizes adoption only when nothing is installed — otherwise
-   deleting one file would disarm the guard.
-
-A job may declare that certain failures are transient — an exit code plus
-patterns that must appear in that run's own output. `EVALUATE` applies this
-when it decides the outcome, so a tolerated failure is recorded as a success
-with its reason; `CHECK` still only reads the record.
-
-Output logs are rotated once they pass a size cap, keeping one previous
-generation, so a frequently-scheduled job cannot fill the disk.
-
-**Key simplifications:**
-- No per-job shell wrapper scripts
-- No invoke-agent.sh/run-skill.sh layers (invoke-skill is on PATH)
-- Job output is captured directly, without shell redirection
-- Every job is launched through the same fixed launch-resolver path rather
-  than whatever interpreter happened to run the sync — this keeps scheduled
-  jobs working across runtime upgrades
-- Environment inherited from the host scheduler's own per-user session
-  (`AI_AGENT_COMMAND_TEMPLATE` already set there)
-
-## Configuration
-
-### jobs.yaml
-
-```yaml
-jobs:
-  - name: example-job
-    description: "Example: what this job does"
-    command: "invoke-skill example-job"  # Can include env vars: VAR=value invoke-skill ...
-    schedule: "0 * * * *"                # 5-field cron expression
-    enabled: true
-    success:                             # optional; omit entirely if the job has no self-reported status
-      require_inner_status: ok
-```
-
-**Fields:**
-- `name` — unique identifier (used for native scheduler entry names, logs)
-- `description` — human-readable purpose
-- `command` — shell command to execute (can include environment variables)
-- `schedule` — cron expression (minute hour * * day-of-week; only the subset each platform's translator supports is accepted — see below)
-- `enabled` — whether the job is scheduled
-- `success` — optional success contract, see **Did the job actually succeed?** below
+On the first standard operation, migrate only recognized legacy standard jobs,
+logs, owner records, registrations, and healthcheck markers. Refuse ambiguous
+or foreign state rather than adopting it.
 
 ## Operations
 
-Use the interfaces listed in the **Dispatcher Interfaces** block above. Key operations:
+Use the generated interfaces as follows:
 
-- **Setup (first time):** `scripts-sync` generates native scheduler entries from jobs.yaml and enables all enabled jobs.
-- **Enable/Disable:** `scripts-enable` and `scripts-disable` modify jobs.yaml and resync native scheduler entries.
-- **Test:** `scripts-test` runs a job immediately and reports whether it actually succeeded (see below — this is more than "did the scheduler accept the trigger").
-- **View logs:** `scripts-view-logs` tails job logs (default 50 lines).
-- **Check health:** `recurring-tasks._rtx.interface.scripts-healthcheck` verifies scheduler registration, job activity, and run freshness, and exits nonzero when any check fails. Where an independent sentinel is supported, setup registers it separately and the sentinel shows a desktop popup after every failed check.
+- `scripts-setup` initializes the selected context, migrates recognized legacy
+  standard state when needed, synchronizes enabled jobs, and installs an
+  independent healthcheck sentinel only where the platform supports it.
+- `scripts-sync` reconciles enabled definitions with native registrations.
+- `scripts-enable` and `scripts-disable` change authorization for one job and
+  reconcile its registration.
+- `scripts-status` reports configured and native state for this context.
+- `scripts-test` triggers one job and waits, bounded, for a fresh outcome
+  record; never treat scheduler trigger acceptance as job success.
+- `scripts-view-logs` reads this context's bounded job log.
+- `scripts-healthcheck` checks descriptor, source, scheduler, registration,
+  activity, and outcome health. On platforms without the independent sentinel,
+  invoke it on demand.
+- `scripts-remove-context` removes only this context's registrations, sentinel,
+  and owner record while preserving job definitions, logs, and history.
 
-## Scheduling
+Before invoking an interface, read the selected job and current status needed
+for its arguments. Report a failed operation without claiming scheduler state
+changed.
 
-`jobs.yaml` is translated into whichever native scheduler the host provides.
-Entry creation, triggering, and status inspection are host-specific; command
-parsing, logging, and success evaluation are shared. Registration details are
-documented with each host implementation.
+## Job definitions
 
-Two facts affect how you author a job:
+Each job has a unique name, description, command, restricted cron schedule,
+enabled flag, and optional success contract. The platform-neutral job schema
+does not promise one identical Cartesian cron grammar across managed hosts.
 
-- **Schedule syntax is a restricted cron subset.** Each field accepts `*`, a
-  step (`*/N`), or a single bare integer. Ranges (`9-17`) and comma lists
-  (`9,12,17`) are rejected by every host translator.
-- **Triggering semantics differ by host.** On some hosts a trigger blocks
-  until the job finishes; on others it returns as soon as the trigger is
-  accepted. Never read "the trigger succeeded" as "the job succeeded" — see
-  below.
+Linux accepts exactly five fields. Minute and hour each accept `*`, `*/N` for
+positive `N`, or one bounded bare integer (minute `0` through `59`, hour `0`
+through `23`); day-of-month and month must each be `*`; weekday accepts `*` or
+one bare integer from `0` through `7` (`0` and `7` are Sunday). Ranges and
+comma lists are rejected.
 
-Scheduler entries are generated from `jobs.yaml` and regenerated on every
-sync. Never edit them by hand.
+macOS currently supports that same component-wise five-field subset, including
+the Cartesian combinations of accepted minute and hour values. Windows supports
+all-wildcard schedules; `*/N * * * *` for positive `N`; `M * * * *` for a
+bounded minute `M`; and `M H * * D` for bounded `M`, bounded hour `H`, and an
+optional weekday `D` (`*` or `0` through `7`). It does not support stepped or
+wildcard minutes combined with a fixed hour or weekday, nor a stepped hour.
 
-## Did the job actually succeed?
+A missing success contract means exit-code-only success. If the job writes its
+own status, require the expected inner status. Tolerated transient failures
+must match both an explicitly allowed exit code and the current run's output
+pattern.
 
-Triggering a job only confirms the scheduler *accepted the trigger*. On some
-hosts that call blocks until the job is done; on others it returns
-immediately, so a bare "did the trigger succeed" check cannot tell you whether
-the job's work succeeded, or whether it even started.
+Review the command, working directory, connected accounts, and intended writes
+before enabling a job. Enabled jobs run without an interactive approval prompt
+and may run outside the host sandbox; disabling a job ends that continuing
+authorization.
 
-Testing a job accounts for this: after triggering it waits, bounded, for a
-fresh outcome record identified by a new per-run id rather than a timestamp
-(two runs can finish within the same second), and reports pass or fail from
-that record instead of trusting the trigger.
+## Execution and health invariants
 
-Whether a run counts as successful is decided by combining two signals:
+The scheduler invokes the immutable managed executor through the active
+resolver, with explicit context-owned job and log roots. It does not execute
+mutable runner files from a checkout or package cache and does not capture
+ambient secrets.
 
-1. The literal process exit code. A non-zero exit (or a process that never
-   spawned at all — missing executable, permission denied, etc.) always
-   fails the run.
-   `success.ignore_exit_codes` can list non-zero codes to treat as non-blocking
-   in healthcheck only.
-2. An optional self-reported inner status. Some jobs write their own
-   `state/status.json` (`{"result": "ok" | "error" | "warning", ...}`) as
-   part of an existing status-tracking mechanism of their own; jobs.yaml's
-   `success.require_inner_status` can require that value to match. A job
-   with no `success:` block declared passes on exit code alone — this
-   matters because most jobs have no such self-reported status file, and
-   requiring one they never write would make every run of theirs report
-   failure.
-   `success.ignore_exit_log_patterns` can list regex patterns that must appear
-   in the recent run log to classify one of those exit-code failures as a
-   tolerated transient condition.
+The executor alone decides success from the process exit code, current-run
+status, and declared success contract. It records one outcome with a unique run
+ID. Test and healthcheck read that outcome; neither invents a second success
+definition or substitutes log modification time.
 
-Declare `success: {require_inner_status: ok}` for a job whose own code
-writes a status file, and omit `success:` entirely for one that does not —
-requiring a status a job never writes would fail every run of it.
+Sync and healthcheck use the same renderer. If a run is active, healthcheck
+applies the job timeout; otherwise it verifies registration activity and a
+fresh successful outcome. Logs rotate after the configured cap with one prior
+generation retained.
 
-Prefer making a job report its own outcome over leaving it on exit code
-alone. An agent-driven job commonly exits 0 while accomplishing nothing, so
-exit-code-only jobs can record success indefinitely while producing no
-result. Where a job persists something, have that step record the status.
+If the active source disappears, report the exact source failure. Restore that
+package or development checkout, repair the same installation context, then
+run `scripts-sync`. Do not rewrite native registrations or
+the schedule descriptor by hand.
 
-## Healthcheck
+## Removal
 
-The healthcheck interface runs pre-flight checks (scheduler manager
-reachable, the agent command configured and resolvable by the scheduler) plus
-per-job registration, freshness, and activity checks. Its process exit
-code reflects the outcome truthfully: `0` when every check passed, `1` when at
-least one failed. Setup also installs an independent four-hour sentinel where
-supported. The sentinel owns the desktop popup fallback, so launch failures
-that occur before the checker starts are still reported.
+Installer uninstall or purge automatically delegates this context's native
+registration and sentinel teardown here before removing installer artifacts.
+Direct `scripts-remove-context` remains available for standalone teardown and
+recovery. Both paths fail closed unless native removal can be verified.
 
-## Logs and outcomes
-
-Each run appends its output to the job's output log, bracketed by run-start
-and run-end markers, and writes a structured outcome record: start and finish
-times, the process exit code, the job's self-reported status if it has one,
-the overall success verdict, a reason when it failed, and a per-run id.
-
-Read the outcome record rather than re-deriving success from the output log —
-testing a job and checking health both read that record, and a second opinion
-about what "succeeded" means is how a failing job stayed green (invariant 1).
-
-Output logs are appended, and rotated once they exceed a size cap; one
-previous generation is kept.
-
-## Common Tasks
-
-### Add a new job
-
-1. Add entry to `jobs.yaml`
-2. Run `scripts-sync`
-3. Test with `scripts-test <name>`
-
-### Modify a job's schedule
-
-1. Edit `jobs.yaml`
-2. Run `scripts-sync`
-
-### Investigate a job failure
-
-1. Check logs: `scripts-view-logs <name>`
-2. Check the structured outcome: `logs/<name>/latest.json`
-3. Test manually: `scripts-test <name>`
-4. Check native scheduler status — see the **Scheduling per platform** section above for the platform-specific command
-
-## Files
-
-- `jobs.yaml` is the source of truth for job definitions.
-- Each job has an output log and an outcome record under its own log
-  directory; the healthcheck keeps its own log alongside them.
-- Scheduler entries live wherever the host scheduler keeps them and are
-  regenerated from `jobs.yaml` on every sync — never edit them by hand.
+Context removal preserves recurring configuration and history. Delete those
+only in a separately authorized data-retention operation.

@@ -12,12 +12,12 @@ GENERATED_VIEW_STANDARDS = {
     Path("references/document-standards/document-profile.standard.yaml"),
 }
 TOOLING_ARTIFACTS = (
-    Path("references/standards/standard-v6.schema.json"),
-    Path("references/standards/validate_standard_v6.py"),
-    Path("references/standards/render_standard_v6.py"),
+    Path("references/standards-schema/standard-v6.schema.json"),
+    Path("references/standards-schema/validate_standard_v6.py"),
+    Path("references/standards-schema/render_standard_v6.py"),
 )
 NON_STANDARD_V6_PATHS = {
-    Path("references/standards/docstring.standard.yaml"),
+    Path("references/standards-schema/docstring.standard.yaml"),
 }
 
 
@@ -67,7 +67,7 @@ def _load_tool(repo_root: Path, module_name: str):
     -----
     - none
     """
-    path = repo_root / "references" / "standards" / f"{module_name}.py"
+    path = repo_root / "references" / "standards-schema" / f"{module_name}.py"
     spec = importlib.util.spec_from_file_location(f"_standard_documents_{module_name}", path)
     if spec is None or spec.loader is None:
         raise ImportError(f"cannot load standards tool {path}")
@@ -112,9 +112,9 @@ def validate(repo_root: Path) -> list[str]:
         constructs: "Builds the repository-local validator and renderer modules used by the scan."
     """
     repo_root = Path(repo_root)
-    tooling_root = repo_root / "references" / "standards"
+    tooling_root = repo_root / "references" / "standards-schema"
     if not tooling_root.is_dir():
-        return ["references/standards: missing standards tooling directory"]
+        return ["references/standards-schema: missing standards tooling directory"]
     missing_tooling = [
         f"{_display(path)}: missing standards tooling artifact"
         for path in TOOLING_ARTIFACTS
@@ -132,7 +132,7 @@ def validate(repo_root: Path) -> list[str]:
         validator = _load_tool(repo_root, "validate_standard_v6")
         renderer = _load_tool(repo_root, "render_standard_v6")
     except (ImportError, OSError) as exc:
-        return errors + [f"references/standards: cannot load standards tooling: {exc}"]
+        return errors + [f"references/standards-schema: cannot load standards tooling: {exc}"]
 
     schema_validator = validator._prepare_schema_validator()
     for relative in sorted(discovered):

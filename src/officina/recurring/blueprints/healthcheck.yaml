@@ -1,0 +1,40 @@
+schema_version: 6
+id: recurring.source.healthcheck
+version: 1
+maturity: experimental
+node_type: behavioral_source
+description: Checks managed registrations and recorded outcomes outside the scheduler without skill source.
+gateway: {language: Python, path: healthcheck.py}
+content: [healthcheck\.py]
+dependencies: [{source: recurring.source.runtime, version: 1, blueprint: {base: module-root, path: blueprints/runtime.yaml}, reason: Reuses sealed authority native renderers and recorded outcomes.}]
+uses_interfaces: []
+interfaces:
+  recurring.source.healthcheck.interface.cli:
+    version: 1
+    description: Check one installation recurring state.
+    content: [healthcheck\.py]
+    uses_interfaces: []
+    contract:
+      arguments:
+        runtime-root: {description: Active runtime root injected by the fixed resolver., required: true, sensitivity: user-private, direct_io_ref: authority, type: {kind: dir, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read}}
+        descriptor: {description: Canonical schedule descriptor., required: true, sensitivity: user-private, direct_io_ref: authority, type: {kind: file, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read, opaque_content: true}}
+        log-root: {description: Explicit canonical log root which must match the descriptor., required: true, sensitivity: user-private, direct_io_ref: authority, type: {kind: dir, syntax: literal, relative_to: caller-cwd, must_exist: false, access: read}}
+        cron: {description: Suppress direct run.log append because cron redirects stdout to that exact log., required: false, default: false, sensitivity: public, type: {kind: flag}}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings: []
+      outputs: [{id: result, audience: both, description: Health findings and truthful exit status., direct_io_ref: result, cardinality: {minimum: 1, maximum: null}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty., type: {kind: string, sensitivity: derived-private}}]
+      outcomes: [{id: healthy, class: success, outputs: [result], effects: [health-report], caller_action: No action.}, {id: unhealthy, class: error, outputs: [result], effects: [health-report], caller_action: Repair the named registration runtime or job failure.}]
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {live: Native scheduler and records are inspected during this invocation.}
+        effects: [{id: health-report, direct_io_ref: health-report, action: update, value_source: {kind: argument, argument_ref: cron}, may_occur_in_outcomes: [healthy, unhealthy], confirmation_evidence: {kind: direct-io, direct_io_ref: health-report}, reversibility: {compensatable: A later healthy check clears stale failure summary state.}}]
+        mutation_safety: {atomicity: {per_effect_only: Failure summary replacement is atomic while the manual report is append-only.}, concurrent_invocations: {unsafe: Concurrent manual reports can interleave.}, idempotency: {idempotent: Repeating a check converges the last-failure summary to current findings.}, on_uncertain_completion: {verify_then_decide: Inspect last-failure.txt and rerun the check.}, partial_effects_on_failure: {possible: A summary may be current even if report append fails.}, rollback_on_failure: {unavailable: Rerun the check after correcting the filesystem failure.}}
+        verification: [{method: output-schema, output_ref: result}]
+      helpers: []
+      direct_io: {network: [], reads: [{id: authority, medium: local-filesystem, access: read, content: Descriptor registrations and records., formats: [json, files], sensitivity: user-private, path: <selected-context>/**, path_match: glob}], writes: [{id: health-report, medium: local-filesystem, access: read-write, content: Current failure summary and manual healthcheck log., formats: [text], sensitivity: user-private, path: <recurring-log-root>/healthcheck/**, path_match: glob}, {id: result, medium: local-system, access: write, content: Health findings., formats: [text], sensitivity: derived-private}]}
+    process_binding: {kind: process, entry: Interface, patterns: [{name: check, min_positionals: 0, max_positionals: 0, allowed_flags: [--runtime-root, --descriptor, --log-root, --cron], required_flags: [--runtime-root, --descriptor, --log-root], allow_stdin: false}]}
+    usage: --runtime-root ROOT --descriptor FILE --log-root DIR [--cron]
+platform_support: {linux: true, macos: true, windows: true}
+runtime_dependencies: []

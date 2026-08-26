@@ -1,0 +1,69 @@
+content: [instructions/finalize\.md]
+dependencies: []
+description: Finalizes generated projections and binds one exact contained source-stem deliverable identically in the envelope and entrypoint body.
+gateway: {language: Markdown, path: instructions/finalize.md}
+id: distill-to-rutters.source.finalize
+interfaces:
+  distill-to-rutters.source.finalize.interface.finalize:
+    content: [instructions/finalize\.md]
+    uses_interfaces: []
+    contract:
+      arguments:
+        request: {description: 'Input, approved preceding artifacts, live repository context, and corrections.', required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+      caller_warnings: [{external-side-effect: Finalizes generated projections and creates or revises the entrypoint candidate plus 07_entrypoint.md.}]
+      direct_io:
+        network: []
+        reads:
+        - {id: source, medium: repository-filesystem, access: read, content: 'Common root input, approved implemented chain, exact contained source-stem deliverable bytes, owning declarations, interfaces, tests, and diff', formats: [markdown, yaml, json, python, git-metadata, text], sensitivity: user-private}
+        writes:
+        - {id: deliverable, medium: local-filesystem, access: write, content: Exact final Compass entrypoint candidate, formats: [markdown], path: '<input-directory>/<source-stem>_distilled.md', path_match: exact, sensitivity: derived-private, system: filesystem}
+        - {id: artifact, medium: local-filesystem, access: write, content: 07_entrypoint.md binding artifact, formats: [markdown], path: '<input-directory>/<source-stem>_distillation/07_entrypoint.md', path_match: exact, sensitivity: derived-private, system: filesystem}
+        - {id: response, medium: prompt, access: write, content: Artifact path and validation request, formats: [markdown], sensitivity: derived-private, system: agent-runtime}
+      execution:
+        consistency: {snapshot: 'Read every consulted file once; require the body candidate identity to equal the single contained deliverable leaf and rehash every consulted path before entrypoint-ready acceptance.'}
+        effects:
+        - id: deliverable-write
+          direct_io_ref: deliverable
+          action: update
+          value_source: {kind: argument, argument_ref: request}
+          may_occur_in_outcomes: [entrypoint-ready, partial]
+          confirmation_evidence: {kind: direct-io, direct_io_ref: deliverable}
+          reversibility: {reversible: Delete or revise the unapproved candidate before recording a new binding artifact.}
+        - id: artifact-write
+          direct_io_ref: artifact
+          action: update
+          value_source: {kind: argument, argument_ref: request}
+          may_occur_in_outcomes: [entrypoint-ready, entrypoint-gap, partial, failed]
+          confirmation_evidence: {kind: direct-io, direct_io_ref: artifact}
+          reversibility: {reversible: Delete or revise this unapproved artifact without changing approved preceding artifacts.}
+        lifecycle: finite
+        mutation_safety:
+          atomicity: {per_effect_only: Only the current stage artifact is written.}
+          concurrent_invocations: {unsafe: Concurrent revisions can overwrite the same artifact.}
+          idempotency: {idempotent: Unchanged inputs and correction authority produce the same artifact content.}
+          on_uncertain_completion: {verify_then_decide: Read the artifact before retrying.}
+          partial_effects_on_failure: {possible: The artifact may be written before the response is returned.}
+          rollback_on_failure: {available: Remove only the incomplete current artifact.}
+        state_effect: mutating
+        verification: [{method: direct-io-state, direct_io_ref: artifact}]
+      helpers: []
+      interaction: {mode: interactive, channel: tty, unattended_outcome: approval-required}
+      outcomes:
+      - {id: entrypoint-ready, class: success, outputs: [deliverable, artifact, response], effects: [deliverable-write, artifact-write], caller_action: Validate 07_entrypoint.md before verification.}
+      - {id: entrypoint-gap, class: partial, outputs: [artifact, response], effects: [artifact-write], caller_action: Validate the entrypoint gap before a finalization repair.}
+      - {id: partial, class: partial, outputs: [deliverable, artifact, response], effects: [deliverable-write, artifact-write], caller_action: Resolve incomplete finalization without advancing.}
+      - {id: approval-required, class: refusal, outputs: [response], effects: [], caller_action: Supply the missing stage authority or requested correction.}
+      - {id: failed, class: error, outputs: [artifact, response], effects: [artifact-write], caller_action: Resolve the recorded finalization failure without advancing.}
+      outputs:
+      - {id: deliverable, audience: both, description: <source-stem>_distilled.md exact Compass entrypoint candidate., direct_io_ref: deliverable, cardinality: {minimum: 0, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Empty when no valid candidate can be created., type: {kind: string, sensitivity: derived-private}}
+      - {id: artifact, audience: both, description: 07_entrypoint.md binding artifact., direct_io_ref: artifact, cardinality: {minimum: 0, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Empty only when approval is absent., type: {kind: string, sensitivity: derived-private}}
+      - {id: response, audience: human, description: 'Artifact path, validation request, or gap.', direct_io_ref: response, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty., type: {kind: string, sensitivity: derived-private}}
+      preconditions: []
+    description: Finalize projections, write the exact source-stem Compass candidate, and bind its identical contained path and digest in the envelope and 07_entrypoint.md body.
+    usage: <input-markdown> <approved-implementation-report>
+    version: 1
+node_type: behavioral_source
+schema_version: 6
+uses_interfaces: []
+version: 1
+maturity: experimental

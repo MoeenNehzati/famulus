@@ -4,7 +4,7 @@
 Blueprints are hand-authored YAML files under ``skills/<name>/blueprint.yaml``.
 This tool never rewrites blueprint files. It only validates them and syncs:
 
-- ``references/blueprint/runtime_dependencies.json``
+- ``references/blueprint-schema/runtime_dependencies.json``
 - the generated contract block near the top of ``SKILL.md``
 - the generated owner-facing dispatcher interface block in ``SKILL.md``
 
@@ -35,6 +35,7 @@ from officina.blueprints.graph import (
     InterfaceExport,
     RepositoryBlueprintGraph,
     load_repository_blueprint_graph,
+    setup_order,
 )
 from officina.common.atomic_files import atomic_replace_bytes
 from officina.certification.view import CertificationView
@@ -47,8 +48,8 @@ INTERFACES_START = "<!-- BEGIN BLUEPRINT INTERFACES -->"
 INTERFACES_END = "<!-- END BLUEPRINT INTERFACES -->"
 USED_INTERFACES_START = "<!-- BEGIN BLUEPRINT USED INTERFACES -->"
 USED_INTERFACES_END = "<!-- END BLUEPRINT USED INTERFACES -->"
-RUNTIME_DEPENDENCIES_PATH = REPO_ROOT / "references" / "blueprint" / "runtime_dependencies.json"
-BLUEPRINT_SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint"
+RUNTIME_DEPENDENCIES_PATH = REPO_ROOT / "references" / "blueprint-schema" / "runtime_dependencies.json"
+BLUEPRINT_SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint-schema"
 PLATFORM_NAMES = ("linux", "macos", "windows")
 RUNTIME_DEPENDENCY_KINDS = (
     "python-package",
@@ -235,6 +236,31 @@ def generated_contract_block(
     else:
         lines.append("Uses Interfaces: none")
     lines.append("")
+
+    setup_exports = [
+        export_id
+        for export_id in exports
+        if export_id in getattr(repository_graph, "setup_requirements", {})
+    ]
+    if setup_exports:
+        setup_export = setup_exports[0]
+        prerequisites = repository_graph.setup_requirements[setup_export]
+        if prerequisites:
+            lines.append("Setup Requires Setup Of:")
+            lines.extend(
+                f"- `{interface_id}@{required_version}`"
+                for interface_id, required_version in prerequisites
+            )
+        else:
+            lines.append("Setup Requires Setup Of: none")
+        lines.append("Setup Order:")
+        lines.extend(
+            f"{index}. `{interface_id}`"
+            for index, interface_id in enumerate(
+                setup_order(repository_graph, setup_export), start=1
+            )
+        )
+        lines.append("")
 
     if exports:
         lines.append("Public Interfaces:")
@@ -837,7 +863,7 @@ def run_sync(*, check_only: bool, schema_version: int = 6) -> int:
             print(f"  {error}", file=sys.stderr)
         if check_only:
             print(
-                "Run `python3 skills/skill-maker/_rtx/_blueprint_syncer.py` to refresh generated artifacts.",
+                "Rerun this interface without `--check` to refresh generated artifacts.",
                 file=sys.stderr,
             )
         return 1

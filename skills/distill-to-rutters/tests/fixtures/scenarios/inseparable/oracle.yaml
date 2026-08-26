@@ -1,0 +1,38 @@
+scenario: inseparable
+capability_honesty:
+  public_runtime_capability: rutter.interface.bound-operations
+  public_runtime_version: 6
+  public_binding_contract_version: 1
+  capability_verified: false
+  enforcement_class: operation-name-only
+  absent_binding_contract: rutter.interface.bound-operations semantic_enforcement@1
+  exact_repair: Expose versioned request, validation, transition, successor, and rejection-code bindings.
+assignments:
+  part-review:
+    voyage_id: voyage-review
+    rutter_definition_id: review
+    inseparability: inseparable
+    independent_workflows: {}
+    graph_evolutions: [inspect]
+rutter_definitions:
+  review:
+    evolutions: [inspect]
+orchestration:
+  mode: single
+  coordinator_rutter_id: null
+  retry_owner: review
+  required_rules: {}
+obligations:
+  obl-review:
+    owning_evolution: review/inspect
+    decision_owner: rutter
+    validator: validate_review
+    logic_validator: validate_review
+    automation_permission: deterministic
+    request_owner: null
+    positive:
+      outcome: accepted
+      state: complete
+    negative:
+      outcome: malformed
+      rejection_code: invalid-review

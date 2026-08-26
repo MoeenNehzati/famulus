@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import io
 import os
+import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -37,7 +39,10 @@ if __package__ and __package__.count('.') >= 1:
     from .._state_record import Manifest
 else:
     from _state_record import Manifest  # noqa: E402
-from install_test_utils import can_create_symlink  # noqa: E402
+if __package__ and __package__.count('.') >= 1:
+    from .install_test_utils import can_create_symlink
+else:
+    from install_test_utils import can_create_symlink  # noqa: E402
 if __package__ and __package__.count('.') >= 1:
     from .._fs_links import default_bin_dir
 else:
@@ -79,10 +84,23 @@ class SetupSymlinksTests(unittest.TestCase):
         (repo_root / "profiles").mkdir()
         (repo_root / ".githooks").mkdir()
         (repo_root / "llmhooks").mkdir()
-        (repo_root / "scripts").mkdir()
-        for helper in ("milestone.py", "agent-timeline.py"):
-            (repo_root / "scripts" / helper).write_text(
-                "#!/usr/bin/env python3\n", encoding="utf-8"
+        runtime_dir = repo_root / "skills" / "milestone-logging" / "_rtx"
+        runtime_dir.mkdir(parents=True)
+        source_runtime_dir = ROOT_DIR / "skills" / "milestone-logging" / "_rtx"
+        for helper in ("_milestone_writer.py", "_agent_timeline.py"):
+            shutil.copy2(
+                source_runtime_dir / helper,
+                runtime_dir / helper,
+            )
+        compatibility_dir = (
+            repo_root / "skills" / "install-assistant-tools" / "_rtx" / "assets" / "bin"
+        )
+        compatibility_dir.mkdir(parents=True)
+        source_compatibility_dir = SCRIPT_DIR / "assets" / "bin"
+        for helper in ("milestone", "agent-timeline"):
+            shutil.copy2(
+                source_compatibility_dir / helper,
+                compatibility_dir / helper,
             )
         (repo_root / "llmhooks" / "registry.py").write_text(
             "def hooks_for_host(host):\n    return []\n", encoding="utf-8"
@@ -99,7 +117,7 @@ class SetupSymlinksTests(unittest.TestCase):
     # famulus-skip: category=platform-contract; reason=Windows cannot execute extension-less links, so dev_link skips these helpers there; alternate=none needed until .bat wrappers exist
     @unittest.skipIf(sys.platform == "win32", "milestone helpers are POSIX-only by design")
     def test_installs_milestone_helpers_into_bin_dir(self) -> None:
-        """CLAUDE.md names `milestone` as a command, so it must reach PATH."""
+        """Installer co-delivers compatibility commands with root instructions."""
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = self.make_repo_root(Path(tmp))
             home = Path(tmp) / "home"
@@ -115,9 +133,17 @@ class SetupSymlinksTests(unittest.TestCase):
             )
 
             bin_dir = default_bin_dir(home=home)
+            compatibility_dir = (
+                repo_root
+                / "skills"
+                / "install-assistant-tools"
+                / "_rtx"
+                / "assets"
+                / "bin"
+            )
             expected = {
-                bin_dir / "milestone": repo_root / "scripts" / "milestone.py",
-                bin_dir / "agent-timeline": repo_root / "scripts" / "agent-timeline.py",
+                bin_dir / "milestone": compatibility_dir / "milestone",
+                bin_dir / "agent-timeline": compatibility_dir / "agent-timeline",
             }
             for link, target in expected.items():
                 self.assertTrue(link.is_symlink(), f"missing link: {link}")
@@ -131,6 +157,102 @@ class SetupSymlinksTests(unittest.TestCase):
             }
             for link in expected:
                 self.assertIn(str(link), recorded)
+
+    # famulus-skip: category=platform-contract; reason=Windows cannot execute extension-less links, so dev_link skips these helpers there; alternate=none needed until .bat wrappers exist
+    @unittest.skipIf(sys.platform == "win32", "milestone helpers are POSIX-only by design")
+    def test_installed_milestone_helpers_execute_without_activation_imports(self) -> None:
+        """Installed links run without activation-provided Python import state."""
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = self.make_repo_root(Path(tmp))
+            home = Path(tmp) / "home"
+            self.capture_run(
+                repo_root=repo_root,
+                home=home,
+                claude_home=home / "claude",
+                codex_home=home / "codex",
+                dry_run=False,
+            )
+
+            bin_dir = default_bin_dir(home=home)
+            dispatcher = bin_dir / "dispatcher"
+            dispatcher.write_text(
+                "#!/bin/sh\n"
+                f"PYTHONPATH={shlex.quote(str(ROOT_DIR / 'src'))} "
+                f"exec {shlex.quote(sys.executable)} -P -m officina.dispatcher.cli "
+                f"--repository-config {shlex.quote(str(ROOT_DIR / 'officina.toml'))} "
+                '"$@"\n',
+                encoding="utf-8",
+            )
+            dispatcher.chmod(0o755)
+            environment = os.environ.copy()
+            for variable in (
+                "PYTHONPATH",
+                "PYTHONHOME",
+                "VIRTUAL_ENV",
+                "CONDA_PREFIX",
+                "CONDA_DEFAULT_ENV",
+            ):
+                environment.pop(variable, None)
+            environment["PATH"] = os.pathsep.join(
+                (str(bin_dir), environment.get("PATH", ""))
+            )
+            environment.update(
+                {
+                    "ASSISTANT_LOGS": str(Path(tmp) / "logs"),
+                    "CODEX_SESSION_ID": "installed-launcher-session",
+                    "CODEX_THREAD_ID": "installed-launcher-agent",
+                }
+            )
+
+            try:
+                milestone = subprocess.run(
+                    [str(bin_dir / "milestone"), "--path"],
+                    env=environment,
+                    cwd=repo_root,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="strict",
+                )
+            except PermissionError as exc:
+                self.fail(f"installed milestone launcher is not executable: {exc}")
+            self.assertEqual(milestone.returncode, 0, milestone.stderr)
+            milestone_path = Path(milestone.stdout.strip())
+            self.assertTrue(
+                milestone_path.resolve().is_relative_to(
+                    Path(environment["ASSISTANT_LOGS"]).resolve()
+                ),
+                milestone.stdout,
+            )
+
+            record = subprocess.run(
+                [
+                    str(bin_dir / "milestone"),
+                    "--role",
+                    "sanitized launcher test",
+                    "record through installed launcher",
+                    "",
+                ],
+                env=environment,
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="strict",
+            )
+            self.assertEqual(record.returncode, 0, record.stderr)
+
+            timeline = subprocess.run(
+                [str(bin_dir / "agent-timeline"), "--list"],
+                env=environment,
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="strict",
+            )
+            self.assertEqual(timeline.returncode, 0, timeline.stderr)
+            self.assertIn("installed-launcher-session", timeline.stdout)
 
     def test_creates_expected_links_in_empty_directories(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -155,16 +277,17 @@ class SetupSymlinksTests(unittest.TestCase):
                 claude_home / "skills": repo_root / "skills",
                 claude_home / "references": repo_root / "references",
                 claude_home / "agents": repo_root / "agents",
-                claude_home / "CLAUDE.md": repo_root / "CLAUDE.md",
             }
             codex_expected = {
                 codex_home / "references": repo_root / "references",
                 codex_home / "agents": repo_root / "agents",
-                codex_home / "AGENTS.md": (repo_root / "CLAUDE.md").resolve(),
                 codex_home / "assistant.config.toml": repo_root / "profiles" / "assistant.config.toml",
                 codex_home / "collab.config.toml": repo_root / "profiles" / "collab.config.toml",
                 codex_home / "coauthor.config.toml": repo_root / "profiles" / "coauthor.config.toml",
             }
+            if sys.platform != "win32":
+                claude_expected[claude_home / "CLAUDE.md"] = repo_root / "CLAUDE.md"
+                codex_expected[codex_home / "AGENTS.md"] = (repo_root / "CLAUDE.md").resolve()
 
             for path, target in claude_expected.items():
                 self.assertTrue(path.is_symlink(), path)
@@ -433,7 +556,7 @@ class SetupSymlinksTests(unittest.TestCase):
         # loudly rather than silently deriving a path from this script's own
         # location.
         with tempfile.TemporaryDirectory() as tmp:
-            with self.assertRaises(TypeError):
+            with self.assertRaises(ValueError):
                 dev_link.run(home=Path(tmp))  # missing required repo_root
 
     def test_run_installs_git_hooks_when_repo_is_git_checkout(self) -> None:
@@ -486,10 +609,10 @@ class SetupSymlinksTests(unittest.TestCase):
 
             self.assertIn("not a git checkout; skipping git hooks setup", output)
 
-    def test_run_sets_ai_in_rc_file(self) -> None:
+    def test_run_does_not_persist_ai_or_logs_in_rc_file(self) -> None:
         if sys.platform == "win32":
-            # famulus-skip: category=platform-contract; reason=Windows stores AI in the user registry; alternate=test_run_sets_ai_in_windows_registry
-            self.skipTest("Windows stores AI in the user registry")
+            # famulus-skip: category=platform-contract; reason=Windows has no POSIX rc-file path to inspect; alternate=test_run_does_not_persist_ai_or_logs_in_windows_registry
+            self.skipTest("POSIX rc-file assertion")
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = self.make_repo_root(Path(tmp))
             home = Path(tmp) / "home"
@@ -509,10 +632,11 @@ class SetupSymlinksTests(unittest.TestCase):
             )
 
             content = rc_file.read_text()
-            self.assertIn(f'export AI="{repo_root}"', content)
+            self.assertNotIn("AI=", content)
+            self.assertNotIn("ASSISTANT_LOGS=", content)
             self.assertNotIn("ASSISTANT_DEFAULT", content)  # dev_link does not own this var
 
-    def test_run_sets_ai_in_windows_registry(self) -> None:
+    def test_run_does_not_persist_ai_or_logs_in_windows_registry(self) -> None:
         registry_calls = []
 
         class FakeKey:
@@ -554,13 +678,7 @@ class SetupSymlinksTests(unittest.TestCase):
                     dry_run=False,
                 )
 
-            self.assertEqual(
-                registry_calls,
-                [
-                    ("AI", fake_winreg.REG_SZ, str(repo_root)),
-                    ("ASSISTANT_LOGS", fake_winreg.REG_SZ, str(home / ".assistant-logs")),
-                ],
-            )
+            self.assertEqual(registry_calls, [])
             self.assertEqual(rc_file.read_text(), "")
 
 

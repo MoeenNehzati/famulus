@@ -18,7 +18,7 @@ interfaces:
     - interface: certification.interface.hashing
       version: 1
     - interface: common.interface.atomic-files
-      version: 1
+      version: 2
     - interface: certification.interface.records
       version: 1
     - interface: blueprints.interface.graph
@@ -411,7 +411,7 @@ uses_interfaces:
 - interface: certification.interface.hashing
   version: 1
 - interface: common.interface.atomic-files
-  version: 1
+  version: 2
 - interface: certification.interface.records
   version: 1
 - interface: blueprints.interface.graph

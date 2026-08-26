@@ -19,9 +19,12 @@ class ClaudeAdapter:
     def transcript_root(self) -> Path:
         """Return Claude Code's project transcript directory."""
 
+        configured = os.environ.get("LLM_WAKEUP_CLAUDE_DIR")
+        if configured:
+            return Path(configured).expanduser()
         return Path(
-            os.environ.get("LLM_WAKEUP_CLAUDE_DIR", "~/.claude/projects")
-        ).expanduser()
+            os.environ.get("CLAUDE_CONFIG_DIR", os.environ.get("CLAUDE_HOME", "~/.claude"))
+        ).expanduser() / "projects"
 
     def include_log(self, path: Path) -> bool:
         """Accept Claude JSONL session transcripts and reject other files."""

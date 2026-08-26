@@ -179,8 +179,8 @@ def test_v4_search_discovers_repository_modules_outside_skills(tmp_path: Path) -
     (tmp_path / "skills").mkdir()
     _write_v4_module(
         tmp_path,
-        "references/blueprint",
-        "blueprint",
+        "references/blueprint-schema",
+        "blueprint-schema",
         "schema-annotated-draft",
     )
     _write_v4_module(
@@ -203,16 +203,16 @@ def test_v4_search_discovers_repository_modules_outside_skills(tmp_path: Path) -
         for row in rows
     } == {
         (
-            "blueprint",
-            "blueprint",
+            "blueprint-schema",
+            "blueprint-schema",
             "module",
-            "references/blueprint/blueprint.yaml",
+            "references/blueprint-schema/blueprint.yaml",
         ),
         (
-            "blueprint",
-            "blueprint.source.schema-annotated-draft",
+            "blueprint-schema",
+            "blueprint-schema.source.schema-annotated-draft",
             "behavioral_source",
-            "references/blueprint/blueprints/schema-annotated-draft.yaml",
+            "references/blueprint-schema/blueprints/schema-annotated-draft.yaml",
         ),
         (
             "skill-standards",

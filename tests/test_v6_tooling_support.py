@@ -19,7 +19,7 @@ V6_SCHEMA_ROOT = REPO_ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v6"
 
 
 def test_repository_schema_marker_accepts_v6(tmp_path: Path) -> None:
-    marker = tmp_path / "references" / "blueprint" / "blueprint.yaml"
+    marker = tmp_path / "references" / "blueprint-schema" / "blueprint.yaml"
     marker.parent.mkdir(parents=True)
     marker.write_text("schema_version: 6\n", encoding="utf-8")
 

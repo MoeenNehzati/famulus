@@ -221,6 +221,86 @@ def test_generically_named_file_may_not_mention_operating_system(tmp_path: Path)
     assert "Windows" in errors[0]
 
 
+@pytest.mark.parametrize(
+    "relative_path",
+    (
+        Path("src/officina/install/context.py"),
+        Path("src/officina/install/development_activation.py"),
+        Path("src/officina/install/runtime_pointer.py"),
+        Path("src/officina/install/resolvers/launch.py"),
+        Path("src/officina/launchers/agent.py"),
+        Path("src/officina/recurring/runtime.py"),
+        Path("src/officina/recurring/healthcheck.py"),
+        Path("src/officina/recurring/executor.py"),
+        Path("src/officina/recurring/native.py"),
+        Path("src/officina/recurring/state.py"),
+        Path("src/officina/recurring/default_jobs.yaml"),
+        Path("src/officina/configuration/schema.json"),
+    ),
+)
+def test_binding_cross_host_orchestration_files_are_exactly_allowed(
+    tmp_path: Path, relative_path: Path
+) -> None:
+    source = tmp_path / relative_path
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("# Coordinates Claude, Codex, Windows, macOS, and Linux.\n")
+
+    assert validate(tmp_path) == []
+
+
+def test_nearby_generic_orchestration_file_remains_rejected(tmp_path: Path) -> None:
+    source = tmp_path / "src" / "officina" / "install" / "context_helper.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("# Coordinates Claude, Codex, Windows, macOS, and Linux.\n")
+
+    errors = validate(tmp_path)
+    assert errors == [
+        "src/officina/install/context_helper.py:1: "
+        "# Coordinates Claude, Codex, Windows, macOS, and Linux."
+    ]
+
+
+def test_nearby_recurring_file_remains_rejected(tmp_path: Path) -> None:
+    source = tmp_path / "src" / "officina" / "recurring" / "helper.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("# Coordinates Claude, Codex, Windows, macOS, and Linux.\n")
+
+    errors = validate(tmp_path)
+    assert errors == [
+        "src/officina/recurring/helper.py:1: "
+        "# Coordinates Claude, Codex, Windows, macOS, and Linux."
+    ]
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    (
+        Path("skills/milestone-logging/_rtx/_milestone_writer.py"),
+        Path("skills/milestone-logging/_rtx/_agent_timeline.py"),
+    ),
+)
+def test_milestone_compatibility_runtime_paths_are_exactly_allowed(
+    tmp_path: Path, relative_path: Path
+) -> None:
+    source = tmp_path / relative_path
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("# Coordinates Claude, Codex, Windows, macOS, and Linux.\n")
+
+    assert validate(tmp_path) == []
+
+
+def test_nearby_milestone_runtime_file_remains_rejected(tmp_path: Path) -> None:
+    source = tmp_path / "skills" / "milestone-logging" / "_rtx" / "_helper.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("# Coordinates Claude, Codex, Windows, macOS, and Linux.\n")
+
+    errors = validate(tmp_path)
+    assert errors == [
+        "skills/milestone-logging/_rtx/_helper.py:1: "
+        "# Coordinates Claude, Codex, Windows, macOS, and Linux."
+    ]
+
+
 def test_blueprint_graph_shared_module_is_platform_neutral(tmp_path: Path) -> None:
     source = (
         Path(__file__).resolve().parents[1]
@@ -342,14 +422,14 @@ def test_frozen_v4_blueprint_metadata_and_owned_content_are_line_checked(
 
 
 def test_blueprint_reference_docs_can_define_platform_metadata(tmp_path: Path) -> None:
-    refs = tmp_path / "references" / "blueprint"
+    refs = tmp_path / "references" / "blueprint-schema"
     refs.mkdir(parents=True)
     (refs / "README.md").write_text("Use `linux`/`macos`/`windows` booleans for support metadata.\n")
     assert validate(tmp_path) == []
 
 
 def test_blueprint_reference_docs_still_reject_host_names(tmp_path: Path) -> None:
-    refs = tmp_path / "references" / "blueprint"
+    refs = tmp_path / "references" / "blueprint-schema"
     refs.mkdir(parents=True)
     (refs / "README.md").write_text("Use Codex for this flow.\n")
     errors = validate(tmp_path)

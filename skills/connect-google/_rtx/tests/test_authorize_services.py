@@ -488,7 +488,9 @@ def test_authorize_services_state_mismatch_stores_no_credential(
 
     from officina.common.famulus_paths import resolve_famulus_paths
 
-    registry_path = resolve_famulus_paths(platform=PLATFORM, home=tmp_path).config_root / "connect-google" / "credentials.json"
+    registry_path = resolve_famulus_paths(
+        platform=PLATFORM, home=tmp_path, environ={}
+    ).config_root / "connect-google" / "credentials.json"
     assert not registry_path.exists()
     descriptor_dir = registry_path.parent / "credentials"
     assert not descriptor_dir.exists() or not tuple(descriptor_dir.iterdir())
@@ -517,7 +519,9 @@ def test_authorize_services_account_hint_mismatch_stores_no_credential(
 
     from officina.common.famulus_paths import resolve_famulus_paths
 
-    registry_path = resolve_famulus_paths(platform=PLATFORM, home=tmp_path).config_root / "connect-google" / "credentials.json"
+    registry_path = resolve_famulus_paths(
+        platform=PLATFORM, home=tmp_path, environ={}
+    ).config_root / "connect-google" / "credentials.json"
     assert not registry_path.exists()
     descriptor_dir = registry_path.parent / "credentials"
     assert not descriptor_dir.exists() or not tuple(descriptor_dir.iterdir())
@@ -628,7 +632,13 @@ def test_oversized_callback_is_ignored_before_valid_callback(
         ):
             with socket.create_connection(("127.0.0.1", port), timeout=1) as client:
                 client.sendall(request)
-                client.recv(4096)
+                try:
+                    client.recv(4096)
+                except ConnectionResetError:
+                    # Windows may reset an intentionally oversized request
+                    # when the server closes it; the valid callback must still
+                    # be sent on the next connection.
+                    pass
 
     background_thread(send_callbacks)
     result = authorize_services_module._wait_for_callback(

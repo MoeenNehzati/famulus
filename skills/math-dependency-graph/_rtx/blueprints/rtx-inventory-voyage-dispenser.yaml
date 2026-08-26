@@ -11,7 +11,7 @@ content:
 - _inventory_pipeline/_voyage_support\.py
 dependencies:
 - source: common.source.atomic-files
-  version: 1
+  version: 2
   blueprint: {base: repository-root, path: src/officina/common/blueprints/atomic-files.yaml}
   reason: Writes cumulative source packets and chunk inventories atomically.
 - source: rutter.source.engine
@@ -35,7 +35,7 @@ dependencies:
   blueprint: {base: module-root, path: blueprints/rtx-inventory-chunk-extractor.yaml}
   reason: Resolves and packets the supplied document entrypoint into internal immutable chunks.
 uses_interfaces:
-- {interface: common.interface.atomic-files, version: 1}
+- {interface: common.interface.atomic-files, version: 2}
 - {interface: rutter.interface.bound-operations, version: 6}
 - {interface: rutter.interface.model, version: 2}
 - {interface: rutter.interface.dispenser, version: 5}
@@ -49,7 +49,7 @@ interfaces:
     - _inventory_pipeline/_voyage_dispenser\.py
     - _inventory_pipeline/_voyage_support\.py
     uses_interfaces:
-    - {interface: common.interface.atomic-files, version: 1}
+    - {interface: common.interface.atomic-files, version: 2}
     - {interface: rutter.interface.bound-operations, version: 6}
     - {interface: rutter.interface.model, version: 2}
     - {interface: rutter.interface.dispenser, version: 5}

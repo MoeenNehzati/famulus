@@ -262,7 +262,7 @@ def validate(repo_root: Path) -> list[str]:
     if not _has_module_blueprints(repo_root):
         return []
 
-    schema_root = repo_root / "references" / "blueprint"
+    schema_root = repo_root / "references" / "blueprint-schema"
     try:
         graph = load_repository_blueprint_graph(
             repo_root,

@@ -286,6 +286,17 @@ def test_assets_markdown_is_exempt(tmp_path: Path) -> None:
     assert _mod.validate(tmp_path) == []
 
 
+def test_generated_build_markdown_is_exempt(tmp_path: Path) -> None:
+    skill = _skill(tmp_path)
+    (skill / "_build").mkdir()
+    (skill / "_build" / "report.md").write_text(
+        "Run _rtx and _Calendar_Gateway.py.\n",
+        encoding="utf-8",
+    )
+
+    assert _mod.validate(tmp_path) == []
+
+
 def test_registered_child_artifacts_are_not_runtime_names_but_executable_is(
     tmp_path: Path,
 ) -> None:

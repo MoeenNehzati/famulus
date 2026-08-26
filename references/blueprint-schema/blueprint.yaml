@@ -1,0 +1,35 @@
+authority:
+  owns_filesystem: []
+children: {}
+content:
+- README\.md
+- behavioral\-source\.schema\.json
+- caller\-contract\.schema\.json
+- certificate\.schema\.json
+- common\.schema\.json
+- direct\-io\.schema\.json
+- interface\-projection\.schema\.json
+- module\.schema\.json
+- pooled\-review\.schema\.json
+- runtime_dependencies\.json
+- schema\-meta\.json
+- schema\.annotated\-draft\.json
+- schema\.json
+- template\.yaml
+description: Owns the repository's current blueprint schemas, templates, and schema
+  metadata.
+exports: {}
+gateway:
+  language: JSON-Schema
+  path: schema.json
+id: blueprint-schema
+namespace_exports: {}
+node_type: module
+schema_version: 6
+sources:
+  blueprint-schema.source.schema-annotated-draft:
+    blueprint:
+      base: module-root
+      path: blueprints/schema-annotated-draft.yaml
+version: 1
+maturity: stable

@@ -226,7 +226,7 @@ def test_cli_writes_canonical_json_and_reports_counts(tmp_path: Path) -> None:
     report = json.loads(result.stdout)
     assert report["entities"] == 2
     assert report["edges"] == 1
-    assert Path(report["out"]) == out_path
+    assert Path(report["out"]).resolve() == out_path.resolve()
     canonical = json.loads(out_path.read_text(encoding="utf-8"))
     assert canonical["graph_kind"] == "math-dependency"
     assert canonical["metadata"]["semantic_ir_sha256"] == hashlib.sha256(

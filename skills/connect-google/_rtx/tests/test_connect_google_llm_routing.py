@@ -175,6 +175,7 @@ def test_module_and_markdown_gateway_graph(
         "connect-google.interface.default",
         "connect-google.interface.create-client",
         "connect-google.interface.connect-services",
+        "connect-google.interface.setup",
     }
     child = load_blueprint(SKILL_ROOT / "_rtx/blueprint.yaml")
     assert set(child["exports"]) == {
@@ -206,7 +207,7 @@ def test_module_and_markdown_gateway_graph(
     for node in (default, create_client, connect_services):
         for edge in node.get("uses_interfaces", []):
             assert not edge["interface"].startswith(
-                ("cloud-files.", "g-calendar.", "email-client.")
+                ("cloud-files.", "online-calendar.", "email-client.")
             )
 
 
@@ -226,7 +227,7 @@ def test_client_status_declares_every_google_client_path_it_reads(
     assert declared_paths == {
         "platform Famulus config root (see credentials.interface.google) / connect-google/client.json",
         "$HOME/.config/cloud-files/client.json",
-        "$HOME/.config/g-calendar/client.json",
+        "$HOME/.config/online-calendar/client.json",
     }
     assert node["process_binding"]["patterns"][0]["flag_patterns"] == {
         "--home": "^.+$"

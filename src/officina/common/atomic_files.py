@@ -146,7 +146,7 @@ def _windows_file_rename_info(
     information = ctypes.cast(
         backing, ctypes.POINTER(_WinFileRenameInfo)
     ).contents
-    information.Flags = int(replace)
+    information.Flags = 0x1 | 0x2 if replace else 0
     information.RootDirectory = parent_handle
     information.FileNameLength = len(encoded)
     if encoded:
@@ -443,6 +443,85 @@ def _posix_atomic_replace_bytes(
         raise
     finally:
         cleanup_error = _cleanup_write(parent_fd, temp_name, temp_created)
+        if failure is None and cleanup_error is not None:
+            raise cleanup_error
+
+
+def _posix_open_expected(parent_fd: int, name: str, path: Path, *, expected_previous_bytes: bytes, expected_previous_mode: int) -> tuple[int, os.stat_result]:
+    """Open and prove one named predecessor through its retained parent."""
+    try:
+        descriptor = _secure_open(name, os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0), dir_fd=parent_fd)
+    except OSError as exc:
+        raise AtomicWriteError(f"compare predecessor mismatch: {path}") from exc
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise AtomicWriteError(f"compare predecessor is not a regular file: {path}")
+        if _read_descriptor_bytes(descriptor) != expected_previous_bytes or stat.S_IMODE(metadata.st_mode) != expected_previous_mode:
+            raise AtomicWriteError(f"compare predecessor mismatch: {path}")
+        linked = _secure_stat(parent_fd, name)
+        if (linked.st_dev, linked.st_ino) != (metadata.st_dev, metadata.st_ino):
+            raise AtomicWriteError(f"destination changed after preflight: {path}")
+        return descriptor, metadata
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def _posix_atomic_compare_and_replace_bytes(path: Path, data: bytes, *, expected_previous_bytes: bytes | None, expected_previous_mode: int | None, allowed_root: Path, mode: int) -> None:
+    if expected_previous_bytes is None:
+        if not _posix_atomic_create_bytes(path, data, allowed_root=allowed_root, mode=mode):
+            raise AtomicWriteError(f"compare predecessor mismatch: {path}")
+        return
+    if expected_previous_mode is None:
+        raise TypeError("an existing predecessor requires its exact mode")
+    parent_fd, name = _open_parent(path, allowed_root)
+    descriptor = -1
+    temp_name = f".{name}.tmp-{secrets.token_hex(8)}"
+    temp_created = False
+    failure: BaseException | None = None
+    try:
+        descriptor, metadata = _posix_open_expected(parent_fd, name, path, expected_previous_bytes=expected_previous_bytes, expected_previous_mode=expected_previous_mode)
+        temporary = _open_temp(parent_fd, temp_name, mode)
+        temp_created = True
+        _write_and_sync(temporary, data)
+        if _read_descriptor_bytes(descriptor) != expected_previous_bytes or stat.S_IMODE(os.fstat(descriptor).st_mode) != expected_previous_mode:
+            raise AtomicWriteError(f"destination changed after preflight: {path}")
+        linked = _secure_stat(parent_fd, name)
+        if (linked.st_dev, linked.st_ino) != (metadata.st_dev, metadata.st_ino):
+            raise AtomicWriteError(f"destination changed after preflight: {path}")
+        _secure_replace(parent_fd, temp_name, name)
+        temp_created = False
+        os.fsync(parent_fd)
+    except BaseException as exc:
+        failure = exc
+        raise
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        cleanup_error = _cleanup_write(parent_fd, temp_name, temp_created)
+        if failure is None and cleanup_error is not None:
+            raise cleanup_error
+
+
+def _posix_atomic_compare_and_delete(path: Path, *, expected_previous_bytes: bytes, expected_previous_mode: int, allowed_root: Path) -> None:
+    parent_fd, name = _open_parent(path, allowed_root)
+    descriptor = -1
+    failure: BaseException | None = None
+    try:
+        descriptor, metadata = _posix_open_expected(parent_fd, name, path, expected_previous_bytes=expected_previous_bytes, expected_previous_mode=expected_previous_mode)
+        if _read_descriptor_bytes(descriptor) != expected_previous_bytes or stat.S_IMODE(os.fstat(descriptor).st_mode) != expected_previous_mode:
+            raise AtomicWriteError(f"destination changed after preflight: {path}")
+        linked = _secure_stat(parent_fd, name)
+        if (linked.st_dev, linked.st_ino) != (metadata.st_dev, metadata.st_ino):
+            raise AtomicWriteError(f"destination changed after preflight: {path}")
+        _secure_unlink(parent_fd, name)
+        os.fsync(parent_fd)
+    except BaseException as exc:
+        failure = exc
+        raise
+    finally:
+        cleanup_error = _cleanup_read(descriptor, parent_fd)
         if failure is None and cleanup_error is not None:
             raise cleanup_error
 
@@ -793,7 +872,7 @@ _WINDOWS_APIS: tuple[object, object, object] | None = None
 # FileRenameInfoEx and FILE_ID_INFO; LockFileEx and FlushFileBuffers; and
 # handle-based GetSecurityInfo/SetSecurityInfo.
 _WIN_SHARE_ALL = 0x1 | 0x2 | 0x4
-_WIN_DIR_ACCESS = 0x20 | 0x80 | 0x00100000
+_WIN_DIR_ACCESS = 0x2 | 0x20 | 0x40 | 0x80 | 0x00100000
 _WIN_READ_ACCESS = 0x1 | 0x80 | 0x00020000 | 0x00100000
 _WIN_MUTATE_ACCESS = (
     0x1 | 0x2 | 0x4 | 0x80 | 0x00010000 | 0x00020000 | 0x00040000 | 0x00100000
@@ -1409,7 +1488,7 @@ def _windows_rename_handle(
         error = int(ntdll.RtlNtStatusToDosError(status))
         if error in {80, 183}:
             return False
-        if information_class == 65 and error in {1, 50, 87, 120}:
+        if information_class == 65 and error in {1, 5, 50, 87, 120}:
             continue
         if error in {1, 50, 87, 120}:
             raise AtomicWriteError(_CAPABILITY_ERROR)
@@ -1701,6 +1780,57 @@ def _windows_atomic_compare_and_append_bytes(
     )
 
 
+def _windows_atomic_compare_and_replace_bytes(path: Path, data: bytes, *, expected_previous_bytes: bytes | None, expected_previous_mode: int | None, allowed_root: Path, mode: int) -> None:
+    del mode, expected_previous_mode
+    if expected_previous_bytes is None:
+        if not _windows_atomic_create_bytes(path, data, allowed_root=allowed_root, mode=0o600):
+            raise AtomicWriteError(f"compare predecessor mismatch: {path}")
+        return
+    parents, parts = _windows_open_parent(path, allowed_root)
+    parent_handle, name = parents[-1], parts[-1]
+    predecessor = -1
+    temp_handle = -1
+    renamed = False
+    try:
+        _windows_verify_parent_chain(parents, parts)
+        predecessor, _information = _windows_open_validated(parent_handle, name, access=_WIN_READ_ACCESS, disposition=1, options=_WIN_FILE_OPTIONS, directory=False)
+        if _windows_read_handle(predecessor) != expected_previous_bytes:
+            raise AtomicWriteError(f"compare predecessor mismatch: {path}")
+        temp_handle, _temp_name = _windows_write_temp(parent_handle, name, data)
+        _windows_verify_parent_chain(parents, parts)
+        _windows_verify_named_handle(parent_handle, name, predecessor)
+        if _windows_read_handle(predecessor) != expected_previous_bytes:
+            raise AtomicWriteError(f"destination changed after preflight: {path}")
+        renamed = _windows_rename_handle(temp_handle, parent_handle, name, replace=True)
+        if not renamed:
+            raise AtomicWriteError(f"native replace collision: {name}")
+        _windows_flush_handle(temp_handle)
+        _windows_verify_named_handle(parent_handle, name, temp_handle)
+    finally:
+        try:
+            if temp_handle >= 0 and not renamed:
+                _windows_mark_delete(temp_handle)
+        finally:
+            _windows_close_chain(parents + ([predecessor] if predecessor >= 0 else []) + ([temp_handle] if temp_handle >= 0 else []))
+
+
+def _windows_atomic_compare_and_delete(path: Path, *, expected_previous_bytes: bytes, expected_previous_mode: int, allowed_root: Path) -> None:
+    del expected_previous_mode
+    parents, parts = _windows_open_parent(path, allowed_root)
+    parent_handle, name = parents[-1], parts[-1]
+    predecessor = -1
+    try:
+        _windows_verify_parent_chain(parents, parts)
+        predecessor, _information = _windows_open_validated(parent_handle, name, access=_WIN_MUTATE_ACCESS, disposition=1, options=_WIN_FILE_OPTIONS, directory=False)
+        if _windows_read_handle(predecessor) != expected_previous_bytes:
+            raise AtomicWriteError(f"compare predecessor mismatch: {path}")
+        _windows_verify_named_handle(parent_handle, name, predecessor)
+        _windows_mark_delete(predecessor)
+        _windows_flush_handle(predecessor)
+    finally:
+        _windows_close_chain(parents + ([predecessor] if predecessor >= 0 else []))
+
+
 def _is_capability_error(error: BaseException) -> bool:
     return isinstance(error, AtomicWriteError) and str(error) == _CAPABILITY_ERROR
 
@@ -1877,3 +2007,23 @@ def atomic_compare_and_append_bytes(
             allowed_root=allowed_root,
             mode=mode,
         )
+
+
+def atomic_compare_and_replace_bytes(path: Path, data: bytes, *, expected_previous_bytes: bytes | None, expected_previous_mode: int | None, allowed_root: Path, mode: int) -> None:
+    """Publish bytes only while the confined predecessor remains exact."""
+    if not isinstance(data, bytes) or (expected_previous_bytes is not None and not isinstance(expected_previous_bytes, bytes)):
+        raise TypeError("compare-and-replace requires bytes or a missing predecessor")
+    if os.name == "nt":
+        _windows_atomic_compare_and_replace_bytes(path, data, expected_previous_bytes=expected_previous_bytes, expected_previous_mode=expected_previous_mode, allowed_root=allowed_root, mode=mode)
+    else:
+        _posix_atomic_compare_and_replace_bytes(path, data, expected_previous_bytes=expected_previous_bytes, expected_previous_mode=expected_previous_mode, allowed_root=allowed_root, mode=mode)
+
+
+def atomic_compare_and_delete(path: Path, *, expected_previous_bytes: bytes, expected_previous_mode: int, allowed_root: Path) -> None:
+    """Remove one confined file only while its predecessor remains exact."""
+    if not isinstance(expected_previous_bytes, bytes):
+        raise TypeError("compare-and-delete requires existing predecessor bytes")
+    if os.name == "nt":
+        _windows_atomic_compare_and_delete(path, expected_previous_bytes=expected_previous_bytes, expected_previous_mode=expected_previous_mode, allowed_root=allowed_root)
+    else:
+        _posix_atomic_compare_and_delete(path, expected_previous_bytes=expected_previous_bytes, expected_previous_mode=expected_previous_mode, allowed_root=allowed_root)

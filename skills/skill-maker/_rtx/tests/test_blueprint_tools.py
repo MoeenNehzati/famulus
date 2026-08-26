@@ -19,7 +19,7 @@ from test_support.v5_blueprint_fixtures import copy_v5_fixture_tree
 
 
 SYNCER_PATH = REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py"
-BLUEPRINT_TEMPLATE = REPO_ROOT / "references" / "blueprint" / "template.yaml"
+BLUEPRINT_TEMPLATE = REPO_ROOT / "references" / "blueprint-schema" / "template.yaml"
 V5_SCHEMA_ROOT = REPO_ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v5"
 V5_AUTHORIZATION_FIXTURE = (
     REPO_ROOT / "tests" / "fixtures" / "blueprint_v5" / "authorization"
@@ -140,6 +140,82 @@ def test_generated_blocks_use_canonical_v5_exports(
     assert "`loose-mode.interface.default`" in contract
     assert "Instruction Interfaces:" in interfaces
     assert "`loose-mode.interface.default`" in interfaces
+
+
+def test_generated_contract_keeps_setup_requirements_separate(syncer) -> None:
+    blueprints = syncer.load_blueprints()
+
+    installer = syncer.generated_contract_block(
+        "install-assistant-tools",
+        blueprints["install-assistant-tools"].data,
+        blueprints["install-assistant-tools"].repository_graph,
+    )
+    google = syncer.generated_contract_block(
+        "connect-google",
+        blueprints["connect-google"].data,
+        blueprints["connect-google"].repository_graph,
+    )
+    lists = syncer.generated_contract_block(
+        "list-manager",
+        blueprints["list-manager"].data,
+        blueprints["list-manager"].repository_graph,
+    )
+
+    assert "Setup Requires Setup Of: none" in installer
+    assert "Setup Requires Setup Of: none" in google
+    assert "`connect-google.interface.setup@1`" in lists
+    assert (
+        "Setup Order:\n"
+        "1. `connect-google.interface.setup`\n"
+        "2. `list-manager.interface.setup`"
+    ) in lists
+    uses, setup = lists.split("Setup Requires Setup Of:", 1)
+    assert "connect-google.interface.setup" not in uses
+    assert "connect-google.interface.setup" in setup
+
+
+def test_generated_setup_order_deduplicates_transitive_dependencies(syncer) -> None:
+    module_id = "root"
+    graph = SimpleNamespace(
+        schema_version=6,
+        module_sources={},
+        nodes={},
+        exports={
+            f"{module_id}.interface.setup": SimpleNamespace(module_node_id=module_id)
+        },
+        setup_requirements={
+            "root.interface.setup": (
+                ("left.interface.setup", 1),
+                ("right.interface.setup", 1),
+            ),
+            "left.interface.setup": (("leaf.interface.setup", 1),),
+            "right.interface.setup": (("leaf.interface.setup", 1),),
+            "leaf.interface.setup": (),
+        },
+    )
+    data = {
+        "version": 1,
+        "discovery": {
+            "catalog": {
+                "domain": "test",
+                "topics": ["setup"],
+                "visibility": "listed",
+            },
+            "activated_by": ["user-request"],
+            "persistent_modifier": False,
+        },
+    }
+
+    contract = syncer.generated_contract_block(module_id, data, graph)
+
+    assert (
+        "Setup Order:\n"
+        "1. `leaf.interface.setup`\n"
+        "2. `left.interface.setup`\n"
+        "3. `right.interface.setup`\n"
+        "4. `root.interface.setup`"
+    ) in contract
+    assert contract.count("`leaf.interface.setup`") == 1
 
 
 def test_v5_generated_views_are_parent_only_and_derive_facade_contract(
@@ -558,7 +634,7 @@ def test_sync_does_not_create_dispatch_routing_state(
         "---\nname: demo\ndescription: Test fixture.\n---\n\nInstructions.\n",
         encoding="utf-8",
     )
-    manifest = repo_root / "references" / "blueprint" / "runtime_dependencies.json"
+    manifest = repo_root / "references" / "blueprint-schema" / "runtime_dependencies.json"
     manifest.parent.mkdir(parents=True)
     monkeypatch.setattr(syncer, "REPO_ROOT", repo_root)
     monkeypatch.setattr(syncer, "SKILLS_ROOT", repo_root / "skills")

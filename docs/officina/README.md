@@ -132,7 +132,7 @@ Famulus — the skill library that happens to be built on Officina.
 
 One distinction matters when reading this list. Many Famulus skills import
 `officina` in order to reach the dispatcher or the runtime. **That makes them
-consumers of the framework, not parts of it.** `email-client`, `g-calendar`,
+consumers of the framework, not parts of it.** `email-client`, `online-calendar`,
 and `daily-plan` all import `officina`; none of them is Officina. Membership
 follows from what a component is *for*, not from what it depends on — the same
 reasoning principle 4.1 applies to authority, which is likewise not inherited
@@ -162,26 +162,38 @@ from a dependency.
 - `common/` — small cross-cutting primitives such as atomic file operations,
   repository paths, TOML handling, dates, and Python-source caching
 - `install/` — installing an Officina project onto a machine: managed runtime,
-  launcher entries, resolvers, runtime pointer, uv bootstrap, and the
-  ownership-aware install manifest that makes uninstall exact
+  launcher entries, resolvers, runtime pointer, uv bootstrap, the assistant
+  access roots granted to a launched agent, and the ownership-aware install
+  manifest that makes uninstall exact
+- `launchers/` — managed runtime policy for agent launch commands and durable
+  backend selection
+- `recurring/` — recurring-task control, execution, healthcheck, and native
+  scheduler rendering
 - `validators/` — validators shipped by the framework itself
 - `wakeup/` — host-session lifecycle across supported hosts
 
+`launchers/` and `recurring/` carry a Famulus roster as data — the agent names
+one launches, the jobs the other ships enabled by default — but neither is
+Famulus. What they are *for* is the same machinery `install/` and `wakeup/`
+provide: policy that a host applies to whatever roster it is given.
+
 ### Machine-readable contracts — [`references/`](../../references/)
 
-- [`blueprint/`](../../references/blueprint/) — the blueprint schema, its
+- [`blueprint/`](../../references/blueprint-schema/) — the blueprint schema, its
   metadata, and the authoring template
 - [`node-standards/`](../../references/node-standards/) — the layered node
   standards: `node` at the root, specialized into `module` and
   `behavioral-source`, then into instruction- and Python-specific variants,
   plus the refactoring standard, authority disposition, and semantic-review
   criteria
-- [`standards/`](../../references/standards/) — the standard-v6 schema, its
+- [`standards-schema/`](../../references/standards-schema/) — the standard-v6 schema, its
   validator and renderer, and the docstring standard and grammar
 - [`skill-standards/`](../../references/skill-standards/) — skill-authoring
   guidelines
-- [`certification/`](../../references/certification/) — node-hash policy and
+- [`certification-policy/`](../../references/certification-policy/) — node-hash policy and
   the certification-basis roots
+- [`runtime/`](../../references/runtime/) — the core requirement set and the
+  hash-locked resolution of it that every managed runtime is built from
 
 `references/document-standards/` is **not** part of Officina. It holds the
 research-document profile consumed by Famulus's writing skills. It is written

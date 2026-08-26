@@ -17,8 +17,11 @@ exports:
       allow_all_modules: false
       allowed_callers:
       - install
+      - install-assistant-tools
+      - install-assistant-tools._rtx
       - recurring-tasks
       - recurring-tasks._rtx
+      - recurring
       - skill-certifier
       - skill-certifier._rtx
       - skill-maker
@@ -26,11 +29,13 @@ exports:
       - credentials
       - rutter
       - math-dependency-graph._rtx
+      - launchers
     source_interface: common.source.atomic-files.interface.python-api
   common.interface.codex-toml:
     access:
       allow_all_modules: false
       allowed_callers:
+      - install
       - install-assistant-tools
       - install-assistant-tools._rtx
     source_interface: common.source.codex-toml.interface.python-api
@@ -49,9 +54,13 @@ exports:
       - email-triage._rtx
       - install-assistant-tools
       - install-assistant-tools._rtx
+      - install
+      - list-manager
+      - list-manager._rtx
       - recurring-tasks
       - recurring-tasks._rtx
       - credentials
+      - launchers
     source_interface: common.source.famulus-paths.interface.python-api
   common.interface.repository-paths:
     access:
@@ -101,5 +110,5 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/toml-io.yaml
-version: 5
+version: 6
 maturity: stable

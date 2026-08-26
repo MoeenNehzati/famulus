@@ -20,7 +20,8 @@ from officina.install.runtime_pointer import RuntimePointerError, activate_relea
 SRC_DIR = Path(__file__).resolve().parents[1] / "src"
 REPO_ROOT = SRC_DIR.parent
 RESOLVER_SOURCE = SRC_DIR / "officina" / "install" / "resolvers" / "launch.py"
-REAL_MANIFEST = Path(__file__).resolve().parents[1] / "references" / "blueprint" / "runtime_dependencies.json"
+RESOLVER_SUPPORT_SOURCES = ()
+REAL_MANIFEST = Path(__file__).resolve().parents[1] / "references" / "blueprint-schema" / "runtime_dependencies.json"
 RUNTIME_LOCK_INPUT = REPO_ROOT / "references" / "runtime" / "requirements-core.in"
 RUNTIME_LOCK = REPO_ROOT / "references" / "runtime" / "requirements-core.lock"
 PINNED_UV_VERSION = "0.11.29"
@@ -91,7 +92,8 @@ def _deploy_resolver(runtime_root: Path, *, trusted_roots: tuple[Path, ...] = ()
     managed_runtime._uv_python_install_dir()."""
     resolver_path = runtime_root / "bootstrap" / "resolvers" / "v1" / "launch.py"
     resolver_path.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(RESOLVER_SOURCE, resolver_path)
+    for source in (RESOLVER_SOURCE, *RESOLVER_SUPPORT_SOURCES):
+        shutil.copy2(source, resolver_path.parent / source.name)
     resolver_path.chmod(0o755)
     if trusted_roots:
         trust_file = resolver_path.parent / "trusted-roots.json"
@@ -175,7 +177,9 @@ def test_main_preserves_validated_venv_python_symlink_path(tmp_path, monkeypatch
     assert recorded["argv"][0] == str(python_bin)
 
 
-def test_main_injects_repository_config_from_v2_pointer(tmp_path, monkeypatch):
+def test_production_dispatcher_uses_pointer_config_without_legacy_roots_or_cwd(
+    tmp_path, monkeypatch
+):
     runtime_root = tmp_path / "runtime"
     release_dir = runtime_root / "releases" / "good-release"
     python_bin = release_dir / "venv" / "bin" / "python"
@@ -192,6 +196,11 @@ def test_main_injects_repository_config_from_v2_pointer(tmp_path, monkeypatch):
         repository_config=config,
     )
     recorded = {}
+    unrelated = tmp_path / "unrelated cwd"
+    unrelated.mkdir()
+    monkeypatch.chdir(unrelated)
+    monkeypatch.delenv("AI", raising=False)
+    monkeypatch.delenv("FAMULUS_REPO_ROOT", raising=False)
 
     def fake_execv(path, argv):
         recorded["path"] = path
@@ -210,6 +219,159 @@ def test_main_injects_repository_config_from_v2_pointer(tmp_path, monkeypatch):
     ]
 
 
+def _write_schema3_pointer(runtime_root: Path) -> Path:
+    release_dir = runtime_root / "releases" / "release-3"
+    python_bin = release_dir / "venv" / "bin" / "python"
+    python_bin.parent.mkdir(parents=True)
+    python_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    repository = runtime_root.parent / "repository"
+    (repository / "skills").mkdir(parents=True)
+    repository_config = repository / "officina.toml"
+    repository_config.write_text(
+        'schema_version = 1\n[modules]\nroots = ["skills"]\n', encoding="utf-8"
+    )
+    launcher_resources = release_dir / "launcher-resources"
+    launcher_resources.mkdir()
+    context = release_dir / "installation-context.json"
+    context.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "release_id": release_dir.name,
+                "mode": "standard",
+                "installation_id": "standard",
+                "source_root": str(repository),
+                "development_root": None,
+                "selected_home": str(runtime_root.parent / "home"),
+                "codex_home": str(runtime_root.parent / "home" / ".codex"),
+                "claude_home": str(runtime_root.parent / "home" / ".claude"),
+            }
+        ),
+        encoding="utf-8",
+    )
+    activate_release(
+        runtime_root=runtime_root,
+        release_dir=release_dir,
+        python_bin=python_bin,
+        repository_config=repository_config,
+        launcher_resources=launcher_resources,
+        installation_context=context,
+    )
+    return python_bin
+
+
+def test_main_injects_validated_runtime_root_for_managed_agent(tmp_path, monkeypatch):
+    runtime_root = tmp_path / "runtime"
+    python_bin = _write_schema3_pointer(runtime_root)
+    recorded = {}
+
+    def fake_execv(path, argv):
+        recorded["path"] = path
+        recorded["argv"] = argv
+
+    monkeypatch.setattr("os.execv", fake_execv)
+    main(
+        _resolver_argv(
+            runtime_root,
+            "-m",
+            "officina.launchers.agent",
+            "--agent",
+            "assistant",
+        )
+    )
+
+    assert recorded["path"] == str(python_bin)
+    assert recorded["argv"] == [
+        str(python_bin),
+        "-m",
+        "officina.launchers.agent",
+        "--runtime-root",
+        str(runtime_root.resolve()),
+        "--agent",
+        "assistant",
+    ]
+
+
+@pytest.mark.parametrize(
+    "module,arguments",
+    [
+        ("officina.recurring.control", ["status", "--descriptor", "/tmp/schedule.json"]),
+        ("officina.recurring.executor", ["--descriptor", "/tmp/schedule.json", "--job", "demo", "--log-root", "/tmp/logs"]),
+        ("officina.recurring.healthcheck", ["--descriptor", "/tmp/schedule.json", "--log-root", "/tmp/logs"]),
+    ],
+)
+def test_main_injects_runtime_root_for_managed_recurring_modules(
+    tmp_path, monkeypatch, module, arguments
+):
+    runtime_root = tmp_path / "runtime"
+    python_bin = _write_schema3_pointer(runtime_root)
+    recorded = {}
+
+    def fake_execv(path, argv):
+        recorded["path"] = path
+        recorded["argv"] = argv
+
+    monkeypatch.setattr("os.execv", fake_execv)
+    main(_resolver_argv(runtime_root, "-m", module, *arguments))
+
+    assert recorded["path"] == str(python_bin)
+    assert recorded["argv"] == [
+        str(python_bin),
+        "-m",
+        module,
+        "--runtime-root",
+        str(runtime_root.resolve()),
+        *arguments,
+    ]
+
+
+@pytest.mark.parametrize(
+    "module",
+    [
+        "officina.recurring.control",
+        "officina.recurring.executor",
+        "officina.recurring.healthcheck",
+    ],
+)
+def test_main_rejects_runtime_root_override_for_managed_recurring_modules(
+    tmp_path, capsys, module
+):
+    runtime_root = tmp_path / "runtime"
+    _write_schema3_pointer(runtime_root)
+
+    exit_code = main(
+        _resolver_argv(runtime_root, "-m", module, "--runtime-root", "/attacker")
+    )
+
+    assert exit_code == 1
+    assert "runtime_root cannot be overridden" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "override", [["--runtime-root", "/tmp/evil"], ["--runtime-root=/tmp/evil"]]
+)
+def test_main_rejects_managed_module_runtime_root_override(
+    tmp_path, monkeypatch, capsys, override
+):
+    runtime_root = tmp_path / "runtime"
+    _write_schema3_pointer(runtime_root)
+    monkeypatch.setattr(
+        "os.execv", lambda *_args: pytest.fail("resolver must reject before exec")
+    )
+
+    exit_code = main(
+        _resolver_argv(
+            runtime_root,
+            "-m",
+            "officina.launchers.agent",
+            *override,
+        )
+    )
+
+    assert exit_code == 1
+    assert "runtime_root cannot be overridden" in capsys.readouterr().err
+
+
 # famulus-skip: category=platform-contract; reason=the deployed stable launcher is a POSIX executable; alternate=Windows launcher contract tests cover native batch launchers
 @pytest.mark.skipif(os.name == "nt", reason="POSIX launcher execution")
 def test_deployed_stable_launcher_runs_an_installed_dispatcher_without_pythonpath(
@@ -225,6 +387,7 @@ def test_deployed_stable_launcher_runs_an_installed_dispatcher_without_pythonpat
     runtime_root = resolve_famulus_paths(
         platform=sys.platform,
         home=home,
+        environ={},
     ).runtime_root
     release_dir = runtime_root / "releases" / "installed"
     environment = release_dir / "venv"
@@ -299,8 +462,10 @@ def test_trusted_interpreter_roots_reads_sidecar_file(tmp_path, monkeypatch):
     """The dependency-free resolver must not shell out to uv or import
     anything: trust comes from a plain JSON sidecar file placed next to the
     deployed resolver at release-activation time."""
-    monkeypatch.setattr(
-        launcher_entry._resolver, "__file__", str(tmp_path / "resolvers" / "launch.py")
+    monkeypatch.setitem(
+        launcher_entry._trusted_interpreter_roots.__globals__,
+        "__file__",
+        str(tmp_path / "resolvers" / "launch.py"),
     )
     resolver_dir = tmp_path / "resolvers"
     resolver_dir.mkdir()
@@ -311,8 +476,10 @@ def test_trusted_interpreter_roots_reads_sidecar_file(tmp_path, monkeypatch):
 
 
 def test_trusted_interpreter_roots_returns_empty_when_sidecar_missing(tmp_path, monkeypatch):
-    monkeypatch.setattr(
-        launcher_entry._resolver, "__file__", str(tmp_path / "resolvers" / "launch.py")
+    monkeypatch.setitem(
+        launcher_entry._trusted_interpreter_roots.__globals__,
+        "__file__",
+        str(tmp_path / "resolvers" / "launch.py"),
     )
     assert launcher_entry._trusted_interpreter_roots() == ()
 
@@ -347,17 +514,26 @@ def test_launcher_entry_never_imports_officina():
     the user's ambient Python before any interpreter handoff happens."""
     import ast
 
-    tree = ast.parse(RESOLVER_SOURCE.read_text(encoding="utf-8"))
-    stdlib_only = {"__future__", "json", "os", "sys", "pathlib"}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                top_level = alias.name.split(".")[0]
-                assert top_level in stdlib_only, f"non-stdlib import: {alias.name}"
-        elif isinstance(node, ast.ImportFrom):
-            assert node.module is not None
-            top_level = node.module.split(".")[0]
-            assert top_level in stdlib_only, f"non-stdlib import: {node.module}"
+    stdlib_or_bundle = {
+        "__future__",
+        "json",
+        "os",
+        "pathlib",
+        "sys",
+    }
+    for source in (RESOLVER_SOURCE, *RESOLVER_SUPPORT_SOURCES):
+        tree = ast.parse(source.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    top_level = alias.name.split(".")[0]
+                    assert top_level in stdlib_or_bundle, f"non-bundle import: {alias.name}"
+            elif isinstance(node, ast.ImportFrom):
+                if node.level:
+                    continue
+                assert node.module is not None
+                top_level = node.module.split(".")[0]
+                assert top_level in stdlib_or_bundle, f"non-bundle import: {node.module}"
 
 
 # ── Task 6c: cross-check the duplicated containment logic against the real

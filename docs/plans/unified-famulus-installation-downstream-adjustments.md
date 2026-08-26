@@ -5,6 +5,12 @@
 > `superpowers:executing-plans` to implement this plan task-by-task. Steps use
 > checkbox (`- [ ]`) syntax for tracking.
 
+> **Recurring-renderer supersession (2026-08-25):** The recurring scheduler
+> implementation steps naming `_schedule_context.py`, `_schedule_backend/`,
+> and `_install_owner.py` are superseded by the
+> [Recurring Renderer Simplification Sequence](2026-08-25-recurring-renderer-simplification.md).
+> The remaining downstream adjustments remain authoritative.
+
 **Goal:** Adjust every consumer whose paths, launcher selection, persistent
 environment, or scheduler registration assumptions change under the unified
 Famulus installation architecture.
@@ -339,7 +345,7 @@ The fixed resolver injects the validated `--runtime-root ROOT` after resolving
 - Create: `tests/test_install_context_consumers.py`
 - Modify focused tests under:
   - `skills/cloud-files/_rtx/tests/`
-  - `skills/g-calendar/_rtx/tests/`
+  - `skills/online-calendar/_rtx/tests/`
   - `skills/email-client/_rtx/tests/`
   - `skills/email-triage/_rtx/tests/`
   - `skills/list-manager/_rtx/tests/`
@@ -362,7 +368,7 @@ The fixed resolver injects the validated `--runtime-root ROOT` after resolving
   standard, deliberately development-isolated, process-local override, or a
   leak. Keep the inventory in named parametrized test cases, not a new runtime
   registry.
-- [ ] Run connect-google, cloud-files, g-calendar, email-client, email-triage,
+- [ ] Run connect-google, cloud-files, online-calendar, email-client, email-triage,
   and list-manager path probes under both contexts. Place stable canary files in
   each host path and prove development neither reads nor writes them. Verify
   service-owned binding configuration as well as shared Google descriptors.
@@ -540,11 +546,10 @@ dispatcher --caller-skill install-assistant-tools install-assistant-tools._rtx.i
   plugin source, moved development checkout, and modified user configuration.
   Assert recovery uses `apply`/repair without adopting or deleting another
   context.
-- [ ] Add `recurring-tasks remove-context` as the sole owner of native
-  registration, sentinel, and owner-record teardown. It preserves canonical
-  jobs, descriptor, and run history. Installer uninstall/purge performs a
-  read-only preflight and refuses while that context has registrations, naming
-  the removal command; once cleared it proceeds without deleting recurring
+- [ ] Keep recurring runtime code as the sole owner of native registration,
+  sentinel, and owner-record teardown. It preserves canonical jobs, descriptor,
+  and run history. Installer uninstall/purge delegates exact-context teardown,
+  verifies the namespace is empty, and then proceeds without deleting recurring
   mutable state. Test failed/repeated teardown and no cross-context deletion.
 - [ ] Add Linux, macOS, and Windows CI coverage for path spaces/Unicode,
   launcher selection, descriptor escaping, scheduler identifiers, and
@@ -576,8 +581,8 @@ This downstream migration is complete only when:
   fixed context resolver;
 - standard scheduler state migrates without losing job configuration, enabled
   state, owner identity, or run history;
-- installer uninstall refuses active registrations and recurring-owned
-  `remove-context` clears only that context while preserving its mutable data;
+- installer uninstall delegates active-registration teardown to the recurring
+  owner, which clears only that context while preserving its mutable data;
 - milestone logs and every tested `FamulusPaths` consumer stay inside the active
   context;
 - Google setup remains independent and credentials remain outside installer

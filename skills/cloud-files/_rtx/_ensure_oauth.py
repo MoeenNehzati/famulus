@@ -4,7 +4,7 @@ ensure_oauth.py — Check cloud-files OAuth status and guide setup if needed.
 
 Relocated from install-assistant-tools' shared Google-OAuth chooser: each
 service now owns its own guidance text and setup flow instead of a shared
-script batching cloud-files and g-calendar together. This wraps
+script batching cloud-files and online-calendar together. This wraps
 setup_oauth.py (the actual token exchange) with the "is this already
 configured, and if not, what does the user need to do" checks that used to
 live in the installer, plus writing ~/.config/cloud-files/config.json

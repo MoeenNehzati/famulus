@@ -22,8 +22,15 @@ Uses Interfaces:
 - `cloud-files.source.gateway -> cloud-files._rtx.interface.write-config@1`
 - `cloud-files.source.gateway -> connect-google.interface.default@1`
 
+Setup Requires Setup Of:
+- `connect-google.interface.setup@1`
+Setup Order:
+1. `connect-google.interface.setup`
+2. `cloud-files.interface.setup`
+
 Public Interfaces:
 - `cloud-files.interface.default`
+- `cloud-files.interface.setup`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -32,6 +39,7 @@ Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
 - `cloud-files.interface.default` — Primary LLM-facing skill instructions.
+- `cloud-files.interface.setup` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

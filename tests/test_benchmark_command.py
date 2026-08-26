@@ -77,21 +77,48 @@ def test_benchmark_passes_explicit_working_directory_and_environment(
 
 
 def test_benchmark_can_return_process_tree_samples_for_attribution(
-    tmp_path: Path,
+    monkeypatch, tmp_path: Path,
 ) -> None:
     """Removing sample retention must make interval attribution impossible."""
     benchmark = _load_benchmark_module()
+    release_path = tmp_path / "release-child"
+    command = [sys.executable, "-c", "pass"]
+
+    if benchmark._linux_proc_constants() is not None:
+        real_process_rows = benchmark._process_rows
+        snapshot_count = 0
+
+        def release_child_after_second_snapshot(page_kb: float):
+            nonlocal snapshot_count
+            rows = real_process_rows(page_kb)
+            snapshot_count += 1
+            if snapshot_count == 2:
+                release_path.touch()
+            return rows
+
+        monkeypatch.setattr(benchmark, "_process_rows", release_child_after_second_snapshot)
+        command = [
+            sys.executable,
+            "-c",
+            (
+                "import sys, time; from pathlib import Path; "
+                "release = Path(sys.argv[1]); deadline = time.monotonic() + 5; "
+                "exec(\"while not release.exists():\\n"
+                " if time.monotonic() >= deadline: raise SystemExit(9)\\n"
+                " time.sleep(0.001)\")"
+            ),
+            str(release_path),
+        ]
 
     metrics = benchmark.benchmark_command(
-        # Leave enough wall time for two sampler iterations even when an xdist
-        # worker is briefly descheduled on a loaded hosted runner.
-        [sys.executable, "-c", "import time; time.sleep(0.5)"],
+        command,
         log_path=tmp_path / "command.log",
         sample_interval_seconds=0.005,
         record_samples=True,
     )
 
     if metrics["capabilities"]["linux_process_tree_sampling"]:
+        assert metrics["returncode"] == 0
         samples = metrics["process_tree_samples"]
         assert len(samples) >= 2
         assert all(row["elapsed_seconds"] >= 0 for row in samples)

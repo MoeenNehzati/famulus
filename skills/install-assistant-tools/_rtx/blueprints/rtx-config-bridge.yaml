@@ -1,5 +1,7 @@
 content:
 - _config_bridge\.py
+- assets/bin/milestone
+- assets/bin/agent\-timeline
 dependencies:
 - blueprint:
     base: module-root
@@ -7,8 +9,7 @@ dependencies:
   reason: Loads Python package support from _rtx/__init__.py.
   source: install-assistant-tools._rtx.source.rtx-init
   version: 1
-description: Links Claude and Codex configuration directories to a development checkout
-  and installs repository hook configuration where supported.
+description: Projects a development checkout into isolated Claude and Codex homes and installs local repository hook configuration where supported.
 gateway:
   language: Python
   path: _config_bridge.py
@@ -17,10 +18,16 @@ interfaces:
   install-assistant-tools._rtx.source.rtx-config-bridge.interface.scripts-dev-link:
     content:
     - _config_bridge\.py
+    - assets/bin/milestone
+    - assets/bin/agent\-timeline
     uses_interfaces:
     - interface: common.interface.codex-toml
-      version: 1
+      version: 2
     - interface: common.interface.toml-io
+      version: 2
+    - interface: milestone-logging._rtx.interface.record
+      version: 1
+    - interface: milestone-logging._rtx.interface.timeline
       version: 1
     contract:
       arguments:
@@ -60,8 +67,8 @@ interfaces:
           system: filesystem
         writes:
         - access: configure
-          content: Claude and Codex configuration links and shell environment and
-            Git hook setting
+          content: Isolated Claude and Codex configuration links, required timeline commands,
+            and local Git hook setting
           formats:
           - symlink
           - shell
@@ -92,7 +99,7 @@ interfaces:
           may_occur_in_outcomes:
           - linked
           reversibility:
-            compensatable: The links and shell block and Git hook setting can be removed
+            compensatable: The links and Git hook setting can be removed
               by the uninstaller.
           value_source:
             argument_ref: repo-root
@@ -100,7 +107,7 @@ interfaces:
         lifecycle: finite
         mutation_safety:
           atomicity:
-            per_effect_only: Links and shell configuration and Git hook configuration
+            per_effect_only: Links, helper commands, and Git hook configuration
               are applied separately.
           concurrent_invocations:
             unsafe: Concurrent bridge operations are not serialized.
@@ -158,8 +165,8 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Symlink Claude/Codex config dirs to a live repo checkout, register
-      dev-mode hooks, set git hooksPath, export $AI. Requires an explicit repo path.
+    description: Project live checkout skills and hooks into isolated context homes,
+      install milestone and agent-timeline when referenced, and set local git hooksPath.
     process_binding:
       entry: Interface
       kind: process
@@ -204,8 +211,12 @@ runtime_dependencies:
 schema_version: 6
 uses_interfaces:
 - interface: common.interface.codex-toml
-  version: 1
+  version: 2
 - interface: common.interface.toml-io
+  version: 2
+- interface: milestone-logging._rtx.interface.record
+  version: 1
+- interface: milestone-logging._rtx.interface.timeline
   version: 1
 version: 1
 maturity: stable

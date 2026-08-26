@@ -14,6 +14,8 @@ interfaces:
     uses_interfaces:
     - interface: ci-debug._rtx.interface.run-ci
       version: 1
+    - interface: ci-debug._rtx.interface.run-targeted-tests
+      version: 1
     - interface: ci-debug.source.instructions-repair-element.interface.repair-element
       version: 1
     - interface: git-workflow.interface.default
@@ -146,6 +148,8 @@ node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
 - interface: ci-debug._rtx.interface.run-ci
+  version: 1
+- interface: ci-debug._rtx.interface.run-targeted-tests
   version: 1
 - interface: ci-debug.source.instructions-repair-element.interface.repair-element
   version: 1

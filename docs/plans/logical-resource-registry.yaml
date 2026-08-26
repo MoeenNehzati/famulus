@@ -58,8 +58,8 @@ system_kinds:
       cloud-files-client: "$home/.config/cloud-files/client.json"
       cloud-files-credentials: "$home/.config/cloud-files/credentials.json"
       cloud-files-config: "$home/.config/cloud-files/config.json"
-      g-calendar-client: "$home/.config/g-calendar/client.json"
-      g-calendar-credentials: "$home/.config/g-calendar/credentials.json"
+      online-calendar-client: "$home/.config/online-calendar/client.json"
+      online-calendar-credentials: "$home/.config/online-calendar/credentials.json"
       datalab-model-cache: "$home/.cache/datalab/models/{path...}"
       repo-skill-blueprint: "$repo/skills/{skill}/blueprint.yaml"
       repo-blueprint-schema-draft: "$repo/references/blueprint/schema.annotated-draft.json"
@@ -134,18 +134,18 @@ system_instances:
     binding: One cloud-files OAuth account plus its configured remote LLM root.
     display: configured cloud-files Google Drive root
 
-  g-calendar:
+  online-calendar:
     kind: calendar-account
-    owner: g-calendar
+    owner: online-calendar
     provider: google-calendar
-    binding: The single active Google Calendar account supported by g-calendar.
-    display: active g-calendar account
+    binding: The single active Google Calendar account supported by online-calendar.
+    display: active online-calendar account
 
 examples:
   concrete:
-    - resource://local/$home/.config/g-calendar/credentials.json
+    - resource://local/$home/.config/online-calendar/credentials.json
     - resource://cloud-files/plans/7-17-26.md
-    - resource://g-calendar/calendars/work%40example.com/events/a1b2c3
+    - resource://online-calendar/calendars/work%40example.com/events/a1b2c3
   patterns:
     - resource://{filesystem:local-filesystem}/{path...}
     - resource://{drive:google-drive-root}/plans/{date}.md

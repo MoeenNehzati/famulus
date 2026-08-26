@@ -14,7 +14,7 @@ source_authorities:
     last_digest: sha256:f84eb2662c3e318ac0d4732daf3116114de84b6fa623ded8261333c7bfc6738f
     status: migrated
     replacement: references/node-standards/refactoring.standard.yaml
-    replacement_digest: sha256:35f720cfa0b0eb64d703ef9921696422ab8e3100b957b80deb6b4885cf2f27ec
+    replacement_digest: sha256:33eaf4fee728af0e7387eebc1790d37d5a54b48afbd39f9176a67a5edd7c4e76
     disposition: Diagnostic signals and remedies moved into the node-standards closure;
       analogy-only labels were retired because they do not affect diagnosis or repair.
   interface-design:
@@ -47,7 +47,7 @@ supersessions:
     authority: skill-guidelines.sensitive-configs.requirement-001#source-block
 proofs:
   semantic-ownership: tests/test_node_standards.py
-  recursive-validation: references/standards/validate_standard_v6.py
+  recursive-validation: references/standards-schema/validate_standard_v6.py
   query-behavior: tests/test_standard_query.py
 migration_audit:
   skill-guidelines:

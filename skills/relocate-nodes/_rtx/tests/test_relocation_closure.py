@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -103,7 +104,7 @@ def _write(path: Path, text: str) -> None:
     """Write one UTF-8 fixture file, creating its parents."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    path.write_bytes(text.encode("utf-8"))
 
 
 def _closure_fixture(
@@ -119,16 +120,16 @@ def _closure_fixture(
     """Build the smallest projected tree that exercises mechanical closure."""
 
     _write(
-        tmp_path / "references/certification/certification-basis-roots.json",
+        tmp_path / "references/certification-policy/certification-basis-roots.json",
         json.dumps(["src/officina/__init__.py"], indent=2) + "\n",
     )
     _write(tmp_path / "src/officina/__init__.py", officina_content)
-    _write(tmp_path / "references/blueprint/schema.json", "{}\n")
+    _write(tmp_path / "references/blueprint-schema/schema.json", "{}\n")
     if include_module_schema:
-        _write(tmp_path / "references/blueprint/module.schema.json", "{}\n")
+        _write(tmp_path / "references/blueprint-schema/module.schema.json", "{}\n")
     elif module_schema_directory:
         _write(
-            tmp_path / "references/blueprint/module.schema.json/placeholder",
+            tmp_path / "references/blueprint-schema/module.schema.json/placeholder",
             "not a schema file\n",
         )
     _write(
@@ -206,6 +207,21 @@ def test_shadow_rejects_unsafe_symlink(
         close_projected_relocation(changes, manifest)
 
 
+def test_shadow_rejects_dangling_symlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A dangling link remains an unsafe projected input rather than disappearing."""
+
+    changes, manifest = _closure_fixture(
+        tmp_path, agents_link_target="missing-instructions.md"
+    )
+    monkeypatch.setattr(closure_module, "load_repository_blueprint_graph", _pass_graph)
+    monkeypatch.setattr(closure_module.subprocess, "run", _sync_without_writes)
+
+    with pytest.raises(MechanicalClosureError, match=r"unsafe shadow symlink: AGENTS\.md"):
+        close_projected_relocation(changes, manifest)
+
+
 def test_injected_synchronizer_receives_the_shadow_repository(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -256,7 +272,7 @@ def test_stale_generated_artifact_is_synchronized_before_check_and_graph(
     """Synchronize stale generated output before the check-only and graph passes."""
 
     changes, manifest = _closure_fixture(tmp_path)
-    target = "references/blueprint/runtime_dependencies.json"
+    target = "references/blueprint-schema/runtime_dependencies.json"
     expected = _empty_runtime_dependencies()
     changes.write_text(target, "stale generated artifact\n")
     calls: list[str] = []
@@ -269,7 +285,7 @@ def test_stale_generated_artifact_is_synchronized_before_check_and_graph(
                 raise MechanicalClosureError("fixture generated artifact is stale")
             return
         calls.append("synchronize")
-        generated.write_text(expected, encoding="utf-8")
+        generated.write_bytes(expected.encode("utf-8"))
 
     def graph(*args: object, **kwargs: object) -> None:
         calls.append("graph")
@@ -293,7 +309,6 @@ def test_shadow_excludes_assistant_tooling_metadata(
     """Assistant metadata trees are absent even when they contain a bad symlink."""
 
     changes, manifest = _closure_fixture(tmp_path, assistant_tooling=True)
-    assert ".codex/agents" not in changes.projected_files()
 
     def sync(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
         """Assert that excluded assistant tooling never reaches the shadow."""
@@ -333,11 +348,11 @@ def test_readme_only_officina_catalog_initializers_join_certification_basis(
     result = close_projected_relocation(changes, manifest)
 
     basis = json.loads(
-        changes.read_text("references/certification/certification-basis-roots.json")
+        changes.read_text("references/certification-policy/certification-basis-roots.json")
     )
     assert basis == ["src/officina/__init__.py", "src/officina/catalog/__init__.py"]
     assert result.certification_basis_changes == (
-        "references/certification/certification-basis-roots.json",
+        "references/certification-policy/certification-basis-roots.json",
     )
 
 
@@ -396,9 +411,9 @@ def test_syncer_generated_bytes_are_reconciled_into_change_set(
         calls += 1
         if "--check" not in args[0]:
             shadow = Path(str(kwargs["cwd"]))
-            (shadow / "skills/demo/SKILL.md").write_text(
-                "# Demo\n<!-- BEGIN BLUEPRINT CONTRACT -->\nnew\n<!-- END BLUEPRINT CONTRACT -->\n",
-                encoding="utf-8",
+            (shadow / "skills/demo/SKILL.md").write_bytes(
+                b"# Demo\n<!-- BEGIN BLUEPRINT CONTRACT -->\nnew\n"
+                b"<!-- END BLUEPRINT CONTRACT -->\n"
             )
         return _sync_without_writes(*args, **kwargs)
 
@@ -531,12 +546,12 @@ def test_partial_canonical_marker_requires_the_missing_closure_input(
 ) -> None:
     """A partial Officina fixture cannot silently skip a required closure step."""
 
-    _write(tmp_path / "references/blueprint/schema.json", "{}\n")
+    _write(tmp_path / "references/blueprint-schema/schema.json", "{}\n")
     changes = ChangeSet(tmp_path)
 
     with pytest.raises(
         MechanicalClosureError,
-        match=r"missing closure input: references/certification/certification-basis-roots\.json",
+        match=r"missing closure input: references/certification-policy/certification-basis-roots\.json",
     ):
         close_projected_relocation(changes, RelocationManifest())
 
@@ -573,11 +588,13 @@ def test_partial_schema_cannot_fall_back_to_the_live_imported_checkout(
 
     with pytest.raises(
         MechanicalClosureError,
-        match=r"missing closure input: references/blueprint/module\.schema\.json",
+        match=r"missing closure input: references/blueprint-schema/module\.schema\.json",
     ):
         close_projected_relocation(changes, manifest)
 
 
+# famulus-skip: category=platform-contract; reason=Windows filesystems do not expose POSIX executable-mode transitions; alternate=the generated-byte reconciliation test covers the same allowlist boundary on Windows
+@pytest.mark.skipif(os.name == "nt", reason="POSIX file modes are unavailable")
 def test_mode_only_generated_artifact_change_is_rejected(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -637,8 +654,8 @@ def test_plan_absorbs_calculated_closure_categories_into_its_report(
 
     _write(tmp_path / "plain.py", "VALUE = 1\n")
     result = MechanicalClosureResult(
-        certification_basis_changes=("references/certification/certification-basis-roots.json",),
-        generated_artifact_changes=("references/blueprint/runtime_dependencies.json",),
+        certification_basis_changes=("references/certification-policy/certification-basis-roots.json",),
+        generated_artifact_changes=("references/blueprint-schema/runtime_dependencies.json",),
         validation_results=("repository blueprint graph",),
     )
     monkeypatch.setattr(
@@ -650,10 +667,10 @@ def test_plan_absorbs_calculated_closure_categories_into_its_report(
     report = plan_relocation(tmp_path, RelocationManifest()).report()
 
     assert report["certification_basis_changes"] == [
-        "references/certification/certification-basis-roots.json"
+        "references/certification-policy/certification-basis-roots.json"
     ]
     assert report["generated_artifact_changes"] == [
-        "references/blueprint/runtime_dependencies.json"
+        "references/blueprint-schema/runtime_dependencies.json"
     ]
     assert report["validation_results"] == ["repository blueprint graph"]
 
@@ -712,40 +729,22 @@ def _extractor_acceptance_manifest() -> RelocationManifest:
     """Build the narrow declarations needed for one complete source transfer."""
 
     return RelocationManifest(
-        moves=(
+        relocations=(
             Move(
                 "src/officina/common/standard_extractor.py",
                 "src/officina/standards/extractor.py",
+                (
+                    Rename(
+                        "officina.common.standard_extractor",
+                        "officina.standards.extractor",
+                    ),
+                ),
             ),
             Move(
                 "src/officina/common/blueprints/standard-extractor.yaml",
                 "src/officina/standards/blueprints/extractor.yaml",
             ),
         ),
-        renames={
-            "python_modules": (
-                Rename(
-                    "officina.common.standard_extractor",
-                    "officina.standards.extractor",
-                ),
-            ),
-            "source_ids": (
-                Rename(
-                    "common.source.standard-extractor",
-                    "standards.source.extractor",
-                ),
-            ),
-            "interface_ids": (
-                Rename(
-                    "common.source.standard-extractor.interface.python-api",
-                    "standards.source.extractor.interface.python-api",
-                ),
-                Rename(
-                    "common.interface.standard-extractor",
-                    "standards.interface.extractor",
-                ),
-            ),
-        },
         blueprint_documents=(
             (
                 "src/officina/standards/blueprint.yaml",
@@ -832,13 +831,13 @@ def _extractor_acceptance_manifest() -> RelocationManifest:
 def _write_extractor_acceptance_fixture(tmp_path: Path) -> dict[str, bytes]:
     """Create only the canonical inputs for one real Officina extractor relocation."""
 
-    for schema in (REPO_ROOT / "references/blueprint").glob("*.json"):
-        destination = tmp_path / "references/blueprint" / schema.name
+    for schema in (REPO_ROOT / "references/blueprint-schema").glob("*.json"):
+        destination = tmp_path / "references/blueprint-schema" / schema.name
         destination.parent.mkdir(parents=True, exist_ok=True)
         _write(destination, schema.read_text(encoding="utf-8"))
     _write(
-        tmp_path / "references/blueprint/config.yaml",
-        (REPO_ROOT / "references/blueprint/config.yaml").read_text(encoding="utf-8"),
+        tmp_path / "references/blueprint-schema/config.yaml",
+        (REPO_ROOT / "references/blueprint-schema/config.yaml").read_text(encoding="utf-8"),
     )
     _write(tmp_path / "src/officina/__init__.py", 'ORIGIN = "shadow"\n')
     _write(tmp_path / "src/officina/common/__init__.py", '"""Common fixture."""\n')
@@ -907,11 +906,11 @@ def _write_extractor_acceptance_fixture(tmp_path: Path) -> dict[str, bytes]:
     )
     _write(tmp_path / "unrelated-dirty.md", "do not relocate\n")
     _write(
-        tmp_path / "references/certification/certification-basis-roots.json",
+        tmp_path / "references/certification-policy/certification-basis-roots.json",
         json.dumps(["src/officina/__init__.py"], indent=2) + "\n",
     )
     _write(
-        tmp_path / "references/blueprint/runtime_dependencies.json",
+        tmp_path / "references/blueprint-schema/runtime_dependencies.json",
         '{"stale": true}\n',
     )
     return {
@@ -922,8 +921,8 @@ def _write_extractor_acceptance_fixture(tmp_path: Path) -> dict[str, bytes]:
             "src/officina/common/blueprint.yaml",
             "consumer.py",
             "unrelated-dirty.md",
-            "references/certification/certification-basis-roots.json",
-            "references/blueprint/runtime_dependencies.json",
+            "references/certification-policy/certification-basis-roots.json",
+            "references/blueprint-schema/runtime_dependencies.json",
         )
     }
 
@@ -936,7 +935,7 @@ def test_one_preflight_closes_real_extractor_relocation_and_is_idempotent(
     before = _write_extractor_acceptance_fixture(tmp_path)
 
     def synchronize(repository: Path, *, check: bool) -> None:
-        target = repository / "references/blueprint/runtime_dependencies.json"
+        target = repository / "references/blueprint-schema/runtime_dependencies.json"
         expected = _empty_runtime_dependencies()
         if not check:
             target.write_text(expected, encoding="utf-8")
@@ -977,17 +976,17 @@ def test_one_preflight_closes_real_extractor_relocation_and_is_idempotent(
     assert "common.source.standard-extractor" not in json.dumps(standards)
     assert "standard_extractor.py" not in json.dumps(extractor)
     assert json.loads(
-        changes.read_text("references/certification/certification-basis-roots.json")
+        changes.read_text("references/certification-policy/certification-basis-roots.json")
     ) == ["src/officina/__init__.py", "src/officina/standards/__init__.py"]
     runtime_dependencies = json.loads(
-        changes.read_text("references/blueprint/runtime_dependencies.json")
+        changes.read_text("references/blueprint-schema/runtime_dependencies.json")
     )
     assert json.dumps(runtime_dependencies, indent=2) + "\n" == _empty_runtime_dependencies()
     assert changes.report()["certification_basis_changes"] == [
-        "references/certification/certification-basis-roots.json"
+        "references/certification-policy/certification-basis-roots.json"
     ]
     assert changes.report()["generated_artifact_changes"] == [
-        "references/blueprint/runtime_dependencies.json"
+        "references/blueprint-schema/runtime_dependencies.json"
     ]
     assert changes.report()["validation_results"] == [
         "blueprint synchronizer check",

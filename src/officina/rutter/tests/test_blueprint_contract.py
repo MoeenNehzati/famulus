@@ -12,7 +12,7 @@ from officina.blueprints.inventory import collect_blueprints
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
-CANONICAL_SCHEMA_ROOT = REPOSITORY_ROOT / "references" / "blueprint"
+CANONICAL_SCHEMA_ROOT = REPOSITORY_ROOT / "references" / "blueprint-schema"
 
 
 def test_v6_rutter_operation_effects_are_outcome_specific() -> None:
@@ -334,7 +334,7 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
         "storage": [
             {"interface": "rutter.source.history.interface.python-api", "version": 1},
             {"interface": "rutter.source.values.interface.python-api", "version": 1},
-            {"interface": "common.interface.atomic-files", "version": 1},
+            {"interface": "common.interface.atomic-files", "version": 2},
         ],
         "values": [],
     }

@@ -1,14 +1,7 @@
 """Browser coverage for inspector navigation and advanced edge geometry."""
 
-from pathlib import Path
-import shutil
-import subprocess
-import tempfile
-
-import pytest
-pytestmark = pytest.mark.xdist_group("browser")
-
 from officina.visualization.elk_html_renderer import build_html_with_elk
+from test_support.browser import require_chrome, run_html
 
 
 def _run_browser_case(
@@ -19,10 +12,7 @@ def _run_browser_case(
     virtual_time_budget: int = 4000,
     wait_for_load: bool = True,
 ) -> None:
-    chrome = shutil.which("google-chrome")
-    if chrome is None:
-        # famulus-skip: category=capability-unavailable; reason=Google Chrome is not installed; alternate=renderer contract tests cover generated controls and graph payloads
-        pytest.skip("google-chrome unavailable")
+    chrome = require_chrome()
     runner_body = f"""async () => {{
           try {{
             document.body.dataset.testStatus = "RUNNING";
@@ -43,26 +33,11 @@ def _run_browser_case(
         {runner}
         </script></body>""",
     )
-    path = Path(f"/tmp/officina-{name}-browser.html")
-    path.write_text(html, encoding="utf-8")
-    with tempfile.TemporaryDirectory() as profile:
-        result = subprocess.run(
-            [
-                chrome,
-                "--headless",
-                "--no-sandbox",
-                "--disable-gpu",
-                "--disable-dev-shm-usage",
-                "--disable-crash-reporter",
-                f"--user-data-dir={profile}",
-                f"--virtual-time-budget={virtual_time_budget}",
-                "--dump-dom",
-                path.as_uri(),
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+    result = run_html(
+        chrome,
+        html,
+        virtual_time_budget=virtual_time_budget,
+    )
     marker = 'data-test-status="'
     marker_start = result.stdout.find(marker)
     status = (

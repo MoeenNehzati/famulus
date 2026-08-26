@@ -22,7 +22,7 @@ from officina.configuration.configured_schema import configured_validator, load_
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-BLUEPRINT_ROOT = REPO_ROOT / "references" / "blueprint"
+BLUEPRINT_ROOT = REPO_ROOT / "references" / "blueprint-schema"
 CONFIG_PATH = BLUEPRINT_ROOT / "config.yaml"
 
 

@@ -68,8 +68,8 @@ taxonomy:
 from officina.configuration import configured_validator
 
 validator = configured_validator(
-    "references/blueprint/module.schema.json",
-    config_path="references/blueprint/config.yaml",
+    "references/blueprint-schema/module.schema.json",
+    config_path="references/blueprint-schema/config.yaml",
 )
 validator.validate(document)
 ```

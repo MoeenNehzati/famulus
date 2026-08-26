@@ -6,9 +6,9 @@ other shared file can stay platform-generic.
 """
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Mapping
 
 
 class FamulusPathsError(Exception):
@@ -20,7 +20,7 @@ class InvalidFamulusHomeError(FamulusPathsError, ValueError):
 
 
 class FamulusLocalAppDataMissingError(FamulusPathsError, RuntimeError):
-    """Raised when LOCALAPPDATA is required but unset on Windows."""
+    """Compatibility error retained for callers of the former Windows contract."""
 
 
 @dataclass(frozen=True)
@@ -47,9 +47,31 @@ class FamulusPaths:
     email_triage_state_root: Path
 
 
-def resolve_famulus_paths(*, platform: str, home: Path) -> FamulusPaths:
-    if not home.is_absolute():
+def _absolute_root(value: str | Path, *, label: str) -> Path:
+    path = Path(value)
+    if not str(value) or not path.is_absolute():
+        raise InvalidFamulusHomeError(f"{label} must be a non-empty absolute path, got {value!r}")
+    return path
+
+
+def _environment_root(environ: Mapping[str, str], name: str) -> Path | None:
+    if name not in environ:
+        return None
+    return _absolute_root(environ[name], label=name)
+
+
+def resolve_famulus_paths(
+    *, platform: str, home: Path, environ: Mapping[str, str]
+) -> FamulusPaths:
+    """Resolve all Famulus paths from explicit inputs only.
+
+    ``environ`` is deliberately mandatory: installation callers must pass the
+    environment they selected, and this function never consults ``os.environ``.
+    """
+    if not str(home) or not home.is_absolute():
         raise InvalidFamulusHomeError(f"home must be an absolute path, got {home!r}")
+    for name in ("XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "APPDATA", "LOCALAPPDATA"):
+        _environment_root(environ, name)
 
     if platform == "darwin":
         base = home / "Library" / "Application Support" / "Famulus"
@@ -58,23 +80,24 @@ def resolve_famulus_paths(*, platform: str, home: Path) -> FamulusPaths:
         state_root = base / "state"
         user_bin = home / ".local" / "bin"
     elif platform == "win32":
-        local_app_data = os.environ.get("LOCALAPPDATA")
-        if not local_app_data:
-            raise FamulusLocalAppDataMissingError(
-                "LOCALAPPDATA is required to resolve Famulus paths on Windows"
-            )
-        base = Path(local_app_data) / "Famulus"
+        local_app_data = (
+            _environment_root(environ, "LOCALAPPDATA") or home / "AppData" / "Local"
+        )
+        app_data = (
+            _environment_root(environ, "APPDATA") or home / "AppData" / "Roaming"
+        )
+        base = local_app_data / "Famulus"
         data_root = base
-        config_root = base / "config"
+        config_root = app_data / "Famulus"
         state_root = base / "state"
         user_bin = base / "bin"
     else:
-        xdg_data = os.environ.get("XDG_DATA_HOME")
-        data_root = Path(xdg_data) / "famulus" if xdg_data else home / ".local" / "share" / "famulus"
-        xdg_config = os.environ.get("XDG_CONFIG_HOME")
-        config_root = Path(xdg_config) / "famulus" if xdg_config else home / ".config" / "famulus"
-        xdg_state = os.environ.get("XDG_STATE_HOME")
-        state_root = Path(xdg_state) / "famulus" if xdg_state else home / ".local" / "state" / "famulus"
+        xdg_data = _environment_root(environ, "XDG_DATA_HOME")
+        data_root = xdg_data / "famulus" if xdg_data else home / ".local" / "share" / "famulus"
+        xdg_config = _environment_root(environ, "XDG_CONFIG_HOME")
+        config_root = xdg_config / "famulus" if xdg_config else home / ".config" / "famulus"
+        xdg_state = _environment_root(environ, "XDG_STATE_HOME")
+        state_root = xdg_state / "famulus" if xdg_state else home / ".local" / "state" / "famulus"
         user_bin = home / ".local" / "bin"
 
     runtime_root = data_root / "runtime"

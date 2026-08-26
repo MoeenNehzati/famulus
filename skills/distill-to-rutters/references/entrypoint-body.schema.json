@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "entrypoint-body.schema.json",
+  "title": "Entrypoint Binding Contract Body",
+  "type": "object",
+  "required": ["entrypoint_binding"],
+  "additionalProperties": false,
+  "properties": {
+    "entrypoint_binding": {
+      "type": "object",
+      "required": ["candidate_path", "candidate_sha256", "public_binding", "source_outcome", "gateway_interpretation"],
+      "additionalProperties": false,
+      "properties": {
+        "candidate_path": {"type": "string", "minLength": 1},
+        "candidate_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "public_binding": {"type": "string", "minLength": 1},
+        "source_outcome": {"type": "string", "minLength": 1},
+        "gateway_interpretation": {"enum": ["accepted", "gap", "blocked", "failed"]}
+      }
+    }
+  }
+}

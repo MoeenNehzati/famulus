@@ -145,7 +145,7 @@ def _certify(
         "reviewed_commit": snapshot.commit,
         "certified_at": "2026-07-20T12:00:00Z",
         "expected_schema_version": 4,
-        "schema_root": repo / "references" / "blueprint",
+        "schema_root": repo / "references" / "blueprint-schema",
         "require_migration_review": True,
     }
     options.update(overrides)
@@ -322,7 +322,7 @@ def _add_cross_owner_contract(repo: Path):
     repository.git("commit", "-qm", "add contract source")
     return certifier.load_repository_blueprint_graph(
         repo,
-        schema_root=repo / "references" / "blueprint",
+        schema_root=repo / "references" / "blueprint-schema",
         expected_schema_version=4,
     )
 
@@ -548,13 +548,13 @@ def test_selected_legacy_writer_issues_current_payload(
     policy_source = (
         MODULE_PATH.parents[3]
         / "references"
-        / "certification"
+        / "certification-policy"
         / "node-hash-policy.yaml"
     )
     policy_path = (
         tmp_path
         / "references"
-        / "certification"
+        / "certification-policy"
         / "node-hash-policy.yaml"
     )
     policy_path.parent.mkdir(parents=True)
@@ -1078,7 +1078,7 @@ def test_batched_readiness_matches_canonical_per_path_decisions(
     paths = (
         tmp_path / "skills" / "demo-skill" / "SKILL.md",
         tmp_path / "skills" / "demo-skill" / "blueprint.yaml",
-        tmp_path / "references" / "certification" / "node-hash-policy.yaml",
+        tmp_path / "references" / "certification-policy" / "node-hash-policy.yaml",
     )
     expected_hashes = certifier._expected_file_hashes(snapshot, paths)
     target = paths[0]
@@ -1116,7 +1116,7 @@ def test_batched_readiness_uses_fixed_git_process_count(
     paths = (
         tmp_path / "skills" / "demo-skill" / "SKILL.md",
         tmp_path / "skills" / "demo-skill" / "blueprint.yaml",
-        tmp_path / "references" / "certification" / "node-hash-policy.yaml",
+        tmp_path / "references" / "certification-policy" / "node-hash-policy.yaml",
     )
     expected_hashes = certifier._expected_file_hashes(snapshot, paths)
     operations: list[tuple[str, ...]] = []
@@ -1211,7 +1211,9 @@ def test_batched_readiness_preserves_unusual_tracked_filename(
     tmp_path: Path,
 ) -> None:
     materialize_repository_fixture(tmp_path)
-    relative_path = "skills/demo-skill/literal[edge]*?.txt"
+    # Square brackets exercise Git pathspec quoting while remaining a valid
+    # filename on every supported platform (unlike `*` and `?` on Windows).
+    relative_path = "skills/demo-skill/literal[edge].txt"
     path = tmp_path / relative_path
     path.write_text("unusual but valid\n", encoding="utf-8")
     repository = GitTestRepository(tmp_path)
@@ -1930,7 +1932,7 @@ def test_private_writer_rechecks_forced_untracked_input_after_append(
     module_declaration["content"].append(r"local\.txt")
     write_yaml(module_blueprint, module_declaration)
     policy_path = (
-        tmp_path / "references" / "certification" / "node-hash-policy.yaml"
+        tmp_path / "references" / "certification-policy" / "node-hash-policy.yaml"
     )
     policy = yaml.safe_load(policy_path.read_text(encoding="utf-8"))
     policy["rules"].append(
@@ -2035,7 +2037,7 @@ def test_completeness_findings_block_structural_draft_signing(
     repository.git("commit", "-qm", "draft")
     graph = certifier.load_repository_blueprint_graph(
         tmp_path,
-        schema_root=tmp_path / "references" / "blueprint",
+        schema_root=tmp_path / "references" / "blueprint-schema",
         expected_schema_version=4,
     )
 
@@ -2152,7 +2154,7 @@ def test_public_certification_resolves_one_target_without_hash_dispatch(
     assert calls[0]["repo_root"] == tmp_path.resolve()
     assert calls[0]["allow_non_atomic"] is False
     assert calls[0]["expected_schema_version"] == 6
-    assert calls[0]["schema_root"] == tmp_path / "references" / "blueprint"
+    assert calls[0]["schema_root"] == tmp_path / "references" / "blueprint-schema"
     assert set(calls[0]["target_node_ids"]) == {
         node_id
         for node_id, node in graph.nodes.items()

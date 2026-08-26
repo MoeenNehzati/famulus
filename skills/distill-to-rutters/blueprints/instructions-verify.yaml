@@ -1,0 +1,64 @@
+content: [instructions/verify\.md]
+dependencies: []
+description: Verifies the exact approved entrypoint predecessor and contained candidate leaf, accepting verified only when every evidence row passes.
+gateway: {language: Markdown, path: instructions/verify.md}
+id: distill-to-rutters.source.verify
+interfaces:
+  distill-to-rutters.source.verify.interface.verify:
+    content: [instructions/verify\.md]
+    uses_interfaces: []
+    contract:
+      arguments:
+        request: {description: 'Input, approved semantic and implementation artifacts, explicit approval, exact diff, and live repository state.', required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+      caller_warnings:
+      - external-side-effect: Verification may create isolated test and Voyage state through the registered public interface and writes 08_verification.md.
+      direct_io:
+        network: []
+        reads:
+        - {id: source, medium: repository-filesystem, access: read, content: 'Common root input, approved entrypoint-ready artifact, its exact contained candidate path and digest, implementation diff, public interfaces, tests, and validators', formats: [markdown, yaml, json, python, git-metadata, text], sensitivity: user-private}
+        writes:
+        - {id: verification-command, medium: subprocess, access: execute, content: 'Focused tests, blueprint synchronization, validators, and public dispenser probe', formats: [argv, text], sensitivity: user-private, system: repository tools}
+        - {id: artifact, medium: local-filesystem, access: write, content: 08_verification.md verification report, formats: [markdown], path: '<input-directory>/<source-stem>_distillation/08_verification.md', path_match: exact, sensitivity: derived-private, system: filesystem}
+        - {id: response, medium: prompt, access: write, content: 'Verification path, verdict, limitations, and validation request', formats: [markdown], sensitivity: derived-private, system: agent-runtime}
+      execution:
+        consistency: {snapshot: 'Read every consulted file once; bind the body and envelope to the approved entrypoint candidate, require all checks passed, and rehash all consulted paths before verified acceptance.'}
+        effects:
+        - id: report-write
+          direct_io_ref: artifact
+          action: update
+          value_source: {kind: argument, argument_ref: request}
+          may_occur_in_outcomes: [verified, verification-failed, verification-blocked, partial]
+          confirmation_evidence: {kind: direct-io, direct_io_ref: artifact}
+          reversibility: {reversible: Delete or revise the unapproved verification report without changing the implementation.}
+        lifecycle: finite
+        mutation_safety:
+          atomicity: {per_effect_only: Tests and probe state use their own boundaries; the report is written separately.}
+          concurrent_invocations: {unsafe: Concurrent implementation changes invalidate verification evidence.}
+          idempotency: {non_idempotent: Live probe identifiers and temporary state may differ across runs.}
+          on_uncertain_completion: {verify_then_decide: Inspect public status and existing evidence before retrying a stateful probe.}
+          partial_effects_on_failure: {possible: Test or Voyage state may exist before a later check fails.}
+          rollback_on_failure: {available: Remove only isolated verification state when its public release authority permits it.}
+        state_effect: mutating
+        verification:
+        - {method: direct-io-state, direct_io_ref: artifact}
+        - {method: output-schema, output_ref: report}
+      helpers: []
+      interaction: {mode: interactive, channel: tty, unattended_outcome: approval-required}
+      outcomes:
+      - {id: verified, class: success, outputs: [report, response], effects: [report-write], caller_action: Validate the terminal 08_verification.md evidence.}
+      - {id: verification-failed, class: error, outputs: [report, response], effects: [report-write], caller_action: Resolve the recorded product failure without claiming completion.}
+      - {id: verification-blocked, class: refusal, outputs: [report, response], effects: [report-write], caller_action: Stop until the recorded environment prerequisite changes.}
+      - {id: partial, class: partial, outputs: [report, response], effects: [report-write], caller_action: Resolve incomplete verification evidence without claiming completion.}
+      - {id: approval-required, class: refusal, outputs: [response], effects: [], caller_action: Explicitly approve 07_entrypoint.md before verification.}
+      outputs:
+      - {id: report, audience: both, description: 08_verification.md verification report., direct_io_ref: artifact, cardinality: {minimum: 0, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Empty only when approval is absent., type: {kind: string, sensitivity: derived-private}}
+      - {id: response, audience: human, description: 'Verification path, verdict, evidence limits, and validation request.', direct_io_ref: response, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty., type: {kind: string, sensitivity: derived-private}}
+      preconditions: []
+    description: Verify the exact approved entrypoint predecessor and candidate identity, orchestration, and semantic preservation; any failed or blocked check prevents verified.
+    usage: <input-markdown> <approved-entrypoint-artifact> <explicit-approval>
+    version: 1
+node_type: behavioral_source
+schema_version: 6
+uses_interfaces: []
+version: 1
+maturity: experimental

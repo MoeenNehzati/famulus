@@ -2,10 +2,13 @@
 
 This document describes the implemented Famulus trust boundary originally
 audited at commit `777b8c03a103` on 2026-08-13 and delta-reviewed through
-commit `e74b8ad7` on 2026-08-17. The delta review covered the credential-module
-relocation, process-local Drive access-token caching and error reporting, the
-dedicated `background_run` agent and unattended launch path, and the
-current-source managed-runtime bootstrap. It is an implementation inventory,
+commit `a7d2fb28` on 2026-08-22. The first delta review, through `e74b8ad7`,
+covered the credential-module relocation, process-local Drive access-token
+caching and error reporting, the dedicated `background_run` agent and
+unattended launch path, and the current-source managed-runtime bootstrap. The
+second covered `51c06606`, which unified the installation contexts, and
+`a68a6389`, which grants a managed assistant the state roots described under
+[Roots granted to a managed assistant](#roots-granted-to-a-managed-assistant). It is an implementation inventory,
 not a security certification. The limitations near the end are release work,
 not features that are already mitigated.
 
@@ -46,13 +49,13 @@ personal-assistant workflows.
 | --- | --- | --- |
 | `connect-google` | A Google Desktop OAuth client and the Google identity returned during authorization | Stores the OAuth client secret and refresh-token references; coordinates grants for selected Google services |
 | `cloud-files` | Files below the configured Drive root | Reads, creates, replaces, and deletes files in the `lists/` and `plans/` subdirectories exposed to LLM callers |
-| `g-calendar` | Calendar lists, events, and availability | Creates, updates, moves, and deletes events within its public interface |
+| `online-calendar` | Calendar lists, events, and availability | Creates, updates, moves, and deletes events within its public interface |
 | `email-client` | Account metadata, messages, headers, bodies, and attachments | Sends mail, saves requested attachments locally, and adds, changes, or removes local account records |
 | `email-triage` | New mail and the `todo` and `triage` lists | Classifies messages and writes list entries; it does not send mail or create calendar events |
 | `list-manager` | Cloud-backed lists | Adds, changes, completes, rejects, and deletes list entries through `cloud-files` |
 | `daily-plan` | Calendar data, weather, lists, and existing plans | Writes plans and plan metadata to Drive; list-changing requests can update master lists |
 | `wrap-up` | Plans, lists, and session context | Updates plans and lists after a consolidated user review |
-| `recurring-tasks` | Job definitions, run status, and captured job output | Installs and removes per-user scheduled jobs; enabled jobs may invoke other skills without a new interactive prompt |
+| `recurring-tasks` | Context-specific job definitions, run status, and captured job output | Installs and removes per-user jobs namespaced by `installation_id`; enabled jobs may invoke other skills without a new interactive prompt |
 | `install-assistant-tools` | Host configuration and the selected installation source | Installs launchers, hooks, profiles, runtime files, and the unattended `background_run` prerequisite; it does not enable jobs, and uninstall/purge remove only resources they currently own |
 | `get-weather` | A location supplied by the user or another workflow | Sends that location to Open-Meteo geocoding and forecast services; it uses no credential |
 | `send-feedback` | A reviewed, redacted diagnostic report | Publishes the report as a public issue on the configured project, or sends it by email, only after preview and explicit approval; it refuses vulnerability reports and routes them to the private security channel |
@@ -94,6 +97,41 @@ Famulus uses these platform roots for newer shared configuration and state:
 | macOS | `~/Library/Application Support/Famulus/config` | `~/Library/Application Support/Famulus/state` |
 | Windows | `%LOCALAPPDATA%\Famulus\config` | `%LOCALAPPDATA%\Famulus\state` |
 
+These are the `standard` context roots. A `development` context instead keeps
+its config, data, state, assistant homes, jobs, and logs under the selected
+checkout's `.famulus/` tree. This prevents contexts from sharing mutable state;
+it does not sandbox the assistant from the rest of the operating-system
+account. Backend ownership is durable in each context's `launchers.json`.
+`ASSISTANT_DEFAULT` and `ASSISTANT_LOGS` are process-local overrides only.
+`AI` and `FAMULUS_REPO_ROOT` are not installation selectors and must not be
+persisted.
+
+### Roots granted to a managed assistant
+
+Both hosts confine an agent to directories the user has approved, and a Famulus
+skill that cannot write its own state root fails at the point of use rather
+than at install time. So applying a context writes the state roots the skills
+actually need into the host's own access configuration: Claude's
+`permissions.additionalDirectories`, and the equivalent Codex access roots,
+each inside a marked block the installer owns and records in the manifest.
+
+Seven roots are granted, and they are state directories rather than working
+directories: the assistant log root, the recurring-job config and state roots,
+the email-triage state root, the `list-manager` lock and cache directories, and
+the `llm-wakeup` state root. `resolve_assistant_access_roots` derives them from
+the selected context, never from process overrides, so `ASSISTANT_LOGS` and its
+siblings cannot widen the grant.
+
+What the grant refuses is the more useful half. A resolved root that overlaps
+the credential root, the managed runtime, either assistant home, or the install
+state root raises `AssistantAccessBoundaryError` and the apply stops. The
+assistant is therefore granted the state it writes and denied the state that
+would let it rewrite its own installation or read the Google credentials.
+
+This narrows nothing that the host granted independently. It is an addition to
+the agent's writable set, not a sandbox around it, and a `development` context
+grants the same roots under the checkout's `.famulus/` tree instead.
+
 `~` below means the account running the host agent. `<PLUGIN>` means the
 installed Famulus plugin directory or checkout. Plugin directories are
 replaceable and should not contain durable private state, although current
@@ -110,7 +148,7 @@ paths listed below still do.
 | Google refresh token for a descriptor | Python `keyring`, service `Famulus:connect-google`, username `credential-file:<descriptor-stem>:refresh-token` | Raw refresh token |
 | Google refresh token for a registry record | Python `keyring`, service `Famulus:connect-google`, username referenced by the registry, normally `google-refresh:<uuid>` (older records may use `<credential-id>:refresh-token`) | Raw refresh token |
 | Drive binding | `~/.config/cloud-files/config.json` | Remote root, timeout, and credential descriptor or ID reference |
-| Calendar binding | `~/.config/g-calendar/config.json` | Credential descriptor or ID reference |
+| Calendar binding | `~/.config/online-calendar/config.json` | Credential descriptor or ID reference |
 | Email account registry | `~/.config/email-client/accounts.json` | Email address, display name, server settings, auth mode, and credential reference; no new-route password or refresh token |
 | IMAP/SMTP app passwords | Python `keyring`, service `Famulus:email-client`, usernames `<nickname>:imap` and `<nickname>:smtp` | Raw app passwords |
 | Legacy email OAuth secrets | Python `keyring`, service `Famulus:email-client`, usernames `<nickname>:oauth:client-secret` and `<nickname>:oauth:refresh-token` | Raw client secret and refresh token |
@@ -124,7 +162,7 @@ matters.
 Canonical client and descriptor files are written with owner-only file modes
 on POSIX and reject symbolic-link destinations. Access tokens are normally
 short-lived values obtained during a request and are not persisted by the
-canonical path. The `g-calendar` executable does have an explicit `token` mode
+canonical path. The `online-calendar` executable does have an explicit `token` mode
 that prints an access token to standard output; its skill instructions reserve
 that mode for explicitly requested direct API access.
 
@@ -134,8 +172,8 @@ The runtime still accepts older files at:
 
 - `~/.config/cloud-files/client.json`
 - `~/.config/cloud-files/credentials.json`
-- `~/.config/g-calendar/client.json`
-- `~/.config/g-calendar/credentials.json`
+- `~/.config/online-calendar/client.json`
+- `~/.config/online-calendar/credentials.json`
 
 Those files may contain raw OAuth client secrets and refresh tokens. They are
 migration compatibility, not the recommended setup. Their continued support is
@@ -153,16 +191,15 @@ a known hardening gap.
 | Email-triage classification log | `<PLUGIN>/skills/email-triage/_rtx/triage.log`; includes account, message ID, sender, subject, decision, and reason |
 | List-manager category cache | `<PLUGIN>/skills/list-manager/_rtx/tmp/categories.<list>.yaml`; contains list category paths and cache counters, not list entries |
 | Daily-plan run status | `<PLUGIN>/skills/daily-plan/state/status.json` |
-| Recurring-task definitions | `<PLUGIN>/skills/recurring-tasks/_rtx/jobs.yaml` and installed per-user scheduler configuration; platform scheduler support files may also use `<CONFIG>/recurring-tasks/` and `<STATE>/recurring-tasks/` |
-| Recurring-task output and outcome records | `<PLUGIN>/skills/recurring-tasks/_rtx/logs/`; command output is captured and logs are rotated after 5 MiB with one prior copy retained |
+| Recurring-task definitions | The selected context's recurring configuration root, namespaced by `installation_id`, plus native per-user scheduler registrations |
+| Recurring-task output and outcome records | The selected context's recurring state root, namespaced by `installation_id`; command output is captured and logs rotate after 5 MiB with one prior copy retained |
 | Weather queries | Location and forecast parameters sent to Open-Meteo |
 | Feedback reports | Email recipient configured by the project, only after the user reviews and approves the report |
 
-The generated `<PLUGIN>` state/log locations are ignored by Git and are not part
-of the tracked release payload, but plugin-cache replacement can discard them
-and their content is private. They are disposable in the first-release
-contract. Move them to `<STATE>` before promising that plugin replacement will
-retain them.
+Standard recurring state lives below platform Famulus roots. Development
+recurring state lives below the selected checkout's `.famulus/` tree. Package
+cache replacement therefore does not own or discard either context's mutable
+jobs or history.
 
 ## What reaches Claude or Codex
 
@@ -222,8 +259,8 @@ The implemented public workflows use the following boundaries:
 
 ### Unattended recurring execution
 
-Phase 1 always installs `invoke-skill` and its required `background_run`
-launcher, profile, and worker directory. That installation alone does not
+Stage 3 installs `invoke-skill` and its required `background_run` capability,
+profile, and context-owned worker directory. That installation alone does not
 create or enable a scheduled job. A job runs only after the user explicitly
 asks `recurring-tasks` to create or enable it.
 
@@ -257,9 +294,11 @@ therefore remains open.
 
 These are distinct operations:
 
-1. **Disable automation.** Use `recurring-tasks` to disable and synchronize
-   every job that invokes the integration. This stops future scheduled runs but
-   does not remove credentials or remote data.
+1. **Disable automation and remove its context registrations.** Use
+   `recurring-tasks` to disable the selected context's jobs, synchronize, and
+   run `scripts-remove-context`. This removes only that installation ID's
+   native registrations, sentinel, and owner record; it preserves recurring
+   configuration and history and does not remove credentials or remote data.
 2. **Revoke Google access.** Remove the OAuth connection in the Google Account
    [third-party connections page](https://myaccount.google.com/connections).
    Revocation ends the token's server-side authority. Deleting local files
@@ -273,10 +312,12 @@ These are distinct operations:
    lists, plans, mail, attachments already saved locally, calendar events, or
    data already retained by a model provider. Delete those separately only
    after identifying their exact owner and desired retention.
-5. **Uninstall Famulus.** The installer removes resources recorded in its
-   manifest. Its `--purge` mode removes recorded configuration directories, but
-   the current implementation does not comprehensively revoke Google access,
-   clear all shared keyring entries, or cover every legacy/service path.
+5. **Uninstall Famulus.** After recurring preflight reports no registrations,
+   ordinary uninstall removes unchanged manifest-owned resources. `--purge`
+   additionally removes exact-identity immutable runtime/bootstrap, launcher,
+   and generated profile artifacts. Neither mode recursively deletes mutable
+   configuration or credentials, comprehensively revokes Google access, clears
+   all shared keyring entries, or deletes arbitrary service data.
 
 There is no single complete disconnect-and-purge command yet. Until one exists,
 do not describe uninstall or local file deletion as revocation.
@@ -302,7 +343,7 @@ keyring backend have their own logging and retention behavior.
 The audit identified these unresolved items:
 
 1. Google scopes are broader than the public runtime operations.
-2. `g-calendar` has a token-to-standard-output mode.
+2. `online-calendar` has a token-to-standard-output mode.
 3. Disconnect, server-side revocation, local secret cleanup, uninstall, and
    purge are not one complete lifecycle.
 4. Legacy plaintext OAuth credential files remain readable.
@@ -310,8 +351,9 @@ The audit identified these unresolved items:
    an encrypted native credential store.
 6. Untrusted external content is not isolated from model instructions by a
    complete deterministic authorization layer.
-7. Email-triage, list-manager, daily-plan, and recurring-task private state,
-   working copies, or logs still have paths inside replaceable plugin content.
+7. Some email-triage, list-manager, and daily-plan private working copies or
+   logs still have paths inside replaceable package content; recurring mutable
+   jobs and logs have moved to context-owned state.
 8. Email recipients, subjects, and attachment paths are present in local
    process arguments; only the email body is passed through standard input.
 9. Enabled recurring jobs deliberately run without interactive host approvals

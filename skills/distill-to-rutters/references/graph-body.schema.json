@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "graph-body.schema.json",
+  "title": "Evolution Graph Contract Body",
+  "type": "object",
+  "required": ["rutters"],
+  "additionalProperties": false,
+  "properties": {
+    "rutters": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["rutter_id", "voyage_ids", "version", "initial_evolution", "charter_fields", "evolutions", "transitions", "terminal_results"],
+        "additionalProperties": false,
+        "properties": {
+          "rutter_id": {"type": "string", "minLength": 1},
+          "voyage_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+          "version": {"type": "integer", "minimum": 1},
+          "initial_evolution": {"type": "string", "minLength": 1},
+          "charter_fields": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+          "evolutions": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["evolution_id", "evolution_type", "obligation_ids", "decision_owner", "validator", "outcomes"],
+              "additionalProperties": false,
+              "properties": {
+                "evolution_id": {"type": "string", "minLength": 1},
+                "evolution_type": {"type": "string", "minLength": 1},
+                "obligation_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+                "decision_owner": {"enum": ["rutter", "human", "llm", "external"]},
+                "validator": {"type": "string", "minLength": 1},
+                "outcomes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+              }
+            }
+          },
+          "transitions": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["from", "outcome", "to"],
+              "additionalProperties": false,
+              "properties": {
+                "from": {"type": "string", "minLength": 1},
+                "outcome": {"type": "string", "minLength": 1},
+                "to": {"type": "string", "minLength": 1}
+              }
+            }
+          },
+          "terminal_results": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+        }
+      }
+    }
+  }
+}

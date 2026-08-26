@@ -296,7 +296,7 @@ def file_lock(path: Path):
         os.close(fd)
 
 
-def _cloud_lock_dir(*, home: Path | None = None) -> Path:
+def _cloud_lock_dir(*, home: Path | None = None, managed: bool = False) -> Path:
     """Stable, well-known directory for cloud-mode lock sidecars -- as
     opposed to file_lock()'s per-command sidecar next to the file it locks,
     which for --cloud mode is a fresh tempfile.mkdtemp() path every
@@ -307,18 +307,37 @@ def _cloud_lock_dir(*, home: Path | None = None) -> Path:
     email-triage/_rtx/_failure_sentinel.py for the same reason: tests need a
     tmp_path, not the real shared state root.
     """
-    override = os.environ.get("LIST_MANAGER_CLOUD_LOCK_DIR")
+    override = None if managed else os.environ.get("LIST_MANAGER_CLOUD_LOCK_DIR")
     if override:
         return Path(override)
     from officina.common.famulus_paths import resolve_famulus_paths
 
-    return resolve_famulus_paths(platform=sys.platform, home=home or Path.home()).state_root / "list-manager" / "locks"
+    return (
+        resolve_famulus_paths(
+            platform=sys.platform, home=home or Path.home(), environ=os.environ
+        ).state_root
+        / "list-manager"
+        / "locks"
+    )
+
+
+def _cloud_cache_dir(*, home: Path | None = None, managed: bool = False) -> Path:
+    """Return the managed temporary-cache directory for cloud list work."""
+    from officina.common.famulus_paths import resolve_famulus_paths
+
+    return (
+        resolve_famulus_paths(
+            platform=sys.platform, home=home or Path.home(), environ=os.environ
+        ).state_root
+        / "list-manager"
+        / "cache"
+    )
 
 
 _SAFE_LOCK_NAME_RE = re.compile(r"[^A-Za-z0-9_.-]")
 
 
-def cloud_lock_path(list_name: str) -> Path:
+def cloud_lock_path(list_name: str, *, managed: bool = False) -> Path:
     """Resolve a STABLE lock target for a cloud list name, keyed by the name
     itself rather than by any per-invocation local path.
 
@@ -342,7 +361,7 @@ def cloud_lock_path(list_name: str) -> Path:
     closes.
     """
     safe_name = _SAFE_LOCK_NAME_RE.sub("_", list_name) or "_"
-    lock_dir = _cloud_lock_dir()
+    lock_dir = _cloud_lock_dir(managed=managed)
     lock_dir.mkdir(parents=True, exist_ok=True)
     # ".yaml" suffix purely so file_lock()'s "<file>.lock" sidecar naming
     # reads the same way it does for local-file locks; no such file is ever
@@ -1142,7 +1161,9 @@ def main(argv: list[str] | None = None) -> int:
             mutating = args.command in ("init", "create-entry", "update", "delete")
             lock_cm = file_lock(cloud_lock_path(list_name)) if mutating else contextlib.nullcontext()
             with lock_cm:
-                tmp_dir = Path(tempfile.mkdtemp())
+                cache_dir = _cloud_cache_dir(managed=True)
+                cache_dir.mkdir(parents=True, exist_ok=True)
+                tmp_dir = Path(tempfile.mkdtemp(dir=cache_dir))
                 temp_path = tmp_dir / f"{list_name}.yaml"
                 try:
                     if args.command == "init":

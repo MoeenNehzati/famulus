@@ -1,0 +1,35 @@
+schema_version: 6
+node_type: module
+id: standards-schema
+version: 1
+maturity: stable
+description: Owns the schemas, grammars, validator, and renderer for canonical repository standards.
+gateway:
+  path: standard-v6.schema.json
+  language: JSON-Schema
+content:
+- docstring\.standard\.lark
+- docstring\.standard\.yaml
+- docstring_format\.schema\.json
+- docstring_format\.yaml
+- render_standard_v6\.py
+- standard-v6\.schema\.json
+- validate_standard_v6\.py
+authority:
+  owns_filesystem: []
+sources:
+  standards-schema.source.standard-validator:
+    blueprint:
+      base: module-root
+      path: blueprints/standard-validator.yaml
+  standards-schema.source.standard-renderer:
+    blueprint:
+      base: module-root
+      path: blueprints/standard-renderer.yaml
+  standards-schema.source.docstring-schema:
+    blueprint:
+      base: module-root
+      path: blueprints/docstring-schema.yaml
+children: {}
+namespace_exports: {}
+exports: {}

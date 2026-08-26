@@ -4,6 +4,12 @@ content:
 dependencies:
 - blueprint:
     base: module-root
+    path: blueprints/context.yaml
+  reason: Serializes the explicit installation context into each schema-3 candidate.
+  source: install.source.context
+  version: 1
+- blueprint:
+    base: module-root
     path: blueprints/runtime-pointer.yaml
   reason: build-candidate-release activates the finished release through the shared
     runtime-pointer source.
@@ -17,8 +23,9 @@ dependencies:
   version: 1
 description: Pools runtime_dependencies.json schema v2 into a generated universal lock,
   validates exact pins and hashes, and builds a versioned managed-runtime candidate
-  containing that lock and either a first-party Officina wheel or an editable explicit
-  repository checkout before atomic activation.
+  containing that lock, a schema-2 installation context with selected_home, and a
+  verified first-party Officina wheel; standard mode installs the wheel while development
+  mode installs the explicit repository editably before atomic activation.
 gateway:
   language: Python
   path: managed_runtime.py
@@ -44,10 +51,12 @@ interfaces:
             - value: build-candidate-release
               description: Create a new release, install and verify the first-party
                 dispatcher artifact plus dependencies, and activate it.
+            - value: deployed-resolver-trusted-roots
+              description: Read the absolute interpreter roots selected by the active immutable resolver generation.
         manifest-path:
           description: Path to runtime_dependencies.json schema v2 to read declared
             module dependencies from.
-          required: true
+          required: false
           sensitivity: public
           direct_io_ref: manifest-file
           type:
@@ -98,8 +107,8 @@ interfaces:
             - value: windows
               description: Windows.
         runtime-root:
-          description: Managed-runtime root directory that owns current.json and every
-            release directory, used only for build-candidate-release.
+          description: Managed-runtime root directory that owns current.json, releases,
+            and resolver generations; used for candidate builds and trusted-root reads.
           required: false
           sensitivity: user-private
           direct_io_ref: pointer-file
@@ -122,8 +131,9 @@ interfaces:
             must_exist: true
             access: read
         editable:
-          description: Install the explicit repo-root editably instead of installing the
-            retained wheel. Defaults to false.
+          description: Explicit wheel/editable selection. When unspecified, derive it
+            from installation-context mode; without a context, default to false. An
+            explicit value that disagrees with the context is rejected.
           required: false
           sensitivity: public
           type:
@@ -155,6 +165,16 @@ interfaces:
           sensitivity: public
           type:
             kind: string
+        installation-context:
+          description: Explicit standard or development context, including selected_home,
+            that authoritatively selects wheel or editable installation when editable
+            is unspecified, is serialized as schema 2 into the candidate release, and
+            is selected atomically with schema-3 current.json.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
       preconditions:
       - id: readable-manifest
         description: manifest-path must be a readable, syntactically valid JSON file
@@ -164,7 +184,7 @@ interfaces:
           argument_ref: manifest-path
           predicate: present
         unmet_outcome: unsupported-manifest
-        caller_action: Supply the real references/blueprint/runtime_dependencies.json
+        caller_action: Supply the real references/blueprint-schema/runtime_dependencies.json
           (schema v2).
       - id: verified-runtime-lock
         description: For build-candidate-release, lock-input-path and lock-path must
@@ -188,9 +208,9 @@ interfaces:
       outputs:
       - id: result
         audience: machine
-        description: For declared-python-packages, a tuple of pip install specs. For
-          build-candidate-release, the RuntimePointer dataclass instance for the newly
-          activated release.
+        description: For declared-python-packages, a tuple of pip install specs; for
+          build-candidate-release, the newly activated RuntimePointer; for
+          deployed-resolver-trusted-roots, a tuple of absolute trusted root paths.
         direct_io_ref: return-value
         cardinality:
           minimum: 0
@@ -205,7 +225,7 @@ interfaces:
         type:
           kind: string
           sensitivity: public
-          description: Python tuple[str, ...] or RuntimePointer instance.
+          description: Python tuple[str, ...], tuple[Path, ...], or RuntimePointer instance.
       outcomes:
       - id: completed
         class: success
@@ -317,6 +337,14 @@ interfaces:
           - binary
           sensitivity: user-private
           path: <uv-bin>
+        - id: resolver-trust-file
+          medium: local-filesystem
+          access: read
+          content: Active resolver generation selector and trusted interpreter root list
+          formats:
+          - json
+          sensitivity: user-private
+          path: <runtime-root>/bootstrap/resolvers/**
         writes:
         - id: release-directory
           medium: local-filesystem

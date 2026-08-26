@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "assignment-body.schema.json",
+  "title": "Rutter Assignment and Orchestration Contract Body",
+  "type": "object",
+  "required": ["assignments", "orchestration"],
+  "additionalProperties": false,
+  "properties": {
+    "assignments": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["part_id", "voyage_id", "rutter_definition_id", "charter_fields", "input_ids", "output_ids", "inseparability", "independent_workflows"],
+        "additionalProperties": false,
+        "properties": {
+          "part_id": {"type": "string", "minLength": 1},
+          "voyage_id": {"type": "string", "minLength": 1},
+          "rutter_definition_id": {"type": "string", "minLength": 1},
+          "charter_fields": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+          "input_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+          "output_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+          "inseparability": {
+            "type": "object",
+            "required": ["status", "reason"],
+            "additionalProperties": false,
+            "properties": {
+              "status": {"enum": ["inseparable", "independent"]},
+              "reason": {"type": "string", "minLength": 1}
+            }
+          },
+          "independent_workflows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["voyage_id", "join_transition"],
+              "additionalProperties": false,
+              "properties": {
+                "voyage_id": {"type": "string", "minLength": 1},
+                "join_transition": {"type": "string", "minLength": 1}
+              }
+            }
+          }
+        }
+      }
+    },
+    "orchestration": {
+      "type": "object",
+      "required": ["mode", "coordinator_rutter_id", "starts", "dependencies", "joins", "aggregate_results", "partial_failure", "retries", "retry_owner", "cancellation", "failure_propagation", "authorization", "release"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": {"enum": ["single", "coordinated"]},
+        "coordinator_rutter_id": {"type": ["string", "null"]},
+        "starts": {"$ref": "#/$defs/rules"},
+        "dependencies": {"$ref": "#/$defs/rules"},
+        "joins": {"$ref": "#/$defs/rules"},
+        "aggregate_results": {"$ref": "#/$defs/rules"},
+        "partial_failure": {"$ref": "#/$defs/rules"},
+        "retries": {"$ref": "#/$defs/rules"},
+        "retry_owner": {"type": "string", "minLength": 1},
+        "cancellation": {"$ref": "#/$defs/rules"},
+        "failure_propagation": {"$ref": "#/$defs/rules"},
+        "authorization": {"$ref": "#/$defs/rules"},
+        "release": {"$ref": "#/$defs/rules"}
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["mode"],
+            "properties": {"mode": {"const": "coordinated"}}
+          },
+          "then": {
+            "properties": {
+              "coordinator_rutter_id": {"type": "string", "minLength": 1}
+            }
+          },
+          "else": {
+            "properties": {"coordinator_rutter_id": {"type": "null"}}
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["obligation_id", "owning_transition", "evidence"],
+        "additionalProperties": false,
+        "properties": {
+          "obligation_id": {"type": "string", "minLength": 1},
+          "owning_transition": {"type": "string", "minLength": 1},
+          "evidence": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

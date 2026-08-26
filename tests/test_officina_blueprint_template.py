@@ -237,23 +237,23 @@ def test_refresh_preserves_extra_valid_fields_at_the_end() -> None:
 
 
 def test_live_module_template_renders_parseable_v6_yaml() -> None:
-    schema = load_schema(Path("references/blueprint/module.schema.json"))
+    schema = load_schema(Path("references/blueprint-schema/module.schema.json"))
 
     text = render_blueprint_template(schema)
 
     loaded = yaml.safe_load(text)
     assert loaded["schema_version"] == 6
     assert loaded["node_type"] == "module"
-    schema_validator(load_schema(Path("references/blueprint/schema.json"))).validate(
+    schema_validator(load_schema(Path("references/blueprint-schema/schema.json"))).validate(
         loaded
     )
 
 
 def test_generated_v5_templates_validate_against_live_authoring_schemas() -> None:
     for path in (
-        Path("references/blueprint/module.schema.json"),
-        Path("references/blueprint/behavioral-source.schema.json"),
-        Path("references/blueprint/schema.annotated-draft.json"),
+        Path("references/blueprint-schema/module.schema.json"),
+        Path("references/blueprint-schema/behavioral-source.schema.json"),
+        Path("references/blueprint-schema/schema.annotated-draft.json"),
     ):
         schema = load_schema(path)
         for doc_mode in ["full", "compact"]:
@@ -262,7 +262,7 @@ def test_generated_v5_templates_validate_against_live_authoring_schemas() -> Non
 
 
 def test_annotated_authoring_schema_routes_only_live_v5_nodes() -> None:
-    schema = load_schema(Path("references/blueprint/schema.annotated-draft.json"))
+    schema = load_schema(Path("references/blueprint-schema/schema.annotated-draft.json"))
 
     assert schema["$ref"].endswith("schema.json")
     assert "Canonical authoring entry point" in schema["description"]
@@ -282,13 +282,13 @@ def test_each_live_schema_generates_a_valid_authoring_template() -> None:
         "module.schema.json",
         "behavioral-source.schema.json",
     ]:
-        schema = load_schema(Path("references/blueprint") / name)
+        schema = load_schema(Path("references/blueprint-schema") / name)
         rendered = render_blueprint_template(schema)
         schema_validator(schema).validate(yaml.safe_load(rendered))
 
 
 def test_compatibility_entry_rejects_pre_v5_authoring_values() -> None:
-    schema = load_schema(Path("references/blueprint/schema.json"))
+    schema = load_schema(Path("references/blueprint-schema/schema.json"))
 
     with pytest.raises(ValueError, match="module or behavioral_source"):
         refresh_blueprint_documentation(
@@ -298,30 +298,30 @@ def test_compatibility_entry_rejects_pre_v5_authoring_values() -> None:
 
 
 def test_committed_template_is_a_complete_live_v6_module() -> None:
-    committed = yaml.safe_load(Path("references/blueprint/template.yaml").read_text())
+    committed = yaml.safe_load(Path("references/blueprint-schema/template.yaml").read_text())
 
     assert committed["schema_version"] == 6
     assert committed["node_type"] == "module"
     assert committed["children"] == {}
     assert committed["namespace_exports"] == {}
     schema_validator(
-        load_schema(Path("references/blueprint/module.schema.json"))
+        load_schema(Path("references/blueprint-schema/module.schema.json"))
     ).validate(committed)
 
 
 def test_schema_family_examples_create_complete_valid_documents(tmp_path: Path) -> None:
     del tmp_path
     for name in ("module.schema.json", "behavioral-source.schema.json"):
-        schema = load_schema(Path("references/blueprint") / name)
+        schema = load_schema(Path("references/blueprint-schema") / name)
         rendered = yaml.safe_load(render_blueprint_template(schema))
         schema_validator(schema).validate(rendered)
 
 
 def test_real_blueprint_refresh_preserves_loaded_values() -> None:
-    schema = load_schema(Path("references/blueprint/schema.annotated-draft.json"))
+    schema = load_schema(Path("references/blueprint-schema/schema.annotated-draft.json"))
     for path in [
         Path("skills/list-manager/blueprint.yaml"),
-        Path("skills/g-calendar/blueprint.yaml"),
+        Path("skills/online-calendar/blueprint.yaml"),
         Path("skills/email-triage/blueprint.yaml"),
     ]:
         original = path.read_text(encoding="utf-8")
@@ -332,7 +332,7 @@ def test_real_blueprint_refresh_preserves_loaded_values() -> None:
 def test_write_regenerated_skill_blueprint_writes_tmp_output(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     skill_dir = repo / "skills" / "demo-skill"
-    schema_dir = repo / "references" / "blueprint"
+    schema_dir = repo / "references" / "blueprint-schema"
     skill_dir.mkdir(parents=True)
     schema_dir.mkdir(parents=True)
     schema = _schema()
@@ -355,7 +355,7 @@ def test_write_regenerated_skill_blueprint_writes_tmp_output(tmp_path: Path) -> 
 def test_regeneration_rejects_pre_v5_blueprints(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     skill_dir = repo / "skills" / "demo-skill"
-    schema_dir = repo / "references" / "blueprint"
+    schema_dir = repo / "references" / "blueprint-schema"
     skill_dir.mkdir(parents=True)
     schema_dir.mkdir(parents=True)
     blueprint = {"schema_version": 2, "blueprint_type": "skill", "id": "demo-skill"}
@@ -392,7 +392,7 @@ def test_regeneration_rejects_pre_v5_blueprints(tmp_path: Path) -> None:
 def test_v5_regeneration_selects_existing_module_schema_owner(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     module_dir = repo / "skills" / "demo-skill"
-    schema_dir = repo / "references" / "blueprint" / "migrations" / "v5"
+    schema_dir = repo / "references" / "blueprint-schema" / "migrations" / "v5"
     module_dir.mkdir(parents=True)
     schema_dir.mkdir(parents=True)
     blueprint = {
@@ -439,7 +439,7 @@ def test_v5_repository_managed_skill_generator_creates_parent_and_code_child(
     tmp_path: Path,
 ) -> None:
     repo = tmp_path / "repo"
-    schema_root = Path("references/blueprint").resolve()
+    schema_root = Path("references/blueprint-schema").resolve()
     skill_file = repo / "skills" / "demo-skill" / "SKILL.md"
     skill_file.parent.mkdir(parents=True)
     skill_file.write_text(
@@ -520,14 +520,14 @@ def test_v5_repository_managed_skill_generator_defaults_to_parent_only(
         activated_by=("user-request",),
         persistent_modifier=False,
         repo_root=repo,
-        schema_root=Path("references/blueprint").resolve(),
+        schema_root=Path("references/blueprint-schema").resolve(),
     )
 
     assert outputs == (skill_root / "blueprint.yaml",)
     assert not (skill_root / "_rtx").exists()
     graph = load_repository_blueprint_graph(
         repo,
-        schema_root=Path("references/blueprint").resolve(),
+        schema_root=Path("references/blueprint-schema").resolve(),
         expected_schema_version=6,
     )
     assert set(graph.nodes) == {"instruction-only"}
@@ -551,7 +551,7 @@ def test_v5_repository_managed_skill_generator_requires_parent_skill_file(
             activated_by=("user-request",),
             persistent_modifier=False,
             repo_root=repo,
-            schema_root=Path("references/blueprint").resolve(),
+            schema_root=Path("references/blueprint-schema").resolve(),
             include_code_child=True,
         )
 
@@ -606,7 +606,7 @@ def test_v5_repository_managed_skill_generator_rolls_back_and_retries(
             activated_by=("user-request",),
             persistent_modifier=False,
             repo_root=repo,
-            schema_root=Path("references/blueprint").resolve(),
+            schema_root=Path("references/blueprint-schema").resolve(),
             include_code_child=True,
         )
 
@@ -622,7 +622,7 @@ def test_v5_repository_managed_skill_generator_rolls_back_and_retries(
         activated_by=("user-request",),
         persistent_modifier=False,
         repo_root=repo,
-        schema_root=Path("references/blueprint").resolve(),
+        schema_root=Path("references/blueprint-schema").resolve(),
         include_code_child=True,
     )
 
@@ -674,7 +674,7 @@ def test_v5_repository_managed_skill_generator_preserves_preexisting_child_root(
             activated_by=("user-request",),
             persistent_modifier=False,
             repo_root=repo,
-            schema_root=Path("references/blueprint").resolve(),
+            schema_root=Path("references/blueprint-schema").resolve(),
             include_code_child=True,
         )
 

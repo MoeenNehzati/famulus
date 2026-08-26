@@ -9,6 +9,7 @@ Agent configurations for Claude and Codex, auto-generated from source config fil
 | **assistant** | Secretary: fetch info, write, implement easy logic | gpt-5.4-mini | low | claude-haiku-4-5-20251001 | low | 2000 |
 | **collab** | Serious coding, focused on documentation/learning | gpt-5.4 | medium | claude-sonnet-4-6 | medium | 8000 |
 | **coauthor** | Math/research mode, deep thinking and rigor | gpt-5.4 | high | claude-opus-4-8 | high | 16000 |
+| **background_run** | Unattended scheduled work; no one is present to answer a prompt | gpt-5.6-sol | high | claude-sonnet-5 | medium | 10000 |
 
 ## Details
 

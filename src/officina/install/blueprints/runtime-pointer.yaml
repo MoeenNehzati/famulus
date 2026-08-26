@@ -19,7 +19,7 @@ interfaces:
     - runtime_pointer\.py
     uses_interfaces:
     - interface: common.interface.atomic-files
-      version: 1
+      version: 2
     contract:
       arguments:
         operation:
@@ -31,8 +31,14 @@ interfaces:
             values:
             - value: load-current
               description: Load and validate the current release pointer beneath runtime-root.
+            - value: decode-current
+              description: Validate one already-decoded current.json payload without rereading the selector.
             - value: activate-release
               description: Atomically point current.json at release-dir's python-bin.
+            - value: load-installed-context
+              description: Load an exact immutable schema-1 or schema-2 installation-context record; schema 2 carries selected_home.
+            - value: load-resolver-trusted-roots
+              description: Load the trusted interpreter roots selected by the fixed resolver.
         runtime-root:
           description: Managed-runtime root directory that owns current.json and every
             release directory.
@@ -45,6 +51,20 @@ interfaces:
             relative_to: caller-cwd
             must_exist: false
             access: read-write
+        payload:
+          description: Decoded current.json object used only by decode-current.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            description: Python mapping containing the complete pointer payload.
+        trusted-interpreter-roots:
+          description: Explicit trusted roots for a python-bin symlink, used only by load-current and decode-current.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            description: Tuple of absolute pathlib.Path roots.
         release-dir:
           description: Release directory to activate, used only for activate-release.
           required: false
@@ -87,8 +107,10 @@ interfaces:
       outputs:
       - id: result
         audience: machine
-        description: RuntimePointer dataclass instance with release_id, runtime_source,
-          and python_bin fields.
+        description: RuntimePointer or InstalledContextRecord dataclass instance with
+          release identity, interpreter, repository configuration, launcher resources,
+          and installation-context fields; schema-2 records expose selected_home while
+          schema-1 records remain readable with selected_home absent.
         direct_io_ref: return-value
         cardinality:
           minimum: 1
@@ -225,6 +247,6 @@ node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
 - interface: common.interface.atomic-files
-  version: 1
+  version: 2
 version: 1
 maturity: stable

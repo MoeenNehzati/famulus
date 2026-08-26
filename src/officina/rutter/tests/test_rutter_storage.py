@@ -1481,7 +1481,7 @@ def test_store_rejects_symlink_lock(tmp_path: Path) -> None:
     victim.write_text("safe", encoding="utf-8")
     (root / "paper.reckoning.json.lock").symlink_to(victim)
 
-    with pytest.raises(AtomicWriteError, match="symbolic link"):
+    with pytest.raises(AtomicWriteError, match="symbolic link|reparse point"):
         with _store(tmp_path).transaction():
             pass
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "famulus-officina"
-version = "0.1.0"
+version = "0.0.0"
 description = "Blueprint-authorized direct dispatcher and installation runtime"
 requires-python = ">=3.11"
 dependencies = ["PyYAML>=6", "jsonschema>=4,<5"]

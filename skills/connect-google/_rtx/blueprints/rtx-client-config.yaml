@@ -65,7 +65,7 @@ interfaces:
           - json
           id: read-3
           medium: local-filesystem
-          path: $HOME/.config/g-calendar/client.json
+          path: $HOME/.config/online-calendar/client.json
           path_match: exact
           reason: Discover a valid legacy Calendar OAuth client that the user may
             choose to import.

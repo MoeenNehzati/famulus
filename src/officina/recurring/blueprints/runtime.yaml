@@ -1,0 +1,75 @@
+schema_version: 6
+id: recurring.source.runtime
+version: 1
+maturity: experimental
+node_type: behavioral_source
+description: Validates the active recurring descriptor and renders native scheduler artifacts without replaceable skill source.
+gateway: {language: Python, path: runtime.py}
+content: [runtime\.py, native\.py, records\.py]
+dependencies: []
+uses_interfaces:
+- {interface: install.interface.context, version: 1}
+- {interface: launchers.interface.agent, version: 1}
+interfaces:
+  recurring.source.runtime.interface.context-teardown:
+    version: 1
+    description: Remove only native recurring registrations owned by one explicit installation context.
+    content: [runtime\.py, native\.py]
+    uses_interfaces:
+    - {interface: install.interface.context, version: 1}
+    contract:
+      arguments:
+        installation-context: {description: Explicit resolved installation context whose recurring namespace is selected., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+        platform: {description: Host scheduler adapter selector., required: true, sensitivity: public, type: {kind: enum, values: [{value: linux, description: systemd user scheduler with cron fallback.}, {value: darwin, description: launchd scheduler.}, {value: win32, description: Windows Task Scheduler.}]}}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings: [{external-side-effect: Deletes only selected installation namespaced native registrations owner records wrappers and cron sentinel entries; canonical jobs configuration logs history credentials and foreign registrations are preserved.}]
+      outputs: []
+      outcomes:
+      - {id: completed, class: success, outputs: [], effects: [native-registration-teardown, ownership-state-teardown], caller_action: Reinspect the selected namespace and require a certain empty result before removing its runtime.}
+      - {id: failed, class: error, outputs: [], effects: [native-registration-teardown, ownership-state-teardown], caller_action: Preserve the selected runtime and retry after repairing scheduler access.}
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {live: The caller holds the selected recurring lifecycle lock while teardown and its postcheck execute.}
+        effects:
+        - {id: native-registration-teardown, direct_io_ref: native-registrations, action: delete, value_source: {kind: argument, argument_ref: installation-context}, may_occur_in_outcomes: [completed, failed], confirmation_evidence: {kind: direct-io, direct_io_ref: native-registrations}, reversibility: {compensatable: A later recurring setup recreates registrations from preserved canonical jobs configuration.}}
+        - {id: ownership-state-teardown, direct_io_ref: recurring-authority-write, action: delete, value_source: {kind: argument, argument_ref: installation-context}, may_occur_in_outcomes: [completed, failed], confirmation_evidence: {kind: direct-io, direct_io_ref: recurring-authority-write}, reversibility: {compensatable: A later recurring setup recreates ownership state from preserved canonical jobs configuration.}}
+        mutation_safety: {atomicity: {per_effect_only: Scheduler entries owner records wrappers and cron sentinel changes are separate effects.}, concurrent_invocations: {serialized: The selected context lifecycle lock excludes cooperating recurring mutations and uninstall replay.}, idempotency: {idempotent: Repeating teardown converges on an empty selected namespace.}, on_uncertain_completion: {verify_then_decide: Reinspect the selected namespace and preserve runtime unless the result is certainly empty.}, partial_effects_on_failure: {possible: Scheduler removal can partially complete before a host command fails.}, rollback_on_failure: {unavailable: Preserve runtime and retry the idempotent teardown.}}
+        verification: [{method: direct-io-state, direct_io_ref: native-registrations}, {method: direct-io-state, direct_io_ref: recurring-authority-write}]
+      helpers: []
+      direct_io:
+        network: []
+        reads:
+        - {id: recurring-authority-read, medium: local-filesystem, access: read, content: Selected installation registration inventory owner records and wrapper state., formats: [json, files], sensitivity: user-private, path: <selected-installation-context>/**, path_match: glob}
+        writes:
+        - {id: recurring-authority-write, medium: local-filesystem, access: read-write, content: Selected installation registration inventory owner records and Windows wrapper state., formats: [json, files], sensitivity: user-private, path: <selected-installation-context>/**, path_match: glob}
+        - {id: native-registrations, medium: local-system, access: read-write, content: Selected installation namespaced systemd launchd Task Scheduler registrations and managed user crontab sentinel block., formats: [files, text], sensitivity: user-private}
+  recurring.source.runtime.interface.python-api:
+    version: 1
+    description: Validate immutable recurring runtime authority and render or read its state.
+    content: [runtime\.py, native\.py, records\.py]
+    uses_interfaces:
+    - {interface: install.interface.context, version: 1}
+    - {interface: launchers.interface.agent, version: 1}
+    contract:
+      arguments:
+        operation: {description: Runtime validation rendering or record operation., required: true, sensitivity: public, type: {kind: string}}
+        runtime-root: {description: Resolver-injected active runtime root., required: true, sensitivity: user-private, direct_io_ref: authority, type: {kind: dir, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read}}
+        descriptor: {description: Canonical schedule descriptor., required: true, sensitivity: user-private, direct_io_ref: authority, type: {kind: file, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read, opaque_content: true}}
+      preconditions: []
+      interaction: {mode: unattended}
+      caller_warnings: []
+      outputs:
+      - {id: result, audience: machine, description: Validated schedule or native artifact result., direct_io_ref: result, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty on success., type: {kind: string, sensitivity: user-private}}
+      outcomes:
+      - {id: completed, class: success, outputs: [result], effects: [], caller_action: Consume the validated result.}
+      execution: {state_effect: read-only, lifecycle: finite, consistency: {live: Active pointer descriptor launcher and native state are revalidated.}, verification: [{method: output-schema, output_ref: result}]}
+      helpers: []
+      direct_io:
+        network: []
+        reads: [{id: authority, medium: local-filesystem, access: read, content: Active pointer descriptor launcher jobs registrations and records., formats: [json, yaml, files], sensitivity: user-private, path: <selected-context>/**, path_match: glob}]
+        writes: [{id: result, medium: local-system, access: write, content: Validated result., formats: [text], sensitivity: user-private}]
+platform_support: {linux: true, macos: true, windows: true}
+runtime_dependencies:
+- {kind: python-package, name: PyYAML, version: any, platforms: {linux: true, macos: true, windows: true}, reason: Parses canonical recurring jobs configuration.}

@@ -43,7 +43,9 @@ def assert_default_bin_dir_matches_famulus_paths(default_bin_dir, home: Path) ->
     """
     from officina.common.famulus_paths import resolve_famulus_paths
 
-    expected = resolve_famulus_paths(platform=sys.platform, home=home).user_bin
+    expected = resolve_famulus_paths(
+        platform=sys.platform, home=home, environ=os.environ
+    ).user_bin
     result = default_bin_dir(home=home)
 
     assert result == expected
@@ -352,7 +354,7 @@ def build_minimal_managed_runtime_release(
     paths = resolve_famulus_paths(platform=sys.platform, home=home)
     source_root = repo_root or REPO_ROOT
     info = load_install_info(source_root)
-    manifest = source_root / "references" / "blueprint" / "runtime_dependencies.json"
+    manifest = source_root / "references" / "blueprint-schema" / "runtime_dependencies.json"
     platform_name = {"darwin": "macos", "win32": "windows"}.get(sys.platform, "linux")
     build_candidate_release(
         runtime_root=paths.runtime_root,

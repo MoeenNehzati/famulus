@@ -1,0 +1,50 @@
+schema_version: 6
+id: recurring
+version: 1
+maturity: experimental
+node_type: module
+description: Immutable managed recurring-task control, execution, healthcheck, and native scheduler rendering.
+gateway: {language: Python, path: __init__.py}
+content:
+- __init__\.py
+- control\.py
+- executor\.py
+- healthcheck\.py
+- jobs\.py
+- native\.py
+- records\.py
+- runtime\.py
+- state\.py
+- default_jobs\.yaml
+exports:
+  recurring.interface.control:
+    source_interface: recurring.source.control.interface.cli
+    access: {allow_all_modules: false, allowed_callers: [recurring-tasks._rtx]}
+  recurring.interface.executor:
+    source_interface: recurring.source.executor.interface.cli
+    access: {allow_all_modules: false, allowed_callers: [recurring-tasks._rtx]}
+  recurring.interface.healthcheck:
+    source_interface: recurring.source.healthcheck.interface.cli
+    access: {allow_all_modules: false, allowed_callers: [recurring-tasks._rtx]}
+  recurring.interface.context-teardown:
+    source_interface: recurring.source.runtime.interface.context-teardown
+    access: {allow_all_modules: false, allowed_callers: [install-assistant-tools._rtx]}
+namespace_exports: {}
+sources:
+  recurring.source.runtime:
+    blueprint: {base: module-root, path: blueprints/runtime.yaml}
+  recurring.source.control:
+    blueprint: {base: module-root, path: blueprints/control.yaml}
+  recurring.source.executor:
+    blueprint: {base: module-root, path: blueprints/executor.yaml}
+  recurring.source.healthcheck:
+    blueprint: {base: module-root, path: blueprints/healthcheck.yaml}
+children: {}
+authority:
+  owns_filesystem:
+  - {path: '^\$famulus-recurring-config-root/.*$', match: regex, allowed_readers: [recurring.interface.control, recurring.interface.executor, recurring.interface.healthcheck, recurring.interface.context-teardown], reason: Managed recurring control owns canonical configuration and descriptor writes.}
+  - {path: '^\$famulus-recurring-state-root/.*$', match: regex, allowed_readers: [recurring.interface.control, recurring.interface.executor, recurring.interface.healthcheck, recurring.interface.context-teardown], reason: Managed recurring execution owns logs records and Windows task wrappers.}
+  - {path: '^\$host-account-home/\.config/systemd/user/ai-.*$', match: regex, allowed_readers: [recurring.interface.control, recurring.interface.healthcheck, recurring.interface.context-teardown], reason: Managed recurring control owns installation-namespaced systemd user registrations.}
+  - {path: '^\$host-account-home/\.config/systemd/user/install-owner(?:-dev-[0-9a-f]{32})?\.json$', match: regex, allowed_readers: [recurring.interface.control, recurring.interface.context-teardown], reason: Managed recurring control owns the systemd namespace owner record.}
+  - {path: '^\$host-account-home/Library/LaunchAgents/ai-.*\.plist$', match: regex, allowed_readers: [recurring.interface.control, recurring.interface.healthcheck, recurring.interface.context-teardown], reason: Managed recurring control owns installation-namespaced launchd registrations.}
+  - {path: '^\$host-account-home/Library/LaunchAgents/install-owner(?:-dev-[0-9a-f]{32})?\.json$', match: regex, allowed_readers: [recurring.interface.control, recurring.interface.context-teardown], reason: Managed recurring control owns the launchd namespace owner record.}

@@ -24,11 +24,7 @@ If both `my-X` and `X` appear in the available skills list, ALWAYS invoke
 
 ## Milestone logging
 
-Log so progress can be followed live and, afterwards, where time went and what was wasted. Every session, main or subagent.
-
-Before starting each distinct piece of work, run `milestone "<what you are starting>" "<how the previous piece ended>"`, and `milestone --done "<how the last piece ended>"` when finished. Pass `--role "<few words naming your task>"` on every call — agents in one session share a log, and that is what tells your lines apart. It records the timestamp and location itself, so never compose a path or a timestamp yourself.
-
-Log every few tool calls. Name the question you are answering next, not the file you are opening. Do not investigate solely to have something to report. Dead ends and wasted effort are the most valuable lines; record them rather than tidying them away.
+In every main-agent and subagent session, use `milestone-logging` before the first substantive action and follow its protocol through completion. Always supply `--role` when recording progress. If the skill's recording operation fails, report that exact failure once and continue; do not fabricate a record.
 
 ## Status labels
 
@@ -39,4 +35,3 @@ Label claims, steps, or routes when useful:
 - `Gap` — a step is unjustified or incorrect as stated.
 - `Needs hypothesis` — may work, but an assumption hasn't been checked.
 - `I don't know` — truth value genuinely unknown.
-

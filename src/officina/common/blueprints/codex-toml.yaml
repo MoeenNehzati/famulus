@@ -1,8 +1,14 @@
 content:
 - codex_toml\.py
-dependencies: []
-description: Defines the canonical Codex user-configuration filename without performing
-  file I/O.
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/toml-io.yaml
+  reason: Delegates all TOML parsing, structure-preserving transformation, inspection, and atomic application.
+  source: common.source.toml-io
+  version: 2
+description: Provides the canonical Codex configuration path and a thin typed facade
+  over shared syntax-preserving writable-root planning, inspection, and atomic application.
 gateway:
   language: Python
   path: codex_toml.py
@@ -11,64 +17,182 @@ interfaces:
   common.source.codex-toml.interface.python-api:
     content:
     - codex_toml\.py
-    uses_interfaces: []
+    uses_interfaces:
+    - interface: common.interface.toml-io
+      version: 2
     contract:
-      arguments: {}
-      caller_warnings: []
+      arguments:
+        base:
+          description: Runtime base argument accepted by config_path, config_state,
+            plan_access_roots, plan_access_removal, and inspect_access_roots.
+          direct_io_ref: codex-config
+          required: false
+          sensitivity: user-private
+          type:
+            access: read-write
+            kind: dir
+            must_exist: false
+            relative_to: caller-cwd
+            sensitivity: user-private
+            syntax: literal
+        begin:
+          description: Runtime begin keyword accepted by plan_access_roots and inspect_access_roots.
+          required: false
+          sensitivity: public
+          type: {kind: string}
+        end:
+          description: Runtime end keyword accepted by plan_access_roots and inspect_access_roots.
+          required: false
+          sensitivity: public
+          type: {kind: string}
+        ownership:
+          description: Runtime Mapping[str, object] keyword accepted by plan_access_removal.
+          required: false
+          sensitivity: user-private
+          type:
+            description: Schema v6 has no mapping or Python-object argument type;
+              kind string is a schema placeholder and does not assert that the runtime value is str.
+            kind: string
+            sensitivity: user-private
+        plan:
+          description: Runtime ManagedArrayPlan argument accepted by apply_access_plan.
+          required: false
+          sensitivity: user-private
+          type:
+            description: Schema v6 has no Python-object argument type; kind string
+              is a schema placeholder and does not assert that the runtime value is str.
+            kind: string
+            sensitivity: user-private
+        prior:
+          description: Runtime Mapping[str, object] or None keyword accepted by plan_access_roots.
+          required: false
+          sensitivity: user-private
+          type:
+            description: Schema v6 has no mapping, union, or Python-object argument
+              type; kind string is a schema placeholder and does not assert that the runtime value is str.
+            kind: string
+            sensitivity: user-private
+        required:
+          description: Runtime list[str] argument accepted by plan_access_roots.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: list
+            element_type: {kind: string, sensitivity: user-private}
+            sensitivity: user-private
+      caller_warnings:
+      - external-side-effect: This source exposes several Python callables through one
+          aggregate blueprint interface; schema v6 cannot express per-callable requiredness,
+          so each optional argument applies only to callables whose real signature names it.
+      - external-side-effect: Configuration parsing, managed-block validation, and
+          plan publication failures raise the stable CodexTomlError facade exception;
+          callers need not import the underlying TOML-boundary error type.
+      - external-side-effect: Applying a plan rejects a mismatch observed at the final comparison,
+          but comparison and publication are not a portable byte compare-and-swap; a
+          noncooperating already-open writer can race them, requiring post-state verification
+          and recovery.
       direct_io:
         network: []
-        reads: []
+        reads:
+        - access: read
+          content: Codex user TOML bytes and file mode
+          formats: [toml]
+          id: codex-config
+          medium: local-filesystem
+          path: <base>/config.toml
+          sensitivity: user-private
         writes:
         - access: write
-          content: Python return value
+          content: Filename, path, state, immutable plan, or inspection result
           formats:
           - string
+          - path
+          - python-object
           id: return-value
           medium: local-system
-          sensitivity: public
+          sensitivity: user-private
+        - access: read-write
+          content: Structure-preserved Codex user TOML
+          formats: [toml]
+          id: codex-config-write
+          medium: local-filesystem
+          path: <base>/config.toml
+          sensitivity: user-private
       execution:
         consistency:
-          snapshot: The constant is fixed for this interface version.
+          live: Planning and inspection read current state; apply compares the recorded pre-state
+            immediately before publication and callers verify the resulting post-state.
+        effects:
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: codex-config-write
+            kind: direct-io
+          direct_io_ref: codex-config-write
+          id: codex-config-state
+          may_occur_in_outcomes: [completed]
+          reversibility:
+            compensatable: A caller can apply a separately planned identity-proven removal.
+          value_source:
+            argument_ref: plan
+            kind: argument
         lifecycle: finite
-        state_effect: read-only
+        mutation_safety:
+          atomicity:
+            atomic: Apply publishes a complete replacement or removal rather than a partial file,
+              but the preceding byte and mode comparison is a separate portable step.
+          concurrent_invocations:
+            unsafe: Confined handles reject path and symlink swaps, but a noncooperating
+              already-open writer can race final comparison and publication; callers must
+              verify post-state and recover rather than assume preservation of every external edit.
+          idempotency:
+            idempotent: Replanning and applying the same required roots preserves the same managed values.
+          on_uncertain_completion:
+            verify_then_decide: Inspect the exact post-state content identity before retrying or settling a journaled transition.
+          partial_effects_on_failure:
+            possible: Replacement or removal can be published before a subsequent directory-sync failure reports uncertain completion.
+          rollback_on_failure:
+            unavailable: Callers retain ownership metadata and must plan a separate identity-proven removal.
+        state_effect: mutating
         verification:
-        - method: output-schema
-          output_ref: filename
+        - direct_io_ref: codex-config-write
+          method: direct-io-state
       helpers: []
       interaction:
         mode: unattended
       outcomes:
-      - caller_action: Join the filename to the caller-selected Codex configuration
-          directory.
+      - caller_action: Consume the returned value or continue after a successful exact-state application.
         class: success
-        effects: []
+        effects: [codex-config-state]
         id: completed
         outputs:
-        - filename
+        - result
       outputs:
       - audience: machine
         cardinality:
           maximum: 1
-          minimum: 1
-        description: The literal Codex configuration filename config.toml.
+          minimum: 0
+        description: Runtime return is str, Path, TomlFileState, ManagedArrayPlan,
+          ManagedArrayInspection, or None according to the selected callable.
         direct_io_ref: return-value
-        empty: Never empty.
-        id: filename
+        empty: Apply returns no value after a successful transition.
+        id: result
         ordering: stable
         pagination:
           kind: none
         truncation:
           kind: none
         type:
-          format:
-            named: literal
+          description: Schema v6 has no union, Python-object, or void output type;
+            kind string is a schema placeholder and does not assert that every runtime result is str.
           kind: string
-          sensitivity: public
+          sensitivity: user-private
       preconditions: []
     description: Provides Codex TOML operations to Python callers.
-    version: 1
+    version: 2
 node_type: behavioral_source
 schema_version: 6
-uses_interfaces: []
-version: 1
+uses_interfaces:
+- interface: common.interface.toml-io
+  version: 2
+version: 2
 maturity: stable

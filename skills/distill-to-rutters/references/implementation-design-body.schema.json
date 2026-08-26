@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "implementation-design-body.schema.json",
+  "title": "Public Interface Implementation Design Contract Body",
+  "type": "object",
+  "required": ["public_interface_design", "files", "verification_commands"],
+  "additionalProperties": false,
+  "properties": {
+    "public_interface_design": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["capability", "interface", "version", "status", "evidence"],
+        "additionalProperties": false,
+        "properties": {
+          "capability": {"type": "string", "minLength": 1},
+          "interface": {"type": "string", "minLength": 1},
+          "version": {"type": "integer", "minimum": 1},
+          "status": {"enum": ["available", "unavailable"]},
+          "evidence": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "responsibility"],
+        "additionalProperties": false,
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "responsibility": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "verification_commands": {"type": "array", "items": {"type": "string", "minLength": 1}}
+  }
+}

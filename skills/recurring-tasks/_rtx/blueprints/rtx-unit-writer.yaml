@@ -3,30 +3,11 @@ content:
 dependencies:
 - blueprint:
     base: module-root
-    path: blueprints/rtx-jobs-config.yaml
-  reason: Imports the shared validated jobs configuration loader.
-  source: recurring-tasks._rtx.source.rtx-jobs-config
+    path: blueprints/rtx-managed-control.yaml
+  reason: Delegates scheduler synchronization through the shared managed-runtime command helper.
+  source: recurring-tasks._rtx.source.rtx-managed-control
   version: 1
-- blueprint:
-    base: module-root
-    path: blueprints/jobs-config.yaml
-  reason: Reads the shared jobs configuration while generating scheduler entries.
-  source: recurring-tasks._rtx.source.jobs-config
-  version: 1
-- blueprint:
-    base: module-root
-    path: blueprints/rtx-init.yaml
-  reason: Loads Python package support from _rtx/__init__.py.
-  source: recurring-tasks._rtx.source.rtx-init
-  version: 1
-- blueprint:
-    base: module-root
-    path: blueprints/rtx-schedule-backend-init.yaml
-  reason: Imports Python source from _rtx/_schedule_backend/__init__.py, _rtx/_schedule_backend/_linux_backend.py.
-  source: recurring-tasks._rtx.source.rtx-schedule-backend-init
-  version: 1
-description: Reconciles jobs.yaml with native per-user scheduler entries for the current
-  host.
+description: Delegates recurring scheduler synchronization to the canonical managed runtime.
 gateway:
   language: Python
   path: _unit_writer.py
@@ -35,26 +16,13 @@ interfaces:
   recurring-tasks._rtx.source.rtx-unit-writer.interface.scripts-sync:
     content:
     - _unit_writer\.py
-    uses_interfaces: []
+    uses_interfaces:
+    - interface: recurring.interface.control
+      version: 1
     contract:
-      arguments:
-        jobs-file:
-          default: jobs.yaml
-          description: Jobs YAML file used as the reconciliation source
-          required: false
-          sensitivity: user-private
-          type:
-            kind: string
-        unit-dir:
-          default: ''
-          description: Optional scheduler-entry directory override that suppresses
-            live scheduler commands
-          required: false
-          sensitivity: user-private
-          type:
-            kind: string
+      arguments: {}
       caller_warnings:
-      - external-side-effect: Live mode creates and removes native scheduler entries
+      - external-side-effect: Creates and removes native scheduler entries
           to match enabled jobs.
       direct_io:
         network: []
@@ -149,9 +117,9 @@ interfaces:
         cardinality:
           maximum: null
           minimum: 0
-        description: Per-job synchronization messages and final live-mode confirmation
+        description: Per-job synchronization messages and final confirmation
         direct_io_ref: write-2
-        empty: An empty alternate jobs file in non-live mode may print no lines.
+        empty: Never empty on success because a final confirmation is printed.
         id: result
         ordering: stable
         pagination:
@@ -166,12 +134,7 @@ interfaces:
       entry: Interface
       kind: process
       patterns:
-      - allowed_flags:
-        - --unit-dir
-        - --jobs-file
-        flag_patterns:
-          --jobs-file: ^.+$
-          --unit-dir: ^.+$
+      - allowed_flags: []
         max_positionals: 0
         min_positionals: 0
         name: owner
@@ -240,6 +203,8 @@ runtime_dependencies:
   reason: Provides the per-user scheduler that loads generated entries.
   version: any
 schema_version: 6
-uses_interfaces: []
+uses_interfaces:
+- interface: recurring.interface.control
+  version: 1
 version: 1
 maturity: experimental

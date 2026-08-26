@@ -226,9 +226,9 @@ def test_status_payload_and_text_expose_structured_drift_and_worklist(
     )
     dependency_delta = checker.CertificateDependencyDelta(
         change="modified",
-        relation="uses-export",
-        target="provider.source.gateway",
-        interface="provider.interface.run",
+        relation="certified-under",
+        target="skill-certifier.source.audit-interface",
+        interface="skill-certifier.source.audit-interface.interface.audit",
         certified={"interface_hash": "sha256:" + "c" * 64},
         current={"interface_hash": "sha256:" + "d" * 64},
     )
@@ -279,7 +279,7 @@ def test_status_payload_and_text_expose_structured_drift_and_worklist(
     }
     assert node["facet_drift"][0]["dependencies"][0][
         "interface"
-    ] == "provider.interface.run"
+    ] == "skill-certifier.source.audit-interface.interface.audit"
     assert node["facet_drift"][0]["dependencies"][1]["target"] == (
         "contract.source.owner"
     )
@@ -290,7 +290,10 @@ def test_status_payload_and_text_expose_structured_drift_and_worklist(
     assert payload["skills"][0]["stale_worklist"] == payload["stale_worklist"]
     assert text.index("provider.source.gateway") < text.index("demo.source.gateway")
     assert "modified input skills/demo/worker.py" in text
-    assert "modified interface dependency provider.interface.run" in text
+    assert (
+        "modified interface dependency "
+        "skill-certifier.source.audit-interface.interface.audit"
+    ) in text
     assert (
         "modified dependency references-cross-owner-contract "
         "contract.source.owner"
@@ -625,7 +628,7 @@ def test_drift_derivation_delegates_schema_selection_to_canonical_owner(
 
     assert result[0] == "graph"
     expected_schema_root = (
-        tmp_path.resolve() / "references" / "blueprint"
+        tmp_path.resolve() / "references" / "blueprint-schema"
         if schema_version == 6
         else None
     )
@@ -672,7 +675,7 @@ def test_public_v6_drift_uses_live_schema_root(
 
     assert result.graph == "graph"
     assert observed[0]["schema_root"] == (
-        tmp_path / "references" / "blueprint"
+        tmp_path / "references" / "blueprint-schema"
     )
 
 
@@ -786,7 +789,7 @@ def test_installed_sources_ignore_codex_plugin_cache_without_active_registry(
         "stale-skill",
     )
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
-    monkeypatch.setenv("CLAUDE_HOME", str(claude_home))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_home))
 
     sources = checker.observed_skill_sources()
 
@@ -821,7 +824,7 @@ def test_installed_sources_use_only_registry_named_plugin_versions(
         },
     )
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
-    monkeypatch.setenv("CLAUDE_HOME", str(claude_home))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_home))
 
     sources = checker.observed_skill_sources()
 
@@ -881,7 +884,7 @@ def test_active_plugin_with_malformed_version_metadata_fails_with_remediation(
         },
     )
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
-    monkeypatch.setenv("CLAUDE_HOME", str(claude_home))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_home))
 
     with pytest.raises(checker.SkillSourceDiscoveryError) as captured:
         checker.observed_skill_sources()
@@ -912,7 +915,7 @@ def test_empty_active_plugin_graph_uses_schema_neutral_diagnostic(
         "load_repository_blueprint_graph",
         lambda *_args, **_kwargs: SimpleNamespace(nodes={}),
     )
-    args = SimpleNamespace(skills_root=None, repo_root=checker.REPO_ROOT)
+    args = SimpleNamespace(skills_root=None, repo_root=None)
 
     with pytest.raises(checker.DriftCheckError) as captured:
         checker.requested_skill_sources(args)
@@ -920,6 +923,29 @@ def test_empty_active_plugin_graph_uses_schema_neutral_diagnostic(
     message = str(captured.value)
     assert "installed blueprint graph has no registered nodes" in message
     assert "v4 nodes" not in message
+
+
+def test_explicit_repository_root_bypasses_installed_source_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        checker,
+        "observed_skill_sources",
+        lambda: (_ for _ in ()).throw(
+            AssertionError("explicit repository root reached installed discovery")
+        ),
+    )
+    args = SimpleNamespace(skills_root=None, repo_root=checker.REPO_ROOT)
+
+    sources = checker.requested_skill_sources(args)
+
+    assert sources == [
+        checker.SkillSource(
+            source="override",
+            package_root=checker.REPO_ROOT,
+            skills_root=checker.REPO_ROOT / "skills",
+        )
+    ]
 
 
 @pytest.mark.parametrize(
@@ -955,7 +981,7 @@ def test_unsupported_active_plugin_never_reaches_certification_derivation(
         },
     )
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
-    monkeypatch.setenv("CLAUDE_HOME", str(claude_home))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_home))
     monkeypatch.setattr(
         checker,
         "derive_repository_certification_state",
@@ -1006,7 +1032,7 @@ def test_active_v4_plugin_is_rejected_after_canonical_v5_cutover(
         },
     )
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
-    monkeypatch.setenv("CLAUDE_HOME", str(claude_home))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_home))
 
     exit_code = checker.main(["compute-hashes", "--json"])
 
@@ -1029,7 +1055,7 @@ def test_malformed_plugin_registry_fails_with_remediation(
         {"version": 1, "plugins": {}},
     )
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
-    monkeypatch.setenv("CLAUDE_HOME", str(claude_home))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_home))
 
     exit_code = checker.main(["status", "--json"])
 

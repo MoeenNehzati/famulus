@@ -10,14 +10,14 @@ description: >-
 Catalog: assistant-development; topics: assistant-assurance, assistant-architecture; visibility: listed
 Activation: user-request, skill-workflow; persistent modifier: no
 
-Skill Version: 4
+Skill Version: 5
 
 Uses Interfaces:
 - `skill-certifier.source.gateway -> skill-certifier._rtx.interface.certify@2`
 - `skill-certifier.source.gateway -> skill-certifier.source.audit-behavioral-source.interface.audit@1`
 - `skill-certifier.source.gateway -> skill-certifier.source.audit-interface.interface.audit@1`
 - `skill-certifier.source.gateway -> skill-certifier.source.audit-module.interface.audit@1`
-- `skill-certifier.source.gateway -> skill-drift._rtx.interface.drift-status@2`
+- `skill-certifier.source.gateway -> skill-drift._rtx.interface.drift-status@3`
 
 Public Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
@@ -28,13 +28,14 @@ stable. Then:
 
 1. Invoke `skill-drift._rtx.interface.drift-status` in JSON mode. Use its stale
    worklist to identify each exact changed file, interface, or dependency cause.
-2. Process only that worklist dependency-first. Interface facets are leaves
-   inside stale source nodes, not separate worklist nodes. For each stale
-   interface facet named by drift, use `audit-interface`; changed files are
-   evidence for their owning facet, not separate audit subjects.
-3. After affected leaf interfaces pass, use `audit-behavioral-source` only for
-   stale sources and affected source ancestors. Use `audit-module` only for
-   stale modules and affected module ancestors.
+2. Process only that worklist dependency-first and select audits from each exact
+   cause. A `certification-basis-mismatch` is unclassified global drift, so
+   repeat all required semantic review. With a matching basis, a sole mechanical
+   certify `certified-under` cause requires no semantic audit.
+3. For remaining semantic causes, interface facets are leaves inside stale source
+   nodes; use `audit-interface` for affected facets, then
+   `audit-behavioral-source` and `audit-module` only for affected sources and
+   module ancestors. Changed files belong to their owning facet.
 4. When an audit returns `needs-context`, read the smallest additional evidence
    or context scope it names and repeat that audit. Do not widen otherwise.
    Stop on `reject` or an unresolved evidence gap.
@@ -43,11 +44,12 @@ stable. Then:
    currentness, skips current nodes, route-smokes the stale worklist, and issues
    stale nodes dependency-first.
 
-Reuse only unchanged facet evidence whose claim is authenticated by the latest
-valid signed certificate and still matches the canonical facet state. A
-remainder-facet cause belongs to `audit-behavioral-source`; it does not create a
-remainder interface. A non-facet source or module cause starts at that owning
-audit rather than forcing unrelated leaf audits.
+With a matching basis, reuse authenticated semantic evidence when its facet
+local hash or module node hash, input manifest, ordinary dependencies, and
+governing semantic `certified-under` claim still match. The mechanical certify
+claim remains required for currentness and issuance but does not by itself
+require semantic re-audit. A remainder-facet cause belongs to
+`audit-behavioral-source`; it does not create a remainder interface.
 
 Schema validity is necessary but does not establish semantic accuracy. The
 audit interfaces own semantic judgment. The mechanical interface invokes the

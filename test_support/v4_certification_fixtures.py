@@ -40,7 +40,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_SCHEMA_ROOT = (
     PROJECT_ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v4"
 )
-SOURCE_CERTIFICATION_ROOT = PROJECT_ROOT / "references" / "certification"
+SOURCE_CERTIFICATION_ROOT = PROJECT_ROOT / "references" / "certification-policy"
 CHECKS = expected_certifier_checks(expected_schema_version=4)
 
 
@@ -383,7 +383,7 @@ def materialize_v4_repository(
         if root.is_dir()
         else GitTestRepository.create(root)
     )
-    schema_root = root / "references" / "blueprint"
+    schema_root = root / "references" / "blueprint-schema"
     shutil.copytree(SOURCE_SCHEMA_ROOT, schema_root)
     certification_root = root / "references" / "certification"
     certification_root.mkdir(parents=True)
@@ -394,6 +394,16 @@ def materialize_v4_repository(
     shutil.copy2(
         SOURCE_CERTIFICATION_ROOT / "node-hash-policy.schema.json",
         certification_root / "node-hash-policy.schema.json",
+    )
+    current_policy_root = root / "references" / "certification-policy"
+    current_policy_root.mkdir(parents=True)
+    shutil.copy2(
+        SOURCE_CERTIFICATION_ROOT / "node-hash-policy.yaml",
+        current_policy_root / "node-hash-policy.yaml",
+    )
+    shutil.copy2(
+        SOURCE_CERTIFICATION_ROOT / "node-hash-policy.schema.json",
+        current_policy_root / "node-hash-policy.schema.json",
     )
     _write_module(
         root,
@@ -427,7 +437,7 @@ def materialize_v4_repository(
     manifest.parent.mkdir(parents=True)
     manifest.write_text(
         "[\n"
-        '  "references/blueprint/**/*.schema.json",\n'
+        '  "references/blueprint-schema/**/*.schema.json",\n'
         '  "references/certification/node-hash-policy.yaml",\n'
         '  "references/certification/node-hash-policy.schema.json",\n'
         '  "skills/skill-certifier/SKILL.md",\n'
@@ -498,7 +508,7 @@ def create_v4_repository(
         computes: "Hashes the fixture certification basis."
     """
     commit = materialize_v4_repository(root, extra_modules=extra_modules)
-    schema_root = root / "references" / "blueprint"
+    schema_root = root / "references" / "blueprint-schema"
     graph = load_repository_blueprint_graph(
         root,
         schema_root=schema_root,

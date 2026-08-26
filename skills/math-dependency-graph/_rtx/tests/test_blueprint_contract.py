@@ -121,7 +121,7 @@ def test_inventory_voyage_dispenser_declares_its_exact_dependencies() -> None:
         (entry["source"], entry["version"])
         for entry in blueprint["dependencies"]
     ] == [
-        ("common.source.atomic-files", 1),
+        ("common.source.atomic-files", 2),
         ("rutter.source.engine", 3),
         ("rutter.source.model", 2),
         ("rutter.source.dispenser", 5),
@@ -132,7 +132,7 @@ def test_inventory_voyage_dispenser_declares_its_exact_dependencies() -> None:
         ),
     ]
     expected_interfaces = [
-        {"interface": "common.interface.atomic-files", "version": 1},
+        {"interface": "common.interface.atomic-files", "version": 2},
         {"interface": "rutter.interface.bound-operations", "version": 6},
         {"interface": "rutter.interface.model", "version": 2},
         {"interface": "rutter.interface.dispenser", "version": 5},

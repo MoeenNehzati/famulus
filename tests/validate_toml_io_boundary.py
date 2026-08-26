@@ -131,3 +131,30 @@ def test_common_toml_helper_module_is_exempt(tmp_path: Path) -> None:
         rel="src/officina/common/codex_toml.py",
     )
     assert validate(tmp_path) == []
+
+
+def test_path_escaped_from_toml_boundary_cannot_be_read_directly(tmp_path: Path) -> None:
+    _write_runtime_file(
+        tmp_path,
+        "from officina.common import toml_io\n"
+        'path = toml_io.open(base, "config.toml").path\n'
+        "path.read_bytes()\n",
+    )
+    errors = validate(tmp_path)
+    assert any("escaped toml_io path" in error for error in errors)
+
+
+def test_direct_tomllib_use_is_rejected_without_visible_filename(tmp_path: Path) -> None:
+    _write_runtime_file(tmp_path, "import tomllib\ntomllib.loads(text)\n")
+    errors = validate(tmp_path)
+    assert any("tomllib" in error for error in errors)
+
+
+def test_direct_toml_structure_rewrite_is_rejected(tmp_path: Path) -> None:
+    _write_runtime_file(
+        tmp_path,
+        "import re\n"
+        "text = re.sub(r'(?m)^writable_roots = .*$', replacement, text)\n",
+    )
+    errors = validate(tmp_path)
+    assert any("TOML structure rewriting" in error for error in errors)

@@ -1,0 +1,76 @@
+authority:
+  owns_filesystem: []
+  suggested_permissions:
+    bash: []
+    network: []
+children:
+  _rtx: {}
+content:
+- (?:SKILL\.md|instructions/(?:breakdown|assign\-rutters|extract\-evolutions|validate\-logic|design\-implementation|implement|verify|finalize)\.md|references/(?:artifact\-envelope|breakdown\-body|assignment\-body|graph\-body|logic\-validation\-body|implementation\-design\-body|implementation\-report\-body|entrypoint\-body|verification\-body)\.schema\.json|tests/(?:_scenario_oracle\.py|test_(?:artifact_contract|distill_to_rutters_routing|enforcement_contract|distillation_scenarios|runtime_compatibility)\.py|fixtures/(?:context\-closure/(?:root|chain|cycle|generated\-normative|conflict)\.md|enforcement/(?:good|missing\-validator|automated\-judgment|unowned\-coordinator|unavailable\-capability)\.md|scenarios/(?:inseparable/(?:source|good\-contract|missing\-validator)\.md|inseparable/oracle\.yaml|multipart/(?:source|good\-contract|missing\-join)\.md|multipart/oracle\.yaml|judgment/(?:source|good\-contract|automated\-judgment)\.md|judgment/oracle\.yaml))))
+description: Routes a review-gated Markdown-to-Rutter distillation through separate
+  analysis, authoring, implementation, verification, and Compass-entrypoint interfaces.
+discovery:
+  mechanism: skill
+  catalog:
+    domain: assistant-development
+    topics:
+    - assistant-authoring
+    - assistant-architecture
+    - assistant-assurance
+    - repository-workflow
+    visibility: listed
+  activated_by:
+  - user-request
+  - skill-workflow
+  persistent_modifier: false
+exports:
+  distill-to-rutters.interface.default:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: distill-to-rutters.source.gateway.interface.default
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: distill-to-rutters
+namespace_exports:
+  _rtx:
+    version: 1
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - distill-to-rutters
+    surface:
+      only:
+        distill-to-rutters._rtx.interface.validate-and-route: 1
+    interface_access:
+      distill-to-rutters._rtx.interface.validate-and-route:
+        allow_all_modules: false
+        allowed_callers:
+        - distill-to-rutters
+node_type: module
+schema_version: 6
+sources:
+  distill-to-rutters.source.assign-rutters:
+    blueprint: {base: module-root, path: blueprints/instructions-assign-rutters.yaml}
+  distill-to-rutters.source.breakdown:
+    blueprint: {base: module-root, path: blueprints/instructions-breakdown.yaml}
+  distill-to-rutters.source.design-implementation:
+    blueprint: {base: module-root, path: blueprints/instructions-design-implementation.yaml}
+  distill-to-rutters.source.extract-evolutions:
+    blueprint: {base: module-root, path: blueprints/instructions-extract-evolutions.yaml}
+  distill-to-rutters.source.finalize:
+    blueprint: {base: module-root, path: blueprints/instructions-finalize.yaml}
+  distill-to-rutters.source.gateway:
+    blueprint: {base: module-root, path: blueprints/gateway.yaml}
+  distill-to-rutters.source.implement:
+    blueprint: {base: module-root, path: blueprints/instructions-implement.yaml}
+  distill-to-rutters.source.validate-logic:
+    blueprint: {base: module-root, path: blueprints/instructions-validate-logic.yaml}
+  distill-to-rutters.source.verify:
+    blueprint: {base: module-root, path: blueprints/instructions-verify.yaml}
+version: 1
+maturity: experimental
+installation_tier: core
+personal_preference:
+  applies: false

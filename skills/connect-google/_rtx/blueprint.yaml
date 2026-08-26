@@ -5,7 +5,7 @@ authority:
     - connect-google._rtx.interface.connect-services
     - connect-google._rtx.interface.client-status
     - email-client._rtx.interface.accounts-setup-oauth
-    - g-calendar._rtx.interface.setup-oauth
+    - online-calendar._rtx.interface.setup-oauth
     match: exact
     path: platform Famulus config root (see credentials.interface.google) /
       connect-google/client.json

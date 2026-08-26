@@ -1,0 +1,217 @@
+content:
+- development_activation\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/context.yaml
+  reason: Activates only a previously resolved and boundary-validated development context.
+  source: install.source.context
+  version: 1
+description: Generates schema-2 clone-local famulus-env bootstraps that carry selected_home,
+  reads legacy schema-1 descriptors compatibly, constructs an inherited but selector-clean
+  interactive environment, verifies managed command origin, and implements exec and
+  all-or-nothing shell export.
+gateway:
+  language: Python
+  path: development_activation.py
+id: install.source.development-activation
+interfaces:
+  install.source.development-activation.interface.python-api:
+    content:
+    - development_activation\.py
+    uses_interfaces:
+    - interface: install.source.context.interface.python-api
+      version: 1
+    contract:
+      arguments:
+        operation:
+          description: Activation operation to perform.
+          required: true
+          sensitivity: public
+          type:
+            kind: enum
+            values:
+            - value: build-environment
+              description: Build inherited interactive environment overrides.
+            - value: verify-commands
+              description: Verify every managed command at the clone-local command origin.
+            - value: install-activation
+              description: Generate famulus-env bootstraps and their descriptor.
+            - value: exec-or-export
+              description: Execute a command or emit all-or-nothing shell assignments.
+        development-root:
+          description: Absolute checkout selected by a validated InstallationContext.
+          required: true
+          sensitivity: user-private
+          direct_io_ref: development-directory
+          type:
+            kind: dir
+            syntax: literal
+            relative_to: caller-cwd
+            must_exist: true
+            access: read-write
+        platform:
+          description: Host platform identifier used for activation and stable-root validation.
+          required: true
+          sensitivity: public
+          type:
+            kind: string
+        home:
+          description: Absolute normal home used to derive protected standard roots.
+          required: true
+          sensitivity: user-private
+          direct_io_ref: home-directory
+          type:
+            kind: dir
+            syntax: literal
+            relative_to: caller-cwd
+            must_exist: false
+            access: read
+        environ:
+          description: Explicit environment mapping used only to derive stable-root
+            canaries and deterministic activation selectors.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            description: Read-only string-to-string mapping.
+      preconditions:
+      - id: validated-development-context
+        description: The context must be development mode and pass real-path containment.
+        check:
+          kind: direct-io
+          direct_io_ref: development-directory
+          predicate: exists
+        unmet_outcome: unsafe-context
+        caller_action: Resolve and validate the development context before activation.
+      - id: stable-root-canaries
+        description: The clone-local .famulus tree must not overlap standard Famulus
+          roots or normal assistant homes derived from explicit inputs.
+        check:
+          kind: argument
+          argument_ref: home
+          predicate: present
+        unmet_outcome: unsafe-context
+        caller_action: Move the checkout outside normal assistant and standard Famulus roots.
+      interaction:
+        mode: unattended
+      caller_warnings:
+      - external-side-effect: exec replaces the current process; isolated homes are not a security sandbox.
+      outputs:
+      - id: result
+        audience: machine
+        description: Environment mapping, verified command map, bootstrap path, export text, or process exit.
+        direct_io_ref: return-value
+        cardinality:
+          minimum: 1
+          maximum: 1
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        empty: Export output is complete on success and empty on failure.
+        type:
+          kind: string
+          sensitivity: user-private
+          description: Operation-specific activation result.
+      outcomes:
+      - id: completed
+        class: success
+        outputs:
+        - result
+        effects:
+        - activation-files
+        caller_action: Execute through or evaluate the returned trusted activation surface.
+      - id: missing-runtime-or-command
+        class: error
+        outputs: []
+        effects: []
+        caller_action: Repair the selected development installation; do not fall back to stable commands.
+      - id: unsafe-context
+        class: refusal
+        outputs: []
+        effects: []
+        caller_action: Remove path escapes and resolve the context again.
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency:
+          live: Interactive exec inherits the current environment at invocation time;
+            descriptors contain only deterministic context facts.
+        effects:
+        - id: activation-files
+          direct_io_ref: activation-bootstrap
+          action: update
+          value_source:
+            kind: direct-io
+            direct_io_ref: activation-bootstrap
+          may_occur_in_outcomes:
+          - completed
+          confirmation_evidence:
+            kind: direct-io
+            direct_io_ref: activation-bootstrap
+          reversibility:
+            compensatable: The owning installer manifest removes the generated .famulus tree.
+        mutation_safety:
+          atomicity:
+            per_effect_only: Each generated activation artifact is written completely before use.
+          concurrent_invocations:
+            unsafe: Installation apply owns serialization of activation publication.
+          idempotency:
+            idempotent: Reinstalling the same context rewrites equivalent activation artifacts.
+          on_uncertain_completion:
+            retry: Re-run the owning idempotent apply operation.
+          partial_effects_on_failure:
+            possible: A descriptor may exist before both platform bootstraps are written.
+          rollback_on_failure:
+            available: Re-run apply or remove the manifested .famulus context.
+        verification:
+        - method: direct-io-state
+          direct_io_ref: activation-bootstrap
+      helpers: []
+      direct_io:
+        reads:
+        - id: development-directory
+          medium: local-filesystem
+          access: read
+          content: Checkout and .famulus real-path metadata.
+          formats:
+          - path
+          sensitivity: user-private
+          path: <development-root>
+        - id: home-directory
+          medium: local-filesystem
+          access: read
+          content: Normal user home path and real-path metadata used as a protected canary.
+          formats:
+          - path
+          sensitivity: user-private
+          path: <home>
+        writes:
+        - id: activation-bootstrap
+          medium: local-filesystem
+          access: read-write
+          content: Generated famulus-env, famulus-env.cmd, and schema-2 activation descriptor containing selected_home.
+          formats:
+          - text
+          - json
+          sensitivity: user-private
+          path: <development-root>/.famulus
+        - id: return-value
+          medium: local-system
+          access: write
+          content: Python return value or process environment.
+          formats:
+          - text
+          sensitivity: user-private
+        network: []
+    description: Provides clone-local activation generation, verification, exec, and export.
+    version: 1
+node_type: behavioral_source
+schema_version: 6
+uses_interfaces:
+- interface: install.source.context.interface.python-api
+  version: 1
+version: 1
+maturity: stable

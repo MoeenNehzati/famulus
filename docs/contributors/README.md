@@ -18,19 +18,25 @@ The skill system is built around a small set of explicit authored surfaces:
 Start with these architecture and contract references:
 
 - [docs/officina/skill-blueprints.md](../officina/skill-blueprints.md)
-- [references/blueprint/schema.json](../../references/blueprint/schema.json)
-- [references/blueprint/template.yaml](../../references/blueprint/template.yaml)
+- [references/blueprint-schema/schema.json](../../references/blueprint-schema/schema.json)
+- [references/blueprint-schema/template.yaml](../../references/blueprint-schema/template.yaml)
 - Layered [node standards](../../references/node-standards/node.standard.yaml), queried through `refactor-node`
 
 ## How Skills Stay in Sync
 
 The module and contained-source blueprints are the canonical machine-readable
 graph. Generated `SKILL.md` blocks and repository indexes are refreshed through
-[skills/skill-maker/_rtx/_blueprint_syncer.py](../../skills/skill-maker/_rtx/_blueprint_syncer.py):
+`skill-maker`'s exported sync interface. Check whether they are current:
 
 ```bash
-python3 skills/skill-maker/_rtx/_blueprint_syncer.py
+dispatcher --caller-skill skill-certifier \
+  skill-maker._rtx.interface.sync-blueprints --check
 ```
+
+Run it without `--check` only when intentionally refreshing the generated
+artifacts. Do not reach past the interface to the file behind it: the syncer is
+private `_rtx` content, and a bare `python3` runs outside the managed runtime,
+so importing `officina` fails before the syncer does anything.
 
 Cross-skill script calls should go through the dispatcher boundary, not direct script reach-through:
 
@@ -58,6 +64,7 @@ These skills own assistant modules, standards, and their lifecycle.
 <!-- BEGIN AUTO-GENERATED DOCS: assistant-development -->
 > Generated from live blueprints. Do not edit this block by hand.
 
+- `distill-to-rutters` — An existing Markdown skill instruction should be transformed into transparent Rutters and an operable Voyage dispenser
 - `hook-maker` — Design cross-host assistant hooks with one purpose and per-host bindings
 - `refactor-node` — Refactor whole repository nodes or owned sub-scopes by gateway language
 - `regenerate-blueprints` — An existing skill blueprint needs regeneration, whether requested directly or required by another skill
@@ -88,4 +95,4 @@ For task-oriented routing, see the
 - [docs/officina/scaffolding/README.md](../officina/scaffolding/README.md) — long-form explanation of the scaffolding layer and why it exists
 - [docs/contributors/documentation-system.md](documentation-system.md) — how doc generation and doc validation work
 - [docs/testing.md](../testing.md) — test commands, suite policy, hooks, CI, and parallel execution
-- [references/blueprint/README.md](../../references/blueprint/README.md) — blueprint reference index
+- [references/blueprint-schema/README.md](../../references/blueprint-schema/README.md) — blueprint reference index

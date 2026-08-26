@@ -32,7 +32,7 @@ def _write_skill(
     activated_by: list[str] | None = None,
     persistent_modifier: bool = False,
 ) -> None:
-    config_path = root / "references" / "blueprint" / "config.yaml"
+    config_path = root / "references" / "blueprint-schema" / "config.yaml"
     if not config_path.exists():
         config_path.parent.mkdir(parents=True)
         config_path.write_text(

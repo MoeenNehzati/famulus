@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-dev_link.py — Wire Claude and Codex to a live AI repo checkout (dev mode).
+dev_link.py — Wire Claude and Codex to a live checkout (dev mode).
 
 Instead of maintaining duplicate copies of skills, references, and agents
 across Claude and Codex config directories, this script creates symlinks so
 both tools read from the same checkout. Changes to the repo take effect
 everywhere without any copy step. Also registers dev-mode hooks, sets
-git core.hooksPath, and exports $AI — all dev-mode-only concerns, distinct
+git core.hooksPath — all dev-mode-only concerns, distinct
 from the plugin-mode-safe scaffold.py/launchers.py subcommands.
 
 repo_root is a required argument: dev mode is an explicit user choice with
@@ -52,6 +52,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Mapping
 
 REPO_SRC = Path(__file__).resolve().parents[3] / "src"
 if not __package__ and str(REPO_SRC) not in sys.path:
@@ -61,20 +62,17 @@ if not __package__:
 
 import officina.common.codex_toml as codex_toml
 import officina.common.toml_io as toml_io
+from officina.install.context import InstallationContext
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 if __package__:
-    from ._state_record import Manifest, manifest_path
+    from ._state_record import Manifest, manifest_path, strip_managed_hook_objects
 else:
-    from _state_record import Manifest, manifest_path
+    from _state_record import Manifest, manifest_path, strip_managed_hook_objects
 if __package__:
     from ._fs_links import make_link
 else:
     from _fs_links import make_link
-if __package__:
-    from ._shell_block import ensure_rc_vars
-else:
-    from _shell_block import ensure_rc_vars
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -292,13 +290,36 @@ def install_git_hooks(repo_root: Path, hooks_dir: Path, dry_run: bool, manifest:
     if dry_run:
         log(f"Would set git -C {repo_root} config core.hooksPath .githooks")
     else:
+        prior_probe = subprocess.run(
+            ["git", "-C", str(repo_root), "config", "--local", "--get", "core.hooksPath"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="strict",
+            env=git_environment,
+        )
+        prior_value = prior_probe.stdout.strip() if prior_probe.returncode == 0 else None
+        if manifest is not None and prior_value == ".githooks":
+            existing = next(
+                (
+                    entry for entry in manifest.entries
+                    if entry.get("kind") == "git_hooks_path"
+                    and entry.get("path") == str(repo_root)
+                ),
+                None,
+            )
+            if existing is not None:
+                prior_value = existing.get("prior_value")
+        if manifest is not None:
+            fields = {"installed_value": ".githooks"}
+            if isinstance(prior_value, str):
+                fields["prior_value"] = prior_value
+            manifest.record("git_hooks_path", path=str(repo_root), **fields)
         subprocess.run(
             ["git", "-C", str(repo_root), "config", "core.hooksPath", ".githooks"],
             check=True,
             env=git_environment,
         )
-        if manifest is not None:
-            manifest.record("git_hooks_path", path=str(repo_root))
 
 
 HOOKS_BLOCK_BEGIN = "# >>> skill-system-hooks >>>"
@@ -396,14 +417,16 @@ def install_claude_hooks(claude_home: Path, repo_root: Path, dry_run: bool, mani
         event_hooks = hooks.get(event_name)
         if not isinstance(event_hooks, list):
             continue
-        filtered = [
-            entry for entry in event_hooks
-            if not any(
-                hook.get("command", "") in commands_to_replace
-                for hook in entry.get("hooks", [])
-                if isinstance(hook, dict)
+        # Replace this installer's own hook objects, never the entry group
+        # around them: a user hook sharing the group must survive a re-run.
+        replaced: set[str] = set()
+        filtered = []
+        for group in event_hooks:
+            surviving, _changed = strip_managed_hook_objects(
+                group, commands_to_replace, replaced
             )
-        ]
+            if surviving is not None:
+                filtered.append(surviving)
         if filtered:
             hooks[event_name] = filtered
         else:
@@ -514,7 +537,9 @@ def resolve_dir(tool: str, env_var: str, default: Path) -> Path:
 
 def run(
     *,
-    repo_root: Path,
+    context: InstallationContext | None = None,
+    environ: Mapping[str, str] | None = None,
+    repo_root: Path | None = None,
     home: Path | None = None,
     claude_home: Path | None = None,
     codex_home: Path | None = None,
@@ -525,7 +550,7 @@ def run(
     manifest: Manifest | None = None,
 ) -> None:
     """Create or repair Claude and Codex config dir symlinks, dev-mode hooks,
-    git hooksPath, and the $AI env var.
+    and git hooksPath.
 
     repo_root is required and must be supplied explicitly by the caller (the
     install.py orchestrator asks the user for it) — it is never derived from
@@ -533,6 +558,15 @@ def run(
     default to platform home and standard config locations, and config dirs
     are auto-detected when not supplied.
     """
+    if context is not None:
+        if context.mode != "development" or context.development_root is None:
+            raise ValueError("checkout projections require a development context")
+        repo_root = context.source_root
+        home = context.development_root / ".famulus" / "home"
+        claude_home = context.claude_home
+        codex_home = context.codex_home
+    if repo_root is None:
+        raise ValueError("repo_root is required when context is omitted")
     home = home or Path.home()
 
     if manifest is None and not dry_run:
@@ -561,7 +595,10 @@ def run(
         ensure_skills_link(repo_root, repo_root / "skills", claude_home / "skills", dry_run, manifest)
         make_link(repo_root / "references", claude_home / "references", dry_run, manifest)
         make_link(repo_root / "agents",     claude_home / "agents",     dry_run, manifest)
-        make_link(repo_root / "CLAUDE.md",  claude_home / "CLAUDE.md",  dry_run, manifest)
+        if sys.platform != "win32":
+            make_link(repo_root / "CLAUDE.md", claude_home / "CLAUDE.md", dry_run, manifest)
+        else:
+            log("  SKIP CLAUDE.md projection (milestone helpers are unsupported on Windows)")
 
     # ── Codex symlinks ───────────────────────────────────────────────────────
     # codex_home itself must be a REAL directory (never a symlink). Codex's
@@ -587,7 +624,10 @@ def run(
             agents_md_source = repo_root / "AGENTS.md"
             if not agents_md_source.exists():
                 agents_md_source = repo_root / "CLAUDE.md"
-            make_link(agents_md_source, codex_home / "AGENTS.md", dry_run, manifest)
+            if sys.platform != "win32":
+                make_link(agents_md_source, codex_home / "AGENTS.md", dry_run, manifest)
+            else:
+                log("  SKIP AGENTS.md projection (milestone helpers are unsupported on Windows)")
 
             # Codex loads profiles from individual files directly under $CODEX_HOME.
             if profiles_dir.is_dir():
@@ -602,8 +642,8 @@ def run(
     if do_codex:
         install_codex_hooks(codex_home, repo_root, dry_run, manifest)
 
-    # The milestone instruction in CLAUDE.md names `milestone` as a command, so
-    # the helpers must be on PATH wherever that instruction is delivered.
+    # Root instructions require milestone-logging, and the installer
+    # co-delivers these stable compatibility commands on PATH.
     try:
         from ._fs_links import default_bin_dir
     except ImportError:  # pragma: no cover - direct-script fallback
@@ -613,46 +653,24 @@ def run(
         # need .bat wrappers, as the launcher installer builds for its own.
         log("  SKIP milestone helpers (needs a Windows launcher wrapper)")
     else:
-        milestone_bin = default_bin_dir(home=home)
+        milestone_bin = context.paths.user_bin if context is not None else default_bin_dir(home=home)
         if not dry_run:
             milestone_bin.mkdir(parents=True, exist_ok=True)
-        for script, command in (
-            ("milestone.py", "milestone"),
-            ("agent-timeline.py", "agent-timeline"),
-        ):
-            make_link(repo_root / "scripts" / script, milestone_bin / command, dry_run, manifest)
-
-    assistant_logs = home / ".assistant-logs"
-    if sys.platform == "win32":
-        if dry_run:
-            log(f"  Would set AI={repo_root}")
-            log(f"  Would set ASSISTANT_LOGS={assistant_logs}")
-        else:
-            import winreg
-            with winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER, "Environment", 0,
-                winreg.KEY_READ | winreg.KEY_WRITE,
-            ) as key:
-                winreg.SetValueEx(key, "AI", 0, winreg.REG_SZ, str(repo_root))
-                winreg.SetValueEx(
-                    key, "ASSISTANT_LOGS", 0, winreg.REG_SZ, str(assistant_logs)
-                )
-            log(f"  Set AI={repo_root}")
-            log(f"  Set ASSISTANT_LOGS={assistant_logs}")
-    else:
-        if shell_rc is None:
-            detected_shell = os.environ.get("SHELL", "")
-            shell_rc = home / (".zshrc" if "zsh" in detected_shell else ".bashrc")
-        ensure_rc_vars(
-            shell_rc,
-            {
-                "AI": f'export AI="{repo_root}"',
-                "ASSISTANT_LOGS": f'export ASSISTANT_LOGS="{assistant_logs}"',
-            },
-            dry_run,
-            manifest,
-            label="user",
+        compatibility_dir = (
+            repo_root
+            / "skills"
+            / "install-assistant-tools"
+            / "_rtx"
+            / "assets"
+            / "bin"
         )
+        for command in ("milestone", "agent-timeline"):
+            make_link(
+                compatibility_dir / command,
+                milestone_bin / command,
+                dry_run,
+                manifest,
+            )
 
     # ── Summary ──────────────────────────────────────────────────────────────
 
@@ -697,6 +715,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     run(
         repo_root=Path(args.repo_root),
+        environ=os.environ,
         home=Path(args.home) if args.home else None,
         claude_home=Path(args.claude_home) if args.claude_home else None,
         codex_home=Path(args.codex_home) if args.codex_home else None,

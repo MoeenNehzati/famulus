@@ -24,7 +24,7 @@ dependencies:
     path: blueprints/values.yaml
   reason: Imports machine results and exact definition and state errors.
 - source: common.source.atomic-files
-  version: 1
+  version: 2
   blueprint:
     base: repository-root
     path: src/officina/common/blueprints/atomic-files.yaml
@@ -36,7 +36,7 @@ uses_interfaces:
 - interface: rutter.source.values.interface.python-api
   version: 1
 - interface: common.interface.atomic-files
-  version: 1
+  version: 2
 interfaces:
   rutter.source.storage.interface.read:
     content:
@@ -47,7 +47,7 @@ interfaces:
     - interface: rutter.source.values.interface.python-api
       version: 1
     - interface: common.interface.atomic-files
-      version: 1
+      version: 2
     version: 2
     description: Strictly decodes one complete Reckoning into typed recovery and fault
       authority without changing storage.
@@ -140,7 +140,7 @@ interfaces:
     - interface: rutter.source.values.interface.python-api
       version: 1
     - interface: common.interface.atomic-files
-      version: 1
+      version: 2
     version: 2
     description: Appends .lock to one confined .reckoning.json path and reloads authoritative
       Reckoning bytes under that stable sidecar.
@@ -236,7 +236,7 @@ interfaces:
     - interface: rutter.source.values.interface.python-api
       version: 1
     - interface: common.interface.atomic-files
-      version: 1
+      version: 2
     version: 2
     description: Atomically creates or compare-and-replaces one complete Reckoning
       and returns no value.

@@ -5,6 +5,13 @@ ledger. Reuse that context for every targeted invocation so its stable setup and
 request-scoped reports survive agent or session restarts. Keep every known
 failure until a report actually executes and clears it.
 
+Treat a stall as a failure class. Record the active element and last completed
+selector, then choose the smallest runnable selector that contains the first
+unresolved work. Run it with an explicit wall-clock bound; exceeding that bound
+is red evidence, not a reason to extend the enclosing workflow timeout. When a
+subprocess stalls, verify cleanup of its whole process tree and inherited
+resources before accepting the repair.
+
 While failures remain:
 
 1. Choose one failure class and its smallest failure-containing selector set.

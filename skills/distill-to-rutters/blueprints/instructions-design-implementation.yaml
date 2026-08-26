@@ -1,0 +1,69 @@
+content: [instructions/design\-implementation\.md]
+dependencies: []
+description: Resolves approved graphs into an exact implementation design only when the owned production compatibility predicate passes contained public Rutter, Voyage, dispenser, Compass handoff, and real-transition probes.
+gateway: {language: Markdown, path: instructions/design-implementation.md}
+id: distill-to-rutters.source.design-implementation
+interfaces:
+  distill-to-rutters.source.design-implementation.interface.design-implementation:
+    content: [instructions/design\-implementation\.md]
+    uses_interfaces:
+    - {interface: using-compass.interface.default, version: 12}
+    contract:
+      arguments:
+        request: {description: 'Input, approved preceding artifacts, live repository context, and corrections.', required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+      caller_warnings: [{external-side-effect: Creates or revises 05_implementation_design.md.}]
+      direct_io:
+        network: []
+        reads:
+        - {id: source, medium: repository-filesystem, access: read, content: 'Input Markdown, approved artifacts, owning declarations, interfaces, tests, and diff required by this stage', formats: [markdown, yaml, json, python, git-metadata, text], sensitivity: user-private}
+        - id: runtime-contracts
+          medium: repository-filesystem
+          access: read
+          content: 'Invoke the owned production runtime-compatibility predicate. Discover versions only from checked-out, repository-contained Rutter root exports and resolved source interfaces; reject absolute locators, parent traversal, and symlink escapes. Require operation-specific semantic_capabilities whose required/optional declarations match actual argument flags, whose outcome maps equal the complete interface outcomes, and whose nominal construction output is emitted by a success outcome. Each structured nominal Python type ties a construction output or execution binding to officina.rutter.Rutter, officina.rutter.Voyage, or officina.rutter.VoyageDispenser. Preserve all valid constructors; Compass binding.accepts must uniquely select an exact interface/version/operation/output/rutter-binding-construction capability/nominal_type tuple and match the producer output complete qualified class and schema, otherwise ambiguity blocks. The Rutter, Voyage, and VoyageDispenser Python exports are present. Current absent evidence is the five class-and-role root-export contract.semantic_capabilities fields and using-compass binding.accepts.'
+          formats: [yaml, python, text]
+          sensitivity: user-private
+        writes:
+        - {id: artifact, medium: local-filesystem, access: write, content: 05_implementation_design.md stage artifact, formats: [markdown], path: '<input-directory>/<source-stem>_distillation/05_implementation_design.md', path_match: exact, sensitivity: derived-private, system: filesystem}
+        - {id: response, medium: prompt, access: write, content: Artifact path and validation request, formats: [markdown], sensitivity: derived-private, system: agent-runtime}
+      execution:
+        consistency: {snapshot: 'The production compatibility predicate reads every consulted public declaration once, enforces repository containment, and every consulted path is rehashed before design-ready is accepted.'}
+        effects:
+        - id: artifact-write
+          direct_io_ref: artifact
+          action: update
+          value_source: {kind: argument, argument_ref: request}
+          may_occur_in_outcomes: [design-ready, design-gap, design-blocked, partial, failed]
+          confirmation_evidence: {kind: direct-io, direct_io_ref: artifact}
+          reversibility: {reversible: Delete or revise this unapproved artifact without changing approved preceding artifacts.}
+        lifecycle: finite
+        mutation_safety:
+          atomicity: {per_effect_only: Only the current stage artifact is written.}
+          concurrent_invocations: {unsafe: Concurrent revisions can overwrite the same artifact.}
+          idempotency: {idempotent: Unchanged inputs and correction authority produce the same artifact content.}
+          on_uncertain_completion: {verify_then_decide: Read the artifact before retrying.}
+          partial_effects_on_failure: {possible: The artifact may be written before the response is returned.}
+          rollback_on_failure: {available: Remove only the incomplete current artifact.}
+        state_effect: mutating
+        verification: [{method: direct-io-state, direct_io_ref: artifact}]
+      helpers: []
+      interaction: {mode: interactive, channel: tty, unattended_outcome: approval-required}
+      outcomes:
+      - {id: design-ready, class: success, outputs: [artifact, response], effects: [artifact-write], caller_action: Validate this artifact only after every public-runtime probe and one real bound transition pass.}
+      - {id: design-gap, class: partial, outputs: [artifact, response], effects: [artifact-write], caller_action: Validate the design gap before a design repair.}
+      - {id: design-blocked, class: refusal, outputs: [artifact, response], effects: [artifact-write], caller_action: 'Validate the reported path, raw-byte digest, typed outcome, and exact missing public capabilities; then stop until every named capability becomes available.'}
+      - {id: partial, class: partial, outputs: [artifact, response], effects: [artifact-write], caller_action: Resolve incomplete design work without advancing.}
+      - {id: approval-required, class: refusal, outputs: [response], effects: [], caller_action: Supply the missing stage authority or requested correction.}
+      - {id: failed, class: error, outputs: [artifact, response], effects: [artifact-write], caller_action: Resolve the recorded failure without advancing.}
+      outputs:
+      - {id: artifact, audience: both, description: 05_implementation_design.md stage artifact., direct_io_ref: artifact, cardinality: {minimum: 0, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Empty only on refusal or failure., type: {kind: string, sensitivity: derived-private}}
+      - {id: response, audience: human, description: 'Artifact path, validation request, or gap.', direct_io_ref: response, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty., type: {kind: string, sensitivity: derived-private}}
+      preconditions: []
+    description: Design exact target changes only when the owned production public-runtime compatibility predicate passes; otherwise report the exact design block.
+    usage: <input-markdown> <approved-semantic-artifacts>
+    version: 1
+node_type: behavioral_source
+schema_version: 6
+uses_interfaces:
+- {interface: using-compass.interface.default, version: 12}
+version: 1
+maturity: experimental

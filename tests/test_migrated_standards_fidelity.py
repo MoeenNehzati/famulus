@@ -22,8 +22,8 @@ def load_module(name, relative_path):
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module); return module
 
-validator = load_module("migrated_validator", "references/standards/validate_standard_v6.py")
-renderer = load_module("migrated_renderer", "references/standards/render_standard_v6.py")
+validator = load_module("migrated_validator", "references/standards-schema/validate_standard_v6.py")
+renderer = load_module("migrated_renderer", "references/standards-schema/render_standard_v6.py")
 
 def nodes(document):
     result = {}

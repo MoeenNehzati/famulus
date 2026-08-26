@@ -1,0 +1,98 @@
+content:
+- SKILL\.md
+dependencies: []
+description: Resolves the input and approval authority, enforces the fixed artifact
+  filenames, exact source-stem workspace identity, recursive byte freshness, and typed
+  stage success before routing one authorized Markdown-to-Rutter distillation stage.
+gateway: {language: Markdown, path: SKILL.md}
+id: distill-to-rutters.source.gateway
+interfaces:
+  distill-to-rutters.source.gateway.interface.default:
+    content: [SKILL\.md]
+    uses_interfaces:
+    - {interface: distill-to-rutters._rtx.interface.validate-and-route, version: 1}
+    - {interface: distill-to-rutters.source.breakdown.interface.breakdown, version: 1}
+    - {interface: distill-to-rutters.source.assign-rutters.interface.assign-rutters, version: 1}
+    - {interface: distill-to-rutters.source.extract-evolutions.interface.extract-evolutions, version: 1}
+    - {interface: distill-to-rutters.source.validate-logic.interface.validate-logic, version: 1}
+    - {interface: distill-to-rutters.source.design-implementation.interface.design-implementation, version: 1}
+    - {interface: distill-to-rutters.source.implement.interface.implement, version: 1}
+    - {interface: distill-to-rutters.source.finalize.interface.finalize, version: 1}
+    - {interface: distill-to-rutters.source.verify.interface.verify, version: 1}
+    contract:
+      arguments:
+        request:
+          description: Input Markdown path, owning skill, explicit approval authority,
+            approved artifacts, corrections, and constraints.
+          required: true
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+      caller_warnings:
+      - external-side-effect: The selected stage writes its assigned artifact and later
+          stages may edit the owning skill after explicit approval.
+      direct_io:
+        network: []
+        reads:
+        - {id: request, medium: prompt, access: read, content: Input path and approval request, formats: [text], sensitivity: user-private, system: agent-runtime}
+        - {id: repository-state, medium: repository-filesystem, access: read, content: 'Common root input, exact <source-stem>_distillation workspace, fixed-name approved artifacts, contained deliverable leaf, recursive context dependencies, production compatibility declarations, tests, and diff; cross-run artifacts and unknown filenames carry no route authority', formats: [markdown, yaml, json, python, git-metadata, text], sensitivity: user-private}
+        writes:
+        - {id: routed-write, medium: repository-filesystem, access: write, content: Exactly one stage's authorized artifact or approved implementation outputs, formats: [markdown, yaml, json, python, text], sensitivity: user-private}
+        - {id: response, medium: prompt, access: write, content: 'Route, artifact path, gap, or validation request', formats: [markdown], sensitivity: derived-private, system: agent-runtime}
+      execution:
+        consistency: {snapshot: 'Read every consulted path once, compare recorded digests before parsing changed artifacts, enforce one common source chain, then rehash every consulted path before accepting a route.'}
+        effects:
+        - id: routed-stage-write
+          direct_io_ref: routed-write
+          action: update
+          value_source: {kind: argument, argument_ref: request}
+          may_occur_in_outcomes: [artifact-ready, completed]
+          confirmation_evidence: {kind: output, output_ref: response}
+          reversibility: {reversible: Restore only the current stage's outputs without disturbing approved artifacts or unrelated work.}
+        lifecycle: finite
+        mutation_safety:
+          atomicity: {per_effect_only: One stage writes only its declared outputs.}
+          concurrent_invocations: {unsafe: Concurrent stages can invalidate approvals and artifact order.}
+          idempotency: {non_idempotent: Re-entry can revise the current artifact or implementation.}
+          on_uncertain_completion: {verify_then_decide: Inspect the current artifact and diff before retrying.}
+          partial_effects_on_failure: {possible: A stage artifact may exist before its response is reported.}
+          rollback_on_failure: {available: Revert only incomplete current-stage outputs.}
+        state_effect: mutating
+        verification:
+        - {method: output-schema, output_ref: response}
+        - {method: direct-io-state, direct_io_ref: repository-state}
+      helpers: []
+      interaction: {mode: interactive, channel: tty, unattended_outcome: approval-required}
+      outcomes:
+      - {id: artifact-ready, class: success, outputs: [response], effects: [routed-stage-write], caller_action: Validate the reported artifact before authorizing another stage.}
+      - {id: completed, class: success, outputs: [response], effects: [routed-stage-write], caller_action: Validate the final distilled entrypoint.}
+      - {id: approval-required, class: refusal, outputs: [response], effects: [], caller_action: Identify and approve the current artifact before continuing.}
+      - {id: failed, class: error, outputs: [response], effects: [], caller_action: 'Resolve the reported input, ownership, interface, or repository-state gap.'}
+      outputs:
+      - id: response
+        audience: human
+        description: Selected route, written artifact path, validation request, final result, or blocking gap.
+        direct_io_ref: response
+        cardinality: {minimum: 1, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: Never empty.
+        type: {kind: string, sensitivity: derived-private}
+      preconditions: []
+    description: Route exactly one approval-authorized stage only after exact workflow identity, recursive freshness, typed predecessor success, and a final consulted-path rehash; then stop for validation.
+    usage: <input-markdown> [last-approved-artifact and correction]
+    version: 1
+node_type: behavioral_source
+schema_version: 6
+uses_interfaces:
+- {interface: distill-to-rutters._rtx.interface.validate-and-route, version: 1}
+- {interface: distill-to-rutters.source.breakdown.interface.breakdown, version: 1}
+- {interface: distill-to-rutters.source.assign-rutters.interface.assign-rutters, version: 1}
+- {interface: distill-to-rutters.source.extract-evolutions.interface.extract-evolutions, version: 1}
+- {interface: distill-to-rutters.source.validate-logic.interface.validate-logic, version: 1}
+- {interface: distill-to-rutters.source.design-implementation.interface.design-implementation, version: 1}
+- {interface: distill-to-rutters.source.implement.interface.implement, version: 1}
+- {interface: distill-to-rutters.source.finalize.interface.finalize, version: 1}
+- {interface: distill-to-rutters.source.verify.interface.verify, version: 1}
+version: 1
+maturity: experimental

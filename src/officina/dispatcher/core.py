@@ -55,7 +55,12 @@ def repository_certification_view(*args: Any, **kwargs: Any) -> Any:
 
 
 def get_repo_root(repo_root: Path | None = None) -> Path:
-    """Return an explicit root, the managed ``AI`` root, or the source root."""
+    """Resolve an offline inventory/trace root for legacy API callers.
+
+    Live dispatch always receives pointer-carried ``repository_config`` and
+    never calls this compatibility seam. ``AI`` remains supported here only
+    for named offline validators and old fixtures.
+    """
 
     if repo_root is not None:
         return Path(repo_root).resolve()

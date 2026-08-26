@@ -1,0 +1,15 @@
+schema_version: 6
+node_type: behavioral_source
+id: certification-policy.source.node-hash-policy
+version: 1
+maturity: stable
+description: Defines and validates the canonical selection policy for node hash inputs.
+gateway:
+  path: node-hash-policy.yaml
+  language: YAML
+content:
+- node-hash-policy\.schema\.json
+- node-hash-policy\.yaml
+dependencies: []
+uses_interfaces: []
+interfaces: {}

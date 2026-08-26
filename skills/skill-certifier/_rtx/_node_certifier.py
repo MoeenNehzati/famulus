@@ -1317,7 +1317,7 @@ class RouteSmokeAuditor:
                     "schema_root": (
                         Path(self._schema_root)
                         if self._schema_root is not None
-                        else root / "references" / "blueprint" / "v5"
+                        else root / "references" / "blueprint-schema" / "v5"
                     ),
                 }
             traces = trace_python_route_smoke_dependencies_batch(
@@ -1913,7 +1913,7 @@ def _validate_semantic_attestation(
             )
             mechanical_graph = load_repository_blueprint_graph(
                 mechanical_root,
-                schema_root=mechanical_root / "references" / "blueprint",
+                schema_root=mechanical_root / "references" / "blueprint-schema",
                 expected_schema_version=4,
             )
         except (GitMaterializationError, CertificationHashError, OSError, ValueError) as exc:
@@ -3485,9 +3485,9 @@ def _certify_repository(
         Path(schema_root)
         if schema_root is not None
         else (
-            root / "references" / "blueprint"
+            root / "references" / "blueprint-schema"
             if expected_schema_version == 6
-            else root / "references" / "blueprint" / "migrations" / f"v{expected_schema_version}"
+            else root / "references" / "blueprint-schema" / "migrations" / f"v{expected_schema_version}"
         )
     )
     policy_path = root / CANONICAL_NODE_HASH_POLICY
@@ -4181,7 +4181,7 @@ def certify(
 
     graph = load_repository_blueprint_graph(
         repository,
-        schema_root=repository / "references" / "blueprint",
+        schema_root=repository / "references" / "blueprint-schema",
         expected_schema_version=6,
     )
     if any(
@@ -4223,7 +4223,7 @@ def certify(
         require_candidate_execution=True,
         require_migration_review=False,
         expected_schema_version=6,
-        schema_root=repository / "references" / "blueprint",
+        schema_root=repository / "references" / "blueprint-schema",
     )
     written = set(result.node_ids)
     current = set(result.current_node_ids)

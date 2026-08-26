@@ -4,9 +4,15 @@ Famulus documentation is intentionally split between hand-written narrative and 
 
 ## What Is Hand-Written
 
-The following stay hand-written:
+Almost everything is. The generated set is the short one, so the rule runs the
+other way: a file is generated when it carries an `AUTO-GENERATED` marker or is
+named under [What Is Generated](#what-is-generated). Everything else is written
+by hand.
 
 - [README.md](../../README.md)
+- [`docs/*.md`](../) — the top-level Famulus pages, except the generated
+  [skill index](../skills.md)
+- [`docs/officina/**.md`](../officina/) — the framework documentation
 - [`docs/quickstarts/*.md`](../quickstarts/)
 - [`docs/domains/*.md`](../domains/)
 - [`docs/contributors/*.md`](./)
@@ -16,6 +22,11 @@ Quickstarts carry user-facing setup and workflow guidance. Domain documents
 carry concise domain summaries around their generated inventories. The other
 hand-written files carry contributor explanations, examples, and design
 rationale.
+
+Two of these entries carry generated blocks without being generated
+themselves — the domain documents and [contributors/README.md](README.md)
+embed coverage blocks between markers. Hand-written and generated is a property
+of the region, not only of the file.
 
 ## What Is Generated
 
@@ -89,13 +100,18 @@ The site includes:
 
 - the repository `README.md` as the website homepage
 - `docs/README.md` as the `/documentation/` index
-- every regular file under `docs/`, recursively, except `docs/plans/`
+- every regular file under `docs/`, recursively, except the private subtrees
 - standalone assets such as generated HTML demos under `docs/demo/`
 - the generated interactive repository blueprint graph
 
-`docs/plans/` is the explicit private documentation subtree. Links to files
-there, and to repository source code outside `docs/`, open the corresponding
-GitHub page.
+`docs/plans/` and `docs/superpowers/` are the private documentation subtrees,
+named in `_PRIVATE_SUBTREES` in the assembler. They hold working notes and
+implementation plans, which live under `docs/` so an assistant can read them
+and are not documentation. `docs/superpowers/` is gitignored as well, but the
+assembler walks the working tree rather than the index, so the exclusion has to
+be stated here too or a local build would publish what the site does not.
+Links to files in either subtree, and to repository source code outside
+`docs/`, open the corresponding GitHub page.
 
 To build without starting the local server:
 

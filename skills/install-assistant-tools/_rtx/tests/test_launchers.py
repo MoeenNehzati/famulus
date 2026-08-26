@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -13,7 +14,19 @@ if __package__ and __package__.count('.') >= 1:
     from .. import _agent_launchers as launchers
 else:
     import _agent_launchers as launchers
-from install_test_utils import assert_default_bin_dir_matches_famulus_paths
+from .install_test_utils import assert_default_bin_dir_matches_famulus_paths
+
+
+@pytest.fixture(autouse=True)
+def _isolate_famulus_path_environment(monkeypatch):
+    for name in (
+        "XDG_DATA_HOME",
+        "XDG_CONFIG_HOME",
+        "XDG_STATE_HOME",
+        "APPDATA",
+        "LOCALAPPDATA",
+    ):
+        monkeypatch.delenv(name, raising=False)
 
 
 def _make_repo(tmp_path: Path) -> Path:
@@ -22,9 +35,11 @@ def _make_repo(tmp_path: Path) -> Path:
     source_bin = skill_dir / "_rtx/assets/bin"
     source_bin.mkdir(parents=True)
     for name in ["assistant", "collab", "coauthor", "background_run", "tmux-workspace",
+                 "tw-break", "tw-join", "tw-monitor", "tw-help",
                  "_agent_launch.py", "assistant.bat", "collab.bat", "coauthor.bat",
                  "background_run.bat"]:
-        (source_bin / name).write_text("#!/bin/sh\necho stub\n")
+        content = "@echo off\r\nexit /b 0\r\n" if name.endswith(".bat") else "#!/bin/sh\necho stub\n"
+        (source_bin / name).write_text(content)
         (source_bin / name).chmod(0o755)
     profiles_dir = repo_root / "profiles"
     profiles_dir.mkdir()
@@ -54,7 +69,9 @@ def test_worker_root_in_plugin_mode_is_not_under_repo_workers(tmp_path):
     from officina.common.famulus_paths import resolve_famulus_paths
 
     repo_root = tmp_path / "repo"
-    expected_root = resolve_famulus_paths(platform=sys.platform, home=tmp_path).worker_root
+    expected_root = resolve_famulus_paths(
+        platform=sys.platform, home=tmp_path, environ=os.environ
+    ).worker_root
 
     result = launchers.install_worker_dir(
         repo_root, "assistant", dry_run=True, mode="plugin", home=tmp_path
@@ -96,11 +113,11 @@ def test_run_installs_only_selected_agents(tmp_path):
     )
 
     if sys.platform == "win32":
+        assert (bin_dir / "assistant.bat").is_file()
+        assert not (bin_dir / "assistant").exists()
+    else:
         assert (bin_dir / "assistant").is_file()
         assert not (bin_dir / "assistant").is_symlink()
-        assert (bin_dir / "assistant.bat").is_file()
-    else:
-        assert (bin_dir / "assistant").is_symlink()
     assert (repo_root / "workers" / "assistant").is_dir()
     assert not (repo_root / "workers" / "collab").exists()
     assert (codex_home / "assistant.config.toml").is_file()
@@ -109,7 +126,13 @@ def test_run_installs_only_selected_agents(tmp_path):
 
 def test_run_copies_windows_agent_launcher_files(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "platform", "win32")
-    monkeypatch.setattr(launchers, "_ensure_assistant_default_windows", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "shutil.which",
+        lambda name: r"C:\Python312\python.exe" if name == "python" else None,
+    )
+    monkeypatch.setattr(launchers, "verify_install", lambda *_args, **_kwargs: True)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "roaming"))
     repo_root = _make_repo(tmp_path)
     bin_dir = tmp_path / "bin"
 
@@ -139,11 +162,9 @@ def test_run_copies_windows_agent_launcher_files(tmp_path, monkeypatch):
         dry_run=False,
     )
 
-    assert (bin_dir / "assistant").is_file()
-    assert (bin_dir / "_agent_launch.py").is_file()
     assert (bin_dir / "assistant.bat").is_file()
-    assert not (bin_dir / "assistant").is_symlink()
-    assert not (bin_dir / "_agent_launch.py").is_symlink()
+    assert not (bin_dir / "assistant").exists()
+    assert not (bin_dir / "_agent_launch.py").exists()
 
 
 def test_config_toml_gets_absolute_agent_path_not_codex_home_relative(tmp_path):
@@ -224,10 +245,10 @@ def test_config_toml_preserves_existing_machine_local_copy(tmp_path):
     assert (codex_home / "assistant.config.toml").read_text() == 'model = "user-edited"\n'
 
 
-def test_run_sets_assistant_default_in_rc(tmp_path):
+def test_run_writes_durable_default_without_touching_shell_rc(tmp_path):
     if sys.platform == "win32":
-        # famulus-skip: category=platform-contract; reason=Windows stores ASSISTANT_DEFAULT in the user registry; alternate=test_run_sets_assistant_default_via_windows_registry
-        pytest.skip("Windows stores ASSISTANT_DEFAULT in the user registry")
+        # famulus-skip: category=platform-contract; reason=this assertion names the POSIX Famulus config path; alternate=test_run_writes_windows_durable_default_without_registry_env
+        pytest.skip("POSIX durable-config path assertion")
     repo_root = _make_repo(tmp_path)
     bin_dir = tmp_path / "bin"
     codex_home = tmp_path / "codex"
@@ -236,6 +257,7 @@ def test_run_sets_assistant_default_in_rc(tmp_path):
     rc_file.write_text("")
 
     launchers.run(
+        environ={},
         repo_root=repo_root,
         agents=["assistant"],
         home=tmp_path / "home",
@@ -247,21 +269,31 @@ def test_run_sets_assistant_default_in_rc(tmp_path):
         dry_run=False,
     )
 
-    content = rc_file.read_text()
-    assert "export ASSISTANT_DEFAULT=codex" in content
-    assert 'export PATH="' not in content  # launchers does not own PATH
+    assert rc_file.read_text() == ""
+    if sys.platform == "darwin":
+        config = (
+            tmp_path
+            / "home"
+            / "Library"
+            / "Application Support"
+            / "Famulus"
+            / "config"
+            / "launchers.json"
+        )
+    else:
+        config = tmp_path / "home" / ".config" / "famulus" / "launchers.json"
+    assert '"default_backend": "codex"' in config.read_text()
 
 
-def test_run_sets_assistant_default_via_windows_registry(tmp_path, monkeypatch):
+def test_run_writes_windows_durable_default_without_registry_env(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "platform", "win32")
-    registry_calls = []
     monkeypatch.setattr(
-        launchers,
-        "_ensure_assistant_default_windows",
-        lambda default_llm, dry_run, manifest: registry_calls.append(
-            (default_llm, dry_run, manifest is not None)
-        ),
+        "shutil.which",
+        lambda name: r"C:\Python312\python.exe" if name == "python" else None,
     )
+    monkeypatch.setattr(launchers, "verify_install", lambda *_args, **_kwargs: True)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "roaming"))
     repo_root = _make_repo(tmp_path)
     bin_dir = tmp_path / "bin"
     rc_file = tmp_path / ".bashrc"
@@ -279,8 +311,9 @@ def test_run_sets_assistant_default_via_windows_registry(tmp_path, monkeypatch):
         dry_run=False,
     )
 
-    assert registry_calls == [("codex", False, True)]
     assert rc_file.read_text() == ""
+    config = tmp_path / "roaming" / "Famulus" / "launchers.json"
+    assert '"default_backend": "codex"' in config.read_text()
 
 
 def test_run_with_no_agents_installs_nothing(tmp_path):
@@ -336,7 +369,27 @@ def test_verify_install_reports_fail_for_missing_launcher(tmp_path, capsys):
     assert f"FAIL: {bin_dir / launcher_name} not found" in capsys.readouterr().out
 
 
-def test_tw_agent_links_both_tmux_workspace_and_tw_alias(tmp_path):
+def test_verify_install_uses_windows_wrapper_for_every_agent(tmp_path, monkeypatch):
+    """Windows verifies every agent through its runnable batch wrapper."""
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "future_agent").write_text("#!/bin/sh\n")
+    (bin_dir / "future_agent.bat").write_text("@echo off\r\nexit /b 0\r\n")
+    calls = []
+
+    def run(argv, **_kwargs):
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(launchers.subprocess, "run", run)
+
+    assert launchers.verify_install(bin_dir, ["future_agent"])
+    assert calls == [[str(bin_dir / "future_agent.bat"), "--help"]]
+
+
+def test_tw_selection_installs_the_complete_workspace_bundle(tmp_path):
     if sys.platform == "win32" or not hasattr(os, "symlink"):
         # famulus-skip: category=platform-contract; reason=tw symlink alias is Unix-only; alternate=Windows launcher copy tests cover supported Windows agents
         pytest.skip("tw symlink alias is Unix-only")
@@ -355,9 +408,66 @@ def test_tw_agent_links_both_tmux_workspace_and_tw_alias(tmp_path):
         dry_run=False,
     )
 
-    assert (bin_dir / "tmux-workspace").is_symlink()
-    assert (bin_dir / "tw").is_symlink()
+    for command in ("tmux-workspace", "tw", "tw-break", "tw-join", "tw-monitor", "tw-help"):
+        assert (bin_dir / command).is_symlink()
     assert (bin_dir / "tmux-workspace").resolve() == (bin_dir / "tw").resolve()
+
+
+@pytest.mark.parametrize("command", ("tw-break", "tw-join", "tw-monitor"))
+@pytest.mark.parametrize("flag", ("-h", "--help"))
+# famulus-skip: category=platform-contract; reason=tw action helpers are POSIX shell assets and cannot execute natively on Windows; alternate=Unix shared tests exercise every helper and help flag
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="tw action helpers are POSIX-only",
+)
+def test_tw_action_helper_help_does_not_invoke_tmux(tmp_path, command, flag):
+    sentinel = tmp_path / "invoked"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    for dependency in ("tmux", "btop"):
+        executable = fake_bin / dependency
+        executable.write_text(
+            "#!/bin/sh\nprintf '%s\\n' \"$0\" >> \"$TW_SENTINEL\"\nexit 99\n"
+        )
+        executable.chmod(0o755)
+
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+    env["TW_SENTINEL"] = str(sentinel)
+    source_bin = Path(__file__).resolve().parents[1] / "assets" / "bin"
+
+    result = subprocess.run(
+        [str(source_bin / command), flag],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert f"Usage: {command}" in result.stdout
+    assert not sentinel.exists()
+
+
+def test_tw_verification_fails_when_any_bundle_command_is_missing(tmp_path):
+    if sys.platform == "win32" or not hasattr(os, "symlink"):
+        # famulus-skip: category=platform-contract; reason=tw bundle is Unix-only; alternate=Windows launcher tests cover supported Windows commands
+        pytest.skip("tw bundle is Unix-only")
+    repo_root = _make_repo(tmp_path)
+    bin_dir = tmp_path / "bin"
+    launchers.run(
+        repo_root=repo_root,
+        agents=["tw"],
+        home=tmp_path / "home",
+        bin_dir=bin_dir,
+        codex_home=tmp_path / "codex",
+        claude_home=tmp_path / "claude",
+        default_llm="claude",
+        dry_run=False,
+    )
+    (bin_dir / "tw-help").unlink()
+
+    assert not launchers.verify_install(bin_dir, ["tw"])
 
 
 def test_launcher_closure_always_includes_background_run():
@@ -404,7 +514,8 @@ def test_install_with_no_agents_still_creates_background_run_launcher(tmp_path):
 
 def test_tw_agent_is_skipped_on_windows(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "platform", "win32")
-    monkeypatch.setattr(launchers, "_ensure_assistant_default_windows", lambda *args, **kwargs: None)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "roaming"))
     repo_root = _make_repo(tmp_path)
     bin_dir = tmp_path / "bin"
 

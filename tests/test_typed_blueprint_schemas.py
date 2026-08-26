@@ -13,8 +13,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_ROOT = (
     REPO_ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v4"
 )
-LIVE_V6_SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint"
-CERTIFICATION_ROOT = REPO_ROOT / "references" / "certification"
+LIVE_V6_SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint-schema"
+CERTIFICATION_ROOT = REPO_ROOT / "references" / "certification-policy"
 
 
 def _load(name: str) -> dict:
@@ -233,7 +233,7 @@ def test_live_v6_personal_preference_rejects_whitespace_description() -> None:
 
 
 def _canonical_errors(document: dict, name: str) -> list[str]:
-    root = REPO_ROOT / "references" / "blueprint"
+    root = REPO_ROOT / "references" / "blueprint-schema"
     schema = json.loads((root / name).read_text(encoding="utf-8"))
     store = {
         child.name: json.loads(child.read_text(encoding="utf-8"))
@@ -843,7 +843,7 @@ def test_dispatch_schema_accepts_live_v5_blueprints() -> None:
         }
     )
 
-    canonical_root = REPO_ROOT / "references" / "blueprint"
+    canonical_root = REPO_ROOT / "references" / "blueprint-schema"
     schema = json.loads(
         (canonical_root / "schema.json").read_text(encoding="utf-8")
     )
@@ -1029,7 +1029,7 @@ def test_current_certificate_accepts_explicit_interface_dependency_hash() -> Non
         }
     ]
 
-    canonical_root = REPO_ROOT / "references" / "blueprint"
+    canonical_root = REPO_ROOT / "references" / "blueprint-schema"
     schema = json.loads(
         (canonical_root / "certificate.schema.json").read_text(encoding="utf-8")
     )

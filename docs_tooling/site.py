@@ -3,7 +3,8 @@
 The source repository contains working notes and implementation plans that are
 not part of the public documentation website.  This module makes that boundary
 explicit: it stages the repository ``README.md`` as the homepage and the
-complete ``docs`` tree except ``docs/plans`` under an ignored build directory.
+complete ``docs`` tree except the private subtrees under an ignored build
+directory.
 Links to files outside that surface remain useful by becoming links to their
 GitHub source pages.
 
@@ -24,6 +25,12 @@ from urllib.parse import quote
 
 DEFAULT_REPOSITORY_URL = "https://github.com/MoeenNehzati/famulus"
 DEFAULT_REPOSITORY_REF = "master"
+
+# Working notes and implementation plans live under ``docs`` for the assistant
+# to read, but they are not documentation. ``superpowers`` is also gitignored,
+# so excluding it here keeps a local build showing exactly what the published
+# site shows rather than whatever happens to be on this disk.
+_PRIVATE_SUBTREES = frozenset({"plans", "superpowers"})
 
 _MARKDOWN_LINK = re.compile(
     r"(?P<prefix>!?\[[^\]\n]*\]\()(?P<destination>[^)\n]+)(?P<suffix>\))"
@@ -160,7 +167,7 @@ def _published_paths(repo_root: Path, docs_root: Path) -> dict[Path, Path]:
         relative = source.relative_to(docs_root)
         if not source.is_file() or source.is_symlink():
             continue
-        if relative.parts[0] == "plans":
+        if relative.parts[0] in _PRIVATE_SUBTREES:
             continue
         destination = (
             Path("documentation/index.md")

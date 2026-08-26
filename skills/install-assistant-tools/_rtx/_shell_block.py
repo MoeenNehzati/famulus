@@ -1,9 +1,8 @@
 """Managed shell-rc block writer shared by scaffold, launchers, and dev_link.
 
-Each of those three subcommands owns exactly one variable in the managed
-block (PATH, ASSISTANT_DEFAULT, AI respectively) but they share one physical
-block in the rc file. ensure_rc_vars() merges by variable name so re-running
-any one subcommand updates only its own line, leaving the others intact.
+Production uses this only for PATH. The generic variable merge remains for
+offline compatibility tests that exercise legacy block replay. Re-running a
+caller updates only its own named line, leaving the others intact.
 """
 from __future__ import annotations
 

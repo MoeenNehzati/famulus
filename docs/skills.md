@@ -11,9 +11,9 @@ This page is the complete skill inventory. For workflows and examples, start fro
 - `daily-plan` — Generate today's plan from calendar, todos, and weather _(topics: planning, personal-organization; activated by: user request, skill workflow)_
 - `email-client` — Read, search, and send email across configured accounts _(topics: communications, external-integrations; activated by: user request, skill workflow)_
 - `email-triage` — Triage the inbox into todo and triage lists since the last run _(topics: communications, personal-organization; activated by: user request, skill workflow)_
-- `g-calendar` — Read and modify Google Calendar via a local OAuth CLI _(topics: planning, personal-organization, external-integrations; activated by: user request, skill workflow)_
 - `get-weather` — Fetch weather for a location, day, or date range _(topics: planning, external-integrations; activated by: user request, skill workflow)_
 - `list-manager` — Manage personal YAML lists in cloud storage _(topics: personal-organization, storage-and-sync; activated by: user request, skill workflow)_
+- `online-calendar` — Read and modify Google Calendar via a local OAuth CLI _(topics: planning, personal-organization, external-integrations; activated by: user request, skill workflow)_
 - `send-feedback` — Send feedback, report a problem, or describe a failed Famulus workflow to its maintainer _(topics: communications, assistant-assurance; activated by: user request, skill workflow)_
 - `wrap-up` — Review the day, update plans and lists, and find handoff candidates via find-handoff-candidates _(topics: planning, personal-organization, session-management; activated by: user request, skill workflow)_
 
@@ -56,6 +56,7 @@ This page is the complete skill inventory. For workflows and examples, start fro
 
 ### Listed
 
+- `distill-to-rutters` — An existing Markdown skill instruction should be transformed into transparent Rutters and an operable Voyage dispenser _(topics: assistant-authoring, assistant-architecture, assistant-assurance, repository-workflow; activated by: user request, skill workflow)_
 - `hook-maker` — Design cross-host assistant hooks with one purpose and per-host bindings _(topics: assistant-authoring, assistant-architecture; activated by: user request, skill workflow)_
 - `regenerate-blueprints` — An existing skill blueprint needs regeneration, whether requested directly or required by another skill _(topics: assistant-authoring, assistant-architecture; activated by: user request, skill workflow)_
 - `relocate-nodes` — Registered Officina nodes or their owned files must be moved while mechanically updating blueprint ownership, references, generated artifacts, and callers _(topics: assistant-architecture, repository-workflow, assistant-assurance; activated by: user request, skill workflow)_
@@ -74,6 +75,7 @@ This page is the complete skill inventory. For workflows and examples, start fro
 - `cloud-files` — Bounded read/write of plain files under a configured Google Drive root _(topics: external-integrations, storage-and-sync; activated by: user request, skill workflow)_
 - `connect-google` — The user needs to set up or restore Google authentication for Famulus _(topics: external-integrations; activated by: user request, skill workflow)_
 - `install-assistant-tools` — Install or update launchers, wiring, hooks, and environment on a machine _(topics: assistant-installation, system-maintenance; activated by: user request)_
+- `milestone-logging` — Starting or completing substantive agent work that needs durable, role-labelled progress records and optional run recovery _(topics: task-automation, assistant-assurance; activated by: user request, skill workflow)_
 - `using-compass` — A user or another skill directs the agent to use a named compass _(topics: task-automation, session-management; activated by: user request, skill workflow)_
 
 ## Assistant Interaction

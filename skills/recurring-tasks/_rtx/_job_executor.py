@@ -192,6 +192,10 @@ def run_job(*, jobs_file: Path, job_name: str, log_dir: Path = LOG_DIR) -> int:
     # parents[2] because SKILL_DIR is the _rtx directory: _rtx ->
     # recurring-tasks -> skills -> repo root.
     repo_root = SKILL_DIR.parents[2]
+    # Offline legacy-executor compatibility only. Production schedules invoke
+    # ``officina.recurring.executor`` through the managed resolver and its
+    # validated descriptor environment, which deliberately excludes both
+    # selectors. Keep these defaults solely for old direct executor fixtures.
     env.setdefault("AI", str(repo_root))
     env.setdefault("FAMULUS_REPO_ROOT", str(repo_root))
     resolved_argv = resolve_executable(argv, env)

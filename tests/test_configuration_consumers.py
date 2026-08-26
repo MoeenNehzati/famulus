@@ -34,9 +34,9 @@ def _load_module(name: str, path: Path):
     "relative_path",
     [
         "src/officina/docstring/config.yaml",
-        "references/blueprint/config.yaml",
-        "references/certification/node-hash-policy.yaml",
-        "skills/recurring-tasks/_rtx/jobs.yaml",
+        "references/blueprint-schema/config.yaml",
+        "references/certification-policy/node-hash-policy.yaml",
+        "src/officina/recurring/default_jobs.yaml",
     ],
 )
 def test_repository_configuration_documents_use_central_schema(
@@ -85,12 +85,7 @@ def test_recurring_jobs_config_helper_has_direct_owner_and_import_dependencies()
     source_id = "recurring-tasks._rtx.source.rtx-jobs-config"
 
     assert graph.direct_file_owners[helper] == source_id
-    consumers = {
-        "recurring-tasks._rtx.source.rtx-healthcheck-probe",
-        "recurring-tasks._rtx.source.rtx-job-control",
-        "recurring-tasks._rtx.source.rtx-job-executor",
-        "recurring-tasks._rtx.source.rtx-unit-writer",
-    }
+    consumers = {"recurring-tasks._rtx.source.rtx-job-executor"}
     actual = {
         edge.source_id
         for edge in graph.node_edges

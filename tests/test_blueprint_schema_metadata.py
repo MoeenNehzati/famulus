@@ -8,7 +8,7 @@ import jsonschema
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-LIVE_SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint"
+LIVE_SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint-schema"
 FIXTURE_SCHEMA_ROOT = REPO_ROOT / "tests" / "fixtures" / "blueprint_schemas"
 V5_SCHEMA_ROOT = FIXTURE_SCHEMA_ROOT / "v5"
 SCHEMA_ROOT = FIXTURE_SCHEMA_ROOT / "v4"
@@ -198,6 +198,10 @@ def test_validation_rule_catalog_points_to_existing_enforcement_and_tests() -> N
         validator = RELOCATED_FROZEN_VALIDATORS.get(
             rule["validator"], rule["validator"]
         )
+        if validator.startswith("references/blueprint/"):
+            validator = validator.replace(
+                "references/blueprint/", "references/blueprint-schema/", 1
+            )
         assert (REPO_ROOT / validator).is_file(), rule_id
         assert all((REPO_ROOT / path).is_file() for path in rule["tests"]), rule_id
         assert rule["enforcement"]["state"] in {"schema", "current"}, rule_id

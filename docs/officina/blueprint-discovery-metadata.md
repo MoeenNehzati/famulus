@@ -2,7 +2,7 @@
 
 Discoverable modules declare compact metadata for generated documentation and
 repository navigation. The configured vocabulary lives in
-`references/blueprint/config.yaml`; the canonical module schema injects those
+`references/blueprint-schema/config.yaml`; the canonical module schema injects those
 values as enums. Configuration controls allowed spellings. This document
 controls their meaning.
 

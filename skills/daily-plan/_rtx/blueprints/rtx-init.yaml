@@ -22,7 +22,7 @@ uses_interfaces:
   version: 1
 - interface: common.interface.dates
   version: 1
-- interface: g-calendar._rtx.interface.scripts-gcal
+- interface: online-calendar._rtx.interface.scripts-gcal
   version: 1
 - interface: get-weather._rtx.interface.scripts-weather
   version: 1

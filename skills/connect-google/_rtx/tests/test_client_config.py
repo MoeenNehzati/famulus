@@ -20,6 +20,17 @@ assert SPEC.loader is not None
 SPEC.loader.exec_module(client_config)
 
 
+@pytest.fixture(autouse=True)
+def isolate_windows_famulus_roots(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Keep explicit test homes independent from the runner account."""
+    if sys.platform == "win32":
+        home = tmp_path / "home"
+        monkeypatch.setenv("APPDATA", str(home / "AppData" / "Roaming"))
+        monkeypatch.setenv("LOCALAPPDATA", str(home / "AppData" / "Local"))
+
+
 def desktop_client(client_id: str = "cid") -> dict[str, object]:
     return {
         "installed": {
@@ -40,7 +51,13 @@ def write_json(path: Path, payload: object) -> None:
 def canonical(home: Path) -> Path:
     from officina.common.famulus_paths import resolve_famulus_paths
 
-    return resolve_famulus_paths(platform=sys.platform, home=home).config_root / "connect-google" / "client.json"
+    return (
+        resolve_famulus_paths(
+            platform=sys.platform, home=home, environ=os.environ
+        ).config_root
+        / "connect-google"
+        / "client.json"
+    )
 
 
 class FakeSecretBackend:
@@ -239,7 +256,7 @@ def test_client_status_discovers_valid_legacy_service_clients_without_copying(
 ) -> None:
     home = tmp_path / "home"
     drive = home / ".config" / "cloud-files" / "client.json"
-    calendar = home / ".config" / "g-calendar" / "client.json"
+    calendar = home / ".config" / "online-calendar" / "client.json"
     drive.parent.mkdir(parents=True)
     calendar.parent.mkdir(parents=True)
     write_json(drive, desktop_client("shared"))
@@ -249,7 +266,7 @@ def test_client_status_discovers_valid_legacy_service_clients_without_copying(
 
     assert result["legacy_candidates"] == [
         {"service": "cloud-files", "path": str(drive)},
-        {"service": "g-calendar", "path": str(calendar)},
+        {"service": "online-calendar", "path": str(calendar)},
     ]
     assert result["legacy_candidates_match"] is True
     assert not canonical(home).exists()
@@ -261,7 +278,7 @@ def test_client_status_reports_conflicting_legacy_clients_and_ignores_invalid(
 ) -> None:
     home = tmp_path / "home"
     drive = home / ".config" / "cloud-files" / "client.json"
-    calendar = home / ".config" / "g-calendar" / "client.json"
+    calendar = home / ".config" / "online-calendar" / "client.json"
     drive.parent.mkdir(parents=True)
     calendar.parent.mkdir(parents=True)
     write_json(drive, desktop_client("drive"))
@@ -354,10 +371,21 @@ def test_plaintext_canonical_with_token_field_is_invalid_not_migration(
 
 @pytest.mark.parametrize("platform", ["linux", "darwin", "win32"])
 def test_authorization_preflight_resolves_canonical_path_on_each_platform(
-    tmp_path: Path, secret_backend: FakeSecretBackend, platform: str
+    tmp_path: Path,
+    secret_backend: FakeSecretBackend,
+    platform: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from officina.credentials.google import canonical_client_path
 
+    if platform == "win32":
+        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
+        monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
+    else:
+        monkeypatch.delenv("LOCALAPPDATA", raising=False)
+        monkeypatch.delenv("APPDATA", raising=False)
+        for name in ("XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME"):
+            monkeypatch.delenv(name, raising=False)
     path = canonical_client_path(home=tmp_path, platform=platform)
     path.parent.mkdir(parents=True)
     payload = desktop_client()

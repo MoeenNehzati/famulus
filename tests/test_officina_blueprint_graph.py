@@ -22,7 +22,7 @@ from test_support.v5_blueprint_fixtures import copy_v5_fixture_tree
 
 
 CANONICAL_SCHEMA_ROOT = (
-    Path(__file__).resolve().parents[1] / "references" / "blueprint"
+    Path(__file__).resolve().parents[1] / "references" / "blueprint-schema"
 )
 SCHEMA_ROOT = Path(__file__).parent / "fixtures" / "blueprint_schemas" / "v4"
 V5_SCHEMA_ROOT = Path(__file__).parent / "fixtures" / "blueprint_schemas" / "v5"
@@ -52,6 +52,101 @@ def load_repository_blueprint_graph(
         schema_root=schema_root,
         expected_schema_version=expected_schema_version,
     )
+
+
+def test_install_assistant_tools_exports_public_diagnose_instruction_contract() -> None:
+    repository = Path(__file__).resolve().parents[1]
+    graph = load_repository_blueprint_graph(repository, expected_schema_version=6)
+
+    module, source, export = resolve_export(
+        graph, "install-assistant-tools.interface.diagnose", 1
+    )
+
+    assert module.node_id == "install-assistant-tools"
+    assert source.node_id == "install-assistant-tools.source.gateway"
+    assert export.source_interface_id == (
+        "install-assistant-tools.source.gateway.interface.diagnose"
+    )
+    assert export.export_declaration == {
+        "access": {"allow_all_modules": True, "allowed_callers": []},
+        "source_interface": "install-assistant-tools.source.gateway.interface.diagnose",
+    }
+    assert graph.interface_uses[export.source_interface_id] == (
+        ("install-assistant-tools._rtx.interface.scripts-doctor", 1),
+    )
+    assert "process_binding" not in export.declaration
+    skill = (repository / "skills" / "install-assistant-tools" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    assert "Instruction Interfaces:" in skill
+    assert "`install-assistant-tools.interface.diagnose`" in skill
+
+
+def test_recurring_module_owns_shared_job_schema_source() -> None:
+    repository = Path(__file__).resolve().parents[1]
+    blueprint = yaml.safe_load(
+        (repository / "src" / "officina" / "recurring" / "blueprint.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert r"jobs\.py" in blueprint["content"]
+    graph = load_repository_blueprint_graph(repository, expected_schema_version=6)
+    recurring = graph.nodes["recurring"]
+    assert repository / "src" / "officina" / "recurring" / "jobs.py" in (
+        resolved_node_content_paths(recurring, repository)
+    )
+
+
+def test_reference_schema_and_certification_policy_are_registered_nodes() -> None:
+    """Reference policy bundles remain hashable through ordinary graph nodes."""
+
+    repository = Path(__file__).resolve().parents[1]
+    graph = load_repository_blueprint_graph(repository, expected_schema_version=6)
+
+    expected_sources = {
+        "standards-schema": {
+            "standards-schema.source.standard-validator",
+            "standards-schema.source.standard-renderer",
+            "standards-schema.source.docstring-schema",
+        },
+        "certification-policy": {
+            "certification-policy.source.node-hash-policy",
+            "certification-policy.source.certification-basis",
+        },
+    }
+    for module_id, source_ids in expected_sources.items():
+        module = graph.nodes[module_id]
+        assert set(module.declaration["sources"]) == source_ids
+
+    expected_content = {
+        "standards-schema.source.standard-validator": {
+            "standard-v6.schema.json",
+            "validate_standard_v6.py",
+        },
+        "standards-schema.source.standard-renderer": {
+            "render_standard_v6.py",
+        },
+        "standards-schema.source.docstring-schema": {
+            "docstring.standard.lark",
+            "docstring.standard.yaml",
+            "docstring_format.schema.json",
+            "docstring_format.yaml",
+        },
+        "certification-policy.source.node-hash-policy": {
+            "node-hash-policy.schema.json",
+            "node-hash-policy.yaml",
+        },
+        "certification-policy.source.certification-basis": {
+            "certification-basis-roots.json",
+        },
+    }
+    for source_id, relative_paths in expected_content.items():
+        source = graph.nodes[source_id]
+        assert {
+            path.relative_to(source.module_root).as_posix()
+            for path in resolved_node_content_paths(source, repository)
+        } == relative_paths
 
 
 def _write_yaml(path: Path, value: object) -> None:

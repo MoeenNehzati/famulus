@@ -248,7 +248,7 @@ units:
   targets:
   - target_ref: skill-refactoring.smells.wrong-or-missing-category
     field: /children/0/meaning
-    expected: '`category` missing from `blueprint.yaml`, or the value is not in the typed enum in `references/blueprint/schema.json`.'
+    expected: '`category` missing from `blueprint.yaml`, or the value is not in the typed enum in `references/blueprint-schema/schema.json`.'
 - source: skill-smells.md
   line: 44
   text: '**Moves:** Declare/fix Category.'
@@ -527,21 +527,21 @@ units:
   targets:
   - target_ref: skill-refactoring.remedies.declare-fix-category
     field: /steps/0/instruction
-    expected: Use a typed enum value from `references/blueprint/schema.json`.
+    expected: Use a typed enum value from `references/blueprint-schema/schema.json`.
 - source: skill-refactoring-catalog.md
   line: 21
   text: values in `references/blueprint/schema.json`. See `docs/skill-blueprints.md` for
   targets:
   - target_ref: skill-refactoring.remedies.declare-fix-category
     field: /steps/0/instruction
-    expected: Use a typed enum value from `references/blueprint/schema.json`.
+    expected: Use a typed enum value from `references/blueprint-schema/schema.json`.
 - source: skill-refactoring-catalog.md
   line: 22
   text: the blueprint architecture overview.
   targets:
   - target_ref: skill-refactoring.remedies.declare-fix-category
     field: /steps/0/instruction
-    expected: Use a typed enum value from `references/blueprint/schema.json`.
+    expected: Use a typed enum value from `references/blueprint-schema/schema.json`.
 - source: skill-refactoring-catalog.md
   line: 23
   text: '**Risk:** None.'

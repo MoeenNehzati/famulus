@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "artifact-envelope.schema.json",
+  "title": "Distill-to-Rutters Artifact Envelope",
+  "type": "object",
+  "required": ["schema_version", "stage", "outcome", "prerequisites", "body_schema"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": "distill-to-rutters/v1"},
+    "stage": {
+      "enum": [
+        "breakdown",
+        "assign-rutters",
+        "extract-evolutions",
+        "validate-logic",
+        "design-implementation",
+        "implement",
+        "finalize",
+        "verify"
+      ]
+    },
+    "outcome": {"type": "string", "minLength": 1},
+    "prerequisites": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/prerequisite"}
+    },
+    "body_schema": {
+      "enum": [
+        "breakdown/v1",
+        "assignment/v1",
+        "graph/v1",
+        "logic-validation/v1",
+        "implementation-design/v1",
+        "implementation-report/v1",
+        "entrypoint/v1",
+        "verification/v1"
+      ]
+    }
+  },
+  "$defs": {
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+    },
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "leaf": {
+      "type": "object",
+      "required": ["kind", "path", "sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"enum": ["source", "deliverable"]},
+        "path": {"$ref": "#/$defs/path"},
+        "sha256": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "required": ["kind", "path", "sha256", "stage", "schema_version"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"const": "artifact"},
+        "path": {"$ref": "#/$defs/path"},
+        "sha256": {"$ref": "#/$defs/digest"},
+        "stage": {
+          "enum": [
+            "breakdown",
+            "assign-rutters",
+            "extract-evolutions",
+            "validate-logic",
+            "design-implementation",
+            "implement",
+            "finalize",
+            "verify"
+          ]
+        },
+        "schema_version": {"const": "distill-to-rutters/v1"}
+      }
+    },
+    "prerequisite": {"oneOf": [{"$ref": "#/$defs/leaf"}, {"$ref": "#/$defs/artifact"}]}
+  }
+}

@@ -1,24 +1,11 @@
 """Browser regression coverage for overview-scale node readability."""
 
-from pathlib import Path
-import shutil
-import subprocess
-import tempfile
-
-import pytest
-
 from officina.visualization.elk_html_renderer import build_html_with_elk
+from test_support.browser import require_chrome, run_html
 
-
-pytestmark = pytest.mark.xdist_group("browser")
-
-
-def test_default_nodes_use_larger_cells_and_heavy_condensed_labels(tmp_path: Path) -> None:
+def test_default_nodes_use_larger_cells_and_heavy_condensed_labels() -> None:
     """Ordinary nodes expose the selected 130%-cell readability treatment."""
-    chrome = shutil.which("google-chrome")
-    if chrome is None:
-        # famulus-skip: category=capability-unavailable; reason=Google Chrome is not installed; alternate=renderer contract tests cover generated node dimensions and typography assets
-        pytest.skip("google-chrome unavailable")
+    chrome = require_chrome()
 
     doc = {
         "schema_version": 2,
@@ -70,28 +57,12 @@ def test_default_nodes_use_larger_cells_and_heavy_condensed_labels(tmp_path: Pat
         }, 100));
         </script></body>""",
     )
-    page = tmp_path / "node-readability.html"
-    page.write_text(html, encoding="utf-8")
-
-    with tempfile.TemporaryDirectory() as profile:
-        result = subprocess.run(
-            [
-                chrome,
-                "--headless",
-                "--no-sandbox",
-                "--disable-gpu",
-                "--disable-dev-shm-usage",
-                "--disable-crash-reporter",
-                f"--user-data-dir={profile}",
-                "--virtual-time-budget=3000",
-                "--window-size=1200,800",
-                "--dump-dom",
-                page.as_uri(),
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+    result = run_html(
+        chrome,
+        html,
+        virtual_time_budget=3000,
+        window_size="1200,800",
+    )
 
     marker = 'data-test-status="'
     start = result.stdout.find(marker)

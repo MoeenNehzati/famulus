@@ -215,7 +215,7 @@ def build_presentation_nodes(
         constructs: "Builds each presentation node's ordered canonical root membership."
     """
     configuration = load_configuration(
-        Path(repo_root) / "references" / "blueprint" / "config.yaml"
+        Path(repo_root) / "references" / "blueprint-schema" / "config.yaml"
     )
     raw_catalog = configuration.get("blueprint_catalog", {})
     catalog = raw_catalog if isinstance(raw_catalog, Mapping) else {}

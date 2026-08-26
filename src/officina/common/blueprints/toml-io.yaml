@@ -1,9 +1,15 @@
 content:
 - toml_io\.py
-dependencies: []
-description: Centralizes UTF-8 TOML filename validation, text-file opening with post-write
-  parse validation, string serialization, key-value rendering, and profile-config
-  discovery.
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/atomic-files.yaml
+  reason: Managed TOML reads and planned publication call the confined regular-file read and compare-before-replace or removal primitives directly.
+  source: common.source.atomic-files
+  version: 2
+description: Centralizes UTF-8 TOML filename validation, parsing, text-file opening,
+  syntax-preserving managed-array planning and inspection, compare-before-replace
+  application, string serialization, and profile-config discovery.
 gateway:
   language: Python
   path: toml_io.py
@@ -12,69 +18,150 @@ interfaces:
   common.source.toml-io.interface.python-api:
     content:
     - toml_io\.py
-    uses_interfaces: []
+    uses_interfaces:
+    - interface: common.interface.atomic-files
+      version: 2
     contract:
       arguments:
-        base-or-path:
-          description: Base directory for open and discovery, or TOML file path for
-            validate.
+        agent:
+          description: Runtime agent argument accepted by profile_config_filename.
+          required: false
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+        base:
+          description: Runtime base argument accepted by open, managed_file_state,
+            managed-array planning, and managed-array inspection.
           direct_io_ref: toml-files
           required: false
           sensitivity: user-private
           type:
             access: read-write
-            kind: path
+            kind: dir
             must_exist: false
             relative_to: caller-cwd
+            sensitivity: user-private
             syntax: literal
+        begin:
+          description: Runtime begin keyword accepted by managed-array update and inspection.
+          required: false
+          sensitivity: public
+          type: {kind: string}
+        directory:
+          description: Runtime directory argument accepted by iter_profile_configs.
+          direct_io_ref: toml-files
+          required: false
+          sensitivity: user-private
+          type:
+            access: read
+            kind: dir
+            must_exist: true
+            relative_to: caller-cwd
+            sensitivity: user-private
+            syntax: literal
+        end:
+          description: Runtime end keyword accepted by managed-array update and inspection.
+          required: false
+          sensitivity: public
+          type: {kind: string}
+        key:
+          description: Runtime key argument accepted by key_value.
+          required: false
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+        key_name:
+          description: Runtime key_name keyword accepted by managed-array planning and inspection.
+          required: false
+          sensitivity: public
+          type: {kind: string}
         mode:
           default: r
-          description: UTF-8 text mode accepted by builtins.open; binary modes are
-            rejected.
+          description: Runtime mode argument accepted by open; binary modes are rejected.
           required: false
           sensitivity: public
-          type:
-            kind: string
+          type: {kind: string}
         name:
-          description: Single .toml filename for open, agent name for profile-filename,
-            or key for key-value.
+          description: Runtime single-TOML-filename argument accepted by open,
+            managed_file_state, managed-array planning, and managed-array inspection.
+          required: false
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+        ownership:
+          description: Runtime Mapping[str, object] keyword accepted by plan_managed_string_array_removal.
           required: false
           sensitivity: user-private
           type:
+            description: Schema v6 has no mapping or Python-object argument type;
+              kind string is a schema placeholder and does not assert that the runtime value is str.
             kind: string
-        operation:
-          description: TOML helper to call.
-          required: true
+            sensitivity: user-private
+        path:
+          description: Runtime TOML file path accepted by validate_toml_file.
+          direct_io_ref: toml-files
+          required: false
+          sensitivity: user-private
+          type:
+            access: read
+            kind: file
+            must_exist: true
+            opaque_content: true
+            relative_to: caller-cwd
+            sensitivity: user-private
+            syntax: literal
+        plan:
+          description: Runtime ManagedArrayPlan argument accepted by apply_managed_array_plan.
+          required: false
+          sensitivity: user-private
+          type:
+            description: Schema v6 has no Python-object argument type; kind string
+              is a schema placeholder and does not assert that the runtime value is str.
+            kind: string
+            sensitivity: user-private
+        prior:
+          description: Runtime Mapping[str, object] or None keyword accepted by plan_managed_string_array_update.
+          required: false
+          sensitivity: user-private
+          type:
+            description: Schema v6 has no mapping, union, or Python-object argument
+              type; kind string is a schema placeholder and does not assert that the runtime value is str.
+            kind: string
+            sensitivity: user-private
+        required:
+          description: Runtime list[str] keyword accepted by plan_managed_string_array_update.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: list
+            element_type: {kind: string, sensitivity: user-private}
+            sensitivity: user-private
+        table_name:
+          description: Runtime table_name keyword accepted by managed-array planning and inspection.
+          required: false
           sensitivity: public
-          type:
-            kind: enum
-            values:
-            - description: Open one validated TOML filename under a base directory.
-              value: open
-            - description: Parse one UTF-8 TOML file.
-              value: validate
-            - description: Serialize a scalar string.
-              value: toml-string
-            - description: Render one scalar TOML assignment.
-              value: key-value
-            - description: Return <agent>.config.toml.
-              value: profile-filename
-            - description: Yield sorted profile TOML files in a directory.
-              value: iter-profile-configs
+          type: {kind: string}
         value:
-          description: Scalar string or Path serialized by toml-string or key-value.
+          description: Runtime str or Path argument accepted by toml_string and key_value.
           required: false
           sensitivity: user-private
           type:
+            description: Schema v6 has no union type; kind string is a schema placeholder
+              and does not assert that the runtime value is always str.
             kind: string
+            sensitivity: user-private
       caller_warnings:
+      - external-side-effect: This source exposes several Python callables through one
+          aggregate blueprint interface; schema v6 cannot express per-callable requiredness,
+          so each optional argument applies only to callables whose real signature names it.
       - external-side-effect: Closing a write-capable TomlFile validates the resulting
           file but does not roll back invalid content.
+      - external-side-effect: Applying a managed plan can report uncertain completion if replacement or removal succeeds before directory synchronization fails.
+      - external-side-effect: Managed-plan apply compares its recorded byte and mode
+          pre-state immediately before publication, but comparison and publication are
+          separate portable steps; verify post-state and recover after a concurrent external edit.
       direct_io:
         network: []
         reads:
         - access: read
-          content: UTF-8 TOML files and directory entries
+          content: UTF-8 TOML bytes, exact content and mode identities, and directory entries
           formats:
           - toml
           id: toml-files
@@ -95,6 +182,7 @@ interfaces:
           formats:
           - text
           - path-list
+          - python-object
           id: return-value
           medium: local-system
           sensitivity: user-private
@@ -121,17 +209,19 @@ interfaces:
         lifecycle: finite
         mutation_safety:
           atomicity:
-            non_atomic: Writes use ordinary UTF-8 text file handles.
+            non_atomic: Open exposes ordinary text writes; managed-plan apply separately
+              publishes a complete replacement or removal after a non-transactional comparison.
           concurrent_invocations:
-            unsafe: No file locking or writer serialization is provided.
+            unsafe: Ordinary open and append operations are unserialized, and a noncooperating
+              already-open writer can race the managed-plan comparison and publication steps;
+              callers must verify post-state and recover.
           idempotency:
             non_idempotent: Append and update modes can produce different state when
               repeated.
           on_uncertain_completion:
             verify_then_decide: Parse and inspect the target file before retrying.
           partial_effects_on_failure:
-            possible: A file can contain written bytes even when close-time TOML validation
-              raises.
+            possible: Ordinary writes can leave invalid bytes, and managed replacement or removal can publish before a later directory-sync failure.
           rollback_on_failure:
             unavailable: No backup is retained.
         state_effect: mutating
@@ -161,8 +251,8 @@ interfaces:
         cardinality:
           maximum: null
           minimum: 0
-        description: Context manager, rendered text, filename, discovered paths, or
-          successful validation according to operation.
+        description: Runtime return is TomlFile, str, Path iterator, TomlFileState,
+          ManagedArrayPlan, ManagedArrayInspection, or None according to the selected callable.
         direct_io_ref: return-value
         empty: Validation returns no value and discovery may yield no files.
         id: result
@@ -172,14 +262,17 @@ interfaces:
         truncation:
           kind: none
         type:
-          description: Operation-specific Python return value.
+          description: Schema v6 has no union, Python-object, iterator, or void output
+            type; kind string is a schema placeholder and does not assert that every runtime result is str.
           kind: string
           sensitivity: user-private
       preconditions: []
     description: Provides TOML file operations to Python callers.
-    version: 1
+    version: 2
 node_type: behavioral_source
 schema_version: 6
-uses_interfaces: []
-version: 1
+uses_interfaces:
+- interface: common.interface.atomic-files
+  version: 2
+version: 2
 maturity: stable

@@ -1,0 +1,72 @@
+content: [instructions/implement\.md]
+dependencies: []
+description: Applies one approved design and permits implemented success only when every trace row is implemented with no gap, blocked, partial, or failed row.
+gateway: {language: Markdown, path: instructions/implement.md}
+id: distill-to-rutters.source.implement
+interfaces:
+  distill-to-rutters.source.implement.interface.implement:
+    content: [instructions/implement\.md]
+    uses_interfaces: []
+    contract:
+      arguments:
+        request: {description: 'Input, approved artifacts through implementation design, explicit approval, and live repository state.', required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+      caller_warnings:
+      - external-side-effect: Writes the approved runtime modules, declarations, registrations, focused tests, and 06_implementation_report.md.
+      direct_io:
+        network: []
+        reads:
+        - {id: source, medium: repository-filesystem, access: read, content: 'Common root input, approved design-ready chain, owning blueprints, public interfaces, tests, implementation trace statuses, and diff', formats: [markdown, yaml, json, python, git-metadata, text], sensitivity: user-private}
+        writes:
+        - {id: repository-write, medium: repository-filesystem, access: write, content: 'Approved primary dispenser and support modules, blueprint registrations, generated projections, and focused tests', formats: [python, yaml, markdown, text], path: '<owning-skill>/_rtx/{voyage_dispenser.py,voyage_dispenser_support.py,blueprint.yaml,blueprints/**,tests/**}', path_match: glob, sensitivity: user-private, system: filesystem}
+        - {id: artifact, medium: local-filesystem, access: write, content: 06_implementation_report.md implementation report, formats: [markdown], path: '<input-directory>/<source-stem>_distillation/06_implementation_report.md', path_match: exact, sensitivity: derived-private, system: filesystem}
+        - {id: response, medium: prompt, access: write, content: 'Report path, exact scope, and validation request', formats: [markdown], sensitivity: derived-private, system: agent-runtime}
+      execution:
+        consistency: {snapshot: 'Read each approved target and prerequisite once, rehash all consulted paths before acceptance, and accept implemented only when every trace status is implemented.'}
+        effects:
+        - id: implementation-write
+          direct_io_ref: repository-write
+          action: update
+          value_source: {kind: argument, argument_ref: request}
+          may_occur_in_outcomes: [implemented, implementation-gap, partial, failed]
+          confirmation_evidence: {kind: output, output_ref: report}
+          reversibility: {reversible: Restore only current-stage implementation changes after inspecting the exact diff.}
+        - id: report-write
+          direct_io_ref: artifact
+          action: update
+          value_source: {kind: argument, argument_ref: request}
+          may_occur_in_outcomes: [implemented, implementation-gap, implementation-blocked, partial, failed]
+          confirmation_evidence: {kind: direct-io, direct_io_ref: artifact}
+          reversibility: {reversible: Delete or revise the unapproved implementation report.}
+        lifecycle: finite
+        mutation_safety:
+          atomicity: {per_effect_only: Each approved file is written within its own edit boundary.}
+          concurrent_invocations: {unsafe: Concurrent target edits invalidate the approved design and diff.}
+          idempotency: {non_idempotent: 'Re-entry may revise code, declarations, generated projections, or tests.'}
+          on_uncertain_completion: {verify_then_decide: Inspect the exact diff and report before retrying.}
+          partial_effects_on_failure: {possible: Some approved files may be written before a later write fails.}
+          rollback_on_failure: {available: Restore only incomplete current-stage changes while preserving unrelated work.}
+        state_effect: mutating
+        verification:
+        - {method: output-schema, output_ref: report}
+        - {method: direct-io-state, direct_io_ref: source}
+      helpers: []
+      interaction: {mode: interactive, channel: tty, unattended_outcome: approval-required}
+      outcomes:
+      - {id: implemented, class: success, outputs: [report, response], effects: [implementation-write, report-write], caller_action: Validate 06_implementation_report.md before finalization.}
+      - {id: implementation-gap, class: partial, outputs: [report, response], effects: [implementation-write, report-write], caller_action: Validate the gap report before an implementation repair.}
+      - {id: implementation-blocked, class: refusal, outputs: [report, response], effects: [report-write], caller_action: Stop until the named capability or environment prerequisite changes.}
+      - {id: partial, class: partial, outputs: [report, response], effects: [implementation-write, report-write], caller_action: Review the exact partial diff and resolve the reported gap without advancing.}
+      - {id: approval-required, class: refusal, outputs: [response], effects: [], caller_action: Explicitly approve 05_implementation_design.md before mutation.}
+      - {id: failed, class: error, outputs: [report, response], effects: [implementation-write, report-write], caller_action: Resolve the recorded implementation failure without advancing.}
+      outputs:
+      - {id: report, audience: both, description: 06_implementation_report.md implementation report., direct_io_ref: artifact, cardinality: {minimum: 0, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Empty on refusal or failure before mutation., type: {kind: string, sensitivity: derived-private}}
+      - {id: response, audience: human, description: 'Report path, exact implementation scope, validation request, or gap.', direct_io_ref: response, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty., type: {kind: string, sensitivity: derived-private}}
+      preconditions: []
+    description: Apply exactly one approved design and report complete implemented-only trace correspondence before finalization.
+    usage: <input-markdown> <approved-implementation-design> <explicit-approval>
+    version: 1
+node_type: behavioral_source
+schema_version: 6
+uses_interfaces: []
+version: 1
+maturity: experimental

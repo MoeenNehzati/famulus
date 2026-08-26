@@ -1,6 +1,6 @@
 schema_version: 6
 standard_version: 1.0.0
-revision: 13
+revision: 14
 id: node-standards.behavioral-source
 canonical_path: references/node-standards/behavioral-source.standard.yaml
 title: Behavioral Source Standard
@@ -9,8 +9,8 @@ imports:
   node:
     standard_id: node-standards.node
     standard_version: 1.0.0
-    revision: 13
-    digest: sha256:969254e3a8a3397e4f5b7442ed5f99df8cffaf9152010fe0d5b6efcbee74ed38
+    revision: 14
+    digest: sha256:aeebcac6e2212b96ed4d92539843fc36251268591aa418262ca7a31874354719
     artifact:
       kind: artifact
       ref: artifact.node-standard

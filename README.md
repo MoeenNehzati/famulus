@@ -1,49 +1,80 @@
 # Famulus
 
-Famulus is a personal research assistant, delivered as a skills library that runs on both Claude Code and Codex. It covers day-to-day planning and inbox work on one side, and research-heavy reading and writing on the other.
+[![Python Tests](https://github.com/MoeenNehzati/famulus/actions/workflows/python-tests.yml/badge.svg)](https://github.com/MoeenNehzati/famulus/actions/workflows/python-tests.yml)
+[![Documentation](https://github.com/MoeenNehzati/famulus/actions/workflows/pages.yml/badge.svg)](https://moeennehzati.github.io/famulus/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-**Documentation: <https://moeennehzati.github.io/famulus/>** — the full site, built and published from this repository on every change.
+Famulus is a personal research assistant, delivered as a skills library that
+runs on both Claude Code and Codex. It covers day-to-day planning and inbox work
+on one side, and research-heavy reading and writing on the other.
 
-## Project Status and Requirements
+Once it is installed, you just ask:
 
-Famulus is on the `0.1.0` development line. **No promoted stable release** or
-long-term version-support policy exists yet, so expect interfaces to keep
-moving. The research and writing skills need no credentials and are the easiest
-place to start. The Google integrations and unattended recurring jobs are the
-newest parts and the ones that ask most of your trust, so read
-[security and privacy](docs/security-and-privacy.md) before enabling them.
+```text
+Plan my day.
+Audit this bibliography before submission.
+Build a math dependency graph for paper.tex.
+Prepare a handoff.
+```
+
+[40 skills](docs/skills.md) are available. The
+[featured flows](#featured-flows) below show what a few of them do.
+
+## What It Is Good At
+
+On the personal side, Famulus:
+
+- connects to your email and calendar
+- manages your todo and triage lists in a cloud-backed list manager
+- extracts triage items from your email
+- prepares handoffs by updating session documentation and lessons
+
+Most importantly, it can plan your day from your calendar and lists, then
+document your progress at the end of the day and remind you about sessions that
+still need handoff.
+
+On the research side, it provides skills for reviewing document flow and prose,
+checking notation consistency across a paper, auditing mathematical proofs,
+drawing dependency graphs for mathematical results, and inspecting bibliographies
+for version mismatches, hallucinated metadata, and newer available versions.
+
+## Requirements
+
+Famulus is under active development. The research and writing skills need
+no credentials and are the easiest place to start. The Google integrations and
+unattended recurring jobs are the newest parts and the ones that ask most of
+your trust, so read [security and privacy](docs/security-and-privacy.md) before
+enabling them.
 
 To install Famulus you need:
 
-- a plugin-capable Claude Code or Codex installation; Famulus does not yet
-  publish a minimum supported host-version matrix
+- a plugin-capable Claude Code or Codex installation; there is no published
+  minimum host version
 - Python 3.11 or newer to launch the workstation installer
 - network access during first setup so the installer can obtain its pinned
   `uv`, managed CPython, and hash-locked Python packages
 
-## What It Is Good At
-
-On the personal side, Famulus connects to your email and calendar, provides a cloud-backed list manager for your todo and triage lists, extracts triage items from your email, and prepares handoffs by updating session documentation and lessons. Most importantly, it can plan your day from your calendar and lists, then document your progress at the end of the day and remind you about sessions that still need handoff.
-
-On the research side, it provides skills for reviewing document flow and prose, checking notation consistency across a paper, auditing mathematical proofs, drawing dependency graphs for mathematical results, and inspecting bibliographies for version mismatches, hallucinated metadata, and newer available versions.
-
 ## Quick Start
 
-Installing Famulus is two steps: install the plugin so your host can see the
-skills, then run the workstation installer so the local commands those skills
-rely on exist on your `PATH`. Both steps are described below.
+### 1. Install the plugin
 
-### Step 1: install the plugin
+Famulus ships as the `famulus` plugin inside the `nullkit` marketplace, so you
+add the marketplace first and then install the plugin from it by its
+`plugin@marketplace` id.
 
-Famulus ships as the `famulus` plugin inside the `nullkit` marketplace, which
-lives in this repository. That is why you add the marketplace by repository
-name and then install the plugin from it by its `plugin@marketplace` id.
-
-Claude Code:
+Claude Code, from inside a session:
 
 ```text
 /plugin marketplace add MoeenNehzati/famulus
 /plugin install famulus@nullkit
+```
+
+Claude Code, from a terminal:
+
+```bash
+claude plugin marketplace add MoeenNehzati/famulus
+claude plugin install famulus@nullkit
 ```
 
 Codex:
@@ -55,28 +86,34 @@ codex plugin add famulus@nullkit --json
 
 Restart the host afterwards so it loads the newly installed plugin.
 
-### Step 2: install the assistant tools
+### 2. Install the assistant tools
 
 Installing the plugin makes the skills visible, but it does not create the local
 commands they depend on: `dispatcher`, `llm-wakeup`/`lw`, `invoke-skill`, the
 required `background_run` launcher, profile files, and `PATH` wiring.
 
-Ask your assistant to install the assistant tools. It runs the
-`install-assistant-tools` skill, which builds and activates the managed runtime,
-writes those commands, and walks you through the remaining choices — whether to
-add the optional `assistant`, `collab`, `coauthor`, and `tw` launchers, and
-whether you want an editable checkout instead of the packaged plugin. Open a new
-shell afterwards so the updated `PATH` takes effect.
+Ask your assistant:
 
-Once the tools are installed, later repairs and targeted reinstalls route through
-`dispatcher`. The non-interactive flags, the dev-mode checkout, the repair
-routes, and the verification steps are all in
-[docs/officina/installation.md](docs/officina/installation.md).
+```text
+Install the assistant tools.
+```
 
-### Choose a workflow
+The `install-assistant-tools` skill walks you through the setup, confirms what
+it resolved before changing anything, then checks its own work and explains the
+optional Google and recurring-job steps without running them. Choose `standard`
+unless you are developing Famulus itself from a checkout. Open a new shell
+afterwards when the installer reports a search-path change.
 
-Once Famulus is installed, start with the quickstart closest to what you want
-to do:
+Your installation does not depend on where you cloned or unpacked anything, so
+you can move or delete the original directory afterwards.
+
+Later updates and repairs use this same workflow. Setup options, diagnosis,
+removal, and verification are covered in the
+[Installation Guide](docs/officina/installation.md).
+
+### 3. Choose a workflow
+
+Start with the quickstart closest to what you want to do:
 
 - [Personal Assistance](docs/quickstarts/personal-assistance.md) — plan the day, manage lists, triage email, and wrap up
 - [Research](docs/quickstarts/research.md) — choose the right research review, editing, conversion, or build skill
@@ -85,50 +122,24 @@ to do:
 - [Automation](docs/quickstarts/automation.md) — schedule, inspect, change, or disable recurring assistant jobs
 
 See [Security and Privacy](docs/security-and-privacy.md) before connecting an
-account or enabling unattended work. The [Installation Guide](docs/officina/installation.md)
-covers setup and repair, while the [Skill Index](docs/skills.md) lists every
-available skill.
+account or enabling unattended work.
 
-### Update or remove
+## What Leaves Your Machine
 
-Refresh the host plugin first:
+Famulus is a collection of LLM instructions and local programs. It does not add
+a separate Famulus account or hosted runtime service, and it has no
+Famulus-operated telemetry endpoint.
 
-```bash
-# Claude Code
-claude plugin marketplace update nullkit
-claude plugin update famulus@nullkit
+It does connect your host agent to services you select, and network requests
+happen only as part of functionality you chose: your Claude or Codex provider
+processes model-session content, Google processes OAuth and Drive, Calendar and
+Gmail requests, a registered non-Gmail mail provider processes IMAP/SMTP,
+Open-Meteo receives weather locations, and the configured feedback mailbox
+receives reports you approve. Anything returned to Claude or Codex becomes part
+of that provider's model session.
 
-# Codex
-codex plugin marketplace upgrade nullkit --json
-```
-
-After an update, restart the host and ask your assistant to reinstall the
-assistant tools, so the managed runtime and local commands match the refreshed
-plugin. Before removing the plugin, disable recurring jobs and run the
-manifest-based workstation uninstaller while the plugin is still installed.
-Exact removal commands and the separate credential-revocation steps are in the
-[installation lifecycle](docs/officina/installation.md#6-updating-repairing-and-removing-famulus).
-
-## Platform Support
-
-Famulus is designed to be cross-platform. The plugin is written to the
-intersection of the Claude Code and Codex plugin standards, so one package
-serves both hosts, and almost all of the logic lives in Python rather than in
-shell, so the same code runs on every operating system. CI covers the install
-and packaging paths on Linux, macOS, and Windows through
-[`.github/workflows/python-tests.yml`](.github/workflows/python-tests.yml).
-
-That said, Famulus has only been thoroughly exercised by hand on Linux, so
-installation and day-to-day behavior on macOS and Windows may not be entirely
-without a hitch. The likeliest rough edges are the parts that reach into
-operating-system scheduling — recurring tasks and wakeups in particular.
-
-If you hit one, you can usually just ask your assistant to fix it; the code is
-Python sitting on your own machine. Then tell us what happened, either by
-asking for the `send-feedback` skill, which drafts a redacted report, shows it
-to you, and files it on the
-[issue tracker](https://github.com/MoeenNehzati/famulus/issues) once you
-approve, and we will fix it upstream.
+Full detail, including what each connected service can reach, is in
+[Security and Privacy](docs/security-and-privacy.md).
 
 ## Featured Flows
 
@@ -215,18 +226,36 @@ Connect Famulus to Google.
 
 Famulus recommends Drive, Calendar, and Gmail, while letting you connect only
 the subset you want. `connect-google` guides you through creating a Google
-Cloud project and Desktop OAuth client, then cloud-files, g-calendar, and
+Cloud project and Desktop OAuth client, then cloud-files, online-calendar, and
 email-client perform and own their respective authorizations. Never commit the
 client JSON to GitHub. Each service keeps its resulting user tokens in its own
 local credential storage.
 
-## More Examples
+For a broader list of workflows and prompt ideas, see the
+[Skill Index](docs/skills.md).
 
-For a broader list of workflows and prompt ideas, see [docs/skills.md](docs/skills.md).
+## Platform Support
+
+Famulus is designed to be cross-platform. The plugin is written to the
+intersection of the Claude Code and Codex plugin standards, so one package
+serves both hosts, and almost all of the logic lives in Python rather than in
+shell, so the same code runs on every operating system. CI covers the install
+and packaging paths on Linux, macOS, and Windows.
+
+That said, Famulus has only been thoroughly exercised by hand on Linux, so
+installation and day-to-day behavior on macOS and Windows may be rougher. The
+likeliest trouble spots are the parts that reach into operating-system
+scheduling — recurring tasks and wakeups in particular.
+
+If you hit one, you can usually just ask your assistant to fix it; the code is
+Python sitting on your own machine. Then tell us what happened: ask for the
+`send-feedback` skill, which drafts a redacted report, shows it to you, and
+files it on the [issue tracker](https://github.com/MoeenNehzati/famulus/issues)
+once you approve. We will fix it upstream.
 
 ## Agents and Launchers
 
-The workstation installer provides three main agent launchers:
+The installer can provide three main agent launchers:
 
 - `assistant` for day-to-day personal assistant work
 - `collab` for longer project sessions with continuity and handoff behavior
@@ -239,30 +268,58 @@ modes so they cannot pause for a person who is not present; review the
 [unattended execution boundary](docs/security-and-privacy.md#authorization-and-confirmation-boundaries)
 before enabling any recurring job.
 
-Those launchers work with both Claude Code and Codex. A separate `tw` / `tmux-workspace` wrapper can launch them inside a prearranged tmux workspace with assistant, terminal, scratch, and logs panes/windows.
+Those launchers work with both Claude Code and Codex. A separate `tw` /
+`tmux-workspace` wrapper can launch them inside a prearranged tmux workspace
+with assistant, terminal, scratch, and logs panes/windows.
 
-Usage details and documentation for the launchers are in [docs/launchers.md](docs/launchers.md).
+Usage details, backend selection, and documentation for the launchers are in
+[docs/launchers.md](docs/launchers.md).
+
+## Update
+
+Refresh the host plugin first:
+
+```bash
+# Claude Code
+claude plugin marketplace update nullkit
+claude plugin update famulus@nullkit
+
+# Codex
+codex plugin marketplace upgrade nullkit --json
+```
+
+Then restart the host and ask your assistant to install the assistant tools
+again, so the managed runtime and local commands match the refreshed package.
+
+## Uninstall
+
+Removing Famulus takes three steps, and the order matters.
+
+1. **Disable recurring jobs first.** Ask your assistant to disable this
+   installation's recurring jobs and remove their scheduler registration.
+   Removal reaches your operating system's scheduler, so it has to happen while
+   the runtime that knows how to reach it is still present. Uninstall refuses
+   to proceed if registrations remain.
+2. **Remove the installation.** Ask your assistant to run the uninstaller while
+   the source is still available. This removes installer-owned files and leaves
+   your credentials, worker content, and recurring history in place.
+3. **Revoke Google access yourself.** Uninstalling does not revoke anything.
+   Remove Famulus from your Google account's third-party access settings and
+   delete the local credential files. Famulus does not do this for you.
+
+Exact commands, the difference between uninstall and purge, and the separate
+credential-revocation steps are in the
+[installation lifecycle](docs/officina/installation.md#uninstall-versus-purge).
 
 ## Learn More
 
-- [docs/security-and-privacy.md](docs/security-and-privacy.md) — permissions, credentials, model data, destructive actions, and removal
-- [docs/dependency-and-bootstrap-audit.md](docs/dependency-and-bootstrap-audit.md) — release dependency, bootstrap, and vendored-asset audit
-- [SECURITY.md](SECURITY.md) — private vulnerability reporting
-- [docs/quickstarts/personal-assistance.md](docs/quickstarts/personal-assistance.md) — get started with planning, inbox triage, lists, calendar, weather, and wrap-up
-- [docs/quickstarts/research.md](docs/quickstarts/research.md) — choose the right research review, editing, conversion, or build workflow
-- [docs/quickstarts/development.md](docs/quickstarts/development.md) — choose the right repository, CI, TDD, integration, or handoff workflow
-- [docs/quickstarts/automation.md](docs/quickstarts/automation.md) — enable, verify, inspect, and disable recurring assistant jobs
-- [docs/quickstarts/skill-development.md](docs/quickstarts/skill-development.md) — choose the right skill-development and assurance workflow
-- [docs/domains/assistant-interaction.md](docs/domains/assistant-interaction.md) — reasoning modes, session continuity, handoffs, and wakeups
-- [docs/domains/assistant-operations.md](docs/domains/assistant-operations.md) — storage, authentication, automation, installation, and repair utilities
-- [docs/launchers.md](docs/launchers.md) — agent launchers, backend selection, and the `tw` tmux wrapper
-- [docs/skills.md](docs/skills.md) — generated full skill index
-
-## For Maintainers
-
-- [docs/contributors/documentation-system.md](docs/contributors/documentation-system.md) — documentation generation and validation
-- [docs/contributors/README.md](docs/contributors/README.md) — maintainer and skill-extension entrypoint
-- [docs/testing.md](docs/testing.md) — test commands, suite policy, hooks, CI, and parallel execution
+- [Skill Index](docs/skills.md) — the complete list of available skills
+- [Security and Privacy](docs/security-and-privacy.md) — permissions, credentials, model data, destructive actions, and removal
+- [Installation Guide](docs/officina/installation.md) — setup, diagnosis, repair, and removal
+- [Launchers](docs/launchers.md) — agent launchers, backend selection, and the `tw` tmux wrapper
+- [Dependency and Bootstrap Audit](docs/dependency-and-bootstrap-audit.md) — release dependency, bootstrap, and vendored-asset audit
+- [Assistant Interaction](docs/domains/assistant-interaction.md) — reasoning modes, session continuity, handoffs, and wakeups
+- [Assistant Operations](docs/domains/assistant-operations.md) — storage, authentication, automation, installation, and repair utilities
 
 ## Support
 
@@ -272,18 +329,13 @@ Use the private route in [SECURITY.md](SECURITY.md) for vulnerabilities, and
 never include credentials, tokens, private documents, or personal data in an
 issue.
 
-## Maintainer Checks
+## For Maintainers
 
-These checks are for contributors working on the repository, not for ordinary plugin users.
-
-- `python3 scripts/generate-doc-artifacts.py` — regenerate generated documentation artifacts and embedded coverage blocks.
-- `python3 repo_checks.py --suite validators` — run the repository's documentation and contract validators.
-- `python3 repo_checks.py --suite full --verbose` — run the full Python suite, including installation tests.
-
-Hook order, CI behavior, suite boundaries, and benchmark guidance are documented
-in [docs/testing.md](docs/testing.md).
+- [docs/contributors/README.md](docs/contributors/README.md) — maintainer and skill-extension entrypoint
+- [docs/contributors/documentation-system.md](docs/contributors/documentation-system.md) — documentation generation and validation
+- [docs/testing.md](docs/testing.md) — repository checks, test commands, suite policy, hooks, CI, and benchmarks
 
 ## License
 
-[MIT](LICENSE). Vendored components retain their own licenses; see
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+[MIT](LICENSE) for Famulus itself. Vendored components retain their own
+licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -1135,7 +1135,7 @@ def _validate(
     if repository_graph is None and skills_root.is_dir() and any(
         skills_root.glob("*/blueprint.yaml")
     ):
-        schema_root = repo_root / "references" / "blueprint"
+        schema_root = repo_root / "references" / "blueprint-schema"
         try:
             repository_graph = load_repository_blueprint_graph(
                 repo_root,

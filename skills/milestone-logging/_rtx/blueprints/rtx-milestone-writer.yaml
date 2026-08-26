@@ -1,0 +1,193 @@
+content:
+- _milestone_interface\.py
+- _milestone_writer\.py
+dependencies: []
+description: Appends one role-labelled session milestone and optionally mirrors it into a durable run journal.
+gateway:
+  language: Python
+  path: _milestone_interface.py
+id: milestone-logging._rtx.source.rtx-milestone-writer
+interfaces:
+  milestone-logging._rtx.source.rtx-milestone-writer.interface.record:
+    content:
+    - _milestone_interface\.py
+    - _milestone_writer\.py
+    uses_interfaces: []
+    contract:
+      arguments:
+        doing:
+          default: ''
+          description: Description of the work now starting.
+          required: false
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+        prev:
+          default: ''
+          description: How the preceding work item ended.
+          required: false
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+        role:
+          default: ''
+          description: Short name of the agent's overall task.
+          required: false
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+        done:
+          description: Final status closing the current work item.
+          required: false
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+        path:
+          default: false
+          description: Print the selected session or run-journal path without writing.
+          required: false
+          sensitivity: public
+          type: {kind: flag}
+        run:
+          description: Durable run identifier for work that outlives this session.
+          required: false
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+        event:
+          default: ''
+          description: Typed durable-run event kind.
+          required: false
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+        step:
+          description: Typed durable-run algorithm step.
+          required: false
+          sensitivity: public
+          type: {kind: integer}
+        task:
+          default: ''
+          description: Typed durable-run task identity.
+          required: false
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+        state:
+          default: ''
+          description: Typed durable-run task state.
+          required: false
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+        attempt:
+          description: Typed durable-run task attempt number.
+          required: false
+          sensitivity: public
+          type: {kind: integer}
+        evidence:
+          default: []
+          description: Repeatable path-like durable-run evidence.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: list
+            element_type: {kind: string, sensitivity: user-private}
+      caller_warnings:
+      - external-side-effect: Appends a durable local milestone record.
+      direct_io:
+        network: []
+        reads: []
+        writes:
+        - access: write
+          content: milestone record
+          formats: [jsonl]
+          id: write-1
+          medium: local-filesystem
+          path: <selected-milestone-log-root>/**
+          path_match: glob
+          reason: Uses ASSISTANT_LOGS when it is set and non-empty; otherwise
+            uses $HOME/.assistant-logs.
+          sensitivity: user-private
+          system: filesystem
+        - access: write
+          content: record path or error
+          formats: [text]
+          id: write-2
+          medium: stdout
+          sensitivity: derived-private
+          system: agent-runtime
+      execution:
+        consistency:
+          live: Appends each accepted record to the selected current log root.
+        effects:
+        - action: append
+          confirmation_evidence:
+            direct_io_ref: write-1
+            kind: direct-io
+          direct_io_ref: write-1
+          id: append-milestone
+          may_occur_in_outcomes: [recorded, failed]
+          reversibility:
+            irreversible: Appended progress records are intentionally retained.
+          value_source:
+            argument_ref: doing
+            kind: argument
+        lifecycle: finite
+        mutation_safety:
+          atomicity: {non_atomic: Session and run-journal appends are separate writes.}
+          concurrent_invocations: {safe: Each record is one bounded append write per target.}
+          idempotency: {non_idempotent: Repeating a record appends another event.}
+          on_uncertain_completion: {stop: Inspect the selected log before deciding whether to append again.}
+          partial_effects_on_failure: {possible: A session append can succeed before the matching run-journal append fails.}
+          rollback_on_failure: {unavailable: Appended progress records are intentionally retained.}
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: record-path
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes:
+      - caller_action: Continue after the record is appended.
+        class: success
+        effects: [append-milestone]
+        id: recorded
+        outputs: [record-path]
+      - caller_action: Report the exact write or argument error once and continue without fabricating a record.
+        class: error
+        effects: [append-milestone]
+        id: failed
+        outputs: [record-path]
+      outputs:
+      - audience: both
+        cardinality: {minimum: 0, maximum: 1}
+        description: Printed log path when --path is requested, otherwise empty on success.
+        direct_io_ref: write-2
+        empty: Empty after a successful append unless --path is requested.
+        id: record-path
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        type: {kind: string, sensitivity: derived-private}
+      preconditions: []
+    description: Preserve the milestone command's argv contract while recording progress.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - name: milestone
+        min_positionals: 0
+        max_positionals: 2
+        allow_stdin: false
+        allowed_flags: [--help, -h, --role, --done, --path, --run, --event, --step, --task, --state, --attempt, --evidence]
+        flag_patterns:
+          --role: '(?s).*'
+          --done: '(?s).*'
+          --run: '(?s).*'
+          --event: '(?s).*'
+          --step: '^[+-]?[0-9]+$'
+          --task: '(?s).*'
+          --state: '(?s).*'
+          --attempt: '^[+-]?[0-9]+$'
+          --evidence: '(?s).*'
+    usage: '[DOING] [PREV] [--role ROLE] [--done PREV] [--path] [--run ID] [--event EVENT] [--step STEP] [--task TASK] [--state STATE] [--attempt ATTEMPT] [--evidence PATH]'
+    version: 1
+node_type: behavioral_source
+platform_support: {linux: true, macos: true, windows: true}
+runtime_dependencies: []
+schema_version: 6
+uses_interfaces: []
+version: 1
+maturity: stable

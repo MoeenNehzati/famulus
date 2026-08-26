@@ -79,7 +79,7 @@ DISPATCHES = {
     ),
     "calendar-agenda": DispatchCall(
         caller_module_id="daily-plan._rtx",
-        target_module_id="g-calendar._rtx",
+        target_module_id="online-calendar._rtx",
         interface="scripts-gcal",
     ),
     "weather": DispatchCall(
@@ -105,7 +105,7 @@ _DISPATCH_KEYS = {
     ("cloud-files._rtx", "plans-write"): "cloud-plans-write",
     ("cloud-files._rtx", "lists-read"): "cloud-lists-read",
     ("cloud-files._rtx", "lists-write"): "cloud-lists-write",
-    ("g-calendar._rtx", "scripts-gcal"): "calendar-agenda",
+    ("online-calendar._rtx", "scripts-gcal"): "calendar-agenda",
     ("get-weather._rtx", "scripts-weather"): "weather",
     ("list-manager._rtx", "read-beautify"): "list-read-beautify",
     ("list-manager._rtx", "update-list"): "list-update",
@@ -321,12 +321,12 @@ def parse_calendar_line(line: str) -> dict[str, str] | None:
 
 
 def get_calendar_today() -> list[str]:
-    output = run_dispatcher("g-calendar", "scripts-gcal", "agenda", "--all-calendars")
+    output = run_dispatcher("online-calendar", "scripts-gcal", "agenda", "--all-calendars")
     return output.strip().splitlines() if output.strip() else []
 
 
 def get_calendar_week() -> list[str]:
-    output = run_dispatcher("g-calendar", "scripts-gcal", "agenda", "--all-calendars", "--days", "7")
+    output = run_dispatcher("online-calendar", "scripts-gcal", "agenda", "--all-calendars", "--days", "7")
     return output.strip().splitlines() if output.strip() else []
 
 

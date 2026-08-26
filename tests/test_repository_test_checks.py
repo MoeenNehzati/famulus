@@ -4,10 +4,12 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 from types import SimpleNamespace
 import pytest
+import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -36,7 +38,7 @@ EXPECTED_PORTABILITY_TESTS = (
     "tests/test_officina_atomic_files.py::test_windows_native_secure_create_replace_append_and_acl",
     "tests/test_dispatcher_direct_authorization.py::test_direct_python_process_target_keeps_gateway_and_entry_separate",
     "tests/test_officina_git_provenance.py::test_git_test_repository_preserves_exact_bytes_under_ambient_autocrlf",
-    "skills/recurring-tasks/_rtx/tests/test_schedule_backend.py::test_linux_sync_writes_units_and_enables_timer",
+    "tests/test_officina_recurring_managed.py::test_native_renderers_preserve_only_exact_bounded_environment",
     "tests/test_officina_blueprint_graph.py::test_content_ownership_accepts_equivalent_repository_alias",
     "tests/test_repository_validator_checks.py::test_run_all_isolates_unmerged_index_and_restores_git_environment",
 )
@@ -46,11 +48,16 @@ def test_named_suites_resolve_to_ordered_native_phases() -> None:
     """Catch reintroduction of a task graph or split runner routes."""
     assert runner.SUITE_PHASES == {
         "validators": ("validators",),
-        "tests": ("tests:shared", "tests:performance"),
+        "tests": ("tests:shared", "tests:performance", "tests:browser"),
         "precommit": ("validators", "tests:shared"),
         "pre-push": ("validators", "tests:shared", "tests:browser"),
         "portability": ("tests:shared",),
-        "full": ("validators", "tests:shared", "tests:performance"),
+        "full": (
+            "tests:performance",
+            "validators",
+            "tests:shared",
+            "tests:browser",
+        ),
     }
 
 
@@ -62,8 +69,9 @@ def test_combined_suites_share_one_pooled_run() -> None:
         "tests:browser",
     )
     assert runner._suite_runs("full", task_id=None) == (
-        "combined",
         "tests:performance",
+        "combined",
+        "tests:browser",
     )
 
 
@@ -240,9 +248,10 @@ def test_runner_adds_exact_xdist_worker_count_for_parallel_jobs() -> None:
     ]
 
 
-def test_full_browser_suite_uses_loadgroup() -> None:
+def test_full_pooled_phase_defers_browser_tests_and_uses_worksteal() -> None:
     args = runner._suite_pytest_args("full", verbose=False, jobs=6)
-    assert args[args.index("--dist") + 1] == "loadgroup"
+    assert args[args.index("--dist") + 1] == "worksteal"
+    assert runner.CHROME_TESTS <= _deselected_tests(args)
 
 
 @pytest.mark.parametrize("suite", ["precommit", "pre-push", "portability"])
@@ -336,9 +345,11 @@ def test_functional_phase_uses_native_discovery_without_explicit_roots(
     )
 
     assert command[command.index("-n") + 1] == "8"
-    assert command[command.index("--dist") + 1] == "loadgroup"
+    assert command[command.index("--dist") + 1] == "worksteal"
     assert not any(argument in {"tests", "hooks/tests", "skills"} for argument in command)
-    assert _deselected_tests(command) == runner.PERFORMANCE_TESTS
+    assert _deselected_tests(command) == (
+        runner.CHROME_TESTS | runner.PERFORMANCE_TESTS
+    )
     assert command[command.index("not github_install") - 1] == "-m"
 
 
@@ -381,12 +392,12 @@ def test_combined_command_enables_validators_in_the_same_xdist_session(
     assert command[command.index("--officina-exclude-validator") + 1] == "repo/other"
 
 
-def test_full_does_not_fail_fast_before_performance(
+def test_full_runs_performance_before_pooled_and_browser_phases(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     commands = []
-    statuses = iter((1, 0))
+    statuses = iter((0, 1, 0))
     monkeypatch.setattr(
         runner,
         "_capture_working_staged_paths",
@@ -406,9 +417,12 @@ def test_full_does_not_fail_fast_before_performance(
     )
 
     assert status == 1
-    assert len(commands) == 2
-    assert "--officina-run-validators" in commands[0]
-    assert "--officina-run-validators" not in commands[1]
+    assert len(commands) == 3
+    assert commands[0][-len(runner.PERFORMANCE_TESTS) :] == sorted(
+        runner.PERFORMANCE_TESTS
+    )
+    assert "--officina-run-validators" in commands[1]
+    assert commands[2][-len(runner.CHROME_TESTS) :] == sorted(runner.CHROME_TESTS)
 
 
 def test_precommit_native_discovery_ignores_install_test_roots(
@@ -489,7 +503,7 @@ def test_portability_task_keeps_its_identity_at_the_process_boundary(
     )
 
 
-def test_phase_runner_continues_to_performance_after_pooled_failure(
+def test_phase_runner_continues_after_performance_and_pooled_failures(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -502,7 +516,7 @@ def test_phase_runner_continues_to_performance_after_pooled_failure(
     )
 
     assert runner.run_suite(tmp_path, "full", jobs=8) == 5
-    assert launched == ["tests:shared", "tests:performance"]
+    assert launched == ["tests:performance", "tests:shared", "tests:browser"]
 
 
 def test_windows_process_tree_termination_uses_taskkill_tree_mode(monkeypatch) -> None:
@@ -598,6 +612,7 @@ def test_browser_phase_is_serial_and_uses_only_browser_modules(tmp_path: Path) -
     )
 
     assert "-n" not in command
+    assert "--maxfail=1" in command
     assert command[-len(runner.CHROME_TESTS) :] == sorted(runner.CHROME_TESTS)
 
 
@@ -638,7 +653,7 @@ def test_each_pytest_task_receives_an_isolated_cache_directory(
         next(argument for argument in command if argument.startswith("cache_dir="))
         for command in commands
     ]
-    assert len(set(cache_options)) == 2
+    assert len(set(cache_options)) == len(runner.SUITE_PHASES["tests"])
 
 
 def test_phase_runner_writes_per_file_timing_report(
@@ -812,6 +827,46 @@ def test_probe_task_environment_is_copied_per_child_without_parent_mutation(
     assert os.environ["PYTHONPYCACHEPREFIX"] == str(tmp_path / "ambient-cache")
 
 
+def test_process_runner_removes_hook_git_routing_from_child_environment(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    received = []
+
+    class FakeProcess:
+        def __init__(self, _command, **kwargs):
+            received.append(kwargs["env"])
+
+        def wait(self):
+            return 0
+
+    routing_variables = (
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_COMMON_DIR",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "GIT_NAMESPACE",
+    )
+    for name in routing_variables:
+        monkeypatch.setenv(name, f"hostile-{name.lower()}")
+    monkeypatch.setenv("UNRELATED_ENVIRONMENT_VALUE", "retained")
+    monkeypatch.setattr(runner.subprocess, "Popen", FakeProcess)
+
+    assert runner._run_process(
+        ["check"],
+        cwd=tmp_path,
+        task_id="git-environment-probe",
+        pycache_prefix=tmp_path.parent / f"{tmp_path.name}-pycache",
+    ) == 0
+
+    child_environment = received[0]
+    assert all(name not in child_environment for name in routing_variables)
+    assert child_environment["UNRELATED_ENVIRONMENT_VALUE"] == "retained"
+    assert all(name in os.environ for name in routing_variables)
+
+
 def test_native_smoke_opt_ins_are_scoped_to_their_child_processes(
     tmp_path: Path,
     monkeypatch,
@@ -917,7 +972,7 @@ def test_ci_runs_combined_full_suite_before_portability() -> None:
         / "python-tests.yml"
     ).read_text(encoding="utf-8")
 
-    full = workflow.index("python3 repo_checks.py --suite full --verbose")
+    full = workflow.index("python3 repo_checks.py --suite full --verbose --jobs 1")
     portability = workflow.index(
         "python3 repo_checks.py --suite full --task tests:portability"
     )
@@ -928,7 +983,91 @@ def test_ci_runs_combined_full_suite_before_portability() -> None:
     assert "python3 repo_checks.py --suite tests --verbose" not in workflow
 
 
-def test_ci_shards_windows_repository_checks_for_parallel_diagnostics() -> None:
+def test_ci_runs_browser_behavior_only_on_stable_hosts() -> None:
+    workflow = (
+        Path(__file__).resolve().parents[1]
+        / ".github"
+        / "workflows"
+        / "python-tests.yml"
+    ).read_text(encoding="utf-8")
+    parsed = yaml.safe_load(workflow)
+    test_job = parsed["jobs"]["test"]
+    assert test_job["strategy"]["matrix"]["include"] == [
+        {
+            "os": "ubuntu-latest",
+            "task": "combined",
+            "artifact": "ubuntu-combined",
+        },
+        {
+            "os": "macos-latest",
+            "task": "validators",
+            "jobs": 4,
+            "artifact": "macos-validators",
+        },
+        {
+            "os": "macos-latest",
+            "task": "tests:shared",
+            "jobs": 4,
+            "artifact": "macos-tests-shared",
+        },
+        {
+            "os": "macos-latest",
+            "task": "tests:performance",
+            "jobs": 4,
+            "artifact": "macos-tests-performance",
+        },
+        {
+            "os": "windows-latest",
+            "task": "validators",
+            "jobs": 4,
+            "artifact": "windows-validators",
+        },
+        {
+            "os": "windows-latest",
+            "task": "tests:shared",
+            "jobs": 4,
+            "artifact": "windows-tests-shared",
+        },
+        {
+            "os": "windows-latest",
+            "task": "tests:performance",
+            "jobs": 4,
+            "artifact": "windows-tests-performance",
+        },
+        {
+            "os": "windows-latest",
+            "task": "tests:browser",
+            "jobs": 1,
+            "artifact": "windows-tests-browser",
+        },
+    ]
+    assert "env" not in test_job
+    steps = {step["name"]: step for step in test_job["steps"] if "name" in step}
+    assert steps["Run repository checks"]["env"] == {
+        "FAMULUS_REQUIRE_BROWSER": "1"
+    }
+    assert steps["Run repository check shard"]["env"] == {
+        "FAMULUS_REQUIRE_BROWSER": "${{ matrix.task == 'tests:browser' && '1' || '0' }}"
+    }
+    assert parsed["jobs"]["probe"]["env"] == {
+        "FAMULUS_REQUIRE_BROWSER": (
+            "${{ (inputs.task == 'tests:browser' || inputs.task == 'combined') "
+            "&& '1' || '0' }}"
+        )
+    }
+    assert "matrix.os == 'macos-latest' && matrix.task == 'tests:performance'" in workflow
+    assert "FAMULUS_RUN_PERFORMANCE_GATES: '1'" not in workflow
+    assert 'if: matrix.task == \'combined\'' in workflow
+    assert 'if: matrix.task != \'combined\'' in workflow
+    assert (
+        'python3 repo_checks.py --suite full --task "${{ matrix.task }}" '
+        '--verbose --jobs "${{ matrix.jobs }}"'
+    ) in workflow
+    assert workflow.count("timeout-minutes: 20") == 1
+    assert workflow.count("timeout-minutes: 10") == 1
+
+
+def test_ci_runs_unified_installation_lifecycle_on_all_supported_hosts() -> None:
     workflow = (
         Path(__file__).resolve().parents[1]
         / ".github"
@@ -936,17 +1075,38 @@ def test_ci_shards_windows_repository_checks_for_parallel_diagnostics() -> None:
         / "python-tests.yml"
     ).read_text(encoding="utf-8")
 
-    assert "task: validators" in workflow
-    assert "task: 'tests:shared'" in workflow
-    assert "task: 'tests:performance'" in workflow
-    assert workflow.count("jobs: 4") == 3
-    assert 'if: matrix.task == \'combined\'' in workflow
-    assert 'if: matrix.task != \'combined\'' in workflow
-    assert (
-        'python3 repo_checks.py --suite full --task-id "${{ matrix.task }}" '
-        '--verbose --jobs "${{ matrix.jobs }}"'
-    ) in workflow
-    assert "timeout-minutes: 60" in workflow
+    assert "name: unified installation lifecycle (${{ matrix.os }})" in workflow
+    for operating_system in (
+        "ubuntu-latest",
+        "macos-latest",
+        "windows-latest",
+    ):
+        assert f"          - os: {operating_system}" in workflow
+    assert workflow.count("--exclude-validator repo/docstrings") >= 3
+    assert "--task-id" not in workflow
+    assert "--sequential" not in workflow
+    for selector in (
+        "tests/test_officina_install_context.py",
+        "tests/test_officina_development_activation.py",
+        "tests/test_officina_runtime_pointer.py",
+        "tests/test_officina_managed_runtime.py",
+        "tests/test_officina_install_doctor.py",
+        "tests/test_officina_recurring_managed.py",
+        "tests/test_officina_recurring_state.py",
+        "tests/test_install_context_consumers.py",
+        "skills/install-assistant-tools/_rtx/tests/test_install.py",
+        "skills/install-assistant-tools/_rtx/tests/test_uninstall.py",
+        "skills/install-assistant-tools/_rtx/tests/test_doctor.py",
+        "skills/install-assistant-tools/_rtx/tests/test_e2e_lifecycle.py",
+    ):
+        assert f"--selector {selector}" in workflow
+    assert "Run lifecycle renderer and migration evidence" in workflow
+    assert "Run lifecycle native scheduler evidence where available" in workflow
+    lifecycle_native = workflow.split(
+        "- name: Run lifecycle native scheduler evidence where available", 1
+    )[1].split("- name:", 1)[0]
+    assert "FAMULUS_RUN_SCHEDULER_SMOKE: '1'" in lifecycle_native
+    assert workflow.count("FAMULUS_RUN_SCHEDULER_SMOKE: '1'") == 1
 
 
 def test_ci_workflow_dispatches_a_full_matrix_or_one_safe_probe() -> None:
@@ -980,7 +1140,9 @@ def test_ci_workflow_dispatches_a_full_matrix_or_one_safe_probe() -> None:
     assert "REPO_CHECKS_EXPECTED_SHA: ${{ inputs.expected_sha }}" in workflow
     assert "REPO_CHECKS_TASK: ${{ inputs.task }}" in workflow
     assert "REPO_CHECKS_SELECTOR: ${{ inputs.selector }}" in workflow
-    assert 'json.loads(os.environ["REPO_CHECKS_SELECTOR"])' in workflow
+    assert "json.loads(raw_selectors)" in workflow
+    assert 'if raw_selectors.startswith("[")' in workflow
+    assert "else [raw_selectors] if raw_selectors else []" in workflow
     assert 'command.extend(["--selector", selector])' in workflow
     assert 'if task != "combined":' in workflow
     assert "inputs.selector == '[]'" in workflow
@@ -1009,8 +1171,8 @@ def test_ci_workflow_dispatches_a_full_matrix_or_one_safe_probe() -> None:
             assert "${{ inputs." not in line
 
 
-def test_ci_artifact_uploads_include_hidden_repository_check_evidence() -> None:
-    """Catch upload-artifact silently excluding the hidden evidence directory."""
+def test_ci_artifact_uploads_include_hidden_and_separate_access_evidence() -> None:
+    """Catch hidden or assistant-access evidence being folded into another artifact."""
 
     workflow = (
         Path(__file__).resolve().parents[1]
@@ -1020,9 +1182,49 @@ def test_ci_artifact_uploads_include_hidden_repository_check_evidence() -> None:
     ).read_text(encoding="utf-8")
 
     upload_count = workflow.count("uses: actions/upload-artifact@")
-    assert upload_count == 2
-    assert workflow.count("path: .repo-checks/*.json") == upload_count
+    assert upload_count == 4
+    assert workflow.count("path: .repo-checks/*.json") == 2
+    assert "path: .repo-checks/unified-*.json" in workflow
+    assert (
+        "path: .repo-checks/assistant-access-${{ matrix.evidence_os }}.json"
+        in workflow
+    )
     assert workflow.count("include-hidden-files: true") == upload_count
+    access_upload = workflow.split("- name: Upload assistant access evidence", 1)[1]
+    access_upload = access_upload.split("- name:", 1)[0]
+    assert "if-no-files-found: error" in access_upload
+
+
+def test_unified_access_qualification_scopes_pins_control_and_credentials() -> None:
+    workflow = (
+        Path(__file__).resolve().parents[1]
+        / ".github"
+        / "workflows"
+        / "python-tests.yml"
+    ).read_text(encoding="utf-8")
+
+    pinned = "npm install -g @anthropic-ai/claude-code@2.1.237 @openai/codex@0.149.0"
+    unpinned = "npm install -g @anthropic-ai/claude-code @openai/codex"
+    assert workflow.count(pinned) == 1
+    assert workflow.count(unpinned) == 2
+    assert "id: assistant-access-control" in workflow
+    assert "Path.home()" in workflow
+    assert "--control-root \"${{ steps.assistant-access-control.outputs.control_root }}\"" in workflow
+    assert (
+        "codex sandbox -c 'sandbox_mode=\"workspace-write\"' "
+        "-c sandbox_workspace_write.network_access=true --"
+    ) in workflow
+    assert "Stage Linux assistant evidence in configured writable root" in workflow
+    assert "Collect Linux assistant evidence outside the sandbox" in workflow
+    assert '"$HOME/.assistant-logs/assistant-access-linux.json"' in workflow
+    assert "Enable Codex user namespaces on hosted Ubuntu" in workflow
+    assert "Restore hosted Ubuntu user namespace restriction" in workflow
+    assert workflow.count(
+        "kernel.apparmor_restrict_unprivileged_userns="
+    ) == 2
+    assert "FAMULUS_CLAUDE_ACCESS_SMOKE_API_KEY" in workflow
+    assert "ANTHROPIC_API_KEY: ${{ secrets.FAMULUS_CLAUDE_ACCESS_SMOKE_API_KEY }}" in workflow
+    assert "<<:" not in workflow
 
 
 def test_ci_dependency_lock_covers_the_complete_test_environment() -> None:
@@ -1056,6 +1258,112 @@ def test_precommit_hook_uses_the_combined_root_suite() -> None:
     )
     assert '"$REPO_ROOT/validators/runner.py"' not in hook
     assert '"$REPO_ROOT/scripts/run-python-tests.py"' not in hook
+
+
+@pytest.mark.parametrize("commit_only", (False, True))
+def test_precommit_hook_commits_synchronized_plugin_versions(
+    tmp_path: Path,
+    commit_only: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catch a hook that leaves the two committed plugin versions stale."""
+
+    from test_support.git_repository import GitTestRepository, isolated_git_environment
+
+    repository = GitTestRepository.create(tmp_path / "repository")
+    (repository.root / "pyproject.toml").write_text(
+        '[project]\nname = "famulus-officina"\nversion = "0.1.0"\n',
+        encoding="utf-8",
+    )
+    for directory in (".claude-plugin", ".codex-plugin"):
+        target = repository.root / directory / "plugin.json"
+        target.parent.mkdir(parents=True)
+        target.write_text(
+            '{\n  "name": "famulus",\n  "version": "0.1.0"\n}\n',
+            encoding="utf-8",
+        )
+    hooks = repository.root / ".githooks"
+    scripts = repository.root / "scripts"
+    hooks.mkdir()
+    scripts.mkdir()
+    shutil.copy2(REPO_ROOT / ".githooks" / "pre-commit", hooks / "pre-commit")
+    shutil.copy2(
+        REPO_ROOT / "scripts" / "sync-release-version.py",
+        scripts / "sync-release-version.py",
+    )
+    (repository.root / "repo_checks.py").write_text(
+        "raise SystemExit(0)\n",
+        encoding="utf-8",
+    )
+    repository.git("add", ".")
+    repository.git("commit", "--quiet", "-m", "baseline")
+    repository.git("config", "core.hooksPath", ".githooks")
+
+    (repository.root / "pyproject.toml").write_text(
+        '[project]\nname = "famulus-officina"\nversion = "1.2.3"\n',
+        encoding="utf-8",
+    )
+    repository.git("add", "pyproject.toml")
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    true_binary = shutil.which("true")
+    assert true_binary is not None
+    fake_gitleaks = fake_bin / ("gitleaks.exe" if os.name == "nt" else "gitleaks")
+    shutil.copyfile(true_binary, fake_gitleaks)
+    fake_gitleaks.chmod(0o755)
+    monkeypatch.setenv("GIT_INDEX_FILE", str(tmp_path / "ambient.index"))
+
+    # famulus-raw-git: category=hook-contract; reason=the test must exercise Git's real pre-commit index and hook environment
+    command = [
+        "git",
+        "-c",
+        "commit.gpgSign=false",
+        "-C",
+        str(repository.root),
+        "commit",
+        "--quiet",
+        "-m",
+        "bump version",
+    ]
+    if commit_only:
+        command.extend(("--only", "pyproject.toml"))
+    completed = subprocess.run(
+        command,
+        env=isolated_git_environment(
+            {"PATH": os.pathsep.join((str(fake_bin), os.environ["PATH"]))}
+        ),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    if commit_only:
+        assert completed.returncode != 0
+        assert "partial-path commits cannot synchronize a version change" in completed.stderr
+        assert b'version = "0.1.0"' in repository.git(
+            "show", "HEAD:pyproject.toml"
+        ).stdout
+        assert b'version = "1.2.3"' in repository.git(
+            "show", ":pyproject.toml"
+        ).stdout
+    else:
+        assert completed.returncode == 0, completed.stdout + completed.stderr
+        assert b'version = "1.2.3"' in repository.git(
+            "show", "HEAD:pyproject.toml"
+        ).stdout
+    for directory in (".claude-plugin", ".codex-plugin"):
+        committed = json.loads(
+            repository.git("show", f"HEAD:{directory}/plugin.json").stdout
+        )
+        staged = json.loads(
+            repository.git("show", f":{directory}/plugin.json").stdout
+        )
+        expected = "0.1.0" if commit_only else "1.2.3"
+        assert committed["version"] == expected
+        assert staged["version"] == expected
+        assert json.loads(
+            (repository.root / directory / "plugin.json").read_text(encoding="utf-8")
+        )["version"] == expected
 
 
 def test_skill_hooks_select_validators_through_root_checks() -> None:

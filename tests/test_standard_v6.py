@@ -16,8 +16,8 @@ def load_module(name: str, relative_path: str):
     return module
 
 
-renderer = load_module("standard_v6_renderer", "references/standards/render_standard_v6.py")
-validator = load_module("standard_v6_validator", "references/standards/validate_standard_v6.py")
+renderer = load_module("standard_v6_renderer", "references/standards-schema/render_standard_v6.py")
+validator = load_module("standard_v6_validator", "references/standards-schema/validate_standard_v6.py")
 render_document = renderer.render_document
 validate_document = validator.validate_document
 validate_file = validator.validate_file
@@ -348,7 +348,7 @@ def test_validate_document_uses_root_to_resolve_imports(tmp_path: Path) -> None:
         }
     }
     value["artifacts"]["missing-standard"] = {
-        "path": "references/standards/missing.standard.yaml",
+        "path": "references/standards-schema/missing.standard.yaml",
         "format": "yaml",
         "roles": ["other"],
     }
@@ -411,17 +411,17 @@ def test_validate_file_cache_findings_depend_on_traversal_context(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root = tmp_path / "repo"
-    a_path = root / "references" / "standards" / "a.standard.yaml"
-    b_path = root / "references" / "standards" / "b.standard.yaml"
+    a_path = root / "references" / "standards-schema" / "a.standard.yaml"
+    b_path = root / "references" / "standards-schema" / "b.standard.yaml"
     a = document()
     a["id"] = "a"
-    a["canonical_path"] = "references/standards/a.standard.yaml"
+    a["canonical_path"] = "references/standards-schema/a.standard.yaml"
     b = document()
     b["id"] = "b"
-    b["canonical_path"] = "references/standards/b.standard.yaml"
+    b["canonical_path"] = "references/standards-schema/b.standard.yaml"
     for value, imported_id, imported_path in (
-        (a, "b", "references/standards/b.standard.yaml"),
-        (b, "a", "references/standards/a.standard.yaml"),
+        (a, "b", "references/standards-schema/b.standard.yaml"),
+        (b, "a", "references/standards-schema/a.standard.yaml"),
     ):
         value["artifacts"]["imported-standard"] = {
             "path": imported_path,
@@ -486,7 +486,7 @@ def _add_import(value: dict, artifact_path: str, imported_path: Path) -> None:
     }
     imported = document()
     imported["id"] = "imported-standard"
-    imported["canonical_path"] = "references/standards/imported.standard.yaml"
+    imported["canonical_path"] = "references/standards-schema/imported.standard.yaml"
     _write_standard(imported_path, imported)
     value["imports"] = {
         "imported": {
@@ -516,16 +516,16 @@ def test_update_standards_acceptance_cascades_pins_evidence_and_view(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "repo"
-    base_path = root / "references" / "standards" / "base.standard.yaml"
-    dependent_path = root / "references" / "standards" / "dependent.standard.yaml"
+    base_path = root / "references" / "standards-schema" / "base.standard.yaml"
+    dependent_path = root / "references" / "standards-schema" / "dependent.standard.yaml"
     source_path = root / "evidence" / "policy.md"
-    view_path = root / "references" / "standards" / "base.md"
+    view_path = root / "references" / "standards-schema" / "base.md"
     source_path.parent.mkdir(parents=True)
     source_path.write_text("policy v1\n", encoding="utf-8")
 
     base = document()
     base["id"] = "base"
-    base["canonical_path"] = "references/standards/base.standard.yaml"
+    base["canonical_path"] = "references/standards-schema/base.standard.yaml"
     base["artifacts"]["policy-source"] = {
         "path": "evidence/policy.md",
         "format": "markdown",
@@ -543,9 +543,9 @@ def test_update_standards_acceptance_cascades_pins_evidence_and_view(
 
     dependent = document()
     dependent["id"] = "dependent"
-    dependent["canonical_path"] = "references/standards/dependent.standard.yaml"
+    dependent["canonical_path"] = "references/standards-schema/dependent.standard.yaml"
     dependent["artifacts"]["base-standard"] = {
-        "path": "references/standards/base.standard.yaml",
+        "path": "references/standards-schema/base.standard.yaml",
         "format": "yaml",
         "roles": ["other"],
     }

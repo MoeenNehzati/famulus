@@ -1,0 +1,99 @@
+content:
+- SKILL\.md
+dependencies: []
+description: Defines the LLM-facing protocol for recording durable agent milestones and reading timeline diagnostics.
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: milestone-logging.source.gateway
+interfaces:
+  milestone-logging.source.gateway.interface.default:
+    content:
+    - SKILL\.md
+    uses_interfaces:
+    - interface: milestone-logging._rtx.interface.record
+      version: 1
+    - interface: milestone-logging._rtx.interface.timeline
+      version: 1
+    contract:
+      arguments:
+        request:
+          description: Request to record or inspect agent milestone progress.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+      caller_warnings:
+      - external-side-effect: Recording appends a durable local progress record.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: request
+          formats:
+          - text
+          id: read-1
+          medium: prompt
+          sensitivity: user-private
+        writes:
+        - access: write
+          content: response
+          formats:
+          - markdown
+          id: write-1
+          medium: prompt
+          sensitivity: derived-private
+      execution:
+        consistency:
+          live: The response reflects records observed or appended during this invocation.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: response
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Use the resulting record or diagnostic output.
+        class: success
+        effects: []
+        id: completed
+        outputs:
+        - response
+      - caller_action: Report the exact logging or reading failure and continue the task.
+        class: error
+        effects: []
+        id: failed
+        outputs:
+        - response
+      outputs:
+      - audience: both
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Logging protocol guidance or the selected diagnostic result.
+        direct_io_ref: write-1
+        empty: The interface always returns a response.
+        id: response
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Record a role-labelled progress event or inspect existing milestone records.
+    version: 1
+node_type: behavioral_source
+schema_version: 6
+uses_interfaces:
+- interface: milestone-logging._rtx.interface.record
+  version: 1
+- interface: milestone-logging._rtx.interface.timeline
+  version: 1
+version: 1
+maturity: stable

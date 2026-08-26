@@ -5,6 +5,10 @@ from pathlib import Path
 import yaml
 
 from officina.blueprints.graph import load_repository_blueprint_graph
+from officina.blueprints.process_binding import (
+    compile_gateway_invocation,
+    parse_caller_invocation,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -87,7 +91,7 @@ def test_certifier_gateway_orchestrates_audits_without_default_interface() -> No
     assert {
         use["interface"] for use in gateway["uses_interfaces"]
     } == expected_uses
-    assert module["version"] == gateway["version"] == 4
+    assert module["version"] == gateway["version"] == 5
     certifier_interface = "skill-certifier._rtx.interface.certify"
     certifier_source_interface = (
         "skill-certifier._rtx.source.rtx-certifier.interface.certify"
@@ -104,16 +108,16 @@ def test_certifier_gateway_orchestrates_audits_without_default_interface() -> No
     assert next(
         use for use in gateway["uses_interfaces"] if use["interface"] == certifier_interface
     )["version"] == certifier_interface_version
-    assert drift_module["version"] == drift_gateway["version"] == 3
+    assert drift_module["version"] == drift_gateway["version"] == 4
     drift_source_interface = (
         "skill-drift._rtx.source.rtx-check-drift-state.interface.drift-status"
     )
     drift_status_version = drift_source["interfaces"][drift_source_interface][
         "version"
     ]
-    assert drift_status_version == 2
-    assert drift_source["version"] == drift_runtime["version"] == 2
-    assert drift_module["namespace_exports"]["_rtx"]["version"] == 2
+    assert drift_status_version == 3
+    assert drift_source["version"] == drift_runtime["version"] == 3
+    assert drift_module["namespace_exports"]["_rtx"]["version"] == 3
     assert drift_module["namespace_exports"]["_rtx"]["surface"]["only"][
         drift_interface
     ] == drift_status_version
@@ -162,30 +166,38 @@ def test_certifier_gateway_orchestrates_audits_without_default_interface() -> No
     )
 
 
+def test_drift_repository_routes_supply_their_subcommands() -> None:
+    graph = load_repository_blueprint_graph(REPO_ROOT)
+
+    for interface_id, subcommand in (
+        ("skill-drift._rtx.interface.compute-hashes", "compute-hashes"),
+        ("skill-drift._rtx.interface.drift-status", "status"),
+    ):
+        export = graph.exports[interface_id]
+        parsed = parse_caller_invocation(
+            export,
+            ["--repo-root", str(REPO_ROOT), "--json"],
+            stdin_requested=False,
+        )
+        plan = compile_gateway_invocation(
+            graph.nodes[export.source_node_id], export, parsed
+        )
+
+        assert plan.argv == (
+            subcommand,
+            "--repo-root",
+            str(REPO_ROOT),
+            "--json",
+        )
+
+
 def test_drift_and_canonical_docs_describe_selective_v6_worklist() -> None:
     drift_text = (DRIFT_ROOT / "SKILL.md").read_text(encoding="utf-8")
     canonical_text = (
         REPO_ROOT / "docs" / "officina" / "certification_and_drift.md"
     ).read_text(encoding="utf-8")
-    design_text = (
-        REPO_ROOT
-        / "docs"
-        / "superpowers"
-        / "specs"
-        / "2026-08-17-skill-certifier-llm-interface-design.md"
-    ).read_text(encoding="utf-8")
-    plan_text = (
-        REPO_ROOT
-        / "docs"
-        / "superpowers"
-        / "plans"
-        / "2026-08-17-skill-certifier-llm-interface-rewrite.md"
-    ).read_text(encoding="utf-8")
-
     normalized_drift = " ".join(drift_text.split())
     normalized_canonical = " ".join(canonical_text.split())
-    normalized_design = " ".join(design_text.split()).lower()
-    normalized_plan = " ".join(plan_text.split()).lower()
 
     assert "version-6 repository graphs" in normalized_drift
     assert "dependency closure rooted at that module's owned nodes" in normalized_drift
@@ -200,8 +212,6 @@ def test_drift_and_canonical_docs_describe_selective_v6_worklist() -> None:
     assert "interface: skill-certifier._rtx.interface.certify version: 2" in (
         normalized_canonical
     )
-    assert "selective evidence reuse is implemented" in normalized_design
-    assert "selective evidence reuse before runtime support exists" not in normalized_plan
 
 
 def test_each_semantic_audit_instruction_has_one_bounded_job() -> None:

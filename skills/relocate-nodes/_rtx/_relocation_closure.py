@@ -12,6 +12,7 @@ import ast
 from dataclasses import dataclass
 import json
 from pathlib import Path, PurePosixPath
+import posixpath
 import stat
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Literal
@@ -22,9 +23,9 @@ if TYPE_CHECKING:
     from ._relocation_engine import BlueprintSynchronizer, ChangeSet, RelocationManifest
 
 
-_BASIS_PATH = "references/certification/certification-basis-roots.json"
-_SCHEMA_PREFIX = "references/blueprint/"
-_MODULE_SCHEMA_PATH = "references/blueprint/module.schema.json"
+_BASIS_PATH = "references/certification-policy/certification-basis-roots.json"
+_SCHEMA_PREFIX = "references/blueprint-schema/"
+_MODULE_SCHEMA_PATH = "references/blueprint-schema/module.schema.json"
 _SHADOW_EXCLUDED_PARTS = {
     ".agents",
     ".certificates",
@@ -133,6 +134,25 @@ def _materialize_projection(changes: ChangeSet, shadow_root: Path) -> None:
             continue
         source = changes.root / relative
         target = shadow_root / relative
+        if relative in changes.symlink_writes:
+            link_text = Path(changes.symlink_writes[relative])
+            try:
+                if link_text.is_absolute():
+                    raise ValueError
+                normalized = posixpath.normpath(
+                    str(PurePosixPath(relative).parent / link_text)
+                )
+                projected = changes.projected_files()
+                target_exists = normalized in projected or any(
+                    item.startswith(normalized.rstrip("/") + "/") for item in projected
+                )
+                if normalized.startswith("../") or not target_exists:
+                    raise ValueError
+            except (RuntimeError, ValueError):
+                raise MechanicalClosureError(f"unsafe shadow symlink: {relative}") from None
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.symlink_to(link_text)
+            continue
         if source.is_symlink():
             if relative in changes.writes:
                 raise MechanicalClosureError(
@@ -194,7 +214,7 @@ def _require_closure_inputs(shadow_root: Path) -> None:
 
     required = (
         _BASIS_PATH,
-        "references/blueprint",
+        "references/blueprint-schema",
     )
     for relative in required:
         if not (shadow_root / relative).exists():
@@ -308,7 +328,7 @@ def _generated_skill_change(before: bytes, after: bytes, relative: str) -> bool:
 def _allowed_generated_change(relative: str, before: bytes, after: bytes) -> bool:
     """Return whether one synchronizer difference belongs to its narrow allowlist."""
 
-    if relative == "references/blueprint/runtime_dependencies.json":
+    if relative == "references/blueprint-schema/runtime_dependencies.json":
         return True
     parts = PurePosixPath(relative).parts
     return (
@@ -413,7 +433,7 @@ def close_projected_relocation(
         try:
             load_repository_blueprint_graph(
                 shadow_root,
-                schema_root=shadow_root / "references/blueprint",
+                schema_root=shadow_root / "references/blueprint-schema",
                 expected_schema_version=6,
             )
         except Exception as exc:

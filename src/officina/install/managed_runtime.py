@@ -15,6 +15,7 @@ and legacy ambient-package handling.
 """
 from __future__ import annotations
 
+import ctypes
 import hashlib
 import json
 import os
@@ -29,12 +30,16 @@ from pathlib import Path
 import officina.common.atomic_files as atomic_files
 import officina.common.toml_io as toml_io
 from officina.git.provenance import run_git
+from officina.install.context import InstallationContext
+from officina.install import installation_context_home_fields
+from officina.install.resolvers import resolver_source_bundle
 from officina.install import runtime_lock
 from officina.install.runtime_pointer import RuntimePointer, activate_release
 
 _VERSION_OPERATOR_RE = re.compile(r"^(==|>=|<=|!=|~=|>|<)")
 
 _DEFAULT_DEPENDENCY_INSTALL_TIMEOUT_SECONDS = 600
+_RESOLVER_GENERATION_FORMAT = b"famulus-resolver-generation-v2\0"
 
 
 def _dependency_install_timeout_seconds() -> float:
@@ -51,7 +56,6 @@ def _dependency_install_timeout_seconds() -> float:
 # <runtime_root>/bootstrap/resolvers/v1/launch.py -- see that file's
 # docstring for why it must never be imported here (it must stay
 # stdlib-only and runnable under the user's ambient Python).
-_RESOLVER_SOURCE = Path(__file__).resolve().parent / "resolvers" / "launch.py"
 
 
 class ManagedRuntimeError(Exception):
@@ -617,43 +621,119 @@ def _uv_python_install_dir(uv_bin: Path) -> Path:
     return Path(stdout)
 
 
-def _deploy_resolver(*, runtime_root: Path, trusted_interpreter_roots: tuple[Path, ...]) -> None:
-    """Deploy the dependency-free resolver and its trust sidecar to the
-    fixed path every generated launcher shim execs into
-    (``<runtime_root>/bootstrap/resolvers/v1/launch.py``), alongside a
-    ``trusted-roots.json`` sidecar (a flat JSON list of absolute path
-    strings) that resolver's ``_trusted_interpreter_roots()`` reads.
+def _durably_publish_generation(
+    temporary: Path, generation: Path, generations_dir: Path
+) -> None:
+    """Atomically rename one complete generation and durably publish its name."""
+    if os.name == "nt":
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        move_file = kernel32.MoveFileExW
+        move_file.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32]
+        move_file.restype = ctypes.c_int
+        if not move_file(str(temporary), str(generation), 0x8):
+            raise ctypes.WinError(ctypes.get_last_error())
+        return
+    os.replace(temporary, generation)
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    descriptor = os.open(generations_dir, flags)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
-    Idempotent: overwrites any prior deployment with the current resolver
-    source and trust list, so it is safe to call on every successful
-    activation. Called from ``build_candidate_release`` *before*
-    ``activate_release`` writes current.json (not after): a deployment
-    failure here must not leave a release activated with a missing or
-    broken resolver. Any ``OSError`` (missing source, permissions, disk
-    full, a concurrent-install race on the resolver directory) is converted
-    to ``ManagedRuntimeError`` so callers get the same clean, typed failure
-    as every other managed-runtime error, not a raw traceback.
+
+def _confirm_generation_parent_durable(generations_dir: Path) -> None:
+    """Re-establish the parent durability barrier for a visible generation."""
+    if os.name == "nt":
+        return
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    descriptor = os.open(generations_dir, flags)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _deploy_resolver(*, runtime_root: Path, trusted_interpreter_roots: tuple[Path, ...]) -> None:
+    """Publish one complete immutable resolver generation, then activate it.
+
+    The fixed ``v1/launch.py`` is a generation loader.  Each implementation
+    and trust-list pair is first made complete beneath ``generations/`` and
+    only then selected by atomically replacing ``v1/active.json``.  A legacy
+    fixed resolver remains usable until the final atomic loader replacement,
+    so interruption leaves either the prior complete resolver or the new one.
     """
     try:
-        resolver_dir = runtime_root / "bootstrap" / "resolvers" / "v1"
-        resolver_dir.mkdir(parents=True, exist_ok=True)
-        resolver_path = resolver_dir / "launch.py"
-        resolver_bytes = _RESOLVER_SOURCE.read_bytes()
-        # atomic_replace_bytes (not shutil.copy2): resolver_path is the
-        # fixed path every generated launcher shim and every scheduled
-        # recurring-tasks job execs into, and build_candidate_release runs
-        # again on every install-then-update flow against the same
-        # runtime_root -- a plain copy2 here could race a job that is
-        # mid-exec into this exact file, handing it a torn read. mode=0o755
-        # makes the file executable as part of the same atomic write, so no
-        # separate chmod is needed afterward.
-        atomic_files.atomic_replace_bytes(
-            resolver_path, resolver_bytes, allowed_root=resolver_dir, mode=0o755
+        resolver_root = runtime_root / "bootstrap" / "resolvers"
+        fixed_dir = resolver_root / "v1"
+        generations_dir = resolver_root / "generations"
+        fixed_dir.mkdir(parents=True, exist_ok=True)
+        generations_dir.mkdir(parents=True, exist_ok=True)
+
+        source_path = resolver_source_bundle()["launch.py"]
+        source_bytes = source_path.read_bytes()
+        prior_roots = _deployed_resolver_trusted_roots(fixed_dir, generations_dir)
+        roots = tuple(
+            sorted(
+                {*(root.resolve(strict=False) for root in prior_roots),
+                 *(root.resolve(strict=False) for root in trusted_interpreter_roots)},
+                key=str,
+            )
         )
-        trust_file = resolver_dir / "trusted-roots.json"
-        trust_file.write_text(
-            json.dumps([str(root) for root in trusted_interpreter_roots]),
-            encoding="utf-8",
+        trust_bytes = (json.dumps([str(root) for root in roots], indent=2) + "\n").encode(
+            "utf-8"
+        )
+        generation_id = hashlib.sha256(
+            _RESOLVER_GENERATION_FORMAT + source_bytes + b"\0" + trust_bytes
+        ).hexdigest()
+        generation_dir = generations_dir / generation_id
+        if not generation_dir.exists():
+            temporary = generations_dir / f".{generation_id}.{secrets.token_hex(8)}.tmp"
+            try:
+                temporary.mkdir()
+                atomic_files.atomic_replace_bytes(
+                    temporary / "launch.py",
+                    source_bytes,
+                    allowed_root=temporary,
+                    mode=0o755,
+                )
+                atomic_files.atomic_replace_bytes(
+                    temporary / "trusted-roots.json",
+                    trust_bytes,
+                    allowed_root=temporary,
+                    mode=0o644,
+                )
+                try:
+                    _durably_publish_generation(
+                        temporary, generation_dir, generations_dir
+                    )
+                except OSError:
+                    if not (temporary.is_dir() and generation_dir.is_dir()):
+                        raise
+            finally:
+                if temporary.exists():
+                    shutil.rmtree(temporary)
+        _confirm_generation_parent_durable(generations_dir)
+
+        active_bytes = (
+            json.dumps(
+                {"schema_version": 1, "generation": generation_id},
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n"
+        ).encode("utf-8")
+        atomic_files.atomic_replace_bytes(
+            fixed_dir / "active.json",
+            active_bytes,
+            allowed_root=fixed_dir,
+            mode=0o644,
+        )
+        atomic_files.atomic_replace_bytes(
+            fixed_dir / "launch.py",
+            source_bytes,
+            allowed_root=fixed_dir,
+            mode=0o755,
         )
     except OSError as exc:
         # atomic_files.AtomicWriteError is itself an OSError subclass, so
@@ -661,6 +741,134 @@ def _deploy_resolver(*, runtime_root: Path, trusted_interpreter_roots: tuple[Pat
         # directory, non-regular destination, etc.), not just plain I/O
         # failures.
         raise ManagedRuntimeError(f"could not deploy the launcher resolver: {exc}") from exc
+
+
+def _deployed_resolver_trusted_roots(
+    fixed_dir: Path, generations_dir: Path
+) -> tuple[Path, ...]:
+    """Read roots from the prior complete generation or legacy sidecar."""
+    trust_file = fixed_dir / "trusted-roots.json"
+    active_file = fixed_dir / "active.json"
+    try:
+        active = json.loads(active_file.read_text(encoding="utf-8"))
+        generation = active.get("generation") if isinstance(active, dict) else None
+        if isinstance(generation, str) and re.fullmatch(r"[0-9a-f]{64}", generation):
+            trust_file = generations_dir / generation / "trusted-roots.json"
+        payload = json.loads(trust_file.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return ()
+    if not isinstance(payload, list):
+        return ()
+    return tuple(Path(value) for value in payload if isinstance(value, str) and Path(value).is_absolute())
+
+
+def deployed_resolver_trusted_roots(*, runtime_root: Path) -> tuple[Path, ...]:
+    """Read roots from the same complete generation the deployed resolver accepts."""
+    resolver_root = runtime_root / "bootstrap" / "resolvers"
+    fixed_dir = resolver_root / "v1"
+    generations_root = resolver_root / "generations"
+    active_file = fixed_dir / "active.json"
+    if not active_file.exists():
+        trust_file = fixed_dir / "trusted-roots.json"
+    else:
+        try:
+            payload = json.loads(active_file.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise ManagedRuntimeError(
+                f"could not read active resolver generation: {exc}"
+            ) from exc
+        if not isinstance(payload, dict) or set(payload) != {
+            "schema_version",
+            "generation",
+        }:
+            raise ManagedRuntimeError("active resolver generation has invalid fields")
+        if payload.get("schema_version") != 1:
+            raise ManagedRuntimeError("active resolver generation has unsupported schema")
+        generation = payload.get("generation")
+        if not isinstance(generation, str) or re.fullmatch(r"[0-9a-f]{64}", generation) is None:
+            raise ManagedRuntimeError("active resolver generation has invalid identity")
+        generation_dir = generations_root / generation
+        try:
+            if generation_dir.resolve(strict=True).parent != generations_root.resolve(
+                strict=True
+            ):
+                raise ManagedRuntimeError(
+                    "active resolver generation escapes its generation root"
+                )
+        except OSError as exc:
+            raise ManagedRuntimeError(
+                f"active resolver generation is incomplete: {exc}"
+            ) from exc
+        launch_file = generation_dir / "launch.py"
+        trust_file = generation_dir / "trusted-roots.json"
+        if not launch_file.is_file() or not trust_file.is_file():
+            raise ManagedRuntimeError("active resolver generation is incomplete")
+    try:
+        entries = json.loads(trust_file.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return ()
+    if not isinstance(entries, list):
+        return ()
+    return tuple(Path(entry) for entry in entries if isinstance(entry, str))
+
+
+def _publish_launcher_resources(
+    *, release_dir: Path, repo_root: Path, context: InstallationContext
+) -> Path:
+    """Publish the exact resource address carried by a schema-3 pointer."""
+    if context.mode == "development":
+        return repo_root
+    destination = release_dir / "launcher-resources"
+    temporary = release_dir / ".launcher-resources.tmp"
+    try:
+        temporary.mkdir()
+        for name in ("agents", "profiles", "llmhooks"):
+            source = repo_root / name
+            if source.is_dir():
+                shutil.copytree(
+                    source,
+                    temporary / name,
+                    symlinks=False,
+                    ignore=shutil.ignore_patterns("__pycache__"),
+                )
+        for required in ("agents", "profiles"):
+            if not (temporary / required).is_dir():
+                raise ManagedRuntimeError(
+                    f"launcher resource directory is missing: {repo_root / required}"
+                )
+        os.replace(temporary, destination)
+    except (OSError, shutil.Error) as exc:
+        raise ManagedRuntimeError(f"could not publish launcher resources: {exc}") from exc
+    return destination
+
+
+def _publish_installation_context(
+    *, release_dir: Path, context: InstallationContext
+) -> Path:
+    path = release_dir / "installation-context.json"
+    payload = {
+        "schema_version": 2,
+        "release_id": release_dir.name,
+        "mode": context.mode,
+        "installation_id": context.installation_id,
+        "source_root": str(context.source_root.resolve()),
+        "development_root": (
+            str(context.development_root.resolve())
+            if context.development_root is not None
+            else None
+        ),
+        **installation_context_home_fields(context),
+    }
+    try:
+        atomic_files.atomic_replace_bytes(
+            path,
+            (json.dumps(payload, indent=2) + "\n").encode("utf-8"),
+            allowed_root=release_dir,
+            mode=0o444,
+        )
+    except OSError as exc:
+        raise ManagedRuntimeError(f"could not publish installation context: {exc}") from exc
+    return path
 
 
 def build_candidate_release(
@@ -675,7 +883,8 @@ def build_candidate_release(
     python_version: str,
     repo_root: Path | None = None,
     optional_module_ids: tuple[str, ...] = (),
-    editable: bool = False,
+    editable: bool | None = None,
+    installation_context: InstallationContext | None = None,
 ) -> RuntimePointer:
     """Create a new release directory, provision its managed interpreter,
     install its locked Python dependencies, install Officina, verify the
@@ -686,10 +895,12 @@ def build_candidate_release(
     passed straight through to ``uv venv --python``.
 
     Production callers pass ``repo_root`` explicitly. That path is validated
-    and built as a wheel. By default the retained wheel is installed; editable
-    candidates install the explicit repository instead. Editable mode requires
-    an explicit ``repo_root``. The omitted-root compatibility path retains the
-    target branch's direct package-copy behavior for low-level callers.
+    and built as a wheel. When ``editable`` is unspecified, an installation
+    context selects development/editable or standard/wheel behavior; without a
+    context the default remains standard/wheel behavior. An explicit editable
+    value must match the context. Editable mode requires an explicit
+    ``repo_root``. The omitted-root compatibility path retains the target
+    branch's direct package-copy behavior for low-level callers.
 
     Core-only candidates use the checked-in universal lock.  A requested
     optional module selection is compiled into a release-local hash-checked
@@ -702,8 +913,18 @@ def build_candidate_release(
     resolver and its trust sidecar are deployed *before* activation for exactly
     this reason: a deployment failure must prevent activation, not follow it.
     """
+    if installation_context is not None:
+        context_editable = installation_context.mode == "development"
+        if editable is None:
+            editable = context_editable
+        elif editable != context_editable:
+            raise ManagedRuntimeError(
+                "editable does not match installation context mode"
+            )
+    elif editable is None:
+        editable = False
     if editable and repo_root is None:
-        raise ManagedRuntimeError("editable managed runtime requires explicit repo_root")
+        raise ManagedRuntimeError("repo_root is required for editable mode")
 
     selected_module_ids = tuple(sorted(set(optional_module_ids)))
     selected_lock_input_path = lock_input_path
@@ -727,6 +948,17 @@ def build_candidate_release(
     if repo_root is None:
         repo_root = Path(__file__).resolve().parents[3]
     repo_root = Path(repo_root).resolve()
+    if installation_context is not None:
+        if installation_context.paths.runtime_root.resolve(strict=False) != runtime_root.resolve(
+            strict=False
+        ):
+            raise ManagedRuntimeError(
+                "installation context runtime_root does not match candidate runtime_root"
+            )
+        if installation_context.source_root.resolve() != repo_root:
+            raise ManagedRuntimeError(
+                "installation context source_root does not match candidate repo_root"
+            )
     repository_config = repo_root / toml_io.repository_config_filename()
     release_id = _new_release_id()
     release_dir = runtime_root / "releases" / release_id
@@ -813,6 +1045,18 @@ def build_candidate_release(
             python_version=python_version,
         )
 
+    launcher_resources = None
+    context_path = None
+    if installation_context is not None:
+        launcher_resources = _publish_launcher_resources(
+            release_dir=release_dir,
+            repo_root=repo_root,
+            context=installation_context,
+        )
+        context_path = _publish_installation_context(
+            release_dir=release_dir, context=installation_context
+        )
+
     trusted_interpreter_roots = (_uv_python_install_dir(uv_bin),)
     _deploy_resolver(runtime_root=runtime_root, trusted_interpreter_roots=trusted_interpreter_roots)
     return activate_release(
@@ -820,6 +1064,8 @@ def build_candidate_release(
         release_dir=release_dir,
         python_bin=python_bin,
         repository_config=repository_config,
+        launcher_resources=launcher_resources,
+        installation_context=context_path,
         trusted_interpreter_roots=trusted_interpreter_roots,
     )
 
@@ -837,5 +1083,6 @@ __all__ = [
     "ManagedRuntimeError",
     "build_candidate_release",
     "declared_python_packages",
+    "deployed_resolver_trusted_roots",
     "uv_python_install_dir",
 ]

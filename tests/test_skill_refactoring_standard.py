@@ -24,8 +24,8 @@ def load_module(name: str, relative_path: str):
     return module
 
 
-validator = load_module("skill_refactoring_validator", "references/standards/validate_standard_v6.py")
-renderer = load_module("skill_refactoring_renderer", "references/standards/render_standard_v6.py")
+validator = load_module("skill_refactoring_validator", "references/standards-schema/validate_standard_v6.py")
+renderer = load_module("skill_refactoring_renderer", "references/standards-schema/render_standard_v6.py")
 
 
 EXPECTED_SMELLS = {
@@ -180,7 +180,7 @@ def test_category_remedy_uses_schema_without_documentation_dependency():
     ]
 
     assert remedy["steps"][0]["instruction"] == (
-        "Use a typed enum value from `references/blueprint/schema.json`."
+        "Use a typed enum value from `references/blueprint-schema/schema.json`."
     )
 
 

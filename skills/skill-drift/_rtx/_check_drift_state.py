@@ -68,7 +68,7 @@ class _V4DerivedState:
 def _schema_root_for_version(root: Path, schema_version: int) -> Path | None:
     """Return the live schema root unless v5 selects its retired owner."""
 
-    return root / "references" / "blueprint" if schema_version in {4, 6} else None
+    return root / "references" / "blueprint-schema" if schema_version in {4, 6} else None
 
 
 def _v4_repository_state(
@@ -101,7 +101,7 @@ def _v4_repository_state(
         dict(derived.states),
         derived.source_commit,
         derived.certification_basis_hash,
-        root / "references" / "blueprint",
+        root / "references" / "blueprint-schema",
         dict(derived.certifier_identity),
     )
 
@@ -456,7 +456,7 @@ def requested_skill_sources(args: argparse.Namespace) -> list[SkillSource]:
                 skills_root=skills_root,
             )
         ]
-    if args.repo_root != REPO_ROOT:
+    if args.repo_root is not None:
         root = args.repo_root.resolve()
         return [
             SkillSource(
@@ -475,7 +475,7 @@ def requested_skill_sources(args: argparse.Namespace) -> list[SkillSource]:
         try:
             graph = load_repository_blueprint_graph(
                 source.package_root,
-                schema_root=source.package_root / "references" / "blueprint",
+                schema_root=source.package_root / "references" / "blueprint-schema",
             )
             if not graph.nodes:
                 raise DriftCheckError(
@@ -937,13 +937,13 @@ def build_parser() -> argparse.ArgumentParser:
     status.add_argument("skills", nargs="*")
     status.add_argument("--all", action="store_true")
     status.add_argument("--json", action="store_true")
-    status.add_argument("--repo-root", type=Path, default=REPO_ROOT, help=argparse.SUPPRESS)
+    status.add_argument("--repo-root", type=Path, help=argparse.SUPPRESS)
     status.add_argument("--skill-root", type=Path)
     status.add_argument("--skills-root", type=Path, help=argparse.SUPPRESS)
     hashes = subparsers.add_parser("compute-hashes")
     hashes.add_argument("skills", nargs="*")
     hashes.add_argument("--json", action="store_true")
-    hashes.add_argument("--repo-root", type=Path, default=REPO_ROOT, help=argparse.SUPPRESS)
+    hashes.add_argument("--repo-root", type=Path, help=argparse.SUPPRESS)
     hashes.add_argument("--skill-root", type=Path)
     hashes.add_argument("--skills-root", type=Path, help=argparse.SUPPRESS)
     return parser

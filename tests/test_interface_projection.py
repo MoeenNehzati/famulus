@@ -546,21 +546,16 @@ def test_recurring_tasks_direct_job_edit_exports_project_complete_usage(
         assert source.node_id == "recurring-tasks._rtx.source.rtx-job-control"
         assert export.terminal_interface_id == child_interface
         assert export.source_interface_id == source_interface
-        assert export.declaration["usage"] == (
-            "<name> [--jobs-file FILE] [--no-sync]"
-        )
+        assert export.declaration["usage"] == "<name>"
         assert projected["id"] == public_interface
         assert projected["source_module"] == "recurring-tasks._rtx"
         assert projected["source_interface"] == source_interface
         arguments = projected["contract"]["arguments"]
-        assert arguments["jobs-file"]["required"] is False
-        assert arguments["jobs-file"]["default"] == "jobs.yaml"
-        assert arguments["no-sync"]["required"] is False
-        assert arguments["no-sync"]["default"] is False
+        assert set(arguments) == {"name"}
+        assert arguments["name"]["required"] is True
         assert projected["process_binding"]["patterns"] == [
             {
-                "allowed_flags": ["--jobs-file", "--no-sync"],
-                "flag_patterns": {"--jobs-file": "^.+$"},
+                "allowed_flags": [],
                 "max_positionals": 1,
                 "min_positionals": 1,
                 "name": "owner",
@@ -656,7 +651,7 @@ def test_projection_selects_generic_exports_and_helper_closure(tmp_path: Path) -
     }
     assert "type:string" in projection.vocabulary
     schema_validator(
-        load_schema("references/blueprint/interface-projection.schema.json")
+        load_schema("references/blueprint-schema/interface-projection.schema.json")
     ).validate(document)
     assert standalone_export_size(run) > 0
 
@@ -717,7 +712,7 @@ def test_projection_with_no_dependencies_is_empty_and_valid(tmp_path: Path) -> N
     assert projection.document["helper_interfaces"] == {}
     assert projection.vocabulary == frozenset()
     schema_validator(
-        load_schema("references/blueprint/interface-projection.schema.json")
+        load_schema("references/blueprint-schema/interface-projection.schema.json")
     ).validate(projection.document)
 
 

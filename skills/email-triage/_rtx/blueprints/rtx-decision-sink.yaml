@@ -2,13 +2,19 @@ content:
 - _decision_sink\.py
 dependencies:
 - blueprint:
+    base: repository-root
+    path: src/officina/common/blueprints/famulus-paths.yaml
+  reason: Resolves the managed email-triage state root for the destination log.
+  source: common.source.famulus-paths
+  version: 1
+- blueprint:
     base: module-root
     path: blueprints/rtx-init.yaml
   reason: Loads Python package support from _rtx/__init__.py.
   source: email-triage._rtx.source.rtx-init
   version: 1
-description: Appends one timestamped email-classification decision to the skill-local
-  triage log.
+description: Appends one timestamped email-classification decision to the platform-resolved
+  email-triage state log, copying a legacy module-local log on first use when required.
 gateway:
   language: Python
   path: _decision_sink.py
@@ -17,7 +23,9 @@ interfaces:
   email-triage._rtx.source.rtx-decision-sink.interface.scripts-log-decision:
     content:
     - _decision_sink\.py
-    uses_interfaces: []
+    uses_interfaces:
+    - interface: common.interface.famulus-paths
+      version: 1
     contract:
       arguments:
         account:
@@ -67,18 +75,29 @@ interfaces:
           sensitivity: user-private
           type:
             kind: string
-      caller_warnings: []
+      caller_warnings:
+      - external-side-effect: When the managed log is absent and the legacy module-local
+          log exists, the legacy file is copied to managed state before the new decision is appended.
       direct_io:
         network: []
-        reads: []
+        reads:
+        - access: read
+          content: Optional legacy email-triage decisions copied on first managed use.
+          formats: [text]
+          id: legacy-log
+          medium: local-filesystem
+          path: <module-root>/triage.log
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
         writes:
         - access: write
-          content: decision
+          content: Optional migrated legacy decisions followed by the new decision.
           formats:
           - text
           id: write-1
           medium: local-filesystem
-          path: triage.log
+          path: <email_triage_state_root>/triage.log
           path_match: exact
           sensitivity: user-private
           system: filesystem
@@ -86,6 +105,19 @@ interfaces:
         consistency:
           live: Appends after the current end of triage.log.
         effects:
+        - action: create
+          confirmation_evidence:
+            direct_io_ref: write-1
+            kind: direct-io
+          direct_io_ref: write-1
+          id: migrate-legacy-log
+          may_occur_in_outcomes:
+          - logged
+          reversibility:
+            irreversible: The migrated history and newly appended decision share one managed log and are not separated automatically.
+          value_source:
+            direct_io_ref: legacy-log
+            kind: direct-io
         - action: append
           confirmation_evidence:
             direct_io_ref: write-1
@@ -102,7 +134,8 @@ interfaces:
         lifecycle: finite
         mutation_safety:
           atomicity:
-            per_effect_only: One formatted decision line is appended per invocation.
+            per_effect_only: Legacy copy and decision append are separate operations;
+              the formatted decision is appended in one write.
           concurrent_invocations:
             unsafe: Concurrent appends are not explicitly serialized.
           idempotency:
@@ -110,7 +143,8 @@ interfaces:
           on_uncertain_completion:
             verify_then_decide: Inspect the end of triage.log before retrying.
           partial_effects_on_failure:
-            possible: A partial line may remain after an interrupted append.
+            possible: A migrated destination can remain without the new decision,
+              or a partial decision line can remain after interruption.
           rollback_on_failure:
             unavailable: The interface does not edit prior log content on failure.
         state_effect: mutating
@@ -124,6 +158,7 @@ interfaces:
       - caller_action: Continue triage processing.
         class: success
         effects:
+        - migrate-legacy-log
         - append-decision
         id: logged
         outputs: []
@@ -151,6 +186,8 @@ platform_support:
   windows: true
 runtime_dependencies: []
 schema_version: 6
-uses_interfaces: []
+uses_interfaces:
+- interface: common.interface.famulus-paths
+  version: 1
 version: 1
 maturity: stable

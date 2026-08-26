@@ -35,6 +35,12 @@ exports:
       allow_all_modules: true
       allowed_callers: []
     source_interface: connect-google.source.gateway.interface.default
+  connect-google.interface.setup:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: connect-google.source.gateway.interface.default
+    setup_requires_setup_of: []
 gateway:
   language: Markdown
   path: SKILL.md

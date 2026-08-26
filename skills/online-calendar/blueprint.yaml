@@ -1,0 +1,84 @@
+authority:
+  owns_filesystem: []
+children:
+  _rtx: {}
+content:
+- SKILL\.md
+description: Reads and modifies Google Calendar events and owns the service-specific
+  OAuth credential setup used by its calendar client.
+discovery:
+  mechanism: skill
+  catalog:
+    domain: personal-assistance
+    topics:
+    - planning
+    - personal-organization
+    - external-integrations
+    visibility: featured
+  activated_by:
+  - user-request
+  - skill-workflow
+  persistent_modifier: false
+exports:
+  online-calendar.interface.default:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: online-calendar.source.gateway.interface.default
+  online-calendar.interface.setup:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: online-calendar.source.gateway.interface.default
+    setup_requires_setup_of:
+    - interface: connect-google.interface.setup
+      version: 1
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: online-calendar
+namespace_exports:
+  _rtx:
+    version: 1
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    surface:
+      only:
+        online-calendar._rtx.interface.ensure-oauth: 1
+        online-calendar._rtx.interface.scripts-gcal: 1
+        online-calendar._rtx.interface.setup-oauth: 1
+        online-calendar._rtx.interface.use-google-credential: 1
+        online-calendar._rtx.interface.use-google-credential-file: 1
+    interface_access:
+      online-calendar._rtx.interface.ensure-oauth:
+        allow_all_modules: false
+        allowed_callers: []
+      online-calendar._rtx.interface.scripts-gcal:
+        allow_all_modules: false
+        allowed_callers:
+        - daily-plan
+        - daily-plan._rtx
+      online-calendar._rtx.interface.setup-oauth:
+        allow_all_modules: false
+        allowed_callers: []
+      online-calendar._rtx.interface.use-google-credential:
+        allow_all_modules: false
+        allowed_callers: []
+      online-calendar._rtx.interface.use-google-credential-file:
+        allow_all_modules: false
+        allowed_callers:
+        - connect-google
+        - connect-google._rtx
+node_type: module
+schema_version: 6
+sources:
+  online-calendar.source.gateway:
+    blueprint:
+      base: module-root
+      path: blueprints/gateway.yaml
+version: 2
+maturity: experimental
+installation_tier: core
+personal_preference:
+  applies: false

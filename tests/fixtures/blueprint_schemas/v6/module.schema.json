@@ -185,6 +185,11 @@
         },
         "access": {
           "$ref": "#/definitions/access"
+        },
+        "setup_requires_setup_of": {
+          "$ref": "common.schema.json#/definitions/interfaceUseList",
+          "description": "Setup interfaces that must be completed before this setup interface.",
+          "$comment": "Do not list the base Famulus or assistant-tools installer here. Famulus cannot start without it; that prerequisite is handled separately by a session-start hook."
         }
       }
     },

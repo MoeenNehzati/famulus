@@ -1,0 +1,17 @@
+schema_version: 6
+node_type: behavioral_source
+id: standards-schema.source.docstring-schema
+version: 1
+maturity: stable
+description: Defines the canonical docstring standard, grammar, and legacy format schema.
+gateway:
+  path: docstring.standard.yaml
+  language: YAML
+content:
+- docstring\.standard\.lark
+- docstring\.standard\.yaml
+- docstring_format\.schema\.json
+- docstring_format\.yaml
+dependencies: []
+uses_interfaces: []
+interfaces: {}

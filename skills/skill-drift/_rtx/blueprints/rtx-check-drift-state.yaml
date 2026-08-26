@@ -36,6 +36,18 @@ interfaces:
           sensitivity: public
           type:
             kind: flag
+        repo-root:
+          description: Exact repository root whose complete canonical module graph
+            should be hashed instead of discovering installed copies.
+          direct_io_ref: read-1
+          required: false
+          sensitivity: user-private
+          type:
+            access: read
+            kind: dir
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
         skill-root:
           description: Exact installed module root to hash instead of discovering
             installed copies.
@@ -200,6 +212,8 @@ interfaces:
     description: Compute canonical certification-basis and v6 node hashes for exact
       or installed modules.
     process_binding:
+      args_prefix:
+      - compute-hashes
       entry: Interface
       kind: process
       patterns:
@@ -207,14 +221,14 @@ interfaces:
         allow_stdin: false
         allowed_flags:
         - --json
+        - --repo-root
         - --skill-root
         flag_patterns:
+          --repo-root: ^.+$
           --skill-root: ^.+$
-        min_positionals: 1
-        positional_patterns:
-          '0': ^compute-hashes$
-    usage: compute-hashes [target ...] [--skill-root ROOT] [--json]
-    version: 1
+        min_positionals: 0
+    usage: '[target ...] [--repo-root ROOT | --skill-root ROOT] [--json]'
+    version: 2
   skill-drift._rtx.source.rtx-check-drift-state.interface.drift-status:
     content:
     - _check_drift_state\.py
@@ -244,6 +258,18 @@ interfaces:
           sensitivity: public
           type:
             kind: flag
+        repo-root:
+          description: Exact repository root whose complete canonical module graph
+            should be inspected instead of discovering installed copies.
+          direct_io_ref: read-1
+          required: false
+          sensitivity: user-private
+          type:
+            access: read
+            kind: dir
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
         skill-root:
           description: Exact installed module root to inspect instead of discovering
             installed copies.
@@ -459,6 +485,8 @@ interfaces:
       and the dependency-first stale worklist for exact or installed v6 modules
       without writing certification state.
     process_binding:
+      args_prefix:
+      - status
       entry: Interface
       kind: process
       patterns:
@@ -467,14 +495,14 @@ interfaces:
         allowed_flags:
         - --json
         - --all
+        - --repo-root
         - --skill-root
         flag_patterns:
+          --repo-root: ^.+$
           --skill-root: ^.+$
-        min_positionals: 1
-        positional_patterns:
-          '0': ^status$
-    usage: status [target ...] [--all] [--skill-root ROOT] [--json]
-    version: 2
+        min_positionals: 0
+    usage: '[target ...] [--all] [--repo-root ROOT | --skill-root ROOT] [--json]'
+    version: 3
 node_type: behavioral_source
 platform_support:
   linux: true
@@ -491,5 +519,5 @@ uses_interfaces:
   version: 1
 - interface: certification.interface.view
   version: 1
-version: 2
+version: 3
 maturity: stable

@@ -1,0 +1,60 @@
+content: [instructions/validate\-logic\.md]
+dependencies: []
+description: Audits source-to-Rutter traceability against current public Rutter capabilities and identifies every remaining semantic or authority gap.
+gateway: {language: Markdown, path: instructions/validate-logic.md}
+id: distill-to-rutters.source.validate-logic
+interfaces:
+  distill-to-rutters.source.validate-logic.interface.validate-logic:
+    content: [instructions/validate\-logic\.md]
+    uses_interfaces: []
+    contract:
+      arguments:
+        request: {description: 'Input, approved preceding artifacts, live repository context, and corrections.', required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+      caller_warnings: [{external-side-effect: Creates or revises 04_logic_validation.md.}]
+      direct_io:
+        network: []
+        reads:
+        - {id: source, medium: repository-filesystem, access: read, content: 'Input Markdown, approved artifacts and orchestration, owning declarations, contained current public Rutter root and source blueprints, operation vocabularies, and versioned semantic binding and rejection-result contracts, tests, and diff required by this stage', formats: [markdown, yaml, json, python, git-metadata, text], sensitivity: user-private}
+        writes:
+        - {id: artifact, medium: local-filesystem, access: write, content: 04_logic_validation.md stage artifact, formats: [markdown], path: '<input-directory>/<source-stem>_distillation/04_logic_validation.md', path_match: exact, sensitivity: derived-private, system: filesystem}
+        - {id: response, medium: prompt, access: write, content: Artifact path and validation request, formats: [markdown], sensitivity: derived-private, system: agent-runtime}
+      execution:
+        consistency: {live: 'Every logic-captured claim is checked against the graph prerequisite and current public Rutter interface declarations in the same repository during this invocation.'}
+        effects:
+        - id: artifact-write
+          direct_io_ref: artifact
+          action: update
+          value_source: {kind: argument, argument_ref: request}
+          may_occur_in_outcomes: [logic-captured, logic-gap, partial, failed]
+          confirmation_evidence: {kind: direct-io, direct_io_ref: artifact}
+          reversibility: {reversible: Delete or revise this unapproved artifact without changing approved preceding artifacts.}
+        lifecycle: finite
+        mutation_safety:
+          atomicity: {per_effect_only: Only the current stage artifact is written.}
+          concurrent_invocations: {unsafe: Concurrent revisions can overwrite the same artifact.}
+          idempotency: {idempotent: Unchanged inputs and correction authority produce the same artifact content.}
+          on_uncertain_completion: {verify_then_decide: Read the artifact before retrying.}
+          partial_effects_on_failure: {possible: The artifact may be written before the response is returned.}
+          rollback_on_failure: {available: Remove only the incomplete current artifact.}
+        state_effect: mutating
+        verification: [{method: direct-io-state, direct_io_ref: artifact}]
+      helpers: []
+      interaction: {mode: interactive, channel: tty, unattended_outcome: approval-required}
+      outcomes:
+      - {id: logic-captured, class: success, outputs: [artifact, response], effects: [artifact-write], caller_action: Validate this artifact before authorizing implementation design.}
+      - {id: logic-gap, class: partial, outputs: [artifact, response], effects: [artifact-write], caller_action: Validate the gap artifact before an owning graph or logic repair.}
+      - {id: partial, class: partial, outputs: [artifact, response], effects: [artifact-write], caller_action: Resolve incomplete validation work without advancing.}
+      - {id: approval-required, class: refusal, outputs: [response], effects: [], caller_action: Supply the missing stage authority or requested correction.}
+      - {id: failed, class: error, outputs: [artifact, response], effects: [artifact-write], caller_action: Resolve the recorded failure without advancing.}
+      outputs:
+      - {id: artifact, audience: both, description: 04_logic_validation.md stage artifact., direct_io_ref: artifact, cardinality: {minimum: 0, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Empty only on refusal or failure., type: {kind: string, sensitivity: derived-private}}
+      - {id: response, audience: human, description: 'Artifact path, validation request, or gap.', direct_io_ref: response, cardinality: {minimum: 1, maximum: 1}, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, empty: Never empty., type: {kind: string, sensitivity: derived-private}}
+      preconditions: []
+    description: Validate that every normative and coordinator obligation has actor-preserving enforcement through a current versioned public Rutter binding contract.
+    usage: <input-markdown> <approved-semantic-artifacts>
+    version: 1
+node_type: behavioral_source
+schema_version: 6
+uses_interfaces: []
+version: 1
+maturity: experimental
