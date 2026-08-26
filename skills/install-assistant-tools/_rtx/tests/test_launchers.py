@@ -17,6 +17,18 @@ else:
 from .install_test_utils import assert_default_bin_dir_matches_famulus_paths
 
 
+@pytest.fixture(autouse=True)
+def _isolate_famulus_path_environment(monkeypatch):
+    for name in (
+        "XDG_DATA_HOME",
+        "XDG_CONFIG_HOME",
+        "XDG_STATE_HOME",
+        "APPDATA",
+        "LOCALAPPDATA",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+
 def _make_repo(tmp_path: Path) -> Path:
     repo_root = tmp_path / "repo"
     skill_dir = repo_root / "skills" / "install-assistant-tools"
