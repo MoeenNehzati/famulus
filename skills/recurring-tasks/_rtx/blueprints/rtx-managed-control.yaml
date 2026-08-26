@@ -1,0 +1,23 @@
+content:
+- _managed_control\.py
+dependencies: []
+description: Resolves the active managed recurring runtime, materializes or loads its
+  canonical schedule descriptor, and invokes one control operation through the fixed
+  runtime resolver.
+gateway:
+  language: Python
+  path: _managed_control.py
+id: recurring-tasks._rtx.source.rtx-managed-control
+interfaces: {}
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 6
+uses_interfaces:
+- interface: recurring.interface.control
+  version: 1
+version: 1
+maturity: experimental

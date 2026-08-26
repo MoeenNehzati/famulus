@@ -53,7 +53,6 @@ children: {}
 content:
 - default_jobs\.yaml
 - _healthcheck_probe\.py
-- _install_owner\.py
 - __init__\.py
 - _assistant_desktop_notify\.py
 - _job_control\.py
@@ -61,13 +60,6 @@ content:
 - _job_executor\.py
 - _jobs_config\.py
 - _run_record\.py
-- _schedule_context\.py
-- _schedule_backend/__init__\.py
-- _schedule_backend/_base_backend\.py
-- _schedule_backend/_linux_backend\.py
-- _schedule_backend/_linux_registration_check\.py
-- _schedule_backend/_osx_backend\.py
-- _schedule_backend/_windows_backend\.py
 - _setup_runner\.py
 - _unit_writer\.py
 - tests/.*
@@ -155,6 +147,10 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/rtx-job-executor.yaml
+  recurring-tasks._rtx.source.rtx-managed-control:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-managed-control.yaml
   recurring-tasks._rtx.source.rtx-jobs-config:
     blueprint:
       base: module-root
@@ -163,14 +159,6 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/rtx-run-record.yaml
-  recurring-tasks._rtx.source.rtx-schedule-context:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-schedule-context.yaml
-  recurring-tasks._rtx.source.rtx-schedule-backend-init:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-schedule-backend-init.yaml
   recurring-tasks._rtx.source.rtx-setup-runner:
     blueprint:
       base: module-root

@@ -5,6 +5,11 @@
 > `superpowers:executing-plans` to implement this plan task-by-task. Steps use
 > checkbox (`- [ ]`) syntax for tracking.
 
+> **Recurring-renderer supersession (2026-08-25):** The file-level recurring
+> scheduler steps in this plan are superseded by the
+> [Recurring Renderer Simplification Sequence](2026-08-25-recurring-renderer-simplification.md).
+> The remaining installation architecture remains authoritative.
+
 **Goal:** Provide one five-stage Famulus installation flow whose standard and
 development modes differ only in resolved paths, resource source, and activation
 scope.

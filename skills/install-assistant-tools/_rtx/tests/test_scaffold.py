@@ -319,10 +319,9 @@ def test_run_writes_windows_dispatcher_wakeup_and_invoke_skill_launchers(tmp_pat
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
     monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
     # Dispatcher.bat generation resolves a concrete interpreter path via
-    # shutil.which; mock it (as test_schedule_backend.py's Windows tests
-    # do) rather than let the real shutil.which run its win32-specific
-    # branch on this non-Windows test host, where it would fail since
-    # _winapi isn't importable.
+    # shutil.which; mock it rather than let the real shutil.which run its
+    # win32-specific branch on this non-Windows test host, where it would fail
+    # since _winapi isn't importable.
     monkeypatch.setattr(
         windows_launcher.shutil,
         "which",

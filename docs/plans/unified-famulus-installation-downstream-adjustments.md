@@ -5,6 +5,12 @@
 > `superpowers:executing-plans` to implement this plan task-by-task. Steps use
 > checkbox (`- [ ]`) syntax for tracking.
 
+> **Recurring-renderer supersession (2026-08-25):** The recurring scheduler
+> implementation steps naming `_schedule_context.py`, `_schedule_backend/`,
+> and `_install_owner.py` are superseded by the
+> [Recurring Renderer Simplification Sequence](2026-08-25-recurring-renderer-simplification.md).
+> The remaining downstream adjustments remain authoritative.
+
 **Goal:** Adjust every consumer whose paths, launcher selection, persistent
 environment, or scheduler registration assumptions change under the unified
 Famulus installation architecture.

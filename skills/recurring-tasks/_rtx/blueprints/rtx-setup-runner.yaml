@@ -3,38 +3,11 @@ content:
 dependencies:
 - blueprint:
     base: module-root
-    path: blueprints/rtx-schedule-context.yaml
-  reason: Loads the validated installation schedule context used for setup status and healthcheck rendering.
-  source: recurring-tasks._rtx.source.rtx-schedule-context
+    path: blueprints/rtx-managed-control.yaml
+  reason: Delegates setup through the shared managed-runtime command helper.
+  source: recurring-tasks._rtx.source.rtx-managed-control
   version: 1
-- blueprint:
-    base: module-root
-    path: blueprints/rtx-healthcheck-probe.yaml
-  reason: Registers an independent periodic invocation of the public healthcheck
-    interface.
-  source: recurring-tasks._rtx.source.rtx-healthcheck-probe
-  version: 1
-- blueprint:
-    base: module-root
-    path: blueprints/rtx-init.yaml
-  reason: Loads Python package support from _rtx/__init__.py.
-  source: recurring-tasks._rtx.source.rtx-init
-  version: 1
-- blueprint:
-    base: module-root
-    path: blueprints/rtx-schedule-backend-init.yaml
-  reason: Imports Python source from _rtx/_schedule_backend/__init__.py.
-  source: recurring-tasks._rtx.source.rtx-schedule-backend-init
-  version: 1
-- blueprint:
-    base: module-root
-    path: blueprints/rtx-unit-writer.yaml
-  reason: Imports Python source from _rtx/_unit_writer.py.
-  source: recurring-tasks._rtx.source.rtx-unit-writer
-  version: 1
-description: Performs host setup by ensuring agent environment, syncing installation-ID-owned
-  scheduler entries, installing Linux's independent namespaced healthcheck sentinel or
-  reporting on-demand-only capability, and reporting status.
+description: Delegates recurring-task host setup to the canonical managed runtime.
 gateway:
   language: Python
   path: _setup_runner.py

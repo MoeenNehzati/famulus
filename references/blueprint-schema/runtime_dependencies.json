@@ -5025,29 +5025,7 @@
                 "macos": true,
                 "windows": false
               },
-              "reason": "Loads generated user scheduler entries."
-            },
-            {
-              "kind": "binary",
-              "name": "launchctl",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": true,
-                "windows": false
-              },
               "reason": "Starts the generated scheduler entry immediately."
-            },
-            {
-              "kind": "binary",
-              "name": "schtasks",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": false,
-                "windows": true
-              },
-              "reason": "Creates or updates generated user scheduler entries."
             },
             {
               "kind": "binary",
@@ -5135,17 +5113,6 @@
                 "macos": false,
                 "windows": false
               },
-              "reason": "Reloads and enables generated user timers."
-            },
-            {
-              "kind": "binary",
-              "name": "systemctl",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": false,
-                "windows": false
-              },
               "reason": "Starts the generated user service immediately."
             },
             {
@@ -5169,17 +5136,6 @@
                 "windows": true
               },
               "reason": "Loads jobs.yaml in the management CLI."
-            },
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": ">=6",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Loads the selected recurring job from jobs.yaml."
             },
             {
               "kind": "python-package",
@@ -5215,17 +5171,6 @@
               "reason": "Reads jobs.yaml before running the job."
             },
             {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": ">=6",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Reads jobs.yaml while generating unit files."
-            },
-            {
               "kind": "system-service",
               "name": "launchd",
               "version": "any",
@@ -5235,17 +5180,6 @@
                 "windows": false
               },
               "reason": "Provides the per-user scheduler queried for recurring-task status."
-            },
-            {
-              "kind": "system-service",
-              "name": "launchd",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": true,
-                "windows": false
-              },
-              "reason": "Provides the per-user scheduler that loads generated entries."
             },
             {
               "kind": "system-service",
@@ -5300,17 +5234,6 @@
                 "macos": false,
                 "windows": false
               },
-              "reason": "Provides the user timer manager that loads generated unit files."
-            },
-            {
-              "kind": "system-service",
-              "name": "systemd-user",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": false,
-                "windows": false
-              },
               "reason": "Provides the user timer manager that owns generated recurring-task units."
             },
             {
@@ -5323,17 +5246,6 @@
                 "windows": true
               },
               "reason": "Provides the per-user scheduler queried for recurring-task status."
-            },
-            {
-              "kind": "system-service",
-              "name": "task-scheduler",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": false,
-                "windows": true
-              },
-              "reason": "Provides the per-user scheduler that loads generated entries."
             },
             {
               "kind": "system-service",
@@ -5403,29 +5315,7 @@
                 "macos": true,
                 "windows": false
               },
-              "reason": "Loads generated user scheduler entries."
-            },
-            {
-              "kind": "binary",
-              "name": "launchctl",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": true,
-                "windows": false
-              },
               "reason": "Starts the generated scheduler entry immediately."
-            },
-            {
-              "kind": "binary",
-              "name": "schtasks",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": false,
-                "windows": true
-              },
-              "reason": "Creates or updates generated user scheduler entries."
             },
             {
               "kind": "binary",
@@ -5513,17 +5403,6 @@
                 "macos": false,
                 "windows": false
               },
-              "reason": "Reloads and enables generated user timers."
-            },
-            {
-              "kind": "binary",
-              "name": "systemctl",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": false,
-                "windows": false
-              },
               "reason": "Starts the generated user service immediately."
             },
             {
@@ -5547,17 +5426,6 @@
                 "windows": true
               },
               "reason": "Loads jobs.yaml in the management CLI."
-            },
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": ">=6",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Loads the selected recurring job from jobs.yaml."
             },
             {
               "kind": "python-package",
@@ -5593,17 +5461,6 @@
               "reason": "Reads jobs.yaml before running the job."
             },
             {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": ">=6",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Reads jobs.yaml while generating unit files."
-            },
-            {
               "kind": "system-service",
               "name": "launchd",
               "version": "any",
@@ -5613,17 +5470,6 @@
                 "windows": false
               },
               "reason": "Provides the per-user scheduler queried for recurring-task status."
-            },
-            {
-              "kind": "system-service",
-              "name": "launchd",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": true,
-                "windows": false
-              },
-              "reason": "Provides the per-user scheduler that loads generated entries."
             },
             {
               "kind": "system-service",
@@ -5678,17 +5524,6 @@
                 "macos": false,
                 "windows": false
               },
-              "reason": "Provides the user timer manager that loads generated unit files."
-            },
-            {
-              "kind": "system-service",
-              "name": "systemd-user",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": false,
-                "windows": false
-              },
               "reason": "Provides the user timer manager that owns generated recurring-task units."
             },
             {
@@ -5701,17 +5536,6 @@
                 "windows": true
               },
               "reason": "Provides the per-user scheduler queried for recurring-task status."
-            },
-            {
-              "kind": "system-service",
-              "name": "task-scheduler",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": false,
-                "windows": true
-              },
-              "reason": "Provides the per-user scheduler that loads generated entries."
             },
             {
               "kind": "system-service",
@@ -5782,17 +5606,6 @@
                 "windows": false
               },
               "reason": "Checks user service and timer health."
-            },
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": ">=6",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Loads the selected recurring job from jobs.yaml."
             },
             {
               "kind": "python-package",
@@ -5895,29 +5708,7 @@
                 "macos": true,
                 "windows": false
               },
-              "reason": "Loads generated user scheduler entries."
-            },
-            {
-              "kind": "binary",
-              "name": "launchctl",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": true,
-                "windows": false
-              },
               "reason": "Starts the generated scheduler entry immediately."
-            },
-            {
-              "kind": "binary",
-              "name": "schtasks",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": false,
-                "windows": true
-              },
-              "reason": "Creates or updates generated user scheduler entries."
             },
             {
               "kind": "binary",
@@ -6005,17 +5796,6 @@
                 "macos": false,
                 "windows": false
               },
-              "reason": "Reloads and enables generated user timers."
-            },
-            {
-              "kind": "binary",
-              "name": "systemctl",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": false,
-                "windows": false
-              },
               "reason": "Starts the generated user service immediately."
             },
             {
@@ -6039,17 +5819,6 @@
                 "windows": true
               },
               "reason": "Loads jobs.yaml in the management CLI."
-            },
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": ">=6",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Loads the selected recurring job from jobs.yaml."
             },
             {
               "kind": "python-package",
@@ -6085,17 +5854,6 @@
               "reason": "Reads jobs.yaml before running the job."
             },
             {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": ">=6",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Reads jobs.yaml while generating unit files."
-            },
-            {
               "kind": "system-service",
               "name": "launchd",
               "version": "any",
@@ -6105,17 +5863,6 @@
                 "windows": false
               },
               "reason": "Provides the per-user scheduler queried for recurring-task status."
-            },
-            {
-              "kind": "system-service",
-              "name": "launchd",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": true,
-                "windows": false
-              },
-              "reason": "Provides the per-user scheduler that loads generated entries."
             },
             {
               "kind": "system-service",
@@ -6170,17 +5917,6 @@
                 "macos": false,
                 "windows": false
               },
-              "reason": "Provides the user timer manager that loads generated unit files."
-            },
-            {
-              "kind": "system-service",
-              "name": "systemd-user",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": false,
-                "windows": false
-              },
               "reason": "Provides the user timer manager that owns generated recurring-task units."
             },
             {
@@ -6193,17 +5929,6 @@
                 "windows": true
               },
               "reason": "Provides the per-user scheduler queried for recurring-task status."
-            },
-            {
-              "kind": "system-service",
-              "name": "task-scheduler",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": false,
-                "windows": true
-              },
-              "reason": "Provides the per-user scheduler that loads generated entries."
             },
             {
               "kind": "system-service",
@@ -6244,28 +5969,6 @@
             },
             {
               "kind": "binary",
-              "name": "journalctl",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": false,
-                "windows": false
-              },
-              "reason": "Reports recent service logs for failing jobs."
-            },
-            {
-              "kind": "binary",
-              "name": "launchctl",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": true,
-                "windows": false
-              },
-              "reason": "Checks generated user scheduler health."
-            },
-            {
-              "kind": "binary",
               "name": "launchctl",
               "version": "any",
               "platforms": {
@@ -6277,39 +5980,6 @@
             },
             {
               "kind": "binary",
-              "name": "launchctl",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": true,
-                "windows": false
-              },
-              "reason": "Loads generated user scheduler entries."
-            },
-            {
-              "kind": "binary",
-              "name": "schtasks",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": false,
-                "windows": true
-              },
-              "reason": "Checks generated user scheduler health."
-            },
-            {
-              "kind": "binary",
-              "name": "schtasks",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": false,
-                "windows": true
-              },
-              "reason": "Creates or updates generated user scheduler entries."
-            },
-            {
-              "kind": "binary",
               "name": "schtasks",
               "version": "any",
               "platforms": {
@@ -6318,17 +5988,6 @@
                 "windows": true
               },
               "reason": "Lists and manages generated user scheduler entries."
-            },
-            {
-              "kind": "binary",
-              "name": "systemctl",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": false,
-                "windows": false
-              },
-              "reason": "Checks user service and timer health."
             },
             {
               "kind": "binary",
@@ -6342,28 +6001,6 @@
               "reason": "Lists and manages generated user timers."
             },
             {
-              "kind": "binary",
-              "name": "systemctl",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": false,
-                "windows": false
-              },
-              "reason": "Reloads and enables generated user timers."
-            },
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": ">=6",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Loads the selected recurring job from jobs.yaml."
-            },
-            {
               "kind": "python-package",
               "name": "PyYAML",
               "version": "any",
@@ -6373,28 +6010,6 @@
                 "windows": true
               },
               "reason": "Parses canonical recurring jobs configuration."
-            },
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": ">=6",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Reads jobs.yaml for enabled jobs."
-            },
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": ">=6",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Reads jobs.yaml while generating unit files."
             },
             {
               "kind": "python-package",
@@ -6420,39 +6035,6 @@
             },
             {
               "kind": "system-service",
-              "name": "launchd",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": true,
-                "windows": false
-              },
-              "reason": "Provides the per-user scheduler state checked by health probes."
-            },
-            {
-              "kind": "system-service",
-              "name": "launchd",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": true,
-                "windows": false
-              },
-              "reason": "Provides the per-user scheduler that loads generated entries."
-            },
-            {
-              "kind": "system-service",
-              "name": "systemd-user",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": false,
-                "windows": false
-              },
-              "reason": "Provides the user service and timer state checked by health probes."
-            },
-            {
-              "kind": "system-service",
               "name": "systemd-user",
               "version": "any",
               "platforms": {
@@ -6464,17 +6046,6 @@
             },
             {
               "kind": "system-service",
-              "name": "systemd-user",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": false,
-                "windows": false
-              },
-              "reason": "Provides the user timer manager that loads generated unit files."
-            },
-            {
-              "kind": "system-service",
               "name": "task-scheduler",
               "version": "any",
               "platforms": {
@@ -6483,28 +6054,6 @@
                 "windows": true
               },
               "reason": "Provides the per-user scheduler configured during setup."
-            },
-            {
-              "kind": "system-service",
-              "name": "task-scheduler",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": false,
-                "windows": true
-              },
-              "reason": "Provides the per-user scheduler state checked by health probes."
-            },
-            {
-              "kind": "system-service",
-              "name": "task-scheduler",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": false,
-                "windows": true
-              },
-              "reason": "Provides the per-user scheduler that loads generated entries."
             }
           ]
         },
@@ -6552,29 +6101,7 @@
                 "macos": true,
                 "windows": false
               },
-              "reason": "Loads generated user scheduler entries."
-            },
-            {
-              "kind": "binary",
-              "name": "launchctl",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": true,
-                "windows": false
-              },
               "reason": "Starts the generated scheduler entry immediately."
-            },
-            {
-              "kind": "binary",
-              "name": "schtasks",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": false,
-                "windows": true
-              },
-              "reason": "Creates or updates generated user scheduler entries."
             },
             {
               "kind": "binary",
@@ -6662,17 +6189,6 @@
                 "macos": false,
                 "windows": false
               },
-              "reason": "Reloads and enables generated user timers."
-            },
-            {
-              "kind": "binary",
-              "name": "systemctl",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": false,
-                "windows": false
-              },
               "reason": "Starts the generated user service immediately."
             },
             {
@@ -6696,17 +6212,6 @@
                 "windows": true
               },
               "reason": "Loads jobs.yaml in the management CLI."
-            },
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": ">=6",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Loads the selected recurring job from jobs.yaml."
             },
             {
               "kind": "python-package",
@@ -6742,17 +6247,6 @@
               "reason": "Reads jobs.yaml before running the job."
             },
             {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": ">=6",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Reads jobs.yaml while generating unit files."
-            },
-            {
               "kind": "system-service",
               "name": "launchd",
               "version": "any",
@@ -6762,17 +6256,6 @@
                 "windows": false
               },
               "reason": "Provides the per-user scheduler queried for recurring-task status."
-            },
-            {
-              "kind": "system-service",
-              "name": "launchd",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": true,
-                "windows": false
-              },
-              "reason": "Provides the per-user scheduler that loads generated entries."
             },
             {
               "kind": "system-service",
@@ -6827,17 +6310,6 @@
                 "macos": false,
                 "windows": false
               },
-              "reason": "Provides the user timer manager that loads generated unit files."
-            },
-            {
-              "kind": "system-service",
-              "name": "systemd-user",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": false,
-                "windows": false
-              },
               "reason": "Provides the user timer manager that owns generated recurring-task units."
             },
             {
@@ -6850,17 +6322,6 @@
                 "windows": true
               },
               "reason": "Provides the per-user scheduler queried for recurring-task status."
-            },
-            {
-              "kind": "system-service",
-              "name": "task-scheduler",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": false,
-                "windows": true
-              },
-              "reason": "Provides the per-user scheduler that loads generated entries."
             },
             {
               "kind": "system-service",
@@ -6920,17 +6381,6 @@
                 "windows": false
               },
               "reason": "Reloads and enables generated user timers."
-            },
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": ">=6",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Loads the selected recurring job from jobs.yaml."
             },
             {
               "kind": "python-package",
@@ -7033,29 +6483,7 @@
                 "macos": true,
                 "windows": false
               },
-              "reason": "Loads generated user scheduler entries."
-            },
-            {
-              "kind": "binary",
-              "name": "launchctl",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": true,
-                "windows": false
-              },
               "reason": "Starts the generated scheduler entry immediately."
-            },
-            {
-              "kind": "binary",
-              "name": "schtasks",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": false,
-                "windows": true
-              },
-              "reason": "Creates or updates generated user scheduler entries."
             },
             {
               "kind": "binary",
@@ -7143,17 +6571,6 @@
                 "macos": false,
                 "windows": false
               },
-              "reason": "Reloads and enables generated user timers."
-            },
-            {
-              "kind": "binary",
-              "name": "systemctl",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": false,
-                "windows": false
-              },
               "reason": "Starts the generated user service immediately."
             },
             {
@@ -7177,17 +6594,6 @@
                 "windows": true
               },
               "reason": "Loads jobs.yaml in the management CLI."
-            },
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": ">=6",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Loads the selected recurring job from jobs.yaml."
             },
             {
               "kind": "python-package",
@@ -7223,17 +6629,6 @@
               "reason": "Reads jobs.yaml before running the job."
             },
             {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": ">=6",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Reads jobs.yaml while generating unit files."
-            },
-            {
               "kind": "system-service",
               "name": "launchd",
               "version": "any",
@@ -7243,17 +6638,6 @@
                 "windows": false
               },
               "reason": "Provides the per-user scheduler queried for recurring-task status."
-            },
-            {
-              "kind": "system-service",
-              "name": "launchd",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": true,
-                "windows": false
-              },
-              "reason": "Provides the per-user scheduler that loads generated entries."
             },
             {
               "kind": "system-service",
@@ -7308,17 +6692,6 @@
                 "macos": false,
                 "windows": false
               },
-              "reason": "Provides the user timer manager that loads generated unit files."
-            },
-            {
-              "kind": "system-service",
-              "name": "systemd-user",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": false,
-                "windows": false
-              },
               "reason": "Provides the user timer manager that owns generated recurring-task units."
             },
             {
@@ -7331,17 +6704,6 @@
                 "windows": true
               },
               "reason": "Provides the per-user scheduler queried for recurring-task status."
-            },
-            {
-              "kind": "system-service",
-              "name": "task-scheduler",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": false,
-                "windows": true
-              },
-              "reason": "Provides the per-user scheduler that loads generated entries."
             },
             {
               "kind": "system-service",
@@ -7411,29 +6773,7 @@
                 "macos": true,
                 "windows": false
               },
-              "reason": "Loads generated user scheduler entries."
-            },
-            {
-              "kind": "binary",
-              "name": "launchctl",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": true,
-                "windows": false
-              },
               "reason": "Starts the generated scheduler entry immediately."
-            },
-            {
-              "kind": "binary",
-              "name": "schtasks",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": false,
-                "windows": true
-              },
-              "reason": "Creates or updates generated user scheduler entries."
             },
             {
               "kind": "binary",
@@ -7521,17 +6861,6 @@
                 "macos": false,
                 "windows": false
               },
-              "reason": "Reloads and enables generated user timers."
-            },
-            {
-              "kind": "binary",
-              "name": "systemctl",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": false,
-                "windows": false
-              },
               "reason": "Starts the generated user service immediately."
             },
             {
@@ -7555,17 +6884,6 @@
                 "windows": true
               },
               "reason": "Loads jobs.yaml in the management CLI."
-            },
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": ">=6",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Loads the selected recurring job from jobs.yaml."
             },
             {
               "kind": "python-package",
@@ -7601,17 +6919,6 @@
               "reason": "Reads jobs.yaml before running the job."
             },
             {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": ">=6",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Reads jobs.yaml while generating unit files."
-            },
-            {
               "kind": "system-service",
               "name": "launchd",
               "version": "any",
@@ -7621,17 +6928,6 @@
                 "windows": false
               },
               "reason": "Provides the per-user scheduler queried for recurring-task status."
-            },
-            {
-              "kind": "system-service",
-              "name": "launchd",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": true,
-                "windows": false
-              },
-              "reason": "Provides the per-user scheduler that loads generated entries."
             },
             {
               "kind": "system-service",
@@ -7686,17 +6982,6 @@
                 "macos": false,
                 "windows": false
               },
-              "reason": "Provides the user timer manager that loads generated unit files."
-            },
-            {
-              "kind": "system-service",
-              "name": "systemd-user",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": false,
-                "windows": false
-              },
               "reason": "Provides the user timer manager that owns generated recurring-task units."
             },
             {
@@ -7709,17 +6994,6 @@
                 "windows": true
               },
               "reason": "Provides the per-user scheduler queried for recurring-task status."
-            },
-            {
-              "kind": "system-service",
-              "name": "task-scheduler",
-              "version": "any",
-              "platforms": {
-                "linux": false,
-                "macos": false,
-                "windows": true
-              },
-              "reason": "Provides the per-user scheduler that loads generated entries."
             },
             {
               "kind": "system-service",

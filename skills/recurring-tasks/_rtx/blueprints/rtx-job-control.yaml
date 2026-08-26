@@ -1,52 +1,14 @@
 content:
 - _job_control\.py
-- _managed_control\.py
 dependencies:
 - blueprint:
     base: module-root
-    path: blueprints/rtx-schedule-context.yaml
-  reason: Loads the validated installation schedule context for interactive control operations.
-  source: recurring-tasks._rtx.source.rtx-schedule-context
+    path: blueprints/rtx-managed-control.yaml
+  reason: Delegates each public job-control operation through the shared managed-runtime command helper.
+  source: recurring-tasks._rtx.source.rtx-managed-control
   version: 1
-- blueprint:
-    base: module-root
-    path: blueprints/rtx-jobs-config.yaml
-  reason: Imports the shared validated jobs configuration loader.
-  source: recurring-tasks._rtx.source.rtx-jobs-config
-  version: 1
-- blueprint:
-    base: module-root
-    path: blueprints/jobs-config.yaml
-  reason: Reads and mutates the shared jobs configuration.
-  source: recurring-tasks._rtx.source.jobs-config
-  version: 1
-- blueprint:
-    base: module-root
-    path: blueprints/rtx-init.yaml
-  reason: Loads Python package support from _rtx/__init__.py.
-  source: recurring-tasks._rtx.source.rtx-init
-  version: 1
-- blueprint:
-    base: module-root
-    path: blueprints/rtx-schedule-backend-init.yaml
-  reason: Imports Python source from _rtx/_schedule_backend/__init__.py.
-  source: recurring-tasks._rtx.source.rtx-schedule-backend-init
-  version: 1
-- blueprint:
-    base: module-root
-    path: blueprints/rtx-unit-writer.yaml
-  reason: Imports the scheduler reconciliation implementation from _rtx/_unit_writer.py.
-  source: recurring-tasks._rtx.source.rtx-unit-writer
-  version: 1
-- blueprint:
-    base: module-root
-    path: blueprints/rtx-run-record.yaml
-  reason: Reads the run record a triggered job's executor writes, to report the job's
-    actual outcome instead of only the scheduler's trigger-acceptance result.
-  source: recurring-tasks._rtx.source.rtx-run-record
-  version: 1
-description: Implements enable, disable, immediate-run, status, and log-view operations
-  for configured recurring jobs.
+description: Delegates enable, disable, immediate-run, status, log-view, synchronization,
+  and context-removal operations to the canonical managed recurring runtime.
 gateway:
   language: Python
   path: _job_control.py
