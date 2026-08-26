@@ -535,11 +535,11 @@ def test_dispenser_routes_operations_by_voyage_id(tmp_path: Path) -> None:
     assert dispenser.get_status("worker-2").current_evolution.condition == "terminal"
 
 
-def test_cli_releases_only_a_terminal_voyage(
+def test_cli_requires_force_to_release_a_nonterminal_voyage(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Deleting a ready Voyage would destroy work before its result exists."""
+    """A ready Voyage must survive release unless deletion is explicitly forced."""
 
     voyages = _voyages(tmp_path)
     released: list[str] = []
@@ -566,20 +566,60 @@ def test_cli_releases_only_a_terminal_voyage(
     assert rejected["error"]["code"] == "not-terminal"
     assert released == []
 
-    status = dispenser.get_status("worker-1")
-    dispenser.advance(
-        "worker-1",
-        {"outcome": "answered"},
-        responding_to=status.instruction.evolution_entry_id,
+    assert (
+        voyage_dispenser_cli(dispenser, ["release", "worker-1", "--force"])
+        == 0
     )
-
-    assert voyage_dispenser_cli(dispenser, ["release", "worker-1"]) == 0
     assert json.loads(capsys.readouterr().out) == {
+        "forced": True,
         "released": True,
         "voyage_id": "worker-1",
     }
     assert released == ["worker-1"]
-    assert dispenser.get_voyage_ids() == ("worker-2",)
+
+    status = dispenser.get_status("worker-2")
+    dispenser.advance(
+        "worker-2",
+        {"outcome": "answered"},
+        responding_to=status.instruction.evolution_entry_id,
+    )
+
+    assert voyage_dispenser_cli(dispenser, ["release", "worker-2"]) == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "released": True,
+        "voyage_id": "worker-2",
+    }
+    assert released == ["worker-1", "worker-2"]
+    assert voyages == {}
+
+
+def test_forced_release_does_not_open_unreadable_voyage_state() -> None:
+    """Forced abandonment must work when obsolete Voyage state cannot be loaded."""
+
+    voyage_ids = ["obsolete-voyage-1"]
+
+    def release(voyage_id: str) -> None:
+        voyage_ids.remove(voyage_id)
+
+    def fail_if_opened(voyage_id: str):
+        raise RuntimeError("obsolete state")
+
+    dispenser = VoyageDispenser(
+        modes={
+            "normal": {
+                "description": "Run without diagnostic hooks.",
+                "arguments": {},
+            }
+        },
+        initiate_voyages=lambda mode, *, run_prefix: None,
+        get_voyage_ids=lambda run_prefix=None: tuple(voyage_ids),
+        open_voyage=fail_if_opened,
+        release_voyage=release,
+    )
+
+    dispenser.release("obsolete-voyage-1", force=True)
+
+    assert voyage_ids == []
 
 
 def test_dispenser_rejects_an_id_outside_its_enumeration(tmp_path: Path) -> None:
@@ -634,7 +674,7 @@ def test_cli_help_explains_one_agent_per_voyage(
     assert "status" in help_text
     assert "validate" in help_text
     assert "advance" in help_text
-    assert "release" in help_text
+    assert "release --force" in help_text
     assert "explicit reason" in help_text
 
 

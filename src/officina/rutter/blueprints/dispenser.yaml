@@ -3,8 +3,8 @@ node_type: behavioral_source
 id: rutter.source.dispenser
 version: 4
 description: Declares and explains Voyage initialization modes, creates isolated durable
-  run-prefix collections, exposes uniform ID-scoped operations, and releases terminal
-  Voyage working directories on request.
+  run-prefix collections, exposes uniform ID-scoped operations, and releases Voyage
+  working directories on request with nonterminal deletion requiring an explicit force.
 gateway:
   path: dispenser.py
   language: Python
@@ -40,7 +40,7 @@ interfaces:
     version: 4
     description: Construct one VoyageDispenser from self-describing modes, run-scoped
       durable initialization, optionally filtered ID enumeration, Voyage resolution,
-      and terminal release callbacks; callers discover each mode's explanation and
+      and release callbacks; callers discover each mode's explanation and
       required arguments before initializing.
     contract:
       arguments:
@@ -68,7 +68,7 @@ interfaces:
             - value: advance
               description: Advance one selected Voyage without affecting another.
             - value: release
-              description: Remove one selected Voyage after its terminal result has been read.
+              description: Remove one selected Voyage after its terminal result has been read, or remove it earlier only when explicitly forced.
             - value: cli
               description: Map modes, initiate, list, status, validate, advance,
                 and release commands to finite JSON.
@@ -102,6 +102,13 @@ interfaces:
           type:
             kind: string
             sensitivity: user-private
+        force:
+          description: Explicitly permit release before the selected Voyage has a terminal result.
+          required: false
+          sensitivity: public
+          type:
+            kind: boolean
+            sensitivity: public
         value:
           description: Optional response and entrance correlation arguments.
           required: false
@@ -114,7 +121,7 @@ interfaces:
         mode: unattended
       caller_warnings:
       - external-side-effect: Advance may execute effects owned by the selected Voyage.
-      - external-side-effect: Release permanently removes the selected terminal Voyage's working directory.
+      - external-side-effect: Release permanently removes the selected Voyage's working directory; nonterminal release requires explicit force.
       outputs:
       - id: result
         audience: both
@@ -164,7 +171,7 @@ interfaces:
         class: error
         outputs: []
         effects: []
-        caller_action: Read or advance the Voyage to a terminal result before releasing it.
+        caller_action: Read or advance the Voyage to a terminal result before releasing it, or explicitly force release to abandon it.
       execution:
         state_effect: mutating
         lifecycle: finite
@@ -172,7 +179,7 @@ interfaces:
           live: Mode discovery is always available; initiation persists Voyages under
             one run prefix without blocking other prefixes, list may filter that prefix,
             each later operation resolves current durable IDs globally, and release
-            removes only an ID whose terminal result is available.
+            removes only an ID whose terminal result is available unless the caller explicitly forces release.
         effects:
         - id: voyage-operation
           direct_io_ref: voyage

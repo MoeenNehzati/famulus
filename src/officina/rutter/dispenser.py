@@ -39,7 +39,8 @@ _USAGE_GUIDANCE = (
     "agents must not share or switch Voyage IDs.\n"
     "  6. After capturing a terminal result, invoke release unless there is an "
     "explicit reason to preserve that Voyage's working directory. Do not release "
-    "a ready, faulted, or uncertain Voyage."
+    "a ready, faulted, or uncertain Voyage unless intentionally abandoning it "
+    "with release --force."
 )
 
 
@@ -64,7 +65,7 @@ class InvalidVoyageModeArgumentsError(ValueError):
 
 
 class VoyageNotTerminalError(ValueError):
-    """A Voyage cannot be released before producing its terminal result."""
+    """A Voyage cannot be released normally before producing a terminal result."""
 
 
 class _UsageError(ValueError):
@@ -375,13 +376,18 @@ class VoyageDispenser(PythonArgvMachineInterface):
             dry_run=dry_run,
         )
 
-    def release(self, voyage_id: str) -> None:
-        """Release one terminal Voyage's durable working directory."""
+    def release(self, voyage_id: str, *, force: bool = False) -> None:
+        """Release one Voyage, requiring a terminal result unless forced."""
 
-        voyage = self._resolve(voyage_id)
-        if voyage.get_status().terminal_result is None:
+        if force:
+            if (
+                type(voyage_id) is not str
+                or voyage_id not in self._validated_voyage_ids(allow_empty=True)
+            ):
+                raise UnknownVoyageError(f"unknown Voyage ID {voyage_id!r}")
+        elif self._resolve(voyage_id).get_status().terminal_result is None:
             raise VoyageNotTerminalError(
-                f"Voyage {voyage_id!r} is not terminal and cannot be released"
+                f"Voyage {voyage_id!r} is not terminal; use --force to release it"
             )
         self._release_voyage(voyage_id)
         if voyage_id in self._validated_voyage_ids(allow_empty=True):
@@ -502,9 +508,14 @@ def _parser(dispenser: VoyageDispenser) -> argparse.ArgumentParser:
     advance.add_argument("--responding-to")
     release = commands.add_parser(
         "release",
-        help="Delete one terminal Voyage working directory.",
+        help="Delete one terminal Voyage, or any Voyage with --force.",
     )
     release.add_argument("voyage_id")
+    release.add_argument(
+        "--force",
+        action="store_true",
+        help="Delete the Voyage even when it has no terminal result.",
+    )
     return parser
 
 
@@ -579,11 +590,13 @@ def voyage_dispenser_cli(
                 "validation": report.to_json(),
             }
         elif arguments.command == "release":
-            dispenser.release(arguments.voyage_id)
+            dispenser.release(arguments.voyage_id, force=arguments.force)
             payload = {
                 "voyage_id": arguments.voyage_id,
                 "released": True,
             }
+            if arguments.force:
+                payload["forced"] = True
         else:
             if arguments.response_file is None:
                 if arguments.responding_to is not None:
