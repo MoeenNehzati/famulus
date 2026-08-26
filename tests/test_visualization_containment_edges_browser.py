@@ -60,8 +60,9 @@ def test_containment_edges_reach_both_endpoint_boundaries() -> None:
     html = build_html_with_elk(payload).replace(
         "</body>",
         """<script>
-        window.addEventListener("load", () => setTimeout(() => {
+        window.addEventListener("load", async () => {
           try {
+            await updateVisibilityFull();
             let visibilityApplicationCount = 0;
             const originalApplyVisibilityPresentation = applyVisibilityPresentation;
             applyVisibilityPresentation = (...args) => {
@@ -136,7 +137,7 @@ def test_containment_edges_reach_both_endpoint_boundaries() -> None:
           } catch (error) {
             document.body.dataset.testStatus = "FAIL:" + (error.message || String(error));
           }
-        }, 150));
+        });
         </script></body>""",
     )
     result = run_html(
