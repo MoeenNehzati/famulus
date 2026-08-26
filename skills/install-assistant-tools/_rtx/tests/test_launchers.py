@@ -403,6 +403,11 @@ def test_tw_selection_installs_the_complete_workspace_bundle(tmp_path):
 
 @pytest.mark.parametrize("command", ("tw-break", "tw-join", "tw-monitor"))
 @pytest.mark.parametrize("flag", ("-h", "--help"))
+# famulus-skip: category=platform-contract; reason=tw action helpers are POSIX shell assets and cannot execute natively on Windows; alternate=Unix shared tests exercise every helper and help flag
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="tw action helpers are POSIX-only",
+)
 def test_tw_action_helper_help_does_not_invoke_tmux(tmp_path, command, flag):
     sentinel = tmp_path / "invoked"
     fake_bin = tmp_path / "bin"
