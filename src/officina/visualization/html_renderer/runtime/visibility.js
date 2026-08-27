@@ -94,7 +94,7 @@
       syncToolbar();
       document.querySelectorAll(".graph-node").forEach(nodeEl => {
         const nodeId = nodeEl.dataset.nodeId;
-        nodeEl.style.opacity = "1";
+        nodeEl.style.opacity = dimmedNodes.has(nodeId) ? "0.2" : "1";
         nodeEl.style.display = isHiddenNode(nodeId) ? "none" : "";
       });
 

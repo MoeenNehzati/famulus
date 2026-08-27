@@ -78,29 +78,34 @@
 
     // ── Toolbar button handlers ───────────────────────────────────────────────
 
-    hideSelectedBtn.addEventListener("click", () => {
+    function handleHideSelected() {
       const nodeIds = visibleSelectedNodeIds();
       if (!nodeIds.length) return;
       hideNodes(nodeIds);
-    });
+    }
 
-    dimSelectedBtn.addEventListener("click", () => {
+    function handleDimSelected() {
       const nodeIds = visibleSelectedNodeIds();
       if (!nodeIds.length) return;
       toggleDimNodes(nodeIds);
-    });
+    }
 
-    hideUnselectedBtn.addEventListener("click", () => {
+    function handleHideUnselected() {
       const nodeIds = visibleUnselectedNodeIds({preserveSelectionAncestors: true});
       if (!visibleSelectedNodeIds().length || !nodeIds.length) return;
       hideNodes(nodeIds);
-    });
+    }
 
-    dimUnselectedBtn.addEventListener("click", () => {
+    function handleDimUnselected() {
       const nodeIds = visibleUnselectedNodeIds();
       if (!visibleSelectedNodeIds().length || !nodeIds.length) return;
       toggleDimNodes(nodeIds);
-    });
+    }
+
+    hideSelectedBtn.addEventListener("click", handleHideSelected);
+    dimSelectedBtn.addEventListener("click", handleDimSelected);
+    hideUnselectedBtn.addEventListener("click", handleHideUnselected);
+    dimUnselectedBtn.addEventListener("click", handleDimUnselected);
 
     document.getElementById("redraw-btn").addEventListener("click", () => {
       manualPositions.clear();
@@ -271,6 +276,24 @@
       if (event.key.toLowerCase() === "c") {
         event.preventDefault();
         resetViewState({includeCategories: event.shiftKey});
+        return;
+      }
+      if (event.key.toLowerCase() === "h") {
+        event.preventDefault();
+        if (event.shiftKey) {
+          handleHideUnselected();
+        } else {
+          handleHideSelected();
+        }
+        return;
+      }
+      if (event.key.toLowerCase() === "d") {
+        event.preventDefault();
+        if (event.shiftKey) {
+          handleDimUnselected();
+        } else {
+          handleDimSelected();
+        }
         return;
       }
       if (event.key === "+" || event.key === "=") {
