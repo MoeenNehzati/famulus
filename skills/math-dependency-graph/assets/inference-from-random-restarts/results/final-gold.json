@@ -110,9 +110,9 @@
       "description": "The source entity is directly needed to understand or establish the target."
     },
     {
-      "id": "illustrated-by",
-      "label": "Illustrated by",
-      "description": "The target example illustrates the source mathematical object without supporting its validity."
+      "id": "exemplifies",
+      "label": "Exemplifies",
+      "description": "The source example or instance illustrates the target mathematical object without supporting its validity."
     }
   ],
   "ui": {
@@ -120,7 +120,7 @@
       "supports": {
         "color": "#2563eb"
       },
-      "illustrated-by": {
+      "exemplifies": {
         "color": "#d97706"
       }
     },

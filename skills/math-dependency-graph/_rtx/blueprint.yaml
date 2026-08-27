@@ -6,76 +6,51 @@ authority:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _inventory_pipeline/_voyage_dispenser.py
+      - _graph_builder.py
       - Interface
-      reason: Set up and operate one durable inventory Voyage per immutable chunk.
+      reason: Render math dependency graph HTML from canonical JSON.
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _inventory_pipeline/_chunk_pooler.py
+      - _tex_macro_reader.py
       - Interface
-      reason: Validate and pool completed inventories from disjoint worker chunks.
+      reason: Extract MathJax macro definitions from TeX sources.
     - command:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
-      - _semantic_pipeline/_to_canonical_json.py
+      - _graph_server.py
       - Interface
-      reason: Compile resolved mathematical semantic IR into canonical graph JSON.
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _semantic_pipeline/_apply_proof_digest.py
-      - Interface
-      reason: Normalize transitional proof entities into proof-free semantic IR.
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _inventory_pipeline/_chunk_extractor.py
-      - Interface
-      reason: Extract immutable worker chunks containing source-ordered packets.
+      reason: Serve graph HTML locally for inspection.
     network: []
 children: {}
 content:
-- _inventory_pipeline/(?!artifacts(?:/.*)?$|voyages(?:/.*)?$).*
-- _semantic_pipeline/.*
+- _graph_builder\.py
+- _graph_server\.py
 - __init__\.py
+- _tex_macro_reader\.py
 - tests/.*
 description: Code module for the math-dependency-graph skill.
 exports:
-  math-dependency-graph._rtx.interface.inventory-voyage-dispenser:
+  math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph:
     access:
       allow_all_modules: false
       allowed_callers:
       - math-dependency-graph
-    source_interface: math-dependency-graph._rtx.source.rtx-inventory-voyage-dispenser.interface.inventory-voyages
-  math-dependency-graph._rtx.interface.scripts-pool-inventory-chunks:
+    source_interface: math-dependency-graph._rtx.source.rtx-graph-builder.interface.scripts-build-math-dependency-graph
+  math-dependency-graph._rtx.interface.scripts-extract-mathjax-macros:
     access:
       allow_all_modules: false
       allowed_callers:
       - math-dependency-graph
-    source_interface: math-dependency-graph._rtx.source.rtx-inventory-chunk-pooler.interface.scripts-pool-inventory-chunks
-  math-dependency-graph._rtx.interface.scripts-extract-inventory-chunks:
+    source_interface: math-dependency-graph._rtx.source.rtx-tex-macro-reader.interface.scripts-extract-mathjax-macros
+  math-dependency-graph._rtx.interface.scripts-serve-graph:
     access:
       allow_all_modules: false
       allowed_callers:
       - math-dependency-graph
-    source_interface: math-dependency-graph._rtx.source.rtx-inventory-chunk-extractor.interface.scripts-extract-inventory-chunks
-  math-dependency-graph._rtx.interface.scripts-semantic-to-canonical-json:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - math-dependency-graph
-    source_interface: math-dependency-graph._rtx.source.rtx-semantic-to-canonical-json.interface.scripts-semantic-to-canonical-json
-  math-dependency-graph._rtx.interface.scripts-apply-proof-digest:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - math-dependency-graph
-    source_interface: math-dependency-graph._rtx.source.rtx-apply-proof-digest.interface.scripts-apply-proof-digest
+    source_interface: math-dependency-graph._rtx.source.rtx-graph-server.interface.scripts-serve-graph
 gateway:
   language: Python>=3.11
   path: __init__.py
@@ -84,33 +59,21 @@ namespace_exports: {}
 node_type: module
 schema_version: 6
 sources:
-  math-dependency-graph._rtx.source.rtx-inventory-voyage-dispenser:
+  math-dependency-graph._rtx.source.rtx-graph-builder:
     blueprint:
       base: module-root
-      path: blueprints/rtx-inventory-voyage-dispenser.yaml
-  math-dependency-graph._rtx.source.rtx-inventory-chunk-pooler:
+      path: blueprints/rtx-graph-builder.yaml
+  math-dependency-graph._rtx.source.rtx-graph-server:
     blueprint:
       base: module-root
-      path: blueprints/rtx-inventory-chunk-pooler.yaml
+      path: blueprints/rtx-graph-server.yaml
   math-dependency-graph._rtx.source.rtx-init:
     blueprint:
       base: module-root
       path: blueprints/rtx-init.yaml
-  math-dependency-graph._rtx.source.rtx-inventory-chunk-extractor:
+  math-dependency-graph._rtx.source.rtx-tex-macro-reader:
     blueprint:
       base: module-root
-      path: blueprints/rtx-inventory-chunk-extractor.yaml
-  math-dependency-graph._rtx.source.rtx-semantic-to-canonical-json:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-semantic-to-canonical-json.yaml
-  math-dependency-graph._rtx.source.rtx-apply-proof-digest:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-apply-proof-digest.yaml
-  math-dependency-graph._rtx.source.rtx-semantic-ir-validator:
-    blueprint:
-      base: module-root
-      path: blueprints/rtx-semantic-ir-validator.yaml
-version: 85
+      path: blueprints/rtx-tex-macro-reader.yaml
+version: 1
 maturity: stable

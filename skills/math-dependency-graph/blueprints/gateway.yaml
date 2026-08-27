@@ -1,36 +1,22 @@
 content:
 - SKILL\.md
 dependencies: []
-description: Orchestrates Voyage-based inventory, extraction, proof normalization,
-  and compilation for one notation-faithful direct mathematical graph.
+description: Defines the LLM workflow for extracting a notation-faithful direct mathematical
+  dependency graph and producing its canonical artifacts.
 gateway:
   language: Markdown
   path: SKILL.md
 id: math-dependency-graph.source.gateway
 interfaces:
   math-dependency-graph.source.gateway.interface.default:
+    uses_interfaces: []
     content:
     - SKILL\.md
-    uses_interfaces:
-    - interface: math-dependency-graph.interface.inventory
-      version: 38
-    - interface: math-dependency-graph.interface.inventory-voyages
-      version: 11
-    - interface: math-dependency-graph.interface.extract
-      version: 29
-    - interface: math-dependency-graph.interface.proof-reconciliation
-      version: 3
-    - interface: math-dependency-graph._rtx.interface.scripts-pool-inventory-chunks
-      version: 1
-    - interface: math-dependency-graph._rtx.interface.scripts-apply-proof-digest
-      version: 1
-    - interface: math-dependency-graph._rtx.interface.scripts-semantic-to-canonical-json
-      version: 1
     contract:
       arguments:
         request:
-          description: User request and TeX or Markdown entrypoint for one fresh
-            mathematical graph run.
+          description: User request and source document for extracting or rendering
+            a mathematical dependency graph.
           required: true
           sensitivity: user-private
           type:
@@ -57,8 +43,8 @@ interfaces:
           sensitivity: derived-private
       execution:
         consistency:
-          snapshot: The result is derived from one fresh source snapshot whose inventory
-            workers operate one durable Voyage per immutable chunk.
+          snapshot: The result is derived from the source content supplied for this
+            run.
         lifecycle: finite
         state_effect: read-only
         verification:
@@ -85,8 +71,8 @@ interfaces:
         cardinality:
           maximum: 1
           minimum: 1
-        description: Graph artifact locations, represented source scope, record counts,
-          and genuine unresolved gaps.
+        description: Graph-analysis result and artifact locations or requested review
+          findings.
         direct_io_ref: write-1
         empty: Never empty on success.
         id: response
@@ -99,24 +85,18 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Orchestrate a Voyage inventory, extract, normalize, and compile run.
-    version: 79
+    description: Primary LLM-facing skill instructions.
+    version: 2
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
-- interface: math-dependency-graph.interface.inventory
-  version: 38
-- interface: math-dependency-graph.interface.inventory-voyages
-  version: 11
 - interface: math-dependency-graph.interface.extract
-  version: 29
-- interface: math-dependency-graph.interface.proof-reconciliation
-  version: 3
-- interface: math-dependency-graph._rtx.interface.scripts-pool-inventory-chunks
   version: 1
-- interface: math-dependency-graph._rtx.interface.scripts-apply-proof-digest
+- interface: math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph
   version: 1
-- interface: math-dependency-graph._rtx.interface.scripts-semantic-to-canonical-json
+- interface: math-dependency-graph._rtx.interface.scripts-extract-mathjax-macros
   version: 1
-version: 87
+- interface: math-dependency-graph._rtx.interface.scripts-serve-graph
+  version: 1
+version: 2
 maturity: stable

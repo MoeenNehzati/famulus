@@ -28,6 +28,36 @@ def _script_json(value: object) -> str:
     return json.dumps(value, indent=8).replace("</", "<\\/")
 
 
+# MathJax implements a subset of TeX, so a command it cannot resolve renders as
+# literal text with no error from any other layer. MathJax itself is the only
+# reliable oracle for which commands those are, so record what it reports and
+# show the reader, rather than maintaining a list of commands to expect.
+_UNRESOLVED_TEX_REPORTER = """    window.__unresolvedTeX = {};
+    window.MathJax.tex.formatError = function (jax, err) {
+      var match = /Undefined control sequence\\s+\\\\?([A-Za-z@]+)/.exec(err.message || "");
+      if (match) { window.__unresolvedTeX[match[1]] = true; }
+      return jax.formatError(err);
+    };
+    window.MathJax.startup = Object.assign(window.MathJax.startup || {}, {
+      pageReady: function () {
+        return window.MathJax.startup.defaultPageReady().then(function () {
+          var names = Object.keys(window.__unresolvedTeX);
+          if (!names.length) { return; }
+          var listed = names.map(function (n) { return "\\\\" + n; }).join(", ");
+          console.warn("Unresolved TeX commands (rendered as literal text): " + listed);
+          var banner = document.createElement("div");
+          banner.setAttribute("data-unresolved-tex", names.join(","));
+          banner.style.cssText = "position:fixed;left:12px;bottom:12px;z-index:9999;max-width:46ch;" +
+            "padding:8px 10px;border:1px solid #b45309;border-radius:6px;background:#fffbeb;" +
+            "color:#7c2d12;font:12px/1.45 system-ui,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.15)";
+          banner.textContent = names.length + " TeX command" + (names.length > 1 ? "s" : "") +
+            " could not be rendered: " + listed;
+          document.body.appendChild(banner);
+        });
+      }
+    });
+"""
+
 def _mathjax_head(dependency: Mapping[str, Any]) -> str:
     """Return the trusted MathJax 3 TeX-to-SVG loader and graph configuration."""
     version = dependency.get("version")
@@ -50,6 +80,7 @@ def _mathjax_head(dependency: Mapping[str, Any]) -> str:
     return (
         "  <script>\n"
         f"    window.MathJax = {_script_json(mathjax_configuration)};\n"
+        f"{_UNRESOLVED_TEX_REPORTER}"
         "  </script>\n"
         f"  <script>{_mathjax_runtime()}</script>"
     )

@@ -1,7 +1,7 @@
 ---
 name: math-dependency-graph
 description: >-
-  Use when the user asks for a direct assumptions-to-results dependency graph of a TeX or Markdown mathematical document. Do not use for proof, notation, prose, or literature review.
+  Use when the user asks for a direct assumptions-to-results dependency graph of a LaTeX mathematical document. Do not use for proof, notation, prose, or literature review.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->
@@ -10,25 +10,17 @@ description: >-
 Catalog: research; topics: mathematical-reasoning, visualization, scholarly-documents; visibility: featured
 Activation: user-request, skill-workflow; persistent modifier: no
 
-Skill Version: 112
+Skill Version: 3
 
 Uses Interfaces:
-- `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-apply-proof-digest@1`
-- `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-pool-inventory-chunks@1`
-- `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-semantic-to-canonical-json@1`
-- `math-dependency-graph.source.gateway -> math-dependency-graph.interface.extract@29`
-- `math-dependency-graph.source.gateway -> math-dependency-graph.interface.inventory-voyages@11`
-- `math-dependency-graph.source.gateway -> math-dependency-graph.interface.inventory@38`
-- `math-dependency-graph.source.gateway -> math-dependency-graph.interface.proof-reconciliation@3`
-- `math-dependency-graph.source.instructions-inventory-voyages -> math-dependency-graph._rtx.interface.inventory-voyage-dispenser@11`
-- `math-dependency-graph.source.instructions-inventory-voyages -> using-compass.interface.default@12`
+- `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph@1`
+- `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-extract-mathjax-macros@1`
+- `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-serve-graph@1`
+- `math-dependency-graph.source.gateway -> math-dependency-graph.interface.extract@1`
 
 Public Interfaces:
 - `math-dependency-graph.interface.default`
 - `math-dependency-graph.interface.extract`
-- `math-dependency-graph.interface.inventory`
-- `math-dependency-graph.interface.inventory-voyages`
-- `math-dependency-graph.interface.proof-reconciliation`
 <!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->
@@ -37,28 +29,47 @@ Public Interfaces:
 Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `math-dependency-graph.interface.default` — Orchestrate a Voyage inventory, extract, normalize, and compile run.
-- `math-dependency-graph.interface.extract` — Reconcile pooled inventory and the retained entrypoint into transitional notation-faithful entities, proof ownership, and direct relationships, or author one returned narrow repair.
-- `math-dependency-graph.interface.inventory` — Author one concise recall-first graph inventory fragment through one bounded-unit, signal-complete, forward-reconciling validated loop that preserves opaque results as an identity-only candidate plus attached gap when unique, or a gap only when identity is nonunique.
-- `math-dependency-graph.interface.inventory-voyages` — Initialize one fresh inventory Voyage run, acknowledge each Voyage's one-time inventory instruction and cumulative_packets_file introduction, apply Compass to only its subsequent packet reports, collect completed inventory and cumulative source-packet paths, and release terminal Voyages while retaining those artifacts, debug pre-reference decision bases, and attributed diagnostic reckonings under the run artifacts.
-- `math-dependency-graph.interface.proof-reconciliation` — Group complementary proof fragments, preserve alternative proofs, resolve source-grounded targets, and exhaustively decide every registered proof.
+- `math-dependency-graph.interface.default` — Primary LLM-facing skill instructions.
+- `math-dependency-graph.interface.extract` — Extracts a notation-faithful direct mathematical dependency graph into canonical JSON.
 <!-- END BLUEPRINT INTERFACES -->
 
 # Mathematical Dependency Graph
 
-The gateway orchestrates one canonical dependency-graph workflow: inventory -> extract -> optional proof reconciliation -> deterministic normalization -> compile. It invokes interfaces and schedules workers; it does not restate or perform the mathematical judgments owned by `inventory`, `extract`, and `proof-reconciliation`.
+Use this skill to extract the direct mathematical dependency structure of a source document and render it as an interactive graph.
 
-Use a fresh empty run directory and never reuse an earlier inventory, semantic IR, or graph JSON artifact. Use only absolute paths returned by process-interface reports. A worker writes its assigned JSON directly; the gateway never generates semantic records with code or bulk transformations.
+## Workflow
 
-## Gateway algorithm
+1. Resolve the requested document and scope.
+2. Invoke `math-dependency-graph.interface.extract` with the source, scope, and required canonical JSON destination.
+3. Receive the completed canonical JSON path and any reported evidence gaps.
+4. Extract MathJax macros with `math-dependency-graph._rtx.interface.scripts-extract-mathjax-macros` and retain the macro artifact path. Run this against the document's **root TeX entrypoint**, not the scoped subset being graphed: macro definitions usually live in the root file or a preamble outside the scope, so extracting from the subset silently yields zero macros and the graph renders raw TeX. Skip this step only when the source defines no custom commands anywhere.
+5. Render the graph with `math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph`, passing the canonical JSON, the macro artifact from step 4, and the HTML output path. Rendering is the final required step of every run; canonical JSON without a rendered HTML is an incomplete result. The interface applies the shared `math-dependency` presentation profile, which owns categories, shapes, colours, and explicit/inferred edge styling.
+6. Confirm the render merged the expected macros. A reported macro count of zero on a document that uses custom commands means step 4 read the wrong entrypoint; correct it and render again.
+7. If interactive inspection is requested, invoke `math-dependency-graph._rtx.interface.scripts-serve-graph`.
+8. Report the JSON and HTML artifact paths, the number of macros merged, the scope represented, and unresolved extraction gaps.
 
-1. Initialize the document inventory and apply Compass through `math-dependency-graph.interface.inventory-voyages`. Supply the TeX or Markdown entrypoint and a positive requested chunk count. Use its default mode unless debug was explicitly requested with inventory gold-standard and source-alias JSON paths; use an empty alias object when source paths already align. The dispenser owns durable run storage.
-2. Retain each schema-valid completed chunk inventory and pool them through `math-dependency-graph._rtx.interface.scripts-pool-inventory-chunks`. Retry only the Voyage whose validation failed; never replace a valid inventory or broaden its immutable chunk assignment.
-3. Pass the ordered inventory fragments and retained entrypoint to `math-dependency-graph.interface.extract`. If extraction identifies proof reconciliation work, invoke `math-dependency-graph.interface.proof-reconciliation` only on its bounded proof packet.
-4. Deterministically apply the proof digest through `math-dependency-graph._rtx.interface.scripts-apply-proof-digest`, convert the semantic IR through `math-dependency-graph._rtx.interface.scripts-semantic-to-canonical-json`, and verify that the final semantic IR and canonical JSON are nonempty and schema-valid. Report artifact paths, represented source scope, counts, and genuine unresolved gaps. Visualization and serving belong to the shared visualization layer.
+## Responsibility boundary
 
-Invalid semantic output never reaches compilation, and deterministic finalization never supplies missing mathematical content.
+The `extract` instruction interface owns entity identification, dependency semantics, evidence, uncertainty, and canonical JSON completion. This gateway must not duplicate or improvise those rules.
 
-## Maintainer evaluation
+The build and serve interfaces are deterministic. They validate and adapt canonical graph data, render HTML, and serve local artifacts; they do not infer mathematical dependencies.
 
-When explicitly constructing or revising benchmark truth, follow `references/gold-standard-extraction.md`. When explicitly improving this skill through measured subagent trials, follow `references/experimental-improvement.md`. These are controller-only references: never include either file, gold artifacts, benchmark scores, or prior-pass findings in an inventory or extract worker's context.
+## Required behavior
+
+- Use direct dependencies rather than transitive closure.
+- Preserve the document's notation and evidentiary scope.
+- Treat the canonical JSON artifact as the handoff between semantic extraction and deterministic visualization.
+- Fail clearly when extraction does not produce a usable artifact.
+- Never fill missing entities or relationships during rendering.
+- Report ambiguity and unresolved evidence rather than silently inventing structure.
+
+## Outputs
+
+A successful run identifies:
+
+- the canonical graph JSON path
+- the rendered HTML path, which every run must produce
+- the number of MathJax macros merged into the render
+- the represented source and scope
+- any extraction gaps or confidence limitations
+- the local serving address when serving was requested

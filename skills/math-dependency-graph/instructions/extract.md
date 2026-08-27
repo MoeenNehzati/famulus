@@ -1,118 +1,138 @@
-# Extract the Whole-Document Semantic Graph
+# Extract a Mathematical Dependency Graph
 
-Perform exactly one of the two modes named by the assigned job. This interface owns mathematical judgment in both modes; it does not prepare or pool inventory, compile renderer data, or render HTML.
+Produce canonical graph JSON from the supplied mathematical source. This interface owns semantic interpretation; it does not render HTML.
 
-- **Normal extract:** when the job supplies `semantic-graph.schema.json`, author one transitional whole-document semantic graph object with `ir_version: 2`. Read the assigned extract packet, semantic schema, and `graph-base.json` completely. The packet embeds the complete pooled `inventory-ir.json` as its `inventory` object and names the retained absolute TeX entrypoint, immutable source snapshot, and coordinate sidecar. Write the object to the assigned output path and validate it against `semantic-graph.schema.json`.
-- **Localized correction:** only when a phase report has returned `status: "correction-required"` and the job supplies `semantic-repair.schema.json`, author one narrow repair object with `repair_version: 2`. Read the returned diagnostic, persisted `repair_base`, saved pooled `inventory`, repair schema, and immutable job inputs completely. Write the repair to the assigned output path and validate it against `semantic-repair.schema.json`. A repair object is not a semantic graph and must not be required to satisfy `semantic-graph.schema.json`.
+## Objective
 
-Never mix the two output shapes or infer correction mode merely because a normal extract is difficult. A normal extract owns candidate reconciliation, entity inclusion and classification, unresolved-entity resolution, direct relationships, hint and explicit-reference accounting, source-faithful descriptions, evidence, and genuine uncertainty. A localized correction owns only the removals and upserts needed to resolve the returned record-local diagnostic.
+Expose enough precise structure for a human or machine to trace which stated mathematical objects directly support each result. Preserve the source's notation and distinguish explicit evidence from interpretation.
 
-Every assignment provides one stable `progress_path`. At the start of each attempt and after each bounded audit, append one line in the form `<timestamp> <milestone> <counters>`. Obtain each timestamp at append time with `date -u +%Y-%m-%dT%H:%M:%SZ`; never invent, estimate, or reuse a timestamp. Append at most six lines per attempt. Use only milestone names and integer counters; never write source text, semantic IR, prompt text, reasoning, or error prose. Normal retries and localized corrections append to the same path and never replace prior lines.
+## Entity extraction
 
-This is an LLM mathematical-judgment interface. Make every semantic decision directly from the pooled inventory and registered source ranges. Never generate entities, exclusions, resolutions, relationships, decisions, titles, descriptions, or reasons with code, templates, loops, lexical matching, adjacency chains, or bulk transformations. When evidence is insufficient, retain a precise unresolved disposition or gap instead of guessing. Normal extract produces transitional semantic IR: it retains qualifying proof entities and their incident relationships for the separate proof-reconciliation pass; it does not normalize them into results.
+Create entities for mathematically meaningful, referable objects within the requested scope:
 
-## Normal extract: pooled inventory and source access
+- standing assumptions and maintained restrictions
+- notation blocks that introduce objects used later
+- definitions
+- lemmas, propositions, theorems, and corollaries
+- explicitly named intermediate claims when later arguments depend on them
 
-Consult the pooled inventory first. Its `files` table resolves every compact location; its qualified `e*`, `r*`, `u*`, `h*`, and `g*` ids are the authoritative bookkeeping handles. The coordinate sidecar names the same immutable source snapshot, its SHA-256 identity, and the bounded lookup rules. Require the returned job's `entrypoint` to be absolute and equal the packet's `entrypoint_path`; require the packet, sidecar, and assigned immutable-source path to agree. Stop on a path or identity mismatch.
+Do not create entities for headings, prose transitions, proof steps with no independent referential role, or external results that are merely mentioned. If an external result is essential, represent the document-local invocation as an entity and identify the external result in its metadata.
 
-Reopen source only to resolve identity, classify a candidate, check a proposed direct relationship, or clarify a registered gap. Read each candidate's exact statement location and only the registered evidence or reference locations needed for the decision, with no more surrounding context than the sidecar permits. Do not rescan the paper, rediscover candidates, expand registered ranges, or treat coordinates or inventory paraphrases as source evidence.
+Each entity must provide the schema-required fields:
 
-Set `inventory.candidate_ids` to the pooled candidates in exact order and set `candidate_count` to their exact number. Map every candidate exactly once to one entity's `candidate_ids` or one exclusion. When several candidates are the same mathematical entity, merge them under the first source-ordered candidate id and preserve all candidate ids. Merge repeated external-result invocations only when their name or theorem number, citation, and mathematical content establish identity.
+- `id`: a unique, stable, nonempty identifier
+- `type`: a nonempty mathematical category such as `standing-assumption`, `local-assumption`, `notation`, `definition`, `lemma`, `proposition`, `theorem`, `corollary`, or `remark`
+- `short_title`: a compact description of what the object says, written to be read inside a small node cell. Aim for a short noun phrase naming the mathematical content, such as `Beta-prior posterior tail bound` or `Agreement before exit` — never a bare environment name, a label key, or a macro name.
+- `position`: a nonnegative integer preserving source order
 
-Set `document.source_file` to that exact retained absolute TeX entrypoint. Do not substitute a basename, an included source path, or the immutable source-snapshot path. Include `document.title` only when the source establishes it.
+Also set `ref` whenever the document numbers the object: the number exactly as the document assigns it, such as `4.3`, `A.7`, or `C.2`. Leave `ref` absent only for genuinely unnumbered objects. The viewer draws `short_title` as the node's title and `type` plus `ref` as its subtitle, so a missing `ref` costs the reader the object's index in the paper.
 
-## Entities and exclusions
+Put the source-faithful mathematical statement in `description`, beginning with the mathematics rather than with how the statement was typeset. Set `source` to exactly `explicit` or `inferred` when provenance is useful.
 
-Include a candidate when it supplies a reusable object, premise, result, hypothesis verification, construction, application conclusion, or an example or remark that materially explains the mathematical spine. Exclude local proof steps, navigation, motivation, and duplicate summaries; every exclusion reason must identify the specific content excluded.
+Use `label` only to override the displayed title when `short_title` would read poorly in a node cell, and keep it a display name for the mathematics. A label must never encode a LaTeX label key, a macro name, or typesetting mechanism. When the only in-scope occurrence of a result is a restatement macro or restatement environment, the entity is still the result: name it after the result, and record the restatement — the macro used and the fact that the statement text lies outside the requested scope — in `metadata`. Preserve TeX notation in MathJax-ready strings. Never silently normalize notation in a way that changes scope or meaning.
 
-Apply two fail-closed rules:
+## Relationship extraction
 
-- retain or merge every candidate marked `named-indispensable-external-result` as `type: "external-result"`;
-- when an included candidate directly uses a resolved referenced endpoint, retain or merge that endpoint rather than silently discarding it.
+Record only direct dependencies. Add `A -> B` when understanding or establishing `B` directly requires `A` in the source argument. Do not add a transitive edge merely because a path already implies it.
 
-Classify from `graph-base.json`:
+Encode each relationship inside the supporting source entity's `connects_to` array. For every edge:
 
-- `assumption` with kind `standing` or `local`;
-- `setup` with kind `definition` or `notation`;
-- `result` with kind `lemma`, `proposition`, `theorem`, or `corollary`;
-- `exposition` with kind `remark` or `example`;
-- `external-result` without a kind.
-- `proof` with kind `formal`, `informal`, or `sketch` as a temporary semantic entity.
+- set `to` to the target entity's emitted `id`
+- set `type` to exactly one of two values, and never invent another:
+  - `supports` — establishing or understanding the target directly requires the source. This is the default and covers every kind of mathematical use: a hypothesis, a cited lemma, a supplied construction, a definition introducing notation the target is stated in, a result invoked inside a proof.
+  - `exemplifies` — the source is an example or instance illustrating the target without supporting its validity.
+- state the dependency in `description`: one clause naming how the source is actually used, such as "supplies the uniform Lipschitz bound used before the exit time". The specific character of a dependency belongs here, not in a new `type` value. This clause is what a reader sees on hover.
+- put any further structured detail in `metadata`
+- put the smallest supporting source passage or location in `evidence`
+- set `implicit` to `true` only when the relationship is inferred rather than asserted by the source
+- when confidence is useful, use exactly `Verified`, `High`, `Medium`, `Low`, `Likely`, or `Unknown`
 
-When a source-visible environment genuinely extends one family, keep that family as `type`, use its schema-safe environment name as `kind`, and its visible name as `category_label`. Otherwise add a root type only with source-backed justification. Do not invent roles such as `construction`, `intermediate-claim`, or `main-result`.
+Do not emit a top-level `relationships`, `edges`, `source`, or `target` collection. The containing entity is the edge source; `to` is its target.
 
-Preserve the document's notation. Remove environment wrappers and labels from descriptions. Use `source: "explicit"` when any reconciled candidate is a visible statement and `"inferred"` only for prose-synthesized content. Do not emit locations or source order; deterministic compilation reconstructs them from candidate ids. An entity may have empty `candidate_ids` only when a `created` unresolved resolution targets it.
+The edge vocabulary is closed on purpose. A presentation layer styles edges by category, so a type it does not know cannot be drawn, and a graph that declares `edge_categories` fails validation on any type absent from them. Distinctions such as "used in proof", "assumption for", or "notation for" are descriptions of one dependency, not separate relations: record them in `description` and `metadata`, where they stay visible on hover and remain available to any later analysis.
 
-### Temporary proof entities
+Ambient assumptions must not disappear. Attach them directly to every result whose statement or proof uses them, unless the source defines a clearly scoped aggregate assumption entity and explicitly invokes that aggregate.
 
-Retain an inventoried passage as `type: "proof"` only when it performs substantive inferential work toward a mathematical claim, has a separable registered span, and preserves proof ownership or dependency evidence. Set its kind to `formal`, `informal`, or `sketch`. Its description states the proof obligation and argument, not merely “Proof of X.” Exclude motivation, navigation, restatement, or proof-local algebra that does not independently qualify as an ordinary graph entity, and account for the candidate explicitly.
+Direction means dependency-to-dependent: assumptions and supporting results point toward the object that uses them.
 
-Every retained proof has exactly one outgoing `proves` relationship to one included non-proof result entity eligible to be proved. The relationship direction is proof to result and its registered evidence must establish the source-visible ownership link. A proof may not prove itself or another proof. Preserve ambiguous ownership as an unresolved disposition or genuine gap rather than selecting a target from proximity.
+## Evidence and uncertainty
 
-Represent graph-relevant proof uses as incoming `supports` relationships to the proof entity. Each cites the smallest registered span where that proof actually uses the prerequisite. Do not turn mere mentions, shared notation, local calculations, or thematic adjacency into dependencies. A proof-local intermediate claim remains evidence unless it independently satisfies the ordinary graph-entity policy.
+Evidence must identify the smallest source span that supports the entity or edge. Prefer exact labels and line ranges when available. Do not invent citations, labels, proof uses, or dependencies.
 
-Do not merge a retained proof into its target, redirect its dependencies to the target, or group it merely because another proof has the same target. Normal extraction does not decide proof bundles. Preserve separate identities for an informal exposition and formal proof that may be complementary, and for genuinely alternative arguments; the dedicated reconciliation pass adjudicates those relationships from bounded proof-centered evidence.
+When the source is ambiguous:
 
-## Unresolved entities
+- choose the narrowest defensible interpretation
+- lower confidence and explain the ambiguity in metadata
+- leave unresolved references as explicit gaps
+- never manufacture an edge solely to make the graph connected
 
-Account for every qualified unresolved handle exactly once in `unresolved_resolutions`:
+## Canonical output
 
-- `matched` maps it to an entity backed by inventoried candidates;
-- `created` maps it to a new candidate-free entity justified by the registered evidence;
-- `rejected` records why it is not a graph entity;
-- `unresolved` records why the available evidence cannot decide it.
+Write one JSON object accepted by `src/officina/visualization/graph_specification.schema.json`:
 
-`matched` and `created` require `entity_id`; `rejected` and `unresolved` require a precise reason and must not contain `entity_id`. Do not create an entity merely to satisfy accounting.
+- top-level `schema_version` is the integer `2`
+- top-level `entities` is always present, including when empty
+- do not add undeclared top-level fields because the schema rejects them
+- entity ids are unique
+- every edge target names an emitted entity
+- every entity position is a nonnegative integer and positions preserve source order
+- every optional enum uses the schema's exact spelling and capitalization
 
-## Direct relationships and hint reconciliation
+Use `graph_kind: "math-dependency"` and include `document.title` and `document.source_file` when known. General audit metadata belongs in top-level `metadata`. Do not emit renderer layout, filtering, containment, degree, or tier fields unless the request explicitly requires them; those are presentation or derived concerns rather than mathematical extraction.
 
-Emit only prerequisite-to-dependent direct relationships:
+When the graph contains TeX, request MathJax through the schema-supported dependency object:
 
-- `supports` runs from a premise, setup item, external result, construction, verification, or prior result to the object that directly uses or is established by it;
-- `illustrated-by` runs from the mathematical object to the example illustrating it.
-- `proves` runs from a temporary proof entity to the one result it proves.
+```json
+{
+  "id": "mathjax",
+  "version": "3",
+  "configuration": {
+    "input": "tex",
+    "output": "svg"
+  }
+}
+```
 
-Set `implicit: false` only when the document states the relationship; set it to `true` when mathematical interpretation supplies the link. Every relationship cites one or more qualified registered `evidence_ids`. Add every accepted qualified hint to `hint_ids`; `hint_ids` may be empty only for a new direct relationship independently established from registered evidence.
+Place it in top-level `renderer_dependencies`. Add `configuration.macros` only when macro definitions are known and each value follows the schema-supported string or macro-array form.
 
-Account for every qualified hint exactly once through one relationship's `hint_ids` or one `hint_decisions` record with `rejected`, `superseded`, or `unresolved` and a precise reason. A relationship that accepts a hint in `hint_ids` must retain that hint's resolved `from` and `to` endpoints. A type-only correction may retain the hint when registered evidence supports the corrected type. Changing either endpoint requires a `hint_decisions` record with `decision: "superseded"` for the original hint and a separate relationship with empty `hint_ids` and independent registered evidence. Never emit a self-edge, duplicate `(from, to, type)` edge, adjacency edge, notation-overlap edge, or transitive edge presented as direct.
+A minimal valid extraction has this shape:
 
-Every external-result entity must have an outgoing `supports` relationship. Every included example must be the target of an incoming `illustrated-by` relationship. Every retained proof must have exactly one outgoing `proves` relationship, and every accepted graph-relevant proof dependency must terminate at that proof before reconciliation. In a multi-entity graph, every included entity must be incident to a relationship unless the source-grounded `edgeless_justification` explains why the entire graph genuinely has no direct edges.
+```json
+{
+  "schema_version": 2,
+  "graph_kind": "math-dependency",
+  "entities": [
+    {
+      "id": "assumption-continuity",
+      "type": "standing-assumption",
+      "short_title": "Continuity",
+      "position": 0,
+      "description": "The objective is continuous on the feasible set.",
+      "source": "explicit",
+      "connects_to": [
+        {
+          "to": "theorem-existence",
+          "type": "assumption-for",
+          "description": "Continuity is used to establish existence.",
+          "evidence": "Proof of Theorem 1, first paragraph.",
+          "confidence": "Verified",
+          "implicit": false
+        }
+      ]
+    },
+    {
+      "id": "theorem-existence",
+      "type": "theorem",
+      "short_title": "Existence",
+      "position": 1,
+      "description": "A solution exists.",
+      "source": "explicit",
+      "connects_to": []
+    }
+  ]
+}
+```
 
-## Explicit references, evidence, and gaps
+If no category catalog is supplied, entity `type` values provide the default categories. If the request supplies a category catalog or explicit entity categories, preserve them rather than replacing them with math defaults.
 
-Account for every qualified explicit-reference id exactly once:
-
-- attach it to one emitted relationship's `reference_ids` when it establishes that relationship;
-- otherwise emit one `reference_decisions` record with registered evidence and one schema-listed decision; or
-- when its meaning cannot be resolved, emit one `gaps` record with `category: "reference"`, that `reference_id`, registered evidence, and a precise description.
-
-Only `non-dependency` and `other` reference decisions require a reason. Do not dismiss an ambiguous reference merely to complete the partition. All relationship, reference-decision, and gap evidence ids must resolve to pooled evidence and support the claimed decision.
-
-Account for every qualified inventory-gap id exactly once: attach it to one retained final gap's `inventory_gap_ids`, or emit one `gap_decisions` record explaining that it was resolved, superseded, or rejected. Never let an inventory gap disappear silently.
-
-## Localized correction
-
-When the phase report returns `status: "correction-required"`, use only its returned correction job. Resolve every independently repairable listed error in one repair object. Emit every top-level field required by `semantic-repair.schema.json`, but keep all removal and upsert arrays empty except those needed for the diagnostic; leave unaffected records untouched. If the diagnostic is not record-local, do not author a repair. Regenerate one normal whole-document extract from the immutable packet, sidecar, source snapshot, and entrypoint instead.
-
-## Final audit
-
-For a normal extract, before returning:
-
-1. Confirm exact candidate, unresolved-handle, hint-handle, and explicit-reference partitions with no missing, duplicate, or unknown ids.
-2. Confirm every relationship endpoint exists, every evidence id resolves, and every accepted hint/reference is source-grounded.
-3. Confirm entity types, kinds, descriptions, provenance, and duplicate merging are source-faithful.
-4. Remove self, duplicate, and transitive edges; check required external-result, example, incidence, and zero-edge rules.
-5. Confirm each retained proof is `formal`, `informal`, or `sketch`, has exactly one resolved proof-to-result `proves` edge, and retains every accepted incoming proof-use relationship without premature merging or redirection.
-6. Confirm gaps preserve genuine unresolved semantics rather than hiding failed accounting.
-7. Confirm the complete output has `ir_version: 2`, contains only semantic-graph version-2 fields, and validates against `semantic-graph.schema.json`.
-
-For a localized correction, before returning:
-
-1. Confirm the output has `repair_version: 2` and every required repair array.
-2. Confirm removals and upserts address every independently repairable item in the returned diagnostic and no unaffected record.
-3. Confirm every keyed removal/upsert uses ids and record shapes from the persisted repair base and pooled inventory.
-4. Confirm the repair contains only repair-version-2 fields and validates against `semantic-repair.schema.json`; do not validate the repair object against `semantic-graph.schema.json`.
-
-Use the bounded milestones `inputs-opened`, `inventory-audit`, `source-reopen`, `reconciliation-drafted` (normal mode) or `correction-drafted` (correction mode), `schema-audit`, and `output-written`. Include only applicable integer counters such as `candidates`, `hints`, `references`, `locations`, `entities`, `relationships`, `repairs`, and `gaps`.
-
-Return only the assigned output path: the completed semantic-IR path in normal mode or the completed repair-object path in correction mode. Record genuine semantic gaps only in a normal semantic IR. On failure, return the task failure instead of prose or an approximate artifact.
+Before returning, check the artifact structurally against the current schema and check the semantic invariants the schema cannot express: unique entity ids, valid edge endpoints, source-order positions, direct rather than transitively inferred dependencies, and evidence for every nontrivial edge. Return the path to the completed JSON artifact. Do not return a prose substitute for the artifact. Report evidence gaps alongside the path when the extraction is partial.

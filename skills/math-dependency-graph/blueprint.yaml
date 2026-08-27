@@ -3,13 +3,9 @@ authority:
 children:
   _rtx: {}
 content:
-- SKILL\.md
-- resources/graph-base\.json
-- schemas/(?:inventory|semantic-graph|semantic-repair|proof-normalization)\.schema\.json
-- instructions/(?:inventory|inventory-voyages|extract|proof-reconciliation)\.md
-- references/(?:experimental-improvement|gold-standard-extraction)\.md
-description: Extracts a direct dependency graph from a mathematical TeX or Markdown
-  document and emits canonical graph JSON for the shared visualization layer.
+- (?:SKILL\.md|instructions/extract\.md|resources/graph-base\.json)
+description: Extracts a direct dependency graph from mathematical LaTeX, renders canonical
+  graph JSON as interactive HTML, and serves the result locally for inspection.
 discovery:
   mechanism: skill
   catalog:
@@ -35,55 +31,29 @@ exports:
       allowed_callers:
       - math-dependency-graph
     source_interface: math-dependency-graph.source.instructions-extract.interface.extract
-  math-dependency-graph.interface.inventory:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - math-dependency-graph
-    source_interface: math-dependency-graph.source.instructions-inventory.interface.inventory
-  math-dependency-graph.interface.inventory-voyages:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - math-dependency-graph
-    source_interface: math-dependency-graph.source.instructions-inventory-voyages.interface.inventory-voyages
-  math-dependency-graph.interface.proof-reconciliation:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - math-dependency-graph
-    source_interface: math-dependency-graph.source.instructions-proof-reconciliation.interface.proof-reconciliation
 gateway:
   language: Markdown
   path: SKILL.md
 id: math-dependency-graph
 namespace_exports:
   _rtx:
-    version: 85
+    version: 1
     access:
       allow_all_modules: true
       allowed_callers: []
     surface:
       only:
-        math-dependency-graph._rtx.interface.inventory-voyage-dispenser: 11
-        math-dependency-graph._rtx.interface.scripts-apply-proof-digest: 1
-        math-dependency-graph._rtx.interface.scripts-extract-inventory-chunks: 1
-        math-dependency-graph._rtx.interface.scripts-pool-inventory-chunks: 1
-        math-dependency-graph._rtx.interface.scripts-semantic-to-canonical-json: 1
+        math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph: 1
+        math-dependency-graph._rtx.interface.scripts-extract-mathjax-macros: 1
+        math-dependency-graph._rtx.interface.scripts-serve-graph: 1
     interface_access:
-      math-dependency-graph._rtx.interface.inventory-voyage-dispenser:
+      math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph:
         allow_all_modules: false
         allowed_callers: []
-      math-dependency-graph._rtx.interface.scripts-apply-proof-digest:
+      math-dependency-graph._rtx.interface.scripts-extract-mathjax-macros:
         allow_all_modules: false
         allowed_callers: []
-      math-dependency-graph._rtx.interface.scripts-extract-inventory-chunks:
-        allow_all_modules: false
-        allowed_callers: []
-      math-dependency-graph._rtx.interface.scripts-pool-inventory-chunks:
-        allow_all_modules: false
-        allowed_callers: []
-      math-dependency-graph._rtx.interface.scripts-semantic-to-canonical-json:
+      math-dependency-graph._rtx.interface.scripts-serve-graph:
         allow_all_modules: false
         allowed_callers: []
 node_type: module
@@ -97,19 +67,7 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/instructions-extract.yaml
-  math-dependency-graph.source.instructions-inventory:
-    blueprint:
-      base: module-root
-      path: blueprints/instructions-inventory.yaml
-  math-dependency-graph.source.instructions-inventory-voyages:
-    blueprint:
-      base: module-root
-      path: blueprints/instructions-inventory-voyages.yaml
-  math-dependency-graph.source.instructions-proof-reconciliation:
-    blueprint:
-      base: module-root
-      path: blueprints/instructions-proof-reconciliation.yaml
-version: 112
+version: 3
 maturity: stable
 installation_tier: core
 personal_preference:
