@@ -28,7 +28,9 @@ else:
         dedupe_skill_sources,
         observed_skill_sources,
     )
+from officina.certification.dependency_dag import build_dependency_dag
 from officina.certification.hashing import CertificationHashError, NodeHashState
+from officina.common.atomic_files import atomic_replace_bytes
 from officina.certification.records import certificate_public_key_root
 from officina.blueprints.graph import (
     RepositoryBlueprintGraph,
@@ -187,7 +189,7 @@ class NodeDriftStatus:
     Rationale
     ---------
     Operators need exact file, dependency, declaration, and facet
-    causes to choose the smallest audit boundary.
+    causes to identify the smallest drift boundary.
 
     Pseudocode
     ----------
@@ -283,7 +285,7 @@ class ModuleDriftReport:
 
     Rationale
     ---------
-    A consumer audit cannot safely precede an unaudited stale provider, even
+    A stale consumer cannot safely precede a stale provider, even
     when the provider falls outside the requested module's display scope.
 
     Pseudocode
@@ -760,6 +762,108 @@ def _display_worklist(
     )
 
 
+def _module_ancestors(
+    graph: RepositoryBlueprintGraph,
+    module_id: str,
+) -> set[str]:
+    result: set[str] = set()
+    current: str | None = module_id
+    while current is not None:
+        if current in result:
+            raise DriftCheckError(f"module parent cycle at {current}")
+        result.add(current)
+        current = graph.module_parents.get(current)
+    return result
+
+
+def _has_semantic_facet_drift(facet: CertificateFacetDrift) -> bool:
+    return bool(
+        facet.local_hash_changed
+        or facet.declaration_changed
+        or facet.input_files
+        or any(
+            dependency.relation != "certified-under"
+            for dependency in facet.dependencies
+        )
+    )
+
+
+def _mechanical_certifier_only(status: CertificateNodeCurrentness) -> bool:
+    if status.local_hash_changed or status.declaration_changed or status.input_files:
+        return False
+    dependencies = (
+        *status.dependencies,
+        *(
+            dependency
+            for facet in status.facet_drift
+            for dependency in facet.dependencies
+        ),
+    )
+    return bool(dependencies) and all(
+        dependency.relation == "certified-under" for dependency in dependencies
+    ) and not any(_has_semantic_facet_drift(facet) for facet in status.facet_drift)
+
+
+def semantic_stale_vertices(
+    graph: RepositoryBlueprintGraph,
+    currentness: CertificateCurrentnessReport,
+    stale_worklist: Sequence[str],
+) -> tuple[str, ...]:
+    """Conservatively project stale node causes to semantic DAG vertices."""
+
+    selected: set[str] = set()
+    for node_id in stale_worklist:
+        node = graph.nodes.get(node_id)
+        status = currentness.nodes.get(node_id)
+        if node is None or status is None:
+            raise DriftCheckError(f"missing stale node evidence: {node_id}")
+        if _mechanical_certifier_only(status):
+            continue
+        meaningful_facets = tuple(
+            facet
+            for facet in status.facet_drift
+            if _has_semantic_facet_drift(facet)
+        )
+        if node.node_type == "module":
+            selected.update(_module_ancestors(graph, node_id))
+            continue
+        if node.node_type != "behavioral_source":
+            raise DriftCheckError(f"unsupported stale node type: {node.node_type}")
+        module_id = graph.source_modules.get(node_id)
+        if not isinstance(module_id, str):
+            raise DriftCheckError(f"missing source module: {node_id}")
+        selected.update(_module_ancestors(graph, module_id))
+        selected.add(node_id)
+        if meaningful_facets:
+            for facet in meaningful_facets:
+                if facet.facet_type == "interface":
+                    selected.add(facet.facet_id)
+                elif facet.facet_type != "remainder":
+                    raise DriftCheckError(
+                        f"unsupported stale facet type: {facet.facet_type}"
+                    )
+        else:
+            selected.update(
+                interface_id
+                for interface_id, interface in graph.source_interfaces.items()
+                if interface.source_node_id == node_id
+            )
+    return tuple(sorted(selected))
+
+
+def _write_dag(path: Path, payload: dict[str, Any]) -> Path:
+    destination = Path(path).expanduser().resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    data = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    atomic_replace_bytes(
+        destination,
+        data,
+        allowed_root=destination.parent,
+        mode=0o600,
+    )
+    return destination
+
+
 def build_payload(reports: Sequence[ModuleDriftReport]) -> dict[str, Any]:
     current = sum(report.current for report in reports)
     repository_worklists = _repository_worklists(reports)
@@ -938,6 +1042,7 @@ def build_parser() -> argparse.ArgumentParser:
     status.add_argument("--all", action="store_true")
     status.add_argument("--json", action="store_true")
     status.add_argument("--repo-root", type=Path, help=argparse.SUPPRESS)
+    status.add_argument("--dag-file", type=Path)
     status.add_argument("--skill-root", type=Path)
     status.add_argument("--skills-root", type=Path, help=argparse.SUPPRESS)
     hashes = subparsers.add_parser("compute-hashes")
@@ -964,8 +1069,40 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "status":
             reports = reports_for_scopes(scopes)
             if args.json:
-                print(json.dumps(build_payload(reports), indent=2, sort_keys=True))
+                payload = build_payload(reports)
+                if args.dag_file is not None:
+                    if args.repo_root is None:
+                        raise DriftCheckError(
+                            "--dag-file requires one exact --repo-root"
+                        )
+                    package_roots = {
+                        scope.source.package_root.resolve() for scope in scopes
+                    }
+                    if len(package_roots) != 1:
+                        raise DriftCheckError(
+                            "--dag-file requires one exact repository"
+                        )
+                    derived = _derive_for_source(scopes[0].source)
+                    dag = build_dependency_dag(
+                        derived.graph,
+                        derived.states,
+                        scopes[0].source.package_root,
+                    )
+                    dag_path = _write_dag(args.dag_file, dag)
+                    worklists = _repository_worklists(reports)
+                    stale_nodes = worklists[0][1] if worklists else ()
+                    payload["dag_file"] = dag_path.as_posix()
+                    payload["stale_vertices"] = list(
+                        semantic_stale_vertices(
+                            derived.graph,
+                            derived.currentness,
+                            stale_nodes,
+                        )
+                    )
+                print(json.dumps(payload, indent=2, sort_keys=True))
             else:
+                if args.dag_file is not None:
+                    raise DriftCheckError("--dag-file requires --json")
                 rendered = render_text(reports)
                 report_path = write_markdown_report(rendered)
                 print(rendered, end="")

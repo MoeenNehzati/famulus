@@ -52,6 +52,7 @@ CERTIFIER_NODE_ID = "skill-certifier"
 CERTIFIER_INTERFACE_ID = "skill-certifier.interface.certify"
 V6_CERTIFIER_INTERFACE_ID = "skill-certifier._rtx.interface.certify"
 CERTIFIER_INTERFACE_VERSION = 2
+CERTIFIER_AUDIT_INTERFACE_VERSION = 2
 CERTIFIER_AUDIT_INTERFACES = {
     "interface": "skill-certifier.source.audit-interface.interface.audit",
     "remainder": "skill-certifier.source.audit-behavioral-source.interface.audit",
@@ -1749,7 +1750,7 @@ def _compute_node_hash_states(
         if CERTIFIER_NODE_ID in graph.nodes:
             versions = {V6_CERTIFIER_INTERFACE_ID: CERTIFIER_INTERFACE_VERSION}
             versions.update(
-                (interface_id, 1)
+                (interface_id, CERTIFIER_AUDIT_INTERFACE_VERSION)
                 for interface_id in CERTIFIER_AUDIT_INTERFACES.values()
             )
             try:

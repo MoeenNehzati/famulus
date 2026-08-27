@@ -1,0 +1,36 @@
+schema_version: 6
+node_type: behavioral_source
+id: certification.source.dependency-dag
+version: 1
+maturity: stable
+description: Projects and validates the neutral semantic certification dependency DAG.
+gateway: {path: dependency_dag.py, language: Python}
+content: [dependency_dag\.py]
+dependencies:
+- {blueprint: {base: module-root, path: blueprints/hashing.yaml}, reason: Uses final canonical node and facet dependency attribution., source: certification.source.hashing, version: 1}
+- {blueprint: {base: repository-root, path: src/officina/blueprints/blueprints/graph.yaml}, reason: Uses canonical repository graph ownership and interface resolution., source: blueprints.source.graph, version: 1}
+uses_interfaces: []
+interfaces:
+  certification.source.dependency-dag.interface.python-api:
+    version: 1
+    description: Build or validate one neutral certification dependency DAG.
+    content: [dependency_dag\.py]
+    uses_interfaces: []
+    contract:
+      arguments:
+        operation: {description: Build or decode a dependency DAG., required: true, sensitivity: public, type: {kind: enum, values: [{value: build, description: Project a repository graph.}, {value: decode, description: Validate a payload.}]}}
+        value: {description: Operation-specific graph states repository or payload., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+      preconditions: []
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads: []
+        writes: [{id: return-value, medium: local-system, content: validated DAG Python object, formats: [python-object], access: write, sensitivity: derived-private, system: agent-runtime}]
+      execution: {lifecycle: finite, state_effect: read-only, consistency: {snapshot: Uses the supplied final graph and states.}, verification: [{method: output-schema, output_ref: result}]}
+      interaction: {mode: unattended}
+      helpers: []
+      outcomes:
+      - {id: completed, class: success, outputs: [result], effects: [], caller_action: Consume the validated DAG.}
+      - {id: invalid, class: error, outputs: [], effects: [], caller_action: Correct the graph or payload.}
+      outputs:
+      - {id: result, audience: machine, cardinality: {minimum: 1, maximum: 1}, description: Validated neutral dependency DAG., direct_io_ref: return-value, empty: Never empty., ordering: stable, pagination: {kind: none}, truncation: {kind: none}, type: {kind: string, sensitivity: derived-private}}

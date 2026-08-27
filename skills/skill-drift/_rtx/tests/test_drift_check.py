@@ -14,6 +14,11 @@ SRC_ROOT = MODULE_PATH.parents[3] / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 from officina.certification.records import certificate_public_key_root
+from officina.blueprints.graph import BlueprintNode, InterfaceExport
+from officina.certification.view import (
+    CertificateCurrentnessReport,
+    CertificateNodeCurrentness,
+)
 from test_support.v4_certification_fixtures import create_certified_fixture
 from .. import _check_drift_state as checker
 
@@ -1063,3 +1068,116 @@ def test_malformed_plugin_registry_fails_with_remediation(
     assert exit_code == 2
     assert "installed_plugins.json" in captured.err
     assert "--skill-root, --skills-root, or --repo-root" in captured.err
+
+
+def test_semantic_stale_vertices_uses_conservative_source_fallback(
+    tmp_path: Path,
+) -> None:
+    source_id = "demo.source.gateway"
+    interface_id = f"{source_id}.interface.run"
+    graph = checker.RepositoryBlueprintGraph(
+        nodes={
+            "demo": BlueprintNode(
+                "demo", "module", 1, tmp_path, tmp_path / "module.yaml", None, {}
+            ),
+            source_id: BlueprintNode(
+                source_id,
+                "behavioral_source",
+                1,
+                tmp_path,
+                tmp_path / "source.yaml",
+                None,
+                {},
+            ),
+        },
+        node_edges=(),
+        exports={},
+        export_edges=(),
+        helper_edges=(),
+        certification_edges=(),
+        source_modules={source_id: "demo"},
+        source_interfaces={
+            interface_id: InterfaceExport(
+                interface_id,
+                1,
+                "run",
+                "demo",
+                {},
+                source_node_id=source_id,
+                source_interface_id=interface_id,
+            )
+        },
+        module_parents={"demo": None},
+    )
+    currentness = CertificateCurrentnessReport(
+        nodes={
+            source_id: CertificateNodeCurrentness(
+                source_id,
+                False,
+                ("certificate-missing",),
+                None,
+            )
+        }
+    )
+
+    assert checker.semantic_stale_vertices(
+        graph, currentness, (source_id,)
+    ) == ("demo", source_id, interface_id)
+
+
+def test_status_dag_file_writes_dag_and_stale_vertices(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = checker.SkillSource(
+        source="override",
+        package_root=tmp_path,
+        skills_root=tmp_path / "skills",
+    )
+    scope = checker.RequestedScope(source=source, skill_names=("demo",))
+    derived = checker._V4DerivedState(
+        graph=checker.RepositoryBlueprintGraph(
+            nodes={},
+            node_edges=(),
+            exports={},
+            export_edges=(),
+            helper_edges=(),
+            certification_edges=(),
+        ),
+        states={},
+        basis_hash="sha256:test",
+        currentness=CertificateCurrentnessReport(nodes={}),
+    )
+    monkeypatch.setattr(checker, "requested_scopes", lambda _args: (scope,))
+    monkeypatch.setattr(checker, "reports_for_scopes", lambda _scopes: [])
+    monkeypatch.setattr(checker, "_derive_for_source", lambda _source: derived)
+    monkeypatch.setattr(
+        checker,
+        "build_dependency_dag",
+        lambda _graph, _states, repository: {
+            "schema_version": "officina.certification-dependency-dag/v1",
+            "repository": str(repository),
+            "nodes": [],
+        },
+    )
+    monkeypatch.setattr(
+        checker, "semantic_stale_vertices", lambda *_args: ("demo",)
+    )
+    dag_file = tmp_path / "dag.json"
+
+    assert checker.main(
+        [
+            "status",
+            "--json",
+            "--repo-root",
+            str(tmp_path),
+            "--dag-file",
+            str(dag_file),
+        ]
+    ) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["dag_file"] == dag_file.resolve().as_posix()
+    assert payload["stale_vertices"] == ["demo"]
+    assert json.loads(dag_file.read_text(encoding="utf-8"))["nodes"] == []

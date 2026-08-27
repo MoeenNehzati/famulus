@@ -320,9 +320,44 @@ def _v6_certifier_repository(tmp_path: Path) -> tuple[Path, Path]:
     gateway_blueprint["uses_interfaces"] = [
         dependency
         for dependency in gateway_blueprint["uses_interfaces"]
-        if dependency["interface"] != "skill-drift._rtx.interface.drift-status"
+        if dependency["interface"]
+        not in {
+            "skill-drift._rtx.interface.drift-status",
+            "skill-certifier._rtx.interface.semantic-audit-scheduler",
+        }
     ]
     _write_yaml(gateway_blueprint_path, gateway_blueprint)
+
+    runtime_blueprint_path = certifier_root / "_rtx" / "blueprint.yaml"
+    runtime_blueprint = yaml.safe_load(
+        runtime_blueprint_path.read_text(encoding="utf-8")
+    )
+    runtime_blueprint["sources"].pop(
+        "skill-certifier._rtx.source.semantic-audit-scheduler"
+    )
+    runtime_blueprint["exports"].pop(
+        "skill-certifier._rtx.interface.semantic-audit-scheduler"
+    )
+    _write_yaml(runtime_blueprint_path, runtime_blueprint)
+    (
+        certifier_root
+        / "_rtx"
+        / "blueprints"
+        / "rtx-semantic-audit-scheduler.yaml"
+    ).unlink()
+
+    module_blueprint_path = certifier_root / "blueprint.yaml"
+    module_blueprint = yaml.safe_load(
+        module_blueprint_path.read_text(encoding="utf-8")
+    )
+    runtime_namespace = module_blueprint["namespace_exports"]["_rtx"]
+    runtime_namespace["surface"]["only"].pop(
+        "skill-certifier._rtx.interface.semantic-audit-scheduler"
+    )
+    runtime_namespace["interface_access"].pop(
+        "skill-certifier._rtx.interface.semantic-audit-scheduler"
+    )
+    _write_yaml(module_blueprint_path, module_blueprint)
 
     mechanical_blueprint_path = (
         certifier_root / "_rtx" / "blueprints" / "rtx-certifier.yaml"

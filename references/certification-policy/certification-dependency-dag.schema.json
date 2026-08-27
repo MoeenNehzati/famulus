@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nullkit.dev/schemas/officina-certification-dependency-dag-v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "repository", "nodes"],
+  "properties": {
+    "schema_version": {"const": "officina.certification-dependency-dag/v1"},
+    "repository": {"type": "string", "minLength": 1},
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "owner_node_id", "dependencies"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "kind": {"enum": ["module", "behavioral-source", "interface"]},
+          "owner_node_id": {"type": ["string", "null"]},
+          "dependencies": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1},
+            "uniqueItems": true
+          }
+        },
+        "allOf": [
+          {
+            "if": {"properties": {"kind": {"const": "interface"}}},
+            "then": {"properties": {"owner_node_id": {"type": "string", "minLength": 1}}},
+            "else": {"properties": {"owner_node_id": {"type": "null"}}}
+          }
+        ]
+      }
+    }
+  }
+}

@@ -81,6 +81,7 @@ _INVENTORY = {
     ("skills/find-handoff-candidates/_rtx/_codex_parser.py", "home_dir"): "development-isolated",
     ("skills/find-handoff-candidates/_rtx/_claude_parser.py", "home_dir"): "development-isolated",
     ("skills/skill-drift/_rtx/_check_drift_state.py", "requested_scopes"): "process override",
+    ("skills/skill-drift/_rtx/_check_drift_state.py", "_write_dag"): "process override",
     ("skills/skill-drift/_rtx/_skill_sources/_codex_skill_source.py", "sources"): "development-isolated",
     ("skills/skill-drift/_rtx/_skill_sources/_claude_skill_source.py", "_plugin_sources"): "process override",
     ("skills/skill-drift/_rtx/_skill_sources/_claude_skill_source.py", "sources"): "development-isolated",

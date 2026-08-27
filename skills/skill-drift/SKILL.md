@@ -10,11 +10,11 @@ description: >-
 Catalog: assistant-development; topics: assistant-assurance, assistant-architecture; visibility: listed
 Activation: user-request, skill-workflow; persistent modifier: no
 
-Skill Version: 4
+Skill Version: 5
 
 Uses Interfaces:
 - `skill-drift.source.gateway -> skill-drift._rtx.interface.compute-hashes@2`
-- `skill-drift.source.gateway -> skill-drift._rtx.interface.drift-status@3`
+- `skill-drift.source.gateway -> skill-drift._rtx.interface.drift-status@4`
 
 Public Interfaces:
 - `skill-drift.interface.default`
@@ -48,10 +48,16 @@ JSON status is certification-state read-only. Human-readable status also saves
 a derived report under `_build/certificate-drift-<timestamp>.md`; that report
 has no certification authority. Hash output never writes a report.
 
+For one exact repository, JSON status may receive `--dag-file PATH`. It writes
+the complete neutral dependency DAG as
+`officina.certification-dependency-dag/v1` and adds `dag_file` plus the sorted
+`stale_vertices` projection to stdout. The DAG and projection describe drift;
+they contain no audit state and do not authorize certification.
+
 Report `certificate-current` only when every selected node has a valid signed
 certificate matching its current node hash, dependencies, certification basis,
 certifier functional identity, and expected checks. The signed `source_commit`
-is issuance provenance for restoring the audited snapshot; it is not required
+is issuance provenance for restoring the issued snapshot; it is not required
 to equal current `HEAD`. Otherwise report `certificate-stale` with a stale
 worklist that maps exact changed file, interface, or dependency causes to the
 affected facets and nodes. Manifest mismatches name added, removed, or changed

@@ -24,6 +24,8 @@ exports:
       - recurring
       - skill-certifier
       - skill-certifier._rtx
+      - skill-drift
+      - skill-drift._rtx
       - skill-maker
       - skill-maker._rtx
       - credentials

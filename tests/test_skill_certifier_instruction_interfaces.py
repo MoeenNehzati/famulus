@@ -62,6 +62,8 @@ def test_certifier_exposes_three_private_semantic_audit_sources() -> None:
         assert set(source["interfaces"]) == {interface_id}
         assert source["interfaces"][interface_id]["content"] == source["content"]
         assert source["interfaces"][interface_id]["uses_interfaces"] == []
+        assert source["interfaces"][interface_id]["version"] == 2
+        assert source["version"] == 2
 
 
 def test_certifier_gateway_orchestrates_audits_without_default_interface() -> None:
@@ -85,13 +87,14 @@ def test_certifier_gateway_orchestrates_audits_without_default_interface() -> No
     expected_uses = interface_ids | {
         drift_interface,
         "skill-certifier._rtx.interface.certify",
+        "skill-certifier._rtx.interface.semantic-audit-scheduler",
     }
 
     assert gateway["interfaces"] == {}
     assert {
         use["interface"] for use in gateway["uses_interfaces"]
     } == expected_uses
-    assert module["version"] == gateway["version"] == 5
+    assert module["version"] == gateway["version"] == 6
     certifier_interface = "skill-certifier._rtx.interface.certify"
     certifier_source_interface = (
         "skill-certifier._rtx.source.rtx-certifier.interface.certify"
@@ -100,24 +103,25 @@ def test_certifier_gateway_orchestrates_audits_without_default_interface() -> No
         certifier_source_interface
     ]["version"]
     assert certifier_interface_version == 2
-    assert certifier_source["version"] == certifier_runtime["version"] == 2
-    assert module["namespace_exports"]["_rtx"]["version"] == 2
+    assert certifier_source["version"] == 2
+    assert certifier_runtime["version"] == 3
+    assert module["namespace_exports"]["_rtx"]["version"] == 3
     assert module["namespace_exports"]["_rtx"]["surface"]["only"][
         certifier_interface
     ] == certifier_interface_version
     assert next(
         use for use in gateway["uses_interfaces"] if use["interface"] == certifier_interface
     )["version"] == certifier_interface_version
-    assert drift_module["version"] == drift_gateway["version"] == 4
+    assert drift_module["version"] == drift_gateway["version"] == 5
     drift_source_interface = (
         "skill-drift._rtx.source.rtx-check-drift-state.interface.drift-status"
     )
     drift_status_version = drift_source["interfaces"][drift_source_interface][
         "version"
     ]
-    assert drift_status_version == 3
-    assert drift_source["version"] == drift_runtime["version"] == 3
-    assert drift_module["namespace_exports"]["_rtx"]["version"] == 3
+    assert drift_status_version == 4
+    assert drift_source["version"] == drift_runtime["version"] == 4
+    assert drift_module["namespace_exports"]["_rtx"]["version"] == 4
     assert drift_module["namespace_exports"]["_rtx"]["surface"]["only"][
         drift_interface
     ] == drift_status_version
@@ -145,24 +149,16 @@ def test_certifier_gateway_orchestrates_audits_without_default_interface() -> No
     assert "skill-certifier.interface.default" not in skill_text
     algorithm = skill_text.split("## Certification algorithm", 1)[1]
     normalized_algorithm = " ".join(algorithm.split())
-    assert "dependency-first" in normalized_algorithm
-    assert "stale worklist" in normalized_algorithm
-    assert "changed file, interface, or dependency" in normalized_algorithm
-    assert "interface facets are leaves inside stale source nodes" in (
-        normalized_algorithm.lower()
-    )
-    assert "needs-context" in normalized_algorithm
+    assert "semantic-audit-scheduler@1" in normalized_algorithm
+    assert "claim --capacity k" in normalized_algorithm.lower()
+    assert "one fresh subagent" in normalized_algorithm.lower()
+    assert "never reuse a subagent" in normalized_algorithm.lower()
+    assert "--report-file" in normalized_algorithm
     assert "skips current nodes" in normalized_algorithm
     assert "audit every interface and node" not in normalized_algorithm
-    assert algorithm.index("drift-status") < algorithm.index("audit-interface")
-    assert algorithm.index("audit-interface") < algorithm.index(
-        "audit-behavioral-source"
-    )
-    assert algorithm.index("audit-behavioral-source") < algorithm.index(
-        "audit-module"
-    )
-    assert algorithm.index("audit-module") < algorithm.index(
-        "mechanical `certify`"
+    assert algorithm.index("drift-status") < algorithm.index("semantic-audit-scheduler")
+    assert algorithm.index("semantic-audit-scheduler") < algorithm.index(
+        "mechanical\n   `certify`"
     )
 
 
@@ -191,6 +187,53 @@ def test_drift_repository_routes_supply_their_subcommands() -> None:
         )
 
 
+def test_semantic_audit_scheduler_route_preserves_operation_and_capacity() -> None:
+    graph = load_repository_blueprint_graph(REPO_ROOT)
+    export = graph.exports[
+        "skill-certifier._rtx.interface.semantic-audit-scheduler"
+    ]
+    prefix = SKILL_ROOT / "_build" / "semantic-audit-runs" / "test"
+    parsed = parse_caller_invocation(
+        export,
+        ["claim", str(prefix), "--capacity", "2"],
+        stdin_requested=False,
+    )
+    plan = compile_gateway_invocation(
+        graph.nodes[export.source_node_id], export, parsed
+    )
+
+    assert plan.argv == ("claim", str(prefix), "--capacity", "2")
+
+
+def test_drift_status_route_preserves_dag_file() -> None:
+    graph = load_repository_blueprint_graph(REPO_ROOT)
+    export = graph.exports["skill-drift._rtx.interface.drift-status"]
+    dag_file = REPO_ROOT / "skills" / "skill-certifier" / "_build" / "dag.json"
+    parsed = parse_caller_invocation(
+        export,
+        [
+            "--repo-root",
+            str(REPO_ROOT),
+            "--json",
+            "--dag-file",
+            str(dag_file),
+        ],
+        stdin_requested=False,
+    )
+    plan = compile_gateway_invocation(
+        graph.nodes[export.source_node_id], export, parsed
+    )
+
+    assert plan.argv == (
+        "status",
+        "--repo-root",
+        str(REPO_ROOT),
+        "--json",
+        "--dag-file",
+        str(dag_file),
+    )
+
+
 def test_drift_and_canonical_docs_describe_selective_v6_worklist() -> None:
     drift_text = (DRIFT_ROOT / "SKILL.md").read_text(encoding="utf-8")
     canonical_text = (
@@ -205,7 +248,14 @@ def test_drift_and_canonical_docs_describe_selective_v6_worklist() -> None:
     assert "all direct facet dependencies" in normalized_drift
     assert "relation and target otherwise" in normalized_drift
     assert "stale worklist" in normalized_drift
+    assert "--dag-file" in normalized_drift
+    assert "stale_vertices" in normalized_drift
+    assert "complete neutral dependency DAG" in normalized_drift
     assert "selective bottom-up semantic review" in normalized_canonical
+    assert "officina.certification-dependency-dag/v1" in normalized_canonical
+    assert "semantic-audit-scheduler" in normalized_canonical
+    assert "bounded pool" in normalized_canonical
+    assert "needs-context" not in normalized_canonical
     assert "route smoke" in normalized_canonical
     assert "stale worklist" in normalized_canonical
     assert "all direct facet dependencies" in normalized_canonical
@@ -229,8 +279,9 @@ def test_each_semantic_audit_instruction_has_one_bounded_job() -> None:
 
     assert "one source interface" in interface_text
     assert "interface-owned facts" in normalized_interface
-    assert "smallest additional evidence or context scope" in normalized_interface
-    assert "smallest additional interface scope" not in normalized_interface
+    assert "Do not recursively audit, schedule, or delegate dependencies" in normalized_interface
+    assert "semantic-audit-result/v1" in interface_text
+    assert 'verdict: "abort"' in interface_text
     assert "Do not audit source-wide platform support" in interface_text
     assert "non-process Markdown interface" in normalized_interface
     assert "instruction and prompt behavior" in normalized_interface
@@ -244,6 +295,8 @@ def test_each_semantic_audit_instruction_has_one_bounded_job() -> None:
     assert "Do not sign" in source_text
     assert "already-audited child nodes" in module_text
     assert "namespace" in module_text
+    assert "requests expansion" not in module_text
+    assert "Do not inspect child implementation content" in module_text
     assert "Do not sign" in module_text
 
 

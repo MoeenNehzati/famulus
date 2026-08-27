@@ -133,8 +133,9 @@ def test_reference_schema_and_certification_policy_are_registered_nodes() -> Non
             "docstring_format.schema.json",
             "docstring_format.yaml",
         },
-        "certification-policy.source.node-hash-policy": {
-            "node-hash-policy.schema.json",
+            "certification-policy.source.node-hash-policy": {
+                "certification-dependency-dag.schema.json",
+                "node-hash-policy.schema.json",
             "node-hash-policy.yaml",
         },
         "certification-policy.source.certification-basis": {

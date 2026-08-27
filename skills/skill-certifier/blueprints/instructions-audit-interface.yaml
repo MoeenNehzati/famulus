@@ -38,7 +38,7 @@ interfaces:
         - access: write
           content: structured interface audit result
           formats:
-          - markdown
+          - json
           id: write-1
           medium: prompt
           sensitivity: derived-private
@@ -63,7 +63,7 @@ interfaces:
         id: audited
         outputs:
         - audit-result
-      - caller_action: Supply the smallest requested context and repeat the audit.
+      - caller_action: Stop the run on an abort or invalid request.
         class: error
         effects: []
         id: invalid-request
@@ -74,7 +74,7 @@ interfaces:
         cardinality:
           minimum: 1
           maximum: 1
-        description: Structured pass, reject, or needs-context result for one interface.
+        description: Exact JSON pass, reject, or abort result for one interface.
         direct_io_ref: write-1
         empty: Never empty.
         id: audit-result
@@ -89,9 +89,9 @@ interfaces:
       preconditions: []
     description: Audit one source interface and return bounded semantic evidence and
       a verdict.
-    version: 1
+    version: 2
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces: []
-version: 1
+version: 2
 maturity: stable

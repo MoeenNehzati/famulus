@@ -1,7 +1,7 @@
 schema_version: 6
 node_type: module
 id: certification-policy
-version: 1
+version: 2
 maturity: stable
 description: Owns the canonical node-hash and certification-basis policies.
 gateway:
@@ -9,6 +9,7 @@ gateway:
   language: YAML
 content:
 - certification-basis-roots\.json
+- certification-dependency-dag\.schema\.json
 - node-hash-policy\.schema\.json
 - node-hash-policy\.yaml
 authority:

@@ -30,14 +30,14 @@ gateway:
 id: skill-drift
 namespace_exports:
   _rtx:
-    version: 3
+    version: 4
     access:
       allow_all_modules: true
       allowed_callers: []
     surface:
       only:
         skill-drift._rtx.interface.compute-hashes: 2
-        skill-drift._rtx.interface.drift-status: 3
+        skill-drift._rtx.interface.drift-status: 4
     interface_access:
       skill-drift._rtx.interface.compute-hashes:
         allow_all_modules: true
@@ -52,7 +52,7 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
-version: 4
+version: 5
 maturity: stable
 installation_tier: core
 personal_preference:
