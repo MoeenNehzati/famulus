@@ -94,6 +94,18 @@ def log(msg: str = "") -> None:
     print(msg, flush=True)
 
 
+def _is_linked_worktree(source_root: Path) -> bool:
+    marker = source_root / ".git"
+    if not marker.is_file():
+        return False
+    try:
+        prefix, target = marker.read_text(encoding="utf-8").strip().split(":", 1)
+    except (OSError, UnicodeError, ValueError):
+        return False
+    git_dir = Path(target.strip())
+    return prefix == "gitdir" and git_dir.parent.name == "worktrees"
+
+
 def _all_imported_officina_modules_are_current() -> bool:
     source_root = REPO_SRC.resolve()
     for name, module in tuple(sys.modules.items()):
@@ -509,6 +521,10 @@ def run(
     repo_root = repo_root.resolve()
     if not repo_root.is_dir():
         log(f"Selected source does not exist: {repo_root}")
+        return 2
+    if not dev_mode and _is_linked_worktree(repo_root):
+        log("Standard installation cannot use a linked Git worktree.")
+        log(f"Use --dev-mode --repo-path {repo_root}")
         return 2
     platform_name = scaffold._platform_name()
     if optional_modules is None:

@@ -659,6 +659,33 @@ def test_dev_mode_requires_repo_path_non_interactively(tmp_path, monkeypatch):
         )
 
 
+def test_standard_mode_refuses_linked_worktree_source(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = tmp_path / "linked-worktree"
+    installer = source / "skills" / "install-assistant-tools" / "_rtx" / "_phase_entry.py"
+    installer.parent.mkdir(parents=True)
+    (source / ".git").write_text("gitdir: /repo/.git/worktrees/linked-worktree\n", encoding="utf-8")
+    monkeypatch.setattr(install, "__file__", str(installer))
+
+    status = install.run(
+        home=tmp_path / "home",
+        dry_run=True,
+        non_interactive=True,
+        dev_mode=False,
+        agents=[],
+        default_llm="claude",
+        environ={},
+    )
+
+    assert status == 2
+    output = capsys.readouterr().out
+    assert "Standard installation cannot use a linked Git worktree" in output
+    assert "--dev-mode --repo-path" in output
+
+
 def test_dev_mode_with_repo_path_chains_dev_link(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(install.scaffold, "run", lambda **kw: calls.append(("scaffold", kw)))
