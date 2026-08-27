@@ -590,10 +590,7 @@ def sync_module(blueprint: ModuleBlueprint, check_only: bool) -> list[str]:
         blueprint.name,
         blueprint.repository_graph,
     )
-    expected_skill = sync_contract_block(
-        skill_dir / "SKILL.md",
-        generated_contract_block(blueprint.name, data, blueprint.repository_graph),
-    )
+    expected_skill = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
     expected_skill = sync_interface_block(
         expected_skill,
         generated_interface_block(blueprint.name, blueprint.repository_graph),

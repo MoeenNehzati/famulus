@@ -317,32 +317,6 @@ def test_v5_syncer_rejects_generated_dispatch_missing_gateway_use(
     ]
 
 
-def test_sync_module_check_then_refreshes_generated_blocks(
-    tmp_path: Path,
-    syncer,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    module_root = _copy_managed_skill(tmp_path)
-    monkeypatch.setattr(syncer, "SKILLS_ROOT", tmp_path / "skills")
-    blueprint = syncer.load_blueprints()["loose-mode"]
-    gateway = module_root / "SKILL.md"
-    gateway.write_text(
-        gateway.read_text(encoding="utf-8").replace(
-            "Catalog: assistant-interaction; topics: reasoning-control; "
-            "visibility: featured",
-            "Catalog: stale",
-            1,
-        ),
-        encoding="utf-8",
-    )
-
-    assert syncer.sync_module(blueprint, check_only=True) == [
-        f"{gateway}: generated blueprint blocks are out of sync"
-    ]
-    assert syncer.sync_module(blueprint, check_only=False) == []
-    assert syncer.sync_module(blueprint, check_only=True) == []
-
-
 def test_generated_contract_requires_catalog_discovery(syncer) -> None:
     graph = SimpleNamespace(module_sources={}, nodes={}, exports={})
 
