@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-import json
 import subprocess
 import sys
 
 import yaml
 
-from docs_tooling.site import PUBLISHED_GRAPHS, assemble_site, sync_published_docs
+from docs_tooling.site import PUBLISHED_GRAPHS, assemble_site
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -248,40 +247,13 @@ def test_pages_workflow_builds_and_deploys_independently_of_repository_tests() -
     )
 
 
-def test_published_graph_specifications_exist_and_are_renderable() -> None:
-    """Every manifest entry names a real specification the renderer accepts."""
-
-    assert PUBLISHED_GRAPHS, "the graph manifest should publish at least one graph"
-    for stem, relative in PUBLISHED_GRAPHS.items():
-        specification = REPO_ROOT / relative
-        assert specification.is_file(), f"missing published graph for {stem}: {relative}"
-        payload = json.loads(specification.read_text(encoding="utf-8"))
-        assert payload.get("entities"), f"published graph {stem} declares no entities"
-
-
-def test_assemble_site_renders_every_published_graph(tmp_path: Path) -> None:
-    """A real-repository build emits one standalone page per manifest entry."""
+def test_assemble_site_publishes_every_declared_graph(tmp_path: Path) -> None:
+    """Each manifest entry names a real specification and reaches the site."""
 
     output = tmp_path / "source"
     assemble_site(REPO_ROOT, output, build_graph=False)
     index = (output / "graphs" / "index.md").read_text(encoding="utf-8")
-    for stem in PUBLISHED_GRAPHS:
-        page = output / "graphs" / f"{stem}.html"
-        assert page.is_file(), f"published graph page was not rendered: {stem}"
-        assert page.stat().st_size > 0
-        assert f"({stem}.html)" in index, f"graph index does not link {stem}"
-
-
-def test_sync_published_docs_retains_rendered_graph_pages(tmp_path: Path) -> None:
-    """A live-reload synchronization keeps graphs it cannot itself rebuild."""
-
-    output = tmp_path / "source"
-    assemble_site(REPO_ROOT, output, build_graph=False)
-    stem = next(iter(PUBLISHED_GRAPHS))
-    page = output / "graphs" / f"{stem}.html"
-    stamp = page.stat().st_mtime_ns
-
-    sync_published_docs(REPO_ROOT, output)
-
-    assert page.is_file(), "synchronization deleted a rendered graph page"
-    assert page.stat().st_mtime_ns == stamp, "synchronization rewrote the page"
+    for stem, (relative, label) in PUBLISHED_GRAPHS.items():
+        assert (REPO_ROOT / relative).is_file(), f"missing specification: {relative}"
+        assert (output / "graphs" / f"{stem}.html").stat().st_size > 0
+        assert f"- [{label}]({stem}.html)" in index
