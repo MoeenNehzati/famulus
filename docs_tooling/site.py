@@ -16,6 +16,7 @@ publication policy and creation of the repository blueprint artifact.
 from __future__ import annotations
 
 from collections.abc import Callable
+import json
 from pathlib import Path
 import posixpath
 import re
@@ -25,6 +26,21 @@ from urllib.parse import quote
 
 DEFAULT_REPOSITORY_URL = "https://github.com/MoeenNehzati/famulus"
 DEFAULT_REPOSITORY_REF = "master"
+
+# Graph specifications that are checked into the repository and published as
+# standalone pages.  These are skill *outputs*, not hand-curated references, so
+# a visitor sees what the producing skill actually generates.  The key becomes
+# the page stem under ``graphs/``; the value is repository-relative.
+#
+# Each rendered page inlines the full ELK and MathJax runtimes (~5.4 MB), so
+# the pages do not share a browser cache.  Past roughly a dozen entries the
+# renderer should emit shared vendor scripts instead of inlining them.
+PUBLISHED_GRAPHS: dict[str, Path] = {
+    "math-dependency": Path(
+        "skills/math-dependency-graph/assets/inference-from-random-restarts"
+        "/results/extraction-latest.json"
+    ),
+}
 
 # Working notes and implementation plans live under ``docs`` for the assistant
 # to read, but they are not documentation. ``superpowers`` is also gitignored,
@@ -98,7 +114,7 @@ def sync_published_docs(
         else:
             shutil.copy2(source, destination)
 
-    _write_graph_index(output / "graphs" / "index.md")
+    _write_graph_index(output / "graphs" / "index.md", root)
     return output
 
 
@@ -144,7 +160,33 @@ def assemble_site(
             name="repository",
             write_json=False,
         )
+    _render_published_graphs(root, output / "graphs")
     return output
+
+
+def _render_published_graphs(root: Path, destination: Path) -> list[Path]:
+    """Render each checked-in graph specification as a standalone page."""
+
+    from officina.visualization.artifacts import GraphArtifactWriter
+    from officina.visualization.elk_html_renderer import ElkHtmlRenderer
+
+    writer = GraphArtifactWriter(ElkHtmlRenderer())
+    rendered: list[Path] = []
+    for stem, relative in PUBLISHED_GRAPHS.items():
+        source = root / relative
+        if not source.is_file():
+            # A synthetic repository under test owns no specifications.  The
+            # real manifest is checked separately, so absence is not an error
+            # here; it only means this root publishes no graph of its own.
+            continue
+        artifacts = writer.write(
+            json.loads(source.read_text(encoding="utf-8")),
+            output_dir=destination,
+            stem=stem,
+            write_payload=False,
+        )
+        rendered.append(artifacts.presentation)
+    return rendered
 
 
 def _validate_output_path(root: Path, docs_root: Path, output: Path) -> None:
@@ -182,13 +224,20 @@ def _published_paths(repo_root: Path, docs_root: Path) -> dict[Path, Path]:
 
 
 def _clear_managed_site_sources(output: Path) -> None:
-    """Remove stale staged docs while retaining a previously built blueprint."""
+    """Remove stale staged docs while retaining previously built graphs.
 
+    Rendered graphs are expensive and are produced by ``assemble_site`` rather
+    than by this synchronization pass, so a MkDocs live-reload pass that calls
+    only this function must leave them in place or they would disappear with
+    nothing to regenerate them.
+    """
+
+    retained = {"blueprint"} | {f"{stem}.html" for stem in PUBLISHED_GRAPHS}
     output.mkdir(parents=True, exist_ok=True)
     for child in output.iterdir():
         if child.name == "graphs" and child.is_dir() and not child.is_symlink():
             for graph_child in child.iterdir():
-                if graph_child.name == "blueprint":
+                if graph_child.name in retained:
                     continue
                 _remove_path(graph_child)
             continue
@@ -206,16 +255,27 @@ def _remove_path(path: Path) -> None:
         shutil.rmtree(path)
 
 
-def _write_graph_index(destination: Path) -> None:
-    """Write the navigable page that owns the interactive graph link."""
+def _write_graph_index(destination: Path, repo_root: Path) -> None:
+    """Write the navigable page that owns the interactive graph links."""
 
     lines = [
         "# Graphs",
         "",
         "- [Interactive repository blueprint](blueprint/repository.html)",
     ]
+    for stem, relative in PUBLISHED_GRAPHS.items():
+        lines.append(f"- [{_graph_title(repo_root / relative, stem)}]({stem}.html)")
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _graph_title(specification: Path, fallback: str) -> str:
+    """Return the human title a graph specification declares for itself."""
+
+    if not specification.is_file():
+        return fallback
+    document = json.loads(specification.read_text(encoding="utf-8")).get("document", {})
+    return str(document.get("title") or fallback)
 
 
 def _rewrite_links(
