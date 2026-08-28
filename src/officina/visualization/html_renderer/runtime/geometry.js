@@ -403,7 +403,7 @@
       };
     }
 
-    function appendEdgeMaskBlocker(mask, bounds, padding = 0, radius = 2, fill = "black") {
+    function appendEdgeMaskBlocker(mask, bounds, padding = 0, radius = 2, fill = "black", fillOpacity = 1) {
       if (!bounds || bounds.width <= 0 || bounds.height <= 0) return;
       const blocker = createSvgElement("rect");
       blocker.setAttribute("x", String(bounds.x - padding));
@@ -412,27 +412,40 @@
       blocker.setAttribute("height", String(bounds.height + 2 * padding));
       blocker.setAttribute("rx", String(radius));
       blocker.setAttribute("fill", fill);
+      blocker.setAttribute("fill-opacity", String(fillOpacity));
       mask.appendChild(blocker);
     }
 
+    // A blocker darkens the luminance mask, so its opacity is the share of the
+    // edge that is hidden. Stopping short of 1 keeps a route traceable where it
+    // passes beneath a node instead of breaking it into two orphaned stubs.
+    const NODE_EDGE_OCCLUSION = 0.78;
+    const CONTAINER_EDGE_OCCLUSION = 0.74;
+    const LABEL_EDGE_OCCLUSION = 0.86;
+
     function appendNodeEdgeMaskBlocker(mask, occluder) {
       const shape = occluder.nodeEl?.querySelector(".node-shape");
+      const fill = "black";
+      const fillOpacity = occluder.isContainer
+        ? CONTAINER_EDGE_OCCLUSION
+        : NODE_EDGE_OCCLUSION;
       if (!shape) {
         appendEdgeMaskBlocker(
           mask,
           occluder.position,
           0,
           2,
-          occluder.isContainer ? "#141414" : "black"
+          fill,
+          fillOpacity
         );
         return;
       }
       const blocker = shape.cloneNode(false);
-      const fill = occluder.isContainer ? "#141414" : "black";
       blocker.removeAttribute("class");
       blocker.removeAttribute("style");
       blocker.setAttribute("fill", fill);
-      blocker.setAttribute("stroke", fill);
+      blocker.setAttribute("fill-opacity", String(fillOpacity));
+      blocker.removeAttribute("stroke");
       blocker.removeAttribute("stroke-dasharray");
       blocker.setAttribute("pointer-events", "none");
       blocker.dataset.edgeOcclusionNodeId = occluder.id;
@@ -486,6 +499,7 @@
         const mask = createSvgElement("mask");
         const maskId = `edge-occlusion-${renderVersion}-${index}`;
         mask.setAttribute("id", maskId);
+        mask.setAttribute("mask-type", "luminance");
         mask.setAttribute("maskUnits", "userSpaceOnUse");
         mask.setAttribute("x", String(maskBounds.x));
         mask.setAttribute("y", String(maskBounds.y));
@@ -509,7 +523,7 @@
           }
           occluder.textBounds.forEach(textBounds => {
             if (boundsIntersect(pathBounds, textBounds, 8)) {
-              appendEdgeMaskBlocker(mask, textBounds, 3, 3);
+              appendEdgeMaskBlocker(mask, textBounds, 3, 3, "black", LABEL_EDGE_OCCLUSION);
             }
           });
         });
