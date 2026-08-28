@@ -1446,7 +1446,7 @@ Split verification at the deterministic boundary:
    prohibit inference and automatic retry, and that no obsolete policy claim
    remains. They do not claim to test LLM behavior.
 3. **Manual isolated-LLM qualification** is required because the broader
-   `docs/plans/isolated-llm-testing.md` harness is still proposed. This work
+   isolated-LM harness is being implemented on a separate branch. This work
    adds a narrow non-mutating fixture harness under
    `test_support/connect_google_llm_qualification/`. It creates a disposable
    home, denies network, mounts no user state, exposes only a fixture dispatcher
