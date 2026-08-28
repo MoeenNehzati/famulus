@@ -1,35 +1,18 @@
-"""Adapt manifest-driven node relocation through the skill-owned engine."""
-
+"""Registered adapter for compact node relocation."""
 from __future__ import annotations
-
 import argparse
+import json
 from pathlib import Path
 import sys
-
-from officina.runtime.python_machine_interface import DispatchCall, PythonMachineInterface
-
-
+from typing import Mapping
+import yaml
+from officina.blueprints.graph import load_repository_blueprint_graph
+from officina.runtime.python_machine_interface import PythonMachineInterface
+from ._compact_relocation import RelocationError, apply, plan
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
-
-
 class Interface(PythonMachineInterface):
-    """Expose the skill-owned relocation engine through the registered route."""
-
     prog = "relocate-nodes"
-    description = (
-        "Preflight or apply one manifest-driven node relocation with per-file "
-        "atomic replacement."
-    )
-    dispatches = {
-        "sync-blueprints": DispatchCall(
-            caller_module_id="relocate-nodes._rtx",
-            target_module_id="skill-maker._rtx",
-            interface="sync-blueprints",
-            version=1,
-            smoke_args=("--check",),
-        )
-    }
-
+    description = "Plan or atomically apply one reviewed node relocation."
     def build_parser(self) -> argparse.ArgumentParser:
         parser = super().build_parser()
         parser.add_argument("--root", type=Path, default=REPOSITORY_ROOT)
@@ -37,59 +20,24 @@ class Interface(PythonMachineInterface):
         parser.add_argument("--report", type=Path)
         parser.add_argument("--apply", action="store_true")
         return parser
-
-    def _synchronize(self, repository: Path, *, check: bool) -> None:
-        """Run the authorized synchronizer against one isolated repository view."""
-
-        result = self.dispatch(
-            "sync-blueprints",
-            args=["--check"] if check else [],
-            repo_root=repository,
-            check=False,
-        )
-        if result.returncode != 0:
-            detail = result.stderr.strip() if isinstance(result.stderr, str) else ""
-            from ._relocation_engine import RelocationError
-
-            raise RelocationError(
-                "blueprint synchronizer failed" + (f": {detail}" if detail else "")
-            )
-
+    def _verify(self, root: Path, manifest: Mapping[str, object]) -> None:
+        load_repository_blueprint_graph(root, expected_schema_version=6)
+        if not plan(root, manifest, recover_interrupted=False).empty:
+            raise RelocationError("target-side postflight is not empty")
     def run(self, args: argparse.Namespace) -> int:
-        from ._relocation_engine import (
-            RelocationError,
-            apply_change_set,
-            load_manifest,
-            plan_relocation,
-            render_report,
-        )
-
         try:
             root = args.root.resolve()
-            if args.report is not None:
-                report_path = args.report.resolve()
-                try:
-                    report_path.relative_to(root)
-                except ValueError:
-                    pass
-                else:
-                    raise RelocationError(
-                        "report path must be outside selected repository: "
-                        f"{report_path} is contained by {root}"
-                    )
-            manifest = load_manifest(args.manifest.resolve())
-            changes = plan_relocation(root, manifest, synchronize=self._synchronize)
-            if args.apply and changes.unaccounted_semantic_occurrences:
-                raise RelocationError(
-                    "apply rejected: unaccounted semantic occurrences remain"
-                )
-            report = render_report(changes)
-            if args.report is not None:
-                args.report.write_text(report, encoding="utf-8")
+            if args.report is not None and args.report.resolve().is_relative_to(root):
+                raise RelocationError("report path must be outside selected repository")
+            manifest = yaml.safe_load(args.manifest.read_text(encoding="utf-8"))
+            if not isinstance(manifest, Mapping):
+                raise RelocationError("manifest must be a YAML mapping")
+            recipe = plan(root, manifest)
+            rendered = json.dumps(recipe.report(), indent=2, sort_keys=True) + "\n"
+            sys.stdout.write(rendered) if args.report is None else args.report.write_text(rendered, encoding="utf-8")
             if args.apply:
-                apply_change_set(changes)
-            sys.stdout.write(report)
-        except (OSError, RelocationError) as exc:
+                apply(recipe, verify=lambda: self._verify(root, manifest))
+            return 0
+        except (OSError, RelocationError, yaml.YAMLError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
-        return 0

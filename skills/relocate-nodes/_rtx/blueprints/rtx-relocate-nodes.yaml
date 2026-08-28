@@ -1,18 +1,11 @@
 content:
+- _compact_relocation\.py
 - _relocate_nodes\.py
-- _relocation_addresses\.py
-- _relocation_closure\.py
-- _relocation_engine\.py
-- _relocation_semantics\.py
 - schemas/relocation\.schema\.json
-- tests/test_relocation_addresses\.py
-- tests/test_relocation_closure\.py
-- tests/test_relocation_engine\.py
-- tests/test_relocation_semantics\.py
+- tests/test_compact_relocation\.py
 dependencies: []
 description: Owns schema-v3 relocation projection, semantic-decision preflight, and
-  gated per-file atomic publication with possible partial effects on mid-publish
-  failure.
+  recovery-backed failure-atomic publication.
 gateway:
   language: Python>=3.11
   path: _relocate_nodes.py
@@ -20,22 +13,14 @@ id: relocate-nodes._rtx.source.rtx-relocate-nodes
 interfaces:
   relocate-nodes._rtx.source.rtx-relocate-nodes.interface.relocate:
     content:
+    - _compact_relocation\.py
     - _relocate_nodes\.py
-    - _relocation_addresses\.py
-    - _relocation_closure\.py
-    - _relocation_engine\.py
-    - _relocation_semantics\.py
     - schemas/relocation\.schema\.json
-    - tests/test_relocation_addresses\.py
-    - tests/test_relocation_closure\.py
-    - tests/test_relocation_engine\.py
-    - tests/test_relocation_semantics\.py
+    - tests/test_compact_relocation\.py
     uses_interfaces:
     - interface: blueprints.interface.graph
       version: 1
     - interface: configuration.interface.repository
-      version: 1
-    - interface: skill-maker._rtx.interface.sync-blueprints
       version: 1
     contract:
       arguments:
@@ -78,14 +63,15 @@ interfaces:
             opaque_content: true
         apply:
           default: false
-          description: Publish the accepted change set with atomic replacement per file.
+          description: Publish the accepted change set as one recovery-backed failure-atomic transaction.
           required: false
           sensitivity: public
           type:
             kind: flag
       caller_warnings:
-      - external-side-effect: --apply publishes validated files one at a time and may
-          leave earlier files applied if a later publication fails.
+      - external-side-effect: --apply locks the repository, records rollback state
+          outside it, and restores the complete baseline on a caught failure; an
+          interrupted marker is recovered before the next invocation.
       direct_io:
         network: []
         reads:
@@ -147,8 +133,8 @@ interfaces:
           access: write
           path: <root>/**
           path_match: glob
-          content: Repository change set published with atomic replacement per file
-            and possible partial effects if publication fails.
+          content: Repository change set published through one recovery-backed
+            failure-atomic transaction.
           formats:
           - source-code
           - json
@@ -158,8 +144,8 @@ interfaces:
           sensitivity: user-private
       execution:
         consistency:
-          snapshot: Application verifies every preflight input remains unchanged before
-            publishing the complete change set.
+          snapshot: Application holds one publication lock, verifies every preflight
+            input remains unchanged, and keeps target-side postflight inside the transaction.
         effects:
         - id: repository-change-set
           action: update
@@ -170,8 +156,8 @@ interfaces:
             kind: output
             output_ref: report
           reversibility:
-            compensatable: A subsequent reviewed relocation manifest can restore intended
-              repository paths and content.
+            compensatable: Automatic rollback restores the captured baseline before a
+              failed invocation returns.
           value_source:
             kind: argument
             argument_ref: manifest
@@ -179,23 +165,23 @@ interfaces:
         state_effect: mutating
         mutation_safety:
           atomicity:
-            per_effect_only: Every file is staged and atomically replaced after the
-              complete change set passes preflight; publication is not repository-atomic.
+            atomic: The complete repository change set either passes target-side
+              postflight or is restored from the durable baseline marker.
           concurrent_invocations:
-            unsafe: Concurrent relocation applications can invalidate each other's
-              preflight snapshots.
+            safe: A repository-specific shared lock serializes publishers.
           idempotency:
             idempotent: An unchanged manifest has an empty postflight after its accepted
               change set is applied.
           on_uncertain_completion:
-            verify_then_decide: Rerun the same preflight and require every report
-              category to be empty before retrying.
+            verify_then_decide: The next invocation restores any durable in-progress
+              marker before planning, then reruns the requested preflight.
           partial_effects_on_failure:
-            possible: A mid-publication failure can leave earlier per-file replacements
-              applied while later files remain unchanged.
+            impossible: Caught publication and postflight failures restore every captured
+              regular file, mode, and directory baseline before returning; address-bearing
+              symlinks are rejected during preflight.
           rollback_on_failure:
-            unavailable: Preserve the report and use a reviewed compensating manifest
-              rather than rewriting repository history.
+            automatic: Rollback uses an external durable marker containing the captured
+              baseline; the next invocation restores an interrupted publication.
         verification:
         - method: output-schema
           output_ref: report
@@ -269,7 +255,7 @@ interfaces:
           sensitivity: derived-private
       preconditions: []
     description: Preflight or publish one manifest-driven registered-node relocation
-      with atomic replacement per file.
+      as one recovery-backed failure-atomic change set.
     process_binding:
       entry: Interface
       kind: process
@@ -304,21 +290,11 @@ runtime_dependencies:
     windows: true
   reason: Parses caller-selected relocation manifests in the skill-owned engine.
   version: any
-- kind: python-package
-  name: jsonschema
-  platforms:
-    linux: true
-    macos: true
-    windows: true
-  reason: Validates caller-selected relocation manifests against the skill-owned schema.
-  version: any
 schema_version: 6
 uses_interfaces:
 - interface: blueprints.interface.graph
   version: 1
 - interface: configuration.interface.repository
-  version: 1
-- interface: skill-maker._rtx.interface.sync-blueprints
   version: 1
 version: 1
 maturity: stable

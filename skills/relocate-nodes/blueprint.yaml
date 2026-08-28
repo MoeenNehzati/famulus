@@ -38,8 +38,13 @@ namespace_exports:
       - relocate-nodes
     surface:
       only:
+        relocate-nodes._rtx.interface.build-review-packet: 1
         relocate-nodes._rtx.interface.relocate: 2
     interface_access:
+      relocate-nodes._rtx.interface.build-review-packet:
+        allow_all_modules: false
+        allowed_callers:
+        - relocate-nodes
       relocate-nodes._rtx.interface.relocate:
         allow_all_modules: false
         allowed_callers:

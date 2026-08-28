@@ -1,9 +1,9 @@
 content:
 - SKILL\.md
 dependencies: []
-description: Directs mechanical preflight, occurrence-by-occurrence semantic review,
-  accepted application, and target-side postflight through the private machine
-  interface.
+description: Directs mechanical preflight, grouped user-assisted semantic review,
+  recovery-backed application, and target-side postflight through the private
+  machine interface.
 gateway:
   language: Markdown
   path: SKILL.md
@@ -13,6 +13,8 @@ interfaces:
     content:
     - SKILL\.md
     uses_interfaces:
+    - interface: relocate-nodes._rtx.interface.build-review-packet
+      version: 1
     - interface: relocate-nodes._rtx.interface.relocate
       version: 2
     contract:
@@ -26,9 +28,9 @@ interfaces:
             sensitivity: user-private
       caller_warnings:
       - external-side-effect: Applying an accepted manifest changes the selected
-          repository with per-file atomic replacements, not a repository-wide transaction
-          or rollback; persisted-state, compatibility, and behavioral choices require
-          explicit user review before a semantic decision is recorded.
+          repository through a recovery-backed failure-atomic transaction;
+          persisted-state, compatibility, and behavioral choices require explicit
+          user review before a semantic decision is recorded.
       direct_io:
         network: []
         reads:
@@ -71,35 +73,33 @@ interfaces:
           direct_io_ref: repository-change
           may_occur_in_outcomes:
           - completed
-          - failed
           confirmation_evidence:
             kind: output
             output_ref: response
           reversibility:
-            compensatable: Repair any reported partial publish from version-control
-              evidence; the route does not promise repository-wide rollback.
+            compensatable: Automatic rollback restores the pre-publication baseline
+              before a caught failure returns.
           value_source:
             kind: argument
             argument_ref: request
         lifecycle: finite
         mutation_safety:
           atomicity:
-            per_effect_only: Each file replacement is atomic, but the complete relocation
-              is not a repository-wide transaction.
+            atomic: The complete reviewed change set passes target-side postflight or
+              is restored from the durable baseline marker.
           concurrent_invocations:
-            unsafe: Any included physical inventory change after planning aborts before
-              publish; concurrent publish faults can still leave completed files.
+            safe: A repository-specific publication lock serializes concurrent apply calls.
           idempotency:
-            non_idempotent: Apply only after reviewed preflight; use the identical manifest
-              without apply for target-side postflight.
+            idempotent: A completed relocation has an empty identical postflight.
           on_uncertain_completion:
-            verify_then_decide: Inspect the report and repository state, then rerun the
-              identical manifest as read-only postflight before deciding on repair.
+            verify_then_decide: The next invocation restores an interrupted marker
+              before planning and then reports the recovered repository state.
           partial_effects_on_failure:
-            possible: A mid-publish fault may leave already replaced files in place.
+            impossible: Caught publication or postflight failures restore the complete
+              captured baseline before returning.
           rollback_on_failure:
-            unavailable: The route cleans staging files but does not roll back published
-              repository files.
+            automatic: An external durable baseline marker restores caught or interrupted
+              publication effects.
         state_effect: mutating
         verification:
         - method: output-schema
@@ -122,8 +122,7 @@ interfaces:
           as prescribed by this workflow.
       - id: failed
         class: error
-        effects:
-        - relocation-change
+        effects: []
         outputs:
         - response
         caller_action: Correct the manifest or unresolved reference before retrying.
@@ -151,6 +150,8 @@ interfaces:
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
+- interface: relocate-nodes._rtx.interface.build-review-packet
+  version: 1
 - interface: relocate-nodes._rtx.interface.relocate
   version: 2
 version: 1
