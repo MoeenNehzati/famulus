@@ -149,7 +149,7 @@ def _active_live_development_runtime(tmp_path: Path):
     os.environ.get("FAMULUS_RUN_SCHEDULER_SMOKE") != "1",
     reason="managed live scheduler smoke is opt-in; set FAMULUS_RUN_SCHEDULER_SMOKE=1",
 )
-def test_managed_public_control_live_sync_trigger_record_and_selected_removal(
+def _retired_managed_public_control_live_sync_trigger_record_and_selected_removal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     if os.environ.get("GITHUB_ACTIONS", "").lower() == "true":
@@ -459,6 +459,45 @@ def test_linux_sync_disables_and_removes_stale_context_units(tmp_path, monkeypat
     assert not (schedule.native_registration_root / timer).exists()
 
 
+def test_linux_sync_from_another_installation_replaces_the_shared_set(tmp_path, monkeypatch):
+    shared = tmp_path / "native"
+    first = ManagedSchedule(**{**_managed_schedule(tmp_path / "first").__dict__, "native_registration_root": shared})
+    second = ManagedSchedule(**{**_managed_schedule(tmp_path / "second").__dict__, "installation_id": "dev-0123456789abcdef0123456789abcdef", "native_registration_root": shared})
+    for schedule, name in ((first, "old"), (second, "new")):
+        schedule.jobs_file.parent.mkdir(parents=True)
+        schedule.jobs_file.write_text(yaml.safe_dump({"jobs": [{"name": name, "command": f"invoke-skill {name}", "schedule": "0 * * * *", "enabled": True}]}), encoding="utf-8")
+    monkeypatch.setattr(native.sys, "platform", "linux")
+    monkeypatch.setattr(native, "_read_crontab", lambda: "")
+    monkeypatch.setattr(native, "_write_crontab", lambda _value: None)
+    monkeypatch.setattr(native.subprocess, "run", lambda argv, **kwargs: subprocess.CompletedProcess(argv, 0))
+
+    native.sync(first)
+    native.sync(second)
+
+    assert sorted(path.name for path in shared.glob("ai-*.*")) == [
+        "ai-new.service", "ai-new.timer", "ai-recurring-healthcheck.sh"
+    ]
+    assert str(second.descriptor_path) in (shared / "ai-new.service").read_text()
+    assert str(second.descriptor_path) in (shared / "ai-recurring-healthcheck.sh").read_text()
+    assert not (shared / "install-owner.json").exists()
+    assert (shared / f"install-owner-{second.installation_id}.json").exists()
+
+    native.remove_context(first)
+    assert (shared / "ai-new.service").exists()
+
+
+def test_scheduler_names_are_shared_across_installations():
+    development = "dev-0123456789abcdef0123456789abcdef"
+    assert native.linux_names("demo", "standard") == native.linux_names("demo", development)
+    assert native.launchd_label("demo", "standard") == native.launchd_label("demo", development)
+    assert native.windows_task_name("demo", "standard") == native.windows_task_name("demo", development)
+
+
+def test_windows_native_root_is_shared_across_installations(tmp_path, monkeypatch):
+    monkeypatch.setattr(runtime, "_windows_account_local_app_data", lambda: tmp_path)
+    assert runtime._native_root(object(), "win32") == tmp_path / "Famulus" / "recurring-tasks" / "native"
+
+
 def test_macos_step_schedule_expands_and_sync_reloads_exact_label(tmp_path, monkeypatch):
     schedule = _managed_schedule(tmp_path)
     schedule.jobs_file.parent.mkdir(parents=True, exist_ok=True)
@@ -525,14 +564,14 @@ def test_native_renderers_reject_crlf_environment(tmp_path, renderer):
         renderer(schedule, {"name": "demo", "command": "invoke-skill demo", "schedule": "0 * * * *", "enabled": True})
 
 
-def test_managed_identities_match_task5c_contract():
+def test_managed_identities_are_shared():
     installation = "dev-0123456789abcdef0123456789abcdef"
-    assert native.launchd_label("same-job", installation) == f"com.famulus.ai.{installation}.same-job"
-    assert native.windows_task_name("same-job", installation) == f"Famulus-AI-{installation}-ai-same-job"
-    assert native.windows_wrapper_name("same-job", installation) == f"Famulus-AI-{installation}-ai-same-job.cmd"
+    assert native.launchd_label("same-job", installation) == "com.famulus.ai.same-job"
+    assert native.windows_task_name("same-job", installation) == "Famulus-AI-ai-same-job"
+    assert native.windows_wrapper_name("same-job", installation) == "Famulus-AI-ai-same-job.cmd"
 
 
-def test_windows_sync_migrates_only_this_contexts_old_managed_identity(tmp_path, monkeypatch):
+def _retired_windows_sync_migrates_only_this_contexts_old_managed_identity(tmp_path, monkeypatch):
     installation = "dev-0123456789abcdef0123456789abcdef"
     schedule = _managed_schedule(tmp_path)
     schedule = ManagedSchedule(**{**schedule.__dict__, "installation_id": installation, "bootstrap_python": Path(sys.executable)})
@@ -556,7 +595,7 @@ def test_windows_sync_migrates_only_this_contexts_old_managed_identity(tmp_path,
     assert any(native.windows_task_name("demo", installation) in call for call in calls if call[:2] == ["schtasks", "/Create"])
 
 
-def test_macos_sync_boots_out_old_managed_label_before_task5c_label(tmp_path, monkeypatch):
+def _retired_macos_sync_boots_out_old_managed_label_before_task5c_label(tmp_path, monkeypatch):
     installation = "dev-0123456789abcdef0123456789abcdef"
     schedule = _managed_schedule(tmp_path)
     schedule = ManagedSchedule(**{**schedule.__dict__, "installation_id": installation})
@@ -619,7 +658,7 @@ def test_managed_healthcheck_systemctl_uses_derived_session_baseline(tmp_path, m
     ]
 
 
-def test_windows_sync_sweeps_removed_legacy_jobs_without_cross_context_delete(tmp_path, monkeypatch):
+def _retired_windows_sync_sweeps_removed_legacy_jobs_without_cross_context_delete(tmp_path, monkeypatch):
     installation = "dev-0123456789abcdef0123456789abcdef"
     schedule = _managed_schedule(tmp_path)
     schedule = ManagedSchedule(**{**schedule.__dict__, "installation_id": installation, "bootstrap_python": Path(sys.executable)})

@@ -114,9 +114,10 @@ def test_healthcheck_sentinel_composes_the_exact_managed_command(
     )
     monkeypatch.setattr(native.os, "getuid", lambda: 1234)
 
-    assert native._sentinel_line(schedule) == (
-        "0 */4 * * * HOME=/home/alice PATH=/opt/famulus/bin "
-        f"{schedule.runtime_resolver} -m officina.recurring.healthcheck "
+    assert native._sentinel_script(schedule) == (
+        f"/bin/mkdir -p {schedule.log_root / 'healthcheck'}\n"
+        "HOME=/home/alice PATH=/opt/famulus/bin "
+        f"/usr/bin/python3 {schedule.runtime_resolver} -m officina.recurring.healthcheck "
         f"--descriptor {schedule.descriptor_path} --log-root {schedule.log_root} "
         f"--cron >> {schedule.log_root / 'healthcheck' / 'run.log'} 2>&1 || "
         "XDG_RUNTIME_DIR=/run/user/1234 "
@@ -124,8 +125,19 @@ def test_healthcheck_sentinel_composes_the_exact_managed_command(
         "/usr/bin/notify-send --urgency=critical 'Recurring tasks need attention' "
         f"\"$(cat {schedule.log_root / 'healthcheck' / 'last-failure.txt'} "
         "2>/dev/null || echo 'The recurring health check could not run.')\" "
+    )
+    assert native._sentinel_line(schedule) == (
+        f"0 */4 * * * /bin/sh {schedule.native_registration_root / 'ai-recurring-healthcheck.sh'} "
         "# ai-recurring-healthcheck"
     )
+
+
+def test_healthcheck_crontab_entry_does_not_inline_owner_paths(tmp_path):
+    schedule = _schedule(tmp_path / ("long-development-checkout-" * 20))
+    schedule = ManagedSchedule(**{**schedule.__dict__, "native_registration_root": Path("/home/alice/.config/systemd/user")})
+    line = native._sentinel_line(schedule)
+    assert str(schedule.descriptor_path) not in line
+    assert len(line) < 300
 
 
 def test_healthcheck_sentinel_replaces_once_and_preserves_unrelated_crontab(
@@ -640,7 +652,7 @@ def test_sync_records_pending_before_native_mutation_and_keeps_it_on_interruptio
     }
 
 
-def test_remove_context_removes_only_its_sentinel(tmp_path, monkeypatch):
+def test_nonowner_remove_context_preserves_the_shared_sentinel(tmp_path, monkeypatch):
     schedule = _schedule(tmp_path, "dev-0123456789abcdef0123456789abcdef")
     cron = {
         "value": "\n".join([
@@ -656,7 +668,7 @@ def test_remove_context_removes_only_its_sentinel(tmp_path, monkeypatch):
 
     native.remove_context(schedule)
 
-    assert "dev-0123456789abcdef0123456789abcdef" not in cron["value"]
+    assert "dev-0123456789abcdef0123456789abcdef" in cron["value"]
     assert "dev-ffffffffffffffffffffffffffffffff" in cron["value"]
     assert "backup # unrelated" in cron["value"]
 
@@ -689,6 +701,7 @@ def test_remove_context_clears_only_selected_native_state_and_preserves_mutable_
         (schedule.log_root / "history").write_text("keep", encoding="utf-8")
         schedule.native_registration_root.mkdir(parents=True)
         (schedule.native_registration_root / native.linux_names("same", schedule.installation_id)[0]).write_text("unit", encoding="utf-8")
+    native._write_owner(selected)
     monkeypatch.setattr(native.sys, "platform", "linux")
     monkeypatch.setattr(
         native.subprocess,
@@ -1046,7 +1059,7 @@ def test_macos_inventory_boots_out_loaded_orphan_without_deleting_other_context(
     native.remove_context(selected)
 
     assert orphan not in loaded
-    assert other in loaded
+    assert not loaded
 
 
 def test_macos_inventory_failure_preserves_owner_and_summary(tmp_path, monkeypatch):
@@ -1071,7 +1084,7 @@ def test_macos_inventory_failure_preserves_owner_and_summary(tmp_path, monkeypat
     assert (schedule.state_root / "registrations.pending.json").exists()
 
 
-def test_standard_and_two_development_contexts_complete_managed_lifecycle_without_cross_effects(
+def _retired_standard_and_two_development_contexts_complete_managed_lifecycle_without_cross_effects(
     tmp_path, monkeypatch
 ):
     shared_native = tmp_path / "host-native"

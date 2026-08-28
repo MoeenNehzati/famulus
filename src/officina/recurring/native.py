@@ -15,7 +15,7 @@ from typing import Mapping
 from officina.install.context import InstallationContext
 
 from .runtime import ManagedSchedule, native_registration_root
-from officina.common.atomic_files import atomic_replace_bytes
+from officina.common.atomic_files import atomic_replace_bytes, exclusive_file_lock
 from .jobs import confined_child, validate_job, validate_job_name, validate_jobs_payload
 
 
@@ -118,7 +118,7 @@ def cron_to_systemd(value: str) -> str:
 
 def linux_names(job_name: str, installation_id: str) -> tuple[str, str]:
     job_name = validate_job_name(job_name)
-    stem = f"ai-{registration_token(installation_id)}{job_name}"
+    stem = f"ai-{job_name}"
     return stem + ".service", stem + ".timer"
 
 
@@ -151,8 +151,7 @@ def render_linux_timer(schedule: ManagedSchedule, job: Mapping[str, object]) -> 
 def launchd_label(job_name: str, installation_id: str) -> str:
     if job_name:
         job_name = validate_job_name(job_name)
-    token = registration_token(installation_id).removesuffix("-")
-    return f"com.famulus.ai.{token + '.' if token else ''}{job_name}"
+    return f"com.famulus.ai.{job_name}"
 
 
 def _cron_values(value: str) -> dict[str, int] | list[dict[str, int]]:
@@ -200,26 +199,13 @@ def render_macos_plist(schedule: ManagedSchedule, job: Mapping[str, object]) -> 
 def windows_task_name(job_name: str, installation_id: str) -> str:
     if job_name:
         job_name = validate_job_name(job_name)
-    token = registration_token(installation_id)
-    return f"Famulus-AI-{token}ai-{job_name}" if token else f"Famulus-AI-ai-{job_name}"
+    return f"Famulus-AI-ai-{job_name}"
 
 
 def windows_wrapper_name(job_name: str, installation_id: str) -> str:
     if job_name:
         job_name = validate_job_name(job_name)
     return windows_task_name(job_name, installation_id) + ".cmd"
-
-
-def _legacy_managed_launchd_label(job_name: str, installation_id: str) -> str:
-    return f"com.famulus.ai.{registration_token(installation_id)}{job_name}"
-
-
-def _legacy_managed_windows_task_name(job_name: str, installation_id: str) -> str:
-    return f"Famulus-AI-ai-{registration_token(installation_id)}{job_name}"
-
-
-def _legacy_managed_windows_wrapper_name(job_name: str, installation_id: str) -> str:
-    return f"ai-{registration_token(installation_id)}{job_name}.cmd"
 
 
 def _cmd_quote(value: str) -> str:
@@ -259,7 +245,6 @@ def cron_to_schtasks_args(value: str) -> list[str]:
 def _context_job(name: str, prefix: str, suffix: str, installation_id: str) -> str | None:
     if not name.startswith(prefix) or not name.endswith(suffix): return None
     job = name[len(prefix):] if not suffix else name[len(prefix):len(name) - len(suffix)]
-    if installation_id == "standard" and re.match(r"dev-[0-9a-f]{32}-", job): return None
     try:
         return validate_job_name(job)
     except ValueError:
@@ -331,13 +316,13 @@ def inspect_registration_namespace(
     state_present = state_present or owner.exists()
 
     if platform.startswith("linux"):
-        prefix = f"ai-{registration_token(installation_id)}"
+        prefix = "ai-"
         inventory = _systemd_unit_inventory(
             prefix, installation_id, linux_session_environment()
         )
         patterns = ((f"{prefix}*.service", ".service"), (f"{prefix}*.timer", ".timer"))
     elif platform == "darwin":
-        prefix = f"ai-{registration_token(installation_id)}"
+        prefix = "ai-"
         inventory = _launchd_label_inventory(installation_id)
         patterns = ((f"{prefix}*.plist", ".plist"),)
     elif platform == "win32":
@@ -424,10 +409,6 @@ def _launchd_label_inventory(installation_id: str) -> _NativeInventory:
             continue
         remainder = label[len(prefix):]
         if not remainder:
-            continue
-        if installation_id == "standard" and re.match(
-            r"dev-[0-9a-f]{32}\.", remainder
-        ):
             continue
         entries.append(label)
     return _NativeInventory(True, tuple(entries))
@@ -566,8 +547,7 @@ def write_registration_summary(
 
 
 def _sentinel_marker(installation_id: str) -> str:
-    base = "# ai-recurring-healthcheck"
-    return base if installation_id == "standard" else f"{base}:{installation_id}"
+    return "# ai-recurring-healthcheck"
 
 
 def _read_crontab() -> str:
@@ -595,9 +575,9 @@ def _write_crontab(content: str) -> None:
     )
 
 
-def _sentinel_line(schedule: ManagedSchedule) -> str:
+def _sentinel_script(schedule: ManagedSchedule) -> str:
     arguments = [
-        str(schedule.runtime_resolver), "-m", "officina.recurring.healthcheck",
+        "/usr/bin/python3", str(schedule.runtime_resolver), "-m", "officina.recurring.healthcheck",
         "--descriptor", str(schedule.descriptor_path),
         "--log-root", str(schedule.log_root), "--cron",
     ]
@@ -609,13 +589,17 @@ def _sentinel_line(schedule: ManagedSchedule) -> str:
     summary = shlex.quote(str(schedule.log_root / "healthcheck" / "last-failure.txt"))
     prefix = assignments + " " if assignments else ""
     return (
-        f"0 */4 * * * {prefix}{command} >> {log} 2>&1 || "
+        f"/bin/mkdir -p {shlex.quote(str(schedule.log_root / 'healthcheck'))}\n"
+        f"{prefix}{command} >> {log} 2>&1 || "
         f"XDG_RUNTIME_DIR=/run/user/{os.getuid()} "
         f"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{os.getuid()}/bus "
         f"/usr/bin/notify-send --urgency=critical 'Recurring tasks need attention' "
         f"\"$(cat {summary} 2>/dev/null || echo 'The recurring health check could not run.')\" "
-        f"{_sentinel_marker(schedule.installation_id)}"
     )
+
+
+def _sentinel_line(schedule: ManagedSchedule) -> str:
+    return f"0 */4 * * * /bin/sh {shlex.quote(str(_native_child(schedule, 'ai-recurring-healthcheck.sh')))} {_sentinel_marker(schedule.installation_id)}"
 
 
 def _update_sentinel(schedule: ManagedSchedule, *, remove: bool) -> None:
@@ -730,6 +714,13 @@ def _teardown_incomplete(schedule: ManagedSchedule, remaining: set[str]) -> None
 
 
 def sync(schedule: ManagedSchedule) -> None:
+    root = schedule.native_registration_root
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with exclusive_file_lock(root / ".ai-recurring.lock", allowed_root=root):
+        _sync_unlocked(schedule)
+
+
+def _sync_unlocked(schedule: ManagedSchedule) -> None:
     jobs = load_jobs(schedule)
     root = schedule.native_registration_root
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -742,7 +733,7 @@ def sync(schedule: ManagedSchedule) -> None:
             service, timer = linux_names(str(job["name"]), schedule.installation_id)
             _write_native_bytes(schedule, service, render_linux_service(schedule, job).encode("utf-8"))
             _write_native_bytes(schedule, timer, render_linux_timer(schedule, job).encode("utf-8"))
-        prefix = f"ai-{registration_token(schedule.installation_id)}"
+        prefix = "ai-"
         enabled_names = {str(job["name"]) for job in enabled}
         for timer_path in sorted(root.glob(f"{prefix}*.timer")):
             name = _context_job(timer_path.name, prefix, ".timer", schedule.installation_id)
@@ -753,37 +744,12 @@ def sync(schedule: ManagedSchedule) -> None:
         subprocess.run(["systemctl", "--user", "daemon-reload"], check=True, env=session_environment)
         for job in enabled:
             subprocess.run(["systemctl", "--user", "enable", "--now", linux_names(str(job['name']), schedule.installation_id)[1]], check=True, env=session_environment)
+        _write_native_bytes(schedule, "ai-recurring-healthcheck.sh", (_sentinel_script(schedule) + "\n").encode("utf-8"))
         _update_sentinel(schedule, remove=False)
     elif sys.platform == "darwin":
         target = f"gui/{os.getuid()}"
         enabled_names = {str(job["name"]) for job in enabled}
-        prefix = f"ai-{registration_token(schedule.installation_id)}"
-        legacy_prefix = _legacy_managed_launchd_label("", schedule.installation_id)
-        current_label_prefix = launchd_label("", schedule.installation_id)
-        legacy_services: set[str] = set()
-        if legacy_prefix != current_label_prefix:
-            legacy_services.update(
-                _legacy_managed_launchd_label(str(job["name"]), schedule.installation_id)
-                for job in jobs
-            )
-            listed = subprocess.run(
-                ["launchctl", "list"], capture_output=True, text=True,
-                encoding="utf-8", errors="replace",
-            )
-            if listed.returncode == 0:
-                legacy_services.update(
-                    line.split()[-1] for line in listed.stdout.splitlines()
-                    if line.split() and line.split()[-1].startswith(legacy_prefix)
-                )
-            for path in sorted(root.glob(f"{prefix}*.plist")):
-                try:
-                    label = plistlib.loads(path.read_bytes()).get("Label")
-                except (OSError, plistlib.InvalidFileException, ValueError, TypeError):
-                    continue
-                if isinstance(label, str) and label.startswith(legacy_prefix):
-                    legacy_services.add(label)
-            for label in sorted(legacy_services):
-                subprocess.run(["launchctl", "bootout", f"{target}/{label}"], capture_output=True)
+        prefix = "ai-"
         for path in sorted(root.glob(f"{prefix}*.plist")):
             name = _context_job(path.name, prefix, ".plist", schedule.installation_id)
             if name is not None and name not in enabled_names:
@@ -792,7 +758,7 @@ def sync(schedule: ManagedSchedule) -> None:
                     subprocess.run(["launchctl", "bootout", service], capture_output=True)
                 _unlink_native(schedule, path.name)
         for job in enabled:
-            name = f"ai-{registration_token(schedule.installation_id)}{job['name']}.plist"
+            name = f"ai-{job['name']}.plist"
             path = _write_native_bytes(schedule, name, render_macos_plist(schedule, job))
             service = f"{target}/{launchd_label(str(job['name']), schedule.installation_id)}"
             if subprocess.run(["launchctl", "print", service], capture_output=True).returncode == 0:
@@ -802,15 +768,6 @@ def sync(schedule: ManagedSchedule) -> None:
         enabled_names = {str(job["name"]) for job in enabled}
         prefix = windows_task_name("", schedule.installation_id)
         existing_tasks = _windows_existing_tasks()
-        legacy_prefix = _legacy_managed_windows_task_name("", schedule.installation_id)
-        if legacy_prefix != prefix:
-            for existing in existing_tasks:
-                if existing.rsplit("\\", 1)[-1].startswith(legacy_prefix):
-                    subprocess.run(["schtasks", "/Delete", "/TN", existing, "/F"], capture_output=True)
-        legacy_wrapper_prefix = f"ai-{registration_token(schedule.installation_id)}"
-        for path in sorted(root.glob(f"{legacy_wrapper_prefix}*.cmd")):
-            if _context_job(path.name, legacy_wrapper_prefix, ".cmd", schedule.installation_id) is not None:
-                _unlink_native(schedule, path.name)
         for existing in existing_tasks:
             short = existing.rsplit("\\", 1)[-1]
             name = _context_job(short, prefix, "", schedule.installation_id)
@@ -826,6 +783,9 @@ def sync(schedule: ManagedSchedule) -> None:
             subprocess.run(["schtasks", "/Create", "/TN", windows_task_name(str(job['name']), schedule.installation_id), "/TR", f'cmd.exe /d /s /c "{path}"', "/F", *cron_to_schtasks_args(str(job["schedule"]))], check=True)
     else:
         raise RuntimeError(f"unsupported scheduler platform: {sys.platform}")
+    for owner in root.glob("install-owner*.json"):
+        if owner != _owner_path(schedule):
+            _unlink_native(schedule, owner.name)
     _write_owner(schedule)
     _settle_registration_summary(schedule, selected_names)
 
@@ -860,11 +820,22 @@ def _remove_context(
 ) -> None:
     root = schedule.native_registration_root
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with exclusive_file_lock(root / ".ai-recurring.lock", allowed_root=root):
+        if not _owner_path(schedule).exists():
+            _settle_registration_summary(schedule, [])
+            return
+        _remove_context_unlocked(schedule, platform)
+
+
+def _remove_context_unlocked(
+    schedule: ManagedSchedule | _RegistrationTeardownContext, platform: str
+) -> None:
+    root = schedule.native_registration_root
     candidates = _teardown_candidates(schedule)
     _write_registration_state(schedule, sorted(candidates), pending=True)
     remaining: set[str] = set()
     if platform.startswith("linux"):
-        prefix = f"ai-{registration_token(schedule.installation_id)}"
+        prefix = "ai-"
         session_environment = linux_session_environment()
         inventory = _systemd_unit_inventory(
             prefix, schedule.installation_id, session_environment
@@ -977,7 +948,7 @@ def _remove_context(
                     if name is not None:
                         remaining.add(name)
     elif platform == "darwin":
-        prefix = f"ai-{registration_token(schedule.installation_id)}"
+        prefix = "ai-"
         target = f"gui/{os.getuid()}"
         inventory = _launchd_label_inventory(schedule.installation_id)
         if not inventory.available:
@@ -1083,16 +1054,17 @@ def _remove_context(
                 _teardown_incomplete(schedule, candidates or {"<sentinel>"})
         except RuntimeError:
             _teardown_incomplete(schedule, candidates or {"<sentinel>"})
+        _unlink_native(schedule, "ai-recurring-healthcheck.sh")
     _unlink_native(schedule, _owner_path(schedule).name)
     _settle_registration_summary(schedule, [])
 
 
 def status(schedule: ManagedSchedule) -> str:
     if sys.platform.startswith("linux"):
-        result = subprocess.run(["systemctl", "--user", "list-timers", f"ai-{registration_token(schedule.installation_id)}*.timer", "--no-pager"], capture_output=True, text=True, encoding="utf-8", errors="replace", env=linux_session_environment())
+        result = subprocess.run(["systemctl", "--user", "list-timers", "ai-*.timer", "--no-pager"], capture_output=True, text=True, encoding="utf-8", errors="replace", env=linux_session_environment())
     elif sys.platform == "darwin":
         chunks = []
-        prefix = f"ai-{registration_token(schedule.installation_id)}"
+        prefix = "ai-"
         for path in sorted(schedule.native_registration_root.glob(f"{prefix}*.plist")):
             name = _context_job(path.name, prefix, ".plist", schedule.installation_id)
             if name is not None:

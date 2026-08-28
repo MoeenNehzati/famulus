@@ -49,7 +49,7 @@ def _registration_failure(schedule: ManagedSchedule, job: dict[str, object]) -> 
                 return f"{name}: managed registration is missing ({path})"
         active = subprocess.run(["systemctl", "--user", "is-active", timer], capture_output=True, env=linux_session_environment()).returncode == 0
     elif sys.platform == "darwin":
-        path = root / f"ai-{'' if schedule.installation_id == 'standard' else schedule.installation_id + '-'}{name}.plist"
+        path = root / f"ai-{name}.plist"
         try:
             stale = path.read_bytes() != render_macos_plist(schedule, job)
         except OSError:

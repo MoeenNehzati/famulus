@@ -77,9 +77,22 @@ def _posix_account_home() -> Path:
         raise RecurringRuntimeError("cannot resolve the host account home") from exc
 
 
+def _windows_account_local_app_data() -> Path:
+    import ctypes, uuid
+    folder_id = (ctypes.c_ubyte * 16).from_buffer_copy(uuid.UUID("f1b32785-6fba-4fcf-9d55-7b8e7f157091").bytes_le)
+    selected = ctypes.c_wchar_p()
+    result = ctypes.windll.shell32.SHGetKnownFolderPath(ctypes.byref(folder_id), 0, None, ctypes.byref(selected))
+    if result != 0 or not selected.value:
+        raise RecurringRuntimeError("cannot resolve the host account LocalAppData")
+    try:
+        return _absolute(Path(selected.value), "host account LocalAppData")
+    finally:
+        ctypes.windll.ole32.CoTaskMemFree(ctypes.cast(selected, ctypes.c_void_p))
+
+
 def _native_root(context: InstallationContext, platform: str) -> Path:
     if platform == "win32":
-        return context.paths.recurring_state_root / "task-wrappers"
+        return _windows_account_local_app_data() / "Famulus" / "recurring-tasks" / "native"
     home = _posix_account_home()
     if platform == "darwin":
         return home / "Library" / "LaunchAgents"

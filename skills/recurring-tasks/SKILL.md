@@ -47,16 +47,16 @@ available; it does not create, enable, or run a job.
 Load the active installation before every operation. If no valid active
 context exists, complete or repair installation before recurring setup.
 
-Each context owns an independent namespace keyed by `installation_id`:
+All installations share one native scheduler set for the host account. Every
+setup, sync, enable, or disable operation replaces that set from the active
+installation's complete enabled-job configuration. The rendered tasks point
+directly to that installation's validated schedule descriptor, making the last
+successful scheduling operation the owner.
 
-- native scheduler registrations and healthcheck registration;
-- mutable job definitions;
-- run logs, outcome records, and in-flight state; and
-- the recorded scheduler owner.
-
-Standard and multiple development contexts may coexist. Never infer ownership
-from the current checkout or process environment. Render registrations only
-from the validated schedule descriptor and context-owned job configuration.
+Job definitions, logs, outcome records, and in-flight state remain local to
+each installation. Render registrations only from the validated descriptor and
+job configuration. A non-owner removal must leave the shared scheduler set
+unchanged.
 
 On the first standard operation, migrate only recognized legacy standard jobs,
 logs, owner records, registrations, and healthcheck markers. Refuse ambiguous
@@ -67,20 +67,20 @@ or foreign state rather than adopting it.
 Use the generated interfaces as follows:
 
 - `scripts-setup` initializes the selected context, migrates recognized legacy
-  standard state when needed, synchronizes enabled jobs, and installs an
-  independent healthcheck sentinel only where the platform supports it.
-- `scripts-sync` reconciles enabled definitions with native registrations.
+  standard state when needed, and replaces the shared scheduler set and
+  healthcheck sentinel where the platform supports it.
+- `scripts-sync` replaces the shared scheduler set from enabled definitions.
 - `scripts-enable` and `scripts-disable` change authorization for one job and
   reconcile its registration.
-- `scripts-status` reports configured and native state for this context.
+- `scripts-status` reports configured state and the shared native set.
 - `scripts-test` triggers one job and waits, bounded, for a fresh outcome
   record; never treat scheduler trigger acceptance as job success.
 - `scripts-view-logs` reads this context's bounded job log.
 - `scripts-healthcheck` checks descriptor, source, scheduler, registration,
   activity, and outcome health. On platforms without the independent sentinel,
   invoke it on demand.
-- `scripts-remove-context` removes only this context's registrations, sentinel,
-  and owner record while preserving job definitions, logs, and history.
+- `scripts-remove-context` removes the shared registrations only when this
+  context is their current owner, while preserving definitions, logs, and history.
 
 Before invoking an interface, read the selected job and current status needed
 for its arguments. Report a failed operation without claiming scheduler state
