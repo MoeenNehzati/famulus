@@ -1541,12 +1541,11 @@ Each dry-run must identify the candidate repository root, expected caller and
 target, and expected implementing source. Reject another checkout rather than
 using its passing results.
 
-The current `docs/plans/unified-release-mechanism.md` is still proposed and
-`docs/releasing.md` does not exist. Therefore this plan explicitly blocks
-public distribution until that release mechanism is implemented. The release
-candidate is the exact commit later tagged `vMAJOR.MINOR.PATCH`; the public
-artifact is GitHub's generated source archive for that immutable tag, not a
-locally assembled archive.
+The repository-wide release process is not implemented and `docs/releasing.md`
+does not exist. Therefore this plan explicitly blocks public distribution until
+that release process is implemented. The release candidate is the exact commit
+later tagged `vMAJOR.MINOR.PATCH`; the public artifact is GitHub's generated
+source archive for that immutable tag, not a locally assembled archive.
 
 ### Exact local and installed-candidate gate
 
@@ -1777,7 +1776,7 @@ unexplained human intervention, failed reset, or oracle mismatch is red.
 
 ### Tagged artifact identity
 
-After the unified release mechanism exists, its `docs/releasing.md` commands
+After the repository-wide release process exists, its `docs/releasing.md` commands
 must build the release commit, annotated tag, and GitHub Release. Download
 GitHub's generated source archive for that tag into a fresh temporary
 directory, record its SHA-256, and inspect its file list. Require:
@@ -1810,7 +1809,7 @@ required whole-node standards audit.
   portability/native checks, the exact-SHA matrix, and the staged gate pass.
 - The tagged source archive hash, manifest, and fresh public install identities
   are retained and match the audited commit.
-- The unified release mechanism and `docs/releasing.md` are implemented; until
+- The repository-wide release process and `docs/releasing.md` are implemented; until
   then public distribution remains blocked.
 
 ## Implementation order
@@ -1839,7 +1838,7 @@ required whole-node standards audit.
     selectors plus validators/full/staged gates in the candidate checkout.
 11. Activate the exact candidate, run all dry-runs/standards queries, platform
     and isolated-LLM qualification, and disposable-project live cases.
-12. Implement the unified release mechanism, verify the tagged archive/fresh
+12. Implement the repository-wide release process, verify the tagged archive/fresh
     public installs, and only then change the release verdict to green.
 
 ## Release completion criteria

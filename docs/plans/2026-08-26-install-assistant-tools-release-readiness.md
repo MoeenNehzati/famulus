@@ -415,9 +415,8 @@ The installer component is ready only when:
 - skill text and public documentation match implemented behavior;
 - local, hosted-platform, and disposable lifecycle qualifications pass.
 
-Publication also requires the repository-wide mechanism in
-`docs/plans/unified-release-mechanism.md`: synchronized versions and manifests,
-changelog, runtime lock, notices and licenses, repository and secret checks,
-immutable tag and GitHub Release, and public Claude/Codex install verification.
-That mechanism is still marked proposed; component readiness alone is not
-permission to publish.
+Publication also requires a repository-wide release process: synchronized
+versions and manifests, changelog, runtime lock, notices and licenses,
+repository and secret checks, immutable tag and GitHub Release, and public
+Claude/Codex install verification. Component readiness alone is not permission
+to publish.

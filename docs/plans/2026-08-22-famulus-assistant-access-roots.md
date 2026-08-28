@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python standard library, `FamulusPaths`/`InstallationContext`, installer manifest, pytest, GitHub Actions on Ubuntu/macOS/Windows.
 
-**Spec:** `docs/plans/unified-famulus-installation.md`, extended by the constraints below.
+**Installation contract:** `docs/officina/installation.md`, extended by the constraints below.
 
 ## Global Constraints
 

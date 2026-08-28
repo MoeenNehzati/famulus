@@ -191,7 +191,7 @@ a known hardening gap.
 | Email-triage classification log | `<PLUGIN>/skills/email-triage/_rtx/triage.log`; includes account, message ID, sender, subject, decision, and reason |
 | List-manager category cache | `<PLUGIN>/skills/list-manager/_rtx/tmp/categories.<list>.yaml`; contains list category paths and cache counters, not list entries |
 | Daily-plan run status | `<PLUGIN>/skills/daily-plan/state/status.json` |
-| Recurring-task definitions | The selected context's recurring configuration root, namespaced by `installation_id`, plus native per-user scheduler registrations |
+| Recurring-task definitions | The selected context's recurring configuration root, namespaced by `installation_id`; all installations share one native per-user scheduler set, owned by the last successful scheduling operation |
 | Recurring-task output and outcome records | The selected context's recurring state root, namespaced by `installation_id`; command output is captured and logs rotate after 5 MiB with one prior copy retained |
 | Weather queries | Location and forecast parameters sent to Open-Meteo |
 | Feedback reports | Email recipient configured by the project, only after the user reviews and approves the report |

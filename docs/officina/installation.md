@@ -18,10 +18,11 @@ Every installation has one explicit context:
 | `development` | One explicit existing checkout | That checkout's `.famulus/` tree | Editing and testing a live checkout |
 
 A development context has a stable installation ID, so several checkouts can
-coexist without sharing runtime, assistant homes, jobs, logs, manifests, or
-scheduler registrations. The checkout itself is never used as an assistant
-home. Its isolated homes and all installer-owned development state remain
-inside `.famulus/`.
+coexist without sharing runtime, assistant homes, jobs, logs, or manifests.
+Their job definitions and history remain isolated, but every installation
+shares one native scheduler set for the host account. The checkout itself is
+never used as an assistant home. Its isolated homes and all installer-owned
+development state remain inside `.famulus/`.
 
 Development activation is a convenience boundary, not a sandbox. It projects
 the checkout's skills, references, instructions, hooks, and helper commands
@@ -118,24 +119,27 @@ route.
 ## Recurring jobs and context removal
 
 `recurring-tasks` owns job definitions, logs, outcomes, native registrations,
-health checks, migration, and removal. Every registration is namespaced by the
-context's `installation_id`; standard and multiple development contexts can
-coexist.
+health checks, migration, and removal. All installations share one native
+scheduler set for the host account. Setup, sync, enable, or disable replaces
+that set from the active installation's complete enabled-job configuration;
+the last successful scheduling operation becomes its owner. Job definitions,
+logs, outcomes, and in-flight state remain local to each installation.
 
 Before uninstalling a context:
 
 1. Use `recurring-tasks` to disable its enabled jobs.
 2. Invoke its `scripts-remove-context` operation for that exact context. This
-   removes only that context's native registrations, sentinel, and owner record;
-   it preserves job configuration and history.
+   removes the shared registrations only if that context is their current
+   owner; a non-owner removal leaves them unchanged. Job configuration and
+   history are preserved.
 3. Run the installer uninstaller only after its recurring preflight reports no
-   registrations for that installation ID.
+   shared registrations owned by that installation.
 
 On first standard sync, recurring-tasks adopts recognized legacy standard
-registrations and mutable job state into the `standard` namespace. It does not
-adopt ambiguous or foreign registrations. Linux installs an independent
-periodic healthcheck sentinel. macOS and Windows provide the same healthcheck
-on demand but do not install that independent sentinel.
+registrations and mutable job state. It does not adopt ambiguous or foreign
+registrations. Linux installs one shared periodic healthcheck sentinel. macOS
+and Windows provide the same healthcheck on demand but do not install that
+independent sentinel.
 
 ## Uninstall versus purge
 
