@@ -19,6 +19,109 @@
       "exemplifies": {
         "color": "#d97706"
       }
+    },
+    "edge_presentation": {
+      "facets": [
+        {
+          "id": "provenance",
+          "label": "Provenance",
+          "field": "implicit",
+          "variants": [
+            {
+              "id": "stated",
+              "equals": false,
+              "label": "Stated",
+              "description": "The dependency is asserted by the document.",
+              "style": {
+                "opacity": 1.0
+              }
+            },
+            {
+              "id": "inferred",
+              "equals": true,
+              "label": "Inferred",
+              "description": "The dependency is inferred from the mathematical argument rather than asserted.",
+              "style": {
+                "opacity": 0.55,
+                "stroke_width": 1.4
+              }
+            }
+          ]
+        },
+        {
+          "id": "directness",
+          "label": "Directness",
+          "field": "derived",
+          "variants": [
+            {
+              "id": "direct",
+              "equals": false,
+              "label": "Direct",
+              "description": "Drawn between the two entities that state the dependency.",
+              "style": {
+                "line_pattern": "solid"
+              }
+            },
+            {
+              "id": "indirect",
+              "equals": true,
+              "label": "Indirect",
+              "description": "Composed across one or more hidden entities. The document asserts the path, not this edge.",
+              "style": {
+                "line_pattern": "dashed"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "relation_semantics": {
+    "transformations": {
+      "node_omission": {
+        "rules": [
+          {
+            "id": "supports-chain",
+            "causes": [
+              "user-hidden",
+              "filter-hidden",
+              "detail-hidden"
+            ],
+            "left_types": [
+              "supports"
+            ],
+            "right_types": [
+              "supports"
+            ],
+            "outcomes": [
+              {
+                "type": "supports",
+                "fidelity": "degraded"
+              }
+            ]
+          },
+          {
+            "id": "supports-then-exemplifies",
+            "causes": [
+              "user-hidden",
+              "filter-hidden",
+              "detail-hidden"
+            ],
+            "left_types": [
+              "supports"
+            ],
+            "right_types": [
+              "exemplifies"
+            ],
+            "outcomes": [
+              {
+                "type": "exemplifies",
+                "fidelity": "degraded"
+              }
+            ]
+          }
+        ]
+      }
     }
   }
 }

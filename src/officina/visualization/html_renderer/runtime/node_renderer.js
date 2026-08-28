@@ -225,6 +225,27 @@
         shapeEl = createSvgElement("polygon");
         shapeEl.setAttribute("points", `${x + skew},${y} ${x + w},${y} ${x + w - skew},${y + h} ${x},${y + h}`);
         selectionRing = shapeEl.cloneNode(false);
+      } else if (style.shape === "stadium") {
+        shapeEl = createSvgElement("rect");
+        shapeEl.setAttribute("x", x); shapeEl.setAttribute("y", y);
+        shapeEl.setAttribute("width", w); shapeEl.setAttribute("height", h);
+        shapeEl.setAttribute("rx", h / 2); shapeEl.setAttribute("ry", h / 2);
+        selectionRing = shapeEl.cloneNode(false);
+      } else if (style.shape === "cylinder") {
+        const capHeight = Math.min(14, h / 4);
+        shapeEl = createSvgElement("path");
+        shapeEl.setAttribute("d",
+          `M ${x},${y + capHeight}` +
+          ` A ${w / 2},${capHeight} 0 0 1 ${x + w},${y + capHeight}` +
+          ` L ${x + w},${y + h - capHeight}` +
+          ` A ${w / 2},${capHeight} 0 0 1 ${x},${y + h - capHeight} Z`);
+        selectionRing = shapeEl.cloneNode(false);
+      } else if (style.shape === "note") {
+        const fold = 18;
+        shapeEl = createSvgElement("polygon");
+        shapeEl.setAttribute("points",
+          `${x},${y} ${x + w - fold},${y} ${x + w},${y + fold} ${x + w},${y + h} ${x},${y + h}`);
+        selectionRing = shapeEl.cloneNode(false);
       } else if (style.shape === "roundrect") {
         shapeEl = createSvgElement("rect");
         shapeEl.setAttribute("x", x); shapeEl.setAttribute("y", y);

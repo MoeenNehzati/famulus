@@ -25,7 +25,22 @@ Each entity must provide the schema-required fields:
 - `short_title`: a compact description of what the object says, written to be read inside a small node cell. Aim for a short noun phrase naming the mathematical content, such as `Beta-prior posterior tail bound` or `Agreement before exit` — never a bare environment name, a label key, or a macro name.
 - `position`: a nonnegative integer preserving source order
 
-Also set `ref` whenever the document numbers the object: the number exactly as the document assigns it, such as `4.3`, `A.7`, or `C.2`. Leave `ref` absent only for genuinely unnumbered objects. The viewer draws `short_title` as the node's title and `type` plus `ref` as its subtitle, so a missing `ref` costs the reader the object's index in the paper.
+Also set `ref` to the number the document assigns the object, such as `4.3`, `A.7`, or `C.2`. The viewer draws `short_title` as the node's title and `type` plus `ref` as its subtitle, so a missing `ref` costs the reader the object's index in the paper.
+
+That number is **not written in the source**: TeX assigns it while typesetting, and a `\label{...}` records only a key. Take it from a resolved label map when the job supplies one, and otherwise derive it.
+
+**Record the label rather than the number.** Whenever the object's statement carries a `\label{...}`, copy that key verbatim into `tex_label`. Reading a label off the source needs no inference, whereas a number does, and the rendering step resolves `tex_label` to the printed number deterministically. Set `tex_label` even when you also know the number.
+
+**Use a supplied label map when one is given.** It was produced by compiling the document, so its numbers are exactly what the paper prints: look the entity up by its `tex_label` and copy the number into `ref`. The map also records the kind TeX assigned, such as `lemma` or `assumption`; treat a disagreement with your own reading as a signal to re-examine the statement rather than as licence to override the map.
+
+**Derive the number only when neither is available.** Which environments share a counter, and what resets them, is decided entirely by the preamble, so read the declarations before numbering anything:
+
+- `\newtheorem{theorem}{Theorem}[section]` starts a counter that resets at each section, so its objects are numbered `<section>.<n>`.
+- `\newtheorem{lemma}[theorem]{Lemma}` makes lemmas share the `theorem` counter. Environments sharing a counter advance one sequence between them.
+- `\newtheorem{assumption}{Assumption}[section]` starts a counter of its own. Two environments on different counters may hold the same number, so Assumption 4.1 and Lemma 4.1 can both exist; two on the same counter never can.
+- After `\appendix`, section numbers become letters, so counters read `A.1`, `B.2`, and so on.
+
+Count in document order within each counter's resetting scope, and follow `\setcounter` or `\numberwithin` when the preamble changes a scheme. Leave `ref` absent for a genuinely unnumbered object, and also when neither a label map nor the preamble and every preceding object on that counter is available: a number guessed without them would be wrong, and a wrong index is worse than none.
 
 Put the source-faithful mathematical statement in `description`, beginning with the mathematics rather than with how the statement was typeset. Set `source` to exactly `explicit` or `inferred` when provenance is useful.
 

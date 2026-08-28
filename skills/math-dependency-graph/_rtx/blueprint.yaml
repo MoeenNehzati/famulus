@@ -13,6 +13,13 @@ authority:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
+      - _tex_label_reader.py
+      - Interface
+      reason: Resolve TeX label numbering by draft-compiling the document.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
       - _tex_macro_reader.py
       - Interface
       reason: Extract MathJax macro definitions from TeX sources.
@@ -29,6 +36,7 @@ content:
 - _graph_builder\.py
 - _graph_server\.py
 - __init__\.py
+- _tex_label_reader\.py
 - _tex_macro_reader\.py
 - tests/.*
 description: Code module for the math-dependency-graph skill.
@@ -45,6 +53,12 @@ exports:
       allowed_callers:
       - math-dependency-graph
     source_interface: math-dependency-graph._rtx.source.rtx-tex-macro-reader.interface.scripts-extract-mathjax-macros
+  math-dependency-graph._rtx.interface.scripts-read-tex-labels:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - math-dependency-graph
+    source_interface: math-dependency-graph._rtx.source.rtx-tex-label-reader.interface.scripts-read-tex-labels
   math-dependency-graph._rtx.interface.scripts-serve-graph:
     access:
       allow_all_modules: false
@@ -71,6 +85,10 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/rtx-init.yaml
+  math-dependency-graph._rtx.source.rtx-tex-label-reader:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-tex-label-reader.yaml
   math-dependency-graph._rtx.source.rtx-tex-macro-reader:
     blueprint:
       base: module-root

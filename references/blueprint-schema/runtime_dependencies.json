@@ -4722,6 +4722,9 @@
         "math-dependency-graph._rtx.interface.scripts-extract-mathjax-macros": {
           "dependencies": []
         },
+        "math-dependency-graph._rtx.interface.scripts-read-tex-labels": {
+          "dependencies": []
+        },
         "math-dependency-graph._rtx.interface.scripts-serve-graph": {
           "dependencies": []
         }

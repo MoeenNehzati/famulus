@@ -692,6 +692,10 @@ class Graph:
         canonical_fields = {
             "type",
             "implicit",
+            # Renderer-set on edges composed across omitted nodes. Declared
+            # presentation is the only way to distinguish such an edge, so the
+            # flag is readable by facets even though adapters never author it.
+            "derived",
             "confidence",
             "phase",
             "weight",

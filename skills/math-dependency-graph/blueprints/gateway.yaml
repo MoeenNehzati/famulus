@@ -96,6 +96,8 @@ uses_interfaces:
   version: 1
 - interface: math-dependency-graph._rtx.interface.scripts-extract-mathjax-macros
   version: 1
+- interface: math-dependency-graph._rtx.interface.scripts-read-tex-labels
+  version: 1
 - interface: math-dependency-graph._rtx.interface.scripts-serve-graph
   version: 1
 version: 2

@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
+import sys
 from pathlib import Path
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
@@ -76,6 +78,70 @@ def prepare_macro_file(args: argparse.Namespace, source_path: Path, doc: dict) -
 PRESENTATION_BASE = Path(__file__).resolve().parent.parent / "resources" / "graph-base.json"
 
 
+LABEL_REFERENCE_RE = re.compile(r"\\(ref|eqref|cref|Cref|autoref)\{([^{}]+)\}")
+
+
+def apply_label_numbering(doc: dict, labels: dict[str, dict]) -> int:
+    """Fill each entity's `ref` from the label the extractor recorded.
+
+    Reading a `\\label` off the source needs no inference; turning it into the
+    number the document prints does. Keeping that resolution here means the
+    printed number always matches the compiled document, and an entity whose
+    label is unknown simply keeps no number rather than a guessed one.
+    """
+    if not labels:
+        return 0
+    numbered = 0
+    for entity in doc.get("entities", []):
+        if entity.get("ref"):
+            continue
+        entry = labels.get(str(entity.get("tex_label") or ""))
+        if entry and entry.get("ref"):
+            entity["ref"] = entry["ref"]
+            numbered += 1
+    return numbered
+
+
+def resolve_label_references(doc: dict, labels: dict[str, dict]) -> int:
+    """Replace label keys in graph text with the numbers the document prints.
+
+    Extracted text quotes the source, so it carries `\\ref{lemma:containment}`
+    rather than `Lemma A.7`. A reader cannot resolve a label key, so substitute
+    the resolved number wherever one is known. Keys with no entry are left as
+    they are: an unresolved reference should stay visible rather than silently
+    become something else.
+    """
+    if not labels:
+        return 0
+    replaced = 0
+
+    def substitute(text: str) -> str:
+        nonlocal replaced
+
+        def swap(match: "re.Match[str]") -> str:
+            nonlocal replaced
+            entry = labels.get(match.group(2))
+            if not entry or not entry.get("ref"):
+                return match.group(0)
+            replaced += 1
+            number = entry["ref"]
+            return f"({number})" if match.group(1) == "eqref" else number
+
+        return LABEL_REFERENCE_RE.sub(swap, text)
+
+    def walk(node: object) -> object:
+        if isinstance(node, str):
+            return substitute(node)
+        if isinstance(node, list):
+            return [walk(item) for item in node]
+        if isinstance(node, dict):
+            return {key: walk(value) for key, value in node.items()}
+        return node
+
+    doc["entities"] = walk(doc.get("entities", []))
+    return replaced
+
+
 def apply_presentation_base(doc: dict, source_path: Path) -> Path:
     """Merge the skill's edge catalog into the payload and enforce the closed vocabulary.
 
@@ -101,9 +167,15 @@ def apply_presentation_base(doc: dict, source_path: Path) -> Path:
             "and metadata, not as a new type."
         )
 
+    if "categories" in base:
+        doc.setdefault("categories", base["categories"])
     doc.setdefault("edge_categories", base["edge_categories"])
     ui = doc.setdefault("ui", {})
     ui.setdefault("edge_styles", base["ui"]["edge_styles"])
+    if "edge_presentation" in base["ui"]:
+        ui.setdefault("edge_presentation", base["ui"]["edge_presentation"])
+    if "relation_semantics" in base:
+        doc.setdefault("relation_semantics", base["relation_semantics"])
 
     merged = source_path.parent / f"{source_path.stem}.rendered.json"
     merged.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
@@ -133,6 +205,11 @@ def main(argv: list[str] | None = None) -> None:
         help="Regenerate the default macro file from the TeX entrypoint before rendering.",
     )
     parser.add_argument(
+        "--label-file",
+        dest="label_file",
+        help="Resolved TeX label JSON used to replace reference keys with printed numbers.",
+    )
+    parser.add_argument(
         "--reduce-transitive-edges",
         action="store_true",
         help="Apply graph-theoretic transitive reduction before rendering",
@@ -147,6 +224,14 @@ def main(argv: list[str] | None = None) -> None:
     if not isinstance(doc, dict):
         raise SystemExit("Canonical dependency-graph JSON must be an object.")
     macro_path = prepare_macro_file(args, source_path, doc)
+    labels: dict[str, dict] = {}
+    if args.label_file:
+        label_path = Path(args.label_file).resolve()
+        if not label_path.exists():
+            raise SystemExit(f"Label file not found: {label_path}")
+        labels = json.loads(label_path.read_text(encoding="utf-8"))
+    resolved_references = resolve_label_references(doc, labels)
+    numbered_entities = apply_label_numbering(doc, labels)
     render_source = apply_presentation_base(doc, source_path)
     render_argv = [str(render_source), "--profile", "math-dependency"]
     if args.html_out:
@@ -156,6 +241,19 @@ def main(argv: list[str] | None = None) -> None:
     if args.reduce_transitive_edges:
         render_argv.append("--reduce-transitive-edges")
     render_html(render_argv)
+    # stdout carries the renderer's machine-readable report; these counts are
+    # diagnostics, so they must not turn stdout into two JSON documents.
+    print(
+        json.dumps(
+            {
+                "labels_supplied": len(labels),
+                "entities_numbered": numbered_entities,
+                "references_resolved": resolved_references,
+            },
+            indent=2,
+        ),
+        file=sys.stderr,
+    )
 
 
 class Interface(PythonArgvMachineInterface):

@@ -17,7 +17,7 @@ _VENDOR_DIRECTORY = Path(__file__).parent / "vendor"
 @lru_cache(maxsize=1)
 def _mathjax_runtime() -> str:
     """Load the pinned offline MathJax runtime and make it script-safe."""
-    runtime = (_VENDOR_DIRECTORY / "mathjax-3.2.2-tex-svg.js").read_text(
+    runtime = (_VENDOR_DIRECTORY / "mathjax-3.2.2-tex-svg-full.js").read_text(
         encoding="utf-8"
     )
     return re.sub(r"</script", lambda _match: r"<\/script", runtime, flags=re.IGNORECASE)

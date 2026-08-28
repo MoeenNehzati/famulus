@@ -58,8 +58,8 @@ Includes
     Implements the browser runtime's elk-worker.min behavior.
 ``vendor/elk.bundled.js``
     Implements the browser runtime's elk.bundled behavior.
-``vendor/mathjax-3.2.2-tex-svg.js``
-    Implements the browser runtime's mathjax-3.2.2-tex-svg behavior.
+``vendor/mathjax-3.2.2-tex-svg-full.js``
+    Implements the browser runtime's mathjax-3.2.2-tex-svg-full behavior.
 ``viewer.css``
     Defines the graph canvas, controls, inspector, legend, and responsive layout styles.
 """

@@ -23,14 +23,20 @@ from .html_renderer.assets import render_document
 from .html_renderer.dependencies import render_dependency_head
 
 
+# Fallback shapes assigned to categories a payload does not style itself. Each of
+# these keeps enough width across the band where a label sits. A diamond narrows
+# to a point on both axes and a circle ignores the node's width entirely, so a
+# title has to wrap around the taper and the node grows to hold text a rectangle
+# of the same area would fit; neither is handed out by default. The renderer still
+# draws every implemented shape, including those two and `stadium`, `note`, and
+# `double-rect`, when a payload names one in a category.
 CATEGORY_SHAPES = [
     "rect",
     "roundrect",
     "ellipse",
-    "diamond",
     "hexagon",
     "parallelogram",
-    "double-rect",
+    "cylinder",
 ]
 
 CATEGORY_PALETTE = [
