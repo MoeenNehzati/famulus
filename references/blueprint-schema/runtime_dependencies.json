@@ -7148,6 +7148,14 @@
         }
       }
     },
+    "setup-python-environment": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {}
+    },
     "skill-maker": {
       "maturity": "stable",
       "installation_tier": "core",

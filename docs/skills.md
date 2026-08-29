@@ -76,6 +76,7 @@ This page is the complete skill inventory. For workflows and examples, start fro
 - `connect-google` — The user needs to set up or restore Google authentication for Famulus _(topics: external-integrations; activated by: user request, skill workflow)_
 - `install-assistant-tools` — Install or update launchers, wiring, hooks, and environment on a machine _(topics: assistant-installation, system-maintenance; activated by: user request)_
 - `milestone-logging` — Starting or completing substantive agent work that needs durable, role-labelled progress records and optional run recovery _(topics: task-automation, assistant-assurance; activated by: user request, skill workflow)_
+- `setup-python-environment` — Famulus MCP cannot start because its selected Python or a bundled core package is unavailable _(topics: assistant-installation, system-maintenance; activated by: user request, skill workflow)_
 - `using-compass` — A user or another skill directs the agent to use a named compass _(topics: task-automation, session-management; activated by: user request, skill workflow)_
 
 ## Assistant Interaction

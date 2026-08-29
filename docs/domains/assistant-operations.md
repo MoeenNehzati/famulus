@@ -12,5 +12,6 @@ and repair, see the [installation guide](../officina/installation.md).
 - `install-assistant-tools` — Install or update launchers, wiring, hooks, and environment on a machine
 - `milestone-logging` — Starting or completing substantive agent work that needs durable, role-labelled progress records and optional run recovery
 - `recurring-tasks` — Manage recurring AI jobs through the host's native per-user scheduler
+- `setup-python-environment` — Famulus MCP cannot start because its selected Python or a bundled core package is unavailable
 - `using-compass` — A user or another skill directs the agent to use a named compass
 <!-- END AUTO-GENERATED DOCS: assistant-operations -->
