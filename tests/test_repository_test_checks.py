@@ -1237,6 +1237,7 @@ def test_ci_dependency_lock_covers_the_complete_test_environment() -> None:
         "pytest-xdist==3.8.0",
         "PyYAML==6.0.2",
         "jsonschema==4.23.0",
+        "mcp>=1,<2",
         "keyring==25.6.0",
         "cryptography==44.0.1",
         "lark==1.3.1",

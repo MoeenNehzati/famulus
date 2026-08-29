@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "server": "famulus",
+  "command": "python",
+  "args": ["mcp_server.py"],
+  "tool": {
+    "name": "invoke",
+    "required": ["caller", "interface", "version", "arguments"],
+    "optional": {"dry_run": false},
+    "arguments": {
+      "positionals": "compact positional argv; empty when options is ordered",
+      "options": {
+        "compact": "mapping of one flag to true or one scalar value; list values are rejected",
+        "ordered": "complete ordered argv list; required for repeated, multi-value, or order-sensitive flags"
+      }
+    }
+  },
+  "fingerprint": [
+    "sys.executable",
+    "sys.prefix",
+    "sys.base_prefix",
+    "sys.version_info[:2]"
+  ],
+  "core_packages": ["mcp>=1,<2", "PyYAML>=6", "jsonschema>=4,<5"]
+}

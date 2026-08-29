@@ -7,7 +7,7 @@ name = "famulus-officina"
 version = "0.0.0"
 description = "Blueprint-authorized direct dispatcher and installation runtime"
 requires-python = ">=3.11"
-dependencies = ["PyYAML>=6", "jsonschema>=4,<5"]
+dependencies = ["PyYAML>=6", "jsonschema>=4,<5", "mcp>=1,<2"]
 
 [project.scripts]
 dispatcher = "officina.dispatcher.cli:main"

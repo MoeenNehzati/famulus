@@ -5,5 +5,11 @@
     "name": "Moeen Nehzati"
   },
   "repository": "https://github.com/MoeenNehzati/famulus",
-  "version": "0.0.0"
+  "version": "0.0.0",
+  "mcpServers": {
+    "famulus": {
+      "command": "python",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp_server.py"]
+    }
+  }
 }

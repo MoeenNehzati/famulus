@@ -124,14 +124,17 @@ def test_boundary_matchers_are_compiled_once_per_validation(
     script = caller / "_rtx" / "run.py"
     script.parent.mkdir()
     script.write_text("\n".join(f"value_{index} = {index}" for index in range(100)))
-    compiled_patterns: list[str] = []
-    real_compile = re.compile
+    compile_calls = 0
+    real_compile = _mod._compile_direct_runtime_patterns
 
-    def counted_compile(pattern: str, flags: int = 0) -> re.Pattern[str]:
-        compiled_patterns.append(pattern)
-        return real_compile(pattern, flags)
+    def counted_compile(skill_names: list[str]) -> tuple[re.Pattern[str], ...]:
+        nonlocal compile_calls
+        compile_calls += 1
+        patterns = real_compile(skill_names)
+        assert len(patterns) == 3
+        return patterns
 
-    monkeypatch.setattr(_mod.re, "compile", counted_compile)
+    monkeypatch.setattr(_mod, "_compile_direct_runtime_patterns", counted_compile)
 
     assert _mod.validate(tmp_path) == []
-    assert len(compiled_patterns) == 3
+    assert compile_calls == 1

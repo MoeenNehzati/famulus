@@ -18,6 +18,7 @@
     "automation"
   ],
   "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
   "hooks": "./hooks/hooks.json",
   "interface": {
     "displayName": "Famulus",
