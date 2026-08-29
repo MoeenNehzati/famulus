@@ -1,22 +1,22 @@
 content:
-- instructions/audit-behavioral-source\.md
+- instructions/audit-interface\.md
 dependencies: []
-description: Owns semantic review of one behavioral source as the composition of its
-  interfaces, gateway, remainder content, and source-wide declarations.
+description: Owns semantic review of one source interface against its contract, selected
+  content, binding, dependencies, and observed behavior.
 gateway:
   language: Markdown
-  path: instructions/audit-behavioral-source.md
-id: skill-certifier.source.audit-behavioral-source
+  path: instructions/audit-interface.md
+id: node-certify.source.audit-interface
 interfaces:
-  skill-certifier.source.audit-behavioral-source.interface.audit:
+  node-certify.source.audit-interface.interface.audit:
     content:
-    - instructions/audit-behavioral-source\.md
+    - instructions/audit-interface\.md
     uses_interfaces: []
     contract:
       arguments:
         request:
-          description: Current behavioral-source declaration, bounded source evidence,
-            dependencies, changes, and completed interface audit results.
+          description: Current interface declaration and the bounded content, behavior,
+            change, dependency, and prior-evidence material to audit.
           required: true
           sensitivity: user-private
           type:
@@ -27,7 +27,7 @@ interfaces:
         network: []
         reads:
         - access: read
-          content: bounded behavioral-source audit request and evidence
+          content: bounded interface audit request and evidence
           formats:
           - text
           id: read-1
@@ -36,7 +36,7 @@ interfaces:
           system: agent-runtime
         writes:
         - access: write
-          content: structured behavioral-source audit result
+          content: structured interface audit result
           formats:
           - markdown
           id: write-1
@@ -45,8 +45,8 @@ interfaces:
           system: agent-runtime
       execution:
         consistency:
-          snapshot: The result applies only to the supplied source declaration, interface
-            results, and evidence snapshot.
+          snapshot: The result applies only to the supplied interface declaration
+            and evidence snapshot.
         lifecycle: finite
         state_effect: read-only
         verification:
@@ -56,7 +56,8 @@ interfaces:
       interaction:
         mode: unattended
       outcomes:
-      - caller_action: Use the verdict and evidence in the parent-module audit.
+      - caller_action: Use the verdict and evidence in the containing behavioral-source
+          audit.
         class: success
         effects: []
         id: audited
@@ -73,8 +74,7 @@ interfaces:
         cardinality:
           minimum: 1
           maximum: 1
-        description: Structured pass, reject, or needs-context result for one behavioral
-          source.
+        description: Structured pass, reject, or needs-context result for one interface.
         direct_io_ref: write-1
         empty: Never empty.
         id: audit-result
@@ -87,8 +87,8 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Audit one behavioral source and return bounded semantic evidence
-      and a verdict.
+    description: Audit one source interface and return bounded semantic evidence and
+      a verdict.
     version: 1
 node_type: behavioral_source
 schema_version: 6

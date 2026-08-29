@@ -8,9 +8,9 @@ description: Runs the public v6 certification gate and the frozen candidate-revi
 gateway:
   language: Python
   path: _node_certifier.py
-id: skill-certifier._rtx.source.rtx-certifier
+id: node-certify._rtx.source.rtx-certifier
 interfaces:
-  skill-certifier._rtx.source.rtx-certifier.interface.certify:
+  node-certify._rtx.source.rtx-certifier.interface.certify:
     content:
     - _node_certifier\.py
     - __init__\.py
@@ -134,7 +134,7 @@ interfaces:
           - secret-store-entry
           id: write-1
           medium: local-filesystem
-          path: skills/skill-certifier/.certificates/public-keys
+          path: skills/node-certify/.certificates/public-keys
           path_match: exact
           reason: Create or reuse retained Ed25519 verification material and the active-key
             selector while storing private material through the configured secret

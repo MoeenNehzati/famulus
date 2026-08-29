@@ -518,7 +518,7 @@ def test_required_python_packages_preserve_declared_versions(tmp_path):
             {
                 "version": 2,
                 "skills": {
-                    "skill-certifier": {
+                    "node-certify": {
                         "interfaces": {
                             "certify": {
                                 "dependencies": [
@@ -640,8 +640,8 @@ def test_certifier_runtime_declares_its_validator_runner_dependencies() -> None:
             encoding="utf-8"
         )
     )
-    dependencies = payload["skills"]["skill-certifier"]["interfaces"][
-        "skill-certifier._rtx.interface.certify"
+    dependencies = payload["skills"]["node-certify"]["interfaces"][
+        "node-certify._rtx.interface.certify"
     ]["dependencies"]
     versions = {
         dependency["name"]: dependency["version"]

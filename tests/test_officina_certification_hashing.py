@@ -117,9 +117,9 @@ def test_v4_basis_and_certifier_identity_are_derived_from_one_state(
     assert basis_paths
     assert all(state.certification_basis_hash == basis_hash for state in states.values())
     assert identity == {
-        "interface": "skill-certifier.interface.certify",
+        "interface": "node-certify.interface.certify",
         "version": 1,
-        "node_hash": states["skill-certifier"].node_hash,
+        "node_hash": states["node-certify"].node_hash,
         "source_commit": commit,
     }
     assert expected_certifier_checks(expected_schema_version=4) == (
@@ -148,9 +148,9 @@ def test_v6_certifier_identity_accepts_runtime_interface_owner(
     tmp_path: Path,
 ) -> None:
     graph, states, commit = create_v4_repository(tmp_path)
-    facade_node = graph.nodes["skill-certifier"]
-    v4_export = graph.exports["skill-certifier.interface.certify"]
-    runtime_node_id = "skill-certifier._rtx"
+    facade_node = graph.nodes["node-certify"]
+    v4_export = graph.exports["node-certify.interface.certify"]
+    runtime_node_id = "node-certify._rtx"
     graph = replace(
         graph,
         schema_version=6,
@@ -159,9 +159,9 @@ def test_v6_certifier_identity_accepts_runtime_interface_owner(
             runtime_node_id: replace(facade_node, node_id=runtime_node_id),
         },
         exports={
-            "skill-certifier._rtx.interface.certify": replace(
+            "node-certify._rtx.interface.certify": replace(
                 v4_export,
-                interface_id="skill-certifier._rtx.interface.certify",
+                interface_id="node-certify._rtx.interface.certify",
                 module_node_id=runtime_node_id,
                 version=2,
             )
@@ -171,9 +171,9 @@ def test_v6_certifier_identity_accepts_runtime_interface_owner(
     identity = derive_certifier_identity(graph, states, commit)
 
     assert identity == {
-        "interface": "skill-certifier._rtx.interface.certify",
+        "interface": "node-certify._rtx.interface.certify",
         "version": 2,
-        "node_hash": states["skill-certifier"].node_hash,
+        "node_hash": states["node-certify"].node_hash,
         "source_commit": commit,
     }
 

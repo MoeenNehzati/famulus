@@ -29,7 +29,7 @@ graph. Generated `SKILL.md` blocks and repository indexes are refreshed through
 `skill-maker`'s exported sync interface. Check whether they are current:
 
 ```bash
-dispatcher --caller-skill skill-certifier \
+dispatcher --caller-skill node-certify \
   skill-maker._rtx.interface.sync-blueprints --check
 ```
 
@@ -66,11 +66,11 @@ These skills own assistant modules, standards, and their lifecycle.
 
 - `distill-to-rutters` — An existing Markdown skill instruction should be transformed into transparent Rutters and an operable Voyage dispenser
 - `hook-maker` — Design cross-host assistant hooks with one purpose and per-host bindings
+- `node-certify` — Fresh certificates are requested for one or more Officina nodes
+- `node-drift` — Whether Officina node certificates are current or stale, or asks for canonical node hashes
 - `refactor-node` — Refactor whole repository nodes or owned sub-scopes by gateway language
 - `regenerate-blueprints` — An existing skill blueprint needs regeneration, whether requested directly or required by another skill
 - `relocate-nodes` — Registered Officina nodes or their owned files must be moved while mechanically updating blueprint ownership, references, generated artifacts, and callers
-- `skill-certifier` — Fresh certificates are requested for one or more Officina nodes
-- `skill-drift` — Whether Officina node certificates are current or stale, or asks for canonical node hashes
 - `skill-maker` — Author new skills that conform to the repo's skill-writing guideline
 - `update-standards` — Change canonical standards and keep their pinned closures aligned
 <!-- END AUTO-GENERATED DOCS: assistant-development -->

@@ -206,9 +206,9 @@ These skills exist to operate on the framework itself:
 
 - [`skill-maker`](../../skills/skill-maker/) — author skills and keep
   blueprints and generated views in sync
-- [`skill-certifier`](../../skills/skill-certifier/) — issue node certificates
+- [`node-certify`](../../skills/node-certify/) — issue node certificates
   for an exact committed state
-- [`skill-drift`](../../skills/skill-drift/) — read certificate currentness
+- [`node-drift`](../../skills/node-drift/) — read certificate currentness
   and canonical node hashes
 - [`regenerate-blueprints`](../../skills/regenerate-blueprints/) — refresh an
   existing blueprint

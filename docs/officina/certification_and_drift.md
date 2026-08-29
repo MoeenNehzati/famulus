@@ -173,7 +173,7 @@ payload:
       dependencies: []
   certification_basis_hash: sha256:...
   certifier:
-    interface: skill-certifier._rtx.interface.certify
+    interface: node-certify._rtx.interface.certify
     version: 2
     node_hash: sha256:...
     source_commit: ...
@@ -340,8 +340,8 @@ caller-supplied certificate payload.
 
 ## Authority and security boundary
 
-`skill-certifier` is the sole supported writer for blueprint repair,
-certificate signing, and the append-only certificate log. `skill-drift` is
+`node-certify` is the sole supported writer for blueprint repair,
+certificate signing, and the append-only certificate log. `node-drift` is
 read-only and verifies through the public-key path.
 No broker, service identity, second writer, or parallel signing route is
 introduced. Atomic no-follow writes, user-only permissions, history, and

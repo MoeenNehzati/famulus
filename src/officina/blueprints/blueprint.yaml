@@ -18,10 +18,10 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers:
-      - skill-certifier
-      - skill-certifier._rtx
-      - skill-drift
-      - skill-drift._rtx
+      - node-certify
+      - node-certify._rtx
+      - node-drift
+      - node-drift._rtx
       - skill-maker
       - skill-maker._rtx
       - relocate-nodes._rtx
@@ -37,9 +37,9 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers:
-      - skill-certifier
-      - skill-certifier._rtx
-      - skill-drift
+      - node-certify
+      - node-certify._rtx
+      - node-drift
     source_interface: blueprints.source.pooled.interface.python-api
 gateway:
   language: Python

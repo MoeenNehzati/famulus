@@ -209,7 +209,7 @@ duplicate provider contracts.
 6. Run the `skill-maker._rtx.interface.sync-blueprints` check and repository
    validators.
 7. Review blueprints against actual gateways and content, then certify the
-   exact committed state through `skill-certifier._rtx.interface.certify`.
+   exact committed state through `node-certify._rtx.interface.certify`.
 
 Generated `SKILL.md` blocks and runtime-dependency indexes are derived views.
 Certificate logs are certification state. None of them add nodes or graph

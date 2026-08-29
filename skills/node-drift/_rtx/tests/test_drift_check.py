@@ -227,8 +227,8 @@ def test_status_payload_and_text_expose_structured_drift_and_worklist(
     dependency_delta = checker.CertificateDependencyDelta(
         change="modified",
         relation="certified-under",
-        target="skill-certifier.source.audit-interface",
-        interface="skill-certifier.source.audit-interface.interface.audit",
+        target="node-certify.source.audit-interface",
+        interface="node-certify.source.audit-interface.interface.audit",
         certified={"interface_hash": "sha256:" + "c" * 64},
         current={"interface_hash": "sha256:" + "d" * 64},
     )
@@ -279,7 +279,7 @@ def test_status_payload_and_text_expose_structured_drift_and_worklist(
     }
     assert node["facet_drift"][0]["dependencies"][0][
         "interface"
-    ] == "skill-certifier.source.audit-interface.interface.audit"
+    ] == "node-certify.source.audit-interface.interface.audit"
     assert node["facet_drift"][0]["dependencies"][1]["target"] == (
         "contract.source.owner"
     )
@@ -292,7 +292,7 @@ def test_status_payload_and_text_expose_structured_drift_and_worklist(
     assert "modified input skills/demo/worker.py" in text
     assert (
         "modified interface dependency "
-        "skill-certifier.source.audit-interface.interface.audit"
+        "node-certify.source.audit-interface.interface.audit"
     ) in text
     assert (
         "modified dependency references-cross-owner-contract "
@@ -376,7 +376,7 @@ def test_reports_preserve_facet_drift_and_dependency_first_worklist(
     )
     module_id = "demo-skill"
     source_id = graph.module_sources[module_id][0]
-    external_id = graph.module_sources["skill-certifier"][0]
+    external_id = graph.module_sources["node-certify"][0]
     states[module_id] = replace(
         states[module_id],
         dependency_hashes=(
@@ -447,8 +447,8 @@ def test_reports_share_one_canonical_repository_worklist_across_modules(
     graph, states, _commit, _public_key_root, _backend, _key = (
         create_certified_fixture(tmp_path)
     )
-    module_ids = ("demo-skill", "skill-certifier")
-    provider_id = graph.module_sources["skill-certifier"][0]
+    module_ids = ("demo-skill", "node-certify")
+    provider_id = graph.module_sources["node-certify"][0]
     states[module_ids[0]] = replace(
         states[module_ids[0]],
         dependency_hashes=(
@@ -590,7 +590,7 @@ def test_default_public_key_location_is_certifier_owned(tmp_path: Path) -> None:
     assert certificate_public_key_root(tmp_path) == (
         tmp_path
         / "skills"
-        / "skill-certifier"
+        / "node-certify"
         / ".certificates"
         / "public-keys"
     )

@@ -5,7 +5,7 @@ dependencies:
     base: module-root
     path: blueprints/rtx-skill-sources-init.yaml
   reason: Imports installed-source discovery from _rtx/_skill_sources/__init__.py.
-  source: skill-drift._rtx.source.rtx-skill-sources-init
+  source: node-drift._rtx.source.rtx-skill-sources-init
   version: 1
 description: Resolves exact or installed v6 modules, derives canonical node hashes,
   structured drift causes, and dependency-first stale worklists through the shared
@@ -13,9 +13,9 @@ description: Resolves exact or installed v6 modules, derives canonical node hash
 gateway:
   language: Python
   path: _check_drift_state.py
-id: skill-drift._rtx.source.rtx-check-drift-state
+id: node-drift._rtx.source.rtx-check-drift-state
 interfaces:
-  skill-drift._rtx.source.rtx-check-drift-state.interface.compute-hashes:
+  node-drift._rtx.source.rtx-check-drift-state.interface.compute-hashes:
     content:
     - _check_drift_state\.py
     uses_interfaces:
@@ -229,7 +229,7 @@ interfaces:
         min_positionals: 0
     usage: '[target ...] [--repo-root ROOT | --skill-root ROOT] [--json]'
     version: 2
-  skill-drift._rtx.source.rtx-check-drift-state.interface.drift-status:
+  node-drift._rtx.source.rtx-check-drift-state.interface.drift-status:
     content:
     - _check_drift_state\.py
     uses_interfaces:
@@ -295,7 +295,7 @@ interfaces:
             kind: list
       caller_warnings:
       - external-side-effect: Non-JSON mode writes a timestamped derived Markdown
-          report below skill-drift/_build.
+          report below node-drift/_build.
       direct_io:
         network: []
         reads:

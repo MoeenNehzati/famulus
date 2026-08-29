@@ -306,11 +306,11 @@ def test_v6_search_exposes_current_skill_drift_registered_descriptions() -> None
             "schema_version": 6,
             "filter": {
                 "any": [
-                    {"path": "id", "op": "eq", "value": "skill-drift"},
+                    {"path": "id", "op": "eq", "value": "node-drift"},
                     {
                         "path": "id",
                         "op": "eq",
-                        "value": "skill-drift.source.gateway",
+                        "value": "node-drift.source.gateway",
                     },
                 ]
             },
@@ -320,10 +320,10 @@ def test_v6_search_exposes_current_skill_drift_registered_descriptions() -> None
 
     assert rows == [
         {
-            "module": "skill-drift",
-            "path": "skills/skill-drift/blueprint.yaml",
+            "module": "node-drift",
+            "path": "skills/node-drift/blueprint.yaml",
             "values": {
-                "id": "skill-drift",
+                "id": "node-drift",
                 "description": (
                     "Computes canonical v6 node hashes and reports whether "
                     "installed modules have current signed certificates."
@@ -331,10 +331,10 @@ def test_v6_search_exposes_current_skill_drift_registered_descriptions() -> None
             },
         },
         {
-            "module": "skill-drift",
-            "path": "skills/skill-drift/blueprints/gateway.yaml",
+            "module": "node-drift",
+            "path": "skills/node-drift/blueprints/gateway.yaml",
             "values": {
-                "id": "skill-drift.source.gateway",
+                "id": "node-drift.source.gateway",
                 "description": (
                     "Defines the LLM-facing rules for reading exact "
                     "signed-certificate currentness, stale worklists, and "

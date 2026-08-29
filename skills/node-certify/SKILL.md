@@ -1,5 +1,5 @@
 ---
-name: skill-certifier
+name: node-certify
 description: >-
   Use when fresh certificates are requested for one or more Officina nodes. Do not use merely to check certificate currentness or canonical node hashes.
 ---
@@ -13,11 +13,11 @@ Activation: user-request, skill-workflow; persistent modifier: no
 Skill Version: 5
 
 Uses Interfaces:
-- `skill-certifier.source.gateway -> skill-certifier._rtx.interface.certify@2`
-- `skill-certifier.source.gateway -> skill-certifier.source.audit-behavioral-source.interface.audit@1`
-- `skill-certifier.source.gateway -> skill-certifier.source.audit-interface.interface.audit@1`
-- `skill-certifier.source.gateway -> skill-certifier.source.audit-module.interface.audit@1`
-- `skill-certifier.source.gateway -> skill-drift._rtx.interface.drift-status@3`
+- `node-certify.source.gateway -> node-certify._rtx.interface.certify@2`
+- `node-certify.source.gateway -> node-certify.source.audit-behavioral-source.interface.audit@1`
+- `node-certify.source.gateway -> node-certify.source.audit-interface.interface.audit@1`
+- `node-certify.source.gateway -> node-certify.source.audit-module.interface.audit@1`
+- `node-certify.source.gateway -> node-drift._rtx.interface.drift-status@3`
 
 Public Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
@@ -26,7 +26,7 @@ Public Interfaces: none
 Resolve the requested target and hold its reviewed repository and commit
 stable. Then:
 
-1. Invoke `skill-drift._rtx.interface.drift-status` in JSON mode. Use its stale
+1. Invoke `node-drift._rtx.interface.drift-status` in JSON mode. Use its stale
    worklist to identify each exact changed file, interface, or dependency cause.
 2. Process only that worklist dependency-first and select audits from each exact
    cause. A `certification-basis-mismatch` is unclassified global drift, so

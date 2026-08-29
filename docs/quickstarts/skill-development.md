@@ -14,8 +14,8 @@ for every change.
 | Create or change a cross-host assistant lifecycle hook | `hook-maker` |
 | Regenerate an existing blueprint when regeneration is specifically needed | `regenerate-blueprints` |
 | Create, change, or audit a canonical repository standard | `update-standards` |
-| Check whether node certificates are current or obtain canonical hashes | `skill-drift` |
-| Issue fresh certificates for final node state | `skill-certifier` |
+| Check whether node certificates are current or obtain canonical hashes | `node-drift` |
+| Issue fresh certificates for final node state | `node-certify` |
 | Move a registered node or its owned files without changing behavior | `relocate-nodes` |
 | Operate a named Rutter through its public lifecycle | `using-compass` |
 | Integrate branches whose structures have diverged beyond a normal merge | `semantic-integration` |
@@ -31,8 +31,8 @@ is in scope.
 
 Blueprint regeneration is not a routine synonym for editing or synchronization:
 invoke `regenerate-blueprints` only when an existing blueprint actually needs
-regeneration. After the final reviewed state is in place, use `skill-drift` to
-check certificate currentness. Use `skill-certifier` only when fresh
+regeneration. After the final reviewed state is in place, use `node-drift` to
+check certificate currentness. Use `node-certify` only when fresh
 certificates are requested.
 
 Moving a node is its own route. `refactor-node` changes a node in place and

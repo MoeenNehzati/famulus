@@ -14,7 +14,7 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers:
-      - skill-certifier
+      - node-certify
       - skill-maker
       - relocate-nodes._rtx
     source_interface: skill-maker._rtx.source.rtx-blueprint-syncer.interface.sync-blueprints

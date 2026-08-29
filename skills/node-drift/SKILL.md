@@ -1,5 +1,5 @@
 ---
-name: skill-drift
+name: node-drift
 description: >-
   Use when the user asks whether Officina node certificates are current or stale, or asks for canonical node hashes. Do not use to issue certificates.
 ---
@@ -13,11 +13,11 @@ Activation: user-request, skill-workflow; persistent modifier: no
 Skill Version: 4
 
 Uses Interfaces:
-- `skill-drift.source.gateway -> skill-drift._rtx.interface.compute-hashes@2`
-- `skill-drift.source.gateway -> skill-drift._rtx.interface.drift-status@3`
+- `node-drift.source.gateway -> node-drift._rtx.interface.compute-hashes@2`
+- `node-drift.source.gateway -> node-drift._rtx.interface.drift-status@3`
 
 Public Interfaces:
-- `skill-drift.interface.default`
+- `node-drift.interface.default`
 <!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -25,10 +25,10 @@ Public Interfaces:
 Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `skill-drift.interface.default` — Instructions for exact-target certificate drift, stale worklists, and canonical node-hash checks.
+- `node-drift.interface.default` — Instructions for exact-target certificate drift, stale worklists, and canonical node-hash checks.
 <!-- END BLUEPRINT INTERFACES -->
-Use `skill-drift._rtx.interface.drift-status` to read signed certificate
-currentness and `skill-drift._rtx.interface.compute-hashes` to read the canonical
+Use `node-drift._rtx.interface.drift-status` to read signed certificate
+currentness and `node-drift._rtx.interface.compute-hashes` to read the canonical
 certification-basis and node hashes.
 
 Both routes accept only canonical version-6 repository graphs. They derive state through the
@@ -60,4 +60,4 @@ interface id when present, or relation and target otherwise. Broad certificate,
 basis, or graph concerns remain node-scoped rather than being misreported as a
 narrow facet change.
 
-Writing certification state belongs solely to `skill-certifier`.
+Writing certification state belongs solely to `node-certify`.

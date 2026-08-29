@@ -508,7 +508,7 @@ def test_dispatch_tree_section_parses_ids_and_why(
 
     Dispatches
     ----------
-    skills.skill-certifier:
+    skills.node-certify:
       source:
         audit-interface:
           interface:
@@ -517,7 +517,7 @@ def test_dispatch_tree_section_parses_ids_and_why(
     """
     spec = parse_graph_block(doc)
     assert spec.dispatch_ids() == [
-        "skills.skill-certifier.source.audit-interface.interface.audit"
+        "skills.node-certify.source.audit-interface.interface.audit"
     ]
     assert spec.dispatches[0].why.startswith("Invokes bounded semantic review")
 
@@ -553,7 +553,7 @@ def test_dependency_path_rule_accepts_allowed_absolute_and_relative(
 
     Dispatches
     ----------
-    skills.skill-certifier.source.audit-interface.interface.audit:
+    skills.node-certify.source.audit-interface.interface.audit:
       why: "Uses an allowed skill interface root."
     """
     issues = check_graph_docstring(doc)
@@ -591,7 +591,7 @@ def test_dependency_path_rule_rejects_bare_and_unknown_roots(
 
     Dispatches
     ----------
-    skill-certifier.source.audit-interface.interface.audit:
+    node-certify.source.audit-interface.interface.audit:
       why: "Missing the skills root."
     """
     issues = check_graph_docstring(doc)
@@ -1314,7 +1314,7 @@ def test_strict_pseudocode_parses_typed_compact_steps(
       - if authority is missing:
         - result = CertificationResult(status=`fail_closed`)
         - continue
-      - review = #skill-certifier.source.audit-interface.interface.audit(node)
+      - review = #node-certify.source.audit-interface.interface.audit(node)
     - return result
 
     CallsFromRepo
@@ -1331,7 +1331,7 @@ def test_strict_pseudocode_parses_typed_compact_steps(
 
     Dispatches
     ----------
-    skills.skill-certifier.source.audit-interface.interface.audit:
+    skills.node-certify.source.audit-interface.interface.audit:
       why: "Runs semantic review."
     """
     spec = parse_graph_block(doc)
@@ -1353,7 +1353,7 @@ def test_strict_pseudocode_parses_typed_compact_steps(
     assert spec.pseudocode_steps[4].ref == "CertificationResult"
     assert (
         spec.pseudocode_steps[6].ref
-        == "skill-certifier.source.audit-interface.interface.audit"
+        == "node-certify.source.audit-interface.interface.audit"
     )
     assert not any(issue.code == "docstring.invalid-pseudocode" for issue in check_graph_docstring(doc))
 

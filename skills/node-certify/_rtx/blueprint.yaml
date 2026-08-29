@@ -15,23 +15,23 @@ content:
 - _node_certifier\.py
 - tests/.*
 - __init__\.py
-description: Code module for the skill-certifier skill.
+description: Code module for the node-certify skill.
 exports:
-  skill-certifier._rtx.interface.certify:
+  node-certify._rtx.interface.certify:
     access:
       allow_all_modules: false
       allowed_callers:
-      - skill-certifier
-    source_interface: skill-certifier._rtx.source.rtx-certifier.interface.certify
+      - node-certify
+    source_interface: node-certify._rtx.source.rtx-certifier.interface.certify
 gateway:
   language: Python>=3.11
   path: __init__.py
-id: skill-certifier._rtx
+id: node-certify._rtx
 namespace_exports: {}
 node_type: module
 schema_version: 6
 sources:
-  skill-certifier._rtx.source.rtx-certifier:
+  node-certify._rtx.source.rtx-certifier:
     blueprint:
       base: module-root
       path: blueprints/rtx-certifier.yaml

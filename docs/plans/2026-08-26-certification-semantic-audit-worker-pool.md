@@ -4,7 +4,7 @@
 
 **Goal:** Make repository-wide semantic certification use fresh, bounded audit subagents at the host's available concurrency without exposing or scheduling the dependency DAG in an LLM context.
 
-**Architecture:** Deterministic code derives the semantic-audit task graph internally from the existing schema-v6 certification graph and drift evidence. A process-safe lease allocator exposes only currently ready tasks, accepts schema-validated final reports, and unlocks successors after passing results; it never serializes the whole DAG to the orchestrating LLM. The `skill-certifier` gateway determines host capacity, fills those slots with fresh subagents, and submits each result back to the allocator.
+**Architecture:** Deterministic code derives the semantic-audit task graph internally from the existing schema-v6 certification graph and drift evidence. A process-safe lease allocator exposes only currently ready tasks, accepts schema-validated final reports, and unlocks successors after passing results; it never serializes the whole DAG to the orchestrating LLM. The `node-certify` gateway determines host capacity, fills those slots with fresh subagents, and submits each result back to the allocator.
 
 **Tech stack:** Python 3.11, schema-v6 Officina blueprints, Draft 2020-12 JSON Schema, `jsonschema`, Officina atomic-file and exclusive-lock helpers, dispatcher interfaces, Markdown audit instructions, and pytest.
 
@@ -31,29 +31,29 @@
 
 | File | Responsibility |
 |---|---|
-| `skills/skill-certifier/_rtx/_semantic_audit_pool.py` | Strict run-state codec, hidden task derivation, process-safe claiming, report submission, abort, and compact status. |
-| `skills/skill-certifier/_rtx/schemas/semantic-audit-result.schema.json` | Canonical final-report contract shared by every audit kind. |
-| `skills/skill-certifier/_rtx/tests/test_semantic_audit_pool.py` | Unit and concurrency tests for derivation, leases, prerequisites, retries, aborts, and snapshot pinning. |
-| `skills/skill-certifier/_rtx/tests/test_semantic_audit_result_schema.py` | Direct positive and negative schema tests. |
-| `skills/skill-certifier/_rtx/blueprints/rtx-semantic-audit-pool.yaml` | Process binding and contract for the private pool interface. |
-| `skills/skill-certifier/_rtx/blueprint.yaml` | Registers and exports the pool interface only to the parent `skill-certifier` module. |
-| `skills/skill-certifier/SKILL.md` | Capacity discovery, fresh-subagent pool loop, submission, and final certification handoff. |
-| `skills/skill-certifier/instructions/audit-interface.md` | One non-recursive interface audit and schema-conforming final report. |
-| `skills/skill-certifier/instructions/audit-behavioral-source.md` | One non-recursive source audit consuming supplied interface results. |
-| `skills/skill-certifier/instructions/audit-module.md` | One non-recursive module audit consuming supplied child results. |
-| `skills/skill-certifier/blueprints/gateway.yaml` | Declares use of the pool interface and owns the orchestration contract. |
-| `skills/skill-certifier/blueprints/instructions-audit-*.yaml` | Changes audit output format from Markdown to schema-validated JSON and bumps the three audit interfaces. |
-| `skills/skill-certifier/blueprint.yaml` | Updates content ownership and module/source versions. |
+| `skills/node-certify/_rtx/_semantic_audit_pool.py` | Strict run-state codec, hidden task derivation, process-safe claiming, report submission, abort, and compact status. |
+| `skills/node-certify/_rtx/schemas/semantic-audit-result.schema.json` | Canonical final-report contract shared by every audit kind. |
+| `skills/node-certify/_rtx/tests/test_semantic_audit_pool.py` | Unit and concurrency tests for derivation, leases, prerequisites, retries, aborts, and snapshot pinning. |
+| `skills/node-certify/_rtx/tests/test_semantic_audit_result_schema.py` | Direct positive and negative schema tests. |
+| `skills/node-certify/_rtx/blueprints/rtx-semantic-audit-pool.yaml` | Process binding and contract for the private pool interface. |
+| `skills/node-certify/_rtx/blueprint.yaml` | Registers and exports the pool interface only to the parent `node-certify` module. |
+| `skills/node-certify/SKILL.md` | Capacity discovery, fresh-subagent pool loop, submission, and final certification handoff. |
+| `skills/node-certify/instructions/audit-interface.md` | One non-recursive interface audit and schema-conforming final report. |
+| `skills/node-certify/instructions/audit-behavioral-source.md` | One non-recursive source audit consuming supplied interface results. |
+| `skills/node-certify/instructions/audit-module.md` | One non-recursive module audit consuming supplied child results. |
+| `skills/node-certify/blueprints/gateway.yaml` | Declares use of the pool interface and owns the orchestration contract. |
+| `skills/node-certify/blueprints/instructions-audit-*.yaml` | Changes audit output format from Markdown to schema-validated JSON and bumps the three audit interfaces. |
+| `skills/node-certify/blueprint.yaml` | Updates content ownership and module/source versions. |
 | `references/blueprint-schema/runtime_dependencies.json` | Regenerated dependency projection after interface and version changes. |
 
-The new schema belongs to `skill-certifier._rtx.source.semantic-audit-pool`, together with the code that validates it. The three Markdown audit sources promise that output contract; the parent gateway submits their results to the validating pool interface.
+The new schema belongs to `node-certify._rtx.source.semantic-audit-pool`, together with the code that validates it. The three Markdown audit sources promise that output contract; the parent gateway submits their results to the validating pool interface.
 
 ## Public behavior and private state
 
 Export one parent-private interface:
 
 ```text
-skill-certifier._rtx.interface.semantic-audit-pool@1
+node-certify._rtx.interface.semantic-audit-pool@1
 ```
 
 It supports five operations through one dispatcher surface:
@@ -71,7 +71,7 @@ The gateway may invoke it; no other module may. `initialize` returns only run id
 Run state is stored beneath:
 
 ```text
-skills/skill-certifier/_build/semantic-audit-runs/<run-id>.json
+skills/node-certify/_build/semantic-audit-runs/<run-id>.json
 ```
 
 Every mutating operation acquires `<run-id>.json.lock` with `officina.common.atomic_files.exclusive_file_lock`, strictly decodes the complete state, rechecks the repository/commit pin, applies one transition, and atomically replaces the state file. Leases are random 128-bit tokens and identify exactly one `(run_id, task_id, attempt)` tuple.
@@ -133,7 +133,7 @@ Every subagent's final response is exactly one JSON object, with no Markdown fen
 ```json
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://nullkit.dev/schemas/skill-certifier/semantic-audit-result-v1.json",
+  "$id": "https://nullkit.dev/schemas/node-certify/semantic-audit-result-v1.json",
   "title": "Semantic Audit Result",
   "type": "object",
   "additionalProperties": false,
@@ -154,7 +154,7 @@ Every subagent's final response is exactly one JSON object, with no Markdown fen
   ],
   "properties": {
     "schema_version": {
-      "const": "skill-certifier.semantic-audit-result/v1"
+      "const": "node-certify.semantic-audit-result/v1"
     },
     "run_id": {"type": "string", "minLength": 1},
     "lease_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
@@ -295,26 +295,26 @@ The pool additionally compares every identity field against the active lease. JS
 
 **Files:**
 
-- Create: `skills/skill-certifier/_rtx/schemas/semantic-audit-result.schema.json`
-- Create: `skills/skill-certifier/_rtx/tests/test_semantic_audit_result_schema.py`
-- Modify: `skills/skill-certifier/_rtx/blueprint.yaml`
+- Create: `skills/node-certify/_rtx/schemas/semantic-audit-result.schema.json`
+- Create: `skills/node-certify/_rtx/tests/test_semantic_audit_result_schema.py`
+- Modify: `skills/node-certify/_rtx/blueprint.yaml`
 
 **Interfaces:**
 
 - Consumes: Draft 2020-12 validation through the repository's existing `jsonschema` dependency.
-- Produces: schema ID `skill-certifier.semantic-audit-result/v1` and a reusable test fixture factory `valid_semantic_audit_result(**overrides) -> dict[str, object]`.
+- Produces: schema ID `node-certify.semantic-audit-result/v1` and a reusable test fixture factory `valid_semantic_audit_result(**overrides) -> dict[str, object]`.
 
 - [ ] **Step 1: Write failing positive and conditional schema tests.** Cover one valid interface pass, source rejection, module `needs-context`, and worker abort. Assert rejection of additional properties, malformed lease/commit IDs, pass without evidence, pass with findings, rejection without findings, `needs-context` without requested context, and abort without a finding.
 - [ ] **Step 2: Run the schema tests and verify failure because the schema file is absent.**
 
-  Run: `pytest -q skills/skill-certifier/_rtx/tests/test_semantic_audit_result_schema.py`
+  Run: `pytest -q skills/node-certify/_rtx/tests/test_semantic_audit_result_schema.py`
 
   Expected: failure naming the missing schema path.
 
 - [ ] **Step 3: Add the exact schema above and load it with `Draft202012Validator.check_schema`.** Keep the fixture report's repository and commit concrete; do not use placeholder values.
 - [ ] **Step 4: Run the schema tests.**
 
-  Run: `pytest -q skills/skill-certifier/_rtx/tests/test_semantic_audit_result_schema.py`
+  Run: `pytest -q skills/node-certify/_rtx/tests/test_semantic_audit_result_schema.py`
 
   Expected: all tests pass.
 
@@ -325,21 +325,21 @@ The pool additionally compares every identity field against the active lease. JS
 
 **Files:**
 
-- Create: `skills/skill-certifier/_rtx/_semantic_audit_pool.py`
-- Create: `skills/skill-certifier/_rtx/tests/test_semantic_audit_pool.py`
-- Create: `skills/skill-certifier/_rtx/blueprints/rtx-semantic-audit-pool.yaml`
-- Modify: `skills/skill-certifier/_rtx/blueprint.yaml`
-- Modify: `skills/skill-certifier/_rtx/__init__.py`
+- Create: `skills/node-certify/_rtx/_semantic_audit_pool.py`
+- Create: `skills/node-certify/_rtx/tests/test_semantic_audit_pool.py`
+- Create: `skills/node-certify/_rtx/blueprints/rtx-semantic-audit-pool.yaml`
+- Modify: `skills/node-certify/_rtx/blueprint.yaml`
+- Modify: `skills/node-certify/_rtx/__init__.py`
 
 **Interfaces:**
 
 - Consumes: `derive_repository_certification_state`, `certificate_stale_worklist`, schema-v6 graph topology and facet drift, `exclusive_file_lock`, `atomic_replace_bytes`, and the Task 1 report schema.
-- Produces: `skill-certifier._rtx.interface.semantic-audit-pool@1` and the Python boundaries declared under Public behavior and private state.
+- Produces: `node-certify._rtx.interface.semantic-audit-pool@1` and the Python boundaries declared under Public behavior and private state.
 
 - [ ] **Step 1: Write failing derivation tests.** Use small schema-v6 graph fixtures for a chain, diamond, shared provider, source with two interface facets, remainder-only drift, module ancestor, certification-basis mismatch, reusable unchanged facet, and sole mechanical `certified-under` drift. Assert exact private prerequisites and deterministic ordering. Assert that the public initialize/status payloads contain counts but no `tasks`, `prerequisites`, `edges`, or `stale_worklist` field.
 - [ ] **Step 2: Run the derivation tests and verify the module is absent.**
 
-  Run: `pytest -q skills/skill-certifier/_rtx/tests/test_semantic_audit_pool.py -k 'derive or initialize or status'`
+  Run: `pytest -q skills/node-certify/_rtx/tests/test_semantic_audit_pool.py -k 'derive or initialize or status'`
 
   Expected: collection or import failure for `_semantic_audit_pool`.
 
@@ -347,7 +347,7 @@ The pool additionally compares every identity field against the active lease. JS
 - [ ] **Step 4: Implement deterministic task derivation.** Apply the existing certifier rules: interface facet drift creates interface tasks; remainder/source-wide drift creates a source task; required interface tasks precede their source; affected child/source tasks precede their module; ordinary stale dependency nodes precede consumers; a basis mismatch schedules every required semantic layer; a sole mechanical `certified-under` cause schedules no semantic task. Keep the complete graph only inside serialized run state.
 - [ ] **Step 5: Make the focused derivation tests pass.**
 
-  Run: `pytest -q skills/skill-certifier/_rtx/tests/test_semantic_audit_pool.py -k 'derive or initialize or status'`
+  Run: `pytest -q skills/node-certify/_rtx/tests/test_semantic_audit_pool.py -k 'derive or initialize or status'`
 
   Expected: all selected tests pass.
 
@@ -357,7 +357,7 @@ The pool additionally compares every identity field against the active lease. JS
 - [ ] **Step 9: Implement `claim_ready`.** Validate `1 <= limit <= 64`; lease only pending tasks whose private prerequisites all have passing reports; never return internal prerequisite IDs except the passing results actually consumed by the leased task.
 - [ ] **Step 10: Run lease and concurrency tests.**
 
-  Run: `pytest -q skills/skill-certifier/_rtx/tests/test_semantic_audit_pool.py -k 'claim or lease or concurrent'`
+  Run: `pytest -q skills/node-certify/_rtx/tests/test_semantic_audit_pool.py -k 'claim or lease or concurrent'`
 
   Expected: all selected tests pass.
 
@@ -366,34 +366,34 @@ The pool additionally compares every identity field against the active lease. JS
 - [ ] **Step 13: Implement explicit abort and compact status.** `abort` records one nonempty reason and prevents future claims/submissions. `status` reports `pending_count`, `leased_count`, `passed_count`, `attempt_count`, `state`, `active_lease_ids`, and `terminal_reason` only.
 - [ ] **Step 14: Run all pool tests.**
 
-  Run: `pytest -q skills/skill-certifier/_rtx/tests/test_semantic_audit_pool.py skills/skill-certifier/_rtx/tests/test_semantic_audit_result_schema.py`
+  Run: `pytest -q skills/node-certify/_rtx/tests/test_semantic_audit_pool.py skills/node-certify/_rtx/tests/test_semantic_audit_result_schema.py`
 
   Expected: all tests pass.
 
-- [ ] **Step 15: Declare the process interface.** Bind `initialize`, `claim`, `submit`, `status`, and `abort` under `skill-certifier._rtx.interface.semantic-audit-pool@1`; allow only caller `skill-certifier`; declare `_build/semantic-audit-runs/` as private operational state and the schema as source-owned read content.
+- [ ] **Step 15: Declare the process interface.** Bind `initialize`, `claim`, `submit`, `status`, and `abort` under `node-certify._rtx.interface.semantic-audit-pool@1`; allow only caller `node-certify`; declare `_build/semantic-audit-runs/` as private operational state and the schema as source-owned read content.
 - [ ] **Step 16: If commit authorization has been given, stage only Task 2 files plus the Task 1 ownership registration and commit with `Add semantic audit ready-task allocator`.**
 
 ### Task 3: Make all semantic audit workers bounded, non-recursive, and JSON-only
 
 **Files:**
 
-- Modify: `skills/skill-certifier/instructions/audit-interface.md`
-- Modify: `skills/skill-certifier/instructions/audit-behavioral-source.md`
-- Modify: `skills/skill-certifier/instructions/audit-module.md`
-- Modify: `skills/skill-certifier/blueprints/instructions-audit-interface.yaml`
-- Modify: `skills/skill-certifier/blueprints/instructions-audit-behavioral-source.yaml`
-- Modify: `skills/skill-certifier/blueprints/instructions-audit-module.yaml`
-- Create: `skills/skill-certifier/_rtx/tests/test_semantic_audit_instructions.py`
+- Modify: `skills/node-certify/instructions/audit-interface.md`
+- Modify: `skills/node-certify/instructions/audit-behavioral-source.md`
+- Modify: `skills/node-certify/instructions/audit-module.md`
+- Modify: `skills/node-certify/blueprints/instructions-audit-interface.yaml`
+- Modify: `skills/node-certify/blueprints/instructions-audit-behavioral-source.yaml`
+- Modify: `skills/node-certify/blueprints/instructions-audit-module.yaml`
+- Create: `skills/node-certify/_rtx/tests/test_semantic_audit_instructions.py`
 
 **Interfaces:**
 
-- Consumes: one pool-issued task packet and schema `skill-certifier.semantic-audit-result/v1`.
+- Consumes: one pool-issued task packet and schema `node-certify.semantic-audit-result/v1`.
 - Produces: versions 2 of the three existing audit interfaces, each returning exactly one JSON report.
 
 - [ ] **Step 1: Write failing instruction-contract tests.** For all three files require: exactly one assigned subject; exact snapshot/task/lease identity; no recursion or delegation; no repository mutation, signing, or certification; consumption only of supplied passing prerequisite results; abort on invalid packet/snapshot/scope; and a final response consisting solely of schema-conforming JSON. Reject text that permits workers to discover or audit their own dependencies.
 - [ ] **Step 2: Run the instruction tests and verify they fail against the current Markdown-result instructions.**
 
-  Run: `pytest -q skills/skill-certifier/_rtx/tests/test_semantic_audit_instructions.py`
+  Run: `pytest -q skills/node-certify/_rtx/tests/test_semantic_audit_instructions.py`
 
   Expected: failures naming the missing isolation and JSON-report requirements.
 
@@ -407,7 +407,7 @@ The pool additionally compares every identity field against the active lease. JS
   permitted-scope identity is inconsistent, stop and return `status: abort`.
 
   Your final response must be exactly one JSON object conforming to
-  `skill-certifier.semantic-audit-result/v1`, with no Markdown fence or surrounding
+  `node-certify.semantic-audit-result/v1`, with no Markdown fence or surrounding
   prose. Copy identity fields from the task packet exactly.
   ```
 
@@ -416,7 +416,7 @@ The pool additionally compares every identity field against the active lease. JS
 - [ ] **Step 6: Update the three source blueprints.** Change output format from `markdown` to `json`, describe the shared schema, bump each audit interface and source from version 1 to version 2, and update caller actions for `abort` and `needs-context`.
 - [ ] **Step 7: Run instruction tests.**
 
-  Run: `pytest -q skills/skill-certifier/_rtx/tests/test_semantic_audit_instructions.py skills/skill-certifier/_rtx/tests/test_semantic_audit_result_schema.py`
+  Run: `pytest -q skills/node-certify/_rtx/tests/test_semantic_audit_instructions.py skills/node-certify/_rtx/tests/test_semantic_audit_result_schema.py`
 
   Expected: all tests pass.
 
@@ -426,14 +426,14 @@ The pool additionally compares every identity field against the active lease. JS
 
 **Files:**
 
-- Modify: `skills/skill-certifier/SKILL.md`
-- Modify: `skills/skill-certifier/blueprints/gateway.yaml`
-- Modify: `skills/skill-certifier/blueprint.yaml`
-- Modify: `skills/skill-certifier/_rtx/tests/test_semantic_audit_instructions.py`
+- Modify: `skills/node-certify/SKILL.md`
+- Modify: `skills/node-certify/blueprints/gateway.yaml`
+- Modify: `skills/node-certify/blueprint.yaml`
+- Modify: `skills/node-certify/_rtx/tests/test_semantic_audit_instructions.py`
 
 **Interfaces:**
 
-- Consumes: `skill-drift._rtx.interface.drift-status@3`, `skill-certifier._rtx.interface.semantic-audit-pool@1`, the three audit interfaces at version 2, and `skill-certifier._rtx.interface.certify@2`.
+- Consumes: `node-drift._rtx.interface.drift-status@3`, `node-certify._rtx.interface.semantic-audit-pool@1`, the three audit interfaces at version 2, and `node-certify._rtx.interface.certify@2`.
 - Produces: a gateway algorithm that never schedules from a DAG and invokes mechanical certification only after pool completion.
 
 - [ ] **Step 1: Add failing gateway assertions.** Require the algorithm to initialize the code-owned pool from the exact drift target and reviewed commit; discover available host capacity; claim only ready tasks; spawn one fresh subagent per lease; submit exact JSON; refill released capacity; use a new worker after `needs-context`; abort on worker/tool/report failure; and call mechanical certification only when `status` is complete. Reject any instruction to receive, derive, sort, traverse, or retain the complete audit DAG.
@@ -469,7 +469,7 @@ The pool additionally compares every identity field against the active lease. JS
 - [ ] **Step 4: Update the gateway blueprint.** Add the pool interface, bump the three audit uses to version 2, describe capacity-limited fresh-subagent orchestration, and bump the gateway source and root skill versions.
 - [ ] **Step 5: Run focused gateway and instruction tests.**
 
-  Run: `pytest -q skills/skill-certifier/_rtx/tests/test_semantic_audit_instructions.py skills/skill-certifier/_rtx/tests/test_semantic_audit_pool.py`
+  Run: `pytest -q skills/node-certify/_rtx/tests/test_semantic_audit_instructions.py skills/node-certify/_rtx/tests/test_semantic_audit_pool.py`
 
   Expected: all tests pass.
 
@@ -479,7 +479,7 @@ The pool additionally compares every identity field against the active lease. JS
 
 **Files:**
 
-- Regenerate: `skills/skill-certifier/SKILL.md` generated contract block
+- Regenerate: `skills/node-certify/SKILL.md` generated contract block
 - Regenerate: `references/blueprint-schema/runtime_dependencies.json`
 - Regenerate only other files reported by the authoritative blueprint synchronizer
 - Verify: all files changed in Tasks 1–4
@@ -494,7 +494,7 @@ The pool additionally compares every identity field against the active lease. JS
 - [ ] **Step 3: Run the synchronizer in apply mode only after confirming its output will not overwrite unrelated session work.** Then rerun check mode and require a clean result.
 - [ ] **Step 4: Run focused tests.**
 
-  Run: `pytest -q skills/skill-certifier/_rtx/tests skills/skill-drift/_rtx/tests/test_drift_check.py`
+  Run: `pytest -q skills/node-certify/_rtx/tests skills/node-drift/_rtx/tests/test_drift_check.py`
 
   Expected: all tests pass.
 

@@ -49,7 +49,7 @@ derives:
 Do not edit generated blocks by hand. Run the exported check:
 
 ```bash
-dispatcher --caller-skill skill-certifier \
+dispatcher --caller-skill node-certify \
   skill-maker._rtx.interface.sync-blueprints --check
 ```
 
@@ -86,10 +86,10 @@ Validation has three layers:
 - the v6 schemas validate closed document shapes;
 - repository validators check identities, ownership, exports, dependencies,
   access, process bindings, and generated views;
-- `skill-certifier` performs semantic review and issues append-only signed
+- `node-certify` performs semantic review and issues append-only signed
   certificates for the exact committed graph state.
 
-`skill-drift` is a read-only certificate-currentness consumer. It does not
+`node-drift` is a read-only certificate-currentness consumer. It does not
 write a parallel health or conformance state.
 
 ## Safe change routes

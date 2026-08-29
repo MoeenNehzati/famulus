@@ -3,25 +3,25 @@ content:
 dependencies:
 - blueprint:
     base: repository-root
-    path: skills/skill-certifier/blueprints/gateway.yaml
+    path: skills/node-certify/blueprints/gateway.yaml
   reason: Defines the exclusive certification writer whose state this read-only module
     inspects.
-  source: skill-certifier.source.gateway
+  source: node-certify.source.gateway
   version: 5
 description: Defines the LLM-facing rules for reading exact signed-certificate currentness,
   stale worklists, and canonical v6 node hashes.
 gateway:
   language: Markdown
   path: SKILL.md
-id: skill-drift.source.gateway
+id: node-drift.source.gateway
 interfaces:
-  skill-drift.source.gateway.interface.default:
+  node-drift.source.gateway.interface.default:
     content:
     - SKILL\.md
     uses_interfaces:
-    - interface: skill-drift._rtx.interface.compute-hashes
+    - interface: node-drift._rtx.interface.compute-hashes
       version: 2
-    - interface: skill-drift._rtx.interface.drift-status
+    - interface: node-drift._rtx.interface.drift-status
       version: 3
     contract:
       arguments:
@@ -108,9 +108,9 @@ interfaces:
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
-- interface: skill-drift._rtx.interface.compute-hashes
+- interface: node-drift._rtx.interface.compute-hashes
   version: 2
-- interface: skill-drift._rtx.interface.drift-status
+- interface: node-drift._rtx.interface.drift-status
   version: 3
 version: 4
 maturity: stable

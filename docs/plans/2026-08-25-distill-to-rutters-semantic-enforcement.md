@@ -99,8 +99,8 @@ For source `<source-dir>/<source-stem>.md`, the distillation workspace is `<sour
 - [ ] Record the complete new-node closure and distinguish unrelated modifications from this node's generated projections.
 - [ ] Set maturity to `experimental` immediately.
 - [ ] Ensure the root blueprint owns every current instruction, source blueprint, and test; later tasks add `_rtx`, schemas, and fixtures.
-- [ ] Work from an inventory-clean `master` checkout. First run `dispatcher --caller-skill skill-certifier skill-maker._rtx.interface.sync-blueprints --check`; if nested repositories or duplicate module IDs still block inventory, record the exact external blocker and do not claim Phase A complete.
-- [ ] Regenerate with `dispatcher --caller-skill skill-certifier skill-maker._rtx.interface.sync-blueprints`, then rerun the same interface with `--check`; do not hand-edit generated blocks.
+- [ ] Work from an inventory-clean `master` checkout. First run `dispatcher --caller-skill node-certify skill-maker._rtx.interface.sync-blueprints --check`; if nested repositories or duplicate module IDs still block inventory, record the exact external blocker and do not claim Phase A complete.
+- [ ] Regenerate with `dispatcher --caller-skill node-certify skill-maker._rtx.interface.sync-blueprints`, then rerun the same interface with `--check`; do not hand-edit generated blocks.
 - [ ] Run focused skill tests. Enumerate untracked paths with `git ls-files --others --exclude-standard -- skills/distill-to-rutters docs/plans/2026-08-25-distill-to-rutters-semantic-enforcement.md`; run `git diff --no-index --check /dev/null <exact-path>` for each, treating empty whitespace diagnostics—not the expected nonzero difference exit—as clean. Once separately authorized staging makes the baseline tracked, use ordinary `git diff --check` as well.
 - [ ] If the baseline cannot be isolated from existing generated-file changes, stop and request scope guidance; do not create a partial node commit.
 
@@ -324,7 +324,7 @@ On current `master`, Phase A must end as `hardening-complete; runtime-blocked`. 
 - Write: `<source-dir>/<source-stem>_distillation/07_entrypoint.md`
 
 - [ ] Regenerate target-skill blueprints, ownership, runtime dependencies, and documentation before creating the entrypoint candidate.
-- [ ] Run `dispatcher --caller-skill skill-certifier skill-maker._rtx.interface.sync-blueprints --check` from an inventory-clean checkout. If inventory crosses nested worktrees or duplicate IDs, report `verification-blocked`; do not call the repository green.
+- [ ] Run `dispatcher --caller-skill node-certify skill-maker._rtx.interface.sync-blueprints --check` from an inventory-clean checkout. If inventory crosses nested worktrees or duplicate IDs, report `verification-blocked`; do not call the repository green.
 - [ ] Create the one-line entrypoint only if the verified live Compass contract accepts it. Use its exact public binding handoff, not the obsolete `interface@version` guess.
 - [ ] If an authorization or interaction wrapper cannot be represented by that handoff, report `entrypoint-gap`.
 - [ ] Make the `07_entrypoint.md` envelope name `<source-dir>/<source-stem>_distilled.md` as a `kind: deliverable` leaf prerequisite with its raw-byte digest. Record candidate path, source outcome, and gateway interpretation; pause for user validation. Routing to verification rechecks both report and entrypoint digests.

@@ -19,15 +19,15 @@ discovery:
   - skill-workflow
   persistent_modifier: false
 exports:
-  skill-drift.interface.default:
+  node-drift.interface.default:
     access:
       allow_all_modules: true
       allowed_callers: []
-    source_interface: skill-drift.source.gateway.interface.default
+    source_interface: node-drift.source.gateway.interface.default
 gateway:
   language: Markdown
   path: SKILL.md
-id: skill-drift
+id: node-drift
 namespace_exports:
   _rtx:
     version: 3
@@ -36,19 +36,19 @@ namespace_exports:
       allowed_callers: []
     surface:
       only:
-        skill-drift._rtx.interface.compute-hashes: 2
-        skill-drift._rtx.interface.drift-status: 3
+        node-drift._rtx.interface.compute-hashes: 2
+        node-drift._rtx.interface.drift-status: 3
     interface_access:
-      skill-drift._rtx.interface.compute-hashes:
+      node-drift._rtx.interface.compute-hashes:
         allow_all_modules: true
         allowed_callers: []
-      skill-drift._rtx.interface.drift-status:
+      node-drift._rtx.interface.drift-status:
         allow_all_modules: true
         allowed_callers: []
 node_type: module
 schema_version: 6
 sources:
-  skill-drift.source.gateway:
+  node-drift.source.gateway:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml

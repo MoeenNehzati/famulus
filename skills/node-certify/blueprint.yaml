@@ -1,13 +1,13 @@
 authority:
   owns_filesystem:
   - allowed_readers:
-    - skill-drift._rtx.interface.drift-status
+    - node-drift._rtx.interface.drift-status
     match: regex
     path: ^\.certificates/public-keys/(active-key-id|[0-9a-f]{64}\.pub)$
     reason: Retained Ed25519 public keys are read-only verification material for certificate
       consumers.
   - allowed_readers:
-    - skill-drift._rtx.interface.drift-status
+    - node-drift._rtx.interface.drift-status
     match: regex
     path: ^\.certificates/[^/]+\.jsonl$
     reason: The certifier is the sole writer of append-only node certificate histories.
@@ -33,7 +33,7 @@ exports: {}
 gateway:
   language: Markdown
   path: SKILL.md
-id: skill-certifier
+id: node-certify
 namespace_exports:
   _rtx:
     version: 2
@@ -42,27 +42,27 @@ namespace_exports:
       allowed_callers: []
     surface:
       only:
-        skill-certifier._rtx.interface.certify: 2
+        node-certify._rtx.interface.certify: 2
     interface_access:
-      skill-certifier._rtx.interface.certify:
+      node-certify._rtx.interface.certify:
         allow_all_modules: false
         allowed_callers: []
 node_type: module
 schema_version: 6
 sources:
-  skill-certifier.source.audit-behavioral-source:
+  node-certify.source.audit-behavioral-source:
     blueprint:
       base: module-root
       path: blueprints/instructions-audit-behavioral-source.yaml
-  skill-certifier.source.audit-interface:
+  node-certify.source.audit-interface:
     blueprint:
       base: module-root
       path: blueprints/instructions-audit-interface.yaml
-  skill-certifier.source.audit-module:
+  node-certify.source.audit-module:
     blueprint:
       base: module-root
       path: blueprints/instructions-audit-module.yaml
-  skill-certifier.source.gateway:
+  node-certify.source.gateway:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml

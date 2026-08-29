@@ -181,7 +181,7 @@ class NodeDriftStatus:
 
     Intent
     ------
-    Adapt shared certification currentness into the skill-drift JSON and text
+    Adapt shared certification currentness into the node-drift JSON and text
     contract without removing existing status fields.
 
     Rationale

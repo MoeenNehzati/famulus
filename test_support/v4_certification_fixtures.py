@@ -414,9 +414,9 @@ def materialize_v4_repository(
     )
     _write_module(
         root,
-        "skill-certifier",
-        "skill-certifier.source.gateway",
-        "skill-certifier.source.gateway.interface.certify",
+        "node-certify",
+        "node-certify.source.gateway",
+        "node-certify.source.gateway.interface.certify",
         CERTIFIER_INTERFACE_ID,
     )
     for module_id in extra_modules:
@@ -430,7 +430,7 @@ def materialize_v4_repository(
     manifest = (
         root
         / "skills"
-        / "skill-drift"
+        / "node-drift"
         / "references"
         / "certification-basis-roots.json"
     )
@@ -440,9 +440,9 @@ def materialize_v4_repository(
         '  "references/blueprint-schema/**/*.schema.json",\n'
         '  "references/certification/node-hash-policy.yaml",\n'
         '  "references/certification/node-hash-policy.schema.json",\n'
-        '  "skills/skill-certifier/SKILL.md",\n'
-        '  "skills/skill-certifier/blueprint.yaml",\n'
-        '  "skills/skill-certifier/blueprints/*.yaml"\n'
+        '  "skills/node-certify/SKILL.md",\n'
+        '  "skills/node-certify/blueprint.yaml",\n'
+        '  "skills/node-certify/blueprints/*.yaml"\n'
         "]\n",
         encoding="utf-8",
     )

@@ -831,7 +831,7 @@ def test_frozen_schema_routes_only_v4_nodes() -> None:
 
 def test_dispatch_schema_accepts_live_v5_blueprints() -> None:
     document = yaml.safe_load(
-        (REPO_ROOT / "skills" / "skill-drift" / "blueprint.yaml").read_text(
+        (REPO_ROOT / "skills" / "node-drift" / "blueprint.yaml").read_text(
             encoding="utf-8"
         )
     )
@@ -953,7 +953,7 @@ def _valid_v4_certificate() -> dict:
             ],
             "certification_basis_hash": "sha256:" + "d" * 64,
             "certifier": {
-                "interface": "skill-certifier.interface.certify",
+                "interface": "node-certify.interface.certify",
                 "version": 1,
                 "node_hash": "sha256:" + "e" * 64,
                 "source_commit": "f" * 64,

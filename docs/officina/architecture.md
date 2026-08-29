@@ -452,8 +452,8 @@ evidence. After every repair it reloads schema, graph, ownership, dependency,
 and semantic state. Only a clean final pass is hashed, signed, and appended.
 
 Certification uses one cooperative same-user writer: the existing certificate
-writer, renamed to `skill-certifier`. It owns signing and certificate writes by
-architecture contract; `skill-drift` remains read-only and verifies with the
+writer, renamed to `node-certify`. It owns signing and certificate writes by
+architecture contract; `node-drift` remains read-only and verifies with the
 public key. Every node has one append-only certificate log. Each complete entry
 contains a payload and its signature; the signature covers the payload only,
 so no self-reference is introduced. The final complete valid entry is current

@@ -175,9 +175,9 @@ skill/module ids to select a smaller scope:
 
 ```bash
 python -m officina.visualization.from_blueprint . \
-  --skills skill-certifier \
+  --skills node-certify \
   --output-dir graphs/blueprint \
-  --name skill-certifier
+  --name node-certify
 ```
 
 The default `graphs/` output tree is local generated data and is ignored by

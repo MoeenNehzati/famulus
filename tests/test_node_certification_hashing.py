@@ -310,8 +310,8 @@ def _v6_repository(tmp_path: Path) -> tuple[Path, Path]:
 
 def _v6_certifier_repository(tmp_path: Path) -> tuple[Path, Path]:
     root, policy = _v6_repository(tmp_path)
-    certifier_root = root / "skills" / "skill-certifier"
-    shutil.copytree(REPOSITORY_ROOT / "skills" / "skill-certifier", certifier_root)
+    certifier_root = root / "skills" / "node-certify"
+    shutil.copytree(REPOSITORY_ROOT / "skills" / "node-certify", certifier_root)
 
     gateway_blueprint_path = certifier_root / "blueprints" / "gateway.yaml"
     gateway_blueprint = yaml.safe_load(
@@ -320,7 +320,7 @@ def _v6_certifier_repository(tmp_path: Path) -> tuple[Path, Path]:
     gateway_blueprint["uses_interfaces"] = [
         dependency
         for dependency in gateway_blueprint["uses_interfaces"]
-        if dependency["interface"] != "skill-drift._rtx.interface.drift-status"
+        if dependency["interface"] != "node-drift._rtx.interface.drift-status"
     ]
     _write_yaml(gateway_blueprint_path, gateway_blueprint)
 
@@ -332,7 +332,7 @@ def _v6_certifier_repository(tmp_path: Path) -> tuple[Path, Path]:
     )
     mechanical_blueprint["uses_interfaces"] = []
     mechanical_blueprint["interfaces"][
-        "skill-certifier._rtx.source.rtx-certifier.interface.certify"
+        "node-certify._rtx.source.rtx-certifier.interface.certify"
     ]["uses_interfaces"] = []
     _write_yaml(mechanical_blueprint_path, mechanical_blueprint)
 
@@ -748,18 +748,18 @@ def test_v6_certifier_dependencies_are_exact_and_evidence_only(
     assert _certified_under_interfaces(
         _facet(states[source_id], interface_id).dependency_hashes
     ) == {
-        "skill-certifier._rtx.interface.certify",
-        "skill-certifier.source.audit-interface.interface.audit",
+        "node-certify._rtx.interface.certify",
+        "node-certify.source.audit-interface.interface.audit",
     }
     assert _certified_under_interfaces(
         _facet(states[source_id], source_id).dependency_hashes
     ) == {
-        "skill-certifier._rtx.interface.certify",
-        "skill-certifier.source.audit-behavioral-source.interface.audit",
+        "node-certify._rtx.interface.certify",
+        "node-certify.source.audit-behavioral-source.interface.audit",
     }
     assert _certified_under_interfaces(states["provider-skill"].dependency_hashes) == {
-        "skill-certifier._rtx.interface.certify",
-        "skill-certifier.source.audit-module.interface.audit",
+        "node-certify._rtx.interface.certify",
+        "node-certify.source.audit-module.interface.audit",
     }
 
     assert certification_target_postorder(graph, states, (source_id,)) == (source_id,)
@@ -788,7 +788,7 @@ def test_v6_certifier_dependencies_are_exact_and_evidence_only(
             for scope, items in dependencies.items()
         }
 
-    certifier_root = root / "skills/skill-certifier"
+    certifier_root = root / "skills/node-certify"
     audits = certification_hashing.CERTIFIER_AUDIT_INTERFACES
     cases = (
         (
@@ -828,17 +828,17 @@ def test_v6_certifier_dependencies_are_exact_and_evidence_only(
             if before_hashes[scope] != after_hashes[scope]
         } == expected_scopes
 
-    source_path = root / "skills/skill-certifier/blueprints/instructions-audit-module.yaml"
+    source_path = root / "skills/node-certify/blueprints/instructions-audit-module.yaml"
     source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
     source["interfaces"] = {}
     _write_yaml(source_path, source)
-    gateway_path = root / "skills/skill-certifier/blueprints/gateway.yaml"
+    gateway_path = root / "skills/node-certify/blueprints/gateway.yaml"
     gateway = yaml.safe_load(gateway_path.read_text(encoding="utf-8"))
     gateway["uses_interfaces"] = [
         dependency
         for dependency in gateway["uses_interfaces"]
         if dependency["interface"]
-        != "skill-certifier.source.audit-module.interface.audit"
+        != "node-certify.source.audit-module.interface.audit"
     ]
     _write_yaml(gateway_path, gateway)
 

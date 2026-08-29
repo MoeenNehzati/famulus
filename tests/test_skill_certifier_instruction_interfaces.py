@@ -12,24 +12,24 @@ from officina.blueprints.process_binding import (
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SKILL_ROOT = REPO_ROOT / "skills" / "skill-certifier"
-DRIFT_ROOT = REPO_ROOT / "skills" / "skill-drift"
+SKILL_ROOT = REPO_ROOT / "skills" / "node-certify"
+DRIFT_ROOT = REPO_ROOT / "skills" / "node-drift"
 
 AUDIT_SOURCES = {
-    "skill-certifier.source.audit-interface": (
+    "node-certify.source.audit-interface": (
         "instructions/audit-interface.md",
         "blueprints/instructions-audit-interface.yaml",
-        "skill-certifier.source.audit-interface.interface.audit",
+        "node-certify.source.audit-interface.interface.audit",
     ),
-    "skill-certifier.source.audit-behavioral-source": (
+    "node-certify.source.audit-behavioral-source": (
         "instructions/audit-behavioral-source.md",
         "blueprints/instructions-audit-behavioral-source.yaml",
-        "skill-certifier.source.audit-behavioral-source.interface.audit",
+        "node-certify.source.audit-behavioral-source.interface.audit",
     ),
-    "skill-certifier.source.audit-module": (
+    "node-certify.source.audit-module": (
         "instructions/audit-module.md",
         "blueprints/instructions-audit-module.yaml",
-        "skill-certifier.source.audit-module.interface.audit",
+        "node-certify.source.audit-module.interface.audit",
     ),
 }
 
@@ -45,7 +45,7 @@ def test_certifier_exposes_three_private_semantic_audit_sources() -> None:
 
     assert module["exports"] == {}
     assert set(module["sources"]) == {
-        "skill-certifier.source.gateway",
+        "node-certify.source.gateway",
         *AUDIT_SOURCES,
     }
 
@@ -81,10 +81,10 @@ def test_certifier_gateway_orchestrates_audits_without_default_interface() -> No
         interface_id
         for _, (_, _, interface_id) in AUDIT_SOURCES.items()
     }
-    drift_interface = "skill-drift._rtx.interface.drift-status"
+    drift_interface = "node-drift._rtx.interface.drift-status"
     expected_uses = interface_ids | {
         drift_interface,
-        "skill-certifier._rtx.interface.certify",
+        "node-certify._rtx.interface.certify",
     }
 
     assert gateway["interfaces"] == {}
@@ -92,9 +92,9 @@ def test_certifier_gateway_orchestrates_audits_without_default_interface() -> No
         use["interface"] for use in gateway["uses_interfaces"]
     } == expected_uses
     assert module["version"] == gateway["version"] == 5
-    certifier_interface = "skill-certifier._rtx.interface.certify"
+    certifier_interface = "node-certify._rtx.interface.certify"
     certifier_source_interface = (
-        "skill-certifier._rtx.source.rtx-certifier.interface.certify"
+        "node-certify._rtx.source.rtx-certifier.interface.certify"
     )
     certifier_interface_version = certifier_source["interfaces"][
         certifier_source_interface
@@ -110,7 +110,7 @@ def test_certifier_gateway_orchestrates_audits_without_default_interface() -> No
     )["version"] == certifier_interface_version
     assert drift_module["version"] == drift_gateway["version"] == 4
     drift_source_interface = (
-        "skill-drift._rtx.source.rtx-check-drift-state.interface.drift-status"
+        "node-drift._rtx.source.rtx-check-drift-state.interface.drift-status"
     )
     drift_status_version = drift_source["interfaces"][drift_source_interface][
         "version"
@@ -125,7 +125,7 @@ def test_certifier_gateway_orchestrates_audits_without_default_interface() -> No
         if use["interface"] == drift_interface:
             assert use["version"] == drift_status_version
     assert drift_gateway["interfaces"][
-        "skill-drift.source.gateway.interface.default"
+        "node-drift.source.gateway.interface.default"
     ]["uses_interfaces"][1] == {
         "interface": drift_interface,
         "version": drift_status_version,
@@ -133,7 +133,7 @@ def test_certifier_gateway_orchestrates_audits_without_default_interface() -> No
     certifier_dependency = next(
         dependency
         for dependency in drift_gateway["dependencies"]
-        if dependency["source"] == "skill-certifier.source.gateway"
+        if dependency["source"] == "node-certify.source.gateway"
     )
     assert certifier_dependency["version"] == gateway["version"]
 
@@ -142,7 +142,7 @@ def test_certifier_gateway_orchestrates_audits_without_default_interface() -> No
     load_repository_blueprint_graph(REPO_ROOT)
 
     skill_text = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
-    assert "skill-certifier.interface.default" not in skill_text
+    assert "node-certify.interface.default" not in skill_text
     algorithm = skill_text.split("## Certification algorithm", 1)[1]
     normalized_algorithm = " ".join(algorithm.split())
     assert "dependency-first" in normalized_algorithm
@@ -170,8 +170,8 @@ def test_drift_repository_routes_supply_their_subcommands() -> None:
     graph = load_repository_blueprint_graph(REPO_ROOT)
 
     for interface_id, subcommand in (
-        ("skill-drift._rtx.interface.compute-hashes", "compute-hashes"),
-        ("skill-drift._rtx.interface.drift-status", "status"),
+        ("node-drift._rtx.interface.compute-hashes", "compute-hashes"),
+        ("node-drift._rtx.interface.drift-status", "status"),
     ):
         export = graph.exports[interface_id]
         parsed = parse_caller_invocation(
@@ -209,7 +209,7 @@ def test_drift_and_canonical_docs_describe_selective_v6_worklist() -> None:
     assert "route smoke" in normalized_canonical
     assert "stale worklist" in normalized_canonical
     assert "all direct facet dependencies" in normalized_canonical
-    assert "interface: skill-certifier._rtx.interface.certify version: 2" in (
+    assert "interface: node-certify._rtx.interface.certify version: 2" in (
         normalized_canonical
     )
 
@@ -252,9 +252,9 @@ def test_repository_docs_do_not_reference_removed_default_interface() -> None:
         encoding="utf-8"
     )
 
-    assert "skill-certifier.interface.default" not in docstring_guide
+    assert "node-certify.interface.default" not in docstring_guide
     assert (
-        "skill-certifier.source.audit-interface.interface.audit"
+        "node-certify.source.audit-interface.interface.audit"
         in docstring_guide
     )
 

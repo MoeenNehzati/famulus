@@ -40,7 +40,7 @@ _CONSUMER_ROOTS = (
     "skills/email-triage/_rtx",
     "skills/list-manager/_rtx",
     "skills/find-handoff-candidates/_rtx",
-    "skills/skill-drift/_rtx",
+    "skills/node-drift/_rtx",
     "src/officina/wakeup",
     "src/officina/credentials/google.py",
     "skills/recurring-tasks/_rtx/_assistant_desktop_notify.py",
@@ -80,10 +80,10 @@ _INVENTORY = {
     ("skills/list-manager/_rtx/_yaml_store.py", "_cloud_cache_dir"): "development-isolated",
     ("skills/find-handoff-candidates/_rtx/_codex_parser.py", "home_dir"): "development-isolated",
     ("skills/find-handoff-candidates/_rtx/_claude_parser.py", "home_dir"): "development-isolated",
-    ("skills/skill-drift/_rtx/_check_drift_state.py", "requested_scopes"): "process override",
-    ("skills/skill-drift/_rtx/_skill_sources/_codex_skill_source.py", "sources"): "development-isolated",
-    ("skills/skill-drift/_rtx/_skill_sources/_claude_skill_source.py", "_plugin_sources"): "process override",
-    ("skills/skill-drift/_rtx/_skill_sources/_claude_skill_source.py", "sources"): "development-isolated",
+    ("skills/node-drift/_rtx/_check_drift_state.py", "requested_scopes"): "process override",
+    ("skills/node-drift/_rtx/_skill_sources/_codex_skill_source.py", "sources"): "development-isolated",
+    ("skills/node-drift/_rtx/_skill_sources/_claude_skill_source.py", "_plugin_sources"): "process override",
+    ("skills/node-drift/_rtx/_skill_sources/_claude_skill_source.py", "sources"): "development-isolated",
     ("src/officina/wakeup/store.py", "data_dir"): "process override",
     ("src/officina/wakeup/doctor.py", "_provider_executable"): "process override",
     ("src/officina/wakeup/claude_codex_service.py", "_provider_executable"): "process override",
@@ -399,7 +399,7 @@ def test_handoff_and_skill_drift_use_selected_assistant_homes(
     assert Path(codex_parser.CodexParser().home_dir()) == Path(env["CODEX_HOME"])
     assert Path(claude_parser.ClaudeParser().home_dir()) == Path(env["CLAUDE_CONFIG_DIR"])
 
-    monkeypatch.syspath_prepend(str(ROOT / "skills/skill-drift/_rtx"))
+    monkeypatch.syspath_prepend(str(ROOT / "skills/node-drift/_rtx"))
     for home in (Path(env["CODEX_HOME"]), Path(env["CLAUDE_CONFIG_DIR"])):
         skill = home / "skills" / "selected"
         skill.mkdir(parents=True)

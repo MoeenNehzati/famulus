@@ -162,7 +162,7 @@ def test_payload_schema_tracks_repository_schema(
         "key_id": "sha256:" + "a" * 64,
         "previous_entry_hash": None,
         "certifier_identity": {
-            "interface": "skill-certifier._rtx.interface.certify",
+            "interface": "node-certify._rtx.interface.certify",
             "version": 1,
             "node_hash": "sha256:" + "b" * 64,
             "source_commit": commit,
@@ -214,7 +214,7 @@ def test_gate_records_use_the_schema_selected_registry() -> None:
 def test_executing_certifier_must_be_owned_by_runtime_child() -> None:
     root = MODULE_PATH.parents[3]
     executing = Path(certifier.__file__).resolve()
-    source_id = "skill-certifier.source.certifier"
+    source_id = "node-certify.source.certifier"
     node = SimpleNamespace(
         node_type="behavioral_source",
         gateway_path=executing,
@@ -233,11 +233,11 @@ def test_executing_certifier_must_be_owned_by_runtime_child() -> None:
     parent_owned = SimpleNamespace(
         schema_version=5,
         nodes={source_id: node},
-        source_modules={source_id: "skill-certifier"},
+        source_modules={source_id: "node-certify"},
     )
     with pytest.raises(
         certifier.CertificationError,
-        match="skill-certifier-rtx",
+        match="node-certify-rtx",
     ):
         certifier._verify_executing_candidate_certifier(
             root,
@@ -248,7 +248,7 @@ def test_executing_certifier_must_be_owned_by_runtime_child() -> None:
     child_owned = SimpleNamespace(
         schema_version=5,
         nodes={source_id: node},
-        source_modules={source_id: "skill-certifier-rtx"},
+        source_modules={source_id: "node-certify-rtx"},
     )
     certifier._verify_executing_candidate_certifier(
         root,
@@ -586,7 +586,7 @@ def test_selected_legacy_writer_issues_current_payload(
         certifier,
         "derive_certifier_identity",
         lambda *_args, **_kwargs: {
-            "interface": "skill-certifier-rtx.interface.certify",
+            "interface": "node-certify-rtx.interface.certify",
             "version": 1,
             "node_hash": "sha256:" + "d" * 64,
             "source_commit": commit,
@@ -890,18 +890,18 @@ def test_private_writer_certifies_certifier_through_same_path(
 
     result = _certify(
         tmp_path,
-        target_node_ids=("skill-certifier",),
+        target_node_ids=("node-certify",),
     )
 
     assert result.node_ids == (
-        "skill-certifier",
-        "skill-certifier.source.gateway",
+        "node-certify",
+        "node-certify.source.gateway",
     )
     assert certifier.certificate_log_path(
-        graph.nodes["skill-certifier"]
+        graph.nodes["node-certify"]
     ).is_file()
     assert certifier.certificate_log_path(
-        graph.nodes["skill-certifier.source.gateway"]
+        graph.nodes["node-certify.source.gateway"]
     ).is_file()
 
 
@@ -909,12 +909,12 @@ def test_private_writer_fails_closed_without_current_certifier(
     tmp_path: Path,
 ) -> None:
     materialize_repository_fixture(tmp_path)
-    shutil.rmtree(tmp_path / "skills" / "skill-certifier")
+    shutil.rmtree(tmp_path / "skills" / "node-certify")
     repository = GitTestRepository(tmp_path)
     repository.git("add", "-A")
     repository.git("commit", "-qm", "remove certifier")
 
-    with pytest.raises(certifier.CertificationError, match="certifier"):
+    with pytest.raises(certifier.CertificationError, match="node-certify"):
         _certify(tmp_path)
 
 

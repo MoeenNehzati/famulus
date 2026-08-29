@@ -123,7 +123,7 @@ def _valid_certificate(version: int) -> dict[str, Any]:
             ],
             "certification_basis_hash": "sha256:" + "d" * 64,
             "certifier": {
-                "interface": "skill-certifier.interface.certify",
+                "interface": "node-certify.interface.certify",
                 "version": 1,
                 "node_hash": "sha256:" + "e" * 64,
                 "source_commit": "f" * 40,

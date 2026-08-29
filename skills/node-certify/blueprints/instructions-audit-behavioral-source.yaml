@@ -1,22 +1,22 @@
 content:
-- instructions/audit-module\.md
+- instructions/audit-behavioral-source\.md
 dependencies: []
-description: Owns semantic review of one module as the composition of its exports,
-  namespace authority, directly owned content, and reviewed child nodes.
+description: Owns semantic review of one behavioral source as the composition of its
+  interfaces, gateway, remainder content, and source-wide declarations.
 gateway:
   language: Markdown
-  path: instructions/audit-module.md
-id: skill-certifier.source.audit-module
+  path: instructions/audit-behavioral-source.md
+id: node-certify.source.audit-behavioral-source
 interfaces:
-  skill-certifier.source.audit-module.interface.audit:
+  node-certify.source.audit-behavioral-source.interface.audit:
     content:
-    - instructions/audit-module\.md
+    - instructions/audit-behavioral-source\.md
     uses_interfaces: []
     contract:
       arguments:
         request:
-          description: Current module declaration, bounded module evidence, changes,
-            authority, and completed child-node audit results.
+          description: Current behavioral-source declaration, bounded source evidence,
+            dependencies, changes, and completed interface audit results.
           required: true
           sensitivity: user-private
           type:
@@ -27,7 +27,7 @@ interfaces:
         network: []
         reads:
         - access: read
-          content: bounded module audit request and evidence
+          content: bounded behavioral-source audit request and evidence
           formats:
           - text
           id: read-1
@@ -36,7 +36,7 @@ interfaces:
           system: agent-runtime
         writes:
         - access: write
-          content: structured module audit result
+          content: structured behavioral-source audit result
           formats:
           - markdown
           id: write-1
@@ -45,7 +45,7 @@ interfaces:
           system: agent-runtime
       execution:
         consistency:
-          snapshot: The result applies only to the supplied module declaration, child
+          snapshot: The result applies only to the supplied source declaration, interface
             results, and evidence snapshot.
         lifecycle: finite
         state_effect: read-only
@@ -56,7 +56,7 @@ interfaces:
       interaction:
         mode: unattended
       outcomes:
-      - caller_action: Use a passing verdict to request deterministic certification.
+      - caller_action: Use the verdict and evidence in the parent-module audit.
         class: success
         effects: []
         id: audited
@@ -73,7 +73,8 @@ interfaces:
         cardinality:
           minimum: 1
           maximum: 1
-        description: Structured pass, reject, or needs-context result for one module.
+        description: Structured pass, reject, or needs-context result for one behavioral
+          source.
         direct_io_ref: write-1
         empty: Never empty.
         id: audit-result
@@ -86,7 +87,8 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Audit one module and return bounded semantic evidence and a verdict.
+    description: Audit one behavioral source and return bounded semantic evidence
+      and a verdict.
     version: 1
 node_type: behavioral_source
 schema_version: 6

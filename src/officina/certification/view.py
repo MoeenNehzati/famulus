@@ -1419,9 +1419,9 @@ class RepositoryCertificationView(CertificateCurrentnessView):
             )
             or interface_id
             != (
-                "skill-certifier._rtx.interface.certify"
+                "node-certify._rtx.interface.certify"
                 if self.schema_version == 6
-                else "skill-certifier.interface.certify"
+                else "node-certify.interface.certify"
             )
         ):
             return rejected

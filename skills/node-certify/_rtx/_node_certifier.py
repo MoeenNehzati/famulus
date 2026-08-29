@@ -2020,8 +2020,8 @@ def _verify_executing_candidate_certifier(
     if len(owners) != 1:
         raise CertificationError("executing certifier bytes have no unique candidate owner")
     expected_owner = {
-        5: "skill-certifier-rtx",
-        6: "skill-certifier._rtx",
+        5: "node-certify-rtx",
+        6: "node-certify._rtx",
     }.get(graph.schema_version)
     if (
         expected_owner is not None
@@ -4301,7 +4301,7 @@ def render_text(outcomes: Sequence[CertificationOutcome]) -> str:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """build_parser constructs the skill-certifier CLI parser.
+    """build_parser constructs the node-certify CLI parser.
 
     Intent
     ------
@@ -4405,7 +4405,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 class Interface(PythonArgvMachineInterface):
-    """Interface exposes the skill-certifier argv machine boundary.
+    """Interface exposes the node-certify argv machine boundary.
 
     Intent
     ------

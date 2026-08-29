@@ -40,7 +40,7 @@ def _repository_path(path: Path, repo_root: Path) -> Path:
 
 
 V4_CERTIFICATION_BASIS_MANIFEST = Path(
-    "skills/skill-drift/references/certification-basis-roots.json"
+    "skills/node-drift/references/certification-basis-roots.json"
 )
 CERTIFICATION_BASIS_MANIFEST = Path(
     "references/certification-policy/certification-basis-roots.json"
@@ -48,14 +48,14 @@ CERTIFICATION_BASIS_MANIFEST = Path(
 CANONICAL_NODE_HASH_POLICY = Path(
     "references/certification-policy/node-hash-policy.yaml"
 )
-CERTIFIER_NODE_ID = "skill-certifier"
-CERTIFIER_INTERFACE_ID = "skill-certifier.interface.certify"
-V6_CERTIFIER_INTERFACE_ID = "skill-certifier._rtx.interface.certify"
+CERTIFIER_NODE_ID = "node-certify"
+CERTIFIER_INTERFACE_ID = "node-certify.interface.certify"
+V6_CERTIFIER_INTERFACE_ID = "node-certify._rtx.interface.certify"
 CERTIFIER_INTERFACE_VERSION = 2
 CERTIFIER_AUDIT_INTERFACES = {
-    "interface": "skill-certifier.source.audit-interface.interface.audit",
-    "remainder": "skill-certifier.source.audit-behavioral-source.interface.audit",
-    "module": "skill-certifier.source.audit-module.interface.audit",
+    "interface": "node-certify.source.audit-interface.interface.audit",
+    "remainder": "node-certify.source.audit-behavioral-source.interface.audit",
+    "module": "node-certify.source.audit-module.interface.audit",
 }
 EVIDENCE_ONLY_RELATIONS = frozenset({"certified-under"})
 CERTIFIER_CHECK_REGISTRY: Mapping[str, tuple[str, int]] = {

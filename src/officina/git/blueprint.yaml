@@ -11,9 +11,9 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers:
-      - skill-certifier
-      - skill-certifier._rtx
-      - skill-drift
+      - node-certify
+      - node-certify._rtx
+      - node-drift
     source_interface: git.source.provenance.interface.python-api
 gateway:
   language: Python

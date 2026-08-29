@@ -4745,6 +4745,146 @@
         }
       }
     },
+    "node-certify": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {
+        "node-certify._rtx.interface.certify": {
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Parses v6 blueprint declarations during semantic inspection."
+            },
+            {
+              "kind": "python-package",
+              "name": "cryptography",
+              "version": ">=44.0.1",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Implements Ed25519 key and signature primitives."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            },
+            {
+              "kind": "python-package",
+              "name": "pyflakes",
+              "version": "==3.2.0",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the undefined-name analysis used by the repository validator gate."
+            },
+            {
+              "kind": "python-package",
+              "name": "pytest",
+              "version": "==8.3.4",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Executes the repository validator gate before any certificate is signed."
+            },
+            {
+              "kind": "python-package",
+              "name": "pytest-xdist",
+              "version": "==3.8.0",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the parallel pytest worker support used by the repository validator runner."
+            }
+          ]
+        }
+      }
+    },
+    "node-drift": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {
+        "node-drift._rtx.interface.compute-hashes": {
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "cryptography",
+              "version": ">=44.0.1",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Implements Ed25519 key and signature primitives."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
+        },
+        "node-drift._rtx.interface.drift-status": {
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "cryptography",
+              "version": ">=44.0.1",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Implements Ed25519 key and signature primitives."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
+        }
+      }
+    },
     "notation-review": {
       "maturity": "stable",
       "installation_tier": "core",
@@ -7005,146 +7145,6 @@
         },
         "send-feedback._rtx.interface.file-issue": {
           "dependencies": []
-        }
-      }
-    },
-    "skill-certifier": {
-      "maturity": "stable",
-      "installation_tier": "core",
-      "personal_preference": {
-        "applies": false
-      },
-      "interfaces": {
-        "skill-certifier._rtx.interface.certify": {
-          "dependencies": [
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Parses v6 blueprint declarations during semantic inspection."
-            },
-            {
-              "kind": "python-package",
-              "name": "cryptography",
-              "version": ">=44.0.1",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Implements Ed25519 key and signature primitives."
-            },
-            {
-              "kind": "python-package",
-              "name": "keyring",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
-            },
-            {
-              "kind": "python-package",
-              "name": "pyflakes",
-              "version": "==3.2.0",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Provides the undefined-name analysis used by the repository validator gate."
-            },
-            {
-              "kind": "python-package",
-              "name": "pytest",
-              "version": "==8.3.4",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Executes the repository validator gate before any certificate is signed."
-            },
-            {
-              "kind": "python-package",
-              "name": "pytest-xdist",
-              "version": "==3.8.0",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Provides the parallel pytest worker support used by the repository validator runner."
-            }
-          ]
-        }
-      }
-    },
-    "skill-drift": {
-      "maturity": "stable",
-      "installation_tier": "core",
-      "personal_preference": {
-        "applies": false
-      },
-      "interfaces": {
-        "skill-drift._rtx.interface.compute-hashes": {
-          "dependencies": [
-            {
-              "kind": "python-package",
-              "name": "cryptography",
-              "version": ">=44.0.1",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Implements Ed25519 key and signature primitives."
-            },
-            {
-              "kind": "python-package",
-              "name": "keyring",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
-            }
-          ]
-        },
-        "skill-drift._rtx.interface.drift-status": {
-          "dependencies": [
-            {
-              "kind": "python-package",
-              "name": "cryptography",
-              "version": ">=44.0.1",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Implements Ed25519 key and signature primitives."
-            },
-            {
-              "kind": "python-package",
-              "name": "keyring",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
-            }
-          ]
         }
       }
     },

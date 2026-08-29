@@ -65,7 +65,7 @@ SCHEMA_ROOT = (
     / "v4"
 )
 CERTIFIER = {
-    "interface": "skill-certifier.interface.certify",
+    "interface": "node-certify.interface.certify",
     "version": 1,
     "node_hash": "sha256:" + "c" * 64,
     "source_commit": "c" * 40,
@@ -230,16 +230,16 @@ def test_v5_certifier_bootstrap_roots_parent_runtime_child_and_sources(
     graph = SimpleNamespace(
         schema_version=5,
         nodes={
-            "skill-certifier": object(),
-            "skill-certifier-rtx": object(),
-            "skill-certifier.source.gateway": object(),
-            "skill-certifier-rtx.source.certifier": object(),
+            "node-certify": object(),
+            "node-certify-rtx": object(),
+            "node-certify.source.gateway": object(),
+            "node-certify-rtx.source.certifier": object(),
             "unrelated": object(),
         },
         module_sources={
-            "skill-certifier": ("skill-certifier.source.gateway",),
-            "skill-certifier-rtx": (
-                "skill-certifier-rtx.source.certifier",
+            "node-certify": ("node-certify.source.gateway",),
+            "node-certify-rtx": (
+                "node-certify-rtx.source.certifier",
             ),
         },
     )
@@ -251,10 +251,10 @@ def test_v5_certifier_bootstrap_roots_parent_runtime_child_and_sources(
     assert observed[0][0] is graph
     assert observed[0][1] is state.states
     assert set(observed[0][2]) == {
-        "skill-certifier",
-        "skill-certifier-rtx",
-        "skill-certifier.source.gateway",
-        "skill-certifier-rtx.source.certifier",
+        "node-certify",
+        "node-certify-rtx",
+        "node-certify.source.gateway",
+        "node-certify-rtx.source.certifier",
     }
 
 
@@ -275,15 +275,15 @@ def test_v6_certifier_bootstrap_uses_the_runtime_child_node_id(
     graph = SimpleNamespace(
         schema_version=6,
         nodes={
-            "skill-certifier": object(),
-            "skill-certifier._rtx": object(),
-            "skill-certifier.source.gateway": object(),
-            "skill-certifier._rtx.source.rtx-certifier": object(),
+            "node-certify": object(),
+            "node-certify._rtx": object(),
+            "node-certify.source.gateway": object(),
+            "node-certify._rtx.source.rtx-certifier": object(),
         },
         module_sources={
-            "skill-certifier": ("skill-certifier.source.gateway",),
-            "skill-certifier._rtx": (
-                "skill-certifier._rtx.source.rtx-certifier",
+            "node-certify": ("node-certify.source.gateway",),
+            "node-certify._rtx": (
+                "node-certify._rtx.source.rtx-certifier",
             ),
         },
     )
@@ -417,7 +417,7 @@ def _repository(root: Path) -> tuple[object, dict[str, object], str]:
     basis_manifest = (
         root
         / "skills"
-        / "skill-drift"
+        / "node-drift"
         / "references"
         / "certification-basis-roots.json"
     )
@@ -624,12 +624,12 @@ def _certifier_repository_with_provider_source(
     root: Path,
 ) -> RepositoryCertificationState:
     create_v4_repository(root, extra_modules=("provider",))
-    source_id = "skill-certifier.source.provider-client"
-    source_path = root / "skills" / "skill-certifier" / "_rtx" / "provider_client.py"
+    source_id = "node-certify.source.provider-client"
+    source_path = root / "skills" / "node-certify" / "_rtx" / "provider_client.py"
     source_path.parent.mkdir()
     source_path.write_text("VALUE = 1\n", encoding="utf-8")
     _write_yaml(
-        root / "skills" / "skill-certifier" / "blueprints" / "provider-client.yaml",
+        root / "skills" / "node-certify" / "blueprints" / "provider-client.yaml",
         {
             "schema_version": 4,
             "node_type": "behavioral_source",
@@ -662,7 +662,7 @@ def _certifier_repository_with_provider_source(
             },
         },
     )
-    module_path = root / "skills" / "skill-certifier" / "blueprint.yaml"
+    module_path = root / "skills" / "node-certify" / "blueprint.yaml"
     module = yaml.safe_load(module_path.read_text(encoding="utf-8"))
     module["content"].append(r"_rtx/provider_client\.py")
     module["sources"][source_id] = {
@@ -915,8 +915,8 @@ def v6_structured_certifier_fixture(tmp_path: Path):
     graph, states, _commit, _public_key_root, _key, node_id, interface_id = fixture
     audit_interface = {
         "relation": "certified-under",
-        "target": "skill-certifier.source.audit-interface",
-        "interface": "skill-certifier.source.audit-interface.interface.audit",
+        "target": "node-certify.source.audit-interface",
+        "interface": "node-certify.source.audit-interface.interface.audit",
         "version": 1,
         "interface_hash": "sha256:" + "5" * 64,
     }
@@ -978,7 +978,7 @@ def test_v6_structured_certifier_evidence_is_authoritative(
         item
         for item in facet["dependencies"]
         if item["interface"]
-        == "skill-certifier.source.audit-interface.interface.audit"
+        == "node-certify.source.audit-interface.interface.audit"
     )
     dependency["interface_hash"] = "sha256:" + "7" * 64
     top_level = next(
@@ -992,7 +992,7 @@ def test_v6_structured_certifier_evidence_is_authoritative(
     delta = next(
         item
         for item in drift.dependencies
-        if item.interface == "skill-certifier.source.audit-interface.interface.audit"
+        if item.interface == "node-certify.source.audit-interface.interface.audit"
     )
 
     assert delta.relation == "certified-under"
@@ -1019,8 +1019,8 @@ def test_v6_structured_certifier_evidence_is_authoritative(
     module_id = "demo-skill"
     module_dependency = {
         "relation": "certified-under",
-        "target": "skill-certifier.source.audit-module",
-        "interface": "skill-certifier.source.audit-module.interface.audit",
+        "target": "node-certify.source.audit-module",
+        "interface": "node-certify.source.audit-module.interface.audit",
         "version": 1,
         "interface_hash": "sha256:" + "5" * 64,
     }
@@ -1854,14 +1854,14 @@ def test_zero_certificate_view_allows_only_exact_read_only_sync_fallback(
     )
 
     assert view.check_bootstrap(
-        caller_module_id="skill-certifier",
-        target_module_id="skill-certifier",
-        terminal_module_id="skill-certifier",
-        interface_id="skill-certifier.interface.certify",
+        caller_module_id="node-certify",
+        target_module_id="node-certify",
+        terminal_module_id="node-certify",
+        interface_id="node-certify.interface.certify",
         pattern_name=None,
         argv=(
             "certify",
-            "skill-certifier",
+            "node-certify",
             "--reviewed-repository",
             str(tmp_path),
             "--reviewed-commit",
@@ -1869,7 +1869,7 @@ def test_zero_certificate_view_allows_only_exact_read_only_sync_fallback(
         ),
     ).certified
     assert view.check_bootstrap(
-        caller_module_id="skill-certifier",
+        caller_module_id="node-certify",
         target_module_id="skill-maker",
         terminal_module_id="skill-maker",
         interface_id="skill-maker.interface.sync-blueprints",
@@ -1877,14 +1877,14 @@ def test_zero_certificate_view_allows_only_exact_read_only_sync_fallback(
         argv=("--check",),
     ).certified
     assert not view.check_bootstrap(
-        caller_module_id="skill-certifier",
+        caller_module_id="node-certify",
         target_module_id="skill-maker",
         terminal_module_id="skill-maker",
-        interface_id="skill-certifier.interface.certify",
+        interface_id="node-certify.interface.certify",
         pattern_name=None,
         argv=(
             "certify",
-            "skill-certifier",
+            "node-certify",
             "--reviewed-repository",
             str(tmp_path),
             "--reviewed-commit",
@@ -1892,9 +1892,9 @@ def test_zero_certificate_view_allows_only_exact_read_only_sync_fallback(
         ),
     ).certified
     assert not view.check_bootstrap(
-        caller_module_id="skill-certifier",
-        target_module_id="skill-certifier",
-        terminal_module_id="skill-certifier",
+        caller_module_id="node-certify",
+        target_module_id="node-certify",
+        terminal_module_id="node-certify",
         interface_id="skill-maker.interface.sync-blueprints",
         pattern_name="check",
         argv=("--check",),
@@ -1903,11 +1903,11 @@ def test_zero_certificate_view_allows_only_exact_read_only_sync_fallback(
     rejected = (
         (
             "daily-plan",
-            "skill-certifier.interface.certify",
+            "node-certify.interface.certify",
             None,
             (
                 "certify",
-                "skill-certifier",
+                "node-certify",
                 "--reviewed-repository",
                 str(tmp_path),
                 "--reviewed-commit",
@@ -1915,14 +1915,14 @@ def test_zero_certificate_view_allows_only_exact_read_only_sync_fallback(
             ),
         ),
         (
-            "skill-certifier",
-            "skill-certifier.interface.certify",
+            "node-certify",
+            "node-certify.interface.certify",
             None,
             ("certify",),
         ),
         (
-            "skill-certifier",
-            "skill-certifier.interface.certify",
+            "node-certify",
+            "node-certify.interface.certify",
             None,
             (
                 "certify",
@@ -1934,13 +1934,13 @@ def test_zero_certificate_view_allows_only_exact_read_only_sync_fallback(
             ),
         ),
         (
-            "skill-certifier",
+            "node-certify",
             "skill-maker.interface.sync-blueprints",
             "sync",
             ("--check",),
         ),
         (
-            "skill-certifier",
+            "node-certify",
             "skill-maker.interface.sync-blueprints",
             "sync",
             (),
@@ -1952,19 +1952,19 @@ def test_zero_certificate_view_allows_only_exact_read_only_sync_fallback(
             (),
         ),
         (
-            "skill-certifier",
-            "skill-drift.interface.compute-hashes",
+            "node-certify",
+            "node-drift.interface.compute-hashes",
             None,
             ("compute-hashes", "--json"),
         ),
         (
-            "skill-certifier",
-            "skill-drift.interface.drift-status",
+            "node-certify",
+            "node-drift.interface.drift-status",
             None,
             ("status", "--json"),
         ),
         (
-            "skill-certifier",
+            "node-certify",
             "unrelated.interface.run",
             None,
             (),
@@ -1976,12 +1976,12 @@ def test_zero_certificate_view_allows_only_exact_read_only_sync_fallback(
             target_module_id=(
                 "skill-maker"
                 if interface_id == "skill-maker.interface.sync-blueprints"
-                else "skill-certifier"
+                else "node-certify"
             ),
             terminal_module_id=(
                 "skill-maker"
                 if interface_id == "skill-maker.interface.sync-blueprints"
-                else "skill-certifier"
+                else "node-certify"
             ),
             interface_id=interface_id,
             pattern_name=pattern_name,
@@ -2000,13 +2000,13 @@ def test_v5_bootstrap_mutation_requires_runtime_child_terminal(
         schema_version=5,
     )
     request = {
-        "caller_module_id": "skill-certifier",
-        "target_module_id": "skill-certifier",
-        "interface_id": "skill-certifier.interface.certify",
+        "caller_module_id": "node-certify",
+        "target_module_id": "node-certify",
+        "interface_id": "node-certify.interface.certify",
         "pattern_name": None,
         "argv": (
             "certify",
-            "skill-certifier",
+            "node-certify",
             "--reviewed-repository",
             str(tmp_path),
             "--reviewed-commit",
@@ -2015,15 +2015,15 @@ def test_v5_bootstrap_mutation_requires_runtime_child_terminal(
     }
 
     assert view.check_bootstrap(
-        terminal_module_id="skill-certifier-rtx",
+        terminal_module_id="node-certify-rtx",
         **request,
     ).certified
     assert not view.check_bootstrap(
-        terminal_module_id="skill-certifier",
+        terminal_module_id="node-certify",
         **request,
     ).certified
     sync_request = {
-        "caller_module_id": "skill-certifier",
+        "caller_module_id": "node-certify",
         "target_module_id": "skill-maker",
         "interface_id": "skill-maker.interface.sync-blueprints",
         "pattern_name": "check",
@@ -2051,10 +2051,10 @@ def test_repository_view_never_bootstraps_when_initial_state_is_not_clean(
     )
 
     decision = view.check_bootstrap(
-        caller_module_id="skill-certifier",
-        target_module_id="skill-drift",
-        terminal_module_id="skill-drift",
-        interface_id="skill-drift.interface.compute-hashes",
+        caller_module_id="node-certify",
+        target_module_id="node-drift",
+        terminal_module_id="node-drift",
+        interface_id="node-drift.interface.compute-hashes",
         pattern_name=None,
         argv=("compute-hashes", "--json"),
     )
@@ -2074,7 +2074,7 @@ def test_repository_view_admits_only_exact_self_recertification_for_valid_stale_
         public_key_root,
         secret_backend=backend,
     )
-    certifier_root = graph.nodes["skill-certifier"].module_root
+    certifier_root = graph.nodes["node-certify"].module_root
     certifier_targets = tuple(
         sorted(
             node_id
@@ -2105,25 +2105,25 @@ def test_repository_view_admits_only_exact_self_recertification_for_valid_stale_
     )
     exact = (
         "certify",
-        "skill-certifier",
+        "node-certify",
         "--reviewed-repository",
         str(tmp_path),
         "--reviewed-commit",
         commit,
     )
     assert view.check_bootstrap(
-        caller_module_id="skill-certifier",
-        target_module_id="skill-certifier",
-        terminal_module_id="skill-certifier",
-        interface_id="skill-certifier.interface.certify",
+        caller_module_id="node-certify",
+        target_module_id="node-certify",
+        terminal_module_id="node-certify",
+        interface_id="node-certify.interface.certify",
         pattern_name=None,
         argv=exact,
     ).certified
     assert not view.check_bootstrap(
-        caller_module_id="skill-certifier",
-        target_module_id="skill-certifier",
-        terminal_module_id="skill-certifier",
-        interface_id="skill-certifier.interface.certify",
+        caller_module_id="node-certify",
+        target_module_id="node-certify",
+        terminal_module_id="node-certify",
+        interface_id="node-certify.interface.certify",
         pattern_name=None,
         argv=(
             "certify",
@@ -2143,10 +2143,10 @@ def test_repository_view_admits_only_exact_self_recertification_for_valid_stale_
     _write_log(graph, corrupt_node_id, [corrupt])
 
     assert not repository_certification_view(tmp_path, expected_schema_version=4, schema_root=SCHEMA_ROOT).check_bootstrap(
-        caller_module_id="skill-certifier",
-        target_module_id="skill-certifier",
-        terminal_module_id="skill-certifier",
-        interface_id="skill-certifier.interface.certify",
+        caller_module_id="node-certify",
+        target_module_id="node-certify",
+        terminal_module_id="node-certify",
+        interface_id="node-certify.interface.certify",
         pattern_name=None,
         argv=exact,
     ).certified
@@ -2155,19 +2155,19 @@ def test_repository_view_admits_only_exact_self_recertification_for_valid_stale_
 def test_partial_certifier_multi_root_closure_keeps_only_read_only_sync_fallback(
     tmp_path: Path,
 ) -> None:
-    certifier_root = tmp_path / "skills" / "skill-certifier"
+    certifier_root = tmp_path / "skills" / "node-certify"
     nodes = {
         node_id: BlueprintNode(
             node_id=node_id,
             node_type=(
                 "module"
-                if node_id == "skill-certifier"
+                if node_id == "node-certify"
                 else "behavioral_source"
             ),
             version=1,
             module_root=(
                 certifier_root
-                if node_id.startswith("skill-certifier")
+                if node_id.startswith("node-certify")
                 else tmp_path / "skills" / "skill-maker"
             ),
             blueprint_path=tmp_path / f"{node_id}.yaml",
@@ -2175,9 +2175,9 @@ def test_partial_certifier_multi_root_closure_keeps_only_read_only_sync_fallback
             declaration={"schema_version": 4},
         )
         for node_id in (
-            "skill-certifier",
-            "skill-certifier.source.gateway",
-            "skill-certifier.source.runtime",
+            "node-certify",
+            "node-certify.source.gateway",
+            "node-certify.source.runtime",
             "skill-maker.source.sync-blueprints",
         )
     }
@@ -2189,16 +2189,16 @@ def test_partial_certifier_multi_root_closure_keeps_only_read_only_sync_fallback
         helper_edges=(),
         certification_edges=(),
         module_sources={
-            "skill-certifier": (
-                "skill-certifier.source.gateway",
-                "skill-certifier.source.runtime",
+            "node-certify": (
+                "node-certify.source.gateway",
+                "node-certify.source.runtime",
             )
         },
         direct_file_owners={},
     )
     states = {
-        "skill-certifier": NodeHashState(),
-        "skill-certifier.source.gateway": NodeHashState(
+        "node-certify": NodeHashState(),
+        "node-certify.source.gateway": NodeHashState(
             dependency_hashes=(
                 {
                     "relation": "uses-source",
@@ -2207,7 +2207,7 @@ def test_partial_certifier_multi_root_closure_keeps_only_read_only_sync_fallback
                 },
             )
         ),
-        "skill-certifier.source.runtime": NodeHashState(),
+        "node-certify.source.runtime": NodeHashState(),
         "skill-maker.source.sync-blueprints": NodeHashState(),
     }
 
@@ -2245,7 +2245,7 @@ def test_partial_certifier_multi_root_closure_keeps_only_read_only_sync_fallback
 
     partial = state(
         {
-            "skill-certifier",
+            "node-certify",
             "skill-maker.source.sync-blueprints",
         }
     )
@@ -2260,7 +2260,7 @@ def test_partial_certifier_multi_root_closure_keeps_only_read_only_sync_fallback
     )
 
     assert view.check_bootstrap(
-        caller_module_id="skill-certifier",
+        caller_module_id="node-certify",
         target_module_id="skill-maker",
         terminal_module_id="skill-maker",
         interface_id="skill-maker.interface.sync-blueprints",
@@ -2268,7 +2268,7 @@ def test_partial_certifier_multi_root_closure_keeps_only_read_only_sync_fallback
         argv=("--check",),
     ).certified
     assert not view.check_bootstrap(
-        caller_module_id="skill-certifier",
+        caller_module_id="node-certify",
         target_module_id="skill-maker",
         terminal_module_id="skill-maker",
         interface_id="skill-maker.interface.sync-blueprints",
@@ -2283,10 +2283,10 @@ def test_renewal_rejects_nonprefix_second_root_provider_history(
     state = _certifier_repository_with_provider_source(tmp_path)
     order = certification_view_module._certifier_target_postorder(state)
     assert order == (
-        "skill-certifier",
-        "skill-certifier.source.gateway",
+        "node-certify",
+        "node-certify.source.gateway",
         "provider.source.gateway",
-        "skill-certifier.source.provider-client",
+        "node-certify.source.provider-client",
     )
     public_key_root = certificate_public_key_root(tmp_path)
     public_key_root.mkdir(parents=True)
@@ -2295,9 +2295,9 @@ def test_renewal_rejects_nonprefix_second_root_provider_history(
         secret_backend=MemorySecretBackend(),
     )
     for node_id in (
-        "skill-certifier",
-        "skill-certifier.source.gateway",
-        "skill-certifier.source.provider-client",
+        "node-certify",
+        "node-certify.source.gateway",
+        "node-certify.source.provider-client",
     ):
         _write_log(
             state.graph,
@@ -2358,7 +2358,7 @@ def test_renewal_rejects_signed_entry_for_different_log_subject(
         public_key_root,
         secret_backend=MemorySecretBackend(),
     )
-    log_node_id = "skill-certifier.source.gateway"
+    log_node_id = "node-certify.source.gateway"
     _write_log(
         state.graph,
         log_node_id,
@@ -2368,7 +2368,7 @@ def test_renewal_rejects_signed_entry_for_different_log_subject(
                     tmp_path,
                     state.graph,
                     state.states,
-                    "skill-certifier",
+                    "node-certify",
                     state.source_commit,
                     key.key_id,
                 ),

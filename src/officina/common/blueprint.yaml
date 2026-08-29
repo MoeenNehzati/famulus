@@ -22,8 +22,8 @@ exports:
       - recurring-tasks
       - recurring-tasks._rtx
       - recurring
-      - skill-certifier
-      - skill-certifier._rtx
+      - node-certify
+      - node-certify._rtx
       - skill-maker
       - skill-maker._rtx
       - credentials
@@ -66,8 +66,8 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers:
-      - skill-certifier
-      - skill-certifier._rtx
+      - node-certify
+      - node-certify._rtx
       - skill-maker
     source_interface: common.source.repository-paths.interface.python-api
   common.interface.toml-io:
