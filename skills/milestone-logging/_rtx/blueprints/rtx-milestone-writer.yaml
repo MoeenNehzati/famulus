@@ -29,12 +29,12 @@ interfaces:
           type: {kind: string, sensitivity: user-private}
         role:
           default: ''
-          description: Short name of the agent's overall task.
+          description: Short label identifying the agent's overall task; agent-authored records always supply it.
           required: false
           sensitivity: user-private
           type: {kind: string, sensitivity: user-private}
         done:
-          description: Final status closing the current work item.
+          description: Closing result for completion mode; it replaces the ordinary progress positionals.
           required: false
           sensitivity: user-private
           type: {kind: string, sensitivity: user-private}
@@ -162,7 +162,7 @@ interfaces:
         truncation: {kind: none}
         type: {kind: string, sensitivity: derived-private}
       preconditions: []
-    description: Preserve the milestone command's argv contract while recording progress.
+    description: Append a role-labelled progress milestone or completion record. Progress supplies doing and optional prev; completion supplies the closing result as the done value instead of positional messages. Typed recovery state can also be mirrored into a durable run journal.
     process_binding:
       entry: Interface
       kind: process
@@ -171,6 +171,10 @@ interfaces:
         min_positionals: 0
         max_positionals: 2
         allow_stdin: false
+        notes: Progress mode takes DOING and optional PREV. Completion mode takes
+          --done PREV instead of positional messages, and --done requires its PREV
+          value. Agent-authored records include --role ROLE. --path prints the
+          selected path without recording. Typed event fields require --run ID.
         allowed_flags: [--help, -h, --role, --done, --path, --run, --event, --step, --task, --state, --attempt, --evidence]
         flag_patterns:
           --role: '(?s).*'

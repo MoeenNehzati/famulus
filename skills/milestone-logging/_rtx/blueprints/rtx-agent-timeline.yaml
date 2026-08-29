@@ -127,7 +127,7 @@ interfaces:
         truncation: {kind: none}
         type: {kind: string, sensitivity: derived-private}
       preconditions: []
-    description: Preserve the agent-timeline command's argv contract while reading diagnostics.
+    description: List milestone sessions, render one session with its transcript events, or reconstruct one durable run as text or JSON.
     process_binding:
       entry: Interface
       kind: process
@@ -136,6 +136,8 @@ interfaces:
         min_positionals: 0
         max_positionals: 1
         allow_stdin: false
+        notes: Session mode accepts an optional SESSION, list mode enumerates known
+          sessions, and run mode uses --run ID; --json applies only to run mode.
         allowed_flags: [--help, -h, -l, --list, --slow, --run, --json]
         flag_patterns:
           --slow: '(?s).*'

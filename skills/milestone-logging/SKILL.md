@@ -28,10 +28,10 @@ These interfaces are documented prompt surfaces. They are not executed through `
 <!-- END BLUEPRINT INTERFACES -->
 Skill: milestone-logging
 
-Record progress before the first substantive action, before each distinct work item, every few tool calls, and at completion. For each ordinary record, name the work starting now and how the preceding piece ended. At completion, invoke `record` with `--done` and describe the final outcome. Always supply `--role` on every invocation.
+Use `record` before the first substantive action, before each distinct work item, every few tool calls, and at completion. Every record is role-labelled. A progress record names the work starting now and how the preceding piece ended; a completion record closes the final work item with its outcome.
 
-Invoke `record` to create a record. If one invocation fails, report that exact failure once and continue the task; do not invent a record or retry blindly.
+If one `record` invocation fails, report that exact failure once and continue the task; do not invent a record or retry blindly.
 
-Use `--run` only for work that must outlive the current session. Put recovery-relevant state in its typed fields.
+Use the durable-run mode only for work that must outlive the current session. Put recovery-relevant state in its typed fields.
 
 For a diagnostic read, invoke `timeline`; use its explicit list or run route to inspect existing records.
