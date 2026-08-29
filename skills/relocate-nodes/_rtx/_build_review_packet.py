@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import sys
 from officina.runtime.python_machine_interface import PythonMachineInterface
-from ._compact_relocation import RelocationError, build_packet
+from ._compact_relocation import RelocationError, build_packet, render_packet
 class Interface(PythonMachineInterface):
     prog = "relocate-nodes-build-review-packet"
     description = "Group relocation text hits for user review."
@@ -25,8 +25,7 @@ class Interface(PythonMachineInterface):
                 raise RelocationError("relocation report must be an object")
             packet = build_packet(root, report)
             output.write_text(json.dumps(packet, indent=2) + "\n", encoding="utf-8")
-            summary = packet["summary"]
-            print(f"{summary['occurrences']} occurrences in {summary['review_units']} review units; packet: {output}")
+            print(f"{render_packet(packet)}\nPacket JSON: {output}")
             return 0
         except (OSError, ValueError, RelocationError) as exc:
             print(f"error: {exc}", file=sys.stderr)

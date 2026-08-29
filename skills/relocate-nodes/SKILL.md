@@ -59,21 +59,32 @@ turn them into review loops.
 3. **Build the user review packet.** Invoke the injected review-packet
    interface with the absolute repository root and external report/output paths.
 
-   The packet retains every semantic occurrence but groups Markdown by heading
-   and other text by file. Each unit contains the literal mechanical
-   replacement, a suggested `rewrite` or `preserve`, and an unset user
-   decision. Historical plans and specifications are suggested preserves;
-   everything else is suggested rewrite.
-4. **Ask the user for help removing false positives.** Show the machine list
-   and suggestions compactly. Ask first about whole categories, files, or
-   sections; only show individual occurrences where a broader decision is
-   ambiguous. The default is the mechanical rewrite. The user may preserve an
-   irrelevant unit or refine awkward prose. Never infer persisted-state,
-   compatibility, or behavioral policy from an address change.
-5. Keep every occurrence ID represented after grouping. Add one
-   `semantic_decisions` entry containing its `occurrence_id` and either
-   `rewrite` or `preserve`. A rewrite uses the reported candidate unless the
-   user supplies a different exact `replacement`.
+   The interface writes the full JSON packet and prints its complete compact
+   human rendering. Present that rendering directly; do not spend an LLM turn
+   reconstructing it. The packet groups Markdown by heading and other text by
+   file, retaining every occurrence and its suggested decision. Historical
+   plans and specifications are suggested preserves; everything else is
+   suggested rewrite.
+4. **Ask the user for help removing false positives.** Before asking for
+   decisions, render every review unit with its path, section
+   when present, suggested decision, and occurrence count. Never substitute
+   aggregate counts or an explanation for the packet itself. Show individual
+   occurrence contexts when a unit is ambiguous or the user asks. Then ask
+   about whole categories, files, or sections. The default is the mechanical
+   rewrite. The user may preserve an irrelevant unit or refine awkward prose.
+   Never infer persisted-state, compatibility, or behavioral policy from an
+   address change.
+5. **Encode the answer compactly.** Prefer one `default_disposition` plus exact
+   path-level `disposition_overrides`; the machine expands these rules into the
+   occurrence ledger. Use `semantic_decisions` only for individual exceptions
+   or a user-supplied exact replacement. Precedence is individual decision,
+   path override, then default.
+
+   Put relevant changes that contain no reported old identifier in
+   `supplemental_edits`. Each entry names the projected target `path`, one
+   nonempty exact `expected` string, and its `replacement`. The precondition
+   must identify exactly one old or already-replaced string; ambiguous or
+   missing edits fail preflight. Supplemental edits join the same transaction.
 6. **Rerun preflight** with the reviewed manifest. Continue only when
    `unaccounted_semantic_occurrences` is empty and every planned write and
    delete is intended.
@@ -87,6 +98,11 @@ turn them into review loops.
 8. Run the identical manifest as a **target-side postflight** without
    `--apply`. Require no planned writes or deletes, no unaccounted occurrences,
    and no errors.
+
+Use the report's machine timings when discussing performance. An apply report
+separates initial planning, transactional writes, blueprint-graph verification,
+target-side postflight, and total time; do not attribute later test time to
+ledger application.
 
 Never invoke certification or installation. Completed manifests are temporary
 inputs and are not retained as repository history.

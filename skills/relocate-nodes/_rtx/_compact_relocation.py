@@ -1,60 +1,36 @@
 """Compact recipe, review, and atomic publication for node relocation."""
-
 from __future__ import annotations
-
-import ast
-import base64
+import ast, base64
 from dataclasses import dataclass
-import hashlib
-import json
-import os
+import hashlib, json, os
 from pathlib import Path, PurePosixPath
-import re
-import shutil
-import stat
-import subprocess
-import tempfile
+import re, shutil, stat, subprocess, tempfile, time
 from typing import Callable, Iterable, Mapping
-
 import yaml
 from yaml.nodes import MappingNode, ScalarNode, SequenceNode
-
 from officina.common import toml_io
 from officina.common.atomic_files import atomic_replace_bytes, exclusive_file_lock
 from officina.configuration.repository import load_repository_configuration
-_IGNORED = {".git", ".venv", ".worktrees", "__pycache__", ".pytest_cache",
-            ".mypy_cache", "_build", "build", "dist", "node_modules"}
+_IGNORED = {".git", ".venv", ".worktrees", "__pycache__", ".pytest_cache", ".mypy_cache", "_build", "build", "dist", "node_modules"}
 _STRUCTURED = {".yaml", ".yml", ".json"}
 class RelocationError(RuntimeError):
     pass
 @dataclass(frozen=True)
 class Occurrence:
-    occurrence_id: str
-    path: str
-    byte_start: int
-    byte_end: int
-    line: int
-    match: str
-    candidate: str
-    context: str
+    occurrence_id: str; path: str
+    byte_start: int; byte_end: int; line: int
+    match: str; candidate: str; context: str
 @dataclass
 class Recipe:
-    root: Path
-    writes: dict[str, bytes]
-    deletes: set[str]
-    expected: dict[str, bytes | None]
-    modes: dict[str, int]
-    occurrences: list[Occurrence]
+    root: Path; writes: dict[str, bytes]; deletes: set[str]
+    expected: dict[str, bytes | None]; modes: dict[str, int]; occurrences: list[Occurrence]
     @property
     def empty(self) -> bool:
         return not self.writes and not self.deletes and not self.occurrences
     def report(self) -> dict[str, object]:
-        return {
-            "writes": sorted(self.writes),
-            "deletes": sorted(self.deletes),
-            "semantic_occurrences": [dict(vars(item)) for item in self.occurrences],
-            "unaccounted_semantic_occurrences": [item.occurrence_id for item in self.occurrences],
-        }
+        return {"writes": sorted(self.writes), "deletes": sorted(self.deletes),
+                "semantic_occurrences": [dict(vars(item)) for item in self.occurrences],
+                "unaccounted_semantic_occurrences": [item.occurrence_id for item in self.occurrences]}
 def _relative(value: object, label: str) -> str:
     if not isinstance(value, str) or not value:
         raise RelocationError(f"{label} must be a nonempty path")
@@ -62,25 +38,25 @@ def _relative(value: object, label: str) -> str:
     if path.is_absolute() or ".." in path.parts or value.startswith("./"):
         raise RelocationError(f"{label} must be repository-relative: {value!r}")
     return path.as_posix()
-def _pairs(root: Path, manifest: Mapping[str, object]) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+def _pairs(root: Path, manifest: Mapping[str, object], inventory: set[str]) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
     if manifest.get("schema_version") != 3:
         raise RelocationError("manifest schema_version must be 3")
     raw_moves = manifest.get("relocations")
     if not isinstance(raw_moves, list) or not raw_moves:
         raise RelocationError("manifest relocations must be a nonempty list")
-    moves = [
-        (_relative(item.get("from"), "relocations.from"), _relative(item.get("to"), "relocations.to"))
-        for item in raw_moves if isinstance(item, Mapping)
-    ]
+    moves = [(_relative(item.get("from"), "relocations.from"), _relative(item.get("to"), "relocations.to"))
+             for item in raw_moves if isinstance(item, Mapping)]
     if len(moves) != len(raw_moves) or any(old == new for old, new in moves):
         raise RelocationError("each relocation needs distinct from and to paths")
     config = load_repository_configuration(root / toml_io.repository_config_filename())
     logical: list[tuple[str, str]] = []
     for old, new in moves:
         old_path, new_path = root / old, root / new
-        if old_path.exists() and new_path.exists():
+        old_selected = any(item == old or item.startswith(old + "/") for item in inventory)
+        new_selected = any(item == new or item.startswith(new + "/") for item in inventory)
+        if old_selected and new_selected:
             raise RelocationError(f"destination already exists: {new}")
-        if not old_path.exists() and not new_path.exists():
+        if not old_selected and not new_selected:
             raise RelocationError(f"relocation source does not exist: {old}")
         sources = [item for item in config.module_roots if old_path.is_relative_to(item)]
         targets = [item for item in config.module_roots if new_path.is_relative_to(item)]
@@ -90,23 +66,16 @@ def _pairs(root: Path, manifest: Mapping[str, object]) -> tuple[list[tuple[str, 
     raw_python = manifest.get("python_modules", [])
     if not isinstance(raw_python, list):
         raise RelocationError("python_modules must be a list")
-    python_pairs = [
-        (str(item["from"]), str(item["to"]))
-        for item in raw_python
-        if isinstance(item, Mapping) and isinstance(item.get("from"), str) and isinstance(item.get("to"), str)
-    ]
+    python_pairs = [(str(item["from"]), str(item["to"])) for item in raw_python
+                    if isinstance(item, Mapping) and isinstance(item.get("from"), str) and isinstance(item.get("to"), str)]
     if len(python_pairs) != len(raw_python):
         raise RelocationError("python_modules entries require from and to")
     return moves, logical + python_pairs
 def _files(root: Path, exclusions: Iterable[str]) -> Iterable[Path]:
     excluded = tuple(item.rstrip("/") for item in exclusions)
     if (root / ".git").exists():
-        result = subprocess.run(
-            ["git", "ls-files", "-co", "--exclude-standard", "-z"],
-            cwd=root,
-            check=True,
-            stdout=subprocess.PIPE,
-        )
+        result = subprocess.run(["git", "ls-files", "-co", "--exclude-standard", "-z"], cwd=root,
+                                check=True, stdout=subprocess.PIPE)
         for raw in result.stdout.split(b"\0"):
             if not raw:
                 continue
@@ -156,7 +125,6 @@ def _structured(payload: bytes, pairs: list[tuple[str, str]]) -> bytes:
     for start, end, replacement in sorted(edits, reverse=True):
         text = text[:start] + replacement + text[end:]
     return text.encode()
-
 def _mechanical(relative: str, payload: bytes, address_pairs: list[tuple[str, str]], python_pairs: list[tuple[str, str]]) -> bytes:
     if not any(old.encode() in payload for old, _new in address_pairs + python_pairs):
         return payload
@@ -201,60 +169,79 @@ def _occurrences(relative: str, payload: bytes, pairs: list[tuple[str, str]]) ->
             line_start, line_end = text.rfind("\n", 0, index) + 1, text.find("\n", cursor)
             if line_end < 0:
                 line_end = len(text)
-            found.append(Occurrence(
-                "sha256:" + hashlib.sha256(identity).hexdigest(), relative,
-                byte_start, byte_start + len(old.encode()), text.count("\n", 0, index) + 1,
-                old, new, text[line_start:line_end],
-            ))
+            found.append(Occurrence("sha256:" + hashlib.sha256(identity).hexdigest(), relative,
+                                    byte_start, byte_start + len(old.encode()), text.count("\n", 0, index) + 1,
+                                    old, new, text[line_start:line_end]))
     return sorted(found, key=lambda item: (item.path, item.byte_start))
-def _apply_decisions(payload: bytes, occurrences: list[Occurrence], decisions: Mapping[str, Mapping[str, object]]) -> tuple[bytes, list[Occurrence]]:
+def _apply_decisions(payload: bytes, occurrences: list[Occurrence], decisions: Mapping[str, Mapping[str, object]], default: str | None, overrides: Mapping[str, str]) -> tuple[bytes, list[Occurrence]]:
     replacements: list[tuple[int, int, bytes]] = []
     undecided: list[Occurrence] = []
     for occurrence in occurrences:
         decision = decisions.get(occurrence.occurrence_id)
-        if decision is None:
+        disposition = decision.get("disposition") if decision else overrides.get(occurrence.path, default)
+        if disposition is None:
             undecided.append(occurrence)
-        elif decision.get("disposition") == "rewrite":
-            replacement = decision.get("replacement", occurrence.candidate)
+        elif disposition == "rewrite":
+            replacement = decision.get("replacement", occurrence.candidate) if decision else occurrence.candidate
             if not isinstance(replacement, str):
                 raise RelocationError(f"invalid replacement for {occurrence.occurrence_id}")
             replacements.append((occurrence.byte_start, occurrence.byte_end, replacement.encode()))
-        elif decision.get("disposition") != "preserve":
+        elif disposition != "preserve":
             raise RelocationError(f"invalid disposition for {occurrence.occurrence_id}")
     for start, end, replacement in sorted(replacements, reverse=True):
         payload = payload[:start] + replacement + payload[end:]
     return payload, undecided
-
+def _review_policy(manifest: Mapping[str, object]) -> tuple[dict[str, Mapping[str, object]], str | None, dict[str, str]]:
+    raw_decisions, raw_overrides = manifest.get("semantic_decisions", []), manifest.get("disposition_overrides", [])
+    default = manifest.get("default_disposition")
+    if not isinstance(raw_decisions, list) or not isinstance(raw_overrides, list):
+        raise RelocationError("semantic decisions and disposition overrides must be lists")
+    if default not in (None, "rewrite", "preserve"):
+        raise RelocationError("default_disposition must be rewrite or preserve")
+    decisions = {str(item.get("occurrence_id")): item for item in raw_decisions if isinstance(item, Mapping)}
+    overrides: dict[str, str] = {}
+    for item in raw_overrides:
+        if not isinstance(item, Mapping) or item.get("disposition") not in ("rewrite", "preserve"):
+            raise RelocationError("disposition overrides require path and rewrite or preserve")
+        path = _relative(item.get("path"), "disposition_overrides.path")
+        if path in overrides:
+            raise RelocationError(f"duplicate disposition override: {path}")
+        overrides[path] = str(item["disposition"])
+    return decisions, default, overrides
+def _supplemental(manifest: Mapping[str, object]) -> dict[str, list[tuple[bytes, bytes]]]:
+    raw = manifest.get("supplemental_edits", [])
+    if not isinstance(raw, list):
+        raise RelocationError("supplemental_edits must be a list")
+    edits: dict[str, list[tuple[bytes, bytes]]] = {}
+    for item in raw:
+        if not isinstance(item, Mapping) or not isinstance(item.get("expected"), str) or not item.get("expected") or not isinstance(item.get("replacement"), str):
+            raise RelocationError("supplemental edits require path, expected, and replacement")
+        path = _relative(item.get("path"), "supplemental_edits.path")
+        edits.setdefault(path, []).append((str(item["expected"]).encode(), str(item["replacement"]).encode()))
+    return edits
 def plan(root: Path, manifest: Mapping[str, object], *, recover_interrupted: bool = True) -> Recipe:
     root = root.resolve()
     if recover_interrupted:
         recover(root)
-    moves, logical_python = _pairs(root, manifest)
-    address_pairs = moves + logical_python
-    python_pairs = [(old.replace("-", "_"), new.replace("-", "_")) for old, new in logical_python]
     exclusions = manifest.get("inventory_exclusions", [])
-    raw_decisions = manifest.get("semantic_decisions", [])
     if not isinstance(exclusions, list) or not all(isinstance(item, str) for item in exclusions):
         raise RelocationError("inventory_exclusions must be a string list")
-    if not isinstance(raw_decisions, list):
-        raise RelocationError("semantic_decisions must be a list")
-    decisions = {str(item.get("occurrence_id")): item for item in raw_decisions if isinstance(item, Mapping)}
-    writes: dict[str, bytes] = {}
-    deletes: set[str] = set()
-    expected: dict[str, bytes | None] = {}
-    modes: dict[str, int] = {}
+    paths = list(_files(root, exclusions))
+    inventory = {path.relative_to(root).as_posix() for path in paths if path.is_file() or path.is_symlink()}
+    moves, logical_python = _pairs(root, manifest, inventory)
+    address_pairs = moves + logical_python
+    python_pairs = [(old.replace("-", "_"), new.replace("-", "_")) for old, new in logical_python]
+    decisions, default, overrides = _review_policy(manifest)
+    supplemental = _supplemental(manifest)
+    writes: dict[str, bytes] = {}; deletes: set[str] = set()
+    expected: dict[str, bytes | None] = {}; modes: dict[str, int] = {}
     pending: list[Occurrence] = []
-    for path in _files(root, exclusions):
+    for path in paths:
         relative = path.relative_to(root).as_posix()
         if path.is_symlink():
             target = os.readlink(path)
-            if any(
-                relative == old
-                or relative.startswith(old + "/")
-                or old in relative
-                or old in target
-                for old, _new in address_pairs
-            ):
+            if any(relative == old or relative.startswith(old + "/") or old in relative or old in target
+                   for old, _new in address_pairs):
                 raise RelocationError(f"symlink relocation requires explicit handling: {relative}")
             continue
         if not path.is_file():
@@ -266,7 +253,13 @@ def plan(root: Path, manifest: Mapping[str, object], *, recover_interrupted: boo
                 break
         payload = path.read_bytes()
         projected = _mechanical(target, payload, address_pairs, python_pairs)
-        projected, unresolved = _apply_decisions(projected, _occurrences(target, projected, address_pairs), decisions)
+        projected, unresolved = _apply_decisions(projected, _occurrences(target, projected, address_pairs), decisions, default, overrides)
+        for expected_edit, replacement in supplemental.pop(target, []):
+            count = projected.count(expected_edit)
+            if count == 1:
+                projected = projected.replace(expected_edit, replacement, 1)
+            elif count != 0 or projected.count(replacement) != 1:
+                raise RelocationError(f"supplemental edit precondition failed: {target}")
         pending.extend(unresolved)
         if target != relative or projected != payload:
             writes[target] = projected
@@ -275,8 +268,9 @@ def plan(root: Path, manifest: Mapping[str, object], *, recover_interrupted: boo
         if target != relative:
             deletes.add(relative)
             expected[relative] = payload
+    if supplemental:
+        raise RelocationError(f"supplemental edit path not selected: {next(iter(supplemental))}")
     return Recipe(root, writes, deletes, expected, modes, sorted(pending, key=lambda item: (item.path, item.byte_start)))
-
 def build_packet(root: Path, report: Mapping[str, object]) -> dict[str, object]:
     grouped: dict[tuple[str, str | None], list[Mapping[str, object]]] = {}
     for occurrence in report.get("semantic_occurrences", []):
@@ -293,22 +287,33 @@ def build_packet(root: Path, report: Mapping[str, object]) -> dict[str, object]:
                 if line.startswith("#") and line.lstrip("#").startswith(" "):
                     section = line.lstrip("#").strip()
         grouped.setdefault((relative, section), []).append(occurrence)
-    units = [
-        {"path": path, "section": section, "suggestion": "preserve" if path.startswith(("docs/plans/", "docs/superpowers/")) else "rewrite", "decision": None, "occurrences": items}
-        for (path, section), items in sorted(grouped.items(), key=lambda item: (item[0][0], item[0][1] or ""))
-    ]
+    units = [{"path": path, "section": section, "suggestion": "preserve" if path.startswith(("docs/plans/", "docs/superpowers/")) else "rewrite", "decision": None, "occurrences": items}
+             for (path, section), items in sorted(grouped.items(), key=lambda item: (item[0][0], item[0][1] or ""))]
     return {"schema_version": 1, "summary": {"occurrences": sum(len(items) for items in grouped.values()), "review_units": len(units)}, "review_units": units}
-
+def render_packet(packet: Mapping[str, object]) -> str:
+    summary, units = packet["summary"], packet["review_units"]
+    if not isinstance(summary, Mapping) or not isinstance(units, list):
+        raise RelocationError("invalid review packet")
+    lines = [f"Relocation review: {summary['occurrences']} occurrences in {summary['review_units']} review units"]
+    for index, unit in enumerate(units, 1):
+        if not isinstance(unit, Mapping) or not isinstance(unit.get("occurrences"), list):
+            raise RelocationError("invalid review unit")
+        counts: dict[tuple[str, str], int] = {}
+        for occurrence in unit["occurrences"]:
+            key = (str(occurrence["match"]), str(occurrence["candidate"]))
+            counts[key] = counts.get(key, 0) + 1
+        count = len(unit["occurrences"])
+        section = f" — {unit['section']}" if unit.get("section") else ""
+        pairs = "; ".join(f"`{old}` → `{new}` ×{amount}" for (old, new), amount in counts.items())
+        lines.append(f"{index}. `{unit['path']}`{section} — suggested `{unit['suggestion']}` — {count} occurrence{'s' if count != 1 else ''}: {pairs}")
+    return "\n".join(lines)
 def _state(root: Path) -> tuple[Path, Path, Path]:
     base = Path(tempfile.gettempdir()) / "officina-relocation"
     base.mkdir(mode=0o700, exist_ok=True)
     key = hashlib.sha256(os.fsencode(str(root))).hexdigest()
     return base, base / f"{key}.lock", base / key
-
 def _restore(root: Path, marker: Mapping[str, object]) -> None:
-    baseline = marker.get("baseline")
-    directories = marker.get("directories")
-    created = marker.get("created_directories")
+    baseline, directories, created = marker.get("baseline"), marker.get("directories"), marker.get("created_directories")
     if not isinstance(baseline, Mapping) or not isinstance(directories, Mapping) or not isinstance(created, list):
         raise RelocationError("invalid recovery marker")
     for relative, mode in sorted(directories.items(), key=lambda item: len(PurePosixPath(str(item[0])).parts)):
@@ -330,7 +335,6 @@ def _restore(root: Path, marker: Mapping[str, object]) -> None:
             (root / relative).rmdir()
         except OSError:
             pass
-
 def recover(root: Path) -> bool:
     root = root.resolve()
     base, lock, state = _state(root)
@@ -346,12 +350,11 @@ def recover(root: Path) -> bool:
         _restore(root, marker)
         shutil.rmtree(state)
         return True
-
-def apply(recipe: Recipe, *, verify: Callable[[], None]) -> None:
+def apply(recipe: Recipe, *, verify: Callable[[], Mapping[str, float] | None]) -> dict[str, float]:
     if recipe.occurrences:
         raise RelocationError("apply rejected: unaccounted semantic occurrences remain")
-    root = recipe.root
-    base, lock, state = _state(root)
+    root = recipe.root; base, lock, state = _state(root)
+    started, verification_seconds = time.perf_counter(), 0.0
     with exclusive_file_lock(lock, allowed_root=base):
         if state.exists():
             marker = json.loads((state / "marker.json").read_text(encoding="utf-8"))
@@ -362,10 +365,8 @@ def apply(recipe: Recipe, *, verify: Callable[[], None]) -> None:
             current = path.read_bytes() if path.is_file() and not path.is_symlink() else None
             if current != expected:
                 raise RelocationError(f"repository changed after preflight: {relative}")
-        baseline: dict[str, object] = {}
-        touched = set(recipe.writes) | recipe.deletes
-        directories: dict[str, int] = {}
-        created_directories: set[str] = set()
+        baseline: dict[str, object] = {}; touched = set(recipe.writes) | recipe.deletes
+        directories: dict[str, int] = {}; created_directories: set[str] = set()
         for relative in touched:
             parent = (root / relative).parent
             while parent != root:
@@ -382,12 +383,8 @@ def apply(recipe: Recipe, *, verify: Callable[[], None]) -> None:
             else:
                 baseline[relative] = None
         state.mkdir(mode=0o700)
-        marker = {
-            "repository": str(root),
-            "baseline": baseline,
-            "directories": directories,
-            "created_directories": sorted(created_directories),
-        }
+        marker = {"repository": str(root), "baseline": baseline, "directories": directories,
+                  "created_directories": sorted(created_directories)}
         atomic_replace_bytes(state / "marker.json", (json.dumps(marker, sort_keys=True) + "\n").encode(), allowed_root=state, mode=0o600)
         try:
             for relative, payload in sorted(recipe.writes.items()):
@@ -405,9 +402,12 @@ def apply(recipe: Recipe, *, verify: Callable[[], None]) -> None:
                     except OSError:
                         break
                     parent = parent.parent
-            verify()
+            verification_started = time.perf_counter()
+            verification = verify() or {}
+            verification_seconds = time.perf_counter() - verification_started
         except BaseException:
             _restore(root, marker)
             shutil.rmtree(state)
             raise
         shutil.rmtree(state)
+    return {"transactional_writes_seconds": time.perf_counter() - started - verification_seconds, **verification}

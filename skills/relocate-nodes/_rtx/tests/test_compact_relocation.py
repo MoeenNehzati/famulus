@@ -9,6 +9,7 @@ import sys
 import pytest
 import yaml
 
+from test_support.git_repository import GitTestRepository
 from .. import _compact_relocation as relocation
 from .._compact_relocation import RelocationError, apply, build_packet, plan
 
@@ -184,6 +185,46 @@ def test_reviewed_recipe_applies_once_and_has_empty_postflight(tmp_path: Path) -
     assert plan(tmp_path, manifest).empty
 
 
+def test_compact_disposition_rules_expand_without_occurrence_entries(
+    tmp_path: Path,
+) -> None:
+    manifest = _fixture(tmp_path)
+    manifest["default_disposition"] = "rewrite"
+    manifest["disposition_overrides"] = [
+        {"path": "notes.md", "disposition": "preserve"}
+    ]
+
+    recipe = plan(tmp_path, manifest)
+
+    assert recipe.occurrences == []
+    assert "notes.md" not in recipe.writes
+    assert b"# old-node historical comment" not in recipe.writes[
+        "skills/consumer/blueprint.yaml"
+    ]
+
+
+def test_supplemental_edit_is_atomic_and_postflight_idempotent(
+    tmp_path: Path,
+) -> None:
+    manifest = _fixture(tmp_path)
+    _write(tmp_path / "tests/test_error.py", 'pattern = "certifier"\n')
+    manifest["default_disposition"] = "rewrite"
+    manifest["supplemental_edits"] = [
+        {
+            "path": "tests/test_error.py",
+            "expected": 'pattern = "certifier"',
+            "replacement": 'pattern = "node-certify"',
+        }
+    ]
+
+    recipe = plan(tmp_path, manifest)
+    assert recipe.writes["tests/test_error.py"] == b'pattern = "node-certify"\n'
+
+    apply(recipe, verify=lambda: None)
+
+    assert plan(tmp_path, manifest).empty
+
+
 def test_failed_verification_rolls_back_every_change(tmp_path: Path) -> None:
     manifest = _fixture(tmp_path)
     source_directory = tmp_path / "skills/old-node"
@@ -236,6 +277,22 @@ def test_review_packet_groups_markdown_by_heading(tmp_path: Path) -> None:
     assert packet["review_units"][0]["section"] == "Current"
     assert packet["review_units"][0]["suggestion"] == "rewrite"
     assert packet["review_units"][0]["decision"] is None
+
+
+def test_review_packet_renderer_emits_every_unit_without_llm_reformatting(
+    tmp_path: Path,
+) -> None:
+    manifest = _fixture(tmp_path)
+    _write(tmp_path / "notes.md", "# Current\nUse old-node.\n")
+    _write(tmp_path / "guide.md", "# Guide\nPrefer old-node.\n")
+    packet = build_packet(tmp_path, plan(tmp_path, manifest).report())
+
+    rendered = relocation.render_packet(packet)
+
+    assert "2 occurrences in 2 review units" in rendered
+    assert "`guide.md` — Guide — suggested `rewrite` — 1 occurrence" in rendered
+    assert "`notes.md` — Current — suggested `rewrite` — 1 occurrence" in rendered
+    assert rendered.count("`old-node` → `new-node` ×1") == 2
 
 
 def test_manifest_excludes_repository_runtime_state(tmp_path: Path) -> None:
@@ -349,6 +406,38 @@ def test_public_route_applies_and_then_reports_empty_postflight(tmp_path: Path) 
     assert report["writes"] == []
     assert report["deletes"] == []
     assert report["unaccounted_semantic_occurrences"] == []
+    apply_timings = json.loads(apply_report.read_text(encoding="utf-8"))["timings"]
+    assert set(apply_timings) == {
+        "graph_verification_seconds",
+        "planning_seconds",
+        "postflight_seconds",
+        "total_seconds",
+        "transactional_writes_seconds",
+    }
+    assert all(value >= 0 for value in apply_timings.values())
+
+
+def test_public_route_postflight_allows_ignored_state_under_source(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    manifest_path = tmp_path / "manifest.yaml"
+    apply_report = tmp_path / "apply-report.json"
+    git = GitTestRepository.create(repository)
+    _public_fixture(repository, manifest_path)
+    _write(repository / ".gitignore", "_build/\n")
+    git.git("add", ".")
+    git.git("commit", "--quiet", "-m", "fixture")
+    ignored_state = repository / "skills/old-node/_build/state.json"
+    _write(ignored_state, "{}\n")
+
+    published = _run_public_route(
+        repository, manifest_path, apply_report, publish=True
+    )
+
+    assert published.returncode == 0, published.stderr
+    assert ignored_state.read_text(encoding="utf-8") == "{}\n"
+    assert (repository / "skills/new-node/__init__.py").is_file()
 
 
 def test_public_route_recovers_after_process_exit_mid_publication(

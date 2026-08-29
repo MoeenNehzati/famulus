@@ -62,3 +62,11 @@ def test_skill_documents_recipe_review_and_single_atomic_apply() -> None:
     assert "Ask the user for help removing false positives" in skill
     assert "Apply once" in skill
     assert "failure-atomic transaction" in skill
+
+
+def test_skill_requires_displaying_the_complete_grouped_review_packet() -> None:
+    skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+    normalized = " ".join(skill.split())
+
+    assert "render every review unit" in normalized
+    assert "Never substitute aggregate counts" in normalized
