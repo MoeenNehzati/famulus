@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -11,7 +12,7 @@ import pytest
 
 from .._install_launcher import platform_launcher_installer
 from .._install_launcher import _windows_launcher as windows_launcher
-from .._install_launcher._base_launcher import (
+from officina.common.command_files import (
     LauncherBundleSpec,
     LauncherFileSpec,
     LauncherInstallerBase,
@@ -144,10 +145,11 @@ def test_invoke_skill_delegates_agent_policy_to_managed_module(tmp_path):
 # famulus-skip: category=platform-contract; reason=the Linux wakeup bundle executes POSIX launchers; alternate=test_windows_dispatcher_and_invoke_skill_are_batch_launchers covers native Windows launchers
 @pytest.mark.skipif(os.name == "nt", reason="POSIX launcher execution")
 def test_linux_wakeup_bundle_runs_both_names_through_managed_resolver(tmp_path, monkeypatch):
-    """Removing either public command or forwarding it to the wrong module breaks the installed wakeup CLI."""
+    """The shared Linux/macOS command file keeps a spaced runtime path as argv[0]."""
     installer = platform_launcher_installer("linux")
     bin_dir = tmp_path / "bin"
     home = tmp_path / "home"
+    runtime_root = tmp_path / "selected plugin environment"
     monkeypatch.setattr(sys, "platform", "linux")
     monkeypatch.setenv("XDG_DATA_HOME", str(home / ".local" / "share"))
 
@@ -155,16 +157,17 @@ def test_linux_wakeup_bundle_runs_both_names_through_managed_resolver(tmp_path, 
         bin_dir,
         dry_run=False,
         home=home,
+        runtime_root=runtime_root,
     )
 
     assert result.status == "installed"
-    resolver = home / ".local" / "share" / "famulus" / "runtime" / "bootstrap" / "resolvers" / "v1" / "launch.py"
+    resolver = runtime_root / "bootstrap" / "resolvers" / "v1" / "launch.py"
     resolver.parent.mkdir(parents=True)
     resolver.write_text(
         "#!/usr/bin/env python3\n"
         "import json\n"
         "import sys\n"
-        "print(json.dumps(sys.argv[1:]))\n",
+        "print(json.dumps(sys.argv))\n",
         encoding="utf-8",
     )
     resolver.chmod(0o755)
@@ -184,6 +187,7 @@ def test_linux_wakeup_bundle_runs_both_names_through_managed_resolver(tmp_path, 
         )
         assert completed.returncode == 0, completed.stderr
         assert json.loads(completed.stdout) == [
+            str(resolver),
             "-m",
             "officina.wakeup.cli",
             "doctor",
@@ -198,12 +202,14 @@ def test_osx_wakeup_bundle_installs_both_unix_commands(tmp_path, monkeypatch):
     """Overriding the macOS adapter without the wakeup bundle would drop its public commands."""
     installer = platform_launcher_installer("darwin")
     bin_dir = tmp_path / "bin"
+    runtime_root = tmp_path / "selected plugin environment"
     monkeypatch.setattr(sys, "platform", "darwin")
 
     result = installer.install_wakeup_launcher(
         bin_dir,
         dry_run=False,
         home=tmp_path / "home",
+        runtime_root=runtime_root,
     )
 
     assert result.status == "installed"
@@ -211,6 +217,8 @@ def test_osx_wakeup_bundle_installs_both_unix_commands(tmp_path, monkeypatch):
     assert (bin_dir / "lw").is_file()
     assert not (bin_dir / "llm-wakeup.bat").exists()
     assert not (bin_dir / "lw.bat").exists()
+    resolver = runtime_root / "bootstrap" / "resolvers" / "v1" / "launch.py"
+    assert f"RESOLVER = {str(resolver)!r}" in (bin_dir / "llm-wakeup").read_text(encoding="utf-8")
 
 
 def test_generated_dispatcher_does_not_embed_repo_root_or_sys_executable(tmp_repo_root, tmp_path):
@@ -244,6 +252,8 @@ def test_windows_dispatcher_and_invoke_skill_are_batch_launchers(tmp_path):
     repo_root = Path(r"C:\Users\tester\AI")
     bin_dir = tmp_path / "bin"
     home = tmp_path / "home"
+    runtime_root = Path(r"C:\Selected Plugin Environment\runtime")
+    interpreter = r"C:\Selected Plugin Environment\python.exe"
 
     # Pin the interpreter the generator finds, as the sibling wakeup test
     # does. Left unmocked, this resolves a real interpreter from PATH, and the
@@ -254,10 +264,14 @@ def test_windows_dispatcher_and_invoke_skill_are_batch_launchers(tmp_path):
     with mock.patch.object(
         windows_launcher.shutil,
         "which",
-        side_effect=lambda name: r"C:\Python312\python.exe" if name == "python" else None,
+        side_effect=lambda name: interpreter if name == "python" else None,
     ):
-        dispatcher = installer.install_dispatcher_launcher(repo_root, bin_dir, dry_run=False, home=home)
-        invoke_skill = installer.install_invoke_skill_launcher(bin_dir, dry_run=False)
+        dispatcher = installer.install_dispatcher_launcher(
+            repo_root, bin_dir, dry_run=False, home=home, runtime_root=runtime_root
+        )
+        invoke_skill = installer.install_invoke_skill_launcher(
+            bin_dir, dry_run=False, runtime_root=runtime_root
+        )
 
     content = (bin_dir / "dispatcher.bat").read_text(encoding="utf-8")
     invoke_content = (bin_dir / "invoke-skill.bat").read_text(encoding="utf-8")
@@ -265,10 +279,22 @@ def test_windows_dispatcher_and_invoke_skill_are_batch_launchers(tmp_path):
     assert "-m officina.dispatcher.cli %*" in content
     assert "bootstrap" in content and "resolvers" in content and "launch.py" in content
     assert "py -3" not in content
-    # No longer embeds the repo checkout or a specific interpreter path: the
-    # resolver (invoked here) reads current.json at launch time instead.
+    # The renderer owns quoting of its selected bootstrap interpreter and
+    # resolver; the shared writer only persists this already-rendered content.
     assert r"C:\Users\tester\AI" not in content
     assert sys.executable not in content
+    expected_resolver = windows_launcher._batch_path(
+        windows_launcher._resolver_path(runtime_root=runtime_root)
+    )
+    command = content.splitlines()[-1]
+    match = re.fullmatch(
+        r'"(?P<interpreter>(?:[^"]|"")*)" "(?P<resolver>(?:[^"]|"")*)" '
+        r"-m officina\.dispatcher\.cli %\*",
+        command,
+    )
+    assert match is not None
+    assert match["interpreter"].replace('""', '"') == interpreter
+    assert match["resolver"].replace('""', '"') == expected_resolver
     assert not (bin_dir / "dispatcher").exists()
     assert invoke_skill.status == "installed"
     assert "-m officina.launchers.agent --invoke-skill %*" in invoke_content

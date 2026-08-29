@@ -1,0 +1,15 @@
+content:
+- command_files\.py
+dependencies: []
+description: Installs caller-rendered command files or static command helpers while preserving
+  platform file replacement and executable-bit behavior without selecting an interpreter.
+gateway:
+  language: Python
+  path: command_files.py
+id: common.source.command-files
+interfaces: {}
+node_type: behavioral_source
+schema_version: 6
+uses_interfaces: []
+version: 1
+maturity: stable

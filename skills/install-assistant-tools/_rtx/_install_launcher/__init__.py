@@ -3,7 +3,12 @@ from __future__ import annotations
 
 import sys
 
-from ._base_launcher import LauncherInstallResult
+from officina.common.command_files import LauncherInstallResult
+
+DISPATCHER_WORKFLOWS = ("machine-interface dispatch", "SKILL.md interface invocation")
+INVOKE_SKILL_WORKFLOWS = ("recurring automation", "systemd/cron skill invocation")
+WAKEUP_WORKFLOWS = ("guarded LLM session wakeups", "wakeup scheduling and diagnostics")
+WAKEUP_COMMANDS = ("llm-wakeup", "lw")
 
 
 def platform_launcher_installer(platform: str | None = None):

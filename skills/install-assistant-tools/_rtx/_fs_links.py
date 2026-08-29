@@ -17,6 +17,7 @@ if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from officina.common.famulus_paths import resolve_famulus_paths
+from officina.common.command_files import make_link as _make_link
 
 if __package__:
     from ._state_record import Manifest
@@ -40,57 +41,17 @@ def default_bin_dir(*, home: Path) -> Path:
 
 
 def make_link(src: Path, dst: Path, dry_run: bool, manifest: Manifest | None = None) -> None:
-    """Create or replace the symlink at dst pointing to src.
-
-    Skips with a warning when src does not exist (e.g. optional repo
-    directory). On platforms where symlink creation requires elevated
-    privileges, reports a clear error instead of crashing. When a manifest is
-    given, successful (or already-correct) links are recorded in it.
-    """
-    def record() -> None:
-        if manifest is not None:
-            manifest.record("symlink", path=str(dst), target=str(src))
-
-    if not src.exists():
-        log(f"  SKIP (missing source): {src}")
-        return
-
-    if dst.is_symlink():
-        try:
-            if dst.resolve() == src.resolve():
-                log(f"  OK (already linked): {dst} -> {src}")
-                record()
-                return
-        except OSError:
-            pass
-
-    if dry_run:
-        log(f"  Would link: {dst} -> {src}")
-        return
-
-    # Remove an existing symlink so ln -sfn semantics are preserved.
-    # Never remove a real file or directory — that would be destructive.
-    if dst.is_symlink():
-        dst.unlink()
-    elif dst.exists():
-        log(f"  SKIP (already exists as real path, not a symlink): {dst}")
-        return
-
-    try:
-        dst.symlink_to(src)
-        log(f"  Linked: {dst} -> {src}")
-        record()
-    except OSError as exc:
-        # On Windows without Developer Mode / admin rights symlink creation
-        # raises PermissionError. Give a useful hint rather than a traceback.
-        if sys.platform == "win32":
+    """Create a link with feature-local Windows remediation guidance."""
+    if sys.platform == "win32":
+        def on_error(exc: OSError) -> None:
             log(
                 f"  ERROR: could not create symlink {dst} -> {src}\n"
                 f"  On Windows, symlinks require Developer Mode or administrator"
                 f" privileges.\n  ({exc})"
             )
-        else:
-            log(f"  ERROR: could not create symlink {dst} -> {src}: {exc}")
+    else:
+        on_error = None
+    _make_link(src, dst, dry_run, manifest, on_error=on_error)
 
 
 def make_copy(src: Path, dst: Path, dry_run: bool, manifest: Manifest | None = None) -> None:

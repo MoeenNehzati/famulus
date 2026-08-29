@@ -1,11 +1,16 @@
 content:
 - _install_launcher/__init__\.py
-- _install_launcher/_base_launcher\.py
 - _install_launcher/_linux_launcher\.py
 - _install_launcher/_osx_launcher\.py
 - _install_launcher/_windows_launcher\.py
-dependencies: []
-description: Marks the platform-launcher implementation directory as a Python package
+dependencies:
+- blueprint:
+    base: repository-root
+    path: src/officina/common/blueprints/command-files.yaml
+  reason: Platform renderers reuse the shared neutral command-file writer and installer.
+  source: common.source.command-files
+  version: 1
+description: Marks the feature-local platform-launcher renderer directory as a Python package
   and exposes no callable interface. _linux_launcher.py and _windows_launcher.py generate
   shims that reference the fixed <runtime_root>/bootstrap/resolvers/v1/launch.py resolver
   contract (see officina.install.resolvers.launch, a dependency-free stdlib-only script)

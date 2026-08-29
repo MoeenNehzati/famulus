@@ -15,7 +15,7 @@ from officina.install.context import (
 )
 from .. import _install_scaffold as scaffold
 from .._install_launcher import _windows_launcher as windows_launcher
-from .._install_launcher._base_launcher import LauncherInstallerBase
+from officina.common.command_files import LauncherInstallerBase
 
 RUNTIME_ROOT = Path(__file__).resolve().parents[1]
 from .install_test_utils import assert_default_bin_dir_matches_famulus_paths

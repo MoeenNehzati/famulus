@@ -83,7 +83,6 @@ content:
 - _shell_block\.py
 - _state_record\.py
 - _install_launcher/__init__\.py
-- _install_launcher/_base_launcher\.py
 - _install_launcher/_linux_launcher\.py
 - _install_launcher/_osx_launcher\.py
 - _install_launcher/_windows_launcher\.py

@@ -1,45 +1,64 @@
-"""Shared launcher-bundle primitives for the installer-local platform layer."""
+"""Neutral cross-platform command-file installation primitives."""
 from __future__ import annotations
 
 import shutil
-import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
-from typing import Mapping
-
-if not __package__:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-if __package__ and __package__.count('.') >= 1:
-    from .._fs_links import make_link
-else:
-    from _fs_links import make_link
-if __package__ and __package__.count('.') >= 1:
-    from .._state_record import Manifest
-else:
-    from _state_record import Manifest
+from typing import Any, Callable, Literal
 
 LauncherFileMode = Literal["generate", "copy", "link"]
 LauncherStatus = Literal["installed", "would-install", "unsupported", "skipped", "failed"]
 
-DISPATCHER_WORKFLOWS = (
-    "machine-interface dispatch",
-    "SKILL.md interface invocation",
-)
-INVOKE_SKILL_WORKFLOWS = (
-    "recurring automation",
-    "systemd/cron skill invocation",
-)
-WAKEUP_WORKFLOWS = (
-    "guarded LLM session wakeups",
-    "wakeup scheduling and diagnostics",
-)
-WAKEUP_COMMANDS = ("llm-wakeup", "lw")
-
 
 def log(msg: str = "") -> None:
     print(msg, flush=True)
+
+
+def make_link(
+    src: Path,
+    dst: Path,
+    dry_run: bool,
+    manifest: Any | None = None,
+    *,
+    on_error: Callable[[OSError], None] | None = None,
+) -> None:
+    """Create or replace a command-file symlink without replacing a real path."""
+    def record() -> None:
+        if manifest is not None:
+            manifest.record("symlink", path=str(dst), target=str(src))
+
+    if not src.exists():
+        log(f"  SKIP (missing source): {src}")
+        return
+
+    if dst.is_symlink():
+        try:
+            if dst.resolve() == src.resolve():
+                log(f"  OK (already linked): {dst} -> {src}")
+                record()
+                return
+        except OSError:
+            pass
+
+    if dry_run:
+        log(f"  Would link: {dst} -> {src}")
+        return
+
+    if dst.is_symlink():
+        dst.unlink()
+    elif dst.exists():
+        log(f"  SKIP (already exists as real path, not a symlink): {dst}")
+        return
+
+    try:
+        dst.symlink_to(src)
+        log(f"  Linked: {dst} -> {src}")
+        record()
+    except OSError as exc:
+        if on_error is not None:
+            on_error(exc)
+        else:
+            log(f"  ERROR: could not create symlink {dst} -> {src}: {exc}")
 
 
 @dataclass
@@ -86,7 +105,7 @@ def write_generated_launcher_file(
     *,
     executable: bool,
     dry_run: bool,
-    manifest: Manifest | None,
+    manifest: Any | None,
     label: str,
 ) -> None:
     """Write one generated launcher file into the managed bin dir."""
@@ -98,7 +117,7 @@ def write_generated_launcher_file(
     if path.is_symlink():
         path.unlink()
     path.write_text(content, encoding="utf-8")
-    if executable and sys.platform != "win32":
+    if executable:
         path.chmod(0o755)
     log(f"  Wrote {label}: {path}")
     if manifest is not None:
@@ -111,9 +130,9 @@ def install_static_launcher_file(
     *,
     mode: Literal["copy", "link"],
     dry_run: bool,
-    manifest: Manifest | None,
+    manifest: Any | None,
 ) -> None:
-    """Install a repo-owned launcher helper by copying or symlinking it."""
+    """Install caller-selected static command content by copying or linking it."""
     if mode == "link":
         make_link(src, dst, dry_run, manifest)
         return
@@ -149,7 +168,7 @@ class LauncherInstallerBase:
         bundle: LauncherBundleSpec,
         *,
         dry_run: bool,
-        manifest: Manifest | None,
+        manifest: Any | None,
     ) -> LauncherInstallResult:
         if bundle.unsupported_reason:
             log(f"  SKIP: {bundle.name} ({bundle.unsupported_reason})")
@@ -194,36 +213,10 @@ class LauncherInstallerBase:
             path=bundle.files[0].destination if bundle.files else None,
         )
 
-    def install_agent_launcher_files(
-        self,
-        *,
-        source_bin_dir: Path,
-        bin_dir: Path,
-        agent: str,
-        dry_run: bool,
-        manifest: Manifest | None,
-        home: Path | None = None,
-        environ: Mapping[str, str] | None = None,
-        runtime_root: Path | None = None,
-    ) -> None:
-        raise NotImplementedError
 
-    def install_wakeup_launcher(
-        self,
-        bin_dir: Path,
-        dry_run: bool,
-        manifest: Manifest | None = None,
-        *,
-        home: Path | None = None,
-        runtime_root: Path | None = None,
-    ) -> LauncherInstallResult:
-        """Install the canonical wakeup command and its short alias."""
-        raise NotImplementedError
-
-    @staticmethod
-    def _shell_quote_path(path: Path) -> str:
-        return str(path).replace('"', '\\"')
-
-    @staticmethod
-    def _batch_path(path: Path) -> str:
-        return str(path).replace('"', '""')
+CommandInstallResult = LauncherInstallResult
+CommandFileSpec = LauncherFileSpec
+CommandBundleSpec = LauncherBundleSpec
+CommandFileInstaller = LauncherInstallerBase
+write_generated_command_file = write_generated_launcher_file
+install_static_command_file = install_static_launcher_file

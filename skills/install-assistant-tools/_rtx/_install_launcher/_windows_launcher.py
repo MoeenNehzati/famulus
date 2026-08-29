@@ -14,16 +14,18 @@ else:
 
 from officina.common.famulus_paths import resolve_famulus_paths
 
-from ._base_launcher import (
-    DISPATCHER_WORKFLOWS,
-    INVOKE_SKILL_WORKFLOWS,
-    WAKEUP_COMMANDS,
-    WAKEUP_WORKFLOWS,
+from officina.common.command_files import (
     LauncherBundleSpec,
     LauncherFileSpec,
     LauncherInstallResult,
     LauncherInstallerBase,
     log,
+)
+from . import (
+    DISPATCHER_WORKFLOWS,
+    INVOKE_SKILL_WORKFLOWS,
+    WAKEUP_COMMANDS,
+    WAKEUP_WORKFLOWS,
 )
 
 # Fixed, immutable location of the stable launch resolver beneath a given
@@ -82,10 +84,10 @@ def _windows_module_content(
     The resolved interpreter is only the stable bootstrap interpreter; the
     resolver still selects and enters the active managed release itself.
     """
-    resolver = LauncherInstallerBase._batch_path(
+    resolver = _batch_path(
         _resolver_path(home=home, environ=environ, runtime_root=runtime_root)
     )
-    interpreter = LauncherInstallerBase._batch_path(Path(_resolve_python_interpreter()))
+    interpreter = _batch_path(Path(_resolve_python_interpreter()))
     rendered_args = " ".join(fixed_args)
     if rendered_args:
         rendered_args += " "
@@ -107,6 +109,10 @@ def _windows_module_content(
         f"{local_help}"
         f'"{interpreter}" "{resolver}" -m {module} {rendered_args}%*\n'
     )
+
+
+def _batch_path(path: Path) -> str:
+    return str(path).replace('"', '""')
 
 
 def _windows_dispatcher_content(

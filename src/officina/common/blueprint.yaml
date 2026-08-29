@@ -5,6 +5,7 @@ content:
 - __init__\.py
 - atomic_files\.py
 - codex_toml\.py
+- command_files\.py
 - dates\.py
 - famulus_paths/__init__\.py
 - repository_paths\.py
@@ -86,6 +87,10 @@ namespace_exports: {}
 node_type: module
 schema_version: 6
 sources:
+  common.source.command-files:
+    blueprint:
+      base: module-root
+      path: blueprints/command-files.yaml
   common.source.atomic-files:
     blueprint:
       base: module-root

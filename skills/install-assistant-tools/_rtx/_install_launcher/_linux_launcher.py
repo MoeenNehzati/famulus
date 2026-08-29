@@ -13,15 +13,17 @@ else:
 
 from officina.common.famulus_paths import resolve_famulus_paths
 
-from ._base_launcher import (
-    DISPATCHER_WORKFLOWS,
-    INVOKE_SKILL_WORKFLOWS,
-    WAKEUP_COMMANDS,
-    WAKEUP_WORKFLOWS,
+from officina.common.command_files import (
     LauncherBundleSpec,
     LauncherFileSpec,
     LauncherInstallResult,
     LauncherInstallerBase,
+)
+from . import (
+    DISPATCHER_WORKFLOWS,
+    INVOKE_SKILL_WORKFLOWS,
+    WAKEUP_COMMANDS,
+    WAKEUP_WORKFLOWS,
 )
 
 # Fixed, immutable location of the stable launch resolver beneath a given

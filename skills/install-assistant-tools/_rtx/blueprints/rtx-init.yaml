@@ -7,6 +7,12 @@ content:
 dependencies:
 - blueprint:
     base: repository-root
+    path: src/officina/common/blueprints/command-files.yaml
+  reason: Filesystem-link reuse delegates neutral command-file symlink mechanics to common.
+  source: common.source.command-files
+  version: 1
+- blueprint:
+    base: repository-root
     path: src/officina/common/blueprints/atomic-files.yaml
   reason: Owned uninstall runtime code directly acquires the context-scoped cooperative file lock.
   source: common.source.atomic-files

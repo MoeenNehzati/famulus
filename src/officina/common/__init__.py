@@ -24,6 +24,8 @@ Includes
     Declares the toml io behavioral source contract.
 ``codex_toml.py``
     Reads and updates Codex configuration without discarding unrelated TOML content.
+``command_files.py``
+    Installs caller-rendered command files and static command helpers across hosts.
 ``dates.py``
     Normalizes repository date values and date-oriented filenames.
 ``famulus_paths/``
