@@ -23,7 +23,7 @@ Public Interfaces:
 
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `prepare-handoff.interface.default` — Review recent work, obtain approval, encode project-local continuity, and close with exact machine-readable sentinels.
 <!-- END BLUEPRINT INTERFACES -->
 # Prepare Handoff

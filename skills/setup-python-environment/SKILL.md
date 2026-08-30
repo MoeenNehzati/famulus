@@ -25,7 +25,7 @@ Public Interfaces:
 
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `setup-python-environment.interface.repair-selected-packages` — Repair the core or one caller-owned package declaration in the exact selected Python environment without MCP.
 - `setup-python-environment.interface.setup` — Repair the core or one caller-owned package declaration in the exact selected Python environment without MCP.
 <!-- END BLUEPRINT INTERFACES -->

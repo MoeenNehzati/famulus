@@ -202,8 +202,8 @@ interfaces:
         - --added-todo
         - --added-triage
         - --skipped
-    usage: Write the triage run metrics (counts) to state/status.json with timestamps
-      for post-run reporting.
+    usage: --total-scanned N --added-todo N --added-triage N --skipped N [--deduped
+      N] [--accounts TEXT]
     version: 1
 node_type: behavioral_source
 platform_support:

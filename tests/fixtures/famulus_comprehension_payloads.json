@@ -1,0 +1,22 @@
+{
+  "session_start": "## Skill interfaces\nWhen a skill lists `Executable Interfaces`, invoke them through the `famulus` MCP server using the invocation metadata and `Arguments JSON` shown for that interface; do not invoke private scripts directly. `Instruction Interfaces` are LLM-readable instructions: read and follow them directly, without an MCP call.",
+  "mcp_tool": "famulus.invoke",
+  "record": "Persist each evaluator-selected payload verbatim, then submit that exact object to the packaged MCP ClientSession.call_tool path.",
+  "cases": [
+    {
+      "case_id": "T3C-A",
+      "skill": "skills/milestone-logging/SKILL.md",
+      "user_task": "List the available milestone sessions."
+    },
+    {
+      "case_id": "T3C-B",
+      "skill": "skills/milestone-logging/SKILL.md",
+      "user_task": "Record the progress message 'Task 3 evaluator replay' with role task-3-evaluator and return the record path."
+    },
+    {
+      "case_id": "T3C-C",
+      "skill": "skills/loose-mode/SKILL.md",
+      "user_task": "Loose mode: outline three possible ways to reduce cold-start latency in a Python CLI, labeling uncertainty."
+    }
+  ]
+}

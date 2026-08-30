@@ -348,7 +348,8 @@ def _hook_bindings(repo_root: Path, host: str):
 
 
 def _hook_commands_to_replace(repo_root: Path, host: str) -> set[str]:
-    commands = {_render_hook_command(binding.argv) for binding in _hook_bindings(repo_root, host)}
+    commands = {json.dumps(binding.argv) for binding in _hook_bindings(repo_root, host)}
+    commands.update(_render_hook_command(("python3", *binding.argv[1:])) for binding in _hook_bindings(repo_root, host))
     commands.update(_legacy_managed_hook_commands(repo_root))
     return commands
 
@@ -361,7 +362,7 @@ def _claude_hook_entries(repo_root: Path) -> dict[str, list[dict]]:
             "hooks": [
                 {
                     "type": "command",
-                    "command": _render_hook_command(binding.argv),
+                    "command": binding.argv[0], "args": list(binding.argv[1:]),
                 }
             ]
         }
@@ -380,7 +381,7 @@ def _codex_hooks_block(repo_root: Path) -> str:
         lines.append("\n")
         lines.append(f"[[hooks.{binding.event}.hooks]]\n")
         lines.append(toml_io.key_value("type", "command"))
-        lines.append(toml_io.key_value("command", _render_hook_command(binding.argv)))
+        lines.extend((toml_io.key_value("command", binding.argv[0]), f"args = {json.dumps(binding.argv[1:])}\n"))
     lines.append(f"{HOOKS_BLOCK_END}\n")
     return "".join(lines)
 
@@ -443,7 +444,7 @@ def install_claude_hooks(claude_home: Path, repo_root: Path, dry_run: bool, mani
         os.replace(tmp, settings_file)
         if manifest is not None:
             managed_commands = sorted(
-                hook["command"]
+                json.dumps((hook["command"], *hook["args"]))
                 for entries in managed_entries.values()
                 for entry in entries
                 for hook in entry["hooks"]

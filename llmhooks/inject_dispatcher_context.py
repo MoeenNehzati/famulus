@@ -5,9 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 import sys
-from collections import Counter
 from pathlib import Path
-from typing import Iterable, Mapping
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
@@ -17,53 +15,10 @@ from llmhooks.lib.cross_host import CrossHostHook, HookInput, HookResult, parse_
 
 
 DISPATCHER_CORE = """\
-## Skill dispatcher
-When SKILL.md has `BEGIN BLUEPRINT CONTRACT`, treat `scripts/` as private; read only with approval. Use injected interfaces, not blueprint.yaml.
-Invoke: dispatcher --caller-skill <skill> [--dry-run] <interface-id> <arguments>.
-Dry-run prints compiled argv without gateway execution or stdin reads. Supply positionals first in position order, then options/switches in any order with each option beside its values. Dispatcher adds fixed arguments; do not supply them.\
+## Skill interfaces
+When a skill lists `Executable Interfaces`, invoke them through the `famulus` MCP server using the invocation metadata and `Arguments JSON` shown for that interface; do not invoke private scripts directly. `Instruction Interfaces` are LLM-readable instructions: read and follow them directly, without an MCP call.\
 """
 
-_OPTIONAL_VOCABULARY = {
-    "arity:required": "<x> means required.",
-    "arity:optional": "[<x>] means optional.",
-    "arity:one-or-more": "<x>... means one-or-more.",
-    "arity:zero-or-more": "[<x>...] means zero-or-more.",
-    "binding:switch": "[--flag] means a valueless switch.",
-    "type:enum": "<a|b> means alternatives.",
-    "binding:stdin": "`--stdin` forwards declared UTF-8 stdin.",
-    "provider-skill-route": "`route: {kind: provider-skill, skill: <id>}` delegates the named LLM interface to that skill.",
-}
-
-
-def render_dispatcher_context(
-    vocabulary: Mapping[str, int] | Iterable[str] = (),
-) -> str:
-    """Render one bounded semantic payload from selected construct counts."""
-
-    if isinstance(vocabulary, Mapping):
-        counts = Counter(
-            {
-                str(name): int(count)
-                for name, count in vocabulary.items()
-                if isinstance(count, int) and count > 0
-            }
-        )
-    else:
-        counts = Counter(str(name) for name in vocabulary)
-    parts = [DISPATCHER_CORE]
-    used = len(DISPATCHER_CORE)
-    for name, _count in sorted(counts.items(), key=lambda item: (-item[1], item[0])):
-        entry = _OPTIONAL_VOCABULARY.get(name)
-        if entry is None:
-            continue
-        addition = "\n" + entry
-        if used + len(addition) <= 750:
-            parts.append(addition)
-            used += len(addition)
-    return "".join(parts)
-
-
-CONTEXT_DISPATCHER_AVAILABLE = render_dispatcher_context()
 
 CONTEXT_DISPATCHER_MISSING = """\
 ## Skill System — Dispatcher Unavailable
@@ -103,12 +58,7 @@ class InjectDispatcherContextHook(CrossHostHook):
     def build(self, hook_input: HookInput) -> HookResult:
         ok, missing = dispatcher_available()
         if ok:
-            vocabulary = hook_input.raw.get("interface_vocabulary", {})
-            if not isinstance(vocabulary, (dict, list, tuple, set)):
-                vocabulary = {}
-            return HookResult(
-                additional_context=render_dispatcher_context(vocabulary)
-            )
+            return HookResult(additional_context=DISPATCHER_CORE)
 
         details = "; ".join(missing)
         system_message = (

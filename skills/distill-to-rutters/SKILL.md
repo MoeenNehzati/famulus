@@ -29,9 +29,20 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
+Executable Interfaces:
+
+Call `famulus.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+- `distill-to-rutters._rtx.interface.validate-and-route` — Validate one source or exact-fixed-basename typed artifact and authorize no more than one deterministic route.
+  - Caller: `distill-to-rutters`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--approved-digest": "SHA256", "--artifact-path": "PATH", "--expected-stage": "STAGE", "--user-decision": "approve|reject"}, "positionals": [], "stdin": null}
+    Required options: ["--approved-digest", "--artifact-path", "--expected-stage", "--user-decision"]; positional arity: 0..0; stdin: forbidden
+
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `distill-to-rutters.interface.default` — Route exactly one approval-authorized stage only after exact workflow identity, recursive freshness, typed predecessor success, and a final consulted-path rehash; then stop for validation.
 <!-- END BLUEPRINT INTERFACES -->
 # Distill to Rutters

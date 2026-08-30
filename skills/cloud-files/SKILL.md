@@ -35,9 +35,90 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
+Executable Interfaces:
+
+Call `famulus.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+- `cloud-files._rtx.interface.ensure-oauth` — Check cloud-files OAuth status; print setup guidance or launch browser authorization as needed. Relocated from install-assistant-tools — invoke directly (caller-skill cloud-files) as part of connecting remotes.
+  - Caller: `cloud-files`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--dry-run": true, "--home": "dir"}, "positionals": [], "stdin": null}
+    Required options: ["--home"]; positional arity: 0..0; stdin: forbidden
+- `cloud-files._rtx.interface.lists-delete` — Delete a file from cloud storage under the lists/ directory.
+  - Caller: `cloud-files`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {}, "positionals": ["lists/<path>"], "stdin": null}
+    Required options: []; positional arity: 1..1; stdin: forbidden
+- `cloud-files._rtx.interface.lists-read` — Read a file from cloud storage under the lists/ directory.
+  - Caller: `cloud-files`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {}, "positionals": ["lists/<path>"], "stdin": null}
+    Required options: []; positional arity: 1..1; stdin: forbidden
+- `cloud-files._rtx.interface.lists-write` — Write content (from stdin) to a file in cloud storage under the lists/ directory.
+  - Caller: `cloud-files`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {}, "positionals": ["lists/<path>"], "stdin": null}
+    Required options: []; positional arity: 1..1; stdin: permitted
+- `cloud-files._rtx.interface.plans-delete` — Delete a file from cloud storage under the plans/ directory.
+  - Caller: `cloud-files`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {}, "positionals": ["plans/<path>"], "stdin": null}
+    Required options: []; positional arity: 1..1; stdin: forbidden
+- `cloud-files._rtx.interface.plans-read` — Read a file from cloud storage under the plans/ directory.
+  - Caller: `cloud-files`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {}, "positionals": ["plans/<path>"], "stdin": null}
+    Required options: []; positional arity: 1..1; stdin: forbidden
+- `cloud-files._rtx.interface.plans-write` — Write content (from stdin) to a file in cloud storage under the plans/ directory.
+  - Caller: `cloud-files`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {}, "positionals": ["plans/<path>"], "stdin": null}
+    Required options: []; positional arity: 1..1; stdin: permitted
+- `cloud-files._rtx.interface.setup-oauth` — Run one-time OAuth2 setup for Google Drive access.
+  - Caller: `cloud-files`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--client-id": "id", "--client-secret": "secret", "--from-json": "client_json_path", "--port": "port"}, "positionals": [], "stdin": null}
+    Required options: []; positional arity: 0..0; stdin: forbidden
+- `cloud-files._rtx.interface.use-google-credential` — Bind cloud-files to a shared connect-google credential_id after validating it carries Drive scope, storing only the opaque identifier (never the client secret or refresh token) in cloud-files' own config.json. The pre-existing per-service OAuth path (ensure-oauth/write-config) remains the unchanged fallback for callers who have not adopted the shared credential.
+  - Caller: `cloud-files`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--credential-id": "id", "--home": "dir"}, "positionals": [], "stdin": null}
+    Required options: ["--credential-id", "--home"]; positional arity: 0..0; stdin: forbidden
+- `cloud-files._rtx.interface.use-google-credential-file` — Validate and live-probe a Drive credential descriptor before storing only its normalized absolute path in cloud-files config.
+  - Caller: `cloud-files`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--allow-account-change": true, "--credential-file": "path", "--home": "dir"}, "positionals": [], "stdin": null}
+    Required options: ["--credential-file", "--home"]; positional arity: 0..0; stdin: forbidden
+- `cloud-files._rtx.interface.write-config` — Write ~/.config/cloud-files/config.json with the given remote LLM root. Relocated from install-assistant-tools.
+  - Caller: `cloud-files`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--dry-run": true, "--home": "dir", "--remote-llm-root": "path"}, "positionals": [], "stdin": null}
+    Required options: ["--home"]; positional arity: 0..0; stdin: forbidden
+
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `cloud-files.interface.default` — Primary LLM-facing skill instructions.
 - `cloud-files.interface.setup` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->

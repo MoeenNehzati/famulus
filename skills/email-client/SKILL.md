@@ -33,9 +33,150 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
+Executable Interfaces:
+
+Call `famulus.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+- `email-client._rtx.interface.accounts-add` — Register a new account nickname. Gmail IMAP/SMTP settings are the default; pass explicit host/port flags for other providers. App-password auth is the default; use --auth gmail-oauth for Gmail OAuth.
+  - Caller: `email-client`
+  - Version: 1
+  - Alternative: `owner`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--auth": "app-password|gmail-oauth", "--display-name": "name", "--email": "addr", "--imap-host": "H", "--imap-port": "P", "--nickname": "nick", "--smtp-host": "H", "--smtp-port": "P", "--starttls": true}, "positionals": [], "stdin": null}
+    Required options: ["--email", "--nickname"]; positional arity: 0..0; stdin: forbidden
+- `email-client._rtx.interface.accounts-list` — List registered account nicknames with their email/display name (no secrets).
+  - Caller: `email-client`
+  - Version: 1
+  - Alternative: `owner`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {}, "positionals": [], "stdin": null}
+    Required options: []; positional arity: 0..0; stdin: forbidden
+- `email-client._rtx.interface.accounts-remove` — Remove an account nickname from the registry; optionally purge its stored credentials too.
+  - Caller: `email-client`
+  - Version: 1
+  - Alternative: `owner`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--nickname": "nick", "--purge-credentials": true}, "positionals": [], "stdin": null}
+    Required options: ["--nickname"]; positional arity: 0..0; stdin: forbidden
+- `email-client._rtx.interface.accounts-set-password` — Store the IMAP or SMTP credential for an account in the host credential store. The secret is read from stdin, never a CLI argument.
+  - Caller: `email-client`
+  - Version: 1
+  - Alternative: `owner`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--nickname": "nick", "--purpose": "imap|smtp"}, "positionals": [], "stdin": null}
+    Required options: ["--nickname", "--purpose"]; positional arity: 0..0; stdin: permitted
+- `email-client._rtx.interface.accounts-setup-oauth` — Complete Gmail OAuth setup for an account using a Google desktop OAuth client JSON file. Prints the authorization URL and completion status, stores refresh-token and client-secret keys, and persists Gmail OAuth metadata in accounts.json.
+  - Caller: `email-client`
+  - Version: 1
+  - Alternative: `owner`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--client-config": "path", "--nickname": "nick", "--no-open-browser": true}, "positionals": [], "stdin": null}
+    Required options: ["--client-config", "--nickname"]; positional arity: 0..0; stdin: forbidden
+- `email-client._rtx.interface.accounts-update` — Update fields on an existing account nickname.
+  - Caller: `email-client`
+  - Version: 1
+  - Alternative: `owner`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--auth": "app-password|gmail-oauth", "--display-name": "name", "--email": "addr", "--imap-host": "H", "--imap-port": "P", "--nickname": "nick", "--smtp-host": "H", "--smtp-port": "P"}, "positionals": [], "stdin": null}
+    Required options: ["--nickname"]; positional arity: 0..0; stdin: forbidden
+- `email-client._rtx.interface.accounts-use-google-credential` — Bind one account nickname to a shared connect-google credential_id after validating it carries Gmail scope, storing only the opaque identifier (never the client secret or refresh token) on that account's own registry record. Other accounts and other fields on this account are untouched. The pre-existing per-account Gmail OAuth path (accounts-setup-oauth) remains the unchanged fallback for accounts that have not adopted the shared credential.
+  - Caller: `email-client`
+  - Version: 1
+  - Alternative: `owner`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--credential-id": "id", "--home": "dir", "--nickname": "nick"}, "positionals": [], "stdin": null}
+    Required options: ["--credential-id", "--home", "--nickname"]; positional arity: 0..0; stdin: forbidden
+- `email-client._rtx.interface.accounts-use-google-credential-file` — Validate and live-probe a Gmail credential descriptor before storing only its normalized path and Gmail OAuth mode on one named account.
+  - Caller: `email-client`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--allow-account-change": true, "--credential-file": "path", "--home": "dir", "--nickname": "name"}, "positionals": [], "stdin": null}
+    Required options: ["--credential-file", "--home", "--nickname"]; positional arity: 0..0; stdin: forbidden
+- `email-client._rtx.interface.live-smoke` — Run explicit live provider smoke checks for one account. --imap and --smtp-auth authenticate without sending; --send-self sends a test email to the account's own address.
+  - Caller: `email-client`
+  - Version: 1
+  - Alternative: `short-account`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--body": "text", "--imap": true, "--send-self": true, "--smtp-auth": true, "-a": "nickname"}, "positionals": [], "stdin": null}
+    Required options: ["-a"]; positional arity: 0..0; stdin: forbidden
+  - Alternative: `long-account`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--account": "nickname", "--body": "text", "--imap": true, "--send-self": true, "--smtp-auth": true}, "positionals": [], "stdin": null}
+    Required options: ["--account"]; positional arity: 0..0; stdin: forbidden
+- `email-client._rtx.interface.mail-attachments` — List attachment metadata for one or more emails as JSON. Returns one record per requested UID with attachment entries containing filename, content_type, size_bytes, size_human, and disposition.
+  - Caller: `email-client`
+  - Version: 1
+  - Alternative: `short-account`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--folder": "inbox|sent|drafts|trash|all|<literal>", "-a": "nickname"}, "positionals": ["uid", "uid..."], "stdin": null}
+    Required options: ["-a"]; positional arity: 1..unbounded; stdin: forbidden
+  - Alternative: `long-account`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--account": "nickname", "--folder": "inbox|sent|drafts|trash|all|<literal>"}, "positionals": ["uid", "uid..."], "stdin": null}
+    Required options: ["--account"]; positional arity: 1..unbounded; stdin: forbidden
+- `email-client._rtx.interface.mail-folders` — List IMAP folders for an account (JSON).
+  - Caller: `email-client`
+  - Version: 1
+  - Alternative: `short-account`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"-a": "nickname"}, "positionals": [], "stdin": null}
+    Required options: ["-a"]; positional arity: 0..0; stdin: forbidden
+  - Alternative: `long-account`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--account": "nickname"}, "positionals": [], "stdin": null}
+    Required options: ["--account"]; positional arity: 0..0; stdin: forbidden
+- `email-client._rtx.interface.mail-list` — List email envelopes for an account as JSON (fields: id, flags, subject, from, date, message_id). --folder accepts aliases inbox|sent|drafts|trash|all or any literal IMAP folder name (default inbox). --after narrows server-side by day (IMAP SINCE). Filters are key=value (exact, comma-separated=OR) or key~=value (regex, case-insensitive) over id/subject/from/date/message_id/flags, ANDed across distinct keys, applied client-side after fetch. Unfiltered + undated scans the whole folder (slow on large mailboxes) — pair filters with --after.
+  - Caller: `email-client`
+  - Version: 1
+  - Alternative: `short-account`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--after": "YYYY-MM-DD", "--folder": "inbox|sent|drafts|trash|all|<literal>", "--limit": "N", "-a": "nickname"}, "positionals": ["key=value|key~=value..."], "stdin": null}
+    Required options: ["-a"]; positional arity: 0..unbounded; stdin: forbidden
+  - Alternative: `long-account`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--account": "nickname", "--after": "YYYY-MM-DD", "--folder": "inbox|sent|drafts|trash|all|<literal>", "--limit": "N"}, "positionals": ["key=value|key~=value..."], "stdin": null}
+    Required options: ["--account"]; positional arity: 0..unbounded; stdin: forbidden
+- `email-client._rtx.interface.mail-read` — Read one email by UID (the "id" field from mail-list). Prints Subject/From/To/ Date/Message-ID, then In-Reply-To/References only if the message is a reply, then an Attachments section (none or one line per attachment with filename, MIME type, and size), then a blank line, then the decoded body (text/plain preferred; falls back to HTML with tags stripped).
+  - Caller: `email-client`
+  - Version: 1
+  - Alternative: `short-account`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--folder": "inbox|sent|drafts|trash|all|<literal>", "-a": "nickname"}, "positionals": ["uid"], "stdin": null}
+    Required options: ["-a"]; positional arity: 1..1; stdin: forbidden
+  - Alternative: `long-account`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--account": "nickname", "--folder": "inbox|sent|drafts|trash|all|<literal>"}, "positionals": ["uid"], "stdin": null}
+    Required options: ["--account"]; positional arity: 1..1; stdin: forbidden
+- `email-client._rtx.interface.mail-save-attachments` — Save attachments from one or more emails into a directory. Use --all to save every attachment, or repeat --name to save only selected filenames. Returns JSON describing the saved files.
+  - Caller: `email-client`
+  - Version: 1
+  - Alternative: `short-account-all`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--all": true, "--folder": "inbox|sent|drafts|trash|all|<literal>", "--out": "dir", "-a": "nickname"}, "positionals": ["uid", "uid..."], "stdin": null}
+    Required options: ["--all", "--out", "-a"]; positional arity: 1..unbounded; stdin: forbidden
+  - Alternative: `long-account-all`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--account": "nickname", "--all": true, "--folder": "inbox|sent|drafts|trash|all|<literal>", "--out": "dir"}, "positionals": ["uid", "uid..."], "stdin": null}
+    Required options: ["--account", "--all", "--out"]; positional arity: 1..unbounded; stdin: forbidden
+  - Alternative: `short-account-name`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--folder": "inbox|sent|drafts|trash|all|<literal>", "--name": "filename...", "--out": "dir", "-a": "nickname"}, "positionals": ["uid", "uid..."], "stdin": null}
+    Required options: ["--name", "--out", "-a"]; positional arity: 1..unbounded; stdin: forbidden
+  - Alternative: `long-account-name`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--account": "nickname", "--folder": "inbox|sent|drafts|trash|all|<literal>", "--name": "filename...", "--out": "dir"}, "positionals": ["uid", "uid..."], "stdin": null}
+    Required options: ["--account", "--name", "--out"]; positional arity: 1..unbounded; stdin: forbidden
+- `email-client._rtx.interface.send-email` — Send an email via SMTP; body comes from stdin.
+  - Caller: `email-client`
+  - Version: 1
+  - Alternative: `owner`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--attach": "/path[:DisplayName]", "--from": "nickname", "--in-reply-to": "msg-id", "--references": "refs", "--subject": "subject", "--to": "addr..."}, "positionals": [], "stdin": null}
+    Required options: ["--from", "--subject", "--to"]; positional arity: 0..0; stdin: permitted
+
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `email-client.interface.default` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->
 # Email

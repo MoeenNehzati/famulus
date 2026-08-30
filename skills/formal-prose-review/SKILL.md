@@ -22,7 +22,7 @@ Public Interfaces:
 
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `formal-prose-review.interface.default` — Review grammar, clarity, concision, and formal tone without silently changing mathematical or substantive content.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:

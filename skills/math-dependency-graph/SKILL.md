@@ -26,9 +26,41 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
+Executable Interfaces:
+
+Call `famulus.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+- `math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph` — Render an interactive HTML math dependency graph from canonical JSON; the saved document loads ELK and MathJax from jsDelivr when opened.
+  - Caller: `math-dependency-graph`
+  - Version: 1
+  - Alternative: `owner`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--html-out": "path", "--macro-file": "path", "--reduce-transitive-edges": true, "--refresh-macros": true, "--tex-entry": "entrypoint.tex"}, "positionals": ["source.json"], "stdin": null}
+    Required options: []; positional arity: 1..1; stdin: forbidden
+- `math-dependency-graph._rtx.interface.scripts-extract-mathjax-macros` — Extract MathJax macro definitions from a TeX entrypoint, recursively following \input/\include.
+  - Caller: `math-dependency-graph`
+  - Version: 1
+  - Alternative: `owner`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--out": "path"}, "positionals": ["entrypoint.tex"], "stdin": null}
+    Required options: []; positional arity: 1..1; stdin: forbidden
+- `math-dependency-graph._rtx.interface.scripts-read-tex-labels` — Resolve TeX label numbering by compiling the document, so numbers match what the paper prints instead of being derived by inspection.
+  - Caller: `math-dependency-graph`
+  - Version: 1
+  - Alternative: `owner`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--out": "path"}, "positionals": ["entrypoint.tex"], "stdin": null}
+    Required options: []; positional arity: 1..1; stdin: forbidden
+- `math-dependency-graph._rtx.interface.scripts-serve-graph` — Serve graph HTML from a local directory with no-cache headers for repeated browser inspection.
+  - Caller: `math-dependency-graph`
+  - Version: 1
+  - Alternative: `owner`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--directory": "path", "--host": "host", "--port": "port"}, "positionals": [], "stdin": null}
+    Required options: []; positional arity: 0..0; stdin: forbidden
+
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `math-dependency-graph.interface.default` — Primary LLM-facing skill instructions.
 - `math-dependency-graph.interface.extract` — Extracts a notation-faithful direct mathematical dependency graph into canonical JSON.
 <!-- END BLUEPRINT INTERFACES -->

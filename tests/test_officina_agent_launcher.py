@@ -536,11 +536,13 @@ def test_background_run_hook_command_consumes_only_process_local_pointer_resourc
         (Path(__file__).resolve().parents[1] / "profiles" / "background_run_claude_setting.json")
         .read_text(encoding="utf-8")
     )
-    command = payload["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+    hook = payload["hooks"]["SessionStart"][0]["hooks"][0]
 
-    assert os.path.expandvars(command) == (
-        f'python3 "{resources}/llmhooks/inject_dispatcher_context.py" --claude'
-    )
+    assert hook["command"] == "python"
+    assert [os.path.expandvars(argument) for argument in hook["args"]] == [
+        f"{resources}/llmhooks/inject_dispatcher_context.py",
+        "--claude",
+    ]
 
 
 def test_development_agent_launches_use_exact_live_resources_without_legacy_selectors_or_cwd(

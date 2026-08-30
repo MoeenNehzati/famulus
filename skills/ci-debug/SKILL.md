@@ -26,9 +26,39 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
+Executable Interfaces:
+
+Call `famulus.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+- `ci-debug._rtx.interface.run-ci` — Run the complete remote CI matrix for an exact pushed candidate.
+  - Caller: `ci-debug`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--context": "DIR", "--expected-sha": "SHA", "--ref": "REF", "--repo-root": "REPO", "--timeout": "SECONDS"}, "positionals": [], "stdin": null}
+    Required options: ["--context", "--expected-sha", "--ref", "--repo-root"]; positional arity: 0..0; stdin: forbidden
+- `ci-debug._rtx.interface.run-targeted-tests` — Run one selected failure set or complete matrix element for an exact candidate.
+  - Caller: `ci-debug`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--context": "DIR", "--expected-sha": "SHA", "--jobs": "N", "--os": "OS", "--profile": "PROFILE", "--ref": "REF", "--repo-root": "REPO", "--selector": "NODE", "--task": "TASK", "--timeout": "SECONDS"}, "positionals": [], "stdin": null}
+    Required options: ["--context", "--expected-sha", "--os", "--ref", "--repo-root", "--selector", "--task"]; positional arity: 0..0; stdin: forbidden
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--context": "DIR", "--expected-sha": "SHA", "--jobs": "N", "--os": "OS", "--profile": "PROFILE", "--ref": "REF", "--repo-root": "REPO", "--selectors-json": "JSON", "--task": "TASK", "--timeout": "SECONDS"}, "positionals": [], "stdin": null}
+    Required options: ["--context", "--expected-sha", "--os", "--ref", "--repo-root", "--selectors-json", "--task"]; positional arity: 0..0; stdin: forbidden
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--context": "DIR", "--expected-sha": "SHA", "--from-report": "PATH", "--jobs": "N", "--os": "OS", "--profile": "PROFILE", "--ref": "REF", "--repo-root": "REPO", "--task": "TASK", "--timeout": "SECONDS"}, "positionals": [], "stdin": null}
+    Required options: ["--context", "--expected-sha", "--from-report", "--os", "--ref", "--repo-root", "--task"]; positional arity: 0..0; stdin: forbidden
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--context": "DIR", "--expected-sha": "SHA", "--jobs": "N", "--os": "OS", "--profile": "PROFILE", "--ref": "REF", "--repo-root": "REPO", "--task": "TASK", "--timeout": "SECONDS", "--whole-element": true}, "positionals": [], "stdin": null}
+    Required options: ["--context", "--expected-sha", "--os", "--ref", "--repo-root", "--task", "--whole-element"]; positional arity: 0..0; stdin: forbidden
+
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `ci-debug.interface.default` — Coordinate evidence-bounded CI repair until the complete matrix is green or one repair element returns a concrete blocker.
 - `ci-debug.interface.repair-element` — Repair and verify one assigned CI matrix element without integrating it or claiming overall CI success.
 <!-- END BLUEPRINT INTERFACES -->

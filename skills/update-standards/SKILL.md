@@ -22,7 +22,7 @@ Public Interfaces:
 
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `update-standards.interface.default` — Update a canonical standard and keep its pinned closure, registered views, and declared evidence aligned.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:

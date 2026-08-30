@@ -30,9 +30,76 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
+Executable Interfaces:
+
+Call `famulus.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+- `recurring-tasks._rtx.interface.scripts-disable` — Disable a job by setting enabled: false in jobs.yaml and syncing native scheduler entries.
+  - Caller: `recurring-tasks`
+  - Version: 1
+  - Alternative: `owner`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {}, "positionals": ["name"], "stdin": null}
+    Required options: []; positional arity: 1..1; stdin: forbidden
+- `recurring-tasks._rtx.interface.scripts-enable` — Enable a job by setting enabled: true in jobs.yaml and syncing native scheduler entries.
+  - Caller: `recurring-tasks`
+  - Version: 1
+  - Alternative: `owner`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {}, "positionals": ["name"], "stdin": null}
+    Required options: []; positional arity: 1..1; stdin: forbidden
+- `recurring-tasks._rtx.interface.scripts-healthcheck` — Run pre-flight and per-job health checks for all enabled recurring tasks and return nonzero when any check fails.
+  - Caller: `recurring-tasks`
+  - Version: 1
+  - Alternative: `owner`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {}, "positionals": [], "stdin": null}
+    Required options: []; positional arity: 0..0; stdin: forbidden
+- `recurring-tasks._rtx.interface.scripts-remove-context` — Remove only the active installation context's native recurring state.
+  - Caller: `recurring-tasks`
+  - Version: 1
+  - Alternative: `owner`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {}, "positionals": [], "stdin": null}
+    Required options: []; positional arity: 0..0; stdin: forbidden
+- `recurring-tasks._rtx.interface.scripts-setup` — Verify prerequisites, sync native scheduler entries from jobs.yaml, install recurring health checks, and list active timers/tasks.
+  - Caller: `recurring-tasks`
+  - Version: 1
+  - Alternative: `owner`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--migrate-cron": true}, "positionals": [], "stdin": null}
+    Required options: []; positional arity: 0..0; stdin: forbidden
+- `recurring-tasks._rtx.interface.scripts-status` — List active recurring scheduler entries, next fire times, and service status.
+  - Caller: `recurring-tasks`
+  - Version: 1
+  - Alternative: `owner`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {}, "positionals": [], "stdin": null}
+    Required options: []; positional arity: 0..0; stdin: forbidden
+- `recurring-tasks._rtx.interface.scripts-sync` — Regenerate native scheduler entries from jobs.yaml.
+  - Caller: `recurring-tasks`
+  - Version: 1
+  - Alternative: `owner`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {}, "positionals": [], "stdin": null}
+    Required options: []; positional arity: 0..0; stdin: forbidden
+- `recurring-tasks._rtx.interface.scripts-test` — Trigger a job immediately through the native scheduler, then wait (bounded) for its run record and report whether the job actually succeeded.
+  - Caller: `recurring-tasks`
+  - Version: 1
+  - Alternative: `owner`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {}, "positionals": ["name"], "stdin": null}
+    Required options: []; positional arity: 1..1; stdin: forbidden
+- `recurring-tasks._rtx.interface.scripts-view-logs` — Tail the run log for a job (default 50 lines).
+  - Caller: `recurring-tasks`
+  - Version: 1
+  - Alternative: `owner`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--lines": "N"}, "positionals": ["job-name"], "stdin": null}
+    Required options: []; positional arity: 1..1; stdin: forbidden
+
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `recurring-tasks.interface.default` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->
 

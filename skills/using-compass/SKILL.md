@@ -22,7 +22,7 @@ Public Interfaces:
 
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `using-compass.interface.default` — Read the dispenser help, initialize one fresh run, assign one agent per returned Voyage ID, and keep every agent scoped to its assignment.
 <!-- END BLUEPRINT INTERFACES -->
 # Using Compass

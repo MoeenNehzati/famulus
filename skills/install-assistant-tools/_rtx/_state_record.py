@@ -78,8 +78,13 @@ def strip_managed_hook_objects(
         return group, False
     kept = []
     for hook in hook_objects:
-        if isinstance(hook, dict) and hook.get("command", "") in commands:
-            found.add(hook["command"])
+        command, args = (hook.get("command"), hook.get("args")) if isinstance(hook, dict) and hook.get("type") == "command" else (None, None)
+        if isinstance(command, str) and isinstance(args, list) and all(isinstance(arg, str) for arg in args):
+            command = json.dumps((command, *args))
+        elif args is not None:
+            command = None
+        if command in commands:
+            found.add(command)
             continue
         kept.append(hook)
     if len(kept) == len(hook_objects):

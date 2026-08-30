@@ -142,6 +142,109 @@ def test_generated_blocks_use_canonical_v5_exports(
     assert "`loose-mode.interface.default`" in interfaces
 
 
+def test_generated_executable_interface_uses_famulus_metadata(syncer) -> None:
+    """Break caught: generated skill guidance falls back to Dispatcher syntax."""
+    blueprints = syncer.load_blueprints()
+
+    interfaces = syncer.generated_interface_block(
+        "milestone-logging",
+        blueprints["milestone-logging"].repository_graph,
+    )
+
+    assert "Executable Interfaces:" in interfaces
+    assert "Caller: `milestone-logging`" in interfaces
+    assert "Version: 1" in interfaces
+    assert '"positionals": ["DOING", "PREV"]' in interfaces
+    assert '"--role": "ROLE"' in interfaces
+    assert '"--done": "PREV"' in interfaces
+    assert '"--path": true' in interfaces
+    assert "Omit optional positionals and options that are not needed." in interfaces
+    assert "Ordered outer JSON" not in interfaces
+    assert "Alternative: `milestone`" in interfaces
+    assert "dispatcher --caller-skill" not in interfaces
+
+
+def test_generated_executable_patterns_preserve_alternatives_and_arity(syncer) -> None:
+    """Break caught: a short-account template admits the forbidden long form."""
+    graph = syncer.load_blueprints()["email-client"].repository_graph
+
+    interfaces = syncer.generated_interface_block("email-client._rtx", graph)
+    start = interfaces.index("email-client._rtx.interface.mail-attachments")
+    end = interfaces.index("email-client._rtx.interface.mail-folders")
+    attachments = interfaces[start:end]
+
+    assert "Alternative: `short-account`" in attachments
+    short_attachments = attachments[:attachments.index("Alternative: `long-account`")]
+    assert 'Required options: ["-a"]; positional arity: 1..unbounded; stdin: forbidden' in short_attachments
+    assert '"positionals": ["uid", "uid..."]' in short_attachments
+    assert '"-a": "nickname"' in short_attachments
+    assert '"--folder": "inbox|sent|drafts|trash|all|<literal>"' in short_attachments
+    assert '"--account":' not in short_attachments
+    long_attachments = attachments[attachments.index("Alternative: `long-account`"):]
+    assert '"positionals": ["uid", "uid..."]' in long_attachments
+    assert '"--account": "nickname"' in long_attachments
+    assert '"-a":' not in long_attachments
+    folders = interfaces[interfaces.index("email-client._rtx.interface.mail-folders"):]
+    assert "Alternative: `long-account`" in folders
+    assert 'Required options: ["--account"]' in folders
+    assert "stdin: permitted" in interfaces
+
+
+def test_generated_executable_rejects_ambiguous_usage(syncer) -> None:
+    graph = syncer.load_blueprints()["email-client"].repository_graph
+    export = graph.exports["email-client._rtx.interface.mail-attachments"]
+    spec, _source_id = syncer._generated_export_binding(
+        graph, export.interface_id, export
+    )
+    spec["usage"] = ""
+
+    with pytest.raises(ValueError, match="usage cannot be projected unambiguously"):
+        syncer.generated_interface_block("email-client", graph)
+
+
+def test_generated_executable_preserves_nested_placeholders_without_fallbacks(syncer) -> None:
+    blueprints = syncer.load_blueprints()
+    graph = blueprints["email-client"].repository_graph
+
+    interfaces = syncer.generated_interface_block("email-client._rtx", graph)
+
+    assert '"--attach": "/path[:DisplayName]"' in interfaces
+    for skill in ("email-client", "daily-plan", "node-certify", "node-drift"):
+        blueprint = blueprints[skill]
+        generated = syncer.generated_interface_block(
+            skill, blueprint.repository_graph
+        )
+        assert "POSITIONAL_" not in generated
+
+    daily = syncer.generated_interface_block(
+        "daily-plan", blueprints["daily-plan"].repository_graph
+    )
+    indexed = daily[daily.index("Alternative: `indexed-or-add`"):daily.index("Alternative: `set-deadline`")]
+    assert "set-deadline" not in indexed
+    assert '"positionals": ["set-deadline", "actions|triage", "indices-or-item-id", "deadline-for-set-deadline"]' in daily
+
+    triage = syncer.generated_interface_block(
+        "email-triage", blueprints["email-triage"].repository_graph
+    )
+    assert '"--total-scanned": "N"' in triage
+    assert '"--added-todo": "N"' in triage
+
+
+def test_generated_executable_rejects_ambiguous_option_alias(syncer) -> None:
+    graph = syncer.load_blueprints()["email-client"].repository_graph
+    export = graph.exports["email-client._rtx.interface.mail-folders"]
+    spec, _source_id = syncer._generated_export_binding(
+        graph, export.interface_id, export
+    )
+    long_pattern = spec["process_binding"]["patterns"][1]
+    spec["process_binding"]["patterns"] = [long_pattern]
+    spec["usage"] = "-a <nickname> -b <other>"
+    long_pattern["forbidden_flags"] = ["-a", "-b"]
+
+    with pytest.raises(ValueError, match="ambiguous option alias"):
+        syncer.generated_interface_block("email-client", graph)
+
+
 def test_generated_contract_keeps_setup_requirements_separate(syncer) -> None:
     blueprints = syncer.load_blueprints()
 
@@ -248,7 +351,9 @@ def test_v5_generated_views_are_parent_only_and_derive_facade_contract(
     assert "demo.source.gateway -> demo.interface.execute@3" not in contract
     assert "demo-rtx.interface.execute" not in contract + interfaces
     assert "`demo.interface.execute` — Execute the demo." in interfaces
-    assert "dispatcher --caller-skill demo demo.interface.execute" in interfaces
+    assert "Caller: `demo`" in interfaces
+    assert "Version: 3" in interfaces
+    assert '"positionals": []' in interfaces
     assert set(manifest["skills"]) == {"demo"}
     assert manifest["version"] == 2
     assert manifest["skills"]["demo"]["interfaces"]["demo.interface.execute"] == {

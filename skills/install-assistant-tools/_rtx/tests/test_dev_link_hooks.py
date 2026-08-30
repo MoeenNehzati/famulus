@@ -7,6 +7,7 @@ import importlib.util
 import shutil
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -40,11 +41,24 @@ class DevLinkHooksTests(unittest.TestCase):
 
             settings = json.loads((claude_home / "settings.local.json").read_text(encoding="utf-8"))
             session_start = settings["hooks"]["SessionStart"]
-            commands = [hook["command"] for entry in session_start for hook in entry["hooks"]]
+            hooks = [hook for entry in session_start for hook in entry["hooks"]]
 
-            self.assertTrue(commands)
-            self.assertTrue(any("--claude" in command for command in commands))
-            self.assertTrue(any("inject_dispatcher_context.py" in command and "llmhooks" in command for command in commands))
+            self.assertTrue(hooks)
+            self.assertTrue(any(hook.get("args", [])[-1:] == ["--claude"] for hook in hooks))
+            self.assertTrue(any("llmhooks" in hook.get("args", [""])[0] for hook in hooks))
+
+    def test_development_declarations_keep_a_space_path_as_one_argument(self) -> None:
+        checkout = Path("/tmp") / "checkout with spaces"
+        claude_hook = dev_link._claude_hook_entries(checkout)["SessionStart"][0]["hooks"][0]
+        codex = tomllib.loads(dev_link._codex_hooks_block(checkout))
+        codex_hook = codex["hooks"]["SessionStart"][0]["hooks"][0]
+
+        for hook, host in ((claude_hook, "claude"), (codex_hook, "codex")):
+            self.assertEqual(hook["command"], "python")
+            self.assertEqual(
+                hook["args"],
+                [str(checkout / "llmhooks" / "inject_dispatcher_context.py"), f"--{host}"],
+            )
 
     def test_install_claude_hooks_replaces_legacy_command(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -70,9 +84,55 @@ class DevLinkHooksTests(unittest.TestCase):
             dev_link.install_claude_hooks(claude_home, self.repo_root, dry_run=False)
 
             settings = json.loads(settings_file.read_text(encoding="utf-8"))
-            commands = [hook["command"] for entry in settings["hooks"]["SessionStart"] for hook in entry["hooks"]]
+            hooks = [hook for entry in settings["hooks"]["SessionStart"] for hook in entry["hooks"]]
+            commands = [hook["command"] for hook in hooks]
             self.assertNotIn(legacy_command, commands)
-            self.assertTrue(any("--claude" in command for command in commands))
+            self.assertTrue(any(hook.get("args", [])[-1:] == ["--claude"] for hook in hooks))
+
+    def test_install_claude_hooks_replaces_immediate_prior_command_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            claude_home = Path(tmp) / ".claude"
+            claude_home.mkdir(parents=True)
+            script = self.repo_root / "llmhooks" / "inject_dispatcher_context.py"
+            prior_managed = f"python3 {script} --claude"
+            user_lookalike = f"python3 {script} --claude --user-option"
+            user_type_lookalike = {"type": "prompt", "command": prior_managed}
+            settings_file = claude_home / "settings.local.json"
+            settings_file.write_text(
+                json.dumps(
+                    {
+                        "hooks": {
+                            "SessionStart": [
+                                {
+                                    "hooks": [
+                                        {"type": "command", "command": prior_managed},
+                                        {"type": "command", "command": user_lookalike},
+                                        user_type_lookalike,
+                                    ]
+                                }
+                            ]
+                        }
+                    },
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            dev_link.install_claude_hooks(claude_home, self.repo_root, dry_run=False)
+
+            settings = json.loads(settings_file.read_text(encoding="utf-8"))
+            hooks = [
+                hook
+                for entry in settings["hooks"]["SessionStart"]
+                for hook in entry["hooks"]
+            ]
+            commands = [hook["command"] for hook in hooks]
+            self.assertNotIn(
+                {"type": "command", "command": prior_managed}, hooks
+            )
+            self.assertIn(user_lookalike, commands)
+            self.assertIn(user_type_lookalike, hooks)
 
     def test_reinstall_preserves_a_user_hook_added_to_a_managed_entry_group(self) -> None:
         """Re-running install replaces its own hook objects, not the group.
@@ -90,6 +150,11 @@ class DevLinkHooksTests(unittest.TestCase):
             payload["hooks"]["SessionStart"][0]["hooks"].append(
                 {"type": "command", "command": "echo my-own-hook"}
             )
+            payload["hooks"]["SessionStart"][0]["hooks"].append(
+                {"type": "command", "command": "python", "args": [str(self.repo_root / "llmhooks" / "inject_dispatcher_context.py") + ".backup"]}
+            )
+            user_lookalike = {"type": "command", "command": "python", "args": [str(self.repo_root / "llmhooks" / "inject_dispatcher_context.py"), "--claude", "--user-option"]}
+            payload["hooks"]["SessionStart"][0]["hooks"].append(user_lookalike)
             settings_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
             dev_link.install_claude_hooks(claude_home, self.repo_root, dry_run=False)
@@ -101,7 +166,12 @@ class DevLinkHooksTests(unittest.TestCase):
                 for hook in entry["hooks"]
             ]
             self.assertIn("echo my-own-hook", commands)
-            managed = [c for c in commands if "inject_dispatcher_context.py" in c]
+            self.assertIn(str(self.repo_root / "llmhooks" / "inject_dispatcher_context.py") + ".backup", [hook.get("args", [""])[0] for entry in after["hooks"]["SessionStart"] for hook in entry["hooks"]])
+            self.assertIn(user_lookalike, [hook for entry in after["hooks"]["SessionStart"] for hook in entry["hooks"]])
+            managed = [
+                hook for entry in after["hooks"]["SessionStart"] for hook in entry["hooks"]
+                if hook.get("args") == [str(self.repo_root / "llmhooks" / "inject_dispatcher_context.py"), "--claude"]
+            ]
             self.assertEqual(len(managed), 1, commands)
 
     def test_install_codex_hooks_writes_managed_block_for_registered_hooks(self) -> None:

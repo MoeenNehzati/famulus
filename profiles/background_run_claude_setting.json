@@ -14,7 +14,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${FAMULUS_LAUNCHER_RESOURCES}/llmhooks/inject_dispatcher_context.py\" --claude"
+            "command": "python",
+            "args": ["${FAMULUS_LAUNCHER_RESOURCES}/llmhooks/inject_dispatcher_context.py", "--claude"]
           }
         ]
       }

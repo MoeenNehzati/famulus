@@ -22,7 +22,7 @@ Public Interfaces:
 
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `notation-review.interface.default` — Diagnose notation at the requested scope and propose a light, coherent scheme without changing the document.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:

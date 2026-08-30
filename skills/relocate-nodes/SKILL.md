@@ -20,9 +20,27 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
+Executable Interfaces:
+
+Call `famulus.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+- `relocate-nodes._rtx.interface.build-review-packet` — Group one exhaustive relocation preflight for user-assisted false-positive filtering.
+  - Caller: `relocate-nodes`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--output": "OUTPUT", "--report": "REPORT", "--root": "ROOT"}, "positionals": [], "stdin": null}
+    Required options: ["--output", "--report", "--root"]; positional arity: 0..0; stdin: forbidden
+- `relocate-nodes._rtx.interface.relocate` — Preflight or publish one manifest-driven registered-node relocation as one recovery-backed failure-atomic change set.
+  - Caller: `relocate-nodes`
+  - Version: 2
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--apply": true, "--manifest": "MANIFEST", "--report": "REPORT", "--root": "ROOT"}, "positionals": [], "stdin": null}
+    Required options: ["--manifest"]; positional arity: 0..0; stdin: forbidden
+
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `relocate-nodes.interface.default` — Require mechanical preflight, complete semantic occurrence adjudication, accepted application, and an empty target-side postflight.
 <!-- END BLUEPRINT INTERFACES -->
 ## Machine routes

@@ -38,9 +38,41 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
+Executable Interfaces:
+
+Call `famulus.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+- `connect-google._rtx.interface.bind-credential-file` — Retry service-owned binding with an existing credential descriptor; never invoke OAuth authorization.
+  - Caller: `connect-google`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--allow-account-change": "comma-separated-list", "--credential-file": "path", "--gmail-nickname": "name", "--home": "dir", "--services": "comma-separated-list"}, "positionals": [], "stdin": null}
+    Required options: ["--credential-file", "--home", "--services"]; positional arity: 0..0; stdin: forbidden
+- `connect-google._rtx.interface.client-status` — Report whether the canonical Google Desktop OAuth client is missing, valid, invalid, or needs migration from plaintext, including whether its opaque client-secret reference resolves, without exposing secrets.
+  - Caller: `connect-google`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--home": "dir"}, "positionals": [], "stdin": null}
+    Required options: []; positional arity: 0..0; stdin: forbidden
+- `connect-google._rtx.interface.connect-services` — Run one combined OAuth authorization and bind its new credential file through the fixed service-owner map.
+  - Caller: `connect-google`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--account-hint": "email", "--allow-account-change": "comma-separated-list", "--callback-port": "port", "--gmail-nickname": "name", "--home": "dir", "--no-open-browser": true, "--services": "comma-separated-list"}, "positionals": [], "stdin": null}
+    Required options: ["--home", "--services"]; positional arity: 0..0; stdin: forbidden
+- `connect-google._rtx.interface.install-client` — Validate a Google Desktop OAuth client JSON and atomically install a private canonical copy.
+  - Caller: `connect-google`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--from-json": "client-json", "--home": "dir", "--replace": true}, "positionals": [], "stdin": null}
+    Required options: ["--from-json"]; positional arity: 0..0; stdin: forbidden
+
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `connect-google.interface.connect-services` — Install or reuse a Google Desktop OAuth client and hand selected Google services to their owning skills.
 - `connect-google.interface.create-client` — Guide a user through creating and privately downloading a Google Desktop OAuth client for selected Famulus services.
 - `connect-google.interface.default` — Route Google OAuth-client preparation according to whether a valid Desktop client is already installed.

@@ -22,9 +22,27 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
+Executable Interfaces:
+
+Call `famulus.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+- `node-drift._rtx.interface.compute-hashes` — Compute canonical certification-basis and v6 node hashes for exact or installed modules.
+  - Caller: `node-drift`
+  - Version: 2
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--json": true, "--repo-root": "ROOT", "--skill-root": "ROOT"}, "positionals": ["target..."], "stdin": null}
+    Required options: []; positional arity: 0..unbounded; stdin: forbidden
+- `node-drift._rtx.interface.drift-status` — Read signed certificate currentness, exact structured drift causes, and the dependency-first stale worklist for exact or installed v6 modules without writing certification state.
+  - Caller: `node-drift`
+  - Version: 3
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--all": true, "--json": true, "--repo-root": "ROOT", "--skill-root": "ROOT"}, "positionals": ["target..."], "stdin": null}
+    Required options: []; positional arity: 0..unbounded; stdin: forbidden
+
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `node-drift.interface.default` — Instructions for exact-target certificate drift, stale worklists, and canonical node-hash checks.
 <!-- END BLUEPRINT INTERFACES -->
 Use `node-drift._rtx.interface.drift-status` to read signed certificate

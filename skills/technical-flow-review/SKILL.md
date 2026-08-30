@@ -22,7 +22,7 @@ Public Interfaces:
 
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `technical-flow-review.interface.default` — Diagnose technical-document flow relative to its inferred profile and propose structural direction without unapproved rewriting.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:

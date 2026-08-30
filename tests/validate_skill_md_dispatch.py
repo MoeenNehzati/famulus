@@ -74,7 +74,7 @@ def test_missing_interface_block_is_rejected(tmp_path: Path) -> None:
     assert any("missing generated blueprint interface block" in error for error in errors)
 
 
-def test_child_process_export_is_not_exposed_in_parent_skill_block(
+def test_child_process_export_is_projected_as_famulus_interface(
     tmp_path: Path,
 ) -> None:
     skill = _copy_weather_module(tmp_path)
@@ -85,7 +85,8 @@ def test_child_process_export_is_not_exposed_in_parent_skill_block(
 
     errors = MOD.validate(tmp_path)
 
-    assert "get-weather._rtx.interface.scripts-weather" not in interface_block
+    assert "get-weather._rtx.interface.scripts-weather" in interface_block
+    assert "Executable Interfaces:" in interface_block
     assert "dispatcher --caller-skill" not in interface_block
     assert errors == []
 

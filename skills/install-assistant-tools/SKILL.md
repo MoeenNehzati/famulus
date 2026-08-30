@@ -33,9 +33,48 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
+Executable Interfaces:
+
+Call `famulus.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+- `install-assistant-tools._rtx.interface.scripts-dev-link` — Project live checkout skills and hooks into isolated context homes, install milestone and agent-timeline when referenced, and set local git hooksPath.
+  - Caller: `install-assistant-tools`
+  - Version: 2
+  - Alternative: `owner`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--claude-home": "DIR", "--codex-home": "DIR", "--dry-run": true, "--home": "DIR", "--no-claude": true, "--no-codex": true, "--repo-root": "DIR", "--shell-rc": "FILE"}, "positionals": [], "stdin": null}
+    Required options: ["--repo-root"]; positional arity: 0..0; stdin: forbidden
+- `install-assistant-tools._rtx.interface.scripts-doctor` — Diagnose one explicit context; mode is never inferred from cwd and no state is mutated.
+  - Caller: `install-assistant-tools`
+  - Version: 1
+  - Alternative: `owner`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--checkout": "ABSOLUTE_PATH", "--home": "DIR", "--json": true, "--mode": "standard|development"}, "positionals": [], "stdin": null}
+    Required options: ["--mode"]; positional arity: 0..0; stdin: forbidden
+- `install-assistant-tools._rtx.interface.scripts-install` — Choose mode, confirm choices, apply once, diagnose the same context, and explain optional next steps without invoking them.
+  - Caller: `install-assistant-tools`
+  - Version: 2
+  - Alternative: `owner`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--agents": "LIST", "--bin-dir": "DIR", "--claude-home": "DIR", "--codex-home": "DIR", "--default-llm": "claude|codex", "--dev-mode": true, "--dry-run": true, "--home": "DIR", "--non-interactive": true, "--optional-modules": "LIST", "--repo-path": "DIR|--no-dev-mode", "--shell-rc": "FILE", "--yes": true}, "positionals": [], "stdin": null}
+    Required options: []; positional arity: 0..0; stdin: forbidden
+- `install-assistant-tools._rtx.interface.scripts-launchers` — Install per-agent bin launcher, profile config, worker dir, and durable launchers.json backend selection for the given agents. Direct invocation of this interface installs exactly the --agents selection; tw selects one complete tmux-workspace, tw, tw-break, tw-join, tw-monitor, and tw-help bundle. When this runs as part of the five-stage apply orchestrator, assistant is additionally forced into the installed set regardless of selection, because it is a required invoke-skill prerequisite (feedback item 18) and is not user-selectable. background_run is installed with invoke-skill. Worker directories are created under the platform Famulus state dir in standard mode or under the selected isolated context in development mode (--mode development, an explicit live checkout).
+  - Caller: `install-assistant-tools`
+  - Version: 3
+  - Alternative: `owner`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--agents": "LIST", "--bin-dir": "DIR", "--claude-home": "DIR", "--codex-home": "DIR", "--default-llm": "claude|codex", "--dry-run": true, "--home": "DIR", "--mode": "development|plugin", "--repo-root": "DIR", "--shell-rc": "FILE"}, "positionals": [], "stdin": null}
+    Required options: ["--repo-root"]; positional arity: 0..0; stdin: forbidden
+- `install-assistant-tools._rtx.interface.scripts-scaffold` — Install the shared launcher floor using an exact context; persist PATH only for standard mode.
+  - Caller: `install-assistant-tools`
+  - Version: 2
+  - Alternative: `owner`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--bin-dir": "DIR", "--dry-run": true, "--home": "DIR", "--repo-root": "DIR", "--shell-rc": "FILE"}, "positionals": [], "stdin": null}
+    Required options: ["--repo-root"]; positional arity: 0..0; stdin: forbidden
+
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `install-assistant-tools.interface.default` — Primary LLM-facing skill instructions.
 - `install-assistant-tools.interface.diagnose` — Diagnose one explicitly selected Famulus installation context through the canonical read-only child diagnostic route.
 - `install-assistant-tools.interface.setup` — Primary LLM-facing skill instructions.

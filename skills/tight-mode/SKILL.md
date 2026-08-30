@@ -23,7 +23,7 @@ Public Interfaces:
 
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `tight-mode.interface.default` — Answer under persistent tight-mode rules and stop at diagnosis when a material gap requires user agreement before repair.
 <!-- END BLUEPRINT INTERFACES -->
 ## Core principle

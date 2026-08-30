@@ -13,6 +13,7 @@ import importlib
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -30,24 +31,48 @@ _spec.loader.exec_module(_mod)
 
 
 _DISPATCHER_CONTEXT_MARKERS = [
-    "## Skill dispatcher",
-    "treat `scripts/` as private",
-    "read only with approval",
-    "Use injected interfaces, not blueprint.yaml",
-    "dispatcher --caller-skill <skill> [--dry-run] <interface-id> <arguments>",
-    "Dry-run prints compiled argv without gateway execution or stdin reads.",
-    "Supply positionals first in position order",
-    "Dispatcher adds fixed arguments; do not supply them.",
+    "## Skill interfaces",
+    "`famulus` MCP server",
+    "invocation metadata and `Arguments JSON`",
+    "do not invoke private scripts directly",
+    "`Instruction Interfaces` are LLM-readable instructions",
 ]
 
 
 def _assert_dispatcher_context(text: str) -> None:
     missing = [marker for marker in _DISPATCHER_CONTEXT_MARKERS if marker not in text]
     assert missing == []
-    assert "<callee> <interface-id>" not in text
+    assert "dispatcher --caller-skill" not in text
+    assert "Officina" not in text
     assert len(text) <= 750
-    assert text.count("--caller-skill") == 1
-    assert text.count("--dry-run") == 1
+
+
+def test_packaged_hook_declares_common_python_and_shared_hook() -> None:
+    """Break caught: the packaged hook bypasses the shared Python contract."""
+    payload = json.loads((_REPO_ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+    hook = payload["hooks"]["SessionStart"][0]["hooks"][0]
+
+    assert hook["command"] == "python"
+    assert hook["args"] == [
+        "${CLAUDE_PLUGIN_ROOT}/llmhooks/inject_dispatcher_context.py",
+        "--claude",
+    ]
+
+
+def test_background_profile_declares_common_python_and_shared_hook() -> None:
+    """Break caught: background SessionStart still selects a host-specific Python."""
+    payload = json.loads(
+        (_REPO_ROOT / "profiles" / "background_run_claude_setting.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    hook = payload["hooks"]["SessionStart"][0]["hooks"][0]
+
+    assert hook["command"] == "python"
+    assert hook["args"] == [
+        "${FAMULUS_LAUNCHER_RESOURCES}/llmhooks/inject_dispatcher_context.py",
+        "--claude",
+    ]
 
 
 def _available(*, cli: bool = True, pkg: bool = True):
@@ -111,36 +136,41 @@ class TestHookMetadata:
         binding = hook.install_binding("codex", "/repo/llmhooks/inject_dispatcher_context.py")
         assert binding.event == "SessionStart"
         assert binding.matcher == "startup|clear|compact"
+        assert binding.argv[0] == "python"
         assert binding.argv[-1] == "--codex"
 
 
 class TestOutputs:
-    def test_vocabulary_is_deduplicated_conditional_and_bounded(self):
-        text = _mod.render_dispatcher_context(
-            {
-                "arity:required": 5,
-                "arity:zero-or-more": 3,
-                "arity:one-or-more": 2,
-                "arity:optional": 1,
-                "binding:switch": 1,
-                "type:enum": 1,
-                "binding:stdin": 4,
-                "provider-skill-route": 3,
-            }
-        )
+    def test_global_guidance_is_bounded_and_ignores_local_vocabulary(self):
+        text = _mod.DISPATCHER_CORE
         assert len(_mod.DISPATCHER_CORE) <= 500
         assert len(text) <= 750
-        assert text.count("--stdin") == 1
-        assert text.count("provider-skill") == 1
-        assert text.count("[<x>...]") <= 1
-        assert text.count("<x>...") <= 2
+        assert "--stdin" not in text
+        assert "provider-skill" not in text
         assert "tmp" not in text
         assert "retry" not in text
 
-    def test_no_selected_stdin_or_route_omits_optional_terms(self):
-        text = _mod.render_dispatcher_context({"arity:required": 1})
+    def test_global_guidance_does_not_depend_on_vocabulary(self):
+        text = _mod.DISPATCHER_CORE
         assert "--stdin" not in text
         assert "provider-skill" not in text
+
+    @pytest.mark.skipif(sys.platform != "linux", reason="native Linux evidence")
+    def test_linux_launches_shared_hook_with_literal_python_and_space_path(self, tmp_path: Path):
+        plugin = tmp_path / "plugin root with spaces"
+        shutil.copytree(_REPO_ROOT / "llmhooks", plugin / "llmhooks")
+        python_bin = tmp_path / "bin"
+        python_bin.mkdir()
+        (python_bin / "python").symlink_to(sys.executable)
+        result = subprocess.run(
+            ["python", str(plugin / "llmhooks" / "inject_dispatcher_context.py"), "--claude"],
+            input="{}",
+            text=True,
+            capture_output=True,
+            check=True,
+            env={"PATH": str(python_bin)},
+        )
+        assert json.loads(result.stdout)["hookSpecificOutput"]["hookEventName"] == "SessionStart"
 
     def test_codex_output_is_nested_hook_specific_output(self):
         hook = _mod.InjectDispatcherContextHook()

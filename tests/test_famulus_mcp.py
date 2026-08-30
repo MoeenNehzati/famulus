@@ -17,6 +17,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 SERVER = ROOT / "mcp_server.py"
 CORE = ROOT / "mcp-core.json"
+COMPREHENSION_FIXTURE = ROOT / "tests" / "fixtures" / "famulus_comprehension_payloads.json"
 
 
 def _json(path: Path) -> dict[str, object]:
@@ -98,19 +99,28 @@ def _declared_launch(host: str, plugin_root: Path) -> tuple[str, list[str], Path
     return declaration["command"], declaration["args"], plugin_root
 
 
+def _selected_environment(home: Path) -> dict[str, str]:
+    """Expose the already-selected test interpreter through exact `python`."""
+    environment = {
+        key: value for key, value in os.environ.items() if key != "PYTHONPATH"
+    }
+    environment["PATH"] = os.pathsep.join(
+        (str(Path(sys.executable).parent), environment.get("PATH", ""))
+    )
+    environment["HOME"] = str(home)
+    return environment
+
+
 async def _invoke_through_mcp(host: str, plugin_root: Path, home: Path):
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
 
     command, args, cwd = _declared_launch(host, plugin_root)
-    environment = {
-        key: value for key, value in os.environ.items() if key != "PYTHONPATH"
-    }
     parameters = StdioServerParameters(
         command=command,
         args=args,
         cwd=cwd,
-        env={**environment, "HOME": str(home)},
+        env=_selected_environment(home),
     )
     async with stdio_client(parameters) as (read, write):
         async with ClientSession(read, write) as session:
@@ -323,6 +333,111 @@ def test_dry_run_matches_direct_dispatcher_resolution() -> None:
         _arguments(server, {"positionals": [], "options": {"--path": True}, "stdin": None}),
         dry_run=True,
     ) == expected
+
+
+def test_generated_outer_payload_uses_real_tool_field_names(tmp_path: Path) -> None:
+    """Break caught: projection omits the required outer interface field."""
+    syncer = ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py"
+    spec = importlib.util.spec_from_file_location("projection_syncer", syncer)
+    module = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    graph = module.load_blueprints()["milestone-logging"].repository_graph
+    outer = {"caller": "milestone-logging", "interface": "milestone-logging._rtx.interface.record", "version": 1, "arguments": {"positionals": [], "options": {}, "stdin": None}, "dry_run": False}
+    generated = module.generated_interface_block("milestone-logging", graph)
+    assert all(
+        fragment in generated
+        for fragment in (
+            '"positionals": ["DOING", "PREV"]',
+            '"--role": "ROLE"',
+            '"--path": true',
+            "Omit optional positionals and options that are not needed.",
+        )
+    )
+
+    async def call():
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+
+        plugin = tmp_path / "Plugin Cache" / "famulus"
+        _copy_plugin(plugin)
+        command, args, cwd = _declared_launch("claude", plugin)
+        async with stdio_client(StdioServerParameters(command=command, args=args, cwd=cwd, env=_selected_environment(tmp_path / "home"))) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                tool = (await session.list_tools()).tools[0]
+                assert tool.inputSchema["required"] == ["caller", "interface", "version", "arguments"]
+                return await session.call_tool("invoke", arguments={**outer, "arguments": {"positionals": [], "options": {"--path": True}, "stdin": None}, "dry_run": True})
+
+    result = asyncio.run(asyncio.wait_for(call(), timeout=15))
+    assert result.structuredContent["result"]["target"] == outer["interface"]
+
+
+def test_ordered_arguments_match_email_pattern_and_reject_mixed_alternative() -> None:
+    """Break caught: a projected short-account alternative permits --account too."""
+    server = _load_server()
+    accepted = server.invoke(
+        "email-client",
+        "email-client._rtx.interface.mail-attachments",
+        1,
+        server.OrderedArguments(positionals=(), options=["-a", "account", "42", "43"], stdin=None),
+        dry_run=True,
+    )
+    rejected = server.invoke(
+        "email-client",
+        "email-client._rtx.interface.mail-attachments",
+        1,
+        server.OrderedArguments(
+            positionals=(),
+            options=["-a", "account", "--account", "other", "42"],
+            stdin=None,
+        ),
+        dry_run=True,
+    )
+
+    assert accepted["target"] == "email-client._rtx.interface.mail-attachments"
+    assert rejected["exit_code"] == 2
+    assert rejected["dispatcher"]["code"] == "dispatcher.resolution_failed"
+
+    folders = server.invoke(
+        "email-client", "email-client._rtx.interface.mail-folders", 1,
+        server.OrderedArguments(positionals=(), options=["--account", "account"], stdin=None),
+        dry_run=True,
+    )
+    assert folders["target"] == "email-client._rtx.interface.mail-folders"
+
+
+def test_comprehension_fixture_is_an_uncoached_generated_candidate() -> None:
+    """Break caught: frozen cases drift or expose the controller oracle."""
+    fixture = _json(COMPREHENSION_FIXTURE)
+
+    assert "`famulus` MCP server" in fixture["session_start"]
+    assert fixture["mcp_tool"] == "famulus.invoke"
+    assert [case["case_id"] for case in fixture["cases"]] == [
+        "T3C-A",
+        "T3C-B",
+        "T3C-C",
+    ]
+    assert [case["skill"] for case in fixture["cases"]] == [
+        "skills/milestone-logging/SKILL.md",
+        "skills/milestone-logging/SKILL.md",
+        "skills/loose-mode/SKILL.md",
+    ]
+    assert "Executable Interfaces:" in (
+        ROOT / fixture["cases"][0]["skill"]
+    ).read_text(encoding="utf-8")
+    assert "Executable Interfaces:" in (
+        ROOT / fixture["cases"][1]["skill"]
+    ).read_text(encoding="utf-8")
+    assert "Instruction Interfaces:" in (
+        ROOT / fixture["cases"][2]["skill"]
+    ).read_text(encoding="utf-8")
+    assert "Executable Interfaces:" not in (
+        ROOT / fixture["cases"][2]["skill"]
+    ).read_text(encoding="utf-8")
+    for case in fixture["cases"]:
+        assert set(case) == {"case_id", "skill", "user_task"}
 
 
 def test_execution_captures_dispatcher_output_without_mcp_stdout() -> None:
