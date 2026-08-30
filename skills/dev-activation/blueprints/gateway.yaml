@@ -1,0 +1,108 @@
+content:
+- (?:SKILL\.md|instructions/claude\-codex\-routes\.md)
+dependencies: []
+description: Directs agents to create, validate, report, or enter one checkout-local isolated development environment.
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: dev-activation.source.gateway
+interfaces:
+  dev-activation.source.gateway.interface.default:
+    content:
+    - (?:SKILL\.md|instructions/claude\-codex\-routes\.md)
+    uses_interfaces:
+    - interface: dev-activation._rtx.interface.activation
+      version: 1
+    contract:
+      arguments:
+        request:
+          description: Development activation request naming the checkout and desired host or command.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+      caller_warnings:
+      - external-side-effect: Creates ignored directories below the selected checkout and may replace the current process.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: request
+          formats: [text]
+          id: read-1
+          medium: prompt
+          sensitivity: user-private
+        writes:
+        - access: write
+          content: activation-result
+          formats: [markdown]
+          id: write-1
+          medium: prompt
+          sensitivity: derived-private
+        - access: read-write
+          content: isolated development directories
+          formats: [directory]
+          id: write-2
+          medium: repository-filesystem
+          path: <request-checkout>/.famulus/home
+          sensitivity: user-private
+      execution:
+        consistency:
+          live: Results describe the checkout and environment validated during this request.
+        effects:
+        - action: create
+          confirmation_evidence: {kind: output, output_ref: response}
+          direct_io_ref: write-2
+          id: activation-roots
+          may_occur_in_outcomes: [completed]
+          reversibility:
+            compensatable: Remove the ignored checkout-local .famulus tree after closing development sessions.
+          value_source: {kind: argument, argument_ref: request}
+        lifecycle: finite
+        mutation_safety:
+          atomicity: {per_effect_only: Runtime validation precedes directory creation.}
+          concurrent_invocations: {safe: Directory creation is idempotent.}
+          idempotency: {idempotent: Re-entry produces the same required roots.}
+          on_uncertain_completion: {retry: Re-run validation for the same checkout.}
+          partial_effects_on_failure: {possible: Filesystem failure can interrupt directory creation.}
+          rollback_on_failure: {unavailable: Existing valid directories remain in place.}
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: response
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Use the reported portable launch command or report successful validation.
+        class: success
+        effects: [activation-roots]
+        id: completed
+        outputs: [response]
+      - caller_action: Report the activation error and leave the checkout unchanged beyond already valid roots.
+        class: error
+        effects: []
+        id: refused
+        outputs: []
+      outputs:
+      - audience: human
+        cardinality: {minimum: 1, maximum: 1}
+        description: Concise activation status and portable entry command.
+        direct_io_ref: write-1
+        empty: Never empty on success.
+        id: response
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        type: {kind: string, sensitivity: derived-private}
+      preconditions: []
+    description: Primary development-activation instructions.
+    version: 1
+node_type: behavioral_source
+schema_version: 6
+uses_interfaces:
+- interface: dev-activation._rtx.interface.activation
+  version: 1
+version: 1
+maturity: stable

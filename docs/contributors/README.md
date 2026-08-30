@@ -85,6 +85,7 @@ For task-oriented routing, see the
 > Generated from live blueprints. Do not edit this block by hand.
 
 - `ci-debug` — GitHub Actions CI is red, matrix failures need isolated repair, or repeated full reruns make remote diagnosis inefficient
+- `dev-activation` — A developer needs an assistant or editor to run against one Famulus checkout without discovering globally installed skills or plugins
 - `git-workflow` — Branch-safety checks and commit hygiene for any repo
 - `initialize-tdd` — Scaffold a staged, approval-gated TDD project
 - `semantic-integration` — Integrating substantially diverged Git branches and merge or rebase is inadequate because it produces broad structural conflicts, or because mechanical application would place source changes into structures the target architecture has replaced and thereby lose their intent

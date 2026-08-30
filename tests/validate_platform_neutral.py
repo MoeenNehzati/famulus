@@ -225,7 +225,7 @@ def test_generically_named_file_may_not_mention_operating_system(tmp_path: Path)
     "relative_path",
     (
         Path("src/officina/install/context.py"),
-        Path("src/officina/install/development_activation.py"),
+        Path("skills/dev-activation/_rtx/_development_activation.py"),
         Path("src/officina/install/runtime_pointer.py"),
         Path("src/officina/install/resolvers/launch.py"),
         Path("src/officina/launchers/agent.py"),

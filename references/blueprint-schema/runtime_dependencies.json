@@ -1001,6 +1001,18 @@
         }
       }
     },
+    "dev-activation": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {
+        "dev-activation._rtx.interface.activation": {
+          "dependencies": []
+        }
+      }
+    },
     "distill-to-rutters": {
       "maturity": "experimental",
       "installation_tier": "core",

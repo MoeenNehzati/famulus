@@ -18,7 +18,6 @@ from officina.install.context import (
     load_or_create_development_installation_id,
     resolve_installation_context,
 )
-from officina.install.development_activation import build_interactive_environment
 from officina.recurring import runtime as recurring_runtime
 from officina.recurring.runtime import ManagedSchedule, _bounded_environment
 from officina.wakeup import policies, store
@@ -154,6 +153,12 @@ def _load_source(name: str, relative: str):
     return module
 
 
+DEVELOPMENT_ACTIVATION = _load_source(
+    "task6_consumer_development_activation",
+    "skills/dev-activation/_rtx/_development_activation.py",
+)
+
+
 def _development_env(tmp_path: Path):
     checkout = tmp_path / "checkout"
     checkout.mkdir()
@@ -179,7 +184,9 @@ def _development_env(tmp_path: Path):
         environ=base,
         installation_id=installation_id,
     )
-    return build_interactive_environment(context, environ=base, platform=sys.platform), checkout, context
+    return DEVELOPMENT_ACTIVATION.build_activation_environment(
+        checkout, environ=base, platform=sys.platform
+    ), checkout, context
 
 
 def _standard_env(tmp_path: Path) -> tuple[dict[str, str], Path]:

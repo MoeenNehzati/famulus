@@ -44,6 +44,7 @@ This page is the complete skill inventory. For workflows and examples, start fro
 ### Listed
 
 - `ci-debug` — GitHub Actions CI is red, matrix failures need isolated repair, or repeated full reruns make remote diagnosis inefficient _(topics: repository-workflow, task-automation, assistant-assurance; activated by: user request, skill workflow)_
+- `dev-activation` — A developer needs an assistant or editor to run against one Famulus checkout without discovering globally installed skills or plugins _(topics: repository-workflow, assistant-assurance; activated by: user request, skill workflow)_
 - `git-workflow` — Branch-safety checks and commit hygiene for any repo _(topics: repository-workflow; activated by: user request, skill workflow)_
 - `initialize-tdd` — Scaffold a staged, approval-gated TDD project _(topics: repository-workflow, assistant-assurance; activated by: user request)_
 

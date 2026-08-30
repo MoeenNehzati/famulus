@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import importlib.util
 import sys
 import os
 import json
@@ -25,7 +26,6 @@ from officina.install.context import (
     load_or_create_development_installation_id,
     resolve_installation_context,
 )
-from officina.install.development_activation import build_interactive_environment
 from officina.install.managed_runtime import _deploy_resolver, _publish_installation_context
 from officina.install.runtime_pointer import activate_release
 from officina.launchers.agent import ensure_launcher_configuration
@@ -34,6 +34,16 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 _MANAGED_CONTROL_ROOT = _REPO_ROOT / "skills" / "recurring-tasks" / "_rtx"
 sys.path.insert(0, str(_MANAGED_CONTROL_ROOT))
 import _managed_control as managed_control
+
+
+def _development_activation_module():
+    path = _REPO_ROOT / "skills" / "dev-activation" / "_rtx" / "_development_activation.py"
+    spec = importlib.util.spec_from_file_location("task6_recurring_development_activation", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 @pytest.fixture(autouse=True)
@@ -115,8 +125,8 @@ def _active_live_development_runtime(tmp_path: Path):
         platform=sys.platform, home=stable_home, environ={},
         installation_id=installation_id,
     )
-    environment = build_interactive_environment(
-        context, environ=os.environ, platform=sys.platform
+    environment = _development_activation_module().build_activation_environment(
+        checkout, environ=os.environ, platform=sys.platform
     )
     backend_root = tmp_path / "exact backend executables"
     backend_root.mkdir()

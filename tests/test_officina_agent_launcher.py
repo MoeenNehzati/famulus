@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 import os
 import shutil
 import subprocess
@@ -11,7 +12,6 @@ import pytest
 
 from officina.common.famulus_paths import resolve_famulus_paths
 from officina.install.context import InstallationContext, resolve_installation_context
-from officina.install.development_activation import build_interactive_environment
 
 from officina.launchers.agent import (
     LauncherConfigurationError,
@@ -20,6 +20,16 @@ from officina.launchers.agent import (
     select_backend,
 )
 from officina.launchers import agent as agent_module
+
+
+def _development_activation_module():
+    path = Path(__file__).resolve().parents[1] / "skills" / "dev-activation" / "_rtx" / "_development_activation.py"
+    spec = importlib.util.spec_from_file_location("task6_launcher_development_activation", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_launcher_module_starts_in_a_fresh_interpreter(tmp_path: Path) -> None:
@@ -563,8 +573,8 @@ def test_development_agent_launches_use_exact_live_resources_without_legacy_sele
         "CLAUDE_CONFIG_DIR",
     ):
         monkeypatch.delenv(name, raising=False)
-    activated = build_interactive_environment(
-        context,
+    activated = _development_activation_module().build_activation_environment(
+        checkout,
         environ={"HOME": str(host_home), "PATH": os.environ.get("PATH", "")},
         platform=agent_module.sys.platform,
     )
@@ -590,7 +600,7 @@ def test_development_agent_launch_derives_its_own_environment_from_the_pointer(
 
     The generated user-bin shim knows only the resolver path and the target
     module, so it hands the launcher the caller's ambient environment. Earlier
-    coverage pre-applied build_interactive_environment() before calling main(),
+    coverage pre-applied the former installation-owned environment builder,
     which supplied exactly what the shim never sets -- so every real invocation
     failed context validation while the suite stayed green.
     """

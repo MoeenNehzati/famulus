@@ -1,0 +1,38 @@
+authority:
+  owns_filesystem: []
+  suggested_permissions:
+    bash:
+    - command:
+      - python
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - __init__.py
+      - Interface
+      reason: Create or validate checkout-local development roots.
+    network: []
+children: {}
+content:
+- __init__\.py
+- _development_activation\.py
+description: Shared portable runtime for checkout-local development activation.
+exports:
+  dev-activation._rtx.interface.activation:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - dev-activation
+    source_interface: dev-activation._rtx.source.rtx-development-activation.interface.activation
+gateway:
+  language: Python>=3.11
+  path: __init__.py
+id: dev-activation._rtx
+maturity: stable
+namespace_exports: {}
+node_type: module
+schema_version: 6
+sources:
+  dev-activation._rtx.source.rtx-development-activation:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-development-activation.yaml
+version: 1

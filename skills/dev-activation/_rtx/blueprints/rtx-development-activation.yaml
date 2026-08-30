@@ -1,0 +1,138 @@
+content:
+- __init__\.py
+- _development_activation\.py
+dependencies: []
+description: Creates and validates isolated checkout homes and reports portable activation commands without installing runtimes or services.
+gateway:
+  language: Python
+  path: __init__.py
+id: dev-activation._rtx.source.rtx-development-activation
+interfaces:
+  dev-activation._rtx.source.rtx-development-activation.interface.activation:
+    content:
+    - __init__\.py
+    - _development_activation\.py
+    uses_interfaces: []
+    contract:
+      arguments:
+        action:
+          description: Activation operation.
+          required: true
+          sensitivity: public
+          type:
+            kind: enum
+            values:
+            - {value: create, description: Create only required isolated directories.}
+            - {value: validate, description: Validate checkout metadata and isolated directories.}
+            - {value: report, description: Create and report portable host entry commands.}
+        checkout:
+          description: Absolute Famulus checkout to activate.
+          required: true
+          sensitivity: user-private
+          direct_io_ref: checkout-root
+          type:
+            kind: dir
+            syntax: literal
+            relative_to: caller-cwd
+            must_exist: true
+            access: read-write
+        platform:
+          description: Optional controlled platform identifier; defaults to the current host.
+          required: false
+          sensitivity: public
+          type: {kind: string, sensitivity: public}
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: checkout plugin metadata and activation roots
+          formats: [path, json]
+          id: checkout-root
+          medium: local-filesystem
+          path: <checkout>
+          sensitivity: user-private
+        writes:
+        - access: read-write
+          content: isolated development directories
+          formats: [directory]
+          id: activation-roots
+          medium: local-filesystem
+          path: <checkout>/.famulus/home
+          sensitivity: user-private
+        - access: write
+          content: activation report
+          formats: [json, text]
+          id: result
+          medium: stdout
+          sensitivity: derived-private
+      execution:
+        consistency:
+          live: Validation and reports reflect the selected checkout at invocation time.
+        effects:
+        - action: create
+          confirmation_evidence: {kind: direct-io, direct_io_ref: activation-roots}
+          direct_io_ref: activation-roots
+          id: create-roots
+          may_occur_in_outcomes: [completed]
+          reversibility:
+            compensatable: Remove the ignored checkout-local .famulus tree after closing development sessions.
+          value_source: {kind: argument, argument_ref: checkout}
+        lifecycle: finite
+        mutation_safety:
+          atomicity: {per_effect_only: All checkout metadata is validated before any directory is created.}
+          concurrent_invocations: {safe: Directory creation uses idempotent exist-ok semantics.}
+          idempotency: {idempotent: Re-entry creates the same finite directory set.}
+          on_uncertain_completion: {retry: Re-run create or validate for the same checkout.}
+          partial_effects_on_failure: {possible: Filesystem failure can interrupt creation after an earlier required directory was created.}
+          rollback_on_failure: {unavailable: Existing valid directories are retained.}
+        state_effect: mutating
+        verification:
+        - method: direct-io-state
+          direct_io_ref: activation-roots
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes:
+      - caller_action: Use the validated roots or reported portable command.
+        class: success
+        effects: [create-roots]
+        id: completed
+        outputs: [activation-result]
+      - caller_action: Correct the checkout path or metadata and retry.
+        class: error
+        effects: []
+        id: invalid-checkout
+        outputs: []
+      outputs:
+      - audience: both
+        cardinality: {minimum: 0, maximum: 1}
+        description: JSON report for report mode; empty for successful create or validate.
+        direct_io_ref: result
+        empty: Empty for successful create or validate.
+        id: activation-result
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        type: {kind: string, sensitivity: derived-private}
+      preconditions: []
+    description: Create, validate, or report one isolated development activation.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_stdin: false
+        allowed_flags: [--checkout, --platform]
+        flag_patterns:
+          --checkout: ^.+$
+          --platform: ^(linux|darwin|win32)$
+        max_positionals: 1
+        min_positionals: 1
+    usage: <create|validate|report> --checkout <absolute-path> [--platform <platform>]
+    version: 1
+node_type: behavioral_source
+platform_support: {linux: true, macos: true, windows: true}
+runtime_dependencies: []
+schema_version: 6
+uses_interfaces: []
+version: 1
+maturity: stable

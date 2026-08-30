@@ -26,7 +26,6 @@ from .runtime_pointer import (
 )
 
 __all__ = [
-    "ActivationError",
     "AssistantAccessBoundaryError",
     "DevelopmentBoundaryError",
     "DiagnosticCheck",
@@ -37,12 +36,9 @@ __all__ = [
     "RuntimePointer",
     "RuntimePointerError",
     "activate_release",
-    "build_interactive_environment",
     "build_development_environment",
-    "development_activation_main",
     "deployed_resolver_trusted_roots",
     "diagnose_installation",
-    "install_development_activation",
     "installation_context_home_fields",
     "load_current_pointer",
     "load_installed_context_record",
@@ -53,24 +49,9 @@ __all__ = [
     "render_diagnostic_text",
     "resolve_stable_roots",
     "validate_development_boundaries",
-    "verify_managed_commands",
 ]
 
 _LAZY_EXPORTS = {
-    "ActivationError": (".development_activation", "ActivationError"),
-    "build_interactive_environment": (
-        ".development_activation",
-        "build_interactive_environment",
-    ),
-    "development_activation_main": (".development_activation", "main"),
-    "install_development_activation": (
-        ".development_activation",
-        "install_development_activation",
-    ),
-    "verify_managed_commands": (
-        ".development_activation",
-        "verify_managed_commands",
-    ),
 }
 
 for _doctor_name in (
