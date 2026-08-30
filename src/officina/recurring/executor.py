@@ -84,7 +84,7 @@ def _exact_argv(
         )
         return [str(schedule.backend_executables[backend]), *built[1:]]
     if command_name in {"launch.py", "launch.py.exe"}:
-        return [str(schedule.runtime_resolver), *argv[1:]]
+        return [sys.executable, str(schedule.runtime_resolver), *argv[1:]]
     raise ValueError("job executable must select claude, codex, invoke-skill, or the fixed resolver")
 
 

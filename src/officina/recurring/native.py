@@ -124,7 +124,7 @@ def linux_names(job_name: str, installation_id: str) -> tuple[str, str]:
 
 def render_linux_service(schedule: ManagedSchedule, job: Mapping[str, object]) -> str:
     job = validate_job(job)
-    argv = executor_argv(schedule, str(job["name"]))
+    argv = ["/usr/bin/python3", *executor_argv(schedule, str(job["name"]))]
     rendered_environment = "".join(
         f"Environment={_systemd_quote(name + '=' + value)}\n"
         for name, value in _environment(schedule)

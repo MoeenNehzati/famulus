@@ -211,7 +211,7 @@ def test_linux_service_invokes_the_managed_executor_without_a_shell(
     )
 
     assert service.splitlines()[-1] == (
-        f'ExecStart="{schedule.runtime_resolver}" "-m" '
+        f'ExecStart="/usr/bin/python3" "{schedule.runtime_resolver}" "-m" '
         '"officina.recurring.executor" "--descriptor" '
         f'"{schedule.descriptor_path}" "--job" "demo" "--log-root" '
         f'"{schedule.log_root}"'

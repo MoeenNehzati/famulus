@@ -350,6 +350,20 @@ def test_executor_launches_exact_descriptor_backend_as_process_origin(tmp_path, 
     assert observed[0][0] == str(exact)
 
 
+def test_executor_launches_fixed_resolver_with_current_python(tmp_path, monkeypatch):
+    schedule = _managed_schedule(tmp_path)
+    schedule.jobs_file.parent.mkdir(parents=True, exist_ok=True)
+    schedule.jobs_file.write_text(
+        yaml.safe_dump({"jobs": [{"name": "demo", "command": "launch.py -m officina.wakeup.cli run-due", "schedule": "0 * * * *", "enabled": True}]}),
+        encoding="utf-8",
+    )
+    observed = []
+    monkeypatch.setattr(executor.subprocess, "run", lambda argv, **kwargs: observed.append(argv) or subprocess.CompletedProcess(argv, 0))
+
+    assert executor.run_job(schedule=schedule, job_name="demo") == 0
+    assert observed[0] == [sys.executable, str(schedule.runtime_resolver), "-m", "officina.wakeup.cli", "run-due"]
+
+
 def test_control_and_healthcheck_implementations_do_not_depend_on_skill_source(
     tmp_path, monkeypatch, capsys
 ):
