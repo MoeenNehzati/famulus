@@ -52,14 +52,24 @@ This is the shared router for Google OAuth-client preparation.
 
 1. Use `connect-google._rtx.interface.client-status` before asking the user for a file.
 2. If the stored client is valid, use `connect-google.interface.connect-services`.
-3. If no valid client is installed, ask whether the user already has a Google
-   Desktop OAuth client JSON, naming both ways to have one: they created it in
-   their own Google Cloud project, or the Famulus maintainer added them to a
-   shared project and sent them the file. If status reports legacy candidates,
-   ask before importing one; when candidates differ, ask which one to use. A
-   confirmed or supplied file routes to
-   `connect-google.interface.connect-services`; otherwise route to
-   `connect-google.interface.create-client`.
+3. If no valid client is installed and status reports legacy candidates, ask
+   before importing one; when candidates differ, ask which one to use. A
+   confirmed candidate routes to `connect-google.interface.connect-services`.
+4. If no candidate is selected, explain that Famulus needs a Google Cloud
+   project to register its Desktop OAuth client. Present the two options:
+   - use the developer's experimental Google Cloud project; or
+   - use their own Google Cloud project.
+   Then ask whether the Google account they want to connect has been added by
+   the developer to the experimental project's OAuth test-user list.
+   - If yes, ask for the local path to the Desktop OAuth client JSON provided
+     by the developer, then route it to `connect-google.interface.connect-services`.
+     If the user was added but does not have the file, tell them to obtain the
+     JSON from the developer; never request its contents.
+   - If no, route to `connect-google.interface.create-client`. After the user
+     creates their own project and downloads its Desktop client JSON, obtain
+     its local path and continue through `connect-google.interface.connect-services`.
+   - If the user is unsure, tell them to confirm with the developer; do not
+     assume enrollment.
 
 When a user without a client asks why this step cannot be automated, explain
 that Google requires every application reaching an account to be registered in
@@ -75,9 +85,9 @@ costs or timelines:
 > listed test users, and their refresh tokens expire after seven days, so those
 > users must authorize again.
 
-Owning a project removes that cap for its owner; joining the maintainer's
-project is subject to it. `instructions/create-client.md` repeats the second
-sentence at the configuration step; keep both copies identical.
+Owning a project removes that cap for its owner; using the developer's
+experimental project is subject to it. `instructions/create-client.md` repeats
+the second sentence at the configuration step; keep both copies identical.
 
 Apply the same route to initial setup and reconnect requests. Recommend Drive,
 Calendar, and Gmail while allowing the user to choose a subset. The connection

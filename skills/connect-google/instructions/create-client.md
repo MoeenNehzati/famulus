@@ -1,8 +1,11 @@
 # Create a Google OAuth client
 
-Use this route only when no usable Google Desktop OAuth client JSON is
-available. Recommend setting up Drive, Calendar, and Gmail, but ask which
-subset the user wants before configuring APIs and scopes.
+Use this own-project route only when no usable Google Desktop OAuth client JSON
+is available and the user is not enrolled in the developer's experimental
+Google Cloud project. Explain that the following steps create their own Google
+Cloud project and its Desktop OAuth client. Recommend setting up Drive,
+Calendar, and Gmail, but ask which subset the user wants before configuring APIs
+and scopes.
 
 Guide the user through the current Google Auth Platform UI:
 

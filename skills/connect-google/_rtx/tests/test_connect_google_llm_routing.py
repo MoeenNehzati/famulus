@@ -330,6 +330,28 @@ def test_default_router_contract(skill_body: str) -> None:
     assert "connect-google-rtx" not in text
 
 
+def test_default_router_presents_project_choice_before_requesting_json(
+    skill_body: str,
+) -> None:
+    """A missing client must route by project eligibility before file intake."""
+    text = quoted_prose(skill_body)
+    project_requirement = text.index("needs a google cloud project")
+    developer_project = text.index("developer's experimental google cloud project")
+    own_project = text.index("their own google cloud project")
+    account_enrollment = text.index("has been added by the developer")
+    json_path = text.index("local path")
+    own_route = text.index("if no, route to `connect-google.interface.create-client`")
+    own_download = text.index("downloads its desktop client json", own_route)
+    own_json_path = text.index("local path", own_download)
+
+    assert project_requirement < developer_project < account_enrollment < json_path
+    assert project_requirement < own_project < account_enrollment
+    assert account_enrollment < own_route < own_download < own_json_path
+    assert "oauth test-user list" in text
+    assert "obtain the json from the developer" in text
+    assert "do not assume enrollment" in text
+
+
 def test_create_client_route_contract(create_client_body: str) -> None:
     text = create_client_body
     for phrase in (
@@ -354,6 +376,20 @@ def test_create_client_route_contract(create_client_body: str) -> None:
     assert "never commit" in text
     assert "dispatcher " not in text
     assert "connect-google-rtx" not in text
+
+
+def test_create_client_is_the_own_project_route(create_client_body: str) -> None:
+    text = quoted_prose(create_client_body)
+    assert "own google cloud project" in text
+    assert "local file path" in text
+
+
+def test_connect_services_does_not_bypass_project_routing(
+    connect_services_body: str,
+) -> None:
+    text = quoted_prose(connect_services_body)
+    assert "connect-google.interface.default" in text
+    assert "do not request a json path directly" in text
 
 
 def quoted_prose(text: str) -> str:
