@@ -24,7 +24,6 @@ def load_module(name: str, relative_path: str):
     return module
 
 
-validator = load_module("skill_refactoring_validator", "references/standards-schema/validate_standard_v6.py")
 renderer = load_module("skill_refactoring_renderer", "references/standards-schema/render_standard_v6.py")
 
 
@@ -166,11 +165,10 @@ def assert_source_unit_mapping(unit, document, superseded_targets):
         assert actual == target["expected"], unit
 
 
-def test_standard_validates_and_has_explicit_canonical_path():
+def test_standard_has_expected_identity_and_explicit_canonical_path():
     document = load_standard()
     assert document["id"] == "node-standards.refactoring"
     assert document["canonical_path"] == "references/node-standards/refactoring.standard.yaml"
-    assert validator.validate_file(STANDARD, ROOT) == []
 
 
 def test_category_remedy_uses_schema_without_documentation_dependency():

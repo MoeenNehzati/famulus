@@ -39,7 +39,11 @@ def _argument(
     ("requirement", "expected"),
     [
         ("Python", "Python"),
+        ("Python==3.11", "Python"),
         ("Python>=3.11", "Python"),
+        ("Python>3.11", "Python"),
+        ("Python<=3.13", "Python"),
+        ("Python<4", "Python"),
         ("Python>=3.11,<4", "Python"),
     ],
 )

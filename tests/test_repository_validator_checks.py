@@ -11,6 +11,7 @@ from pathlib import Path
 import xml.etree.ElementTree as ElementTree
 
 import pytest
+from officina.repository.checks.runner import ValidatorPytestPlugin
 from test_support.git_repository import GitTestRepository
 
 
@@ -61,11 +62,34 @@ def _initialize_runner_repository(repo: Path) -> Path:
     return validators
 
 
-def test_run_all_uses_staged_bytes_and_ignores_untracked_validator(
-    tmp_path: Path,
-) -> None:
+@pytest.fixture(scope="session")
+def runner_repository_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Provide one worker-local, unborn, staged starting repository."""
+    template = tmp_path_factory.mktemp("repository-validator-checks") / "template"
+    _initialize_runner_repository(template)
+    return template
+
+
+@pytest.fixture
+def runner_repository(tmp_path: Path, runner_repository_template: Path) -> Path:
+    """Copy the immutable runner repository into one test's private workspace."""
     repo = tmp_path / "repo"
-    validators = _initialize_runner_repository(repo)
+    shutil.copytree(
+        runner_repository_template,
+        repo,
+        copy_function=shutil.copy2,
+        symlinks=True,
+    )
+    return repo
+
+
+def test_run_all_public_staged_runner_contracts(
+    tmp_path: Path,
+    runner_repository: Path,
+) -> None:
+    repo = runner_repository
+    validators = repo / "validators"
+    repository = GitTestRepository(repo)
     tracked = repo / "tracked.txt"
     tracked.write_text("staged\n", encoding="utf-8")
     (validators / "content_probe.py").write_text(
@@ -75,44 +99,19 @@ def test_run_all_uses_staged_bytes_and_ignores_untracked_validator(
         "    return [] if value == 'staged\\n' else [f'unexpected bytes: {value!r}']\n",
         encoding="utf-8",
     )
-    _require_git_ok(GitTestRepository(repo).git("add", "."))
-    tracked.write_text("unstaged\n", encoding="utf-8")
-    sentinel = tmp_path / "untracked-imported"
-    (validators / "untracked_probe.py").write_text(
-        f"from pathlib import Path\nPath({str(sentinel)!r}).write_text('ran')\n"
-        "def validate(repo_root): return []\n",
+    (repo / "src").mkdir(exist_ok=True)
+    helper = repo / "src" / "validator_helper.py"
+    helper.write_text("VALUE = 'staged'\n", encoding="utf-8")
+    (validators / "dependency_probe.py").write_text(
+        "from validator_helper import VALUE\n"
+        "def validate(repo_root):\n"
+        "    return [] if VALUE == 'staged' else [f'unexpected helper: {VALUE}']\n",
         encoding="utf-8",
     )
-
-    results = _RUNNER.run_all(repo, validator_ids=["repo/content_probe"])
-
-    assert results == {}
-    assert not sentinel.exists()
-
-
-def test_run_all_returns_canonical_ids_and_rejects_unknown_selection(
-    tmp_path: Path,
-) -> None:
-    repo = tmp_path / "repo"
-    validators = _initialize_runner_repository(repo)
     (validators / "probe.py").write_text(
         "def validate(repo_root): return ['problem']\n",
         encoding="utf-8",
     )
-    _require_git_ok(GitTestRepository(repo).git("add", "."))
-
-    assert _RUNNER.run_all(repo, validator_ids=["repo/probe"]) == {
-        "repo/probe": ["problem"]
-    }
-    with pytest.raises(_RUNNER.ValidatorRunnerError, match="unknown validator"):
-        _RUNNER.run_all(repo, validator_ids=["repo/missing"])
-
-
-def test_run_all_collects_validators_as_pytest_functions_with_fixtures(
-    tmp_path: Path,
-) -> None:
-    repo = tmp_path / "repo"
-    validators = _initialize_runner_repository(repo)
     (validators / "fixture_probe.py").write_text(
         "def validate(repo_root, request):\n"
         "    errors = []\n"
@@ -123,44 +122,10 @@ def test_run_all_collects_validators_as_pytest_functions_with_fixtures(
         "    return errors\n",
         encoding="utf-8",
     )
-    _require_git_ok(GitTestRepository(repo).git("add", "."))
-
-    assert _RUNNER.run_all(
-        repo,
-        validator_ids=["repo/fixture_probe"],
-    ) == {}
-
-
-def test_run_all_writes_validator_junit_timings(tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
-    validators = _initialize_runner_repository(repo)
     (validators / "timed_probe.py").write_text(
         "def validate(repo_root): return []\n",
         encoding="utf-8",
     )
-    _require_git_ok(GitTestRepository(repo).git("add", "."))
-    timing_output = tmp_path / "validator-timings.xml"
-
-    assert _RUNNER.run_all(
-        repo,
-        validator_ids=["repo/timed_probe"],
-        timing_output=timing_output,
-    ) == {}
-
-    testcases = list(ElementTree.parse(timing_output).getroot().iter("testcase"))
-    assert [testcase.attrib["classname"] for testcase in testcases] == [
-        "validators.timed_probe"
-    ]
-    assert [testcase.attrib["name"] for testcase in testcases] == [
-        "repo/timed_probe"
-    ]
-
-
-def test_run_all_reuses_module_fixture_and_aggregates_validator_items(
-    tmp_path: Path,
-) -> None:
-    repo = tmp_path / "repo"
-    validators = _initialize_runner_repository(repo)
     evidence = tmp_path / "fixture-calls"
     (validators / "multi_item.py").write_text(
         "from pathlib import Path\n"
@@ -176,19 +141,6 @@ def test_run_all_reuses_module_fixture_and_aggregates_validator_items(
         "def validate(repo_root): return ['legacy fallback ran']\n",
         encoding="utf-8",
     )
-    _require_git_ok(GitTestRepository(repo).git("add", "."))
-
-    assert _RUNNER.run_all(repo, validator_ids=["repo/multi_item"]) == {
-        "repo/multi_item": ["first:prepared", "second:prepared"]
-    }
-    assert evidence.read_text(encoding="utf-8") == "x"
-
-
-def test_run_all_shares_python_source_cache_only_within_one_session(
-    tmp_path: Path,
-) -> None:
-    repo = tmp_path / "repo"
-    validators = _initialize_runner_repository(repo)
     (repo / "shared.py").write_text("value = 1\n", encoding="utf-8")
     (validators / "a_cache_writer.py").write_text(
         "def test_cache_starts_empty(repo_root, python_source_cache):\n"
@@ -209,11 +161,109 @@ def test_run_all_shares_python_source_cache_only_within_one_session(
         "def validate(repo_root): return ['legacy fallback ran']\n",
         encoding="utf-8",
     )
-    _require_git_ok(GitTestRepository(repo).git("add", "."))
+    (validators / "included.py").write_text(
+        "def validate(repo_root): return ['included finding']\n",
+        encoding="utf-8",
+    )
+    (validators / "excluded.py").write_text(
+        "def validate(repo_root): return ['excluded finding']\n",
+        encoding="utf-8",
+    )
+    staged_observation = tmp_path / "unborn-staged-paths.json"
+    (repo / "module.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (repo / "notes.txt").write_text("tracked\n", encoding="utf-8")
+    (validators / "staged_probe.py").write_text(
+        "import json\n"
+        "from pathlib import Path\n"
+        f"OBSERVATION = Path({str(staged_observation)!r})\n"
+        "def validate_staged(repo_root, staged_paths):\n"
+        "    OBSERVATION.write_text(json.dumps(list(staged_paths)), encoding='utf-8')\n"
+        "    return []\n"
+        "def validate(repo_root): return ['ordinary entry point ran']\n",
+        encoding="utf-8",
+    )
+    _require_git_ok(repository.git("add", "."))
+    tracked.write_text("unstaged\n", encoding="utf-8")
+    helper.write_text("VALUE = 'unstaged'\n", encoding="utf-8")
+    sentinel = tmp_path / "untracked-imported"
+    (validators / "untracked_probe.py").write_text(
+        f"from pathlib import Path\nPath({str(sentinel)!r}).write_text('ran')\n"
+        "def validate(repo_root): return []\n",
+        encoding="utf-8",
+    )
+    timing_output = tmp_path / "validator-timings.xml"
 
+    # Phase 1: one unborn-repository session owns unselected discovery, staged
+    # bytes and paths, imports, fixtures, aggregation, IDs, and exclusions.
+    results = _RUNNER.run_all(
+        repo,
+        excluded_validator_ids=["repo/excluded"],
+        timing_output=timing_output,
+    )
+
+    assert results == {
+        "repo/included": ["included finding"],
+        "repo/multi_item": ["first:prepared", "second:prepared"],
+        "repo/probe": ["problem"],
+    }
+    assert not sentinel.exists()
+    assert evidence.read_text(encoding="utf-8") == "x"
+    assert json.loads(staged_observation.read_text(encoding="utf-8")) == [
+        "module.py",
+        "notes.txt",
+        "repo_checks.py",
+        "shared.py",
+        "src/officina/__init__.py",
+        "src/officina/common/__init__.py",
+        "src/officina/common/python_source_cache.py",
+        "src/officina/repository/__init__.py",
+        "src/officina/repository/checks/__init__.py",
+        "src/officina/repository/checks/discovery.py",
+        "src/officina/repository/checks/runner.py",
+        "src/officina/validators/__init__.py",
+        "src/officina/validators/snapshot.py",
+        "src/validator_helper.py",
+        "tracked.txt",
+        "validators/a_cache_writer.py",
+        "validators/b_cache_reader.py",
+        "validators/content_probe.py",
+        "validators/dependency_probe.py",
+        "validators/excluded.py",
+        "validators/fixture_probe.py",
+        "validators/included.py",
+        "validators/multi_item.py",
+        "validators/probe.py",
+        "validators/staged_probe.py",
+        "validators/timed_probe.py",
+    ]
+    testcases = list(ElementTree.parse(timing_output).getroot().iter("testcase"))
+    assert sorted(
+        (testcase.attrib["classname"], testcase.attrib["name"])
+        for testcase in testcases
+    ) == sorted(
+        [
+            ("validators.a_cache_writer", "test_cache_starts_empty"),
+            ("validators.b_cache_reader", "test_cache_reuses_prior_parse"),
+            ("validators.content_probe", "repo/content_probe"),
+            ("validators.dependency_probe", "repo/dependency_probe"),
+            ("validators.fixture_probe", "repo/fixture_probe"),
+            ("validators.included", "repo/included"),
+            ("validators.multi_item", "test_first"),
+            ("validators.multi_item", "test_second"),
+            ("validators.probe", "repo/probe"),
+            ("validators.staged_probe", "repo/staged_probe"),
+            ("validators.timed_probe", "repo/timed_probe"),
+        ]
+    )
+    assert all(float(testcase.attrib["time"]) >= 0.0 for testcase in testcases)
+
+    # Phase 2: the preceding run must not leak its source cache into this
+    # session, while both selected validators share one cache in this session.
     selected = ["repo/a_cache_writer", "repo/b_cache_reader"]
     assert _RUNNER.run_all(repo, validator_ids=selected) == {}
-    assert _RUNNER.run_all(repo, validator_ids=selected) == {}
+
+    with pytest.raises(_RUNNER.ValidatorRunnerError, match="unknown validator"):
+        _RUNNER._selected_validator_paths(repo, ["repo/missing"])
 
 
 def test_skill_validator_discovery_supports_each_layout_with_explicit_ids(
@@ -250,23 +300,29 @@ def test_skill_validator_discovery_rejects_ambiguous_dual_layout(
         _RUNNER._validator_paths(tmp_path)
 
 
-def test_selected_graph_consumers_share_one_automatic_blueprint_preflight(
+def test_graph_preflight_shares_schema_and_isolates_consumer_mutation(
     tmp_path: Path,
+    runner_repository: Path,
 ) -> None:
-    repo = tmp_path / "repo"
-    validators = _initialize_runner_repository(repo)
+    repo = runner_repository
+    validators = repo / "validators"
     skill_validators = repo / "skills" / "skill-maker" / "validators"
     skill_validators.mkdir(parents=True)
     counter = tmp_path / "preflight-count"
+    schema_evidence = tmp_path / "schema-version"
+    observation = tmp_path / "later-observation"
     (skill_validators / "blueprints.py").write_text(
         "from pathlib import Path\n"
         f"COUNTER = Path({str(counter)!r})\n"
-        "def preflight(repo_root):\n"
+        f"SCHEMA_EVIDENCE = Path({str(schema_evidence)!r})\n"
+        "def repository_schema_version(repo_root): return 5\n"
+        "def preflight(repo_root, *, expected_schema_version):\n"
         "    count = int(COUNTER.read_text() or '0') if COUNTER.exists() else 0\n"
         "    COUNTER.write_text(str(count + 1))\n"
-        "    return [], {'token': 'shared'}\n"
+        "    SCHEMA_EVIDENCE.write_text(str(expected_schema_version))\n"
+        "    return [], {'token': 'shared', 'items': []}\n"
         "def validate_with_graph(repo_root, graph):\n"
-        "    return [] if graph == {'token': 'shared'} else ['wrong graph']\n"
+        "    return [] if graph == {'token': 'shared', 'items': []} else ['wrong graph']\n"
         "def validate(repo_root): return ['duplicate graph load']\n",
         encoding="utf-8",
     )
@@ -274,177 +330,15 @@ def test_selected_graph_consumers_share_one_automatic_blueprint_preflight(
         (skill_validators / f"{name}.py").write_text(
             "REQUIRES_BLUEPRINT_GRAPH = True\n"
             "def validate_with_graph(repo_root, graph):\n"
-            "    return [] if graph == {'token': 'shared'} else ['wrong graph']\n"
+            "    return [] if graph == {'token': 'shared', 'items': []} else ['wrong graph']\n"
             "def validate(repo_root): return ['duplicate topology error']\n",
             encoding="utf-8",
         )
     (validators / "duplicate_subcommand_tokens.py").write_text(
         "REQUIRES_BLUEPRINT_GRAPH = True\n"
         "def validate_with_graph(repo_root, graph):\n"
-        "    return [] if graph == {'token': 'shared'} else ['wrong graph']\n"
+        "    return [] if graph == {'token': 'shared', 'items': []} else ['wrong graph']\n"
         "def validate(repo_root): return ['duplicate graph load']\n",
-        encoding="utf-8",
-    )
-    _require_git_ok(GitTestRepository(repo).git("add", "."))
-
-    results = _RUNNER.run_all(
-        repo,
-        validator_ids=[
-            "repo/duplicate_subcommand_tokens",
-            "skill-maker/blueprint_relationships",
-            "skill-maker/interface_ids",
-        ],
-    )
-
-    assert results == {}
-    assert counter.read_text(encoding="utf-8") == "1"
-
-
-def test_blueprint_preflight_receives_detected_repository_schema_version(
-    tmp_path: Path,
-) -> None:
-    repo = tmp_path / "repo"
-    _initialize_runner_repository(repo)
-    skill_validators = repo / "skills" / "skill-maker" / "validators"
-    skill_validators.mkdir(parents=True)
-    evidence = tmp_path / "schema-version"
-    (skill_validators / "blueprints.py").write_text(
-        "from pathlib import Path\n"
-        f"EVIDENCE = Path({str(evidence)!r})\n"
-        "def repository_schema_version(repo_root): return 5\n"
-        "def preflight(repo_root, *, expected_schema_version):\n"
-        "    EVIDENCE.write_text(str(expected_schema_version))\n"
-        "    return [], {'token': 'shared'}\n"
-        "def validate_with_graph(repo_root, graph): return []\n"
-        "def validate(repo_root): return ['duplicate graph load']\n",
-        encoding="utf-8",
-    )
-    (skill_validators / "interface_ids.py").write_text(
-        "REQUIRES_BLUEPRINT_GRAPH = True\n"
-        "def validate_with_graph(repo_root, graph): return []\n"
-        "def validate(repo_root): return ['duplicate graph load']\n",
-        encoding="utf-8",
-    )
-    _require_git_ok(GitTestRepository(repo).git("add", "."))
-
-    results = _RUNNER.run_all(
-        repo,
-        validator_ids=["skill-maker/interface_ids"],
-    )
-
-    assert results == {}
-    assert evidence.read_text(encoding="utf-8") == "5"
-
-
-def test_graph_preflight_errors_are_reported_only_by_blueprint_owner(
-    tmp_path: Path,
-) -> None:
-    repo = tmp_path / "repo"
-    validators = _initialize_runner_repository(repo)
-    skill_validators = repo / "skills" / "skill-maker" / "validators"
-    skill_validators.mkdir(parents=True)
-    (skill_validators / "blueprints.py").write_text(
-        "def preflight(repo_root): return ['topology error'], None\n"
-        "def validate(repo_root): return ['duplicate topology error']\n",
-        encoding="utf-8",
-    )
-    for name in ("blueprint_relationships", "interface_ids"):
-        (skill_validators / f"{name}.py").write_text(
-            "REQUIRES_BLUEPRINT_GRAPH = True\n"
-            "def validate_with_graph(repo_root, graph): return ['consumer ran']\n"
-            "def validate(repo_root): return ['duplicate topology error']\n",
-            encoding="utf-8",
-        )
-    (validators / "duplicate_subcommand_tokens.py").write_text(
-        "REQUIRES_BLUEPRINT_GRAPH = True\n"
-        "def validate_with_graph(repo_root, graph): return ['consumer ran']\n"
-        "def validate(repo_root): return ['duplicate topology error']\n",
-        encoding="utf-8",
-    )
-    _require_git_ok(GitTestRepository(repo).git("add", "."))
-
-    assert _RUNNER.run_all(
-        repo,
-        validator_ids=[
-            "repo/duplicate_subcommand_tokens",
-            "skill-maker/blueprint_relationships",
-            "skill-maker/interface_ids",
-        ],
-    ) == {
-        "skill-maker/blueprints": ["topology error"],
-    }
-
-
-def test_fixture_backed_graph_consumer_obeys_preflight_error_gating(
-    tmp_path: Path,
-) -> None:
-    repo = tmp_path / "repo"
-    _initialize_runner_repository(repo)
-    skill_validators = repo / "skills" / "skill-maker" / "validators"
-    skill_validators.mkdir(parents=True)
-    sentinel = tmp_path / "consumer-ran"
-    (skill_validators / "blueprints.py").write_text(
-        "def preflight(repo_root): return ['topology error'], None\n"
-        "def validate(repo_root): return ['duplicate topology error']\n",
-        encoding="utf-8",
-    )
-    (skill_validators / "fixture_consumer.py").write_text(
-        "from pathlib import Path\n"
-        "REQUIRES_BLUEPRINT_GRAPH = True\n"
-        f"SENTINEL = Path({str(sentinel)!r})\n"
-        "def test_graph_consumer(repo_root, python_source_cache):\n"
-        "    SENTINEL.write_text('ran')\n"
-        "    return ['consumer ran']\n"
-        "def validate_with_graph(repo_root, graph): return ['legacy ran']\n"
-        "def validate(repo_root): return ['duplicate topology error']\n",
-        encoding="utf-8",
-    )
-    _require_git_ok(GitTestRepository(repo).git("add", "."))
-
-    assert _RUNNER.run_all(
-        repo,
-        validator_ids=["skill-maker/fixture_consumer"],
-    ) == {"skill-maker/blueprints": ["topology error"]}
-    assert not sentinel.exists()
-
-
-def test_selected_graph_consumer_is_a_noop_when_preflight_has_no_graph(
-    tmp_path: Path,
-) -> None:
-    repo = tmp_path / "repo"
-    _initialize_runner_repository(repo)
-    skill_validators = repo / "skills" / "skill-maker" / "validators"
-    skill_validators.mkdir(parents=True)
-    (skill_validators / "blueprints.py").write_text(
-        "def preflight(repo_root): return [], None\n"
-        "def validate(repo_root): return []\n",
-        encoding="utf-8",
-    )
-    (skill_validators / "interface_ids.py").write_text(
-        "REQUIRES_BLUEPRINT_GRAPH = True\n"
-        "def validate_with_graph(repo_root, graph): return ['must not run']\n"
-        "def validate(repo_root): return []\n",
-        encoding="utf-8",
-    )
-    _require_git_ok(GitTestRepository(repo).git("add", "."))
-
-    assert _RUNNER.run_all(
-        repo,
-        validator_ids=["skill-maker/interface_ids"],
-    ) == {}
-
-
-def test_graph_consumer_mutation_is_reported_and_not_shared_with_later_consumer(
-    tmp_path: Path,
-) -> None:
-    repo = tmp_path / "repo"
-    _initialize_runner_repository(repo)
-    skill_validators = repo / "skills" / "skill-maker" / "validators"
-    skill_validators.mkdir(parents=True)
-    observation = tmp_path / "later-observation"
-    (skill_validators / "blueprints.py").write_text(
-        "def preflight(repo_root): return [], {'items': []}\n"
-        "def validate(repo_root): return []\n",
         encoding="utf-8",
     )
     (skill_validators / "a_mutator.py").write_text(
@@ -470,7 +364,10 @@ def test_graph_consumer_mutation_is_reported_and_not_shared_with_later_consumer(
     results = _RUNNER.run_all(
         repo,
         validator_ids=[
+            "repo/duplicate_subcommand_tokens",
             "skill-maker/a_mutator",
+            "skill-maker/blueprint_relationships",
+            "skill-maker/interface_ids",
             "skill-maker/z_observer",
         ],
     )
@@ -480,12 +377,87 @@ def test_graph_consumer_mutation_is_reported_and_not_shared_with_later_consumer(
             "skill-maker/a_mutator: validator mutated its blueprint graph view"
         ]
     }
+    assert counter.read_text(encoding="utf-8") == "1"
+    assert schema_evidence.read_text(encoding="utf-8") == "5"
     assert observation.read_text(encoding="utf-8") == "[]"
 
 
-def test_run_all_excludes_the_repository_validator_helper(tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
-    validators = _initialize_runner_repository(repo)
+def test_selected_graph_consumer_is_a_noop_when_preflight_has_no_graph(
+    tmp_path: Path,
+    runner_repository: Path,
+) -> None:
+    repo = runner_repository
+    skill_validators = repo / "skills" / "skill-maker" / "validators"
+    skill_validators.mkdir(parents=True)
+    (skill_validators / "blueprints.py").write_text(
+        "def preflight(repo_root): return [], None\n"
+        "def validate(repo_root): return []\n",
+        encoding="utf-8",
+    )
+    (skill_validators / "interface_ids.py").write_text(
+        "REQUIRES_BLUEPRINT_GRAPH = True\n"
+        "def validate_with_graph(repo_root, graph): return ['must not run']\n"
+        "def validate(repo_root): return []\n",
+        encoding="utf-8",
+    )
+    _require_git_ok(GitTestRepository(repo).git("add", "."))
+
+    # Phase 1: an optional missing graph is a successful no-op.
+    assert _RUNNER.run_all(
+        repo,
+        validator_ids=["skill-maker/interface_ids"],
+    ) == {}
+
+    # Phase 2: after explicitly staging a failing owner and every consumer
+    # protocol, the owner finding gates all consumers.
+    sentinel = tmp_path / "fixture-consumer-ran"
+    (skill_validators / "blueprints.py").write_text(
+        "def preflight(repo_root): return ['topology error'], None\n"
+        "def validate(repo_root): return ['duplicate topology error']\n",
+        encoding="utf-8",
+    )
+    (skill_validators / "blueprint_relationships.py").write_text(
+        "REQUIRES_BLUEPRINT_GRAPH = True\n"
+        "def validate_with_graph(repo_root, graph): return ['consumer ran']\n"
+        "def validate(repo_root): return ['duplicate topology error']\n",
+        encoding="utf-8",
+    )
+    (repo / "validators" / "duplicate_subcommand_tokens.py").write_text(
+        "REQUIRES_BLUEPRINT_GRAPH = True\n"
+        "def validate_with_graph(repo_root, graph): return ['consumer ran']\n"
+        "def validate(repo_root): return ['duplicate topology error']\n",
+        encoding="utf-8",
+    )
+    (skill_validators / "fixture_consumer.py").write_text(
+        "from pathlib import Path\n"
+        "REQUIRES_BLUEPRINT_GRAPH = True\n"
+        f"SENTINEL = Path({str(sentinel)!r})\n"
+        "def test_graph_consumer(repo_root, python_source_cache):\n"
+        "    SENTINEL.write_text('ran')\n"
+        "    return ['consumer ran']\n"
+        "def validate_with_graph(repo_root, graph): return ['legacy ran']\n"
+        "def validate(repo_root): return ['duplicate topology error']\n",
+        encoding="utf-8",
+    )
+    _require_git_ok(GitTestRepository(repo).git("add", "."))
+
+    assert _RUNNER.run_all(
+        repo,
+        validator_ids=[
+            "repo/duplicate_subcommand_tokens",
+            "skill-maker/blueprint_relationships",
+            "skill-maker/fixture_consumer",
+            "skill-maker/interface_ids",
+        ],
+    ) == {"skill-maker/blueprints": ["topology error"]}
+    assert not sentinel.exists()
+
+
+def test_validator_paths_excludes_the_repository_validator_helper(
+    tmp_path: Path,
+) -> None:
+    validators = tmp_path / "validators"
+    validators.mkdir()
     (validators / "skill_md_body.py").write_text(
         "VALUE = 'shared helper'\n",
         encoding="utf-8",
@@ -494,93 +466,58 @@ def test_run_all_excludes_the_repository_validator_helper(tmp_path: Path) -> Non
         "def validate(repo_root): return []\n",
         encoding="utf-8",
     )
-    _require_git_ok(GitTestRepository(repo).git("add", "."))
 
-    assert _RUNNER.run_all(repo) == {}
+    assert _RUNNER._validator_paths(tmp_path) == {
+        "repo/probe": validators / "probe.py",
+    }
 
 
-def test_run_all_rejects_an_unknown_module_without_validate(tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
-    validators = _initialize_runner_repository(repo)
-    (validators / "not_a_helper.py").write_text(
+def test_direct_validator_protocol_validation_rejects_invalid_modules(
+    tmp_path: Path,
+) -> None:
+    validator = tmp_path / "not_a_helper.py"
+    validator.write_text(
         "VALUE = 'not a validator'\n",
         encoding="utf-8",
     )
-    _require_git_ok(GitTestRepository(repo).git("add", "."))
 
     with pytest.raises(
         _RUNNER.ValidatorRunnerError,
         match="repo/not_a_helper: validator has no callable validate",
     ):
-        _RUNNER.run_all(repo)
+        _RUNNER._load_validator("repo/not_a_helper", validator)
 
-
-def test_run_all_imports_staged_transitive_dependencies(tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
-    validators = _initialize_runner_repository(repo)
-    (repo / "src").mkdir(exist_ok=True)
-    helper = repo / "src" / "validator_helper.py"
-    helper.write_text("VALUE = 'staged'\n", encoding="utf-8")
-    (validators / "dependency_probe.py").write_text(
-        "from validator_helper import VALUE\n"
-        "def validate(repo_root):\n"
-        "    return [] if VALUE == 'staged' else [f'unexpected helper: {VALUE}']\n",
+    overlap = tmp_path / "staged_graph_overlap.py"
+    overlap.write_text(
+        "REQUIRES_BLUEPRINT_GRAPH = True\n"
+        "def preflight(repo_root): return [], None\n"
+        "def validate_with_graph(repo_root, graph): return []\n"
+        "def validate_staged(repo_root, staged_paths): return []\n"
+        "def validate(repo_root): return []\n",
         encoding="utf-8",
     )
-    _require_git_ok(GitTestRepository(repo).git("add", "."))
-    helper.write_text("VALUE = 'unstaged'\n", encoding="utf-8")
-
-    assert _RUNNER.run_all(
-        repo,
-        validator_ids=["repo/dependency_probe"],
-    ) == {}
-
-
-def test_staged_validator_receives_eligible_paths_with_unborn_head(
-    tmp_path: Path,
-) -> None:
-    repo = tmp_path / "repo"
-    validators = _initialize_runner_repository(repo)
-    observation = tmp_path / "staged-paths.json"
-    (repo / "module.py").write_text("VALUE = 1\n", encoding="utf-8")
-    (repo / "notes.txt").write_text("tracked\n", encoding="utf-8")
-    (validators / "staged_probe.py").write_text(
-        "import json\n"
-        "from pathlib import Path\n"
-        f"OBSERVATION = Path({str(observation)!r})\n"
-        "def validate_staged(repo_root, staged_paths):\n"
-        "    OBSERVATION.write_text(json.dumps(list(staged_paths)), encoding='utf-8')\n"
-        "    return []\n"
-        "def validate(repo_root): return ['ordinary entry point ran']\n",
-        encoding="utf-8",
-    )
-    _require_git_ok(GitTestRepository(repo).git("add", "."))
-
-    results = _RUNNER.run_all(repo, validator_ids=["repo/staged_probe"])
-
-    assert results == {}
-    assert json.loads(observation.read_text(encoding="utf-8")) == [
-        "module.py",
-        "notes.txt",
-        "repo_checks.py",
-        "src/officina/__init__.py",
-        "src/officina/common/__init__.py",
-        "src/officina/common/python_source_cache.py",
-        "src/officina/repository/__init__.py",
-        "src/officina/repository/checks/__init__.py",
-        "src/officina/repository/checks/discovery.py",
-        "src/officina/repository/checks/runner.py",
-        "src/officina/validators/__init__.py",
-        "src/officina/validators/snapshot.py",
-        "validators/staged_probe.py",
-    ]
+    with pytest.raises(
+        _RUNNER.ValidatorRunnerError,
+        match=(
+            "repo/staged_graph_overlap: validate_staged cannot be combined with "
+            "REQUIRES_BLUEPRINT_GRAPH, preflight, validate_with_graph"
+        ),
+    ):
+        ValidatorPytestPlugin(
+            runner=_RUNNER,
+            tracked_root=tmp_path,
+            display_root=tmp_path,
+            selected_paths=(("repo/staged_graph_overlap", overlap),),
+            staged_paths=(),
+        )
 
 
 def test_staged_validator_receives_only_changed_regular_index_paths(
     tmp_path: Path,
+    runner_repository: Path,
 ) -> None:
-    repo = tmp_path / "repo"
-    validators = _initialize_runner_repository(repo)
+    repo = runner_repository
+    validators = repo / "validators"
     repository = GitTestRepository(repo)
     observation = tmp_path / "changed-paths.json"
     for name in (
@@ -631,44 +568,22 @@ def test_staged_validator_receives_only_changed_regular_index_paths(
         "new.py",
         "renamed.py",
     ]
-
-
-@pytest.mark.parametrize(
-    ("graph_source", "expected_hook"),
-    [
-        ("REQUIRES_BLUEPRINT_GRAPH = True\n", "REQUIRES_BLUEPRINT_GRAPH"),
-        ("def preflight(repo_root): return [], None\n", "preflight"),
-        ("def validate_with_graph(repo_root, graph): return []\n", "validate_with_graph"),
-    ],
-)
-def test_staged_validator_rejects_graph_protocol_overlap(
-    tmp_path: Path,
-    graph_source: str,
-    expected_hook: str,
-) -> None:
-    repo = tmp_path / "repo"
-    validators = _initialize_runner_repository(repo)
-    (validators / "staged_probe.py").write_text(
-        graph_source
-        + "def validate_staged(repo_root, staged_paths): return []\n"
-        + "def validate(repo_root): return []\n",
-        encoding="utf-8",
-    )
-    _require_git_ok(GitTestRepository(repo).git("add", "."))
-
-    with pytest.raises(
-        _RUNNER.ValidatorRunnerError,
-        match=rf"validate_staged cannot be combined with .*{expected_hook}",
-    ):
-        _RUNNER.run_all(repo, validator_ids=["repo/staged_probe"])
+    with _RUNNER.staged_repository_view(repo) as view:
+        baseline = view.root / ".git" / "officina-validator-baseline"
+        assert (baseline / "modified.py").read_text(encoding="utf-8") == (
+            "NAME = 'modified.py'\n"
+        )
+        assert (baseline / "renamed.py").read_text(encoding="utf-8") == (
+            "NAME = 'old.py'\n"
+        )
+        assert not (baseline / "new.py").exists()
 
 
 def test_captured_index_drives_both_paths_and_mirrored_bytes(
     tmp_path: Path,
 ) -> None:
     repo = tmp_path / "repo"
-    _initialize_runner_repository(repo)
-    repository = GitTestRepository(repo)
+    repository = GitTestRepository.create(repo)
     module = repo / "module.py"
     module.write_text("VALUE = 'baseline'\n", encoding="utf-8")
     _require_git_ok(repository.git("add", "."))
@@ -696,40 +611,12 @@ def test_captured_index_drives_both_paths_and_mirrored_bytes(
         shutil.rmtree(snapshot.root)
 
 
-def test_staged_view_materializes_head_baselines_for_modifications_and_renames(
-    tmp_path: Path,
-) -> None:
-    repo = tmp_path / "repo"
-    _initialize_runner_repository(repo)
-    repository = GitTestRepository(repo)
-    (repo / "modified.py").write_text("VALUE = 'baseline'\n", encoding="utf-8")
-    (repo / "old.py").write_text("VALUE = 'renamed baseline'\n", encoding="utf-8")
-    _require_git_ok(repository.git("add", "."))
-    _require_git_ok(repository.git("commit", "-qm", "baseline"))
-
-    (repo / "modified.py").write_text("VALUE = 'staged'\n", encoding="utf-8")
-    (repo / "new.py").write_text("VALUE = 'new'\n", encoding="utf-8")
-    _require_git_ok(repository.git("mv", "old.py", "renamed.py"))
-    _require_git_ok(repository.git("add", "modified.py", "new.py"))
-
-    with _RUNNER.staged_repository_view(repo) as view:
-        baseline = view.root / ".git" / "officina-validator-baseline"
-        assert (baseline / "modified.py").read_text(encoding="utf-8") == (
-            "VALUE = 'baseline'\n"
-        )
-        assert (baseline / "renamed.py").read_text(encoding="utf-8") == (
-            "VALUE = 'renamed baseline'\n"
-        )
-        assert not (baseline / "new.py").exists()
-
-
 def test_snapshot_capture_fails_if_head_changes_while_index_is_copied(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repo = tmp_path / "repo"
-    _initialize_runner_repository(repo)
-    repository = GitTestRepository(repo)
+    repository = GitTestRepository.create(repo)
     module = repo / "module.py"
     module.write_text("VALUE = 'baseline'\n", encoding="utf-8")
     _require_git_ok(repository.git("add", "."))
@@ -759,9 +646,10 @@ def test_snapshot_capture_fails_if_head_changes_while_index_is_copied(
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux filename bytes")
 def test_staged_path_transport_preserves_non_utf8_filename_bytes(
     tmp_path: Path,
+    runner_repository: Path,
 ) -> None:
-    repo = tmp_path / "repo"
-    validators = _initialize_runner_repository(repo)
+    repo = runner_repository
+    validators = repo / "validators"
     observation = tmp_path / "non-utf8-paths.json"
     relative_path = os.fsdecode(b"module-\xff.py")
     (repo / relative_path).write_text("VALUE = 1\n", encoding="utf-8")
@@ -783,14 +671,20 @@ def test_staged_path_transport_preserves_non_utf8_filename_bytes(
     assert relative_path in json.loads(observation.read_text(encoding="utf-8"))
 
 
-# famulus-skip: category=platform-contract; reason=POSIX symlink index modes are not supported on Windows; alternate=test_staged_validator_receives_only_changed_regular_index_paths
-@pytest.mark.skipif(os.name != "posix", reason="POSIX symlink mode")
-def test_staged_validator_excludes_changed_symlinks(tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
-    validators = _initialize_runner_repository(repo)
+# famulus-skip: category=platform-contract; reason=POSIX symlink and executable index modes are not supported on Windows; alternate=test_staged_validator_receives_only_changed_regular_index_paths
+@pytest.mark.skipif(os.name != "posix", reason="POSIX symlink and executable modes")
+def test_run_all_preserves_posix_index_modes(
+    tmp_path: Path,
+    runner_repository: Path,
+) -> None:
+    repo = runner_repository
+    validators = repo / "validators"
     observation = tmp_path / "symlink-paths.json"
     (repo / "target.py").write_text("VALUE = 1\n", encoding="utf-8")
     (repo / "link.py").symlink_to("target.py")
+    command = repo / "command"
+    command.write_text("#!/bin/sh\n", encoding="utf-8")
+    command.chmod(0o755)
     (validators / "staged_probe.py").write_text(
         "import json\n"
         "from pathlib import Path\n"
@@ -801,9 +695,19 @@ def test_staged_validator_excludes_changed_symlinks(tmp_path: Path) -> None:
         "def validate(repo_root): return ['ordinary entry point ran']\n",
         encoding="utf-8",
     )
+    (validators / "mode_probe.py").write_text(
+        "import os\n"
+        "def validate(repo_root):\n"
+        "    return [] if os.access(repo_root / 'command', os.X_OK) else ['not executable']\n",
+        encoding="utf-8",
+    )
     _require_git_ok(GitTestRepository(repo).git("add", "."))
+    command.chmod(0o644)
 
-    results = _RUNNER.run_all(repo, validator_ids=["repo/staged_probe"])
+    results = _RUNNER.run_all(
+        repo,
+        validator_ids=["repo/mode_probe", "repo/staged_probe"],
+    )
 
     assert results == {}
     paths = json.loads(observation.read_text(encoding="utf-8"))
@@ -811,9 +715,12 @@ def test_staged_validator_excludes_changed_symlinks(tmp_path: Path) -> None:
     assert "link.py" not in paths
 
 
-def test_staged_validator_supports_split_index_snapshot(tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
-    validators = _initialize_runner_repository(repo)
+def test_staged_validator_supports_split_index_snapshot(
+    tmp_path: Path,
+    runner_repository: Path,
+) -> None:
+    repo = runner_repository
+    validators = repo / "validators"
     repository = GitTestRepository(repo)
     observation = tmp_path / "split-index-paths.json"
     (repo / "module.py").write_text("VALUE = 'baseline'\n", encoding="utf-8")
@@ -839,9 +746,12 @@ def test_staged_validator_supports_split_index_snapshot(tmp_path: Path) -> None:
     assert json.loads(observation.read_text(encoding="utf-8")) == ["module.py"]
 
 
-def test_staged_validator_supports_linked_worktree_index(tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
-    validators = _initialize_runner_repository(repo)
+def test_staged_validator_supports_linked_worktree_index(
+    tmp_path: Path,
+    runner_repository: Path,
+) -> None:
+    repo = runner_repository
+    validators = repo / "validators"
     repository = GitTestRepository(repo)
     observation = tmp_path / "linked-worktree-paths.json"
     (repo / "module.py").write_text("VALUE = 'baseline'\n", encoding="utf-8")
@@ -877,32 +787,13 @@ def test_staged_validator_supports_linked_worktree_index(tmp_path: Path) -> None
     assert json.loads(observation.read_text(encoding="utf-8")) == ["module.py"]
 
 
-# famulus-skip: category=platform-contract; reason=POSIX executable bits are not meaningful on Windows; alternate=the isolated Git index mode tests cover the cross-platform source of truth
-@pytest.mark.skipif(os.name != "posix", reason="POSIX executable mode")
-def test_run_all_materializes_staged_executable_mode(tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
-    validators = _initialize_runner_repository(repo)
-    command = repo / "command"
-    command.write_text("#!/bin/sh\n", encoding="utf-8")
-    command.chmod(0o755)
-    (validators / "mode_probe.py").write_text(
-        "import os\n"
-        "def validate(repo_root):\n"
-        "    return [] if os.access(repo_root / 'command', os.X_OK) else ['not executable']\n",
-        encoding="utf-8",
-    )
-    _require_git_ok(GitTestRepository(repo).git("add", "."))
-    command.chmod(0o644)
-
-    assert _RUNNER.run_all(repo, validator_ids=["repo/mode_probe"]) == {}
-
-
 def test_run_all_isolates_unmerged_index_and_restores_git_environment(
     tmp_path: Path,
+    runner_repository: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    repo = tmp_path / "repo"
-    validators = _initialize_runner_repository(repo)
+    repo = runner_repository
+    validators = repo / "validators"
     conflict = repo / "conflict.txt"
     conflict.write_text("base\n", encoding="utf-8")
 
@@ -972,24 +863,3 @@ def test_run_all_isolates_unmerged_index_and_restores_git_environment(
     assert os.environ["GIT_OBJECT_DIRECTORY"] == "/sentinel/object-dir"
     assert GitTestRepository(repo).git("ls-files", "--stage", "-z").stdout == index_before
     assert GitTestRepository(repo).git("symbolic-ref", "HEAD").stdout == head_before
-
-
-def test_run_all_excludes_only_requested_validator(tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
-    validators = _initialize_runner_repository(repo)
-    (validators / "included.py").write_text(
-        "def validate(repo_root): return ['included finding']\n",
-        encoding="utf-8",
-    )
-    (validators / "excluded.py").write_text(
-        "def validate(repo_root): return ['excluded finding']\n",
-        encoding="utf-8",
-    )
-    _require_git_ok(GitTestRepository(repo).git("add", "."))
-
-    results = _RUNNER.run_all(
-        repo,
-        excluded_validator_ids=["repo/excluded"],
-    )
-
-    assert results == {"repo/included": ["included finding"]}

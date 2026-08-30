@@ -77,7 +77,7 @@ def test_collects_two_runtime_roots_without_module_name_collisions() -> None:
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "skills/list-manager/_rtx/tests/test_lists.py::test_init_creates_valid_yaml" in result.stdout
+    assert "skills/list-manager/_rtx/tests/test_lists.py::test_init_executable_smoke" in result.stdout
     assert (
         "skills/email-triage/_rtx/tests/test_filter_envelopes.py::"
         "test_load_cutoff_missing_watermark_warns_and_records_status"

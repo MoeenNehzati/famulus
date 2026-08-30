@@ -1,9 +1,11 @@
 """Validate canonical blueprint source files and generated skill blocks."""
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 import sys
 from pathlib import Path
+from types import ModuleType
 
 import yaml
 
@@ -173,6 +175,32 @@ def _validate_generated_markers(skill_file: Path) -> list[str]:
     return errors
 
 
+def _load_blueprint_syncer(repo_root: Path) -> ModuleType | None:
+    """Load the repository-local sync checker without launching its CLI."""
+
+    sync_path = (
+        repo_root / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py"
+    )
+    if not sync_path.is_file():
+        return None
+    module_name = "_officina_blueprint_syncer_validator"
+    spec = importlib.util.spec_from_file_location(module_name, sync_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load blueprint syncer: {sync_path}")
+    module = importlib.util.module_from_spec(spec)
+    missing = object()
+    previous = sys.modules.get(module_name, missing)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        if previous is missing:
+            sys.modules.pop(module_name, None)
+        else:
+            sys.modules[module_name] = previous
+
+
 def preflight(
     repo_root: Path,
     *,
@@ -242,26 +270,22 @@ def validate_with_graph(
     if errors:
         return errors
 
-    sync_script = (
-        repo_root / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py"
-    )
-    if sync_script.is_file():
-        sync_command = [sys.executable, str(sync_script), "--check"]
-        sync_command.extend(
-            ("--schema-version", str(graph.schema_version))
+    syncer = _load_blueprint_syncer(repo_root)
+    if syncer is not None:
+        errors.extend(
+            syncer.validate_sync_state(
+                repository_graph=graph,
+                repository_root=repo_root,
+                skills_root=repo_root / "skills",
+                runtime_dependencies_path=(
+                    repo_root
+                    / "references"
+                    / "blueprint-schema"
+                    / "runtime_dependencies.json"
+                ),
+                schema_version=graph.schema_version,
+            )
         )
-        result = subprocess.run(
-            sync_command,
-            cwd=repo_root,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="strict",
-            check=False,
-        )
-        if result.returncode != 0:
-            errors.extend(result.stdout.splitlines())
-            errors.extend(result.stderr.splitlines())
     return errors
 
 

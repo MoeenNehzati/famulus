@@ -15,6 +15,43 @@ from validators import domain_docs_cover_blueprints as domain_docs_validator  # 
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+CLEAN_README = "\n".join(
+    [
+        "# Famulus",
+        "",
+        "Famulus is a cross-host assistant library for personal planning and research work.",
+        "",
+        "## Quick Start",
+        "",
+        "### Step 1: install the plugin",
+        "",
+        "### Step 2: Install the assistant tools",
+        "",
+        "",
+        "https://moeennehzati.github.io/famulus/",
+        "",
+        "https://github.com/MoeenNehzati/famulus/issues",
+        "",
+        "[docs/officina/installation.md](docs/officina/installation.md)",
+        "",
+        "## Featured Workflows",
+        "",
+        "Plan my day",
+        "Wrap up today",
+        "Build a math dependency graph",
+        "",
+        "- [docs/quickstarts/personal-assistance.md](docs/quickstarts/personal-assistance.md)",
+        "- [docs/quickstarts/research.md](docs/quickstarts/research.md)",
+        "- [docs/quickstarts/development.md](docs/quickstarts/development.md)",
+        "- [docs/quickstarts/automation.md](docs/quickstarts/automation.md)",
+        "- [docs/quickstarts/skill-development.md](docs/quickstarts/skill-development.md)",
+        "- [docs/domains/assistant-interaction.md](docs/domains/assistant-interaction.md)",
+        "- [docs/domains/assistant-operations.md](docs/domains/assistant-operations.md)",
+        "- [docs/skills.md](docs/skills.md)",
+        "- [docs/contributors/README.md](docs/contributors/README.md)",
+        "",
+    ]
+)
 
 
 def _write(path: Path, text: str) -> None:
@@ -83,46 +120,7 @@ def _seed_docs(repo_root: Path) -> None:
                 encoding="utf-8"
             ),
         )
-    _write(
-        repo_root / "README.md",
-        "\n".join(
-            [
-                "# Famulus",
-                "",
-                "Famulus is a cross-host assistant library for personal planning and research work.",
-                "",
-                "## Quick Start",
-                "",
-                "### Step 1: install the plugin",
-                "",
-                "### Step 2: Install the assistant tools",
-                "",
-                "",
-                "https://moeennehzati.github.io/famulus/",
-                "",
-                "https://github.com/MoeenNehzati/famulus/issues",
-                "",
-                "[docs/officina/installation.md](docs/officina/installation.md)",
-                "",
-                "## Featured Workflows",
-                "",
-                "Plan my day",
-                "Wrap up today",
-                "Build a math dependency graph",
-                "",
-                "- [docs/quickstarts/personal-assistance.md](docs/quickstarts/personal-assistance.md)",
-                "- [docs/quickstarts/research.md](docs/quickstarts/research.md)",
-                "- [docs/quickstarts/development.md](docs/quickstarts/development.md)",
-                "- [docs/quickstarts/automation.md](docs/quickstarts/automation.md)",
-                "- [docs/quickstarts/skill-development.md](docs/quickstarts/skill-development.md)",
-                "- [docs/domains/assistant-interaction.md](docs/domains/assistant-interaction.md)",
-                "- [docs/domains/assistant-operations.md](docs/domains/assistant-operations.md)",
-                "- [docs/skills.md](docs/skills.md)",
-                "- [docs/contributors/README.md](docs/contributors/README.md)",
-                "",
-            ]
-        ),
-    )
+    _write(repo_root / "README.md", CLEAN_README)
     _write(
         repo_root / "docs/quickstarts/personal-assistance.md",
         "# Personal Assistance Quickstart\n",
@@ -242,15 +240,7 @@ def _make_repo(tmp_path: Path) -> Path:
     return repo_root
 
 
-def test_documentation_validators_accept_clean_repo(tmp_path: Path) -> None:
-    repo_root = _make_repo(tmp_path)
-    assert validate_readme(repo_root) == []
-    assert domain_docs_validator.validate(repo_root) == []
-    assert validate_contributor_docs(repo_root) == []
-    assert validate_skill_docs(repo_root) == []
-
-
-def test_domain_docs_validator_constructs_catalog_once(
+def test_documentation_validators_accept_clean_repo_and_reuse_catalog(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -270,41 +260,36 @@ def test_domain_docs_validator_constructs_catalog_once(
     )
     monkeypatch.setattr(docs_render, "load_catalog", counted_load_catalog)
 
+    assert validate_readme(repo_root) == []
     assert domain_docs_validator.validate(repo_root) == []
     assert calls == 1
+    assert validate_contributor_docs(repo_root) == []
+    assert validate_skill_docs(repo_root) == []
 
 
-def test_readme_validator_flags_missing_skill_index_link(tmp_path: Path) -> None:
-    repo_root = _make_repo(tmp_path)
-    readme = repo_root / "README.md"
-    readme.write_text(readme.read_text(encoding="utf-8").replace("docs/skills.md", "docs/missing.md"), encoding="utf-8")
-    errors = validate_readme(repo_root)
-    assert any("docs/skills.md" in error for error in errors)
-
-
-def test_readme_validator_rejects_code_level_install_entities(tmp_path: Path) -> None:
-    repo_root = _make_repo(tmp_path)
-    readme = repo_root / "README.md"
-    readme.write_text(
-        readme.read_text(encoding="utf-8")
-        + "\npython3 <FAMULUS_DIR>/skills/install-assistant-tools/_rtx/_phase_entry.py\n",
-        encoding="utf-8",
+def test_readme_validator_reports_distinct_user_contract_violations(
+    tmp_path: Path,
+) -> None:
+    readme = tmp_path / "README.md"
+    cases = (
+        (
+            CLEAN_README.replace("docs/skills.md", "docs/missing.md"),
+            ("docs/skills.md",),
+        ),
+        (
+            CLEAN_README
+            + "\npython3 <FAMULUS_DIR>/skills/install-assistant-tools/_rtx/_phase_entry.py\n",
+            ("_phase_entry.py", "_rtx"),
+        ),
+        (
+            CLEAN_README
+            + "\n[Blueprints](docs/officina/skill-blueprints.md)\n",
+            ("docs/officina/skill-blueprints.md",),
+        ),
     )
 
-    errors = validate_readme(repo_root)
-
-    assert any("_phase_entry.py" in error for error in errors)
-    assert any("_rtx" in error for error in errors)
-
-
-def test_readme_validator_rejects_contributor_blueprint_doc(tmp_path: Path) -> None:
-    repo_root = _make_repo(tmp_path)
-    readme = repo_root / "README.md"
-    readme.write_text(
-        readme.read_text(encoding="utf-8") + "\n[Blueprints](docs/officina/skill-blueprints.md)\n",
-        encoding="utf-8",
-    )
-
-    errors = validate_readme(repo_root)
-
-    assert any("docs/officina/skill-blueprints.md" in error for error in errors)
+    for text, expected_snippets in cases:
+        _write(readme, text)
+        errors = validate_readme(tmp_path)
+        for snippet in expected_snippets:
+            assert any(snippet in error for error in errors)

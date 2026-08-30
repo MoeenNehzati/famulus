@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import ast
 import sys
+import unicodedata
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -220,9 +221,12 @@ def _validate_python(
         constructs: "Builds the keyword lookup used by the policy checks."
     """
     try:
-        _source, tree = source_cache.read_parse(path)
+        source, tree = source_cache.read_parse(path)
     except SyntaxError as exc:
         return [f"{rel_path}:{exc.lineno}: failed to parse Python: {exc.msg}"]
+
+    if "subprocess" not in unicodedata.normalize("NFKC", source):
+        return []
 
     errors: list[str] = []
     for node in ast.walk(tree):

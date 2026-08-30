@@ -9,9 +9,6 @@ from officina.blueprints.template import (
 )
 from validators.skill.blueprints import repository_schema_version
 from validators.skill.dependencies import _CANONICAL_INTERFACE_RE
-from validators.skill_runtime_doc_references import (
-    _CANONICAL_INTERFACE_RE as _RUNTIME_INTERFACE_RE,
-)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -30,12 +27,6 @@ def test_dependency_validator_recognizes_dotted_v6_interfaces() -> None:
     interface_id = "example._rtx.source.worker.interface.run"
 
     assert _CANONICAL_INTERFACE_RE.fullmatch(interface_id)
-
-
-def test_runtime_reference_validator_masks_dotted_v6_interfaces() -> None:
-    interface_id = "example._rtx.interface.run@1"
-
-    assert "_rtx" not in _RUNTIME_INTERFACE_RE.sub("", interface_id)
 
 
 def test_repository_writer_can_emit_explicit_v6_blueprints(

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
-import shutil
 from types import SimpleNamespace
 
 import pytest
@@ -36,14 +35,6 @@ def _select_frozen_v4_loader(monkeypatch: pytest.MonkeyPatch) -> None:
 def _write_yaml(path: Path, value: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
-
-
-def _copy_schemas(repo_root: Path) -> None:
-    shutil.copytree(
-        _REPO_ROOT / "references" / "blueprint-schema",
-        repo_root / "references" / "blueprint-schema",
-        ignore=shutil.ignore_patterns("blueprint.yaml", "blueprints"),
-    )
 
 
 def _module(
@@ -130,7 +121,6 @@ def test_no_skills_passes(tmp_path: Path) -> None:
 
 
 def test_v4_declared_module_dependency_passes(tmp_path: Path) -> None:
-    _copy_schemas(tmp_path)
     _module(tmp_path, "other-skill")
     _module(
         tmp_path,
@@ -144,7 +134,6 @@ def test_v4_declared_module_dependency_passes(tmp_path: Path) -> None:
 def test_v4_source_dependency_allows_a_bare_module_reference(
     tmp_path: Path,
 ) -> None:
-    _copy_schemas(tmp_path)
     _module(tmp_path, "other-skill")
     _module(
         tmp_path,
@@ -157,7 +146,6 @@ def test_v4_source_dependency_allows_a_bare_module_reference(
 
 
 def test_undeclared_interface_mention_is_rejected(tmp_path: Path) -> None:
-    _copy_schemas(tmp_path)
     _module(tmp_path, "other-skill")
     _module(
         tmp_path,
@@ -171,7 +159,6 @@ def test_undeclared_interface_mention_is_rejected(tmp_path: Path) -> None:
 def test_undeclared_dotted_child_interface_mention_is_rejected(
     tmp_path: Path,
 ) -> None:
-    _copy_schemas(tmp_path)
     _module(tmp_path, "other-skill")
     _module(
         tmp_path,
@@ -187,7 +174,6 @@ def test_undeclared_dotted_child_interface_mention_is_rejected(
 
 
 def test_undeclared_bare_module_mention_is_rejected(tmp_path: Path) -> None:
-    _copy_schemas(tmp_path)
     _module(tmp_path, "other-skill")
     _module(tmp_path, "my-skill", body="Use other-skill for this.\n")
     errors = _mod.validate(tmp_path)
@@ -195,21 +181,18 @@ def test_undeclared_bare_module_mention_is_rejected(tmp_path: Path) -> None:
 
 
 def test_opaque_runtime_path_is_rejected(tmp_path: Path) -> None:
-    _copy_schemas(tmp_path)
     _module(tmp_path, "my-skill", body="The implementation is _rtx/_worker.py.\n")
     errors = _mod.validate(tmp_path)
     assert any("opaque runtime path" in error for error in errors)
 
 
 def test_deprecated_dependency_marker_is_rejected(tmp_path: Path) -> None:
-    _copy_schemas(tmp_path)
     _module(tmp_path, "my-skill", body="Depends on: other-skill\n")
     errors = _mod.validate(tmp_path)
     assert any("Depends on:" in error for error in errors)
 
 
 def test_disallowed_parent_path_is_rejected(tmp_path: Path) -> None:
-    _copy_schemas(tmp_path)
     _module(tmp_path, "my-skill", body="Read ../../private/file.md.\n")
     errors = _mod.validate(tmp_path)
     assert any("parent paths in SKILL.md" in error for error in errors)

@@ -20,26 +20,30 @@ def _write_runtime(tmp_path: Path, source: str) -> Path:
     return path
 
 
-def test_binary_capture_output_passes(tmp_path: Path) -> None:
+def test_text_encoding_policy_matrix_reports_exact_findings_in_source_order(
+    tmp_path: Path,
+) -> None:
     _write_runtime(
         tmp_path,
         "import subprocess\n"
-        "subprocess.run(['tool'], capture_output=True, check=False)\n",
+        "subprocess.run(['tool'], capture_output=True, check=False)\n"
+        "subprocess.run(['tool'], text=True)\n"
+        "subprocess.Popen(['tool'], universal_newlines=True)\n"
+        "subprocess.call(['tool'], encoding='utf-8')\n"
+        "subprocess.check_call(['tool'], errors='strict')\n"
+        "subprocess.check_output(['tool'], encoding='utf-8', errors='strict')\n",
     )
 
-    assert _mod.validate(tmp_path) == []
-
-
-def test_text_true_without_encoding_is_rejected(tmp_path: Path) -> None:
-    _write_runtime(
-        tmp_path,
-        "import subprocess\n"
-        "subprocess.run(['tool'], capture_output=True, text=True, check=False)\n",
-    )
-
-    errors = _mod.validate(tmp_path)
-
-    assert any("subprocess text mode must set both encoding and errors" in error for error in errors)
+    assert _mod.validate(tmp_path) == [
+        "skills/demo-skill/_rtx/_run_tool.py:3: subprocess text mode must set "
+        "both encoding and errors explicitly",
+        "skills/demo-skill/_rtx/_run_tool.py:4: subprocess text mode must set "
+        "both encoding and errors explicitly",
+        "skills/demo-skill/_rtx/_run_tool.py:5: subprocess text mode must set "
+        "both encoding and errors explicitly",
+        "skills/demo-skill/_rtx/_run_tool.py:6: subprocess text mode must set "
+        "both encoding and errors explicitly",
+    ]
 
 
 def test_injected_cache_preserves_findings_and_ast(tmp_path: Path) -> None:
@@ -56,66 +60,69 @@ def test_injected_cache_preserves_findings_and_ast(tmp_path: Path) -> None:
     assert ast.dump(tree, include_attributes=True) == before
 
 
-def test_universal_newlines_without_encoding_is_rejected(tmp_path: Path) -> None:
-    _write_runtime(
-        tmp_path,
-        "import subprocess\n"
-        "subprocess.run(['tool'], universal_newlines=True)\n",
-    )
-
-    errors = _mod.validate(tmp_path)
-
-    assert any("subprocess text mode must set both encoding and errors" in error for error in errors)
-
-
-def test_encoding_without_errors_is_rejected(tmp_path: Path) -> None:
-    _write_runtime(
-        tmp_path,
-        "import subprocess\n"
-        "subprocess.run(['tool'], capture_output=True, text=True, encoding='utf-8')\n",
-    )
-
-    errors = _mod.validate(tmp_path)
-
-    assert any("subprocess text mode must set both encoding and errors" in error for error in errors)
-
-
-def test_explicit_encoding_and_errors_pass(tmp_path: Path) -> None:
-    _write_runtime(
-        tmp_path,
-        "import subprocess\n"
-        "subprocess.run(\n"
-        "    ['tool'],\n"
-        "    capture_output=True,\n"
-        "    text=True,\n"
-        "    encoding='utf-8',\n"
-        "    errors='strict',\n"
-        "    check=False,\n"
-        ")\n",
-    )
+def test_excluded_tests_and_system_skill_trees_are_ignored(tmp_path: Path) -> None:
+    for path in (
+        tmp_path / "skills" / "demo-skill" / "tests" / "test_tool.py",
+        tmp_path / "skills" / ".system" / "skill-installer" / "scripts" / "installer.py",
+    ):
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            "import subprocess\n"
+            "subprocess.run(['tool'], capture_output=True, text=True)\n",
+            encoding="utf-8",
+        )
 
     assert _mod.validate(tmp_path) == []
 
 
-def test_tests_directory_is_excluded(tmp_path: Path) -> None:
-    path = tmp_path / "skills" / "demo-skill" / "tests" / "test_tool.py"
-    path.parent.mkdir(parents=True)
-    path.write_text(
-        "import subprocess\n"
-        "subprocess.run(['tool'], capture_output=True, text=True)\n",
-        encoding="utf-8",
+def test_token_negative_source_avoids_ast_walk(tmp_path: Path, monkeypatch) -> None:
+    path = _write_runtime(tmp_path, "value = 1\n")
+    source_cache = PythonSourceCache(tmp_path)
+    original_ast_walk = _mod.ast.walk
+    walked_trees: list[ast.AST] = []
+
+    def record_ast_walk(tree):
+        walked_trees.append(tree)
+        return original_ast_walk(tree)
+
+    monkeypatch.setattr(_mod.ast, "walk", record_ast_walk)
+
+    assert _mod._validate_python(
+        path,
+        path.relative_to(tmp_path),
+        source_cache,
+    ) == []
+    assert walked_trees == []
+
+
+def test_normalized_unicode_subprocess_identifier_reports_exact_diagnostic(
+    tmp_path: Path,
+) -> None:
+    path = _write_runtime(
+        tmp_path,
+        "import ｓｕｂｐｒｏｃｅｓｓ\n"
+        "ｓｕｂｐｒｏｃｅｓｓ.run(['tool'], text=True)\n",
     )
+    source_cache = PythonSourceCache(tmp_path)
 
-    assert _mod.validate(tmp_path) == []
+    assert _mod._validate_python(
+        path,
+        path.relative_to(tmp_path),
+        source_cache,
+    ) == [
+        "skills/demo-skill/_rtx/_run_tool.py:2: subprocess text mode must set "
+        "both encoding and errors explicitly"
+    ]
 
 
-def test_ignored_system_skill_directory_is_excluded(tmp_path: Path) -> None:
-    path = tmp_path / "skills" / ".system" / "skill-installer" / "scripts" / "installer.py"
-    path.parent.mkdir(parents=True)
-    path.write_text(
-        "import subprocess\n"
-        "subprocess.run(['git'], stdout=subprocess.PIPE, text=True)\n",
-        encoding="utf-8",
-    )
+def test_malformed_token_negative_source_reports_parse_diagnostic(tmp_path: Path) -> None:
+    path = _write_runtime(tmp_path, "value =\n")
+    source_cache = PythonSourceCache(tmp_path)
 
-    assert _mod.validate(tmp_path) == []
+    assert _mod._validate_python(
+        path,
+        path.relative_to(tmp_path),
+        source_cache,
+    ) == [
+        "skills/demo-skill/_rtx/_run_tool.py:1: failed to parse Python: invalid syntax"
+    ]

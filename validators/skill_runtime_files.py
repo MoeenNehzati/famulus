@@ -139,22 +139,56 @@ def _validate_rtx_path(path: Path, rel_path: Path) -> list[str]:
     return errors
 
 
-def _registered_child_artifact(path: Path, graph: object | None) -> bool:
+def _build_child_artifact_index(
+    graph: object | None,
+) -> tuple[frozenset[Path], frozenset[Path]]:
+    """Return indexed child roots and exact non-Python source gateways."""
+
     if graph is None:
-        return False
+        return frozenset(), frozenset()
     nodes = getattr(graph, "nodes", {})
     module_parents = getattr(graph, "module_parents", {})
-    matching_roots: list[Path] = []
+    child_roots: set[Path] = set()
     for module_id, parent_id in module_parents.items():
         if parent_id is None:
             continue
         node = nodes.get(module_id)
         module_root = getattr(node, "module_root", None)
-        if isinstance(module_root, Path) and path.is_relative_to(module_root):
-            matching_roots.append(module_root)
-    if not matching_roots:
+        if isinstance(module_root, Path):
+            child_roots.add(module_root)
+
+    non_python_gateways: set[Path] = set()
+    direct_file_owners = getattr(graph, "direct_file_owners", {})
+    for owned_path, owner_id in direct_file_owners.items():
+        if not isinstance(owned_path, Path):
+            continue
+        owner = nodes.get(owner_id)
+        if getattr(owner, "node_type", None) != "behavioral_source":
+            continue
+        if getattr(owner, "gateway_path", None) != owned_path:
+            continue
+        declaration = getattr(owner, "declaration", {})
+        gateway = declaration.get("gateway") if isinstance(declaration, dict) else None
+        language = gateway.get("language") if isinstance(gateway, dict) else None
+        if isinstance(language, str) and not language.startswith("Python"):
+            non_python_gateways.add(owned_path)
+    return frozenset(child_roots), frozenset(non_python_gateways)
+
+
+def _is_registered_child_artifact(
+    path: Path,
+    child_roots: frozenset[Path],
+    non_python_gateways: frozenset[Path],
+) -> bool:
+    """Return whether the deepest indexed child owns ``path`` as an artifact."""
+
+    child_root = next(
+        (parent for parent in path.parents if parent in child_roots),
+        None,
+    )
+    if child_root is None:
         return False
-    relative = path.relative_to(max(matching_roots, key=lambda root: len(root.parts)))
+    relative = path.relative_to(child_root)
     fixed_artifact = (
         relative.parent == Path(".")
         and relative.name in _CHILD_ARTIFACT_FILENAMES
@@ -163,23 +197,22 @@ def _registered_child_artifact(path: Path, graph: object | None) -> bool:
     )
     if fixed_artifact:
         return True
+    return path in non_python_gateways
 
-    direct_file_owners = getattr(graph, "direct_file_owners", {})
-    owner_id = direct_file_owners.get(path)
-    owner = nodes.get(owner_id)
-    if getattr(owner, "node_type", None) != "behavioral_source":
-        return False
-    if getattr(owner, "gateway_path", None) != path:
-        return False
-    declaration = getattr(owner, "declaration", {})
-    gateway = declaration.get("gateway") if isinstance(declaration, dict) else None
-    language = gateway.get("language") if isinstance(gateway, dict) else None
-    return isinstance(language, str) and not language.startswith("Python")
+
+def _registered_child_artifact(path: Path, graph: object | None) -> bool:
+    """Compatibility wrapper for callers classifying one child-owned path."""
+
+    return _is_registered_child_artifact(
+        path,
+        *_build_child_artifact_index(graph),
+    )
 
 
 def _validate(repo_root: Path, graph: object | None) -> list[str]:
     errors: list[str] = []
     seen_by_parent: dict[tuple[str, ...], dict[str, tuple[str, ...]]] = defaultdict(dict)
+    child_roots, non_python_gateways = _build_child_artifact_index(graph)
 
     for path, rel_path in _iter_skill_files(repo_root):
         parts = rel_path.parts
@@ -193,7 +226,11 @@ def _validate(repo_root: Path, graph: object | None) -> list[str]:
         if len(parts) >= 4 and parts[2] == RTX_DIR_NAME:
             if any(part in EXEMPT_RTX_DIRNAMES for part in parts[3:-1]):
                 continue
-            if _registered_child_artifact(path, graph):
+            if _is_registered_child_artifact(
+                path,
+                child_roots,
+                non_python_gateways,
+            ):
                 continue
             errors.extend(_validate_rtx_path(path, rel_path))
 

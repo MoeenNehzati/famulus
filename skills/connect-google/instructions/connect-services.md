@@ -9,12 +9,10 @@ Check `connect-google._rtx.interface.client-status`. If it is valid, reuse it. I
 missing or invalid and reports legacy candidates, ask before importing one with
 `connect-google._rtx.interface.install-client`. If multiple candidates differ, ask the
 user which one to import. When this route receives a local Desktop client JSON
-path from `connect-google.interface.default` or
-`connect-google.interface.create-client`, use
-`connect-google._rtx.interface.install-client`. Otherwise return to
-`connect-google.interface.default`; do not request a JSON path directly from
-this route. Replacing a different canonical client requires explicit
-confirmation. Never expose file contents or tokens.
+path from its caller, use `connect-google._rtx.interface.install-client`.
+Otherwise return a clarification that client preparation is required; do not
+request a JSON path directly from this route. Replacing a different canonical
+client requires explicit confirmation. Never expose file contents or tokens.
 
 ## Combined authorization and service-owned binding
 

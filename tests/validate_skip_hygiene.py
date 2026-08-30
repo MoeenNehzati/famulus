@@ -71,6 +71,90 @@ def test_injected_cache_preserves_syntax_error_finding(tmp_path: Path) -> None:
     ) == _mod.validate(tmp_path)
 
 
+def test_token_negative_source_uses_injected_cache_without_walking_ast(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    path = _write_test(tmp_path, "def test_demo():\n    assert True\n")
+    source_cache = PythonSourceCache(tmp_path)
+
+    def _skip_lines_must_not_run(_tree: ast.AST) -> list[int]:
+        pytest.fail("token-negative source must not walk the AST for skips")
+
+    monkeypatch.setattr(_mod, "_skip_lines", _skip_lines_must_not_run)
+
+    assert _mod._validate(tmp_path, source_cache) == []
+    path.unlink()
+    source, tree = source_cache.read_parse(path)
+    assert source == "def test_demo():\n    assert True\n"
+    assert isinstance(tree, ast.Module)
+
+
+def test_token_negative_syntax_error_is_reported_exactly(tmp_path: Path) -> None:
+    _write_test(tmp_path, "if:\n")
+
+    assert _mod._validate(tmp_path, PythonSourceCache(tmp_path)) == [
+        "tests/test_demo.py:1: failed to parse Python: invalid syntax"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("source", "lineno"),
+    [
+        ("import pytest\n\ndef test_demo():\n    pytest.skip('no')\n", 4),
+        (
+            "import pytest\n\n@pytest.mark.skip(reason='no')\ndef test_demo():\n    pass\n",
+            3,
+        ),
+        (
+            "import pytest\n\n@pytest.mark.skipif(True, reason='no')\ndef test_demo():\n    pass\n",
+            3,
+        ),
+        (
+            "import unittest\n\n@unittest.skip('no')\ndef test_demo():\n    pass\n",
+            3,
+        ),
+        (
+            "import unittest\n\n@unittest.skipIf(True, 'no')\ndef test_demo():\n    pass\n",
+            3,
+        ),
+        (
+            "import unittest\n\ndef test_demo(case):\n    case.skipTest('no')\n",
+            4,
+        ),
+        (
+            "import unittest\n\ndef test_demo():\n    raise unittest.SkipTest('no')\n",
+            4,
+        ),
+        (
+            "import pytest\n\ndef test_demo():\n    raise pytest.SkipTest('no')\n",
+            4,
+        ),
+    ],
+    ids=(
+        "pytest-skip",
+        "pytest-mark-skip",
+        "pytest-mark-skipif",
+        "unittest-skip",
+        "unittest-skipif",
+        "testcase-skiptest",
+        "unittest-skiptest",
+        "pytest-skiptest",
+    ),
+)
+def test_recognized_skip_forms_survive_token_gate_with_exact_finding(
+    tmp_path: Path,
+    source: str,
+    lineno: int,
+) -> None:
+    _write_test(tmp_path, source)
+
+    assert _mod.validate(tmp_path) == [
+        f"tests/test_demo.py:{lineno}: test skip must have a nearby "
+        "`# famulus-skip: category=...; reason=...; alternate=...` comment"
+    ]
+
+
 def test_injected_cache_preserves_unicode_error(tmp_path: Path) -> None:
     path = tmp_path / "tests" / "test_demo.py"
     path.parent.mkdir(parents=True)

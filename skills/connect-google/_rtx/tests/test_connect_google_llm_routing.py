@@ -388,7 +388,7 @@ def test_connect_services_does_not_bypass_project_routing(
     connect_services_body: str,
 ) -> None:
     text = quoted_prose(connect_services_body)
-    assert "connect-google.interface.default" in text
+    assert "client preparation is required" in text
     assert "do not request a json path directly" in text
 
 

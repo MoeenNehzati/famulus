@@ -9,6 +9,11 @@ from pathlib import Path
 import yaml
 
 RUNTIME_SUFFIXES = {".py", ".sh"}
+_SYS_PATH_TOKEN = re.compile(r"\bsys\s*\.\s*path\b")
+_LANGUAGE_FIELD = re.compile(
+    r"(?m)(?:^[ \t]*|[{,][ \t]*)[\"']?language[\"']?[ \t]*:[ \t]*"
+    r"(?P<value>[^\r\n#,}]*)"
+)
 
 
 def _is_text_runtime_file(path: Path) -> bool:
@@ -33,6 +38,54 @@ def _is_text_runtime_file(path: Path) -> bool:
     - none
     """
     return path.is_file() and (path.suffix in RUNTIME_SUFFIXES or "_cx" in path.parts)
+
+
+def _could_declare_python_gateway(source: str) -> bool:
+    """Return whether blueprint text can declare a Python gateway.
+
+    Intent
+    ------
+    Skip YAML construction when the source cannot produce the Python language enum.
+
+    Rationale
+    ---------
+    Canonical declarations spell ``Python`` directly. Ambiguous language scalars
+    remain in scope so YAML escapes and aliases retain their prior behavior.
+
+    Pseudocode
+    ----------
+    - if source contains the canonical Python token:
+      - return true
+    - if source contains an escape candidate:
+      - return true
+    - if source contains no language key token:
+      - return false
+    - set language_fields = lexically recognizable language values
+    - if no language field has a recognizable simple form:
+      - return true
+    - return whether any language value is empty, aliased, or tagged
+
+    Wraps
+    -----
+    - none
+    """
+    if "Python" in source:
+        return True
+    if "\\" in source:
+        return True
+    if "language" not in source:
+        return False
+    values = [
+        match.group("value").strip()
+        for match in _LANGUAGE_FIELD.finditer(source)
+    ]
+    if not values:
+        return True
+    return any(
+        not value
+        or value.startswith(("*", "&", "!", "|", ">"))
+        for value in values
+    )
 
 
 def _compile_direct_runtime_patterns(
@@ -195,6 +248,8 @@ def _gateway_paths(repo_root: Path) -> set[Path]:
     Pseudocode
     ----------
     - for blueprint_path in skill blueprint documents:
+      - if blueprint text has no Python gateway token:
+        - continue
       - set document = parsed blueprint mapping
       - if document declares a Python gateway:
         - set findings = findings plus resolved gateway path
@@ -210,8 +265,14 @@ def _gateway_paths(repo_root: Path) -> set[Path]:
         return paths
     for blueprint_path in skills_root.glob("*/**/blueprints/*.yaml"):
         try:
-            document = yaml.safe_load(blueprint_path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, yaml.YAMLError):
+            source = blueprint_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        if not _could_declare_python_gateway(source):
+            continue
+        try:
+            document = yaml.safe_load(source)
+        except yaml.YAMLError:
             continue
         if not isinstance(document, dict):
             continue
@@ -246,6 +307,8 @@ def validate_gateway_sys_path(repo_root: Path) -> list[str]:
     Pseudocode
     ----------
     - for path in declared gateway modules:
+      - if source has no whitespace-tolerant import-path token:
+        - continue
       - set tree = parsed module
       - for statement in module body:
         - if statement mutates the import path and is not package-guarded:
@@ -273,8 +336,19 @@ def validate_gateway_sys_path(repo_root: Path) -> list[str]:
         if not path.is_file():
             continue
         try:
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        except (OSError, UnicodeDecodeError, SyntaxError):
+            source = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        # Keep the common token tolerant of legal spacing. Ambiguous source
+        # containing both names still reaches the AST so explicit line
+        # continuations and comments cannot hide a prior diagnostic.
+        if not _SYS_PATH_TOKEN.search(source) and (
+            "sys" not in source or "path" not in source
+        ):
+            continue
+        try:
+            tree = ast.parse(source, filename=str(path))
+        except SyntaxError:
             continue
         for statement in tree.body:
             if isinstance(
@@ -360,6 +434,10 @@ def validate(repo_root: Path) -> list[str]:
             for lineno, line in enumerate(lines, start=1):
                 stripped = line.strip()
                 if not stripped or stripped.startswith("#"):
+                    continue
+                # Both prohibited direct-path forms contain a private runtime
+                # directory token. Most runtime source lines contain neither.
+                if "_rtx" not in line and "_cx" not in line:
                     continue
 
                 direct_targets = {

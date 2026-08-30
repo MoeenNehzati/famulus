@@ -28,6 +28,11 @@ _ALLOWED_CATEGORIES = {
     "unsupported-platform",
 }
 
+# Conservative gate invariant: every skip form recognized by _is_skip_call or
+# _skip_lines' raised-exception branch must contain at least one of these source
+# tokens.  Extend this evidence whenever adding a recognized form.
+_SKIP_TOKENS = ("skip", "SkipTest")
+
 
 def _iter_python_test_files(repo_root: Path):
     """Yield eligible Python test paths with repository-relative identities.
@@ -341,6 +346,8 @@ def _validate_file(
         source, tree = source_cache.read_parse(path)
     except SyntaxError as exc:
         return [f"{rel_path}:{exc.lineno}: failed to parse Python: {exc.msg}"]
+    if not any(token in source for token in _SKIP_TOKENS):
+        return []
     lines = source.splitlines()
 
     errors: list[str] = []

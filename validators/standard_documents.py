@@ -139,27 +139,38 @@ def validate(repo_root: Path) -> list[str]:
         path = repo_root / relative
         if relative in NON_STANDARD_V6_PATHS:
             continue
+        cache = {}
         errors.extend(
             f"{_display(relative)}: {error}"
             for error in validator.validate_file(
                 path,
                 root=repo_root,
+                cache=cache,
                 _schema_validator=schema_validator,
             )
         )
         try:
-            document = yaml.safe_load(path.read_text(encoding="utf-8"))
+            cached = cache.get(path.resolve())
+            document = (
+                cached[0]
+                if cached is not None
+                else yaml.safe_load(path.read_text(encoding="utf-8"))
+            )
             if document.get("canonical_path") != relative.as_posix():
                 errors.append(
                     f"{_display(relative)}: canonical_path must equal "
                     f"{_display(relative)}; "
                     f"found {document.get('canonical_path')!r}"
                 )
-            rendered = renderer.render_document(document)
         except Exception as exc:
             errors.append(f"{_display(relative)}: cannot render standard: {exc}")
             continue
         if relative not in GENERATED_VIEW_STANDARDS:
+            continue
+        try:
+            rendered = renderer.render_document(document)
+        except Exception as exc:
+            errors.append(f"{_display(relative)}: cannot render standard: {exc}")
             continue
         view_relative = Path(str(relative).removesuffix(".standard.yaml") + ".md")
         view_path = repo_root / view_relative

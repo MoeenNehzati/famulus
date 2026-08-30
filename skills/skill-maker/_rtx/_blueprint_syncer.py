@@ -106,8 +106,6 @@ def load_blueprints(
     schema_version: int = 6,
     schema_root: Path | None = None,
 ) -> dict[str, ModuleBlueprint]:
-    blueprints: dict[str, ModuleBlueprint] = {}
-    paths = sorted(SKILLS_ROOT.glob("*/blueprint.yaml"))
     selected_schema_root = (
         schema_root
         if schema_root is not None
@@ -125,9 +123,31 @@ def load_blueprints(
         )
     except (OSError, ValueError) as exc:
         raise BlueprintError(str(exc)) from exc
+    return blueprints_from_graph(
+        graph,
+        skills_root=SKILLS_ROOT,
+        schema_version=schema_version,
+    )
+
+
+def blueprints_from_graph(
+    repository_graph: RepositoryBlueprintGraph,
+    *,
+    skills_root: Path,
+    schema_version: int,
+) -> dict[str, ModuleBlueprint]:
+    """Select managed skill modules from an already validated graph."""
+
+    if repository_graph.schema_version != schema_version:
+        raise BlueprintError(
+            "provided repository graph schema version does not match the sync "
+            f"request: {repository_graph.schema_version} != {schema_version}"
+        )
+    blueprints: dict[str, ModuleBlueprint] = {}
+    paths = sorted(skills_root.glob("*/blueprint.yaml"))
     modules_by_path = {
         node.blueprint_path.resolve(): node
-        for node in graph.nodes.values()
+        for node in repository_graph.nodes.values()
         if node.node_type == "module"
     }
     for path in paths:
@@ -145,7 +165,7 @@ def load_blueprints(
             module_id,
             path,
             dict(module.declaration),
-            graph,
+            repository_graph,
         )
     return blueprints
 
@@ -804,15 +824,61 @@ def generated_runtime_dependencies_manifest(
 def sync_runtime_dependencies_manifest(
     blueprints: dict[str, ModuleBlueprint],
     check_only: bool,
+    *,
+    runtime_dependencies_path: Path | None = None,
 ) -> list[str]:
+    if runtime_dependencies_path is None:
+        runtime_dependencies_path = RUNTIME_DEPENDENCIES_PATH
     expected = json.dumps(generated_runtime_dependencies_manifest(blueprints), indent=2) + "\n"
-    current = RUNTIME_DEPENDENCIES_PATH.read_text(encoding="utf-8") if RUNTIME_DEPENDENCIES_PATH.exists() else ""
+    current = (
+        runtime_dependencies_path.read_text(encoding="utf-8")
+        if runtime_dependencies_path.exists()
+        else ""
+    )
     if current == expected:
         return []
     if check_only:
-        return [f"{RUNTIME_DEPENDENCIES_PATH}: out of sync with blueprint.yaml"]
-    RUNTIME_DEPENDENCIES_PATH.write_text(expected, encoding="utf-8")
+        return [f"{runtime_dependencies_path}: out of sync with blueprint.yaml"]
+    runtime_dependencies_path.write_text(expected, encoding="utf-8")
     return []
+
+
+def validate_sync_state(
+    *,
+    repository_graph: RepositoryBlueprintGraph,
+    repository_root: Path,
+    skills_root: Path,
+    runtime_dependencies_path: Path,
+    schema_version: int,
+) -> list[str]:
+    """Check generated blueprint state using one caller-prepared graph.
+
+    This is intentionally read-only and does not load a graph.  The canonical
+    validator supplies its per-item defensive graph after owning topology
+    preflight; the standalone sync interface continues to load its own graph.
+    """
+
+    expected_skills_root = repository_root / "skills"
+    if skills_root.resolve(strict=False) != expected_skills_root.resolve(strict=False):
+        raise BlueprintError(
+            f"skills root must be {expected_skills_root}, got {skills_root}"
+        )
+    blueprints = blueprints_from_graph(
+        repository_graph,
+        skills_root=skills_root,
+        schema_version=schema_version,
+    )
+    errors: list[str] = []
+    for blueprint in blueprints.values():
+        errors.extend(sync_module(blueprint, check_only=True))
+    errors.extend(
+        sync_runtime_dependencies_manifest(
+            blueprints,
+            check_only=True,
+            runtime_dependencies_path=runtime_dependencies_path,
+        )
+    )
+    return errors
 
 
 class Interface(PythonMachineInterface):

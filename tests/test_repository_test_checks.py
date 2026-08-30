@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import pickle
 import shutil
 import subprocess
 import sys
@@ -130,6 +131,8 @@ def test_real_pytest_collection_combines_validator_and_standard_items(
             str(staged_paths),
             "--officina-validator",
             "repo/portable_dates",
+            "validators/portable_dates.py",
+            ordinary_node,
         ],
         cwd=REPO_ROOT,
         env={**os.environ, "PYTHONPATH": str(SRC_ROOT)},
@@ -141,6 +144,10 @@ def test_real_pytest_collection_combines_validator_and_standard_items(
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert "validators/portable_dates.py::test_portable_dates" in completed.stdout
     assert ordinary_node in completed.stdout
+    assert [line for line in completed.stdout.splitlines() if "::" in line] == [
+        "validators/portable_dates.py::test_portable_dates",
+        ordinary_node,
+    ]
 
 
 def test_worker_assignment_metrics_record_per_worker_busy_and_idle_time(
@@ -228,6 +235,113 @@ def test_worker_metrics_plugin_satisfies_pytest_hook_contract(tmp_path: Path) ->
     )
 
 
+def test_shared_graph_snapshot_prepares_once_and_rejects_another_view(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catch per-worker preflight and reuse across repository views."""
+    snapshot_path = tmp_path / "graph-snapshot.pickle"
+    tracked_root = tmp_path / "tracked"
+    display_root = tmp_path / "display"
+    tracked_root.mkdir()
+    display_root.mkdir()
+    calls = 0
+
+    def graph_state(_plugin):
+        nonlocal calls
+        calls += 1
+        return runner._GraphState("skill-maker/blueprints", (), {"nodes": ("a",)})
+
+    monkeypatch.setattr(runner.ValidatorPytestPlugin, "_graph_state", graph_state)
+    controller = object.__new__(runner.ValidatorPytestPlugin)
+    controller.runner = runner._validator_snapshot
+    controller.tracked_root = tracked_root
+    controller.display_root = display_root
+    controller._preflight_owner_id = "skill-maker/blueprints"
+    controller._graph_state_value = None
+    controller.prepare_shared_graph_snapshot(snapshot_path)
+
+    worker = object.__new__(runner.ValidatorPytestPlugin)
+    worker.runner = runner._validator_snapshot
+    worker.tracked_root = tracked_root
+    worker.display_root = display_root
+    worker._preflight_owner_id = "skill-maker/blueprints"
+    worker._graph_state_value = None
+    worker.load_shared_graph_snapshot(snapshot_path)
+
+    assert calls == 1
+    assert worker._graph_state_value == runner._GraphState(
+        "skill-maker/blueprints",
+        (),
+        {"nodes": ("a",)},
+    )
+
+    worker.display_root = tmp_path / "other-display"
+    with pytest.raises(
+        runner._validator_snapshot.ValidatorRunnerError,
+        match="does not match this repository view",
+    ):
+        worker.load_shared_graph_snapshot(snapshot_path)
+
+    worker.display_root = display_root
+    snapshot_path.write_bytes(
+        pickle.dumps(
+            runner._SharedGraphSnapshot(
+                schema_version=1,
+                tracked_root=str(tracked_root),
+                display_root=str(display_root),
+                owner_id="skill-maker/blueprints",
+                state=runner._GraphState("repo/other", (), None),
+            )
+        )
+    )
+    with pytest.raises(
+        runner._validator_snapshot.ValidatorRunnerError,
+        match="invalid graph state",
+    ):
+        worker.load_shared_graph_snapshot(snapshot_path)
+
+
+def test_shared_graph_snapshot_normalizes_preflight_and_decode_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catch controller crashes and silent fallback to repeated preflight."""
+    snapshot_path = tmp_path / "graph-snapshot.pickle"
+    tracked_root = tmp_path / "tracked"
+    display_root = tmp_path / "display"
+    tracked_root.mkdir()
+    display_root.mkdir()
+    plugin = object.__new__(runner.ValidatorPytestPlugin)
+    plugin.runner = runner._validator_snapshot
+    plugin.tracked_root = tracked_root
+    plugin.display_root = display_root
+    plugin._preflight_owner_id = "skill-maker/blueprints"
+    plugin._graph_state_value = None
+
+    def failed_preflight(_plugin):
+        raise runner._validator_snapshot.ValidatorRunnerError(
+            "skill-maker/blueprints: validator execution failed: boom"
+        )
+
+    monkeypatch.setattr(runner.ValidatorPytestPlugin, "_graph_state", failed_preflight)
+    plugin.prepare_shared_graph_snapshot(snapshot_path)
+    plugin.load_shared_graph_snapshot(snapshot_path)
+    assert plugin._graph_state_value == runner._GraphState(
+        "skill-maker/blueprints",
+        (),
+        None,
+        "skill-maker/blueprints: validator execution failed: boom",
+    )
+
+    snapshot_path.write_bytes(b"not a pickle")
+    with pytest.raises(
+        runner._validator_snapshot.ValidatorRunnerError,
+        match="cannot read shared blueprint snapshot",
+    ):
+        plugin.load_shared_graph_snapshot(snapshot_path)
+
+
 def test_runner_supplies_repo_src_pythonpath() -> None:
     assert runner._pytest_args(verbose=False) == [
         "-o",
@@ -293,6 +407,52 @@ def test_precommit_defers_installation_chrome_docstring_and_performance_tests() 
     assert runner.CHROME_TESTS <= deselected
     assert runner.DOCSTRING_TESTS <= deselected
     assert runner.PERFORMANCE_TESTS <= deselected
+
+
+def test_only_precommit_defers_reviewed_expensive_integration_nodes() -> None:
+    exact_deferred = {
+        "skills/node-certify/_rtx/tests/test_certifier.py::"
+        "test_private_writer_noop_then_renews_only_stale_parent",
+        "skills/node-certify/_rtx/tests/test_certifier.py::"
+        "test_private_writer_reuses_consumer_for_restored_provider_then_renews_changed_claim",
+        "skills/node-certify/_rtx/tests/test_certifier.py::"
+        "test_private_writer_rotates_valid_history_then_rejects_invalid_signed_history",
+        "skills/node-certify/_rtx/tests/test_certifier.py::"
+        "test_private_writers_cannot_append_against_one_predecessor",
+        "skills/node-certify/_rtx/tests/test_certifier.py::"
+        "test_selected_legacy_writer_issues_current_payload",
+        "tests/test_dispatcher_route_smoke.py::"
+        "test_python_machine_runner_interfaces_accept_route_smoke",
+        "tests/test_unified_pytest_collection.py::"
+        "test_no_argument_collection_matches_explicit_repository_roots",
+        "tests/test_repository_validator_checks.py::"
+        "test_staged_path_transport_preserves_non_utf8_filename_bytes",
+        "tests/test_repository_validator_checks.py::"
+        "test_run_all_preserves_posix_index_modes",
+        "tests/test_repository_validator_checks.py::"
+        "test_staged_validator_supports_split_index_snapshot",
+        "tests/test_repository_validator_checks.py::"
+        "test_staged_validator_supports_linked_worktree_index",
+        "tests/test_repository_validator_checks.py::"
+        "test_run_all_isolates_unmerged_index_and_restores_git_environment",
+    }
+
+    assert runner.PRECOMMIT_DEFERRED_INTEGRATION_TESTS == exact_deferred
+    precommit_deselected = _deselected_tests(
+        runner._suite_pytest_args("precommit", verbose=False)
+    )
+    assert exact_deferred <= precommit_deselected
+    for suite in ("pre-push", "full"):
+        deselected = _deselected_tests(
+            runner._suite_pytest_args(suite, verbose=False)
+        )
+        assert exact_deferred.isdisjoint(deselected)
+
+    unmerged_environment = (
+        "tests/test_repository_validator_checks.py::"
+        "test_run_all_isolates_unmerged_index_and_restores_git_environment"
+    )
+    assert unmerged_environment in runner.PORTABILITY_TESTS
 
 
 def test_prepush_defers_browser_and_slow_tests_from_parallel_pool() -> None:
@@ -377,6 +537,7 @@ def test_combined_command_enables_validators_in_the_same_xdist_session(
         verbose=False,
         jobs=8,
         cache_dir=tmp_path / "cache",
+        graph_snapshot_path=tmp_path / "private" / "graph.pickle",
         timing_path=None,
         validator_root=tmp_path,
         validator_display_root=tmp_path,
@@ -390,6 +551,27 @@ def test_combined_command_enables_validators_in_the_same_xdist_session(
     assert command[command.index("--officina-validator-root") + 1] == str(tmp_path)
     assert command[command.index("--officina-validator") + 1] == "repo/example"
     assert command[command.index("--officina-exclude-validator") + 1] == "repo/other"
+    assert command[
+        command.index("--officina-validator-graph-snapshot") + 1
+    ] == str(tmp_path / "private" / "graph.pickle")
+
+
+def test_serial_validator_command_keeps_process_local_graph_state(
+    tmp_path: Path,
+) -> None:
+    command = runner._pytest_phase_command(
+        "validators",
+        "validators",
+        verbose=False,
+        jobs=1,
+        cache_dir=tmp_path / "cache",
+        timing_path=None,
+        validator_root=tmp_path,
+        validator_display_root=tmp_path,
+        staged_paths_file=tmp_path / "staged-paths.json",
+    )
+
+    assert "--officina-validator-graph-snapshot" not in command
 
 
 def test_full_runs_performance_before_pooled_and_browser_phases(
@@ -964,14 +1146,17 @@ def test_portability_suite_has_exact_early_failure_nodes() -> None:
     )
 
 
-def test_ci_runs_combined_full_suite_before_portability() -> None:
+def test_ci_workflow_preserves_execution_dispatch_and_evidence_contracts() -> None:
+    """Catch CI workflow drift across execution, dispatch, and evidence."""
     workflow = (
         Path(__file__).resolve().parents[1]
         / ".github"
         / "workflows"
         / "python-tests.yml"
     ).read_text(encoding="utf-8")
+    parsed = yaml.safe_load(workflow)
 
+    # Ordered full-suite and portability execution.
     full = workflow.index("python3 repo_checks.py --suite full --verbose --jobs 1")
     portability = workflow.index(
         "python3 repo_checks.py --suite full --task tests:portability"
@@ -982,15 +1167,7 @@ def test_ci_runs_combined_full_suite_before_portability() -> None:
     assert "python3 repo_checks.py --suite validators" not in workflow
     assert "python3 repo_checks.py --suite tests --verbose" not in workflow
 
-
-def test_ci_runs_browser_behavior_only_on_stable_hosts() -> None:
-    workflow = (
-        Path(__file__).resolve().parents[1]
-        / ".github"
-        / "workflows"
-        / "python-tests.yml"
-    ).read_text(encoding="utf-8")
-    parsed = yaml.safe_load(workflow)
+    # Stable-host browser and performance matrix.
     test_job = parsed["jobs"]["test"]
     assert test_job["strategy"]["matrix"]["include"] == [
         {
@@ -1066,15 +1243,7 @@ def test_ci_runs_browser_behavior_only_on_stable_hosts() -> None:
     assert workflow.count("timeout-minutes: 20") == 1
     assert workflow.count("timeout-minutes: 10") == 1
 
-
-def test_ci_runs_unified_installation_lifecycle_on_all_supported_hosts() -> None:
-    workflow = (
-        Path(__file__).resolve().parents[1]
-        / ".github"
-        / "workflows"
-        / "python-tests.yml"
-    ).read_text(encoding="utf-8")
-
+    # Unified installation lifecycle on every supported host.
     assert "name: unified installation lifecycle (${{ matrix.os }})" in workflow
     for operating_system in (
         "ubuntu-latest",
@@ -1108,17 +1277,7 @@ def test_ci_runs_unified_installation_lifecycle_on_all_supported_hosts() -> None
     assert "FAMULUS_RUN_SCHEDULER_SMOKE: '1'" in lifecycle_native
     assert workflow.count("FAMULUS_RUN_SCHEDULER_SMOKE: '1'") == 1
 
-
-def test_ci_workflow_dispatches_a_full_matrix_or_one_safe_probe() -> None:
-    """Catch remote debugging inputs that bypass exact-SHA or argv boundaries."""
-
-    workflow = (
-        Path(__file__).resolve().parents[1]
-        / ".github"
-        / "workflows"
-        / "python-tests.yml"
-    ).read_text(encoding="utf-8")
-
+    # Safe full-matrix or single-probe remote dispatch.
     assert "workflow_dispatch:" in workflow
     for input_name in (
         "mode",
@@ -1170,17 +1329,7 @@ def test_ci_workflow_dispatches_a_full_matrix_or_one_safe_probe() -> None:
         if in_run_block:
             assert "${{ inputs." not in line
 
-
-def test_ci_artifact_uploads_include_hidden_and_separate_access_evidence() -> None:
-    """Catch hidden or assistant-access evidence being folded into another artifact."""
-
-    workflow = (
-        Path(__file__).resolve().parents[1]
-        / ".github"
-        / "workflows"
-        / "python-tests.yml"
-    ).read_text(encoding="utf-8")
-
+    # Hidden and separately scoped uploaded evidence.
     upload_count = workflow.count("uses: actions/upload-artifact@")
     assert upload_count == 4
     assert workflow.count("path: .repo-checks/*.json") == 2
@@ -1194,15 +1343,7 @@ def test_ci_artifact_uploads_include_hidden_and_separate_access_evidence() -> No
     access_upload = access_upload.split("- name:", 1)[0]
     assert "if-no-files-found: error" in access_upload
 
-
-def test_unified_access_qualification_scopes_pins_control_and_credentials() -> None:
-    workflow = (
-        Path(__file__).resolve().parents[1]
-        / ".github"
-        / "workflows"
-        / "python-tests.yml"
-    ).read_text(encoding="utf-8")
-
+    # Assistant-access pins, control roots, and credential boundaries.
     pinned = "npm install -g @anthropic-ai/claude-code@2.1.237 @openai/codex@0.149.0"
     unpinned = "npm install -g @anthropic-ai/claude-code @openai/codex"
     assert workflow.count(pinned) == 1
@@ -1260,13 +1401,11 @@ def test_precommit_hook_uses_the_combined_root_suite() -> None:
     assert '"$REPO_ROOT/scripts/run-python-tests.py"' not in hook
 
 
-@pytest.mark.parametrize("commit_only", (False, True))
 def test_precommit_hook_commits_synchronized_plugin_versions(
     tmp_path: Path,
-    commit_only: bool,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Catch a hook that leaves the two committed plugin versions stale."""
+    """Catch partial or ordinary commits leaving plugin versions stale."""
 
     from test_support.git_repository import GitTestRepository, isolated_git_environment
 
@@ -1311,10 +1450,14 @@ def test_precommit_hook_commits_synchronized_plugin_versions(
     fake_gitleaks = fake_bin / ("gitleaks.exe" if os.name == "nt" else "gitleaks")
     shutil.copyfile(true_binary, fake_gitleaks)
     fake_gitleaks.chmod(0o755)
-    monkeypatch.setenv("GIT_INDEX_FILE", str(tmp_path / "ambient.index"))
+    ambient_index = tmp_path / "ambient.index"
+    monkeypatch.setenv("GIT_INDEX_FILE", str(ambient_index))
+    child_environment = isolated_git_environment(
+        {"PATH": os.pathsep.join((str(fake_bin), os.environ["PATH"]))}
+    )
 
     # famulus-raw-git: category=hook-contract; reason=the test must exercise Git's real pre-commit index and hook environment
-    command = [
+    base_command = [
         "git",
         "-c",
         "commit.gpgSign=false",
@@ -1325,45 +1468,65 @@ def test_precommit_hook_commits_synchronized_plugin_versions(
         "-m",
         "bump version",
     ]
-    if commit_only:
-        command.extend(("--only", "pyproject.toml"))
-    completed = subprocess.run(
-        command,
-        env=isolated_git_environment(
-            {"PATH": os.pathsep.join((str(fake_bin), os.environ["PATH"]))}
-        ),
+    partial = subprocess.run(
+        [*base_command, "--only", "pyproject.toml"],
+        env=child_environment,
         capture_output=True,
         text=True,
         check=False,
     )
 
-    if commit_only:
-        assert completed.returncode != 0
-        assert "partial-path commits cannot synchronize a version change" in completed.stderr
-        assert b'version = "0.1.0"' in repository.git(
-            "show", "HEAD:pyproject.toml"
-        ).stdout
-        assert b'version = "1.2.3"' in repository.git(
-            "show", ":pyproject.toml"
-        ).stdout
-    else:
-        assert completed.returncode == 0, completed.stdout + completed.stderr
-        assert b'version = "1.2.3"' in repository.git(
-            "show", "HEAD:pyproject.toml"
-        ).stdout
+    assert partial.returncode != 0
+    assert "partial-path commits cannot synchronize a version change" in partial.stderr
+    assert b'version = "0.1.0"' in repository.git(
+        "show", "HEAD:pyproject.toml"
+    ).stdout
+    assert b'version = "1.2.3"' in repository.git(
+        "show", ":pyproject.toml"
+    ).stdout
+    assert 'version = "1.2.3"' in (
+        repository.root / "pyproject.toml"
+    ).read_text(encoding="utf-8")
     for directory in (".claude-plugin", ".codex-plugin"):
-        committed = json.loads(
+        assert json.loads(
             repository.git("show", f"HEAD:{directory}/plugin.json").stdout
-        )
-        staged = json.loads(
+        )["version"] == "0.1.0"
+        assert json.loads(
             repository.git("show", f":{directory}/plugin.json").stdout
-        )
-        expected = "0.1.0" if commit_only else "1.2.3"
-        assert committed["version"] == expected
-        assert staged["version"] == expected
+        )["version"] == "0.1.0"
         assert json.loads(
             (repository.root / directory / "plugin.json").read_text(encoding="utf-8")
-        )["version"] == expected
+        )["version"] == "0.1.0"
+    assert os.environ["GIT_INDEX_FILE"] == str(ambient_index)
+    assert not ambient_index.exists()
+
+    completed = subprocess.run(
+        base_command,
+        env=child_environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    for reference in ("HEAD:pyproject.toml", ":pyproject.toml"):
+        assert b'version = "1.2.3"' in repository.git("show", reference).stdout
+    assert 'version = "1.2.3"' in (
+        repository.root / "pyproject.toml"
+    ).read_text(encoding="utf-8")
+    for directory in (".claude-plugin", ".codex-plugin"):
+        for reference in (
+            f"HEAD:{directory}/plugin.json",
+            f":{directory}/plugin.json",
+        ):
+            assert json.loads(repository.git("show", reference).stdout)[
+                "version"
+            ] == "1.2.3"
+        assert json.loads(
+            (repository.root / directory / "plugin.json").read_text(encoding="utf-8")
+        )["version"] == "1.2.3"
+    assert os.environ["GIT_INDEX_FILE"] == str(ambient_index)
+    assert not ambient_index.exists()
 
 
 def test_skill_hooks_select_validators_through_root_checks() -> None:

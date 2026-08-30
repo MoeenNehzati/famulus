@@ -192,3 +192,56 @@ Prefer normal pytest fixtures at the narrowest correct scope for immutable or
 resettable preparation. Keep real subprocess, filesystem, browser, and platform
 boundaries when they are the behavior under test. A faster test is not an
 improvement if it weakens the assertion or changes isolation semantics.
+
+### Preventing setup inflation
+
+The node-certification cleanup exposed recurring mistakes that apply to new
+tests generally:
+
+- Do not call an ordinary helper a fixture. A helper named as a repository
+  fixture rebuilt Git state on every call because it had no pytest scope.
+  Make expensive immutable preparation a session fixture, then give every test
+  an independent function-scoped copy.
+- Split eager setup into layers. `create_v4_repository()` loaded the graph and
+  computed every node hash even at many call sites that discarded the states.
+  Materialization, graph loading, and hash derivation should be independently
+  requested.
+- Give each test a unique branch, state transition, or observable. Three full
+  integration tests covered the same already-current transition, and a narrow
+  module-target smoke duplicated assertions in a stronger issuance test.
+- Keep one parameterized matrix for shared negative cases. A new-untracked-file
+  failure appeared both in the race matrix and in a contrast test whose only
+  unique contract was that a preexisting untracked file is allowed.
+- Do not parameterize a global scan by every expected inventory entry. The
+  installation-context consumer test rescanned and reparsed the same production
+  tree for each named consumer even though one exact set-equality assertion
+  already proved membership. Scan once, compare complete sets, and report the
+  missing or unexpected entries in that assertion.
+- Do not reload the complete repository graph for independent assertions about
+  one immutable checkout. Four blueprint tests each paid the same graph-load
+  cost. Keep their assertions in one repository-level contract test; a
+  module-scoped fixture alone may still be repeated when xdist assigns the tests
+  to different workers.
+- Match fixture size to the function under test. Stale-worklist unit cases built
+  a Git repository, hashed it, generated keys, and signed logs even though the
+  algorithm consumes only graph membership, hash dependencies, and status
+  concerns. Use a minimal scoped fixture for pure ordering and filtering logic.
+- Stop setup at the mocked boundary. Public orchestration tests initialized Git
+  and computed hashes even after graph loading and private issuance were
+  replaced. Use minimal production dataclasses as synthetic inputs for unit
+  contracts; retain separate parsed-repository integration tests.
+- Preserve real boundaries only where they provide evidence. Exact Git bytes,
+  index and tree parity, signing provenance, atomic append races, dependency
+  ordering, and concurrent writers still require isolated physical repositories.
+- Never share a mutable repository between tests or workers. Reusable templates
+  must be immutable and worker-local; copies must include independent `.git`
+  state and preserve modes and symlinks. Reload path-bound graphs, snapshots,
+  and hashes after copying or mutation.
+- Bind cached evidence to the copied artifact. A loader that accepts a commit
+  must derive destination `HEAD` and reject a supplied mismatch; otherwise graph
+  state and provenance can refer to different repository states.
+
+Review new expensive tests with a small coverage matrix: entry point, initial
+state, mutation, expected transition, unique observable, and required real
+boundary. If a row duplicates an existing row, merge the new assertion into the
+canonical scenario instead of adding another full setup.

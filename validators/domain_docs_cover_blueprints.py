@@ -173,36 +173,36 @@ def test_domain_coverage(
     return _validate_domain_coverage(repo_root, skill_catalog)
 
 
-@pytest.mark.parametrize(
-    "rel_path",
-    DOMAIN_DOCS,
-    ids=lambda path: path.as_posix(),
-)
-def test_domain_document(
+def test_domain_documents(
     repo_root: Path,
     skill_catalog: list[SkillInfo],
-    rel_path: Path,
 ) -> list[str]:
-    """Check one domain document against blocks rendered from the shared catalog.
+    """Check every domain document against blocks rendered from the shared catalog.
 
     Intent
     ------
-    Expose one document's generated-block contract as a pytest validator item.
+    Expose all document generated-block contracts as one pytest validator item.
 
     Rationale
     ---------
-    Parametrized items identify the exact stale or malformed domain document.
+    One worker-local catalog serves compatible read-only document comparisons.
 
     Pseudocode
     ----------
-    - return document findings from staged root prepared catalog and relative path
+    - set errors = empty list
+    - for configured domain document in declared order:
+      - append document findings from staged root and prepared catalog
+    - return errors
 
     Wraps
     -----
-    ._validate_domain_document -> preprocess: none; postprocess: none; fixed_arguments: none
+    ._validate_domain_document -> preprocess: none; postprocess: append one document's findings; fixed_arguments: none
     """
 
-    return _validate_domain_document(repo_root, skill_catalog, rel_path)
+    errors: list[str] = []
+    for rel_path in DOMAIN_DOCS:
+        errors.extend(_validate_domain_document(repo_root, skill_catalog, rel_path))
+    return errors
 
 
 def validate(repo_root: Path) -> list[str]:

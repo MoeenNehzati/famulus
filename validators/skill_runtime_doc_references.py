@@ -5,6 +5,7 @@ import re
 import sys
 from collections.abc import Mapping
 from pathlib import Path, PurePosixPath
+from typing import NamedTuple
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = REPO_ROOT / "src"
@@ -130,11 +131,11 @@ def _declared_public_interface_ids(
     )
 
 
-def _graph_public_interface_ids(
+def _graph_public_interface_ids_by_skill(
     graph: object,
-    skill_name: str,
-) -> frozenset[str] | None:
-    """Return same-skill IDs from a validated graph, or None for legacy fakes.
+    skill_names: frozenset[str],
+) -> dict[str, frozenset[str]] | None:
+    """Index same-skill IDs from a validated graph, or None for legacy fakes.
 
     Intent
     ------
@@ -147,7 +148,7 @@ def _graph_public_interface_ids(
     Pseudocode
     ----------
     - return legacy sentinel when graph exports are unavailable
-    - select exports owned by the requested module
+    - index exports once by their top-level owning skill
     - retain only canonical same-skill interface identifiers
 
     Wraps
@@ -157,17 +158,20 @@ def _graph_public_interface_ids(
     exports = getattr(graph, "exports", None)
     if not isinstance(exports, Mapping):
         return None
-    return frozenset(
-        interface_id
-        for interface_id, export in exports.items()
-        if (
-            getattr(export, "module_node_id", None) == skill_name
-            or str(getattr(export, "module_node_id", "")).startswith(
-                f"{skill_name}."
-            )
-        )
-        and _is_same_skill_public_interface(skill_name, interface_id)
-    )
+    interface_ids: dict[str, set[str]] = {name: set() for name in skill_names}
+    for interface_id, export in exports.items():
+        module_node_id = getattr(export, "module_node_id", None)
+        if not isinstance(module_node_id, str):
+            continue
+        skill_name = module_node_id.partition(".")[0]
+        if skill_name not in skill_names:
+            continue
+        if _is_same_skill_public_interface(skill_name, interface_id):
+            interface_ids[skill_name].add(interface_id)
+    return {
+        skill_name: frozenset(ids)
+        for skill_name, ids in interface_ids.items()
+    }
 
 
 def _mask_declared_public_interfaces(
@@ -202,7 +206,7 @@ def _mask_declared_public_interfaces(
         )
     return line
 
-def _iter_skill_markdown(repo_root: Path):
+def _iter_skill_markdown(repo_root: Path, skill_dirs: tuple[Path, ...] | None = None):
     """Yield eligible skill Markdown paths in stable repository order.
 
     Intent
@@ -224,13 +228,17 @@ def _iter_skill_markdown(repo_root: Path):
     -----
     - none
     """
-    skills_root = repo_root / "skills"
-    if not skills_root.is_dir():
-        return
-    for path in sorted(skills_root.glob("*")):
-        if not path.is_dir() or path.name == ".system":
-            continue
-        for md_path in sorted(path.rglob("*.md")):
+    if skill_dirs is None:
+        skills_root = repo_root / "skills"
+        if not skills_root.is_dir():
+            return
+        skill_dirs = tuple(
+            path
+            for path in sorted(skills_root.iterdir())
+            if path.is_dir() and path.name != ".system"
+        )
+    for skill_dir in skill_dirs:
+        for md_path in sorted(skill_dir.rglob("*.md")):
             rel_path = PurePosixPath(md_path.relative_to(repo_root).as_posix())
             if any(part in _EXCLUDED_PARTS for part in rel_path.parts):
                 continue
@@ -374,6 +382,108 @@ def _suffix_patterns_for_stem(stem: str) -> list[re.Pattern[str]]:
     ]
 
 
+class _CombinedSkillPatterns(NamedTuple):
+    """Combined runtime matchers and their stable diagnostic metadata."""
+
+    suffix_pattern: re.Pattern[str] | None
+    suffix_groups: dict[str, tuple[tuple[str, int], ...]]
+    stem_pattern: re.Pattern[str] | None
+    stem_groups: dict[str, tuple[tuple[int, str], ...]]
+    stem_order: tuple[str, ...]
+
+
+def _combined_patterns_for_stems(stems: list[str]) -> _CombinedSkillPatterns:
+    """Compile one suffix scan and one stable-priority stem scan per skill."""
+    suffix_sources: dict[str, str] = {}
+    suffix_metadata: dict[str, list[tuple[str, int]]] = {}
+    stem_sources: dict[str, list[tuple[int, str]]] = {}
+    for stem_index, stem in enumerate(stems):
+        for variant_index, pattern in enumerate(_suffix_patterns_for_stem(stem)):
+            source_key = pattern.pattern.casefold()
+            suffix_sources.setdefault(source_key, pattern.pattern)
+            suffix_metadata.setdefault(source_key, []).append(
+                (stem, variant_index)
+            )
+        for pattern in _stem_patterns(stem):
+            stem_sources.setdefault(pattern.pattern, []).append((stem_index, stem))
+    suffix_groups = {
+        f"suffix_{index}": tuple(metadata)
+        for index, metadata in enumerate(suffix_metadata.values())
+    }
+    suffix_alternatives = [
+        f"(?P<{group}>{source})"
+        for group, source in zip(
+            suffix_groups, suffix_sources.values(), strict=True
+        )
+    ]
+    stem_groups = {
+        f"stem_{index}": tuple(metadata)
+        for index, metadata in enumerate(stem_sources.values())
+    }
+    stem_alternatives = [
+        f"(?P<{group}>{source})"
+        for group, source in zip(stem_groups, stem_sources, strict=True)
+    ]
+    suffix_pattern = (
+        re.compile("|".join(suffix_alternatives), re.IGNORECASE)
+        if suffix_alternatives
+        else None
+    )
+    stem_pattern = (
+        re.compile(r"(?=(?:" + "|".join(stem_alternatives) + r"))", re.IGNORECASE)
+        if stem_alternatives
+        else None
+    )
+    return _CombinedSkillPatterns(
+        suffix_pattern=suffix_pattern,
+        suffix_groups=suffix_groups,
+        stem_pattern=stem_pattern,
+        stem_groups=stem_groups,
+        stem_order=tuple(stems),
+    )
+
+
+def _suffix_findings(
+    patterns: _CombinedSkillPatterns,
+    line: str,
+) -> list[tuple[str, str]]:
+    """Return one token per stem in stem and private-before-public order."""
+    if patterns.suffix_pattern is None:
+        return []
+    matches: dict[str, dict[int, str]] = {}
+    for match in patterns.suffix_pattern.finditer(line):
+        group = match.lastgroup
+        if group is None:
+            continue
+        for stem, variant_index in patterns.suffix_groups[group]:
+            matches.setdefault(stem, {}).setdefault(
+                variant_index, match.group(group)
+            )
+    return [
+        (stem, variants[min(variants)])
+        for stem in patterns.stem_order
+        if (variants := matches.get(stem))
+    ]
+
+
+def _first_stem_finding(
+    patterns: _CombinedSkillPatterns,
+    line: str,
+) -> str | None:
+    """Return the first matching stem in stable inventory order."""
+    if patterns.stem_pattern is None:
+        return None
+    best: tuple[int, str] | None = None
+    for match in patterns.stem_pattern.finditer(line):
+        group = match.lastgroup
+        if group is None:
+            continue
+        candidate = min(patterns.stem_groups[group])
+        if best is None or candidate < best:
+            best = candidate
+    return best[1] if best is not None else None
+
+
 def _validate(repo_root: Path, graph: object | None) -> list[str]:
     """Return private runtime references found in public skill Markdown.
 
@@ -425,48 +535,37 @@ def _validate(repo_root: Path, graph: object | None) -> list[str]:
     if not skills_root.is_dir():
         return errors
 
-    stems_by_skill = {
-        skill_dir.name: _runtime_stems_for_skill(skill_dir, graph)
+    skill_dirs = tuple(
+        skill_dir
         for skill_dir in sorted(skills_root.iterdir())
         if skill_dir.is_dir() and skill_dir.name != ".system"
+    )
+    stems_by_skill = {
+        skill_dir.name: _runtime_stems_for_skill(skill_dir, graph)
+        for skill_dir in skill_dirs
     }
-    public_interfaces_by_skill: dict[str, frozenset[str]] = {}
-    for skill_dir in sorted(skills_root.iterdir()):
-        if not skill_dir.is_dir() or skill_dir.name == ".system":
-            continue
-        graph_ids = (
-            _graph_public_interface_ids(graph, skill_dir.name)
-            if graph is not None
-            else None
-        )
-        public_interfaces_by_skill[skill_dir.name] = (
-            graph_ids
-            if graph_ids is not None
+    graph_ids_by_skill = (
+        _graph_public_interface_ids_by_skill(graph, frozenset(stems_by_skill))
+        if graph is not None
+        else None
+    )
+    public_interfaces_by_skill = {
+        skill_dir.name: (
+            graph_ids_by_skill[skill_dir.name]
+            if graph_ids_by_skill is not None
             else _declared_public_interface_ids(repo_root, skill_dir)
         )
-    patterns_by_skill: dict[
-        str,
-        tuple[
-            list[tuple[str, list[re.Pattern[str]]]],
-            list[tuple[str, re.Pattern[str]]],
-        ],
-    ] = {}
+        for skill_dir in skill_dirs
+    }
+    patterns_by_skill: dict[str, _CombinedSkillPatterns] = {}
 
-    for path, rel_path in _iter_skill_markdown(repo_root):
+    for path, rel_path in _iter_skill_markdown(repo_root, skill_dirs):
         skill_name = rel_path.parts[1]
         if skill_name not in patterns_by_skill:
-            stems = stems_by_skill.get(skill_name, [])
-            suffix_patterns = [
-                (stem, _suffix_patterns_for_stem(stem))
-                for stem in stems
-            ]
-            stem_patterns = [
-                (stem, pattern)
-                for stem in stems
-                for pattern in _stem_patterns(stem)
-            ]
-            patterns_by_skill[skill_name] = suffix_patterns, stem_patterns
-        suffix_patterns, stem_patterns = patterns_by_skill[skill_name]
+            patterns_by_skill[skill_name] = _combined_patterns_for_stems(
+                stems_by_skill.get(skill_name, [])
+            )
+        patterns = patterns_by_skill[skill_name]
         try:
             text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
@@ -486,22 +585,17 @@ def _validate(repo_root: Path, graph: object | None) -> list[str]:
                     f"{rel_path}:{lineno}: skill-facing Markdown must not mention old runtime path "
                     f"`{old_path.group(0)}`"
                 )
-            for stem, stem_suffix_patterns in suffix_patterns:
-                for suffix_pattern in stem_suffix_patterns:
-                    suffix_match = suffix_pattern.search(line)
-                    if suffix_match:
-                        errors.append(
-                            f"{rel_path}:{lineno}: skill-facing Markdown must not mention runtime file "
-                            f"`{suffix_match.group(0)}`"
-                        )
-                        break
-            for stem, pattern in stem_patterns:
-                if pattern.search(stem_scan_line):
-                    errors.append(
-                        f"{rel_path}:{lineno}: skill-facing Markdown must not mention private runtime "
-                        f"name `{stem}`"
-                    )
-                    break
+            for _stem, token in _suffix_findings(patterns, line):
+                errors.append(
+                    f"{rel_path}:{lineno}: skill-facing Markdown must not mention runtime file "
+                    f"`{token}`"
+                )
+            stem = _first_stem_finding(patterns, stem_scan_line)
+            if stem is not None:
+                errors.append(
+                    f"{rel_path}:{lineno}: skill-facing Markdown must not mention private runtime "
+                    f"name `{stem}`"
+                )
 
     return errors
 

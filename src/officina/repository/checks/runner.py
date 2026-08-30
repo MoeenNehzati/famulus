@@ -9,6 +9,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import pickle
 import signal
 import subprocess
 import sys
@@ -53,6 +54,32 @@ DOCSTRING_TESTS = {
     "tests/test_docstrings_validator.py",
 }
 PERFORMANCE_TESTS = {"tests/test_dispatcher_performance.py"}
+PRECOMMIT_DEFERRED_INTEGRATION_TESTS = {
+    "skills/node-certify/_rtx/tests/test_certifier.py::"
+    "test_private_writer_noop_then_renews_only_stale_parent",
+    "skills/node-certify/_rtx/tests/test_certifier.py::"
+    "test_private_writer_reuses_consumer_for_restored_provider_then_renews_changed_claim",
+    "skills/node-certify/_rtx/tests/test_certifier.py::"
+    "test_private_writer_rotates_valid_history_then_rejects_invalid_signed_history",
+    "skills/node-certify/_rtx/tests/test_certifier.py::"
+    "test_private_writers_cannot_append_against_one_predecessor",
+    "skills/node-certify/_rtx/tests/test_certifier.py::"
+    "test_selected_legacy_writer_issues_current_payload",
+    "tests/test_dispatcher_route_smoke.py::"
+    "test_python_machine_runner_interfaces_accept_route_smoke",
+    "tests/test_unified_pytest_collection.py::"
+    "test_no_argument_collection_matches_explicit_repository_roots",
+    "tests/test_repository_validator_checks.py::"
+    "test_staged_path_transport_preserves_non_utf8_filename_bytes",
+    "tests/test_repository_validator_checks.py::"
+    "test_run_all_preserves_posix_index_modes",
+    "tests/test_repository_validator_checks.py::"
+    "test_staged_validator_supports_split_index_snapshot",
+    "tests/test_repository_validator_checks.py::"
+    "test_staged_validator_supports_linked_worktree_index",
+    "tests/test_repository_validator_checks.py::"
+    "test_run_all_isolates_unmerged_index_and_restores_git_environment",
+}
 # These install what is published on GitHub's default branch, so they report on
 # the remote's health rather than on the working tree under test. Pooled phases
 # would inherit a network dependency that says nothing about the local diff.
@@ -72,6 +99,7 @@ PRECOMMIT_EXCLUDED_TESTS = {
     *CHROME_TESTS,
     *DOCSTRING_TESTS,
     *PERFORMANCE_TESTS,
+    *PRECOMMIT_DEFERRED_INTEGRATION_TESTS,
 }
 PREPUSH_EXCLUDED_TESTS = CHROME_TESTS | DOCSTRING_TESTS | PERFORMANCE_TESTS
 SUITE_EXCLUDED_VALIDATORS = {
@@ -114,6 +142,36 @@ class _GraphState:
     owner_id: str
     errors: tuple[str, ...]
     graph: object | None
+    failure: str | None = None
+
+
+@dataclass(frozen=True)
+class _SharedGraphSnapshot:
+    """Bind one prepared graph to its exact repository view.
+
+    Intent
+    ------
+    Carry graph state between the pytest controller and xdist workers.
+
+    Rationale
+    ---------
+    Workers may reuse only a snapshot prepared for the same roots and owner.
+
+    Pseudocode
+    ----------
+    - set snapshot = schema, tracked root, display root, owner, graph state
+    - return snapshot
+
+    Wraps
+    -----
+    - none
+    """
+
+    schema_version: int
+    tracked_root: str
+    display_root: str
+    owner_id: str
+    state: _GraphState
 
 
 @dataclass(frozen=True)
@@ -576,6 +634,123 @@ class ValidatorPytestPlugin:
             self.results[owner_id] = list(normalized)
         return self._graph_state_value
 
+    def prepare_shared_graph_snapshot(self, snapshot_path: Path) -> None:
+        """Prepare one controller-owned graph snapshot for xdist workers.
+
+        Intent
+        ------
+        Run blueprint preflight once and atomically serialize its complete result.
+
+        Rationale
+        ---------
+        A session fixture is process-local, so xdist otherwise repeats preflight.
+
+        Pseudocode
+        ----------
+        - return when no graph owner is selected
+        - set state = prepared graph or normalized preparation failure
+        - set snapshot = state plus exact tracked and display roots
+        - atomically write snapshot
+
+        Wraps
+        -----
+        - none
+        """
+
+        owner_id = self._preflight_owner_id
+        if owner_id is None:
+            return
+        try:
+            state = self._graph_state()
+        except self.runner.ValidatorRunnerError as exc:
+            state = _GraphState(owner_id, (), None, str(exc))
+        if state is None:
+            return
+        snapshot = _SharedGraphSnapshot(
+            schema_version=1,
+            tracked_root=str(self.tracked_root),
+            display_root=str(self.display_root),
+            owner_id=owner_id,
+            state=state,
+        )
+        path = Path(snapshot_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+        try:
+            temporary.write_bytes(pickle.dumps(snapshot))
+            temporary.replace(path)
+        except Exception as exc:
+            raise self.runner.ValidatorRunnerError(
+                f"{owner_id}: cannot write shared blueprint snapshot: {exc}"
+            ) from exc
+
+    def load_shared_graph_snapshot(self, snapshot_path: Path) -> None:
+        """Load a controller snapshot only for its original repository view.
+
+        Intent
+        ------
+        Restore shared graph state without rerunning preflight in an xdist worker.
+
+        Rationale
+        ---------
+        Explicit provenance checks prevent reuse across roots, views, or owners.
+
+        Pseudocode
+        ----------
+        - return when no graph owner is selected
+        - read and validate the snapshot record
+        - reject mismatched provenance
+        - set cached graph state = snapshot state
+
+        Wraps
+        -----
+        - none
+        """
+
+        owner_id = self._preflight_owner_id
+        if owner_id is None:
+            return
+        path = Path(snapshot_path)
+        try:
+            snapshot = pickle.loads(path.read_bytes())
+        except Exception as exc:
+            raise self.runner.ValidatorRunnerError(
+                f"{owner_id}: cannot read shared blueprint snapshot: {exc}"
+            ) from exc
+        if not isinstance(snapshot, _SharedGraphSnapshot):
+            raise self.runner.ValidatorRunnerError(
+                f"{owner_id}: shared blueprint snapshot has an invalid payload"
+            )
+        expected_identity = (
+            1,
+            str(self.tracked_root),
+            str(self.display_root),
+            owner_id,
+        )
+        snapshot_identity = (
+            snapshot.schema_version,
+            snapshot.tracked_root,
+            snapshot.display_root,
+            snapshot.owner_id,
+        )
+        if snapshot_identity != expected_identity:
+            raise self.runner.ValidatorRunnerError(
+                f"{owner_id}: shared blueprint snapshot does not match this "
+                "repository view"
+            )
+        state = snapshot.state
+        if (
+            not isinstance(state, _GraphState)
+            or state.owner_id != owner_id
+            or not isinstance(state.errors, tuple)
+            or not all(isinstance(error, str) for error in state.errors)
+            or (state.failure is not None and not isinstance(state.failure, str))
+        ):
+            raise self.runner.ValidatorRunnerError(
+                f"{owner_id}: shared blueprint snapshot has an invalid graph state"
+            )
+        self._graph_state_value = state
+
     @pytest.fixture(scope="session")
     def repo_root(self) -> Path:
         """Return the exact staged repository root.
@@ -797,6 +972,9 @@ class ValidatorPytestPlugin:
             False,
         ) is True
         state = self._graph_state() if uses_graph else None
+        if state is not None and state.failure is not None:
+            self.execution_error = state.failure
+            pytest.fail(state.failure, pytrace=False)
         if state is not None and state.errors:
             if (
                 validator_id == state.owner_id
@@ -1100,6 +1278,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     group.addoption("--officina-validator-root", type=Path)
     group.addoption("--officina-validator-display-root", type=Path)
     group.addoption("--officina-staged-paths-file", type=Path)
+    group.addoption("--officina-validator-graph-snapshot", type=Path)
     group.addoption("--officina-validator", action="append", default=[])
     group.addoption("--officina-exclude-validator", action="append", default=[])
 
@@ -1183,6 +1362,17 @@ def pytest_configure(config: pytest.Config) -> None:
         selected_paths=selected_paths,
         staged_paths=staged_paths,
     )
+    graph_snapshot_path = config.getoption(
+        "--officina-validator-graph-snapshot"
+    )
+    if graph_snapshot_path is not None:
+        try:
+            if hasattr(config, "workerinput"):
+                plugin.load_shared_graph_snapshot(graph_snapshot_path)
+            else:
+                plugin.prepare_shared_graph_snapshot(graph_snapshot_path)
+        except _validator_snapshot.ValidatorRunnerError as exc:
+            raise pytest.UsageError(str(exc)) from exc
     config.pluginmanager.register(plugin, "officina-validator-items")
 
 
@@ -1901,6 +2091,7 @@ def _pytest_phase_command(
     verbose: bool,
     jobs: int,
     cache_dir: Path,
+    graph_snapshot_path: Path | None = None,
     timing_path: Path | None,
     validator_root: Path | None = None,
     validator_display_root: Path | None = None,
@@ -1918,8 +2109,8 @@ def _pytest_phase_command(
 
     Rationale
     ---------
-    Suite deselection, xdist policy, validator plugin inputs, cache location,
-    and timing output must travel together to prevent invocation drift.
+    Suite deselection, xdist policy, validator plugin inputs, private graph
+    snapshot, cache location, and timing output must travel together.
 
     Pseudocode
     ----------
@@ -1937,6 +2128,8 @@ def _pytest_phase_command(
           - raise ValueError
     - if task includes validators:
       - set pytest_arguments = arguments plus validator plugin inputs
+      - if execution is parallel and a private snapshot path exists:
+        - set pytest_arguments = arguments plus graph snapshot path
     - set pytest_arguments = arguments plus cache and optional timing path
     - return Python pytest command
 
@@ -2016,6 +2209,13 @@ def _pytest_phase_command(
             pytest_args.extend(["--officina-validator", validator_id])
         for validator_id in excluded_validator_ids:
             pytest_args.extend(["--officina-exclude-validator", validator_id])
+        if jobs > 1 and graph_snapshot_path is not None:
+            pytest_args.extend(
+                [
+                    "--officina-validator-graph-snapshot",
+                    str(graph_snapshot_path),
+                ]
+            )
     pytest_args.extend(["-o", f"cache_dir={cache_dir}"])
     if timing_path is not None:
         pytest_args.append(f"--junitxml={timing_path}")
@@ -2293,6 +2493,11 @@ def run_suite(
                     verbose=verbose,
                     jobs=jobs,
                     cache_dir=cache_dir,
+                    graph_snapshot_path=(
+                        artifact_root
+                        / "graph-snapshots"
+                        / f"{index:04d}.pickle"
+                    ),
                     timing_path=timing_path,
                     validator_root=execution_root,
                     validator_display_root=root,

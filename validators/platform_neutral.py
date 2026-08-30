@@ -92,11 +92,54 @@ _PLATFORM_METADATA_LINE_RE = re.compile(
 _PEP508_PLATFORM_MARKER_LINE_RE = re.compile(
     r";.*\bsys_platform\s*==\s*['\"](?:linux|darwin|win32)['\"]"
 )
+_METADATA_PLATFORM_KEYS = "platform-keys"
+_METADATA_PEP508_MARKER = "pep508-marker"
+_METADATA_ALL_NON_HOST_LINES = "all-non-host-lines"
+_UNCLASSIFIED_METADATA = object()
 REQUIRES_BLUEPRINT_GRAPH = True
 BLUEPRINT_GRAPH_OPTIONAL = True
 
 
-def _is_allowed_platform_metadata_line(rel_path: Path, line: str) -> bool:
+def _platform_metadata_exemption_kind(rel_path: Path) -> str | None:
+    """Classify the metadata exemption available to one authored file.
+
+    Intent
+    ------
+    Precompute path-dependent metadata eligibility once per file.
+
+    Rationale
+    ---------
+    Ordinary shared files need no metadata regex or repeated path comparisons.
+
+    Pseudocode
+    ----------
+    - return the narrow line matcher kind for structured metadata files
+    - return the all-non-host-lines kind for schema/tooling definitions
+    - return none for ordinary files
+
+    Wraps
+    -----
+    - none
+    """
+    if rel_path.parts[:2] == ("references", "blueprint-schema"):
+        return _METADATA_ALL_NON_HOST_LINES
+    if rel_path.name.endswith("blueprint.yaml"):
+        return _METADATA_PLATFORM_KEYS
+    if rel_path == Path("references/blueprint-schema/runtime_dependencies.json"):
+        return _METADATA_PLATFORM_KEYS
+    if rel_path == Path("references/runtime/requirements-core.lock"):
+        return _METADATA_PEP508_MARKER
+    if rel_path in _PLATFORM_METADATA_TOOLING_PATHS:
+        return _METADATA_ALL_NON_HOST_LINES
+    return None
+
+
+def _is_allowed_platform_metadata_line(
+    rel_path: Path,
+    line: str,
+    *,
+    exemption_kind: str | None | object = _UNCLASSIFIED_METADATA,
+) -> bool:
     """Return whether one platform metadata line is allowed.
 
     Intent
@@ -109,27 +152,30 @@ def _is_allowed_platform_metadata_line(rel_path: Path, line: str) -> bool:
 
     Pseudocode
     ----------
-    - if line contains a host name:
+    - classify the file when no prepared classification was supplied
+    - if the file has no metadata exemption or line contains a host name:
       - return false
-    - return whether path and line form recognized platform metadata
+    - return whether the line matches the prepared exemption kind
 
     Wraps
     -----
     - none
+
+    CallsFromRepo
+    -------------
+    ._platform_metadata_exemption_kind:
+      why:
+        computes: "Classifies callers that do not supply prepared eligibility."
     """
-    if _HOST_PATTERN.search(line):
+    if exemption_kind is _UNCLASSIFIED_METADATA:
+        exemption_kind = _platform_metadata_exemption_kind(rel_path)
+    if exemption_kind is None or _HOST_PATTERN.search(line):
         return False
-    if rel_path.name.endswith("blueprint.yaml") and _PLATFORM_METADATA_LINE_RE.search(line):
-        return True
-    if rel_path == Path("references/blueprint-schema/runtime_dependencies.json"):
+    if exemption_kind == _METADATA_PLATFORM_KEYS:
         return _PLATFORM_METADATA_LINE_RE.search(line) is not None
-    if rel_path == Path("references/runtime/requirements-core.lock"):
+    if exemption_kind == _METADATA_PEP508_MARKER:
         return _PEP508_PLATFORM_MARKER_LINE_RE.search(line) is not None
-    if rel_path.parts[:2] == ("references", "blueprint-schema"):
-        return True
-    if rel_path in _PLATFORM_METADATA_TOOLING_PATHS:
-        return True
-    return False
+    return exemption_kind == _METADATA_ALL_NON_HOST_LINES
 
 
 def _forbidden_pattern_for(path: Path) -> re.Pattern[str] | None:
@@ -370,6 +416,9 @@ def _validate(
     ._is_allowed_platform_metadata_line:
       why:
         computes: "Recognizes allowed descriptive platform metadata."
+    ._platform_metadata_exemption_kind:
+      why:
+        computes: "Preclassifies whether each file can contain exempt metadata."
 
     InstantiationsFromRepo
     ----------------------
@@ -388,12 +437,17 @@ def _validate(
         pattern = _forbidden_pattern_for(path)
         if pattern is None:
             continue
+        metadata_exemption = _platform_metadata_exemption_kind(rel)
         try:
             text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             continue
         for lineno, line in enumerate(text.splitlines(), start=1):
-            if _is_allowed_platform_metadata_line(rel, line):
+            if metadata_exemption is not None and _is_allowed_platform_metadata_line(
+                rel,
+                line,
+                exemption_kind=metadata_exemption,
+            ):
                 continue
             if pattern.search(line):
                 errors.append(f"{rel.as_posix()}:{lineno}: {line.strip()}")

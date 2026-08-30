@@ -50,7 +50,6 @@ def test_injected_cache_preserves_findings_and_ast(tmp_path: Path) -> None:
 def test_v5_dispatch_caller_uses_deepest_registered_module(
     tmp_path: Path,
 ) -> None:
-    copy_v5_fixture_tree(_V5_FIXTURE / "modules", tmp_path / "modules")
     copy_v5_fixture_tree(_V5_FIXTURE / "skills", tmp_path / "skills")
     graph = load_repository_blueprint_graph(
         tmp_path,
