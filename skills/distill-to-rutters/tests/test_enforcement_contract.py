@@ -22,6 +22,11 @@ _FIXTURE_RE = re.compile(
     r"^```distill-enforcement-fixture\s*\n(?P<body>.*?)\n```\s*$",
     re.DOTALL | re.MULTILINE,
 )
+_ARTIFACT_RE = re.compile(
+    r"\A```yaml\s*\n(?P<envelope>.*?)\n```\s*\n\s*"
+    r"```distill-contract\s*\n(?P<body>.*?)\n```\s*\Z",
+    re.DOTALL,
+)
 
 
 def _load_contract():
@@ -86,13 +91,45 @@ def _write_artifact(
     )
 
 
+def _read_artifact(path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    match = _ARTIFACT_RE.match(path.read_text(encoding="utf-8"))
+    assert match is not None
+    envelope = yaml.safe_load(match.group("envelope"))
+    body = yaml.safe_load(match.group("body"))
+    assert isinstance(envelope, dict)
+    assert isinstance(body, dict)
+    return envelope, body
+
+
+def _rewrite_artifact(
+    path: Path,
+    envelope: dict[str, Any],
+    body: dict[str, Any],
+) -> None:
+    prerequisites = envelope["prerequisites"]
+    assert isinstance(prerequisites, list) and len(prerequisites) == 1
+    _write_artifact(
+        path,
+        stage=envelope["stage"],
+        outcome=envelope["outcome"],
+        body_schema=envelope["body_schema"],
+        prerequisite=prerequisites[0],
+        body=body,
+    )
+
+
 def _expose_semantic_binding_contract(repository: Path) -> None:
     engine = repository / "src/officina/rutter/blueprints/engine.yaml"
     document = yaml.safe_load(engine.read_text(encoding="utf-8"))
     interface = document["interfaces"][
         "rutter.source.engine.interface.bound-operations"
     ]
-    interface["contract"]["semantic_enforcement"] = {
+    interface["contract"]["semantic_enforcement"] = _semantic_binding_contract()
+    engine.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
+
+
+def _semantic_binding_contract() -> dict[str, Any]:
+    return {
         "version": 1,
         "request": {
             "operation": "get-status",
@@ -123,51 +160,23 @@ def _expose_semantic_binding_contract(repository: Path) -> None:
             "successor_ref": "result",
         },
     }
-    engine.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
 
 
-def _artifacts(
-    tmp_path: Path,
-    fixture_name: str,
-    *,
-    logic_outcome: str | None = None,
-    expose_binding_contract: bool = False,
-    mutate_assignment=None,
-    mutate_graph=None,
-    mutate_logic=None,
-) -> tuple[Path, Path]:
-    root = tmp_path / "repo"
-    root.mkdir(parents=True)
-    (root / ".git").mkdir()
-    public_runtime = root / "src/officina/rutter"
-    public_runtime.mkdir(parents=True)
-    shutil.copy2(
-        REPOSITORY_ROOT / "src/officina/rutter/blueprint.yaml",
-        public_runtime / "blueprint.yaml",
-    )
-    shutil.copytree(
-        REPOSITORY_ROOT / "src/officina/rutter/blueprints",
-        public_runtime / "blueprints",
-    )
-    if expose_binding_contract:
-        _expose_semantic_binding_contract(root)
+def _captured_bodies(
+    fixture_name: str = "good.md",
+) -> tuple[dict[str, Any], dict[str, Any]]:
     data = copy.deepcopy(_fixture(fixture_name))
-    selected_logic_outcome = logic_outcome or data.get(
-        "logic_outcome", "logic-captured"
-    )
-    if selected_logic_outcome == "logic-captured":
-        for row in data["logic"]["enforcement_matrix"]:
-            if "capability_gap" not in row:
-                continue
-            row["capability_verified"] = True
-            row["exact_mechanism"]["enforcement_class"] = (
-                "rutter-state-transition"
-            )
-            del row["capability_gap"]
-    normative_ids = data.get("normative_obligations") or [
-        row["obligation_id"] for row in data["logic"]["enforcement_matrix"]
-    ]
-    assignment_body = data.get("assignment") or {
+    for row in data["logic"]["enforcement_matrix"]:
+        if "capability_gap" not in row:
+            continue
+        row["capability_verified"] = True
+        row["exact_mechanism"]["enforcement_class"] = "rutter-state-transition"
+        del row["capability_gap"]
+    return data["graph"], data["logic"]
+
+
+def _assignment_body() -> dict[str, Any]:
+    return {
         "assignments": [
             {
                 "part_id": "part-main",
@@ -199,12 +208,193 @@ def _artifacts(
             "release": [],
         },
     }
-    if mutate_assignment is not None:
-        mutate_assignment(assignment_body)
-    if mutate_graph is not None:
-        mutate_graph(data["graph"])
-    if mutate_logic is not None:
-        mutate_logic(data["logic"])
+
+
+def _validate_capture_body(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    graph: dict[str, Any],
+    logic: dict[str, Any],
+) -> None:
+    """Exercise semantic capture after authoritative schema validation."""
+    contract = _load_contract()
+    session = contract._SnapshotSession(REPOSITORY_ROOT)
+    assert (
+        contract._schema_errors(
+            graph,
+            "graph-body.schema.json",
+            session,
+            "extract-evolutions",
+        )
+        == ()
+    )
+    assert (
+        contract._schema_errors(
+            logic,
+            "logic-validation-body.schema.json",
+            session,
+            "validate-logic",
+        )
+        == ()
+    )
+    normative_ids = {row["obligation_id"] for row in logic["enforcement_matrix"]}
+    monkeypatch.setattr(
+        contract,
+        "_logic_inputs",
+        lambda *_args: (graph, _assignment_body(), normative_ids, []),
+    )
+    monkeypatch.setattr(
+        contract,
+        "_public_runtime_contract",
+        lambda *_args, **_kwargs: (
+            frozenset({"get-status", "validate", "advance"}),
+            _semantic_binding_contract(),
+        ),
+    )
+    envelope = contract.ArtifactEnvelope(
+        schema_version="distill-to-rutters/v1",
+        stage="validate-logic",
+        outcome="logic-captured",
+        prerequisites=(),
+        body_schema="logic-validation/v1",
+    )
+    contract._validate_logic_capture(
+        REPOSITORY_ROOT,
+        envelope,
+        logic,
+        session,
+    )
+
+
+def _minimal_public_runtime_tree(root: Path) -> Path:
+    repository = root / "repo"
+    module = repository / "src/officina/rutter"
+    (module / "blueprints").mkdir(parents=True)
+    shutil.copy2(
+        REPOSITORY_ROOT / "src/officina/rutter/blueprint.yaml",
+        module / "blueprint.yaml",
+    )
+    shutil.copy2(
+        REPOSITORY_ROOT / "src/officina/rutter/blueprints/engine.yaml",
+        module / "blueprints/engine.yaml",
+    )
+    return repository
+
+
+@pytest.fixture(scope="session")
+def repository_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    root = tmp_path_factory.mktemp("distill-enforcement-repository-template")
+    (root / ".git").mkdir()
+    public_runtime = root / "src/officina/rutter"
+    public_runtime.mkdir(parents=True)
+    shutil.copy2(
+        REPOSITORY_ROOT / "src/officina/rutter/blueprint.yaml",
+        public_runtime / "blueprint.yaml",
+    )
+    shutil.copytree(
+        REPOSITORY_ROOT / "src/officina/rutter/blueprints",
+        public_runtime / "blueprints",
+    )
+    return root
+
+
+@pytest.fixture(scope="session")
+def artifact_templates(
+    tmp_path_factory: pytest.TempPathFactory,
+    repository_template: Path,
+):
+    root = tmp_path_factory.mktemp("distill-enforcement-artifact-templates")
+    templates: dict[tuple[str, str | None, bool], Path] = {}
+
+    def build(
+        fixture_name: str,
+        *,
+        logic_outcome: str | None,
+        expose_binding_contract: bool,
+    ) -> Path:
+        key = (fixture_name, logic_outcome, expose_binding_contract)
+        if key not in templates:
+            template = root / f"repo-{len(templates)}"
+            shutil.copytree(
+                repository_template,
+                template,
+                copy_function=shutil.copy2,
+                symlinks=True,
+            )
+            _populate_artifacts(
+                template,
+                fixture_name,
+                logic_outcome=logic_outcome,
+                expose_binding_contract=expose_binding_contract,
+            )
+            templates[key] = template
+        return templates[key]
+
+    return build
+
+
+@pytest.fixture
+def artifacts(tmp_path: Path, artifact_templates):
+    counter = 0
+
+    def build(
+        fixture_name: str,
+        *,
+        logic_outcome: str | None = None,
+        expose_binding_contract: bool = False,
+        mutate_logic=None,
+    ) -> tuple[Path, Path]:
+        nonlocal counter
+        root = tmp_path / f"repo-{counter}"
+        counter += 1
+        template = artifact_templates(
+            fixture_name,
+            logic_outcome=logic_outcome,
+            expose_binding_contract=expose_binding_contract,
+        )
+        shutil.copytree(
+            template,
+            root,
+            copy_function=shutil.copy2,
+            symlinks=True,
+        )
+        graph = root / "source_distillation/03_evolutions_and_transitions.md"
+        logic = root / "source_distillation/04_logic_validation.md"
+
+        if mutate_logic is not None:
+            logic_envelope, logic_body = _read_artifact(logic)
+            mutate_logic(logic_body)
+            _rewrite_artifact(logic, logic_envelope, logic_body)
+
+        return graph, logic
+
+    return build
+
+
+def _populate_artifacts(
+    root: Path,
+    fixture_name: str,
+    *,
+    logic_outcome: str | None = None,
+    expose_binding_contract: bool = False,
+) -> tuple[Path, Path]:
+    if expose_binding_contract:
+        _expose_semantic_binding_contract(root)
+    data = copy.deepcopy(_fixture(fixture_name))
+    selected_logic_outcome = logic_outcome or data.get(
+        "logic_outcome", "logic-captured"
+    )
+    if selected_logic_outcome == "logic-captured":
+        for row in data["logic"]["enforcement_matrix"]:
+            if "capability_gap" not in row:
+                continue
+            row["capability_verified"] = True
+            row["exact_mechanism"]["enforcement_class"] = "rutter-state-transition"
+            del row["capability_gap"]
+    normative_ids = data.get("normative_obligations") or [
+        row["obligation_id"] for row in data["logic"]["enforcement_matrix"]
+    ]
+    assignment_body = data.get("assignment") or _assignment_body()
 
     source = root / "source.md"
     source.write_text("# Normative source\n", encoding="utf-8")
@@ -248,9 +438,9 @@ def _artifacts(
                 {
                     "part_id": "part-main",
                     "obligation_ids": normative_ids,
-                    "independence": assignment_body["assignments"][0][
-                        "inseparability"
-                    ]["status"],
+                    "independence": assignment_body["assignments"][0]["inseparability"][
+                        "status"
+                    ],
                     "reason": "The obligations share transition state.",
                 }
             ],
@@ -306,49 +496,92 @@ def _artifacts(
 
 
 def test_current_public_api_forces_actor_owned_capture_to_logic_gap(
-    tmp_path: Path,
+    artifacts,
 ) -> None:
     """Operation vocabulary alone must not prove semantic enforcement bindings."""
     contract = _load_contract()
-    graph, logic = _artifacts(tmp_path, "good.md")
+    graph, logic = artifacts("good.md")
 
     graph_result = contract.validate_artifact(graph, "extract-evolutions")
     logic_result = contract.validate_artifact(logic, "validate-logic")
 
-    assert graph_result.valid is True, graph_result.errors
-    assert logic_result.valid is True, logic_result.errors
+    assert graph_result.valid is True, (
+        "current-public-api-graph",
+        graph_result.errors,
+    )
+    assert logic_result.valid is True, (
+        "current-public-api-logic-gap",
+        "truthful-non-enforceable-claim",
+        logic_result.errors,
+    )
 
-    _, captured = _artifacts(
-        tmp_path / "captured",
+    _, captured = artifacts(
         "good.md",
         logic_outcome="logic-captured",
     )
     captured_result = contract.validate_artifact(captured, "validate-logic")
 
-    assert captured_result.valid is False
+    assert captured_result.valid is False, "current-public-api-captured-refusal"
     assert any(
         "does not expose semantic enforcement bindings" in error
         for error in captured_result.errors
     )
 
 
-def test_versioned_public_binding_contract_allows_structural_capture(
-    tmp_path: Path,
+def test_public_binding_contract_scenarios_remain_isolated(
+    artifacts,
 ) -> None:
-    """Capture is possible only when the public versioned contract proves bindings."""
+    """Public success, operation, and export scenarios keep adapter ownership."""
     contract = _load_contract()
-    graph, logic = _artifacts(
-        tmp_path,
+
+    _, success = artifacts(
         "good.md",
         logic_outcome="logic-captured",
         expose_binding_contract=True,
     )
+    success_result = contract.validate_artifact(success, "validate-logic")
+    assert success_result.valid is True, (
+        "versioned-public-binding-contract",
+        success_result.errors,
+    )
 
-    graph_result = contract.validate_artifact(graph, "extract-evolutions")
-    logic_result = contract.validate_artifact(logic, "validate-logic")
+    def invent_operation(logic: dict[str, Any]) -> None:
+        logic["enforcement_matrix"][0]["exact_mechanism"]["validation"][
+            "operation"
+        ] = "submit"
 
-    assert graph_result.valid is True, graph_result.errors
-    assert logic_result.valid is True, logic_result.errors
+    _, invented = artifacts(
+        "good.md",
+        logic_outcome="logic-captured",
+        expose_binding_contract=True,
+        mutate_logic=invent_operation,
+    )
+    invented_result = contract.validate_artifact(invented, "validate-logic")
+    assert invented_result.valid is False, "live-interface-operation"
+    assert any(
+        "operation submit is absent from rutter.interface.bound-operations@6" in error
+        for error in invented_result.errors
+    ), "live-interface-operation"
+
+    _, missing_export = artifacts(
+        "good.md",
+        logic_outcome="logic-captured",
+        expose_binding_contract=True,
+    )
+    public_blueprint = missing_export.parents[1] / "src/officina/rutter/blueprint.yaml"
+    runtime = yaml.safe_load(public_blueprint.read_text(encoding="utf-8"))
+    del runtime["exports"]["rutter.interface.bound-operations"]
+    public_blueprint.write_text(
+        yaml.safe_dump(runtime, sort_keys=False),
+        encoding="utf-8",
+    )
+    export_result = contract.validate_artifact(missing_export, "validate-logic")
+    assert export_result.valid is False, "artifact-repository-public-api"
+    assert any(
+        "rutter.interface.bound-operations@6 is not a current public runtime capability"
+        in error
+        for error in export_result.errors
+    ), "artifact-repository-public-api"
 
 
 @pytest.mark.parametrize(
@@ -368,15 +601,14 @@ def test_versioned_public_binding_contract_allows_structural_capture(
     ),
 )
 def test_logic_captured_rejects_specific_semantic_gaps(
-    tmp_path: Path,
+    artifacts,
     fixture_name: str,
     expected_error: str,
     expose_binding_contract: bool,
 ) -> None:
     """Each false success claim must fail for its named semantic gap."""
     contract = _load_contract()
-    graph, logic = _artifacts(
-        tmp_path,
+    graph, logic = artifacts(
         fixture_name,
         expose_binding_contract=expose_binding_contract,
     )
@@ -390,12 +622,11 @@ def test_logic_captured_rejects_specific_semantic_gaps(
 
 
 def test_graph_ready_rejects_an_unowned_coordinator_obligation(
-    tmp_path: Path,
+    artifacts,
 ) -> None:
     """Coordinator foreign-key gaps belong to graph validation, not logic prose."""
     contract = _load_contract()
-    graph, _ = _artifacts(
-        tmp_path,
+    graph, _ = artifacts(
         "unowned-coordinator.md",
         expose_binding_contract=True,
     )
@@ -409,166 +640,99 @@ def test_graph_ready_rejects_an_unowned_coordinator_obligation(
 
 
 def test_logic_captured_requires_exactly_one_row_for_every_graph_obligation(
-    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Dropping a normative graph obligation must make logic-captured impossible."""
+    graph, logic = _captured_bodies()
+    logic["enforcement_matrix"] = logic["enforcement_matrix"][:1]
     contract = _load_contract()
-
-    def drop_human_obligation(logic: dict[str, Any]) -> None:
-        logic["enforcement_matrix"] = logic["enforcement_matrix"][:1]
-
-    _, logic = _artifacts(
-        tmp_path,
-        "good.md",
-        logic_outcome="logic-captured",
-        expose_binding_contract=True,
-        mutate_logic=drop_human_obligation,
-    )
-    result = contract.validate_artifact(logic, "validate-logic")
-
-    assert result.valid is False
+    with pytest.raises(contract.ArtifactContractError) as raised:
+        _validate_capture_body(monkeypatch, graph=graph, logic=logic)
     assert any(
         "enforcement matrix must cover graph obligations exactly" in error
-        for error in result.errors
+        for error in (str(raised.value),)
     )
 
 
 def test_logic_captured_cannot_omit_an_obligation_from_graph_and_matrix(
-    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The approved normative closure, not the proposed graph, defines completeness."""
+    graph, logic = _captured_bodies()
+    rutter = graph["rutters"][0]
+    rutter["evolutions"] = rutter["evolutions"][:1]
+    rutter["transitions"] = rutter["transitions"][:2]
+    logic["enforcement_matrix"] = logic["enforcement_matrix"][:1]
     contract = _load_contract()
-
-    def drop_graph_obligation(graph: dict[str, Any]) -> None:
-        rutter = graph["rutters"][0]
-        rutter["evolutions"] = rutter["evolutions"][:1]
-        rutter["transitions"] = rutter["transitions"][:2]
-
-    def drop_logic_obligation(logic: dict[str, Any]) -> None:
-        logic["enforcement_matrix"] = logic["enforcement_matrix"][:1]
-
-    _, logic = _artifacts(
-        tmp_path,
-        "good.md",
-        logic_outcome="logic-captured",
-        expose_binding_contract=True,
-        mutate_graph=drop_graph_obligation,
-        mutate_logic=drop_logic_obligation,
+    session = contract._SnapshotSession(REPOSITORY_ROOT)
+    assert (
+        contract._schema_errors(
+            graph, "graph-body.schema.json", session, "extract-evolutions"
+        )
+        == ()
     )
-    result = contract.validate_artifact(logic, "validate-logic")
-
-    assert result.valid is False
+    assert (
+        contract._schema_errors(
+            logic, "logic-validation-body.schema.json", session, "validate-logic"
+        )
+        == ()
+    )
+    monkeypatch.setattr(
+        contract,
+        "_logic_inputs",
+        lambda *_args: (
+            graph,
+            _assignment_body(),
+            {"obl-deterministic", "obl-approval"},
+            [],
+        ),
+    )
+    monkeypatch.setattr(
+        contract,
+        "_public_runtime_contract",
+        lambda *_args, **_kwargs: (
+            frozenset({"get-status", "validate", "advance"}),
+            _semantic_binding_contract(),
+        ),
+    )
+    envelope = contract.ArtifactEnvelope(
+        "distill-to-rutters/v1",
+        "validate-logic",
+        "logic-captured",
+        (),
+        "logic-validation/v1",
+    )
+    with pytest.raises(contract.ArtifactContractError) as raised:
+        contract._validate_logic_capture(REPOSITORY_ROOT, envelope, logic, session)
     assert any(
         "enforcement matrix must cover normative obligations exactly" in error
-        for error in result.errors
+        for error in (str(raised.value),)
     )
 
 
-@pytest.mark.parametrize(
-    "enforcement_class",
-    ("prompt-only", "operation-name-only", "wrapper-constraint", "schema-only"),
-)
 def test_logic_captured_rejects_constraints_that_are_not_runtime_mechanisms(
-    tmp_path: Path,
-    enforcement_class: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Renaming prose or shape as enforcement must not authorize logic-captured."""
-    contract = _load_contract()
+    for enforcement_class in (
+        "prompt-only",
+        "operation-name-only",
+        "wrapper-constraint",
+        "schema-only",
+    ):
 
-    def replace_mechanism(logic: dict[str, Any]) -> None:
+        graph, logic = _captured_bodies()
         logic["enforcement_matrix"][0]["exact_mechanism"][
             "enforcement_class"
         ] = enforcement_class
-
-    _, logic = _artifacts(
-        tmp_path,
-        "good.md",
-        logic_outcome="logic-captured",
-        expose_binding_contract=True,
-        mutate_logic=replace_mechanism,
-    )
-    result = contract.validate_artifact(logic, "validate-logic")
-
-    assert result.valid is False
-    assert any(
-        f"enforcement class {enforcement_class} is not a public runtime mechanism"
-        in error
-        for error in result.errors
-    )
-
-
-def test_logic_captured_checks_operations_exposed_by_the_live_interface(
-    tmp_path: Path,
-) -> None:
-    """A real interface name cannot legitimize an operation it does not expose."""
-    contract = _load_contract()
-
-    def invent_operation(logic: dict[str, Any]) -> None:
-        logic["enforcement_matrix"][0]["exact_mechanism"]["validation"][
-            "operation"
-        ] = "submit"
-
-    _, logic = _artifacts(
-        tmp_path,
-        "good.md",
-        logic_outcome="logic-captured",
-        expose_binding_contract=True,
-        mutate_logic=invent_operation,
-    )
-    result = contract.validate_artifact(logic, "validate-logic")
-
-    assert result.valid is False
-    assert any(
-        "operation submit is absent from rutter.interface.bound-operations@6"
-        in error
-        for error in result.errors
-    )
-
-
-def test_capability_check_uses_the_artifact_repository_public_api(
-    tmp_path: Path,
-) -> None:
-    """A stale helper checkout cannot overrule the artifact repository inventory."""
-    contract = _load_contract()
-    _, logic = _artifacts(
-        tmp_path,
-        "good.md",
-        logic_outcome="logic-captured",
-        expose_binding_contract=True,
-    )
-    public_blueprint = logic.parents[1] / "src/officina/rutter/blueprint.yaml"
-    runtime = yaml.safe_load(public_blueprint.read_text(encoding="utf-8"))
-    del runtime["exports"]["rutter.interface.bound-operations"]
-    public_blueprint.write_text(
-        yaml.safe_dump(runtime, sort_keys=False),
-        encoding="utf-8",
-    )
-
-    result = contract.validate_artifact(logic, "validate-logic")
-
-    assert result.valid is False
-    assert any(
-        "rutter.interface.bound-operations@6 is not a current public runtime capability"
-        in error
-        for error in result.errors
-    )
-
-
-def test_logic_gap_can_truthfully_record_a_non_enforceable_claim(
-    tmp_path: Path,
-) -> None:
-    """A detected gap remains a valid non-advancing artifact, not a false success."""
-    contract = _load_contract()
-    graph, logic = _artifacts(
-        tmp_path,
-        "good.md",
-    )
-
-    graph_result = contract.validate_artifact(graph, "extract-evolutions")
-    logic_result = contract.validate_artifact(logic, "validate-logic")
-
-    assert graph_result.valid is True, graph_result.errors
-    assert logic_result.valid is True, logic_result.errors
+        contract = _load_contract()
+        with pytest.raises(contract.ArtifactContractError) as raised:
+            _validate_capture_body(monkeypatch, graph=graph, logic=logic)
+        assert any(
+            f"enforcement class {enforcement_class} is not a public runtime mechanism"
+            in error
+            for error in (str(raised.value),)
+        ), enforcement_class
 
 
 def test_truthful_gap_fixture_records_the_absent_public_contract() -> None:
@@ -577,10 +741,7 @@ def test_truthful_gap_fixture_records_the_absent_public_contract() -> None:
 
     for row in rows:
         assert row["capability_verified"] is False
-        assert (
-            row["exact_mechanism"]["enforcement_class"]
-            == "operation-name-only"
-        )
+        assert row["exact_mechanism"]["enforcement_class"] == "operation-name-only"
         assert row["capability_gap"] == {
             "absent_binding_contract": (
                 "rutter.interface.bound-operations semantic_enforcement@1"
@@ -595,36 +756,28 @@ def test_truthful_gap_fixture_records_the_absent_public_contract() -> None:
 
 
 def test_logic_captured_rejects_any_retained_capability_gap(
-    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A captured-success row cannot retain a declaration that it is a gap."""
+    graph, logic = _captured_bodies()
+    logic["enforcement_matrix"][0]["capability_gap"] = {
+        "absent_binding_contract": "semantic_enforcement@1",
+        "exact_repair": "Expose the missing public binding contract.",
+    }
     contract = _load_contract()
-
-    def retain_gap(logic: dict[str, Any]) -> None:
-        logic["enforcement_matrix"][0]["capability_gap"] = {
-            "absent_binding_contract": "semantic_enforcement@1",
-            "exact_repair": "Expose the missing public binding contract.",
-        }
-
-    _, logic = _artifacts(
-        tmp_path,
-        "good.md",
-        logic_outcome="logic-captured",
-        expose_binding_contract=True,
-        mutate_logic=retain_gap,
-    )
-    result = contract.validate_artifact(logic, "validate-logic")
-
-    assert result.valid is False
+    with pytest.raises(contract.ArtifactContractError) as raised:
+        _validate_capture_body(monkeypatch, graph=graph, logic=logic)
     assert any(
         "logic-captured cannot include capability_gap" in error
-        for error in result.errors
+        for error in (str(raised.value),)
     )
 
 
-@pytest.mark.parametrize(
-    ("case", "expected_error"),
-    (
+def test_actor_binding_components_are_checked_independently(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each owner/evidence/validator/transition binding must fail independently."""
+    cases = (
         ("request-owner", "request owner llm does not match human"),
         (
             "evidence-ref",
@@ -638,107 +791,62 @@ def test_logic_captured_rejects_any_retained_capability_gap(
             "transition-authority",
             "transition authority wrapper is not owning-rutter-evolution",
         ),
-    ),
-)
-def test_actor_binding_components_are_checked_independently(
-    tmp_path: Path,
-    case: str,
-    expected_error: str,
-) -> None:
-    """Each owner/evidence/validator/transition binding must fail independently."""
-    contract = _load_contract()
+    )
+    for case, expected_error in cases:
 
-    def break_binding(logic: dict[str, Any]) -> None:
+        graph, logic = _captured_bodies()
         row = logic["enforcement_matrix"][1]
         if case == "request-owner":
             row["exact_mechanism"]["request"]["owner"] = "llm"
         elif case == "evidence-ref":
             row["exact_mechanism"]["request"]["evidence_ref"] = "input.claim"
         elif case == "validator":
-            row["exact_mechanism"]["validation"][
-                "validator_ref"
-            ] = "validate_other"
+            row["exact_mechanism"]["validation"]["validator_ref"] = "validate_other"
         else:
             row["exact_mechanism"]["transition"]["authority"] = "wrapper"
-
-    _, logic = _artifacts(
-        tmp_path,
-        "good.md",
-        logic_outcome="logic-captured",
-        expose_binding_contract=True,
-        mutate_logic=break_binding,
-    )
-    result = contract.validate_artifact(logic, "validate-logic")
-
-    assert result.valid is False
-    assert any(expected_error in error for error in result.errors)
+        contract = _load_contract()
+        with pytest.raises(contract.ArtifactContractError) as raised:
+            _validate_capture_body(monkeypatch, graph=graph, logic=logic)
+        assert expected_error in str(raised.value), case
 
 
-@pytest.mark.parametrize("actor", ("human", "llm", "external"))
 def test_each_non_rutter_owner_is_preserved_by_the_public_binding_contract(
-    tmp_path: Path,
-    actor: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A shared branch must preserve each supported non-Rutter owner class."""
-    contract = _load_contract()
-
-    def set_graph_owner(graph: dict[str, Any]) -> None:
+    for actor in ("human", "llm", "external"):
+        graph, logic = _captured_bodies()
         graph["rutters"][0]["evolutions"][1]["decision_owner"] = actor
-
-    def set_logic_owner(logic: dict[str, Any]) -> None:
         row = logic["enforcement_matrix"][1]
         row["original_decision_owner"] = actor
         row["exact_mechanism"]["request"]["owner"] = actor
-
-    _, logic = _artifacts(
-        tmp_path,
-        "good.md",
-        logic_outcome="logic-captured",
-        expose_binding_contract=True,
-        mutate_graph=set_graph_owner,
-        mutate_logic=set_logic_owner,
-    )
-    result = contract.validate_artifact(logic, "validate-logic")
-
-    assert result.valid is True, result.errors
+        _validate_capture_body(monkeypatch, graph=graph, logic=logic)
 
 
-@pytest.mark.parametrize("actor", ("human", "llm", "external"))
 def test_each_non_rutter_owner_class_rejects_missing_rutter_request(
-    tmp_path: Path,
-    actor: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Every non-Rutter owner class must retain its requested decision boundary."""
-    contract = _load_contract()
-
-    def set_graph_owner(graph: dict[str, Any]) -> None:
+    for actor in ("human", "llm", "external"):
+        graph, logic = _captured_bodies()
         graph["rutters"][0]["evolutions"][1]["decision_owner"] = actor
-
-    def remove_actor_request(logic: dict[str, Any]) -> None:
         row = logic["enforcement_matrix"][1]
         row["original_decision_owner"] = actor
         row["exact_mechanism"]["request"] = None
-
-    _, logic = _artifacts(
-        tmp_path,
-        "good.md",
-        logic_outcome="logic-captured",
-        expose_binding_contract=True,
-        mutate_graph=set_graph_owner,
-        mutate_logic=remove_actor_request,
-    )
-    result = contract.validate_artifact(logic, "validate-logic")
-
-    assert result.valid is False
-    assert any(
-        f"{actor}-owned obligation obl-approval requires a Rutter request" in error
-        for error in result.errors
-    )
+        contract = _load_contract()
+        with pytest.raises(contract.ArtifactContractError) as raised:
+            _validate_capture_body(monkeypatch, graph=graph, logic=logic)
+        assert any(
+            f"{actor}-owned obligation obl-approval requires a Rutter request" in error
+            for error in (str(raised.value),)
+        ), actor
 
 
-@pytest.mark.parametrize(
-    ("case", "expected_error"),
-    (
+def test_structured_traces_must_match_capability_and_graph(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Structured traces are consistency claims, not unconstrained prose."""
+    cases = (
         (
             "successor",
             "positive trace successor failed is not the approved successor complete",
@@ -756,17 +864,10 @@ def test_each_non_rutter_owner_class_rejects_missing_rutter_request(
             "rejection-code",
             "negative trace rejection_code arbitrary-rejection is not declared by public validation binding",
         ),
-    ),
-)
-def test_structured_traces_must_match_capability_and_graph(
-    tmp_path: Path,
-    case: str,
-    expected_error: str,
-) -> None:
-    """Structured traces are consistency claims, not unconstrained prose."""
-    contract = _load_contract()
+    )
+    for case, expected_error in cases:
 
-    def break_trace(logic: dict[str, Any]) -> None:
+        graph, logic = _captured_bodies()
         row = logic["enforcement_matrix"][1]
         if case == "successor":
             row["positive_trace"]["expected"]["state"] = "failed"
@@ -785,55 +886,44 @@ def test_structured_traces_must_match_capability_and_graph(
                 "kind": "rejection",
                 "rejection_code": "arbitrary-rejection",
             }
-
-    _, logic = _artifacts(
-        tmp_path,
-        "good.md",
-        logic_outcome="logic-captured",
-        expose_binding_contract=True,
-        mutate_logic=break_trace,
-    )
-    result = contract.validate_artifact(logic, "validate-logic")
-
-    assert result.valid is False
-    assert any(expected_error in error for error in result.errors)
+        contract = _load_contract()
+        with pytest.raises(contract.ArtifactContractError) as raised:
+            _validate_capture_body(monkeypatch, graph=graph, logic=logic)
+        assert expected_error in str(raised.value), case
 
 
-@pytest.mark.parametrize("path_kind", ("absolute", "parent"))
 def test_public_source_blueprint_paths_reject_unconfined_lexical_paths(
     tmp_path: Path,
-    path_kind: str,
 ) -> None:
     """A public export cannot redirect validation outside module-root syntax."""
     contract = _load_contract()
-    _, logic = _artifacts(
-        tmp_path,
-        "good.md",
-        logic_outcome="logic-captured",
-        expose_binding_contract=True,
-    )
-    public_root = logic.parents[1] / "src/officina/rutter"
-    root_blueprint = public_root / "blueprint.yaml"
-    document = yaml.safe_load(root_blueprint.read_text(encoding="utf-8"))
-    locator = document["sources"]["rutter.source.engine"]["blueprint"]
-    locator["path"] = (
-        str((public_root / "blueprints/engine.yaml").resolve())
-        if path_kind == "absolute"
-        else "blueprints/../blueprints/engine.yaml"
-    )
-    root_blueprint.write_text(
-        yaml.safe_dump(document, sort_keys=False),
-        encoding="utf-8",
-    )
+    for path_kind in ("absolute", "parent"):
+        repository = _minimal_public_runtime_tree(tmp_path / path_kind)
+        public_root = repository / "src/officina/rutter"
+        root_blueprint = public_root / "blueprint.yaml"
+        document = yaml.safe_load(root_blueprint.read_text(encoding="utf-8"))
+        locator = document["sources"]["rutter.source.engine"]["blueprint"]
+        locator["path"] = (
+            str((public_root / "blueprints/engine.yaml").resolve())
+            if path_kind == "absolute"
+            else "blueprints/../blueprints/engine.yaml"
+        )
+        root_blueprint.write_text(
+            yaml.safe_dump(document, sort_keys=False),
+            encoding="utf-8",
+        )
 
-    result = contract.validate_artifact(logic, "validate-logic")
-
-    assert result.valid is False
-    assert any(
-        "module-root blueprint path must be relative without parent traversal"
-        in error
-        for error in result.errors
-    )
+        with pytest.raises(contract.ArtifactContractError) as raised:
+            contract._public_runtime_contract(
+                repository,
+                "rutter.interface.bound-operations",
+                6,
+            )
+        assert any(
+            "module-root blueprint path must be relative without parent traversal"
+            in error
+            for error in (str(raised.value),)
+        ), path_kind
 
 
 def test_public_source_blueprint_path_rejects_symlink_escape(
@@ -841,32 +931,28 @@ def test_public_source_blueprint_path_rejects_symlink_escape(
 ) -> None:
     """A relative locator cannot escape module root through a symlink."""
     contract = _load_contract()
-    _, logic = _artifacts(
-        tmp_path,
-        "good.md",
-        logic_outcome="logic-captured",
-        expose_binding_contract=True,
-    )
-    public_root = logic.parents[1] / "src/officina/rutter"
-    outside = logic.parents[1] / "outside-engine.yaml"
+    repository = _minimal_public_runtime_tree(tmp_path)
+    public_root = repository / "src/officina/rutter"
+    outside = repository / "outside-engine.yaml"
     shutil.copy2(public_root / "blueprints/engine.yaml", outside)
     (public_root / "escape.yaml").symlink_to(outside)
     root_blueprint = public_root / "blueprint.yaml"
     document = yaml.safe_load(root_blueprint.read_text(encoding="utf-8"))
-    document["sources"]["rutter.source.engine"]["blueprint"]["path"] = (
-        "escape.yaml"
-    )
+    document["sources"]["rutter.source.engine"]["blueprint"]["path"] = "escape.yaml"
     root_blueprint.write_text(
         yaml.safe_dump(document, sort_keys=False),
         encoding="utf-8",
     )
 
-    result = contract.validate_artifact(logic, "validate-logic")
-
-    assert result.valid is False
+    with pytest.raises(contract.ArtifactContractError) as raised:
+        contract._public_runtime_contract(
+            repository,
+            "rutter.interface.bound-operations",
+            6,
+        )
     assert any(
         "module-root blueprint path escapes public Rutter module root" in error
-        for error in result.errors
+        for error in (str(raised.value),)
     )
 
 
@@ -875,22 +961,20 @@ def test_public_root_blueprint_path_rejects_symlink_escape(
 ) -> None:
     """The root public blueprint must be contained before any bytes are read."""
     contract = _load_contract()
-    _, logic = _artifacts(
-        tmp_path,
-        "good.md",
-        logic_outcome="logic-captured",
-        expose_binding_contract=True,
-    )
-    root_blueprint = logic.parents[1] / "src/officina/rutter/blueprint.yaml"
+    repository = _minimal_public_runtime_tree(tmp_path / "inside")
+    root_blueprint = repository / "src/officina/rutter/blueprint.yaml"
     outside = tmp_path / "outside-root-blueprint.yaml"
     shutil.copy2(root_blueprint, outside)
     root_blueprint.unlink()
     root_blueprint.symlink_to(outside)
 
-    result = contract.validate_artifact(logic, "validate-logic")
-
-    assert result.valid is False
+    with pytest.raises(contract.ArtifactContractError) as raised:
+        contract._public_runtime_contract(
+            repository,
+            "rutter.interface.bound-operations",
+            6,
+        )
     assert any(
         "public Rutter root blueprint escapes artifact repository" in error
-        for error in result.errors
+        for error in (str(raised.value),)
     )

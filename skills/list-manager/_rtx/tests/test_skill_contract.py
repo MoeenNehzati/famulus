@@ -1,10 +1,7 @@
 from pathlib import Path
 
-import pytest
-
 from officina.blueprints.graph import (
-    load_repository_blueprint_graph,
-    repository_schema_version,
+    RepositoryBlueprintGraph,
     resolve_export,
 )
 
@@ -13,26 +10,12 @@ RUNTIME_ROOT = TEST_ROOT.parent
 SKILL_ROOT = (
     RUNTIME_ROOT.parent if RUNTIME_ROOT.name == "_rtx" else RUNTIME_ROOT
 )
-REPO_ROOT = SKILL_ROOT.parents[1]
-SCHEMA_VERSION = repository_schema_version(REPO_ROOT)
-SCHEMA_ROOT = REPO_ROOT / "references/blueprint-schema"
-if SCHEMA_VERSION == 5:
-    SCHEMA_ROOT = SCHEMA_ROOT / "v5"
 
 
-@pytest.fixture(scope="module")
-def repository_graph():
-    """Load the immutable repository graph once for both contract lookups."""
-    return load_repository_blueprint_graph(
-        REPO_ROOT,
-        schema_root=SCHEMA_ROOT,
-        expected_schema_version=SCHEMA_VERSION,
-    )
-
-
-def test_cloud_update_contract_requires_list_patches_with_quoted_string_ids(
-    repository_graph,
+def test_update_contracts_require_sequence_patches_and_quoted_string_ids(
+    ordinary_repository_graph: RepositoryBlueprintGraph,
 ):
+    repository_graph = ordinary_repository_graph
     _module, _source, export = resolve_export(
         repository_graph,
         "list-manager._rtx.interface.cloud-update",
@@ -57,10 +40,6 @@ def test_cloud_update_contract_requires_list_patches_with_quoted_string_ids(
     assert "number-to-id mapping" in skill_body
     assert "report the resolved ids and intended change" in skill_body
 
-
-def test_local_update_description_matches_its_sequence_patch_contract(
-    repository_graph,
-):
     _module, _source, export = resolve_export(
         repository_graph,
         "list-manager._rtx.interface.update-list",

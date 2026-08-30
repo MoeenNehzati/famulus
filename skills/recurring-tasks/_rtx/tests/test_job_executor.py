@@ -533,7 +533,7 @@ def test_run_job_kills_and_records_a_job_that_exceeds_its_timeout(tmp_path, monk
         ),
     )
     log_dir = tmp_path / "logs"
-    monkeypatch.setattr(job_executor, "JOB_TIMEOUT_SECONDS", 1)
+    monkeypatch.setattr(job_executor, "JOB_TIMEOUT_SECONDS", 0.25)
 
     exit_code = job_executor.run_job(
         jobs_file=jobs_file, job_name="demo", log_dir=log_dir

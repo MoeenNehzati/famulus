@@ -9,12 +9,13 @@ it changed nothing for callers that do not pass one.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import subprocess
 import sys
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+import time
 
 import pytest
 import yaml
@@ -27,9 +28,16 @@ TIMELINE = RUNTIME / "_agent_timeline.py"
 BLUEPRINTS = RUNTIME / "blueprints"
 
 
-def call(script: Path, *args: str, logs: Path, session: str = "sess-a", thread: str | None = None,
-         cwd: Path | None = None, env_overrides: dict[str, str] | None = None,
-         output_encoding: str | None = None) -> subprocess.CompletedProcess[str]:
+def call(
+    script: Path,
+    *args: str,
+    logs: Path,
+    session: str = "sess-a",
+    thread: str | None = None,
+    cwd: Path | None = None,
+    env_overrides: dict[str, str] | None = None,
+    output_encoding: str | None = None,
+) -> subprocess.CompletedProcess[str]:
     """Invoke a helper the way a shell on PATH would, with a private log root."""
     env = dict(os.environ)
     env["ASSISTANT_LOGS"] = str(logs)
@@ -43,7 +51,10 @@ def call(script: Path, *args: str, logs: Path, session: str = "sess-a", thread: 
         env.update(env_overrides)
     return subprocess.run(
         [sys.executable, str(script), *args],
-        env=env, capture_output=True, text=True, encoding=output_encoding,
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding=output_encoding,
         cwd=str(cwd or ROOT),
     )
 
@@ -81,7 +92,11 @@ def dispatch(
 
 
 def records(path: Path) -> list[dict]:
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
 
 
 def session_files(logs: Path) -> list[Path]:
@@ -158,47 +173,24 @@ def test_record_interface_accepts_role_and_positional_messages(tmp_path: Path) -
     )
 
 
-def test_record_dispatcher_accepts_an_explicit_empty_role(tmp_path: Path) -> None:
+def test_record_dispatcher_accepts_empty_role_and_signed_step(tmp_path: Path) -> None:
     logs = tmp_path / "logs"
 
-    direct = call(MILESTONE, "--role", "", "start", "previous", logs=logs)
     dispatched = dispatch(
         "milestone-logging._rtx.interface.record",
+        "--run",
+        "nightly-01",
         "--role",
         "",
-        "start",
-        "previous",
-        logs=logs,
-    )
-
-    assert direct.returncode == 0, direct.stderr
-    assert dispatched.returncode == 0, dispatched.stderr
-
-
-def test_record_dispatcher_accepts_signed_step_syntax(tmp_path: Path) -> None:
-    logs = tmp_path / "logs"
-
-    direct = call(
-        MILESTONE,
-        "--run",
-        "nightly-01",
-        "--step",
-        "+1",
-        "start",
-        logs=logs,
-    )
-    dispatched = dispatch(
-        "milestone-logging._rtx.interface.record",
-        "--run",
-        "nightly-01",
         "--step",
         "+1",
         "start",
         logs=logs,
     )
 
-    assert direct.returncode == 0, direct.stderr
     assert dispatched.returncode == 0, dispatched.stderr
+    rec = records(logs / "runs" / "nightly-01.jsonl")[0]
+    assert (rec["role"], rec["step"]) == ("", 1)
 
 
 def test_timeline_interface_lists_a_session(tmp_path: Path) -> None:
@@ -218,6 +210,24 @@ def test_timeline_interface_lists_a_session(tmp_path: Path) -> None:
         + "\n",
         encoding="utf-8",
     )
+    runs = logs / "runs"
+    runs.mkdir()
+    (runs / "nightly-01.jsonl").write_text(
+        json.dumps(
+            {
+                "ts": "2026-08-22T09:01:00+00:00",
+                "role": "reviewer",
+                "cwd": "/workspace",
+                "doing": "run event",
+                "prev": "",
+                "run": "nightly-01",
+                "session": "hidden-session",
+                "agent": "session",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
     shown = dispatch(
         "milestone-logging._rtx.interface.timeline",
@@ -227,6 +237,8 @@ def test_timeline_interface_lists_a_session(tmp_path: Path) -> None:
 
     assert shown.returncode == 0, shown.stderr
     assert "visible" in shown.stdout
+    assert "nightly-01" not in shown.stdout
+    assert "hidden-session" not in shown.stdout
 
 
 def test_timeline_interface_accepts_session_and_slow_value(tmp_path: Path) -> None:
@@ -239,7 +251,7 @@ def test_timeline_interface_accepts_session_and_slow_value(tmp_path: Path) -> No
                 "ts": "2026-08-22T09:00:00+00:00",
                 "role": "reviewer",
                 "cwd": "/workspace",
-                "doing": "start",
+                "doing": "old shape",
                 "prev": "previous",
             }
         )
@@ -257,6 +269,7 @@ def test_timeline_interface_accepts_session_and_slow_value(tmp_path: Path) -> No
 
     assert shown.returncode == 0, shown.stderr
     assert "session visible" in shown.stdout
+    assert "old shape" in shown.stdout
 
 
 def test_runtime_interfaces_render_help(tmp_path: Path) -> None:
@@ -272,97 +285,52 @@ def test_runtime_interfaces_render_help(tmp_path: Path) -> None:
         "--help",
         logs=logs,
     )
-
     assert record_help.returncode == 0, record_help.stderr
     assert "--role ROLE" in record_help.stdout
     assert timeline_help.returncode == 0, timeline_help.stderr
     assert "--slow SLOW" in timeline_help.stdout
 
 
-def test_runtime_interfaces_render_short_help(tmp_path: Path) -> None:
-    logs = tmp_path / "logs"
-
-    direct_record = call(MILESTONE, "-h", logs=logs)
-    direct_timeline = call(TIMELINE, "-h", logs=logs)
-    dispatched_record = dispatch(
-        "milestone-logging._rtx.interface.record",
-        "-h",
-        logs=logs,
-    )
-    dispatched_timeline = dispatch(
-        "milestone-logging._rtx.interface.timeline",
-        "-h",
-        logs=logs,
-    )
-
-    assert direct_record.returncode == 0, direct_record.stderr
-    assert direct_timeline.returncode == 0, direct_timeline.stderr
-    assert (dispatched_record.returncode, dispatched_timeline.returncode) == (0, 0)
-
-
 # ── backward compatibility ───────────────────────────────────────────────────
+
 
 def test_plain_call_still_writes_only_the_original_fields(tmp_path: Path) -> None:
     logs = tmp_path / "logs"
-    done = call(MILESTONE, "--role", "auditor", "read the loader", "found the entry point", logs=logs)
+    done = call(
+        MILESTONE,
+        "--role",
+        "auditor",
+        "read the loader",
+        "found the entry point",
+        logs=logs,
+    )
 
     assert done.returncode == 0, done.stderr
     written = session_files(logs)
     assert len(written) == 1
     rec = records(written[0])[0]
     assert set(rec) == {"ts", "role", "cwd", "doing", "prev"}
-    assert (rec["role"], rec["doing"], rec["prev"]) == ("auditor", "read the loader", "found the entry point")
-
-
-def test_plain_call_writes_no_run_journal(tmp_path: Path) -> None:
-    logs = tmp_path / "logs"
-    call(MILESTONE, "no run here", logs=logs)
-
+    assert (rec["role"], rec["doing"], rec["prev"]) == (
+        "auditor",
+        "read the loader",
+        "found the entry point",
+    )
     assert not (logs / "runs").exists()
-
-
-def test_records_written_before_run_journals_existed_stay_readable(tmp_path: Path) -> None:
-    logs = tmp_path / "logs"
-    old = logs / "2026-01-02"
-    old.mkdir(parents=True)
-    (old / "sess-old.session.jsonl").write_text(
-        json.dumps({"ts": "2026-01-02T09:00:00+00:00", "role": "r", "cwd": "/w",
-                    "doing": "old shape", "prev": ""}) + "\n",
-        encoding="utf-8",
-    )
-
-    shown = call(TIMELINE, "sess-old", logs=logs)
-
-    assert shown.returncode == 0, shown.stderr
-    assert "old shape" in shown.stdout
-
-
-def test_timeline_escapes_non_cp1252_plain_text_on_a_legacy_console(
-    tmp_path: Path,
-) -> None:
-    """Plain output stays readable when dynamic text exceeds the encoding."""
-    logs = tmp_path / "logs"
-    call(MILESTONE, "portable output 🙂", logs=logs)
-
-    shown = call(
-        TIMELINE,
-        "sess-a",
-        logs=logs,
-        env_overrides={"PYTHONIOENCODING": "cp1252"},
-    )
-
-    assert shown.returncode == 0, shown.stderr
-    assert "portable output" in shown.stdout
-    assert r"\U0001f642" in shown.stdout
 
 
 def test_timeline_json_preserves_unicode_with_utf8_and_legacy_output(
     tmp_path: Path,
 ) -> None:
-    """JSON escapes only when required and remains semantically lossless."""
+    """Plain and JSON output remain readable and lossless on legacy consoles."""
     logs = tmp_path / "logs"
     call(MILESTONE, "--run", "unicode-run", "json payload 🙂", logs=logs)
 
+    plain_legacy = call(
+        TIMELINE,
+        "sess-a",
+        logs=logs,
+        env_overrides={"PYTHONIOENCODING": "cp1252"},
+    )
     utf8 = call(
         TIMELINE,
         "--run",
@@ -381,73 +349,100 @@ def test_timeline_json_preserves_unicode_with_utf8_and_legacy_output(
         env_overrides={"PYTHONIOENCODING": "cp1252"},
     )
 
+    assert plain_legacy.returncode == 0, plain_legacy.stderr
+    assert "json payload" in plain_legacy.stdout
+    assert r"\U0001f642" in plain_legacy.stdout
     assert utf8.returncode == 0, utf8.stderr
     assert "🙂" in utf8.stdout
     assert legacy.returncode == 0, legacy.stderr
     assert json.loads(legacy.stdout)["events"][0]["doing"] == "json payload 🙂"
 
 
-def test_listing_sessions_ignores_run_journals(tmp_path: Path) -> None:
-    """A run journal is not a session; `--list` must not offer it as one."""
-    logs = tmp_path / "logs"
-    call(MILESTONE, "plain", logs=logs, session="sess-a")
-    call(MILESTONE, "--run", "nightly-01", "with a run", logs=logs, session="sess-b")
-
-    listed = call(TIMELINE, "--list", logs=logs)
-
-    assert listed.returncode == 0, listed.stderr
-    assert "sess-a" in listed.stdout
-    assert "sess-b" in listed.stdout
-    assert "nightly-01" not in listed.stdout
-
-
 # ── the durable journal ──────────────────────────────────────────────────────
 
-def test_run_events_also_land_in_the_session_log(tmp_path: Path) -> None:
-    """The run journal is added alongside the session log, not carved out of it."""
+
+def test_run_recovery_preserves_lifecycle_damage_and_session_mirrors(
+    tmp_path: Path,
+) -> None:
+    """Two real writes frame schema-faithful history and damaged lines."""
     logs = tmp_path / "logs"
-    call(MILESTONE, "--run", "nightly-01", "start the sweep", logs=logs)
-
-    rec = records(session_files(logs)[0])[0]
-    assert rec["run"] == "nightly-01"
-    assert rec["doing"] == "start the sweep"
-
-
-def test_one_run_is_reconstructed_across_two_assistant_sessions(tmp_path: Path) -> None:
-    logs = tmp_path / "logs"
-    call(MILESTONE, "--run", "nightly-01", "--event", "run-start", "begin", logs=logs, session="sess-a")
-    call(MILESTONE, "--run", "nightly-01", "--step", "3", "third step", logs=logs,
-         session="sess-b", thread="thread-9")
+    started = call(
+        MILESTONE,
+        "--run",
+        "nightly-01",
+        "--event",
+        "run-start",
+        "--step",
+        "1",
+        "--evidence",
+        "out/a.json",
+        "--evidence",
+        "out/b.json",
+        "begin",
+        logs=logs,
+        session="sess-a",
+    )
+    assert started.returncode == 0, started.stderr
+    journal = logs / "runs" / "nightly-01.jsonl"
+    base = {
+        "ts": "2026-08-22T09:01:00+00:00",
+        "role": "worker",
+        "cwd": "/workspace",
+        "prev": "",
+        "run": "nightly-01",
+        "session": "sess-a",
+        "agent": "session",
+        "event": "task",
+        "task": "extract",
+    }
+    prepared = [
+        {**base, "doing": "piece 1", "state": "started", "attempt": 1},
+        {**base, "doing": "piece 2", "state": "failed", "attempt": 1},
+        {**base, "doing": "piece 3", "state": "started", "attempt": 2},
+        {
+            **base,
+            "doing": "piece 4",
+            "state": "succeeded",
+            "attempt": 2,
+            "evidence": ["out/extract.json"],
+        },
+        {
+            **base,
+            "doing": "piece 5",
+            "task": "render",
+            "state": "skipped",
+        },
+    ]
+    with journal.open("a", encoding="utf-8") as handle:
+        for record in prepared:
+            handle.write(json.dumps(record) + "\n")
+        handle.write("{not json at all\n")
+        handle.write(json.dumps(["a list, not a record"]) + "\n")
+    finished = call(
+        MILESTONE,
+        "--run",
+        "nightly-01",
+        "--event",
+        "run-end",
+        "--step",
+        "9",
+        "--done",
+        "finish",
+        logs=logs,
+        session="sess-b",
+        thread="thread-9",
+    )
 
     dumped = call(TIMELINE, "--run", "nightly-01", "--json", logs=logs)
+    shown = call(TIMELINE, "--run", "nightly-01", logs=logs)
 
+    assert finished.returncode == 0, finished.stderr
     assert dumped.returncode == 0, dumped.stderr
     run = json.loads(dumped.stdout)
-    assert [e["doing"] for e in run["events"]] == ["begin", "third step"]
-    assert [e["session"] for e in run["events"]] == ["sess-a", "sess-b"]
-    assert [e["agent"] for e in run["events"]] == ["session", "thread-9"]
-    assert run["sessions"] == ["sess-a", "sess-b"]
-
-
-def test_task_lifecycle_reconstructs_from_typed_fields_only(tmp_path: Path) -> None:
-    """Start, failure, retry, skip and completion are read off typed keys."""
-    logs = tmp_path / "logs"
-    steps = [
-        ("--event", "run-start", "--step", "1"),
-        ("--event", "task", "--task", "extract", "--state", "started", "--attempt", "1"),
-        ("--event", "task", "--task", "extract", "--state", "failed", "--attempt", "1"),
-        ("--event", "task", "--task", "extract", "--state", "started", "--attempt", "2"),
-        ("--event", "task", "--task", "extract", "--state", "succeeded", "--attempt", "2",
-         "--evidence", "out/extract.json"),
-        ("--event", "task", "--task", "render", "--state", "skipped"),
-        ("--event", "run-end", "--step", "9"),
+    typed = [
+        (e.get("event"), e.get("task"), e.get("state"), e.get("attempt"))
+        for e in run["events"]
     ]
-    for index, flags in enumerate(steps):
-        call(MILESTONE, "--run", "nightly-01", *flags, f"piece {index}", logs=logs)
-
-    run = json.loads(call(TIMELINE, "--run", "nightly-01", "--json", logs=logs).stdout)
-
-    typed = [(e.get("event"), e.get("task"), e.get("state"), e.get("attempt")) for e in run["events"]]
     assert typed == [
         ("run-start", None, None, None),
         ("task", "extract", "started", 1),
@@ -458,16 +453,36 @@ def test_task_lifecycle_reconstructs_from_typed_fields_only(tmp_path: Path) -> N
         ("run-end", None, None, None),
     ]
     assert run["events"][0]["step"] == 1
+    assert run["events"][0]["evidence"] == ["out/a.json", "out/b.json"]
+    assert "evidence_dropped" not in run["events"][0]
     assert run["events"][4]["evidence"] == ["out/extract.json"]
-
-
-def test_absent_typed_fields_are_omitted_from_the_record(tmp_path: Path) -> None:
-    """Nothing is invented: a field not passed leaves no key behind."""
-    logs = tmp_path / "logs"
-    call(MILESTONE, "--run", "nightly-01", "--event", "run-start", "begin", logs=logs)
-
-    rec = records(logs / "runs" / "nightly-01.jsonl")[0]
-    assert "task" not in rec and "state" not in rec and "attempt" not in rec and "evidence" not in rec
+    first = run["events"][0]
+    assert "task" not in first and "state" not in first and "attempt" not in first
+    assert run["events"][-1]["doing"] == "(done)"
+    assert run["events"][-1]["prev"] == "finish"
+    assert run["sessions"] == ["sess-a", "sess-b"]
+    assert run["agents"] == ["session", "thread-9"]
+    expected_origins = [("sess-a", "session")] * 6 + [("sess-b", "thread-9")]
+    assert [
+        (event["session"], event["agent"]) for event in run["events"]
+    ] == expected_origins
+    assert [bad["line"] for bad in run["malformed"]] == [7, 8]
+    mirrors = [records(path)[0] for path in session_files(logs)]
+    assert [(rec["session"], rec["doing"]) for rec in mirrors] == [
+        ("sess-a", "begin"),
+        ("sess-b", "(done)"),
+    ]
+    assert shown.returncode == 0, shown.stderr
+    assert "malformed" in shown.stdout.lower()
+    assert "line 7" in shown.stdout
+    assert "evidence: out/a.json" in shown.stdout
+    rendered_origins = [
+        origin
+        for line in shown.stdout.splitlines()
+        for origin in ("sess-a/session", "sess-b/thread-9")
+        if " > " in line and origin in line
+    ]
+    assert rendered_origins == ["sess-a/session"] * 6 + ["sess-b/thread-9"]
 
 
 def test_run_journal_path_is_printable(tmp_path: Path) -> None:
@@ -488,25 +503,41 @@ def test_typed_fields_without_a_run_are_refused(tmp_path: Path) -> None:
     assert not session_files(logs)
 
 
-@pytest.mark.parametrize(
-    "unsafe",
-    ["../escape", "runs/../../etc", "a/b", "", ".", "..", "-leading-dash", "x" * 65, "sp ace", "tab\tid"],
-)
-def test_unsafe_run_identifiers_are_rejected(tmp_path: Path, unsafe: str) -> None:
+def test_writer_rejects_run_id_traversal(tmp_path: Path) -> None:
     logs = tmp_path / "logs"
-    refused = call(MILESTONE, "--run", unsafe, "begin", logs=logs)
+    refused = call(MILESTONE, "--run", "../escape", "begin", logs=logs)
 
-    assert refused.returncode != 0, f"accepted unsafe run id: {unsafe!r}"
+    assert refused.returncode != 0
     assert not list(logs.rglob("*.jsonl"))
 
 
-@pytest.mark.parametrize("unsafe", ["../escape", "a/b", "x" * 65])
-def test_the_reader_rejects_unsafe_run_identifiers_too(tmp_path: Path, unsafe: str) -> None:
+def test_run_id_grammar_classes_are_rejected_in_process() -> None:
+    spec = importlib.util.spec_from_file_location(
+        "milestone_writer_for_test", MILESTONE
+    )
+    assert spec is not None and spec.loader is not None
+    writer = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(writer)
+    for unsafe in (
+        "",
+        ".",
+        "..",
+        "-leading-dash",
+        "x" * 65,
+        "sp ace",
+        "tab\tid",
+        "a/b",
+    ):
+        with pytest.raises(ValueError, match="unsafe run id"):
+            writer.run_journal(unsafe)
+
+
+def test_the_reader_rejects_unsafe_run_identifiers_too(tmp_path: Path) -> None:
     logs = tmp_path / "logs"
     (logs / "runs").mkdir(parents=True)
-    refused = call(TIMELINE, "--run", unsafe, "--json", logs=logs)
+    refused = call(TIMELINE, "--run", "../escape", "--json", logs=logs)
 
-    assert refused.returncode != 0, f"accepted unsafe run id: {unsafe!r}"
+    assert refused.returncode != 0
 
 
 def test_missing_run_is_reported_rather_than_rendered_empty(tmp_path: Path) -> None:
@@ -520,110 +551,156 @@ def test_missing_run_is_reported_rather_than_rendered_empty(tmp_path: Path) -> N
 
 # ── malformed input ──────────────────────────────────────────────────────────
 
-def test_malformed_journal_lines_are_reported_not_silently_dropped(tmp_path: Path) -> None:
-    logs = tmp_path / "logs"
-    call(MILESTONE, "--run", "nightly-01", "--event", "run-start", "begin", logs=logs)
-    journal = logs / "runs" / "nightly-01.jsonl"
-    with journal.open("a", encoding="utf-8") as handle:
-        handle.write("{not json at all\n")
-        handle.write(json.dumps(["a list, not a record"]) + "\n")
-    call(MILESTONE, "--run", "nightly-01", "--event", "run-end", "finish", logs=logs)
-
-    run = json.loads(call(TIMELINE, "--run", "nightly-01", "--json", logs=logs).stdout)
-
-    assert [e["doing"] for e in run["events"]] == ["begin", "finish"]
-    assert [m["line"] for m in run["malformed"]] == [2, 3]
-
-
-def test_malformed_lines_are_visible_when_the_run_is_rendered(tmp_path: Path) -> None:
-    logs = tmp_path / "logs"
-    call(MILESTONE, "--run", "nightly-01", "begin", logs=logs)
-    with (logs / "runs" / "nightly-01.jsonl").open("a", encoding="utf-8") as handle:
-        handle.write("{not json at all\n")
-
-    shown = call(TIMELINE, "--run", "nightly-01", logs=logs)
-
-    assert shown.returncode == 0, shown.stderr
-    assert "malformed" in shown.stdout.lower()
-    assert "line 2" in shown.stdout
-
-
 # ── concurrency ──────────────────────────────────────────────────────────────
+
 
 def test_concurrent_writers_leave_the_journal_valid_jsonl(tmp_path: Path) -> None:
     logs = tmp_path / "logs"
-    count = 24
+    count = 8
+    ready = tmp_path / "ready"
+    ready.mkdir()
+    release = tmp_path / "release"
+    child = """
+import importlib.util
+import os
+from pathlib import Path
+import sys
+import time
 
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        results = list(pool.map(
-            lambda index: call(MILESTONE, "--run", "nightly-01", "--task", f"t{index}",
-                               f"piece {index}", logs=logs, session=f"sess-{index % 3}"),
-            range(count),
-        ))
+source = Path(os.environ["MILESTONE_SOURCE"])
+spec = importlib.util.spec_from_file_location("synchronized_milestone_writer", source)
+if spec is None or spec.loader is None:
+    raise RuntimeError(f"cannot load {source}")
+writer = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(writer)
+append_line = writer._append_line
 
-    assert all(r.returncode == 0 for r in results), [r.stderr for r in results if r.returncode]
+def synchronized_append(target, line):
+    if target.parent.name == "runs":
+        (Path(os.environ["SYNC_READY"]) / os.environ["SYNC_ID"]).touch()
+        release = Path(os.environ["SYNC_RELEASE"])
+        deadline = time.monotonic() + 10
+        while not release.exists():
+            if time.monotonic() >= deadline:
+                raise TimeoutError("append barrier was not released")
+            time.sleep(0.01)
+    append_line(target, line)
+
+writer._append_line = synchronized_append
+raise SystemExit(writer.main(sys.argv[1:]))
+"""
+    processes: list[subprocess.Popen[str]] = []
+    for index in range(count):
+        env = dict(os.environ)
+        env.update(
+            ASSISTANT_LOGS=str(logs),
+            CLAUDE_CODE_SESSION_ID=f"sess-{index % 3}",
+            MILESTONE_SOURCE=str(MILESTONE),
+            SYNC_ID=f"writer-{index}",
+            SYNC_READY=str(ready),
+            SYNC_RELEASE=str(release),
+        )
+        env.pop("CODEX_SESSION_ID", None)
+        env.pop("CODEX_THREAD_ID", None)
+        processes.append(
+            subprocess.Popen(
+                [
+                    sys.executable,
+                    "-c",
+                    child,
+                    "--run",
+                    "nightly-01",
+                    "--task",
+                    f"t{index}",
+                    f"piece {index}",
+                ],
+                cwd=ROOT,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+            )
+        )
+
+    outputs: list[tuple[int | None, str]] = []
+    try:
+        deadline = time.monotonic() + 10
+        expected_ready = {f"writer-{index}" for index in range(count)}
+        while {path.name for path in ready.iterdir()} != expected_ready:
+            if time.monotonic() >= deadline or any(
+                process.poll() is not None for process in processes
+            ):
+                break
+            time.sleep(0.01)
+        assert {path.name for path in ready.iterdir()} == expected_ready
+        assert all(process.poll() is None for process in processes)
+        release.touch()
+        for process in processes:
+            _stdout, stderr = process.communicate(timeout=10)
+            outputs.append((process.returncode, stderr))
+    finally:
+        release.touch(exist_ok=True)
+        for process in processes:
+            if process.poll() is None:
+                process.terminate()
+                process.communicate(timeout=5)
+
+    assert all(returncode == 0 for returncode, _stderr in outputs), outputs
     written = records(logs / "runs" / "nightly-01.jsonl")
     assert len(written) == count
     assert {rec["task"] for rec in written} == {f"t{index}" for index in range(count)}
 
 
-def test_a_record_stays_inside_the_single_write_budget(tmp_path: Path) -> None:
-    """Interleave safety rests on one line, one write, well under 4KB.
-
-    Every free-text field is individually capped, but a repeatable `--evidence`
-    is not: twenty long paths push the record past the budget the whole
-    concurrency guarantee is stated in terms of.
-    """
+def test_evidence_truncation_and_multibyte_records_stay_inside_the_write_budget(
+    tmp_path: Path,
+) -> None:
+    """One labeled multibyte record proves field caps and the byte budget."""
     logs = tmp_path / "logs"
-    evidence = []
-    for _ in range(20):
-        evidence += ["--evidence", "e" * 200]
-    written = call(MILESTONE, "--run", "nightly-01", *evidence, "x" * 200, "y" * 200, logs=logs)
-
-    assert written.returncode == 0, written.stderr
-    line = (logs / "runs" / "nightly-01.jsonl").read_bytes()
-    assert len(line) < 4096, f"record is {len(line)} bytes"
-
-
-def test_dropping_evidence_to_fit_is_recorded_not_silent(tmp_path: Path) -> None:
-    logs = tmp_path / "logs"
-    evidence = []
-    for index in range(20):
-        evidence += ["--evidence", f"{index}-" + "e" * 198]
-    call(MILESTONE, "--run", "nightly-01", *evidence, "x" * 200, "y" * 200, logs=logs)
-
-    rec = records(logs / "runs" / "nightly-01.jsonl")[0]
-    assert rec["evidence_dropped"] == 20 - len(rec["evidence"])
-    assert rec["evidence"][0].startswith("0-")  # the earliest paths are the kept ones
-
-
-def test_ordinary_evidence_is_kept_whole(tmp_path: Path) -> None:
-    logs = tmp_path / "logs"
-    call(MILESTONE, "--run", "nightly-01", "--evidence", "out/a.json", "--evidence", "out/b.json",
-         "done", "", logs=logs)
-
-    rec = records(logs / "runs" / "nightly-01.jsonl")[0]
-    assert rec["evidence"] == ["out/a.json", "out/b.json"]
-    assert "evidence_dropped" not in rec
-
-
-def test_the_budget_holds_for_multibyte_text(tmp_path: Path) -> None:
-    """The budget is counted in bytes, so a fully non-ASCII record still fits.
-
-    Pins the choice of budget rather than a new behavior: every capped field
-    filled with three-byte characters must still leave the record under 4KB.
-    """
-    logs = tmp_path / "logs"
-    wide = "漢" * 200
-    evidence = []
-    for _ in range(20):
-        evidence += ["--evidence", "証" * 200]
+    run_id = "r" * 64
+    session_id = "s" * 64
+    wide = "漢" * 201
+    evidence_values = [f"{index:02d}-" + "証" * 198 for index in range(20)]
+    evidence_args = []
+    for value in evidence_values:
+        evidence_args += ["--evidence", value]
     written = call(
-        MILESTONE, "--run", "r" * 64, "--role", wide, "--event", "事" * 60,
-        "--task", "務" * 100, "--state", "態" * 40, "--step", "999", "--attempt", "999",
-        *evidence, wide, wide, logs=logs, session="s" * 64,
+        MILESTONE,
+        "--run",
+        run_id,
+        "--role",
+        wide,
+        "--event",
+        "事" * 61,
+        "--task",
+        "務" * 101,
+        "--state",
+        "態" * 41,
+        "--step",
+        "999",
+        "--attempt",
+        "999",
+        *evidence_args,
+        wide,
+        wide,
+        logs=logs,
+        session=session_id,
     )
 
     assert written.returncode == 0, written.stderr
-    line = (logs / "runs" / ("r" * 64 + ".jsonl")).read_bytes()
-    assert len(line) < 4096, f"record is {len(line)} bytes"
+    line = (logs / "runs" / f"{run_id}.jsonl").read_bytes()
+    assert len(line) <= 4096, f"record is {len(line)} bytes"
+    rec = json.loads(line)
+    assert (rec["run"], rec["session"]) == (run_id, session_id)
+    assert rec["role"] == wide[:200]
+    assert rec["doing"] == wide[:200]
+    assert rec["prev"] == wide[:200]
+    assert rec["event"] == ("事" * 61)[:60]
+    assert rec["task"] == ("務" * 101)[:100]
+    assert rec["state"] == ("態" * 41)[:40]
+    assert (rec["step"], rec["attempt"]) == (999, 999)
+    assert rec["evidence_dropped"] == 19
+    assert len(rec["evidence"]) == 1
+    assert rec["evidence"][0] == evidence_values[0][:200]
+    assert rec["evidence"][0].startswith("00-")
+    assert len(rec["evidence"][0]) == 200

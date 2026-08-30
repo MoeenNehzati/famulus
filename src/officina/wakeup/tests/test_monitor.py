@@ -493,51 +493,38 @@ def test_claude_capture_accepts_encoded_existing_status_command(
     assert capsys.readouterr().out == "encoded-status\n"
 
 
-def test_run_due_worker_performs_monitor_pass_before_delivery(
-    tmp_path: Path, monkeypatch
-) -> None:
-    state = tmp_path / "state"
-    monkeypatch.setenv("LLM_WAKEUP_HOME", str(state))
-    transcript = tmp_path / f"{SESSION_ID}.jsonl"
-    _write_jsonl(
-        transcript,
-        [{"type": "user", "sessionId": SESSION_ID, "message": {"content": "work"}}],
-    )
-    capture_claude_status(
-        {
-            "session_id": SESSION_ID,
-            "transcript_path": str(transcript),
-            "rate_limits": {
-                "five_hour": {
-                    "used_percentage": 97,
-                    "resets_at": RESET_EPOCH,
-                }
-            },
-        }
-    )
-    set_auto_schedule("claude", SESSION_ID, True, FORCE)
-
-    # Two things must be pinned or this test reaches the real desktop. It
-    # discovered this machine's live near-limit sessions, and it left `notifier`
-    # unset, which falls through to _default_notifier and its notify-send call
-    # -- so every run of the suite raised a real popup about whatever session
-    # the developer happened to be in.
-    import officina.wakeup.claude_codex_usage as usage
-
-    monkeypatch.setattr(usage, "_observable_claude_exhaustions", lambda: [])
-    monkeypatch.setattr(
-        "officina.wakeup.claude_codex_cli.monitor_usage",
-        lambda: monitor_usage(
-            now=datetime.fromtimestamp(RESET_EPOCH - 500, tz=timezone.utc),
-            notifier=lambda _message: None,
+@pytest.mark.parametrize(
+    ("monitor_error", "expected_stderr"),
+    [
+        (None, ""),
+        (
+            RuntimeError("monitor failed"),
+            "usage-monitor-error detail=monitor failed\n",
         ),
+    ],
+    ids=("monitor-succeeds", "monitor-fails"),
+)
+def test_run_due_worker_performs_monitor_pass_before_delivery(
+    monkeypatch, capsys, monitor_error: Exception | None, expected_stderr: str
+) -> None:
+    calls: list[str] = []
+
+    def monitor(_args) -> None:
+        calls.append("monitor")
+        if monitor_error is not None:
+            raise monitor_error
+
+    def deliver_due_jobs() -> None:
+        calls.append("run_due")
+
+    monkeypatch.setattr("officina.wakeup.claude_codex_cli._monitor", monitor)
+    monkeypatch.setattr(
+        "officina.wakeup.claude_codex_cli.run_due", deliver_due_jobs
     )
 
     assert main(["run-due"]) == 0
-
-    jobs = json.loads((state / "jobs.json").read_text())
-    assert len(jobs) == 1
-    assert jobs[0]["session_id"] == SESSION_ID
+    assert calls == ["monitor", "run_due"]
+    assert capsys.readouterr().err == expected_stderr
 
 
 def _snapshot(window: str, percentage: float, reset: int, transcript: Path):

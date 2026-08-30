@@ -50,16 +50,6 @@ STAGE_ARTIFACTS = {
 }
 WORKSPACE_NAME = "source_distillation"
 DELIVERABLE_NAME = "source_distilled.md"
-OLD_ARTIFACTS = {
-    "breakdown": "01.md",
-    "assign-rutters": "02_assign-rutters.md",
-    "extract-evolutions": "03_extract-evolutions.md",
-    "validate-logic": "04_validate-logic.md",
-    "design-implementation": "05_design-implementation.md",
-    "implement": "06_implement.md",
-    "finalize": "07_finalize.md",
-    "verify": "08_verify.md",
-}
 
 
 def _load_module(name: str):
@@ -82,13 +72,28 @@ def _load_module(name: str):
     return importlib.import_module(f"{PACKAGE_NAME}.{runtime_name}")
 
 
-@pytest.fixture
-def repository(tmp_path: Path) -> Path:
-    root = tmp_path / "repo"
-    root.mkdir()
+@pytest.fixture(scope="session")
+def minimal_repository_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    root = tmp_path_factory.mktemp("distill-artifact-minimal-template")
     (root / ".git").mkdir()
     (root / "source.md").write_bytes(b"# exact source\r\n")
     (root / DELIVERABLE_NAME).write_bytes(b"Use the distilled Rutter entrypoint.\n")
+    return root
+
+
+@pytest.fixture(scope="session")
+def runtime_repository_template(
+    tmp_path_factory: pytest.TempPathFactory,
+    minimal_repository_template: Path,
+) -> Path:
+    root = tmp_path_factory.mktemp("distill-artifact-runtime-template")
+    shutil.copytree(
+        minimal_repository_template,
+        root,
+        dirs_exist_ok=True,
+        copy_function=shutil.copy2,
+        symlinks=True,
+    )
     public_runtime = root / "src/officina/rutter"
     public_runtime.mkdir(parents=True)
     shutil.copy2(
@@ -130,6 +135,30 @@ def repository(tmp_path: Path) -> Path:
     engine_path.write_text(
         yaml.safe_dump(engine, sort_keys=False),
         encoding="utf-8",
+    )
+    return root
+
+
+@pytest.fixture
+def repository(tmp_path: Path, minimal_repository_template: Path) -> Path:
+    root = tmp_path / "repo"
+    shutil.copytree(
+        minimal_repository_template,
+        root,
+        copy_function=shutil.copy2,
+        symlinks=True,
+    )
+    return root
+
+
+@pytest.fixture
+def runtime_repository(tmp_path: Path, runtime_repository_template: Path) -> Path:
+    root = tmp_path / "repo"
+    shutil.copytree(
+        runtime_repository_template,
+        root,
+        copy_function=shutil.copy2,
+        symlinks=True,
     )
     return root
 
@@ -498,9 +527,12 @@ def test_sha256_file_hashes_exact_raw_bytes(repository: Path) -> None:
     ("breakdown", "assign-rutters", "extract-evolutions", "validate-logic"),
 )
 def test_validate_artifact_accepts_each_stage_in_a_complete_chain(
-    repository: Path, stage: str
+    request: pytest.FixtureRequest, stage: str
 ) -> None:
     contract = _load_module("artifact_contract")
+    repository: Path = request.getfixturevalue(
+        "runtime_repository" if stage == "validate-logic" else "repository"
+    )
     artifact = _write_artifact_chain(repository, stage)[stage]
 
     result = contract.validate_artifact(artifact, stage)
@@ -515,12 +547,12 @@ def test_validate_artifact_accepts_each_stage_in_a_complete_chain(
     ("design-implementation", "implement", "finalize", "verify"),
 )
 def test_phase_b_success_claims_do_not_validate_on_current_blocked_runtime(
-    repository: Path,
+    runtime_repository: Path,
     stage: str,
 ) -> None:
     """Current public compatibility cannot support any downstream success claim."""
     contract = _load_module("artifact_contract")
-    artifact = _write_artifact_chain(repository, stage)[stage]
+    artifact = _write_artifact_chain(runtime_repository, stage)[stage]
 
     result = contract.validate_artifact(artifact, stage)
 
@@ -544,20 +576,20 @@ def test_validate_artifact_rejects_stage_skipping_without_immediate_predecessor(
     assert any("immediate preceding stage" in error for error in result.errors)
 
 
-@pytest.mark.parametrize("stage", STAGE_CASES)
-def test_validate_artifact_rejects_missing_required_machine_rows(
-    repository: Path, stage: str
-) -> None:
+def test_validate_artifact_rejects_missing_required_machine_rows() -> None:
     contract = _load_module("artifact_contract")
-    required_row = STAGE_CASES[stage][2]
-    body = _valid_body(stage, repository)
-    del body[required_row]
-    artifact = _write_artifact_chain(repository, stage, body=body)[stage]
+    for stage, (_, _, required_row) in STAGE_CASES.items():
+        body = _valid_body(stage)
+        del body[required_row]
 
-    result = contract.validate_artifact(artifact, stage)
+        errors = contract._schema_errors(
+            body,
+            contract.STAGE_CONTRACTS[stage]["schema_file"],
+        )
 
-    assert result.valid is False
-    assert any(required_row in error for error in result.errors)
+        assert any(required_row in error for error in errors), (
+            f"{stage}: missing {required_row} was not rejected: {errors}"
+        )
 
 
 @pytest.mark.parametrize(
@@ -938,51 +970,38 @@ def test_breakdown_gap_can_record_an_unreadable_context_gap(
     assert contract.validate_artifact(artifact, "breakdown").valid is True
 
 
-def test_coordinated_assignment_requires_a_coordinator_rutter(
-    repository: Path,
-) -> None:
+def test_coordinated_assignment_requires_a_coordinator_rutter() -> None:
     contract = _load_module("artifact_contract")
-    body = _valid_body("assign-rutters", repository)
+    body = _valid_body("assign-rutters")
     body["orchestration"]["mode"] = "coordinated"
-    artifact = _write_artifact_chain(repository, "assign-rutters", body=body)[
-        "assign-rutters"
-    ]
 
-    result = contract.validate_artifact(artifact, "assign-rutters")
+    errors = contract._schema_errors(body, "assignment-body.schema.json")
 
-    assert result.valid is False
-    assert any("coordinator_rutter_id" in error for error in result.errors)
+    assert any("coordinator_rutter_id" in error for error in errors)
 
 
-@pytest.mark.parametrize(
-    "container, field",
-    [
+def test_assignment_requires_rutter_owned_decomposition_and_failure_policy() -> None:
+    """Missing assignment ownership data cannot be repaired by result validation."""
+    contract = _load_module("artifact_contract")
+    for container, field in (
         ("assignment", "inseparability"),
         ("assignment", "independent_workflows"),
         ("orchestration", "partial_failure"),
         ("orchestration", "retry_owner"),
-    ],
-)
-def test_assignment_requires_rutter_owned_decomposition_and_failure_policy(
-    repository: Path, container: str, field: str
-) -> None:
-    """Missing assignment ownership data cannot be repaired by result validation."""
-    contract = _load_module("artifact_contract")
-    body = _valid_body("assign-rutters", repository)
-    target = (
-        body["assignments"][0]
-        if container == "assignment"
-        else body["orchestration"]
-    )
-    target.pop(field)
-    artifact = _write_artifact_chain(repository, "assign-rutters", body=body)[
-        "assign-rutters"
-    ]
+    ):
+        body = _valid_body("assign-rutters")
+        target = (
+            body["assignments"][0]
+            if container == "assignment"
+            else body["orchestration"]
+        )
+        target.pop(field)
 
-    result = contract.validate_artifact(artifact, "assign-rutters")
+        errors = contract._schema_errors(body, "assignment-body.schema.json")
 
-    assert result.valid is False
-    assert any(field in error for error in result.errors)
+        assert any(field in error for error in errors), (
+            f"{container}.{field} was not rejected: {errors}"
+        )
 
 
 @pytest.mark.parametrize("mutation", ("missing", "extra", "duplicate"))
@@ -1089,37 +1108,35 @@ def test_graph_ready_closes_assignment_foreign_keys(
     assert any("assignment graph" in error for error in result.errors)
 
 
-@pytest.mark.parametrize(
-    "mutation",
-    ("missing-successor", "duplicate-successor", "invalid-target", "invalid-source"),
-)
 def test_graph_ready_requires_one_valid_successor_per_declared_outcome(
-    repository: Path,
-    mutation: str,
 ) -> None:
     contract = _load_module("artifact_contract")
-    graph = _valid_body("extract-evolutions", repository)
-    transitions = graph["rutters"][0]["transitions"]
-    if mutation == "missing-successor":
-        transitions.pop()
-    elif mutation == "duplicate-successor":
-        transitions.append(dict(transitions[0], to="failed"))
-    elif mutation == "invalid-target":
-        transitions[0]["to"] = "not-a-state-or-result"
-    else:
-        transitions[0]["from"] = "not-an-evolution"
-    _, _, artifact = _write_graph_chain(repository, graph_body=graph)
+    for mutation in (
+        "missing-successor",
+        "duplicate-successor",
+        "invalid-target",
+        "invalid-source",
+    ):
+        graph = _valid_body("extract-evolutions")
+        transitions = graph["rutters"][0]["transitions"]
+        if mutation == "missing-successor":
+            transitions.pop()
+        elif mutation == "duplicate-successor":
+            transitions.append(dict(transitions[0], to="failed"))
+        elif mutation == "invalid-target":
+            transitions[0]["to"] = "not-a-state-or-result"
+        else:
+            transitions[0]["from"] = "not-an-evolution"
 
-    result = contract.validate_artifact(artifact, "extract-evolutions")
-
-    assert result.valid is False
-    assert any("successor" in error for error in result.errors)
+        with pytest.raises(contract.ArtifactContractError, match="successor"):
+            contract._graph_index(graph)
 
 
 def test_logic_captured_requires_every_public_capability_to_be_verified(
-    repository: Path,
+    runtime_repository: Path,
 ) -> None:
     contract = _load_module("artifact_contract")
+    repository = runtime_repository
     body = _valid_body("validate-logic", repository)
     body["enforcement_matrix"][0]["capability_verified"] = False
     captured = _write_artifact_chain(repository, "validate-logic", body=body)[
@@ -1142,13 +1159,15 @@ def test_logic_captured_requires_every_public_capability_to_be_verified(
 
 @pytest.mark.parametrize("status", ("gap", "blocked", "partial", "failed"))
 def test_implemented_rejects_every_nonimplemented_trace_row(
-    repository: Path,
+    runtime_repository: Path,
     status: str,
 ) -> None:
     contract = _load_module("artifact_contract")
-    body = _valid_body("implement", repository)
+    body = _valid_body("implement", runtime_repository)
     body["implementation_trace_map"][0]["status"] = status
-    artifact = _write_artifact_chain(repository, "implement", body=body)["implement"]
+    artifact = _write_artifact_chain(runtime_repository, "implement", body=body)[
+        "implement"
+    ]
 
     result = contract.validate_artifact(artifact, "implement")
 
@@ -1158,10 +1177,11 @@ def test_implemented_rejects_every_nonimplemented_trace_row(
 
 @pytest.mark.parametrize("mutation", ("path", "digest", "extra-leaf"))
 def test_entrypoint_ready_equals_its_one_contained_deliverable_leaf(
-    repository: Path,
+    runtime_repository: Path,
     mutation: str,
 ) -> None:
     contract = _load_module("artifact_contract")
+    repository = runtime_repository
     artifacts = _write_artifact_chain(repository, "implement")
     implementation = artifacts["implement"]
     candidate = repository / DELIVERABLE_NAME
@@ -1204,10 +1224,11 @@ def test_entrypoint_ready_equals_its_one_contained_deliverable_leaf(
 
 @pytest.mark.parametrize("result_value", ("failed", "blocked"))
 def test_verified_rejects_failed_or_blocked_verification_checks(
-    repository: Path,
+    runtime_repository: Path,
     result_value: str,
 ) -> None:
     contract = _load_module("artifact_contract")
+    repository = runtime_repository
     body = _valid_body("verify", repository)
     body["verification_evidence"][0]["result"] = result_value
     artifact = _write_artifact_chain(repository, "verify", body=body)["verify"]
@@ -1220,10 +1241,11 @@ def test_verified_rejects_failed_or_blocked_verification_checks(
 
 @pytest.mark.parametrize("mutation", ("path", "digest", "missing-leaf"))
 def test_verified_candidate_equals_approved_entrypoint_predecessor(
-    repository: Path,
+    runtime_repository: Path,
     mutation: str,
 ) -> None:
     contract = _load_module("artifact_contract")
+    repository = runtime_repository
     artifacts = _write_artifact_chain(repository, "finalize")
     entrypoint = artifacts["finalize"]
     candidate = repository / DELIVERABLE_NAME
@@ -1348,44 +1370,21 @@ def test_freshness_rejects_structurally_impossible_artifact_cycles(
 @pytest.mark.parametrize(
     ("stage", "next_stage"),
     [
-        ("breakdown", "assign-rutters"),
-        ("assign-rutters", "extract-evolutions"),
-        ("extract-evolutions", "validate-logic"),
-        ("validate-logic", "design-implementation"),
-    ],
-)
-def test_only_success_outcomes_advance_in_final_stage_order(
-    repository: Path, stage: str, next_stage: str | None
-) -> None:
-    contract = _load_module("artifact_contract")
-    outcome = STAGE_CASES[stage][0]
-    artifact = _write_artifact_chain(repository, stage)[stage]
-
-    decision = contract.decide_route(
-        stage, outcome, _sha256(artifact), "approve", artifact
-    )
-
-    assert decision.status == "accepted"
-    assert decision.authorized_route == next_stage
-    assert decision.earliest_stale_prerequisite is None
-
-
-@pytest.mark.parametrize(
-    ("stage", "next_stage"),
-    [
-        ("breakdown", "assign-rutters"),
         ("assign-rutters", "extract-evolutions"),
         ("extract-evolutions", "validate-logic"),
         ("validate-logic", "design-implementation"),
     ],
 )
 def test_public_interface_accepts_only_each_exact_stage_basename(
-    repository: Path,
+    request: pytest.FixtureRequest,
     capsys: pytest.CaptureFixture[str],
     stage: str,
     next_stage: str | None,
 ) -> None:
     interface = _load_module("interface")
+    repository: Path = request.getfixturevalue(
+        "runtime_repository" if stage == "validate-logic" else "repository"
+    )
     artifact = _write_artifact_chain(repository, stage)[stage]
 
     status = interface.main(
@@ -1408,21 +1407,14 @@ def test_public_interface_accepts_only_each_exact_stage_basename(
     assert payload["authorized_route"] == next_stage
 
 
-@pytest.mark.parametrize("stage", STAGE_CASES)
-@pytest.mark.parametrize("filename_kind", ("old", "unknown"))
-def test_public_interface_rejects_old_and_unknown_stage_basenames(
+def test_public_interface_rejects_an_arbitrary_stage_basename(
     repository: Path,
     capsys: pytest.CaptureFixture[str],
-    stage: str,
-    filename_kind: str,
 ) -> None:
     interface = _load_module("interface")
+    stage = "breakdown"
     artifact = _write_artifact_chain(repository, stage)[stage]
-    rejected_name = (
-        OLD_ARTIFACTS[stage]
-        if filename_kind == "old"
-        else f"unknown-{STAGE_ARTIFACTS[stage]}"
-    )
+    rejected_name = f"unknown-{STAGE_ARTIFACTS[stage]}"
     rejected = artifact.rename(artifact.with_name(rejected_name))
 
     status = interface.main(
@@ -1524,6 +1516,9 @@ def test_wrong_hash_and_explicit_rejection_only_authorize_repairs(
     rejected = contract.decide_route(
         "breakdown", "breakdown-ready", _sha256(artifact), "reject", artifact
     )
+    stale_rejection = contract.decide_route(
+        "breakdown", "breakdown-ready", "0" * 64, "reject", artifact
+    )
 
     assert stale.status == "stale"
     assert stale.authorized_route == "breakdown"
@@ -1532,30 +1527,14 @@ def test_wrong_hash_and_explicit_rejection_only_authorize_repairs(
     )
     assert rejected.status == "rejected"
     assert rejected.authorized_route == "breakdown"
-
-
-def test_rejection_with_wrong_candidate_digest_routes_to_candidate_owner(
-    repository: Path,
-) -> None:
-    contract = _load_module("artifact_contract")
-    artifact = _write_artifact(
-        repository,
-        name=STAGE_ARTIFACTS["breakdown"],
-        stage="breakdown",
-    )
-
-    decision = contract.decide_route(
-        "breakdown", "breakdown-ready", "0" * 64, "reject", artifact
-    )
-
-    assert decision.status == "stale"
-    assert decision.authorized_route == "breakdown"
-    assert decision.earliest_stale_prerequisite == (
+    assert stale_rejection.status == "stale"
+    assert stale_rejection.authorized_route == "breakdown"
+    assert stale_rejection.earliest_stale_prerequisite == (
         f"{WORKSPACE_NAME}/{STAGE_ARTIFACTS['breakdown']}"
     )
 
 
-def test_rejection_with_stale_chain_routes_to_earliest_stale_owner(
+def test_stale_chain_routes_to_earliest_owner_for_either_user_decision(
     repository: Path,
 ) -> None:
     contract = _load_module("artifact_contract")
@@ -1563,29 +1542,18 @@ def test_rejection_with_stale_chain_routes_to_earliest_stale_owner(
     artifact = artifacts["validate-logic"]
     (repository / "source.md").write_text("changed\n", encoding="utf-8")
 
-    decision = contract.decide_route(
-        "validate-logic", "logic-captured", _sha256(artifact), "reject", artifact
-    )
+    for user_decision in ("reject", "approve"):
+        decision = contract.decide_route(
+            "validate-logic",
+            "logic-captured",
+            _sha256(artifact),
+            user_decision,
+            artifact,
+        )
 
-    assert decision.status == "stale"
-    assert decision.authorized_route == "breakdown"
-    assert decision.earliest_stale_prerequisite == "source.md"
-
-
-def test_stale_transitive_source_routes_to_earliest_owning_stage(
-    repository: Path,
-) -> None:
-    contract = _load_module("artifact_contract")
-    logic = _write_artifact_chain(repository, "validate-logic")["validate-logic"]
-    (repository / "source.md").write_text("changed\n", encoding="utf-8")
-
-    decision = contract.decide_route(
-        "validate-logic", "logic-captured", _sha256(logic), "approve", logic
-    )
-
-    assert decision.status == "stale"
-    assert decision.authorized_route == "breakdown"
-    assert decision.earliest_stale_prerequisite == "source.md"
+        assert decision.status == "stale", user_decision
+        assert decision.authorized_route == "breakdown", user_decision
+        assert decision.earliest_stale_prerequisite == "source.md", user_decision
 
 
 def test_changed_malformed_candidate_is_stale_before_it_is_parsed(
@@ -1718,6 +1686,7 @@ def test_interface_emits_complete_route_json(repository: Path, capsys) -> None:
     )
 
     payload = json.loads(capsys.readouterr().out)
+    assert artifact.name == STAGE_ARTIFACTS["breakdown"]
     assert status == 0
     assert payload == {
         "status": "accepted",

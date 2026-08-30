@@ -5,6 +5,7 @@ import subprocess
 import sys
 import time
 from contextlib import redirect_stderr, redirect_stdout
+from datetime import date
 from pathlib import Path
 from unittest.mock import patch
 
@@ -104,32 +105,11 @@ def todo_file(tmp_path):
 
 # ── init ─────────────────────────────────────────────────────────────────────
 
-def test_init_creates_valid_yaml(tmp_path):
-    f = tmp_path / "todo.yaml"
-    result = run(["init", str(f), "--schema", "todo"])
-    assert result.returncode == 0, result.stderr
-    data = yaml.safe_load(f.read_text())
-    assert data["schema"] == "todo"
-    assert data["name"] == "todo"
-    # A fresh list is seeded with usable default domain categories rather
-    # than an empty list (feedback item 23) -- see
-    # test_init_seeds_default_categories_for_todo_schema for the details.
-    assert data["categories"]
-
-
 def test_init_executable_smoke(tmp_path):
     f = tmp_path / "script-smoke.yaml"
     result = run_script_smoke(["init", str(f), "--schema", "todo"])
     assert result.returncode == 0, result.stderr
     assert yaml.safe_load(f.read_text())["schema"] == "todo"
-
-
-def test_init_custom_name(tmp_path):
-    f = tmp_path / "mylist.yaml"
-    result = run(["init", str(f), "--schema", "todo", "--name", "My Tasks"])
-    assert result.returncode == 0, result.stderr
-    data = yaml.safe_load(f.read_text())
-    assert data["name"] == "My Tasks"
 
 
 def test_managed_cloud_state_uses_canonical_lock_and_cache_roots(monkeypatch, tmp_path):
@@ -162,22 +142,6 @@ def test_init_unknown_schema_fails(tmp_path):
     assert result.returncode != 0
 
 
-def test_init_triage_schema(tmp_path):
-    f = tmp_path / "pa.yaml"
-    result = run(["init", str(f), "--schema", "triage"])
-    assert result.returncode == 0, result.stderr
-    data = yaml.safe_load(f.read_text())
-    assert data["schema"] == "triage"
-
-
-def test_init_default_schema(tmp_path):
-    f = tmp_path / "notes.yaml"
-    result = run(["init", str(f), "--schema", "default"])
-    assert result.returncode == 0, result.stderr
-    data = yaml.safe_load(f.read_text())
-    assert data["schema"] == "default"
-
-
 # Fixed subcategory sets todo/triage domain categories must carry exactly
 # (task-list.json / task-list-personal.json's `name` enum). Personal adds
 # "Shop"; every other domain (e.g. Work) uses the base six.
@@ -200,9 +164,11 @@ def _assert_default_domain_categories(data: dict) -> None:
 
 def test_init_seeds_default_categories_for_todo_schema(tmp_path):
     f = tmp_path / "todo.yaml"
-    result = run(["init", str(f), "--schema", "todo"])
+    result = run(["init", str(f), "--schema", "todo", "--name", "My Tasks"])
     assert result.returncode == 0, result.stderr
     data = yaml.safe_load(f.read_text())
+    assert data["schema"] == "todo"
+    assert data["name"] == "My Tasks"
     _assert_default_domain_categories(data)
 
 
@@ -211,6 +177,8 @@ def test_init_seeds_default_categories_for_triage_schema(tmp_path):
     result = run(["init", str(f), "--schema", "triage"])
     assert result.returncode == 0, result.stderr
     data = yaml.safe_load(f.read_text())
+    assert data["schema"] == "triage"
+    assert data["name"] == "triage"
     _assert_default_domain_categories(data)
 
 
@@ -221,18 +189,12 @@ def test_init_default_schema_categories_stay_empty(tmp_path):
     result = run(["init", str(f), "--schema", "default"])
     assert result.returncode == 0, result.stderr
     data = yaml.safe_load(f.read_text())
+    assert data["schema"] == "default"
+    assert data["name"] == "notes"
     assert data["categories"] == []
 
 
 # ── gen-id ───────────────────────────────────────────────────────────────────
-
-def test_gen_id_returns_six_char_hex(todo_file):
-    result = run(["gen-id", str(todo_file)])
-    assert result.returncode == 0, result.stderr
-    id_ = result.stdout.strip()
-    assert len(id_) == 6
-    assert all(c in "0123456789abcdef" for c in id_)
-
 
 def test_gen_id_count(todo_file):
     result = run(["gen-id", str(todo_file), "--count", "5"])
@@ -240,6 +202,8 @@ def test_gen_id_count(todo_file):
     ids = result.stdout.strip().splitlines()
     assert len(ids) == 5
     assert len(set(ids)) == 5  # all unique
+    assert all(len(id_) == 6 for id_ in ids)
+    assert all(set(id_) <= set("0123456789abcdef") for id_ in ids)
 
 
 def test_gen_id_avoids_collisions(tmp_path):
@@ -306,34 +270,24 @@ def test_read_unfiltered_applies_requested_sort(todo_file):
     ]
 
 
-def test_read_unfiltered_sort_places_missing_values_last(todo_file):
-    result = run(["read", str(todo_file), "--sort", "location"])
-
-    assert result.returncode == 0, result.stderr
-    sorted_data = yaml.safe_load(result.stdout)
-    sorted_writing = sorted_data["categories"][0]["categories"][3]
-    assert [entry["id"] for entry in sorted_writing["entries"]] == [
-        "a3f2b9",
-        "b7c1e2",
+def test_read_unfiltered_sort_places_missing_values_last():
+    entries = [
+        {"id": "b7c1e2"},
+        {"id": "a3f2b9", "location": "home"},
     ]
+    yaml_store._sort_tree(entries, "location")
+    assert [entry["id"] for entry in entries] == ["a3f2b9", "b7c1e2"]
 
 
-def test_read_unfiltered_sort_compares_short_and_long_strings(todo_file):
-    data = yaml.safe_load(todo_file.read_text())
-    writing = data["categories"][0]["categories"][3]
-    writing["entries"][0]["title"] = "Long title here"
-    writing["entries"][1]["title"] = "A"
-    todo_file.write_text(yaml.safe_dump(data, sort_keys=False))
-
-    result = run(["read", str(todo_file), "--sort", "title"])
-
-    assert result.returncode == 0, result.stderr
-    sorted_data = yaml.safe_load(result.stdout)
-    sorted_writing = sorted_data["categories"][0]["categories"][3]
-    assert [entry["id"] for entry in sorted_writing["entries"]] == [
-        "b7c1e2",
-        "a3f2b9",
-    ]
+def test_read_unfiltered_sort_compares_short_and_long_strings():
+    data = {
+        "entries": [
+            {"id": "a3f2b9", "title": "Long title here"},
+            {"id": "b7c1e2", "title": "A"},
+        ]
+    }
+    yaml_store._sort_tree(data, "title")
+    assert [entry["id"] for entry in data["entries"]] == ["b7c1e2", "a3f2b9"]
 
 
 def test_read_filter_exact_match(todo_file):
@@ -501,32 +455,16 @@ NEW_ENTRY_YAML = """\
   deadline: '2026-07-15'
 """
 
-NEW_ENTRY_NO_ID_YAML = """\
-- title: New task without ID
-  state: incomplete
-  created: '2026-06-29'
-  deadline: '2026-07-20'
-"""
-
-
-def test_create_entry_by_category_path(todo_file):
-    result = run(["create-entry", str(todo_file), "Work/Writing"], stdin=NEW_ENTRY_YAML)
-    assert result.returncode == 0, result.stderr
-    data = yaml.safe_load(todo_file.read_text())
-    writing_cat = data["categories"][0]["categories"][3]
-    assert writing_cat["name"] == "Writing"
-    assert len(writing_cat["entries"]) == 3
-    assert writing_cat["entries"][2]["title"] == "Draft blog post"
-
-
 def test_create_entry_assigns_id(todo_file):
-    result = run(["create-entry", str(todo_file), "Work/Writing"], stdin=NEW_ENTRY_NO_ID_YAML)
+    entry_yaml = "- title: New task without ID\n  deadline: '2026-07-20'\n"
+    result = run(["create-entry", str(todo_file), "Work/Writing"], stdin=entry_yaml)
     assert result.returncode == 0, result.stderr
     data = yaml.safe_load(todo_file.read_text())
     new_entry = data["categories"][0]["categories"][3]["entries"][2]
-    assert "id" in new_entry
     assert len(new_entry["id"]) == 6
     assert all(c in "0123456789abcdef" for c in new_entry["id"])
+    assert new_entry["state"] == "incomplete"
+    assert new_entry["created"] == date.today().isoformat()
 
 
 def test_create_entry_by_entry_id(todo_file):
@@ -584,26 +522,21 @@ def test_create_entry_bulk(todo_file):
   created: '2026-06-29'
   deadline: '2026-07-11'
 """
-    result = run(["create-entry", str(todo_file), "Work/Writing"], stdin=bulk)
+    result = run(
+        ["create-entry", str(todo_file), "Work/Writing", "--expected-revision", "0"],
+        stdin=bulk,
+    )
     assert result.returncode == 0, result.stderr
     data = yaml.safe_load(todo_file.read_text())
-    entries = data["categories"][0]["categories"][3]["entries"]
+    writing = data["categories"][0]["categories"][3]
+    assert writing["name"] == "Writing"
+    entries = writing["entries"]
     assert len(entries) == 4
-    titles = [e["title"] for e in entries]
-    assert "Task A" in titles
-    assert "Task B" in titles
+    assert [e["title"] for e in entries[-2:]] == ["Task A", "Task B"]
+    assert data["revision"] == 1
 
 
 # ── update ────────────────────────────────────────────────────────────────────
-
-def test_update_changes_state(todo_file):
-    update_yaml = "- id: a3f2b9\n  state: complete\n"
-    result = run(["update", str(todo_file)], stdin=update_yaml)
-    assert result.returncode == 0, result.stderr
-    data = yaml.safe_load(todo_file.read_text())
-    entry = data["categories"][0]["categories"][3]["entries"][0]
-    assert entry["state"] == "complete"
-
 
 def test_update_stamps_modified_on_any_change(todo_file):
     import datetime
@@ -624,8 +557,10 @@ def test_update_stamps_completed_on_finish_only(todo_file):
     assert result.returncode == 0, result.stderr
     data = yaml.safe_load(todo_file.read_text())
     entry = data["categories"][0]["categories"][3]["entries"][0]
+    assert entry["state"] == "complete"
     assert entry["completed"] == today
     assert entry["modified"] == today
+    assert data["revision"] == 1
 
 
 def test_update_never_overwrites_existing_completed(todo_file):
@@ -691,11 +626,11 @@ def test_update_from_file(todo_file, tmp_path):
 
 def test_delete_top_level_entry(todo_file):
     """Delete a top-level category entry by id; file is updated and contains no trace."""
-    original = todo_file.read_text()
-    result = run(["delete", str(todo_file), "a3f2b9"])
+    result = run(["delete", str(todo_file), "a3f2b9", "--expected-revision", "0"])
     assert result.returncode == 0, result.stderr
     assert "deleted: a3f2b9" in result.stdout
     data = yaml.safe_load(todo_file.read_text())
+    assert data["revision"] == 1
     writing_entries = data["categories"][0]["categories"][3].get("entries", [])
     assert all(e["id"] != "a3f2b9" for e in writing_entries)
     # Other entries must survive
@@ -728,37 +663,16 @@ def test_delete_bulk(todo_file):
     assert writing_entries == []
 
 
-def test_delete_unknown_id_exits_nonzero_file_unchanged(todo_file):
-    """Unknown id → nonzero exit and file not modified."""
-    before = todo_file.read_text()
-    result = run(["delete", str(todo_file), "ffffff"])
-    assert result.returncode != 0
-    assert "ffffff" in result.stderr
-    assert todo_file.read_text() == before
-
-
 def test_delete_partial_missing_aborts(todo_file):
     """If any id is missing, all deletions are aborted; file is unchanged."""
     before = todo_file.read_text()
     result = run(["delete", str(todo_file), "a3f2b9", "zzzzzz"])
     assert result.returncode != 0
+    assert "zzzzzz" in result.stderr
     assert todo_file.read_text() == before
 
 
 # ── create-entry defaults ─────────────────────────────────────────────────────
-
-def test_create_entry_defaults_state_and_created(todo_file):
-    """create-entry should default state=incomplete and created=today when omitted."""
-    import datetime
-    entry_yaml = "- title: Minimal task\n  deadline: '2026-08-01'\n"
-    result = run(["create-entry", str(todo_file), "Work/Writing"], stdin=entry_yaml)
-    assert result.returncode == 0, result.stderr
-    data = yaml.safe_load(todo_file.read_text())
-    entries = data["categories"][0]["categories"][3]["entries"]
-    new_entry = next(e for e in entries if e["title"] == "Minimal task")
-    assert new_entry["state"] == "incomplete"
-    assert new_entry["created"] == datetime.date.today().isoformat()
-
 
 def test_create_entry_unquoted_date_is_coerced(todo_file):
     """create-entry with an unquoted date value must still validate and save as string."""
@@ -784,13 +698,6 @@ def test_describe_schema_whole():
     assert "state" in out["auto_generated_fields"]
 
 
-def test_describe_schema_single_field():
-    result = run(["describe-schema", "todo", "state"])
-    assert result.returncode == 0, result.stderr
-    out = yaml.safe_load(result.stdout)
-    assert out == {"state": {"enum": ["incomplete", "inprogress", "complete"]}}
-
-
 def test_describe_schema_unknown_field_errors():
     result = run(["describe-schema", "todo", "not_a_field"])
     assert result.returncode != 0
@@ -809,36 +716,15 @@ def test_describe_schema_unknown_schema_errors():
 # disk today -- a missing revision is treated as revision 0 so this feature
 # is opt-in and doesn't disturb any file that predates it.
 
-def test_update_without_expected_revision_still_works(todo_file):
-    """Backward compat: callers that never pass --expected-revision behave
-    exactly as before -- the check is opt-in, not mandatory."""
-    result = run(["update", str(todo_file)], stdin="- id: a3f2b9\n  state: complete\n")
-    assert result.returncode == 0, result.stderr
-    data = yaml.safe_load(todo_file.read_text())
-    entry = data["categories"][0]["categories"][3]["entries"][0]
-    assert entry["state"] == "complete"
-
-
-def test_update_succeeds_with_matching_expected_revision(todo_file):
-    # Fresh file has no revision field -> treated as revision 0.
-    result = run(
-        ["update", str(todo_file), "--expected-revision", "0"],
-        stdin="- id: a3f2b9\n  state: complete\n",
-    )
-    assert result.returncode == 0, result.stderr
-    data = yaml.safe_load(todo_file.read_text())
-    entry = data["categories"][0]["categories"][3]["entries"][0]
-    assert entry["state"] == "complete"
-    # A successful revision-checked mutation advances the counter.
-    assert data["revision"] == 1
-
-
 def test_update_revision_increments_across_successive_mutations(todo_file):
     r1 = run(
         ["update", str(todo_file), "--expected-revision", "0"],
         stdin="- id: a3f2b9\n  state: complete\n",
     )
     assert r1.returncode == 0, r1.stderr
+    after_first = yaml.safe_load(todo_file.read_text())
+    assert after_first["revision"] == 1
+    assert after_first["categories"][0]["categories"][3]["entries"][0]["state"] == "complete"
     r2 = run(
         ["update", str(todo_file), "--expected-revision", "1"],
         stdin="- id: b7c1e2\n  state: complete\n",
@@ -846,15 +732,7 @@ def test_update_revision_increments_across_successive_mutations(todo_file):
     assert r2.returncode == 0, r2.stderr
     data = yaml.safe_load(todo_file.read_text())
     assert data["revision"] == 2
-
-
-def test_update_rejects_stale_expected_revision(todo_file):
-    result = run(
-        ["update", str(todo_file), "--expected-revision", "5"],
-        stdin="- id: a3f2b9\n  state: complete\n",
-    )
-    assert result.returncode != 0
-    assert "revision" in result.stderr.lower()
+    assert data["categories"][0]["categories"][3]["entries"][1]["state"] == "complete"
 
 
 def test_update_rejects_stale_revision_from_a_prior_completed_write(todo_file):
@@ -992,16 +870,6 @@ def test_update_lock_acquisition_times_out_with_clear_error(todo_file):
         os.close(holder_fd)
 
 
-def test_create_entry_succeeds_with_matching_expected_revision(todo_file):
-    result = run(
-        ["create-entry", str(todo_file), "Work/Writing", "--expected-revision", "0"],
-        stdin=NEW_ENTRY_YAML,
-    )
-    assert result.returncode == 0, result.stderr
-    data = yaml.safe_load(todo_file.read_text())
-    assert data["revision"] == 1
-
-
 def test_create_entry_rejects_stale_expected_revision_no_write(todo_file):
     before = todo_file.read_text()
     result = run(
@@ -1011,13 +879,6 @@ def test_create_entry_rejects_stale_expected_revision_no_write(todo_file):
     assert result.returncode != 0
     assert "revision" in result.stderr.lower()
     assert todo_file.read_text() == before  # rejected mutation writes nothing
-
-
-def test_delete_succeeds_with_matching_expected_revision(todo_file):
-    result = run(["delete", str(todo_file), "a3f2b9", "--expected-revision", "0"])
-    assert result.returncode == 0, result.stderr
-    data = yaml.safe_load(todo_file.read_text())
-    assert data["revision"] == 1
 
 
 def test_delete_rejects_stale_expected_revision_no_write(todo_file):

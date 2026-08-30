@@ -42,13 +42,41 @@ def config_dir(tmp_path):
     return tmp_path / "email-client"
 
 
-def test_list_empty_registry(config_dir):
+@pytest.fixture
+def registered_account(config_dir):
+    """Seed the canonical state for tests whose contract starts after add."""
+    config_dir.mkdir(parents=True)
+    accounts_file = config_dir / "accounts.json"
+    accounts_file.write_text(
+        json.dumps(
+            {
+                "work": {
+                    "email": "me@example.com",
+                    "display_name": "",
+                    "imap": {"host": "imap.gmail.com", "port": 993},
+                    "smtp": {
+                        "host": "smtp.gmail.com",
+                        "port": 465,
+                        "starttls": False,
+                    },
+                    "auth": "app-password",
+                    "imap_service": "email-client-work-imap",
+                    "smtp_service": "email-client-work-smtp",
+                }
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    accounts_file.chmod(0o600)
+    return config_dir
+
+
+def test_public_list_add_and_resolve_contract(config_dir):
     result = run(config_dir, "list")
     assert result.returncode == 0
     assert json.loads(result.stdout) == {}
 
-
-def test_add_then_list(config_dir):
     result = run(config_dir, "add", "--nickname", "work", "--email", "me@example.com", "--display-name", "Me")
     assert result.returncode == 0
 
@@ -56,9 +84,6 @@ def test_add_then_list(config_dir):
     data = json.loads(result.stdout)
     assert data == {"work": {"email": "me@example.com", "display_name": "Me"}}
 
-
-def test_add_defaults_to_gmail_settings(config_dir):
-    run(config_dir, "add", "--nickname", "work", "--email", "me@example.com")
     result = run(config_dir, "resolve", "--nickname", "work")
     record = json.loads(result.stdout)
     assert record["imap"] == {"host": "imap.gmail.com", "port": 993}
@@ -66,77 +91,58 @@ def test_add_defaults_to_gmail_settings(config_dir):
     assert record["auth"] == "app-password"
     assert record["imap_service"] == "email-client-work-imap"
     assert record["smtp_service"] == "email-client-work-smtp"
+    # POSIX mode bits do not model Windows ACL ownership.
+    if sys.platform != "win32":
+        assert (config_dir / "accounts.json").stat().st_mode & 0o777 == 0o600
 
 
-def test_add_can_select_gmail_oauth(config_dir):
-    run(config_dir, "add", "--nickname", "work", "--email", "me@example.com", "--auth", "gmail-oauth")
-    record = read_registry(config_dir)["work"]
-    assert record["auth"] == "gmail-oauth"
-
-
-def test_add_explicit_non_gmail_settings(config_dir):
+def test_add_accepts_explicit_provider_and_auth_settings(config_dir):
     run(
         config_dir, "add", "--nickname", "other", "--email", "me@example.com",
         "--imap-host", "imap.example.com", "--imap-port", "993",
         "--smtp-host", "smtp.example.com", "--smtp-port", "587", "--starttls",
+        "--auth", "gmail-oauth",
     )
     record = read_registry(config_dir)["other"]
     assert record["imap"] == {"host": "imap.example.com", "port": 993}
     assert record["smtp"] == {"host": "smtp.example.com", "port": 587, "starttls": True}
+    assert record["auth"] == "gmail-oauth"
 
 
-def test_add_duplicate_nickname_fails(config_dir):
-    run(config_dir, "add", "--nickname", "work", "--email", "me@example.com")
-    result = run(config_dir, "add", "--nickname", "work", "--email", "other@example.com")
+def test_add_duplicate_nickname_fails(registered_account):
+    before = read_registry(registered_account)
+    result = run(registered_account, "add", "--nickname", "work", "--email", "other@example.com")
     assert result.returncode != 0
     assert "already exists" in result.stderr
+    assert read_registry(registered_account) == before
 
 
-def test_update_changes_fields(config_dir):
-    run(config_dir, "add", "--nickname", "work", "--email", "me@example.com")
-    result = run(config_dir, "update", "--nickname", "work", "--display-name", "New Name", "--auth", "gmail-oauth")
+def test_update_then_remove_preserves_lifecycle_contract(registered_account):
+    result = run(registered_account, "update", "--nickname", "work", "--display-name", "New Name", "--auth", "gmail-oauth")
     assert result.returncode == 0
-    record = read_registry(config_dir)["work"]
+    record = read_registry(registered_account)["work"]
     assert record["display_name"] == "New Name"
     assert record["email"] == "me@example.com"  # untouched fields survive
     assert record["auth"] == "gmail-oauth"
 
+    result = run(registered_account, "remove", "--nickname", "work")
+    assert result.returncode == 0
+    assert read_registry(registered_account) == {}
 
-def test_update_unknown_nickname_fails(config_dir):
-    result = run(config_dir, "update", "--nickname", "ghost", "--display-name", "X")
+
+def test_unknown_account_errors_are_command_specific(registered_account):
+    before = read_registry(registered_account)
+    result = run(registered_account, "update", "--nickname", "ghost", "--display-name", "X")
     assert result.returncode != 0
     assert "no account" in result.stderr
 
-
-def test_remove_drops_from_registry(config_dir):
-    run(config_dir, "add", "--nickname", "work", "--email", "me@example.com")
-    result = run(config_dir, "remove", "--nickname", "work")
-    assert result.returncode == 0
-    assert read_registry(config_dir) == {}
-
-
-def test_remove_unknown_nickname_fails(config_dir):
-    result = run(config_dir, "remove", "--nickname", "ghost")
+    result = run(registered_account, "remove", "--nickname", "ghost")
     assert result.returncode != 0
 
-
-def test_resolve_unknown_nickname_lists_known(config_dir):
-    run(config_dir, "add", "--nickname", "work", "--email", "me@example.com")
-    result = run(config_dir, "resolve", "--nickname", "ghost")
+    result = run(registered_account, "resolve", "--nickname", "ghost")
     assert result.returncode != 0
     assert "work" in result.stderr
-
-
-# famulus-skip: category=platform-contract; reason=POSIX mode bits do not model Windows ACL ownership; alternate=registry creation behavior and keyring credential tests run on Windows
-@pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="POSIX mode bits do not model Windows ACL ownership",
-)
-def test_registry_file_permissions_are_owner_only(config_dir):
-    run(config_dir, "add", "--nickname", "work", "--email", "me@example.com")
-    accounts_file = config_dir / "accounts.json"
-    mode = accounts_file.stat().st_mode & 0o777
-    assert mode == 0o600
+    assert read_registry(registered_account) == before
 
 
 # ── set-password / remove --purge-credentials (stubbed keyring) ─────────────
@@ -239,11 +245,10 @@ def run_with_fake_keyring(config_dir, fake_keyring, *args, input=None):
     )
 
 
-def test_set_password_reads_from_stdin_not_argv(config_dir, fake_keyring):
+def test_set_password_reads_from_stdin_not_argv(registered_account, fake_keyring):
     _, log_file, store_file = fake_keyring
-    run_with_fake_keyring(config_dir, fake_keyring, "add", "--nickname", "work", "--email", "me@example.com")
     result = run_with_fake_keyring(
-        config_dir,
+        registered_account,
         fake_keyring,
         "set-password",
         "--nickname",
@@ -326,35 +331,61 @@ def fake_registry_missing_gmail_scope(tmp_path):
     return _store_credential(tmp_path / "credential-home", granted_gmail_scope=False)
 
 
-def test_use_google_credential_stores_only_credential_id(config_dir, tmp_path, fake_registry_with_gmail_scope):
+def test_use_google_credential_updates_only_binding_fields(
+    registered_account, tmp_path, fake_registry_with_gmail_scope
+):
     credential_id = fake_registry_with_gmail_scope
-    run(config_dir, "add", "--nickname", "work", "--email", "me@example.com")
+    data = read_registry(registered_account)
+    data["work"].update(
+        {
+            "display_name": "Work Mail",
+            "imap": {"host": "imap.example.com", "port": 993},
+            "smtp": {
+                "host": "smtp.example.com",
+                "port": 587,
+                "starttls": True,
+            },
+        }
+    )
+    (registered_account / "accounts.json").write_text(
+        json.dumps(data) + "\n", encoding="utf-8"
+    )
 
     result = run(
-        config_dir, "use-google-credential",
+        registered_account, "use-google-credential",
         "--nickname", "work", "--credential-id", credential_id, "--home", str(tmp_path / "credential-home"),
     )
     assert result.returncode == 0
 
-    record = read_registry(config_dir)["work"]
+    record = read_registry(registered_account)["work"]
     assert record["credential_id"] == credential_id
+    assert record["auth"] == "gmail-oauth"
     assert "client_secret" not in record
     assert "refresh_token" not in record
     assert "access_token" not in record
+    assert record["email"] == "me@example.com"
+    assert record["display_name"] == "Work Mail"
+    assert record["imap"] == {"host": "imap.example.com", "port": 993}
+    assert record["smtp"] == {
+        "host": "smtp.example.com",
+        "port": 587,
+        "starttls": True,
+    }
+    assert record["imap_service"] == "email-client-work-imap"
+    assert record["smtp_service"] == "email-client-work-smtp"
 
 
-def test_use_google_credential_rejects_insufficient_scope(config_dir, tmp_path, fake_registry_missing_gmail_scope):
+def test_use_google_credential_rejects_insufficient_scope(registered_account, tmp_path, fake_registry_missing_gmail_scope):
     credential_id = fake_registry_missing_gmail_scope
-    run(config_dir, "add", "--nickname", "work", "--email", "me@example.com")
+    before = read_registry(registered_account)
 
     result = run(
-        config_dir, "use-google-credential",
+        registered_account, "use-google-credential",
         "--nickname", "work", "--credential-id", credential_id, "--home", str(tmp_path / "credential-home"),
     )
     assert result.returncode != 0
 
-    record = read_registry(config_dir)["work"]
-    assert "credential_id" not in record
+    assert read_registry(registered_account) == before
 
 
 def test_use_google_credential_rejects_unknown_nickname(config_dir, tmp_path, fake_registry_with_gmail_scope):
@@ -367,87 +398,26 @@ def test_use_google_credential_rejects_unknown_nickname(config_dir, tmp_path, fa
 
     assert result.returncode != 0
     assert "unknown account" in result.stderr
+    assert not (config_dir / "accounts.json").exists()
 
 
-def test_use_google_credential_sets_gmail_oauth_auth_mode(config_dir, tmp_path, fake_registry_with_gmail_scope):
-    """Ensure Google credential binding switches ``auth`` to ``gmail-oauth``.
-
-    XOAUTH2 selection reads ``auth``, not merely ``credential_id``; without this
-    update, binding silently leaves the account's app-password mode active.
-    """
-    credential_id = fake_registry_with_gmail_scope
-    run(config_dir, "add", "--nickname", "work", "--email", "me@example.com")
-
-    record = read_registry(config_dir)["work"]
-    assert record["auth"] == "app-password"
-
-    result = run(
-        config_dir, "use-google-credential",
-        "--nickname", "work", "--credential-id", credential_id, "--home", str(tmp_path / "credential-home"),
-    )
-    assert result.returncode == 0
-
-    record = read_registry(config_dir)["work"]
-    assert record["auth"] == "gmail-oauth"
-    assert record["credential_id"] == credential_id
-
-
-def test_use_google_credential_preserves_other_fields(config_dir, tmp_path, fake_registry_with_gmail_scope):
-    # Regression test for the merge-not-replace bug class found and fixed in
-    # cloud-files: use-google-credential must mutate the loaded record in
-    # place (like cmd_update) rather than rebuilding it, so unrelated fields
-    # on the account survive.
-    credential_id = fake_registry_with_gmail_scope
-    run(
-        config_dir, "add", "--nickname", "work", "--email", "me@example.com",
-        "--display-name", "Work Mail",
-        "--imap-host", "imap.example.com", "--imap-port", "993",
-        "--smtp-host", "smtp.example.com", "--smtp-port", "587", "--starttls",
-        "--auth", "gmail-oauth",
-    )
-
-    result = run(
-        config_dir, "use-google-credential",
-        "--nickname", "work", "--credential-id", credential_id, "--home", str(tmp_path / "credential-home"),
-    )
-    assert result.returncode == 0
-
-    record = read_registry(config_dir)["work"]
-    assert record["credential_id"] == credential_id
-    assert record["email"] == "me@example.com"
-    assert record["display_name"] == "Work Mail"
-    assert record["imap"] == {"host": "imap.example.com", "port": 993}
-    assert record["smtp"] == {"host": "smtp.example.com", "port": 587, "starttls": True}
-    assert record["auth"] == "gmail-oauth"
-    assert record["imap_service"] == "email-client-work-imap"
-    assert record["smtp_service"] == "email-client-work-smtp"
-
-
-def test_remove_purge_credentials_clears_both_services(config_dir, fake_keyring):
+def test_remove_purge_credentials_clears_both_services(registered_account, fake_keyring):
     _, log_file, store_file = fake_keyring
-    run_with_fake_keyring(config_dir, fake_keyring, "add", "--nickname", "work", "--email", "me@example.com")
-    run_with_fake_keyring(
-        config_dir,
-        fake_keyring,
-        "set-password",
-        "--nickname",
-        "work",
-        "--purpose",
-        "imap",
-        input="imap-secret\n",
-    )
-    run_with_fake_keyring(
-        config_dir,
-        fake_keyring,
-        "set-password",
-        "--nickname",
-        "work",
-        "--purpose",
-        "smtp",
-        input="smtp-secret\n",
+    store_file.write_text(
+        json.dumps(
+            {
+                "Famulus:email-client": {
+                    "work:imap": "imap-secret",
+                    "work:smtp": "smtp-secret",
+                    "email-client-work-imap": "imap-secret",
+                    "email-client-work-smtp": "smtp-secret",
+                }
+            }
+        ),
+        encoding="utf-8",
     )
 
-    result = run_with_fake_keyring(config_dir, fake_keyring, "remove", "--nickname", "work", "--purge-credentials")
+    result = run_with_fake_keyring(registered_account, fake_keyring, "remove", "--nickname", "work", "--purge-credentials")
 
     assert result.returncode == 0
     calls = log_file.read_text()

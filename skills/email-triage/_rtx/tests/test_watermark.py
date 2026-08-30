@@ -1,32 +1,24 @@
-"""CLI tests for update_watermark.py / mark_failure.py, isolated via
-EMAIL_TRIAGE_STATE_DIR so nothing here touches the real state/ directory.
-"""
+"""In-process state histories for the email-triage watermark helpers."""
+
+from __future__ import annotations
+
 import importlib.util
 import json
 import os
-import subprocess
 import sys
+from datetime import date, timedelta
 from pathlib import Path
-
-import pytest
 
 SCRIPTS_DIR = Path(__file__).parent.parent
 REPO_SRC = Path(__file__).resolve().parents[4] / "src"
-SCRIPT_NAMES = {
-    "update_watermark.py": "_watermark_writer.py",
-    "mark_failure.py": "_failure_sentinel.py",
-    "clear_failure.py": "_failure_clearer.py",
-    "get_cutoff.py": "_watermark_floor.py",
-    "write_metrics.py": "_write_metrics.py",
-}
 
 if str(REPO_SRC) not in sys.path:
     sys.path.insert(0, str(REPO_SRC))
 
 
-def _load_module(script_name):
+def _load_module(module_name: str):
     spec = importlib.util.spec_from_file_location(
-        script_name, SCRIPTS_DIR / script_name
+        module_name.removesuffix(".py"), SCRIPTS_DIR / module_name
     )
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -34,215 +26,210 @@ def _load_module(script_name):
     return module
 
 
-def run(script, state_dir, *args, input=None):
-    env = os.environ.copy()
-    env["EMAIL_TRIAGE_STATE_DIR"] = str(state_dir)
-    env["PYTHONPATH"] = str(REPO_SRC)
-    return subprocess.run(
-        [sys.executable, str(SCRIPTS_DIR / SCRIPT_NAMES[script]), *args],
-        capture_output=True, text=True, input=input,
-        env=env,
+# Execute each implementation module once. Every mutating scenario below then
+# rebinds its path globals to a fresh state root before calling main(argv).
+WATERMARK_WRITER = _load_module("_watermark_writer.py")
+WATERMARK_FLOOR = _load_module("_watermark_floor.py")
+FAILURE_SENTINEL = _load_module("_failure_sentinel.py")
+FAILURE_CLEARER = _load_module("_failure_clearer.py")
+WRITE_METRICS = _load_module("_write_metrics.py")
+
+
+def _status(state_root: Path) -> dict:
+    return json.loads((state_root / "status.json").read_text())
+
+
+def _metrics_args() -> list[str]:
+    return [
+        "--total-scanned",
+        "3",
+        "--added-todo",
+        "0",
+        "--added-triage",
+        "0",
+        "--skipped",
+        "3",
+        "--deduped",
+        "0",
+        "--accounts",
+        "personal",
+    ]
+
+
+def test_writer_and_floor_state_histories(tmp_path, capsys):
+    run_id_root = tmp_path / "run-id-and-replay"
+    WATERMARK_WRITER.STATUS_FILE = run_id_root / "status.json"
+    WATERMARK_WRITER.WATERMARK = run_id_root / "last_run"
+    capsys.readouterr()
+    assert WATERMARK_WRITER.main(["--run-id", "run-a"]) == 0
+    first_output = capsys.readouterr()
+    first_status = _status(run_id_root)
+    first_watermark = (run_id_root / "last_run").read_text()
+    assert first_status["result"] == "ok"
+    assert first_status["last_finalized_run_id"] == "run-a"
+    assert "Watermark updated:" in first_output.out
+
+    WATERMARK_WRITER.STATUS_FILE = run_id_root / "status.json"
+    WATERMARK_WRITER.WATERMARK = run_id_root / "last_run"
+    capsys.readouterr()
+    assert WATERMARK_WRITER.main(["--run-id", "run-a"]) == 0
+    replay_output = capsys.readouterr()
+    assert "no-op (replay-safe)" in replay_output.out
+    assert _status(run_id_root) == first_status
+    assert (run_id_root / "last_run").read_text() == first_watermark
+
+    no_run_id_root = tmp_path / "repeated-no-run-id"
+    WATERMARK_WRITER.STATUS_FILE = no_run_id_root / "status.json"
+    WATERMARK_WRITER.WATERMARK = no_run_id_root / "last_run"
+    capsys.readouterr()
+    assert WATERMARK_WRITER.main([]) == 0
+    capsys.readouterr()
+    first_without_id = (no_run_id_root / "last_run").read_text()
+
+    WATERMARK_WRITER.STATUS_FILE = no_run_id_root / "status.json"
+    WATERMARK_WRITER.WATERMARK = no_run_id_root / "last_run"
+    capsys.readouterr()
+    assert WATERMARK_WRITER.main([]) == 0
+    capsys.readouterr()
+    second_without_id = (no_run_id_root / "last_run").read_text()
+    assert second_without_id >= first_without_id
+    assert "last_finalized_run_id" not in _status(no_run_id_root)
+
+    stale_root = tmp_path / "stale-status-replacement"
+    stale_root.mkdir()
+    (stale_root / "status.json").write_text(
+        json.dumps({"result": "pending", "message": "reset at start of new run"})
     )
+    WATERMARK_WRITER.STATUS_FILE = stale_root / "status.json"
+    WATERMARK_WRITER.WATERMARK = stale_root / "last_run"
+    capsys.readouterr()
+    assert WATERMARK_WRITER.main([]) == 0
+    capsys.readouterr()
+    stale_status = _status(stale_root)
+    assert stale_status["result"] == "ok"
+    assert stale_status["message"] == "watermark advanced"
+
+    cutoff_root = tmp_path / "writer-floor-interoperability"
+    WATERMARK_WRITER.STATUS_FILE = cutoff_root / "status.json"
+    WATERMARK_WRITER.WATERMARK = cutoff_root / "last_run"
+    capsys.readouterr()
+    assert WATERMARK_WRITER.main([]) == 0
+    capsys.readouterr()
+    written_date = date.fromisoformat((cutoff_root / "last_run").read_text()[:10])
+
+    WATERMARK_FLOOR.STATUS_FILE = cutoff_root / "status.json"
+    WATERMARK_FLOOR.WATERMARK = cutoff_root / "last_run"
+    capsys.readouterr()
+    assert WATERMARK_FLOOR.main([]) == 0
+    cutoff_output = capsys.readouterr()
+    assert cutoff_output.err == ""
+    assert cutoff_output.out.strip() == (written_date - timedelta(days=1)).isoformat()
 
 
-def test_update_watermark_advances_on_clean_run(tmp_path):
-    result = run("update_watermark.py", tmp_path)
-    assert result.returncode == 0
-    assert (tmp_path / "last_run").exists()
-    status = json.loads((tmp_path / "status.json").read_text())
-    assert status["result"] == "ok"
+def test_failure_and_recovery_state_histories(tmp_path, capsys):
+    default_reason_root = tmp_path / "default-failure-reason"
+    FAILURE_SENTINEL.STATUS_FILE = default_reason_root / "status.json"
+    capsys.readouterr()
+    assert FAILURE_SENTINEL.main([]) == 0
+    capsys.readouterr()
+    default_status = _status(default_reason_root)
+    assert default_status["result"] == "error"
+    assert default_status["message"]
 
+    blocked_root = tmp_path / "failure-blocks-watermark"
+    FAILURE_SENTINEL.STATUS_FILE = blocked_root / "status.json"
+    capsys.readouterr()
+    assert FAILURE_SENTINEL.main(["something broke"]) == 0
+    capsys.readouterr()
 
-def test_update_watermark_with_run_id_records_it_alongside_result(tmp_path):
-    result = run("update_watermark.py", tmp_path, "--run-id", "run-a")
-    assert result.returncode == 0
-    status = json.loads((tmp_path / "status.json").read_text())
-    assert status["result"] == "ok"
-    assert status["last_finalized_run_id"] == "run-a"
+    WATERMARK_WRITER.STATUS_FILE = blocked_root / "status.json"
+    WATERMARK_WRITER.WATERMARK = blocked_root / "last_run"
+    capsys.readouterr()
+    assert WATERMARK_WRITER.main([]) != 0
+    blocked_output = capsys.readouterr()
+    assert "something broke" in blocked_output.err
+    assert not (blocked_root / "last_run").exists()
 
+    recovery_root = tmp_path / "clear-failure"
+    FAILURE_SENTINEL.STATUS_FILE = recovery_root / "status.json"
+    capsys.readouterr()
+    assert FAILURE_SENTINEL.main(["credentials missing"]) == 0
+    capsys.readouterr()
 
-def test_update_watermark_replay_with_same_run_id_does_not_readvance(tmp_path):
-    first = run("update_watermark.py", tmp_path, "--run-id", "run-b")
-    assert first.returncode == 0
-    watermark_after_first = (tmp_path / "last_run").read_text()
-
-    second = run("update_watermark.py", tmp_path, "--run-id", "run-b")
-    assert second.returncode == 0
-    watermark_after_second = (tmp_path / "last_run").read_text()
-
-    assert watermark_after_second == watermark_after_first
-
-
-def test_update_watermark_without_run_id_still_advances_every_call(tmp_path):
-    # Backward compatible standalone behavior: with no --run-id there is no
-    # idempotency key, so each clean call advances again (matches the
-    # pre-existing test_watermark_survives_across_two_clean_runs below).
-    run("update_watermark.py", tmp_path)
-    first = (tmp_path / "last_run").read_text()
-    run("update_watermark.py", tmp_path)
-    second = (tmp_path / "last_run").read_text()
-    assert second >= first
-    status = json.loads((tmp_path / "status.json").read_text())
-    assert "last_finalized_run_id" not in status
-
-
-def test_mark_failure_blocks_subsequent_watermark_update(tmp_path):
-    run("mark_failure.py", tmp_path, "something broke")
-    result = run("update_watermark.py", tmp_path)
-    assert result.returncode != 0
-    assert "something broke" in result.stderr
-    assert not (tmp_path / "last_run").exists()
-
-
-def test_mark_failure_default_reason_when_none_given(tmp_path):
-    result = run("mark_failure.py", tmp_path)
-    assert result.returncode == 0
-    status = json.loads((tmp_path / "status.json").read_text())
-    assert status["result"] == "error"
-    assert status["message"]  # non-empty default reason
-
-
-def test_clear_failure_does_not_advance_watermark(tmp_path):
-    run("mark_failure.py", tmp_path, "credentials missing")
-
-    result = run("clear_failure.py", tmp_path, "OAuth restored")
-
-    assert result.returncode == 0
-    assert not (tmp_path / "last_run").exists()
-    status = json.loads((tmp_path / "status.json").read_text())
-    assert status == {
+    FAILURE_CLEARER.STATUS_FILE = recovery_root / "status.json"
+    capsys.readouterr()
+    assert FAILURE_CLEARER.main(["OAuth restored"]) == 0
+    capsys.readouterr()
+    assert not (recovery_root / "last_run").exists()
+    assert _status(recovery_root) == {
         "result": "ok",
         "message": "failure cleared: OAuth restored; watermark unchanged",
     }
 
 
-def test_clear_failure_allows_fresh_successful_update(tmp_path):
-    run("mark_failure.py", tmp_path, "credentials missing")
-    run("clear_failure.py", tmp_path, "OAuth restored")
-
-    result = run("update_watermark.py", tmp_path)
-
-    assert result.returncode == 0
-    assert (tmp_path / "last_run").exists()
-    status = json.loads((tmp_path / "status.json").read_text())
-    assert status["result"] == "ok"
-
-
-def test_successful_update_replaces_message_from_earlier_state(tmp_path):
-    """status.json must not end a run describing itself with a message from
-    before the run finished -- e.g. the start-of-run reset text sitting next to
-    result "ok", which reads as a success that never happened."""
-    (tmp_path / "status.json").write_text(
-        json.dumps({"result": "pending", "message": "reset at start of new run"})
-    )
-
-    assert run("update_watermark.py", tmp_path).returncode == 0
-
-    status = json.loads((tmp_path / "status.json").read_text())
-    assert status["result"] == "ok"
-    assert status["message"] == "watermark advanced"
-
-
-def _metrics_args():
-    return [
-        "--run-id", "r1", "--total-scanned", "3", "--added-todo", "0",
-        "--added-triage", "0", "--skipped", "3", "--deduped", "0",
-        "--accounts", "personal",
-    ]
-
-
-def test_writing_metrics_does_not_re_stamp_the_previous_runs_ok(tmp_path):
-    """read_inner_status decides whether a status belongs to the current run
-    by the file's mtime. Rewriting status.json to add metrics refreshes that
-    mtime, so carrying the previous run's "ok" through would let a run that
-    recorded metrics and then stalled -- never advancing the watermark --
-    present that stale "ok" as its own and satisfy require_inner_status."""
-    (tmp_path / "status.json").write_text(
+def test_metrics_state_histories(tmp_path, capsys):
+    stale_ok_root = tmp_path / "stale-ok"
+    stale_ok_root.mkdir()
+    (stale_ok_root / "status.json").write_text(
         json.dumps({"result": "ok", "message": "watermark advanced"})
     )
+    WRITE_METRICS.STATUS_FILE = stale_ok_root / "status.json"
+    capsys.readouterr()
+    assert WRITE_METRICS.main(_metrics_args()) == 0
+    capsys.readouterr()
+    stale_ok_status = _status(stale_ok_root)
+    assert stale_ok_status["result"] == "pending"
+    assert stale_ok_status["metrics"]["total_scanned"] == 3
 
-    result = run("write_metrics.py", tmp_path, *[a for a in _metrics_args() if a not in ("--run-id", "r1")])
-
-    assert result.returncode == 0, result.stderr
-    status = json.loads((tmp_path / "status.json").read_text())
-    assert status["result"] == "pending"
-    assert status["metrics"]["total_scanned"] == 3
-
-
-def test_writing_metrics_preserves_a_latched_error(tmp_path):
-    """update_watermark has to see the error to refuse advancing."""
-    (tmp_path / "status.json").write_text(
+    latched_error_root = tmp_path / "latched-error"
+    latched_error_root.mkdir()
+    (latched_error_root / "status.json").write_text(
         json.dumps({"result": "error", "message": "upload failed"})
     )
+    WRITE_METRICS.STATUS_FILE = latched_error_root / "status.json"
+    capsys.readouterr()
+    assert WRITE_METRICS.main(_metrics_args()) == 0
+    capsys.readouterr()
+    latched_error_status = _status(latched_error_root)
+    assert latched_error_status["result"] == "error"
+    assert latched_error_status["message"] == "upload failed"
 
-    run("write_metrics.py", tmp_path, *[a for a in _metrics_args() if a not in ("--run-id", "r1")])
 
-    status = json.loads((tmp_path / "status.json").read_text())
-    assert status["result"] == "error"
-    assert status["message"] == "upload failed"
-
-
-def test_a_warning_does_not_delete_the_replay_guard(tmp_path):
-    """get_cutoff records a warning when no watermark exists. It used to
-    rewrite status.json wholesale, dropping last_finalized_run_id -- the key
-    _finalize_run reads to refuse advancing the watermark twice on a replay."""
-    (tmp_path / "status.json").write_text(
+def test_warning_history_preserves_replay_guard(tmp_path, capsys):
+    warning_root = tmp_path / "warning-preserves-replay-guard"
+    warning_root.mkdir()
+    (warning_root / "status.json").write_text(
         json.dumps({"result": "ok", "last_finalized_run_id": "abc123"})
     )
-
-    result = run("get_cutoff.py", tmp_path)
-
-    assert result.returncode == 0
-    status = json.loads((tmp_path / "status.json").read_text())
+    WATERMARK_FLOOR.STATUS_FILE = warning_root / "status.json"
+    WATERMARK_FLOOR.WATERMARK = warning_root / "last_run"
+    capsys.readouterr()
+    assert WATERMARK_FLOOR.main([]) == 0
+    warning_output = capsys.readouterr()
+    status = _status(warning_root)
+    assert "WARNING" in warning_output.err
     assert status["result"] == "warning"
     assert status["last_finalized_run_id"] == "abc123"
 
 
-def test_watermark_survives_across_two_clean_runs(tmp_path):
-    run("update_watermark.py", tmp_path)
-    first = (tmp_path / "last_run").read_text()
-    run("update_watermark.py", tmp_path)
-    second = (tmp_path / "last_run").read_text()
-    assert second >= first  # timestamp advanced, not reset
-
-
-def test_get_cutoff_reads_watermark_written_by_update_watermark(tmp_path):
-    run("update_watermark.py", tmp_path)
-    result = run("get_cutoff.py", tmp_path)
-    assert result.returncode == 0
-    # Should print today's or yesterday's date, not the 2-day-back default
-    # that only kicks in when no watermark exists at all.
-    assert "WARNING" not in result.stderr
-
-
-# ── default_state_dir ────────────────────────────────────────────────────────
-
-STATE_DIR_MODULES = [
-    "_watermark_writer.py",
-    "_watermark_floor.py",
-    "_failure_clearer.py",
-    "_failure_sentinel.py",
-]
-
-
-@pytest.mark.parametrize("module_name", STATE_DIR_MODULES)
-def test_state_dir_defaults_to_famulus_state_root_not_skill_dir(monkeypatch, tmp_path, module_name):
-    monkeypatch.delenv("EMAIL_TRIAGE_STATE_DIR", raising=False)
+def test_state_dir_defaults_and_overrides_for_all_state_modules(monkeypatch, tmp_path):
     from officina.common.famulus_paths import resolve_famulus_paths
 
-    expected = resolve_famulus_paths(
-        platform=sys.platform, home=tmp_path, environ=os.environ
-    ).email_triage_state_root
+    modules = {
+        "watermark-writer": WATERMARK_WRITER,
+        "watermark-floor": WATERMARK_FLOOR,
+        "failure-clearer": FAILURE_CLEARER,
+        "failure-sentinel": FAILURE_SENTINEL,
+    }
+    for label, module in modules.items():
+        home = tmp_path / label / "home"
+        monkeypatch.delenv("EMAIL_TRIAGE_STATE_DIR", raising=False)
+        expected = resolve_famulus_paths(
+            platform=sys.platform, home=home, environ=os.environ
+        ).email_triage_state_root
+        assert module.default_state_dir(home=home) == expected
+        assert module.default_state_dir(home=home) != module.SKILL_DIR / "state"
 
-    module = _load_module(module_name)
-    assert module.default_state_dir(home=tmp_path) == expected
-    assert module.default_state_dir(home=tmp_path) != module.SKILL_DIR / "state"
-
-
-@pytest.mark.parametrize("module_name", STATE_DIR_MODULES)
-def test_state_dir_honors_explicit_env_override(monkeypatch, tmp_path, module_name):
-    override = tmp_path / "custom-state"
-    monkeypatch.setenv("EMAIL_TRIAGE_STATE_DIR", str(override))
-
-    module = _load_module(module_name)
-    assert module.default_state_dir() == override
+        override = tmp_path / label / "explicit-state"
+        monkeypatch.setenv("EMAIL_TRIAGE_STATE_DIR", str(override))
+        assert module.default_state_dir() == override

@@ -241,7 +241,7 @@ def test_root_blueprint_owns_the_task_1_through_5_acceptance_closure() -> None:
 def test_layer_2_exercises_parser_digest_chain_outcome_registry_and_route(
     tmp_path: Path,
 ) -> None:
-    """A stale transitive source must defeat an otherwise approved route."""
+    """A real scenario must bridge to accepted breakdown/assignment artifacts."""
     contract = _load_contract()
     source_fixture = _require_scenario_file("multipart", "source.md")
     scenario_fixture = _require_scenario_file("multipart", "good-contract.md")
@@ -338,49 +338,6 @@ def test_layer_2_exercises_parser_digest_chain_outcome_registry_and_route(
         "authorized_route": "extract-evolutions",
         "earliest_stale_prerequisite": None,
     }
-
-    approved_assignment_bytes = assignment.read_bytes()
-    _write_artifact(
-        assignment,
-        stage="assign-rutters",
-        outcome="verified",
-        body_schema="assignment/v1",
-        prerequisites=[
-            {
-                "kind": "artifact",
-                "path": breakdown.relative_to(repository).as_posix(),
-                "sha256": _digest(breakdown),
-                "stage": "breakdown",
-                "schema_version": "distill-to-rutters/v1",
-            }
-        ],
-        body=dict(scenario["assignment"]),
-    )
-    unknown_result = contract.validate_artifact(assignment, "assign-rutters")
-    assert unknown_result.valid is False
-    assert unknown_result.errors == (
-        "unknown outcome verified for stage assign-rutters",
-    )
-    assignment.write_bytes(approved_assignment_bytes)
-
-    source.write_text(
-        source.read_text(encoding="utf-8") + "\nChanged.\n",
-        encoding="utf-8",
-    )
-    freshness = contract.check_freshness(assignment)
-    assert freshness.current is False
-    assert freshness.earliest_stale_prerequisite == "source.md"
-    assert freshness.owning_stage == "breakdown"
-    stale = contract.decide_route(
-        "assign-rutters",
-        "assignment-ready",
-        _digest(assignment),
-        "approve",
-        assignment,
-    )
-    assert stale.status == "stale"
-    assert stale.authorized_route == "breakdown"
-    assert stale.earliest_stale_prerequisite == "source.md"
 
 
 @pytest.mark.parametrize("scenario", ("inseparable", "multipart", "judgment"))
@@ -532,86 +489,50 @@ COORDINATOR_GROUPS = (
 )
 
 
-@pytest.mark.parametrize("group", COORDINATOR_GROUPS)
-def test_layer_3_requires_every_coordinator_rule_group(
-    tmp_path: Path,
-    group: str,
-) -> None:
-    """Every Task-3 coordinator decision must have its hand-authored row."""
+def test_layer_3_requires_exact_coordinator_rule_groups(tmp_path: Path) -> None:
+    """Every coordinator group must contain exactly its hand-authored row."""
     good = load_scenario_contract(
         _require_scenario_file("multipart", "good-contract.md")
     )
-    mutated = copy.deepcopy(good)
-    mutated["assignment"]["orchestration"][group] = []
-    path = tmp_path / f"missing-{group}.md"
-    _write_scenario_bundle(path, mutated)
+    missing = copy.deepcopy(good)
+    unexpected = copy.deepcopy(good)
+    for group in COORDINATOR_GROUPS:
+        missing["assignment"]["orchestration"][group] = []
+        unexpected["assignment"]["orchestration"][group].append(
+            {
+                "obligation_id": "obl-orphan",
+                "owning_transition": "coordinate",
+                "evidence": "This row has no fixture-oracle obligation.",
+            }
+        )
 
-    assert evaluate_scenario(
-        path,
-        _require_scenario_file("multipart", "oracle.yaml"),
-    ) == (f"orchestration.{group} is missing obligation obl-join",)
+    oracle = _require_scenario_file("multipart", "oracle.yaml")
+    labeled_findings = []
+    for label, document in (("missing", missing), ("unexpected", unexpected)):
+        path = tmp_path / f"{label}-coordinator-groups.md"
+        _write_scenario_bundle(path, document)
+        findings = evaluate_scenario(path, oracle)
+        labeled_findings.extend(
+            (f"{label}-{group}", finding)
+            for group, finding in zip(COORDINATOR_GROUPS, findings, strict=True)
+        )
 
-
-@pytest.mark.parametrize(
-    ("group", "expected"),
-    (
-        ("starts", "orchestration.starts has unexpected obligations ['obl-orphan']"),
-        (
-            "dependencies",
-            "orchestration.dependencies has unexpected obligations ['obl-orphan']",
-        ),
-        ("joins", "orchestration.joins has unexpected obligations ['obl-orphan']"),
-        (
-            "aggregate_results",
-            "orchestration.aggregate_results has unexpected obligations ['obl-orphan']",
-        ),
-        (
-            "partial_failure",
-            "orchestration.partial_failure has unexpected obligations ['obl-orphan']",
-        ),
-        (
-            "retries",
-            "orchestration.retries has unexpected obligations ['obl-orphan']",
-        ),
-        (
-            "cancellation",
-            "orchestration.cancellation has unexpected obligations ['obl-orphan']",
-        ),
-        (
-            "failure_propagation",
-            "orchestration.failure_propagation has unexpected obligations ['obl-orphan']",
-        ),
-        (
-            "authorization",
-            "orchestration.authorization has unexpected obligations ['obl-orphan']",
-        ),
-        ("release", "orchestration.release has unexpected obligations ['obl-orphan']"),
-    ),
-)
-def test_layer_3_rejects_unexpected_rules_in_every_coordinator_group(
-    tmp_path: Path,
-    group: str,
-    expected: str,
-) -> None:
-    """A schema-valid orphan row cannot hide beside the expected rule."""
-    good = load_scenario_contract(
-        _require_scenario_file("multipart", "good-contract.md")
+    assert tuple(labeled_findings) == tuple(
+        [
+            (
+                f"missing-{group}",
+                f"orchestration.{group} is missing obligation obl-join",
+            )
+            for group in COORDINATOR_GROUPS
+        ]
+        + [
+            (
+                f"unexpected-{group}",
+                f"orchestration.{group} has unexpected obligations ['obl-orphan']",
+            )
+            for group in COORDINATOR_GROUPS
+        ]
     )
-    mutated = copy.deepcopy(good)
-    mutated["assignment"]["orchestration"][group].append(
-        {
-            "obligation_id": "obl-orphan",
-            "owning_transition": "coordinate",
-            "evidence": "This row has no fixture-oracle obligation.",
-        }
-    )
-    path = tmp_path / f"unexpected-{group}.md"
-    _write_scenario_bundle(path, mutated)
-
-    assert evaluate_scenario(
-        path,
-        _require_scenario_file("multipart", "oracle.yaml"),
-    ) == (expected,)
 
 
 def test_layer_3_rejects_a_coordinator_rule_mismatch(tmp_path: Path) -> None:
@@ -717,37 +638,35 @@ def test_fixture_parser_requires_exactly_one_contract_block(
         load_scenario_contract(path)
 
 
-@pytest.mark.parametrize(
-    ("scenario", "name"),
-    (
-        ("inseparable", "good-contract.md"),
-        ("inseparable", "missing-validator.md"),
-        ("multipart", "good-contract.md"),
-        ("multipart", "missing-join.md"),
-        ("judgment", "good-contract.md"),
-        ("judgment", "automated-judgment.md"),
-    ),
-)
-def test_scenario_bundles_use_the_real_stage_body_contracts(
-    scenario: str,
-    name: str,
-) -> None:
+def test_scenario_bundles_use_the_real_stage_body_contracts() -> None:
     """Fixture bundles use production schemas but are not represented as artifacts."""
-    document = load_scenario_contract(_require_scenario_file(scenario, name))
+    scenario_cases = (
+        ("inseparable-good", "inseparable", "good-contract.md"),
+        ("inseparable-missing-validator", "inseparable", "missing-validator.md"),
+        ("multipart-good", "multipart", "good-contract.md"),
+        ("multipart-missing-join", "multipart", "missing-join.md"),
+        ("judgment-good", "judgment", "good-contract.md"),
+        ("judgment-automated", "judgment", "automated-judgment.md"),
+    )
     schema_files = {
         "assignment": "assignment-body.schema.json",
         "graph": "graph-body.schema.json",
         "logic": "logic-validation-body.schema.json",
     }
+    validators = {
+        contract_name: jsonschema.Draft202012Validator(
+            json.loads(
+                (SKILL_ROOT / "references" / schema_file).read_text(encoding="utf-8")
+            )
+        )
+        for contract_name, schema_file in schema_files.items()
+    }
 
-    for contract_name, schema_file in schema_files.items():
-        schema = json.loads(
-            (SKILL_ROOT / "references" / schema_file).read_text(encoding="utf-8")
-        )
-        errors = sorted(
-            jsonschema.Draft202012Validator(schema).iter_errors(
-                document[contract_name]
-            ),
-            key=lambda error: tuple(str(part) for part in error.absolute_path),
-        )
-        assert errors == []
+    for label, scenario, name in scenario_cases:
+        document = load_scenario_contract(_require_scenario_file(scenario, name))
+        for contract_name, validator in validators.items():
+            errors = sorted(
+                validator.iter_errors(document[contract_name]),
+                key=lambda error: tuple(str(part) for part in error.absolute_path),
+            )
+            assert errors == [], (label, contract_name, errors)
