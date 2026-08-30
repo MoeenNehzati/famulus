@@ -572,10 +572,25 @@ def _evaluate_as_v5(
     )
 
 
-def test_v5_currentness_accepts_each_closed_v1_v2_entry_without_monotonicity(
+def test_v5_currentness_handles_legacy_and_closed_v1_v2_entries_without_monotonicity(
     tmp_path: Path,
 ) -> None:
     graph, states, commit, public_key_root, _backend, key = _fixture(tmp_path)
+
+    legacy_report = _evaluate_as_v5(
+        tmp_path,
+        graph,
+        states,
+        commit,
+        public_key_root,
+    )
+
+    assert not legacy_report.current
+    assert all(
+        "legacy-certificate-payload" in status.concerns
+        for status in legacy_report.nodes.values()
+    )
+
     _rewrite_payload_version_chain(
         tmp_path,
         graph,
@@ -598,26 +613,6 @@ def test_v5_currentness_accepts_each_closed_v1_v2_entry_without_monotonicity(
         node_id: status.concerns
         for node_id, status in report.nodes.items()
     }
-
-
-def test_v5_currentness_marks_a_final_v1_entry_stale(
-    tmp_path: Path,
-) -> None:
-    graph, states, commit, public_key_root, _backend, _key = _fixture(tmp_path)
-
-    report = _evaluate_as_v5(
-        tmp_path,
-        graph,
-        states,
-        commit,
-        public_key_root,
-    )
-
-    assert not report.current
-    assert all(
-        "legacy-certificate-payload" in status.concerns
-        for status in report.nodes.values()
-    )
 
 
 def _certifier_repository_with_provider_source(
@@ -697,68 +692,7 @@ def _evaluate(
     )
 
 
-def test_certificate_currentness_accepts_exact_recursive_state_and_adapter(tmp_path: Path) -> None:
-    graph, states, commit, public_key_root, _backend, _key = _fixture(tmp_path)
-
-    report = _evaluate(tmp_path, graph, states, commit, public_key_root)
-    view = CertificateCurrentnessView(report)
-
-    assert all(status.current for status in report.nodes.values())
-    assert view.certificate_for("demo-skill") is not None
-    assert view.check_export(
-        "demo-skill",
-        "demo-skill.interface.run",
-        1,
-        "demo-skill.source.gateway",
-    ).certified
-
-
-def test_certificate_currentness_accepts_later_head_with_unchanged_certified_inputs(
-    tmp_path: Path,
-) -> None:
-    graph, states, certified_commit, public_key_root, _backend, _key = _fixture(
-        tmp_path
-    )
-    repository = GitTestRepository(tmp_path)
-    (tmp_path / "unrelated.txt").write_text("unrelated\n", encoding="utf-8")
-    repository.git("add", "unrelated.txt")
-    repository.git("commit", "-qm", "unrelated later commit")
-    assert (
-        repository.git("rev-parse", "HEAD").stdout.decode("ascii").strip()
-        != certified_commit
-    )
-
-    report = _evaluate(tmp_path, graph, states, certified_commit, public_key_root)
-
-    assert all(status.current for status in report.nodes.values())
-
-
-def test_repository_certification_state_accepts_later_head_with_unchanged_certified_inputs(
-    tmp_path: Path,
-) -> None:
-    _graph, _states, certified_commit, public_key_root, _backend, _key = (
-        create_certified_fixture(tmp_path)
-    )
-    repository = GitTestRepository(tmp_path)
-    (tmp_path / "unrelated.txt").write_text("unrelated\n", encoding="utf-8")
-    repository.git("add", "unrelated.txt")
-    repository.git("commit", "-qm", "unrelated later commit")
-    assert (
-        repository.git("rev-parse", "HEAD").stdout.decode("ascii").strip()
-        != certified_commit
-    )
-
-    state = derive_repository_certification_state(
-        tmp_path,
-        public_key_root=public_key_root,
-        expected_schema_version=4,
-        schema_root=SCHEMA_ROOT,
-    )
-
-    assert all(status.current for status in state.currentness.nodes.values())
-
-
-def test_certificate_currentness_propagates_explicit_non_atomic_fallback(
+def test_certificate_currentness_accepts_recursive_state_adapter_and_non_atomic_forwarding(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -807,7 +741,15 @@ def test_certificate_currentness_propagates_explicit_non_atomic_fallback(
         allow_non_atomic=True,
     )
 
+    view = CertificateCurrentnessView(report)
     assert all(status.current for status in report.nodes.values())
+    assert view.certificate_for("demo-skill") is not None
+    assert view.check_export(
+        "demo-skill",
+        "demo-skill.interface.run",
+        1,
+        "demo-skill.source.gateway",
+    ).certified
     assert observed == {
         "basis": 1,
         "reads": len(graph.nodes),
@@ -815,55 +757,86 @@ def test_certificate_currentness_propagates_explicit_non_atomic_fallback(
     }
 
 
-@pytest.mark.parametrize(
-    ("field", "replacement", "concern"),
-    [
-        ("subject", {"id": "wrong"}, "subject-mismatch"),
-        ("input_manifest", [], "input-manifest-mismatch"),
-        ("node_hash", "sha256:" + "d" * 64, "node-hash-mismatch"),
-        (
-            "dependencies",
-            [
-                {
-                    "relation": "contains-source",
-                    "target": "demo-skill.source.gateway",
-                    "version": 1,
-                    "node_hash": "sha256:" + "d" * 64,
-                }
-            ],
-            "dependency-mismatch",
-        ),
-        ("certification_basis_hash", "sha256:" + "d" * 64, "certification-basis-mismatch"),
-        ("certifier", {**CERTIFIER, "version": 2}, "certifier-mismatch"),
-        ("checks", [], "checks-mismatch"),
-    ],
-)
+def test_repository_certification_state_accepts_later_head_with_unchanged_certified_inputs(
+    tmp_path: Path,
+) -> None:
+    _graph, _states, certified_commit, public_key_root, _backend, _key = (
+        create_certified_fixture(tmp_path)
+    )
+    repository = GitTestRepository(tmp_path)
+    (tmp_path / "unrelated.txt").write_text("unrelated\n", encoding="utf-8")
+    repository.git("add", "unrelated.txt")
+    repository.git("commit", "-qm", "unrelated later commit")
+    assert (
+        repository.git("rev-parse", "HEAD").stdout.decode("ascii").strip()
+        != certified_commit
+    )
+
+    state = derive_repository_certification_state(
+        tmp_path,
+        public_key_root=public_key_root,
+        expected_schema_version=4,
+        schema_root=SCHEMA_ROOT,
+    )
+
+    assert all(status.current for status in state.currentness.nodes.values())
+
+
 def test_certificate_currentness_rejects_each_mismatched_projection(
     tmp_path: Path,
-    field: str,
-    replacement: object,
-    concern: str,
 ) -> None:
     graph, states, commit, public_key_root, _backend, key = _fixture(tmp_path)
     node_id = "demo-skill"
     payload = _payload(tmp_path, graph, states, node_id, commit, key.key_id)
-    if field == "subject":
-        payload[field] = {**payload[field], **replacement}
-    else:
-        payload[field] = replacement
+    payload["subject"] = {**payload["subject"], "id": "wrong"}
+    payload["input_manifest"] = [
+        {
+            **payload["input_manifest"][0],
+            "digest": "sha256:" + "d" * 64,
+        }
+    ]
+    payload["node_hash"] = "sha256:" + "d" * 64
+    payload["dependencies"] = [
+        {
+            "relation": "contains-source",
+            "target": "demo-skill.source.gateway",
+            "version": 1,
+            "node_hash": "sha256:" + "d" * 64,
+        }
+    ]
+    payload["certification_basis_hash"] = "sha256:" + "d" * 64
+    payload["certifier"] = {**CERTIFIER, "version": 2}
+    payload["checks"] = []
     _write_log(graph, node_id, [sign_certificate_payload(payload, key)])
 
-    status = _evaluate(tmp_path, graph, states, commit, public_key_root).nodes[node_id]
+    status = _evaluate(
+        tmp_path, graph, states, commit, public_key_root
+    ).nodes[node_id]
 
     assert not status.current
-    assert concern in status.concerns
+    assert status.concerns == (
+        "subject-mismatch",
+        "input-manifest-mismatch",
+        "node-hash-mismatch",
+        "dependency-mismatch",
+        "certification-basis-mismatch",
+        "certifier-mismatch",
+        "checks-mismatch",
+    )
 
 
 def _v6_facet_fixture(
     root: Path,
 ) -> tuple[object, dict[str, object], str, Path, object, str, str]:
-    graph, states, commit, public_key_root, _backend, key = _fixture(root)
+    graph, states, commit = _repository(root)
     graph = replace(graph, schema_version=6)
+    public_key_root = root / "public-keys"
+    public_key_root.mkdir()
+    backend = MemorySecretBackend()
+    key = load_or_create_certificate_signing_key(
+        public_key_root,
+        secret_backend=backend,
+    )
     node_id = "demo-skill.source.gateway"
     interface_id = f"{node_id}.interface.run"
     state = states[node_id]
@@ -909,9 +882,8 @@ def _v6_facet_fixture(
     return graph, states, commit, public_key_root, key, node_id, interface_id
 
 
-@pytest.fixture
-def v6_structured_certifier_fixture(tmp_path: Path):
-    fixture = _v6_facet_fixture(tmp_path)
+def _v6_structured_certifier_fixture(root: Path):
+    fixture = _v6_facet_fixture(root)
     graph, states, _commit, _public_key_root, _key, node_id, interface_id = fixture
     audit_interface = {
         "relation": "certified-under",
@@ -952,9 +924,8 @@ def _v6_structured_payload(
 
 def test_v6_structured_certifier_evidence_is_authoritative(
     tmp_path: Path,
-    v6_structured_certifier_fixture,
 ) -> None:
-    fixture = v6_structured_certifier_fixture
+    fixture = _v6_structured_certifier_fixture(tmp_path)
     graph, states, commit, public_key_root, _key, node_id, interface_id = fixture
 
     def write_and_evaluate(payload, target_id=node_id):
@@ -1043,67 +1014,8 @@ def test_v6_structured_certifier_evidence_is_authoritative(
     assert "certifier-mismatch" not in status.concerns
 
 
-@pytest.mark.parametrize(
-    ("facet_type", "field", "replacement", "concern_template"),
-    [
-        (
-            "interface",
-            "local_hash",
-            "sha256:" + "3" * 64,
-            "interface-hash-mismatch:{interface_id}",
-        ),
-        (
-            "interface",
-            "input_manifest",
-            [],
-            "interface-input-manifest-mismatch:{interface_id}",
-        ),
-        (
-            "interface",
-            "dependencies",
-            [
-                {
-                    "relation": "uses-source",
-                    "target": "demo-skill.source.gateway",
-                    "version": 1,
-                    "node_hash": "sha256:" + "4" * 64,
-                }
-            ],
-            "interface-dependency-mismatch:{interface_id}",
-        ),
-        (
-            "remainder",
-            "local_hash",
-            "sha256:" + "3" * 64,
-            "remainder-hash-mismatch",
-        ),
-        (
-            "remainder",
-            "input_manifest",
-            [],
-            "remainder-input-manifest-mismatch",
-        ),
-        (
-            "remainder",
-            "dependencies",
-            [
-                {
-                    "relation": "uses-source",
-                    "target": "demo-skill.source.gateway",
-                    "version": 1,
-                    "node_hash": "sha256:" + "4" * 64,
-                }
-            ],
-            "remainder-dependency-mismatch",
-        ),
-    ],
-)
-def test_v6_currentness_reports_exact_facet_mismatch(
+def test_v6_currentness_reports_exact_facet_and_payload_shape_mismatches(
     tmp_path: Path,
-    facet_type: str,
-    field: str,
-    replacement: object,
-    concern_template: str,
 ) -> None:
     (
         graph,
@@ -1126,10 +1038,24 @@ def test_v6_currentness_reports_exact_facet_mismatch(
     payload["facets"] = [
         dict(claim) for claim in certification_facet_claims(states[node_id])
     ]
-    target = next(
-        facet for facet in payload["facets"] if facet["type"] == facet_type
+    interface = next(
+        facet for facet in payload["facets"] if facet["type"] == "interface"
     )
-    target[field] = replacement
+    remainder = next(
+        facet for facet in payload["facets"] if facet["type"] == "remainder"
+    )
+    replacement_dependencies = [
+        {
+            "relation": "uses-source",
+            "target": "demo-skill.source.gateway",
+            "version": 1,
+            "node_hash": "sha256:" + "4" * 64,
+        }
+    ]
+    for facet in (interface, remainder):
+        facet["local_hash"] = "sha256:" + "3" * 64
+        facet["input_manifest"] = []
+        facet["dependencies"] = replacement_dependencies
     _write_log(graph, node_id, [sign_certificate_payload(payload, key)])
 
     report = evaluate_certificate_currentness(
@@ -1145,20 +1071,24 @@ def test_v6_currentness_reports_exact_facet_mismatch(
         allow_non_atomic=True,
     )
 
-    expected = concern_template.format(interface_id=interface_id)
-    assert expected in report.nodes[node_id].concerns
+    assert report.nodes[node_id].concerns == (
+        f"interface-hash-mismatch:{interface_id}",
+        f"interface-input-manifest-mismatch:{interface_id}",
+        f"interface-dependency-mismatch:{interface_id}",
+        "remainder-hash-mismatch",
+        "remainder-input-manifest-mismatch",
+        "remainder-dependency-mismatch",
+    )
 
+    reversed_facets = [
+        dict(claim)
+        for claim in reversed(certification_facet_claims(states[node_id]))
+    ]
+    assert certification_view_module._facet_currentness_concerns(
+        reversed_facets,
+        states[node_id],
+    ) == ("facet-order-mismatch",)
 
-def test_v6_currentness_rejects_noncanonical_facet_order(tmp_path: Path) -> None:
-    (
-        graph,
-        states,
-        commit,
-        public_key_root,
-        key,
-        node_id,
-        _interface_id,
-    ) = _v6_facet_fixture(tmp_path)
     payload = _payload(
         tmp_path,
         graph,
@@ -1167,11 +1097,7 @@ def test_v6_currentness_rejects_noncanonical_facet_order(tmp_path: Path) -> None
         commit,
         key.key_id,
     )
-    payload["certificate_schema_version"] = 3
-    payload["facets"] = [
-        dict(claim)
-        for claim in reversed(certification_facet_claims(states[node_id]))
-    ]
+    payload["certificate_schema_version"] = 2
     _write_log(graph, node_id, [sign_certificate_payload(payload, key)])
 
     report = evaluate_certificate_currentness(
@@ -1187,25 +1113,13 @@ def test_v6_currentness_rejects_noncanonical_facet_order(tmp_path: Path) -> None
         allow_non_atomic=True,
     )
 
-    assert "facet-order-mismatch" in report.nodes[node_id].concerns
+    assert "legacy-certificate-payload" in report.nodes[node_id].concerns
 
 
-def test_v6_currentness_reports_exact_structured_facet_deltas(
-    tmp_path: Path,
-) -> None:
-    (
-        graph,
-        states,
-        commit,
-        public_key_root,
-        key,
-        node_id,
-        interface_id,
-    ) = _v6_facet_fixture(tmp_path)
-    state = states[node_id]
-    interface = next(
-        facet for facet in state.facets if facet.facet_id == interface_id
-    )
+def test_v6_currentness_reports_exact_structured_facet_deltas() -> None:
+    node_id = "demo-skill.source.gateway"
+    interface_id = f"{node_id}.interface.run"
+    blueprint_path = "skills/demo-skill/blueprints/gateway.yaml"
     current_manifest = (
         {
             "path": "skills/demo-skill/current.txt",
@@ -1231,33 +1145,28 @@ def test_v6_currentness_reports_exact_structured_facet_deltas(
         "version": 1,
         "node_hash": "sha256:" + "3" * 64,
     }
-    updated_interface = replace(
-        interface,
+    interface = CertificationFacetHashState(
+        facet_id=interface_id,
+        facet_type="interface",
         local_hash="sha256:" + "e" * 64,
         input_manifest=current_manifest,
         dependency_hashes=(current_contract_dependency, current_dependency),
     )
-    states[node_id] = replace(
-        state,
-        facets=tuple(
-            updated_interface if facet.facet_id == interface_id else facet
-            for facet in state.facets
+    state = NodeHashState(
+        facets=(
+            CertificationFacetHashState(
+                facet_id=node_id,
+                facet_type="remainder",
+                local_hash="sha256:" + "f" * 64,
+            ),
+            interface,
         ),
     )
-    payload = _payload(
-        tmp_path,
-        graph,
-        states,
-        node_id,
-        commit,
-        key.key_id,
-    )
-    payload["certificate_schema_version"] = 3
-    payload["facets"] = [
-        dict(claim) for claim in certification_facet_claims(states[node_id])
+    payload_facets = [
+        dict(claim) for claim in certification_facet_claims(state)
     ]
     certified = next(
-        facet for facet in payload["facets"] if facet["id"] == interface_id
+        facet for facet in payload_facets if facet["id"] == interface_id
     )
     certified["input_manifest"] = [
         {
@@ -1281,22 +1190,12 @@ def test_v6_currentness_reports_exact_structured_facet_deltas(
             "interface_hash": "sha256:" + "1" * 64,
         }
     ]
-    _write_log(graph, node_id, [sign_certificate_payload(payload, key)])
-
-    report = evaluate_certificate_currentness(
-        graph,
-        states,
-        repo_root=tmp_path,
-        public_key_root=public_key_root,
-        source_commit=commit,
-        certifier_identity=CERTIFIER,
-        checks_by_node={current_id: CHECKS for current_id in graph.nodes},
-        certification_basis_paths=(),
-        schema_root=CANONICAL_SCHEMA_ROOT,
-        allow_non_atomic=True,
+    drift = certification_view_module._facet_drift(
+        payload_facets,
+        state,
+        blueprint_path=blueprint_path,
     )
 
-    drift = report.nodes[node_id].facet_drift
     assert len(drift) == 1
     assert drift[0].facet_id == interface_id
     assert drift[0].facet_type == "interface"
@@ -1326,89 +1225,77 @@ def test_v6_currentness_reports_exact_structured_facet_deltas(
         ),
     ]
 
-
-def test_v6_declaration_only_drift_names_owning_blueprint(
-    tmp_path: Path,
-) -> None:
-    (
-        graph,
-        states,
-        commit,
-        public_key_root,
-        key,
-        node_id,
-        interface_id,
-    ) = _v6_facet_fixture(tmp_path)
-    payload = _payload(
-        tmp_path,
-        graph,
-        states,
-        node_id,
-        commit,
-        key.key_id,
-    )
-    payload["certificate_schema_version"] = 3
-    payload["facets"] = [
-        dict(claim) for claim in certification_facet_claims(states[node_id])
+    payload_facets = [
+        dict(claim) for claim in certification_facet_claims(state)
     ]
     certified = next(
-        facet for facet in payload["facets"] if facet["id"] == interface_id
+        facet for facet in payload_facets if facet["id"] == interface_id
     )
     certified["local_hash"] = "sha256:" + "9" * 64
-    _write_log(graph, node_id, [sign_certificate_payload(payload, key)])
-
-    report = evaluate_certificate_currentness(
-        graph,
-        states,
-        repo_root=tmp_path,
-        public_key_root=public_key_root,
-        source_commit=commit,
-        certifier_identity=CERTIFIER,
-        checks_by_node={current_id: CHECKS for current_id in graph.nodes},
-        certification_basis_paths=(),
-        schema_root=CANONICAL_SCHEMA_ROOT,
-        allow_non_atomic=True,
+    drift = certification_view_module._facet_drift(
+        payload_facets,
+        state,
+        blueprint_path=blueprint_path,
     )
 
-    drift = report.nodes[node_id].facet_drift
     assert len(drift) == 1
     assert drift[0].facet_id == interface_id
     assert drift[0].local_hash_changed
     assert drift[0].declaration_changed
-    assert drift[0].blueprint_path == (
-        graph.nodes[node_id].blueprint_path.relative_to(tmp_path).as_posix()
-    )
+    assert drift[0].blueprint_path == blueprint_path
     assert drift[0].input_files == ()
     assert drift[0].dependencies == ()
 
 
-def test_stale_worklist_is_dependency_first_and_excludes_current_nodes(
-    tmp_path: Path,
-) -> None:
-    graph, states, _commit, _public_key_root, _backend, _key = _fixture(tmp_path)
-    dependency, requested = sorted(graph.nodes)[:2]
-    states[requested] = replace(
-        states[requested],
-        dependency_hashes=(
-            {
-                "relation": "contains-source",
-                "target": dependency,
-                "version": graph.nodes[dependency].version,
-                "node_hash": states[dependency].node_hash,
-            },
+@pytest.fixture
+def stale_worklist_fixture():
+    dependency = "dependency"
+    requested = "requested"
+    graph = SimpleNamespace(nodes={dependency: object(), requested: object()})
+    states = {
+        dependency: NodeHashState(node_hash="sha256:" + "1" * 64),
+        requested: NodeHashState(
+            dependency_hashes=(
+                {
+                    "relation": "contains-source",
+                    "target": dependency,
+                    "version": 1,
+                    "node_hash": "sha256:" + "1" * 64,
+                },
+            ),
         ),
-    )
+    }
+    return graph, states, dependency, requested
+
+
+@pytest.mark.parametrize(
+    ("requested_concerns", "expected_requested"),
+    [
+        (("node-hash-mismatch",), True),
+        (("dependency-not-current:dependency",), False),
+        (("dependency-mismatch", "dependency-not-current:dependency"), True),
+    ],
+)
+def test_stale_worklist_retains_only_nodes_requiring_renewal(
+    stale_worklist_fixture,
+    requested_concerns: tuple[str, ...],
+    expected_requested: bool,
+) -> None:
+    graph, states, dependency, requested = stale_worklist_fixture
     report = CertificateCurrentnessReport(
         nodes={
-            node_id: CertificateNodeCurrentness(
-                node_id=node_id,
-                current=node_id not in {requested, dependency},
-                concerns=("node-hash-mismatch",)
-                if node_id in {requested, dependency}
-                else (),
+            dependency: CertificateNodeCurrentness(
+                node_id=dependency,
+                current=False,
+                concerns=("checks-mismatch",),
                 certificate=None,
-            )
-            for node_id in graph.nodes
+            ),
+            requested: CertificateNodeCurrentness(
+                node_id=requested,
+                current=False,
+                concerns=requested_concerns,
+                certificate=None,
+            ),
         }
     )
 
@@ -1419,95 +1306,9 @@ def test_stale_worklist_is_dependency_first_and_excludes_current_nodes(
         (requested,),
     )
 
-    assert worklist == (dependency, requested)
-
-
-def test_stale_worklist_omits_consumer_with_only_propagated_staleness(
-    tmp_path: Path,
-) -> None:
-    graph, states, _commit, _public_key_root, _backend, _key = _fixture(tmp_path)
-    dependency, requested = sorted(graph.nodes)[:2]
-    states[requested] = replace(
-        states[requested],
-        dependency_hashes=(
-            {
-                "relation": "contains-source",
-                "target": dependency,
-                "version": graph.nodes[dependency].version,
-                "node_hash": states[dependency].node_hash,
-            },
-        ),
+    assert worklist == (
+        (dependency, requested) if expected_requested else (dependency,)
     )
-    report = CertificateCurrentnessReport(
-        nodes={
-            node_id: CertificateNodeCurrentness(
-                node_id=node_id,
-                current=node_id not in {requested, dependency},
-                concerns=(
-                    (f"dependency-not-current:{dependency}",)
-                    if node_id == requested
-                    else ("checks-mismatch",)
-                    if node_id == dependency
-                    else ()
-                ),
-                certificate=None,
-            )
-            for node_id in graph.nodes
-        }
-    )
-
-    worklist = certification_view_module.certificate_stale_worklist(
-        graph,
-        states,
-        report,
-        (requested,),
-    )
-
-    assert worklist == (dependency,)
-
-
-def test_stale_worklist_keeps_consumer_with_changed_dependency_claim(
-    tmp_path: Path,
-) -> None:
-    graph, states, _commit, _public_key_root, _backend, _key = _fixture(tmp_path)
-    dependency, requested = sorted(graph.nodes)[:2]
-    states[requested] = replace(
-        states[requested],
-        dependency_hashes=(
-            {
-                "relation": "contains-source",
-                "target": dependency,
-                "version": graph.nodes[dependency].version,
-                "node_hash": states[dependency].node_hash,
-            },
-        ),
-    )
-    report = CertificateCurrentnessReport(
-        nodes={
-            node_id: CertificateNodeCurrentness(
-                node_id=node_id,
-                current=node_id not in {requested, dependency},
-                concerns=(
-                    ("dependency-mismatch", f"dependency-not-current:{dependency}")
-                    if node_id == requested
-                    else ("checks-mismatch",)
-                    if node_id == dependency
-                    else ()
-                ),
-                certificate=None,
-            )
-            for node_id in graph.nodes
-        }
-    )
-
-    worklist = certification_view_module.certificate_stale_worklist(
-        graph,
-        states,
-        report,
-        (requested,),
-    )
-
-    assert worklist == (dependency, requested)
 
 
 def test_node_level_drift_reports_input_delta_and_blueprint_cause(
@@ -1515,6 +1316,8 @@ def test_node_level_drift_reports_input_delta_and_blueprint_cause(
 ) -> None:
     graph, states, commit, public_key_root, _backend, key = _fixture(tmp_path)
     node_id = "demo-skill"
+    original_state = states[node_id]
+    states[node_id] = original_state
     payload = _payload(
         tmp_path,
         graph,
@@ -1553,6 +1356,7 @@ def test_node_level_drift_reports_input_delta_and_blueprint_cause(
     assert not status.declaration_changed
     assert status.blueprint_path is None
 
+    states[node_id] = original_state
     payload = _payload(
         tmp_path,
         graph,
@@ -1578,15 +1382,7 @@ def test_node_level_drift_reports_input_delta_and_blueprint_cause(
         graph.nodes[node_id].blueprint_path.relative_to(tmp_path).as_posix()
     )
 
-
-def test_node_level_blueprint_input_delta_is_declaration_drift(
-    tmp_path: Path,
-) -> None:
-    graph, states, commit, public_key_root, _backend, key = _fixture(tmp_path)
-    node_id = "demo-skill"
-    blueprint_path = graph.nodes[node_id].blueprint_path.relative_to(
-        tmp_path
-    ).as_posix()
+    states[node_id] = original_state
     payload = _payload(
         tmp_path,
         graph,
@@ -1602,7 +1398,7 @@ def test_node_level_blueprint_input_delta_is_declaration_drift(
     payload["node_hash"] = "sha256:" + "8" * 64
     _write_log(graph, node_id, [sign_certificate_payload(payload, key)])
 
-    status = _evaluate(
+    blueprint_input_status = _evaluate(
         tmp_path,
         graph,
         states,
@@ -1610,18 +1406,13 @@ def test_node_level_blueprint_input_delta_is_declaration_drift(
         public_key_root,
     ).nodes[node_id]
 
-    assert [(delta.change, delta.path) for delta in status.input_files] == [
+    assert [(delta.change, delta.path) for delta in blueprint_input_status.input_files] == [
         ("modified", blueprint_path)
     ]
-    assert status.declaration_changed
-    assert status.blueprint_path == blueprint_path
+    assert blueprint_input_status.declaration_changed
+    assert blueprint_input_status.blueprint_path == blueprint_path
 
-
-def test_node_interface_dependency_drift_is_not_a_declaration_change(
-    tmp_path: Path,
-) -> None:
-    graph, states, commit, public_key_root, _backend, key = _fixture(tmp_path)
-    node_id = "demo-skill"
+    states[node_id] = original_state
     current_dependency = {
         "relation": "uses-export",
         "target": "provider",
@@ -1650,7 +1441,7 @@ def test_node_interface_dependency_drift_is_not_a_declaration_change(
     payload["node_hash"] = "sha256:" + "8" * 64
     _write_log(graph, node_id, [sign_certificate_payload(payload, key)])
 
-    status = _evaluate(
+    dependency_status = _evaluate(
         tmp_path,
         graph,
         states,
@@ -1660,53 +1451,17 @@ def test_node_interface_dependency_drift_is_not_a_declaration_change(
 
     assert [
         (delta.change, delta.relation, delta.target, delta.interface)
-        for delta in status.dependencies
+        for delta in dependency_status.dependencies
     ] == [
         ("modified", "uses-export", "provider", "provider.interface.run")
     ]
-    assert status.local_hash_changed
-    assert not status.declaration_changed
-    assert status.blueprint_path is None
+    assert dependency_status.local_hash_changed
+    assert not dependency_status.declaration_changed
+    assert dependency_status.blueprint_path is None
+    states[node_id] = original_state
 
 
-def test_v6_currentness_marks_pre_facet_payload_stale(tmp_path: Path) -> None:
-    (
-        graph,
-        states,
-        commit,
-        public_key_root,
-        key,
-        node_id,
-        _interface_id,
-    ) = _v6_facet_fixture(tmp_path)
-    payload = _payload(
-        tmp_path,
-        graph,
-        states,
-        node_id,
-        commit,
-        key.key_id,
-    )
-    payload["certificate_schema_version"] = 2
-    _write_log(graph, node_id, [sign_certificate_payload(payload, key)])
-
-    report = evaluate_certificate_currentness(
-        graph,
-        states,
-        repo_root=tmp_path,
-        public_key_root=public_key_root,
-        source_commit=commit,
-        certifier_identity=CERTIFIER,
-        checks_by_node={current_id: CHECKS for current_id in graph.nodes},
-        certification_basis_paths=(),
-        schema_root=CANONICAL_SCHEMA_ROOT,
-        allow_non_atomic=True,
-    )
-
-    assert "legacy-certificate-payload" in report.nodes[node_id].concerns
-
-
-def test_certificate_source_commits_are_issuance_provenance_not_currentness(
+def test_certificate_provenance_and_export_source_currentness(
     tmp_path: Path,
 ) -> None:
     graph, states, current_commit, public_key_root, _backend, key = _fixture(tmp_path)
@@ -1731,15 +1486,15 @@ def test_certificate_source_commits_are_issuance_provenance_not_currentness(
     )
 
     assert all(status.current for status in report.nodes.values())
-
-
-def test_export_requires_its_exact_source_but_containment_does_not_stale_module(
-    tmp_path: Path,
-) -> None:
-    graph, states, commit, public_key_root, _backend, _key = _fixture(tmp_path)
     certificate_log_path(graph.nodes["demo-skill.source.gateway"]).unlink()
 
-    report = _evaluate(tmp_path, graph, states, commit, public_key_root)
+    report = _evaluate(
+        tmp_path,
+        graph,
+        states,
+        current_commit,
+        public_key_root,
+    )
     decision = CertificateCurrentnessView(report).check_export(
         "demo-skill",
         "demo-skill.interface.run",
@@ -1753,7 +1508,9 @@ def test_export_requires_its_exact_source_but_containment_does_not_stale_module(
     assert decision.code == "source-certification-unavailable"
 
 
-def test_rotation_with_linked_new_final_entries_remains_current(tmp_path: Path) -> None:
+def test_rotation_and_history_integrity_select_only_a_valid_final_entry(
+    tmp_path: Path,
+) -> None:
     graph, states, commit, public_key_root, backend, old_key = _fixture(tmp_path)
     new_key = rotate_certificate_signing_key(public_key_root, secret_backend=backend)
     for node_id in _postorder(graph):
@@ -1767,10 +1524,6 @@ def test_rotation_with_linked_new_final_entries_remains_current(tmp_path: Path) 
     report = _evaluate(tmp_path, graph, states, commit, public_key_root)
 
     assert all(status.current for status in report.nodes.values())
-
-
-def test_broken_history_and_inactive_final_key_are_suspect(tmp_path: Path) -> None:
-    graph, states, commit, public_key_root, backend, old_key = _fixture(tmp_path)
     rotate_certificate_signing_key(public_key_root, secret_backend=backend)
 
     inactive = _evaluate(tmp_path, graph, states, commit, public_key_root)
@@ -1789,9 +1542,36 @@ def test_broken_history_and_inactive_final_key_are_suspect(tmp_path: Path) -> No
     assert "suspect-certificate-log" in broken.nodes[node_id].concerns
 
 
-def test_history_never_restores_an_older_matching_entry(tmp_path: Path) -> None:
+def test_schema_and_history_validation_rejects_every_invalid_entry_position(
+    tmp_path: Path,
+) -> None:
     graph, states, commit, public_key_root, _backend, key = _fixture(tmp_path)
     node_id = "demo-skill.source.gateway"
+
+    payload = _payload(tmp_path, graph, states, node_id, commit, key.key_id)
+    payload["unexpected_field"] = []
+    _write_log(graph, node_id, [sign_certificate_payload(payload, key)])
+
+    status = _evaluate(tmp_path, graph, states, commit, public_key_root).nodes[node_id]
+
+    assert not status.current
+    assert "invalid-certificate-schema" in status.concerns
+
+    historical_payload = _payload(
+        tmp_path, graph, states, node_id, commit, key.key_id
+    )
+    historical_payload["unexpected_field"] = []
+    historical = sign_certificate_payload(historical_payload, key)
+    final_payload = _payload(tmp_path, graph, states, node_id, commit, key.key_id)
+    final_payload["previous_entry_hash"] = certificate_entry_hash(historical)
+    final = sign_certificate_payload(final_payload, key)
+    _write_log(graph, node_id, [historical, final])
+
+    status = _evaluate(tmp_path, graph, states, commit, public_key_root).nodes[node_id]
+
+    assert not status.current
+    assert "invalid-certificate-schema" in status.concerns
+
     current = sign_certificate_payload(
         _payload(tmp_path, graph, states, node_id, commit, key.key_id), key
     )
@@ -1806,40 +1586,6 @@ def test_history_never_restores_an_older_matching_entry(tmp_path: Path) -> None:
     assert not status.current
     assert status.certificate == stale
     assert "certification-basis-mismatch" in status.concerns
-
-
-def test_schema_rejects_extra_certificate_data(tmp_path: Path) -> None:
-    graph, states, commit, public_key_root, _backend, key = _fixture(tmp_path)
-    node_id = "demo-skill.source.gateway"
-    payload = _payload(tmp_path, graph, states, node_id, commit, key.key_id)
-    payload["unexpected_field"] = []
-    _write_log(graph, node_id, [sign_certificate_payload(payload, key)])
-
-    status = _evaluate(tmp_path, graph, states, commit, public_key_root).nodes[node_id]
-
-    assert not status.current
-    assert "invalid-certificate-schema" in status.concerns
-
-
-def test_schema_rejects_invalid_historical_certificate_data(tmp_path: Path) -> None:
-    graph, states, commit, public_key_root, _backend, key = _fixture(tmp_path)
-    node_id = "demo-skill.source.gateway"
-    historical_payload = _payload(
-        tmp_path, graph, states, node_id, commit, key.key_id
-    )
-    historical_payload["unexpected_field"] = []
-    historical = sign_certificate_payload(historical_payload, key)
-    final_payload = _payload(tmp_path, graph, states, node_id, commit, key.key_id)
-    final_payload["previous_entry_hash"] = certificate_entry_hash(historical)
-    final = sign_certificate_payload(final_payload, key)
-    _write_log(graph, node_id, [historical, final])
-
-    status = _evaluate(
-        tmp_path, graph, states, commit, public_key_root
-    ).nodes[node_id]
-
-    assert not status.current
-    assert "invalid-certificate-schema" in status.concerns
 
 
 def test_zero_certificate_view_allows_only_exact_read_only_sync_fallback(
@@ -2063,7 +1809,7 @@ def test_repository_view_never_bootstraps_when_initial_state_is_not_clean(
     assert decision.code == "certification-unavailable"
 
 
-def test_repository_view_admits_only_exact_self_recertification_for_valid_stale_history(
+def test_repository_view_admits_only_valid_exact_self_recertification(
     tmp_path: Path,
 ) -> None:
     graph, states, commit = create_v4_repository(tmp_path)
@@ -2096,7 +1842,10 @@ def test_repository_view_admits_only_exact_self_recertification_for_valid_stale_
             key,
         )
         _write_log(graph, node_id, [signed[node_id]])
-    rotate_certificate_signing_key(public_key_root, secret_backend=backend)
+    active_key = rotate_certificate_signing_key(
+        public_key_root,
+        secret_backend=backend,
+    )
 
     view = repository_certification_view(tmp_path, expected_schema_version=4, schema_root=SCHEMA_ROOT)
     assert all(
@@ -2150,6 +1899,54 @@ def test_repository_view_admits_only_exact_self_recertification_for_valid_stale_
         pattern_name=None,
         argv=exact,
     ).certified
+
+    for node_id in certifier_targets:
+        _write_log(
+            graph,
+            node_id,
+            [
+                sign_certificate_payload(
+                    v4_payload(
+                        tmp_path,
+                        graph,
+                        states,
+                        node_id,
+                        commit,
+                        active_key.key_id,
+                    ),
+                    active_key,
+                )
+            ],
+        )
+    log_node_id = "node-certify.source.gateway"
+    _write_log(
+        graph,
+        log_node_id,
+        [
+            sign_certificate_payload(
+                v4_payload(
+                    tmp_path,
+                    graph,
+                    states,
+                    "node-certify",
+                    commit,
+                    active_key.key_id,
+                ),
+                active_key,
+            )
+        ],
+    )
+    state = derive_repository_certification_state(
+        tmp_path,
+        expected_schema_version=4,
+        schema_root=SCHEMA_ROOT,
+    )
+
+    assert "subject-mismatch" in state.currentness.nodes[log_node_id].concerns
+    assert not certification_view_module._certifier_renewal_state_admissible(
+        state,
+        repo_root=tmp_path,
+    )
 
 
 def test_partial_certifier_multi_root_closure_keeps_only_read_only_sync_fallback(
@@ -2277,10 +2074,36 @@ def test_partial_certifier_multi_root_closure_keeps_only_read_only_sync_fallback
     ).certified
 
 
-def test_renewal_rejects_nonprefix_second_root_provider_history(
+def test_renewal_accepts_only_valid_migrated_and_multi_root_prefixes(
     tmp_path: Path,
 ) -> None:
     state = _certifier_repository_with_provider_source(tmp_path)
+    migrated_state = replace(
+        state,
+        graph=replace(state.graph, schema_version=5),
+    )
+
+    assert certification_view_module._certifier_renewal_state_admissible(
+        migrated_state,
+        repo_root=tmp_path,
+    )
+
+    migrated_order = certification_view_module._certifier_target_postorder(
+        migrated_state
+    )
+    assert migrated_order
+    migrated_path = certificate_log_path(
+        migrated_state.graph.nodes[migrated_order[0]]
+    )
+    migrated_path.parent.mkdir(parents=True, exist_ok=True)
+    migrated_path.write_text("{}\n", encoding="utf-8")
+
+    assert not certification_view_module._certifier_renewal_state_admissible(
+        migrated_state,
+        repo_root=tmp_path,
+    )
+    migrated_path.unlink()
+
     order = certification_view_module._certifier_target_postorder(state)
     assert order == (
         "node-certify",
@@ -2317,67 +2140,6 @@ def test_renewal_rejects_nonprefix_second_root_provider_history(
             ],
         )
     state = derive_repository_certification_state(tmp_path, expected_schema_version=4, schema_root=SCHEMA_ROOT)
-
-    assert not certification_view_module._certifier_renewal_state_admissible(
-        state,
-        repo_root=tmp_path,
-    )
-
-
-def test_v5_renewal_accepts_empty_migrated_prefix_and_rejects_corrupt_history(
-    tmp_path: Path,
-) -> None:
-    state = _certifier_repository_with_provider_source(tmp_path)
-    state = replace(state, graph=replace(state.graph, schema_version=5))
-
-    assert certification_view_module._certifier_renewal_state_admissible(
-        state,
-        repo_root=tmp_path,
-    )
-
-    order = certification_view_module._certifier_target_postorder(state)
-    assert order
-    path = certificate_log_path(state.graph.nodes[order[0]])
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("{}\n", encoding="utf-8")
-
-    assert not certification_view_module._certifier_renewal_state_admissible(
-        state,
-        repo_root=tmp_path,
-    )
-
-
-def test_renewal_rejects_signed_entry_for_different_log_subject(
-    tmp_path: Path,
-) -> None:
-    create_v4_repository(tmp_path)
-    state = derive_repository_certification_state(tmp_path, expected_schema_version=4, schema_root=SCHEMA_ROOT)
-    public_key_root = certificate_public_key_root(tmp_path)
-    public_key_root.mkdir(parents=True)
-    key = load_or_create_certificate_signing_key(
-        public_key_root,
-        secret_backend=MemorySecretBackend(),
-    )
-    log_node_id = "node-certify.source.gateway"
-    _write_log(
-        state.graph,
-        log_node_id,
-        [
-            sign_certificate_payload(
-                v4_payload(
-                    tmp_path,
-                    state.graph,
-                    state.states,
-                    "node-certify",
-                    state.source_commit,
-                    key.key_id,
-                ),
-                key,
-            )
-        ],
-    )
-    state = derive_repository_certification_state(tmp_path, expected_schema_version=4, schema_root=SCHEMA_ROOT)
-    assert "subject-mismatch" in state.currentness.nodes[log_node_id].concerns
 
     assert not certification_view_module._certifier_renewal_state_admissible(
         state,

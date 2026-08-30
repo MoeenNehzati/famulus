@@ -4,18 +4,97 @@ from pathlib import Path
 
 import pytest
 
+import conftest as root_conftest
 from officina.blueprints.graph import (
+    BlueprintNode,
     BlueprintGraphError,
     InterfaceExport,
     RepositoryBlueprintGraph,
     _setup_requirements,
-    load_repository_blueprint_graph,
     setup_order,
 )
 
 
-ROOT = Path(__file__).resolve().parents[1]
+class _GraphFixtureRequest:
+    def __init__(self, candidate: object) -> None:
+        self.candidate = candidate
 
+    def getfixturevalue(self, name: str) -> object:
+        assert name == "graph"
+        return self.candidate
+
+
+def _ordinary_graph_with_paths(
+    module_root: object,
+    blueprint_path: object,
+    gateway_path: object,
+) -> RepositoryBlueprintGraph:
+    return RepositoryBlueprintGraph(
+        nodes={
+            "demo": BlueprintNode(
+                node_id="demo",
+                node_type="module",
+                version=1,
+                module_root=module_root,
+                blueprint_path=blueprint_path,
+                gateway_path=gateway_path,
+                declaration={},
+            )
+        },
+        node_edges=(),
+        exports={},
+        export_edges=(),
+        helper_edges=(),
+        certification_edges=(),
+    )
+
+
+def test_ordinary_repository_graph_checks_fallback_type_and_materialized_paths(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    relative = _ordinary_graph_with_paths(
+        Path("skills/demo"),
+        Path("skills/demo/blueprint.yaml"),
+        None,
+    )
+    loaded_roots = []
+
+    def load_fallback(root: Path) -> RepositoryBlueprintGraph:
+        loaded_roots.append(root)
+        return relative
+
+    monkeypatch.setattr(
+        root_conftest,
+        "load_repository_blueprint_graph",
+        load_fallback,
+    )
+    fixture = root_conftest.ordinary_repository_graph.__wrapped__
+
+    assert fixture(_GraphFixtureRequest(None)) is relative
+    assert loaded_roots == [root_conftest._REPOSITORY_ROOT]
+
+    with pytest.raises(TypeError, match="must be a RepositoryBlueprintGraph"):
+        fixture(_GraphFixtureRequest(object()))
+    with pytest.raises(TypeError, match="must be pathlib.Path values"):
+        fixture(
+            _GraphFixtureRequest(
+                _ordinary_graph_with_paths(
+                    "skills/demo",
+                    Path("blueprint.yaml"),
+                    None,
+                )
+            )
+        )
+    with pytest.raises(AssertionError, match="different materialized root"):
+        fixture(
+            _GraphFixtureRequest(
+                _ordinary_graph_with_paths(
+                    tmp_path,
+                    tmp_path / "blueprint.yaml",
+                    None,
+                )
+            )
+        )
 
 def _graph(requirements: dict[str, tuple[tuple[str, int], ...]]) -> RepositoryBlueprintGraph:
     return RepositoryBlueprintGraph(
@@ -51,12 +130,10 @@ def _export(
     )
 
 
-def test_repository_setup_order_is_explicit_and_dependency_first() -> None:
-    graph = load_repository_blueprint_graph(
-        ROOT,
-        schema_root=ROOT / "references" / "blueprint-schema",
-        expected_schema_version=6,
-    )
+def test_repository_setup_order_is_explicit_and_dependency_first(
+    ordinary_repository_graph: RepositoryBlueprintGraph,
+) -> None:
+    graph = ordinary_repository_graph
 
     assert setup_order(graph, "install-assistant-tools.interface.setup") == (
         "install-assistant-tools.interface.setup",
@@ -74,6 +151,17 @@ def test_repository_setup_order_is_explicit_and_dependency_first() -> None:
     assert setup_order(graph, "list-manager.interface.setup") == expected + (
         "list-manager.interface.setup",
     )
+    for module_id in (
+        "install-assistant-tools",
+        "connect-google",
+        "cloud-files",
+        "online-calendar",
+        "list-manager",
+    ):
+        assert (
+            graph.exports[f"{module_id}.interface.setup"].source_interface_id
+            == graph.exports[f"{module_id}.interface.default"].source_interface_id
+        )
 
 
 def test_setup_order_deduplicates_a_diamond() -> None:
@@ -190,23 +278,3 @@ def test_setup_requirements_reject_invalid_targets(
 
     with pytest.raises(BlueprintGraphError, match=message):
         _setup_requirements(exports)
-
-
-def test_setup_exports_alias_existing_default_behavior() -> None:
-    graph = load_repository_blueprint_graph(
-        ROOT,
-        schema_root=ROOT / "references" / "blueprint-schema",
-        expected_schema_version=6,
-    )
-
-    for module_id in (
-        "install-assistant-tools",
-        "connect-google",
-        "cloud-files",
-        "online-calendar",
-        "list-manager",
-    ):
-        assert (
-            graph.exports[f"{module_id}.interface.setup"].source_interface_id
-            == graph.exports[f"{module_id}.interface.default"].source_interface_id
-        )

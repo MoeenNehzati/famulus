@@ -458,29 +458,30 @@ def materialize_v4_repository(
     return commit
 
 
-def create_v4_repository(
+def load_v4_repository(
     root: Path,
     *,
-    extra_modules: tuple[str, ...] = (),
+    commit: str | None = None,
 ):
-    """Create a committed version-4 repository and compute its graph state.
+    """Load graph and hash state from an existing committed v4 repository.
 
     Intent
     ------
-    Return the canonical graph, node hashes, and source commit used by tests.
+    Derive destination-bound graph and hash objects without rematerializing Git.
 
     Rationale
     ---------
-    Callers that do not need signed certificates should stop after graph setup.
+    Repository bytes and Git objects can be copied between tests, but graph paths
+    and mutable hash state must be recomputed for each function-local destination.
 
     Pseudocode
     ----------
-    - commit = materialize_v4_repository(root)
+    - set resolved_commit = repository HEAD
+    - raise when supplied commit differs from resolved commit
     - graph = load_repository_blueprint_graph(root)
     - basis_paths = resolve_certification_basis_paths(root)
-    - set basis_hash = computed certification basis hash
     - states = compute_node_hash_states(graph)
-    - return graph, states, and commit
+    - return graph, states, and resolved commit
 
     Wraps
     -----
@@ -488,9 +489,6 @@ def create_v4_repository(
 
     InstantiationsFromRepo
     ----------------------
-    .materialize_v4_repository:
-      why:
-        constructs: "Creates and pins the committed fixture repository."
     officina.blueprints.graph.load_repository_blueprint_graph:
       why:
         constructs: "Loads the fixture's canonical blueprint graph."
@@ -507,7 +505,17 @@ def create_v4_repository(
       why:
         computes: "Hashes the fixture certification basis."
     """
-    commit = materialize_v4_repository(root, extra_modules=extra_modules)
+    resolved_commit = (
+        GitTestRepository(root)
+        .git("rev-parse", "HEAD")
+        .stdout.decode("ascii")
+        .strip()
+    )
+    if commit is not None and commit != resolved_commit:
+        raise ValueError(
+            f"supplied commit {commit} does not match repository HEAD "
+            f"{resolved_commit}"
+        )
     schema_root = root / "references" / "blueprint-schema"
     graph = load_repository_blueprint_graph(
         root,
@@ -528,7 +536,44 @@ def create_v4_repository(
         ),
         certification_basis_paths=basis_paths,
     )
-    return graph, states, commit
+    return graph, states, resolved_commit
+
+
+def create_v4_repository(
+    root: Path,
+    *,
+    extra_modules: tuple[str, ...] = (),
+):
+    """Create a committed version-4 repository and compute its graph state.
+
+    Intent
+    ------
+    Return the canonical graph, node hashes, and source commit used by tests.
+
+    Rationale
+    ---------
+    Callers that do not need signed certificates should stop after graph setup.
+
+    Pseudocode
+    ----------
+    - commit = materialize_v4_repository(root)
+    - return load_v4_repository(root, commit=commit)
+
+    Wraps
+    -----
+    - none
+
+    InstantiationsFromRepo
+    ----------------------
+    .materialize_v4_repository:
+      why:
+        constructs: "Creates and pins the committed fixture repository."
+    .load_v4_repository:
+      why:
+        constructs: "Loads destination-bound graph and hash state."
+    """
+    commit = materialize_v4_repository(root, extra_modules=extra_modules)
+    return load_v4_repository(root, commit=commit)
 
 
 def postorder(graph: object) -> tuple[str, ...]:

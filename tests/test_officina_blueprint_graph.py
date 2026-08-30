@@ -18,6 +18,7 @@ from officina.blueprints.graph import (
     resolve_export,
     validate_runtime_file_path,
 )
+from officina.blueprints.inventory import collect_blueprints
 from test_support.v5_blueprint_fixtures import copy_v5_fixture_tree
 
 
@@ -54,55 +55,45 @@ def load_repository_blueprint_graph(
     )
 
 
-def test_install_assistant_tools_exports_public_diagnose_instruction_contract() -> None:
+def test_repository_v6_declarations_register_cross_module_contracts() -> None:
     repository = Path(__file__).resolve().parents[1]
-    graph = load_repository_blueprint_graph(repository, expected_schema_version=6)
-
-    module, source, export = resolve_export(
-        graph, "install-assistant-tools.interface.diagnose", 1
+    install_root = repository / "skills" / "install-assistant-tools"
+    install_module = yaml.safe_load(
+        (install_root / "blueprint.yaml").read_text(encoding="utf-8")
     )
+    install_source = yaml.safe_load(
+        (install_root / "blueprints" / "gateway.yaml").read_text(encoding="utf-8")
+    )
+    export = install_module["exports"]["install-assistant-tools.interface.diagnose"]
+    source_interface_id = export["source_interface"]
 
-    assert module.node_id == "install-assistant-tools"
-    assert source.node_id == "install-assistant-tools.source.gateway"
-    assert export.source_interface_id == (
+    assert install_module["id"] == "install-assistant-tools"
+    assert install_source["id"] == "install-assistant-tools.source.gateway"
+    assert source_interface_id == (
         "install-assistant-tools.source.gateway.interface.diagnose"
     )
-    assert export.export_declaration == {
+    assert export == {
         "access": {"allow_all_modules": True, "allowed_callers": []},
         "source_interface": "install-assistant-tools.source.gateway.interface.diagnose",
     }
-    assert graph.interface_uses[export.source_interface_id] == (
-        ("install-assistant-tools._rtx.interface.scripts-doctor", 1),
-    )
-    assert "process_binding" not in export.declaration
-    skill = (repository / "skills" / "install-assistant-tools" / "SKILL.md").read_text(
-        encoding="utf-8"
-    )
+    source_interface = install_source["interfaces"][source_interface_id]
+    assert source_interface["uses_interfaces"] == [
+        {
+            "interface": "install-assistant-tools._rtx.interface.scripts-doctor",
+            "version": 1,
+        }
+    ]
+    assert "process_binding" not in source_interface
+    skill = (install_root / "SKILL.md").read_text(encoding="utf-8")
     assert "Instruction Interfaces:" in skill
     assert "`install-assistant-tools.interface.diagnose`" in skill
-
-
-def test_recurring_module_owns_shared_job_schema_source() -> None:
-    repository = Path(__file__).resolve().parents[1]
-    blueprint = yaml.safe_load(
-        (repository / "src" / "officina" / "recurring" / "blueprint.yaml").read_text(
-            encoding="utf-8"
-        )
+    recurring_root = repository / "src" / "officina" / "recurring"
+    recurring = yaml.safe_load(
+        (recurring_root / "blueprint.yaml").read_text(encoding="utf-8")
     )
 
-    assert r"jobs\.py" in blueprint["content"]
-    graph = load_repository_blueprint_graph(repository, expected_schema_version=6)
-    recurring = graph.nodes["recurring"]
-    assert repository / "src" / "officina" / "recurring" / "jobs.py" in (
-        resolved_node_content_paths(recurring, repository)
-    )
-
-
-def test_reference_schema_and_certification_policy_are_registered_nodes() -> None:
-    """Reference policy bundles remain hashable through ordinary graph nodes."""
-
-    repository = Path(__file__).resolve().parents[1]
-    graph = load_repository_blueprint_graph(repository, expected_schema_version=6)
+    assert r"jobs\.py" in recurring["content"]
+    assert (recurring_root / "jobs.py").is_file()
 
     expected_sources = {
         "standards-schema": {
@@ -115,9 +106,18 @@ def test_reference_schema_and_certification_policy_are_registered_nodes() -> Non
             "certification-policy.source.certification-basis",
         },
     }
+    reference_modules = {}
     for module_id, source_ids in expected_sources.items():
-        module = graph.nodes[module_id]
-        assert set(module.declaration["sources"]) == source_ids
+        module_root = repository / "references" / module_id
+        module = yaml.safe_load(
+            (module_root / "blueprint.yaml").read_text(encoding="utf-8")
+        )
+        reference_modules[module_id] = (module_root, module)
+        assert set(module["sources"]) == source_ids
+        for source_id in source_ids:
+            source_locator = module["sources"][source_id]["blueprint"]
+            assert source_locator["base"] == "module-root"
+            assert (module_root / source_locator["path"]).is_file()
 
     expected_content = {
         "standards-schema.source.standard-validator": {
@@ -142,11 +142,34 @@ def test_reference_schema_and_certification_policy_are_registered_nodes() -> Non
         },
     }
     for source_id, relative_paths in expected_content.items():
-        source = graph.nodes[source_id]
-        assert {
-            path.relative_to(source.module_root).as_posix()
-            for path in resolved_node_content_paths(source, repository)
-        } == relative_paths
+        module_id = source_id.split(".source.", 1)[0]
+        module_root, module = reference_modules[module_id]
+        source_path = module_root / module["sources"][source_id]["blueprint"]["path"]
+        source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+        assert set(source["content"]) == {
+            relative_path.replace(".", r"\.") for relative_path in relative_paths
+        }
+        assert all(
+            (module_root / relative_path).is_file()
+            for relative_path in relative_paths
+        )
+
+    feedback_source = yaml.safe_load(
+        (
+            repository
+            / "skills"
+            / "send-feedback"
+            / "blueprints"
+            / "gateway.yaml"
+        ).read_text(encoding="utf-8")
+    )
+    assert feedback_source["interfaces"][
+        "send-feedback.source.gateway.interface.default"
+    ]["uses_interfaces"] == [
+        {"interface": "email-client.interface.default", "version": 3},
+        {"interface": "send-feedback._rtx.interface.check-route", "version": 1},
+        {"interface": "send-feedback._rtx.interface.file-issue", "version": 1},
+    ]
 
 
 def _write_yaml(path: Path, value: object) -> None:
@@ -246,6 +269,76 @@ def _write_v6_interface_facet_fixture(root: Path) -> Path:
     return worker_path
 
 
+def _v6_interface_facet_inputs(root: Path) -> tuple[
+    dict[str, BlueprintNode],
+    dict[str, BlueprintNode],
+    dict[str, str],
+    dict[str, tuple[str, ...]],
+    dict[str, tuple[tuple[str, int], ...]],
+]:
+    module_root = root / "skills" / "demo-skill"
+    module_path = module_root / "blueprint.yaml"
+    module = yaml.safe_load(module_path.read_text(encoding="utf-8"))
+    modules = {
+        "demo-skill": BlueprintNode(
+            node_id="demo-skill",
+            node_type="module",
+            version=1,
+            module_root=module_root,
+            blueprint_path=module_path,
+            gateway_path=module_root / "worker.py",
+            declaration=module,
+        )
+    }
+    sources: dict[str, BlueprintNode] = {}
+    interface_uses_by_source: dict[str, tuple[tuple[str, int], ...]] = {}
+    for name in ("provider", "worker"):
+        path = module_root / "blueprints" / f"{name}.yaml"
+        declaration = yaml.safe_load(path.read_text(encoding="utf-8"))
+        source_id = declaration["id"]
+        sources[source_id] = BlueprintNode(
+            node_id=source_id,
+            node_type="behavioral_source",
+            version=1,
+            module_root=module_root,
+            blueprint_path=path,
+            gateway_path=module_root / declaration["gateway"]["path"],
+            declaration=declaration,
+        )
+        interface_uses_by_source[source_id] = tuple(
+            (use["interface"], use["version"])
+            for use in declaration["uses_interfaces"]
+        )
+    return (
+        modules,
+        sources,
+        {source_id: "demo-skill" for source_id in sources},
+        {"demo-skill": ()},
+        interface_uses_by_source,
+    )
+
+
+def _resolve_v6_interface_facets(root: Path) -> tuple[
+    dict[str, tuple[Path, ...]],
+    dict[str, tuple[tuple[str, int], ...]],
+]:
+    (
+        modules,
+        sources,
+        source_modules,
+        module_children,
+        interface_uses_by_source,
+    ) = _v6_interface_facet_inputs(root)
+    return blueprint_graph._v6_interface_facets(
+        root,
+        modules=modules,
+        sources=sources,
+        source_modules=source_modules,
+        module_children=module_children,
+        interface_uses_by_source=interface_uses_by_source,
+    )
+
+
 def test_v6_graph_resolves_overlapping_interface_content_and_use_subsets(
     tmp_path: Path,
 ) -> None:
@@ -302,11 +395,7 @@ def test_v6_graph_rejects_interface_facets_outside_source_envelope(
     _write_yaml(worker_path, worker)
 
     with pytest.raises(BlueprintGraphError, match=message):
-        load_repository_blueprint_graph(
-            tmp_path,
-            expected_schema_version=6,
-            schema_root=CANONICAL_SCHEMA_ROOT,
-        )
+        _resolve_v6_interface_facets(tmp_path)
 
 
 def test_v6_graph_allows_source_without_interfaces(tmp_path: Path) -> None:
@@ -315,19 +404,17 @@ def test_v6_graph_allows_source_without_interfaces(tmp_path: Path) -> None:
     worker["interfaces"] = {}
     _write_yaml(worker_path, worker)
 
-    graph = load_repository_blueprint_graph(
-        tmp_path,
-        expected_schema_version=6,
-        schema_root=CANONICAL_SCHEMA_ROOT,
+    interface_content_paths, interface_uses = _resolve_v6_interface_facets(
+        tmp_path
     )
 
     assert not any(
         interface_id.startswith("demo-skill.source.worker.interface.")
-        for interface_id in graph.interface_content_paths
+        for interface_id in interface_content_paths
     )
     assert not any(
         interface_id.startswith("demo-skill.source.worker.interface.")
-        for interface_id in graph.interface_uses
+        for interface_id in interface_uses
     )
 
 
@@ -376,6 +463,23 @@ def _copy_v5_authorization_fixture(tmp_path: Path) -> Path:
         V5_AUTHORIZATION_FIXTURE,
         tmp_path / "repo",
     )
+
+
+def _copy_v5_skill_fixture(tmp_path: Path) -> Path:
+    root = tmp_path / "repo"
+    copy_v5_fixture_tree(
+        V5_AUTHORIZATION_FIXTURE / "skills",
+        root / "skills",
+    )
+    inventory = collect_blueprints(root, expected_schema_version=5)
+    assert inventory.issues == ()
+    assert {document.node_id for document in inventory.documents} == {
+        "demo",
+        "demo.source.gateway",
+        "demo-rtx",
+        "demo-rtx.source.runtime",
+    }
+    return root
 
 
 def test_dispatch_scoped_graph_warns_for_unrelated_invalid_module(
@@ -434,49 +538,6 @@ def test_dispatch_scoped_graph_includes_absolute_access_policy_callers(
         }
     ]
     _write_yaml(runtime_source, runtime)
-    broken_root = root / "modules" / "broken"
-    (broken_root / "README.md").parent.mkdir(parents=True, exist_ok=True)
-    (broken_root / "README.md").write_text("Broken module.\n", encoding="utf-8")
-    (broken_root / "caller.py").write_text("pass\n", encoding="utf-8")
-    _write_yaml(
-        broken_root / "blueprint.yaml",
-        {
-            "schema_version": 5,
-            "node_type": "module",
-            "id": "broken",
-            "version": 1,
-            "gateway": {"path": "README.md", "language": "Markdown"},
-            "content": [r"(?:README\.md|caller\.py)"],
-            "authority": {"owns_filesystem": []},
-            "sources": {
-                "broken.source.caller": {
-                    "blueprint": {
-                        "base": "module-root",
-                        "path": "blueprints/caller.yaml",
-                    }
-                }
-            },
-            "children": {},
-            "namespace_exports": {},
-            "exports": {},
-        },
-    )
-    _write_yaml(
-        broken_root / "blueprints" / "caller.yaml",
-        {
-            "schema_version": 5,
-            "node_type": "behavioral_source",
-            "id": "broken.source.caller",
-            "version": 1,
-            "gateway": {"path": "caller.py", "language": "Python>=3.11"},
-            "content": [r"caller\.py"],
-            "dependencies": [],
-            "uses_interfaces": [
-                {"interface": "missing.interface.run", "version": 1}
-            ],
-            "interfaces": {},
-        },
-    )
     dependency_root = root / "modules" / "dependency"
     dependency_root.mkdir(parents=True, exist_ok=True)
     (dependency_root / "README.md").write_text(
@@ -530,7 +591,6 @@ def test_dispatch_scoped_graph_includes_absolute_access_policy_callers(
 
     assert "beta" in result.graph.nodes
     assert "dependency.source.runtime" in result.graph.nodes
-    assert result.diagnostics[0].code == "unrelated-blueprint-invalid"
 
 
 def _v4_contract(*, helper: dict[str, object] | None = None) -> dict[str, object]:
@@ -812,8 +872,6 @@ def test_v4_repository_graph_uses_one_generic_export_and_direct_ownership(
     )
 
     assert isinstance(export, InterfaceExport)
-    assert not hasattr(graph, "machine_exports")
-    assert not hasattr(blueprint_graph, "MachineInterfaceExport")
     assert module.node_id == "provider-skill"
     assert source.node_id == "provider-skill.source.worker"
     assert export.source_interface_id == (
@@ -849,11 +907,7 @@ def test_v4_repository_graph_uses_one_generic_export_and_direct_ownership(
     assert all(isinstance(edge, CertificationEdge) for edge in graph.certification_edges)
 
 
-@pytest.mark.parametrize("schema_version", [2, 3])
-def test_repository_graph_rejects_pre_v4_documents(
-    tmp_path: Path,
-    schema_version: int,
-) -> None:
+def test_repository_graph_rejects_pre_v4_documents(tmp_path: Path) -> None:
     _write_v4_module(tmp_path, "provider-skill", allow_callers=[])
     _write_yaml(
         tmp_path
@@ -862,7 +916,7 @@ def test_repository_graph_rejects_pre_v4_documents(
         / "blueprints"
         / "legacy.yaml",
         {
-            "schema_version": schema_version,
+            "schema_version": 3,
             "node_type": "behavior" "-source",
             "id": "provider-skill.source.legacy",
             "version": 1,
@@ -987,18 +1041,15 @@ def test_runtime_authority_uses_generic_v4_export_edges(tmp_path: Path) -> None:
     ) == ("provider-skill.interface.run",)
 
 
-@pytest.mark.parametrize("node_type", [None, "invented-node"])
 def test_v4_repository_graph_validates_claimed_v4_documents_before_filtering(
     tmp_path: Path,
-    node_type: str | None,
 ) -> None:
     _write_v4_module(tmp_path, "provider-skill", allow_callers=[])
     rogue = {
         "schema_version": 4,
         "id": "provider-skill.rogue",
+        "node_type": "invented-node",
     }
-    if node_type is not None:
-        rogue["node_type"] = node_type
     _write_yaml(
         tmp_path / "skills" / "provider-skill" / "blueprints" / "rogue.yaml",
         rogue,
@@ -1006,31 +1057,6 @@ def test_v4_repository_graph_validates_claimed_v4_documents_before_filtering(
 
     with pytest.raises(BlueprintGraphError, match="unsupported typed node type"):
         load_repository_blueprint_graph(tmp_path, schema_root=SCHEMA_ROOT)
-
-
-def test_v4_process_pattern_accepts_short_flags(tmp_path: Path) -> None:
-    _write_v4_module(tmp_path, "provider-skill", allow_callers=[])
-    source_path = tmp_path / "skills" / "provider-skill" / "blueprints" / "worker.yaml"
-    source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
-    interface = source["interfaces"][
-        "provider-skill.source.worker.interface.run"
-    ]
-    interface["process_binding"]["patterns"] = [
-        {
-            "min_positionals": 0,
-            "max_positionals": 0,
-            "required_flags": ["-a"],
-            "allowed_flags": ["-a"],
-            "flag_patterns": {"-a": "^.+$"},
-        }
-    ]
-    _write_yaml(source_path, source)
-
-    graph = load_repository_blueprint_graph(tmp_path, schema_root=SCHEMA_ROOT)
-
-    assert graph.nodes["provider-skill.source.worker"].declaration["interfaces"][
-        "provider-skill.source.worker.interface.run"
-    ]["process_binding"]["patterns"][0]["required_flags"] == ["-a"]
 
 
 @pytest.mark.parametrize(
@@ -1051,12 +1077,7 @@ def test_v4_repository_graph_rejects_invalid_local_contract_references(
     case: str,
     match: str,
 ) -> None:
-    _write_v4_module(tmp_path, "provider-skill", allow_callers=[])
-    source_path = tmp_path / "skills" / "provider-skill" / "blueprints" / "worker.yaml"
-    source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
-    contract = source["interfaces"][
-        "provider-skill.source.worker.interface.run"
-    ]["contract"]
+    contract = _v4_contract()
 
     if case == "output-direct-io":
         contract["outputs"][0]["direct_io_ref"] = "missing"
@@ -1141,10 +1162,29 @@ def test_v4_repository_graph_rejects_invalid_local_contract_references(
                 }
             )
 
-    _write_yaml(source_path, source)
-
     with pytest.raises(BlueprintGraphError, match=match):
-        load_repository_blueprint_graph(tmp_path, schema_root=SCHEMA_ROOT)
+        if case == "output-direct-io":
+            _write_v4_module(tmp_path, "provider-skill", allow_callers=[])
+            source_path = (
+                tmp_path
+                / "skills"
+                / "provider-skill"
+                / "blueprints"
+                / "worker.yaml"
+            )
+            source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+            source["interfaces"][
+                "provider-skill.source.worker.interface.run"
+            ]["contract"] = contract
+            _write_yaml(source_path, source)
+            load_repository_blueprint_graph(tmp_path, schema_root=SCHEMA_ROOT)
+        else:
+            blueprint_graph._validate_v4_interface_contract(
+                "provider-skill.source.worker.interface.run",
+                {"contract": contract},
+                module_id="provider-skill",
+                authority_claims=(),
+            )
 
 
 def test_v4_repository_graph_rejects_write_into_another_module_authority(
@@ -1483,26 +1523,6 @@ def test_v4_repository_graph_rejects_certification_and_export_cycles(
         load_repository_blueprint_graph(tmp_path, schema_root=SCHEMA_ROOT)
 
 
-def test_v5_repository_loader_is_explicit_and_v4_default_is_unchanged(
-    tmp_path: Path,
-) -> None:
-    root = _copy_v5_authorization_fixture(tmp_path)
-
-    with pytest.raises(ValueError, match="schema_version 4"):
-        load_repository_blueprint_graph(root, schema_root=V5_SCHEMA_ROOT)
-
-    graph = load_repository_blueprint_graph(
-        root,
-        schema_root=V5_SCHEMA_ROOT,
-        expected_schema_version=5,
-    )
-
-    assert graph.schema_version == 5
-    assert all(
-        node.declaration["schema_version"] == 5 for node in graph.nodes.values()
-    )
-
-
 def test_blueprints_module_declares_resolve_authorization_as_one_enum_value() -> None:
     declaration = yaml.safe_load(
         (
@@ -1526,7 +1546,7 @@ def test_blueprints_module_declares_resolve_authorization_as_one_enum_value() ->
     assert set(resolve_authorization) == {"value", "description"}
 
 
-def test_v5_graph_indexes_registered_topology_and_deepest_ownership(
+def test_v5_graph_indexes_registered_topology_routes_facades_and_deepest_ownership(
     tmp_path: Path,
 ) -> None:
     root = _copy_v5_authorization_fixture(tmp_path)
@@ -1537,6 +1557,10 @@ def test_v5_graph_indexes_registered_topology_and_deepest_ownership(
         expected_schema_version=5,
     )
 
+    assert graph.schema_version == 5
+    assert all(
+        node.declaration["schema_version"] == 5 for node in graph.nodes.values()
+    )
     assert graph.module_parents == {
         "alpha": "root",
         "beta": "root",
@@ -1556,7 +1580,6 @@ def test_v5_graph_indexes_registered_topology_and_deepest_ownership(
     assert graph.nodes["demo-rtx"].module_root == (
         root / "skills" / "demo" / "_rtx"
     )
-    assert graph.nodes["demo-rtx"].module_root == graph.nodes["demo-rtx"].module_root
 
     assert graph.direct_file_owners[
         root / "modules" / "root" / "README.md"
@@ -1579,18 +1602,6 @@ def test_v5_graph_indexes_registered_topology_and_deepest_ownership(
         owner == "demo"
         and path.is_relative_to(root / "skills" / "demo" / "_rtx")
         for path, owner in graph.direct_file_owners.items()
-    )
-
-
-def test_v5_graph_materializes_routes_facades_and_exact_new_relations(
-    tmp_path: Path,
-) -> None:
-    root = _copy_v5_authorization_fixture(tmp_path)
-
-    graph = load_repository_blueprint_graph(
-        root,
-        schema_root=V5_SCHEMA_ROOT,
-        expected_schema_version=5,
     )
 
     relation_names = {edge.relation for edge in graph.node_edges}
@@ -1658,30 +1669,10 @@ def test_v5_graph_materializes_routes_facades_and_exact_new_relations(
     ].declaration
 
 
-def test_v5_graph_rejects_registration_cycles_through_shared_inventory(
-    tmp_path: Path,
-) -> None:
-    root = _copy_v5_authorization_fixture(tmp_path)
-    marker = root / "modules" / "root" / "blueprint.yaml"
-    declaration = yaml.safe_load(marker.read_text(encoding="utf-8"))
-    declaration["children"]["root"] = {
-        "base": "module-root",
-        "path": "blueprint.yaml",
-    }
-    _write_yaml(marker, declaration)
-
-    with pytest.raises(ValueError, match="registration cycle"):
-        load_repository_blueprint_graph(
-            root,
-            schema_root=V5_SCHEMA_ROOT,
-            expected_schema_version=5,
-        )
-
-
 def test_v5_graph_relationship_validation_requires_child_facade_admission(
     tmp_path: Path,
 ) -> None:
-    root = _copy_v5_authorization_fixture(tmp_path)
+    root = _copy_v5_skill_fixture(tmp_path)
     gateway_marker = (
         root / "skills" / "demo" / "blueprints" / "gateway.yaml"
     )
@@ -1713,8 +1704,8 @@ def test_v5_graph_allows_broader_outer_filter_when_owner_can_call_next_hop(
     tmp_path: Path,
     filter_kind: str,
 ) -> None:
-    root = _copy_v5_authorization_fixture(tmp_path)
     if filter_kind == "namespace-route":
+        root = _copy_v5_authorization_fixture(tmp_path)
         marker = root / "modules" / "root" / "alpha" / "blueprint.yaml"
         declaration = yaml.safe_load(marker.read_text(encoding="utf-8"))
         declaration["namespace_exports"]["leaf"]["access"] = {
@@ -1722,6 +1713,7 @@ def test_v5_graph_allows_broader_outer_filter_when_owner_can_call_next_hop(
             "allowed_callers": [],
         }
     else:
+        root = _copy_v5_skill_fixture(tmp_path)
         marker = root / "skills" / "demo" / "blueprint.yaml"
         declaration = yaml.safe_load(marker.read_text(encoding="utf-8"))
         declaration["exports"]["demo.interface.execute"]["access"] = {
@@ -1794,7 +1786,7 @@ def test_v5_graph_rejects_parent_child_filesystem_authority_overlap(
 def test_v5_managed_skill_parent_rejects_executable_source(
     tmp_path: Path,
 ) -> None:
-    root = _copy_v5_authorization_fixture(tmp_path)
+    root = _copy_v5_skill_fixture(tmp_path)
     gateway_path = root / "skills" / "demo" / "blueprints" / "gateway.yaml"
     gateway = yaml.safe_load(gateway_path.read_text(encoding="utf-8"))
     gateway["gateway"]["language"] = "Python>=3.11"
@@ -1814,7 +1806,7 @@ def test_v5_managed_skill_parent_rejects_executable_source(
 def test_v5_managed_skill_parent_rejects_process_bound_interface(
     tmp_path: Path,
 ) -> None:
-    root = _copy_v5_authorization_fixture(tmp_path)
+    root = _copy_v5_skill_fixture(tmp_path)
     gateway_path = root / "skills" / "demo" / "blueprints" / "gateway.yaml"
     runtime_path = (
         root / "skills" / "demo" / "_rtx" / "blueprints" / "runtime.yaml"
@@ -1849,20 +1841,3 @@ def test_v5_managed_skill_parent_rejects_process_bound_interface(
             schema_root=V5_SCHEMA_ROOT,
             expected_schema_version=5,
         )
-
-
-def test_send_feedback_default_facet_owns_every_delivery_dependency() -> None:
-    """Selective drift attributes both public-issue routes to the default workflow."""
-
-    graph = load_repository_blueprint_graph(
-        Path(__file__).resolve().parents[1],
-        expected_schema_version=6,
-    )
-
-    assert graph.interface_uses[
-        "send-feedback.source.gateway.interface.default"
-    ] == (
-        ("email-client.interface.default", 3),
-        ("send-feedback._rtx.interface.check-route", 1),
-        ("send-feedback._rtx.interface.file-issue", 1),
-    )

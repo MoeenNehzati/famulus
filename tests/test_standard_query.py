@@ -5,30 +5,161 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import shutil
+from typing import Any
 
+import pytest
 import yaml
 
-from officina.standards.query import Interface, query
+from officina.standards.extractor import extract_standard
+from officina.standards.query import (
+    Interface,
+    query,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PYTHON_MODULE_STANDARD = Path(
     "references/node-standards/python-module.standard.yaml"
 )
+REFACTORING_STANDARD = Path("references/node-standards/refactoring.standard.yaml")
+REFACTOR_FACTS = {"task.kind": "refactor"}
+REFACTOR_QUERY = {
+    "filter": {
+        "path": "$section",
+        "op": "regex",
+        "pattern": (
+            r"^(standards|imports|links|artifacts|checks|tests|assurances|"
+            r"semantic_reviews|evidence_claims)$"
+        ),
+    },
+    "select": "all",
+}
+ISOLATED_REFACTORING_QUERY_FILES = (
+    Path("references/standards-schema/validate_standard_v6.py"),
+    Path("references/standards-schema/standard-v6.schema.json"),
+    Path("references/node-standards/refactoring.standard.yaml"),
+)
 
 
-def test_explicit_query_returns_the_complete_deduplicated_import_closure() -> None:
-    """Dropping or duplicating a transitively imported document breaks the result."""
+def test_unrelated_invalid_blueprint_cannot_block_an_explicit_query(
+    tmp_path: Path,
+) -> None:
+    """Reintroducing repository blueprint discovery would reject this fixture."""
+
+    for relative_path in ISOLATED_REFACTORING_QUERY_FILES:
+        destination = tmp_path / relative_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(REPO_ROOT / relative_path, destination)
+    unrelated = tmp_path / "skills" / "broken"
+    unrelated.mkdir(parents=True)
+    (unrelated / "blueprint.yaml").write_text("not: [valid\n", encoding="utf-8")
 
     result = query(
-        REPO_ROOT,
-        PYTHON_MODULE_STANDARD,
-        facts={"task.kind": "refactor"},
+        tmp_path,
+        REFACTORING_STANDARD,
+        facts=REFACTOR_FACTS,
     )
 
-    assert result["standard"] == PYTHON_MODULE_STANDARD.as_posix()
-    assert result["root_document"] == "node-standards.python-module"
-    document_ids = [document["id"] for document in result["documents"]]
+    assert result["standard"] == REFACTORING_STANDARD.as_posix()
+    assert result["root_document"] == "node-standards.refactoring"
+    assert [document["id"] for document in result["documents"]] == [
+        "node-standards.refactoring"
+    ]
+
+
+def test_every_view_preserves_root_and_closure_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every projection preserves one complete, immutable live closure."""
+
+    selected = {
+        "document": "node-standards.python-ood",
+        "ref": "python-ood.behavioral-contract#preserve-observables",
+    }
+    record_query = {
+        "filter": {"path": "$kind", "op": "eq", "value": "definition"},
+        "select": ["document", "id"],
+    }
+    extraction_calls: list[
+        tuple[Path, Path, dict[str, Any] | None, dict[str, Any]]
+    ] = []
+    captured_extraction: dict[str, dict[str, Any]] = {}
+
+    def capture_python_module_extraction(
+        repo_root: Path,
+        standard_path: Path,
+        *,
+        facts: dict[str, Any] | None,
+        query: dict[str, Any],
+    ) -> dict[str, Any]:
+        extraction_calls.append((repo_root, standard_path, facts, query))
+        extracted = extract_standard(
+            repo_root,
+            standard_path,
+            facts=facts,
+            query=query,
+        )
+        captured_extraction["value"] = extracted
+        return extracted
+
+    monkeypatch.setattr(
+        "officina.standards.query.extract_standard",
+        capture_python_module_extraction,
+    )
+    requirements = query(
+        REPO_ROOT,
+        PYTHON_MODULE_STANDARD,
+        facts=REFACTOR_FACTS,
+    )
+    extraction = captured_extraction["value"]
+    extraction_snapshot = json.dumps(extraction, sort_keys=True)
+
+    def reuse_python_module_extraction(
+        repo_root: Path,
+        standard_path: Path,
+        *,
+        facts: dict[str, Any] | None,
+        query: dict[str, Any],
+    ) -> dict[str, Any]:
+        extraction_calls.append((repo_root, standard_path, facts, query))
+        return extraction
+
+    monkeypatch.setattr(
+        "officina.standards.query.extract_standard",
+        reuse_python_module_extraction,
+    )
+    results = [
+        requirements,
+        query(
+            REPO_ROOT,
+            PYTHON_MODULE_STANDARD,
+            facts=REFACTOR_FACTS,
+            view="context",
+            refs=[selected],
+        ),
+        query(
+            REPO_ROOT,
+            PYTHON_MODULE_STANDARD,
+            facts=REFACTOR_FACTS,
+            view="remedies",
+            refs=[selected],
+        ),
+        query(
+            REPO_ROOT,
+            PYTHON_MODULE_STANDARD,
+            facts=REFACTOR_FACTS,
+            view="full",
+        ),
+        query(
+            REPO_ROOT,
+            PYTHON_MODULE_STANDARD,
+            facts=REFACTOR_FACTS,
+            record_query=record_query,
+        ),
+    ]
+
+    assert requirements["standard"] == PYTHON_MODULE_STANDARD.as_posix()
+    document_ids = [document["id"] for document in requirements["documents"]]
     assert set(document_ids) >= {
         "node-standards.python-module",
         "node-standards.module",
@@ -37,73 +168,47 @@ def test_explicit_query_returns_the_complete_deduplicated_import_closure() -> No
         "node-standards.refactoring",
     }
     assert len(document_ids) == len(set(document_ids))
-    assert result["requirements"]["true"]
+    assert requirements["requirements"]["true"]
     assert all(
         requirement["document"] in document_ids
-        for state in result["requirements"].values()
+        for state in requirements["requirements"].values()
         for requirement in state
     )
 
-
-def test_unrelated_invalid_blueprint_cannot_block_an_explicit_query(
-    tmp_path: Path,
-) -> None:
-    """Reintroducing repository blueprint discovery would reject this fixture."""
-
-    shutil.copytree(REPO_ROOT / "references", tmp_path / "references")
-    unrelated = tmp_path / "skills" / "broken"
-    unrelated.mkdir(parents=True)
-    (unrelated / "blueprint.yaml").write_text("not: [valid\n", encoding="utf-8")
-
-    result = query(
-        tmp_path,
-        PYTHON_MODULE_STANDARD,
-        facts={"task.kind": "refactor"},
-    )
-
-    assert result["root_document"] == "node-standards.python-module"
-
-
-def test_every_view_preserves_root_and_closure_metadata() -> None:
-    """A projection must not hide which authoritative documents were queried."""
-
-    facts = {"task.kind": "refactor"}
-    selected = {
-        "document": "node-standards.python-ood",
-        "ref": "python-ood.behavioral-contract#preserve-observables",
-    }
-    results = [
-        query(REPO_ROOT, PYTHON_MODULE_STANDARD, facts=facts),
-        query(
-            REPO_ROOT,
-            PYTHON_MODULE_STANDARD,
-            facts=facts,
-            view="context",
-            refs=[selected],
-        ),
-        query(
-            REPO_ROOT,
-            PYTHON_MODULE_STANDARD,
-            facts=facts,
-            view="remedies",
-            refs=[selected],
-        ),
-        query(REPO_ROOT, PYTHON_MODULE_STANDARD, facts=facts, view="full"),
-        query(
-            REPO_ROOT,
-            PYTHON_MODULE_STANDARD,
-            facts=facts,
-            record_query={
-                "filter": {"path": "$kind", "op": "eq", "value": "definition"},
-                "select": ["document", "id"],
-            },
-        ),
-    ]
-
-    expected_documents = results[0]["documents"]
+    expected_documents = extraction["documents"]
     for result in results:
+        assert result["repository_root"] == str(REPO_ROOT.resolve())
         assert result["root_document"] == "node-standards.python-module"
         assert result["documents"] == expected_documents
+
+    requirements, context, remedies, full, records = results
+    assert requirements["view"] == "requirements" and {
+        "requirements",
+        "context_index",
+    } <= requirements.keys()
+    assert context["view"] == "context" and "context" in context
+    assert remedies["view"] == "remedies" and {
+        "remedies",
+        "procedures",
+    } <= remedies.keys()
+    assert full["view"] == "full" and {
+        "items",
+        "remedies",
+        "evidence",
+        "artifacts",
+    } <= full.keys()
+    assert records["view"] == "query" and "records" in records
+    assert extraction_calls == [
+        (REPO_ROOT.resolve(), PYTHON_MODULE_STANDARD, REFACTOR_FACTS, query_spec)
+        for query_spec in (
+            REFACTOR_QUERY,
+            REFACTOR_QUERY,
+            REFACTOR_QUERY,
+            REFACTOR_QUERY,
+            record_query,
+        )
+    ]
+    assert json.dumps(extraction, sort_keys=True) == extraction_snapshot
 
 
 def test_process_interface_accepts_a_standard_path_not_a_target() -> None:

@@ -22,6 +22,7 @@ from officina.certification.hashing import (
 )
 from officina.blueprints.graph import (
     BlueprintGraphError,
+    RepositoryBlueprintGraph,
     load_repository_blueprint_graph,
 )
 from officina.git.provenance import git_file_provenance
@@ -225,14 +226,19 @@ def _write_module(
     )
 
 
-def _repository(tmp_path: Path) -> tuple[Path, Path]:
+def _repository(
+    tmp_path: Path,
+    *,
+    include_consumer: bool = True,
+) -> tuple[Path, Path]:
     repository = GitTestRepository.initialize_existing_empty(tmp_path)
     _write_module(tmp_path, "provider-skill")
-    _write_module(
-        tmp_path,
-        "consumer-skill",
-        uses_export="provider-skill.interface.run",
-    )
+    if include_consumer:
+        _write_module(
+            tmp_path,
+            "consumer-skill",
+            uses_export="provider-skill.interface.run",
+        )
     (tmp_path / ".gitignore").write_text(
         "ignored.txt\n*.log\n", encoding="utf-8"
     )
@@ -258,13 +264,53 @@ def _repository(tmp_path: Path) -> tuple[Path, Path]:
     return tmp_path, policy
 
 
+def _copy_repository_template(tmp_path: Path, template: Path) -> tuple[Path, Path]:
+    root = tmp_path / "repository"
+    shutil.copytree(template, root, symlinks=True)
+    return root, root / "node-hash-policy.yaml"
+
+
+@pytest.fixture(scope="session")
+def v4_provider_repository_template(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Path:
+    root = tmp_path_factory.mktemp("v4-provider-hashing-repository")
+    _repository(root, include_consumer=False)
+    return root
+
+
+@pytest.fixture
+def v4_provider_repository(
+    tmp_path: Path,
+    v4_provider_repository_template: Path,
+) -> tuple[Path, Path]:
+    return _copy_repository_template(tmp_path, v4_provider_repository_template)
+
+
+@pytest.fixture(scope="session")
+def v4_repository_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    root = tmp_path_factory.mktemp("v4-hashing-repository")
+    _repository(root)
+    return root
+
+
+@pytest.fixture
+def v4_repository(
+    tmp_path: Path,
+    v4_repository_template: Path,
+) -> tuple[Path, Path]:
+    return _copy_repository_template(tmp_path, v4_repository_template)
+
+
 def _states(
     root: Path,
     policy: Path,
     *,
     certification_basis_paths: tuple[Path, ...] = (),
+    graph: RepositoryBlueprintGraph | None = None,
 ) -> dict[str, NodeHashState]:
-    graph = load_repository_blueprint_graph(root, schema_root=SCHEMA_ROOT)
+    if graph is None:
+        graph = load_repository_blueprint_graph(root, schema_root=SCHEMA_ROOT)
     return compute_node_hash_states(
         graph,
         repo_root=root,
@@ -308,10 +354,57 @@ def _v6_repository(tmp_path: Path) -> tuple[Path, Path]:
     return tmp_path, policy
 
 
+@pytest.fixture(scope="session")
+def v6_repository_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    root = tmp_path_factory.mktemp("v6-hashing-repository")
+    _v6_repository(root)
+    return root
+
+
+@pytest.fixture
+def v6_repository(
+    tmp_path: Path,
+    v6_repository_template: Path,
+) -> tuple[Path, Path]:
+    root = tmp_path / "repository"
+    shutil.copytree(v6_repository_template, root, symlinks=True)
+    return root, root / "node-hash-policy.yaml"
+
+
 def _v6_certifier_repository(tmp_path: Path) -> tuple[Path, Path]:
     root, policy = _v6_repository(tmp_path)
     certifier_root = root / "skills" / "node-certify"
-    shutil.copytree(REPOSITORY_ROOT / "skills" / "node-certify", certifier_root)
+    certifier_fixture_paths = (
+        "blueprint.yaml",
+        "SKILL.md",
+        "blueprints/gateway.yaml",
+        "blueprints/instructions-audit-interface.yaml",
+        "blueprints/instructions-audit-behavioral-source.yaml",
+        "blueprints/instructions-audit-module.yaml",
+        "instructions/audit-interface.md",
+        "instructions/audit-behavioral-source.md",
+        "instructions/audit-module.md",
+        "_rtx/blueprint.yaml",
+        "_rtx/__init__.py",
+        "_rtx/_node_certifier.py",
+        "_rtx/blueprints/rtx-certifier.yaml",
+    )
+    source_root = REPOSITORY_ROOT / "skills" / "node-certify"
+    for relative_path in certifier_fixture_paths:
+        destination = certifier_root / relative_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_root / relative_path, destination)
+
+    mechanical_module_path = certifier_root / "_rtx" / "blueprint.yaml"
+    mechanical_module = yaml.safe_load(
+        mechanical_module_path.read_text(encoding="utf-8")
+    )
+    mechanical_module["content"] = [
+        pattern
+        for pattern in mechanical_module["content"]
+        if pattern != "tests/.*"
+    ]
+    _write_yaml(mechanical_module_path, mechanical_module)
 
     gateway_blueprint_path = certifier_root / "blueprints" / "gateway.yaml"
     gateway_blueprint = yaml.safe_load(
@@ -342,12 +435,18 @@ def _v6_certifier_repository(tmp_path: Path) -> tuple[Path, Path]:
     return root, policy
 
 
-def _v6_states(root: Path, policy: Path) -> dict[str, NodeHashState]:
-    graph = load_repository_blueprint_graph(
-        root,
-        schema_root=CANONICAL_SCHEMA_ROOT,
-        expected_schema_version=6,
-    )
+def _v6_states(
+    root: Path,
+    policy: Path,
+    *,
+    graph: RepositoryBlueprintGraph | None = None,
+) -> dict[str, NodeHashState]:
+    if graph is None:
+        graph = load_repository_blueprint_graph(
+            root,
+            schema_root=CANONICAL_SCHEMA_ROOT,
+            expected_schema_version=6,
+        )
     return compute_node_hash_states(
         graph,
         repo_root=root,
@@ -356,10 +455,7 @@ def _v6_states(root: Path, policy: Path) -> dict[str, NodeHashState]:
     )
 
 
-def test_v5_hashes_record_static_route_and_facade_edges_without_containment(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def _v5_repository(tmp_path: Path) -> tuple[Path, Path]:
     repository = GitTestRepository.initialize_existing_empty(tmp_path)
     copy_v5_fixture_tree(
         V5_AUTHORIZATION_FIXTURE / "modules",
@@ -381,8 +477,31 @@ def test_v5_hashes_record_static_route_and_facade_edges_without_containment(
     )
     repository.git("add", ".")
     repository.git("commit", "-qm", "v5 fixture")
+    return tmp_path, policy
+
+
+@pytest.fixture(scope="session")
+def v5_repository_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    root = tmp_path_factory.mktemp("v5-hashing-repository")
+    _v5_repository(root)
+    return root
+
+
+@pytest.fixture
+def v5_repository(
+    tmp_path: Path,
+    v5_repository_template: Path,
+) -> tuple[Path, Path]:
+    return _copy_repository_template(tmp_path, v5_repository_template)
+
+
+def test_v5_hashes_record_static_route_and_facade_edges_without_containment(
+    v5_repository,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, policy = v5_repository
     graph = load_repository_blueprint_graph(
-        tmp_path,
+        root,
         schema_root=V5_SCHEMA_ROOT,
         expected_schema_version=5,
     )
@@ -403,7 +522,7 @@ def test_v5_hashes_record_static_route_and_facade_edges_without_containment(
 
     states = compute_node_hash_states(
         graph,
-        repo_root=tmp_path,
+        repo_root=root,
         policy_path=policy,
         certification_basis_hash="sha256:" + "b" * 64,
     )
@@ -452,7 +571,7 @@ def test_v5_hashes_record_static_route_and_facade_edges_without_containment(
     root_hash = states["root"].node_hash
     alpha_hash = states["alpha"].node_hash
     leaf_runtime = (
-        tmp_path
+        root
         / "modules"
         / "root"
         / "alpha"
@@ -462,7 +581,7 @@ def test_v5_hashes_record_static_route_and_facade_edges_without_containment(
     leaf_runtime.write_text("VALUE = 'changed child bytes'\n", encoding="utf-8")
     changed = compute_node_hash_states(
         graph,
-        repo_root=tmp_path,
+        repo_root=root,
         policy_path=policy,
         certification_basis_hash="sha256:" + "b" * 64,
     )
@@ -582,9 +701,9 @@ def _add_contract_source(
 
 
 def test_v4_uses_one_node_hash_state_and_policy_selected_input_manifest(
-    tmp_path: Path,
+    v4_provider_repository,
 ) -> None:
-    root, policy = _repository(tmp_path)
+    root, policy = v4_provider_repository
 
     states = _states(root, policy)
     source = states["provider-skill.source.gateway"]
@@ -609,16 +728,17 @@ def test_v4_uses_one_node_hash_state_and_policy_selected_input_manifest(
 
 
 def test_dependency_change_does_not_recursively_change_consumer_local_hash(
-    tmp_path: Path,
+    v4_repository,
 ) -> None:
-    root, policy = _repository(tmp_path)
-    first = _states(root, policy)
+    root, policy = v4_repository
+    graph = load_repository_blueprint_graph(root, schema_root=SCHEMA_ROOT)
+    first = _states(root, policy, graph=graph)
     consumer_id = "consumer-skill.source.gateway"
 
     (root / "skills" / "provider-skill" / "_rtx" / "worker.py").write_text(
         "print('changed')\n", encoding="utf-8"
     )
-    second = _states(root, policy)
+    second = _states(root, policy, graph=graph)
 
     assert second[consumer_id].node_hash == first[consumer_id].node_hash
     assert second[consumer_id].dependency_hashes != first[consumer_id].dependency_hashes
@@ -629,10 +749,10 @@ def test_dependency_change_does_not_recursively_change_consumer_local_hash(
     assert second["provider-skill"].node_hash == first["provider-skill"].node_hash
 
 
-def test_v6_interface_dependency_hash_ignores_unrelated_provider_blueprint_fields(
-    tmp_path: Path,
+def test_v6_interface_dependency_hash_tracks_only_the_used_contract(
+    v6_repository,
 ) -> None:
-    root, policy = _v6_repository(tmp_path)
+    root, policy = v6_repository
     first = _v6_states(root, policy)
     consumer_id = "consumer-skill.source.gateway"
     provider_id = "provider-skill.source.gateway"
@@ -653,7 +773,12 @@ def test_v6_interface_dependency_hash_ignores_unrelated_provider_blueprint_field
         "provider-skill.source.gateway.interface.other"
     ]["description"] = "An unrelated interface."
     _write_yaml(provider_blueprint, provider)
-    second = _v6_states(root, policy)
+    unrelated_graph = load_repository_blueprint_graph(
+        root,
+        schema_root=CANONICAL_SCHEMA_ROOT,
+        expected_schema_version=6,
+    )
+    second = _v6_states(root, policy, graph=unrelated_graph)
     second_dependency = next(
         dependency
         for dependency in second[consumer_id].dependency_hashes
@@ -665,28 +790,14 @@ def test_v6_interface_dependency_hash_ignores_unrelated_provider_blueprint_field
     assert first_dependency["interface_hash"].startswith("sha256:")
     assert "node_hash" not in first_dependency
     assert second[provider_id].node_hash != first[provider_id].node_hash
-
-
-def test_v6_interface_dependency_hash_changes_with_used_contract(
-    tmp_path: Path,
-) -> None:
-    root, policy = _v6_repository(tmp_path)
-    graph = load_repository_blueprint_graph(
-        root,
-        schema_root=CANONICAL_SCHEMA_ROOT,
-        expected_schema_version=6,
-    )
-    interface_id = "provider-skill.interface.run"
     extracted = certification_hashing.extract_interface_from_blueprint(
-        graph,
+        unrelated_graph,
         interface_id,
         1,
     )
     first_hash = certification_hashing.compute_interface_hash(extracted)
 
-    provider_blueprint = root / "skills/provider-skill/blueprints/gateway.yaml"
     provider = yaml.safe_load(provider_blueprint.read_text(encoding="utf-8"))
-    source_interface_id = "provider-skill.source.gateway.interface.run"
     provider["interfaces"][source_interface_id]["contract"]["execution"][
         "consistency"
     ]["snapshot"] = "The contract changed."
@@ -770,9 +881,18 @@ def test_v6_certifier_dependencies_are_exact_and_evidence_only(
         loaded_paths=(root / "skills/provider-skill/_rtx/worker.py",),
         certification_basis_paths=(),
         repo_root=root,
-    )[0].target_node_id == source_id
+    ) == (
+        certification_hashing.RouteSmokeDependencyMapping(
+            "skills/provider-skill/_rtx/worker.py",
+            "certification-dependency",
+            source_id,
+        ),
+    )
 
-    def scopes(current, certifier_interface):
+    def scopes(
+        current: dict[str, NodeHashState],
+        certifier_interface: str,
+    ) -> dict[str, str | None]:
         dependencies = {
             "source": current[source_id].dependency_hashes,
             "interface": _facet(current[source_id], interface_id).dependency_hashes,
@@ -793,33 +913,61 @@ def test_v6_certifier_dependencies_are_exact_and_evidence_only(
     cases = (
         (
             certification_hashing.V6_CERTIFIER_INTERFACE_ID,
+            "node-certify._rtx.source.rtx-certifier.interface.certify",
             "_rtx/_node_certifier.py",
             {"source", "interface", "remainder", "module"},
         ),
         (
+            audits["interface"],
             audits["interface"],
             "instructions/audit-interface.md",
             {"source", "interface"},
         ),
         (
             audits["remainder"],
+            audits["remainder"],
             "instructions/audit-behavioral-source.md",
             {"source", "remainder"},
         ),
         (
             audits["module"],
+            audits["module"],
             "instructions/audit-module.md",
             {"module"},
         ),
     )
-    for audit_id, relative_path, expected_scopes in cases:
+    certifier_manifests = {
+        origin_interface: {
+            entry["path"]
+            for entry in _facet(
+                states[origin_interface.rsplit(".interface.", 1)[0]],
+                origin_interface,
+            ).input_manifest
+        }
+        for _audit_id, origin_interface, _relative_path, _expected_scopes in cases
+    }
+    for _audit_id, origin_interface, relative_path, _expected_scopes in cases:
+        expected_path = f"skills/node-certify/{relative_path}"
+        assert {
+            candidate_interface
+            for candidate_interface, manifest in certifier_manifests.items()
+            if expected_path in manifest
+        } == {origin_interface}
+
+    originals: dict[Path, bytes] = {}
+    for _audit_id, _origin_interface, relative_path, _expected_scopes in cases:
         path = certifier_root / relative_path
-        original = path.read_text(encoding="utf-8")
-        try:
-            path.write_text(original + "\nChanged.\n", encoding="utf-8")
-            changed = _v6_states(root, policy)
-        finally:
-            path.write_text(original, encoding="utf-8")
+        originals[path] = path.read_bytes()
+    try:
+        for path, original in originals.items():
+            path.write_bytes(original + b"\nChanged.\n")
+        changed = _v6_states(root, policy, graph=graph)
+    finally:
+        for path, original in originals.items():
+            path.write_bytes(original)
+    assert {path: path.read_bytes() for path in originals} == originals
+
+    for audit_id, _origin_interface, _relative_path, expected_scopes in cases:
         before_hashes = scopes(states, audit_id)
         after_hashes = scopes(changed, audit_id)
         assert {
@@ -849,20 +997,29 @@ def test_v6_certifier_dependencies_are_exact_and_evidence_only(
         _v6_states(root, policy)
 
 
-def test_v6_claimed_file_changes_only_its_interface_facet(
-    tmp_path: Path,
+def test_v6_claimed_and_unclaimed_file_changes_update_only_their_facets(
+    v6_repository,
 ) -> None:
-    root, policy = _v6_repository(tmp_path)
-    first = _v6_states(root, policy)
+    root, policy = v6_repository
+    graph = load_repository_blueprint_graph(
+        root,
+        schema_root=CANONICAL_SCHEMA_ROOT,
+        expected_schema_version=6,
+    )
+    first = _v6_states(root, policy, graph=graph)
     source_id = "provider-skill.source.gateway"
     run_id = f"{source_id}.interface.run"
     inspect_id = f"{source_id}.interface.inspect"
+    consumer_id = "consumer-skill.source.gateway"
+    consumer_interface = f"{consumer_id}.interface.run"
 
-    (root / "skills/provider-skill/_rtx/worker.py").write_text(
+    worker = root / "skills/provider-skill/_rtx/worker.py"
+    original_worker = worker.read_text(encoding="utf-8")
+    worker.write_text(
         "VALUE = 2\n",
         encoding="utf-8",
     )
-    second = _v6_states(root, policy)
+    second = _v6_states(root, policy, graph=graph)
 
     assert _facet(second[source_id], run_id).local_hash != _facet(
         first[source_id], run_id
@@ -874,58 +1031,35 @@ def test_v6_claimed_file_changes_only_its_interface_facet(
         first[source_id], source_id
     )
     assert second[source_id].node_hash != first[source_id].node_hash
-
-
-def test_v6_unclaimed_file_changes_only_remainder_facet(
-    tmp_path: Path,
-) -> None:
-    root, policy = _v6_repository(tmp_path)
-    first = _v6_states(root, policy)
-    source_id = "provider-skill.source.gateway"
-    run_id = f"{source_id}.interface.run"
-    inspect_id = f"{source_id}.interface.inspect"
-
-    (root / "skills/provider-skill/remainder.txt").write_text(
-        "changed remainder\n",
-        encoding="utf-8",
-    )
-    second = _v6_states(root, policy)
-
-    assert _facet(second[source_id], run_id) == _facet(first[source_id], run_id)
-    assert _facet(second[source_id], inspect_id) == _facet(
-        first[source_id], inspect_id
-    )
-    assert _facet(second[source_id], source_id).local_hash != _facet(
-        first[source_id], source_id
-    ).local_hash
-    assert second[source_id].node_hash != first[source_id].node_hash
-
-
-def test_v6_used_interface_change_updates_dependency_not_consumer_local_hash(
-    tmp_path: Path,
-) -> None:
-    root, policy = _v6_repository(tmp_path)
-    first = _v6_states(root, policy)
-    consumer_id = "consumer-skill.source.gateway"
-    consumer_interface = f"{consumer_id}.interface.run"
-
-    (root / "skills/provider-skill/_rtx/worker.py").write_text(
-        "VALUE = 2\n",
-        encoding="utf-8",
-    )
-    second = _v6_states(root, policy)
-
     first_facet = _facet(first[consumer_id], consumer_interface)
     second_facet = _facet(second[consumer_id], consumer_interface)
     assert second_facet.local_hash == first_facet.local_hash
     assert second_facet.dependency_hashes != first_facet.dependency_hashes
     assert second[consumer_id].node_hash == first[consumer_id].node_hash
 
+    worker.write_text(original_worker, encoding="utf-8")
+    (root / "skills/provider-skill/remainder.txt").write_text(
+        "changed remainder\n",
+        encoding="utf-8",
+    )
+    remainder_changed = _v6_states(root, policy, graph=graph)
+
+    assert _facet(remainder_changed[source_id], run_id) == _facet(
+        first[source_id], run_id
+    )
+    assert _facet(remainder_changed[source_id], inspect_id) == _facet(
+        first[source_id], inspect_id
+    )
+    assert _facet(remainder_changed[source_id], source_id).local_hash != _facet(
+        first[source_id], source_id
+    ).local_hash
+    assert remainder_changed[source_id].node_hash != first[source_id].node_hash
+
 
 def test_v6_source_without_interfaces_has_only_remainder_facet(
-    tmp_path: Path,
+    v6_repository,
 ) -> None:
-    root, policy = _v6_repository(tmp_path)
+    root, policy = v6_repository
     source_path = root / "skills/provider-skill/blueprints/gateway.yaml"
     source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
     source["interfaces"] = {}
@@ -951,10 +1085,10 @@ def test_v6_source_without_interfaces_has_only_remainder_facet(
 
 
 def test_v6_source_hash_uses_versioned_interface_projection(
-    tmp_path: Path,
+    v6_repository,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    root, policy = _v6_repository(tmp_path)
+    root, policy = v6_repository
     captured: list[object] = []
     real_hash_value = certification_hashing._hash_value
 
@@ -988,9 +1122,9 @@ def test_v6_source_hash_uses_versioned_interface_projection(
 
 
 def test_v6_interface_contract_files_belong_to_originating_facet(
-    tmp_path: Path,
+    v6_repository,
 ) -> None:
-    root, policy = _v6_repository(tmp_path)
+    root, policy = v6_repository
     module = root / "skills/provider-skill"
     contract_path = module / "run.schema.json"
     contract_path.write_text('{"type":"string"}\n', encoding="utf-8")
@@ -1009,9 +1143,14 @@ def test_v6_interface_contract_files_belong_to_originating_facet(
     repository.git("add", ".")
     repository.git("commit", "-qm", "add interface contract")
 
-    first = _v6_states(root, policy)
+    graph = load_repository_blueprint_graph(
+        root,
+        schema_root=CANONICAL_SCHEMA_ROOT,
+        expected_schema_version=6,
+    )
+    first = _v6_states(root, policy, graph=graph)
     contract_path.write_text('{"type":"number"}\n', encoding="utf-8")
-    second = _v6_states(root, policy)
+    second = _v6_states(root, policy, graph=graph)
     source_id = "provider-skill.source.gateway"
 
     assert "skills/provider-skill/run.schema.json" in {
@@ -1029,9 +1168,9 @@ def test_v6_interface_contract_files_belong_to_originating_facet(
 
 
 def test_v6_cross_owner_contract_dependency_belongs_to_originating_facet(
-    tmp_path: Path,
+    v6_repository,
 ) -> None:
-    root, policy = _v6_repository(tmp_path)
+    root, policy = v6_repository
     module = root / "skills/provider-skill"
     contract_path = module / "run.schema.json"
     contract_path.write_text('{"type":"string"}\n', encoding="utf-8")
@@ -1066,9 +1205,9 @@ def test_v6_cross_owner_contract_dependency_belongs_to_originating_facet(
 
 
 def test_repository_root_contract_reference_targets_exact_file_owner(
-    tmp_path: Path,
+    v4_repository,
 ) -> None:
-    root, policy = _repository(tmp_path)
+    root, policy = v4_repository
     shared_contract = root / "skills" / "provider-skill" / "shared.schema.json"
     shared_contract.write_text(
         '{"$ref": "nested/child.schema.json"}\n', encoding="utf-8"
@@ -1121,8 +1260,10 @@ def test_repository_root_contract_reference_targets_exact_file_owner(
     }
 
 
-def test_policy_last_match_wins_and_reserved_outputs_fail_closed(tmp_path: Path) -> None:
-    root, policy = _repository(tmp_path)
+def test_policy_last_match_wins_and_reserved_outputs_fail_closed(
+    v4_provider_repository,
+) -> None:
+    root, policy = v4_provider_repository
     document = yaml.safe_load(policy.read_text(encoding="utf-8"))
     document["rules"].append(
         {"action": "include", "pattern": "**/*.log", "require_match": True}
@@ -1152,56 +1293,61 @@ def test_policy_last_match_wins_and_reserved_outputs_fail_closed(tmp_path: Path)
         _states(root, policy)
 
 
-def test_required_include_matching_only_mandatory_blueprint_still_fails(
-    tmp_path: Path,
+def test_mandatory_blueprint_policy_rules_fail_closed(
+    v4_provider_repository,
 ) -> None:
-    root, policy = _repository(tmp_path)
+    root, policy = v4_provider_repository
     blueprint = "skills/provider-skill/blueprints/gateway.yaml"
-    document = yaml.safe_load(policy.read_text(encoding="utf-8"))
-    document["rules"].append(
-        {
-            "action": "include",
-            "pattern": blueprint,
-            "require_match": True,
-        }
-    )
-    _write_yaml(policy, document)
-    assert certification_hashing._git_exclude_matches(  # type: ignore[attr-defined]
-        root,
-        (blueprint,),
-        blueprint,
-    ) == {blueprint}
+    original_policy = policy.read_bytes()
+    try:
+        require_document = yaml.safe_load(original_policy.decode("utf-8"))
+        require_document["rules"].append(
+            {
+                "action": "include",
+                "pattern": blueprint,
+                "require_match": True,
+            }
+        )
+        _write_yaml(policy, require_document)
+        assert certification_hashing._git_exclude_matches(  # type: ignore[attr-defined]
+            root,
+            (blueprint,),
+            blueprint,
+        ) == {blueprint}
 
-    with pytest.raises(
-        CertificationHashError,
-        match="requires at least one match",
-    ):
-        _states(root, policy)
+        with pytest.raises(
+            CertificationHashError,
+            match="requires at least one match",
+        ):
+            _states(root, policy)
 
+        policy.write_bytes(original_policy)
+        assert policy.read_bytes() == original_policy
+        exclude_document = yaml.safe_load(original_policy.decode("utf-8"))
+        exclude_document["rules"].append(
+            {
+                "action": "exclude",
+                "pattern": blueprint,
+            }
+        )
+        _write_yaml(policy, exclude_document)
 
-def test_excluding_mandatory_blueprint_still_fails(tmp_path: Path) -> None:
-    root, policy = _repository(tmp_path)
-    blueprint = "skills/provider-skill/blueprints/gateway.yaml"
-    document = yaml.safe_load(policy.read_text(encoding="utf-8"))
-    document["rules"].append(
-        {
-            "action": "exclude",
-            "pattern": blueprint,
-        }
-    )
-    _write_yaml(policy, document)
-
-    with pytest.raises(
-        CertificationHashError,
-        match="mandatory blueprint, gateway, or contract input cannot be excluded",
-    ):
-        _states(root, policy)
+        with pytest.raises(
+            CertificationHashError,
+            match=(
+                "mandatory blueprint, gateway, or contract input cannot be excluded"
+            ),
+        ):
+            _states(root, policy)
+    finally:
+        policy.write_bytes(original_policy)
+    assert policy.read_bytes() == original_policy
 
 
 def test_git_policy_matcher_covers_tracked_ignored_and_untracked_files(
-    tmp_path: Path,
+    v4_provider_repository,
 ) -> None:
-    root, _policy = _repository(tmp_path)
+    root, _policy = v4_provider_repository
     tracked = "skills/provider-skill/_rtx/worker.py"
     ignored = "skills/provider-skill/ignored.txt"
     untracked = "skills/provider-skill/notes.tmp"
@@ -1227,11 +1373,11 @@ def test_git_policy_matcher_covers_tracked_ignored_and_untracked_files(
     } == cases
 
 
-def test_v4_hashing_batches_git_provenance_and_policy_calls(
-    tmp_path: Path,
+def test_v4_hashing_batches_and_wraps_git_provenance_failures(
+    v4_provider_repository,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    root, policy = _repository(tmp_path)
+    root, policy = v4_provider_repository
     graph = load_repository_blueprint_graph(root, schema_root=SCHEMA_ROOT)
     document = yaml.safe_load(policy.read_text(encoding="utf-8"))
     rules = document["rules"]
@@ -1247,25 +1393,17 @@ def test_v4_hashing_batches_git_provenance_and_policy_calls(
             git_commands.append(command)
         return real_run(command, *args, **kwargs)
 
-    monkeypatch.setattr(subprocess, "run", counting_run)
-
-    compute_node_hash_states(
-        graph,
-        repo_root=root,
-        policy_path=policy,
-        certification_basis_hash="sha256:" + "b" * 64,
-        certification_basis_paths=(),
-    )
+    with monkeypatch.context() as batch_context:
+        batch_context.setattr(subprocess, "run", counting_run)
+        compute_node_hash_states(
+            graph,
+            repo_root=root,
+            policy_path=policy,
+            certification_basis_hash="sha256:" + "b" * 64,
+            certification_basis_paths=(),
+        )
 
     assert len(git_commands) <= len(rules) + 2
-
-
-def test_v4_hashing_wraps_fatal_batch_provenance_as_certification_error(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    root, policy = _repository(tmp_path)
-    graph = load_repository_blueprint_graph(root, schema_root=SCHEMA_ROOT)
 
     def fatal_tracked_query(
         _repo_root: Path,
@@ -1279,32 +1417,32 @@ def test_v4_hashing_wraps_fatal_batch_provenance_as_certification_error(
             b"fatal: node provenance failed\n",
         )
 
-    monkeypatch.setattr(git_provenance, "run_git", fatal_tracked_query)
-
-    with pytest.raises(
-        CertificationHashError,
-        match="cannot determine Git provenance",
-    ) as error:
-        compute_node_hash_states(
-            graph,
-            repo_root=root,
-            policy_path=policy,
-            certification_basis_hash="sha256:" + "b" * 64,
-            certification_basis_paths=(),
-        )
+    with monkeypatch.context() as fatal_context:
+        fatal_context.setattr(git_provenance, "run_git", fatal_tracked_query)
+        with pytest.raises(
+            CertificationHashError,
+            match="cannot determine Git provenance",
+        ) as error:
+            compute_node_hash_states(
+                graph,
+                repo_root=root,
+                policy_path=policy,
+                certification_basis_hash="sha256:" + "b" * 64,
+                certification_basis_paths=(),
+            )
 
     assert isinstance(error.value.__cause__, ValueError)
     assert "fatal: node provenance failed" in str(error.value.__cause__)
 
 
-def test_route_smoke_paths_map_to_input_dependency_or_basis(tmp_path: Path) -> None:
-    root, policy = _repository(tmp_path)
-    graph = load_repository_blueprint_graph(root, schema_root=SCHEMA_ROOT)
-    states = _states(root, policy)
+def test_route_smoke_paths_map_to_input_dependency_or_basis(v4_repository) -> None:
+    root, policy = v4_repository
     basis_path = root / "src" / "officina" / "runtime" / "support.py"
     basis_path.parent.mkdir(parents=True)
     basis_path.write_text("VALUE = 1\n", encoding="utf-8")
     provider_path = root / "skills" / "provider-skill" / "_rtx" / "worker.py"
+    graph = load_repository_blueprint_graph(root, schema_root=SCHEMA_ROOT)
+    states = _states(root, policy, graph=graph)
 
     mappings = map_route_smoke_dependencies(
         graph,
@@ -1344,40 +1482,10 @@ def test_route_smoke_paths_map_to_input_dependency_or_basis(tmp_path: Path) -> N
     )
 
 
-def test_v6_route_smoke_accepts_manifest_bound_interface_dependency(
-    tmp_path: Path,
-) -> None:
-    root, policy = _v6_repository(tmp_path)
-    graph = load_repository_blueprint_graph(
-        root,
-        schema_root=CANONICAL_SCHEMA_ROOT,
-        expected_schema_version=6,
-    )
-    states = _v6_states(root, policy)
-    provider_path = root / "skills/provider-skill/_rtx/worker.py"
-
-    mappings = map_route_smoke_dependencies(
-        graph,
-        states,
-        source_node_id="consumer-skill.source.gateway",
-        loaded_paths=[provider_path],
-        certification_basis_paths=(),
-        repo_root=root,
-    )
-
-    assert mappings == (
-        certification_hashing.RouteSmokeDependencyMapping(
-            "skills/provider-skill/_rtx/worker.py",
-            "certification-dependency",
-            "provider-skill.source.gateway",
-        ),
-    )
-
-
 def test_route_smoke_maps_transitive_contract_only_dependency(
-    tmp_path: Path,
+    v4_provider_repository,
 ) -> None:
-    root, policy = _repository(tmp_path)
+    root, policy = v4_provider_repository
     module = root / "skills" / "provider-skill"
     contracts = module / "contracts"
     contracts.mkdir()
@@ -1406,7 +1514,7 @@ def test_route_smoke_maps_transitive_contract_only_dependency(
     _write_yaml(source_path, source)
 
     graph = load_repository_blueprint_graph(root, schema_root=SCHEMA_ROOT)
-    states = _states(root, policy)
+    states = _states(root, policy, graph=graph)
     gateway_id = "provider-skill.source.gateway"
     assert {
         dependency["target"]
@@ -1436,9 +1544,14 @@ def test_route_smoke_maps_transitive_contract_only_dependency(
     )
 
 
-@pytest.mark.parametrize(
-    "dependency_hashes",
-    [
+def test_route_smoke_rejects_invalid_dependency_states_and_unmapped_paths(
+    v4_repository,
+) -> None:
+    root, policy = v4_repository
+    graph = load_repository_blueprint_graph(root, schema_root=SCHEMA_ROOT)
+    states = _states(root, policy, graph=graph)
+    source_id = "consumer-skill.source.gateway"
+    cases = (
         ({"relation": "references-cross-owner-contract"},),
         (
             {
@@ -1448,35 +1561,25 @@ def test_route_smoke_maps_transitive_contract_only_dependency(
                 "node_hash": "sha256:" + "a" * 64,
             },
         ),
-    ],
-)
-def test_route_smoke_rejects_invalid_dependency_state_shape_or_target(
-    tmp_path: Path,
-    dependency_hashes: tuple[dict[str, object], ...],
-) -> None:
-    root, policy = _repository(tmp_path)
-    graph = load_repository_blueprint_graph(root, schema_root=SCHEMA_ROOT)
-    states = _states(root, policy)
-    source_id = "consumer-skill.source.gateway"
-    states[source_id] = replace(
-        states[source_id], dependency_hashes=dependency_hashes
     )
-
-    with pytest.raises(CertificationHashError, match="invalid dependency hash"):
-        map_route_smoke_dependencies(
-            graph,
-            states,
-            source_node_id=source_id,
-            loaded_paths=[root / "skills" / "consumer-skill" / "_rtx" / "worker.py"],
-            certification_basis_paths=[],
-            repo_root=root,
+    for dependency_hashes in cases:
+        invalid_states = dict(states)
+        invalid_states[source_id] = replace(
+            states[source_id], dependency_hashes=dependency_hashes
         )
 
+        with pytest.raises(CertificationHashError, match="invalid dependency hash"):
+            map_route_smoke_dependencies(
+                graph,
+                invalid_states,
+                source_node_id=source_id,
+                loaded_paths=[
+                    root / "skills" / "consumer-skill" / "_rtx" / "worker.py"
+                ],
+                certification_basis_paths=[],
+                repo_root=root,
+            )
 
-def test_route_smoke_rejects_unmapped_loaded_path(tmp_path: Path) -> None:
-    root, policy = _repository(tmp_path)
-    graph = load_repository_blueprint_graph(root, schema_root=SCHEMA_ROOT)
-    states = _states(root, policy)
     unmapped = root / "tools" / "unmapped.py"
     unmapped.parent.mkdir()
     unmapped.write_text("VALUE = 1\n", encoding="utf-8")
@@ -1493,37 +1596,17 @@ def test_route_smoke_rejects_unmapped_loaded_path(tmp_path: Path) -> None:
 
 
 def test_v5_route_smoke_maps_runtime_package_init_to_containing_module(
-    tmp_path: Path,
+    v5_repository,
 ) -> None:
-    repository = GitTestRepository.initialize_existing_empty(tmp_path)
-    copy_v5_fixture_tree(
-        V5_AUTHORIZATION_FIXTURE / "modules",
-        tmp_path / "modules",
-    )
-    copy_v5_fixture_tree(
-        V5_AUTHORIZATION_FIXTURE / "skills",
-        tmp_path / "skills",
-    )
-    policy = tmp_path / "node-hash-policy.yaml"
-    _write_yaml(
-        policy,
-        {
-            "policy_version": 1,
-            "path_syntax": "gitignore",
-            "starting_set": "git-tracked-directly-owned-regular-files",
-            "rules": [{"action": "exclude", "pattern": "**/.certificates/**"}],
-        },
-    )
-    repository.git("add", ".")
-    repository.git("commit", "-qm", "v5 fixture")
+    root, policy = v5_repository
     graph = load_repository_blueprint_graph(
-        tmp_path,
+        root,
         schema_root=V5_SCHEMA_ROOT,
         expected_schema_version=5,
     )
     states = compute_node_hash_states(
         graph,
-        repo_root=tmp_path,
+        repo_root=root,
         policy_path=policy,
         certification_basis_hash="sha256:" + "b" * 64,
     )
@@ -1533,11 +1616,11 @@ def test_v5_route_smoke_maps_runtime_package_init_to_containing_module(
         states,
         source_node_id="demo-rtx.source.runtime",
         loaded_paths=[
-            tmp_path / "skills" / "demo" / "_rtx" / "__init__.py",
-            tmp_path / "skills" / "demo" / "_rtx" / "runtime.py",
+            root / "skills" / "demo" / "_rtx" / "__init__.py",
+            root / "skills" / "demo" / "_rtx" / "runtime.py",
         ],
         certification_basis_paths=[],
-        repo_root=tmp_path,
+        repo_root=root,
     )
 
     assert [
@@ -1561,11 +1644,11 @@ def test_v5_route_smoke_maps_runtime_package_init_to_containing_module(
         states,
         source_node_id="demo.source.gateway",
         loaded_paths=[
-            tmp_path / "skills" / "demo" / "_rtx" / "__init__.py",
-            tmp_path / "skills" / "demo" / "_rtx" / "runtime.py",
+            root / "skills" / "demo" / "_rtx" / "__init__.py",
+            root / "skills" / "demo" / "_rtx" / "runtime.py",
         ],
         certification_basis_paths=[],
-        repo_root=tmp_path,
+        repo_root=root,
     )
 
     assert [
@@ -1589,10 +1672,10 @@ def test_v5_route_smoke_maps_runtime_package_init_to_containing_module(
         states,
         source_node_id="demo.source.gateway",
         loaded_paths=[
-            tmp_path / "skills" / "demo" / "_rtx" / "__init__.py",
+            root / "skills" / "demo" / "_rtx" / "__init__.py",
         ],
         certification_basis_paths=[],
-        repo_root=tmp_path,
+        repo_root=root,
     )
 
     assert [
@@ -1608,10 +1691,10 @@ def test_v5_route_smoke_maps_runtime_package_init_to_containing_module(
 
 
 def test_compute_node_hash_states_does_not_trace_route_smoke_dependencies(
-    tmp_path: Path,
+    v4_provider_repository,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    root, policy = _repository(tmp_path)
+    root, policy = v4_provider_repository
     _make_python_gateway(root, "provider-skill", import_unowned=False)
     graph = load_repository_blueprint_graph(root, schema_root=SCHEMA_ROOT)
 
@@ -1635,9 +1718,9 @@ def test_compute_node_hash_states_does_not_trace_route_smoke_dependencies(
 
 
 def test_v4_hashing_makes_transitive_same_owner_contract_closure_mandatory(
-    tmp_path: Path,
+    v4_provider_repository,
 ) -> None:
-    root, policy = _repository(tmp_path)
+    root, policy = v4_provider_repository
     module = root / "skills" / "provider-skill"
     contracts = module / "contracts"
     contracts.mkdir()
@@ -1671,9 +1754,9 @@ def test_v4_hashing_makes_transitive_same_owner_contract_closure_mandatory(
 
 
 def test_v4_hashing_attributes_transitive_contract_files_to_direct_owner(
-    tmp_path: Path,
+    v4_provider_repository,
 ) -> None:
-    root, policy = _repository(tmp_path)
+    root, policy = v4_provider_repository
     module = root / "skills" / "provider-skill"
     contracts = module / "contracts"
     contracts.mkdir()
@@ -1710,9 +1793,9 @@ def test_v4_hashing_attributes_transitive_contract_files_to_direct_owner(
 
 
 def test_v4_hashing_rejects_cycle_after_cross_owner_contract_edges(
-    tmp_path: Path,
+    v4_provider_repository,
 ) -> None:
-    root, policy = _repository(tmp_path)
+    root, policy = v4_provider_repository
     module = root / "skills" / "provider-skill"
     contracts = module / "contracts"
     contracts.mkdir()

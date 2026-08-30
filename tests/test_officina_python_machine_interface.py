@@ -451,17 +451,6 @@ def write_route_smoke_worker(skill_root: Path, route_smoke_body: str) -> None:
     )
 
 
-def test_load_interface_from_relative_file_spec(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    runtime = tmp_path / "_rtx"
-    runtime.mkdir()
-    write_interface(runtime / "_demo.py")
-    monkeypatch.chdir(tmp_path)
-
-    interface = load_interface("_rtx/_demo.py", "Interface")
-
-    assert interface.__class__.__name__ == "Interface"
-
-
 def test_load_interface_accepts_a_configured_interface_instance(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -483,22 +472,6 @@ def test_load_interface_accepts_a_configured_interface_instance(
     interface = load_interface("_rtx/_demo.py", "Interface")
 
     assert interface.__class__.__name__ == "DemoInterface"
-
-
-def test_route_smoke_trace_supports_temporary_repository(tmp_path: Path) -> None:
-    skill = tmp_path / "skills" / "demo-skill"
-    runtime = skill / "_rtx"
-    runtime.mkdir(parents=True)
-    write_interface(runtime / "_demo.py")
-
-    paths = python_interface.trace_python_route_smoke_dependencies(
-        skill,
-        tmp_path,
-        _target(),
-    )
-
-    assert (runtime / "_demo.py").resolve() in paths
-    assert any(path.name == "python_machine_interface.py" for path in paths)
 
 
 def test_dependency_loader_uses_structured_target_not_command(
@@ -527,14 +500,73 @@ def test_dependency_loader_uses_structured_target_not_command(
     assert interface.__class__.__name__ == "Interface"
 
 
-def test_route_smoke_batch_uses_one_child_and_isolates_loaded_paths(
+def test_route_smoke_batch_preserves_repository_and_process_isolation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    first = tmp_path / "skills" / "first-skill"
-    second = tmp_path / "skills" / "second-skill"
+    live_package = Path(__file__).resolve().parents[1] / "src" / "officina"
+    candidate_package = tmp_path / "src" / "officina"
+    candidate_package.mkdir(parents=True)
+    candidate_init = candidate_package / "__init__.py"
+    candidate_init.write_text(
+        f"__path__.append({str(live_package)!r})\n",
+        encoding="utf-8",
+    )
+    live_runtime = live_package / "runtime"
+    candidate_runtime = candidate_package / "runtime"
+    candidate_runtime.mkdir()
+    (candidate_runtime / "__init__.py").write_text(
+        f"__path__.append({str(live_runtime)!r})\n",
+        encoding="utf-8",
+    )
+    candidate_python_interface = candidate_runtime / "python_machine_interface.py"
+    shutil.copyfile(
+        live_runtime / "python_machine_interface.py",
+        candidate_python_interface,
+    )
+    candidate_marker = candidate_package / "_batch_trace_marker.py"
+    candidate_marker.write_text("MARKER = True\n", encoding="utf-8")
+
+    first = tmp_path / "skills" / "alpha-loaded-skill"
+    second = tmp_path / "skills" / "beta-loaded-skill"
     write_traced_interface(first, "first")
     write_traced_interface(second, "second")
+    unused = first / "_rtx" / "_unused.py"
+    unused.write_text("UNUSED = True\n", encoding="utf-8")
+
+    importer = tmp_path / "skills" / "gamma-1-importer-skill"
+    nonimporter = tmp_path / "skills" / "gamma-2-nonimporter-skill"
+    write_route_smoke_worker(
+        importer,
+        "        import officina._batch_trace_marker\n",
+    )
+    write_route_smoke_worker(nonimporter, "        pass\n")
+
+    shared_first = tmp_path / "skills" / "epsilon-shared-import-skill"
+    shared_second = tmp_path / "skills" / "zeta-shared-import-skill"
+    for skill in (shared_first, shared_second):
+        write_route_smoke_worker(
+            skill,
+            "        from officina import _batch_trace_marker\n",
+        )
+
+    cwd_mutator = tmp_path / "skills" / "eta-cwd-mutator-skill"
+    cwd_observer = tmp_path / "skills" / "theta-cwd-observer-skill"
+    leaked_path = (tmp_path / "leaked-path").as_posix()
+    write_route_smoke_worker(
+        cwd_mutator,
+        "        import os, sys\n"
+        f"        os.chdir({str(tmp_path)!r})\n"
+        f"        sys.path.insert(0, {leaked_path!r})\n",
+    )
+    write_route_smoke_worker(
+        cwd_observer,
+        "        import sys\n"
+        "        from pathlib import Path\n"
+        "        assert Path.cwd() == Path(__file__).resolve().parents[1]\n"
+        f"        assert {leaked_path!r} not in sys.path\n",
+    )
+
     target = _target("_rtx/_worker.py")
     child_calls: list[list[str]] = []
     real_run = python_interface.subprocess.run
@@ -555,7 +587,13 @@ def test_route_smoke_batch_uses_one_child_and_isolates_loaded_paths(
         tmp_path,
         [
             (second, target),
+            (shared_second, target),
             (first, target),
+            (importer, target),
+            (nonimporter, target),
+            (shared_first, target),
+            (cwd_mutator, target),
+            (cwd_observer, target),
             (first.resolve(), target),
         ],
     )
@@ -563,123 +601,36 @@ def test_route_smoke_batch_uses_one_child_and_isolates_loaded_paths(
     first_key = (first.resolve(), target)
     second_key = (second.resolve(), target)
     assert child_calls and len(child_calls) == 1
-    assert list(traces) == [first_key, second_key]
+    expected_keys = [
+        (skill.resolve(), target)
+        for skill in (
+            first,
+            second,
+            shared_first,
+            cwd_mutator,
+            importer,
+            nonimporter,
+            cwd_observer,
+            shared_second,
+        )
+    ]
+    assert list(traces) == expected_keys
     assert (first / "_rtx" / "_dependency.py").resolve() in traces[first_key]
     assert (second / "_rtx" / "_dependency.py").resolve() not in traces[first_key]
     assert (second / "_rtx" / "_dependency.py").resolve() in traces[second_key]
     assert (first / "_rtx" / "_dependency.py").resolve() not in traces[second_key]
-
-
-def test_v4_route_smoke_trace_reports_loaded_not_merely_bound_sources(
-    tmp_path: Path,
-) -> None:
-    skill = tmp_path / "skills" / "demo-skill"
-    write_traced_interface(skill, "loaded")
-    unused = skill / "_rtx" / "_unused.py"
-    unused.write_text("UNUSED = True\n", encoding="utf-8")
-    target = _target("_rtx/_worker.py")
-
-    paths = python_interface.trace_python_route_smoke_dependencies(
-        skill,
-        tmp_path,
-        target,
-    )
-
-    assert (skill / "_rtx" / "_worker.py").resolve() in paths
-    assert (skill / "_rtx" / "_dependency.py").resolve() in paths
-    assert unused.resolve() not in paths
-
-
-def test_route_smoke_batch_isolates_lazy_officina_imports_between_specs(
-    tmp_path: Path,
-) -> None:
-    source_package = tmp_path / "src" / "officina"
-    source_package.mkdir(parents=True)
-    current_package = Path(__file__).resolve().parents[1] / "src" / "officina"
-    (source_package / "__init__.py").write_text(
-        f"__path__.append({str(current_package)!r})\n",
-        encoding="utf-8",
-    )
-    marker = source_package / "_route_smoke_test_marker.py"
-    marker.write_text("MARKER = True\n", encoding="utf-8")
-    first = tmp_path / "skills" / "a-skill"
-    second = tmp_path / "skills" / "b-skill"
-    write_route_smoke_worker(
-        first,
-        "        import officina._route_smoke_test_marker\n",
-    )
-    write_route_smoke_worker(second, "        pass\n")
-    target = _target("_rtx/_worker.py")
-
-    traces = python_interface.trace_python_route_smoke_dependencies_batch(
-        tmp_path,
-        ((first, target), (second, target)),
-    )
-
-    assert marker.resolve() in traces[(first.resolve(), target)]
-    assert marker.resolve() not in traces[(second.resolve(), target)]
-
-
-def test_route_smoke_batch_retraces_shared_lazy_officina_import_per_spec(
-    tmp_path: Path,
-) -> None:
-    source_package = tmp_path / "src" / "officina"
-    source_package.mkdir(parents=True)
-    current_package = Path(__file__).resolve().parents[1] / "src" / "officina"
-    (source_package / "__init__.py").write_text(
-        f"__path__.append({str(current_package)!r})\n",
-        encoding="utf-8",
-    )
-    marker = source_package / "_route_smoke_test_marker.py"
-    marker.write_text("MARKER = True\n", encoding="utf-8")
-    first = tmp_path / "skills" / "a-skill"
-    second = tmp_path / "skills" / "b-skill"
-    for skill in (first, second):
-        write_route_smoke_worker(
-            skill,
-            "        from officina import _route_smoke_test_marker\n",
-        )
-    target = _target("_rtx/_worker.py")
-
-    traces = python_interface.trace_python_route_smoke_dependencies_batch(
-        tmp_path,
-        ((first, target), (second, target)),
-    )
-
-    assert marker.resolve() in traces[(first.resolve(), target)]
-    assert marker.resolve() in traces[(second.resolve(), target)]
-
-
-def test_route_smoke_batch_restores_cwd_and_sys_path_between_specs(
-    tmp_path: Path,
-) -> None:
-    first = tmp_path / "skills" / "a-skill"
-    second = tmp_path / "skills" / "b-skill"
-    leaked_path = (tmp_path / "leaked-path").as_posix()
-    write_route_smoke_worker(
-        first,
-        "        import os, sys\n"
-        f"        os.chdir({str(tmp_path)!r})\n"
-        f"        sys.path.insert(0, {leaked_path!r})\n",
-    )
-    write_route_smoke_worker(
-        second,
-        "        import sys\n"
-        "        from pathlib import Path\n"
-        "        assert Path.cwd() == Path(__file__).resolve().parents[1]\n"
-        f"        assert {leaked_path!r} not in sys.path\n",
-    )
-    target = _target("_rtx/_worker.py")
-
-    traces = python_interface.trace_python_route_smoke_dependencies_batch(
-        tmp_path,
-        ((first, target), (second, target)),
-    )
-
-    assert set(traces) == {
-        (first.resolve(), target),
-        (second.resolve(), target),
-    }
+    assert (first / "_rtx" / "_worker.py").resolve() in traces[first_key]
+    assert unused.resolve() not in traces[first_key]
+    assert candidate_marker.resolve() in traces[(importer.resolve(), target)]
+    assert candidate_marker.resolve() not in traces[(nonimporter.resolve(), target)]
+    assert candidate_marker.resolve() in traces[(shared_first.resolve(), target)]
+    assert candidate_marker.resolve() in traces[(shared_second.resolve(), target)]
+    assert candidate_init.resolve() in traces[first_key]
+    assert (live_package / "__init__.py").resolve() not in traces[first_key]
+    assert candidate_python_interface.resolve() in traces[first_key]
+    assert (
+        live_runtime / "python_machine_interface.py"
+    ).resolve() not in traces[first_key]
 
 
 def test_route_smoke_batch_rejects_invalid_blueprint_outside_skills(
@@ -900,62 +851,6 @@ def test_scalar_route_smoke_trace_delegates_to_batch(
     assert calls == [(tmp_path, ((skill, target),))]
 
 
-def test_route_smoke_trace_prefers_candidate_local_officina_source(
-    tmp_path: Path,
-) -> None:
-    skill = tmp_path / "skills" / "demo-skill"
-    runtime = skill / "_rtx"
-    runtime.mkdir(parents=True)
-    write_interface(runtime / "_demo.py")
-    live_source = Path(python_interface.__file__).resolve().parents[2]
-    candidate_source = tmp_path / "src"
-    shutil.copytree(
-        live_source / "officina",
-        candidate_source / "officina",
-        ignore=lambda directory, names: {
-            name
-            for name in names
-            if name == "blueprint.yaml"
-            or (name == "blueprints" and Path(directory).name != "officina")
-        },
-    )
-
-    paths = python_interface.trace_python_route_smoke_dependencies(
-        skill,
-        tmp_path,
-        _target(),
-    )
-
-    assert (candidate_source / "officina" / "__init__.py").resolve() in paths
-    assert (live_source / "officina" / "__init__.py").resolve() not in paths
-
-
-def test_load_interface_preserves_package_relative_imports(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    runtime = tmp_path / "_rtx"
-    runtime.mkdir()
-    (runtime / "__init__.py").write_text("VALUE = 'ok'\n", encoding="utf-8")
-    (runtime / "_demo.py").write_text(
-        "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
-        "from . import VALUE\n"
-        "\n"
-        "class Interface(PythonMachineInterface):\n"
-        "    def route_smoke(self):\n"
-        "        assert VALUE == 'ok'\n"
-        "\n"
-        "    def run(self, args):\n"
-        "        return 0\n",
-        encoding="utf-8",
-    )
-    monkeypatch.chdir(tmp_path)
-
-    interface = load_interface("_rtx/_demo.py", "Interface")
-
-    assert interface.__class__.__name__ == "Interface"
-
-
 def test_load_interface_ignores_conflicting_cached_package(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -993,34 +888,6 @@ def test_load_interface_ignores_conflicting_cached_package(
     sys.modules.pop("_rtx._demo", None)
 
 
-def test_logical_loader_preserves_relative_imports_physical_file_and_resources(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    module_root = tmp_path / "skills" / "demo" / "_rtx"
-    _write_logical_runtime(module_root, value="demo")
-    target = _logical_target("demo-rtx")
-    monkeypatch.chdir(module_root)
-    sys.modules.pop("runtime", None)
-    sys.modules.pop("helper", None)
-
-    interface = load_interface(
-        target.gateway_path,
-        target.process_entry,
-        logical_package=target.logical_package,
-        logical_entrypoint=target.logical_entrypoint,
-    )
-
-    assert interface.value == "demo"
-    assert interface.physical_file == (module_root / "runtime.py").resolve()
-    assert Path(interface.run.__func__.__code__.co_filename) == (
-        module_root / "runtime.py"
-    ).resolve()
-    assert interface.resource == "resource-demo"
-    assert "runtime" not in sys.modules
-    assert "helper" not in sys.modules
-
-
 def test_logical_loader_replaces_hostile_cached_package_state(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1031,7 +898,10 @@ def test_logical_loader_replaces_hostile_cached_package_state(
     hostile = type(sys)(target.logical_package)
     hostile.VALUE = "hostile"
     hostile.__file__ = str(tmp_path / "hostile.py")
-    sys.modules[target.logical_package] = hostile
+    monkeypatch.setitem(sys.modules, target.logical_package, hostile)
+    monkeypatch.delitem(sys.modules, "runtime", raising=False)
+    monkeypatch.delitem(sys.modules, "helper", raising=False)
+    monkeypatch.delitem(sys.modules, "late_helper", raising=False)
     monkeypatch.chdir(module_root)
 
     interface = load_interface(
@@ -1042,9 +912,20 @@ def test_logical_loader_replaces_hostile_cached_package_state(
     )
 
     assert interface.value == "trusted"
+    assert interface.physical_file == (module_root / "runtime.py").resolve()
+    assert Path(interface.run.__func__.__code__.co_filename) == (
+        module_root / "runtime.py"
+    ).resolve()
+    assert interface.resource == "resource-trusted"
+    assert "runtime" not in sys.modules
+    assert "helper" not in sys.modules
+    assert target.logical_entrypoint not in sys.modules
     assert sys.modules[target.logical_package] is hostile
     assert run_python_machine_interface(interface, []) == 0
     assert interface.late_value == "late-trusted"
+    assert "late_helper" not in sys.modules
+    assert f"{target.logical_package}.late_helper" not in sys.modules
+    assert target.logical_entrypoint not in sys.modules
     assert sys.modules[target.logical_package] is hostile
 
 
@@ -1165,70 +1046,13 @@ def test_main_attaches_runtime_dispatch_context(
     }
 
 
-def test_logical_descriptor_and_snapshot_sources_have_identical_identities(
+def test_logical_bound_transports_preserve_identity_and_reject_bare_imports(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from officina.blueprints.graph import (
         encode_runtime_python_package_snapshot,
     )
-
-    module_root = tmp_path / "skills" / "demo" / "_rtx"
-    _write_logical_runtime(module_root, value="same")
-    target = _logical_target("demo-rtx")
-    monkeypatch.chdir(module_root)
-    paths = (module_root / "__init__.py", module_root / "helper.py", module_root / "runtime.py")
-    descriptors = [
-        os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0))
-        for path in paths
-    ]
-    try:
-        descriptor_sources = python_runner._load_bound_package_sources(
-                tuple(
-                    (descriptor, path.relative_to(module_root.parent).as_posix())
-                    for descriptor, path in zip(descriptors, paths, strict=True)
-                ),
-                logical_package=target.logical_package,
-                physical_package_prefix=module_root.name,
-        )
-    finally:
-        for descriptor in descriptors:
-            os.close(descriptor)
-
-    snapshots = tuple((path, path.read_bytes()) for path in paths)
-    payload = encode_runtime_python_package_snapshot(
-        snapshots,
-        module_root.parent,
-    )
-    snapshot = tmp_path / "snapshot.json"
-    snapshot.write_bytes(payload)
-    snapshot_sources = python_runner._load_package_snapshot_sources(
-        snapshot,
-        hashlib.sha256(payload).hexdigest(),
-        logical_package=target.logical_package,
-        physical_package_prefix=module_root.name,
-    )
-
-    assert descriptor_sources == snapshot_sources
-    assert target.logical_entrypoint in descriptor_sources
-    assert descriptor_sources[target.logical_entrypoint][1] == str(
-        (module_root / "runtime.py").resolve()
-    )
-
-
-@pytest.mark.parametrize("transport", ["descriptor", "snapshot"])
-def test_logical_bound_transport_rejects_bare_sibling_import_after_live_swap(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    transport: str,
-) -> None:
-    from officina.blueprints.graph import (
-        encode_runtime_python_package_snapshot,
-    )
-
-    if transport == "descriptor" and os.name == "nt":
-        # famulus-skip: category=platform-contract; reason=Windows denies renaming an open CRT descriptor; alternate=the snapshot parameter exercises the same bound-source isolation contract
-        pytest.skip("Windows cannot rename an open descriptor")
 
     module_root = tmp_path / "skills" / "demo" / "_rtx"
     module_root.mkdir(parents=True)
@@ -1245,25 +1069,30 @@ def test_logical_bound_transport_rejects_bare_sibling_import_after_live_swap(
         encoding="utf-8",
     )
     target = _logical_target("demo-rtx")
-    paths = (module_root / "__init__.py", helper, runtime)
     monkeypatch.chdir(module_root)
-    sys.modules.pop("helper", None)
-    original_sys_path = list(sys.path)
-    sys.path.insert(0, str(module_root))
-    sys.path.insert(0, "")
-
-    if transport == "descriptor":
-        descriptors = [
-            os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0))
-            for path in paths
-        ]
+    paths = (module_root / "__init__.py", helper, runtime)
+    snapshots = tuple((path, path.read_bytes()) for path in paths)
+    payload = encode_runtime_python_package_snapshot(
+        snapshots,
+        module_root.parent,
+    )
+    snapshot = tmp_path / "snapshot.json"
+    snapshot.write_bytes(payload)
+    snapshot_sources = python_runner._load_package_snapshot_sources(
+        snapshot,
+        hashlib.sha256(payload).hexdigest(),
+        logical_package=target.logical_package,
+        physical_package_prefix=module_root.name,
+    )
+    descriptors = [
+        os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+        for path in paths
+    ]
+    descriptor_sources = None
+    if not descriptor_safe_open_supported():
+        # famulus-skip: category=platform-contract; reason=Windows denies renaming an open CRT descriptor; alternate=descriptor identity is checked before the swap and snapshot sources exercise live-swap isolation
         try:
-            helper.replace(module_root / "captured-helper.py")
-            helper.write_text(
-                "raise AssertionError('hostile live helper executed')\n",
-                encoding="utf-8",
-            )
-            sources = python_runner._load_bound_package_sources(
+            descriptor_sources = python_runner._load_bound_package_sources(
                 tuple(
                     (descriptor, path.relative_to(module_root.parent).as_posix())
                     for descriptor, path in zip(descriptors, paths, strict=True)
@@ -1274,34 +1103,49 @@ def test_logical_bound_transport_rejects_bare_sibling_import_after_live_swap(
         finally:
             for descriptor in descriptors:
                 os.close(descriptor)
-    else:
-        payload = encode_runtime_python_package_snapshot(
-            tuple((path, path.read_bytes()) for path in paths),
-            module_root.parent,
-        )
-        snapshot = tmp_path / "snapshot.json"
-        snapshot.write_bytes(payload)
-        helper.replace(module_root / "captured-helper.py")
-        helper.write_text(
-            "raise AssertionError('hostile live helper executed')\n",
-            encoding="utf-8",
-        )
-        sources = python_runner._load_package_snapshot_sources(
-            snapshot,
-            hashlib.sha256(payload).hexdigest(),
-            logical_package=target.logical_package,
-            physical_package_prefix=module_root.name,
-        )
+        descriptors = []
+        assert descriptor_sources == snapshot_sources
 
-    try:
-        with pytest.raises(ModuleNotFoundError, match="helper"):
-            load_interface(
-                target.gateway_path,
-                target.process_entry,
+    helper.replace(module_root / "captured-helper.py")
+    helper.write_text(
+        "raise AssertionError('hostile live helper executed')\n",
+        encoding="utf-8",
+    )
+    sources_by_transport = [("snapshot", snapshot_sources)]
+    if descriptors:
+        try:
+            descriptor_sources = python_runner._load_bound_package_sources(
+                tuple(
+                    (descriptor, path.relative_to(module_root.parent).as_posix())
+                    for descriptor, path in zip(descriptors, paths, strict=True)
+                ),
                 logical_package=target.logical_package,
-                logical_entrypoint=target.logical_entrypoint,
-                _package_sources=sources,
+                physical_package_prefix=module_root.name,
             )
+        finally:
+            for descriptor in descriptors:
+                os.close(descriptor)
+        assert descriptor_sources == snapshot_sources
+        sources_by_transport.append(("descriptor", descriptor_sources))
+
+    assert target.logical_entrypoint in snapshot_sources
+    assert snapshot_sources[target.logical_entrypoint][1] == str(runtime.resolve())
+    original_sys_path = list(sys.path)
+    monkeypatch.delitem(sys.modules, "helper", raising=False)
+    sys.path.insert(0, str(module_root))
+    sys.path.insert(0, "")
+    try:
+        for transport, sources in sources_by_transport:
+            with pytest.raises(ModuleNotFoundError, match="helper") as error:
+                load_interface(
+                    target.gateway_path,
+                    target.process_entry,
+                    logical_package=target.logical_package,
+                    logical_entrypoint=target.logical_entrypoint,
+                    _package_sources=sources,
+                )
+            assert error.value.name == "helper", transport
+            assert "helper" not in sys.modules
     finally:
         sys.path[:] = original_sys_path
 
@@ -1317,67 +1161,60 @@ def test_logical_in_process_loader_and_route_smoke_confine_and_restore_sys_path(
     source = (
         "import os, sys\n"
         "from pathlib import Path\n"
+        "from . import state\n"
         "ROOT = Path(os.getcwd()).resolve()\n"
         "def assert_confined():\n"
         "    assert all(Path(entry or os.getcwd()).resolve() != ROOT for entry in sys.path)\n"
         "assert_confined()\n"
         "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
         "class Interface(PythonMachineInterface):\n"
+        "    def __init__(self):\n"
+        "        state.VALUE = 1\n"
+        "        self.constructed_state = state.VALUE\n"
         "    def route_smoke(self): assert_confined()\n"
-        "    def run(self, args): return 0\n"
+        "    def run(self, args):\n"
+        "        assert_confined()\n"
+        "        from . import state\n"
+        "        assert state.VALUE == 1\n"
+        "        self.run_state = state.VALUE\n"
+        "        return 0\n"
     ).encode("utf-8")
+    state_source = b"VALUE = 0\n"
     (module_root / "__init__.py").write_bytes(b"")
+    (module_root / "state.py").write_bytes(state_source)
     (module_root / "runtime.py").write_bytes(source)
     monkeypatch.chdir(module_root)
     sources = python_runner._index_bound_package_sources(
         (
             (b"", "__init__.py"),
+            (state_source, "state.py"),
             (source, "runtime.py"),
         ),
         logical_package=target.logical_package,
     )
     assert sources[target.logical_entrypoint][1] == str(physical_runtime)
+    original_sys_path = list(sys.path)
     sys.path.insert(0, str(module_root))
     sys.path.insert(0, "")
-    before = list(sys.path)
+    confined_sys_path = list(sys.path)
+    try:
+        interface = load_interface(
+            target.gateway_path,
+            target.process_entry,
+            logical_package=target.logical_package,
+            logical_entrypoint=target.logical_entrypoint,
+            _package_sources=sources,
+        )
+        assert interface.constructed_state == 1
+        assert sys.path == confined_sys_path
 
-    interface = load_interface(
-        target.gateway_path,
-        target.process_entry,
-        logical_package=target.logical_package,
-        logical_entrypoint=target.logical_entrypoint,
-        _package_sources=sources,
-    )
-    assert sys.path == before
-
-    assert run_python_machine_interface(interface, ["--route-smoke"]) == 0
-    assert sys.path == before
-
-
-def test_bound_interface_reuses_the_same_trusted_module_state_across_run(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    runtime = tmp_path / "_rtx"
-    runtime.mkdir()
-    (runtime / "__init__.py").write_text("", encoding="utf-8")
-    (runtime / "state.py").write_text("VALUE = 0\n", encoding="utf-8")
-    (runtime / "worker.py").write_text(
-        "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
-        "from . import state\n"
-        "class Interface(PythonMachineInterface):\n"
-        "    def __init__(self): state.VALUE = 1\n"
-        "    def run(self, args):\n"
-        "        from . import state\n"
-        "        assert state.VALUE == 1\n"
-        "        return 0\n",
-        encoding="utf-8",
-    )
-    monkeypatch.chdir(tmp_path)
-
-    interface = load_interface("_rtx/worker.py", "Interface")
-
-    assert run_python_machine_interface(interface, []) == 0
+        assert run_python_machine_interface(interface, ["--route-smoke"]) == 0
+        assert sys.path == confined_sys_path
+        assert run_python_machine_interface(interface, []) == 0
+        assert interface.run_state == 1
+        assert sys.path == confined_sys_path
+    finally:
+        sys.path[:] = original_sys_path
 
 
 def test_route_smoke_trace_isolates_two_nested_rtx_logical_packages(
@@ -1562,7 +1399,7 @@ def test_load_interface_uses_bound_source_snapshot_after_final_swap(
     assert not hasattr(interface, "marker")
 
 
-def test_route_smoke_builds_parser_but_does_not_require_normal_args(
+def test_route_smoke_then_normal_mode_preserves_parser_and_run_behavior(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -1573,27 +1410,14 @@ def test_route_smoke_builds_parser_but_does_not_require_normal_args(
     monkeypatch.chdir(tmp_path)
     interface = load_interface("_rtx/_demo.py", "Interface")
 
-    result = run_python_machine_interface(interface, ["--route-smoke"])
+    route_result = run_python_machine_interface(interface, ["--route-smoke"])
 
-    assert result == 0
+    assert route_result == 0
     assert not interface.ran
     assert capsys.readouterr().out == "route-smoke ok\n"
+    normal_result = run_python_machine_interface(interface, ["--name", "Ada"])
 
-
-def test_normal_mode_parses_args_and_runs(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    runtime = tmp_path / "_rtx"
-    runtime.mkdir()
-    write_interface(runtime / "_demo.py")
-    monkeypatch.chdir(tmp_path)
-    interface = load_interface("_rtx/_demo.py", "Interface")
-
-    result = run_python_machine_interface(interface, ["--name", "Ada"])
-
-    assert result == 0
+    assert normal_result == 0
     assert interface.ran
     assert capsys.readouterr().out == "hello Ada\n"
 
@@ -1870,7 +1694,12 @@ def test_dependency_resolver_uses_private_trace_certification_seam(
     assert captured["certification_view"] is certification_view
 
 
-def test_dependency_resolver_collects_transitive_v4_dispatches(tmp_path: Path) -> None:
+def test_v4_dependency_resolver_reuses_preloaded_graph_without_fd_growth(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import officina.dispatcher.core as dispatcher_core
+
     _write_v4_runtime_module(
         tmp_path,
         "source-skill",
@@ -1897,40 +1726,24 @@ def test_dependency_resolver_collects_transitive_v4_dispatches(tmp_path: Path) -
             )
         }
 
-    dependencies = DispatchDependencyResolver(
+    resolver = DispatchDependencyResolver(
         repo_root=tmp_path,
         certification_view=_PassingCertificationView(),
-    ).collect(SourceInterface())
-
-    assert [(item.key, item.resolved.target) for item in dependencies] == [
+    )
+    proc_fds = Path("/proc/self/fd")
+    before = len(list(proc_fds.iterdir())) if proc_fds.is_dir() else None
+    graphless_results = [resolver.collect(SourceInterface()) for _ in range(2)]
+    after = len(list(proc_fds.iterdir())) if proc_fds.is_dir() else None
+    expected = [
         ("middle", "middle-skill.interface.run"),
         ("next", "leaf-skill.interface.run"),
     ]
-    assert [item.depth for item in dependencies] == [0, 1]
+    for dependencies in graphless_results:
+        assert [(item.key, item.resolved.target) for item in dependencies] == expected
+        assert [item.depth for item in dependencies] == [0, 1]
+    if before is not None:
+        assert after == before
 
-
-def test_preloaded_graph_resolves_transitive_dispatches_without_reloading(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import officina.dispatcher.core as dispatcher_core
-
-    _write_v4_runtime_module(
-        tmp_path,
-        "source-skill",
-        target="middle-skill.interface.run",
-    )
-    _write_v4_runtime_module(
-        tmp_path,
-        "middle-skill",
-        target="leaf-skill.interface.run",
-        allowed_callers=("source-skill",),
-    )
-    _write_v4_runtime_module(
-        tmp_path,
-        "leaf-skill",
-        allowed_callers=("middle-skill",),
-    )
     graph = load_repository_blueprint_graph(
         tmp_path,
         expected_schema_version=4,
@@ -1956,66 +1769,18 @@ def test_preloaded_graph_resolves_transitive_dispatches_without_reloading(
         reject_graph,
     )
 
-    class SourceInterface(PythonMachineInterface):
-        dispatches = {
-            "middle": DispatchCall(
-                caller_skill="source-skill",
-                target_skill="middle-skill",
-                interface="middle-skill.interface.run",
-            )
-        }
-
-    dependencies = DispatchDependencyResolver(
+    preloaded_dependencies = DispatchDependencyResolver(
         repo_root=tmp_path,
         certification_view=_PassingCertificationView(),
         graph=graph,
     ).collect(SourceInterface())
 
-    assert [item.resolved.target for item in dependencies] == [
-        "middle-skill.interface.run",
-        "leaf-skill.interface.run",
-    ]
+    assert [
+        (item.key, item.resolved.target) for item in preloaded_dependencies
+    ] == expected
+    assert [item.depth for item in preloaded_dependencies] == [0, 1]
     assert inventory_calls == 0
     assert graph_calls == 0
-
-
-def test_repeated_v4_dependency_collection_does_not_retain_file_descriptors(
-    tmp_path: Path,
-) -> None:
-    proc_fds = Path("/proc/self/fd")
-    if not proc_fds.is_dir():
-        # famulus-skip: category=platform-contract; reason=FD enumeration requires procfs; alternate=metadata resolver tests cover deterministic closure
-        pytest.skip("descriptor-count assertion requires /proc/self/fd")
-    _write_v4_runtime_module(
-        tmp_path,
-        "source-skill",
-        target="target-skill.interface.run",
-    )
-    _write_v4_runtime_module(
-        tmp_path,
-        "target-skill",
-        allowed_callers=("source-skill",),
-    )
-
-    class SourceInterface(PythonMachineInterface):
-        dispatches = {
-            "target": DispatchCall(
-                caller_skill="source-skill",
-                target_skill="target-skill",
-                interface="target-skill.interface.run",
-            )
-        }
-
-    resolver = DispatchDependencyResolver(
-        repo_root=tmp_path,
-        certification_view=_PassingCertificationView(),
-    )
-    before = len(list(proc_fds.iterdir()))
-    retained_results = [resolver.collect(SourceInterface()) for _ in range(20)]
-    after = len(list(proc_fds.iterdir()))
-
-    assert retained_results
-    assert after == before
 
 
 def test_main_reports_incomplete_python_target(

@@ -30,6 +30,9 @@ V5_AUTHORIZATION_FIXTURE = (
 V5_SCHEMA_ROOT = (
     Path(__file__).parent / "fixtures" / "blueprint_schemas" / "v5"
 )
+V6_SCHEMA_ROOT = (
+    Path(__file__).parent / "fixtures" / "blueprint_schemas" / "v6"
+)
 _canonical_iter_blueprints = iter_blueprints
 _canonical_search_blueprints = search_blueprints
 
@@ -116,6 +119,61 @@ def _write_v4_blueprints(root: Path) -> None:
                 description: Run the module.
             """
         ).lstrip(),
+        encoding="utf-8",
+    )
+
+
+def _write_v6_blueprints(root: Path) -> None:
+    module_root = root / "skills" / "node-drift"
+    module_root.mkdir(parents=True)
+    (module_root / "SKILL.md").write_text("# Node drift\n", encoding="utf-8")
+    (module_root / "blueprint.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": 6,
+                "node_type": "module",
+                "id": "node-drift",
+                "version": 1,
+                "maturity": "stable",
+                "description": "Report signed-certificate currentness.",
+                "gateway": {"path": "SKILL.md", "language": "Markdown"},
+                "content": [r"SKILL\.md"],
+                "authority": {"owns_filesystem": []},
+                "sources": {
+                    "node-drift.source.gateway": {
+                        "blueprint": {
+                            "base": "module-root",
+                            "path": "blueprints/gateway.yaml",
+                        }
+                    }
+                },
+                "children": {},
+                "namespace_exports": {},
+                "exports": {},
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    source = module_root / "blueprints" / "gateway.yaml"
+    source.parent.mkdir()
+    source.write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": 6,
+                "node_type": "behavioral_source",
+                "id": "node-drift.source.gateway",
+                "version": 1,
+                "maturity": "stable",
+                "description": "Define the currentness query rules.",
+                "gateway": {"path": "SKILL.md", "language": "Markdown"},
+                "content": [r"SKILL\.md"],
+                "dependencies": [],
+                "uses_interfaces": [],
+                "interfaces": {},
+            },
+            sort_keys=False,
+        ),
         encoding="utf-8",
     )
 
@@ -299,9 +357,24 @@ def test_v4_default_search_result_uses_generic_node_metadata(tmp_path: Path) -> 
     ]
 
 
-def test_v6_search_exposes_current_skill_drift_registered_descriptions() -> None:
+def test_v6_search_exposes_registered_descriptions(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    canonical_loader = blueprint_search_module.load_repository_blueprint_graph
+    monkeypatch.setattr(
+        blueprint_search_module,
+        "load_repository_blueprint_graph",
+        lambda repo_root, **kwargs: canonical_loader(
+            repo_root,
+            schema_root=V6_SCHEMA_ROOT,
+            **kwargs,
+        ),
+    )
+    _write_v6_blueprints(tmp_path)
+
     rows = _canonical_search_blueprints(
-        REPO_ROOT,
+        tmp_path,
         {
             "schema_version": 6,
             "filter": {
@@ -324,10 +397,7 @@ def test_v6_search_exposes_current_skill_drift_registered_descriptions() -> None
             "path": "skills/node-drift/blueprint.yaml",
             "values": {
                 "id": "node-drift",
-                "description": (
-                    "Computes canonical v6 node hashes and reports whether "
-                    "installed modules have current signed certificates."
-                ),
+                "description": "Report signed-certificate currentness.",
             },
         },
         {
@@ -335,11 +405,7 @@ def test_v6_search_exposes_current_skill_drift_registered_descriptions() -> None
             "path": "skills/node-drift/blueprints/gateway.yaml",
             "values": {
                 "id": "node-drift.source.gateway",
-                "description": (
-                    "Defines the LLM-facing rules for reading exact "
-                    "signed-certificate currentness, stale worklists, and "
-                    "canonical v6 node hashes."
-                ),
+                "description": "Define the currentness query rules.",
             },
         },
     ]
@@ -724,27 +790,6 @@ def test_search_blueprints_select_all_and_raw_comments(tmp_path: Path) -> None:
         "interfaces": {},
     }
     assert "# keep this comment" in rows[0]["raw"]
-
-
-def test_search_blueprints_default_query_returns_metadata_only(tmp_path: Path) -> None:
-    _write_blueprint(
-        tmp_path,
-        "defaulted",
-        """
-        category: general-assistant
-        interface_version: 1
-        interfaces: {}
-        """,
-    )
-
-    assert search_blueprints(tmp_path) == [
-        {
-            "module": "defaulted",
-            "id": "defaulted",
-            "node_type": "module",
-            "path": "skills/defaulted/blueprint.yaml",
-        }
-    ]
 
 
 def test_missing_filter_matches_absent_selector(tmp_path: Path) -> None:

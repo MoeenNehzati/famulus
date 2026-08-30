@@ -215,29 +215,24 @@ def _load_package_source(package: str, relative: str):
     return module
 
 
-@pytest.mark.parametrize(
-    ("consumer", "classification"),
-    sorted(_INVENTORY.items()),
-    ids=lambda value: ":".join(value) if isinstance(value, tuple) else value,
-)
-def test_named_path_consumer_inventory(
-    consumer: tuple[str, str], classification: str
-) -> None:
-    assert consumer in _scanned_consumers()
-    assert classification in {
-        "standard",
-        "development-isolated",
-        "process override",
-        "leak",
-    }
-
-
 def test_named_path_inventory_equals_scoped_production_scan() -> None:
     scanned = _scanned_consumers()
     assert set(_INVENTORY) == scanned, (
         f"unscanned={sorted(set(_INVENTORY) - scanned)!r}; "
         f"unclassified={sorted(scanned - set(_INVENTORY))!r}"
     )
+    accepted_classifications = {
+        "standard",
+        "development-isolated",
+        "process override",
+        "leak",
+    }
+    invalid_classifications = {
+        consumer: classification
+        for consumer, classification in _INVENTORY.items()
+        if classification not in accepted_classifications
+    }
+    assert invalid_classifications == {}
 
 
 def test_milestone_follows_selected_home_and_process_override(tmp_path: Path) -> None:

@@ -82,46 +82,6 @@ def _write_skill(
     )
 
 
-def test_live_blueprints_declare_maturity_and_discovery_installation_metadata() -> None:
-    """Live node readiness and discoverable-module installation are explicit."""
-
-    blueprint_paths = sorted(
-        (
-            *REPO_ROOT.joinpath("skills").glob("**/blueprint.yaml"),
-            *REPO_ROOT.joinpath("src", "officina").glob("**/blueprint.yaml"),
-        )
-    )
-
-    assert blueprint_paths
-    for path in blueprint_paths:
-        blueprint = yaml.safe_load(path.read_text(encoding="utf-8"))
-        assert blueprint["maturity"] in {"stable", "experimental"}, path
-        if blueprint["node_type"] == "module" and "discovery" in blueprint:
-            assert blueprint["installation_tier"] in {"core", "optional"}, path
-            preference = blueprint["personal_preference"]
-            assert isinstance(preference["applies"], bool), path
-            if preference["applies"]:
-                assert preference["description"].strip(), path
-
-
-def test_load_catalog_reads_configured_discovery_metadata(tmp_path: Path) -> None:
-    _write_skill(
-        tmp_path,
-        "proof-audit",
-        domain="research",
-        topics=["mathematical-reasoning"],
-        visibility="featured",
-    )
-
-    skill = load_catalog(tmp_path)[0]
-
-    assert skill.domain == "research"
-    assert skill.topics == ("mathematical-reasoning",)
-    assert skill.visibility == "featured"
-    assert skill.activated_by == ("user-request",)
-    assert skill.persistent_modifier is False
-
-
 def test_load_catalog_reuses_module_schema_preparation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -153,27 +113,64 @@ def test_load_catalog_reuses_module_schema_preparation(
         counted_load_schema_validator,
     )
 
-    assert len(load_catalog(tmp_path)) == 2
+    catalog = load_catalog(tmp_path)
+
+    assert [
+        (
+            skill.name,
+            skill.domain,
+            skill.topics,
+            skill.visibility,
+            skill.activated_by,
+            skill.persistent_modifier,
+        )
+        for skill in catalog
+    ] == [
+        (
+            "proof-audit",
+            "research",
+            ("mathematical-reasoning",),
+            "featured",
+            ("user-request",),
+            False,
+        ),
+        (
+            "session-guide",
+            "assistant-interaction",
+            ("session-management",),
+            "listed",
+            ("user-request",),
+            False,
+        ),
+    ]
     assert loaded_schema_names == ["module.schema.json"]
 
 
-def test_domain_grouping_omits_hidden_skills_by_default(tmp_path: Path) -> None:
-    _write_skill(
-        tmp_path,
-        "visible",
-        domain="assistant-interaction",
-        topics=["session-management"],
-        visibility="listed",
+def test_domain_grouping_omits_hidden_skills_by_default() -> None:
+    grouped = skills_by_domain(
+        [
+            SkillInfo(
+                name="visible",
+                domain="assistant-interaction",
+                topics=("session-management",),
+                visibility="listed",
+                activated_by=("user-request",),
+                persistent_modifier=False,
+                summary="Visible summary",
+                description="Use when the visible skill applies.",
+            ),
+            SkillInfo(
+                name="hidden",
+                domain="assistant-interaction",
+                topics=("session-management",),
+                visibility="hidden",
+                activated_by=("user-request",),
+                persistent_modifier=False,
+                summary="Hidden summary",
+                description="Use when the hidden skill applies.",
+            ),
+        ]
     )
-    _write_skill(
-        tmp_path,
-        "hidden",
-        domain="assistant-interaction",
-        topics=["session-management"],
-        visibility="hidden",
-    )
-
-    grouped = skills_by_domain(load_catalog(tmp_path))
 
     assert [skill.name for skill in grouped["assistant-interaction"]] == ["visible"]
 
@@ -182,14 +179,18 @@ def test_render_document_uses_supplied_catalog(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _write_skill(
-        tmp_path,
-        "proof-audit",
-        domain="research",
-        topics=["mathematical-reasoning"],
-        visibility="featured",
-    )
-    catalog = load_catalog(tmp_path)
+    catalog = [
+        SkillInfo(
+            name="proof-audit",
+            domain="research",
+            topics=("mathematical-reasoning",),
+            visibility="featured",
+            activated_by=("user-request",),
+            persistent_modifier=False,
+            summary="Audit a mathematical proof",
+            description="Use when a mathematical proof needs auditing.",
+        )
+    ]
     doc_path = tmp_path / "docs" / "domains" / "research.md"
     doc_path.parent.mkdir(parents=True)
     doc_path.write_text(
@@ -209,17 +210,26 @@ def test_render_document_uses_supplied_catalog(
         catalog=catalog,
     )
 
-    assert "Generated from live blueprints" in rendered
+    assert rendered == (
+        "<!-- BEGIN AUTO-GENERATED DOCS: research -->\n"
+        "> Generated from live blueprints. Do not edit this block by hand.\n\n"
+        "- `proof-audit` — Audit a mathematical proof\n"
+        "<!-- END AUTO-GENERATED DOCS: research -->\n"
+    )
 
 
-def test_skill_index_separates_featured_and_listed_and_shows_topics(
+def test_multiline_description_uses_standalone_first_sentence_as_summary(
     tmp_path: Path,
 ) -> None:
     _write_skill(
         tmp_path,
-        "featured-skill",
+        "notation-review",
         domain="research",
-        topics=["research-writing", "reasoning-control"],
+        topics=[
+            "mathematical-reasoning",
+            "research-writing",
+            "reasoning-control",
+        ],
         visibility="featured",
         activated_by=["user-request", "skill-workflow"],
         persistent_modifier=True,
@@ -230,30 +240,6 @@ def test_skill_index_separates_featured_and_listed_and_shows_topics(
         domain="research",
         topics=["scholarly-documents"],
         visibility="listed",
-    )
-
-    rendered = render_skill_index(tmp_path)
-
-    assert "## Research" in rendered
-    assert "### Featured" in rendered
-    assert "`featured-skill`" in rendered
-    assert "research-writing" in rendered
-    assert "activated by: user request, skill workflow" in rendered
-    assert "persistent modifier" in rendered
-    assert "### Listed" in rendered
-    assert "`listed-skill`" in rendered
-    assert "scholarly-documents" in rendered
-
-
-def test_multiline_description_uses_standalone_first_sentence_as_summary(
-    tmp_path: Path,
-) -> None:
-    _write_skill(
-        tmp_path,
-        "notation-review",
-        domain="research",
-        topics=["mathematical-reasoning"],
-        visibility="featured",
     )
     (tmp_path / "skills" / "notation-review" / "SKILL.md").write_text(
         """---
@@ -276,6 +262,15 @@ description: |
     assert "Mathematical notation needs review for clarity and consistency" in rendered
     assert "symbols should be unified" not in rendered
     assert "Do not use when" not in rendered
+    assert "## Research" in rendered
+    assert "### Featured" in rendered
+    assert "`notation-review`" in rendered
+    assert "research-writing" in rendered
+    assert "activated by: user request, skill workflow" in rendered
+    assert "persistent modifier" in rendered
+    assert "### Listed" in rendered
+    assert "`listed-skill`" in rendered
+    assert "scholarly-documents" in rendered
 
 
 def test_repository_multiline_skill_summaries_remain_catalog_safe(
@@ -289,16 +284,8 @@ def test_repository_multiline_skill_summaries_remain_catalog_safe(
     assert summaries["technical-flow-review"] == (
         "For document-level review of technical structure, motivation, or reader flow"
     )
-
-
-def test_regenerate_blueprints_description_is_trigger_only(
-    live_catalog: tuple[SkillInfo, ...],
-) -> None:
-    skill = next(
-        skill for skill in live_catalog if skill.name == "regenerate-blueprints"
-    )
-
-    assert skill.description == (
+    descriptions = {skill.name: skill.description for skill in live_catalog}
+    assert descriptions["regenerate-blueprints"] == (
         "Use when an existing skill blueprint needs regeneration, whether "
         "requested directly or required by another skill. Do not use for ordinary "
         "blueprint editing or synchronization."

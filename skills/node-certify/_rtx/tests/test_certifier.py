@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import importlib.util
 import shutil
@@ -10,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Callable, Iterator
 
 import pytest
 import yaml
@@ -18,6 +20,8 @@ MODULE_PATH = Path(__file__).resolve().parents[1] / "_node_certifier.py"
 SRC_ROOT = MODULE_PATH.parents[3] / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
+from officina.blueprints.graph import BlueprintNode, RepositoryBlueprintGraph
+from officina.certification.hashing import NodeHashState
 from officina.certification.records import (
     canonical_certificate_envelope_bytes,
     certificate_public_key_root,
@@ -27,14 +31,14 @@ from officina.certification.records import (
     rotate_certificate_signing_key,
     sign_certificate_payload,
 )
-from officina.git.provenance import check_commit_readiness
+from officina.git.provenance import GitSnapshot
 from officina.runtime.python_machine_interface import (
     logical_python_package_name,
 )
 from test_support.v4_certification_fixtures import (
     MemorySecretBackend,
     contract,
-    create_v4_repository as create_repository_fixture,
+    load_v4_repository as load_repository_fixture,
     materialize_v4_repository as materialize_repository_fixture,
     write_yaml,
 )
@@ -49,42 +53,403 @@ assert SPEC.loader is not None
 sys.modules[SPEC.name] = certifier
 SPEC.loader.exec_module(certifier)
 
-LEGACY_SCHEMA_ROOT = MODULE_PATH.parents[3] / "tests" / "fixtures" / "blueprint_schemas" / "v5"
+LEGACY_SCHEMA_ROOT = (
+    MODULE_PATH.parents[3] / "tests" / "fixtures" / "blueprint_schemas" / "v5"
+)
 LEGACY_AUTHORIZATION_FIXTURE = (
-    MODULE_PATH.parents[3]
-    / "tests"
-    / "fixtures"
-    / "blueprint_v5"
-    / "authorization"
+    MODULE_PATH.parents[3] / "tests" / "fixtures" / "blueprint_v5" / "authorization"
 )
 
+RepositoryCopyFactory = Callable[[Path], str]
+RepositoryGraphBinder = Callable[[Path, RepositoryBlueprintGraph], None]
+VALID_COMMIT = "a" * 40
 
-def test_repository_fixture_skips_graph_and_hash_preparation(
+
+def _copy_repository_tree(template_root: Path, destination: Path) -> None:
+    target = Path(destination)
+    if target.exists():
+        if not target.is_dir() or any(target.iterdir()):
+            raise ValueError(f"repository copy destination must be empty: {target}")
+        shutil.copytree(
+            template_root,
+            target,
+            copy_function=shutil.copy2,
+            dirs_exist_ok=True,
+            symlinks=True,
+        )
+        return
+    shutil.copytree(
+        template_root,
+        target,
+        copy_function=shutil.copy2,
+        symlinks=True,
+    )
+
+
+@pytest.fixture(scope="session")
+def _base_v4_repository_copier(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> RepositoryCopyFactory:
+    template_root = tmp_path_factory.mktemp("node-certify-v4-template") / "repository"
+    commit = materialize_repository_fixture(template_root)
+
+    def copy_repository(destination: Path) -> str:
+        _copy_repository_tree(template_root, destination)
+        return commit
+
+    return copy_repository
+
+
+@pytest.fixture
+def copy_base_v4_repository(
+    _base_v4_repository_copier: RepositoryCopyFactory,
+) -> RepositoryCopyFactory:
+    return _base_v4_repository_copier
+
+
+@pytest.fixture(scope="session")
+def _cross_owner_v4_repository_copier(
+    tmp_path_factory: pytest.TempPathFactory,
+    _base_v4_repository_copier: RepositoryCopyFactory,
+) -> RepositoryCopyFactory:
+    template_root = (
+        tmp_path_factory.mktemp("node-certify-v4-cross-owner-template") / "repository"
+    )
+    _base_v4_repository_copier(template_root)
+    _add_cross_owner_contract(template_root)
+    commit = (
+        GitTestRepository(template_root)
+        .git("rev-parse", "HEAD")
+        .stdout.decode("ascii")
+        .strip()
+    )
+
+    def copy_repository(destination: Path) -> str:
+        _copy_repository_tree(template_root, destination)
+        return commit
+
+    return copy_repository
+
+
+@pytest.fixture
+def copy_cross_owner_v4_repository(
+    _cross_owner_v4_repository_copier: RepositoryCopyFactory,
+) -> RepositoryCopyFactory:
+    return _cross_owner_v4_repository_copier
+
+
+@pytest.fixture
+def stable_empty_route_trace(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Isolate writer tests whose observable is independent of route tracing."""
+    monkeypatch.setattr(
+        certifier.RouteSmokeAuditor,
+        "trace_dependencies",
+        lambda _self: (),
+    )
+
+
+@pytest.fixture(scope="session")
+def immutable_legacy_route_graph(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> RepositoryBlueprintGraph:
+    root = tmp_path_factory.mktemp("node-certify-v5-route-graph")
+    copy_legacy_fixture_tree(
+        LEGACY_AUTHORIZATION_FIXTURE / "modules",
+        root / "modules",
+    )
+    copy_legacy_fixture_tree(
+        LEGACY_AUTHORIZATION_FIXTURE / "skills",
+        root / "skills",
+    )
+    return certifier.load_repository_blueprint_graph(
+        root,
+        schema_root=LEGACY_SCHEMA_ROOT,
+        expected_schema_version=5,
+    )
+
+
+def _load_repository_graph(repo: Path):
+    return certifier.load_repository_blueprint_graph(
+        repo,
+        schema_root=repo / "references" / "blueprint-schema",
+        expected_schema_version=4,
+    )
+
+
+def _bind_repository_graph(
+    monkeypatch: pytest.MonkeyPatch,
+    repo_root: Path,
+    graph: RepositoryBlueprintGraph,
+    *,
+    schema_root: Path,
+    expected_schema_version: int,
+) -> None:
+    resolved_root = repo_root.resolve()
+    resolved_schema_root = schema_root.resolve()
+    if graph.schema_version != expected_schema_version or any(
+        node.declaration.get("schema_version") != expected_schema_version
+        for node in graph.nodes.values()
+    ):
+        raise ValueError("bound graph does not match the requested schema version")
+    if any(
+        not node.blueprint_path.resolve().is_relative_to(resolved_root)
+        for node in graph.nodes.values()
+    ):
+        raise ValueError("bound graph does not belong to the requested repository")
+    physical_load = certifier.load_repository_blueprint_graph
+
+    def load(
+        requested_root: Path,
+        *,
+        schema_root: Path | None = None,
+        expected_schema_version: int = 6,
+    ) -> RepositoryBlueprintGraph:
+        if (
+            Path(requested_root).resolve() == resolved_root
+            and schema_root is not None
+            and Path(schema_root).resolve() == resolved_schema_root
+            and expected_schema_version == graph.schema_version
+        ):
+            return graph
+        return physical_load(
+            requested_root,
+            schema_root=schema_root,
+            expected_schema_version=expected_schema_version,
+        )
+
+    monkeypatch.setattr(certifier, "load_repository_blueprint_graph", load)
+
+
+@pytest.fixture
+def bind_repository_graph(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[RepositoryGraphBinder]:
+    snapshots: list[tuple[RepositoryBlueprintGraph, RepositoryBlueprintGraph]] = []
+
+    def bind(repo_root: Path, graph: RepositoryBlueprintGraph) -> None:
+        snapshots.append((graph, copy.deepcopy(graph)))
+        _bind_repository_graph(
+            monkeypatch,
+            repo_root,
+            graph,
+            schema_root=repo_root / "references" / "blueprint-schema",
+            expected_schema_version=4,
+        )
+
+    yield bind
+
+    for graph, snapshot in snapshots:
+        assert graph == snapshot, "bound repository graph must remain immutable"
+
+
+def _synthetic_repository_graph(
+    repo_root: Path,
+    *,
+    modules: tuple[tuple[str, str], ...] = (("demo-skill", "demo-skill"),),
+    schema_version: int = 6,
+) -> RepositoryBlueprintGraph:
+    nodes: dict[str, BlueprintNode] = {}
+    module_sources: dict[str, tuple[str, ...]] = {}
+    for module_id, module_name in modules:
+        module_root = (repo_root / "skills" / module_name).resolve()
+        source_id = f"{module_id}.source.gateway"
+        declaration = {"schema_version": schema_version}
+        nodes[module_id] = BlueprintNode(
+            node_id=module_id,
+            node_type="module",
+            version=1,
+            module_root=module_root,
+            blueprint_path=module_root / "blueprint.yaml",
+            gateway_path=module_root / "SKILL.md",
+            declaration=declaration,
+        )
+        nodes[source_id] = BlueprintNode(
+            node_id=source_id,
+            node_type="behavioral_source",
+            version=1,
+            module_root=module_root,
+            blueprint_path=module_root / "blueprints" / "gateway.yaml",
+            gateway_path=module_root / "_rtx" / "gateway.py",
+            declaration=declaration,
+        )
+        module_sources[module_id] = (source_id,)
+    return RepositoryBlueprintGraph(
+        nodes=nodes,
+        node_edges=(),
+        exports={},
+        export_edges=(),
+        helper_edges=(),
+        certification_edges=(),
+        module_sources=module_sources,
+        schema_version=schema_version,
+    )
+
+
+def _synthetic_python_source_graph(repo_root: Path) -> RepositoryBlueprintGraph:
+    graph = _synthetic_repository_graph(repo_root, schema_version=4)
+    source_id = "demo-skill.source.gateway"
+    source = graph.nodes[source_id]
+    binding = {
+        "kind": "process",
+        "entry": "Interface",
+        "arguments": {},
+        "fixed": [],
+    }
+    declaration = {
+        "schema_version": 4,
+        "gateway": {"path": "_rtx/worker.py", "language": "Python"},
+        "interfaces": {
+            "demo-skill.source.gateway.interface.run": {
+                "process_binding": binding,
+            },
+            "demo-skill.source.gateway.interface.inspect": {
+                "process_binding": dict(binding),
+            },
+        },
+    }
+    return replace(
+        graph,
+        nodes={
+            **graph.nodes,
+            source_id: replace(
+                source,
+                gateway_path=source.module_root / "_rtx" / "worker.py",
+                declaration=declaration,
+            ),
+        },
+    )
+
+
+def _git_metadata_result(
+    operation: str,
+    relative_path: str,
+    *,
+    object_id: str = "1" * 40,
+) -> SimpleNamespace:
+    if operation == "ls-tree":
+        stdout = (
+            f"100644 blob {object_id}\t{relative_path}\0"
+            f"100644 blob {'2' * 40}\tunrelated.txt\0"
+        ).encode()
+    elif operation == "ls-files":
+        stdout = f"100644 {object_id} 0\t{relative_path}\0".encode()
+    elif operation == "cat-file":
+        payload = b"committed bytes\n"
+        stdout = f"{object_id} blob {len(payload)}\n".encode() + payload + b"\n"
+    else:
+        raise AssertionError(f"unexpected Git operation: {operation}")
+    return SimpleNamespace(returncode=0, stdout=stdout, stderr=b"")
+
+
+def test_repository_fixture_materializes_without_preparation_then_loads_bound_state(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Build repository-only fixtures without unused graph preparation."""
     from test_support import v4_certification_fixtures as certification_fixtures
 
     def unexpected(*_args: object, **_kwargs: object) -> None:
         pytest.fail("repository-only fixture performed graph preparation")
 
+    with monkeypatch.context() as materialization_patch:
+        materialization_patch.setattr(
+            certification_fixtures,
+            "load_repository_blueprint_graph",
+            unexpected,
+        )
+        materialization_patch.setattr(
+            certification_fixtures,
+            "compute_node_hash_states",
+            unexpected,
+        )
+
+        commit = certification_fixtures.materialize_v4_repository(tmp_path)
+
+    assert (
+        GitTestRepository(tmp_path)
+        .git("rev-parse", "HEAD")
+        .stdout.decode("ascii")
+        .strip()
+        == commit
+    )
+
+    graph, states, loaded_commit = certification_fixtures.load_v4_repository(tmp_path)
+
+    assert loaded_commit == commit
+    assert set(states) == set(graph.nodes)
+    assert all(
+        node.blueprint_path.is_relative_to(tmp_path) for node in graph.nodes.values()
+    )
+    with pytest.raises(ValueError, match="does not match repository HEAD"):
+        certification_fixtures.load_v4_repository(
+            tmp_path,
+            commit="0" * 40,
+        )
+
+
+def test_repository_graph_binding_requires_exact_root_schema_and_version(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph = _synthetic_repository_graph(tmp_path, schema_version=4)
+    schema_root = tmp_path / "references" / "blueprint-schema"
+    fallback = _synthetic_repository_graph(tmp_path / "fallback", schema_version=6)
+    physical_calls: list[tuple[Path, Path | None, int]] = []
+
+    def physical_load(
+        repo_root: Path,
+        *,
+        schema_root: Path | None = None,
+        expected_schema_version: int = 6,
+    ) -> RepositoryBlueprintGraph:
+        physical_calls.append((Path(repo_root), schema_root, expected_schema_version))
+        return fallback
+
     monkeypatch.setattr(
-        certification_fixtures,
+        certifier,
         "load_repository_blueprint_graph",
-        unexpected,
+        physical_load,
     )
-    monkeypatch.setattr(
-        certification_fixtures,
-        "compute_node_hash_states",
-        unexpected,
+    _bind_repository_graph(
+        monkeypatch,
+        tmp_path,
+        graph,
+        schema_root=schema_root,
+        expected_schema_version=4,
     )
 
-    commit = certification_fixtures.materialize_v4_repository(tmp_path)
-
-    assert GitTestRepository(tmp_path).git("rev-parse", "HEAD").stdout.decode(
-        "ascii"
-    ).strip() == commit
+    assert (
+        certifier.load_repository_blueprint_graph(
+            tmp_path / ".",
+            schema_root=schema_root / ".",
+            expected_schema_version=4,
+        )
+        is graph
+    )
+    assert (
+        certifier.load_repository_blueprint_graph(
+            tmp_path / "other",
+            schema_root=schema_root,
+            expected_schema_version=4,
+        )
+        is fallback
+    )
+    assert (
+        certifier.load_repository_blueprint_graph(
+            tmp_path,
+            schema_root=tmp_path / "other-schema",
+            expected_schema_version=4,
+        )
+        is fallback
+    )
+    assert (
+        certifier.load_repository_blueprint_graph(
+            tmp_path,
+            schema_root=schema_root,
+            expected_schema_version=6,
+        )
+        is fallback
+    )
+    assert len(physical_calls) == 3
 
 
 def test_certifier_does_not_expose_legacy_audit_health_authority() -> None:
@@ -106,26 +471,6 @@ def test_certifier_does_not_expose_legacy_audit_health_authority() -> None:
     ):
         assert not hasattr(certifier, name)
     assert "compute-hashes" not in certifier.Interface.dispatches
-
-
-def test_repository_fixture_preserves_exact_bytes_under_ambient_autocrlf(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    global_config = tmp_path / "global.gitconfig"
-    global_config.write_text("[core]\n\tautocrlf = true\n", encoding="utf-8")
-    repository = tmp_path / "repo"
-    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(global_config))
-    materialize_repository_fixture(repository)
-    tracked = repository / "exact-bytes.txt"
-    tracked.write_bytes(b"exact\r\nbytes\r\n")
-
-    git = GitTestRepository(repository)
-    git.git("add", "exact-bytes.txt")
-    git.git("commit", "-qm", "exact bytes")
-    committed = git.git("show", "HEAD:exact-bytes.txt").stdout
-
-    assert committed == tracked.read_bytes()
 
 
 def _certify(
@@ -155,8 +500,10 @@ def _certify(
 def test_payload_schema_tracks_repository_schema(
     tmp_path: Path,
 ) -> None:
-    graph, states, commit = create_repository_fixture(tmp_path)
+    commit = VALID_COMMIT
+    graph = _synthetic_repository_graph(tmp_path, schema_version=4)
     node_id = "demo-skill"
+    states = {node_id: NodeHashState()}
     common = {
         "source_commit": commit,
         "key_id": "sha256:" + "a" * 64,
@@ -171,21 +518,27 @@ def test_payload_schema_tracks_repository_schema(
         "certified_at": "2026-07-20T12:00:00Z",
     }
 
-    assert certifier._build_certificate_payload(
-        tmp_path,
-        graph,
-        states,
-        node_id,
-        **common,
-    )["certificate_schema_version"] == 1
-    assert certifier._build_certificate_payload(
-        tmp_path,
-        replace(graph, schema_version=5),
-        states,
-        node_id,
-        expected_schema_version=5,
-        **common,
-    )["certificate_schema_version"] == 2
+    assert (
+        certifier._build_certificate_payload(
+            tmp_path,
+            graph,
+            states,
+            node_id,
+            **common,
+        )["certificate_schema_version"]
+        == 1
+    )
+    assert (
+        certifier._build_certificate_payload(
+            tmp_path,
+            replace(graph, schema_version=5),
+            states,
+            node_id,
+            expected_schema_version=5,
+            **common,
+        )["certificate_schema_version"]
+        == 2
+    )
     v6_payload = certifier._build_certificate_payload(
         tmp_path,
         replace(graph, schema_version=6),
@@ -327,66 +680,132 @@ def _add_cross_owner_contract(repo: Path):
     )
 
 
-def _as_current_graph(graph):
-    return replace(
-        graph,
-        schema_version=6,
-        nodes={
-            node_id: replace(
-                node,
-                declaration={**node.declaration, "schema_version": 6},
-            )
-            for node_id, node in graph.nodes.items()
-        },
-    )
-
-
-def test_live_certification_provisions_missing_canonical_key_root(
+def test_private_writer_successful_real_route_issuance_has_complete_payload_and_boundaries(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    copy_base_v4_repository: RepositoryCopyFactory,
+    bind_repository_graph: RepositoryGraphBinder,
 ) -> None:
-    commit = materialize_repository_fixture(tmp_path)
+    commit = copy_base_v4_repository(tmp_path)
+    real_load_graph = certifier.load_repository_blueprint_graph
+    graph_load_calls = 0
+
+    def counted_load_graph(*args: object, **kwargs: object):
+        nonlocal graph_load_calls
+        graph_load_calls += 1
+        return real_load_graph(*args, **kwargs)
+
+    monkeypatch.setattr(
+        certifier,
+        "load_repository_blueprint_graph",
+        counted_load_graph,
+    )
+    graph = _load_repository_graph(tmp_path)
+    bind_repository_graph(tmp_path, graph)
     public_key_root = certificate_public_key_root(tmp_path)
+    backend = MemorySecretBackend()
+    real_compute = certifier.compute_node_hash_states
+    real_inspect = certifier.CommitReadinessInspector.inspect
+    compute_calls = 0
+    readiness_calls = 0
+    atomic_modes: dict[str, list[object]] = {
+        "read": [],
+        "replace": [],
+        "compare-and-append": [],
+    }
+
+    def fail_if_read(_root: Path) -> str:
+        raise AssertionError("live certification must not read migration-only refs")
+
+    def counted_compute(*args: object, **kwargs: object):
+        nonlocal compute_calls
+        compute_calls += 1
+        return real_compute(*args, **kwargs)
+
+    def counted_inspect(self):
+        nonlocal readiness_calls
+        readiness_calls += 1
+        return real_inspect(self)
+
+    def observe_atomic_mode(name: str, operation):
+        def wrapped(*args, **kwargs):
+            atomic_modes[name].append(kwargs.get("allow_non_atomic"))
+            return operation(*args, **kwargs)
+
+        return wrapped
+
+    (tmp_path / "preexisting-untracked.txt").write_text(
+        "preexisting\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(certifier, "blueprint_mechanical_commit", fail_if_read)
+    monkeypatch.setattr(certifier, "compute_node_hash_states", counted_compute)
+    monkeypatch.setattr(certifier.CommitReadinessInspector, "inspect", counted_inspect)
+    monkeypatch.setattr(
+        certifier,
+        "read_regular_file_bytes",
+        observe_atomic_mode("read", certifier.read_regular_file_bytes),
+    )
+    monkeypatch.setattr(
+        certifier,
+        "atomic_replace_bytes",
+        observe_atomic_mode("replace", certifier.atomic_replace_bytes),
+    )
+    monkeypatch.setattr(
+        certifier,
+        "atomic_compare_and_append_bytes",
+        observe_atomic_mode(
+            "compare-and-append",
+            certifier.atomic_compare_and_append_bytes,
+        ),
+    )
 
     result = _certify(
         tmp_path,
         public_key_root=public_key_root,
-        secret_backend=MemorySecretBackend(),
+        secret_backend=backend,
+        require_migration_review=False,
     )
-
-    assert result.source_commit == commit
-    assert (public_key_root / "active-key-id").is_file()
-
-
-def test_private_writer_issues_parseable_append_only_certificate(
-    tmp_path: Path,
-) -> None:
-    graph, _states, commit = create_repository_fixture(tmp_path)
-
-    result = _certify(tmp_path)
 
     assert result.node_ids == (
         "demo-skill",
         "demo-skill.source.gateway",
     )
     assert result.source_commit == commit
+    assert (public_key_root / "active-key-id").is_file()
+    assert graph_load_calls == 1
+    assert compute_calls == 2
+    assert readiness_calls == 2
+    assert {name: set(values) for name, values in atomic_modes.items()} == {
+        "read": {False},
+        "replace": {False},
+        "compare-and-append": {False},
+    }
     path = certifier.certificate_log_path(graph.nodes["demo-skill"])
-    entries = parse_certificate_log(path.read_bytes(), tmp_path / "public-keys")
+    entries = parse_certificate_log(path.read_bytes(), public_key_root)
     assert len(entries) == 1
     payload = entries[0]["payload"]
     assert payload["subject"]["id"] == "demo-skill"
     assert payload["source_commit"] == commit
     assert payload["checks"] == list(certifier.expected_certifier_checks(4))
-    assert {
-        (check["id"], check["version"]) for check in payload["checks"]
-    } >= {("route-smoke-dependencies", 1)}
+    assert {(check["id"], check["version"]) for check in payload["checks"]} >= {
+        ("route-smoke-dependencies", 1)
+    }
 
 
-def test_private_writer_repeated_current_certification_writes_nothing(
+def test_private_writer_noop_then_renews_only_stale_parent(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    copy_base_v4_repository: RepositoryCopyFactory,
+    stable_empty_route_trace: None,
+    bind_repository_graph: RepositoryGraphBinder,
 ) -> None:
-    graph, _states, _commit = create_repository_fixture(tmp_path)
+    copy_base_v4_repository(tmp_path)
+    graph = _load_repository_graph(tmp_path)
+    bind_repository_graph(tmp_path, graph)
     backend = MemorySecretBackend()
+    parent_id = "demo-skill"
+    child_id = "demo-skill.source.gateway"
 
     first = _certify(tmp_path, secret_backend=backend)
     log_bytes = {
@@ -397,6 +816,7 @@ def test_private_writer_repeated_current_certification_writes_nothing(
     pooled_identity = pooled_path.stat().st_ino
     audit_scopes: list[tuple[str, ...]] = []
     mechanical_gates: list[str] = []
+    real_audit = certifier.RouteSmokeAuditor.require_stable_dependencies
 
     def unexpected_audit(self) -> None:
         audit_scopes.append(self._certification_node_ids)
@@ -412,6 +832,11 @@ def test_private_writer_repeated_current_certification_writes_nothing(
         secret_backend=backend,
         before_stale_issuance=lambda: mechanical_gates.append("mechanical"),
     )
+    pooled_document = yaml.safe_load(pooled_path.read_text(encoding="utf-8"))
+    module_entries = parse_certificate_log(
+        certifier.certificate_log_path(graph.nodes["demo-skill"]).read_bytes(),
+        tmp_path / "public-keys",
+    )
 
     assert second.node_ids == ()
     assert second.current_node_ids == first.node_ids
@@ -422,25 +847,20 @@ def test_private_writer_repeated_current_certification_writes_nothing(
     assert pooled_path.stat().st_ino == pooled_identity
     assert audit_scopes == []
     assert mechanical_gates == []
-
-
-def test_private_writer_stale_parent_current_child_writes_only_parent(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    graph, _states, _commit = create_repository_fixture(tmp_path)
-    backend = MemorySecretBackend()
-    parent_id = "demo-skill"
-    child_id = "demo-skill.source.gateway"
-
-    _certify(tmp_path, secret_backend=backend)
+    assert pooled_document["document_type"] == "pooled-blueprint-review"
+    assert pooled_document["root"]["id"] == "demo-skill"
+    assert pooled_document["root"]["certificate_hash"] == certificate_entry_hash(
+        module_entries[-1]
+    )
+    assert not (
+        tmp_path / "skills" / "demo-skill" / ".pooled-blueprint-review.health.json"
+    ).exists()
     parent_log = certifier.certificate_log_path(graph.nodes[parent_id])
     child_log = certifier.certificate_log_path(graph.nodes[child_id])
     child_bytes = child_log.read_bytes()
     parent_log.unlink()
     audit_scopes: list[tuple[str, ...]] = []
     events: list[str] = []
-    real_audit = certifier.RouteSmokeAuditor.require_stable_dependencies
 
     def capture_audit(self) -> None:
         events.append("route")
@@ -462,16 +882,24 @@ def test_private_writer_stale_parent_current_child_writes_only_parent(
     assert result.node_ids == (parent_id,)
     assert result.current_node_ids == (child_id,)
     assert child_log.read_bytes() == child_bytes
-    assert len(parse_certificate_log(parent_log.read_bytes(), tmp_path / "public-keys")) == 1
+    assert (
+        len(parse_certificate_log(parent_log.read_bytes(), tmp_path / "public-keys"))
+        == 1
+    )
     assert audit_scopes == [(parent_id,)]
     assert events == ["mechanical", "route"]
 
 
-def test_private_writer_missing_provider_reuses_unchanged_consumer_certificate(
+def test_private_writer_reuses_consumer_for_restored_provider_then_renews_changed_claim(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    copy_cross_owner_v4_repository: RepositoryCopyFactory,
+    stable_empty_route_trace: None,
+    bind_repository_graph: RepositoryGraphBinder,
 ) -> None:
-    materialize_repository_fixture(tmp_path)
-    graph = _add_cross_owner_contract(tmp_path)
+    copy_cross_owner_v4_repository(tmp_path)
+    graph = _load_repository_graph(tmp_path)
+    bind_repository_graph(tmp_path, graph)
     target = "demo-skill.source.gateway"
     dependency = "demo-skill.source.contract"
     backend = MemorySecretBackend()
@@ -497,27 +925,16 @@ def test_private_writer_missing_provider_reuses_unchanged_consumer_certificate(
     assert result.node_ids == (dependency,)
     assert result.current_node_ids == (target,)
     assert target_log.read_bytes() == target_bytes
-    assert len(
-        parse_certificate_log(dependency_log.read_bytes(), tmp_path / "public-keys")
-    ) == 1
-
-
-def test_private_writer_changed_provider_claim_reissues_consumer(
-    tmp_path: Path,
-) -> None:
-    materialize_repository_fixture(tmp_path)
-    graph = _add_cross_owner_contract(tmp_path)
-    target = "demo-skill.source.gateway"
-    dependency = "demo-skill.source.contract"
-    backend = MemorySecretBackend()
-
-    _certify(
-        tmp_path,
-        target_node_ids=(target,),
-        secret_backend=backend,
-        require_migration_review=False,
+    assert (
+        len(
+            parse_certificate_log(dependency_log.read_bytes(), tmp_path / "public-keys")
+        )
+        == 1
     )
-    contract_path = tmp_path / "skills" / "demo-skill" / "contracts" / "shared.schema.json"
+    assert not certifier.certificate_log_path(graph.nodes["demo-skill"]).exists()
+    contract_path = (
+        tmp_path / "skills" / "demo-skill" / "contracts" / "shared.schema.json"
+    )
     contract_path.write_text('{"type":"integer"}\n', encoding="utf-8")
     repository = GitTestRepository(tmp_path)
     repository.git("add", "skills/demo-skill/contracts/shared.schema.json")
@@ -552,10 +969,7 @@ def test_selected_legacy_writer_issues_current_payload(
         / "node-hash-policy.yaml"
     )
     policy_path = (
-        tmp_path
-        / "references"
-        / "certification-policy"
-        / "node-hash-policy.yaml"
+        tmp_path / "references" / "certification-policy" / "node-hash-policy.yaml"
     )
     policy_path.parent.mkdir(parents=True)
     shutil.copy2(policy_source, policy_path)
@@ -592,12 +1006,6 @@ def test_selected_legacy_writer_issues_current_payload(
             "source_commit": commit,
         },
     )
-    monkeypatch.setattr(
-        certifier.RouteSmokeAuditor,
-        "trace_dependencies",
-        lambda _self: (),
-    )
-
     with pytest.raises(
         certifier.CertificationError,
         match="v5 certification completeness failed",
@@ -634,57 +1042,6 @@ def test_selected_legacy_writer_issues_current_payload(
         )
 
 
-def test_private_writer_module_target_certifies_contained_source(
-    tmp_path: Path,
-) -> None:
-    graph, _states, _commit = create_repository_fixture(tmp_path)
-    source_id = "demo-skill.source.gateway"
-
-    result = _certify(tmp_path, target_node_ids=("demo-skill",))
-
-    assert source_id in result.node_ids
-    assert certifier.certificate_log_path(graph.nodes[source_id]).is_file()
-
-
-def test_private_writer_writes_certificate_backed_pooled_review(
-    tmp_path: Path,
-) -> None:
-    graph, _states, _commit = create_repository_fixture(tmp_path)
-    backend = MemorySecretBackend()
-
-    _certify(tmp_path, secret_backend=backend)
-    repeated = _certify(tmp_path, secret_backend=backend)
-
-    path = tmp_path / "skills" / "demo-skill" / ".pooled-blueprint-review.yaml"
-    document = yaml.safe_load(path.read_text(encoding="utf-8"))
-    entries = parse_certificate_log(
-        certifier.certificate_log_path(graph.nodes["demo-skill"]).read_bytes(),
-        tmp_path / "public-keys",
-    )
-    assert len(entries) == 1
-    assert repeated.node_ids == ()
-    assert document["document_type"] == "pooled-blueprint-review"
-    assert document["root"]["id"] == "demo-skill"
-    assert document["root"]["certificate_hash"] == certificate_entry_hash(entries[-1])
-    assert not (
-        tmp_path
-        / "skills"
-        / "demo-skill"
-        / ".pooled-blueprint-review.health.json"
-    ).exists()
-
-
-def test_private_writer_exact_source_does_not_write_parent(tmp_path: Path) -> None:
-    graph, _states, _commit = create_repository_fixture(tmp_path)
-    target = "demo-skill.source.gateway"
-
-    result = _certify(tmp_path, target_node_ids=(target,))
-
-    assert result.node_ids == (target,)
-    assert certifier.certificate_log_path(graph.nodes[target]).is_file()
-    assert not certifier.certificate_log_path(graph.nodes["demo-skill"]).exists()
-
-
 @pytest.mark.parametrize(
     "race",
     [
@@ -699,11 +1056,16 @@ def test_private_writer_exact_source_does_not_write_parent(tmp_path: Path) -> No
 def test_private_writer_aborts_pre_append_races(
     tmp_path: Path,
     race: str,
+    copy_base_v4_repository: RepositoryCopyFactory,
+    stable_empty_route_trace: None,
+    bind_repository_graph: RepositoryGraphBinder,
 ) -> None:
     if race == "worktree-mode" and sys.platform == "win32":
         # famulus-skip: category=platform-contract; reason=Windows worktrees do not expose a reliable POSIX executable mode; alternate=index-mode covers the authoritative Git mode boundary
         pytest.skip("POSIX worktree mode is unavailable")
-    graph, _states, _commit = create_repository_fixture(tmp_path)
+    copy_base_v4_repository(tmp_path)
+    graph = _load_repository_graph(tmp_path)
+    bind_repository_graph(tmp_path, graph)
 
     def mutate(node_id: str) -> None:
         if race == "tracked-input":
@@ -739,64 +1101,36 @@ def test_private_writer_aborts_pre_append_races(
         _certify(tmp_path, before_append=mutate)
 
 
-def test_private_writer_allows_preexisting_but_rejects_new_untracked_file(
+def test_private_writer_detects_post_append_log_corruption(
     tmp_path: Path,
+    copy_base_v4_repository: RepositoryCopyFactory,
+    stable_empty_route_trace: None,
+    bind_repository_graph: RepositoryGraphBinder,
 ) -> None:
-    graph, _states, _commit = create_repository_fixture(tmp_path)
-    (tmp_path / "preexisting-untracked.txt").write_text(
-        "preexisting\n",
-        encoding="utf-8",
-    )
-    backend = MemorySecretBackend()
-
-    result = _certify(tmp_path, secret_backend=backend)
-
-    assert result.node_ids == (
-        "demo-skill",
-        "demo-skill.source.gateway",
-    )
-
-    def add_untracked(_node_id: str) -> None:
-        (tmp_path / "new-untracked.txt").write_text(
-            "new\n",
-            encoding="utf-8",
-        )
-
-    certifier.certificate_log_path(graph.nodes["demo-skill"]).unlink()
-    with pytest.raises(certifier.CertificationError, match="changed"):
-        _certify(
-            tmp_path,
-            secret_backend=backend,
-            before_append=add_untracked,
-        )
-
-
-def test_private_writer_detects_post_append_log_corruption(tmp_path: Path) -> None:
-    graph, _states, _commit = create_repository_fixture(tmp_path)
+    copy_base_v4_repository(tmp_path)
+    graph = _load_repository_graph(tmp_path)
+    bind_repository_graph(tmp_path, graph)
 
     def corrupt(node_id: str) -> None:
         with certifier.certificate_log_path(graph.nodes[node_id]).open("ab") as stream:
             stream.write(b"{}\n")
 
-    with pytest.raises(certifier.CertificationError, match="post-write certificate log changed"):
+    with pytest.raises(
+        certifier.CertificationError, match="post-write certificate log changed"
+    ):
         _certify(tmp_path, after_append=corrupt)
 
 
-@pytest.mark.parametrize(
-    ("allow_non_atomic", "overrides"),
-    [
-        (False, {}),
-        (True, {"allow_non_atomic": True}),
-    ],
-    ids=("default-atomic", "explicit-non-atomic"),
-)
-def test_private_writer_propagates_atomic_mode_to_existing_file_apis(
+def test_private_writer_propagates_explicit_non_atomic_mode_to_existing_file_apis(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    allow_non_atomic: bool,
-    overrides: dict[str, object],
+    copy_base_v4_repository: RepositoryCopyFactory,
+    stable_empty_route_trace: None,
+    bind_repository_graph: RepositoryGraphBinder,
 ) -> None:
-    materialize_repository_fixture(tmp_path)
+    copy_base_v4_repository(tmp_path)
+    graph = _load_repository_graph(tmp_path)
+    bind_repository_graph(tmp_path, graph)
     (tmp_path / "public-keys").mkdir()
     observed: dict[str, list[object]] = {
         "read": [],
@@ -832,52 +1166,21 @@ def test_private_writer_propagates_atomic_mode_to_existing_file_apis(
         lambda *_args, **_kwargs: "pooled review\n",
     )
 
-    result = _certify(tmp_path, **overrides)
+    result = _certify(tmp_path, allow_non_atomic=True)
 
     assert "demo-skill" in result.node_ids
-    assert {
-        name: set(values)
-        for name, values in observed.items()
-    } == {
-        "read": {allow_non_atomic},
-        "replace": {allow_non_atomic},
-        "compare-and-append": {allow_non_atomic},
+    assert {name: set(values) for name, values in observed.items()} == {
+        "read": {True},
+        "replace": {True},
+        "compare-and-append": {True},
     }
-
-
-def test_live_writer_does_not_require_migration_review_metadata(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    materialize_repository_fixture(tmp_path)
-
-    def fail_if_read(_root: Path) -> str:
-        raise AssertionError("live certification must not read migration-only refs")
-
-    monkeypatch.setattr(
-        certifier,
-        "blueprint_mechanical_commit",
-        fail_if_read,
-    )
-
-    result = _certify(
-        tmp_path,
-        require_migration_review=False,
-    )
-
-    assert result.node_ids == (
-        "demo-skill",
-        "demo-skill.source.gateway",
-    )
 
 
 def test_private_writer_rejects_caller_supplied_gate_callbacks(
     tmp_path: Path,
 ) -> None:
-    materialize_repository_fixture(tmp_path)
-
     with pytest.raises(TypeError, match="semantic_audit"):
-        _certify(
+        certifier._certify_repository(
             tmp_path,
             semantic_audit=lambda _snapshot: None,
         )
@@ -885,8 +1188,12 @@ def test_private_writer_rejects_caller_supplied_gate_callbacks(
 
 def test_private_writer_certifies_certifier_through_same_path(
     tmp_path: Path,
+    copy_base_v4_repository: RepositoryCopyFactory,
+    bind_repository_graph: RepositoryGraphBinder,
 ) -> None:
-    graph, _states, _commit = create_repository_fixture(tmp_path)
+    copy_base_v4_repository(tmp_path)
+    graph = _load_repository_graph(tmp_path)
+    bind_repository_graph(tmp_path, graph)
 
     result = _certify(
         tmp_path,
@@ -897,9 +1204,7 @@ def test_private_writer_certifies_certifier_through_same_path(
         "node-certify",
         "node-certify.source.gateway",
     )
-    assert certifier.certificate_log_path(
-        graph.nodes["node-certify"]
-    ).is_file()
+    assert certifier.certificate_log_path(graph.nodes["node-certify"]).is_file()
     assert certifier.certificate_log_path(
         graph.nodes["node-certify.source.gateway"]
     ).is_file()
@@ -907,8 +1212,9 @@ def test_private_writer_certifies_certifier_through_same_path(
 
 def test_private_writer_fails_closed_without_current_certifier(
     tmp_path: Path,
+    copy_base_v4_repository: RepositoryCopyFactory,
 ) -> None:
-    materialize_repository_fixture(tmp_path)
+    copy_base_v4_repository(tmp_path)
     shutil.rmtree(tmp_path / "skills" / "node-certify")
     repository = GitTestRepository(tmp_path)
     repository.git("add", "-A")
@@ -918,67 +1224,16 @@ def test_private_writer_fails_closed_without_current_certifier(
         _certify(tmp_path)
 
 
-def test_private_writer_keeps_current_same_key_certificate_without_append(
+def test_private_writer_rotates_valid_history_then_rejects_invalid_signed_history(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    copy_base_v4_repository: RepositoryCopyFactory,
+    stable_empty_route_trace: None,
+    bind_repository_graph: RepositoryGraphBinder,
 ) -> None:
-    graph, _states, _commit = create_repository_fixture(tmp_path)
-    backend = MemorySecretBackend()
-    target = "demo-skill.source.gateway"
-
-    _certify(
-        tmp_path,
-        target_node_ids=(target,),
-        secret_backend=backend,
-    )
-    repeated = _certify(
-        tmp_path,
-        target_node_ids=(target,),
-        secret_backend=backend,
-    )
-
-    path = certifier.certificate_log_path(graph.nodes[target])
-    entries = parse_certificate_log(path.read_bytes(), tmp_path / "public-keys")
-    assert len(entries) == 1
-    assert repeated.node_ids == ()
-    assert repeated.current_node_ids == (target,)
-
-
-def test_private_writer_appends_after_rotation_against_old_signed_envelope(
-    tmp_path: Path,
-) -> None:
-    graph, _states, _commit = create_repository_fixture(tmp_path)
-    backend = MemorySecretBackend()
-    target = "demo-skill.source.gateway"
-
-    _certify(
-        tmp_path,
-        target_node_ids=(target,),
-        secret_backend=backend,
-    )
-    new_key = rotate_certificate_signing_key(
-        tmp_path / "public-keys",
-        secret_backend=backend,
-    )
-    _certify(
-        tmp_path,
-        target_node_ids=(target,),
-        secret_backend=backend,
-    )
-
-    path = certifier.certificate_log_path(graph.nodes[target])
-    entries = parse_certificate_log(path.read_bytes(), tmp_path / "public-keys")
-    assert len(entries) == 2
-    assert entries[0]["payload"]["key_id"] != new_key.key_id
-    assert entries[1]["payload"]["key_id"] == new_key.key_id
-    assert entries[1]["payload"]["previous_entry_hash"] == certificate_entry_hash(
-        entries[0]
-    )
-
-
-def test_private_writer_rejects_invalid_signed_history_before_any_work(
-    tmp_path: Path,
-) -> None:
-    graph, _states, _commit = create_repository_fixture(tmp_path)
+    copy_base_v4_repository(tmp_path)
+    graph = _load_repository_graph(tmp_path)
+    bind_repository_graph(tmp_path, graph)
     backend = MemorySecretBackend()
     target = "demo-skill.source.gateway"
     public_key_root = tmp_path / "public-keys"
@@ -988,16 +1243,39 @@ def test_private_writer_rejects_invalid_signed_history_before_any_work(
         target_node_ids=(target,),
         secret_backend=backend,
     )
-    log_path = certifier.certificate_log_path(graph.nodes[target])
+    new_key = rotate_certificate_signing_key(
+        public_key_root,
+        secret_backend=backend,
+    )
+    _certify(
+        tmp_path,
+        target_node_ids=(target,),
+        secret_backend=backend,
+    )
+
+    path = certifier.certificate_log_path(graph.nodes[target])
+    entries = parse_certificate_log(path.read_bytes(), public_key_root)
+    assert len(entries) == 2
+    assert entries[0]["payload"]["key_id"] != new_key.key_id
+    assert entries[1]["payload"]["key_id"] == new_key.key_id
+    assert entries[1]["payload"]["previous_entry_hash"] == certificate_entry_hash(
+        entries[0]
+    )
+    log_path = path
     entry = parse_certificate_log(log_path.read_bytes(), public_key_root)[-1]
     invalid_payload = dict(entry["payload"])
+    invalid_payload["previous_entry_hash"] = certificate_entry_hash(entry)
     invalid_payload["unexpected_field"] = []
     key = load_or_create_certificate_signing_key(
         public_key_root,
         secret_backend=backend,
     )
     invalid_entry = sign_certificate_payload(invalid_payload, key)
-    invalid_bytes = canonical_certificate_envelope_bytes(invalid_entry) + b"\n"
+    invalid_bytes = (
+        log_path.read_bytes()
+        + canonical_certificate_envelope_bytes(invalid_entry)
+        + b"\n"
+    )
     log_path.write_bytes(invalid_bytes)
     events: list[str] = []
 
@@ -1013,141 +1291,104 @@ def test_private_writer_rejects_invalid_signed_history_before_any_work(
     assert log_path.read_bytes() == invalid_bytes
 
 
-def test_private_writer_derives_repository_only_at_batch_boundaries(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    materialize_repository_fixture(tmp_path)
-    real_compute = certifier.compute_node_hash_states
-    calls = 0
-
-    def counted_compute(*args: object, **kwargs: object):
-        nonlocal calls
-        calls += 1
-        return real_compute(*args, **kwargs)
-
-    monkeypatch.setattr(certifier, "compute_node_hash_states", counted_compute)
-
-    _certify(tmp_path)
-
-    assert calls == 2
-
-
-def test_private_writer_runs_full_readiness_only_at_batch_boundaries(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    materialize_repository_fixture(tmp_path)
-    real_inspect = certifier.CommitReadinessInspector.inspect
-    calls = 0
-
-    def counted_inspect(self):
-        nonlocal calls
-        calls += 1
-        return real_inspect(self)
-
-    monkeypatch.setattr(certifier.CommitReadinessInspector, "inspect", counted_inspect)
-
-    _certify(tmp_path)
-
-    assert calls == 2
-
-
 @pytest.mark.parametrize(
-    "mutation",
+    ("mutation", "expected_reason"),
     (
-        "clean",
-        "content",
-        "worktree-mode",
-        "index-mode",
-        "missing",
-        "symlink",
-        "expected-hash",
+        ("clean", None),
+        (
+            "content",
+            "worktree-differs-from-commit:skills/demo-skill/SKILL.md",
+        ),
+        (
+            "worktree-mode",
+            "worktree-mode-differs-from-commit:skills/demo-skill/SKILL.md",
+        ),
+        (
+            "index-mode",
+            "index-mode-differs-from-commit:skills/demo-skill/SKILL.md",
+        ),
+        ("missing", "unsafe-worktree-input:skills/demo-skill/SKILL.md"),
+        ("symlink", "unsafe-worktree-input:skills/demo-skill/SKILL.md"),
+        (
+            "expected-hash",
+            "expected-hash-mismatch:skills/demo-skill/SKILL.md",
+        ),
     ),
 )
-def test_batched_readiness_matches_canonical_per_path_decisions(
+def test_batched_readiness_preserves_canonical_per_path_decisions_without_git_setup(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
     mutation: str,
+    expected_reason: str | None,
 ) -> None:
     if mutation in {"worktree-mode", "symlink"} and sys.platform == "win32":
         # famulus-skip: category=platform-contract; reason=requires POSIX mode and symlink semantics; alternate=non-Windows parity cases
         pytest.skip("POSIX worktree behavior is unavailable")
-    materialize_repository_fixture(tmp_path)
-    snapshot = certifier.capture_git_snapshot(tmp_path)
-    assert snapshot is not None
-    paths = (
-        tmp_path / "skills" / "demo-skill" / "SKILL.md",
-        tmp_path / "skills" / "demo-skill" / "blueprint.yaml",
-        tmp_path / "references" / "certification-policy" / "node-hash-policy.yaml",
-    )
-    expected_hashes = certifier._expected_file_hashes(snapshot, paths)
-    target = paths[0]
+    snapshot = GitSnapshot(repo_root=tmp_path, commit=VALID_COMMIT)
+    relative_path = "skills/demo-skill/SKILL.md"
+    target = tmp_path / relative_path
+    target.parent.mkdir(parents=True)
+    committed_bytes = b"committed bytes\n"
+    target.write_bytes(committed_bytes)
+    object_id = "1" * 40
+    index_mode = "100644"
+    expected_hashes = {
+        relative_path: "sha256:" + hashlib.sha256(committed_bytes).hexdigest()
+    }
     if mutation == "content":
         target.write_text("changed\n", encoding="utf-8")
     elif mutation == "worktree-mode":
         target.chmod(target.stat().st_mode | stat.S_IXUSR)
     elif mutation == "index-mode":
-        GitTestRepository(tmp_path).git("update-index", "--chmod=+x", "skills/demo-skill/SKILL.md")
+        index_mode = "100755"
     elif mutation == "missing":
         target.unlink()
     elif mutation == "symlink":
         target.unlink()
-        target.symlink_to("blueprint.yaml")
+        target.symlink_to("replacement.md")
     elif mutation == "expected-hash":
-        expected_hashes[target.relative_to(tmp_path).as_posix()] = "sha256:incorrect"
+        expected_hashes[relative_path] = "sha256:incorrect"
 
-    canonical = check_commit_readiness(snapshot, paths, expected_hashes)
+    operations: list[tuple[str, ...]] = []
+
+    def batched_git(_repo_root: Path, *args: str, **_kwargs: object):
+        operations.append(args)
+        if args[0] == "ls-tree":
+            stdout = f"100644 blob {object_id}\t{relative_path}\0".encode()
+        elif args[0] == "ls-files":
+            stdout = f"{index_mode} {object_id} 0\t{relative_path}\0".encode()
+        elif args[0] == "cat-file":
+            stdout = (
+                f"{object_id} blob {len(committed_bytes)}\n".encode()
+                + committed_bytes
+                + b"\n"
+            )
+        else:
+            raise AssertionError(f"unexpected Git operation: {args}")
+        return SimpleNamespace(returncode=0, stdout=stdout, stderr=b"")
+
+    monkeypatch.setattr(certifier, "run_git", batched_git)
     batched = certifier.CommitReadinessInspector(
         snapshot,
-        paths,
+        (target,),
         expected_hashes,
     ).inspect()
 
-    assert batched == canonical
-
-
-def test_batched_readiness_uses_fixed_git_process_count(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    materialize_repository_fixture(tmp_path)
-    snapshot = certifier.capture_git_snapshot(tmp_path)
-    assert snapshot is not None
-    paths = (
-        tmp_path / "skills" / "demo-skill" / "SKILL.md",
-        tmp_path / "skills" / "demo-skill" / "blueprint.yaml",
-        tmp_path / "references" / "certification-policy" / "node-hash-policy.yaml",
-    )
-    expected_hashes = certifier._expected_file_hashes(snapshot, paths)
-    operations: list[tuple[str, ...]] = []
-    real_run_git = certifier.run_git
-
-    def counted_run_git(repo_root: Path, *args: str, **kwargs: object):
-        operations.append(args)
-        return real_run_git(repo_root, *args, **kwargs)
-
-    monkeypatch.setattr(certifier, "run_git", counted_run_git)
-
-    readiness = certifier.CommitReadinessInspector(
-        snapshot,
-        paths,
-        expected_hashes,
-    ).inspect()
-
-    assert readiness.stamp_worthy
-    assert operations == [
-        ("ls-tree", "-r", "-z", "--full-tree", snapshot.commit),
-        ("ls-files", "--stage", "-z"),
-        ("cat-file", "--batch"),
-    ]
+    assert batched.reasons == (() if expected_reason is None else (expected_reason,))
+    if mutation == "clean":
+        assert batched.stamp_worthy
+        assert operations == [
+            ("ls-tree", "-r", "-z", "--full-tree", snapshot.commit),
+            ("ls-files", "--stage", "-z"),
+            ("cat-file", "--batch"),
+        ]
 
 
 def test_commit_tree_filter_does_not_scan_the_requested_sequence_for_each_entry(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    materialize_repository_fixture(tmp_path)
-    snapshot = certifier.capture_git_snapshot(tmp_path)
-    assert snapshot is not None
+    snapshot = GitSnapshot(repo_root=tmp_path, commit=VALID_COMMIT)
 
     class MembershipRejectingPaths(tuple[str, ...]):
         def __contains__(self, _value: object) -> bool:
@@ -1160,6 +1401,20 @@ def test_commit_tree_filter_does_not_scan_the_requested_sequence_for_each_entry(
         )
     )
 
+    def query_tree(_repo_root: Path, *args: str, **_kwargs: object):
+        assert args == ("ls-tree", "-r", "-z", "--full-tree", VALID_COMMIT)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=(
+                f"100644 blob {'1' * 40}\t{relative_paths[0]}\0"
+                f"100644 blob {'2' * 40}\t{relative_paths[1]}\0"
+                f"100644 blob {'3' * 40}\tunrelated.txt\0"
+            ).encode(),
+            stderr=b"",
+        )
+
+    monkeypatch.setattr(certifier, "run_git", query_tree)
+
     entries = certifier.CommitReadinessInspector(
         snapshot,
         (),
@@ -1170,63 +1425,66 @@ def test_commit_tree_filter_does_not_scan_the_requested_sequence_for_each_entry(
     assert set(entries) == set(relative_paths)
 
 
-@pytest.mark.parametrize(
-    ("failed_operation", "expected_reason"),
-    (
-        ("ls-tree", "git-tree-query-failed"),
-        ("ls-files", "git-index-query-failed"),
-        ("cat-file", "git-blob-query-failed"),
-    ),
-)
-def test_batched_readiness_names_failed_metadata_query(
+def test_batched_readiness_names_each_failed_metadata_query(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    failed_operation: str,
-    expected_reason: str,
 ) -> None:
-    materialize_repository_fixture(tmp_path)
-    snapshot = certifier.capture_git_snapshot(tmp_path)
-    assert snapshot is not None
+    snapshot = GitSnapshot(repo_root=tmp_path, commit=VALID_COMMIT)
     path = tmp_path / "skills" / "demo-skill" / "SKILL.md"
-    expected_hashes = certifier._expected_file_hashes(snapshot, (path,))
-    real_run_git = certifier.run_git
+    relative_path = "skills/demo-skill/SKILL.md"
+    cases = (
+        ("ls-tree", "git-tree-query-failed", False),
+        ("ls-files", "git-index-query-failed", False),
+        ("cat-file", "git-blob-query-failed", False),
+        ("cat-file", f"git-unavailable:{relative_path}", True),
+    )
+    for failed_operation, expected_reason, unavailable in cases:
 
-    def fail_metadata_query(repo_root: Path, *args: str, **kwargs: object):
-        if args[0] == failed_operation:
-            return SimpleNamespace(returncode=1, stdout=b"", stderr=b"query failed")
-        return real_run_git(repo_root, *args, **kwargs)
+        def fail_metadata_query(_repo_root: Path, *args: str, **_kwargs: object):
+            if args[0] == failed_operation:
+                if unavailable:
+                    raise OSError("Git unavailable")
+                return SimpleNamespace(
+                    returncode=1,
+                    stdout=b"",
+                    stderr=b"query failed",
+                )
+            return _git_metadata_result(args[0], relative_path)
 
-    monkeypatch.setattr(certifier, "run_git", fail_metadata_query)
-
-    readiness = certifier.CommitReadinessInspector(
-        snapshot,
-        (path,),
-        expected_hashes,
-    ).inspect()
-
-    assert readiness.reasons == (expected_reason,)
+        monkeypatch.setattr(certifier, "run_git", fail_metadata_query)
+        readiness = certifier.CommitReadinessInspector(
+            snapshot,
+            (path,),
+            {},
+        ).inspect()
+        assert readiness.reasons == (expected_reason,)
 
 
 def test_batched_readiness_preserves_unusual_tracked_filename(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    materialize_repository_fixture(tmp_path)
     # Square brackets exercise Git pathspec quoting while remaining a valid
     # filename on every supported platform (unlike `*` and `?` on Windows).
     relative_path = "skills/demo-skill/literal[edge].txt"
     path = tmp_path / relative_path
-    path.write_text("unusual but valid\n", encoding="utf-8")
-    repository = GitTestRepository(tmp_path)
-    repository.git("add", "--", relative_path)
-    repository.git("commit", "-qm", "add unusual path")
-    snapshot = certifier.capture_git_snapshot(tmp_path)
-    assert snapshot is not None
-    expected_hashes = certifier._expected_file_hashes(snapshot, (path,))
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"committed bytes\n")
+    snapshot = GitSnapshot(repo_root=tmp_path, commit=VALID_COMMIT)
+
+    monkeypatch.setattr(
+        certifier,
+        "run_git",
+        lambda _repo_root, *args, **_kwargs: _git_metadata_result(
+            args[0],
+            relative_path,
+        ),
+    )
 
     readiness = certifier.CommitReadinessInspector(
         snapshot,
         (path,),
-        expected_hashes,
+        {},
     ).inspect()
 
     assert readiness.stamp_worthy
@@ -1234,91 +1492,85 @@ def test_batched_readiness_preserves_unusual_tracked_filename(
 
 def test_batched_readiness_matches_outside_repository_decision(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    materialize_repository_fixture(tmp_path)
-    snapshot = certifier.capture_git_snapshot(tmp_path)
-    assert snapshot is not None
-    tracked_path = tmp_path / "skills" / "demo-skill" / "SKILL.md"
+    snapshot = GitSnapshot(repo_root=tmp_path, commit=VALID_COMMIT)
     outside_path = tmp_path.parent / f"{tmp_path.name}-outside.txt"
     outside_path.write_text("outside\n", encoding="utf-8")
-    paths = (tracked_path, outside_path)
-    expected_hashes = certifier._expected_file_hashes(snapshot, paths)
+    monkeypatch.setattr(
+        certifier,
+        "run_git",
+        lambda _repo_root, *args, **_kwargs: SimpleNamespace(
+            returncode=0,
+            stdout=b"",
+            stderr=b"",
+        ),
+    )
 
-    canonical = check_commit_readiness(snapshot, paths, expected_hashes)
     batched = certifier.CommitReadinessInspector(
         snapshot,
-        paths,
-        expected_hashes,
+        (outside_path,),
+        {},
     ).inspect()
 
-    assert batched == canonical
+    assert batched.reasons == ("input-outside-repository",)
 
 
 def test_batched_readiness_matches_conflicted_index_decision(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    materialize_repository_fixture(tmp_path)
-    repository = GitTestRepository(tmp_path)
     relative_path = "skills/demo-skill/SKILL.md"
     path = tmp_path / relative_path
-    original_object = repository.git(
-        "rev-parse",
-        f"HEAD:{relative_path}",
-    ).stdout.decode("ascii").strip()
-    conflicting_object = repository.git(
-        "hash-object",
-        "-w",
-        "--stdin",
-        input_bytes=b"conflicting index content\n",
-    ).stdout.decode("ascii").strip()
-    repository.git("update-index", "--force-remove", "--", relative_path)
-    repository.git(
-        "update-index",
-        "--index-info",
-        input_bytes=(
-            f"100644 {original_object} 1\t{relative_path}\n"
-            f"100644 {conflicting_object} 2\t{relative_path}\n"
-        ).encode("utf-8"),
-    )
-    snapshot = certifier.capture_git_snapshot(tmp_path)
-    assert snapshot is not None
-    expected_hashes = certifier._expected_file_hashes(snapshot, (path,))
+    snapshot = GitSnapshot(repo_root=tmp_path, commit=VALID_COMMIT)
+    object_id = "1" * 40
 
-    canonical = check_commit_readiness(snapshot, (path,), expected_hashes)
-    batched = certifier.CommitReadinessInspector(
-        snapshot,
-        (path,),
-        expected_hashes,
-    ).inspect()
+    def conflicted_metadata(_repo_root: Path, *args: str, **_kwargs: object):
+        if args[0] == "ls-files":
+            stdout = (
+                f"100644 {object_id} 1\t{relative_path}\0"
+                f"100644 {'2' * 40} 2\t{relative_path}\0"
+            ).encode()
+            return SimpleNamespace(returncode=0, stdout=stdout, stderr=b"")
+        return _git_metadata_result(args[0], relative_path, object_id=object_id)
 
-    assert batched == canonical
-    assert batched.reasons == (f"nonzero-index-stage:{relative_path}",)
+    monkeypatch.setattr(certifier, "run_git", conflicted_metadata)
 
-
-def test_batched_readiness_matches_unsupported_commit_mode(
-    tmp_path: Path,
-) -> None:
-    if sys.platform == "win32":
-        # famulus-skip: category=platform-contract; reason=requires creation of a committed symbolic link; alternate=unsupported index stages and native-read branch cover platform-neutral fail-closed handling
-        pytest.skip("symbolic-link fixture is unavailable")
-    materialize_repository_fixture(tmp_path)
-    relative_path = "skills/demo-skill/linked-input"
-    path = tmp_path / relative_path
-    path.symlink_to("SKILL.md")
-    repository = GitTestRepository(tmp_path)
-    repository.git("add", "--", relative_path)
-    repository.git("commit", "-qm", "add symbolic input")
-    snapshot = certifier.capture_git_snapshot(tmp_path)
-    assert snapshot is not None
-
-    canonical = check_commit_readiness(snapshot, (path,), {})
     batched = certifier.CommitReadinessInspector(
         snapshot,
         (path,),
         {},
     ).inspect()
 
-    assert batched == canonical
+    assert batched.reasons == (f"nonzero-index-stage:{relative_path}",)
+
+
+def test_batched_readiness_matches_unsupported_commit_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    relative_path = "skills/demo-skill/linked-input"
+    path = tmp_path / relative_path
+    snapshot = GitSnapshot(repo_root=tmp_path, commit=VALID_COMMIT)
+    object_id = "1" * 40
+
+    def unsupported_metadata(_repo_root: Path, *args: str, **_kwargs: object):
+        if args[0] == "ls-tree":
+            return SimpleNamespace(
+                returncode=0,
+                stdout=f"120000 blob {object_id}\t{relative_path}\0".encode(),
+                stderr=b"",
+            )
+        return _git_metadata_result(args[0], relative_path, object_id=object_id)
+
+    monkeypatch.setattr(certifier, "run_git", unsupported_metadata)
+
+    batched = certifier.CommitReadinessInspector(
+        snapshot,
+        (path,),
+        {},
+    ).inspect()
+
     assert batched.reasons == (f"unsupported-commit-mode:{relative_path}",)
 
 
@@ -1326,9 +1578,7 @@ def test_read_worktree_file_uses_native_confined_reader_when_required(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    materialize_repository_fixture(tmp_path)
-    snapshot = certifier.capture_git_snapshot(tmp_path)
-    assert snapshot is not None
+    snapshot = GitSnapshot(repo_root=tmp_path, commit=VALID_COMMIT)
     calls: list[tuple[Path, Path, bool]] = []
 
     def native_read(
@@ -1361,41 +1611,10 @@ def test_read_worktree_file_uses_native_confined_reader_when_required(
     ]
 
 
-def test_batched_readiness_preserves_blob_query_unavailable_reason(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    materialize_repository_fixture(tmp_path)
-    snapshot = certifier.capture_git_snapshot(tmp_path)
-    assert snapshot is not None
-    path = tmp_path / "skills" / "demo-skill" / "SKILL.md"
-    expected_hashes = certifier._expected_file_hashes(snapshot, (path,))
-    real_run_git = certifier.run_git
-
-    def fail_blob_query(repo_root: Path, *args: str, **kwargs: object):
-        if args[:2] == ("cat-file", "--batch"):
-            raise OSError("Git unavailable")
-        return real_run_git(repo_root, *args, **kwargs)
-
-    monkeypatch.setattr(certifier, "run_git", fail_blob_query)
-
-    readiness = certifier.CommitReadinessInspector(
-        snapshot,
-        (path,),
-        expected_hashes,
-    ).inspect()
-
-    assert readiness.reasons == (
-        "git-unavailable:skills/demo-skill/SKILL.md",
-    )
-
-
 @pytest.mark.parametrize(
     "race",
     [
         "content",
-        "worktree-mode",
-        "index-mode",
         "head",
         "basis",
         "checks",
@@ -1406,11 +1625,13 @@ def test_private_writer_rederives_every_final_state_after_append(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     race: str,
+    copy_base_v4_repository: RepositoryCopyFactory,
+    stable_empty_route_trace: None,
+    bind_repository_graph: RepositoryGraphBinder,
 ) -> None:
-    if race == "worktree-mode" and sys.platform == "win32":
-        # famulus-skip: category=platform-contract; reason=Windows worktrees do not expose a reliable POSIX executable mode; alternate=index-mode covers the authoritative Git mode boundary
-        pytest.skip("POSIX worktree mode is unavailable")
-    graph, _states, _commit = create_repository_fixture(tmp_path)
+    copy_base_v4_repository(tmp_path)
+    graph = _load_repository_graph(tmp_path)
+    bind_repository_graph(tmp_path, graph)
     target = "demo-skill.source.gateway"
 
     def mutate(node_id: str) -> None:
@@ -1419,15 +1640,6 @@ def test_private_writer_rederives_every_final_state_after_append(
             (tmp_path / "skills" / "demo-skill" / "SKILL.md").write_text(
                 "changed after append\n",
                 encoding="utf-8",
-            )
-        elif race == "worktree-mode":
-            path = tmp_path / "skills" / "demo-skill" / "SKILL.md"
-            path.chmod(path.stat().st_mode | stat.S_IXUSR)
-        elif race == "index-mode":
-            GitTestRepository(tmp_path).git(
-                "update-index",
-                "--chmod=+x",
-                "skills/demo-skill/SKILL.md",
             )
         elif race == "head":
             (tmp_path / "head-race.txt").write_text(
@@ -1438,12 +1650,7 @@ def test_private_writer_rederives_every_final_state_after_append(
             repository.git("add", "head-race.txt")
             repository.git("commit", "-qm", "head race")
         elif race == "basis":
-            policy = (
-                tmp_path
-                / "references"
-                / "certification"
-                / "node-hash-policy.yaml"
-            )
+            policy = tmp_path / "references" / "certification" / "node-hash-policy.yaml"
             policy.write_text(
                 policy.read_text(encoding="utf-8").replace(
                     "**/*.log",
@@ -1473,9 +1680,13 @@ def test_private_writer_rederives_every_final_state_after_append(
 
 def test_private_writer_rechecks_dependency_certificate_after_append(
     tmp_path: Path,
+    copy_cross_owner_v4_repository: RepositoryCopyFactory,
+    stable_empty_route_trace: None,
+    bind_repository_graph: RepositoryGraphBinder,
 ) -> None:
-    materialize_repository_fixture(tmp_path)
-    graph = _add_cross_owner_contract(tmp_path)
+    copy_cross_owner_v4_repository(tmp_path)
+    graph = _load_repository_graph(tmp_path)
+    bind_repository_graph(tmp_path, graph)
     target = "demo-skill.source.gateway"
     dependency_id = "demo-skill.source.contract"
 
@@ -1495,55 +1706,19 @@ def test_private_writer_rechecks_dependency_certificate_after_append(
         )
 
 
-def test_private_writer_orders_dependency_before_exact_target(
+def test_private_writer_orders_dependency_and_audits_exact_postorder_twice(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    copy_cross_owner_v4_repository: RepositoryCopyFactory,
+    bind_repository_graph: RepositoryGraphBinder,
 ) -> None:
-    materialize_repository_fixture(tmp_path)
-    graph = _add_cross_owner_contract(tmp_path)
+    copy_cross_owner_v4_repository(tmp_path)
+    repository_graph = _load_repository_graph(tmp_path)
+    bind_repository_graph(tmp_path, repository_graph)
     target = "demo-skill.source.gateway"
     dependency = "demo-skill.source.contract"
     backend = MemorySecretBackend()
     attempted: list[str] = []
-
-    def stop_dependency(node_id: str) -> None:
-        attempted.append(node_id)
-        if node_id == dependency:
-            raise certifier.CertificationError("stop dependency issuance")
-
-    with pytest.raises(
-        certifier.CertificationError,
-        match="stop dependency issuance",
-    ):
-        _certify(
-            tmp_path,
-            target_node_ids=(target,),
-            secret_backend=backend,
-            require_migration_review=False,
-            before_append=stop_dependency,
-        )
-
-    assert attempted == [dependency]
-    assert not certifier.certificate_log_path(graph.nodes[target]).exists()
-    assert not certifier.certificate_log_path(graph.nodes[dependency]).exists()
-
-    result = _certify(
-        tmp_path,
-        target_node_ids=(target,),
-        secret_backend=backend,
-        require_migration_review=False,
-    )
-
-    assert result.node_ids == (dependency, target)
-
-
-def test_private_writer_audits_exact_dependency_postorder_twice_before_append(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    materialize_repository_fixture(tmp_path)
-    repository_graph = _add_cross_owner_contract(tmp_path)
-    target = "demo-skill.source.gateway"
-    dependency = "demo-skill.source.contract"
     real_postorder = certifier.certification_target_postorder
     postorders: list[tuple[str, ...]] = []
     audit_scopes: list[tuple[str, ...]] = []
@@ -1567,12 +1742,41 @@ def test_private_writer_audits_exact_dependency_postorder_twice_before_append(
         audit_scopes.append(self._certification_node_ids)
         return ()
 
+    def stop_dependency(node_id: str) -> None:
+        attempted.append(node_id)
+        if node_id == dependency:
+            raise certifier.CertificationError("stop dependency issuance")
+
     monkeypatch.setattr(certifier, "certification_target_postorder", record_postorder)
     monkeypatch.setattr(certifier.RouteSmokeAuditor, "trace_dependencies", audit)
+
+    with pytest.raises(
+        certifier.CertificationError,
+        match="stop dependency issuance",
+    ):
+        _certify(
+            tmp_path,
+            target_node_ids=(target,),
+            secret_backend=backend,
+            require_migration_review=False,
+            before_append=stop_dependency,
+        )
+
+    assert attempted == [dependency]
+    assert not certifier.certificate_log_path(repository_graph.nodes[target]).exists()
+    assert not certifier.certificate_log_path(
+        repository_graph.nodes[dependency]
+    ).exists()
+    assert postorders == [(dependency, target)]
+    assert audit_scopes == [(dependency, target), (dependency, target)]
+
+    postorders.clear()
+    audit_scopes.clear()
 
     result = _certify(
         tmp_path,
         target_node_ids=(target,),
+        secret_backend=backend,
         require_migration_review=False,
     )
 
@@ -1590,7 +1794,8 @@ def test_certifier_route_audit_rejects_unknown_scope_before_tracing(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    graph, states, _commit = create_repository_fixture(tmp_path)
+    graph = _synthetic_python_source_graph(tmp_path)
+    states = {node_id: NodeHashState() for node_id in graph.nodes}
 
     monkeypatch.setattr(
         certifier,
@@ -1615,7 +1820,8 @@ def test_route_auditor_prepares_once_but_traces_twice(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    graph, states, _commit = create_repository_fixture(tmp_path)
+    graph = _synthetic_python_source_graph(tmp_path)
+    states = {node_id: NodeHashState() for node_id in graph.nodes}
     prepare_calls = 0
     trace_calls = 0
     real_prepare = certifier._python_route_smoke_trace_specs
@@ -1653,37 +1859,11 @@ def test_certifier_route_audit_batches_unique_source_entrypoints(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    graph, states, _commit = create_repository_fixture(tmp_path)
+    graph = _synthetic_python_source_graph(tmp_path)
+    states = {node_id: NodeHashState() for node_id in graph.nodes}
     source_id = "demo-skill.source.gateway"
     source = graph.nodes[source_id]
     worker = source.module_root / "_rtx" / "worker.py"
-    worker.parent.mkdir(exist_ok=True)
-    worker.write_text("# route-smoke fixture\n", encoding="utf-8")
-    declaration = dict(source.declaration)
-    declaration["gateway"] = {"path": "_rtx/worker.py", "language": "Python"}
-    interfaces = dict(declaration["interfaces"])
-    first_id = "demo-skill.source.gateway.interface.run"
-    first = dict(interfaces[first_id])
-    first["process_binding"] = {
-        "kind": "process",
-        "entry": "Interface",
-        "arguments": {},
-        "fixed": [],
-    }
-    interfaces[first_id] = first
-    interfaces["demo-skill.source.gateway.interface.inspect"] = dict(first)
-    declaration["interfaces"] = interfaces
-    graph = replace(
-        graph,
-        nodes={
-            **graph.nodes,
-            source_id: replace(
-                source,
-                declaration=declaration,
-                gateway_path=worker,
-            ),
-        },
-    )
     target = certifier.PythonProcessTarget(
         Path("_rtx/worker.py"),
         "Interface",
@@ -1706,9 +1886,7 @@ def test_certifier_route_audit_batches_unique_source_entrypoints(
         tuple[Path, ...],
     ]:
         batch_calls.append((repo_root, tuple(specifications)))
-        return {
-            (source.module_root.resolve(), target): (worker,)
-        }
+        return {(source.module_root.resolve(), target): (worker,)}
 
     monkeypatch.setattr(
         certifier,
@@ -1738,23 +1916,12 @@ def test_certifier_route_audit_batches_unique_source_entrypoints(
     assert result == ((source_id, target, ()),)
 
 
-def test_route_audit_uses_logical_package_and_explicit_shadow_schema(
-    tmp_path: Path,
+def test_route_audit_uses_schema_specific_logical_package_identity(
+    immutable_legacy_route_graph: RepositoryBlueprintGraph,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    copy_legacy_fixture_tree(
-        LEGACY_AUTHORIZATION_FIXTURE / "modules",
-        tmp_path / "modules",
-    )
-    copy_legacy_fixture_tree(
-        LEGACY_AUTHORIZATION_FIXTURE / "skills",
-        tmp_path / "skills",
-    )
-    graph = certifier.load_repository_blueprint_graph(
-        tmp_path,
-        schema_root=LEGACY_SCHEMA_ROOT,
-        expected_schema_version=5,
-    )
+    graph = immutable_legacy_route_graph
+    repo_root = next(iter(graph.nodes.values())).module_root.parents[1]
     source_id = "demo-rtx.source.runtime"
     source = graph.nodes[source_id]
     declaration = dict(source.declaration)
@@ -1780,9 +1947,7 @@ def test_route_audit_uses_logical_package_and_explicit_shadow_schema(
         normalized = tuple(specifications)
         observed.append((repo_root, normalized, kwargs))
         return {
-            (source.module_root.resolve(), normalized[0][1]): (
-                source.gateway_path,
-            )
+            (source.module_root.resolve(), normalized[0][1]): (source.gateway_path,)
         }
 
     monkeypatch.setattr(
@@ -1799,7 +1964,7 @@ def test_route_audit_uses_logical_package_and_explicit_shadow_schema(
     result = certifier.RouteSmokeAuditor(
         graph,
         {},
-        repo_root=tmp_path,
+        repo_root=repo_root,
         certification_basis_paths=(),
         certification_node_ids=(source_id,),
         schema_root=LEGACY_SCHEMA_ROOT,
@@ -1815,39 +1980,7 @@ def test_route_audit_uses_logical_package_and_explicit_shadow_schema(
         "schema_root": LEGACY_SCHEMA_ROOT,
     }
     assert result == ((source_id, target, ()),)
-
-
-def test_v6_nested_module_route_target_uses_logical_package_identity(
-    tmp_path: Path,
-) -> None:
-    copy_legacy_fixture_tree(
-        LEGACY_AUTHORIZATION_FIXTURE / "modules",
-        tmp_path / "modules",
-    )
-    copy_legacy_fixture_tree(
-        LEGACY_AUTHORIZATION_FIXTURE / "skills",
-        tmp_path / "skills",
-    )
-    graph = certifier.load_repository_blueprint_graph(
-        tmp_path,
-        schema_root=LEGACY_SCHEMA_ROOT,
-        expected_schema_version=5,
-    )
-    source_id = "demo-rtx.source.runtime"
-    source = graph.nodes[source_id]
-    declaration = dict(source.declaration)
-    interfaces = dict(declaration["interfaces"])
-    interface_id = "demo-rtx.source.runtime.interface.execute"
-    interface = dict(interfaces[interface_id])
-    interface["process_binding"] = {
-        "kind": "process",
-        "entry": "Interface",
-        "arguments": {},
-        "fixed": [],
-    }
-    interfaces[interface_id] = interface
-    declaration["interfaces"] = interfaces
-    graph = replace(
+    v6_graph = replace(
         graph,
         schema_version=6,
         nodes={
@@ -1861,7 +1994,7 @@ def test_v6_nested_module_route_target_uses_logical_package_identity(
     )
 
     specification = certifier._python_route_smoke_trace_specs(
-        graph,
+        v6_graph,
         (source_id,),
     )[0]
 
@@ -1872,11 +2005,13 @@ def test_v6_nested_module_route_target_uses_logical_package_identity(
     assert target.logical_entrypoint == f"{package}.runtime"
 
 
-def test_private_writer_route_audit_failure_precedes_every_append(
+def test_private_writer_route_audit_failures_precede_key_and_append(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    copy_base_v4_repository: RepositoryCopyFactory,
 ) -> None:
-    graph, _states, _commit = create_repository_fixture(tmp_path)
+    copy_base_v4_repository(tmp_path)
+    graph = _load_repository_graph(tmp_path)
 
     def reject(*_args: object, **_kwargs: object) -> None:
         raise certifier.CertificationHashError("route audit failed")
@@ -1891,13 +2026,7 @@ def test_private_writer_route_audit_failure_precedes_every_append(
         _certify(tmp_path)
 
     assert not certifier.certificate_log_path(graph.nodes["demo-skill"]).exists()
-
-
-def test_private_writer_route_audit_mismatch_fails_closed(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    graph, _states, _commit = create_repository_fixture(tmp_path)
+    assert not (certificate_public_key_root(tmp_path) / "active-key-id").exists()
     results = iter((("before",), ("after",)))
 
     monkeypatch.setattr(
@@ -1913,12 +2042,15 @@ def test_private_writer_route_audit_mismatch_fails_closed(
         _certify(tmp_path)
 
     assert not certifier.certificate_log_path(graph.nodes["demo-skill"]).exists()
+    assert not (certificate_public_key_root(tmp_path) / "active-key-id").exists()
 
 
 def test_private_writer_rechecks_forced_untracked_input_after_append(
     tmp_path: Path,
+    copy_base_v4_repository: RepositoryCopyFactory,
+    stable_empty_route_trace: None,
 ) -> None:
-    materialize_repository_fixture(tmp_path)
+    copy_base_v4_repository(tmp_path)
     source_blueprint = (
         tmp_path / "skills" / "demo-skill" / "blueprints" / "gateway.yaml"
     )
@@ -1926,9 +2058,7 @@ def test_private_writer_rechecks_forced_untracked_input_after_append(
     declaration["content"].append(r"local\.txt")
     write_yaml(source_blueprint, declaration)
     module_blueprint = tmp_path / "skills" / "demo-skill" / "blueprint.yaml"
-    module_declaration = yaml.safe_load(
-        module_blueprint.read_text(encoding="utf-8")
-    )
+    module_declaration = yaml.safe_load(module_blueprint.read_text(encoding="utf-8"))
     module_declaration["content"].append(r"local\.txt")
     write_yaml(module_blueprint, module_declaration)
     policy_path = (
@@ -1969,8 +2099,11 @@ def test_private_writer_rechecks_forced_untracked_input_after_append(
 def test_private_writers_cannot_append_against_one_predecessor(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    copy_base_v4_repository: RepositoryCopyFactory,
+    stable_empty_route_trace: None,
 ) -> None:
-    graph, _states, _commit = create_repository_fixture(tmp_path)
+    copy_base_v4_repository(tmp_path)
+    graph = _load_repository_graph(tmp_path)
     target = "demo-skill.source.gateway"
     backend = MemorySecretBackend()
     public_key_root = tmp_path / "public-keys"
@@ -2006,14 +2139,14 @@ def test_private_writers_cannot_append_against_one_predecessor(
     with ThreadPoolExecutor(max_workers=2) as pool:
         outcomes = list(pool.map(lambda _index: issue(), range(2)))
 
-    assert sum(
-        isinstance(outcome, certifier.CertificationResult)
-        for outcome in outcomes
-    ) == 1
-    assert sum(
-        isinstance(outcome, certifier.CertificationError)
-        for outcome in outcomes
-    ) == 1
+    assert (
+        sum(isinstance(outcome, certifier.CertificationResult) for outcome in outcomes)
+        == 1
+    )
+    assert (
+        sum(isinstance(outcome, certifier.CertificationError) for outcome in outcomes)
+        == 1
+    )
     entries = parse_certificate_log(
         certifier.certificate_log_path(graph.nodes[target]).read_bytes(),
         public_key_root,
@@ -2023,8 +2156,9 @@ def test_private_writers_cannot_append_against_one_predecessor(
 
 def test_completeness_findings_block_structural_draft_signing(
     tmp_path: Path,
+    copy_base_v4_repository: RepositoryCopyFactory,
 ) -> None:
-    materialize_repository_fixture(tmp_path)
+    copy_base_v4_repository(tmp_path)
     module_path = tmp_path / "skills" / "demo-skill" / "blueprint.yaml"
     declaration = yaml.safe_load(module_path.read_text(encoding="utf-8"))
     declaration.pop("description")
@@ -2044,7 +2178,9 @@ def test_completeness_findings_block_structural_draft_signing(
     findings = certifier.certification_completeness_findings(graph)
 
     assert any(finding.field == "description" for finding in findings)
-    with pytest.raises(certifier.CertificationError, match="certification completeness"):
+    with pytest.raises(
+        certifier.CertificationError, match="certification completeness"
+    ):
         _certify(tmp_path)
 
 
@@ -2115,17 +2251,29 @@ def test_cli_propagates_explicit_non_atomic_fallback(
     assert calls[0]["allow_non_atomic"] is True
 
 
+@pytest.mark.parametrize(
+    ("allow_non_atomic", "overrides"),
+    [
+        (False, {}),
+        (True, {"allow_non_atomic": True}),
+    ],
+    ids=("default-atomic", "explicit-non-atomic"),
+)
 def test_public_certification_resolves_one_target_without_hash_dispatch(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    allow_non_atomic: bool,
+    overrides: dict[str, object],
 ) -> None:
-    legacy_graph, _states, commit = create_repository_fixture(tmp_path)
-    graph = _as_current_graph(legacy_graph)
+    commit = VALID_COMMIT
+    graph = _synthetic_repository_graph(tmp_path)
     calls: list[dict[str, object]] = []
+    events: list[str] = []
 
     def issue(repo_root: Path, **kwargs: object):
         calls.append({"repo_root": repo_root, **kwargs})
         kwargs["before_stale_issuance"]()
+        events.append("issue")
         return certifier.CertificationResult(
             node_ids=tuple(kwargs["target_node_ids"]),
             source_commit=commit,
@@ -2140,19 +2288,21 @@ def test_public_certification_resolves_one_target_without_hash_dispatch(
     monkeypatch.setattr(
         certifier,
         "run_mechanical_checks",
-        lambda _repo_root: _passed_mechanical_result(),
+        lambda _repo_root: (events.append("mechanical") or _passed_mechanical_result()),
     )
 
     evidence, outcomes = certifier.certify(
         targets=("demo-skill",),
         reviewed_repository=tmp_path,
         reviewed_commit=commit,
+        **overrides,
     )
 
     assert evidence == [_passed_mechanical_result()]
+    assert events == ["mechanical", "issue"]
     assert len(calls) == 1
     assert calls[0]["repo_root"] == tmp_path.resolve()
-    assert calls[0]["allow_non_atomic"] is False
+    assert calls[0]["allow_non_atomic"] is allow_non_atomic
     assert calls[0]["expected_schema_version"] == 6
     assert calls[0]["schema_root"] == tmp_path / "references" / "blueprint-schema"
     assert set(calls[0]["target_node_ids"]) == {
@@ -2162,9 +2312,7 @@ def test_public_certification_resolves_one_target_without_hash_dispatch(
     }
     assert outcomes[0].module == "demo-skill"
     assert outcomes[0].source == "reviewed-repository"
-    assert outcomes[0].module_root == (
-        tmp_path / "skills" / "demo-skill"
-    ).resolve()
+    assert outcomes[0].module_root == (tmp_path / "skills" / "demo-skill").resolve()
     assert all(
         node.certificate_path.parent.name == ".certificates"
         and node.certificate_path.suffix == ".jsonl"
@@ -2172,49 +2320,12 @@ def test_public_certification_resolves_one_target_without_hash_dispatch(
     )
 
 
-def test_public_certification_propagates_explicit_non_atomic_fallback(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    legacy_graph, _states, commit = create_repository_fixture(tmp_path)
-    graph = _as_current_graph(legacy_graph)
-    calls: list[dict[str, object]] = []
-
-    def issue(_repo_root: Path, **kwargs: object):
-        calls.append(dict(kwargs))
-        return certifier.CertificationResult(
-            node_ids=tuple(kwargs["target_node_ids"]),
-            source_commit=commit,
-        )
-
-    monkeypatch.setattr(certifier, "_certify_repository", issue)
-    monkeypatch.setattr(
-        certifier,
-        "load_repository_blueprint_graph",
-        lambda *_args, **_kwargs: graph,
-    )
-    monkeypatch.setattr(
-        certifier,
-        "run_mechanical_checks",
-        lambda _repo_root: _passed_mechanical_result(),
-    )
-
-    certifier.certify(
-        targets=("demo-skill",),
-        reviewed_repository=tmp_path,
-        reviewed_commit=commit,
-        allow_non_atomic=True,
-    )
-
-    assert calls[0]["allow_non_atomic"] is True
-
-
 def test_public_certification_reports_already_current_nodes_as_satisfied(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    legacy_graph, _states, commit = create_repository_fixture(tmp_path)
-    graph = _as_current_graph(legacy_graph)
+    commit = VALID_COMMIT
+    graph = _synthetic_repository_graph(tmp_path)
     requested = tuple(
         sorted(
             node_id
@@ -2264,16 +2375,17 @@ def test_public_certification_without_targets_selects_all_reviewed_modules(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    legacy_graph, _states, commit = create_repository_fixture(
+    commit = VALID_COMMIT
+    graph = _synthetic_repository_graph(
         tmp_path,
-        extra_modules=("other-skill",),
+        modules=(
+            ("demo-skill", "demo-skill"),
+            ("other-skill", "other-skill"),
+        ),
     )
-    graph = _as_current_graph(legacy_graph)
     expected_modules = tuple(
         sorted(
-            node.node_id
-                for node in graph.nodes.values()
-                if node.node_type == "module"
+            node.node_id for node in graph.nodes.values() if node.node_type == "module"
         )
     )
     calls: list[dict[str, object]] = []
@@ -2312,7 +2424,7 @@ def test_public_certification_without_targets_selects_all_reviewed_modules(
 def test_reviewed_target_resolution_is_exact_deduplicated_and_fail_closed(
     tmp_path: Path,
 ) -> None:
-    graph, _states, _commit = create_repository_fixture(tmp_path)
+    graph = _synthetic_repository_graph(tmp_path, schema_version=4)
     module_root = (tmp_path / "skills" / "demo-skill").resolve()
 
     resolved = certifier.resolve_reviewed_repository_targets(
@@ -2348,22 +2460,19 @@ def test_reviewed_target_resolution_is_exact_deduplicated_and_fail_closed(
 def test_reviewed_target_resolution_supports_distinct_module_id_and_name(
     tmp_path: Path,
 ) -> None:
-    graph, _states, _commit = create_repository_fixture(tmp_path)
-    renamed = replace(
-        graph.nodes["demo-skill"],
-        node_id="demo-module-id",
+    graph = _synthetic_repository_graph(
+        tmp_path,
+        modules=(("demo-module-id", "demo-skill"),),
+        schema_version=4,
     )
-    nodes = dict(graph.nodes)
-    del nodes["demo-skill"]
-    nodes[renamed.node_id] = renamed
-    mismatched_graph = replace(graph, nodes=nodes)
+    renamed = graph.nodes["demo-module-id"]
 
     by_id = certifier.resolve_reviewed_repository_targets(
-        mismatched_graph,
+        graph,
         ("demo-module-id",),
     )
     by_name = certifier.resolve_reviewed_repository_targets(
-        mismatched_graph,
+        graph,
         ("demo-skill",),
     )
 
@@ -2372,21 +2481,9 @@ def test_reviewed_target_resolution_supports_distinct_module_id_and_name(
 
 
 def test_legacy_reviewed_target_resolution_never_uses_runtime_basename(
-    tmp_path: Path,
+    immutable_legacy_route_graph: RepositoryBlueprintGraph,
 ) -> None:
-    copy_legacy_fixture_tree(
-        LEGACY_AUTHORIZATION_FIXTURE / "modules",
-        tmp_path / "modules",
-    )
-    copy_legacy_fixture_tree(
-        LEGACY_AUTHORIZATION_FIXTURE / "skills",
-        tmp_path / "skills",
-    )
-    graph = certifier.load_repository_blueprint_graph(
-        tmp_path,
-        schema_root=LEGACY_SCHEMA_ROOT,
-        expected_schema_version=5,
-    )
+    graph = immutable_legacy_route_graph
 
     assert tuple(
         node.node_id
@@ -2402,52 +2499,12 @@ def test_legacy_reviewed_target_resolution_never_uses_runtime_basename(
         certifier.resolve_reviewed_repository_targets(graph, ("_rtx",))
 
 
-def test_public_mechanical_gate_precedes_route_audit(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    legacy_graph, _states, commit = create_repository_fixture(tmp_path)
-    graph = _as_current_graph(legacy_graph)
-    events: list[str] = []
-
-    def issue(_repo_root: Path, **kwargs: object):
-        kwargs["before_stale_issuance"]()
-        events.append("issue")
-        return certifier.CertificationResult(
-            node_ids=tuple(kwargs["target_node_ids"]),
-            source_commit=commit,
-        )
-
-    monkeypatch.setattr(certifier, "_certify_repository", issue)
-    monkeypatch.setattr(
-        certifier,
-        "run_mechanical_checks",
-        lambda _repo_root: (
-            events.append("mechanical") or _passed_mechanical_result()
-        ),
-    )
-    monkeypatch.setattr(
-        certifier,
-        "load_repository_blueprint_graph",
-        lambda *_args, **_kwargs: graph,
-    )
-
-    evidence, _outcomes = certifier.certify(
-        targets=("demo-skill",),
-        reviewed_repository=tmp_path,
-        reviewed_commit=commit,
-    )
-
-    assert evidence == [_passed_mechanical_result()]
-    assert events == ["mechanical", "issue"]
-
-
 def test_public_certification_has_no_mechanical_bypass(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    legacy_graph, _states, commit = create_repository_fixture(tmp_path)
-    graph = _as_current_graph(legacy_graph)
+    commit = VALID_COMMIT
+    graph = _synthetic_repository_graph(tmp_path)
     signed = False
 
     def fail_mechanical(_repo_root: Path) -> certifier.CommandResult:

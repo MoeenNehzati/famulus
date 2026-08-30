@@ -45,17 +45,9 @@ V5_SCHEMA_ROOT = (
     / "blueprint_schemas"
     / "v5"
 )
-REPO_ROOT = Path(__file__).resolve().parents[1]
 V5_AUTHORIZATION_FIXTURE = (
     Path(__file__).parent / "fixtures" / "blueprint_v5" / "authorization"
 )
-
-
-@pytest.fixture(scope="module")
-def live_repository_graph() -> RepositoryBlueprintGraph:
-    """Share the immutable live graph across repository contract checks."""
-
-    return _canonical_load_repository_blueprint_graph(REPO_ROOT)
 
 
 class _PassingView:
@@ -428,14 +420,15 @@ def _load_v5_projection_graph(root: Path):
     )
 
 
-def test_v5_projection_derives_facade_contract_from_terminal_child(
+def test_v5_projection_derives_facade_contract_and_rejects_denied_authorization(
     tmp_path: Path,
 ) -> None:
     root = _v5_projection_repository(tmp_path)
+    graph = _load_v5_projection_graph(root)
     certification = _PassingView()
 
     projection = project_consumer_interfaces(
-        _load_v5_projection_graph(root),
+        graph,
         "demo.source.gateway",
         certification,
     )
@@ -458,9 +451,31 @@ def test_v5_projection_derives_facade_contract_from_terminal_child(
     } == {"demo-rtx"}
     assert certification.checked == ["demo.interface.execute"]
 
+    terminal = graph.exports["demo-rtx.interface.execute"]
+    assert isinstance(terminal.export_declaration, dict)
+    terminal.export_declaration["access"] = {
+        "allow_all_modules": False,
+        "allowed_callers": [],
+    }
 
-def test_pdf_to_markdown_direct_export_projects_optional_output_directory(
-    live_repository_graph: RepositoryBlueprintGraph,
+    with pytest.raises(
+        InterfaceProjectionError,
+        match=(
+            r"demo\.interface\.execute: authorization rejected "
+            r"\[caller-filtered:terminal-export:"
+            r"demo-rtx\.interface\.execute\]"
+        ),
+    ):
+        project_consumer_interfaces(
+            graph,
+            "demo.source.gateway",
+            _PassingView(),
+        )
+
+
+def test_live_repository_exports_project_their_complete_cli_contracts(
+    ordinary_repository_graph: RepositoryBlueprintGraph,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     public_interface = (
         "pdf-to-markdown._rtx.interface.scripts-fetch-arxiv-source"
@@ -469,7 +484,7 @@ def test_pdf_to_markdown_direct_export_projects_optional_output_directory(
         "pdf-to-markdown._rtx.source.rtx-source-fetcher.interface."
         "scripts-fetch-arxiv-source"
     )
-    graph = live_repository_graph
+    graph = ordinary_repository_graph
 
     module, source, export = resolve_export(graph, public_interface, 1)
     projection = project_consumer_interfaces(
@@ -500,17 +515,11 @@ def test_pdf_to_markdown_direct_export_projects_optional_output_directory(
         }
     ]
 
-
-def test_recurring_tasks_direct_job_edit_exports_project_complete_usage(
-    live_repository_graph: RepositoryBlueprintGraph,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
     operations = ("disable", "enable")
     public_interfaces = [
         f"recurring-tasks._rtx.interface.scripts-{operation}"
         for operation in operations
     ]
-    graph = live_repository_graph
     gateway = graph.nodes["recurring-tasks.source.gateway"]
     declared_uses = gateway.declaration["uses_interfaces"]
     assert all(
@@ -562,12 +571,6 @@ def test_recurring_tasks_direct_job_edit_exports_project_complete_usage(
             }
         ]
 
-
-def test_live_list_read_export_matches_its_cli_contract(
-    live_repository_graph: RepositoryBlueprintGraph,
-) -> None:
-    graph = live_repository_graph
-
     list_export = graph.exports["list-manager._rtx.interface.read-list"]
     assert list_export.declaration["usage"] == "<file> [filters] [--sort FIELD]"
 
@@ -596,34 +599,7 @@ def test_v5_projection_follows_helper_closure_through_facade(
     )
 
 
-def test_v5_projection_rejects_denied_authorization_result(
-    tmp_path: Path,
-) -> None:
-    root = _v5_projection_repository(tmp_path)
-    graph = _load_v5_projection_graph(root)
-    terminal = graph.exports["demo-rtx.interface.execute"]
-    assert isinstance(terminal.export_declaration, dict)
-    terminal.export_declaration["access"] = {
-        "allow_all_modules": False,
-        "allowed_callers": [],
-    }
-
-    with pytest.raises(
-        InterfaceProjectionError,
-        match=(
-            r"demo\.interface\.execute: authorization rejected "
-            r"\[caller-filtered:terminal-export:"
-            r"demo-rtx\.interface\.execute\]"
-        ),
-    ):
-        project_consumer_interfaces(
-            graph,
-            "demo.source.gateway",
-            _PassingView(),
-        )
-
-
-def test_projection_selects_generic_exports_and_helper_closure(tmp_path: Path) -> None:
+def test_generic_projection_contracts_and_rejections(tmp_path: Path) -> None:
     _repository(tmp_path)
     graph = load_repository_blueprint_graph(tmp_path)
     certification = _PassingView()
@@ -655,16 +631,23 @@ def test_projection_selects_generic_exports_and_helper_closure(tmp_path: Path) -
     ).validate(document)
     assert standalone_export_size(run) > 0
 
-
-def test_projection_rejects_failed_certification_and_standalone_overflow(
-    tmp_path: Path,
-) -> None:
-    _repository(tmp_path)
     with pytest.raises(InterfaceProjectionError, match="certification-unavailable"):
         project_consumer_interfaces(
-            load_repository_blueprint_graph(tmp_path),
+            graph,
             "consumer-skill.source.gateway",
             RejectingCertificationView(),
+        )
+
+    declaration = graph.nodes["provider-skill.source.lookup"].declaration
+    target = declaration["interfaces"][
+        "provider-skill.source.lookup.interface.names"
+    ]
+    target["contract"]["execution"]["state_effect"] = "mutating"
+    with pytest.raises(InterfaceProjectionError, match="must be read-only"):
+        project_consumer_interfaces(
+            graph,
+            "consumer-skill.source.gateway",
+            _PassingView(),
         )
 
     oversized = tmp_path / "oversized"
@@ -714,21 +697,6 @@ def test_projection_with_no_dependencies_is_empty_and_valid(tmp_path: Path) -> N
     schema_validator(
         load_schema("references/blueprint-schema/interface-projection.schema.json")
     ).validate(projection.document)
-
-
-def test_enum_helper_target_must_be_read_only(tmp_path: Path) -> None:
-    _repository(tmp_path)
-    graph = load_repository_blueprint_graph(tmp_path)
-    declaration = graph.nodes["provider-skill.source.lookup"].declaration
-    target = declaration["interfaces"]["provider-skill.source.lookup.interface.names"]
-    target["contract"]["execution"]["state_effect"] = "mutating"
-
-    with pytest.raises(InterfaceProjectionError, match="must be read-only"):
-        project_consumer_interfaces(
-            graph,
-            "consumer-skill.source.gateway",
-            _PassingView(),
-        )
 
 
 @pytest.mark.parametrize("source_node_id", [None, "provider-skill.source.lookup"])

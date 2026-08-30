@@ -8,78 +8,26 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+
 import pytest
-import yaml
 
 from officina.blueprints.graph import (
+    BlueprintNode,
+    InterfaceExport,
     RepositoryBlueprintGraph,
     load_repository_blueprint_graph,
 )
-from officina.blueprints.inventory import BlueprintInventoryError
 from officina.blueprints.process_binding import gateway_language_name
+from officina.dispatcher import cli as dispatcher_cli
 import officina.runtime.python_machine_interface as python_interface
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-RUNNER_MODULE = "officina.runtime.python_machine_interface_runner"
 
 
 @dataclass(frozen=True)
 class RouteSmokeCase:
     target: str
-
-
-def _v4_contract() -> dict[str, object]:
-    return {
-        "arguments": {},
-        "preconditions": [],
-        "interaction": {"mode": "unattended"},
-        "caller_warnings": [],
-        "outputs": [
-            {
-                "id": "result",
-                "audience": "machine",
-                "description": "Result.",
-                "type": {"kind": "string"},
-                "direct_io_ref": "stdout",
-                "cardinality": {"minimum": 1, "maximum": 1},
-                "ordering": "stable",
-                "pagination": {"kind": "none"},
-                "truncation": {"kind": "none"},
-                "empty": "Never empty.",
-            }
-        ],
-        "outcomes": [
-            {
-                "id": "success",
-                "class": "success",
-                "outputs": ["result"],
-                "effects": [],
-                "caller_action": "Continue.",
-            }
-        ],
-        "execution": {
-            "state_effect": "read-only",
-            "lifecycle": "finite",
-            "consistency": {"snapshot": "One snapshot."},
-            "verification": [{"method": "output-schema", "output_ref": "result"}],
-        },
-        "helpers": [],
-        "direct_io": {
-            "reads": [],
-            "writes": [
-                {
-                    "id": "stdout",
-                    "medium": "stdout",
-                    "access": "write",
-                    "content": "Result.",
-                    "formats": ["text"],
-                    "sensitivity": "public",
-                }
-            ],
-            "network": [],
-        },
-    }
 
 
 def _dispatcher_env() -> dict[str, str]:
@@ -90,20 +38,6 @@ def _dispatcher_env() -> dict[str, str]:
         src_root if not existing_pythonpath else os.pathsep.join([src_root, existing_pythonpath])
     )
     return env
-
-
-def _runner_interfaces(
-    repo_root: Path = REPO_ROOT,
-    *,
-    expected_schema_version: int = 6,
-    schema_root: Path | None = None,
-) -> list[RouteSmokeCase]:
-    graph = load_repository_blueprint_graph(
-        repo_root,
-        expected_schema_version=expected_schema_version,
-        schema_root=schema_root,
-    )
-    return _runner_interfaces_from_graph(graph)
 
 
 def _runner_interfaces_from_graph(
@@ -162,19 +96,6 @@ def _route_smoke_specifications(
     return tuple(specifications)
 
 
-def _route_smoke_cases(
-    repo_root: Path = REPO_ROOT,
-    *,
-    expected_schema_version: int = 6,
-    schema_root: Path | None = None,
-) -> list[RouteSmokeCase]:
-    return _runner_interfaces(
-        repo_root,
-        expected_schema_version=expected_schema_version,
-        schema_root=schema_root,
-    )
-
-
 @pytest.fixture(scope="module")
 def live_repository_graph() -> RepositoryBlueprintGraph:
     """Load the immutable live repository graph once for this test module."""
@@ -228,193 +149,156 @@ def test_dispatcher_module_cli_help_is_available(tmp_path: Path) -> None:
     assert "--error-format" in result.stdout
 
 
-def test_dispatcher_cli_text_requires_exact_repository_config(tmp_path: Path) -> None:
-    result = _run_dispatcher(
-        [
-            "--caller-skill",
-            "demo-caller",
-            "nonexistent-module.interface.does-not-exist",
-        ],
-        cwd=tmp_path,
+def test_dispatcher_cli_formats_configuration_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    target = "nonexistent-module.interface.does-not-exist"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["dispatcher", "--caller-skill", "demo-caller", target],
+    )
+    assert dispatcher_cli.main() == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == (
+        "error: dispatcher requires the exact repository configuration path\n"
     )
 
-    assert result.returncode == 2
-    assert result.stdout == ""
-    assert result.stderr == "error: dispatcher requires the exact repository configuration path\n"
-
-
-def test_dispatcher_cli_reports_invalid_repository_config_without_traceback(
-    tmp_path: Path,
-) -> None:
     config = tmp_path / "officina.toml"
     config.write_text("not valid = [")
-    result = _run_dispatcher(
+    monkeypatch.setattr(
+        sys,
+        "argv",
         [
+            "dispatcher",
             "--repository-config",
             str(config),
             "--caller-skill",
             "demo-caller",
-            "nonexistent-module.interface.does-not-exist",
+            target,
         ],
-        cwd=tmp_path,
     )
+    assert dispatcher_cli.main() == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("error: ")
+    assert "Traceback" not in captured.err
 
-    assert result.returncode == 2
-    assert result.stdout == ""
-    assert result.stderr.startswith("error: ")
-    assert "Traceback" not in result.stderr
-
-
-def test_dispatcher_cli_error_format_json_emits_structured_payload(
-    tmp_path: Path,
-) -> None:
-    result = _run_dispatcher(
+    monkeypatch.setattr(
+        sys,
+        "argv",
         [
+            "dispatcher",
             "--caller-skill",
             "demo-caller",
             "--error-format",
             "json",
-            "nonexistent-module.interface.does-not-exist",
+            target,
         ],
-        cwd=tmp_path,
     )
-
-    assert result.returncode == 2
-    assert result.stdout == ""
-    payload = json.loads(result.stderr)
+    assert dispatcher_cli.main() == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    payload = json.loads(captured.err)
     assert payload["schema_version"] == 1
     assert payload["code"] == "dispatcher.runtime_misconfigured"
     assert payload["caller_module_id"] == "demo-caller"
     assert payload["target_module_id"] == "nonexistent-module"
-    assert "token" not in result.stderr.lower()
-    assert "secret" not in result.stderr.lower()
+    assert "token" not in captured.err.lower()
+    assert "secret" not in captured.err.lower()
 
 
-@pytest.mark.parametrize(
-    ("language", "included"),
-    [
-        ("Python", True),
-        ("Python==3.11", True),
-        ("Python>=3.11", True),
-        ("Python>3.11", True),
-        ("Python<=3.13", True),
-        ("Python<4", True),
-        ("Java>=17", False),
-    ],
-)
-def test_route_smoke_discovers_v4_python_process_exports(
-    tmp_path: Path,
-    language: str,
-    included: bool,
-) -> None:
-    module = tmp_path / "skills" / "demo-skill"
-    runtime = module / "_rtx"
-    runtime.mkdir(parents=True)
-    (runtime / "worker.py").write_text("class Interface: pass\n", encoding="utf-8")
-    (module / "blueprints").mkdir()
-    source_id = "demo-skill.source.worker"
-    source_interface = f"{source_id}.interface.run"
-    (module / "blueprints" / "worker.yaml").write_text(
-        yaml.safe_dump(
-            {
-                "schema_version": 4,
-                "node_type": "behavioral_source",
-                "id": source_id,
-                "version": 1,
-                "description": "Worker.",
-                "gateway": {"path": "_rtx/worker.py", "language": language},
-                "content": [r"_rtx/worker\.py"],
-                "dependencies": [],
-                "uses_interfaces": [],
-                "interfaces": {
-                        source_interface: {
-                            "version": 1,
-                            "description": "Run.",
-                            "contract": _v4_contract(),
-                            "process_binding": {
-                            "kind": "process",
-                            "entry": "Interface",
-                            "arguments": {},
-                            "fixed": [],
-                        },
-                    }
-                },
-            },
-            sort_keys=False,
+def test_route_smoke_discovers_and_builds_python_process_targets() -> None:
+    source_specs = {
+        "demo.source.java": ("Java>=17", Path("java.py"), Path("/repo/java")),
+        "demo.source.zeta": ("Python", Path("zeta.py"), Path("/repo/zeta")),
+        "demo.source.alpha": (
+            "Python>=3.11",
+            Path("nested/__init__.py"),
+            Path("/repo/alpha"),
         ),
-        encoding="utf-8",
-    )
-    (module / "blueprint.yaml").write_text(
-        yaml.safe_dump(
-            {
-                "schema_version": 4,
-                "node_type": "module",
-                "id": "demo-skill",
-                "version": 1,
-                "description": "Demo.",
-                "gateway": {"path": "_rtx/worker.py", "language": language},
-                "content": [r"_rtx/worker\.py"],
-                "authority": {"owns_filesystem": []},
-                "sources": {
-                    source_id: {
-                        "blueprint": {
-                            "base": "module-root",
-                            "path": "blueprints/worker.yaml",
-                        }
-                    }
-                },
-                "exports": {
-                    "demo-skill.interface.run": {
-                        "source_interface": source_interface,
-                        "access": {"allow_all_modules": True, "allowed_callers": []},
-                    }
-                },
+    }
+    nodes = {
+        source_id: BlueprintNode(
+            node_id=source_id,
+            node_type="behavioral_source",
+            version=1,
+            module_root=root,
+            blueprint_path=root / "blueprints" / "worker.yaml",
+            gateway_path=root / gateway_path,
+            declaration={
+                "gateway": {"language": language, "path": gateway_path.as_posix()}
             },
-            sort_keys=False,
-        ),
-        encoding="utf-8",
-    )
-
-    expected = [
-        RouteSmokeCase("demo-skill.interface.run")
-    ] if included else []
-    assert _route_smoke_cases(
-        tmp_path,
-        expected_schema_version=4,
-        schema_root=REPO_ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v4",
-    ) == expected
-
-
-def test_route_smoke_does_not_fall_back_when_v4_inventory_is_malformed(
-    tmp_path: Path,
-) -> None:
-    module = tmp_path / "skills" / "demo-skill"
-    (module / "blueprints").mkdir(parents=True)
-    (module / "blueprint.yaml").write_text(
-        "schema_version: 4\n? [not, a, string]: invalid\n",
-        encoding="utf-8",
-    )
-    (module / "blueprints" / "broken.yaml").write_text(
-        "schema_version: 4\n? [not, a, string]: invalid\n",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(BlueprintInventoryError):
-        _route_smoke_cases(
-            tmp_path,
-            expected_schema_version=4,
-            schema_root=REPO_ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v4",
         )
+        for source_id, (language, gateway_path, root) in source_specs.items()
+    }
+    export_specs = {
+        "zeta.interface.run": ("demo.source.zeta", {"entry": "Zeta"}),
+        "missing.interface.run": (None, {"entry": "Missing"}),
+        "java.interface.run": ("demo.source.java", {"entry": "Java"}),
+        "alpha.interface.run": ("demo.source.alpha", {"entry": "Alpha"}),
+        "unbound.interface.run": ("demo.source.zeta", None),
+    }
+    exports = {
+        export_id: InterfaceExport(
+            interface_id=export_id,
+            version=1,
+            local_name="run",
+            module_node_id="demo",
+            declaration=(
+                {"process_binding": {"kind": "process", **binding}}
+                if binding is not None
+                else {}
+            ),
+            source_node_id=source_id,
+        )
+        for export_id, (source_id, binding) in export_specs.items()
+    }
+    graph = RepositoryBlueprintGraph(
+        nodes=nodes,
+        node_edges=(),
+        exports=exports,
+        export_edges=(),
+        helper_edges=(),
+        certification_edges=(),
+        source_modules={
+            "demo.source.alpha": "alpha-module",
+            "demo.source.zeta": "zeta-module",
+        },
+    )
 
+    cases = tuple(_runner_interfaces_from_graph(graph))
+    assert cases == (
+        RouteSmokeCase("alpha.interface.run"),
+        RouteSmokeCase("zeta.interface.run"),
+    )
 
-def test_live_blueprints_have_runner_interfaces_to_smoke_or_skip(
-    live_runner_interfaces: tuple[RouteSmokeCase, ...],
-) -> None:
-    if not live_runner_interfaces:
-        # famulus-skip: category=empty-contract; reason=no live runner-backed machine interfaces exist; alternate=route-smoke extraction unit tests cover discovery logic
-        pytest.skip(f"no machine interfaces currently invoke {RUNNER_MODULE}")
-
-    assert live_runner_interfaces
+    alpha_package = python_interface.logical_python_package_name("alpha-module")
+    zeta_package = python_interface.logical_python_package_name("zeta-module")
+    assert _route_smoke_specifications(graph, cases) == (
+        (
+            Path("/repo/alpha"),
+            python_interface.PythonProcessTarget(
+                Path("nested/__init__.py"),
+                "Alpha",
+                logical_package=alpha_package,
+                logical_entrypoint=f"{alpha_package}.nested",
+            ),
+        ),
+        (
+            Path("/repo/zeta"),
+            python_interface.PythonProcessTarget(
+                Path("zeta.py"),
+                "Zeta",
+                logical_package=zeta_package,
+                logical_entrypoint=f"{zeta_package}.zeta",
+            ),
+        ),
+    )
 
 
 def test_python_machine_runner_interfaces_accept_route_smoke(

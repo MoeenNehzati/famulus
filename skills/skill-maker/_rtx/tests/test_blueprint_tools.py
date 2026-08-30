@@ -19,7 +19,6 @@ from test_support.v5_blueprint_fixtures import copy_v5_fixture_tree
 
 
 SYNCER_PATH = REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py"
-BLUEPRINT_TEMPLATE = REPO_ROOT / "references" / "blueprint-schema" / "template.yaml"
 V5_SCHEMA_ROOT = REPO_ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v5"
 V5_AUTHORIZATION_FIXTURE = (
     REPO_ROOT / "tests" / "fixtures" / "blueprint_v5" / "authorization"
@@ -36,7 +35,7 @@ def load_module(module_name: str, path: Path):
     return module
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def syncer():
     return load_module("sync_module_blueprints_v5_tests", SYNCER_PATH)
 
@@ -87,39 +86,19 @@ def _copy_v5_managed_skill(repo_root: Path) -> tuple[Path, dict[str, object]]:
     return root, dependency
 
 
-def test_blueprint_template_is_canonical_v6_module() -> None:
-    manifest = yaml.safe_load(BLUEPRINT_TEMPLATE.read_text(encoding="utf-8"))
-
-    assert manifest["schema_version"] == 6
-    assert manifest["node_type"] == "module"
-    assert manifest["children"] == {}
-    assert manifest["namespace_exports"] == {}
-
-
-def test_syncer_loads_canonical_v5_modules_from_repository_graph(
+def test_syncer_loads_canonical_module_and_generates_export_blocks(
     tmp_path: Path,
     syncer,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _copy_managed_skill(tmp_path)
     monkeypatch.setattr(syncer, "SKILLS_ROOT", tmp_path / "skills")
-
     blueprint = syncer.load_blueprints()["loose-mode"]
 
     assert blueprint.data["node_type"] == "module"
     assert blueprint.repository_graph.nodes[
         "loose-mode.source.gateway"
     ].node_type == "behavioral_source"
-
-
-def test_generated_blocks_use_canonical_v5_exports(
-    tmp_path: Path,
-    syncer,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _copy_managed_skill(tmp_path)
-    monkeypatch.setattr(syncer, "SKILLS_ROOT", tmp_path / "skills")
-    blueprint = syncer.load_blueprints()["loose-mode"]
 
     contract = syncer.generated_contract_block(
         blueprint.name,
@@ -143,35 +122,65 @@ def test_generated_blocks_use_canonical_v5_exports(
 
 
 def test_generated_contract_keeps_setup_requirements_separate(syncer) -> None:
-    blueprints = syncer.load_blueprints()
+    module_id = "consumer"
+    source_id = f"{module_id}.source.gateway"
+    setup_id = f"{module_id}.interface.setup"
+    prerequisite_id = "provider.interface.setup"
+    ordinary_use_id = "provider.interface.run"
+    graph = SimpleNamespace(
+        schema_version=6,
+        module_sources={module_id: (source_id,)},
+        nodes={
+            source_id: SimpleNamespace(
+                declaration={
+                    "uses_interfaces": [
+                        {"interface": ordinary_use_id, "version": 2}
+                    ]
+                }
+            )
+        },
+        exports={
+            setup_id: SimpleNamespace(module_node_id=module_id),
+            ordinary_use_id: SimpleNamespace(module_node_id="provider"),
+        },
+        setup_requirements={setup_id: ()},
+    )
+    data = {
+        "version": 1,
+        "discovery": {
+            "catalog": {
+                "domain": "test",
+                "topics": ["setup"],
+                "visibility": "listed",
+            },
+            "activated_by": ["user-request"],
+            "persistent_modifier": False,
+        },
+    }
 
-    installer = syncer.generated_contract_block(
-        "install-assistant-tools",
-        blueprints["install-assistant-tools"].data,
-        blueprints["install-assistant-tools"].repository_graph,
+    contract_without_prerequisite = syncer.generated_contract_block(
+        module_id,
+        data,
+        graph,
     )
-    google = syncer.generated_contract_block(
-        "connect-google",
-        blueprints["connect-google"].data,
-        blueprints["connect-google"].repository_graph,
-    )
-    lists = syncer.generated_contract_block(
-        "list-manager",
-        blueprints["list-manager"].data,
-        blueprints["list-manager"].repository_graph,
-    )
+    assert "Setup Requires Setup Of: none" in contract_without_prerequisite
 
-    assert "Setup Requires Setup Of: none" in installer
-    assert "Setup Requires Setup Of: none" in google
-    assert "`connect-google.interface.setup@1`" in lists
+    graph.setup_requirements = {
+        prerequisite_id: (),
+        setup_id: ((prerequisite_id, 1),),
+    }
+    contract = syncer.generated_contract_block(module_id, data, graph)
+
+    assert f"`{source_id} -> {ordinary_use_id}@2`" in contract
+    assert f"`{prerequisite_id}@1`" in contract
     assert (
         "Setup Order:\n"
-        "1. `connect-google.interface.setup`\n"
-        "2. `list-manager.interface.setup`"
-    ) in lists
-    uses, setup = lists.split("Setup Requires Setup Of:", 1)
-    assert "connect-google.interface.setup" not in uses
-    assert "connect-google.interface.setup" in setup
+        f"1. `{prerequisite_id}`\n"
+        f"2. `{setup_id}`"
+    ) in contract
+    uses, setup = contract.split("Setup Requires Setup Of:", 1)
+    assert prerequisite_id not in uses
+    assert prerequisite_id in setup
 
 
 def test_generated_setup_order_deduplicates_transitive_dependencies(syncer) -> None:
@@ -254,23 +263,11 @@ def test_v5_generated_views_are_parent_only_and_derive_facade_contract(
     assert manifest["skills"]["demo"]["interfaces"]["demo.interface.execute"] == {
         "dependencies": [dependency],
     }
-
-
-def test_v5_generated_facade_view_uses_validated_structural_binding(
-    tmp_path: Path,
-    syncer,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    root, _dependency = _copy_v5_managed_skill(tmp_path / "repo")
-    monkeypatch.setattr(syncer, "SKILLS_ROOT", root / "skills")
-    blueprint = syncer.load_blueprints(
-        schema_version=5,
-        schema_root=V5_SCHEMA_ROOT,
-    )["demo"]
     terminal = blueprint.repository_graph.exports[
         "demo-rtx.interface.execute"
     ]
     assert isinstance(terminal.export_declaration, dict)
+    original_access = terminal.export_declaration["access"]
     terminal.export_declaration["access"] = {
         "allow_all_modules": False,
         "allowed_callers": ["outsider"],
@@ -283,30 +280,15 @@ def test_v5_generated_facade_view_uses_validated_structural_binding(
 
     assert "`demo.interface.execute` — Execute the demo." in interfaces
     assert "demo-rtx.interface.execute" not in interfaces
+    terminal.export_declaration["access"] = original_access
 
-
-def test_v5_syncer_rejects_generated_dispatch_missing_gateway_use(
-    tmp_path: Path,
-    syncer,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    root, _dependency = _copy_v5_managed_skill(tmp_path / "repo")
-    gateway_path = root / "skills" / "demo" / "blueprints" / "gateway.yaml"
-    gateway = yaml.safe_load(gateway_path.read_text(encoding="utf-8"))
+    gateway = blueprint.repository_graph.nodes["demo.source.gateway"].declaration
+    original_uses = gateway["uses_interfaces"]
     gateway["uses_interfaces"] = [
         entry
         for entry in gateway["uses_interfaces"]
         if entry["interface"] != "demo.interface.execute"
     ]
-    gateway_path.write_text(
-        yaml.safe_dump(gateway, sort_keys=False),
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(syncer, "SKILLS_ROOT", root / "skills")
-    blueprint = syncer.load_blueprints(
-        schema_version=5,
-        schema_root=V5_SCHEMA_ROOT,
-    )["demo"]
 
     assert syncer.validate_gateway_declares_generated_dispatches(
         blueprint.name,
@@ -315,6 +297,7 @@ def test_v5_syncer_rejects_generated_dispatch_missing_gateway_use(
         "demo.source.gateway: generated dispatcher exports are missing from "
         "uses_interfaces: demo.interface.execute@3"
     ]
+    gateway["uses_interfaces"] = original_uses
 
 
 def test_generated_contract_requires_catalog_discovery(syncer) -> None:
@@ -625,6 +608,55 @@ def test_sync_does_not_create_dispatch_routing_state(
     data_home = tmp_path / "data"
     monkeypatch.setenv("XDG_DATA_HOME", str(data_home))
 
+    assert not manifest.exists()
     assert syncer.run_sync(check_only=False, schema_version=5) == 0
+    assert manifest.is_file()
+    written_manifest = manifest.read_bytes()
     assert syncer.run_sync(check_only=True, schema_version=5) == 0
+    assert manifest.read_bytes() == written_manifest
     assert not data_home.exists()
+
+
+def test_validate_sync_state_reuses_the_provided_graph(
+    tmp_path: Path,
+    syncer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _copy_managed_skill(tmp_path)
+    skills_root = tmp_path / "skills"
+    monkeypatch.setattr(syncer, "SKILLS_ROOT", skills_root)
+    graph = syncer.load_blueprints()["loose-mode"].repository_graph
+    runtime_dependencies_path = (
+        tmp_path / "references" / "blueprint-schema" / "runtime_dependencies.json"
+    )
+    runtime_dependencies_path.parent.mkdir(parents=True)
+    blueprints = syncer.blueprints_from_graph(
+        graph,
+        skills_root=skills_root,
+        schema_version=6,
+    )
+    runtime_dependencies_path.write_text(
+        json.dumps(
+            syncer.generated_runtime_dependencies_manifest(blueprints),
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    def _unexpected_graph_load(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("sync-state checking must use the supplied graph")
+
+    monkeypatch.setattr(
+        syncer,
+        "load_repository_blueprint_graph",
+        _unexpected_graph_load,
+    )
+
+    assert syncer.validate_sync_state(
+        repository_graph=graph,
+        repository_root=tmp_path,
+        skills_root=skills_root,
+        runtime_dependencies_path=runtime_dependencies_path,
+        schema_version=6,
+    ) == []

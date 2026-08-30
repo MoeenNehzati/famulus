@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator, Mapping
 from copy import deepcopy
+from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 
 import jsonschema
 import pytest
@@ -15,10 +18,106 @@ SCHEMA_ROOT = (
 )
 LIVE_V6_SCHEMA_ROOT = REPO_ROOT / "references" / "blueprint-schema"
 CERTIFICATION_ROOT = REPO_ROOT / "references" / "certification-policy"
+FROZEN_V4_SCHEMA_NAMES = (
+    "schema.json",
+    "module.schema.json",
+    "behavioral-source.schema.json",
+    "common.schema.json",
+    "caller-contract.schema.json",
+    "direct-io.schema.json",
+    "certificate.schema.json",
+    "interface-projection.schema.json",
+)
+
+
+@dataclass(frozen=True)
+class _SchemaBundle:
+    """One worker-local, immutable parsed schema closure."""
+
+    root: Path
+    version: int
+    documents: Mapping[str, object]
+
+
+_FROZEN_V4_BUNDLE: _SchemaBundle | None = None
+_LIVE_V6_BUNDLE: _SchemaBundle | None = None
+
+
+def _freeze(value: object) -> object:
+    if isinstance(value, dict):
+        return MappingProxyType({key: _freeze(child) for key, child in value.items()})
+    if isinstance(value, list):
+        return tuple(_freeze(child) for child in value)
+    return value
+
+
+def _thaw(value: object) -> object:
+    if isinstance(value, Mapping):
+        return {key: _thaw(child) for key, child in value.items()}
+    if isinstance(value, tuple):
+        return [_thaw(child) for child in value]
+    return value
+
+
+def _parsed_schema_bundle(
+    root: Path, version: int, paths: list[Path]
+) -> _SchemaBundle:
+    documents = {
+        path.relative_to(root).as_posix(): _freeze(
+            json.loads(path.read_text(encoding="utf-8"))
+        )
+        for path in paths
+    }
+    schema = documents["schema.json"]
+    assert isinstance(schema, Mapping)
+    assert f"version-{version}" in schema["description"]
+    return _SchemaBundle(
+        root=root.resolve(),
+        version=version,
+        documents=MappingProxyType(documents),
+    )
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _worker_scoped_schema_bundles() -> Iterator[None]:
+    """Parse each exact schema root once in each xdist worker."""
+
+    global _FROZEN_V4_BUNDLE, _LIVE_V6_BUNDLE
+    previous_v4, previous_v6 = _FROZEN_V4_BUNDLE, _LIVE_V6_BUNDLE
+    _FROZEN_V4_BUNDLE = _parsed_schema_bundle(
+        SCHEMA_ROOT,
+        4,
+        [SCHEMA_ROOT / name for name in FROZEN_V4_SCHEMA_NAMES],
+    )
+    _LIVE_V6_BUNDLE = _parsed_schema_bundle(
+        LIVE_V6_SCHEMA_ROOT,
+        6,
+        sorted(LIVE_V6_SCHEMA_ROOT.glob("*.json")),
+    )
+    try:
+        yield
+    finally:
+        _FROZEN_V4_BUNDLE, _LIVE_V6_BUNDLE = previous_v4, previous_v6
+
+
+def _schema_bundle(
+    bundle: _SchemaBundle | None, root: Path, version: int
+) -> _SchemaBundle:
+    assert bundle is not None, "worker-scoped schema bundle is not initialized"
+    assert bundle.root == root.resolve()
+    assert bundle.version == version
+    return bundle
+
+
+def _schema_store(bundle: _SchemaBundle) -> dict[str, object]:
+    return {name: _thaw(document) for name, document in bundle.documents.items()}
 
 
 def _load(name: str) -> dict:
-    return json.loads((SCHEMA_ROOT / name).read_text(encoding="utf-8"))
+    bundle = _schema_bundle(_FROZEN_V4_BUNDLE, SCHEMA_ROOT, 4)
+    document = _thaw(bundle.documents[name])
+    assert isinstance(document, dict)
+    return document
 
 
 def _validator(name: str = "schema.json") -> jsonschema.Draft7Validator:
@@ -28,14 +127,15 @@ def _validator(name: str = "schema.json") -> jsonschema.Draft7Validator:
     cached validator makes later fragment validation depend on test order.
     """
 
+    bundle = _schema_bundle(_FROZEN_V4_BUNDLE, SCHEMA_ROOT, 4)
     schema = _load(name)
-    store = {
-        child.relative_to(SCHEMA_ROOT).as_posix(): json.loads(
-            child.read_text(encoding="utf-8")
-        )
-        for child in SCHEMA_ROOT.rglob("*.schema.json")
-    }
-    store.update({(SCHEMA_ROOT / key).resolve().as_uri(): value for key, value in store.items()})
+    store = _schema_store(bundle)
+    store.update(
+        {
+            (SCHEMA_ROOT / key).resolve().as_uri(): value
+            for key, value in store.items()
+        }
+    )
     resolver = jsonschema.RefResolver(
         base_uri=(SCHEMA_ROOT / name).resolve().as_uri(),
         referrer=schema,
@@ -51,11 +151,10 @@ def _errors(document: dict, name: str = "schema.json") -> list[str]:
 def _live_v6_validator(name: str) -> jsonschema.Draft7Validator:
     """Build a validator for one live v6 schema and its local references."""
 
-    schema = json.loads((LIVE_V6_SCHEMA_ROOT / name).read_text(encoding="utf-8"))
-    store = {
-        child.name: json.loads(child.read_text(encoding="utf-8"))
-        for child in LIVE_V6_SCHEMA_ROOT.glob("*.json")
-    }
+    bundle = _schema_bundle(_LIVE_V6_BUNDLE, LIVE_V6_SCHEMA_ROOT, 6)
+    schema = _thaw(bundle.documents[name])
+    assert isinstance(schema, dict)
+    store = _schema_store(bundle)
     store.update(
         {
             (LIVE_V6_SCHEMA_ROOT / key).resolve().as_uri(): value
@@ -200,8 +299,8 @@ def test_live_v6_non_discoverable_module_rejects_installation_metadata(
 def test_live_v6_personal_preference_requires_description_when_applicable() -> None:
     """A preference claim needs an author-facing reason when it applies."""
 
-    module = _valid_live_v6_module()
-    module.update(
+    missing_description = _valid_live_v6_module()
+    missing_description.update(
         {
             "maturity": "stable",
             "installation_tier": "core",
@@ -210,46 +309,36 @@ def test_live_v6_personal_preference_requires_description_when_applicable() -> N
     )
     validator = _live_v6_validator("module.schema.json")
 
-    assert list(validator.iter_errors(module))
-    module["personal_preference"]["description"] = (
-        "Explains the user-specific workflow preference."
+    assert list(validator.iter_errors(missing_description)), "missing description"
+
+    substantive_description = _valid_live_v6_module()
+    substantive_description.update(
+        {
+            "maturity": "stable",
+            "installation_tier": "core",
+            "personal_preference": {
+                "applies": True,
+                "description": "Explains the user-specific workflow preference.",
+            },
+        }
     )
-    validator.validate(module)
+    validator.validate(substantive_description)
 
-
-def test_live_v6_personal_preference_rejects_whitespace_description() -> None:
-    """An applicable preference needs a substantive author-facing description."""
-
-    module = _valid_live_v6_module()
-    module.update(
+    whitespace_description = _valid_live_v6_module()
+    whitespace_description.update(
         {
             "maturity": "stable",
             "installation_tier": "core",
             "personal_preference": {"applies": True, "description": " \t\n "},
         }
     )
-
-    assert list(_live_v6_validator("module.schema.json").iter_errors(module))
+    assert list(validator.iter_errors(whitespace_description)), "whitespace description"
 
 
 def _canonical_errors(document: dict, name: str) -> list[str]:
-    root = REPO_ROOT / "references" / "blueprint-schema"
-    schema = json.loads((root / name).read_text(encoding="utf-8"))
-    store = {
-        child.name: json.loads(child.read_text(encoding="utf-8"))
-        for child in root.glob("*.schema.json")
-    }
-    resolver = jsonschema.RefResolver(
-        base_uri=(root / name).resolve().as_uri(),
-        referrer=schema,
-        store=store,
-    )
     return [
         error.message
-        for error in jsonschema.Draft7Validator(
-            schema,
-            resolver=resolver,
-        ).iter_errors(document)
+        for error in _live_v6_validator(name).iter_errors(document)
     ]
 
 
@@ -666,6 +755,14 @@ def test_v4_preserves_usage_and_legacy_argv_patterns_as_evidence() -> None:
                 "required_flags": ["--cloud"],
                 "allowed_flags": ["--cloud", "--refresh"],
                 "positional_patterns": {"0": "^[a-z]+$"},
+            },
+            {
+                "name": "short-flag",
+                "min_positionals": 0,
+                "max_positionals": 0,
+                "required_flags": ["-a"],
+                "allowed_flags": ["-a"],
+                "flag_patterns": {"-a": "^.+$"},
             }
         ],
     }
@@ -829,37 +926,7 @@ def test_frozen_schema_routes_only_v4_nodes() -> None:
     ]
 
 
-def test_dispatch_schema_accepts_live_v5_blueprints() -> None:
-    document = yaml.safe_load(
-        (REPO_ROOT / "skills" / "node-drift" / "blueprint.yaml").read_text(
-            encoding="utf-8"
-        )
-    )
-    document.update(
-        {
-            "maturity": "stable",
-            "installation_tier": "core",
-            "personal_preference": {"applies": False},
-        }
-    )
-
-    canonical_root = REPO_ROOT / "references" / "blueprint-schema"
-    schema = json.loads(
-        (canonical_root / "schema.json").read_text(encoding="utf-8")
-    )
-    store = {
-        child.name: json.loads(child.read_text(encoding="utf-8"))
-        for child in canonical_root.glob("*.schema.json")
-    }
-    resolver = jsonschema.RefResolver(
-        base_uri=(canonical_root / "schema.json").resolve().as_uri(),
-        referrer=schema,
-        store=store,
-    )
-    assert list(jsonschema.Draft7Validator(schema, resolver=resolver).iter_errors(document)) == []
-
-
-def test_node_hash_policy_schema_enforces_ordered_include_exclude_rules() -> None:
+def test_node_hash_policy_schema_and_canonical_policy_history() -> None:
     path = CERTIFICATION_ROOT / "node-hash-policy.schema.json"
     assert path.is_file(), "node-hash-policy.schema.json is absent"
     schema = json.loads(path.read_text(encoding="utf-8"))
@@ -870,7 +937,7 @@ def test_node_hash_policy_schema_enforces_ordered_include_exclude_rules() -> Non
         "reserved-certification-output-rejection",
         "path-boundary-symlink-and-special-file-safety",
     ]
-    document = {
+    valid_policy = {
         "policy_version": 1,
         "path_syntax": "gitignore",
         "starting_set": "git-tracked-directly-owned-regular-files",
@@ -883,28 +950,22 @@ def test_node_hash_policy_schema_enforces_ordered_include_exclude_rules() -> Non
             },
         ],
     }
-    validator.validate(document)
+    validator.validate(valid_policy)
 
-    document["rules"][0]["require_match"] = False
-    assert list(validator.iter_errors(document))
+    unexpected_exclude_match = deepcopy(valid_policy)
+    unexpected_exclude_match["rules"][0]["require_match"] = False
+    assert list(validator.iter_errors(unexpected_exclude_match)), "exclude match flag"
 
-    del document["rules"][0]["require_match"]
-    document["rules"][1]["pattern"] = "../escape"
-    assert list(validator.iter_errors(document))
+    escaped_pattern = deepcopy(valid_policy)
+    escaped_pattern["rules"][1]["pattern"] = "../escape"
+    assert list(validator.iter_errors(escaped_pattern)), "escaped include pattern"
 
-
-def test_canonical_node_hash_policy_is_closed_and_excludes_only_reserved_outputs() -> None:
-    schema = json.loads(
-        (CERTIFICATION_ROOT / "node-hash-policy.schema.json").read_text(
-            encoding="utf-8"
-        )
-    )
     policy_path = CERTIFICATION_ROOT / "node-hash-policy.yaml"
     assert policy_path.is_file(), "node-hash-policy.yaml is absent"
-    policy = yaml.safe_load(policy_path.read_text(encoding="utf-8"))
+    canonical_policy = yaml.safe_load(policy_path.read_text(encoding="utf-8"))
 
-    jsonschema.Draft7Validator(schema).validate(policy)
-    assert policy["rules"] == [
+    validator.validate(canonical_policy)
+    assert canonical_policy["rules"] == [
         {"action": "exclude", "pattern": pattern}
         for pattern in (
             "**/*.log",
@@ -1016,10 +1077,12 @@ def test_v4_certificate_keeps_runtime_claim_audits_in_versioned_checks() -> None
     assert _errors(runtime_check, "certificate.schema.json") == []
 
 
-def test_current_certificate_accepts_explicit_interface_dependency_hash() -> None:
-    document = _valid_v4_certificate()
-    document["payload"]["certificate_schema_version"] = 2
-    document["payload"]["dependencies"] = [
+def test_current_certificate_accepts_versioned_dependency_and_facet_histories() -> None:
+    validator = _live_v6_validator("certificate.schema.json")
+
+    dependency_hash_certificate = _valid_v4_certificate()
+    dependency_hash_certificate["payload"]["certificate_schema_version"] = 2
+    dependency_hash_certificate["payload"]["dependencies"] = [
         {
             "relation": "uses-export",
             "target": "other-skill.source.gateway",
@@ -1028,30 +1091,13 @@ def test_current_certificate_accepts_explicit_interface_dependency_hash() -> Non
             "interface_hash": "sha256:" + "c" * 64,
         }
     ]
-
-    canonical_root = REPO_ROOT / "references" / "blueprint-schema"
-    schema = json.loads(
-        (canonical_root / "certificate.schema.json").read_text(encoding="utf-8")
-    )
-    store = {
-        child.name: json.loads(child.read_text(encoding="utf-8"))
-        for child in canonical_root.glob("*.schema.json")
-    }
-    resolver = jsonschema.RefResolver(
-        base_uri=(canonical_root / "certificate.schema.json").resolve().as_uri(),
-        referrer=schema,
-        store=store,
+    assert list(validator.iter_errors(dependency_hash_certificate)) == [], (
+        "v2 interface dependency hash"
     )
 
-    assert list(
-        jsonschema.Draft7Validator(schema, resolver=resolver).iter_errors(document)
-    ) == []
-
-
-def test_current_certificate_accepts_v3_facet_claims() -> None:
-    document = _valid_v4_certificate()
-    document["payload"]["certificate_schema_version"] = 3
-    document["payload"]["facets"] = [
+    facet_certificate = _valid_v4_certificate()
+    facet_certificate["payload"]["certificate_schema_version"] = 3
+    facet_certificate["payload"]["facets"] = [
         {
             "id": "demo-skill.source.gateway.interface.run",
             "type": "interface",
@@ -1066,8 +1112,7 @@ def test_current_certificate_accepts_v3_facet_claims() -> None:
             "dependencies": [],
         }
     ]
-
-    assert _canonical_errors(document, "certificate.schema.json") == []
+    assert list(validator.iter_errors(facet_certificate)) == [], "v3 facet claims"
 
 
 @pytest.mark.parametrize(

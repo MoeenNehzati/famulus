@@ -137,11 +137,16 @@ def _snapshot(root: Path) -> dict[str, bytes]:
 
 def test_plan_mechanically_rewrites_blueprints_and_python_only(tmp_path: Path) -> None:
     manifest = _fixture(tmp_path)
+    manifest["inventory_exclusions"] = [".claude", ".codex", ".superpowers"]
     consumer = tmp_path / "skills/consumer/blueprint.yaml"
     consumer.write_text(
         "# old-node historical comment\n" + consumer.read_text(encoding="utf-8"),
         encoding="utf-8",
     )
+    _write(tmp_path / ".claude/log.md", "old-node\n")
+    _write(tmp_path / ".codex/log.md", "old-node\n")
+    _write(tmp_path / ".superpowers/log.md", "old-node\n")
+    (tmp_path / "AGENTS.md").symlink_to("README.md")
 
     recipe = plan(tmp_path, manifest)
 
@@ -160,6 +165,12 @@ def test_plan_mechanically_rewrites_blueprints_and_python_only(tmp_path: Path) -
         "notes.md",
         "skills/consumer/blueprint.yaml",
     ]
+    assert not any(
+        item.path.startswith((".claude/", ".codex/", ".superpowers/"))
+        for item in recipe.occurrences
+    )
+    assert "AGENTS.md" not in recipe.writes
+    json.dumps(recipe.report())
 
 
 def test_reviewed_recipe_applies_once_and_has_empty_postflight(tmp_path: Path) -> None:
@@ -185,30 +196,20 @@ def test_reviewed_recipe_applies_once_and_has_empty_postflight(tmp_path: Path) -
     assert plan(tmp_path, manifest).empty
 
 
-def test_compact_disposition_rules_expand_without_occurrence_entries(
+def test_compact_dispositions_and_supplemental_edit_apply_once(
     tmp_path: Path,
 ) -> None:
     manifest = _fixture(tmp_path)
+    consumer = tmp_path / "skills/consumer/blueprint.yaml"
+    consumer.write_text(
+        "# old-node historical comment\n" + consumer.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    _write(tmp_path / "tests/test_error.py", 'pattern = "certifier"\n')
     manifest["default_disposition"] = "rewrite"
     manifest["disposition_overrides"] = [
         {"path": "notes.md", "disposition": "preserve"}
     ]
-
-    recipe = plan(tmp_path, manifest)
-
-    assert recipe.occurrences == []
-    assert "notes.md" not in recipe.writes
-    assert b"# old-node historical comment" not in recipe.writes[
-        "skills/consumer/blueprint.yaml"
-    ]
-
-
-def test_supplemental_edit_is_atomic_and_postflight_idempotent(
-    tmp_path: Path,
-) -> None:
-    manifest = _fixture(tmp_path)
-    _write(tmp_path / "tests/test_error.py", 'pattern = "certifier"\n')
-    manifest["default_disposition"] = "rewrite"
     manifest["supplemental_edits"] = [
         {
             "path": "tests/test_error.py",
@@ -218,10 +219,25 @@ def test_supplemental_edit_is_atomic_and_postflight_idempotent(
     ]
 
     recipe = plan(tmp_path, manifest)
+
+    assert recipe.occurrences == []
+    assert "notes.md" not in recipe.writes
+    assert b"# new-node historical comment" in recipe.writes[
+        "skills/consumer/blueprint.yaml"
+    ]
     assert recipe.writes["tests/test_error.py"] == b'pattern = "node-certify"\n'
 
     apply(recipe, verify=lambda: None)
 
+    assert (tmp_path / "notes.md").read_text(encoding="utf-8") == (
+        "Use old-node when demonstrating relocation.\n"
+    )
+    assert consumer.read_text(encoding="utf-8").startswith(
+        "# new-node historical comment\n"
+    )
+    assert (tmp_path / "tests/test_error.py").read_bytes() == (
+        b'pattern = "node-certify"\n'
+    )
     assert plan(tmp_path, manifest).empty
 
 
@@ -261,24 +277,6 @@ def test_failed_verification_rolls_back_every_change(tmp_path: Path) -> None:
     assert unrelated_empty.is_dir()
 
 
-def test_report_is_json_serializable(tmp_path: Path) -> None:
-    recipe = plan(tmp_path, _fixture(tmp_path))
-    json.dumps(recipe.report())
-
-
-def test_review_packet_groups_markdown_by_heading(tmp_path: Path) -> None:
-    manifest = _fixture(tmp_path)
-    _write(tmp_path / "notes.md", "# Current\nUse old-node.\n")
-    report = plan(tmp_path, manifest).report()
-
-    packet = build_packet(tmp_path, report)
-
-    assert packet["summary"] == {"occurrences": 1, "review_units": 1}
-    assert packet["review_units"][0]["section"] == "Current"
-    assert packet["review_units"][0]["suggestion"] == "rewrite"
-    assert packet["review_units"][0]["decision"] is None
-
-
 def test_review_packet_renderer_emits_every_unit_without_llm_reformatting(
     tmp_path: Path,
 ) -> None:
@@ -289,31 +287,24 @@ def test_review_packet_renderer_emits_every_unit_without_llm_reformatting(
 
     rendered = relocation.render_packet(packet)
 
+    assert packet["summary"] == {"occurrences": 2, "review_units": 2}
+    assert [unit["path"] for unit in packet["review_units"]] == [
+        "guide.md",
+        "notes.md",
+    ]
+    assert [unit["section"] for unit in packet["review_units"]] == [
+        "Guide",
+        "Current",
+    ]
+    assert [unit["suggestion"] for unit in packet["review_units"]] == [
+        "rewrite",
+        "rewrite",
+    ]
+    assert [unit["decision"] for unit in packet["review_units"]] == [None, None]
     assert "2 occurrences in 2 review units" in rendered
     assert "`guide.md` — Guide — suggested `rewrite` — 1 occurrence" in rendered
     assert "`notes.md` — Current — suggested `rewrite` — 1 occurrence" in rendered
     assert rendered.count("`old-node` → `new-node` ×1") == 2
-
-
-def test_manifest_excludes_repository_runtime_state(tmp_path: Path) -> None:
-    manifest = _fixture(tmp_path)
-    manifest["inventory_exclusions"] = [".claude", ".codex", ".superpowers"]
-    _write(tmp_path / ".claude/log.md", "old-node\n")
-    _write(tmp_path / ".codex/log.md", "old-node\n")
-    _write(tmp_path / ".superpowers/log.md", "old-node\n")
-
-    paths = {item.path for item in plan(tmp_path, manifest).occurrences}
-
-    assert not any(path.startswith((".claude/", ".codex/", ".superpowers/")) for path in paths)
-
-
-def test_planning_ignores_unrelated_symlinks(tmp_path: Path) -> None:
-    manifest = _fixture(tmp_path)
-    (tmp_path / "AGENTS.md").symlink_to("README.md")
-
-    recipe = plan(tmp_path, manifest)
-
-    assert "AGENTS.md" not in recipe.writes
 
 
 def test_plan_rejects_existing_destination(tmp_path: Path) -> None:
@@ -388,43 +379,8 @@ def test_public_route_applies_and_then_reports_empty_postflight(tmp_path: Path) 
     repository = tmp_path / "repository"
     manifest_path = tmp_path / "manifest.yaml"
     apply_report = tmp_path / "apply-report.json"
-    postflight_report = tmp_path / "postflight-report.json"
-    _public_fixture(repository, manifest_path)
-
-    published = _run_public_route(
-        repository, manifest_path, apply_report, publish=True
-    )
-
-    assert published.returncode == 0, published.stderr
-    assert not (repository / "skills/old-node").exists()
-    assert (repository / "skills/new-node/__init__.py").read_text(
-        encoding="utf-8"
-    ) == "VALUE = 1\n"
-    postflight = _run_public_route(repository, manifest_path, postflight_report)
-    assert postflight.returncode == 0, postflight.stderr
-    report = json.loads(postflight_report.read_text(encoding="utf-8"))
-    assert report["writes"] == []
-    assert report["deletes"] == []
-    assert report["unaccounted_semantic_occurrences"] == []
-    apply_timings = json.loads(apply_report.read_text(encoding="utf-8"))["timings"]
-    assert set(apply_timings) == {
-        "graph_verification_seconds",
-        "planning_seconds",
-        "postflight_seconds",
-        "total_seconds",
-        "transactional_writes_seconds",
-    }
-    assert all(value >= 0 for value in apply_timings.values())
-
-
-def test_public_route_postflight_allows_ignored_state_under_source(
-    tmp_path: Path,
-) -> None:
-    repository = tmp_path / "repository"
-    manifest_path = tmp_path / "manifest.yaml"
-    apply_report = tmp_path / "apply-report.json"
     git = GitTestRepository.create(repository)
-    _public_fixture(repository, manifest_path)
+    manifest = _public_fixture(repository, manifest_path)
     _write(repository / ".gitignore", "_build/\n")
     git.git("add", ".")
     git.git("commit", "--quiet", "-m", "fixture")
@@ -436,8 +392,22 @@ def test_public_route_postflight_allows_ignored_state_under_source(
     )
 
     assert published.returncode == 0, published.stderr
+    assert not (repository / "skills/old-node/__init__.py").exists()
+    assert not (repository / "skills/old-node/blueprint.yaml").exists()
     assert ignored_state.read_text(encoding="utf-8") == "{}\n"
-    assert (repository / "skills/new-node/__init__.py").is_file()
+    assert (repository / "skills/new-node/__init__.py").read_text(
+        encoding="utf-8"
+    ) == "VALUE = 1\n"
+    apply_timings = json.loads(apply_report.read_text(encoding="utf-8"))["timings"]
+    assert set(apply_timings) == {
+        "graph_verification_seconds",
+        "planning_seconds",
+        "postflight_seconds",
+        "total_seconds",
+        "transactional_writes_seconds",
+    }
+    assert all(value >= 0 for value in apply_timings.values())
+    assert plan(repository, manifest, recover_interrupted=False).empty
 
 
 def test_public_route_recovers_after_process_exit_mid_publication(

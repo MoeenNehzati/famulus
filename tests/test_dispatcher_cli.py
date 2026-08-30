@@ -196,18 +196,43 @@ def test_live_cli_exposes_child_stderr_before_child_completes(
     reader = threading.Thread(target=read_two_lines, daemon=True)
     reader.start()
 
-    assert observed.get(timeout=3).startswith(
-        "warning: certification-status-unavailable:"
-    )
-    assert observed.get(timeout=3) == "oauth.authorization_url\n"
-    assert process.poll() is None
-    release.touch()
-    stdout, stderr = process.communicate(timeout=3)
+    try:
+        assert observed.get(timeout=3).startswith(
+            "warning: certification-status-unavailable:"
+        )
+        assert observed.get(timeout=3) == "oauth.authorization_url\n"
+        assert process.poll() is None
+    finally:
+        release.touch()
+        stdout, stderr = process.communicate(timeout=3)
+        reader.join(timeout=1)
 
-    reader.join(timeout=1)
+    assert not reader.is_alive()
     assert stdout == "authorized\n"
     assert stderr == ""
     assert process.returncode == 0
+
+    stale = subprocess.run(
+        [
+            sys.executable,
+            "-P",
+            "-m",
+            "officina.dispatcher.cli",
+            "--repository-config",
+            str(config),
+            "--caller-skill",
+            "probe",
+            "probe.interface.stream@7",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=environment,
+    )
+    assert stale.returncode == 0, stale.stderr
+    assert stale.stdout == "authorized\n"
+    assert "warning: interface-version-pin-stale:" in stale.stderr
+    assert "requested 7, available 1" in stale.stderr
 
 
 @pytest.mark.parametrize(
@@ -327,46 +352,6 @@ def test_cli_forwards_identical_stdin_to_both_attempts_of_a_stale_pin(
         assert cli.main() == 0
 
     assert observed == [payload, payload]
-
-
-def test_live_cli_accepts_a_version_pin_and_warns_when_it_is_stale(
-    live_stream_repository: tuple[Path, Path, Path],
-) -> None:
-    """End-to-end, through a real child process rather than a stub."""
-    config, release, _module_root = live_stream_repository
-    release.touch()  # let the child exit immediately
-    environment = os.environ.copy()
-    environment["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
-    environment["DISPATCHER_STREAM_RELEASE"] = str(release)
-
-    def run(target: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            [
-                sys.executable, "-P", "-m", "officina.dispatcher.cli",
-                "--repository-config", str(config),
-                "--caller-skill", "probe",
-                target,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            env=environment,
-        )
-
-    matching = run("probe.interface.stream@1")
-    assert matching.returncode == 0, matching.stderr
-    assert matching.stdout == "authorized\n"
-    assert "interface-version-pin-stale" not in matching.stderr
-
-    stale = run("probe.interface.stream@7")
-    assert stale.returncode == 0, stale.stderr
-    assert stale.stdout == "authorized\n"
-    assert "warning: interface-version-pin-stale:" in stale.stderr
-    assert "requested 7, available 1" in stale.stderr
-
-    bare = run("probe.interface.stream")
-    assert bare.returncode == 0, bare.stderr
-    assert bare.stdout == "authorized\n"
 
 
 def test_cli_does_not_retry_failures_unrelated_to_the_version_pin(

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import yaml
 
-from officina.blueprints.graph import load_repository_blueprint_graph
+from officina.blueprints.graph import RepositoryBlueprintGraph
 from officina.blueprints.process_binding import (
     compile_gateway_invocation,
     parse_caller_invocation,
@@ -64,7 +64,9 @@ def test_certifier_exposes_three_private_semantic_audit_sources() -> None:
         assert source["interfaces"][interface_id]["uses_interfaces"] == []
 
 
-def test_certifier_gateway_orchestrates_audits_without_default_interface() -> None:
+def test_certifier_gateway_orchestrates_audits_without_default_interface(
+    ordinary_repository_graph: RepositoryBlueprintGraph,
+) -> None:
     module = _yaml(SKILL_ROOT / "blueprint.yaml")
     gateway = _yaml(SKILL_ROOT / "blueprints" / "gateway.yaml")
     certifier_runtime = _yaml(SKILL_ROOT / "_rtx" / "blueprint.yaml")
@@ -139,7 +141,27 @@ def test_certifier_gateway_orchestrates_audits_without_default_interface() -> No
 
     # The real graph load proves the namespace-exported drift route is authorized
     # and does not introduce a certification dependency cycle.
-    load_repository_blueprint_graph(REPO_ROOT)
+    graph = ordinary_repository_graph
+    for interface_id, subcommand in (
+        ("node-drift._rtx.interface.compute-hashes", "compute-hashes"),
+        ("node-drift._rtx.interface.drift-status", "status"),
+    ):
+        export = graph.exports[interface_id]
+        parsed = parse_caller_invocation(
+            export,
+            ["--repo-root", str(REPO_ROOT), "--json"],
+            stdin_requested=False,
+        )
+        plan = compile_gateway_invocation(
+            graph.nodes[export.source_node_id], export, parsed
+        )
+
+        assert plan.argv == (
+            subcommand,
+            "--repo-root",
+            str(REPO_ROOT),
+            "--json",
+        )
 
     skill_text = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
     assert "node-certify.interface.default" not in skill_text
@@ -164,33 +186,6 @@ def test_certifier_gateway_orchestrates_audits_without_default_interface() -> No
     assert algorithm.index("audit-module") < algorithm.index(
         "mechanical `certify`"
     )
-
-
-def test_drift_repository_routes_supply_their_subcommands() -> None:
-    graph = load_repository_blueprint_graph(REPO_ROOT)
-
-    for interface_id, subcommand in (
-        ("node-drift._rtx.interface.compute-hashes", "compute-hashes"),
-        ("node-drift._rtx.interface.drift-status", "status"),
-    ):
-        export = graph.exports[interface_id]
-        parsed = parse_caller_invocation(
-            export,
-            ["--repo-root", str(REPO_ROOT), "--json"],
-            stdin_requested=False,
-        )
-        plan = compile_gateway_invocation(
-            graph.nodes[export.source_node_id], export, parsed
-        )
-
-        assert plan.argv == (
-            subcommand,
-            "--repo-root",
-            str(REPO_ROOT),
-            "--json",
-        )
-
-
 def test_drift_and_canonical_docs_describe_selective_v6_worklist() -> None:
     drift_text = (DRIFT_ROOT / "SKILL.md").read_text(encoding="utf-8")
     canonical_text = (

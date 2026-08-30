@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import json
 import importlib.util
+import json
 import os
 from pathlib import Path
 import subprocess
 import sys
+from types import ModuleType
 
 import pytest
 
@@ -60,15 +61,19 @@ def _run(repository: GitTestRepository) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _index_json(repository: GitTestRepository, path: Path) -> dict[str, object]:
-    return json.loads(repository.git("show", f":{path.as_posix()}").stdout)
+def _load_module() -> ModuleType:
+    spec = importlib.util.spec_from_file_location("sync_release_version", SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
-def test_sync_uses_staged_version_and_preserves_staged_and_unstaged_views(
+def test_public_sync_preserves_views_is_idempotent_and_rejects_deletion(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Catch whole-file staging that absorbs unrelated working-tree edits."""
+    """Retain one real Git/process owner for the synchronizer boundary."""
 
     repository = _create_repository(tmp_path)
     (repository.root / "pyproject.toml").write_text(
@@ -76,28 +81,34 @@ def test_sync_uses_staged_version_and_preserves_staged_and_unstaged_views(
         encoding="utf-8",
     )
     repository.git("add", "pyproject.toml")
-
     for manifest in MANIFESTS:
-        staged = json.loads((repository.root / manifest).read_text(encoding="utf-8"))
-        staged["description"] = f"staged {manifest.parent.name}"
+        staged = {
+            "name": "famulus",
+            "version": "0.1.0",
+            "description": f"staged {manifest.parent.name}",
+        }
         _write_json(repository.root / manifest, staged)
         repository.git("add", manifest.as_posix())
         working = dict(staged)
         working["description"] = f"unstaged {manifest.parent.name}"
         _write_json(repository.root / manifest, working)
-
-    (repository.root / "unrelated.txt").write_text("staged unrelated\n", encoding="utf-8")
+    (repository.root / "unrelated.txt").write_text(
+        "staged unrelated\n", encoding="utf-8"
+    )
     repository.git("add", "unrelated.txt")
     unrelated_index_before = repository.git("show", ":unrelated.txt").stdout
-    monkeypatch.setenv("GIT_INDEX_FILE", str(tmp_path / "ambient.index"))
+    ambient_index = tmp_path / "ambient.index"
+    monkeypatch.setenv("GIT_INDEX_FILE", str(ambient_index))
 
-    completed = _run(repository)
+    first = _run(repository)
 
-    assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert completed.stdout == "Synchronized release version 2.3.4\n"
+    assert first.returncode == 0, first.stdout + first.stderr
+    assert first.stdout == "Synchronized release version 2.3.4\n"
+    expected_working: dict[Path, bytes] = {}
+    expected_index: dict[Path, bytes] = {}
     for manifest in MANIFESTS:
-        staged = _index_json(repository, manifest)
-        working = json.loads((repository.root / manifest).read_text(encoding="utf-8"))
+        staged = json.loads(repository.git("show", f":{manifest.as_posix()}").stdout)
+        working = json.loads((repository.root / manifest).read_bytes())
         assert staged == {
             "name": "famulus",
             "version": "2.3.4",
@@ -108,171 +119,205 @@ def test_sync_uses_staged_version_and_preserves_staged_and_unstaged_views(
             "version": "2.3.4",
             "description": f"unstaged {manifest.parent.name}",
         }
+        expected_working[manifest] = (repository.root / manifest).read_bytes()
+        expected_index[manifest] = repository.git(
+            "show", f":{manifest.as_posix()}"
+        ).stdout
     assert repository.git("show", ":unrelated.txt").stdout == unrelated_index_before
-
-
-def test_sync_is_idempotent(tmp_path: Path) -> None:
-    """Catch rewrites or index churn when every version is already synchronized."""
-
-    repository = _create_repository(tmp_path)
-
-    first = _run(repository)
-    files_after_first = {
-        path: (repository.root / path).read_bytes() for path in MANIFESTS
-    }
     index_after_first = repository.git("ls-files", "--stage", "-z").stdout
+
     second = _run(repository)
 
-    assert first.returncode == 0, first.stdout + first.stderr
     assert second.returncode == 0, second.stdout + second.stderr
+    assert second.stdout == "Synchronized release version 2.3.4\n"
     assert {
         path: (repository.root / path).read_bytes() for path in MANIFESTS
-    } == files_after_first
+    } == expected_working
+    assert {
+        path: repository.git("show", f":{path.as_posix()}").stdout
+        for path in MANIFESTS
+    } == expected_index
     assert repository.git("ls-files", "--stage", "-z").stdout == index_after_first
+    assert os.environ["GIT_INDEX_FILE"] == str(ambient_index)
+    assert not ambient_index.exists()
 
-
-def test_sync_changes_only_top_level_version_bytes(tmp_path: Path) -> None:
-    """Catch JSON reserialization that changes unrelated manifest bytes."""
-
-    repository = _create_repository(tmp_path)
-    (repository.root / "pyproject.toml").write_text(
-        '[project]\nname = "famulus-officina"\nversion = "1.2.3"\n',
-        encoding="utf-8",
-    )
-    repository.git("add", "pyproject.toml")
-    unusual = b'{ "name":"famulus", "version" : "0.1.0", "nested":{"version":"9.9.9"} }\n\n'
-    expected = b'{ "name":"famulus", "version" : "1.2.3", "nested":{"version":"9.9.9"} }\n\n'
-    for manifest in MANIFESTS:
-        (repository.root / manifest).write_bytes(unusual)
-        repository.git("add", manifest.as_posix())
-
-    completed = _run(repository)
-
-    assert completed.returncode == 0, completed.stdout + completed.stderr
-    for manifest in MANIFESTS:
-        assert (repository.root / manifest).read_bytes() == expected
-        assert repository.git("show", f":{manifest.as_posix()}").stdout == expected
-
-
-def test_sync_rejects_malformed_input_before_changing_files_or_index(
-    tmp_path: Path,
-) -> None:
-    """Catch validation that mutates the first manifest before reading the second."""
-
-    repository = _create_repository(tmp_path)
-    (repository.root / "pyproject.toml").write_text(
-        '[project]\nname = "famulus-officina"\nversion = "1.2.3"\n',
-        encoding="utf-8",
-    )
-    repository.git("add", "pyproject.toml")
-    malformed = repository.root / MANIFESTS[1]
-    malformed.write_text('{"version": "0.1.0", "version": }\n', encoding="utf-8")
-    repository.git("add", MANIFESTS[1].as_posix())
-    files_before = {path: (repository.root / path).read_bytes() for path in MANIFESTS}
-    index_before = repository.git("ls-files", "--stage", "-z").stdout
-
-    completed = _run(repository)
-
-    assert completed.returncode == 1
-    assert "malformed UTF-8 JSON" in completed.stderr
-    assert {path: (repository.root / path).read_bytes() for path in MANIFESTS} == files_before
-    assert repository.git("ls-files", "--stage", "-z").stdout == index_before
-
-
-def test_sync_rejects_duplicate_manifest_keys(tmp_path: Path) -> None:
-    repository = _create_repository(tmp_path)
-    duplicate = repository.root / MANIFESTS[0]
-    duplicate.write_text(
-        '{"version":"0.1.0","version":"0.1.0"}\n',
-        encoding="utf-8",
-    )
-    repository.git("add", MANIFESTS[0].as_posix())
-
-    completed = _run(repository)
-
-    assert completed.returncode == 1
-    assert "duplicate JSON key: version" in completed.stderr
-
-
-def test_sync_rejects_deleted_staged_manifest_without_mutation(tmp_path: Path) -> None:
-    repository = _create_repository(tmp_path)
+    repository.git("reset", "--hard", "HEAD")
+    repository.git("rm", MANIFESTS[0].as_posix())
     surviving = repository.root / MANIFESTS[1]
     surviving_before = surviving.read_bytes()
-    repository.git("rm", MANIFESTS[0].as_posix())
+    index_before_deletion_check = repository.git("ls-files", "--stage", "-z").stdout
+    unrelated_before_deletion_check = repository.git("show", ":unrelated.txt").stdout
 
-    completed = _run(repository)
+    deleted = _run(repository)
 
-    assert completed.returncode == 1
+    assert deleted.returncode == 1
+    assert deleted.stderr.startswith("error: ")
+    assert ":.claude-plugin/plugin.json" in deleted.stderr
     assert surviving.read_bytes() == surviving_before
-
-
-def test_sync_rejects_malformed_canonical_toml(tmp_path: Path) -> None:
-    repository = _create_repository(tmp_path)
-    (repository.root / "pyproject.toml").write_text("[project\n", encoding="utf-8")
-    repository.git("add", "pyproject.toml")
-
-    completed = _run(repository)
-
-    assert completed.returncode == 1
-    assert "malformed UTF-8 TOML" in completed.stderr
-
-
-@pytest.mark.parametrize(
-    "version",
-    ("1.2", "01.2.3", "1.02.3", "1.2.03", "1.2.3-rc1", " 1.2.3"),
-)
-def test_sync_rejects_noncanonical_versions(tmp_path: Path, version: str) -> None:
-    """Catch acceptance of version spellings outside the release contract."""
-
-    repository = _create_repository(tmp_path)
-    (repository.root / "pyproject.toml").write_text(
-        f'[project]\nname = "famulus-officina"\nversion = "{version}"\n',
-        encoding="utf-8",
+    assert (
+        repository.git("ls-files", "--stage", "-z").stdout
+        == index_before_deletion_check
     )
-    repository.git("add", "pyproject.toml")
-
-    completed = _run(repository)
-
-    assert completed.returncode == 1
-    assert "canonical MAJOR.MINOR.PATCH" in completed.stderr
+    assert (
+        repository.git("show", ":unrelated.txt").stdout
+        == unrelated_before_deletion_check
+    )
 
 
-def test_sync_rolls_back_working_files_when_second_replace_fails(
+def test_manifest_output_rewrites_only_top_level_version_and_rejects_bad_json() -> None:
+    module = _load_module()
+    path = MANIFESTS[0]
+    unusual = (
+        b'{ "name":"famulus", "version" : "0.1.0", '
+        b'"nested":{"version":"9.9.9"} }\n\n'
+    )
+    expected = (
+        b'{ "name":"famulus", "version" : "1.2.3", '
+        b'"nested":{"version":"9.9.9"} }\n\n'
+    )
+
+    assert module._manifest_output(unusual, path, "1.2.3") == expected
+    assert module._manifest_output(expected, path, "1.2.3") == expected
+
+    with pytest.raises(module.SynchronizationError) as malformed:
+        module._manifest_output(b'{"version": }\n', path, "1.2.3")
+    assert str(malformed.value) == (
+        ".claude-plugin/plugin.json: malformed UTF-8 JSON: "
+        "Expecting value: line 1 column 13 (char 12)"
+    )
+
+    with pytest.raises(module.SynchronizationError) as duplicate:
+        module._manifest_output(
+            b'{"version":"0.1.0","version":"0.1.0"}\n', path, "1.2.3"
+        )
+    assert str(duplicate.value) == "duplicate JSON key: version"
+
+
+def test_canonical_version_rejects_malformed_toml_and_noncanonical_values() -> None:
+    module = _load_module()
+
+    with pytest.raises(module.SynchronizationError) as malformed:
+        module._canonical_version(b"[project\n")
+    assert str(malformed.value) == (
+        "pyproject.toml: malformed UTF-8 TOML: Expected ']' at the end of a "
+        "table declaration (at line 1, column 9)"
+    )
+
+    for version in ("1.2", "01.2.3", "1.02.3", "1.2.03", "1.2.3-rc1", " 1.2.3"):
+        staged = f'[project]\nversion = "{version}"\n'.encode()
+        with pytest.raises(module.SynchronizationError) as noncanonical:
+            module._canonical_version(staged)
+        assert str(noncanonical.value) == (
+            "pyproject.toml: [project].version must be canonical MAJOR.MINOR.PATCH"
+        )
+
+
+def test_synchronize_prepares_every_input_before_mutation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Catch a late filesystem failure that leaves only one manifest updated."""
+    module = _load_module()
+    root = tmp_path / "preparation"
+    root.mkdir()
+    for manifest in MANIFESTS:
+        path = root / manifest
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b'{"version":"0.1.0"}\n')
+    (root / MANIFESTS[1]).write_bytes(b'{"version": }\n')
+    before = {manifest: (root / manifest).read_bytes() for manifest in MANIFESTS}
+    index_inputs = {
+        Path("pyproject.toml"): b'[project]\nversion = "1.2.3"\n',
+        MANIFESTS[0]: b'{"version":"0.1.0"}\n',
+        MANIFESTS[1]: b'{"version":"0.1.0"}\n',
+    }
+    reads: list[Path] = []
+    modes: list[Path] = []
 
-    repository = _create_repository(tmp_path)
-    (repository.root / "pyproject.toml").write_text(
-        '[project]\nname = "famulus-officina"\nversion = "1.2.3"\n',
-        encoding="utf-8",
+    def index_bytes(_root: Path, path: Path) -> bytes:
+        reads.append(path)
+        return index_inputs[path]
+
+    def index_mode(_root: Path, path: Path) -> str:
+        modes.append(path)
+        return "100644"
+
+    monkeypatch.setattr(module, "_repository_root", lambda: root)
+    monkeypatch.setattr(module, "_index_bytes", index_bytes)
+    monkeypatch.setattr(module, "_index_mode", index_mode)
+    monkeypatch.setattr(
+        module,
+        "_atomic_replace",
+        lambda *_args: pytest.fail("replacement started before preparation completed"),
     )
-    repository.git("add", "pyproject.toml")
-    files_before = {path: (repository.root / path).read_bytes() for path in MANIFESTS}
-    index_before = repository.git("ls-files", "--stage", "-z").stdout
-    spec = importlib.util.spec_from_file_location("sync_release_version", SCRIPT)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    monkeypatch.setattr(module, "_repository_root", lambda: repository.root)
-    real_replace = module._atomic_replace
+    monkeypatch.setattr(
+        module,
+        "_git",
+        lambda *_args, **_kwargs: pytest.fail("index update started during preparation"),
+    )
+
+    with pytest.raises(module.SynchronizationError) as malformed:
+        module.synchronize()
+
+    assert str(malformed.value) == (
+        ".codex-plugin/plugin.json: malformed UTF-8 JSON: "
+        "Expecting value: line 1 column 13 (char 12)"
+    )
+    assert reads == [Path("pyproject.toml"), MANIFESTS[0], MANIFESTS[1]]
+    assert modes == [MANIFESTS[0], MANIFESTS[1]]
+    assert {manifest: (root / manifest).read_bytes() for manifest in MANIFESTS} == before
+
+
+def test_synchronize_rolls_back_real_atomic_replacements_without_git(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_module()
+    rollback_root = tmp_path / "rollback"
+    rollback_root.mkdir()
+    rollback_before: dict[Path, bytes] = {}
+    for manifest in MANIFESTS:
+        path = rollback_root / manifest
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b'{"version":"0.1.0"}\n')
+        rollback_before[manifest] = path.read_bytes()
+    real_replace = _load_module()._atomic_replace
+    replacements: list[Path] = []
     failed = False
 
     def fail_second_once(path: Path, data: bytes) -> None:
         nonlocal failed
-        if path == repository.root / MANIFESTS[1] and not failed:
+        replacements.append(path)
+        if path == rollback_root / MANIFESTS[1] and not failed:
             failed = True
             raise OSError("injected second replacement failure")
         real_replace(path, data)
 
+    rollback_index = {
+        Path("pyproject.toml"): b'[project]\nversion = "1.2.3"\n',
+        MANIFESTS[0]: rollback_before[MANIFESTS[0]],
+        MANIFESTS[1]: rollback_before[MANIFESTS[1]],
+    }
+    monkeypatch.setattr(module, "_repository_root", lambda: rollback_root)
+    monkeypatch.setattr(
+        module, "_index_bytes", lambda _root, path: rollback_index[path]
+    )
+    monkeypatch.setattr(module, "_index_mode", lambda _root, _path: "100644")
+    monkeypatch.setattr(module, "_temporary_index_active", lambda _root: False)
     monkeypatch.setattr(module, "_atomic_replace", fail_second_once)
-    for name in tuple(os.environ):
-        if name.startswith("GIT_"):
-            monkeypatch.delenv(name)
+    monkeypatch.setattr(
+        module,
+        "_git",
+        lambda *_args, **_kwargs: pytest.fail("rollback used a Git child"),
+    )
 
-    with pytest.raises(OSError, match="injected second replacement failure"):
+    with pytest.raises(OSError, match="^injected second replacement failure$"):
         module.synchronize()
 
-    assert {path: (repository.root / path).read_bytes() for path in MANIFESTS} == files_before
-    assert repository.git("ls-files", "--stage", "-z").stdout == index_before
+    assert replacements == [
+        rollback_root / MANIFESTS[0],
+        rollback_root / MANIFESTS[1],
+        rollback_root / MANIFESTS[0],
+    ]
+    assert {
+        manifest: (rollback_root / manifest).read_bytes() for manifest in MANIFESTS
+    } == rollback_before

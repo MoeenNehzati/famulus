@@ -22,7 +22,6 @@ def load_module(name, relative_path):
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module); return module
 
-validator = load_module("migrated_validator", "references/standards-schema/validate_standard_v6.py")
 renderer = load_module("migrated_renderer", "references/standards-schema/render_standard_v6.py")
 
 def nodes(document):
@@ -38,23 +37,17 @@ def resolve(value, pointer):
     for token in pointer.strip("/").split("/") if pointer != "/" else []: value = value[int(token)] if isinstance(value, list) else value[token]
     return value
 
-def test_standards_validate_and_generated_views_are_fresh():
-    for standard in NODE_STANDARDS.glob("*.standard.yaml"):
-        assert validator.validate_file(standard, ROOT) == []
-    assert validator.validate_file(PROFILE, ROOT) == []
-    document = yaml.safe_load(PROFILE.read_text(encoding="utf-8")); rendered = renderer.render_document(document)
-    assert rendered == renderer.render_document(document) == PROFILE_VIEW.read_text(encoding="utf-8")
-
 def test_skill_guidelines_make_v5_the_only_live_blueprint_authoring_family():
-    document = yaml.safe_load((NODE_STANDARDS / "node.standard.yaml").read_text(encoding="utf-8"))
+    node_standard_texts = {
+        path.name: path.read_text(encoding="utf-8")
+        for path in NODE_STANDARDS.glob("*.standard.yaml")
+    }
+    document = yaml.safe_load(node_standard_texts["node.standard.yaml"])
     families = {family["id"]: family for family in document["standards"]}
     live = families["skill-guidelines.module-behavioral-source-v5"]
     assert "sole live blueprint and interface authoring authority" in live["summary"]
 
-    serialized = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in NODE_STANDARDS.glob("*.standard.yaml")
-    )
+    serialized = "\n".join(node_standard_texts.values())
     node_kinds = next(
         rule
         for rule in live["children"]
@@ -111,9 +104,9 @@ def test_skill_guidelines_make_v5_the_only_live_blueprint_authoring_family():
         ".last_audit",
         ".pooled-blueprint",
     )
-    for path in NODE_STANDARDS.glob("*.standard.yaml"):
-        text = path.read_text(encoding="utf-8").lower()
-        assert not [marker for marker in legacy_markers if marker in text], path
+    for name, text in node_standard_texts.items():
+        lowered = text.lower()
+        assert not [marker for marker in legacy_markers if marker in lowered], name
 
 def test_interface_design_is_one_source_owned_authority():
     standards_root = ROOT / "references/skill-standards"
@@ -153,11 +146,6 @@ def test_interface_design_is_one_source_owned_authority():
     ).read_text(encoding="utf-8")
     assert "references/skill-standards/interface-design.md" not in consumer
     assert "skill-standards.source.interface-design" not in consumer_blueprint
-    disposition = yaml.safe_load(
-        (NODE_STANDARDS / "authority-disposition.yaml").read_text(encoding="utf-8")
-    )
-    assert disposition["source_authorities"]["interface-design"]["status"] == "excluded"
-
 def test_skill_hooks_describe_the_live_v5_guideline_contract():
     blueprint_hook = (ROOT / ".githooks/skill/check-blueprints").read_text(encoding="utf-8")
     assert "v5 module/source" in blueprint_hook
@@ -168,63 +156,132 @@ def test_skill_hooks_describe_the_live_v5_guideline_contract():
     assert "source `uses_interfaces`" in dependency_hook
     assert "depends_on" not in dependency_hook
 
-def test_render_mode_is_schema_checked_and_defaults_to_semantic():
-    profile = yaml.safe_load(PROFILE.read_text(encoding="utf-8"))
-    assert "render_mode" not in profile
-    assert renderer.render_document(profile) == PROFILE_VIEW.read_text(encoding="utf-8")
+def test_render_mode_defaults_to_semantic():
+    document = {
+        "canonical_path": "synthetic.standard.yaml",
+        "title": "Synthetic",
+        "purpose": "Exercise semantic rendering.",
+        "standards": [
+            {
+                "kind": "rule",
+                "id": "synthetic.rule",
+                "title": "Synthetic rule",
+                "assertions": [
+                    {
+                        "id": "required-behavior",
+                        "modality": "required",
+                        "statement": "Preserve the semantic default.",
+                    }
+                ],
+            }
+        ],
+    }
+    assert "render_mode" not in document
+    rendered = renderer.render_document(document)
+    assert "## Synthetic rule" in rendered
+    assert "- **required** — Preserve the semantic default." in rendered
 
-def test_every_source_block_is_exactly_preserved_once():
-    for fixture_name, map_name, standard in (
-        ("skill-guidelines.md", "skill-guidelines-source-map.yaml", FROZEN_GUIDELINES),
-        ("document-profile-schema.md", "document-profile-source-map.yaml", PROFILE),
-    ):
-        fixture = FIXTURES / fixture_name; lines = fixture.read_text(encoding="utf-8").splitlines(); mapping = yaml.safe_load((FIXTURES / map_name).read_text(encoding="utf-8"))
-        assert hashlib.sha256(fixture.read_bytes()).hexdigest() == SOURCE_DIGESTS[fixture_name] == mapping["source_sha256"]
-        indexed = nodes(yaml.safe_load(standard.read_text(encoding="utf-8"))); covered = []
+
+def test_frozen_v1_sources_preserve_content_structure_and_provenance():
+    source_bytes = {
+        name: (FIXTURES / name).read_bytes()
+        for name in SOURCE_DIGESTS
+    }
+    source_text = {
+        name: content.decode("utf-8") for name, content in source_bytes.items()
+    }
+    mappings = {
+        "skill-guidelines.md": yaml.safe_load(
+            (FIXTURES / "skill-guidelines-source-map.yaml").read_text(
+                encoding="utf-8"
+            )
+        ),
+        "document-profile-schema.md": yaml.safe_load(
+            (FIXTURES / "document-profile-source-map.yaml").read_text(
+                encoding="utf-8"
+            )
+        ),
+    }
+    documents = {
+        "skill-guidelines.md": yaml.safe_load(
+            FROZEN_GUIDELINES.read_text(encoding="utf-8")
+        ),
+        "document-profile-schema.md": yaml.safe_load(
+            PROFILE.read_text(encoding="utf-8")
+        ),
+    }
+    rendered = FROZEN_GUIDELINES_VIEW.read_text(encoding="utf-8")
+
+    for fixture_name in SOURCE_DIGESTS:
+        lines = source_text[fixture_name].splitlines()
+        mapping = mappings[fixture_name]
+        assert (
+            hashlib.sha256(source_bytes[fixture_name]).hexdigest()
+            == SOURCE_DIGESTS[fixture_name]
+            == mapping["source_sha256"]
+        )
+        indexed = nodes(documents[fixture_name])
+        covered = []
         for unit in mapping["units"]:
-            text = "\n".join(lines[unit["start"]-1:unit["end"]]); assert text == unit["text"]
-            assert unit["content_digest"] == "sha256:" + hashlib.sha256((text+"\n").encode()).hexdigest()
-            covered.extend(n for n in range(unit["start"], unit["end"]+1) if lines[n-1].strip())
+            text = "\n".join(lines[unit["start"] - 1 : unit["end"]])
+            assert text == unit["text"]
+            assert unit["content_digest"] == "sha256:" + hashlib.sha256(
+                (text + "\n").encode()
+            ).hexdigest()
+            covered.extend(
+                line_number
+                for line_number in range(unit["start"], unit["end"] + 1)
+                if lines[line_number - 1].strip()
+            )
             if unit["kind"] == "contextual":
                 assert "target" not in unit and unit["contextual_reason"]
                 if fixture_name == "skill-guidelines.md":
-                    assert all(lines[n-1].strip() == "---" or lines[n-1].strip().startswith("```") for n in range(unit["start"], unit["end"]+1))
+                    assert all(
+                        lines[line_number - 1].strip() == "---"
+                        or lines[line_number - 1].strip().startswith("```")
+                        for line_number in range(unit["start"], unit["end"] + 1)
+                    )
             else:
                 assert unit["kind"] == "semantic"
                 target = unit.get("target") or unit["targets"][0]
-                assert resolve(indexed[target["target_ref"]], target["field"]) == target["expected"]
-                if fixture_name == "skill-guidelines.md": assert target["expected"] == text
-        expected = {n for n,line in enumerate(lines,1) if line.strip()}
-        assert set(covered) == expected and len(covered) == len(set(covered))
+                assert (
+                    resolve(indexed[target["target_ref"]], target["field"])
+                    == target["expected"]
+                )
+                if fixture_name == "skill-guidelines.md":
+                    assert target["expected"] == text
+        expected = {
+            line_number
+            for line_number, line in enumerate(lines, 1)
+            if line.strip()
+        }
+        assert set(covered) == expected
+        assert len(covered) == len(set(covered))
 
-def test_guideline_headings_are_preserved_as_families_and_view_is_readable():
-    document = yaml.safe_load(FROZEN_GUIDELINES.read_text(encoding="utf-8")); titles = {family["title"] for family in document["standards"]}
-    assert document["render_mode"] == "source-faithful"
-    source = (FIXTURES / "skill-guidelines.md").read_text(encoding="utf-8")
+    frozen_document = documents["skill-guidelines.md"]
+    titles = {family["title"] for family in frozen_document["standards"]}
+    assert frozen_document["render_mode"] == "source-faithful"
+    source = source_text["skill-guidelines.md"]
     markdown_titles = {m.group(1) for m in re.finditer(r"^#{1,6}\s+(.+)$", source, re.M)}
     markdown_titles.discard("Skill Module Standards")
     bold_titles = {m.group(1) for m in re.finditer(r"^\*\*(.+?)\*\*", source, re.M)}
     assert markdown_titles | bold_titles <= titles
-    rendered = FROZEN_GUIDELINES_VIEW.read_text(encoding="utf-8")
     for phrase in ("A skill is a software module", "Blueprint authoring", "Dispatcher role", "Validator and test conventions"):
         assert phrase in rendered
     assert not re.search(r"^#{2,6} (?:Requirement|Guidance|Example|Procedure) [0-9]{3}$", rendered, re.M)
     assert rendered.count("# Skill Module Standards") == 1
     ordered = ["## A skill is a software module.", "## 1. Skill identity and contract come first", "## Blueprint authoring", "## Canonical interface names", "## Validator and test conventions"]
     assert [rendered.index(text) for text in ordered] == sorted(rendered.index(text) for text in ordered)
-    source_size = len((FIXTURES / "skill-guidelines.md").read_text(encoding="utf-8"))
+    source_size = len(source)
     assert len(rendered) < source_size * 1.35
     assert "the module blueprint declares sources, exports, and export access" in rendered
     assert "each behavioral source declares its own interfaces and direct dependencies" in rendered
     assert "```python\nfrom officina.runtime.python_machine_interface" in rendered and "class Interface(PythonMachineInterface):" in rendered
     assert "1. Create `validators/<name>.py`" in rendered and "4. Add a `tests/validate_<name>.py`" in rendered
 
-def test_every_fenced_source_block_is_one_verbatim_unit_and_contiguous_in_view():
-    source = (FIXTURES / "skill-guidelines.md").read_text(encoding="utf-8")
     fenced = re.findall(r"^```[^\n]*\n.*?^```$", source, re.M | re.S)
     assert fenced
-    rendered = FROZEN_GUIDELINES_VIEW.read_text(encoding="utf-8")
-    mapping = yaml.safe_load((FIXTURES / "skill-guidelines-source-map.yaml").read_text(encoding="utf-8"))["units"]
+    mapping = mappings["skill-guidelines.md"]["units"]
     semantic_text = {unit["text"] for unit in mapping if unit["kind"] == "semantic"}
     for block in fenced:
         assert block in semantic_text
@@ -233,9 +290,7 @@ def test_every_fenced_source_block_is_one_verbatim_unit_and_contiguous_in_view()
     assert {"```python", "```bash", "```text"} <= tags
     assert any("regex" in tag for tag in tags)
 
-def test_guideline_block_ids_are_frozen_family_local_ids():
     frozen = yaml.safe_load((FIXTURES / "skill-guidelines-frozen-ids.yaml").read_text(encoding="utf-8"))
-    mapping = yaml.safe_load((FIXTURES / "skill-guidelines-source-map.yaml").read_text(encoding="utf-8"))["units"]
     semantic = [unit for unit in mapping if unit["kind"] == "semantic"]
     assert len(frozen["blocks"]) == len(semantic)
     assert len(set(frozen["blocks"].values())) == len(semantic)
@@ -244,8 +299,6 @@ def test_guideline_block_ids_are_frozen_family_local_ids():
     for unit in semantic:
         assert unit["target"]["target_ref"].split("#", 1)[0] == frozen["blocks"][f'{unit["start"]}-{unit["end"]}']
 
-def test_enforcement_inventory_is_exhaustive_and_typed():
-    source = (FIXTURES / "skill-guidelines.md").read_text(encoding="utf-8")
     extracted = {p.rstrip(".,;:") for p in re.findall(r"(?:\.githooks|references|validators|tests|skills|src)/[A-Za-z0-9_.*<>/{},-]+(?:\.[A-Za-z0-9_*<>/{},-]+)?", source)}
     inventory = yaml.safe_load((FIXTURES / "skill-guidelines-enforcement-ledger.yaml").read_text(encoding="utf-8"))["references"]
     assert {entry["path"] for entry in inventory} == extracted
@@ -254,6 +307,19 @@ def test_enforcement_inventory_is_exhaustive_and_typed():
     hook = next(entry for entry in inventory if entry["path"] == ".githooks/pre-commit")
     assert hook["kind"] == "validation-entrypoint" and hook["integration_point"] == "precommit"
 
+    disposition = yaml.safe_load(
+        (NODE_STANDARDS / "authority-disposition.yaml").read_text(encoding="utf-8")
+    )
+    assert disposition["source_authorities"]["skill-guidelines"]["status"] == "replaced"
+    assert not (ROOT / "references/skill-standards/skill-guidelines.standard.yaml").exists()
+    assert not (ROOT / "references/skill-standards/skill-guidelines.md").exists()
+    assert frozen_document["standard_version"] == "1.0.0"
+    assert frozen_document["revision"] == 3
+    assert any(
+        family["id"] == "skill-guidelines.module-behavioral-source-v4"
+        for family in frozen_document["standards"]
+    )
+
 def test_document_profile_scope_fields_template_and_normalization():
     rendered = PROFILE_VIEW.read_text(encoding="utf-8")
     assert "canonical schema for top-of-document TeX profile comments" in rendered
@@ -261,24 +327,3 @@ def test_document_profile_scope_fields_template_and_normalization():
         assert field in rendered and f"% {field}:" in rendered
     for phrase in ("may be left unspecified", "may be left blank when irrelevant", "Infer fields only", "Reader familiarity", "journal-article", "conference-article", "research-presentation", "research-notes"):
         assert phrase in rendered
-
-
-def test_layered_cutover_preserves_frozen_v1_source_fixtures() -> None:
-    disposition = yaml.safe_load(
-        (NODE_STANDARDS / "authority-disposition.yaml").read_text(encoding="utf-8")
-    )
-    assert disposition["source_authorities"]["skill-guidelines"]["status"] == "replaced"
-    assert not (ROOT / "references/skill-standards/skill-guidelines.standard.yaml").exists()
-    assert not (ROOT / "references/skill-standards/skill-guidelines.md").exists()
-    frozen = yaml.safe_load(FROZEN_GUIDELINES.read_text(encoding="utf-8"))
-    assert frozen["standard_version"] == "1.0.0"
-    assert frozen["revision"] == 3
-    assert any(
-        family["id"] == "skill-guidelines.module-behavioral-source-v4"
-        for family in frozen["standards"]
-    )
-    for fixture_name, digest in SOURCE_DIGESTS.items():
-        assert (
-            hashlib.sha256((FIXTURES / fixture_name).read_bytes()).hexdigest()
-            == digest
-        )

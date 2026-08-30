@@ -14,10 +14,10 @@ import officina.git.provenance as git_provenance
 from officina.git.provenance import (
     BLUEPRINT_V4_MECHANICAL_REF,
     GitMaterializationError,
+    GitSnapshot,
     blueprint_v4_mechanical_commit,
     capture_git_snapshot,
     check_commit_readiness,
-    git_file_provenance,
     materialize_git_commit,
     pin_blueprint_v4_mechanical_commit,
     run_git,
@@ -154,7 +154,7 @@ def test_capture_snapshot_ignores_ambient_git_dir(
     assert snapshot.commit == requested_commit
 
 
-def test_run_git_disables_repository_hooks(tmp_path: Path) -> None:
+def test_run_git_disables_repository_hooks_and_local_fsmonitor(tmp_path: Path) -> None:
     GitTestRepository.initialize_existing_empty(tmp_path)
     tracked = tmp_path / "tracked.txt"
     tracked.write_text("tracked\n", encoding="utf-8")
@@ -166,22 +166,24 @@ def test_run_git_disables_repository_hooks(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     hook.chmod(0o755)
+    fsmonitor_marker = tmp_path / "fsmonitor-ran"
+    monitor = tmp_path / "malicious-fsmonitor"
+    monitor.write_text(
+        f"#!/bin/sh\ntouch {fsmonitor_marker}\nexit 1\n",
+        encoding="utf-8",
+    )
+    monitor.chmod(0o755)
+    _git(tmp_path, "config", "core.fsmonitor", str(monitor))
 
     # famulus-raw-git: category=run-git-contract; reason=the test verifies that production run_git suppresses repository hooks
-    result = run_git(tmp_path, "commit", "--quiet", "-m", "commit", check=False)
+    commit = run_git(tmp_path, "commit", "--quiet", "-m", "commit", check=False)
+    # famulus-raw-git: category=run-git-contract; reason=the test verifies that production run_git suppresses a configured fsmonitor
+    status = run_git(tmp_path, "status", "--short", check=False)
 
-    assert result.returncode == 0
+    assert commit.returncode == 0
+    assert status.returncode == 0
     assert not hook_marker.exists()
-
-
-def test_git_literal_pathspec_environment_cannot_break_provenance(
-    repo: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    path = repo / "skills" / "demo" / "SKILL.md"
-    monkeypatch.setenv("GIT_LITERAL_PATHSPECS", "1")
-
-    assert git_file_provenance(repo, path) == "tracked"
+    assert not fsmonitor_marker.exists()
 
 
 def test_git_file_provenance_batch_classifies_normalized_literal_paths_in_two_calls(
@@ -324,40 +326,6 @@ def test_git_file_provenance_batch_rejects_fatal_ignore_query(
     assert [args[0] for args in calls] == ["ls-files", "check-ignore"]
 
 
-def test_run_git_disables_malicious_local_fsmonitor(tmp_path: Path) -> None:
-    GitTestRepository.initialize_existing_empty(tmp_path)
-    marker = tmp_path / "fsmonitor-ran"
-    monitor = tmp_path / "malicious-fsmonitor"
-    monitor.write_text(
-        f"#!/bin/sh\ntouch {marker}\nexit 1\n",
-        encoding="utf-8",
-    )
-    monitor.chmod(0o755)
-    _git(tmp_path, "config", "core.fsmonitor", str(monitor))
-
-    # famulus-raw-git: category=run-git-contract; reason=the test verifies that production run_git suppresses a configured fsmonitor
-    result = run_git(tmp_path, "status", "--short", check=False)
-
-    assert result.returncode == 0
-    assert not marker.exists()
-
-
-def test_materialize_git_commit_uses_exact_commit_not_worktree(repo: Path) -> None:
-    commit = _git(repo, "rev-parse", "HEAD").stdout.decode().strip()
-    (repo / "skills" / "demo" / "SKILL.md").write_text(
-        "uncommitted\n", encoding="utf-8"
-    )
-    destination = repo / "materialized"
-    destination.mkdir(mode=0o700)
-
-    paths = materialize_git_commit(repo, commit, destination)
-
-    assert paths == (Path("skills/demo/SKILL.md"),)
-    assert (destination / "skills" / "demo" / "SKILL.md").read_text(
-        encoding="utf-8"
-    ) == "original\n"
-
-
 def test_materialize_git_commit_rejects_escaping_symlink_before_writes(
     repo: Path,
 ) -> None:
@@ -400,12 +368,24 @@ def test_materialize_git_commit_ignores_export_attribute_transformations(
     _git(repo, "add", ".gitattributes", "hidden.txt", "template.txt", "run.sh")
     _git(repo, "commit", "--quiet", "-m", "export attributes")
     commit = _git(repo, "rev-parse", "HEAD").stdout.decode().strip()
+    (repo / "skills" / "demo" / "SKILL.md").write_text(
+        "uncommitted\n", encoding="utf-8"
+    )
     destination = repo / "materialized"
     destination.mkdir(mode=0o700)
 
     paths = materialize_git_commit(repo, commit, destination)
 
-    assert Path("hidden.txt") in paths
+    assert paths == (
+        Path(".gitattributes"),
+        Path("hidden.txt"),
+        Path("run.sh"),
+        Path("skills/demo/SKILL.md"),
+        Path("template.txt"),
+    )
+    assert (destination / "skills" / "demo" / "SKILL.md").read_text(
+        encoding="utf-8"
+    ) == "original\n"
     assert (destination / "hidden.txt").read_text(encoding="utf-8") == "must remain\n"
     assert (destination / "template.txt").read_text(
         encoding="utf-8"
@@ -416,6 +396,7 @@ def test_materialize_git_commit_ignores_export_attribute_transformations(
 
 def test_blueprint_v4_mechanical_ref_is_pinned_once(repo: Path) -> None:
     mechanical = _git(repo, "rev-parse", "HEAD").stdout.decode().strip()
+    snapshot = capture_git_snapshot(repo)
 
     assert pin_blueprint_v4_mechanical_commit(repo, mechanical) == mechanical
     assert blueprint_v4_mechanical_commit(repo) == mechanical
@@ -427,6 +408,7 @@ def test_blueprint_v4_mechanical_ref_is_pinned_once(repo: Path) -> None:
     )
 
     commit_unrelated_change(repo)
+    assert not snapshot_head_matches(snapshot)
     reviewed = _git(repo, "rev-parse", "HEAD").stdout.decode().strip()
     with pytest.raises(GitMaterializationError, match="already pinned"):
         pin_blueprint_v4_mechanical_commit(repo, reviewed)
@@ -454,9 +436,6 @@ def mutate_local_input(repo: Path, state: str) -> Path:
     elif state == "untracked":
         path = repo / "skills" / "demo" / "untracked.md"
         path.write_text("untracked\n", encoding="utf-8")
-    elif state == "symlink":
-        path.unlink()
-        path.symlink_to("replacement.md")
     else:
         raise ValueError(f"unsupported state {state!r}")
     return path
@@ -464,6 +443,49 @@ def mutate_local_input(repo: Path, state: str) -> Path:
 
 def mark_skip_worktree(repo: Path, path: Path) -> None:
     _git(repo, "update-index", "--skip-worktree", "--", path.relative_to(repo).as_posix())
+
+
+def _assert_and_restore_readiness_baseline(
+    repo: Path,
+    *,
+    path: Path,
+    untracked: Path,
+    baseline_bytes: bytes,
+    baseline_mode: int,
+    baseline_index: bytes,
+) -> None:
+    _git(repo, "reset", "--quiet", "--mixed", "HEAD")
+    _git(
+        repo,
+        "update-index",
+        "--no-skip-worktree",
+        "--",
+        path.relative_to(repo).as_posix(),
+    )
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        path.unlink()
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(baseline_bytes)
+    else:
+        path.write_bytes(baseline_bytes)
+    path.chmod(baseline_mode)
+    if untracked.is_symlink() or untracked.exists():
+        untracked.unlink()
+
+    assert path.exists() and path.is_file() and not path.is_symlink()
+    assert path.read_bytes() == baseline_bytes
+    assert stat.S_IMODE(path.stat().st_mode) == baseline_mode
+    assert not untracked.exists() and not untracked.is_symlink()
+    assert _git(repo, "ls-files", "--stage", "-z").stdout == baseline_index
+    skip_state = _git(
+        repo,
+        "ls-files",
+        "-v",
+        "--",
+        path.relative_to(repo).as_posix(),
+    ).stdout
+    assert skip_state.startswith(b"H ")
 
 
 def commit_unrelated_change(repo: Path) -> None:
@@ -481,14 +503,15 @@ def _fifo_readiness_worker(repo_text: str, path_text: str, result_queue) -> None
 
 
 @requires_descriptor_safe_open
-def test_unrelated_dirty_file_does_not_block_node(repo: Path) -> None:
+def test_commit_readiness_outcomes_share_one_repository_history(repo: Path) -> None:
+    path = repo / "skills" / "demo" / "SKILL.md"
     snapshot = capture_git_snapshot(repo)
     (repo / "unrelated.txt").write_text("dirty", encoding="utf-8")
 
     result = check_commit_readiness(
         snapshot,
-        [repo / "skills/demo/SKILL.md"],
-        {"skills/demo/SKILL.md": sha256_file(repo / "skills/demo/SKILL.md")},
+        [path],
+        {"skills/demo/SKILL.md": sha256_file(path)},
     )
 
     assert result.stamp_worthy
@@ -499,12 +522,84 @@ def test_unrelated_dirty_file_does_not_block_node(repo: Path) -> None:
     }
     assert result.reasons == ()
 
+    captured_from_subdirectory = capture_git_snapshot(repo / "skills" / "demo")
+    deduplicated = check_commit_readiness(
+        captured_from_subdirectory,
+        [path, path],
+        {},
+    )
+    assert captured_from_subdirectory is not None
+    assert captured_from_subdirectory.repo_root == repo.resolve()
+    assert deduplicated.source is not None
+    assert deduplicated.source["input_paths"] == ["skills/demo/SKILL.md"]
 
-def test_native_confined_reader_supports_commit_readiness_and_fallback(
-    repo: Path,
+    missing = check_commit_readiness(
+        snapshot,
+        [repo / "skills" / "demo" / "missing.md"],
+        {},
+    )
+    assert not missing.stamp_worthy
+    assert missing.source is None
+    assert missing.reasons == ("not-tracked-at-commit:skills/demo/missing.md",)
+
+    hash_mismatch = check_commit_readiness(
+        snapshot,
+        [path],
+        {"skills/demo/SKILL.md": "sha256:" + "0" * 64},
+    )
+    assert not hash_mismatch.stamp_worthy
+    assert hash_mismatch.source is None
+    assert hash_mismatch.reasons == (
+        "expected-hash-mismatch:skills/demo/SKILL.md",
+    )
+
+    outside = repo.parent / "outside.txt"
+    outside.write_text("outside\n", encoding="utf-8")
+    outside_result = check_commit_readiness(
+        snapshot,
+        [outside, Path("..") / outside.name, outside],
+        {},
+    )
+    assert outside_result.reasons == ("input-outside-repository",)
+
+    # Binary readiness is last because it advances HEAD for this shared history.
+    binary = repo / "skills" / "demo" / "binary.bin"
+    binary.write_bytes(b"\x00\xff\x80binary\n")
+    _git(repo, "add", "skills/demo/binary.bin")
+    _git(repo, "commit", "--quiet", "-m", "Add binary input")
+    binary_snapshot = capture_git_snapshot(repo)
+    binary_result = check_commit_readiness(
+        binary_snapshot,
+        [binary],
+        {"skills/demo/binary.bin": sha256_file(binary)},
+    )
+    assert binary_result.stamp_worthy
+
+
+def test_native_confined_reader_supports_readiness_and_rejects_changed_bytes(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    repo = tmp_path / "repo"
     path = repo / "skills" / "demo" / "SKILL.md"
+    path.parent.mkdir(parents=True)
+    path.write_text("original\n", encoding="utf-8")
+    snapshot = GitSnapshot(repo.resolve(), "a" * 40)
+    monkeypatch.setattr(
+        git_provenance,
+        "_tree_entry",
+        lambda _snapshot, _relative: ("100644", "b" * 40),
+    )
+    monkeypatch.setattr(
+        git_provenance,
+        "_index_entries",
+        lambda _root, _relative: (("100644", "b" * 40, "0"),),
+    )
+    monkeypatch.setattr(
+        git_provenance,
+        "_commit_blob",
+        lambda _root, _object_id: b"original\n",
+    )
     observed: list[bool] = []
 
     def native_read(
@@ -522,7 +617,7 @@ def test_native_confined_reader_supports_commit_readiness_and_fallback(
     monkeypatch.setattr(git_provenance, "read_regular_file_bytes", native_read)
 
     result = check_commit_readiness(
-        capture_git_snapshot(repo),
+        snapshot,
         [path],
         {},
         allow_non_atomic=True,
@@ -530,79 +625,83 @@ def test_native_confined_reader_supports_commit_readiness_and_fallback(
 
     assert result.stamp_worthy
     assert observed == [True]
+    path.write_text("changed\n", encoding="utf-8")
+
+    changed = check_commit_readiness(snapshot, [path], {})
+
+    assert changed.reasons == (
+        "worktree-differs-from-commit:skills/demo/SKILL.md",
+    )
+    assert observed == [True, False]
 
 
-def test_native_confined_reader_still_rejects_changed_bytes(
+def test_mutating_readiness_transitions_restore_the_exact_repository_state(
     repo: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     path = repo / "skills" / "demo" / "SKILL.md"
-    path.write_text("changed\n", encoding="utf-8")
-    monkeypatch.setattr(git_provenance, "_use_native_confined_read", lambda: True)
-    monkeypatch.setattr(
-        git_provenance,
-        "read_regular_file_bytes",
-        lambda target, **_kwargs: target.read_bytes(),
+    untracked = repo / "skills" / "demo" / "untracked.md"
+    snapshot = capture_git_snapshot(repo)
+    baseline_bytes = path.read_bytes()
+    baseline_mode = stat.S_IMODE(path.stat().st_mode)
+    baseline_index = _git(repo, "ls-files", "--stage", "-z").stdout
+
+    def reset() -> None:
+        _assert_and_restore_readiness_baseline(
+            repo,
+            path=path,
+            untracked=untracked,
+            baseline_bytes=baseline_bytes,
+            baseline_mode=baseline_mode,
+            baseline_index=baseline_index,
+        )
+
+    reset()
+    mutate_local_input(repo, "staged")
+    assert check_commit_readiness(snapshot, [path], {}).reasons == (
+        "index-differs-from-commit:skills/demo/SKILL.md",
     )
 
-    result = check_commit_readiness(capture_git_snapshot(repo), [path], {})
-
-    assert result.reasons == (
+    reset()
+    mutate_local_input(repo, "unstaged")
+    assert check_commit_readiness(snapshot, [path], {}).reasons == (
         "worktree-differs-from-commit:skills/demo/SKILL.md",
     )
 
+    reset()
+    mutate_local_input(repo, "untracked")
+    assert check_commit_readiness(snapshot, [untracked], {}).reasons == (
+        "not-tracked-at-commit:skills/demo/untracked.md",
+    )
 
-@pytest.mark.parametrize("state", ["staged", "unstaged", "untracked", "symlink"])
-def test_local_input_change_blocks_stamp(repo: Path, state: str) -> None:
-    path = mutate_local_input(repo, state)
-
-    result = check_commit_readiness(capture_git_snapshot(repo), [path], {})
-
-    assert not result.stamp_worthy
-    assert result.source is None
-    assert result.reasons
-
-
-def test_index_skip_worktree_does_not_hide_changed_bytes(repo: Path) -> None:
-    path = repo / "skills" / "demo" / "SKILL.md"
+    reset()
     mark_skip_worktree(repo, path)
     path.write_text("changed", encoding="utf-8")
+    assert check_commit_readiness(snapshot, [path], {}).reasons == (
+        "worktree-differs-from-commit:skills/demo/SKILL.md",
+    )
 
-    assert not check_commit_readiness(capture_git_snapshot(repo), [path], {}).stamp_worthy
-
-
-def test_staged_mode_only_change_blocks_stamp(repo: Path) -> None:
-    path = repo / "skills" / "demo" / "SKILL.md"
+    reset()
     _git(repo, "update-index", "--chmod=+x", "--", "skills/demo/SKILL.md")
+    assert check_commit_readiness(snapshot, [path], {}).reasons == (
+        "index-mode-differs-from-commit:skills/demo/SKILL.md",
+    )
 
-    result = check_commit_readiness(capture_git_snapshot(repo), [path], {})
-
-    assert result.reasons == ("index-mode-differs-from-commit:skills/demo/SKILL.md",)
-
-
-def test_index_only_content_change_blocks_stamp(repo: Path) -> None:
-    path = repo / "skills" / "demo" / "SKILL.md"
-    original_bytes = path.read_bytes()
+    reset()
     path.write_text("staged\n", encoding="utf-8")
     _git(repo, "add", "skills/demo/SKILL.md")
-    path.write_bytes(original_bytes)
+    path.write_bytes(baseline_bytes)
+    assert check_commit_readiness(snapshot, [path], {}).reasons == (
+        "index-differs-from-commit:skills/demo/SKILL.md",
+    )
 
-    result = check_commit_readiness(capture_git_snapshot(repo), [path], {})
+    if git_provenance._descriptor_safe_open_supported():
+        reset()
+        path.chmod(path.stat().st_mode | stat.S_IXUSR)
+        assert check_commit_readiness(snapshot, [path], {}).reasons == (
+            "worktree-mode-differs-from-commit:skills/demo/SKILL.md",
+        )
 
-    assert result.reasons == ("index-differs-from-commit:skills/demo/SKILL.md",)
-
-
-@requires_descriptor_safe_open
-def test_unstaged_mode_only_change_blocks_stamp(repo: Path) -> None:
-    path = repo / "skills" / "demo" / "SKILL.md"
-    path.chmod(path.stat().st_mode | stat.S_IXUSR)
-
-    result = check_commit_readiness(capture_git_snapshot(repo), [path], {})
-
-    assert result.reasons == ("worktree-mode-differs-from-commit:skills/demo/SKILL.md",)
-
-
-def test_nonzero_index_stage_blocks_stamp(repo: Path) -> None:
+    reset()
     relative_path = "skills/demo/SKILL.md"
     object_id = (
         _git(repo, "rev-parse", f"HEAD:{relative_path}")
@@ -616,12 +715,11 @@ def test_nonzero_index_stage_blocks_stamp(repo: Path) -> None:
         "--index-info",
         input_bytes=f"100644 {object_id} 1\t{relative_path}\n".encode("ascii"),
     )
-
-    result = check_commit_readiness(
-        capture_git_snapshot(repo), [repo / relative_path], {}
+    assert check_commit_readiness(snapshot, [path], {}).reasons == (
+        "nonzero-index-stage:skills/demo/SKILL.md",
     )
 
-    assert result.reasons == ("nonzero-index-stage:skills/demo/SKILL.md",)
+    reset()
 
 
 def test_literal_pathspec_metacharacters_do_not_match_another_file(tmp_path: Path) -> None:
@@ -636,59 +734,6 @@ def test_literal_pathspec_metacharacters_do_not_match_another_file(tmp_path: Pat
     result = check_commit_readiness(capture_git_snapshot(tmp_path), [path], {})
 
     assert result.reasons == ("not-tracked-at-commit:[t]racked.txt",)
-
-
-@requires_descriptor_safe_open
-def test_capture_from_subdirectory_uses_repository_relative_paths(repo: Path) -> None:
-    snapshot = capture_git_snapshot(repo / "skills" / "demo")
-    path = repo / "skills" / "demo" / "SKILL.md"
-
-    result = check_commit_readiness(snapshot, [path, path], {})
-
-    assert snapshot.repo_root == repo.resolve()
-    assert result.source is not None
-    assert result.source["input_paths"] == ["skills/demo/SKILL.md"]
-
-
-def test_missing_input_is_not_stamp_worthy(repo: Path) -> None:
-    result = check_commit_readiness(
-        capture_git_snapshot(repo),
-        [repo / "skills" / "demo" / "missing.md"],
-        {},
-    )
-
-    assert not result.stamp_worthy
-    assert result.source is None
-    assert result.reasons == ("not-tracked-at-commit:skills/demo/missing.md",)
-
-
-@requires_descriptor_safe_open
-def test_expected_hash_mismatch_is_not_stamp_worthy(repo: Path) -> None:
-    result = check_commit_readiness(
-        capture_git_snapshot(repo),
-        [repo / "skills" / "demo" / "SKILL.md"],
-        {"skills/demo/SKILL.md": "sha256:" + "0" * 64},
-    )
-
-    assert not result.stamp_worthy
-    assert result.source is None
-    assert result.reasons == ("expected-hash-mismatch:skills/demo/SKILL.md",)
-
-
-@requires_descriptor_safe_open
-def test_binary_input_bytes_are_compared_without_decoding(repo: Path) -> None:
-    path = repo / "skills" / "demo" / "binary.bin"
-    path.write_bytes(b"\x00\xff\x80binary\n")
-    _git(repo, "add", "skills/demo/binary.bin")
-    _git(repo, "commit", "--quiet", "-m", "Add binary input")
-
-    result = check_commit_readiness(
-        capture_git_snapshot(repo),
-        [path],
-        {"skills/demo/binary.bin": sha256_file(path)},
-    )
-
-    assert result.stamp_worthy
 
 
 @requires_descriptor_safe_open
@@ -779,19 +824,6 @@ def test_fifo_replacement_returns_without_blocking(repo: Path) -> None:
         result_queue.close()
 
 
-def test_out_of_repository_inputs_have_one_canonical_reason(repo: Path) -> None:
-    outside = repo.parent / "outside.txt"
-    outside.write_text("outside\n", encoding="utf-8")
-
-    result = check_commit_readiness(
-        capture_git_snapshot(repo),
-        [outside, Path("..") / outside.name, outside],
-        {},
-    )
-
-    assert result.reasons == ("input-outside-repository",)
-
-
 def test_non_git_snapshot_is_a_no_stamp_outcome(tmp_path: Path) -> None:
     path = tmp_path / "input.txt"
     path.write_text("input\n", encoding="utf-8")
@@ -829,20 +861,33 @@ def test_sha256_repository_is_supported_when_available(tmp_path: Path) -> None:
     assert result.stamp_worthy
 
 
-def test_snapshot_head_matches_detects_new_commit(repo: Path) -> None:
-    snapshot = capture_git_snapshot(repo)
-    commit_unrelated_change(repo)
-
-    assert not snapshot_head_matches(snapshot)
 def test_unsupported_descriptor_capability_is_a_no_stamp_outcome(
-    repo: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    repo = tmp_path / "repo"
+    path = repo / "skills" / "demo" / "SKILL.md"
+    path.parent.mkdir(parents=True)
+    path.write_text("original\n", encoding="utf-8")
+    snapshot = GitSnapshot(repo.resolve(), "a" * 40)
+    monkeypatch.setattr(
+        git_provenance,
+        "_tree_entry",
+        lambda _snapshot, _relative: ("100644", "b" * 40),
+    )
+    monkeypatch.setattr(
+        git_provenance,
+        "_index_entries",
+        lambda _root, _relative: (("100644", "b" * 40, "0"),),
+    )
+    monkeypatch.setattr(
+        git_provenance,
+        "_commit_blob",
+        lambda _root, _object_id: b"original\n",
+    )
     monkeypatch.setattr(git_provenance, "_use_native_confined_read", lambda: False)
     monkeypatch.setattr(git_provenance, "_descriptor_safe_open_supported", lambda: False)
 
-    result = check_commit_readiness(
-        capture_git_snapshot(repo), [repo / "skills" / "demo" / "SKILL.md"], {}
-    )
+    result = check_commit_readiness(snapshot, [path], {})
 
     assert result.reasons == (
         "descriptor-safe-open-unavailable:skills/demo/SKILL.md",

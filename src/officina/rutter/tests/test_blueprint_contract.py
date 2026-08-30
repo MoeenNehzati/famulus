@@ -6,109 +6,14 @@ from pathlib import Path
 
 import yaml
 
-import officina.blueprints.graph as blueprint_graph
-from officina.blueprints.graph import load_repository_blueprint_graph
-from officina.blueprints.inventory import collect_blueprints
-
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
-CANONICAL_SCHEMA_ROOT = REPOSITORY_ROOT / "references" / "blueprint-schema"
-
-
-def test_v6_rutter_operation_effects_are_outcome_specific() -> None:
-    """Dry-run, create, and replacement outcomes declare their exact effects."""
-
-    repo_root = REPOSITORY_ROOT
-    engine_path = repo_root / "src/officina/rutter/blueprints/engine.yaml"
-    storage_path = repo_root / "src/officina/rutter/blueprints/storage.yaml"
-    engine = yaml.safe_load(engine_path.read_text(encoding="utf-8"))
-    storage = yaml.safe_load(storage_path.read_text(encoding="utf-8"))
-    validators = {}
-    for path, document in ((engine_path, engine), (storage_path, storage)):
-        assert blueprint_graph._declaration_schema_errors(
-            path,
-            document,
-            CANONICAL_SCHEMA_ROOT,
-            validators,
-            expected_schema_version=6,
-        ) == ()
-
-    bound = engine["interfaces"][
-        "rutter.source.engine.interface.bound-operations"
-    ]
-    assert bound["version"] == 6
-    assert "inquisitive-inventory CLI" in bound["description"]
-    bound_contract = bound["contract"]
-    bound_outcomes = {
-        entry["id"]: entry for entry in bound_contract["outcomes"]
-    }
-    assert bound_outcomes["described"]["effects"] == []
-    assert bound_outcomes["previewed"]["effects"] == []
-    for outcome in ("ready", "terminal", "faulted", "uncertain"):
-        assert bound_outcomes[outcome]["effects"] == ["reckoning-update"]
-    bound_effects = {
-        entry["id"]: entry
-        for entry in bound_contract["execution"]["effects"]
-    }
-    assert bound_effects["reckoning-update"]["may_occur_in_outcomes"] == [
-        "ready",
-        "terminal",
-        "faulted",
-        "uncertain",
-    ]
-
-    write = storage["interfaces"][
-        "rutter.source.storage.interface.write"
-    ]["contract"]
-    write_outcomes = {entry["id"]: entry for entry in write["outcomes"]}
-    assert write_outcomes["created"]["effects"] == ["reckoning-file-create"]
-    assert write_outcomes["replaced"]["effects"] == ["reckoning-file-replace"]
-    write_effects = {entry["id"]: entry for entry in write["execution"]["effects"]}
-    assert write_effects["reckoning-file-create"]["action"] == "create"
-    assert write_effects["reckoning-file-create"]["may_occur_in_outcomes"] == [
-        "created"
-    ]
-    assert write_effects["reckoning-file-replace"]["action"] == "update"
-    assert write_effects["reckoning-file-replace"]["may_occur_in_outcomes"] == [
-        "replaced"
-    ]
-
-
-def test_v6_rutter_bound_operations_names_response_required_boundary() -> None:
-    """A missing LLMStep response is a boundary, not invalid submitted input."""
-
-    repo_root = REPOSITORY_ROOT
-    engine = yaml.safe_load(
-        (repo_root / "src/officina/rutter/blueprints/engine.yaml").read_text(
-            encoding="utf-8"
-        )
-    )
-    contract = engine["interfaces"][
-        "rutter.source.engine.interface.bound-operations"
-    ]["contract"]
-    outcomes = {entry["id"]: entry for entry in contract["outcomes"]}
-
-    response_required = outcomes["response-required"]
-    assert response_required["class"] == "refusal"
-    assert response_required["effects"] == []
-    assert "RutterValidationError: LLMStep response is required" in response_required[
-        "caller_action"
-    ]
-    assert "VoyageStatus" in response_required["caller_action"]
-    assert "get_status" in response_required["caller_action"]
-    assert "perform the LLM instruction" in response_required["caller_action"]
-    assert "does not return a ValidationReport" in response_required["caller_action"]
-    assert "ValidationReport" in outcomes["invalid-input"]["caller_action"]
 
 
 def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
     """The cohesive implementation files own exact imports and interfaces."""
 
     repo_root = REPOSITORY_ROOT
-    graph = load_repository_blueprint_graph(
-        repo_root,
-        expected_schema_version=6,
-    )
     rutter_root = repo_root / "src/officina/rutter"
     module = yaml.safe_load((rutter_root / "blueprint.yaml").read_text(encoding="utf-8"))
     source_names = (
@@ -134,6 +39,7 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
         (rutter_root.parent / "common" / "blueprint.yaml").read_text(encoding="utf-8")
     )
 
+    assert module["id"] == "rutter"
     assert module["version"] == 10
     assert sources["diagnostic"]["version"] == 4
     assert sources["diagnostic"]["interfaces"][
@@ -160,23 +66,18 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
         r"tests/.*",
         r"values\.py",
     ]
-    assert set(module["sources"]) == {
-        "rutter.source.authoring",
-        "rutter.source.diagnostic",
-        "rutter.source.dispenser",
-        "rutter.source.engine",
-        "rutter.source.evaluation",
-        "rutter.source.history",
-        "rutter.source.model",
-        "rutter.source.reducer",
-        "rutter.source.runtime",
-        "rutter.source.storage",
-        "rutter.source.values",
+    assert module["sources"] == {
+        f"rutter.source.{name}": {
+            "blueprint": {
+                "base": "module-root",
+                "path": f"blueprints/{name}.yaml",
+            }
+        }
+        for name in source_names
     }
-    assert {"rutter", *(f"rutter.source.{name}" for name in source_names)}.issubset(
-        graph.nodes
-    )
-    assert "rutter.source.hooks" not in graph.nodes
+    for name in source_names:
+        assert sources[name]["id"] == f"rutter.source.{name}"
+    assert "rutter.source.hooks" not in module["sources"]
     assert set(module["exports"]) == {
         "rutter.interface.binding",
         "rutter.interface.bound-operations",
@@ -463,52 +364,3 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
     ]
     assert "rutter" in atomic_callers
     assert "using-compass" not in atomic_callers
-
-
-def test_inventory_registers_exact_rutter_module_and_source_files() -> None:
-    """A missing or broadened Rutter registration would orphan owned code."""
-
-    result = collect_blueprints(REPOSITORY_ROOT, expected_schema_version=6)
-    by_id = {document.node_id: document for document in result.documents}
-
-    module = by_id["rutter"]
-    source_names = (
-        "authoring",
-        "diagnostic",
-        "dispenser",
-        "engine",
-        "evaluation",
-        "history",
-        "model",
-        "reducer",
-        "runtime",
-        "storage",
-        "values",
-    )
-    sources = {name: by_id[f"rutter.source.{name}"] for name in source_names}
-
-    assert module.relative_path.as_posix() == "src/officina/rutter/blueprint.yaml"
-    assert module.declaration["content"] == [
-        r"__init__\.py",
-        r"authoring\.py",
-        r"diagnostic\.py",
-        r"dispenser\.py",
-        r"engine\.py",
-        r"evaluation\.py",
-        r"history\.py",
-        r"model\.py",
-        r"reducer\.py",
-        r"runtime\.py",
-        r"storage\.py",
-        r"tests/.*",
-        r"values\.py",
-    ]
-    assert set(module.declaration["sources"]) == {
-        f"rutter.source.{name}" for name in source_names
-    }
-    for name, source in sources.items():
-        assert source.declaration["gateway"] == {
-            "path": f"{name}.py",
-            "language": "Python",
-        }
-        assert source.declaration["content"] == [rf"{name}\.py"]

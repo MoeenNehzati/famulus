@@ -8,8 +8,8 @@ from pathlib import Path
 import sys
 
 import pytest
+import yaml
 
-from officina.blueprints.graph import load_repository_blueprint_graph
 from officina.certification.hashing import (
     CertificationHashError,
     load_node_hash_policy,
@@ -30,20 +30,21 @@ def _load_module(name: str, path: Path):
     return module
 
 
-@pytest.mark.parametrize(
-    "relative_path",
-    [
+def test_repository_configuration_documents_use_central_schema() -> None:
+    relative_paths = (
         "src/officina/docstring/config.yaml",
         "references/blueprint-schema/config.yaml",
         "references/certification-policy/node-hash-policy.yaml",
         "src/officina/recurring/default_jobs.yaml",
-    ],
-)
-def test_repository_configuration_documents_use_central_schema(
-    relative_path: str,
-) -> None:
-    loaded = load_configuration(REPO_ROOT / relative_path)
-    assert loaded
+    )
+
+    loaded = {
+        relative_path: load_configuration(REPO_ROOT / relative_path)
+        for relative_path in relative_paths
+    }
+
+    empty_paths = [path for path, document in loaded.items() if not document]
+    assert empty_paths == []
 
 
 def test_docstring_config_rejects_unknown_fields(tmp_path: Path) -> None:
@@ -79,19 +80,33 @@ def test_recurring_jobs_shared_loader_validates_documents(tmp_path: Path) -> Non
         jobs_config.load_jobs(path)
 
 
-def test_recurring_jobs_config_helper_has_direct_owner_and_import_dependencies() -> None:
-    graph = load_repository_blueprint_graph(REPO_ROOT)
-    helper = REPO_ROOT / "skills/recurring-tasks/_rtx/_jobs_config.py"
+def test_recurring_jobs_config_helper_declares_direct_owner_and_consumers() -> None:
+    blueprint_dir = REPO_ROOT / "skills/recurring-tasks/_rtx/blueprints"
     source_id = "recurring-tasks._rtx.source.rtx-jobs-config"
+    source = yaml.safe_load(
+        (blueprint_dir / "rtx-jobs-config.yaml").read_text(encoding="utf-8")
+    )
 
-    assert graph.direct_file_owners[helper] == source_id
-    consumers = {"recurring-tasks._rtx.source.rtx-job-executor"}
-    actual = {
-        edge.source_id
-        for edge in graph.node_edges
-        if edge.relation == "uses-source" and edge.target_id == source_id
+    assert source["id"] == source_id
+    assert source["gateway"] == {
+        "language": "Python",
+        "path": "_jobs_config.py",
     }
-    assert actual == consumers
+    assert source["content"] == [r"_jobs_config\.py"]
+
+    declarations = (
+        yaml.safe_load(path.read_text(encoding="utf-8"))
+        for path in blueprint_dir.glob("*.yaml")
+    )
+    consumers = {
+        declaration["id"]
+        for declaration in declarations
+        if any(
+            dependency.get("source") == source_id
+            for dependency in declaration.get("dependencies", ())
+        )
+    }
+    assert consumers == {"recurring-tasks._rtx.source.rtx-job-executor"}
 
 
 def test_cloud_files_config_rejects_unknown_fields(tmp_path: Path) -> None:
