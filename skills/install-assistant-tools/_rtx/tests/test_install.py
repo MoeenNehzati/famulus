@@ -101,7 +101,7 @@ def test_apply_uses_one_resolved_context_for_every_stage_and_verification(
         claude_home=tmp_path / ".claude",
         installation_id="standard",
     )
-    choices = install.ApplyChoices(agents=("assistant",), default_backend="codex")
+    choices = install.ApplyChoices()
     calls: list[tuple[str, object]] = []
     monkeypatch.setattr(
         install,
@@ -119,11 +119,6 @@ def test_apply_uses_one_resolved_context_for_every_stage_and_verification(
         lambda **kw: calls.append(("projection", kw)),
     )
     monkeypatch.setattr(
-        install.launchers,
-        "run",
-        lambda **kw: calls.append(("helpers", kw)) or True,
-    )
-    monkeypatch.setattr(
         install,
         "diagnose_installation",
         lambda **kw: calls.append(("verify", kw)) or install.DiagnosticReport.healthy_for(context),
@@ -132,9 +127,15 @@ def test_apply_uses_one_resolved_context_for_every_stage_and_verification(
     status = install.apply(context=context, choices=choices, environ={})
 
     assert status == 0
-    assert [name for name, _ in calls] == ["candidate", "scaffold", "helpers", "verify"]
+    assert [name for name, _ in calls] == ["candidate", "scaffold", "verify"]
     for _name, kwargs in calls:
         assert kwargs["context"] is context
+
+
+@pytest.mark.parametrize("flag", ["--agents", "--default-llm"])
+def test_general_installer_rejects_relocated_launcher_flags(flag: str) -> None:
+    with pytest.raises(SystemExit):
+        install.parse_args([flag, "assistant"])
 
 
 def test_development_apply_wires_editable_candidate_from_context(
@@ -161,7 +162,6 @@ def test_development_apply_wires_editable_candidate_from_context(
     monkeypatch.setattr(install, "_record_managed_runtime_state", lambda **kw: None)
     monkeypatch.setattr(install.scaffold, "run", lambda **kw: 0)
     monkeypatch.setattr(install.dev_link, "run", lambda **kw: None)
-    monkeypatch.setattr(install.launchers, "run", lambda **kw: True)
     monkeypatch.setattr(install, "reconcile_assistant_access", lambda *args: None)
     monkeypatch.setattr(
         install,
@@ -171,7 +171,7 @@ def test_development_apply_wires_editable_candidate_from_context(
 
     status = install.apply(
         context=context,
-        choices=install.ApplyChoices(agents=(), default_backend="claude"),
+        choices=install.ApplyChoices(),
         environ={},
     )
 
@@ -208,7 +208,6 @@ def test_apply_mandatorily_reconciles_access_after_other_config_and_before_verif
     monkeypatch.setattr(install, "_record_managed_runtime_state", lambda **kw: None)
     monkeypatch.setattr(install.scaffold, "run", lambda **kw: calls.append("scaffold") or 0)
     monkeypatch.setattr(install.dev_link, "run", lambda **kw: calls.append("dev-link"))
-    monkeypatch.setattr(install.launchers, "run", lambda **kw: calls.append("launchers") or True)
     monkeypatch.setattr(
         install,
         "reconcile_assistant_access",
@@ -224,14 +223,14 @@ def test_apply_mandatorily_reconciles_access_after_other_config_and_before_verif
 
     assert install.apply(
         context=context,
-        choices=install.ApplyChoices(agents=(), default_backend="claude"),
+        choices=install.ApplyChoices(),
         environ={},
     ) == 0
 
     expected = ["candidate", "scaffold"]
     if mode == "development":
         expected.append("dev-link")
-    expected.extend(["launchers", "access", "verify"])
+    expected.extend(["access", "verify"])
     assert calls == expected
 
 
@@ -283,12 +282,11 @@ def test_apply_stops_before_later_effects_when_scaffold_is_required_failure(
     calls: list[str] = []
     monkeypatch.setattr(install, "_build_managed_runtime_candidate", lambda **kw: 0)
     monkeypatch.setattr(install.scaffold, "run", lambda **kw: calls.append("scaffold") or 1)
-    monkeypatch.setattr(install.launchers, "run", lambda **kw: calls.append("helpers"))
     monkeypatch.setattr(install, "diagnose_installation", lambda **kw: calls.append("verify"))
 
     status = install.apply(
         context=context,
-        choices=install.ApplyChoices(agents=(), default_backend="claude"),
+        choices=install.ApplyChoices(),
         environ={},
     )
 
@@ -324,7 +322,7 @@ def test_apply_preserves_invalid_existing_manifest_bytes(
 
     status = install.apply(
         context=context,
-        choices=install.ApplyChoices(agents=(), default_backend="claude"),
+        choices=install.ApplyChoices(),
         environ={},
     )
 
@@ -378,9 +376,7 @@ def test_real_standard_apply_is_accepted_by_real_doctor(
 
     status = install.apply(
         context=context,
-        choices=install.ApplyChoices(
-            agents=(), default_backend="codex", home=tmp_path, shell_rc=tmp_path / ".bashrc"
-        ),
+        choices=install.ApplyChoices(home=tmp_path, shell_rc=tmp_path / ".bashrc"),
         environ={},
     )
 
@@ -421,12 +417,11 @@ def test_reapply_succeeds_when_doctor_reports_valid_recurring_registrations(
     )
     monkeypatch.setattr(install, "_build_managed_runtime_candidate", lambda **kw: 0)
     monkeypatch.setattr(install.scaffold, "run", lambda **kw: 0)
-    monkeypatch.setattr(install.launchers, "run", lambda **kw: True)
     monkeypatch.setattr(install, "diagnose_installation", lambda **kw: report)
 
     status = install.apply(
         context=context,
-        choices=install.ApplyChoices(agents=(), default_backend="claude"),
+        choices=install.ApplyChoices(),
         environ={},
     )
 
@@ -493,13 +488,12 @@ def test_moved_installed_development_checkout_repair_rebases_pointer_context_and
     monkeypatch.setattr(install, "_build_managed_runtime_candidate", publish_candidate)
     monkeypatch.setattr(install.scaffold, "run", lambda **kw: 0)
     monkeypatch.setattr(install.dev_link, "run", lambda **kw: None)
-    monkeypatch.setattr(install.launchers, "run", lambda **kw: True)
     monkeypatch.setattr(
         install,
         "diagnose_installation",
         lambda **kw: install.DiagnosticReport.healthy_for(kw["context"]),
     )
-    choices = install.ApplyChoices(agents=(), default_backend="codex")
+    choices = install.ApplyChoices()
 
     first_context = context_for(original)
     assert install.apply(context=first_context, choices=choices, environ={}) == 0
@@ -599,13 +593,13 @@ def test_interface_runs_in_process_when_runtime_module_is_current(
 
 def test_dry_run_stops_after_confirming_choices_without_effects(tmp_path, monkeypatch, capsys):
     calls = []
+    monkeypatch.setattr(install, "_is_linked_worktree", lambda _root: False)
     monkeypatch.setattr(install.scaffold, "run", lambda **kw: calls.append(("scaffold", kw)))
     monkeypatch.setattr(install.dev_link, "run", lambda **kw: calls.append(("dev_link", kw)))
-    monkeypatch.setattr(install.launchers, "run", lambda **kw: calls.append(("launchers", kw)))
 
     status = install.run(
         home=tmp_path, dry_run=True, non_interactive=True,
-        dev_mode=False, agents=[], default_llm="claude",
+        dev_mode=False,
     )
 
     names = [name for name, _ in calls]
@@ -620,9 +614,9 @@ def test_dry_run_stops_after_confirming_choices_without_effects(tmp_path, monkey
 def test_successful_install_reports_exactly_five_stages_in_order(
     tmp_path, monkeypatch, capsys
 ):
+    monkeypatch.setattr(install, "_is_linked_worktree", lambda _root: False)
     monkeypatch.setattr(install, "_build_managed_runtime_candidate", lambda **kw: 0)
     monkeypatch.setattr(install.scaffold, "run", lambda **kw: 0)
-    monkeypatch.setattr(install.launchers, "run", lambda **kw: True)
     monkeypatch.setattr(
         install,
         "diagnose_installation",
@@ -633,8 +627,6 @@ def test_successful_install_reports_exactly_five_stages_in_order(
         home=tmp_path,
         non_interactive=True,
         dev_mode=False,
-        agents=[],
-        default_llm="claude",
         yes=True,
         environ={},
     )
@@ -650,12 +642,11 @@ def test_successful_install_reports_exactly_five_stages_in_order(
 def test_dev_mode_requires_repo_path_non_interactively(tmp_path, monkeypatch):
     monkeypatch.setattr(install.scaffold, "run", lambda **kw: None)
     monkeypatch.setattr(install.dev_link, "run", lambda **kw: None)
-    monkeypatch.setattr(install.launchers, "run", lambda **kw: None)
 
     with pytest.raises(SystemExit):
         install.run(
             home=tmp_path, dry_run=True, non_interactive=True,
-            dev_mode=True, repo_path=None, agents=[], default_llm="claude",
+            dev_mode=True, repo_path=None,
         )
 
 
@@ -675,8 +666,6 @@ def test_standard_mode_refuses_linked_worktree_source(
         dry_run=True,
         non_interactive=True,
         dev_mode=False,
-        agents=[],
-        default_llm="claude",
         environ={},
     )
 
@@ -690,13 +679,12 @@ def test_dev_mode_with_repo_path_chains_dev_link(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(install.scaffold, "run", lambda **kw: calls.append(("scaffold", kw)))
     monkeypatch.setattr(install.dev_link, "run", lambda **kw: calls.append(("dev_link", kw)))
-    monkeypatch.setattr(install.launchers, "run", lambda **kw: calls.append(("launchers", kw)))
     repo_path = tmp_path / "myrepo"
     repo_path.mkdir()
 
     status = install.run(
         home=tmp_path, dry_run=True, non_interactive=True,
-        dev_mode=True, repo_path=repo_path, agents=["assistant"], default_llm="codex",
+        dev_mode=True, repo_path=repo_path,
     )
 
     names = [name for name, _ in calls]
@@ -706,6 +694,7 @@ def test_dev_mode_with_repo_path_chains_dev_link(tmp_path, monkeypatch):
 
 def test_plugin_mode_uses_auto_derived_repo_root(tmp_path, monkeypatch):
     calls = []
+    monkeypatch.setattr(install, "_is_linked_worktree", lambda _root: False)
     monkeypatch.setattr(
         install,
         "_preview_context_lines",
@@ -714,7 +703,7 @@ def test_plugin_mode_uses_auto_derived_repo_root(tmp_path, monkeypatch):
 
     install.run(
         home=tmp_path, dry_run=True, non_interactive=True,
-        dev_mode=False, agents=[], default_llm="claude",
+        dev_mode=False,
     )
 
     preview_kwargs = calls[0]
@@ -770,8 +759,8 @@ def test_install_skill_documents_assistant_access_roots_and_recurring_authority_
 
 def test_non_interactive_install_uses_checked_in_core_lock(tmp_path, monkeypatch):
     calls = []
+    monkeypatch.setattr(install, "_is_linked_worktree", lambda _root: False)
     monkeypatch.setattr(install.scaffold, "run", lambda **kw: None)
-    monkeypatch.setattr(install.launchers, "run", lambda **kw: None)
     monkeypatch.setattr(install, "diagnose_installation", lambda **kw: install.DiagnosticReport.healthy_for(kw["context"]))
     monkeypatch.setattr(
         install.managed_runtime,
@@ -781,7 +770,7 @@ def test_non_interactive_install_uses_checked_in_core_lock(tmp_path, monkeypatch
 
     status = install.run(
         home=tmp_path, dry_run=False, non_interactive=True,
-        dev_mode=False, agents=[], default_llm="claude", yes=True, environ={},
+        dev_mode=False, yes=True, environ={},
     )
 
     assert calls[0]["optional_module_ids"] == ()
@@ -794,7 +783,6 @@ def test_non_interactive_install_uses_checked_in_core_lock(tmp_path, monkeypatch
 def test_non_interactive_install_rejects_optional_selection(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(install.scaffold, "run", lambda **kw: None)
-    monkeypatch.setattr(install.launchers, "run", lambda **kw: None)
     monkeypatch.setattr(install, "diagnose_installation", lambda **kw: install.DiagnosticReport.healthy_for(kw["context"]))
     monkeypatch.setattr(
         install.managed_runtime,
@@ -804,7 +792,7 @@ def test_non_interactive_install_rejects_optional_selection(tmp_path, monkeypatc
 
     status = install.run(
         home=tmp_path, dry_run=False, non_interactive=True,
-        dev_mode=False, agents=[], default_llm="claude", yes=True,
+        dev_mode=False, yes=True,
         optional_modules=["pdf-to-markdown"],
     )
 
@@ -816,8 +804,8 @@ def test_interactive_install_prompts_for_optional_modules(
     tmp_path, monkeypatch
 ):
     calls = []
+    monkeypatch.setattr(install, "_is_linked_worktree", lambda _root: False)
     monkeypatch.setattr(install.scaffold, "run", lambda **kw: None)
-    monkeypatch.setattr(install.launchers, "run", lambda **kw: None)
     monkeypatch.setattr(install, "diagnose_installation", lambda **kw: install.DiagnosticReport.healthy_for(kw["context"]))
     monkeypatch.setattr(
         install.managed_runtime,
@@ -831,8 +819,6 @@ def test_interactive_install_prompts_for_optional_modules(
         dry_run=False,
         non_interactive=False,
         dev_mode=False,
-        agents=[],
-        default_llm="claude",
         yes=True,
         environ={},
     )
@@ -910,8 +896,8 @@ def test_optional_module_prompt_reports_rough_known_total(monkeypatch, capsys):
 
 def test_phase_entry_builds_candidate_before_scaffold(tmp_path, monkeypatch):
     calls = []
+    monkeypatch.setattr(install, "_is_linked_worktree", lambda _root: False)
     monkeypatch.setattr(install.scaffold, "run", lambda **kw: calls.append(("scaffold", kw)))
-    monkeypatch.setattr(install.launchers, "run", lambda **kw: calls.append(("launchers", kw)))
     monkeypatch.setattr(install, "diagnose_installation", lambda **kw: install.DiagnosticReport.healthy_for(kw["context"]))
     monkeypatch.setattr(
         install.managed_runtime,
@@ -921,7 +907,7 @@ def test_phase_entry_builds_candidate_before_scaffold(tmp_path, monkeypatch):
 
     status = install.run(
         home=tmp_path, dry_run=False, non_interactive=True,
-        dev_mode=False, agents=[], default_llm="claude", yes=True, environ={},
+        dev_mode=False, yes=True, environ={},
     )
 
     names = [name for name, _ in calls]
@@ -932,7 +918,6 @@ def test_phase_entry_builds_candidate_before_scaffold(tmp_path, monkeypatch):
 def test_phase_entry_failed_candidate_leaves_prior_pointer_and_returns_nonzero(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(install.scaffold, "run", lambda **kw: calls.append(("scaffold", kw)))
-    monkeypatch.setattr(install.launchers, "run", lambda **kw: calls.append(("launchers", kw)))
 
     def fail(**kwargs):
         raise ManagedRuntimeError("simulated")
@@ -941,7 +926,7 @@ def test_phase_entry_failed_candidate_leaves_prior_pointer_and_returns_nonzero(t
 
     status = install.run(
         home=tmp_path, dry_run=False, non_interactive=True,
-        dev_mode=False, agents=[], default_llm="claude", yes=True,
+        dev_mode=False, yes=True,
     )
 
     assert status != 0
@@ -962,7 +947,6 @@ def test_phase_entry_resolver_deploy_failure_returns_nonzero_not_a_crash(tmp_pat
     """
     calls = []
     monkeypatch.setattr(install.scaffold, "run", lambda **kw: calls.append(("scaffold", kw)))
-    monkeypatch.setattr(install.launchers, "run", lambda **kw: calls.append(("launchers", kw)))
     # Real bootstrap_uv is not under test here and would otherwise also
     # observe the atomic_files.atomic_replace_bytes patch below (it's the
     # same shared module object) and make a real network call -- stub it
@@ -982,7 +966,7 @@ def test_phase_entry_resolver_deploy_failure_returns_nonzero_not_a_crash(tmp_pat
 
     status = install.run(
         home=tmp_path, dry_run=False, non_interactive=True,
-        dev_mode=False, agents=[], default_llm="claude", yes=True,
+        dev_mode=False, yes=True,
     )
 
     assert status != 0
@@ -1005,7 +989,6 @@ def test_phase_entry_catches_runtime_pointer_error_not_just_managed_runtime_erro
     """
     calls = []
     monkeypatch.setattr(install.scaffold, "run", lambda **kw: calls.append(("scaffold", kw)))
-    monkeypatch.setattr(install.launchers, "run", lambda **kw: calls.append(("launchers", kw)))
     monkeypatch.setattr(install.managed_runtime, "_create_release_venv", lambda **kw: None)
     monkeypatch.setattr(install.managed_runtime, "_run_dependency_install", lambda **kw: None)
     monkeypatch.setattr(
@@ -1019,7 +1002,7 @@ def test_phase_entry_catches_runtime_pointer_error_not_just_managed_runtime_erro
 
     status = install.run(
         home=tmp_path, dry_run=False, non_interactive=True,
-        dev_mode=False, agents=[], default_llm="claude", yes=True,
+        dev_mode=False, yes=True,
     )
 
     assert status != 0
@@ -1069,8 +1052,8 @@ def test_ensure_managed_uv_calls_bootstrap_even_when_binary_already_exists(tmp_p
 
 def test_phase_entry_dry_run_skips_candidate_build(tmp_path, monkeypatch):
     calls = []
+    monkeypatch.setattr(install, "_is_linked_worktree", lambda _root: False)
     monkeypatch.setattr(install.scaffold, "run", lambda **kw: calls.append(("scaffold", kw)))
-    monkeypatch.setattr(install.launchers, "run", lambda **kw: calls.append(("launchers", kw)))
     monkeypatch.setattr(
         install.managed_runtime,
         "build_candidate_release",
@@ -1079,7 +1062,7 @@ def test_phase_entry_dry_run_skips_candidate_build(tmp_path, monkeypatch):
 
     status = install.run(
         home=tmp_path, dry_run=True, non_interactive=True,
-        dev_mode=False, agents=[], default_llm="claude",
+        dev_mode=False,
     )
 
     assert status == 0

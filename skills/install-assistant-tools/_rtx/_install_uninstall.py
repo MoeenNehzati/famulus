@@ -18,9 +18,6 @@ it. Concretely, after a re-run against an already-installed system:
     ownership"), so no access entry is journaled at all;
   - Claude's permissions.additionalDirectories re-records with an empty
     `introduced`, which means "own nothing", not "own what is there";
-  - launchers.json, Windows-copied launcher helpers, and the per-agent
-    profile configs are skipped as already present, so they too lose their
-    ownership record.
 A later uninstall then exits 0 and reports success while silently leaving
 every one of those behind, with no report line naming them. Revoke the
 access roots by hand before trusting such an uninstall.

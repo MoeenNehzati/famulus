@@ -1,0 +1,41 @@
+authority:
+  owns_filesystem: []
+children:
+  _rtx: {}
+content:
+- SKILL\.md
+description: Installs only an explicitly selected subset of optional interactive launchers.
+discovery:
+  mechanism: skill
+  catalog: {domain: assistant-operations, topics: [assistant-installation], visibility: listed}
+  activated_by: [user-request, skill-workflow]
+  persistent_modifier: false
+exports:
+  install-launchers.interface.default:
+    access: {allow_all_modules: true, allowed_callers: []}
+    source_interface: install-launchers.source.gateway.interface.default
+  install-launchers.interface.setup:
+    access: {allow_all_modules: true, allowed_callers: []}
+    source_interface: install-launchers.source.gateway.interface.default
+    setup_requires_setup_of: []
+gateway: {language: Markdown, path: SKILL.md}
+id: install-launchers
+namespace_exports:
+  _rtx:
+    version: 1
+    access: {allow_all_modules: true, allowed_callers: []}
+    surface:
+      only: {install-launchers._rtx.interface.agent-launchers: 1}
+    interface_access:
+      install-launchers._rtx.interface.agent-launchers:
+        allow_all_modules: false
+        allowed_callers: [install-launchers]
+node_type: module
+schema_version: 6
+sources:
+  install-launchers.source.gateway:
+    blueprint: {base: module-root, path: blueprints/gateway.yaml}
+version: 1
+maturity: stable
+installation_tier: optional
+personal_preference: {applies: false}

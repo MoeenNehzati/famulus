@@ -454,22 +454,25 @@ def test_doctor_names_missing_recurring_backend_and_uses_install_recovery(tmp_pa
     )
 
 
-def test_doctor_returns_apply_recovery_when_launcher_authority_is_malformed(tmp_path: Path) -> None:
+@pytest.mark.parametrize("optional_state", ["absent", "malformed"])
+def test_doctor_ignores_absent_or_malformed_optional_launcher_state(
+    tmp_path: Path, optional_state: str
+) -> None:
     context = _standard_context(tmp_path)
     _write_healthy_installation(context)
     _write_recurring_descriptor(context)
-    (context.paths.config_root / "launchers.json").write_text("{", encoding="utf-8")
+    launcher_state = context.paths.config_root / "launchers.json"
+    if optional_state == "absent":
+        launcher_state.unlink()
+    else:
+        launcher_state.write_text("{", encoding="utf-8")
 
     report = _diagnose(context)
     recurring = next(check for check in report.checks if check.id == "recurring")
 
-    assert report.status == "unhealthy"
-    assert "launcher" in recurring.summary.lower()
-    assert recurring.recovery == (
-        "dispatcher --caller-skill install-assistant-tools "
-        "install-assistant-tools._rtx.interface.scripts-install "
-        "--no-dev-mode --non-interactive --yes"
-    )
+    assert report.status == "healthy"
+    assert recurring.status == "ok"
+    assert recurring.recovery == ""
 
 
 def test_doctor_validates_reconstruction_before_missing_descriptor_teardown_recovery(

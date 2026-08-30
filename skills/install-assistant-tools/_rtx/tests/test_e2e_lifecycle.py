@@ -43,10 +43,6 @@ if __package__ and __package__.count('.') >= 1:
 else:
     import _config_bridge as dev_link  # noqa: E402
 if __package__ and __package__.count('.') >= 1:
-    from .. import _agent_launchers as launchers
-else:
-    import _agent_launchers as launchers  # noqa: E402
-if __package__ and __package__.count('.') >= 1:
     from .. import _install_scaffold as scaffold
 else:
     import _install_scaffold as scaffold  # noqa: E402
@@ -178,70 +174,6 @@ def test_dev_mode_exposes_all_skills_on_claude_and_codex(homes):
         assert (homes[host] / "references").is_dir(), host
 
     # the real repo must be untouched by a dev install into sandbox homes
-    assert _tree_hash(REPO_ROOT / "skills") == skills_before
-
-
-# ── Launcher availability after install (real repo, read-only) ──────────────
-
-# famulus-skip: category=platform-contract; reason=Windows uses .bat launcher wrappers instead of POSIX executables; alternate=test_codex_install exercises installed Windows launchers
-@pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="POSIX launchers",
-)
-def test_launchers_executable_after_install(homes):
-    skills_before = _tree_hash(REPO_ROOT / "skills")
-    bin_dir = homes["root"] / "bin"
-    bin_dir.mkdir()
-
-    source_bin = REPO_ROOT / "skills" / "install-assistant-tools" / "_rtx/assets/bin"
-    launcher_installer = platform_launcher_installer()
-    buf = io.StringIO()
-    with redirect_stdout(buf):
-        launcher_installer.install_dispatcher_launcher(
-            REPO_ROOT, bin_dir, dry_run=False, home=homes["home"]
-        )
-        for agent in ("assistant", "collab", "coauthor", "tw"):
-            launchers.install_agent_launcher_files(
-                source_bin, bin_dir, agent, dry_run=False, manifest=None, environ={}
-            )
-
-    env = python_test_env(homes["root"], {"HOME": str(homes["home"])})
-    # "dispatcher" is generated separately below: it now execs into the
-    # stable managed-runtime resolver (officina.install.resolvers.launch)
-    # instead of running self-contained against this repo checkout -- see the
-    # assertion further down, once a real candidate release has been built
-    # and the resolver deployed, for its current, expected failure mode.
-    for cmd in ("assistant", "collab", "coauthor", "tw"):
-        exe = bin_dir / cmd
-        assert exe.exists(), f"{cmd} not installed into bin dir"
-        result = subprocess.run(
-            [str(exe), "--help"], capture_output=True, text=True, env=env, timeout=60
-        )
-        assert result.returncode == 0, (
-            f"{cmd} --help failed ({result.returncode}):\n{result.stderr}"
-        )
-
-    dispatcher = bin_dir / "dispatcher"
-    assert dispatcher.exists(), "dispatcher not installed into bin dir"
-
-    if managed_runtime_uv_bin() is None:
-        # famulus-skip: category=capability-unavailable; reason=proving the resolver hop succeeds requires building a real managed-runtime release, which needs a real uv binary; alternate=tests/test_officina_managed_runtime.py and tests/test_officina_launcher_entry.py cover the build+deploy+resolver flow directly
-        pytest.skip("uv is not installed on this machine")
-    # Build and activate a real managed-runtime candidate release under this
-    # test's sandboxed home. build_candidate_release deploys the
-    # dependency-free launcher resolver and its trusted-roots.json sidecar as
-    # part of that activation (Task 7's Step 3b), so the resolver hop this
-    # dispatcher shim execs into now succeeds.
-    build_minimal_managed_runtime_release(home=homes["home"], tmp_root=homes["root"])
-
-    result = subprocess.run(
-        [str(dispatcher), "--help"], capture_output=True, text=True, env=env, timeout=60
-    )
-    # The candidate release installs Officina and the core dependencies needed
-    # by dispatcher, so this exercises the complete generated-launcher hop.
-    assert result.returncode == 0, result.stderr
-    assert "usage:" in result.stdout
-
     assert _tree_hash(REPO_ROOT / "skills") == skills_before
 
 
@@ -400,17 +332,6 @@ def test_install_uninstall_roundtrip_restores_home(homes, tmp_path: Path):
             )
             scaffold.run(
                 repo_root=repo, home=home, bin_dir=bin_dir, shell_rc=shell_rc,
-                environ={},
-            )
-            launchers.run(
-                repo_root=repo,
-                agents=["assistant", "collab", "coauthor", "tw"],
-                home=home,
-                bin_dir=bin_dir,
-                codex_home=homes["codex"],
-                claude_home=homes["claude"],
-                shell_rc=shell_rc,
-                default_llm="claude",
                 environ={},
             )
     finally:

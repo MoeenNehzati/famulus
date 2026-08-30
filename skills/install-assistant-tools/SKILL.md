@@ -1,7 +1,7 @@
 ---
 name: install-assistant-tools
 description: >-
-  Use when the user asks to install, update, propagate, or repair the `assistant`, `collab`, `coauthor`, or workspace helper commands, including missing or stale launchers and shell integration. Do not use for unrelated software or plugin installation.
+  Use when the user asks to install, update, propagate, or repair the core Famulus command floor and development integration. Do not use for optional interactive launchers or unrelated software.
 ---
 
 <!-- BEGIN BLUEPRINT CONTRACT -->
@@ -17,7 +17,6 @@ Uses Interfaces:
 - `install-assistant-tools.source.gateway -> install-assistant-tools._rtx.interface.scripts-dev-link@2`
 - `install-assistant-tools.source.gateway -> install-assistant-tools._rtx.interface.scripts-doctor@1`
 - `install-assistant-tools.source.gateway -> install-assistant-tools._rtx.interface.scripts-install@2`
-- `install-assistant-tools.source.gateway -> install-assistant-tools._rtx.interface.scripts-launchers@3`
 - `install-assistant-tools.source.gateway -> install-assistant-tools._rtx.interface.scripts-scaffold@2`
 - `install-assistant-tools.source.gateway -> recurring-tasks.interface.default@1`
 
@@ -55,15 +54,8 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
   - Version: 2
   - Alternative: `owner`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
-    {"options": {"--agents": "LIST", "--bin-dir": "DIR", "--claude-home": "DIR", "--codex-home": "DIR", "--default-llm": "claude|codex", "--dev-mode": true, "--dry-run": true, "--home": "DIR", "--non-interactive": true, "--optional-modules": "LIST", "--repo-path": "DIR|--no-dev-mode", "--shell-rc": "FILE", "--yes": true}, "positionals": [], "stdin": null}
+    {"options": {"--bin-dir": "DIR", "--claude-home": "DIR", "--codex-home": "DIR", "--dev-mode": true, "--dry-run": true, "--home": "DIR", "--non-interactive": true, "--optional-modules": "LIST", "--repo-path": "DIR|--no-dev-mode", "--shell-rc": "FILE", "--yes": true}, "positionals": [], "stdin": null}
     Required options: []; positional arity: 0..0; stdin: forbidden
-- `install-assistant-tools._rtx.interface.scripts-launchers` — Install per-agent bin launcher, profile config, worker dir, and durable launchers.json backend selection for the given agents. Direct invocation of this interface installs exactly the --agents selection; tw selects one complete tmux-workspace, tw, tw-break, tw-join, tw-monitor, and tw-help bundle. When this runs as part of the five-stage apply orchestrator, assistant is additionally forced into the installed set regardless of selection, because it is a required invoke-skill prerequisite (feedback item 18) and is not user-selectable. background_run is installed with invoke-skill. Worker directories are created under the platform Famulus state dir in standard mode or under the selected isolated context in development mode (--mode development, an explicit live checkout).
-  - Caller: `install-assistant-tools`
-  - Version: 3
-  - Alternative: `owner`
-    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
-    {"options": {"--agents": "LIST", "--bin-dir": "DIR", "--claude-home": "DIR", "--codex-home": "DIR", "--default-llm": "claude|codex", "--dry-run": true, "--home": "DIR", "--mode": "development|plugin", "--repo-root": "DIR", "--shell-rc": "FILE"}, "positionals": [], "stdin": null}
-    Required options: ["--repo-root"]; positional arity: 0..0; stdin: forbidden
 - `install-assistant-tools._rtx.interface.scripts-scaffold` — Install the shared launcher floor using an exact context; persist PATH only for standard mode.
   - Caller: `install-assistant-tools`
   - Version: 2
@@ -91,20 +83,20 @@ publishes exactly five stages:
 1. Choose `standard` or `development`. Never infer a context from the working
    directory. Development requires an explicit existing checkout.
 2. Confirm the resolved source, state, runtime, command directory, isolated
-   homes, backend, helpers, and optional modules. A dry run stops here without
+   homes and optional modules. A dry run stops here without
    effects; unattended mutation requires `--yes`.
 3. Apply once to the resolved context: candidate runtime, shared command floor,
-   development-only projections, and selected helpers. Required failure stops
+   and development-only projections. Required failure stops
    later effects. Repeating this stage reconciles the same context.
 4. Diagnose that same context and report pointer/source/runtime consistency,
-   command origins, launcher configuration, manifest health, and recurring
+   command origins, manifest health, and recurring
    registration summary.
 5. Explain that `connect-google` connects selected Google services and
    `recurring-tasks` creates and manages recurring AI jobs. Show the user how
    to invoke each skill, but do not invoke either or make installation success
    depend on them.
 
-Do not preselect optional helpers. If optional modules are available, show
+If optional modules are available, show
 their module IDs, affected packages, and cached package-index size estimates.
 Mark missing estimates unavailable; never guess. Core versus optional and
 stable versus experimental are independent classifications.
@@ -124,10 +116,6 @@ Installed commands and development adapters locate the active runtime through
 their self-locating resolver and the selected context's `current.json`. Do not
 depend on the current directory or original clone location. Do not instruct
 the user to persist `AI`, `FAMULUS_REPO_ROOT`, or `ASSISTANT_LOGS`.
-
-Backend selection is durable in `launchers.json`. Treat
-`ASSISTANT_DEFAULT` only as a process-local override and never as installation
-state.
 
 Managed assistants receive exactly these writable access roots from the
 selected context: `assistant_logs_root`, `recurring_config_root`,
@@ -154,7 +142,6 @@ Use narrower interfaces only for a demonstrated targeted repair:
 | --- | --- |
 | shared command floor and search path | `scripts-scaffold` |
 | development repository integration | `scripts-dev-link` |
-| selected helper commands and profiles | `scripts-launchers` |
 | read-only context diagnosis | declared diagnostic interface |
 
 Do not run development repair for a standard installation.
@@ -171,13 +158,12 @@ revokes remote credentials, or deletes arbitrary mutable user data.
 ## Completion
 
 After apply, follow the printed environment-reload instruction. Verify every
-installed command resolves from the selected context and that its help request
+core installed command resolves from the selected context and that its help request
 exits successfully. Re-run the read-only diagnostic interface; if recurring jobs exist, also ask
 `recurring-tasks` for status and healthcheck in that context.
 
 If a required phase fails, report its exact error and do not claim later stages
-completed. A platform-scoped helper reported unsupported is non-fatal when the
-shared command floor succeeded.
+completed.
 
 ## Conflict policy
 

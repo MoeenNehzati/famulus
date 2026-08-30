@@ -240,15 +240,11 @@ class CodexInstallTests(unittest.TestCase):
                 str(install_claude_home),
                 "--bin-dir",
                 str(install_bin),
-                "--default-llm",
-                "codex",
                 # This exercises plugin-mode install.py (no --dev-mode): only
-                # scaffold + launchers run, not dev_link. --non-interactive is
+                # the general scaffold runs, not dev_link. --non-interactive is
                 # required since this subprocess has no attached stdin.
                 "--non-interactive",
                 "--no-dev-mode",
-                "--agents",
-                "assistant,collab,coauthor,tw",
             ]
             if sys.platform != "win32":
                 install_cmd.extend(["--shell-rc", str(install_shell_rc)])
@@ -269,6 +265,26 @@ class CodexInstallTests(unittest.TestCase):
                 },
             )
             run_command(install_cmd, env=install_env, timeout=900)
+            self.assertFalse((install_bin / "assistant").exists())
+            self.assertFalse((install_bin / "assistant.bat").exists())
+
+            run_command(
+                [
+                    sys.executable,
+                    str(installed_path / "skills" / "install-launchers" / "_rtx" / "_agent_launchers.py"),
+                    "--canonical-python", sys.executable,
+                    "--plugin-root", str(installed_path),
+                    "--agents", "assistant,collab,coauthor",
+                    "--home", str(install_home),
+                    "--bin-dir", str(install_bin),
+                    "--codex-home", str(install_codex_home),
+                    "--claude-home", str(install_claude_home),
+                    "--default-llm", "codex",
+                    "--mode", "plugin",
+                ],
+                env=install_env,
+                timeout=180,
+            )
 
             # workers are created at install time by the bootstrap (runtime
             # dirs, not plugin content). This is a plugin-mode install
@@ -335,15 +351,15 @@ class CodexInstallTests(unittest.TestCase):
             # --no-dev-mode (plugin mode), and plugin-mode skill/reference
             # visibility already comes from the plugin loader itself (already
             # confirmed above via `codex debug prompt-input`, before install.py
-            # ever ran). Only scaffold + launchers run in this test.
+            # ever ran). Feature-owned launcher setup is invoked separately above.
             claude_links = {
                 install_claude_home / "assistant_claude_setting.json": installed_path / "profiles" / "assistant_claude_setting.json",
                 install_claude_home / "collab_claude_setting.json": installed_path / "profiles" / "collab_claude_setting.json",
                 install_claude_home / "coauthor_claude_setting.json": installed_path / "profiles" / "coauthor_claude_setting.json",
             }
             bin_links = {
-                install_bin / "tmux-workspace": installed_path / "skills" / "install-assistant-tools" / "_rtx/assets/bin" / "tmux-workspace",
-                install_bin / "tw": installed_path / "skills" / "install-assistant-tools" / "_rtx/assets/bin" / "tmux-workspace",
+                install_bin / "tmux-workspace": installed_path / "skills" / "install-launchers" / "_rtx/assets/bin" / "tmux-workspace",
+                install_bin / "tw": installed_path / "skills" / "install-launchers" / "_rtx/assets/bin" / "tmux-workspace",
             }
 
             for path, target in claude_links.items():
@@ -362,12 +378,9 @@ class CodexInstallTests(unittest.TestCase):
                     launcher = install_bin / f"{agent}.bat"
                     expect_file(launcher)
                     launcher_text = launcher.read_text(encoding="utf-8")
-                    self.assertIn("officina.launchers.agent", launcher_text)
-                    self.assertIn(f"--agent {agent}", launcher_text)
-                    self.assertIn("bootstrap", launcher_text)
-                    self.assertIn("resolvers", launcher_text)
-                    self.assertIn("launch.py", launcher_text)
-                    self.assertNotIn(str(installed_path), launcher_text)
+                    self.assertIn(str(installed_path), launcher_text)
+                    self.assertIn(f'"{agent}" %*', launcher_text)
+                    self.assertNotIn("launch.py", launcher_text)
                 self.assertFalse((install_bin / "tmux-workspace").exists())
                 self.assertFalse((install_bin / "tw").exists())
             else:
@@ -377,15 +390,10 @@ class CodexInstallTests(unittest.TestCase):
                     self.assertFalse(launcher.is_symlink(), f"{agent} must be generated")
                     self.assertTrue(os.access(launcher, os.X_OK), f"{agent} not executable")
                     launcher_text = launcher.read_text(encoding="utf-8")
-                    self.assertIn("officina.launchers.agent", launcher_text)
-                    self.assertIn(f"'--agent', '{agent}'", launcher_text)
-                    self.assertIn("os.execv(RESOLVER", launcher_text)
-                    self.assertIn("bootstrap", launcher_text)
-                    self.assertIn("resolvers", launcher_text)
-                    self.assertIn("launch.py", launcher_text)
-                    self.assertNotIn(str(installed_path), launcher_text)
-                for path, target in bin_links.items():
-                    expect_symlink(path, target)
+                    self.assertIn(str(installed_path), launcher_text)
+                    self.assertIn(agent, launcher_text)
+                    self.assertIn("exec ", launcher_text)
+                    self.assertNotIn("launch.py", launcher_text)
 
             for mapping in (codex_copies, claude_copies):
                 for path, (source, agent) in mapping.items():

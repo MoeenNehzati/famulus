@@ -182,7 +182,17 @@ class WindowsLauncherInstaller(LauncherInstallerBase):
                     destination=bin_dir / "invoke-skill.bat",
                     mode="generate",
                     content=_windows_invoke_skill_content(home=home, runtime_root=runtime_root),
-                )
+                ),
+                LauncherFileSpec(
+                    destination=bin_dir / "background_run.bat",
+                    mode="generate",
+                    content=_windows_module_content(
+                        "officina.launchers.agent",
+                        home=home,
+                        runtime_root=runtime_root,
+                        fixed_args=("--agent", "background_run"),
+                    ),
+                ),
             ],
         )
         return self.install_bundle(bundle, dry_run=dry_run, manifest=manifest)
@@ -211,40 +221,3 @@ class WindowsLauncherInstaller(LauncherInstallerBase):
             ],
         )
         return self.install_bundle(bundle, dry_run=dry_run, manifest=manifest)
-
-    def install_agent_launcher_files(
-        self,
-        *,
-        source_bin_dir: Path,
-        bin_dir: Path,
-        agent: str,
-        dry_run: bool,
-        manifest: Manifest | None,
-        home: Path | None = None,
-        environ: Mapping[str, str] | None = None,
-        runtime_root: Path | None = None,
-    ) -> None:
-        if agent == "tw":
-            log("  SKIP: tw (tmux not available on Windows)")
-            return
-
-        bundle = LauncherBundleSpec(
-            name=agent,
-            required=False,
-            workflows=("agent launcher",),
-            files=[
-                LauncherFileSpec(
-                    destination=bin_dir / f"{agent}.bat",
-                    mode="generate",
-                    content=_windows_module_content(
-                        "officina.launchers.agent",
-                        home=home,
-                        environ=environ,
-                        runtime_root=runtime_root,
-                        fixed_args=("--agent", agent),
-                        help_name=agent,
-                    ),
-                )
-            ],
-        )
-        self.install_bundle(bundle, dry_run=dry_run, manifest=manifest)

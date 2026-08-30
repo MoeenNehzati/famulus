@@ -56,6 +56,7 @@ _EXCLUDED_PARTS = {"tests", "validators", ".git", ".claude-plugin", ".codex-plug
 _EXCLUDED_PATHS = {
     Path("references/node-standards"),
     Path("skills/install-assistant-tools"),
+    Path("skills/install-launchers"),
     Path("skills/latex-workshop"),
     Path("skills/recurring-tasks"),
 }

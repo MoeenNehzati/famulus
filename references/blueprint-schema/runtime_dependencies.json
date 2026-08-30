@@ -2273,21 +2273,6 @@
             }
           ]
         },
-        "install-assistant-tools._rtx.interface.scripts-launchers": {
-          "dependencies": [
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Parses canonical recurring jobs configuration."
-            }
-          ]
-        },
         "install-assistant-tools._rtx.interface.scripts-scaffold": {
           "dependencies": [
             {
@@ -2302,6 +2287,18 @@
               "reason": "Parses canonical recurring jobs configuration."
             }
           ]
+        }
+      }
+    },
+    "install-launchers": {
+      "maturity": "stable",
+      "installation_tier": "optional",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {
+        "install-launchers._rtx.interface.agent-launchers": {
+          "dependencies": []
         }
       }
     },

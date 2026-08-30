@@ -13,7 +13,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Mapping, Protocol
 
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 from officina.common.atomic_files import atomic_replace_bytes
+from officina.common.famulus_paths import resolve_famulus_paths
 import officina.common.toml_io as toml_io
 from officina.install.context import (
     InstallationContext,
@@ -303,7 +307,37 @@ def _agent_args(argv: list[str]) -> tuple[str, bool, Backend | None, list[str]]:
     return agent, local, backend, remaining
 
 
+def _selected_plugin_main(plugin_root: Path, agent: str, remaining: list[str]) -> int:
+    expected = plugin_root / "src" / "officina" / "launchers" / "agent.py"
+    if not plugin_root.is_absolute() or Path(__file__).resolve() != expected.resolve():
+        raise LauncherConfigurationError("selected plugin root does not own this launcher entry")
+    environ = _managed_launch_environment(os.environ)
+    paths = resolve_famulus_paths(platform=sys.platform, home=Path.home(), environ=environ)
+    selected_agent, local, explicit_backend, args = _agent_args([agent, *remaining])
+    configured = load_launcher_configuration(config_root=paths.config_root)
+    backend = explicit_backend or select_backend(
+        agent=selected_agent, configuration=configured, environ=environ
+    )
+    os.environ["FAMULUS_LAUNCHER_RESOURCES"] = str(plugin_root)
+    if not local:
+        worker = paths.worker_root / selected_agent
+        worker.mkdir(parents=True, exist_ok=True)
+        os.chdir(worker)
+    return _launch_command(build_agent_command(
+        agent=selected_agent,
+        backend=backend,
+        resources=plugin_root,
+        claude_home=Path(os.environ.get("CLAUDE_HOME", Path.home() / ".claude")),
+        args=args,
+    ))
+
+
 def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and not argv[0].startswith("-"):
+        if len(argv) < 2:
+            raise LauncherConfigurationError("selected plugin root and agent are required")
+        return _selected_plugin_main(Path(argv[0]), argv[1], argv[2:])
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--runtime-root", type=Path, required=True)
     action = parser.add_mutually_exclusive_group(required=True)
@@ -322,7 +356,12 @@ def main(argv: list[str] | None = None) -> int:
     # pointer-validated address.  It is deliberately overwritten rather than
     # inherited, so neither legacy root selectors nor cwd can choose hook code.
     os.environ["FAMULUS_LAUNCHER_RESOURCES"] = str(pointer.launcher_resources)
-    configured = load_launcher_configuration(config_root=context.paths.config_root)
+    try:
+        configured = load_launcher_configuration(config_root=context.paths.config_root)
+    except LauncherConfigurationError:
+        if known.invoke_skill is None and known.agent != "background_run":
+            raise
+        configured = LauncherConfiguration(default_backend="claude", identity="absent")
     if known.invoke_skill is not None:
         agent = "background_run"
         backend = select_backend(agent=agent, configuration=configured, environ=environ)

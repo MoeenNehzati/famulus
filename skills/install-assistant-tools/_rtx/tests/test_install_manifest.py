@@ -531,15 +531,11 @@ def test_uninstall_keeps_failed_entries_in_manifest(tmp_path: Path):
 
 
 def test_full_install_writes_manifest(tmp_path: Path):
-    """Verify scaffold and launchers record home-scoped side effects; dev_link owns hook-install coverage."""
+    """Verify the general scaffold records its own home-scoped side effects."""
     if __package__ and __package__.count('.') >= 1:
         from .. import _install_scaffold as scaffold
     else:
         import _install_scaffold as scaffold
-    if __package__ and __package__.count('.') >= 1:
-        from .. import _agent_launchers as launchers
-    else:
-        import _agent_launchers as launchers
 
     repo = tmp_path / "repo"
     skill_dir = repo / "skills" / "install-assistant-tools"
@@ -562,18 +558,6 @@ def test_full_install_writes_manifest(tmp_path: Path):
         repo_root=repo, home=home, bin_dir=home / "bin", shell_rc=home / ".bashrc",
         environ={},
     )
-    launchers.run(
-        repo_root=repo,
-        agents=["assistant"],
-        home=home,
-        bin_dir=home / "bin",
-        codex_home=home / ".codex",
-        claude_home=home / ".claude",
-        shell_rc=home / ".bashrc",
-        default_llm="claude",
-        environ={},
-    )
-
     mpath = manifest_path(home)
     assert mpath.exists()
     entries = json.loads(mpath.read_text())["entries"]

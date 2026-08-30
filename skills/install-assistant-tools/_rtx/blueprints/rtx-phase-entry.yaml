@@ -3,12 +3,6 @@ content:
 dependencies:
 - blueprint:
     base: module-root
-    path: blueprints/rtx-agent-launchers.yaml
-  reason: Imports Python source from _rtx/_agent_launchers.py.
-  source: install-assistant-tools._rtx.source.rtx-agent-launchers
-  version: 1
-- blueprint:
-    base: module-root
     path: blueprints/rtx-config-bridge.yaml
   reason: Imports Python source from _rtx/_config_bridge.py.
   source: install-assistant-tools._rtx.source.rtx-config-bridge
@@ -68,7 +62,7 @@ interfaces:
     contract:
       arguments:
         options:
-          description: Explicit mode, optional development checkout, helpers, backend,
+          description: Explicit mode, optional development checkout,
             dry-run, interaction, and confirmation choices.
           required: false
           sensitivity: user-private
@@ -113,7 +107,7 @@ interfaces:
           sensitivity: derived-private
       execution:
         consistency:
-          per_source: Candidate, scaffold, projections, helpers, and doctor share one resolved context;
+          per_source: Candidate, scaffold, projections, and doctor share one resolved context;
             candidate editability is derived from that context's mode.
         effects:
         - action: configure
@@ -199,12 +193,10 @@ interfaces:
       kind: process
       patterns:
       - allowed_flags: [--dry-run, --non-interactive, --yes, --dev-mode, --no-dev-mode,
-          --repo-path, --agents, --default-llm, --optional-modules, --home, --bin-dir,
+          --repo-path, --optional-modules, --home, --bin-dir,
           --shell-rc, --codex-home, --claude-home]
         flag_patterns:
           --repo-path: ^.+$
-          --agents: ^.*$
-          --default-llm: ^(claude|codex)$
           --optional-modules: ^.*$
           --home: ^.+$
           --bin-dir: ^.+$
@@ -215,7 +207,7 @@ interfaces:
         min_positionals: 0
         name: owner
     usage: '[--dry-run] [--non-interactive --yes] [--dev-mode --repo-path DIR|--no-dev-mode]
-      [--agents LIST] [--default-llm {claude,codex}] [--optional-modules LIST]
+      [--optional-modules LIST]
       [--home DIR] [--bin-dir DIR] [--shell-rc FILE] [--codex-home DIR] [--claude-home DIR]'
     version: 2
 node_type: behavioral_source

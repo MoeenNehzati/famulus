@@ -800,7 +800,6 @@ def test_real_installer_apply_manifest_excludes_google_credentials(
     monkeypatch.setattr(installer, "_build_managed_runtime_candidate", lambda **kwargs: 0)
     monkeypatch.setattr(installer, "_record_managed_runtime_state", lambda **kwargs: None)
     monkeypatch.setattr(installer.dev_link, "run", lambda **kwargs: None)
-    monkeypatch.setattr(installer.launchers, "verify_install", lambda *args, **kwargs: True)
     monkeypatch.setattr(
         installer,
         "diagnose_installation",
@@ -810,8 +809,6 @@ def test_real_installer_apply_manifest_excludes_google_credentials(
     status = installer.apply(
         context=context,
         choices=installer.ApplyChoices(
-            agents=(),
-            default_backend="codex",
             home=selected_home,
             shell_rc=selected_home / ".bashrc",
         ),

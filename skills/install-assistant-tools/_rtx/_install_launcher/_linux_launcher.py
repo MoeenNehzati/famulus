@@ -166,7 +166,19 @@ class LinuxLauncherInstaller(LauncherInstallerBase):
                     mode="generate",
                     content=_unix_invoke_skill_content(home=home, runtime_root=runtime_root),
                     executable=True,
-                )
+                ),
+                LauncherFileSpec(
+                    destination=bin_dir / "background_run",
+                    mode="generate",
+                    content=_unix_module_content(
+                        "officina.launchers.agent",
+                        "Launch the scheduler-owned background agent.",
+                        home=home,
+                        runtime_root=runtime_root,
+                        fixed_args=("--agent", "background_run"),
+                    ),
+                    executable=True,
+                ),
             ],
         )
         return self.install_bundle(bundle, dry_run=dry_run, manifest=manifest)
@@ -201,65 +213,3 @@ class LinuxLauncherInstaller(LauncherInstallerBase):
             ],
         )
         return self.install_bundle(bundle, dry_run=dry_run, manifest=manifest)
-
-    def install_agent_launcher_files(
-        self,
-        *,
-        source_bin_dir: Path,
-        bin_dir: Path,
-        agent: str,
-        dry_run: bool,
-        manifest: Manifest | None,
-        home: Path | None = None,
-        environ: Mapping[str, str] | None = None,
-        runtime_root: Path | None = None,
-    ) -> None:
-        if agent == "tw":
-            bundle = LauncherBundleSpec(
-                name="tw",
-                required=False,
-                workflows=("tmux workspace launcher",),
-                files=[
-                    LauncherFileSpec(
-                        source=source_bin_dir / "tmux-workspace",
-                        destination=bin_dir / "tmux-workspace",
-                        mode=self.static_launcher_mode,
-                    ),
-                    LauncherFileSpec(
-                        source=source_bin_dir / "tmux-workspace",
-                        destination=bin_dir / "tw",
-                        mode=self.static_launcher_mode,
-                    ),
-                    *(
-                        LauncherFileSpec(
-                            source=source_bin_dir / command,
-                            destination=bin_dir / command,
-                            mode=self.static_launcher_mode,
-                        )
-                        for command in ("tw-break", "tw-join", "tw-monitor", "tw-help")
-                    ),
-                ],
-            )
-        else:
-            bundle = LauncherBundleSpec(
-                name=agent,
-                required=False,
-                workflows=("agent launcher",),
-                files=[
-                    LauncherFileSpec(
-                        destination=bin_dir / agent,
-                        mode="generate",
-                        content=_unix_module_content(
-                            "officina.launchers.agent",
-                            f"Launch the {agent} managed agent.",
-                            home=home,
-                            environ=environ,
-                            runtime_root=runtime_root,
-                            fixed_args=("--agent", agent),
-                            help_name=agent,
-                        ),
-                        executable=True,
-                    )
-                ],
-            )
-        self.install_bundle(bundle, dry_run=dry_run, manifest=manifest)

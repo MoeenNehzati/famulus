@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
 """
-install.py — Phase-1 orchestrator: scaffold, then optionally dev-link, then
-launchers.
-
 Asks explicitly whether the user wants development mode (never inferred from
 filesystem probes) and, if so, asks for the repo path directly rather than
 deriving it from this script's own location. Plugin-mode installs use the
@@ -17,7 +14,6 @@ which happens after this script exits successfully.
 Run individual scripts directly for targeted repairs:
   python3 _rtx/_install_scaffold.py --help
   python3 _rtx/_config_bridge.py --help
-  python3 _rtx/_agent_launchers.py --help
 """
 from __future__ import annotations
 
@@ -61,10 +57,6 @@ if __package__:
 else:
     import _config_bridge as dev_link
 if __package__:
-    from . import _agent_launchers as launchers
-else:
-    import _agent_launchers as launchers
-if __package__:
     from . import _install_scaffold as scaffold
 else:
     import _install_scaffold as scaffold
@@ -78,13 +70,8 @@ else:
         AssistantAccessConfigError,
         reconcile_assistant_access,
     )
-ALL_AGENTS = launchers.ALL_AGENTS
-
-
 @dataclass(frozen=True)
 class ApplyChoices:
-    agents: tuple[str, ...]
-    default_backend: str
     optional_module_ids: tuple[str, ...] = ()
     home: Path | None = None
     shell_rc: Path | None = None
@@ -138,23 +125,6 @@ def _prompt_repo_path() -> Path:
         if reply:
             return Path(reply).expanduser()
         log("A repo path is required for development mode.")
-
-
-def _prompt_agents() -> list[str]:
-    log(f"Which agent launchers do you want? Available: {', '.join(ALL_AGENTS)}")
-    reply = input("Comma-separated list (blank for none): ").strip()
-    if not reply:
-        return []
-    chosen = [a.strip() for a in reply.split(",") if a.strip()]
-    invalid = set(chosen) - set(ALL_AGENTS)
-    if invalid:
-        log(f"Ignoring unknown agent(s): {', '.join(sorted(invalid))}")
-    return [a for a in chosen if a in ALL_AGENTS]
-
-
-def _prompt_default_llm() -> str:
-    reply = input("Default backend for launchers [claude/codex] (default: claude): ").strip().lower()
-    return reply if reply in ("claude", "codex") else "claude"
 
 
 def _ensure_managed_uv(*, info, paths, platform_name: str) -> int:
@@ -365,18 +335,6 @@ def apply(
     if context.mode == "development":
         dev_link.run(context=context, environ=environ, manifest=manifest)
 
-    helper_status = launchers.run(
-        context=context,
-        agents=list(choices.agents),
-        home=choices.home,
-        default_llm=choices.default_backend,
-        environ=environ,
-        manifest=manifest,
-        install_invoke_skill=True,
-    )
-    if helper_status is False:
-        return 1
-
     try:
         reconcile_assistant_access(context, manifest)
     except AssistantAccessConfigError as exc:
@@ -482,8 +440,6 @@ def run(
     non_interactive: bool = False,
     dev_mode: bool | None = None,
     repo_path: Path | None = None,
-    agents: list[str] | None = None,
-    default_llm: str | None = None,
     optional_modules: list[str] | None = None,
     yes: bool = False,
     environ: Mapping[str, str] | None = None,
@@ -533,19 +489,12 @@ def run(
             platform_name=platform_name,
         )
     optional_module_ids = tuple(sorted(set(optional_modules)))
-    if agents is None:
-        agents = [] if non_interactive else _prompt_agents()
-    if default_llm is None:
-        default_llm = "claude" if non_interactive else _prompt_default_llm()
-
     mode_name = "development" if dev_mode else "standard"
     log("Stage 2/5: Confirm choices")
     for line in _preview_context_lines(
         mode=mode_name, source_root=repo_root, home=home, environ=selected_environ
     ):
         log(f"  {line}")
-    log(f"  Backend: {default_llm}")
-    log(f"  Helpers: {', '.join(agents) if agents else '(baseline only)'}")
     if dry_run:
         log("Dry-run complete; no installation state was changed.")
         return 0
@@ -596,8 +545,6 @@ def run(
     status = apply(
         context=context,
         choices=ApplyChoices(
-            agents=tuple(agents),
-            default_backend=default_llm,
             optional_module_ids=optional_module_ids,
             home=home,
             shell_rc=shell_rc,
@@ -655,17 +602,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--optional-modules", metavar="LIST",
         help="Comma-separated optional module IDs; requires interactive confirmation.",
     )
-    parser.add_argument("--agents", metavar="LIST",
-        help="Comma-separated subset of: " + ",".join(ALL_AGENTS))
-    parser.add_argument("--default-llm", choices=["claude", "codex"])
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    agents = None
-    if args.agents is not None:
-        agents = [a.strip() for a in args.agents.split(",") if a.strip()]
     return run(
         home=Path(args.home) if args.home else None,
         bin_dir=Path(args.bin_dir) if args.bin_dir else None,
@@ -676,8 +617,6 @@ def main(argv: list[str] | None = None) -> int:
         non_interactive=args.non_interactive,
         dev_mode=args.dev_mode,
         repo_path=Path(args.repo_path) if args.repo_path else None,
-        agents=agents,
-        default_llm=args.default_llm,
         optional_modules=(
             [module_id.strip() for module_id in args.optional_modules.split(",") if module_id.strip()]
             if args.optional_modules is not None else None

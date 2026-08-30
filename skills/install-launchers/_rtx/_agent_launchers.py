@@ -1,8 +1,7 @@
-#!/usr/bin/env python3
 """
 launchers.py — Install per-agent bin launchers, profiles, and worker dirs.
 
-For each agent in --agents (assistant, collab, coauthor, tw): symlinks its
+For each agent in --agents (assistant, collab, coauthor, tw): installs its
 bin launcher, copies its profile config into Codex/Claude homes, creates its
 worker directory, and links its Claude settings file. Durable backend selection
 lives in launchers.json; backend environment variables remain process-local
@@ -23,10 +22,11 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
-from typing import Literal, Mapping, Sequence
+from typing import Literal, Mapping
 
 InstallMode = Literal["development", "plugin"]
 
@@ -38,25 +38,18 @@ if not __package__:
 
 import officina.common.toml_io as toml_io
 from officina.common.famulus_paths import resolve_famulus_paths
-from officina.install.context import InstallationContext
-from officina.launchers.agent import ensure_launcher_configuration
+from officina.launchers.agent import ManifestRecorder as Manifest, ensure_launcher_configuration
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
-
-if __package__:
-    from ._install_launcher import platform_launcher_installer
-else:
-    from _install_launcher import platform_launcher_installer
-if __package__:
-    from ._state_record import Manifest, manifest_path
-else:
-    from _state_record import Manifest, manifest_path
-if __package__:
-    from ._fs_links import log, make_link, default_bin_dir
-else:
-    from _fs_links import log, make_link, default_bin_dir
+from officina.common.command_files import (
+    CommandBundleSpec,
+    CommandFileInstaller,
+    CommandFileSpec,
+    log,
+    make_link,
+)
 _MODEL_INSTRUCTIONS_RE = re.compile(r'^model_instructions_file\s*=\s*".*"$', re.MULTILINE)
 
-ALL_AGENTS = ["assistant", "collab", "coauthor", "background_run", "tw"]
+ALL_AGENTS = ["assistant", "collab", "coauthor", "tw"]
 
 # tw is a bin-dir alias for tmux-workspace; it has no separate worker dir,
 # profile, or durable backend-selection relevance (tmux-workspace isn't an LLM backend).
@@ -67,26 +60,15 @@ ALL_AGENTS = ["assistant", "collab", "coauthor", "background_run", "tw"]
 # which should be borrowed from whatever the interactive assistant happens to
 # be tuned for. Sharing `assistant` meant scheduled jobs silently inherited a
 # cheap, low-effort interactive profile.
-WORKER_AGENTS = ["assistant", "collab", "coauthor", "background_run"]
+WORKER_AGENTS = ["assistant", "collab", "coauthor"]
 
 
-def launcher_closure(selected_agents: Sequence[str], *, install_invoke_skill: bool) -> tuple[str, ...]:
-    """Expand a user's --agents selection to the set that must be installed.
-
-    `background_run` is a hard prerequisite for the invoke-skill
-    implementation (feedback item 18, originally `assistant`): when
-    install_invoke_skill is set, it's guaranteed to be present and moved to
-    the front, regardless of whether the caller explicitly selected it.
-    invoke-skill execs it by name, so installing the scheduler's launcher
-    without its agent would leave every scheduled job failing with
-    "Command not found".
-    """
-    agents = list(dict.fromkeys(selected_agents))  # de-dupe, preserve order
-    if install_invoke_skill:
-        if "background_run" in agents:
-            agents.remove("background_run")
-        agents.insert(0, "background_run")
-    return tuple(agents)
+def command_content(canonical_python: Path, plugin_root: Path, agent: str, *, windows: bool) -> str:
+    entry = plugin_root / "src" / "officina" / "launchers" / "agent.py"
+    argv = (canonical_python, entry, plugin_root, agent)
+    if windows:
+        return "@echo off\n" + " ".join(f'"{str(item).replace(chr(34), chr(34) * 2)}"' for item in argv) + " %*\n"
+    return "#!/bin/sh\nexec " + " ".join(shlex.quote(str(item)) for item in argv) + ' "$@"\n'
 
 
 def install_agent_launcher_files(
@@ -96,24 +78,21 @@ def install_agent_launcher_files(
     dry_run: bool,
     manifest: Manifest | None,
     *,
-    home: Path | None = None,
-    environ: Mapping[str, str],
-    runtime_root: Path | None = None,
+    canonical_python: Path,
+    plugin_root: Path,
 ) -> None:
-    home = home or Path.home()
     if not dry_run:
         bin_dir.mkdir(parents=True, exist_ok=True)
-    installer = platform_launcher_installer()
-    installer.install_agent_launcher_files(
-        source_bin_dir=source_bin_dir,
-        bin_dir=bin_dir,
-        agent=agent,
-        dry_run=dry_run,
-        manifest=manifest,
-        home=home,
-        environ=environ,
-        runtime_root=runtime_root,
-    )
+    if agent == "tw":
+        if sys.platform == "win32":
+            log("  SKIP: tw (tmux not available on Windows)")
+            return
+        names = ("tmux-workspace", "tw", "tw-break", "tw-join", "tw-monitor", "tw-help")
+        files = [CommandFileSpec(source=source_bin_dir / ("tmux-workspace" if name == "tw" else name), destination=bin_dir / name, mode="link") for name in names]
+    else:
+        windows = sys.platform == "win32"
+        files = [CommandFileSpec(destination=bin_dir / (agent + ".bat" if windows else agent), mode="generate", content=command_content(canonical_python, plugin_root, agent, windows=windows), executable=not windows)]
+    CommandFileInstaller().install_bundle(CommandBundleSpec(name=agent, files=files, workflows=("interactive launcher",), required=False), dry_run=dry_run, manifest=manifest)
 
 
 def worker_root_for_mode(
@@ -146,17 +125,12 @@ def install_worker_dir(
     mode: InstallMode = "development",
     home: Path | None = None,
     environ: Mapping[str, str] | None = None,
-    context: InstallationContext | None = None,
 ) -> Path | None:
     if agent not in WORKER_AGENTS:
         return None
     home = home or Path.home()
-    wdir = (
-        context.paths.worker_root
-        if context is not None
-        else worker_root_for_mode(
-            mode, repo_root, home, environ=os.environ if environ is None else environ
-        )
+    wdir = worker_root_for_mode(
+        mode, repo_root, home, environ=os.environ if environ is None else environ
     ) / agent
     if dry_run:
         log(f"Would create worker dir {wdir}")
@@ -235,24 +209,6 @@ def install_profile_for_agent(repo_root: Path, profiles_dir: Path, codex_home: P
         make_link(settings, claude_home / settings.name, dry_run, manifest)
 
 
-def remove_legacy_coder_links(source_bin_dir: Path, profiles_dir: Path, bin_dir: Path, codex_home: Path, claude_home: Path, dry_run: bool) -> None:
-    """Remove legacy 'coder' symlinks that point back into this repo."""
-    legacy_config = toml_io.profile_config_filename("coder")
-    candidates = {
-        bin_dir     / "coder":             source_bin_dir / "coder",
-        codex_home  / legacy_config:       profiles_dir / legacy_config,
-        claude_home / legacy_config:       profiles_dir / legacy_config,
-    }
-    for legacy, expected_target in candidates.items():
-        if not legacy.is_symlink():
-            continue
-        if legacy.resolve() == expected_target.resolve():
-            if dry_run:
-                log(f"Would remove legacy link {legacy}")
-            else:
-                legacy.unlink()
-
-
 def verify_install(bin_dir: Path, agents: list[str]) -> bool:
     """Run --help on each installed agent command and report results.
 
@@ -313,60 +269,47 @@ def verify_install(bin_dir: Path, agents: list[str]) -> bool:
 
 def run(
     *,
-    context: InstallationContext | None = None,
-    environ: Mapping[str, str] | None = None,
-    repo_root: Path | None = None,
+    canonical_python: Path,
+    repo_root: Path,
     agents: list[str],
+    environ: Mapping[str, str] | None = None,
     home: Path | None = None,
     bin_dir: Path | None = None,
     codex_home: Path | None = None,
     claude_home: Path | None = None,
-    shell_rc: Path | None = None,
     default_llm: str | None = None,
     dry_run: bool = False,
     manifest: Manifest | None = None,
     mode: InstallMode = "development",
-    install_invoke_skill: bool = False,
-) -> bool:
+) -> bool | None:
+    agents = list(dict.fromkeys(agents))
+    if invalid := set(agents) - set(ALL_AGENTS):
+        raise ValueError(f"Unknown launcher(s): {', '.join(sorted(invalid))}")
+    if not agents:
+        log("Available launchers: " + ", ".join(ALL_AGENTS))
+        return None
+    if not canonical_python.is_absolute() or not repo_root.is_absolute():
+        raise ValueError("canonical_python and repo_root must be absolute")
+    if "tw" in agents:
+        try:
+            if subprocess.run(["tmux", "-V"], capture_output=True, check=False).returncode:
+                return False
+        except FileNotFoundError:
+            return False
     selected_environ = os.environ if environ is None else environ
-    if context is not None:
-        repo_root = context.source_root
-        home = (
-            context.development_root / ".famulus" / "home"
-            if context.mode == "development" and context.development_root is not None
-            else (home or Path.home())
-        )
-        bin_dir = context.paths.user_bin
-        codex_home = context.codex_home
-        claude_home = context.claude_home
-        mode = "development" if context.mode == "development" else "plugin"
-    if repo_root is None:
-        raise ValueError("repo_root is required when context is omitted")
     home = home or Path.home()
-    bin_dir = bin_dir or resolve_famulus_paths(
-        platform=sys.platform, home=home, environ=selected_environ
-    ).user_bin
-    source_bin_dir = repo_root / "skills" / "install-assistant-tools" / "_rtx/assets/bin"
+    paths = resolve_famulus_paths(platform=sys.platform, home=home, environ=selected_environ)
+    bin_dir = bin_dir or paths.user_bin
+    source_bin_dir = repo_root / "skills" / "install-launchers" / "_rtx/assets/bin"
     profiles_dir = repo_root / "profiles"
     codex_home = codex_home or home / ".codex"
     claude_home = claude_home or home / ".claude"
-
-    agents = list(launcher_closure(agents, install_invoke_skill=install_invoke_skill))
-
-    if manifest is None and not dry_run:
-        manifest = Manifest(manifest_path(home))
-    if dry_run:
-        manifest = None
-
-    paths = resolve_famulus_paths(
-        platform=sys.platform, home=home, environ=selected_environ
-    ) if context is None else context.paths
-    if dry_run:
+    if dry_run and any(agent != "tw" for agent in agents):
         log(
             f"  Would ensure durable launcher selection at "
             f"{paths.config_root / 'launchers.json'}"
         )
-    else:
+    elif any(agent != "tw" for agent in agents):
         ensure_launcher_configuration(
             config_root=paths.config_root,
             default_backend=default_llm,
@@ -380,9 +323,8 @@ def run(
             agent,
             dry_run,
             manifest,
-            home=home,
-            environ=selected_environ,
-            runtime_root=context.paths.runtime_root if context is not None else None,
+            canonical_python=canonical_python,
+            plugin_root=repo_root,
         )
         install_worker_dir(
             repo_root,
@@ -391,18 +333,10 @@ def run(
             mode=mode,
             home=home,
             environ=selected_environ,
-            context=context,
         )
         install_profile_for_agent(repo_root, profiles_dir, codex_home, claude_home, agent, dry_run, manifest)
 
-    remove_legacy_coder_links(source_bin_dir, profiles_dir, bin_dir, codex_home, claude_home, dry_run)
-
-    if manifest is not None:
-        manifest.save()
-
-    verified = True
-    if not dry_run and agents:
-        verified = verify_install(bin_dir, agents)
+    verified = verify_install(bin_dir, agents) if not dry_run else True
 
     log("")
     log("Launchers complete.")
@@ -419,14 +353,14 @@ class Interface(PythonArgvMachineInterface):
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--repo-root", metavar="DIR", required=True)
+    parser.add_argument("--canonical-python", metavar="FILE", required=True)
+    parser.add_argument("--plugin-root", metavar="DIR", required=True)
     parser.add_argument("--agents", metavar="LIST", default="",
         help="Comma-separated subset of: assistant,collab,coauthor,tw (default: none)")
     parser.add_argument("--home", metavar="DIR")
     parser.add_argument("--bin-dir", metavar="DIR")
     parser.add_argument("--codex-home", metavar="DIR")
     parser.add_argument("--claude-home", metavar="DIR")
-    parser.add_argument("--shell-rc", metavar="FILE")
     parser.add_argument("--default-llm", choices=["claude", "codex"])
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--mode", choices=["development", "plugin"], default="development",
@@ -442,13 +376,13 @@ def main(argv: list[str] | None = None) -> int:
     if invalid:
         raise SystemExit(f"Unknown agent(s): {', '.join(sorted(invalid))}. Valid: {', '.join(ALL_AGENTS)}")
     run(
-        repo_root=Path(args.repo_root),
+        canonical_python=Path(args.canonical_python),
+        repo_root=Path(args.plugin_root),
         agents=agents,
         home=Path(args.home) if args.home else None,
         bin_dir=Path(args.bin_dir) if args.bin_dir else None,
         codex_home=Path(args.codex_home) if args.codex_home else None,
         claude_home=Path(args.claude_home) if args.claude_home else None,
-        shell_rc=Path(args.shell_rc) if args.shell_rc else None,
         default_llm=args.default_llm,
         mode=args.mode,
         dry_run=args.dry_run,

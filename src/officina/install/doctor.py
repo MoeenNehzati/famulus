@@ -24,10 +24,6 @@ from officina.install.runtime_pointer import (
     load_current_pointer,
     load_installed_context_record,
 )
-from officina.launchers.agent import (
-    LauncherConfigurationError,
-    load_launcher_configuration,
-)
 
 
 class InstallManifestError(ValueError):
@@ -237,18 +233,6 @@ def _check_source(context: InstallationContext) -> DiagnosticCheck:
             f"restore source at {context.source_root}, then run {_apply_command(context)}",
         )
     return DiagnosticCheck("source", "ok", f"Source: {context.source_root}")
-
-
-def _check_launcher_selection(context: InstallationContext) -> DiagnosticCheck:
-    try:
-        configuration = load_launcher_configuration(config_root=context.paths.config_root)
-    except LauncherConfigurationError as exc:
-        return DiagnosticCheck(
-            "launcher-selection", "error", f"Launcher selection is absent or malformed: {exc}", _apply_command(context)
-        )
-    return DiagnosticCheck(
-        "launcher-selection", "ok", f"Default backend: {configuration.default_backend}"
-    )
 
 
 def _check_commands(
@@ -496,7 +480,6 @@ def diagnose_installation(
     checks = (
         _check_pointer(context),
         _check_source(context),
-        _check_launcher_selection(context),
         _check_commands(context, environ=environ, platform=platform),
         _check_manifest(context),
         _check_assistant_access(context),

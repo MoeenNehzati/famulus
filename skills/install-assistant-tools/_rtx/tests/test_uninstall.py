@@ -1,7 +1,7 @@
 """Tests for uninstall.py — manifest-based reversal of install side effects.
 
 The installed state is produced by REALLY running the installers
-(dev_link.run + scaffold.run + launchers.run) against a fake repo and
+(dev_link.run + scaffold.run) against a fake repo and
 sandboxed homes, so a genuine manifest drives the uninstall — the only
 supported path. A missing manifest is a hard error (tested), never a
 heuristic guess.
@@ -55,10 +55,6 @@ if __package__ and __package__.count('.') >= 1:
     from .. import _config_bridge as dev_link
 else:
     import _config_bridge as dev_link  # noqa: E402
-if __package__ and __package__.count('.') >= 1:
-    from .. import _agent_launchers as launchers
-else:
-    import _agent_launchers as launchers  # noqa: E402
 if __package__ and __package__.count('.') >= 1:
     from .. import _install_scaffold as scaffold
 else:
@@ -1957,14 +1953,6 @@ def make_installed_state(root: Path) -> dict[str, Path]:
                 repo_root=repo, home=home, bin_dir=bin_dir, shell_rc=shell_rc,
                 environ={},
             )
-            launchers.run(
-                repo_root=repo,
-                agents=["assistant", "collab", "coauthor", "tw"],
-                home=home, bin_dir=bin_dir, shell_rc=shell_rc,
-                claude_home=claude_home, codex_home=codex_home,
-                default_llm="claude",
-                environ={},
-            )
     finally:
         sys.path[:] = saved_path
         for name in [n for n in sys.modules if n == "llmhooks" or n.startswith("llmhooks.")]:
@@ -2079,14 +2067,11 @@ def test_removes_repo_symlinks_from_homes(installed):
     assert not (installed["codex_home"] / "AGENTS.md").is_symlink()
 
 
-def test_removes_profile_copies_preserving_user_config(installed):
-    # profiles are installed as copies; the user's own config (no repo
-    # counterpart, not in the manifest) must survive
-    assert (installed["claude_home"] / "assistant.config.toml").is_file()
+def test_general_uninstall_preserves_optional_profile_state(installed):
+    optional = installed["claude_home"] / "assistant.config.toml"
+    optional.write_text("optional feature\n", encoding="utf-8")
     run_uninstall(installed, "--purge")
-    assert list(installed["claude_home"].glob("*.config.toml")) == [
-        installed["claude_home"] / "personal.config.toml"
-    ]
+    assert optional.read_text(encoding="utf-8") == "optional feature\n"
     assert not list(installed["codex_home"].glob("*.config.toml"))
     assert (installed["claude_home"] / "personal.config.toml").read_text(
         encoding="utf-8"
@@ -2100,12 +2085,13 @@ def test_preserves_foreign_symlink(installed):
 
 # famulus-skip: category=platform-contract; reason=Windows installs dispatcher.bat rather than a POSIX dispatcher file; alternate=test_codex_install checks Windows dispatcher launcher
 @pytest.mark.skipif(sys.platform == "win32", reason="dispatcher launcher is POSIX-only by design; Windows uses .bat wrappers + registry PATH")
-def test_removes_bin_links_and_launcher(installed):
-    assert (installed["bin_dir"] / "assistant").exists()
+def test_general_uninstall_leaves_optional_launcher_and_removes_general_commands(installed):
+    optional = installed["bin_dir"] / "assistant"
+    optional.write_text("optional feature\n", encoding="utf-8")
     assert (installed["bin_dir"] / "dispatcher").is_file()
     run_uninstall(installed)
-    leftovers = [p.name for p in installed["bin_dir"].iterdir()]
-    assert leftovers == [], f"bin dir not emptied: {leftovers}"
+    assert optional.read_text(encoding="utf-8") == "optional feature\n"
+    assert not (installed["bin_dir"] / "dispatcher").exists()
 
 
 # famulus-skip: category=platform-contract; reason=Windows installs manage PATH via registry not shell rc files; alternate=test_launchers covers Windows registry env behavior

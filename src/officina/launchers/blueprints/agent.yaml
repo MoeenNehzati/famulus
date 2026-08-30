@@ -3,7 +3,7 @@ id: launchers.source.agent
 version: 1
 maturity: stable
 node_type: behavioral_source
-description: Validate the active schema-3 installation, select a durable or process-local backend, and launch a named managed agent.
+description: Launch a named agent through either validated managed context or an explicitly selected plugin root, and own optional interactive backend configuration.
 gateway:
   language: Python
   path: agent.py
@@ -48,6 +48,8 @@ interfaces:
               description: Create, preserve, or explicitly change launchers.json.
             - value: launch-agent
               description: Resolve the active schema-3 context and launch one agent.
+            - value: launch-selected-agent
+              description: Launch one interactive agent from the explicit current plugin root captured by install-launchers.
         runtime-root:
           description: Absolute active runtime root injected by the fixed resolver for launch-agent.
           required: false
@@ -70,6 +72,17 @@ interfaces:
             relative_to: caller-cwd
             must_exist: false
             access: read-write
+        plugin-root:
+          description: Absolute current selected plugin root for launch-selected-agent.
+          required: false
+          sensitivity: user-private
+          direct_io_ref: selected-plugin
+          type:
+            kind: dir
+            syntax: literal
+            relative_to: caller-cwd
+            must_exist: true
+            access: read
       preconditions: []
       interaction:
         mode: unattended
@@ -109,7 +122,7 @@ interfaces:
         state_effect: mutating
         lifecycle: finite
         consistency:
-          live: Pointer, context, launcher resources, and configuration are validated at invocation time.
+          live: Managed pointer/context or the explicit selected plugin root and optional configuration are validated at invocation time.
         effects:
         - id: launcher-state
           direct_io_ref: launcher-configuration
@@ -160,6 +173,13 @@ interfaces:
           - json
           sensitivity: user-private
           path: <famulus-config-root>/launchers.json
+        - id: selected-plugin
+          medium: local-filesystem
+          access: read
+          content: Explicit current plugin agent instructions and profiles.
+          formats: [python, markdown, toml, json]
+          sensitivity: user-private
+          path: <plugin-root>
         writes:
         - id: return-value
           medium: local-system
@@ -176,4 +196,4 @@ interfaces:
           - json
           sensitivity: user-private
           path: <famulus-config-root>/launchers.json
-    description: Own durable backend selection and managed agent launch policy.
+    description: Own optional interactive backend selection and reuse one agent launch policy for managed and explicitly selected plugin routes.

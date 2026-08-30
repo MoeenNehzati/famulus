@@ -11,7 +11,6 @@ from typing import Mapping
 from officina.common.atomic_files import atomic_replace_bytes
 from officina.install.context import InstallationContext, load_active_context
 from officina.install.runtime_pointer import decode_current_pointer, load_deployed_resolver_trusted_roots
-from officina.launchers.agent import LauncherConfigurationError, load_launcher_configuration
 
 
 class RecurringRuntimeError(ValueError):
@@ -227,12 +226,6 @@ def _expected_schedule(*, runtime_root: Path, environ: Mapping[str, str], platfo
     _no_symlink_components(resolver, "runtime resolver")
     if not resolver.is_file():
         raise RecurringPrerequisiteError(f"runtime resolver is missing: {resolver}")
-    try:
-        launcher = load_launcher_configuration(config_root=context.paths.config_root)
-    except LauncherConfigurationError as exc:
-        raise RecurringPrerequisiteError(
-            f"launcher configuration cannot reconstruct recurring authority: {exc}"
-        ) from exc
     backends = {
         name: _resolve_executable(name, environ, platform=platform)
         for name in _BACKENDS
@@ -247,7 +240,7 @@ def _expected_schedule(*, runtime_root: Path, environ: Mapping[str, str], platfo
         jobs_file=context.paths.recurring_config_root / "jobs.yaml",
         log_root=context.paths.recurring_state_root / "logs",
         config_root=context.paths.recurring_config_root, state_root=context.paths.recurring_state_root,
-        native_registration_root=_native_root(context, platform), default_backend=launcher.default_backend,
+        native_registration_root=_native_root(context, platform), default_backend="claude",
         backend_executables=backends,
         environment=_bounded_environment(context, backends, bootstrap, platform, environ, pointer.release_id),
         launcher_bin=context.paths.user_bin,

@@ -19,8 +19,6 @@ interfaces:
       version: 2
     - interface: install-assistant-tools._rtx.interface.scripts-doctor
       version: 1
-    - interface: install-assistant-tools._rtx.interface.scripts-launchers
-      version: 3
     - interface: install-assistant-tools._rtx.interface.scripts-scaffold
       version: 2
     - interface: recurring-tasks.interface.default
@@ -37,7 +35,7 @@ interfaces:
             sensitivity: user-private
       caller_warnings:
       - external-side-effect: After explicit confirmation, apply may create a managed runtime,
-          launchers, standard PATH configuration, or development-only projections and Git hook settings.
+          shared commands, standard PATH configuration, or development-only projections and Git hook settings.
       direct_io:
         network: []
         reads:
@@ -201,8 +199,6 @@ uses_interfaces:
   version: 1
 - interface: install-assistant-tools._rtx.interface.scripts-install
   version: 2
-- interface: install-assistant-tools._rtx.interface.scripts-launchers
-  version: 3
 - interface: install-assistant-tools._rtx.interface.scripts-scaffold
   version: 2
 - interface: recurring-tasks.interface.default

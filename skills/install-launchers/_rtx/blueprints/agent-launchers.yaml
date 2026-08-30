@@ -1,0 +1,151 @@
+content:
+- _agent_launchers\.py
+- assets/bin/tmux\-workspace
+- assets/bin/tw\-break
+- assets/bin/tw\-join
+- assets/bin/tw\-monitor
+- assets/bin/tw\-help
+dependencies:
+- blueprint: {base: repository-root, path: src/officina/common/blueprints/command-files.yaml}
+  reason: Reuses the neutral command-file installation primitive directly.
+  source: common.source.command-files
+  version: 1
+- blueprint: {base: repository-root, path: src/officina/launchers/blueprints/agent.yaml}
+  reason: Generated commands enter the existing agent launcher implementation.
+  source: launchers.source.agent
+  version: 1
+description: Installs an explicit optional launcher subset from already-selected values.
+gateway: {language: Python, path: _agent_launchers.py}
+id: install-launchers._rtx.source.agent-launchers
+interfaces:
+  install-launchers._rtx.source.agent-launchers.interface.setup:
+    content:
+    - _agent_launchers\.py
+    - assets/bin/tmux\-workspace
+    - assets/bin/tw\-break
+    - assets/bin/tw\-join
+    - assets/bin/tw\-monitor
+    - assets/bin/tw\-help
+    uses_interfaces:
+    - {interface: common.interface.toml-io, version: 2}
+    - {interface: common.interface.famulus-paths, version: 1}
+    - {interface: launchers.interface.agent, version: 1}
+    contract:
+      arguments:
+        canonical-python:
+          description: Canonical absolute executable returned by the complete Task 2 fingerprint procedure.
+          required: true
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+        plugin-root:
+          description: Absolute root of the current host-selected Famulus plugin implementation.
+          required: true
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+        agents:
+          description: Explicit comma-separated subset of assistant, collab, coauthor, and tw; blank performs no mutation.
+          required: true
+          sensitivity: public
+          type: {kind: string}
+        options:
+          description: Optional target roots, backend, mode, and dry-run choice.
+          required: false
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+      caller_warnings:
+      - external-side-effect: Non-dry-run execution writes only the selected launcher family targets.
+      direct_io:
+        network: []
+        reads:
+        - id: selected-plugin
+          medium: repository-filesystem
+          access: read
+          content: selected launcher assets, profiles, agents, and existing agent entry
+          formats: [python, shell, toml, json, markdown]
+          sensitivity: public
+          path: <plugin-root>
+          path_match: exact
+        writes:
+        - id: selected-targets
+          medium: home-filesystem
+          access: configure
+          content: selected command files, profiles, worker directories, and launcher configuration
+          formats: [python, shell, batch, toml, json, directory]
+          sensitivity: user-private
+          path: selected platform launcher targets
+        - id: status
+          medium: stdout
+          access: write
+          content: selected launcher result
+          formats: [text]
+          sensitivity: derived-private
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency: {live: Existing selected targets are inspected immediately before each write.}
+        effects:
+        - id: launcher-state
+          direct_io_ref: selected-targets
+          action: configure
+          value_source: {kind: argument, argument_ref: agents}
+          may_occur_in_outcomes: [installed, failed]
+          confirmation_evidence: {kind: direct-io, direct_io_ref: selected-targets}
+          reversibility: {compensatable: The feature-owned selected files can be removed separately.}
+        mutation_safety:
+          atomicity: {per_effect_only: Each selected file is written independently.}
+          concurrent_invocations: {unsafe: Concurrent setup calls are not serialized.}
+          idempotency: {idempotent: Rerunning the same subset repairs only those selected targets.}
+          on_uncertain_completion: {verify_then_decide: Inspect only selected outputs before retrying.}
+          partial_effects_on_failure: {possible: Earlier selected outputs remain when a later write fails.}
+          rollback_on_failure: {unavailable: Earlier selected writes are retained and reported.}
+        verification: [{method: output-schema, output_ref: response}]
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes:
+      - {id: installed, class: success, outputs: [response], effects: [launcher-state], caller_action: Verify only the selected installed commands.}
+      - {id: no-selection, class: no-op, outputs: [response], effects: [], caller_action: Ask for an explicit subset before retrying.}
+      - {id: failed, class: error, outputs: [], effects: [launcher-state], caller_action: Report the failed selected target without reconciling other launchers.}
+      outputs:
+      - id: response
+        audience: both
+        description: Ordered selected installation actions or available-launcher list.
+        direct_io_ref: status
+        cardinality: {minimum: 1, maximum: null}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: Never empty.
+        type: {kind: string, sensitivity: derived-private}
+      preconditions: []
+    description: Install or repair only an explicit interactive launcher subset using caller-selected Python and plugin values.
+    process_binding:
+      kind: process
+      entry: Interface
+      patterns:
+      - name: setup
+        min_positionals: 0
+        max_positionals: 0
+        allowed_flags: [--canonical-python, --plugin-root, --agents, --home, --bin-dir, --codex-home, --claude-home, --default-llm, --mode, --dry-run]
+        required_flags: [--canonical-python, --plugin-root]
+        flag_patterns:
+          --canonical-python: ^.+$
+          --plugin-root: ^.+$
+          --agents: ^.*$
+          --home: ^.+$
+          --bin-dir: ^.+$
+          --codex-home: ^.+$
+          --claude-home: ^.+$
+          --default-llm: ^(claude|codex)$
+          --mode: ^(development|plugin)$
+    usage: --canonical-python FILE --plugin-root DIR [--agents LIST] [--home DIR] [--bin-dir DIR] [--codex-home DIR] [--claude-home DIR] [--default-llm {claude,codex}] [--mode {development,plugin}] [--dry-run]
+    version: 1
+node_type: behavioral_source
+platform_support: {linux: true, macos: true, windows: true}
+runtime_dependencies: []
+schema_version: 6
+uses_interfaces:
+- {interface: common.interface.toml-io, version: 2}
+- {interface: common.interface.famulus-paths, version: 1}
+- {interface: launchers.interface.agent, version: 1}
+version: 1
+maturity: stable

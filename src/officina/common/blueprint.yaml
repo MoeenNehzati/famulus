@@ -55,6 +55,7 @@ exports:
       - email-triage._rtx
       - install-assistant-tools
       - install-assistant-tools._rtx
+      - install-launchers._rtx
       - install
       - list-manager
       - list-manager._rtx
@@ -77,6 +78,7 @@ exports:
       allowed_callers:
       - install-assistant-tools
       - install-assistant-tools._rtx
+      - install-launchers._rtx
       - configuration
     source_interface: common.source.toml-io.interface.python-api
 gateway:
