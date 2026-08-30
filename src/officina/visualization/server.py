@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import functools
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
+import os
 from pathlib import Path
 import socket
 import subprocess
@@ -166,18 +167,29 @@ def start_graph_server(
     command = [
         sys.executable,
         "-m",
-        "http.server",
-        str(selected_port),
-        "--bind",
-        host,
+        "officina.visualization.server",
         "--directory",
         str(serving_directory),
+        "--host",
+        host,
+        "--port",
+        str(selected_port),
     ]
-    process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if os.name == "posix":
+        platform_options = {"start_new_session": True}
+    else:
+        platform_options = {"creationflags": (
+            subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+        )}
+    process = subprocess.Popen(
+        command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL, **platform_options
+    )
 
     deadline = time.perf_counter() + startup_wait
     while time.perf_counter() < deadline:
         if process.poll() is not None:
+            process.wait()
             raise RuntimeError(
                 f"Graph server process exited while starting on port {selected_port}."
             )
@@ -191,6 +203,11 @@ def start_graph_server(
         time.sleep(0.05)
 
     process.terminate()
+    try:
+        process.wait(timeout=1.0)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=1.0)
     raise RuntimeError(f"Graph server did not start in {startup_wait:.1f}s on port {selected_port}.")
 
 
@@ -206,3 +223,7 @@ __all__ = [
     "start_graph_server",
     "valid_port",
 ]
+
+
+if __name__ == "__main__":
+    main()

@@ -8,8 +8,12 @@ import json
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 import sys
+import time
+from urllib.parse import quote
+from urllib.request import urlopen
 
 import pytest
 
@@ -42,7 +46,7 @@ def _arguments(server, payload: dict[str, object]):
     return argument_type(**payload)
 
 
-def _copy_plugin(plugin_root: Path) -> None:
+def _copy_plugin(plugin_root: Path, *, include_graph: bool = False) -> None:
     plugin_root.mkdir(parents=True)
     shutil.copy2(SERVER, plugin_root / SERVER.name)
     shutil.copy2(CORE, plugin_root / CORE.name)
@@ -72,6 +76,11 @@ def _copy_plugin(plugin_root: Path) -> None:
     shutil.copy2(ROOT / "skills" / "git-workflow" / "blueprint.yaml", git_workflow)
     shutil.copytree(ROOT / ".claude-plugin", plugin_root / ".claude-plugin")
     shutil.copytree(ROOT / ".codex-plugin", plugin_root / ".codex-plugin")
+    if include_graph:
+        shutil.copytree(
+            ROOT / "skills" / "math-dependency-graph",
+            plugin_root / "skills" / "math-dependency-graph",
+        )
 
 
 def _declared_launch(host: str, plugin_root: Path) -> tuple[str, list[str], Path | None]:
@@ -187,6 +196,148 @@ async def _invoke_through_mcp(host: str, plugin_root: Path, home: Path):
                 ordered_positionals,
                 after_rejections,
             )
+
+
+def _pid_is_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def _terminate_pid(pid: int) -> None:
+    os.kill(pid, signal.SIGTERM)
+    deadline = time.monotonic() + 3.0
+    while time.monotonic() < deadline and _pid_is_alive(pid):
+        time.sleep(0.05)
+    assert not _pid_is_alive(pid)
+
+
+async def _serve_graph_through_mcp(
+    host: str, plugin_root: Path, home: Path, served: Path
+) -> tuple[object, object, object, object, bytes, str, bool]:
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+
+    command, args, cwd = _declared_launch(host, plugin_root)
+    parameters = StdioServerParameters(
+        command=command,
+        args=args,
+        cwd=cwd,
+        env=_selected_environment(home),
+    )
+    pid: int | None = None
+    completed = False
+    try:
+        async with stdio_client(parameters) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                listed = await session.list_tools()
+                called = await session.call_tool(
+                    "invoke",
+                    arguments={
+                        "caller": "math-dependency-graph",
+                        "interface": (
+                            "math-dependency-graph._rtx.interface.scripts-serve-graph"
+                        ),
+                        "version": 1,
+                        "arguments": {
+                            "positionals": [],
+                            "options": {
+                                "--directory": str(served),
+                                "--host": "127.0.0.1",
+                                "--port": "8765",
+                            },
+                            "stdin": None,
+                        },
+                        "dry_run": False,
+                    },
+                )
+                ready = json.loads(called.structuredContent["result"]["stdout"])
+                pid = ready["pid"]
+                with urlopen(
+                    ready["url"] + quote("known file.txt"), timeout=3.0
+                ) as response:
+                    body = response.read()
+                    cache_control = response.headers["Cache-Control"]
+                after = await session.list_tools()
+                finite = await session.call_tool(
+                    "invoke",
+                    arguments={
+                        "caller": "milestone-logging",
+                        "interface": "milestone-logging._rtx.interface.record",
+                        "version": 1,
+                        "arguments": {
+                            "positionals": [],
+                            "options": {"--path": True},
+                            "stdin": None,
+                        },
+                        "dry_run": True,
+                    },
+                )
+                completed = True
+                return (
+                    listed,
+                    called,
+                    after,
+                    finite,
+                    body,
+                    cache_control,
+                    _pid_is_alive(pid),
+                )
+    finally:
+        if not completed and pid is not None and _pid_is_alive(pid):
+            _terminate_pid(pid)
+
+
+@pytest.mark.parametrize("host", ["claude", "codex"])
+def test_graph_server_returns_through_real_mcp_and_survives(
+    host: str, tmp_path: Path
+) -> None:
+    """Break caught: the graph child holds MCP pipes or dies with its gateway."""
+    plugin = tmp_path / "Plugin Cache" / "famulus"
+    served = tmp_path / "served directory with spaces"
+    served.mkdir()
+    expected = b"real-mcp-task-four"
+    (served / "known file.txt").write_bytes(expected)
+    _copy_plugin(plugin, include_graph=True)
+    pid: int | None = None
+    try:
+        listed, called, after, finite, body, cache_control, alive = asyncio.run(
+            asyncio.wait_for(
+                _serve_graph_through_mcp(host, plugin, tmp_path / "home", served),
+                timeout=15,
+            )
+        )
+        result = called.structuredContent["result"]
+        ready = json.loads(result["stdout"])
+        pid = ready["pid"]
+        assert [tool.name for tool in listed.tools] == ["invoke"]
+        assert called.isError is False
+        assert result["exit_code"] == 0
+        assert result["stderr"] == ""
+        assert ready == {
+            "serving": str(served.resolve()),
+            "host": "127.0.0.1",
+            "port": ready["port"],
+            "url": f"http://127.0.0.1:{ready['port']}/",
+            "cache": "disabled",
+            "pid": pid,
+        }
+        assert isinstance(ready["port"], int)
+        assert isinstance(pid, int) and pid > 0
+        assert body == expected
+        assert cache_control == "no-store, no-cache, must-revalidate, max-age=0"
+        assert alive is True
+        assert [tool.name for tool in after.tools] == ["invoke"]
+        assert finite.isError is False
+        assert finite.structuredContent["result"]["target"] == (
+            "milestone-logging._rtx.interface.record"
+        )
+    finally:
+        if pid is not None and _pid_is_alive(pid):
+            _terminate_pid(pid)
 
 
 @pytest.mark.parametrize("host", ["claude", "codex"])

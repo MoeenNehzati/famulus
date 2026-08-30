@@ -7,8 +7,8 @@ dependencies:
   reason: Loads Python package support from _rtx/__init__.py.
   source: math-dependency-graph._rtx.source.rtx-init
   version: 1
-description: Serves one graph directory through a no-cache local HTTP server until
-  interrupted.
+description: Starts one graph directory in a no-cache background HTTP server and
+  returns readiness metadata.
 gateway:
   language: Python
   path: _graph_server.py
@@ -51,6 +51,8 @@ interfaces:
       caller_warnings:
       - external-side-effect: Binding a non-loopback host exposes every readable file
           beneath directory to reachable clients.
+      - external-side-effect: The returned background process persists until feature-local
+          cleanup terminates its PID.
       direct_io:
         network:
         - access: configure
@@ -84,17 +86,7 @@ interfaces:
       execution:
         consistency:
           live: Each HTTP request reads current files from the served directory.
-        lifecycle: long-running
-        long_running:
-          ready_when:
-            kind: output-match
-            matcher:
-              dialect: python
-              kind: regex
-              matching: prefix
-              pattern: '"url"'
-            output_ref: ready
-          startup_failure_outcome: bind-failed
+        lifecycle: finite
         state_effect: read-only
         verification:
         - method: output-schema
@@ -103,14 +95,15 @@ interfaces:
       interaction:
         mode: unattended
       outcomes:
-      - caller_action: Open the reported URL and cancel the process when inspection
-          is complete.
+      - caller_action: Open the reported URL and terminate the returned PID with
+          feature-local cleanup when inspection is complete.
         class: success
         effects: []
         id: serving
         outputs:
         - ready
-      - caller_action: Select an available host and port or correct directory access.
+      - caller_action: Correct directory access or startup conditions and retry; no
+          background process remains after failure.
         class: error
         effects: []
         id: bind-failed
@@ -120,7 +113,8 @@ interfaces:
         cardinality:
           maximum: 1
           minimum: 1
-        description: JSON object containing served directory and URL and cache policy.
+        description: JSON object containing the absolute served directory, host,
+          actual port, URL, disabled cache policy, and background process PID.
         direct_io_ref: write-1
         empty: Never empty after successful bind.
         id: ready
@@ -135,8 +129,8 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Serve graph HTML from a local directory with no-cache headers for
-      repeated browser inspection.
+    description: Start graph HTML from a local directory in a no-cache background
+      server and return readiness metadata for repeated browser inspection.
     process_binding:
       entry: Interface
       kind: process

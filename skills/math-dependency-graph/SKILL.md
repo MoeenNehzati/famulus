@@ -50,7 +50,7 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--out": "path"}, "positionals": ["entrypoint.tex"], "stdin": null}
     Required options: []; positional arity: 1..1; stdin: forbidden
-- `math-dependency-graph._rtx.interface.scripts-serve-graph` — Serve graph HTML from a local directory with no-cache headers for repeated browser inspection.
+- `math-dependency-graph._rtx.interface.scripts-serve-graph` — Start graph HTML from a local directory in a no-cache background server and return readiness metadata for repeated browser inspection.
   - Caller: `math-dependency-graph`
   - Version: 1
   - Alternative: `owner`
