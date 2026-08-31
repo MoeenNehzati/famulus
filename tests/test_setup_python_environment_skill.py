@@ -130,7 +130,6 @@ def test_setup_skill_is_host_loaded_and_uses_task_1_core_authority() -> None:
     graph = load_repository_blueprint_graph(
         ROOT,
         schema_root=ROOT / "references" / "blueprint-schema",
-        expected_schema_version=6,
     )
     core = json.loads((ROOT / "mcp-core.json").read_text(encoding="utf-8"))
     text = SKILL.read_text(encoding="utf-8")
@@ -152,7 +151,6 @@ def test_graph_execution_contract_covers_the_actual_ordered_command_sequence() -
     graph = load_repository_blueprint_graph(
         ROOT,
         schema_root=ROOT / "references" / "blueprint-schema",
-        expected_schema_version=6,
     )
     contract = graph.nodes[
         "setup-python-environment.source.gateway"

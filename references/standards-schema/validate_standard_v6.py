@@ -7,7 +7,7 @@ from pathlib import Path
 import jsonschema, yaml
 
 HERE=Path(__file__).parent
-OPTIONAL=('imports','domain_facts','schema_authorities','schema_authority_links','checks','tests','assurances','semantic_reviews','links','sources','source_units','evidence_claims','external_exceptions')
+OPTIONAL=('imports','domain_facts','schema_authorities','schema_authority_links','checks','tests','assurances','semantic_reviews','links','evidence_claims','external_exceptions')
 SEMANTIC={'family','rule','assertion','guidance','definition','procedure','step','evidence-claim'}
 
 def _schema():
@@ -359,11 +359,7 @@ def _validate_document(document,_semantic_index=None,_semantic_errors=None):
    return
   found=sem.get(r['ref'])
   if not found or found[0]!=r['kind']: e.append(f"{label}: dangling semantic {r['kind']} reference {r['ref']}")
- for uid,u in d['source_units'].items():
-   if u['source']['ref'] not in d['sources']: e.append(f'source_units.{uid}: dangling source')
  for ident,(kind,node) in sem.items():
-  for u in node.get('origin',{}).get('source_units',[]):
-   if u['ref'] not in d['source_units']: e.append(f'{ident}.origin: dangling source unit')
   for r in node.get('origin',{}).get('derived_from',[]): local(r,f'{ident}.origin')
   if kind=='procedure':
    for field in ('invariants','completion_conditions'):
@@ -444,8 +440,6 @@ def _validate_document(document,_semantic_index=None,_semantic_errors=None):
     linked=d['links'].get(t['ref'])
     if not linked:e.append(f'semantic_reviews.{rid}: dangling link')
     elif linked['resolution']['state']=='unresolved' and (r['lifecycle']!='planned' or r['resolution']['state']!='unresolved'):e.append(f'semantic_reviews.{rid}: unresolved link requires planned unresolved review')
-   elif kind=='source-unit':
-    if t['ref'] not in d['source_units']:e.append(f'semantic_reviews.{rid}: dangling source unit')
    else:local(t,f'semantic_reviews.{rid}')
    for aspect in c['aspects']:
     sig=(kind,t['ref'],aspect)
@@ -526,33 +520,6 @@ def validate_document(document: dict, root: Path, _schema_validator=None) -> lis
    errors.append(f'imports.{alias}: import path escapes repository root');continue
   if not target.is_file():errors.append(f'imports.{alias}: missing import file under root {root}')
  return errors
-def _select(lines,selector):
- """Select bytes for one portable line-range source unit.
-
- Intent
- ------
- Validate inclusive one-based line bounds and encode the selected lines with a final newline.
-
- Rationale
- ---------
- Digest verification requires deterministic bytes and rejects unsupported selector kinds.
-
- Pseudocode
- ----------
- - if selector is not line range:
-   - return unsupported selector finding
- - if bounds are invalid:
-   - return range finding
- - return selected UTF-8 bytes
-
- Wraps
- -----
- - none
- """
- if selector['kind']!='line-range': return None,'unsupported source selector for portable verifier'
- a,b=selector['start'],selector['end']
- if a<1 or b<a or b>len(lines): return None,'selector out of range'
- return ('\n'.join(lines[a-1:b])+'\n').encode(),None
 def _resolve_artifact_path(artifact, root, label):
  """Resolve one safe repository-relative artifact path.
 
@@ -664,12 +631,9 @@ def validate_file(path,root=None,cache=None,_stack=None,_schema_validator=None):
  ._maps:
    why:
      constructs: "Populates optional mappings on root and imported documents before traversal."
- ._select:
-   why:
-     constructs: "Builds deterministic source-unit bytes used for content-digest verification."
  ._resolve_artifact_path:
    why:
-     constructs: "Builds bounded repository artifact paths for authorities, sources, reviews, and imports."
+     constructs: "Builds bounded repository artifact paths for authorities, reviews, and imports."
  ._resolve_json_pointer:
    why:
      constructs: "Builds selected schema-authority fragments or bounded pointer findings."
@@ -711,23 +675,6 @@ def validate_file(path,root=None,cache=None,_stack=None,_schema_validator=None):
   if artifact:
    _,problem=_resolve_artifact_path(artifact,root,f'semantic_reviews.{rid}.instructions.artifact')
    if problem:errors.append(problem)
- # Verify sources and source units.
- source_bytes={}
- for sid,s in d['sources'].items():
-  art=d['artifacts'].get(s['artifact']['ref'])
-  if not art:continue
-  target,problem=_resolve_artifact_path(art,root,f'sources.{sid}')
-  if problem:errors.append(problem);continue
-  data=target.read_bytes();source_bytes[sid]=(data,target)
-  actual='sha256:'+hashlib.sha256(data).hexdigest()
-  if actual!=s['digest']:errors.append(f'sources.{sid}.digest: source digest mismatch expected {s["digest"]} actual {actual}')
- for uid,u in d['source_units'].items():
-  pair=source_bytes.get(u['source']['ref'])
-  if not pair:continue
-  lines=pair[0].decode().splitlines(); selected,err=_select(lines,u['selector'])
-  if err:errors.append(f'source_units.{uid}: {err}');continue
-  actual='sha256:'+hashlib.sha256(selected).hexdigest()
-  if actual!=u['content_digest']:errors.append(f'source_units.{uid}.content_digest: source-unit digest mismatch expected {u["content_digest"]} actual {actual}')
  # Resolve imports with cache.
  imported={}
  for alias,decl in d['imports'].items():

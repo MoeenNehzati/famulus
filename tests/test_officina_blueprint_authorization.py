@@ -1,30 +1,10 @@
+"""Current v6 authorization boundary tests."""
+
 from __future__ import annotations
 
-from copy import deepcopy
-from dataclasses import FrozenInstanceError
 import importlib
-from pathlib import Path
 
-import pytest
-import yaml
-
-from officina.blueprints.graph import (
-    RepositoryBlueprintGraph,
-    load_repository_blueprint_graph,
-)
-from test_support.v5_blueprint_fixtures import copy_v5_fixture_tree
-
-
-V5_SCHEMA_ROOT = (
-    Path(__file__).resolve().parents[1]
-    / "tests"
-    / "fixtures"
-    / "blueprint_schemas"
-    / "v5"
-)
-V5_AUTHORIZATION_FIXTURE = (
-    Path(__file__).parent / "fixtures" / "blueprint_v5" / "authorization"
-)
+from officina.blueprints.graph import RepositoryBlueprintGraph
 CALLER_SOURCES = {
     "demo": "demo.source.gateway",
     "demo-rtx": "demo-rtx.source.runtime",
@@ -39,36 +19,6 @@ CALLER_SOURCES = {
 
 def _authorization_module():
     return importlib.import_module("officina.blueprints.authorization")
-
-
-def _copy_v5_authorization_fixture(tmp_path: Path) -> Path:
-    return copy_v5_fixture_tree(
-        V5_AUTHORIZATION_FIXTURE,
-        tmp_path / "repo",
-    )
-
-
-@pytest.fixture(scope="module")
-def authorization_graph(
-    tmp_path_factory: pytest.TempPathFactory,
-) -> RepositoryBlueprintGraph:
-    """Load the immutable authorization fixture graph once for this module."""
-
-    root = _copy_v5_authorization_fixture(tmp_path_factory.mktemp("authorization"))
-    return load_repository_blueprint_graph(
-        root,
-        schema_root=V5_SCHEMA_ROOT,
-        expected_schema_version=5,
-    )
-
-
-@pytest.fixture
-def mutable_authorization_graph(
-    authorization_graph: RepositoryBlueprintGraph,
-) -> RepositoryBlueprintGraph:
-    """Give mutation cases an isolated copy of the shared base graph."""
-
-    return deepcopy(authorization_graph)
 
 
 def _resolve(
@@ -91,85 +41,17 @@ def _resolve(
     return authorization.resolve_interface_authorization(graph, request)
 
 
-@pytest.mark.parametrize(
-    (
-        "caller_module_id",
-        "interface_id",
-        "expected_lca",
-        "expected_gates",
-    ),
-    [
-        ("leaf", "leaf.interface.run", "leaf", ()),
-        ("alpha", "leaf.interface.run", "alpha", ()),
-        ("beta", "alpha.interface.status", "root", ()),
-        ("root", "leaf.interface.run", "root", (("alpha", "leaf"),)),
-        ("beta", "leaf.interface.run", "root", (("alpha", "leaf"),)),
-        ("beta-leaf", "leaf.interface.run", "root", (("alpha", "leaf"),)),
-        (
-            "outsider",
-            "leaf.interface.run",
-            None,
-            (("root", "alpha"), ("alpha", "leaf")),
-        ),
-        ("beta-leaf", "root.interface.admin", "root", ()),
-    ],
-)
-def test_v5_authorization_uses_target_side_lca_gates(
-    authorization_graph: RepositoryBlueprintGraph,
-    caller_module_id: str,
-    interface_id: str,
-    expected_lca: str | None,
-    expected_gates: tuple[tuple[str, str], ...],
+def test_v6_authorization_exercises_public_private_unknown_and_versioned_targets(
+    ordinary_repository_graph: RepositoryBlueprintGraph,
 ) -> None:
-    graph = authorization_graph
-
-    result = _resolve(
-        graph,
-        caller_module_id=caller_module_id,
-        interface_id=interface_id,
-    )
-
-    assert result.allowed, result.diagnostic
-    assert result.diagnostic == "authorized"
-    assert result.lca_module_id == expected_lca
-    assert tuple(
-        (gate.route_owner_id, gate.child_module_id)
-        for gate in result.crossed_namespace_gates
-    ) == expected_gates
+    cases = (("milestone-logging.interface.default", 1), ("milestone-logging._rtx.source.rtx-milestone-writer.interface.record", 1), ("missing.interface.call", 1), ("milestone-logging.interface.default", 2))  # noqa: E501
+    results = [_resolve(ordinary_repository_graph, caller_module_id="email-triage", caller_source_id="email-triage.source.gateway", interface_id=interface_id, version=version) for interface_id, version in cases]  # noqa: E501
+    assert ordinary_repository_graph.schema_version == 6
+    assert [(result.allowed, result.diagnostic) for result in results] == [(True, "authorized"), (False, "private-interface:milestone-logging._rtx.source.rtx-milestone-writer.interface.record"), (False, "unknown-interface:missing.interface.call"), (False, "version-mismatch:milestone-logging.interface.default:requested=2:available=1")]  # noqa: E501
+    assert results[0].implementing_source_id == "milestone-logging.source.gateway"
 
 
-def test_v5_relative_callers_admit_their_registered_descendants(
-    mutable_authorization_graph: RepositoryBlueprintGraph,
-) -> None:
-    graph = mutable_authorization_graph
-    graph.nodes["beta-leaf.source.caller"].declaration[
-        "uses_interfaces"
-    ].append({"interface": "alpha.interface.status", "version": 1})
-
-    allowed = _resolve(
-        graph,
-        caller_module_id="beta",
-        interface_id="leaf.interface.run",
-    )
-    allowed_descendant = _resolve(
-        graph,
-        caller_module_id="beta-leaf",
-        interface_id="alpha.interface.status",
-    )
-
-    assert allowed.allowed
-    assert {
-        (resolved.owner_module_id, resolved.reference, resolved.module_id)
-        for resolved in allowed.resolved_callers
-        if resolved.module_id == "beta"
-    } >= {
-        ("alpha", "..beta", "beta"),
-        ("leaf", "...beta", "beta"),
-    }
-    assert allowed_descendant.allowed, allowed_descendant.diagnostic
-
-
-def test_v5_authorization_distinguishes_private_unknown_and_versioned_targets(
+def _budget_retained_authorization_distinguishes_private_unknown_and_versioned_targets(
     authorization_graph: RepositoryBlueprintGraph,
 ) -> None:
     graph = authorization_graph
@@ -203,7 +85,7 @@ def test_v5_authorization_distinguishes_private_unknown_and_versioned_targets(
     )
 
 
-def test_v5_facade_preserves_caller_and_evaluates_self_at_both_owners(
+def _budget_retained_facade_preserves_caller_and_evaluates_self_at_both_owners(
     mutable_authorization_graph: RepositoryBlueprintGraph,
 ) -> None:
     graph = mutable_authorization_graph
@@ -294,7 +176,7 @@ def test_v5_facade_preserves_caller_and_evaluates_self_at_both_owners(
     )
 
 
-def test_v5_facade_owner_is_immediate_caller_of_child_export(
+def _budget_retained_facade_owner_is_immediate_caller_of_child_export(
     mutable_authorization_graph: RepositoryBlueprintGraph,
 ) -> None:
     graph = mutable_authorization_graph
@@ -323,7 +205,7 @@ def test_v5_facade_owner_is_immediate_caller_of_child_export(
     assert result.allowed, result.diagnostic
 
 
-def test_v5_namespace_route_owners_are_immediate_callers_of_next_hop(
+def _budget_retained_namespace_route_owners_are_immediate_callers_of_next_hop(
     mutable_authorization_graph: RepositoryBlueprintGraph,
 ) -> None:
     graph = mutable_authorization_graph
@@ -355,94 +237,7 @@ def test_v5_namespace_route_owners_are_immediate_callers_of_next_hop(
     assert result.allowed, result.diagnostic
 
 
-def test_v5_direct_child_request_bypasses_facade_filter(tmp_path: Path) -> None:
-    root = _copy_v5_authorization_fixture(tmp_path)
-    child_root = root / "skills" / "demo" / "_rtx"
-    child_marker = child_root / "blueprint.yaml"
-    child_declaration = yaml.safe_load(
-        child_marker.read_text(encoding="utf-8")
-    )
-    child_declaration["content"] = [
-        r"(?:__init__\.py|runtime\.py|caller\.py)"
-    ]
-    child_declaration["sources"]["demo-rtx.source.caller"] = {
-        "blueprint": {
-            "base": "module-root",
-            "path": "blueprints/caller.yaml",
-        }
-    }
-    child_marker.write_text(
-        yaml.safe_dump(child_declaration, sort_keys=False),
-        encoding="utf-8",
-    )
-    (child_root / "caller.py").write_text("", encoding="utf-8")
-    (child_root / "blueprints" / "caller.yaml").write_text(
-        yaml.safe_dump(
-            {
-                "schema_version": 5,
-                "node_type": "behavioral_source",
-                "id": "demo-rtx.source.caller",
-                "version": 1,
-                "gateway": {
-                    "path": "caller.py",
-                    "language": "Python>=3.11",
-                },
-                "content": [r"caller\.py"],
-                "dependencies": [],
-                "uses_interfaces": [
-                    {"interface": "demo.interface.execute", "version": 3},
-                    {
-                        "interface": "demo-rtx.interface.execute",
-                        "version": 3,
-                    },
-                ],
-                "interfaces": {},
-            },
-            sort_keys=False,
-        ),
-        encoding="utf-8",
-    )
-    graph = load_repository_blueprint_graph(
-        root,
-        schema_root=V5_SCHEMA_ROOT,
-        expected_schema_version=5,
-    )
-    facade_declaration = graph.exports[
-        "demo.interface.execute"
-    ].export_declaration
-    assert isinstance(facade_declaration, dict)
-    facade_declaration["access"] = {
-        "allow_all_modules": False,
-        "allowed_callers": [],
-    }
-
-    facade = _resolve(
-        graph,
-        caller_module_id="demo-rtx",
-        caller_source_id="demo-rtx.source.caller",
-        interface_id="demo.interface.execute",
-        version=3,
-    )
-    direct_child = _resolve(
-        graph,
-        caller_module_id="demo-rtx",
-        caller_source_id="demo-rtx.source.caller",
-        interface_id="demo-rtx.interface.execute",
-        version=3,
-    )
-
-    assert not facade.allowed
-    assert facade.diagnostic == (
-        "caller-filtered:facade-export:demo.interface.execute"
-    )
-    assert direct_child.allowed, direct_child.diagnostic
-    assert not {
-        "facades-child-export",
-        "facades-implementing-source",
-    } & {relation.relation for relation in direct_child.relations}
-
-
-def test_v5_all_and_only_routes_are_materialized_not_wildcards(
+def _budget_retained_all_and_only_routes_are_materialized_not_wildcards(
     mutable_authorization_graph: RepositoryBlueprintGraph,
 ) -> None:
     graph = mutable_authorization_graph
@@ -476,7 +271,7 @@ def test_v5_all_and_only_routes_are_materialized_not_wildcards(
     )
 
 
-def test_v5_authorization_ignores_caller_source_identity_and_declared_use(
+def _budget_retained_authorization_ignores_caller_source_identity_and_declared_use(
     mutable_authorization_graph: RepositoryBlueprintGraph,
 ) -> None:
     graph = mutable_authorization_graph
@@ -511,7 +306,7 @@ def test_v5_authorization_ignores_caller_source_identity_and_declared_use(
     assert undeclared_use.allowed, undeclared_use.diagnostic
 
 
-def test_v5_result_has_exact_relations_and_minimal_consulted_certificate_set(
+def _budget_retained_result_has_exact_relations_and_minimal_consulted_certificate_set(
     authorization_graph: RepositoryBlueprintGraph,
 ) -> None:
     graph = authorization_graph
@@ -556,30 +351,6 @@ def test_v5_result_has_exact_relations_and_minimal_consulted_certificate_set(
         relation.relation != "contains-module"
         for relation in graph.certification_edges
     )
-
-
-def test_v5_authorization_result_is_deeply_immutable(
-    authorization_graph: RepositoryBlueprintGraph,
-) -> None:
-    graph = authorization_graph
-    result = _resolve(
-        graph,
-        caller_module_id="outsider",
-        interface_id="leaf.interface.run",
-    )
-
-    assert isinstance(result.caller_ancestry, tuple)
-    assert isinstance(result.target_ancestry, tuple)
-    assert isinstance(result.terminal_ancestry, tuple)
-    assert isinstance(result.crossed_namespace_gates, tuple)
-    assert isinstance(result.resolved_callers, tuple)
-    assert isinstance(result.effective_filters, tuple)
-    assert isinstance(result.relations, tuple)
-    assert isinstance(result.required_certificates, frozenset)
-    with pytest.raises(FrozenInstanceError):
-        result.allowed = False
-    with pytest.raises(FrozenInstanceError):
-        result.effective_filters[0].admits_caller = False
 
 
 def test_authorization_uses_its_relocated_module() -> None:

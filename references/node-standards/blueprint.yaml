@@ -2,7 +2,7 @@ authority:
   owns_filesystem: []
 children: {}
 content:
-- (?:authority\-disposition|[a-z0-9\-]+\.standard)\.yaml|semantic\-review\.md
+- (?:[a-z0-9\-]+\.standard\.yaml|semantic\-review\.md)
 description: Owns the layered canonical standards queried for registered nodes and
   owned sub-scopes.
 exports: {}

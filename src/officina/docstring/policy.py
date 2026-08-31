@@ -17,13 +17,10 @@ import yaml
 from ..configuration.configured_schema import load_configuration
 
 DOCSTRING_STANDARD_FILE = "docstring.standard.yaml"
-DOCSTRING_STANDARD_CANDIDATE_FILE = "docstring.standard.candidate.yaml"
-DOCSTRING_LEGACY_FORMAT_FILE = "docstring_format.yaml"
 DOCSTRING_CONFIG_FILE = "config.yaml"
 
 _ALLOWED_PROFILE_CHECKS: frozenset[str] = frozenset(
     {
-        "dependency_why_action",
         "instantiation_product_pseudocode",
         "pseudocode_dataflow",
         "pseudocode_output_use",
@@ -70,12 +67,11 @@ class DependencySectionNames:
 
 @dataclass(frozen=True)
 class DependencySyntaxConfig:
-    """Policy switches for dependency section syntax.
+    """Policy for dependency section syntax.
 
     Intent
     ------
-    Record whether dependency sections require structured why entries and whether
-    legacy flat syntax is still accepted.
+    Record whether dependency sections require structured why entries.
 
     Rationale
     ---------
@@ -84,7 +80,7 @@ class DependencySyntaxConfig:
 
     Pseudocode
     ----------
-    - set dependency_syntax_contract = legacy and rationale flags
+    - set dependency_syntax_contract = rationale requirements
     - return dependency_syntax_contract
 
     Wraps
@@ -92,7 +88,6 @@ class DependencySyntaxConfig:
     - none
     """
 
-    allow_legacy_flat: bool = False
     require_why: bool = True
 
 
@@ -112,7 +107,7 @@ class DependencyWhyConfig:
 
     Pseudocode
     ----------
-    - set dependency_why_contract = actions legacy flag and misc length
+    - set dependency_why_contract = actions and misc length
     - return dependency_why_contract
 
     Wraps
@@ -158,7 +153,6 @@ class DependencyWhyConfig:
             "dispatches": ("dispatches",),
         }
     )
-    allow_legacy_string: bool = False
     misc_min_chars: int = 80
 
 
@@ -256,7 +250,7 @@ class DocstringRuntimeConfig:
 
     Intent
     ------
-    Collect allowed absolute roots, dependency section names, syntax switches,
+    Collect allowed absolute roots, dependency section names, syntax requirements,
     quality policy, ownership policy, and profiles.
 
     Rationale
@@ -553,7 +547,6 @@ class ModuleDependencyConfig:
     instantiates_section: str = "InstantiationsFromRepo"
     dispatches_section: str = "Dispatches"
     allow_implicit: bool = True
-    allow_legacy_flat: bool = False
     require_why: bool = True
     dependency_why: DependencyWhyConfig = field(default_factory=DependencyWhyConfig)
     pseudocode_quality: PseudocodeQualityConfig = field(default_factory=PseudocodeQualityConfig)
@@ -1310,40 +1303,11 @@ def resolve_docstring_schema_path(path: str | Path | None = None) -> Path | None
     if path is not None:
         return Path(path)
 
-    def _resolve_candidates(base: Path) -> list[Path]:
-        """_resolve_candidates supports portable standard loading and repo-profile policy materialization as a documented callable boundary.
-
-        Intent
-        ------
-        Expose the resolve candidates step in portable standard loading and repo-profile policy materialization so readers and tools can locate its exact responsibility.
-
-        Rationale
-        ---------
-        This boundary keeps resolve candidates behavior separate inside portable standard loading and repo-profile policy materialization; documenting it makes dependency checks and graph extraction reviewable.
-
-        Pseudocode
-        ----------
-        - set resolve_candidates_inputs = received_context
-        - return resolve_candidates_inputs
-
-        Wraps
-        -----
-        - none
-        """
-        return [
-            base / DOCSTRING_STANDARD_FILE,
-            base / DOCSTRING_STANDARD_CANDIDATE_FILE,
-            base / DOCSTRING_LEGACY_FORMAT_FILE,
-            base / "standards-schema" / DOCSTRING_STANDARD_FILE,
-            base / "standards-schema" / DOCSTRING_STANDARD_CANDIDATE_FILE,
-            base / "standards-schema" / DOCSTRING_LEGACY_FORMAT_FILE,
-        ]
-
     module_path = Path(__file__).resolve()
     for parent in (module_path, *module_path.parents):
-        for candidate in _resolve_candidates(parent / "references"):
-            if candidate.exists():
-                return candidate
+        candidate = parent / "references" / "standards-schema" / DOCSTRING_STANDARD_FILE
+        if candidate.exists():
+            return candidate
     return None
 
 
@@ -1415,7 +1379,7 @@ def load_docstring_config(path: str | Path | None = None) -> DocstringRuntimeCon
         constructs: "Builds configured dependency-section names from names_for_dependency_sections."
     .DependencySyntaxConfig:
       why:
-        constructs: "Builds syntax toggles that decide whether tree syntax and why mappings are mandatory."
+        constructs: "Builds the structured dependency rationale requirements."
     .DependencyWhyConfig:
       why:
         constructs: "Builds the allowed action-key vocabulary for dependency rationale blocks."
@@ -1496,10 +1460,6 @@ def load_docstring_config(path: str | Path | None = None) -> DocstringRuntimeCon
             ),
         ),
         dependency_syntax=DependencySyntaxConfig(
-            allow_legacy_flat=_safe_bool(
-                syntax_values.get("allow_legacy_flat"),
-                syntax_defaults.allow_legacy_flat,
-            ),
             require_why=_safe_bool(
                 syntax_values.get("require_why"),
                 syntax_defaults.require_why,
@@ -1508,10 +1468,6 @@ def load_docstring_config(path: str | Path | None = None) -> DocstringRuntimeCon
         dependency_why=DependencyWhyConfig(
             actions=_safe_str_tuple(why_values.get("actions"), why_defaults.actions),
             section_actions=section_actions,
-            allow_legacy_string=_safe_bool(
-                why_values.get("allow_legacy_string"),
-                why_defaults.allow_legacy_string,
-            ),
             misc_min_chars=_safe_int(
                 why_values.get("misc_min_chars"),
                 why_defaults.misc_min_chars,
@@ -1575,7 +1531,6 @@ def apply_config_to_policy(
         calls_section=section_names.calls,
         instantiates_section=section_names.instantiations,
         dispatches_section=section_names.dispatches,
-        allow_legacy_flat=syntax.allow_legacy_flat,
         require_why=syntax.require_why,
         dependency_why=config.dependency_why,
         pseudocode_quality=config.pseudocode_quality,
@@ -1729,14 +1684,6 @@ def apply_docstring_profiles(schema_rules: DocstringSchema, path: Path) -> Docst
                 pseudocode_quality=replace(
                     module_rules.pseudocode_quality,
                     require_assigned_dependency_output_use=enabled,
-                ),
-            )
-        if "dependency_why_action" in checks:
-            module_rules = replace(
-                module_rules,
-                dependency_why=replace(
-                    module_rules.dependency_why,
-                    allow_legacy_string=not bool(checks["dependency_why_action"]),
                 ),
             )
         if "instantiation_product_pseudocode" in checks:
@@ -1911,10 +1858,6 @@ def load_docstring_schema(path: str | Path | None = None) -> DocstringSchema:
                 module_dependency_values.get("allow_implicit"),
                 module_dependency_config.allow_implicit,
             ),
-            allow_legacy_flat=_safe_bool(
-                module_dependency_values.get("allow_legacy_flat"),
-                module_dependency_config.allow_legacy_flat,
-            ),
             require_why=_safe_bool(
                 module_dependency_values.get("require_why"),
                 module_dependency_config.require_why,
@@ -1925,10 +1868,6 @@ def load_docstring_schema(path: str | Path | None = None) -> DocstringSchema:
                     module_dependency_config.dependency_why.actions,
                 ),
                 section_actions=section_actions,
-                allow_legacy_string=_safe_bool(
-                    dependency_why_values.get("allow_legacy_string"),
-                    module_dependency_config.dependency_why.allow_legacy_string,
-                ),
                 misc_min_chars=_safe_int(
                     dependency_why_values.get("misc_min_chars"),
                     module_dependency_config.dependency_why.misc_min_chars,

@@ -173,30 +173,23 @@ def module_discovery(data: dict[str, Any], context: str) -> dict[str, Any]:
 
 def load_blueprints(
     *,
-    schema_version: int = 6,
     schema_root: Path | None = None,
 ) -> dict[str, ModuleBlueprint]:
     selected_schema_root = (
         schema_root
         if schema_root is not None
-        else (
-            BLUEPRINT_SCHEMA_ROOT
-            if schema_version == 6
-            else BLUEPRINT_SCHEMA_ROOT / "migrations" / f"v{schema_version}"
-        )
+        else BLUEPRINT_SCHEMA_ROOT
     )
     try:
         graph = load_repository_blueprint_graph(
             SKILLS_ROOT.parent,
             schema_root=selected_schema_root,
-            expected_schema_version=schema_version,
         )
     except (OSError, ValueError) as exc:
         raise BlueprintError(str(exc)) from exc
     return blueprints_from_graph(
         graph,
         skills_root=SKILLS_ROOT,
-        schema_version=schema_version,
     )
 
 
@@ -204,14 +197,13 @@ def blueprints_from_graph(
     repository_graph: RepositoryBlueprintGraph,
     *,
     skills_root: Path,
-    schema_version: int,
 ) -> dict[str, ModuleBlueprint]:
     """Select managed skill modules from an already validated graph."""
 
-    if repository_graph.schema_version != schema_version:
+    if repository_graph.schema_version != 6:
         raise BlueprintError(
-            "provided repository graph schema version does not match the sync "
-            f"request: {repository_graph.schema_version} != {schema_version}"
+            "provided repository graph must use schema version 6: "
+            f"{repository_graph.schema_version}"
         )
     blueprints: dict[str, ModuleBlueprint] = {}
     paths = sorted(skills_root.glob("*/blueprint.yaml"))
@@ -224,12 +216,6 @@ def blueprints_from_graph(
         module = modules_by_path.get(path.resolve())
         if module is None:
             raise BlueprintError(f"{path}: repository graph has no matching module")
-        discovery = module.declaration.get("discovery")
-        if schema_version == 5 and not (
-            isinstance(discovery, dict)
-            and discovery.get("mechanism") == "skill"
-        ):
-            continue
         module_id = module.node_id
         blueprints[module_id] = ModuleBlueprint(
             module_id,
@@ -245,15 +231,8 @@ def _generated_export_binding(
     export_id: str,
     export: InterfaceExport,
 ) -> tuple[Mapping[str, Any], str | None]:
-    if getattr(repository_graph, "schema_version", 4) != 5:
-        return export.declaration, export.source_node_id
-    terminal_id = export.terminal_interface_id or export.interface_id
-    terminal = repository_graph.exports.get(terminal_id)
-    if terminal is None:
-        raise BlueprintError(
-            f"{export_id}: generated-view terminal export is unavailable"
-        )
-    return terminal.declaration, terminal.source_node_id
+    del repository_graph, export_id
+    return export.declaration, export.source_node_id
 
 
 def generated_contract_block(
@@ -271,26 +250,6 @@ def generated_contract_block(
         source = repository_graph.nodes[source_id]
         for entry in source.declaration.get("uses_interfaces", []) or []:
             if isinstance(entry, dict) and isinstance(entry.get("interface"), str):
-                target = repository_graph.exports.get(entry["interface"])
-                if (
-                    repository_graph.schema_version == 5
-                    and target is not None
-                    and target.module_node_id == module_id
-                ):
-                    continue
-                if (
-                    repository_graph.schema_version == 5
-                    and target is not None
-                    and repository_graph.module_parents.get(
-                        target.module_node_id
-                    )
-                    == module_id
-                    and repository_graph.module_local_segments.get(
-                        target.module_node_id
-                    )
-                    == "_rtx"
-                ):
-                    continue
                 pinned = entry.get("version")
                 suffix = f"@{pinned}" if isinstance(pinned, int) else ""
                 uses.append(f"{source_id} -> {entry['interface']}{suffix}")
@@ -481,44 +440,6 @@ def _host_gateway_source(
     return matches[0]
 
 
-def validate_gateway_declares_generated_dispatches(
-    module_id: str,
-    repository_graph: RepositoryBlueprintGraph,
-) -> list[str]:
-    """Ensure generated host dispatcher commands have matching source uses."""
-
-    if getattr(repository_graph, "schema_version", 4) != 5:
-        return []
-    gateway = _host_gateway_source(module_id, repository_graph)
-    raw_uses = gateway.declaration.get("uses_interfaces", [])
-    if not isinstance(raw_uses, list):
-        return [f"{gateway.node_id}: uses_interfaces must be a list"]
-    declared = {
-        (entry.get("interface"), entry.get("version"))
-        for entry in raw_uses
-        if isinstance(entry, Mapping)
-    }
-    missing: list[str] = []
-    for export_id, export in sorted(repository_graph.exports.items()):
-        if export.module_node_id != module_id:
-            continue
-        spec, _source_id = _generated_export_binding(
-            repository_graph,
-            export_id,
-            export,
-        )
-        if not isinstance(spec.get("process_binding"), dict):
-            continue
-        if (export_id, export.version) not in declared:
-            missing.append(f"{export_id}@{export.version}")
-    if missing:
-        return [
-            f"{gateway.node_id}: generated dispatcher exports are missing from "
-            f"uses_interfaces: {', '.join(missing)}"
-        ]
-    return []
-
-
 def sync_contract_block(skill_file: Path, contract_block: str) -> str:
     """Inject or replace the generated blueprint contract block in SKILL.md."""
     text = skill_file.read_text(encoding="utf-8")
@@ -668,7 +589,7 @@ def plan_projected_consumer_interface_updates(
     repository_graph: RepositoryBlueprintGraph,
     certification: CertificationView,
 ) -> dict[Path, str]:
-    """Project every canonical v5 Markdown gateway from the shared graph."""
+    """Project every canonical Markdown gateway from the shared graph."""
 
     projections = {}
     for node_id, node in sorted(repository_graph.nodes.items()):
@@ -702,10 +623,7 @@ def apply_consumer_interface_updates(planned: Mapping[Path, str]) -> None:
 def sync_module(blueprint: ModuleBlueprint, check_only: bool) -> list[str]:
     data = blueprint.data
     skill_dir = blueprint.path.parent
-    errors: list[str] = validate_gateway_declares_generated_dispatches(
-        blueprint.name,
-        blueprint.repository_graph,
-    )
+    errors: list[str] = []
     expected_skill = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
     expected_skill = sync_interface_block(
         expected_skill,
@@ -945,7 +863,6 @@ def validate_sync_state(
     repository_root: Path,
     skills_root: Path,
     runtime_dependencies_path: Path,
-    schema_version: int,
 ) -> list[str]:
     """Check generated blueprint state using one caller-prepared graph.
 
@@ -962,7 +879,6 @@ def validate_sync_state(
     blueprints = blueprints_from_graph(
         repository_graph,
         skills_root=skills_root,
-        schema_version=schema_version,
     )
     errors: list[str] = []
     for blueprint in blueprints.values():
@@ -988,25 +904,15 @@ class Interface(PythonMachineInterface):
             action="store_true",
             help="Validate blueprints and fail if generated artifacts are out of sync.",
         )
-        parser.add_argument(
-            "--schema-version",
-            type=int,
-            choices=(4, 5, 6),
-            default=6,
-            help="Select the explicit repository blueprint generation.",
-        )
         return parser
 
     def run(self, args: argparse.Namespace) -> int:
-        return run_sync(
-            check_only=args.check,
-            schema_version=args.schema_version,
-        )
+        return run_sync(check_only=args.check)
 
 
-def run_sync(*, check_only: bool, schema_version: int = 6) -> int:
+def run_sync(*, check_only: bool) -> int:
     try:
-        blueprints = load_blueprints(schema_version=schema_version)
+        blueprints = load_blueprints()
     except BlueprintError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

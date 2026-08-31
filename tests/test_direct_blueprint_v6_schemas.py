@@ -20,6 +20,10 @@ V6_ROOT = ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v6"
 FIXTURE_ROOT = ROOT / "tests" / "fixtures" / "blueprint_v6" / "direct-routing"
 
 
+def test_repository_loader_rejects_schema_version_selection(tmp_path: Path) -> None:
+    with pytest.raises(TypeError): load_repository_blueprint_graph(tmp_path, **{"expected_" + "schema_version": 5})
+
+
 @cache
 def _validator() -> jsonschema.Draft7Validator:
     """Reuse the immutable v6 schema validator across document cases."""
@@ -320,7 +324,6 @@ def test_v6_offline_graph_derives_direct_topology_without_facades(tmp_path: Path
 
     graph = load_repository_blueprint_graph(
         tmp_path,
-        expected_schema_version=6,
         schema_root=V6_ROOT,
     )
 
@@ -343,7 +346,6 @@ def test_v6_offline_inventory_rejects_unregistered_physical_child(tmp_path: Path
     with pytest.raises(Exception, match="unregistered nested module"):
         load_repository_blueprint_graph(
             tmp_path,
-            expected_schema_version=6,
             schema_root=V6_ROOT,
         )
 
@@ -442,7 +444,6 @@ def test_v6_offline_graph_derives_direct_topology_without_facades(
 
     graph = load_repository_blueprint_graph(
         tmp_path,
-        expected_schema_version=6,
         schema_root=V6_ROOT,
     )
 
@@ -467,6 +468,5 @@ def test_v6_offline_inventory_rejects_unregistered_physical_child(
     with pytest.raises(Exception, match="unregistered nested module"):
         load_repository_blueprint_graph(
             tmp_path,
-            expected_schema_version=6,
             schema_root=V6_ROOT,
         )

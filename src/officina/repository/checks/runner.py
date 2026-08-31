@@ -589,15 +589,8 @@ class ValidatorPytestPlugin:
             raise self.runner.ValidatorRunnerError(
                 f"{owner_id}: blueprint preflight is unavailable"
             )
-        schema_version = getattr(owner, "repository_schema_version", None)
         try:
-            if callable(schema_version):
-                value = preflight(
-                    self.tracked_root,
-                    expected_schema_version=schema_version(self.tracked_root),
-                )
-            else:
-                value = preflight(self.tracked_root)
+            value = preflight(self.tracked_root)
         except BaseException as exc:
             raise self.runner.ValidatorRunnerError(
                 f"{owner_id}: validator execution failed: {exc}"

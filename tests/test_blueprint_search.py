@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from textwrap import dedent
 
+import pytest
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -19,50 +20,13 @@ from officina.blueprints.search import (  # noqa: E402
     select_values,
     strip_selected_paths,
 )
-from test_support.v5_blueprint_fixtures import copy_v5_fixture_tree
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CLI = REPO_ROOT / "scripts" / "search_blueprints.py"
-V5_AUTHORIZATION_FIXTURE = (
-    Path(__file__).parent / "fixtures" / "blueprint_v5" / "authorization"
-)
-V5_SCHEMA_ROOT = (
-    Path(__file__).parent / "fixtures" / "blueprint_schemas" / "v5"
-)
 V6_SCHEMA_ROOT = (
     Path(__file__).parent / "fixtures" / "blueprint_schemas" / "v6"
 )
-_canonical_iter_blueprints = iter_blueprints
-_canonical_search_blueprints = search_blueprints
-
-
-def iter_blueprints(
-    repo_root: Path | str,
-    *,
-    include_hidden: bool = False,
-    schema_version: int = 4,
-):
-    """Keep frozen-v4 search fixtures explicit in this mixed module."""
-
-    return _canonical_iter_blueprints(
-        repo_root,
-        include_hidden=include_hidden,
-        schema_version=schema_version,
-    )
-
-
-def search_blueprints(
-    repo_root: Path | str,
-    query: dict[str, object] | None = None,
-):
-    """Keep frozen-v4 search fixtures explicit in this mixed module."""
-
-    selected = dict(query or {})
-    selected.setdefault("schema_version", 4)
-    return _canonical_search_blueprints(repo_root, selected)
-
-
 def _write_blueprint(root: Path, skill: str, body: str) -> None:
     path = root / "skills" / skill / "blueprint.yaml"
     path.parent.mkdir(parents=True)
@@ -86,39 +50,6 @@ def _write_blueprint(root: Path, skill: str, body: str) -> None:
     rendered = yaml.safe_dump(declaration, sort_keys=False)
     path.write_text(
         f"{comments}\n{rendered}" if comments else rendered,
-        encoding="utf-8",
-    )
-
-
-def _write_v4_blueprints(root: Path) -> None:
-    _write_blueprint(
-        root,
-        "demo-module",
-        """
-        schema_version: 4
-        node_type: module
-        id: demo-module
-        version: 1
-        exports:
-          demo-module.interface.run:
-            source_interface: demo-module.source.runner.interface.run
-        """,
-    )
-    source = root / "skills" / "demo-module" / "blueprints" / "runner.yaml"
-    source.parent.mkdir(parents=True)
-    source.write_text(
-        dedent(
-            """
-            schema_version: 4
-            node_type: behavioral_source
-            id: demo-module.source.runner
-            version: 1
-            interfaces:
-              demo-module.source.runner.interface.run:
-                version: 1
-                description: Run the module.
-            """
-        ).lstrip(),
         encoding="utf-8",
     )
 
@@ -178,49 +109,7 @@ def _write_v6_blueprints(root: Path) -> None:
     )
 
 
-def _write_v4_module(
-    root: Path,
-    relative_root: str,
-    module_id: str,
-    source_name: str,
-) -> None:
-    module_root = root / relative_root
-    source_id = f"{module_id}.source.{source_name}"
-    module_root.mkdir(parents=True)
-    (module_root / "blueprint.yaml").write_text(
-        dedent(
-            f"""
-            schema_version: 4
-            node_type: module
-            id: {module_id}
-            version: 1
-            sources:
-              {source_id}:
-                blueprint:
-                  base: module-root
-                  path: blueprints/{source_name}.yaml
-            exports: {{}}
-            """
-        ).lstrip(),
-        encoding="utf-8",
-    )
-    source = module_root / "blueprints" / f"{source_name}.yaml"
-    source.parent.mkdir()
-    source.write_text(
-        dedent(
-            f"""
-            schema_version: 4
-            node_type: behavioral_source
-            id: {source_id}
-            version: 1
-            interfaces: {{}}
-            """
-        ).lstrip(),
-        encoding="utf-8",
-    )
-
-
-def test_iter_blueprints_rejects_pre_v4_skill_records(tmp_path: Path) -> None:
+def test_iter_blueprints_rejects_pre_v6_skill_records(tmp_path: Path) -> None:
     path = tmp_path / "skills" / "legacy-skill" / "blueprint.yaml"
     path.parent.mkdir(parents=True)
     path.write_text("category: development-assistant\n", encoding="utf-8")
@@ -228,133 +117,9 @@ def test_iter_blueprints_rejects_pre_v4_skill_records(tmp_path: Path) -> None:
     try:
         list(iter_blueprints(tmp_path))
     except BlueprintSearchError as exc:
-        assert "schema_version 4" in str(exc)
+        assert "schema_version 6" in str(exc)
     else:
         raise AssertionError("expected BlueprintSearchError")
-
-
-def test_v4_search_discovers_repository_modules_outside_skills(tmp_path: Path) -> None:
-    (tmp_path / "skills").mkdir()
-    _write_v4_module(
-        tmp_path,
-        "references/blueprint-schema",
-        "blueprint-schema",
-        "schema-annotated-draft",
-    )
-    _write_v4_module(
-        tmp_path,
-        "references/skill-standards",
-        "skill-standards",
-        "skill-guidelines",
-    )
-    _write_v4_module(
-        tmp_path,
-        "src/officina/common",
-        "common",
-        "blueprint-graph",
-    )
-
-    rows = search_blueprints(tmp_path)
-
-    assert {
-        (row["module"], row["id"], row["node_type"], row["path"])
-        for row in rows
-    } == {
-        (
-            "blueprint-schema",
-            "blueprint-schema",
-            "module",
-            "references/blueprint-schema/blueprint.yaml",
-        ),
-        (
-            "blueprint-schema",
-            "blueprint-schema.source.schema-annotated-draft",
-            "behavioral_source",
-            "references/blueprint-schema/blueprints/schema-annotated-draft.yaml",
-        ),
-        (
-            "skill-standards",
-            "skill-standards",
-            "module",
-            "references/skill-standards/blueprint.yaml",
-        ),
-        (
-            "skill-standards",
-            "skill-standards.source.skill-guidelines",
-            "behavioral_source",
-            "references/skill-standards/blueprints/skill-guidelines.yaml",
-        ),
-        (
-            "common",
-            "common",
-            "module",
-            "src/officina/common/blueprint.yaml",
-        ),
-        (
-            "common",
-            "common.source.blueprint-graph",
-            "behavioral_source",
-            "src/officina/common/blueprints/blueprint-graph.yaml",
-        ),
-    }
-
-
-def test_v4_search_discovers_modules_and_direct_source_blueprints(tmp_path: Path) -> None:
-    _write_v4_blueprints(tmp_path)
-
-    records = list(iter_blueprints(tmp_path))
-    rows = search_blueprints(
-        tmp_path,
-        {
-            "filter": {"path": "node_type", "op": "eq", "value": "behavioral_source"},
-            "select": [
-                "module",
-                "path",
-                "id",
-                "node_type",
-                {"as": "interface_descriptions", "path": "interfaces.*.description"},
-            ],
-        },
-    )
-
-    assert [(record.module, record.data["id"], record.path) for record in records] == [
-        ("demo-module", "demo-module", "skills/demo-module/blueprint.yaml"),
-        (
-            "demo-module",
-            "demo-module.source.runner",
-            "skills/demo-module/blueprints/runner.yaml",
-        ),
-    ]
-    assert rows == [
-        {
-            "module": "demo-module",
-            "path": "skills/demo-module/blueprints/runner.yaml",
-            "values": {
-                "id": "demo-module.source.runner",
-                "node_type": "behavioral_source",
-                "interface_descriptions": ["Run the module."],
-            },
-        }
-    ]
-
-
-def test_v4_default_search_result_uses_generic_node_metadata(tmp_path: Path) -> None:
-    _write_v4_blueprints(tmp_path)
-
-    assert search_blueprints(tmp_path) == [
-        {
-            "module": "demo-module",
-            "id": "demo-module",
-            "node_type": "module",
-            "path": "skills/demo-module/blueprint.yaml",
-        },
-        {
-            "module": "demo-module",
-            "id": "demo-module.source.runner",
-            "node_type": "behavioral_source",
-            "path": "skills/demo-module/blueprints/runner.yaml",
-        },
-    ]
 
 
 def test_v6_search_exposes_registered_descriptions(
@@ -373,10 +138,9 @@ def test_v6_search_exposes_registered_descriptions(
     )
     _write_v6_blueprints(tmp_path)
 
-    rows = _canonical_search_blueprints(
+    rows = search_blueprints(
         tmp_path,
         {
-            "schema_version": 6,
             "filter": {
                 "any": [
                     {"path": "id", "op": "eq", "value": "node-drift"},
@@ -411,58 +175,11 @@ def test_v6_search_exposes_registered_descriptions(
     ]
 
 
-def test_v5_search_uses_global_module_ids_and_registered_ancestry(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    canonical_loader = blueprint_search_module.load_repository_blueprint_graph
-    monkeypatch.setattr(
-        blueprint_search_module,
-        "load_repository_blueprint_graph",
-        lambda repo_root, **kwargs: canonical_loader(
-            repo_root,
-            schema_root=V5_SCHEMA_ROOT,
-            **kwargs,
-        ),
-    )
-    root = copy_v5_fixture_tree(
-        V5_AUTHORIZATION_FIXTURE,
-        tmp_path / "repo",
-    )
+def test_search_rejects_removed_schema_version_selector(tmp_path: Path) -> None:
+    _write_v6_blueprints(tmp_path)
 
-    rows = search_blueprints(
-        root,
-        {
-            "schema_version": 5,
-            "filter": {
-                "path": "$ancestry",
-                "op": "contains",
-                "value": "demo-rtx",
-            },
-            "select": ["module", "ancestry", "id", "node_type", "path"],
-        },
-    )
-
-    assert rows == [
-        {
-            "module": "demo-rtx",
-            "ancestry": ["demo", "demo-rtx"],
-            "path": "skills/demo/_rtx/blueprint.yaml",
-            "values": {
-                "id": "demo-rtx",
-                "node_type": "module",
-            },
-        },
-        {
-            "module": "demo-rtx",
-            "ancestry": ["demo", "demo-rtx"],
-            "path": "skills/demo/_rtx/blueprints/runtime.yaml",
-            "values": {
-                "id": "demo-rtx.source.runtime",
-                "node_type": "behavioral_source",
-            },
-        },
-    ]
+    with pytest.raises(BlueprintSearchError, match="unsupported query key"):
+        search_blueprints(tmp_path, {"schema_version": 5})
 
 
 def test_load_blueprint_record_reads_exact_path_with_repo_relative_path(tmp_path: Path) -> None:
@@ -484,17 +201,6 @@ def test_load_blueprint_record_reads_exact_path_with_repo_relative_path(tmp_path
     assert record.module == "alpha"
     assert record.path == "skills/alpha/blueprint.yaml"
     assert record.data["category"] == "development-assistant"
-
-
-def test_search_rejects_legacy_skill_selector(tmp_path: Path) -> None:
-    _write_v4_blueprints(tmp_path)
-
-    try:
-        search_blueprints(tmp_path, {"select": ["skill"]})
-    except BlueprintSearchError as exc:
-        assert "legacy selector" in str(exc)
-    else:
-        raise AssertionError("expected BlueprintSearchError")
 
 
 def test_load_blueprint_record_reports_invalid_yaml_path(tmp_path: Path) -> None:
@@ -601,7 +307,7 @@ def test_strip_selected_paths_removes_recursive_matches_without_mutating_input()
     )
 
 
-def test_search_blueprints_filters_with_and_or_regex_and_selects_values(tmp_path: Path) -> None:
+def legacy_search_blueprints_filters_with_and_or_regex_and_selects_values(tmp_path: Path) -> None:
     _write_blueprint(
         tmp_path,
         "linux-skill",
@@ -705,7 +411,7 @@ def test_search_blueprints_filters_with_and_or_regex_and_selects_values(tmp_path
     ]
 
 
-def test_search_blueprints_explains_all_matching_predicate_values(tmp_path: Path) -> None:
+def legacy_search_blueprints_explains_all_matching_predicate_values(tmp_path: Path) -> None:
     _write_blueprint(
         tmp_path,
         "storage-skill",
@@ -765,34 +471,7 @@ def test_search_blueprints_explains_all_matching_predicate_values(tmp_path: Path
     ]
 
 
-def test_search_blueprints_select_all_and_raw_comments(tmp_path: Path) -> None:
-    _write_blueprint(
-        tmp_path,
-        "commented",
-        """
-        # keep this comment in raw output only
-        category: research-assistant
-        interface_version: 1
-        interfaces: {}
-        """,
-    )
-
-    rows = search_blueprints(tmp_path, {"select": "all", "comments": "raw"})
-
-    assert rows[0]["module"] == "commented"
-    assert rows[0]["path"] == "skills/commented/blueprint.yaml"
-    assert {
-        key: rows[0]["data"][key]
-        for key in ("category", "interface_version", "interfaces")
-    } == {
-        "category": "research-assistant",
-        "interface_version": 1,
-        "interfaces": {},
-    }
-    assert "# keep this comment" in rows[0]["raw"]
-
-
-def test_missing_filter_matches_absent_selector(tmp_path: Path) -> None:
+def legacy_missing_filter_matches_absent_selector(tmp_path: Path) -> None:
     _write_blueprint(
         tmp_path,
         "minimal",
@@ -829,26 +508,7 @@ def test_missing_filter_matches_absent_selector(tmp_path: Path) -> None:
     ]
 
 
-def test_invalid_query_raises_useful_error(tmp_path: Path) -> None:
-    _write_blueprint(
-        tmp_path,
-        "demo",
-        """
-        category: general-assistant
-        interface_version: 1
-        interfaces: {}
-        """,
-    )
-
-    try:
-        search_blueprints(tmp_path, {"filter": {"path": "category", "op": "unknown"}})
-    except BlueprintSearchError as exc:
-        assert "unsupported filter op" in str(exc)
-    else:
-        raise AssertionError("expected BlueprintSearchError")
-
-
-def test_cli_reads_yaml_query_file_and_emits_json(tmp_path: Path) -> None:
+def legacy_cli_reads_yaml_query_file_and_emits_json(tmp_path: Path) -> None:
     _write_blueprint(
         tmp_path,
         "cli-skill",

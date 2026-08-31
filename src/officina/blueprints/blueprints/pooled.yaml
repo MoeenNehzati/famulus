@@ -4,7 +4,7 @@ dependencies:
 - blueprint:
     base: module-root
     path: blueprints/graph.yaml
-  reason: Imports the v4 repository graph type from graph.py.
+  reason: Imports the canonical repository graph type from graph.py.
   source: blueprints.source.graph
   version: 1
 - blueprint:
@@ -13,7 +13,7 @@ dependencies:
   reason: Imports the read-only certification view protocol from view.py.
   source: certification.source.view
   version: 1
-description: Renders deterministic generated blueprint reviews from v4 graph declarations
+description: Renders deterministic generated blueprint reviews from graph declarations
   and current certificates without becoming graph or certification authority.
 gateway:
   language: Python
@@ -44,7 +44,7 @@ interfaces:
             - description: Derive the generated pooled-review path under a module
                 root.
               value: review-path
-            - description: Render a deterministic review from one v4 graph and read-only
+            - description: Render a deterministic review from one graph and read-only
                 current-certificate view.
               value: render-review
       caller_warnings: []
@@ -79,7 +79,7 @@ interfaces:
         id: completed
         outputs:
         - result
-      - caller_action: Reject missing certificates, unknown roots, non-v4 graphs,
+      - caller_action: Reject missing certificates, unknown roots, invalid graphs,
           and paths outside the owning module.
         class: error
         effects: []

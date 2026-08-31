@@ -64,8 +64,6 @@ _SECTION_KINDS = {
     "evidence_claims": "evidence-claim",
     "schema_authorities": "schema-authority",
     "schema_authority_links": "schema-authority-link",
-    "sources": "source",
-    "source_units": "source-unit",
     "external_exceptions": "external-exception",
 }
 

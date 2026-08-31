@@ -23,7 +23,7 @@ class Interface(PythonMachineInterface):
         return parser
     def _verify(self, root: Path, manifest: Mapping[str, object]) -> dict[str, float]:
         started = time.perf_counter()
-        load_repository_blueprint_graph(root, expected_schema_version=6)
+        load_repository_blueprint_graph(root)
         graph_seconds = time.perf_counter() - started
         started = time.perf_counter()
         if not plan(root, manifest, recover_interrupted=False).empty:

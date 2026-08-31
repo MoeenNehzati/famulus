@@ -165,16 +165,7 @@ def review(d):
  for k,r in d.get('semantic_reviews',{}).items():
   artifact=r['instructions']['artifact']['ref']; path=d['artifacts'].get(artifact,{}).get('path',artifact)
   print(f"## {k}\n- reviewers: {', '.join(r['reviewer_kinds'])}\n- instructions: {path} / {r['instructions']['instruction_id']}\n- lifecycle: {r['lifecycle']}; resolution: {r['resolution']['state']}\n- question: {r['question']}\n- procedure: {r['procedure']}")
-def trace(d):
- print('# Traceability');used=set()
- for n,_ in walk(d['standards']):
-  used.update(u['ref'] for u in n.get('origin',{}).get('source_units',[]))
-  if n['kind']=='rule':
-   for a in n['assertions']:used.update(u['ref'] for u in a.get('origin',{}).get('source_units',[]))
-  if n['kind']=='procedure':
-   for s in n['steps']:used.update(u['ref'] for u in s.get('origin',{}).get('source_units',[]))
- print(f"{len(used)}/{len(d.get('source_units',{}))} source units represented")
 if __name__=='__main__':
- p=argparse.ArgumentParser();p.add_argument('--view',choices=['default','item','diagnostic','schema-authority','semantic-review','traceability'],default='default');p.add_argument('file');a=p.parse_args();d=yaml.safe_load(Path(a.file).read_text())
+ p=argparse.ArgumentParser();p.add_argument('--view',choices=['default','item','diagnostic','schema-authority','semantic-review'],default='default');p.add_argument('file');a=p.parse_args();d=yaml.safe_load(Path(a.file).read_text())
  if a.view=='default':print(render_document(d),end='')
- else:{'item':item,'diagnostic':diagnostic,'schema-authority':authority,'semantic-review':review,'traceability':trace}[a.view](d)
+ else:{'item':item,'diagnostic':diagnostic,'schema-authority':authority,'semantic-review':review}[a.view](d)

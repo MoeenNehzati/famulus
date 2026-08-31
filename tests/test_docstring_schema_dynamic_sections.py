@@ -49,7 +49,7 @@ callable:
     calls_section: CallsFromRepo
     instantiates_section: InstantiationsFromRepo
     dependency_why:
-      allow_legacy_string: true
+      misc_min_chars: 40
     pseudocode_quality:
       require_assigned_dependency_output_use: false
   wraps:
@@ -107,6 +107,22 @@ def test_default_docstring_standard_uses_schema_named_reference_directory() -> N
         / "standards-schema"
         / "docstring.standard.yaml"
     )
+
+
+def test_docstring_standard_resolution_ignores_shadow_reference(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Only the canonical standards-schema policy participates in discovery."""
+    references = tmp_path / "references"
+    canonical = references / "standards-schema" / "docstring.standard.yaml"
+    shadow = references / "docstring.standard.yaml"
+    canonical.parent.mkdir(parents=True)
+    canonical.write_text("name: canonical\n", encoding="utf-8")
+    shadow.write_text("name: shadow\n", encoding="utf-8")
+    monkeypatch.setattr("officina.docstring.policy.__file__", tmp_path / "src/policy.py")
+
+    assert resolve_docstring_schema_path() == canonical
 
 
 def _install_custom_format(tmp_path: Path, monkeypatch) -> None:
@@ -603,28 +619,12 @@ def test_dependency_path_rule_rejects_bare_and_unknown_roots(
     assert len(bad_paths) == 3
 
 
-def test_legacy_flat_dependency_syntax_can_be_disabled(
+def test_structured_dependency_syntax_is_unconditional(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    """Legacy flat dependency lines are rejected when config disables them."""
+    """Flat dependency lines are rejected by the structured parser."""
     _install_custom_format(tmp_path, monkeypatch)
-    _install_custom_config(
-        tmp_path,
-        monkeypatch,
-        """\
-allowed_abs:
-  - officina
-  - skills
-names_for_dependency_sections:
-  calls: CallsFromRepo
-  instantiations: InstantiationsFromRepo
-  dispatches: Dispatches
-dependency_syntax:
-  allow_legacy_flat: false
-  require_why: true
-""",
-    )
 
     doc = """
     Compute a node-certifier result.
@@ -647,12 +647,6 @@ dependency_syntax:
     """
     issues = check_graph_docstring(doc)
     assert any(issue.code == "docstring.invalid-module-dependency" for issue in issues)
-
-
-def test_repo_default_disables_legacy_flat_dependency_syntax() -> None:
-    """The active repo config rejects legacy flat dependency declarations by default."""
-    rules = load_docstring_schema()
-    assert rules.module_dependencies.allow_legacy_flat is False
 
 
 def test_colon_dependency_section_header_is_reported(
@@ -819,23 +813,12 @@ def test_dependency_why_action_key_is_parsed_and_validated(
     }
 
 
-def test_dependency_why_action_rejects_legacy_unknown_multi_and_short_misc(
+def test_dependency_why_action_rejects_string_unknown_multi_and_short_misc(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     """Dependency why action syntax gives guidance for non-graphable edge labels."""
-    schema_path = tmp_path / "docstring.standard.yaml"
-    schema_path.write_text(
-        _CUSTOM_DOCSTRING_STANDARD.replace(
-            "      allow_legacy_string: true",
-            "      allow_legacy_string: false\n      misc_min_chars: 40",
-        ),
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(
-        "officina.docstring.policy.resolve_docstring_schema_path",
-        lambda _path=None: schema_path,
-    )
+    _install_custom_format(tmp_path, monkeypatch)
 
     def issue_codes_for(why_block: str) -> set[str]:
         doc = f"""

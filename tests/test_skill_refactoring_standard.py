@@ -1,20 +1,11 @@
 import importlib.util
-import hashlib
 from pathlib import Path
 
 import yaml
-import pytest
 
 
 ROOT = Path(__file__).parents[1]
 STANDARD = ROOT / "references/node-standards/refactoring.standard.yaml"
-FIXTURES = ROOT / "tests/fixtures/standards"
-SOURCE_MAP = FIXTURES / "skill-refactoring-source-map.yaml"
-
-SOURCE_DIGESTS = {
-    "skill-smells.md": "58949df5f13f3d46af0f9c838933bb993ba8ce72f614f7ef602cd4e9445b62d9",
-    "skill-refactoring-catalog.md": "4acb49a22d9788990661080810988fb3b134f83e1e055825ee32771b0fe91eab",
-}
 
 def load_module(name: str, relative_path: str):
     path = ROOT / relative_path
@@ -136,35 +127,6 @@ def semantic_nodes(document):
     return nodes
 
 
-def resolve_pointer(value, pointer):
-    for token in pointer.strip("/").split("/") if pointer != "/" else []:
-        value = value[int(token)] if isinstance(value, list) else value[token]
-    return value
-
-
-def assert_source_unit_mapping(unit, document, superseded_targets):
-    nodes = semantic_nodes(document)
-    if unit.get("retired"):
-        assert unit["retired"].strip()
-        return
-    target_refs = {target["target_ref"] for target in unit.get("targets", [])}
-    if target_refs and target_refs <= set(superseded_targets):
-        assert all(superseded_targets[target] for target in target_refs)
-        return
-    if unit.get("relation") == "remedied-by-target-refs":
-        actual = sorted(
-            link["target"]["ref"].rsplit(".", 1)[-1]
-            for link in document["links"].values()
-            if link["relation"] == "remedied-by" and link["source"]["ref"] == unit["target_ref"]
-        )
-        assert actual == unit["expected"], unit
-        return
-    assert unit["targets"], unit
-    for target in unit["targets"]:
-        actual = resolve_pointer(nodes[target["target_ref"]], target["field"])
-        assert actual == target["expected"], unit
-
-
 def test_standard_has_expected_identity_and_explicit_canonical_path():
     document = load_standard()
     assert document["id"] == "node-standards.refactoring"
@@ -180,66 +142,6 @@ def test_category_remedy_uses_schema_without_documentation_dependency():
     assert remedy["steps"][0]["instruction"] == (
         "Use a typed enum value from `references/blueprint-schema/schema.json`."
     )
-
-
-def test_every_immutable_source_unit_has_exact_or_documented_fidelity():
-    document = load_standard()
-    nodes = semantic_nodes(document)
-    source_map_document = yaml.safe_load(SOURCE_MAP.read_text(encoding="utf-8"))
-    source_map = source_map_document["units"]
-    superseded_targets = source_map_document["superseded_targets"]
-    fixture_paths = {
-        name: FIXTURES / name
-        for name in ("skill-smells.md", "skill-refactoring-catalog.md")
-    }
-    expected_units = []
-    for name, fixture in fixture_paths.items():
-        assert hashlib.sha256(fixture.read_bytes()).hexdigest() == SOURCE_DIGESTS[name]
-        expected_units.extend(
-            (name, line_number, line.strip())
-            for line_number, line in enumerate(
-                fixture.read_text(encoding="utf-8").splitlines(),
-                1,
-            )
-            if line.strip()
-        )
-    assert [(unit["source"], unit["line"], unit["text"]) for unit in source_map] == expected_units
-    for unit in source_map:
-        assert_source_unit_mapping(unit, document, superseded_targets)
-    assert source_map[0]["targets"][0]["target_ref"] == "skill-refactoring.diagnostic-signals"
-    catalog_intro = next(unit for unit in source_map if unit["source"] == "skill-refactoring-catalog.md")
-    assert catalog_intro["targets"][0]["target_ref"] == "skill-refactoring.refactoring-moves"
-
-
-def test_mapped_procedure_steps_detect_mutation_in_each_risk_family():
-    source_map = yaml.safe_load(SOURCE_MAP.read_text(encoding="utf-8"))["units"]
-    representatives = {
-        ("skill-refactoring-catalog.md", 20),  # safe: Declare/fix Category
-        ("skill-refactoring-catalog.md", 43),  # medium: Extract Reference
-        ("skill-refactoring-catalog.md", 92),  # structural: Decompose Script
-    }
-    selected = [unit for unit in source_map if (unit["source"], unit["line"]) in representatives]
-    assert len(selected) == len(representatives)
-    for unit in selected:
-        target = unit["targets"][0]
-        tokens = target["field"].strip("/").split("/")
-        for operation in ("change", "delete"):
-            document = load_standard()
-            parent = semantic_nodes(document)[target["target_ref"]]
-            for token in tokens[:-1]:
-                parent = parent[int(token)] if isinstance(parent, list) else parent[token]
-            last = tokens[-1]
-            if operation == "change":
-                if isinstance(parent, list):
-                    parent[int(last)] = "mutated"
-                else:
-                    parent[last] = "mutated"
-            elif isinstance(parent, list):
-                del parent[int(last)]
-            else:
-                del parent[last]
-            with pytest.raises((AssertionError, KeyError, IndexError)):
-                assert_source_unit_mapping(unit, document, {})
 
 
 def test_all_diagnostic_signals_are_preserved_without_analogy_labels():

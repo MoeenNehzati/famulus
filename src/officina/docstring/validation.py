@@ -319,7 +319,6 @@ def _collect_invalid_module_dependencies(
     *,
     section: str,
     allow_implicit: bool,
-    allow_legacy_flat: bool,
     require_why: bool,
 ) -> tuple[ParserIssue, ...]:
     """Collect malformed module dependency references.
@@ -353,7 +352,6 @@ def _collect_invalid_module_dependencies(
     _, invalid = _parse_module_dependency_section(
         lines,
         allow_implicit=allow_implicit,
-        allow_legacy_flat=allow_legacy_flat,
         require_why=require_why,
     )
     for raw in invalid:
@@ -362,8 +360,7 @@ def _collect_invalid_module_dependencies(
                 code="docstring.invalid-module-dependency",
                 message=(
                     f"Invalid module dependency {raw!r}; expected a YAML-like "
-                    "tree leaf with 'why:' or legacy '<name> -> <why>' when "
-                    "legacy flat syntax is enabled."
+                    "tree leaf with a structured 'why:' action."
                 ),
                 section=section,
                 severity="warning",
@@ -376,7 +373,6 @@ def _collect_invalid_dispatch_dependencies(
     lines: Iterable[str],
     *,
     section: str,
-    allow_legacy_flat: bool,
     require_why: bool,
 ) -> tuple[ParserIssue, ...]:
     """Collect malformed dispatch dependency references.
@@ -409,7 +405,6 @@ def _collect_invalid_dispatch_dependencies(
 
     _, invalid = _parse_dispatch_dependency_section(
         lines,
-        allow_legacy_flat=allow_legacy_flat,
         require_why=require_why,
     )
     for raw in invalid:
@@ -418,8 +413,7 @@ def _collect_invalid_dispatch_dependencies(
                 code="docstring.invalid-module-dependency",
                 message=(
                     f"Invalid dispatch dependency {raw!r}; expected a YAML-like "
-                    "tree leaf with 'why:' or legacy '<id> -> <why>' when "
-                    "legacy flat syntax is enabled."
+                    "tree leaf with a structured 'why:' action."
                 ),
                 section=section,
                 severity="warning",
@@ -1644,7 +1638,7 @@ def _collect_dependency_why_action_issues(spec, *, dependency_rules) -> tuple[Pa
         action = str(getattr(dependency, "why_action", "") or "").strip()
         legacy = bool(getattr(dependency, "why_legacy_string", False))
         action_count = int(getattr(dependency, "why_action_count", 0) or 0)
-        if legacy and not config.allow_legacy_string:
+        if legacy:
             issues.append(
                 ParserIssue(
                     code="docstring.dependency-why-action",
@@ -2345,7 +2339,6 @@ _collect_invalid_module_dependencies(
             spec.sections.get(dependency_rules.calls_section, []),
             section=dependency_rules.calls_section,
             allow_implicit=dependency_rules.allow_implicit,
-            allow_legacy_flat=dependency_rules.allow_legacy_flat,
             require_why=dependency_rules.require_why,
         )
     )
@@ -2354,7 +2347,6 @@ _collect_invalid_module_dependencies(
             spec.sections.get(dependency_rules.instantiates_section, []),
             section=dependency_rules.instantiates_section,
             allow_implicit=dependency_rules.allow_implicit,
-            allow_legacy_flat=dependency_rules.allow_legacy_flat,
             require_why=dependency_rules.require_why,
         )
     )
@@ -2362,7 +2354,6 @@ _collect_invalid_module_dependencies(
         _collect_invalid_dispatch_dependencies(
             spec.sections.get(dependency_rules.dispatches_section, []),
             section=dependency_rules.dispatches_section,
-            allow_legacy_flat=dependency_rules.allow_legacy_flat,
             require_why=dependency_rules.require_why,
         )
     )

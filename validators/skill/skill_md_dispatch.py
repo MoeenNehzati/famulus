@@ -83,7 +83,7 @@ def _validate_skill_text(
     return errors
 
 
-def _validate_v4(
+def _validate_graph(
     graph: RepositoryBlueprintGraph,
     repo_root: Path,
 ) -> list[str]:
@@ -144,10 +144,10 @@ def validate(repo_root: Path) -> list[str]:
 
     schema_root = repo_root / "references" / "blueprint-schema"
     try:
+        # The canonical loader owns the repository's fixed v6 boundary.
         repository_graph = load_repository_blueprint_graph(
             repo_root,
             schema_root=schema_root if (schema_root / "module.schema.json").is_file() else None,
-            expected_schema_version=6,
         )
     except (BlueprintGraphError, BlueprintInventoryError, OSError, UnicodeError) as exc:
         return [str(exc)]
@@ -158,7 +158,7 @@ def validate_with_graph(
     repo_root: Path,
     graph: RepositoryBlueprintGraph,
 ) -> list[str]:
-    return _validate_v4(graph, repo_root)
+    return _validate_graph(graph, repo_root)
 
 
 def main() -> int:

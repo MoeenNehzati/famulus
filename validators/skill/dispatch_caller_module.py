@@ -258,10 +258,7 @@ def _validate(
 
     Pseudocode
     ----------
-    - if a version-5 graph is available:
-      - set candidates = owned non-test Python files and their source modules
-    - else:
-      - set candidates = discovered skill runtime sources and deepest module owners
+    - set candidates = discovered skill runtime sources and deepest module owners
     - set parsed_candidates = source_cache.read_parse for each candidate
     - set errors = legacy import and invalid DispatchCall findings
     - set errors = errors plus invalid dispatch caller-skill findings
@@ -300,29 +297,18 @@ def _validate(
     """
     errors: list[str] = []
     candidates: list[tuple[Path, str]] = []
-    if graph is not None and graph.schema_version == 5:
-        for path, owner_id in sorted(graph.direct_file_owners.items()):
-            if path.suffix != ".py" or not path.is_file():
-                continue
-            rel = path.relative_to(repo_root)
-            if "tests" in rel.parts:
-                continue
-            candidates.append(
-                (path, graph.source_modules.get(owner_id, owner_id))
+    skills_root = repo_root / "skills"
+    if not skills_root.is_dir():
+        return errors
+    for blueprint_path in sorted(skills_root.glob("*/blueprint.yaml")):
+        skill_name = blueprint_path.parent.name
+        for path in _python_files(blueprint_path.parent):
+            expected_module_id = (
+                _deepest_module_id(graph, path, skill_name)
+                if graph is not None
+                else skill_name
             )
-    else:
-        skills_root = repo_root / "skills"
-        if not skills_root.is_dir():
-            return errors
-        for blueprint_path in sorted(skills_root.glob("*/blueprint.yaml")):
-            skill_name = blueprint_path.parent.name
-            for path in _python_files(blueprint_path.parent):
-                expected_module_id = (
-                    _deepest_module_id(graph, path, skill_name)
-                    if graph is not None
-                    else skill_name
-                )
-                candidates.append((path, expected_module_id))
+            candidates.append((path, expected_module_id))
 
     for path, expected_module_id in candidates:
         rel = path.relative_to(repo_root).as_posix()
@@ -342,12 +328,6 @@ def _validate(
                 f"{rel}:{lineno}: import officina.dispatcher instead of removed famulus.dispatcher"
             )
         for declaration in analyze_dispatch_call_declarations(tree):
-            if graph is not None and graph.schema_version == 5 and declaration.legacy_v4:
-                errors.append(
-                    f"{rel}:{declaration.lineno}: DispatchCall() must use "
-                    "caller_module_id and target_module_id in v5 runtime code"
-                )
-                continue
             if declaration.caller_module_id is None:
                 errors.append(
                     f"{rel}:{declaration.lineno}: DispatchCall() must include caller_module_id "

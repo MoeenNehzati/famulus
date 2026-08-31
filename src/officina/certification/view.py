@@ -326,7 +326,7 @@ class CertificateRecordView:
         self,
         authorization: AuthorizationResult,
     ) -> CertificationDecision:
-        """Check exactly the resolver-owned v5 certificate requirement set."""
+        """Check exactly the resolver-owned v6 certificate requirement set."""
 
         if not authorization.allowed:
             return CertificationDecision(
@@ -360,7 +360,7 @@ class CertificateRecordView:
 
 
 def certificate_log_path(node: BlueprintNode) -> Path:
-    """Return the sole append-only certificate log path for one v4 node."""
+    """Return the sole append-only certificate log path for one v6 node."""
 
     if any(separator in node.node_id for separator in ("/", "\\")):
         raise ValueError(f"certificate node ID contains a path separator: {node.node_id}")
@@ -778,7 +778,12 @@ def evaluate_certificate_currentness(
     schema_root: Path | None = None,
     allow_non_atomic: bool = False,
 ) -> CertificateCurrentnessReport:
-    """Evaluate the final entry of every v4 log against one derived graph state."""
+    """Evaluate the final entry of every certificate log against the v6 graph state."""
+
+    if graph.schema_version != 6:
+        raise CertificationHashError(
+            "certification currentness requires a schema v6 graph"
+        )
 
     root = Path(repo_root).resolve()
     selected_schema_root = Path(schema_root) if schema_root is not None else _default_schema_root()
@@ -794,7 +799,6 @@ def evaluate_certificate_currentness(
             if certification_basis_paths is not None
             else resolve_certification_basis_paths(
                 root,
-                expected_schema_version=graph.schema_version,
                 allow_non_atomic=allow_non_atomic,
             )
         )
@@ -913,8 +917,7 @@ def evaluate_certificate_currentness(
             certified_manifest = payload.get("input_manifest", [])
             certified_dependencies = payload.get("dependencies", [])
             facet_capable = (
-                graph.schema_version == 6
-                and payload.get("certificate_schema_version") == 3
+                payload.get("certificate_schema_version") == 3
                 and bool(state.facets)
             )
             if not facet_capable:
@@ -947,23 +950,17 @@ def evaluate_certificate_currentness(
                     if declaration_changed
                     else None
                 )
-            if (
-                graph.schema_version == 5
-                and payload.get("certificate_schema_version") == 1
-            ):
+            if payload.get("certificate_schema_version") != 3:
                 concerns.append("legacy-certificate-payload")
-            if graph.schema_version == 6:
-                if payload.get("certificate_schema_version") != 3:
-                    concerns.append("legacy-certificate-payload")
-                else:
-                    concerns.extend(
-                        _facet_currentness_concerns(payload.get("facets"), state)
-                    )
-                    facet_drift = _facet_drift(
-                        payload.get("facets"),
-                        state,
-                        blueprint_path=_relative_path(node.blueprint_path, root),
-                    )
+            else:
+                concerns.extend(
+                    _facet_currentness_concerns(payload.get("facets"), state)
+                )
+                facet_drift = _facet_drift(
+                    payload.get("facets"),
+                    state,
+                    blueprint_path=_relative_path(node.blueprint_path, root),
+                )
             if payload.get("subject") != _expected_subject(node, root):
                 concerns.append("subject-mismatch")
             if payload.get("input_manifest") != [dict(entry) for entry in state.input_manifest]:
@@ -975,7 +972,7 @@ def evaluate_certificate_currentness(
             if payload.get("certification_basis_hash") != state.certification_basis_hash:
                 concerns.append("certification-basis-mismatch")
             payload_certifier = payload.get("certifier")
-            structured_certifier = graph.schema_version == 6 and any(
+            structured_certifier = any(
                 dependency.get("relation") in EVIDENCE_ONLY_RELATIONS
                 for dependency in state.dependency_hashes
             )
@@ -1109,38 +1106,28 @@ def derive_repository_certification_state(
     repo_root: Path,
     *,
     public_key_root: Path | None = None,
-    expected_schema_version: int = 6,
     schema_root: Path | None = None,
     allow_non_atomic: bool = False,
 ) -> RepositoryCertificationState:
     """Derive the sole repository-backed certification state used by readers."""
 
     root = Path(repo_root).resolve()
-    if expected_schema_version not in {4, 5, 6}:
-        raise ValueError("expected_schema_version must be 4, 5, or 6")
     selected_schema_root = (
         Path(schema_root)
         if schema_root is not None
-        else (
-            root / "references" / "blueprint-schema"
-            if expected_schema_version == 6
-            else root / "references" / "blueprint-schema" / "migrations" / f"v{expected_schema_version}"
-        )
+        else root / "references" / "blueprint-schema"
     )
     try:
         graph = load_repository_blueprint_graph(
             root,
             schema_root=selected_schema_root,
-            expected_schema_version=expected_schema_version,
         )
         if any(
-            node.declaration.get("schema_version")
-            != expected_schema_version
+            node.declaration.get("schema_version") != 6
             for node in graph.nodes.values()
         ):
             raise RepositoryCertificationError(
-                "repository certification requires one closed schema-version "
-                f"{expected_schema_version} repository"
+                "repository certification requires one closed schema-version 6 repository"
             )
         snapshot = capture_git_snapshot(root)
         if snapshot is None or snapshot.repo_root != root:
@@ -1149,12 +1136,10 @@ def derive_repository_certification_state(
             )
         basis_paths = resolve_certification_basis_paths(
             root,
-            expected_schema_version=expected_schema_version,
             allow_non_atomic=allow_non_atomic,
         )
         basis_hash = compute_certification_basis_hash(
             root,
-            expected_schema_version=expected_schema_version,
             allow_non_atomic=allow_non_atomic,
         )
         states = compute_node_hash_states(
@@ -1171,7 +1156,7 @@ def derive_repository_certification_state(
             snapshot.commit,
         )
         checks_by_node = {
-            node_id: expected_certifier_checks(expected_schema_version)
+            node_id: expected_certifier_checks()
             for node_id in graph.nodes
         }
         currentness = evaluate_certificate_currentness(
@@ -1216,8 +1201,7 @@ def _certifier_target_postorder(
     """Return the exact dependency-first order for the certifier module target."""
 
     module_ids = [CERTIFIER_NODE_ID]
-    suffix = "._rtx" if state.graph.schema_version == 6 else "-rtx"
-    runtime_node_id = f"{CERTIFIER_NODE_ID}{suffix}"
+    runtime_node_id = f"{CERTIFIER_NODE_ID}._rtx"
     if runtime_node_id in state.graph.nodes:
         module_ids.append(runtime_node_id)
     roots = {
@@ -1356,15 +1340,11 @@ class RepositoryCertificationView(CertificateCurrentnessView):
         repo_root: Path,
         source_commit: str,
         bootstrap_allowed: bool,
-        schema_version: int = 6,
     ) -> None:
         super().__init__(report)
-        if schema_version not in {4, 5, 6}:
-            raise ValueError("schema_version must be 4, 5, or 6")
         self.repo_root = Path(repo_root).resolve()
         self.source_commit = source_commit
         self.bootstrap_allowed = bootstrap_allowed
-        self.schema_version = schema_version
 
     def check_bootstrap(
         self,
@@ -1386,20 +1366,10 @@ class RepositoryCertificationView(CertificateCurrentnessView):
         if not self.bootstrap_allowed or caller_module_id != CERTIFIER_NODE_ID:
             return rejected
         tokens = tuple(argv)
-        expected_sync_interface = (
-            "skill-maker._rtx.interface.sync-blueprints"
-            if self.schema_version == 6
-            else "skill-maker.interface.sync-blueprints"
-        )
-        if interface_id == expected_sync_interface:
+        if interface_id == "skill-maker._rtx.interface.sync-blueprints":
             if (
                 target_module_id == "skill-maker"
-                and terminal_module_id
-                == (
-                    "skill-maker-rtx"
-                    if self.schema_version == 5
-                    else "skill-maker"
-                )
+                and terminal_module_id == "skill-maker"
                 and pattern_name == "check"
                 and tokens == ("--check",)
             ):
@@ -1411,18 +1381,8 @@ class RepositoryCertificationView(CertificateCurrentnessView):
             return rejected
         if (
             target_module_id != CERTIFIER_NODE_ID
-            or terminal_module_id
-            != (
-                f"{CERTIFIER_NODE_ID}-rtx"
-                if self.schema_version == 5
-                else CERTIFIER_NODE_ID
-            )
-            or interface_id
-            != (
-                "node-certify._rtx.interface.certify"
-                if self.schema_version == 6
-                else "node-certify.interface.certify"
-            )
+            or terminal_module_id != CERTIFIER_NODE_ID
+            or interface_id != "node-certify._rtx.interface.certify"
         ):
             return rejected
         if not tokens or tokens[0] != "certify":
@@ -1460,7 +1420,6 @@ class RepositoryCertificationView(CertificateCurrentnessView):
 def repository_certification_view(
     repo_root: Path,
     *,
-    expected_schema_version: int = 6,
     schema_root: Path | None = None,
     allow_non_atomic: bool = False,
 ) -> RepositoryCertificationView:
@@ -1468,7 +1427,6 @@ def repository_certification_view(
 
     state = derive_repository_certification_state(
         repo_root,
-        expected_schema_version=expected_schema_version,
         schema_root=schema_root,
         allow_non_atomic=allow_non_atomic,
     )
@@ -1476,7 +1434,6 @@ def repository_certification_view(
         state.currentness,
         repo_root=repo_root,
         source_commit=state.source_commit,
-        schema_version=state.graph.schema_version,
         bootstrap_allowed=(
             _initial_certificate_state_admissible(state)
             or _certifier_renewal_state_admissible(

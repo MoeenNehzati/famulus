@@ -12,7 +12,6 @@
   "references/certification-policy/node-hash-policy.schema.json",
   "references/certification-policy/node-hash-policy.yaml",
   "references/node-standards/*.standard.yaml",
-  "references/node-standards/authority-disposition.yaml",
   "references/standards-schema/docstring.standard.lark",
   "references/standards-schema/docstring.standard.yaml",
   "references/standards-schema/render_standard_v6.py",

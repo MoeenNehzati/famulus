@@ -353,7 +353,7 @@ class RepositoryBlueprintGraph:
     certification_edges: tuple[CertificationEdge, ...]
     module_sources: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     direct_file_owners: Mapping[Path, str] = field(default_factory=dict)
-    schema_version: int = 4
+    schema_version: int = 6
     source_modules: Mapping[str, str] = field(default_factory=dict)
     source_interfaces: Mapping[str, InterfaceExport] = field(default_factory=dict)
     module_parents: Mapping[str, str | None] = field(default_factory=dict)
@@ -1722,8 +1722,6 @@ def _declaration_schema_errors(
     declaration: dict[str, Any],
     schema_root: Path,
     validators: dict[str, jsonschema.protocols.Validator],
-    *,
-    expected_schema_version: int = 6,
 ) -> tuple[BlueprintSchemaError, ...]:
     """Transform blueprint path, declaration, schema root, validators into the declaration schema errors result used by the blueprint graph.
 
@@ -1766,17 +1764,16 @@ def _declaration_schema_errors(
     """
     schema_version = declaration.get("schema_version")
     node_type = declaration.get("node_type")
-    if schema_version != expected_schema_version:
+    if schema_version != 6:
         raise BlueprintGraphError(
-            f"{blueprint_path}: repository graph requires schema_version "
-            f"{expected_schema_version}"
+            f"{blueprint_path}: repository graph requires schema_version 6"
         )
     try:
         schema_name = _SCHEMA_FILES[node_type]
     except (KeyError, TypeError) as exc:
         raise BlueprintGraphError(
             f"{blueprint_path}: unsupported typed node type {node_type!r} "
-            f"for schema version {expected_schema_version}"
+            "for schema version 6"
         ) from exc
     validator = validators.get(schema_name)
     if validator is None:
@@ -1924,9 +1921,9 @@ def resolved_node_content_paths(
         constructs: "Supplies dependency position 1, BlueprintGraphError, while transforming node, repo root, excluded module roots into the resolved node content paths value."
     """
 
-    if node.declaration.get("schema_version") not in {4, 5, 6}:
+    if node.declaration.get("schema_version") != 6:
         raise BlueprintGraphError(
-            f"{node.blueprint_path}: content resolution requires schema_version 4, 5, or 6"
+            f"{node.blueprint_path}: content resolution requires schema_version 6"
         )
     repo_root = Path(os.path.abspath(repo_root))
     owner_root = Path(os.path.abspath(node.module_root))
@@ -2106,49 +2103,13 @@ def validate_runtime_file_path(
 
 def _node_from_document(
     document: Any,
-    *,
-    expected_schema_version: int,
 ) -> BlueprintNode:
-    """Transform document, expected schema version into the node from document result used by the blueprint graph.
-
-    Intent
-    ------
-    Use document, expected schema version to transform document, expected schema version into the node from document result used by the blueprint graph.
-
-    Rationale
-    ---------
-    The operation combines document, expected schema version through dict, get, BlueprintNode and bounded failure checks, an explicit return value, making the resulting node from document behavior explicit across 3 conditional branches.
-
-    Pseudocode
-    ----------
-    - set node_from_document_inputs = document, expected schema version
-    - if node_from_document_inputs violate blueprint invariants:
-      - raise blueprint graph error
-    - return node from document value
-
-    Wraps
-    -----
-    - none
-
-    InstantiationsFromRepo
-    ----------------------
-    ._positive_version:
-      why:
-        constructs: "Supplies dependency position 1,  positive version, while transforming document, expected schema version into the node from document value."
-    .BlueprintNode:
-      why:
-        constructs: "Supplies dependency position 2, BlueprintNode, while transforming document, expected schema version into the node from document value."
-    .BlueprintGraphError:
-      why:
-        constructs: "Supplies dependency position 3, BlueprintGraphError, while transforming document, expected schema version into the node from document value."
-    """
     declaration = dict(document.declaration)
     node_id = declaration.get("id")
     node_type = declaration.get("node_type")
     if not isinstance(node_id, str) or not node_id:
         raise BlueprintGraphError(
-            f"{document.path}: version {expected_schema_version} blueprint "
-            "requires a non-empty id"
+            f"{document.path}: version 6 blueprint requires a non-empty id"
         )
     if node_type not in _SCHEMA_FILES:
         raise BlueprintGraphError(
@@ -2169,35 +2130,11 @@ def _node_from_document(
     )
 
 
-def _v4_node_from_document(document: Any) -> BlueprintNode:
-    """Transform document into the v4 node from document result used by the blueprint graph.
-
-    Intent
-    ------
-    Use document to transform document into the v4 node from document result used by the blueprint graph.
-
-    Rationale
-    ---------
-    The operation combines document through _node_from_document and an explicit return value, making the resulting v4 node from document behavior explicit across 0 conditional branches.
-
-    Pseudocode
-    ----------
-    - set v4_node_from_document_inputs = document
-    - return v4 node from document value
-
-    Wraps
-    -----
-    - ._node_from_document -> preprocess: forwards validated arguments; postprocess: returns the wrapped value unchanged; fixed_arguments: none
-    """
-    return _node_from_document(document, expected_schema_version=4)
-
-
 def _load_module_blueprint(
     repo_root: Path,
     module_root: Path,
     *,
     schema_root: Path | None = None,
-    expected_schema_version: int = 4,
     validators: dict[str, jsonschema.protocols.Validator],
 ) -> BlueprintNode:
     """Load one exact module marker with caller-owned schema validators.
@@ -2253,9 +2190,6 @@ def _load_module_blueprint(
       why:
         constructs: "Supplies dependency position 5,  declaration schema errors, while transforming repo root, module root, schema root, expected schema version into the load module blueprint value."
     """
-
-    if expected_schema_version not in {4, 5, 6}:
-        raise ValueError("expected_schema_version must be 4, 5, or 6")
 
     repository = Path(os.path.abspath(repo_root))
     module = Path(os.path.abspath(module_root))
@@ -2314,22 +2248,14 @@ def _load_module_blueprint(
         dict(declaration),
         selected_schema_root,
         validators,
-        expected_schema_version=expected_schema_version,
     )
     if errors:
         raise errors[0]
 
-    node = _node_from_document(
-        document,
-        expected_schema_version=expected_schema_version,
-    )
+    node = _node_from_document(document)
     if node.node_type != "module":
         raise BlueprintGraphError(f"{marker}: exact module marker must declare node_type module")
-    if (
-        node.node_id != module.name
-        if expected_schema_version < 6
-        else node.node_id.rsplit(".", 1)[-1] != module.name
-    ):
+    if node.node_id.rsplit(".", 1)[-1] != module.name:
         raise BlueprintGraphError(
             f"{marker}: module id {node.node_id!r} must match its directory"
         )
@@ -2342,7 +2268,6 @@ def prepare_module_blueprint_loader(
     repo_root: Path,
     *,
     schema_root: Path | None = None,
-    expected_schema_version: int = 4,
 ) -> Callable[[Path], BlueprintNode]:
     """Prepare an exact module loader with one bounded schema-validator cache.
 
@@ -2397,7 +2322,6 @@ def prepare_module_blueprint_loader(
             repo_root,
             module_root,
             schema_root=schema_root,
-            expected_schema_version=expected_schema_version,
             validators=validators,
         )
 
@@ -2409,7 +2333,6 @@ def load_module_blueprints(
     module_roots: Sequence[Path],
     *,
     schema_root: Path | None = None,
-    expected_schema_version: int = 4,
 ) -> tuple[BlueprintNode, ...]:
     """Load ordered exact module markers through one prepared schema context.
 
@@ -2440,7 +2363,6 @@ def load_module_blueprints(
     load = prepare_module_blueprint_loader(
         repo_root,
         schema_root=schema_root,
-        expected_schema_version=expected_schema_version,
     )
     return tuple(load(module_root) for module_root in module_roots)
 
@@ -2450,7 +2372,6 @@ def load_module_blueprint(
     module_root: Path,
     *,
     schema_root: Path | None = None,
-    expected_schema_version: int = 4,
 ) -> BlueprintNode:
     """Load one exact module marker through an isolated schema context.
 
@@ -2481,7 +2402,6 @@ def load_module_blueprint(
     load = prepare_module_blueprint_loader(
         repo_root,
         schema_root=schema_root,
-        expected_schema_version=expected_schema_version,
     )
     return load(module_root)
 
@@ -2711,40 +2631,11 @@ def _reject_certification_cycles(
         visit(node_id)
 
 
-def _v4_local_ids(
+def _local_interface_ids(
     values: object,
     *,
     context: str,
 ) -> tuple[set[str], list[Mapping[str, Any]]]:
-    """Transform values, context into the v4 local ids result used by the blueprint graph.
-
-    Intent
-    ------
-    Use values, context to transform values, context into the v4 local ids result used by the blueprint graph.
-
-    Rationale
-    ---------
-    The operation combines values, context through set, isinstance, append and ordered iteration, bounded failure checks, an explicit return value, making the resulting v4 local ids behavior explicit across 3 conditional branches.
-
-    Pseudocode
-    ----------
-    - set v4_local_ids_inputs = values, context
-    - if v4_local_ids_inputs violate blueprint invariants:
-      - raise blueprint graph error
-    - for item in v4_local_ids_inputs:
-      - set validated_item = item
-    - return v4 local ids value
-
-    Wraps
-    -----
-    - none
-
-    InstantiationsFromRepo
-    ----------------------
-    .BlueprintGraphError:
-      why:
-        constructs: "Supplies dependency position 1, BlueprintGraphError, while transforming values, context into the v4 local ids value."
-    """
     entries = values if isinstance(values, list) else []
     identifiers: set[str] = set()
     mappings: list[Mapping[str, Any]] = []
@@ -2763,115 +2654,34 @@ def _v4_local_ids(
     return identifiers, mappings
 
 
-def _require_v4_local_ref(
+def _require_local_interface_ref(
     value: object,
     valid: set[str],
     *,
     context: str,
     kind: str,
 ) -> None:
-    """Require valid v4 local ref.
-
-    Intent
-    ------
-    Use value, valid, context, kind to require valid v4 local ref.
-
-    Rationale
-    ---------
-    The operation combines value, valid, context, kind through isinstance, BlueprintGraphError and bounded failure checks, making the resulting require v4 local ref behavior explicit across 1 conditional branches.
-
-    Pseudocode
-    ----------
-    - set require_v4_local_ref_inputs = value, valid, context, kind
-    - if require_v4_local_ref_inputs violate blueprint invariants:
-      - raise blueprint graph error
-    - return none
-
-    Wraps
-    -----
-    - none
-
-    InstantiationsFromRepo
-    ----------------------
-    .BlueprintGraphError:
-      why:
-        constructs: "Supplies dependency position 1, BlueprintGraphError, while transforming value, valid, context, kind into the require v4 local ref value."
-    """
     if isinstance(value, str) and value not in valid:
         raise BlueprintGraphError(f"{context}: unknown {kind} {value!r}")
 
 
-def _walk_v4_contract(
+def _walk_interface_contract(
     value: object,
     path: tuple[str, ...] = (),
 ) -> list[tuple[tuple[str, ...], str, object]]:
-    """Transform value, path into the walk v4 contract result used by the blueprint graph.
-
-    Intent
-    ------
-    Use value, path to transform value, path into the walk v4 contract result used by the blueprint graph.
-
-    Rationale
-    ---------
-    The operation combines value, path through isinstance, items, str and ordered iteration, an explicit return value, making the resulting walk v4 contract behavior explicit across 2 conditional branches.
-
-    Pseudocode
-    ----------
-    - set walk_v4_contract_inputs = value, path
-    - for item in walk_v4_contract_inputs:
-      - set validated_item = item
-    - return walk v4 contract value
-
-    Wraps
-    -----
-    - none
-
-    InstantiationsFromRepo
-    ----------------------
-    ._walk_v4_contract:
-      why:
-        constructs: "Supplies dependency position 1,  walk v4 contract, while transforming value, path into the walk v4 contract value."
-    """
     found: list[tuple[tuple[str, ...], str, object]] = []
     if isinstance(value, Mapping):
         for key, child in value.items():
             field = str(key)
             found.append((path, field, child))
-            found.extend(_walk_v4_contract(child, (*path, field)))
+            found.extend(_walk_interface_contract(child, (*path, field)))
     elif isinstance(value, list):
         for index, child in enumerate(value):
-            found.extend(_walk_v4_contract(child, (*path, str(index))))
+            found.extend(_walk_interface_contract(child, (*path, str(index))))
     return found
 
 
-def _validate_v4_internal_path(value: object, *, context: str) -> None:
-    """Validate v4 internal path.
-
-    Intent
-    ------
-    Use value, context to validate v4 internal path.
-
-    Rationale
-    ---------
-    The operation combines value, context through PurePosixPath, isinstance, is_absolute and bounded failure checks, an explicit return value, making the resulting validate v4 internal path behavior explicit across 2 conditional branches.
-
-    Pseudocode
-    ----------
-    - set validate_v4_internal_path_inputs = value, context
-    - if validate_v4_internal_path_inputs violate blueprint invariants:
-      - raise blueprint graph error
-    - return validate v4 internal path value
-
-    Wraps
-    -----
-    - none
-
-    InstantiationsFromRepo
-    ----------------------
-    .BlueprintGraphError:
-      why:
-        constructs: "Supplies dependency position 1, BlueprintGraphError, while transforming value, context into the validate v4 internal path value."
-    """
+def _validate_internal_path(value: object, *, context: str) -> None:
     if not isinstance(value, str):
         return
     path = PurePosixPath(value)
@@ -2886,38 +2696,9 @@ def _validate_v4_internal_path(value: object, *, context: str) -> None:
         )
 
 
-def _v4_authority_claims(
+def _authority_claims(
     modules: Mapping[str, BlueprintNode],
 ) -> tuple[tuple[str, str, str, re.Pattern[str] | None], ...]:
-    """Transform modules into the v4 authority claims result used by the blueprint graph.
-
-    Intent
-    ------
-    Use modules to transform modules into the v4 authority claims result used by the blueprint graph.
-
-    Rationale
-    ---------
-    The operation combines modules through sorted, tuple, items and ordered iteration, bounded failure checks, an explicit return value, making the resulting v4 authority claims behavior explicit across 4 conditional branches.
-
-    Pseudocode
-    ----------
-    - set v4_authority_claims_inputs = modules
-    - if v4_authority_claims_inputs violate blueprint invariants:
-      - raise blueprint graph error
-    - for item in v4_authority_claims_inputs:
-      - set validated_item = item
-    - return v4 authority claims value
-
-    Wraps
-    -----
-    - none
-
-    InstantiationsFromRepo
-    ----------------------
-    .BlueprintGraphError:
-      why:
-        constructs: "Supplies dependency position 1, BlueprintGraphError, while transforming modules into the v4 authority claims value."
-    """
     claims: list[tuple[str, str, str, re.Pattern[str] | None]] = []
     for module_id, module in sorted(modules.items()):
         authority = module.declaration.get("authority")
@@ -2949,7 +2730,7 @@ def _v4_authority_claims(
     return tuple(claims)
 
 
-def _validate_v4_interface_contract(
+def _validate_interface_contract(
     interface_id: str,
     declaration: Mapping[str, Any],
     *,
@@ -2959,73 +2740,29 @@ def _validate_v4_interface_contract(
         ...,
     ],
 ) -> None:
-    """Validate v4 interface contract.
-
-    Intent
-    ------
-    Use interface id, declaration, module id, authority claims to validate v4 interface contract.
-
-    Rationale
-    ---------
-    The operation combines interface id, declaration, module id, authority claims through get, _v4_local_ids, set and ordered iteration, bounded failure checks, an explicit return value, making the resulting validate v4 interface contract behavior explicit across 20 conditional branches.
-
-    Pseudocode
-    ----------
-    - set validate_v4_interface_contract_inputs = interface id, declaration, module id, authority claims
-    - if validate_v4_interface_contract_inputs violate blueprint invariants:
-      - raise blueprint graph error
-    - for item in validate_v4_interface_contract_inputs:
-      - set validated_item = item
-    - return validate v4 interface contract value
-
-    Wraps
-    -----
-    - none
-
-    CallsFromRepo
-    -------------
-    ._walk_v4_contract:
-      why:
-        computes: "Supplies dependency position 1,  walk v4 contract, while transforming interface id, declaration, module id, authority claims into the validate v4 interface contract value."
-    ._validate_v4_internal_path:
-      why:
-        computes: "Supplies dependency position 2,  validate v4 internal path, while transforming interface id, declaration, module id, authority claims into the validate v4 interface contract value."
-    ._require_v4_local_ref:
-      why:
-        computes: "Supplies dependency position 3,  require v4 local ref, while transforming interface id, declaration, module id, authority claims into the validate v4 interface contract value."
-
-    InstantiationsFromRepo
-    ----------------------
-    ._v4_local_ids:
-      why:
-        constructs: "Supplies dependency position 1,  v4 local ids, while transforming interface id, declaration, module id, authority claims into the validate v4 interface contract value."
-    .BlueprintGraphError:
-      why:
-        constructs: "Supplies dependency position 2, BlueprintGraphError, while transforming interface id, declaration, module id, authority claims into the validate v4 interface contract value."
-    """
     contract = declaration.get("contract")
     if not isinstance(contract, Mapping):
         return
     arguments = contract.get("arguments")
     argument_ids = set(arguments) if isinstance(arguments, Mapping) else set()
-    precondition_ids, preconditions = _v4_local_ids(
+    precondition_ids, preconditions = _local_interface_ids(
         contract.get("preconditions"),
         context=f"{interface_id}.preconditions",
     )
-    output_ids, outputs = _v4_local_ids(
+    output_ids, outputs = _local_interface_ids(
         contract.get("outputs"),
         context=f"{interface_id}.outputs",
     )
-    outcome_ids, outcomes = _v4_local_ids(
+    outcome_ids, outcomes = _local_interface_ids(
         contract.get("outcomes"),
         context=f"{interface_id}.outcomes",
     )
-    helper_ids, helpers = _v4_local_ids(
+    helper_ids, helpers = _local_interface_ids(
         contract.get("helpers"),
         context=f"{interface_id}.helpers",
     )
     execution = contract.get("execution")
-    effect_ids, effects = _v4_local_ids(
+    effect_ids, effects = _local_interface_ids(
         execution.get("effects") if isinstance(execution, Mapping) else [],
         context=f"{interface_id}.execution.effects",
     )
@@ -3072,7 +2809,7 @@ def _validate_v4_interface_contract(
         "unattended_outcome": (outcome_ids, "outcome"),
         "startup_failure_outcome": (outcome_ids, "outcome"),
     }
-    for path, field, value in _walk_v4_contract(contract):
+    for path, field, value in _walk_interface_contract(contract):
         selected = reference_fields.get(field)
         if (
             selected is None
@@ -3082,7 +2819,7 @@ def _validate_v4_interface_contract(
         ):
             continue
         valid, label = selected
-        _require_v4_local_ref(
+        _require_local_interface_ref(
             value,
             valid,
             context=f"{interface_id}.{'.'.join((*path, field))}",
@@ -3101,14 +2838,14 @@ def _validate_v4_interface_contract(
     for outcome in outcomes:
         outcome_id = outcome.get("id")
         for output_ref in outcome.get("outputs", []):
-            _require_v4_local_ref(
+            _require_local_interface_ref(
                 output_ref,
                 output_ids,
                 context=f"{interface_id}: outcome {outcome_id!r}",
                 kind="output",
             )
         for effect_ref in outcome.get("effects", []):
-            _require_v4_local_ref(
+            _require_local_interface_ref(
                 effect_ref,
                 effect_ids,
                 context=f"{interface_id}: outcome {outcome_id!r}",
@@ -3127,7 +2864,7 @@ def _validate_v4_interface_contract(
             target = route_targets.get(route.get("kind"))
             if target is not None:
                 valid, label = target
-                _require_v4_local_ref(
+                _require_local_interface_ref(
                     route.get("target"),
                     valid,
                     context=f"{interface_id}: helper {helper_id!r} route",
@@ -3136,7 +2873,7 @@ def _validate_v4_interface_contract(
         for field in ("empty", "failure"):
             behavior = helper.get(field)
             if isinstance(behavior, Mapping):
-                _require_v4_local_ref(
+                _require_local_interface_ref(
                     behavior.get("outcome"),
                     outcome_ids,
                     context=f"{interface_id}: helper {helper_id!r} {field}",
@@ -3157,7 +2894,7 @@ def _validate_v4_interface_contract(
                     f"{effect_ref!r} must be a write or network action"
                 )
             for outcome_ref in effect.get("may_occur_in_outcomes", []):
-                _require_v4_local_ref(
+                _require_local_interface_ref(
                     outcome_ref,
                     outcome_ids,
                     context=f"{interface_id}: effect {effect_id!r}",
@@ -3200,7 +2937,7 @@ def _validate_v4_interface_contract(
     }
     for entry_context, entry in io_entries:
         path = entry.get("path")
-        _validate_v4_internal_path(
+        _validate_internal_path(
             path,
             context=f"{interface_id}.contract.direct_io.{entry_context}",
         )
@@ -3482,520 +3219,6 @@ def _build_export_relationships(
     return export_edges, helper_edges
 
 
-def _load_v4_repository_blueprint_graph(
-    root: Path,
-    documents: tuple[Any, ...],
-    *,
-    schema_root: Path,
-) -> RepositoryBlueprintGraph:
-    """Load v4 repository blueprint graph.
-
-    Intent
-    ------
-    Use root, documents, schema root to load v4 repository blueprint graph.
-
-    Rationale
-    ---------
-    The operation combines root, documents, schema root through sorted, _v4_authority_claims, _build_source_relationships and ordered iteration, bounded failure checks, an explicit return value, making the resulting load v4 repository blueprint graph behavior explicit across 35 conditional branches.
-
-    Pseudocode
-    ----------
-    - set load_v4_repository_blueprint_graph_inputs = root, documents, schema root
-    - if load_v4_repository_blueprint_graph_inputs violate blueprint invariants:
-      - raise blueprint graph error
-    - for item in load_v4_repository_blueprint_graph_inputs:
-      - set validated_item = item
-    - return load v4 repository blueprint graph value
-
-    Wraps
-    -----
-    - none
-
-    CallsFromRepo
-    -------------
-    ._reject_certification_cycles:
-      why:
-        computes: "Supplies dependency position 1,  reject certification cycles, while transforming root, documents, schema root into the load v4 repository blueprint graph value."
-    ._require_platform_compatibility:
-      why:
-        computes: "Supplies dependency position 2,  require platform compatibility, while transforming root, documents, schema root into the load v4 repository blueprint graph value."
-    ._reject_export_cycles:
-      why:
-        computes: "Supplies dependency position 3,  reject export cycles, while transforming root, documents, schema root into the load v4 repository blueprint graph value."
-    ._validate_v4_interface_contract:
-      why:
-        computes: "Supplies dependency position 4,  validate v4 interface contract, while transforming root, documents, schema root into the load v4 repository blueprint graph value."
-    .resolved_node_content_paths:
-      why:
-        computes: "Supplies dependency position 5, resolved node content paths, while transforming root, documents, schema root into the load v4 repository blueprint graph value."
-
-    InstantiationsFromRepo
-    ----------------------
-    ._v4_node_from_document:
-      why:
-        constructs: "Supplies dependency position 1,  v4 node from document, while transforming root, documents, schema root into the load v4 repository blueprint graph value."
-    ._declaration_schema_errors:
-      why:
-        constructs: "Supplies dependency position 2,  declaration schema errors, while transforming root, documents, schema root into the load v4 repository blueprint graph value."
-    ._positive_version:
-      why:
-        constructs: "Supplies dependency position 3,  positive version, while transforming root, documents, schema root into the load v4 repository blueprint graph value."
-    ._build_export_relationships:
-      why:
-        constructs: "Supplies dependency position 4,  build export relationships, while transforming root, documents, schema root into the load v4 repository blueprint graph value."
-    .BlueprintEdge:
-      why:
-        constructs: "Supplies dependency position 5, BlueprintEdge, while transforming root, documents, schema root into the load v4 repository blueprint graph value."
-    ._resolve_locator:
-      why:
-        constructs: "Supplies dependency position 6,  resolve locator, while transforming root, documents, schema root into the load v4 repository blueprint graph value."
-    .InterfaceExport:
-      why:
-        constructs: "Supplies dependency position 7, InterfaceExport, while transforming root, documents, schema root into the load v4 repository blueprint graph value."
-    .BlueprintGraphError:
-      why:
-        constructs: "Supplies dependency position 8, BlueprintGraphError, while transforming root, documents, schema root into the load v4 repository blueprint graph value."
-    ._build_source_relationships:
-      why:
-        constructs: "Supplies dependency position 9,  build source relationships, while transforming root, documents, schema root into the load v4 repository blueprint graph value."
-    ._v4_authority_claims:
-      why:
-        constructs: "Supplies dependency position 10,  v4 authority claims, while transforming root, documents, schema root into the load v4 repository blueprint graph value."
-    .RepositoryBlueprintGraph:
-      why:
-        constructs: "Supplies dependency position 11, RepositoryBlueprintGraph, while transforming root, documents, schema root into the load v4 repository blueprint graph value."
-    """
-    validators: dict[str, jsonschema.protocols.Validator] = {}
-    nodes: dict[str, BlueprintNode] = {}
-    for document in documents:
-        errors = _declaration_schema_errors(
-            document.path,
-            dict(document.declaration),
-            schema_root,
-            validators,
-            expected_schema_version=4,
-        )
-        if errors:
-            raise errors[0]
-        node = _v4_node_from_document(document)
-        existing = nodes.get(node.node_id)
-        if existing is not None:
-            raise BlueprintGraphError(
-                f"duplicate node id {node.node_id!r}: "
-                f"{existing.blueprint_path} and {node.blueprint_path}"
-            )
-        nodes[node.node_id] = node
-
-    modules = {
-        node.node_id: node
-        for node in nodes.values()
-        if node.node_type == "module"
-    }
-    sources = {
-        node.node_id: node
-        for node in nodes.values()
-        if node.node_type == "behavioral_source"
-    }
-    if not modules:
-        raise BlueprintGraphError(
-            "version 4 repository graph requires at least one module"
-        )
-    if len(modules) + len(sources) != len(nodes):
-        raise BlueprintGraphError(
-            "version 4 repository graph permits only module "
-            "and behavioral_source nodes"
-        )
-
-    module_sources: dict[str, tuple[str, ...]] = {}
-    source_modules: dict[str, str] = {}
-    for module_id, module in sorted(modules.items()):
-        if module.module_root.name != module_id:
-            raise BlueprintGraphError(
-                f"{module.blueprint_path}: module id {module_id!r} "
-                "must match its directory"
-            )
-        raw_sources = module.declaration.get("sources")
-        if not isinstance(raw_sources, dict):
-            raise BlueprintGraphError(
-                f"{module.blueprint_path}: sources must be a mapping"
-            )
-        contained: list[str] = []
-        for source_id, entry in sorted(raw_sources.items()):
-            if not isinstance(source_id, str) or not isinstance(entry, dict):
-                raise BlueprintGraphError(
-                    f"{module.blueprint_path}: invalid source containment entry"
-                )
-            expected_prefix = f"{module_id}.source."
-            if not source_id.startswith(expected_prefix):
-                raise BlueprintGraphError(
-                    f"{module.blueprint_path}: source {source_id!r} must use "
-                    f"module namespace {expected_prefix!r}"
-                )
-            locator_path = _resolve_locator(
-                module.module_root,
-                entry.get("blueprint"),
-                f"{module.blueprint_path}:sources.{source_id}",
-                root,
-            )
-            source = sources.get(source_id)
-            if source is None:
-                raise BlueprintGraphError(
-                    f"{module.blueprint_path}: unresolved contained "
-                    f"source {source_id!r}"
-                )
-            if Path(os.path.abspath(locator_path)) != Path(
-                os.path.abspath(source.blueprint_path)
-            ):
-                raise BlueprintGraphError(
-                    f"{module.blueprint_path}: source {source_id!r} locator "
-                    "does not identify its canonical blueprint"
-                )
-            previous_module = source_modules.get(source_id)
-            if previous_module is not None:
-                raise BlueprintGraphError(
-                    f"source {source_id!r} is contained by both "
-                    f"{previous_module} and {module_id}"
-                )
-            if source.module_root != module.module_root:
-                raise BlueprintGraphError(
-                    f"{source.blueprint_path}: contained source must be "
-                    f"inside module {module_id}"
-                )
-            source_modules[source_id] = module_id
-            contained.append(source_id)
-        module_sources[module_id] = tuple(contained)
-    orphan_sources = sorted(set(sources) - set(source_modules))
-    if orphan_sources:
-        raise BlueprintGraphError(
-            "behavioral sources must be contained by exactly one module: "
-            + ", ".join(orphan_sources)
-        )
-
-    authority_claims = _v4_authority_claims(modules)
-    source_interfaces: dict[
-        str,
-        tuple[BlueprintNode, Mapping[str, JsonValue]],
-    ] = {}
-    for source_id, source in sorted(sources.items()):
-        raw_interfaces = source.declaration.get("interfaces")
-        if not isinstance(raw_interfaces, dict):
-            raise BlueprintGraphError(
-                f"{source.blueprint_path}: interfaces must be a mapping"
-            )
-        for interface_id, declaration in sorted(raw_interfaces.items()):
-            if not isinstance(interface_id, str) or not isinstance(
-                declaration,
-                dict,
-            ):
-                raise BlueprintGraphError(
-                    f"{source.blueprint_path}: "
-                    "invalid source interface declaration"
-                )
-            expected_prefix = f"{source_id}.interface."
-            if not interface_id.startswith(expected_prefix):
-                raise BlueprintGraphError(
-                    f"{source.blueprint_path}: interface {interface_id!r} "
-                    f"must use source namespace {expected_prefix!r}"
-                )
-            if interface_id in source_interfaces:
-                raise BlueprintGraphError(
-                    f"duplicate source interface {interface_id!r}"
-                )
-            _validate_v4_interface_contract(
-                interface_id,
-                declaration,
-                module_id=source_modules[source_id],
-                authority_claims=authority_claims,
-            )
-            source_interfaces[interface_id] = (source, declaration)
-
-    exports: dict[str, InterfaceExport] = {}
-    for module_id, module in sorted(modules.items()):
-        raw_exports = module.declaration.get("exports")
-        if not isinstance(raw_exports, dict):
-            raise BlueprintGraphError(
-                f"{module.blueprint_path}: exports must be a mapping"
-            )
-        for export_id, export_declaration in sorted(raw_exports.items()):
-            if not isinstance(export_id, str) or not isinstance(
-                export_declaration,
-                dict,
-            ):
-                raise BlueprintGraphError(
-                    f"{module.blueprint_path}: invalid export declaration"
-                )
-            expected_prefix = f"{module_id}.interface."
-            if not export_id.startswith(expected_prefix):
-                raise BlueprintGraphError(
-                    f"{module.blueprint_path}: export {export_id!r} must use "
-                    f"module namespace {expected_prefix!r}"
-                )
-            if export_id in exports:
-                raise BlueprintGraphError(f"duplicate export {export_id!r}")
-            source_interface_id = export_declaration.get("source_interface")
-            if not isinstance(source_interface_id, str):
-                raise BlueprintGraphError(
-                    f"{module.blueprint_path}: export {export_id!r} "
-                    "requires source_interface"
-                )
-            try:
-                source, interface_declaration = source_interfaces[
-                    source_interface_id
-                ]
-            except KeyError as exc:
-                raise BlueprintGraphError(
-                    f"{module.blueprint_path}: export {export_id!r} targets "
-                    f"unknown source interface {source_interface_id!r}"
-                ) from exc
-            if source_modules[source.node_id] != module_id:
-                raise BlueprintGraphError(
-                    f"{module.blueprint_path}: export {export_id!r} "
-                    "must bind a contained source interface"
-                )
-            exports[export_id] = InterfaceExport(
-                interface_id=export_id,
-                version=_positive_version(
-                    interface_declaration.get("version"),
-                    source_interface_id,
-                ),
-                local_name=export_id.rsplit(".interface.", 1)[-1],
-                module_node_id=module_id,
-                declaration=interface_declaration,
-                source_node_id=source.node_id,
-                source_interface_id=source_interface_id,
-                export_declaration=export_declaration,
-            )
-
-    node_edges: list[BlueprintEdge] = []
-    certification_edges: list[CertificationEdge] = []
-    for module_id, source_ids in sorted(module_sources.items()):
-        for source_id in source_ids:
-            source = sources[source_id]
-            node_edges.append(
-                BlueprintEdge(
-                    "contains-source",
-                    module_id,
-                    source_id,
-                    source.version,
-                    source.blueprint_path,
-                )
-            )
-
-    def resolve_v4_interface_use(
-        source_id: str,
-        source: BlueprintNode,
-        interface_id: str,
-        version: int,
-    ) -> tuple[str, str]:
-        """Resolve v4 interface use.
-
-        Intent
-        ------
-        Use source id, source, interface id, version to resolve v4 interface use.
-
-        Rationale
-        ---------
-        The operation combines source id, source, interface id, version through BlueprintGraphError, _positive_version, get and bounded failure checks, an explicit return value, making the resulting resolve v4 interface use behavior explicit across 7 conditional branches.
-
-        Pseudocode
-        ----------
-        - set resolve_v4_interface_use_inputs = source id, source, interface id, version
-        - if resolve_v4_interface_use_inputs violate blueprint invariants:
-          - raise blueprint graph error
-        - return resolve v4 interface use value
-
-        Wraps
-        -----
-        - none
-
-        CallsFromRepo
-        -------------
-        ._require_platform_compatibility:
-          why:
-            computes: "Supplies dependency position 1,  require platform compatibility, while transforming source id, source, interface id, version into the resolve v4 interface use value."
-
-        InstantiationsFromRepo
-        ----------------------
-        ._positive_version:
-          why:
-            constructs: "Supplies dependency position 1,  positive version, while transforming source id, source, interface id, version into the resolve v4 interface use value."
-        .BlueprintGraphError:
-          why:
-            constructs: "Supplies dependency position 2, BlueprintGraphError, while transforming source id, source, interface id, version into the resolve v4 interface use value."
-        """
-        if interface_id in source_interfaces:
-            target_source, target_declaration = source_interfaces[interface_id]
-            if source_modules[target_source.node_id] != source_modules[source_id]:
-                raise BlueprintGraphError(
-                    f"{source.node_id}: private interface {interface_id!r} "
-                    "cannot be used cross-module"
-                )
-            actual_version = _positive_version(
-                target_declaration.get("version"),
-                interface_id,
-            )
-            if actual_version != version:
-                raise BlueprintGraphError(
-                    f"{source.node_id}: pins {interface_id} version {version}, "
-                    f"but target version is {actual_version}"
-                )
-            return "uses-private-interface", target_source.node_id
-        if interface_id in exports:
-            export = exports[interface_id]
-            if export.version != version:
-                raise BlueprintGraphError(
-                    f"{source.node_id}: pins {interface_id} version {version}, "
-                    f"but target version is {export.version}"
-                )
-            caller_module = source_modules[source_id]
-            access = (
-                export.export_declaration.get("access")
-                if isinstance(export.export_declaration, Mapping)
-                else None
-            )
-            if not isinstance(access, Mapping):
-                raise BlueprintGraphError(
-                    f"{interface_id}: export access is missing"
-                )
-            allowed = access.get("allowed_callers", [])
-            if (
-                caller_module != export.module_node_id
-                and access.get("allow_all_modules") is not True
-                and caller_module not in allowed
-            ):
-                raise BlueprintGraphError(
-                    f"{source.node_id}: caller module "
-                    f"{caller_module!r} is not allowed by {interface_id}"
-                )
-            target_source_id = export.source_node_id
-            assert target_source_id is not None
-            _require_platform_compatibility(
-                source,
-                sources[target_source_id],
-                context=source.node_id,
-            )
-            return "uses-export", target_source_id
-        raise BlueprintGraphError(
-            f"{source.node_id}: unresolved interface {interface_id!r}"
-        )
-
-    interface_uses_by_source = _build_source_relationships(
-        root,
-        sources=sources,
-        node_edges=node_edges,
-        certification_edges=certification_edges,
-        dependency_root=lambda source: source.module_root,
-        resolve_interface_use=resolve_v4_interface_use,
-    )
-    export_edges, helper_edges = _build_export_relationships(
-        exports,
-        interface_uses_by_source,
-    )
-
-    module_content: dict[str, set[Path]] = {}
-    source_content: dict[str, set[Path]] = {}
-    blueprint_paths = {
-        Path(os.path.abspath(node.blueprint_path)) for node in nodes.values()
-    }
-    for module_id, module in sorted(modules.items()):
-        paths = {
-            Path(os.path.abspath(path))
-            for path in resolved_node_content_paths(module, root)
-        }
-        if paths & blueprint_paths:
-            raise BlueprintGraphError(
-                f"{module.blueprint_path}: content cannot include blueprint files"
-            )
-        module_content[module_id] = paths
-    for source_id, source in sorted(sources.items()):
-        paths = {
-            Path(os.path.abspath(path))
-            for path in resolved_node_content_paths(source, root)
-        }
-        if paths & blueprint_paths:
-            raise BlueprintGraphError(
-                f"{source.blueprint_path}: content cannot include blueprint files"
-            )
-        source_content[source_id] = paths
-
-    direct_file_owners: dict[Path, str] = {}
-    for module_id, source_ids in sorted(module_sources.items()):
-        seen_source_paths: dict[Path, str] = {}
-        for source_id in source_ids:
-            missing = source_content[source_id] - module_content[module_id]
-            if missing:
-                raise BlueprintGraphError(
-                    f"{sources[source_id].blueprint_path}: source content "
-                    f"must be contained by module {module_id}: "
-                    f"{sorted(str(path) for path in missing)}"
-                )
-            for path in sorted(source_content[source_id]):
-                previous = seen_source_paths.get(path)
-                if previous is not None:
-                    raise BlueprintGraphError(
-                        f"{sources[source_id].blueprint_path}: sibling sources "
-                        f"{previous} and {source_id} overlap at {path}"
-                    )
-                seen_source_paths[path] = source_id
-                direct_file_owners[path] = source_id
-        for path in sorted(module_content[module_id] - set(seen_source_paths)):
-            direct_file_owners[path] = module_id
-
-    seen_certification_edges: set[tuple[str, str, str, int | None]] = set()
-    unique_certification_edges: list[CertificationEdge] = []
-    for edge in certification_edges:
-        key = (
-            edge.relation,
-            edge.source_node_id,
-            edge.target_node_id,
-            edge.target_version,
-        )
-        if key not in seen_certification_edges:
-            seen_certification_edges.add(key)
-            unique_certification_edges.append(edge)
-    certification_edge_tuple = tuple(
-        sorted(
-            unique_certification_edges,
-            key=lambda edge: (
-                edge.source_node_id,
-                edge.relation,
-                edge.target_node_id,
-                edge.target_version or 0,
-            ),
-        )
-    )
-    _reject_certification_cycles(set(nodes), certification_edge_tuple)
-    export_edge_tuple = tuple(
-        sorted(
-            export_edges,
-            key=lambda edge: (
-                edge.source_export_id,
-                edge.target_interface_id,
-                edge.target_version,
-            ),
-        )
-    )
-    _reject_export_cycles(exports, export_edge_tuple)
-    return RepositoryBlueprintGraph(
-        nodes=dict(sorted(nodes.items())),
-        node_edges=tuple(sorted(node_edges, key=_edge_key)),
-        exports=dict(sorted(exports.items())),
-        export_edges=export_edge_tuple,
-        helper_edges=tuple(
-            sorted(
-                helper_edges,
-                key=lambda edge: (
-                    edge.source_export_id,
-                    edge.local_helper_id,
-                ),
-            )
-        ),
-        certification_edges=certification_edge_tuple,
-        module_sources=module_sources,
-        direct_file_owners=direct_file_owners,
-    )
-
-
 def _v5_topology(
     root: Path,
     modules: Mapping[str, BlueprintNode],
@@ -4222,46 +3445,11 @@ def _v6_topology(
     )
 
 
-def _v5_sources(
+def _sources(
     root: Path,
     modules: Mapping[str, BlueprintNode],
     sources: Mapping[str, BlueprintNode],
 ) -> tuple[dict[str, tuple[str, ...]], dict[str, str]]:
-    """Transform root, modules, sources into the v5 sources result used by the blueprint graph.
-
-    Intent
-    ------
-    Use root, modules, sources to transform root, modules, sources into the v5 sources result used by the blueprint graph.
-
-    Rationale
-    ---------
-    The operation combines root, modules, sources through sorted, Path, items and ordered iteration, bounded failure checks, an explicit return value, making the resulting v5 sources behavior explicit across 7 conditional branches.
-
-    Pseudocode
-    ----------
-    - set v5_sources_inputs = root, modules, sources
-    - if v5_sources_inputs violate blueprint invariants:
-      - raise blueprint graph error
-    - for item in v5_sources_inputs:
-      - set validated_item = item
-    - return v5 sources value
-
-    Wraps
-    -----
-    - none
-
-    CallsFromRepo
-    -------------
-    ._resolve_locator:
-      why:
-        computes: "Supplies dependency position 1,  resolve locator, while transforming root, modules, sources into the v5 sources value."
-
-    InstantiationsFromRepo
-    ----------------------
-    .BlueprintGraphError:
-      why:
-        constructs: "Supplies dependency position 1, BlueprintGraphError, while transforming root, modules, sources into the v5 sources value."
-    """
     sources_by_marker = {
         Path(os.path.abspath(source.blueprint_path)): source_id
         for source_id, source in sources.items()
@@ -4323,29 +3511,10 @@ def _v5_sources(
     return module_sources, source_modules
 
 
-def _v5_authority_claims_overlap(
+def _authority_claims_overlap(
     first: tuple[str, re.Pattern[str] | None],
     second: tuple[str, re.Pattern[str] | None],
 ) -> bool:
-    """Transform first, second into the v5 authority claims overlap result used by the blueprint graph.
-
-    Intent
-    ------
-    Use first, second to transform first, second into the v5 authority claims overlap result used by the blueprint graph.
-
-    Rationale
-    ---------
-    The operation combines first, second through fullmatch and an explicit return value, making the resulting v5 authority claims overlap behavior explicit across 3 conditional branches.
-
-    Pseudocode
-    ----------
-    - set v5_authority_claims_overlap_inputs = first, second
-    - return v5 authority claims overlap value
-
-    Wraps
-    -----
-    - none
-    """
     first_match, first_pattern = first
     second_match, second_pattern = second
     if first_pattern is None and second_pattern is None:
@@ -4362,53 +3531,15 @@ def _v5_authority_claims_overlap(
     return True
 
 
-def _validate_v5_nested_authority(
+def _validate_nested_authority(
     modules: Mapping[str, BlueprintNode],
     module_ancestry: Mapping[str, tuple[str, ...]],
 ) -> None:
-    """Validate v5 nested authority.
-
-    Intent
-    ------
-    Use modules, module ancestry to validate v5 nested authority.
-
-    Rationale
-    ---------
-    The operation combines modules, module ancestry through _v4_authority_claims, sorted, append and ordered iteration, bounded failure checks, making the resulting validate v5 nested authority behavior explicit across 1 conditional branches.
-
-    Pseudocode
-    ----------
-    - set validate_v5_nested_authority_inputs = modules, module ancestry
-    - if validate_v5_nested_authority_inputs violate blueprint invariants:
-      - raise blueprint graph error
-    - for item in validate_v5_nested_authority_inputs:
-      - set validated_item = item
-    - return none
-
-    Wraps
-    -----
-    - none
-
-    CallsFromRepo
-    -------------
-    ._v5_authority_claims_overlap:
-      why:
-        computes: "Supplies dependency position 1,  v5 authority claims overlap, while transforming modules, module ancestry into the validate v5 nested authority value."
-    ._v4_authority_claims:
-      why:
-        computes: "Supplies dependency position 2,  v4 authority claims, while transforming modules, module ancestry into the validate v5 nested authority value."
-
-    InstantiationsFromRepo
-    ----------------------
-    .BlueprintGraphError:
-      why:
-        constructs: "Supplies dependency position 1, BlueprintGraphError, while transforming modules, module ancestry into the validate v5 nested authority value."
-    """
     mutable_claims: dict[
         str,
         list[tuple[str, re.Pattern[str] | None]],
     ] = {module_id: [] for module_id in modules}
-    for module_id, _match, path, pattern in _v4_authority_claims(modules):
+    for module_id, _match, path, pattern in _authority_claims(modules):
         mutable_claims[module_id].append((path, pattern))
     claims_by_module = {
         module_id: tuple(claims)
@@ -4419,7 +3550,7 @@ def _validate_v5_nested_authority(
         for ancestor_id in ancestry[:-1]:
             for ancestor_claim in claims_by_module[ancestor_id]:
                 for descendant_claim in claims_by_module[descendant_id]:
-                    if not _v5_authority_claims_overlap(
+                    if not _authority_claims_overlap(
                         ancestor_claim,
                         descendant_claim,
                     ):
@@ -4506,60 +3637,14 @@ def _validate_v5_managed_skill_code_boundaries(
                     )
 
 
-def _v5_interfaces_and_exports(
+def _interfaces_and_exports(
     modules: Mapping[str, BlueprintNode],
     sources: Mapping[str, BlueprintNode],
     source_modules: Mapping[str, str],
     module_children: Mapping[str, tuple[str, ...]],
     module_local_segments: Mapping[str, str],
-    *,
-    allow_facades: bool = True,
 ) -> tuple[dict[str, InterfaceExport], dict[str, InterfaceExport]]:
-    """Transform modules, sources, source modules, module children into the v5 interfaces and exports result used by the blueprint graph.
-
-    Intent
-    ------
-    Use modules, sources, source modules, module children to transform modules, sources, source modules, module children into the v5 interfaces and exports result used by the blueprint graph.
-
-    Rationale
-    ---------
-    The operation combines modules, sources, source modules, module children through _v4_authority_claims, sorted, items and ordered iteration, bounded failure checks, an explicit return value, making the resulting v5 interfaces and exports behavior explicit across 16 conditional branches.
-
-    Pseudocode
-    ----------
-    - set v5_interfaces_and_exports_inputs = modules, sources, source modules, module children
-    - if v5_interfaces_and_exports_inputs violate blueprint invariants:
-      - raise blueprint graph error
-    - for item in v5_interfaces_and_exports_inputs:
-      - set validated_item = item
-    - return v5 interfaces and exports value
-
-    Wraps
-    -----
-    - none
-
-    CallsFromRepo
-    -------------
-    ._validate_v4_interface_contract:
-      why:
-        computes: "Supplies dependency position 1,  validate v4 interface contract, while transforming modules, sources, source modules, module children into the v5 interfaces and exports value."
-
-    InstantiationsFromRepo
-    ----------------------
-    ._positive_version:
-      why:
-        constructs: "Supplies dependency position 1,  positive version, while transforming modules, sources, source modules, module children into the v5 interfaces and exports value."
-    ._v4_authority_claims:
-      why:
-        constructs: "Supplies dependency position 2,  v4 authority claims, while transforming modules, sources, source modules, module children into the v5 interfaces and exports value."
-    .InterfaceExport:
-      why:
-        constructs: "Supplies dependency position 3, InterfaceExport, while transforming modules, sources, source modules, module children into the v5 interfaces and exports value."
-    .BlueprintGraphError:
-      why:
-        constructs: "Supplies dependency position 4, BlueprintGraphError, while transforming modules, sources, source modules, module children into the v5 interfaces and exports value."
-    """
-    authority_claims = _v4_authority_claims(modules)
+    authority_claims = _authority_claims(modules)
     source_interfaces: dict[str, InterfaceExport] = {}
     for source_id, source in sorted(sources.items()):
         raw_interfaces = source.declaration.get("interfaces")
@@ -4585,7 +3670,7 @@ def _v5_interfaces_and_exports(
                 raise BlueprintGraphError(
                     f"duplicate source interface {interface_id!r}"
                 )
-            _validate_v4_interface_contract(
+            _validate_interface_contract(
                 interface_id,
                 declaration,
                 module_id=source_modules[source_id],
@@ -4605,9 +3690,6 @@ def _v5_interfaces_and_exports(
             )
 
     exports: dict[str, InterfaceExport] = {}
-    facade_declarations: list[
-        tuple[str, str, Mapping[str, JsonValue]]
-    ] = []
     for module_id, module in sorted(modules.items()):
         raw_exports = module.declaration.get("exports")
         if not isinstance(raw_exports, dict):
@@ -4655,64 +3737,9 @@ def _v5_interfaces_and_exports(
                     terminal_module_node_id=module_id,
                 )
                 continue
-            facade = export_declaration.get("facade_interface")
-            if not allow_facades:
-                raise BlueprintGraphError(
-                    f"{module.blueprint_path}: export {export_id!r} must bind a contained source interface"
-                )
-            if not isinstance(facade, Mapping):
-                raise BlueprintGraphError(
-                    f"{module.blueprint_path}: export {export_id!r} must be "
-                    "a source export or facade"
-                )
-            facade_declarations.append(
-                (module_id, export_id, export_declaration)
-            )
-
-    for module_id, export_id, export_declaration in facade_declarations:
-        facade = export_declaration["facade_interface"]
-        assert isinstance(facade, Mapping)
-        target_id = facade.get("interface")
-        if not isinstance(target_id, str):
             raise BlueprintGraphError(
-                f"{export_id}: facade target interface must be a string"
+                f"{module.blueprint_path}: export {export_id!r} must bind a contained source interface"
             )
-        target = exports.get(target_id)
-        if target is None:
-            raise BlueprintGraphError(
-                f"{export_id}: facade targets unknown or nonterminal export "
-                f"{target_id!r}"
-            )
-        target_version = _positive_version(
-            facade.get("version"),
-            f"{export_id}.facade_interface",
-        )
-        if target.version != target_version:
-            raise BlueprintGraphError(
-                f"{export_id}: facade pins {target_id} version {target_version}, "
-                f"but target version is {target.version}"
-            )
-        child_id = target.module_node_id
-        if (
-            child_id not in module_children.get(module_id, ())
-            or module_local_segments.get(child_id) != "_rtx"
-            or target.terminal_interface_id != target.interface_id
-        ):
-            raise BlueprintGraphError(
-                f"{export_id}: facade must target one direct _rtx child export"
-            )
-        exports[export_id] = InterfaceExport(
-            interface_id=export_id,
-            version=target.version,
-            local_name=export_id.rsplit(".interface.", 1)[-1],
-            module_node_id=module_id,
-            declaration=target.declaration,
-            source_node_id=target.source_node_id,
-            source_interface_id=target.source_interface_id,
-            export_declaration=export_declaration,
-            terminal_interface_id=target.interface_id,
-            terminal_module_node_id=target.module_node_id,
-        )
     return (
         dict(sorted(source_interfaces.items())),
         dict(sorted(exports.items())),
@@ -4840,54 +3867,14 @@ def setup_order(
     return tuple(order)
 
 
-def _v5_namespace_routes(
+def _namespace_routes(
     modules: Mapping[str, BlueprintNode],
     exports: Mapping[str, InterfaceExport],
     module_children: Mapping[str, tuple[str, ...]],
-    *,
-    direct_segments: bool = False,
 ) -> tuple[
     dict[tuple[str, str], NamespaceRoute],
     tuple[RoutedInterface, ...],
 ]:
-    """Transform modules, exports, module children into the v5 namespace routes result used by the blueprint graph.
-
-    Intent
-    ------
-    Use modules, exports, module children to transform modules, exports, module children into the v5 namespace routes result used by the blueprint graph.
-
-    Rationale
-    ---------
-    The operation combines modules, exports, module children through items, sorted, tuple and ordered iteration, bounded failure checks, an explicit return value, making the resulting v5 namespace routes behavior explicit across 13 conditional branches.
-
-    Pseudocode
-    ----------
-    - set v5_namespace_routes_inputs = modules, exports, module children
-    - if v5_namespace_routes_inputs violate blueprint invariants:
-      - raise blueprint graph error
-    - for item in v5_namespace_routes_inputs:
-      - set validated_item = item
-    - return v5 namespace routes value
-
-    Wraps
-    -----
-    - none
-
-    InstantiationsFromRepo
-    ----------------------
-    .RoutedInterface:
-      why:
-        constructs: "Supplies dependency position 1, RoutedInterface, while transforming modules, exports, module children into the v5 namespace routes value."
-    ._positive_version:
-      why:
-        constructs: "Supplies dependency position 2,  positive version, while transforming modules, exports, module children into the v5 namespace routes value."
-    .NamespaceRoute:
-      why:
-        constructs: "Supplies dependency position 3, NamespaceRoute, while transforming modules, exports, module children into the v5 namespace routes value."
-    .BlueprintGraphError:
-      why:
-        constructs: "Supplies dependency position 4, BlueprintGraphError, while transforming modules, exports, module children into the v5 namespace routes value."
-    """
     direct_exports: dict[str, dict[str, InterfaceExport]] = {
         module_id: {} for module_id in modules
     }
@@ -4953,13 +3940,9 @@ def _v5_namespace_routes(
             raise BlueprintGraphError(
                 f"{modules[module_id].blueprint_path}: "
                 "namespace_exports must be a mapping"
-            )
+        )
         for raw_child_id, declaration in sorted(raw_routes.items()):
-            child_id = (
-                f"{module_id}.{raw_child_id}"
-                if direct_segments
-                else raw_child_id
-            )
+            child_id = f"{module_id}.{raw_child_id}"
             if (
                 not isinstance(child_id, str)
                 or not isinstance(declaration, dict)
@@ -4986,43 +3969,39 @@ def _v5_namespace_routes(
                 raise BlueprintGraphError(
                     f"{module_id}: namespace route {child_id} has invalid surface"
                 )
-            if direct_segments and "all" in raw_surface:
+            if "all" in raw_surface:
                 raise BlueprintGraphError(
                     f"{module_id}: namespace route {child_id} requires explicit only surface"
                 )
-            if raw_surface.get("all") is True:
-                selected = dict(child_surface)
-            else:
-                only = raw_surface.get("only")
-                if not isinstance(only, Mapping):
+            only = raw_surface.get("only")
+            if not isinstance(only, Mapping):
+                raise BlueprintGraphError(
+                    f"{module_id}: namespace route {child_id} must select only"
+                )
+            selected = {}
+            for interface_id, raw_version in sorted(only.items()):
+                if not isinstance(interface_id, str):
                     raise BlueprintGraphError(
-                        f"{module_id}: namespace route {child_id} "
-                        "must select all or only"
+                        f"{module_id}: routed interface id must be a string"
                     )
-                selected = {}
-                for interface_id, raw_version in sorted(only.items()):
-                    if not isinstance(interface_id, str):
-                        raise BlueprintGraphError(
-                            f"{module_id}: routed interface id must be a string"
-                        )
-                    export = child_surface.get(interface_id)
-                    version = _positive_version(
-                        raw_version,
-                        f"{module_id}:namespace_exports.{child_id}."
-                        f"surface.only.{interface_id}",
+                export = child_surface.get(interface_id)
+                version = _positive_version(
+                    raw_version,
+                    f"{module_id}:namespace_exports.{child_id}."
+                    f"surface.only.{interface_id}",
+                )
+                if export is None:
+                    raise BlueprintGraphError(
+                        f"{module_id}: namespace route {child_id} cannot "
+                        f"expose private or unrouted interface {interface_id!r}"
                     )
-                    if export is None:
-                        raise BlueprintGraphError(
-                            f"{module_id}: namespace route {child_id} cannot "
-                            f"expose private or unrouted interface {interface_id!r}"
-                        )
-                    if export.version != version:
-                        raise BlueprintGraphError(
-                            f"{module_id}: namespace route pins {interface_id} "
-                            f"version {version}, but target version is "
-                            f"{export.version}"
-                        )
-                    selected[interface_id] = export
+                if export.version != version:
+                    raise BlueprintGraphError(
+                        f"{module_id}: namespace route pins {interface_id} "
+                        f"version {version}, but target version is "
+                        f"{export.version}"
+                    )
+                selected[interface_id] = export
             interface_access = declaration.get("interface_access", {})
             if not isinstance(interface_access, Mapping) or not set(
                 interface_access
@@ -5087,7 +4066,7 @@ def _v5_namespace_routes(
     return dict(sorted(routes.items())), routed
 
 
-def _v5_content_ownership(
+def _content_ownership(
     root: Path,
     nodes: Mapping[str, BlueprintNode],
     modules: Mapping[str, BlueprintNode],
@@ -5095,41 +4074,6 @@ def _v5_content_ownership(
     module_sources: Mapping[str, tuple[str, ...]],
     module_children: Mapping[str, tuple[str, ...]],
 ) -> dict[Path, str]:
-    """Transform root, nodes, modules, sources into the v5 content ownership result used by the blueprint graph.
-
-    Intent
-    ------
-    Use root, nodes, modules, sources to transform root, nodes, modules, sources into the v5 content ownership result used by the blueprint graph.
-
-    Rationale
-    ---------
-    The operation combines root, nodes, modules, sources through sorted, Path, items and ordered iteration, bounded failure checks, an explicit return value, making the resulting v5 content ownership behavior explicit across 4 conditional branches.
-
-    Pseudocode
-    ----------
-    - set v5_content_ownership_inputs = root, nodes, modules, sources
-    - if v5_content_ownership_inputs violate blueprint invariants:
-      - raise blueprint graph error
-    - for item in v5_content_ownership_inputs:
-      - set validated_item = item
-    - return v5 content ownership value
-
-    Wraps
-    -----
-    - none
-
-    CallsFromRepo
-    -------------
-    .resolved_node_content_paths:
-      why:
-        computes: "Supplies dependency position 1, resolved node content paths, while transforming root, nodes, modules, sources into the v5 content ownership value."
-
-    InstantiationsFromRepo
-    ----------------------
-    .BlueprintGraphError:
-      why:
-        constructs: "Supplies dependency position 1, BlueprintGraphError, while transforming root, nodes, modules, sources into the v5 content ownership value."
-    """
     blueprint_paths = {
         Path(os.path.abspath(node.blueprint_path)) for node in nodes.values()
     }
@@ -5378,99 +4322,12 @@ def _unique_certification_edges(
     )
 
 
-def _load_v5_repository_blueprint_graph(
+def _load_v6_repository_blueprint_graph(
     root: Path,
     documents: tuple[Any, ...],
     *,
     schema_root: Path,
-    schema_version: int = 5,
 ) -> RepositoryBlueprintGraph:
-    """Load v5 repository blueprint graph.
-
-    Intent
-    ------
-    Use root, documents, schema root to load v5 repository blueprint graph.
-
-    Rationale
-    ---------
-    The operation combines root, documents, schema root through _v5_topology, _validate_v5_nested_authority, _v5_sources and ordered iteration, bounded failure checks, an explicit return value, making the resulting load v5 repository blueprint graph behavior explicit across 11 conditional branches.
-
-    Pseudocode
-    ----------
-    - set load_v5_repository_blueprint_graph_inputs = root, documents, schema root
-    - if load_v5_repository_blueprint_graph_inputs violate blueprint invariants:
-      - raise blueprint graph error
-    - for item in load_v5_repository_blueprint_graph_inputs:
-      - set validated_item = item
-    - return load v5 repository blueprint graph value
-
-    Wraps
-    -----
-    - none
-
-    CallsFromRepo
-    -------------
-    ._validate_v5_managed_skill_code_boundaries:
-      why:
-        computes: "Supplies dependency position 1,  validate v5 managed skill code boundaries, while transforming root, documents, schema root into the load v5 repository blueprint graph value."
-    ._reject_certification_cycles:
-      why:
-        computes: "Supplies dependency position 2,  reject certification cycles, while transforming root, documents, schema root into the load v5 repository blueprint graph value."
-    ._validate_v5_nested_authority:
-      why:
-        computes: "Supplies dependency position 3,  validate v5 nested authority, while transforming root, documents, schema root into the load v5 repository blueprint graph value."
-    ._require_platform_compatibility:
-      why:
-        computes: "Supplies dependency position 4,  require platform compatibility, while transforming root, documents, schema root into the load v5 repository blueprint graph value."
-    ._reject_export_cycles:
-      why:
-        computes: "Supplies dependency position 5,  reject export cycles, while transforming root, documents, schema root into the load v5 repository blueprint graph value."
-
-    InstantiationsFromRepo
-    ----------------------
-    ._unique_certification_edges:
-      why:
-        constructs: "Supplies dependency position 1,  unique certification edges, while transforming root, documents, schema root into the load v5 repository blueprint graph value."
-    ._declaration_schema_errors:
-      why:
-        constructs: "Supplies dependency position 2,  declaration schema errors, while transforming root, documents, schema root into the load v5 repository blueprint graph value."
-    ._v5_content_ownership:
-      why:
-        constructs: "Supplies dependency position 3,  v5 content ownership, while transforming root, documents, schema root into the load v5 repository blueprint graph value."
-    ._node_from_document:
-      why:
-        constructs: "Supplies dependency position 4,  node from document, while transforming root, documents, schema root into the load v5 repository blueprint graph value."
-    ._v5_interfaces_and_exports:
-      why:
-        constructs: "Supplies dependency position 5,  v5 interfaces and exports, while transforming root, documents, schema root into the load v5 repository blueprint graph value."
-    ._build_export_relationships:
-      why:
-        constructs: "Supplies dependency position 6,  build export relationships, while transforming root, documents, schema root into the load v5 repository blueprint graph value."
-    .BlueprintEdge:
-      why:
-        constructs: "Supplies dependency position 7, BlueprintEdge, while transforming root, documents, schema root into the load v5 repository blueprint graph value."
-    ._v5_topology:
-      why:
-        constructs: "Supplies dependency position 8,  v5 topology, while transforming root, documents, schema root into the load v5 repository blueprint graph value."
-    ._v5_namespace_routes:
-      why:
-        constructs: "Supplies dependency position 9,  v5 namespace routes, while transforming root, documents, schema root into the load v5 repository blueprint graph value."
-    .BlueprintGraphError:
-      why:
-        constructs: "Supplies dependency position 10, BlueprintGraphError, while transforming root, documents, schema root into the load v5 repository blueprint graph value."
-    ._v5_sources:
-      why:
-        constructs: "Supplies dependency position 11,  v5 sources, while transforming root, documents, schema root into the load v5 repository blueprint graph value."
-    .CertificationEdge:
-      why:
-        constructs: "Supplies dependency position 12, CertificationEdge, while transforming root, documents, schema root into the load v5 repository blueprint graph value."
-    ._build_source_relationships:
-      why:
-        constructs: "Supplies dependency position 13,  build source relationships, while transforming root, documents, schema root into the load v5 repository blueprint graph value."
-    .RepositoryBlueprintGraph:
-      why:
-        constructs: "Supplies dependency position 14, RepositoryBlueprintGraph, while transforming root, documents, schema root into the load v5 repository blueprint graph value."
-    """
     validators: dict[str, jsonschema.protocols.Validator] = {}
     nodes: dict[str, BlueprintNode] = {}
     for document in documents:
@@ -5479,11 +4336,10 @@ def _load_v5_repository_blueprint_graph(
             dict(document.declaration),
             schema_root,
             validators,
-            expected_schema_version=schema_version,
         )
         if errors:
             raise errors[0]
-        node = _node_from_document(document, expected_schema_version=schema_version)
+        node = _node_from_document(document)
         previous = nodes.get(node.node_id)
         if previous is not None:
             raise BlueprintGraphError(
@@ -5504,11 +4360,11 @@ def _load_v5_repository_blueprint_graph(
     }
     if not modules:
         raise BlueprintGraphError(
-            f"version {schema_version} repository graph requires at least one module"
+            "version 6 repository graph requires at least one module"
         )
     if len(modules) + len(sources) != len(nodes):
         raise BlueprintGraphError(
-            f"version {schema_version} repository graph permits only module and "
+            "version 6 repository graph permits only module and "
             "behavioral_source nodes"
         )
 
@@ -5517,37 +4373,21 @@ def _load_v5_repository_blueprint_graph(
         module_children,
         module_local_segments,
         module_ancestry,
-    ) = (
-        _v6_topology(modules)
-        if schema_version == 6
-        else _v5_topology(root, modules)
-    )
-    _validate_v5_nested_authority(modules, module_ancestry)
-    module_sources, source_modules = _v5_sources(
-        root,
-        modules,
-        sources,
-    )
-    if schema_version == 5:
-        _validate_v5_managed_skill_code_boundaries(
-            modules,
-            sources,
-            module_sources,
-        )
-    source_interfaces, exports = _v5_interfaces_and_exports(
+    ) = _v6_topology(modules)
+    _validate_nested_authority(modules, module_ancestry)
+    module_sources, source_modules = _sources(root, modules, sources)
+    source_interfaces, exports = _interfaces_and_exports(
         modules,
         sources,
         source_modules,
         module_children,
         module_local_segments,
-        allow_facades=schema_version == 5,
     )
-    setup_requirements = _setup_requirements(exports) if schema_version == 6 else {}
-    namespace_routes, routed_interfaces = _v5_namespace_routes(
+    setup_requirements = _setup_requirements(exports)
+    namespace_routes, routed_interfaces = _namespace_routes(
         modules,
         exports,
         module_children,
-        direct_segments=schema_version == 6,
     )
 
     node_edges: list[BlueprintEdge] = []
@@ -5677,7 +4517,7 @@ def _load_v5_repository_blueprint_graph(
         helper_edges=(),
         certification_edges=_unique_certification_edges(certification_edges),
         module_sources=module_sources,
-        schema_version=schema_version,
+        schema_version=6,
         source_modules=source_modules,
         source_interfaces=source_interfaces,
         module_parents=module_parents,
@@ -5699,45 +4539,12 @@ def _load_v5_repository_blueprint_graph(
     except _ResolutionFailure as exc:
         raise BlueprintGraphError(exc.diagnostic) from exc
 
-    def resolve_v5_interface_use(
+    def resolve_interface_use(
         source_id: str,
         source: BlueprintNode,
         interface_id: str,
         version: int,
     ) -> tuple[str, str]:
-        """Resolve v5 interface use.
-
-        Intent
-        ------
-        Use source id, source, interface id, version to resolve v5 interface use.
-
-        Rationale
-        ---------
-        The operation combines source id, source, interface id, version through get, BlueprintGraphError, resolve_interface_authorization and bounded failure checks, an explicit return value, making the resulting resolve v5 interface use behavior explicit across 5 conditional branches.
-
-        Pseudocode
-        ----------
-        - set resolve_v5_interface_use_inputs = source id, source, interface id, version
-        - if resolve_v5_interface_use_inputs violate blueprint invariants:
-          - raise blueprint graph error
-        - return resolve v5 interface use value
-
-        Wraps
-        -----
-        - none
-
-        CallsFromRepo
-        -------------
-        ._require_platform_compatibility:
-          why:
-            computes: "Supplies dependency position 1,  require platform compatibility, while transforming source id, source, interface id, version into the resolve v5 interface use value."
-
-        InstantiationsFromRepo
-        ----------------------
-        .BlueprintGraphError:
-          why:
-            constructs: "Supplies dependency position 1, BlueprintGraphError, while transforming source id, source, interface id, version into the resolve v5 interface use value."
-        """
         private = source_interfaces.get(interface_id)
         if private is not None:
             if private.module_node_id != source_modules[source_id]:
@@ -5785,14 +4592,14 @@ def _load_v5_repository_blueprint_graph(
         node_edges=node_edges,
         certification_edges=certification_edges,
         dependency_root=lambda source: source.module_root,
-        resolve_interface_use=resolve_v5_interface_use,
+        resolve_interface_use=resolve_interface_use,
     )
     export_edges, helper_edges = _build_export_relationships(
         exports,
         interface_uses_by_source,
     )
 
-    direct_file_owners = _v5_content_ownership(
+    direct_file_owners = _content_ownership(
         root,
         nodes,
         modules,
@@ -5800,18 +4607,14 @@ def _load_v5_repository_blueprint_graph(
         module_sources,
         module_children,
     )
-    if schema_version == 6:
-        interface_content_paths, interface_uses = _v6_interface_facets(
-            root,
-            modules=modules,
-            sources=sources,
-            source_modules=source_modules,
-            module_children=module_children,
-            interface_uses_by_source=interface_uses_by_source,
-        )
-    else:
-        interface_content_paths = {}
-        interface_uses = {}
+    interface_content_paths, interface_uses = _v6_interface_facets(
+        root,
+        modules=modules,
+        sources=sources,
+        source_modules=source_modules,
+        module_children=module_children,
+        interface_uses_by_source=interface_uses_by_source,
+    )
     certification_edge_tuple = _unique_certification_edges(
         certification_edges
     )
@@ -5844,7 +4647,7 @@ def _load_v5_repository_blueprint_graph(
         certification_edges=certification_edge_tuple,
         module_sources=module_sources,
         direct_file_owners=direct_file_owners,
-        schema_version=schema_version,
+        schema_version=6,
         source_modules=source_modules,
         source_interfaces=source_interfaces,
         module_parents=module_parents,
@@ -6223,9 +5026,9 @@ def load_dispatch_blueprint_graph(
 
     InstantiationsFromRepo
     ----------------------
-    ._load_v5_repository_blueprint_graph:
+    ._load_v6_repository_blueprint_graph:
       why:
-        constructs: "Supplies dependency position 1,  load v5 repository blueprint graph, while transforming repo root, caller module id, interface id, schema root into the load dispatch blueprint graph value."
+        constructs: "Supplies dependency position 1, load the canonical repository blueprint graph for one dispatch closure."
     .BlueprintDiagnostic:
       why:
         constructs: "Supplies dependency position 2, BlueprintDiagnostic, while transforming repo root, caller module id, interface id, schema root into the load dispatch blueprint graph value."
@@ -6249,13 +5052,11 @@ def load_dispatch_blueprint_graph(
             load_repository_blueprint_graph(
                 root,
                 schema_root=schema_root,
-                expected_schema_version=5,
             )
         )
     except (BlueprintGraphError, BlueprintInventoryError) as full_error:
         inventory = collect_blueprints(
             root,
-            expected_schema_version=5,
             skip_parse_errors=True,
         )
         selected_documents, selected_roots = _dispatch_document_closure(
@@ -6297,10 +5098,8 @@ def load_dispatch_blueprint_graph(
                 Path(__file__).resolve().parents[3]
                 / "references"
                 / "blueprint-schema"
-                / "migrations"
-                / "v5"
             )
-        graph = _load_v5_repository_blueprint_graph(
+        graph = _load_v6_repository_blueprint_graph(
             root,
             selected_documents,
             schema_root=selected_schema_root,
@@ -6320,147 +5119,25 @@ def load_repository_blueprint_graph(
     repo_root: Path,
     *,
     schema_root: Path | None = None,
-    expected_schema_version: int = 6,
 ) -> RepositoryBlueprintGraph:
-    """Load one explicit repository-wide graph; v6 is canonical.
-
-    Intent
-    ------
-    Use repo root, schema root, expected schema version to load one explicit repository-wide graph; v6 is canonical.
-
-    Rationale
-    ---------
-    The operation combines repo root, schema root, expected schema version through resolve, tuple, _load_v4_repository_blueprint_graph and ordered iteration, bounded failure checks, an explicit return value, making the resulting load repository blueprint graph behavior explicit across 4 conditional branches.
-
-    Pseudocode
-    ----------
-    - set load_repository_blueprint_graph_inputs = repo root, schema root, expected schema version
-    - if load_repository_blueprint_graph_inputs violate blueprint invariants:
-      - raise blueprint graph error
-    - for item in load_repository_blueprint_graph_inputs:
-      - set validated_item = item
-    - return load repository blueprint graph value
-
-    Wraps
-    -----
-    - none
-
-    InstantiationsFromRepo
-    ----------------------
-    .inventory.iter_blueprints:
-      why:
-        constructs: "Supplies dependency position 1, iter blueprints, while transforming repo root, schema root, expected schema version into the load repository blueprint graph value."
-    ._load_v4_repository_blueprint_graph:
-      why:
-        constructs: "Supplies dependency position 2,  load v4 repository blueprint graph, while transforming repo root, schema root, expected schema version into the load repository blueprint graph value."
-    ._load_v5_repository_blueprint_graph:
-      why:
-        constructs: "Supplies dependency position 3,  load v5 repository blueprint graph, while transforming repo root, schema root, expected schema version into the load repository blueprint graph value."
-    .BlueprintGraphError:
-      why:
-        constructs: "Supplies dependency position 4, BlueprintGraphError, while transforming repo root, schema root, expected schema version into the load repository blueprint graph value."
-    """
-
-    if expected_schema_version not in {4, 5, 6}:
-        raise ValueError("expected_schema_version must be 4, 5, or 6")
     root = Path(repo_root).resolve()
-    documents = tuple(
-        iter_inventory_blueprints(
-            root,
-            expected_schema_version=expected_schema_version,
-        )
-    )
-    for document in documents:
-        if (
-            document.declaration.get("schema_version")
-            != expected_schema_version
-        ):
-            raise BlueprintGraphError(
-                f"{document.path}: repository graph requires schema_version "
-                f"{expected_schema_version}"
-            )
-
+    documents = tuple(iter_inventory_blueprints(root))
     selected_schema_root = (
         Path(schema_root)
         if schema_root is not None
-        else (
-            root / "references" / "blueprint-schema"
-            if expected_schema_version == 6
-            else root / "references" / "blueprint-schema" / "migrations" / f"v{expected_schema_version}"
-        )
+        else root / "references" / "blueprint-schema"
     )
     if not (selected_schema_root / "module.schema.json").is_file():
         selected_schema_root = (
             Path(__file__).resolve().parents[3]
             / "references"
             / "blueprint-schema"
-            / (
-                Path()
-                if expected_schema_version == 6
-                else Path("migrations") / f"v{expected_schema_version}"
-            )
         )
-    if expected_schema_version in {5, 6}:
-        return _load_v5_repository_blueprint_graph(
-            root,
-            documents,
-            schema_root=selected_schema_root,
-            schema_version=expected_schema_version,
-        )
-    return _load_v4_repository_blueprint_graph(
+    return _load_v6_repository_blueprint_graph(
         root,
         documents,
         schema_root=selected_schema_root,
     )
-
-
-def repository_schema_version(repo_root: Path) -> int:
-    """Return the canonical repository schema version, defaulting legacy trees to v4.
-
-    Intent
-    ------
-    Use repo root to return the canonical repository schema version, defaulting legacy trees to v4.
-
-    Rationale
-    ---------
-    The operation combines repo root through int, safe_load, isinstance and bounded failure checks, an explicit return value, making the resulting repository schema version behavior explicit across 1 conditional branches.
-
-    Pseudocode
-    ----------
-    - set repository_schema_version_inputs = repo root
-    - if repository_schema_version_inputs violate blueprint invariants:
-      - raise blueprint graph error
-    - return repository schema version value
-
-    Wraps
-    -----
-    - none
-    """
-
-    marker = (
-        Path(repo_root)
-        / "references"
-        / "blueprint-schema"
-        / "blueprint.yaml"
-    )
-    try:
-        document = yaml.safe_load(marker.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return 4
-    except (OSError, UnicodeError, yaml.YAMLError) as exc:
-        raise ValueError(
-            f"{marker}: cannot determine repository schema version"
-        ) from exc
-    version = (
-        document.get("schema_version")
-        if isinstance(document, dict)
-        else None
-    )
-    if version not in {4, 5, 6}:
-        raise ValueError(
-            f"{marker}: repository schema version must be 4, 5, or 6"
-        )
-    return int(version)
 
 
 def resolve_export(

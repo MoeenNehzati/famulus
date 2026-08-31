@@ -724,7 +724,7 @@ def _reconcile_v5_topology(
             )
 
 
-def _reconcile_v6_topology(
+def _reconcile_topology(
     repo_root: Path,
     module_roots: tuple[Path, ...],
     marker_documents: Mapping[Path, BlueprintDocument],
@@ -817,11 +817,8 @@ def _reconcile_v6_topology(
 def collect_blueprints(
     repo_root: Path,
     *,
-    expected_schema_version: int = 6,
     skip_parse_errors: bool = False,
 ) -> BlueprintInventoryResult:
-    if expected_schema_version not in {4, 5, 6}:
-        raise ValueError("expected_schema_version must be 4, 5, or 6")
     repo_root = Path(repo_root).resolve()
     documents: list[BlueprintDocument] = []
     issues: list[BlueprintInventoryIssue] = []
@@ -830,22 +827,9 @@ def collect_blueprints(
         repo_root,
         ignored_paths,
         issues=issues,
-        reject_nested_repositories=expected_schema_version in {5, 6},
-        exclude_host_system_skills=expected_schema_version in {5, 6},
+        reject_nested_repositories=True,
+        exclude_host_system_skills=True,
     )
-    if expected_schema_version == 4:
-        for index, root in enumerate(module_roots):
-            for possible_parent in module_roots[:index]:
-                if root.is_relative_to(possible_parent):
-                    issues.append(
-                        BlueprintInventoryIssue(
-                            root.relative_to(repo_root) / "blueprint.yaml",
-                            "nested module roots are not allowed: "
-                            f"{possible_parent.relative_to(repo_root).as_posix()} "
-                            f"and {root.relative_to(repo_root).as_posix()}",
-                        )
-                    )
-                    break
     for path in _blueprint_paths(repo_root, module_roots, ignored_paths):
         relative = path.relative_to(repo_root)
         try:
@@ -887,29 +871,17 @@ def collect_blueprints(
     for document in marker_documents:
         declaration = document.declaration
         if (
-            declaration.get("schema_version") != expected_schema_version
+            declaration.get("schema_version") != 6
             or declaration.get("node_type") != "module"
         ):
             issues.append(
                 BlueprintInventoryIssue(
                     document.relative_path,
                     "canonical module marker must declare schema_version "
-                    f"{expected_schema_version} and node_type module",
+                    "6 and node_type module",
                 )
             )
             continue
-        module_id = declaration.get("id")
-        if (
-            expected_schema_version == 4
-            and isinstance(module_id, str)
-            and module_id != document.module_root.name
-        ):
-            issues.append(
-                BlueprintInventoryIssue(
-                    document.relative_path,
-                    f"module id {module_id!r} must match its directory",
-                )
-            )
         module_id = declaration.get("id")
         if not isinstance(module_id, str):
             continue
@@ -925,27 +897,15 @@ def collect_blueprints(
             )
         else:
             modules_by_id[module_id] = document
-    if expected_schema_version == 5:
-        _reconcile_v5_topology(
-            repo_root,
-            module_roots,
-            {
-                document.module_root: document
-                for document in marker_documents
-            },
-            ignored_paths,
-            issues,
-        )
-    if expected_schema_version == 6:
-        _reconcile_v6_topology(
-            repo_root,
-            module_roots,
-            {
-                document.module_root: document
-                for document in marker_documents
-            },
-            issues,
-        )
+    _reconcile_topology(
+        repo_root,
+        module_roots,
+        {
+            document.module_root: document
+            for document in marker_documents
+        },
+        issues,
+    )
     issues.sort(key=lambda issue: (issue.relative_path.as_posix(), issue.message))
     documents.sort(key=lambda document: document.relative_path.as_posix())
     result = BlueprintInventoryResult(tuple(documents), tuple(issues))
@@ -954,14 +914,5 @@ def collect_blueprints(
     return result
 
 
-def iter_blueprints(
-    repo_root: Path,
-    *,
-    expected_schema_version: int = 5,
-) -> Iterator[BlueprintDocument]:
-    return iter(
-        collect_blueprints(
-            repo_root,
-            expected_schema_version=expected_schema_version,
-        ).documents
-    )
+def iter_blueprints(repo_root: Path) -> Iterator[BlueprintDocument]:
+    return iter(collect_blueprints(repo_root).documents)

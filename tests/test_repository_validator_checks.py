@@ -309,17 +309,13 @@ def test_graph_preflight_shares_schema_and_isolates_consumer_mutation(
     skill_validators = repo / "skills" / "skill-maker" / "validators"
     skill_validators.mkdir(parents=True)
     counter = tmp_path / "preflight-count"
-    schema_evidence = tmp_path / "schema-version"
     observation = tmp_path / "later-observation"
     (skill_validators / "blueprints.py").write_text(
         "from pathlib import Path\n"
         f"COUNTER = Path({str(counter)!r})\n"
-        f"SCHEMA_EVIDENCE = Path({str(schema_evidence)!r})\n"
-        "def repository_schema_version(repo_root): return 5\n"
-        "def preflight(repo_root, *, expected_schema_version):\n"
+        "def preflight(repo_root):\n"
         "    count = int(COUNTER.read_text() or '0') if COUNTER.exists() else 0\n"
         "    COUNTER.write_text(str(count + 1))\n"
-        "    SCHEMA_EVIDENCE.write_text(str(expected_schema_version))\n"
         "    return [], {'token': 'shared', 'items': []}\n"
         "def validate_with_graph(repo_root, graph):\n"
         "    return [] if graph == {'token': 'shared', 'items': []} else ['wrong graph']\n"
@@ -378,7 +374,6 @@ def test_graph_preflight_shares_schema_and_isolates_consumer_mutation(
         ]
     }
     assert counter.read_text(encoding="utf-8") == "1"
-    assert schema_evidence.read_text(encoding="utf-8") == "5"
     assert observation.read_text(encoding="utf-8") == "[]"
 
 

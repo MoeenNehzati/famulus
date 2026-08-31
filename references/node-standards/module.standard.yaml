@@ -1,6 +1,6 @@
 schema_version: 6
-standard_version: 1.0.0
-revision: 14
+standard_version: 2.0.0
+revision: 15
 id: node-standards.module
 canonical_path: references/node-standards/module.standard.yaml
 title: Module Standard
@@ -8,9 +8,9 @@ purpose: Add requirements specific to module nodes.
 imports:
   node:
     standard_id: node-standards.node
-    standard_version: 1.0.0
-    revision: 14
-    digest: sha256:aeebcac6e2212b96ed4d92539843fc36251268591aa418262ca7a31874354719
+    standard_version: 2.0.0
+    revision: 15
+    digest: sha256:7f1060c87fe6f5e664280f31cdc7fc626607e84aa4df452c32ac65c2690c0ef5
     artifact:
       kind: artifact
       ref: artifact.node-standard
@@ -20,7 +20,7 @@ standards:
   title: Module topology and authorization
   children:
   - kind: rule
-    id: skill-guidelines.module-behavioral-source-v5.topology
+    id: skill-guidelines.module-behavioral-source-v6.topology
     assertions:
     - id: explicit-registration
       modality: required
@@ -29,7 +29,7 @@ standards:
         `blueprint.yaml` locator. Containment chooses ownership; declarations choose authority.'
       atomicity: pending
   - kind: rule
-    id: skill-guidelines.module-behavioral-source-v5.exports
+    id: skill-guidelines.module-behavioral-source-v6.exports
     assertions:
     - id: closed-export-forms
       modality: required
@@ -38,7 +38,7 @@ standards:
         A facade derives the child contract and binding. Facades preserve names, not permissions.'
       atomicity: pending
   - kind: rule
-    id: skill-guidelines.module-behavioral-source-v5.namespace-routing
+    id: skill-guidelines.module-behavioral-source-v6.namespace-routing
     assertions:
     - id: child-authority-ceiling
       modality: required
@@ -47,7 +47,7 @@ standards:
         ceiling. Registration reveals internally; namespace export routes outward.
       atomicity: pending
   - kind: rule
-    id: skill-guidelines.module-behavioral-source-v5.callers
+    id: skill-guidelines.module-behavioral-source-v6.callers
     assertions:
     - id: exact-callers
       modality: required
@@ -56,7 +56,7 @@ standards:
         parser. Relative references resolve through the certified registration tree and are never globs.
       atomicity: pending
   - kind: rule
-    id: skill-guidelines.module-behavioral-source-v5.authorization
+    id: skill-guidelines.module-behavioral-source-v6.authorization
     assertions:
     - id: one-resolver
       modality: required
@@ -65,7 +65,7 @@ standards:
         one authorization result. Resolve once; enforce everywhere.
       atomicity: pending
   - kind: rule
-    id: skill-guidelines.module-behavioral-source-v5.runtime-identities
+    id: skill-guidelines.module-behavioral-source-v6.runtime-identities
     assertions:
     - id: module-identities
       modality: required

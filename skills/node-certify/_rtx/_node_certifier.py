@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import argparse
-from copy import deepcopy
 import hashlib
 import json
 import os
 import stat
 import subprocess
 import sys
-import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -18,7 +16,6 @@ from typing import Any, Mapping, Sequence
 
 from officina.certification.hashing import (
     CANONICAL_NODE_HASH_POLICY,
-    CERTIFIER_CHECK_REGISTRY,
     CertificationHashError,
     NodeHashState,
     certification_facet_claims,
@@ -63,11 +60,8 @@ from officina.certification.view import (
 )
 from officina.git.provenance import (
     CommitReadiness,
-    GitMaterializationError,
     GitSnapshot,
-    blueprint_v4_mechanical_commit as blueprint_mechanical_commit,
     capture_git_snapshot,
-    materialize_git_commit,
     run_git,
     snapshot_head_matches,
 )
@@ -337,96 +331,6 @@ def certification_completeness_findings(
                                 )
                             )
     return tuple(findings)
-
-
-def protected_review_projection(
-    graph: RepositoryBlueprintGraph,
-) -> dict[str, object]:
-    """Extract graph fields protected during semantic review.
-
-    Intent
-    ------
-    Build a comparable projection of module ids, node kinds, gateway paths, dependencies, and interface contracts.
-
-    Rationale
-    ---------
-    Semantic migration review may alter blueprint wording, but it must not silently change executable wiring or protected dependency structure.
-
-    Pseudocode
-    ----------
-    - set projection = protected_node_and_interface_fields
-    - return projection
-
-    Wraps
-    -----
-    - none
-    """
-
-    projected: dict[str, object] = {}
-    for node_id, node in sorted(graph.nodes.items()):
-        declaration = node.declaration
-        record: dict[str, object] = {
-            "node_type": node.node_type,
-            "version": node.version,
-            "gateway": deepcopy(declaration.get("gateway")),
-            "content": deepcopy(declaration.get("content")),
-        }
-        if node.node_type == "module":
-            record.update(
-                {
-                    "authority": deepcopy(declaration.get("authority")),
-                    "sources": deepcopy(declaration.get("sources")),
-                    "exports": deepcopy(declaration.get("exports")),
-                    "discovery": deepcopy(declaration.get("discovery")),
-                }
-            )
-        else:
-            interfaces = declaration.get("interfaces", {})
-            record.update(
-                {
-                    "dependencies": deepcopy(declaration.get("dependencies")),
-                    "uses_interfaces": deepcopy(
-                        declaration.get("uses_interfaces")
-                    ),
-                    "platform_support": deepcopy(
-                        declaration.get("platform_support")
-                    ),
-                    "runtime_dependencies": deepcopy(
-                        declaration.get("runtime_dependencies")
-                    ),
-                    "interfaces": {
-                        interface_id: {
-                            "version": interface.get("version"),
-                            "process_binding": deepcopy(
-                                interface.get("process_binding")
-                            ),
-                        }
-                        for interface_id, interface in sorted(interfaces.items())
-                        if isinstance(interface_id, str)
-                        and isinstance(interface, Mapping)
-                    },
-                }
-            )
-        projected[node_id] = record
-    helper_edges = tuple(
-        {
-            "source_export_id": edge.source_export_id,
-            "local_helper_id": edge.local_helper_id,
-            "target_interface_id": edge.target_interface_id,
-            "target_version": edge.target_version,
-            "binding": deepcopy(edge.binding),
-        }
-        for edge in sorted(
-            graph.helper_edges,
-            key=lambda item: (
-                item.source_export_id,
-                item.local_helper_id,
-                item.target_interface_id,
-                item.target_version,
-            ),
-        )
-    )
-    return {"nodes": projected, "helper_edges": helper_edges}
 
 
 def _hash_bytes(value: bytes) -> str:
@@ -1083,6 +987,11 @@ def _python_route_smoke_trace_specs(
         transforms: "The module id becomes logical package evidence stored on each constructed process target."
     """
 
+    if graph.schema_version != 6:
+        raise CertificationHashError(
+            "route-smoke certification requires a schema v6 graph"
+        )
+
     selected: set[str] = set()
     for node_id in certification_node_ids:
         if node_id not in graph.nodes:
@@ -1124,27 +1033,24 @@ def _python_route_smoke_trace_specs(
                 and isinstance(entry, str)
             ):
                 try:
-                    logical_package = None
-                    logical_entrypoint = None
-                    if graph.schema_version in {5, 6}:
-                        module_id = graph.source_modules[node_id]
-                        logical_package = logical_python_package_name(module_id)
-                        path = Path(gateway_path)
-                        physical_parts = (
-                            path.parent.parts
-                            if path.name == "__init__.py"
-                            else (*path.parent.parts, path.stem)
-                        )
-                        suffix = ".".join(
-                            part
-                            for part in physical_parts
-                            if part not in {"", "."}
-                        )
-                        logical_entrypoint = (
-                            logical_package
-                            if not suffix
-                            else f"{logical_package}.{suffix}"
-                        )
+                    module_id = graph.source_modules[node_id]
+                    logical_package = logical_python_package_name(module_id)
+                    path = Path(gateway_path)
+                    physical_parts = (
+                        path.parent.parts
+                        if path.name == "__init__.py"
+                        else (*path.parent.parts, path.stem)
+                    )
+                    suffix = ".".join(
+                        part
+                        for part in physical_parts
+                        if part not in {"", "."}
+                    )
+                    logical_entrypoint = (
+                        logical_package
+                        if not suffix
+                        else f"{logical_package}.{suffix}"
+                    )
                     python_target = PythonProcessTarget(
                         Path(gateway_path),
                         entry,
@@ -1310,20 +1216,9 @@ class RouteSmokeAuditor:
             for node_id, _interface_id, python_target in trace_specs
         )
         try:
-            trace_options = {}
-            if self._graph.schema_version == 5:
-                trace_options = {
-                    "expected_schema_version": 5,
-                    "schema_root": (
-                        Path(self._schema_root)
-                        if self._schema_root is not None
-                        else root / "references" / "blueprint-schema" / "v5"
-                    ),
-                }
             traces = trace_python_route_smoke_dependencies_batch(
                 root,
                 specifications,
-                **trace_options,
             )
         except (PythonRouteSmokeTraceError, ValueError) as exc:
             raise CertificationHashError(str(exc)) from exc
@@ -1406,7 +1301,6 @@ def _build_certificate_payload(
     certifier_identity: Mapping[str, object],
     checks: Sequence[Mapping[str, object]],
     certified_at: str,
-    expected_schema_version: int = 4,
 ) -> dict[str, object]:
     """_build_certificate_payload builds the dictionary signed as a node certificate.
 
@@ -1445,13 +1339,7 @@ def _build_certificate_payload(
     if node.gateway_path is None:
         raise CertificationError(f"{node_id}: certificate subject requires a gateway path")
     return {
-        "certificate_schema_version": (
-            3
-            if expected_schema_version == 6
-            else 2
-            if expected_schema_version == 5
-            else 1
-        ),
+        "certificate_schema_version": 3,
         "subject": {
             "id": node.node_id,
             "node_type": node.node_type,
@@ -1469,11 +1357,7 @@ def _build_certificate_payload(
         "source_commit": source_commit,
         "input_manifest": [dict(entry) for entry in state.input_manifest],
         "dependencies": [dict(entry) for entry in state.dependency_hashes],
-        **(
-            {"facets": [dict(claim) for claim in certification_facet_claims(state)]}
-            if expected_schema_version == 6
-            else {}
-        ),
+        "facets": [dict(claim) for claim in certification_facet_claims(state)],
         "certification_basis_hash": state.certification_basis_hash,
         "certifier": dict(certifier_identity),
         "checks": [dict(check) for check in checks],
@@ -1538,11 +1422,7 @@ def _build_gate_evidence(
     )
 
 
-def _passed_check(
-    gate_name: str,
-    *,
-    expected_schema_version: int = 4,
-) -> dict[str, object]:
+def _passed_check(gate_name: str) -> dict[str, object]:
     """_passed_check creates a passed check record from the certifier registry.
 
     Intent
@@ -1575,11 +1455,7 @@ def _passed_check(
       why:
         raises: "A missing gate name leaves this helper as a typed certifier rejection."
     """
-    registry = (
-        CERTIFIER_CHECK_REGISTRY
-        if expected_schema_version == 4
-        else certifier_check_registry(expected_schema_version)
-    )
+    registry = certifier_check_registry()
     try:
         check_id, version = registry[gate_name]
     except KeyError as exc:
@@ -1597,7 +1473,6 @@ def _run_deterministic_check(
     *,
     graph: RepositoryBlueprintGraph,
     states: Mapping[str, NodeHashState],
-    expected_schema_version: int = 4,
 ) -> dict[str, object]:
     """Validate one node against deterministic certification evidence.
 
@@ -1656,32 +1531,27 @@ def _run_deterministic_check(
         for finding in certification_completeness_findings(graph)
     ):
         raise CertificationError(f"{snapshot.node_id}: deterministic completeness failed")
-    return _passed_check(
-        "deterministic",
-        expected_schema_version=expected_schema_version,
-    )
+    return _passed_check("deterministic")
 
 
-def _semantic_attestation_check(
+def _semantic_review_check(
     snapshot: GateEvidence,
     *,
     reviewed_commit: str,
-    expected_schema_version: int = 4,
 ) -> dict[str, object]:
-    """_semantic_attestation_check creates the semantic-review check row when migration review is required.
+    """Create the semantic-review check row for the reviewed v6 commit.
 
     Intent
     ------
-    Run semantic-attestation replay for migration certificates and return the corresponding passed gate record.
+    Bind the semantic-review check to the exact source commit being certified.
 
     Rationale
     ---------
-    The migration path allows reviewed blueprint edits only when replay proves the protected projection stayed stable.
+    The signed check must describe the exact reviewed repository snapshot.
 
     Pseudocode
     ----------
-        - if migration_review_required:
-          - set attestation = semantic_replay_result
+        - require reviewed_commit equals source_commit
         - return semantic_check_row
 
     Wraps
@@ -1692,7 +1562,7 @@ def _semantic_attestation_check(
     ----------------------
     .CertificationError:
       why:
-        raises: "Failed semantic replay rejects migration-review certification before a passed check is emitted."
+        raises: "A commit mismatch rejects certification before a passed check is emitted."
     ._passed_check:
       why:
         constructs: "The passed-check row records the successful gate name and registry version."
@@ -1700,271 +1570,7 @@ def _semantic_attestation_check(
 
     if not reviewed_commit or snapshot.source_commit != reviewed_commit:
         raise CertificationError(f"{snapshot.node_id}: semantic review does not match HEAD")
-    return _passed_check(
-        "semantic-review",
-        expected_schema_version=expected_schema_version,
-    )
-
-
-def _blueprint_paths(
-    graph: RepositoryBlueprintGraph,
-    repo_root: Path,
-) -> set[Path]:
-    """_blueprint_paths collects blueprint paths contained in a graph.
-
-    Intent
-    ------
-    Convert every graph node blueprint path into a repository-relative path set.
-
-    Rationale
-    ---------
-    Semantic-attestation diff checks need a compact allowlist of blueprint files so unrelated reviewed changes are rejected.
-
-    Pseudocode
-    ----------
-        - set paths = empty_set
-        - for node in graph_nodes:
-          - set paths = paths_with_repo_relative_blueprint
-        - return paths
-
-    Wraps
-    -----
-    - none
-
-    InstantiationsFromRepo
-    ----------------------
-    officina.common.repository_paths.repository_relative_path:
-      why:
-        constructs: "The path normalizer converts blueprint locations into the allowlist used by semantic attestation."
-    .CertificationError:
-      why:
-        raises: "Blueprint paths that escape the repository reject the semantic-attestation allowlist."
-    """
-    try:
-        return {
-            repository_relative_path(node.blueprint_path, repo_root)
-            for node in graph.nodes.values()
-        }
-    except RepositoryPathError as exc:
-        raise CertificationError("v4 blueprint path escapes its repository") from exc
-
-
-def _materialize_local_inputs(
-    source_root: Path,
-    target_root: Path,
-    states: Mapping[str, NodeHashState],
-    *,
-    allow_non_atomic: bool,
-) -> None:
-    """Copy untracked inputs into a reconstructed commit tree.
-
-    Intent
-    ------
-    Find local manifest entries, reject unsafe paths or collisions, read each byte payload, and write it under the temporary mechanical tree.
-
-    Rationale
-    ---------
-    Semantic-attestation replay must restore declared local evidence exactly while preserving repository-boundary and atomic-write guarantees.
-
-    Pseudocode
-    ----------
-    - raise %.CertificationError(unsafe_local_input)
-    - set copied_inputs = declared_local_manifest_entries
-    - for input_path in copied_inputs:
-      - set copied_inputs = copied_inputs_with_materialized_bytes
-    - return copied_inputs
-
-    Wraps
-    -----
-    - none
-
-    CallsFromRepo
-    -------------
-    officina.common.atomic_files.atomic_replace_bytes:
-      why:
-        writes: "Writes each declared local input into the reconstructed tree after path and collision checks."
-
-    InstantiationsFromRepo
-    ----------------------
-    .CertificationError:
-      why:
-        raises: "Unsafe or unreadable local-input materialization leaves as a typed certifier rejection."
-    officina.common.atomic_files.read_regular_file_bytes:
-      why:
-        serializes: "The copied byte payload is read once and carried into the bounded atomic write."
-    """
-
-    relative_paths = {
-        Path(entry["path"])
-        for state in states.values()
-        for entry in state.input_manifest
-        if entry.get("git_provenance") != "tracked"
-        and isinstance(entry.get("path"), str)
-    }
-    for relative in sorted(relative_paths):
-        if relative.is_absolute() or ".." in relative.parts:
-            raise CertificationError("local v4 input escapes the candidate repository")
-        current = target_root
-        for part in relative.parts[:-1]:
-            current = current / part
-            try:
-                metadata = current.lstat()
-            except FileNotFoundError:
-                current.mkdir(mode=0o700)
-                metadata = current.lstat()
-            if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
-                raise CertificationError(f"unsafe local v4 input parent: {relative.as_posix()}")
-        target = target_root / relative
-        if target.exists() or target.is_symlink():
-            raise CertificationError(f"local v4 input collides with commit: {relative.as_posix()}")
-        try:
-            data = read_regular_file_bytes(
-                source_root / relative,
-                allowed_root=source_root,
-                allow_non_atomic=allow_non_atomic,
-            )
-            atomic_replace_bytes(
-                target,
-                data,
-                allowed_root=target_root,
-                mode=0o600,
-                allow_non_atomic=allow_non_atomic,
-            )
-        except (AtomicWriteError, OSError) as exc:
-            raise CertificationError(
-                f"cannot materialize local v4 input: {relative.as_posix()}"
-            ) from exc
-
-
-def _validate_semantic_attestation(
-    repo_root: Path,
-    reviewed_graph: RepositoryBlueprintGraph,
-    reviewed_states: Mapping[str, NodeHashState],
-    *,
-    mechanical_commit: str,
-    reviewed_commit: str,
-    allow_non_atomic: bool,
-) -> None:
-    """Replay the mechanical baseline behind a reviewed migration commit.
-
-    Intent
-    ------
-    Materialize the mechanical commit, restore local inputs, load its graph, verify ancestry, restrict changed files, and compare protected projections.
-
-    Rationale
-    ---------
-    The semantic-review certificate depends on proving that review commits changed only allowed blueprint text and not executable protected structure.
-
-    Pseudocode
-    ----------
-    - set mechanical_tree = materialized_mechanical_commit
-    - set mechanical_graph = loaded_mechanical_blueprint_graph
-    - set changed_paths = reviewed_diff_paths
-    - if protected_projection_changed:
-      - raise %.CertificationError(semantic_attestation_failed)
-    - return attestation_passed
-
-    Wraps
-    -----
-    - none
-
-    CallsFromRepo
-    -------------
-    ._materialize_local_inputs:
-      why:
-        writes: "Restores declared local inputs into the temporary mechanical tree before graph loading."
-    ._blueprint_paths:
-      why:
-        computes: "Builds the allowed blueprint-path set used to reject unrelated reviewed-file changes."
-    .protected_review_projection:
-      why:
-        validates: "Compares protected graph projections after path-level review checks pass."
-    officina.git.provenance.materialize_git_commit:
-      why:
-        writes: "Expands the mechanical commit into the temporary attestation workspace."
-
-    InstantiationsFromRepo
-    ----------------------
-    .CertificationError:
-      why:
-        raises: "Any failed replay, ancestry, diff, or projection check leaves as a typed certifier rejection."
-    officina.blueprints.graph.load_repository_blueprint_graph:
-      why:
-        constructs: "The replayed graph provides the baseline projection compared against the reviewed graph."
-    officina.git.provenance.run_git:
-      why:
-        constructs: "Ancestry and changed-path command results are carried into attestation branch decisions."
-    """
-
-    with tempfile.TemporaryDirectory(prefix="v4-mechanical-commit-") as raw_root:
-        mechanical_root = Path(raw_root)
-        try:
-            materialize_git_commit(
-                repo_root,
-                mechanical_commit,
-                mechanical_root,
-                allow_non_atomic=allow_non_atomic,
-            )
-            _materialize_local_inputs(
-                repo_root,
-                mechanical_root,
-                reviewed_states,
-                allow_non_atomic=allow_non_atomic,
-            )
-            mechanical_graph = load_repository_blueprint_graph(
-                mechanical_root,
-                schema_root=mechanical_root / "references" / "blueprint-schema",
-                expected_schema_version=4,
-            )
-        except (GitMaterializationError, CertificationHashError, OSError, ValueError) as exc:
-            raise CertificationError(f"mechanical commit cannot be reconstructed: {exc}") from exc
-        if not mechanical_graph.nodes or any(
-            node.declaration.get("schema_version") != 4
-            for node in mechanical_graph.nodes.values()
-        ):
-            raise CertificationError("mechanical commit does not contain an all-v4 graph")
-        ancestry = run_git(
-            repo_root,
-            "merge-base",
-            "--is-ancestor",
-            mechanical_commit,
-            reviewed_commit,
-            check=False,
-        )
-        if ancestry.returncode != 0:
-            raise CertificationError("mechanical commit is not an ancestor of reviewed commit")
-        changed = run_git(
-            repo_root,
-            "diff",
-            "--name-only",
-            "--no-renames",
-            "--no-ext-diff",
-            "-z",
-            mechanical_commit,
-            reviewed_commit,
-            "--",
-            check=False,
-        )
-        if changed.returncode != 0:
-            raise CertificationError("cannot compare mechanical and reviewed commits")
-        changed_paths = {
-            Path(os.fsdecode(raw_path))
-            for raw_path in changed.stdout.rstrip(b"\0").split(b"\0")
-            if raw_path
-        }
-        allowed_paths = _blueprint_paths(
-            mechanical_graph, mechanical_root
-        ) | _blueprint_paths(reviewed_graph, repo_root)
-        unexpected = sorted(changed_paths - allowed_paths)
-        if unexpected:
-            raise CertificationError(
-                "semantic review may change only blueprint files: "
-                + ", ".join(path.as_posix() for path in unexpected)
-            )
-        if protected_review_projection(mechanical_graph) != protected_review_projection(
-            reviewed_graph
-        ):
-            raise CertificationError("semantic review changed the protected projection")
+    return _passed_check("semantic-review")
 
 
 def _verify_executing_candidate_certifier(
@@ -2019,16 +1625,10 @@ def _verify_executing_candidate_certifier(
     ]
     if len(owners) != 1:
         raise CertificationError("executing certifier bytes have no unique candidate owner")
-    expected_owner = {
-        5: "node-certify-rtx",
-        6: "node-certify._rtx",
-    }.get(graph.schema_version)
-    if (
-        expected_owner is not None
-        and graph.source_modules.get(owners[0]) != expected_owner
-    ):
+    expected_owner = "node-certify._rtx"
+    if graph.source_modules.get(owners[0]) != expected_owner:
         raise CertificationError(
-            f"executing v{graph.schema_version} certifier source must belong to "
+            "executing v6 certifier source must belong to "
             f"{expected_owner}"
         )
     executing_digest = "sha256:" + hashlib.sha256(executing.read_bytes()).hexdigest()
@@ -2098,7 +1698,6 @@ class RepositoryEvidenceLoader:
         schema_root: Path,
         policy_path: Path,
         snapshot: GitSnapshot,
-        expected_schema_version: int,
         allow_non_atomic: bool,
         require_candidate_execution: bool,
     ) -> None:
@@ -2124,7 +1723,6 @@ class RepositoryEvidenceLoader:
         self._schema_root = schema_root
         self._policy_path = policy_path
         self._snapshot = snapshot
-        self._expected_schema_version = expected_schema_version
         self._allow_non_atomic = allow_non_atomic
         self._require_candidate_execution = require_candidate_execution
 
@@ -2189,33 +1787,28 @@ class RepositoryEvidenceLoader:
             graph = load_repository_blueprint_graph(
                 self._repo_root,
                 schema_root=self._schema_root,
-                expected_schema_version=self._expected_schema_version,
             )
             if not graph.nodes or any(
-                node.declaration.get("schema_version")
-                != self._expected_schema_version
+                node.declaration.get("schema_version") != 6
                 for node in graph.nodes.values()
             ):
                 raise CertificationError(
-                    "private certificate writer accepts only a closed "
-                    f"all-v{self._expected_schema_version} repository"
+                    "private certificate writer accepts only a closed all-v6 repository"
                 )
             completeness = certification_completeness_findings(graph)
             if completeness:
                 first = completeness[0]
                 raise CertificationError(
-                    f"v{self._expected_schema_version} certification completeness failed: "
+                    "v6 certification completeness failed: "
                     f"{first.subject_id}:{first.field} "
                     f"({len(completeness)} finding(s))"
                 )
             basis_paths = resolve_certification_basis_paths(
                 self._repo_root,
-                expected_schema_version=self._expected_schema_version,
                 allow_non_atomic=self._allow_non_atomic,
             )
             basis_hash = compute_certification_basis_hash(
                 self._repo_root,
-                expected_schema_version=self._expected_schema_version,
                 allow_non_atomic=self._allow_non_atomic,
             )
             states = compute_node_hash_states(
@@ -2808,7 +2401,6 @@ class CertificateBatchIssuer:
         certifier_identity: Mapping[str, object],
         reviewed_commit: str,
         certified_at: str,
-        expected_schema_version: int,
         allow_non_atomic: bool,
         freeze_guard: RepositoryFreezeGuard,
         before_append: object | None,
@@ -2842,7 +2434,6 @@ class CertificateBatchIssuer:
         self._certifier_identity = certifier_identity
         self._reviewed_commit = reviewed_commit
         self._certified_at = certified_at
-        self._expected_schema_version = expected_schema_version
         self._allow_non_atomic = allow_non_atomic
         self._freeze_guard = freeze_guard
         self._before_append = before_append
@@ -2946,7 +2537,7 @@ class CertificateBatchIssuer:
 
         Intent
         ------
-        Run deterministic, route-smoke, and semantic-attestation record construction against one evidence snapshot.
+        Run deterministic, route-smoke, and semantic-review record construction against one evidence snapshot.
 
         Rationale
         ---------
@@ -2971,7 +2562,7 @@ class CertificateBatchIssuer:
         ._passed_check:
           why:
             computes: "Builds the route-smoke pass record consumed immediately by normalization."
-        ._semantic_attestation_check:
+        ._semantic_review_check:
           why:
             computes: "Builds the schema-selected semantic record consumed immediately by normalization."
         officina.certification.hashing.expected_certifier_checks:
@@ -3002,20 +2593,15 @@ class CertificateBatchIssuer:
                     evidence,
                     graph=self._graph,
                     states=self._states,
-                    expected_schema_version=self._expected_schema_version,
                 ),
-                _passed_check(
-                    "route-smoke",
-                    expected_schema_version=self._expected_schema_version,
-                ),
-                _semantic_attestation_check(
+                _passed_check("route-smoke"),
+                _semantic_review_check(
                     evidence,
                     reviewed_commit=self._reviewed_commit,
-                    expected_schema_version=self._expected_schema_version,
                 ),
             )
         )
-        if records != expected_certifier_checks(self._expected_schema_version):
+        if records != expected_certifier_checks():
             raise CertificationError(f"{node_id}: certifier gate registry changed")
         return records
 
@@ -3127,7 +2713,6 @@ class CertificateBatchIssuer:
             certifier_identity=self._certifier_identity,
             checks=checks,
             certified_at=self._certified_at,
-            expected_schema_version=self._expected_schema_version,
         )
         envelope = sign_certificate_payload(payload, self._signing_key)
         frame = canonical_certificate_envelope_bytes(envelope) + b"\n"
@@ -3283,7 +2868,7 @@ class CertificateBatchIssuer:
             or final_snapshot.commit != self._snapshot.commit
         ):
             raise CertificationError("HEAD changed after certificate append")
-        if checks != expected_certifier_checks(self._expected_schema_version):
+        if checks != expected_certifier_checks():
             raise CertificationError("certifier checks changed after certificate append")
         self._freeze_guard.require_frozen_inputs("after certificate append")
         self._freeze_guard.require_local_inputs("after certificate append")
@@ -3342,8 +2927,6 @@ def _certify_repository(
     after_append: object | None = None,
     allow_non_atomic: bool = False,
     require_candidate_execution: bool = False,
-    require_migration_review: bool = False,
-    expected_schema_version: int = 6,
     schema_root: Path | None = None,
 ) -> CertificationResult:
     """Issue signed certificates for selected repository nodes.
@@ -3370,9 +2953,6 @@ def _certify_repository(
 
     CallsFromRepo
     -------------
-    ._validate_semantic_attestation:
-      why:
-        validates: "Replays the mechanical baseline before migration certificates are allowed."
     .CertificateBatchIssuer:
       why:
         orchestrates: "Runs the ordered append batch after repository inputs have been frozen."
@@ -3430,41 +3010,17 @@ def _certify_repository(
     officina.certification.view.certificate_requires_renewal:
       why:
         validates: "Separates intrinsic certificate drift from currentness propagated only from stale dependencies."
-    officina.git.provenance.blueprint_v4_mechanical_commit:
-      why:
-        constructs: "Produces the optional migration baseline used by semantic replay."
     officina.git.provenance.capture_git_snapshot:
       why:
         constructs: "Produces initial and final snapshots used to reject HEAD drift."
-    officina.git.provenance.run_git:
-      why:
-        constructs: "Produces candidate atomicity evidence before migration review."
     """
 
     root = Path(repo_root).resolve()
-    if expected_schema_version not in {4, 5, 6}:
-        raise CertificationError(
-            f"unsupported certification schema version: {expected_schema_version}"
-        )
-    if require_migration_review and expected_schema_version != 4:
-        raise CertificationError("the frozen migration writer accepts only v4")
-    if require_migration_review:
-        atomic = run_git(
-            root, "config", "--bool", "--get", "famulus.candidateAtomicGuarantee",
-            check=False,
-        )
-        if atomic.returncode == 0 and atomic.stdout.strip() == b"false":
-            raise CertificationError("non-atomic diagnostic candidate is non-certifiable")
-        temp_root = Path(tempfile.gettempdir()).resolve()
-        if not root.is_relative_to(temp_root):
-            raise CertificationError(
-                "private v4 certification is restricted to temporary repositories"
-            )
     snapshot = capture_git_snapshot(root)
     if snapshot is None or snapshot.repo_root != root:
-        raise CertificationError("v4 certification requires the exact Git repository root")
+        raise CertificationError("certification requires the exact Git repository root")
     if snapshot.commit != reviewed_commit:
-        raise CertificationError("v4 certification HEAD does not match the reviewed commit")
+        raise CertificationError("certification HEAD does not match the reviewed commit")
 
     freeze_guard = RepositoryFreezeGuard(
         repo_root=root,
@@ -3473,22 +3029,10 @@ def _certify_repository(
     )
     freeze_guard.capture_initial_state()
 
-    mechanical_commit: str | None = None
-    if require_migration_review:
-        try:
-            mechanical_commit = blueprint_mechanical_commit(root)
-        except GitMaterializationError as exc:
-            raise CertificationError(
-                f"candidate mechanical baseline is unavailable: {exc}"
-            ) from exc
     selected_schema_root = (
         Path(schema_root)
         if schema_root is not None
-        else (
-            root / "references" / "blueprint-schema"
-            if expected_schema_version == 6
-            else root / "references" / "blueprint-schema" / "migrations" / f"v{expected_schema_version}"
-        )
+        else root / "references" / "blueprint-schema"
     )
     policy_path = root / CANONICAL_NODE_HASH_POLICY
 
@@ -3497,7 +3041,6 @@ def _certify_repository(
         schema_root=selected_schema_root,
         policy_path=policy_path,
         snapshot=snapshot,
-        expected_schema_version=expected_schema_version,
         allow_non_atomic=allow_non_atomic,
         require_candidate_execution=require_candidate_execution,
     )
@@ -3507,15 +3050,6 @@ def _certify_repository(
     basis_hash = evidence.basis_hash
     basis_paths = evidence.basis_paths
     certifier_identity = evidence.certifier_identity
-    if mechanical_commit is not None:
-        _validate_semantic_attestation(
-            root,
-            graph,
-            states,
-            mechanical_commit=mechanical_commit,
-            reviewed_commit=reviewed_commit,
-            allow_non_atomic=allow_non_atomic,
-        )
     try:
         expanded_target_ids = set(target_node_ids)
         for node_id in tuple(expanded_target_ids):
@@ -3530,7 +3064,7 @@ def _certify_repository(
     except CertificationHashError as exc:
         raise CertificationError(str(exc)) from exc
     expected_checks_by_node = {
-        node_id: expected_certifier_checks(expected_schema_version)
+        node_id: expected_certifier_checks()
         for node_id in graph.nodes
     }
     initial_report = evaluate_certificate_currentness(
@@ -3634,7 +3168,6 @@ def _certify_repository(
             certifier_identity=certifier_identity,
             reviewed_commit=reviewed_commit,
             certified_at=certified_at,
-            expected_schema_version=expected_schema_version,
             allow_non_atomic=allow_non_atomic,
             freeze_guard=freeze_guard,
             before_append=before_append,
@@ -4066,7 +3599,7 @@ def resolve_reviewed_repository_targets(
         )
     )
     if not module_nodes:
-        raise CertificationError("reviewed repository contains no v4 modules")
+        raise CertificationError("reviewed repository contains no modules")
     if not requests:
         return module_nodes
 
@@ -4090,10 +3623,6 @@ def resolve_reviewed_repository_targets(
                 node
                 for node in module_nodes
                 if node.node_id == request
-                or (
-                    graph.schema_version == 4
-                    and node.module_root.name == request
-                )
             ]
         if len(matches) != 1:
             raise CertificationError(
@@ -4182,7 +3711,6 @@ def certify(
     graph = load_repository_blueprint_graph(
         repository,
         schema_root=repository / "references" / "blueprint-schema",
-        expected_schema_version=6,
     )
     if any(
         node.declaration.get("schema_version") != 6
@@ -4221,8 +3749,6 @@ def certify(
         ),
         allow_non_atomic=allow_non_atomic,
         require_candidate_execution=True,
-        require_migration_review=False,
-        expected_schema_version=6,
         schema_root=repository / "references" / "blueprint-schema",
     )
     written = set(result.node_ids)

@@ -379,8 +379,8 @@ def test_dedup_against_reports_malformed_yaml_from_cloud_read(tmp_path, capsys):
 def test_declares_dispatch_to_list_manager_cloud_read():
     module = _load_runtime()
     call = module.Interface.dispatches["list-read"]
-    assert call.caller_skill in {"email-triage", "email-triage._rtx"}
-    assert (call.target_skill, call.interface) == (
+    assert call.caller_module_id in {"email-triage", "email-triage._rtx"}
+    assert (call.target_module_id, call.interface) == (
         "list-manager._rtx",
         "cloud-read",
     )
