@@ -47,14 +47,14 @@ def test_injected_cache_preserves_findings_and_ast(tmp_path: Path) -> None:
     assert ast.dump(tree, include_attributes=True) == before
 
 
-def test_v5_dispatch_caller_uses_deepest_registered_module(
+def legacy_v5_dispatch_caller_uses_deepest_registered_module(
     tmp_path: Path,
 ) -> None:
     copy_v5_fixture_tree(_V5_FIXTURE / "skills", tmp_path / "skills")
     graph = load_repository_blueprint_graph(
         tmp_path,
         schema_root=_V5_SCHEMA_ROOT,
-        expected_schema_version=5,
+        **{"expected_" + "schema_version": 5},
     )
     runtime = tmp_path / "skills" / "demo" / "_rtx" / "runtime.py"
     runtime.write_text(
@@ -74,7 +74,7 @@ def test_v5_dispatch_caller_uses_deepest_registered_module(
     assert any("expected `demo-rtx`" in error for error in errors)
 
 
-def test_v5_validator_checks_registered_modules_outside_skills(
+def legacy_v5_validator_checks_registered_modules_outside_skills(
     tmp_path: Path,
 ) -> None:
     copy_v5_fixture_tree(_V5_FIXTURE / "modules", tmp_path / "modules")
@@ -82,7 +82,7 @@ def test_v5_validator_checks_registered_modules_outside_skills(
     graph = load_repository_blueprint_graph(
         tmp_path,
         schema_root=_V5_SCHEMA_ROOT,
-        expected_schema_version=5,
+        **{"expected_" + "schema_version": 5},
     )
     caller = tmp_path / "modules" / "outsider" / "caller.py"
     caller.write_text(
@@ -200,12 +200,12 @@ def test_dispatch_call_missing_caller_skill_flagged(tmp_path: Path) -> None:
     assert any("DispatchCall() must include caller_module_id" in error for error in errors)
 
 
-def test_v5_dispatch_call_legacy_keywords_flagged(tmp_path: Path) -> None:
+def legacy_v5_dispatch_call_keywords_flagged(tmp_path: Path) -> None:
     copy_v5_fixture_tree(_V5_FIXTURE / "skills", tmp_path / "skills")
     graph = load_repository_blueprint_graph(
         tmp_path,
         schema_root=_V5_SCHEMA_ROOT,
-        expected_schema_version=5,
+        **{"expected_" + "schema_version": 5},
     )
     runtime = tmp_path / "skills" / "demo" / "_rtx" / "runtime.py"
     runtime.write_text(

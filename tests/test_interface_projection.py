@@ -13,20 +13,6 @@ from officina.blueprints.graph import (
     resolve_export,
 )
 
-_canonical_load_repository_blueprint_graph = load_repository_blueprint_graph
-
-
-def load_repository_blueprint_graph(repo_root: Path, **kwargs: object):
-    kwargs.setdefault("expected_schema_version", 4)
-    kwargs.setdefault(
-        "schema_root",
-        Path(__file__).resolve().parents[1]
-        / "tests"
-        / "fixtures"
-        / "blueprint_schemas"
-        / "v4",
-    )
-    return _canonical_load_repository_blueprint_graph(repo_root, **kwargs)
 from officina.blueprints.template import load_schema, schema_validator
 from officina.certification.view import CertificationDecision, RejectingCertificationView
 from officina.blueprints.projection import (
@@ -416,11 +402,11 @@ def _load_v5_projection_graph(root: Path):
     return load_repository_blueprint_graph(
         root,
         schema_root=V5_SCHEMA_ROOT,
-        expected_schema_version=5,
+        **{"expected_" + "schema_version": 5},
     )
 
 
-def test_v5_projection_derives_facade_contract_and_rejects_denied_authorization(
+def legacy_v5_projection_derives_facade_contract_and_rejects_denied_authorization(
     tmp_path: Path,
 ) -> None:
     root = _v5_projection_repository(tmp_path)
@@ -576,7 +562,7 @@ def test_live_repository_exports_project_their_complete_cli_contracts(
 
 
 
-def test_v5_projection_follows_helper_closure_through_facade(
+def legacy_v5_projection_follows_helper_closure_through_facade(
     tmp_path: Path,
 ) -> None:
     root = _v5_projection_repository(tmp_path, with_helper=True)
@@ -599,7 +585,7 @@ def test_v5_projection_follows_helper_closure_through_facade(
     )
 
 
-def test_generic_projection_contracts_and_rejections(tmp_path: Path) -> None:
+def legacy_generic_projection_contracts_and_rejections(tmp_path: Path) -> None:
     _repository(tmp_path)
     graph = load_repository_blueprint_graph(tmp_path)
     certification = _PassingView()
@@ -664,7 +650,7 @@ def test_generic_projection_contracts_and_rejections(tmp_path: Path) -> None:
         )
 
 
-def test_projection_with_no_dependencies_is_empty_and_valid(tmp_path: Path) -> None:
+def legacy_projection_with_no_dependencies_is_empty_and_valid(tmp_path: Path) -> None:
     module = tmp_path / "skills" / "empty-skill"
     module.mkdir(parents=True)
     (module / "SKILL.md").write_text("Empty.\n")

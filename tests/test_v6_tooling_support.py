@@ -7,20 +7,11 @@ import yaml
 from officina.blueprints.template import (
     write_repository_managed_skill_blueprints,
 )
-from validators.skill.blueprints import repository_schema_version
 from validators.skill.dependencies import _CANONICAL_INTERFACE_RE
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 V6_SCHEMA_ROOT = REPO_ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v6"
-
-
-def test_repository_schema_marker_accepts_v6(tmp_path: Path) -> None:
-    marker = tmp_path / "references" / "blueprint-schema" / "blueprint.yaml"
-    marker.parent.mkdir(parents=True)
-    marker.write_text("schema_version: 6\n", encoding="utf-8")
-
-    assert repository_schema_version(tmp_path) == 6
 
 
 def test_dependency_validator_recognizes_dotted_v6_interfaces() -> None:
@@ -29,7 +20,7 @@ def test_dependency_validator_recognizes_dotted_v6_interfaces() -> None:
     assert _CANONICAL_INTERFACE_RE.fullmatch(interface_id)
 
 
-def test_repository_writer_can_emit_explicit_v6_blueprints(
+def test_repository_writer_emits_v6_blueprints(
     tmp_path: Path,
 ) -> None:
     skill_root = tmp_path / "skills" / "example"
@@ -45,7 +36,6 @@ def test_repository_writer_can_emit_explicit_v6_blueprints(
         persistent_modifier=False,
         repo_root=tmp_path,
         schema_root=V6_SCHEMA_ROOT,
-        schema_version=6,
         include_code_child=True,
     )
 

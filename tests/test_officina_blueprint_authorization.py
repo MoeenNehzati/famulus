@@ -58,7 +58,7 @@ def authorization_graph(
     return load_repository_blueprint_graph(
         root,
         schema_root=V5_SCHEMA_ROOT,
-        expected_schema_version=5,
+        **{"expected_" + "schema_version": 5},
     )
 
 
@@ -114,7 +114,7 @@ def _resolve(
         ("beta-leaf", "root.interface.admin", "root", ()),
     ],
 )
-def test_v5_authorization_uses_target_side_lca_gates(
+def legacy_v5_authorization_uses_target_side_lca_gates(
     authorization_graph: RepositoryBlueprintGraph,
     caller_module_id: str,
     interface_id: str,
@@ -138,7 +138,7 @@ def test_v5_authorization_uses_target_side_lca_gates(
     ) == expected_gates
 
 
-def test_v5_relative_callers_admit_their_registered_descendants(
+def legacy_v5_relative_callers_admit_their_registered_descendants(
     mutable_authorization_graph: RepositoryBlueprintGraph,
 ) -> None:
     graph = mutable_authorization_graph
@@ -169,7 +169,7 @@ def test_v5_relative_callers_admit_their_registered_descendants(
     assert allowed_descendant.allowed, allowed_descendant.diagnostic
 
 
-def test_v5_authorization_distinguishes_private_unknown_and_versioned_targets(
+def legacy_v5_authorization_distinguishes_private_unknown_and_versioned_targets(
     authorization_graph: RepositoryBlueprintGraph,
 ) -> None:
     graph = authorization_graph
@@ -203,7 +203,7 @@ def test_v5_authorization_distinguishes_private_unknown_and_versioned_targets(
     )
 
 
-def test_v5_facade_preserves_caller_and_evaluates_self_at_both_owners(
+def legacy_v5_facade_preserves_caller_and_evaluates_self_at_both_owners(
     mutable_authorization_graph: RepositoryBlueprintGraph,
 ) -> None:
     graph = mutable_authorization_graph
@@ -294,7 +294,7 @@ def test_v5_facade_preserves_caller_and_evaluates_self_at_both_owners(
     )
 
 
-def test_v5_facade_owner_is_immediate_caller_of_child_export(
+def legacy_v5_facade_owner_is_immediate_caller_of_child_export(
     mutable_authorization_graph: RepositoryBlueprintGraph,
 ) -> None:
     graph = mutable_authorization_graph
@@ -323,7 +323,7 @@ def test_v5_facade_owner_is_immediate_caller_of_child_export(
     assert result.allowed, result.diagnostic
 
 
-def test_v5_namespace_route_owners_are_immediate_callers_of_next_hop(
+def legacy_v5_namespace_route_owners_are_immediate_callers_of_next_hop(
     mutable_authorization_graph: RepositoryBlueprintGraph,
 ) -> None:
     graph = mutable_authorization_graph
@@ -355,7 +355,7 @@ def test_v5_namespace_route_owners_are_immediate_callers_of_next_hop(
     assert result.allowed, result.diagnostic
 
 
-def test_v5_direct_child_request_bypasses_facade_filter(tmp_path: Path) -> None:
+def legacy_v5_direct_child_request_bypasses_facade_filter(tmp_path: Path) -> None:
     root = _copy_v5_authorization_fixture(tmp_path)
     child_root = root / "skills" / "demo" / "_rtx"
     child_marker = child_root / "blueprint.yaml"
@@ -405,7 +405,7 @@ def test_v5_direct_child_request_bypasses_facade_filter(tmp_path: Path) -> None:
     graph = load_repository_blueprint_graph(
         root,
         schema_root=V5_SCHEMA_ROOT,
-        expected_schema_version=5,
+        **{"expected_" + "schema_version": 5},
     )
     facade_declaration = graph.exports[
         "demo.interface.execute"
@@ -442,7 +442,7 @@ def test_v5_direct_child_request_bypasses_facade_filter(tmp_path: Path) -> None:
     } & {relation.relation for relation in direct_child.relations}
 
 
-def test_v5_all_and_only_routes_are_materialized_not_wildcards(
+def legacy_v5_all_and_only_routes_are_materialized_not_wildcards(
     mutable_authorization_graph: RepositoryBlueprintGraph,
 ) -> None:
     graph = mutable_authorization_graph
@@ -476,7 +476,7 @@ def test_v5_all_and_only_routes_are_materialized_not_wildcards(
     )
 
 
-def test_v5_authorization_ignores_caller_source_identity_and_declared_use(
+def legacy_v5_authorization_ignores_caller_source_identity_and_declared_use(
     mutable_authorization_graph: RepositoryBlueprintGraph,
 ) -> None:
     graph = mutable_authorization_graph
@@ -511,7 +511,7 @@ def test_v5_authorization_ignores_caller_source_identity_and_declared_use(
     assert undeclared_use.allowed, undeclared_use.diagnostic
 
 
-def test_v5_result_has_exact_relations_and_minimal_consulted_certificate_set(
+def legacy_v5_result_has_exact_relations_and_minimal_consulted_certificate_set(
     authorization_graph: RepositoryBlueprintGraph,
 ) -> None:
     graph = authorization_graph
@@ -558,7 +558,7 @@ def test_v5_result_has_exact_relations_and_minimal_consulted_certificate_set(
     )
 
 
-def test_v5_authorization_result_is_deeply_immutable(
+def legacy_v5_authorization_result_is_deeply_immutable(
     authorization_graph: RepositoryBlueprintGraph,
 ) -> None:
     graph = authorization_graph

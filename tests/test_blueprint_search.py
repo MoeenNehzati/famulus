@@ -33,36 +33,6 @@ V5_SCHEMA_ROOT = (
 V6_SCHEMA_ROOT = (
     Path(__file__).parent / "fixtures" / "blueprint_schemas" / "v6"
 )
-_canonical_iter_blueprints = iter_blueprints
-_canonical_search_blueprints = search_blueprints
-
-
-def iter_blueprints(
-    repo_root: Path | str,
-    *,
-    include_hidden: bool = False,
-    schema_version: int = 4,
-):
-    """Keep frozen-v4 search fixtures explicit in this mixed module."""
-
-    return _canonical_iter_blueprints(
-        repo_root,
-        include_hidden=include_hidden,
-        schema_version=schema_version,
-    )
-
-
-def search_blueprints(
-    repo_root: Path | str,
-    query: dict[str, object] | None = None,
-):
-    """Keep frozen-v4 search fixtures explicit in this mixed module."""
-
-    selected = dict(query or {})
-    selected.setdefault("schema_version", 4)
-    return _canonical_search_blueprints(repo_root, selected)
-
-
 def _write_blueprint(root: Path, skill: str, body: str) -> None:
     path = root / "skills" / skill / "blueprint.yaml"
     path.parent.mkdir(parents=True)
@@ -220,7 +190,7 @@ def _write_v4_module(
     )
 
 
-def test_iter_blueprints_rejects_pre_v4_skill_records(tmp_path: Path) -> None:
+def test_iter_blueprints_rejects_pre_v6_skill_records(tmp_path: Path) -> None:
     path = tmp_path / "skills" / "legacy-skill" / "blueprint.yaml"
     path.parent.mkdir(parents=True)
     path.write_text("category: development-assistant\n", encoding="utf-8")
@@ -228,12 +198,12 @@ def test_iter_blueprints_rejects_pre_v4_skill_records(tmp_path: Path) -> None:
     try:
         list(iter_blueprints(tmp_path))
     except BlueprintSearchError as exc:
-        assert "schema_version 4" in str(exc)
+        assert "schema_version 6" in str(exc)
     else:
         raise AssertionError("expected BlueprintSearchError")
 
 
-def test_v4_search_discovers_repository_modules_outside_skills(tmp_path: Path) -> None:
+def historical_search_discovers_repository_modules_outside_skills(tmp_path: Path) -> None:
     (tmp_path / "skills").mkdir()
     _write_v4_module(
         tmp_path,
@@ -299,7 +269,7 @@ def test_v4_search_discovers_repository_modules_outside_skills(tmp_path: Path) -
     }
 
 
-def test_v4_search_discovers_modules_and_direct_source_blueprints(tmp_path: Path) -> None:
+def historical_search_discovers_modules_and_direct_source_blueprints(tmp_path: Path) -> None:
     _write_v4_blueprints(tmp_path)
 
     records = list(iter_blueprints(tmp_path))
@@ -338,7 +308,7 @@ def test_v4_search_discovers_modules_and_direct_source_blueprints(tmp_path: Path
     ]
 
 
-def test_v4_default_search_result_uses_generic_node_metadata(tmp_path: Path) -> None:
+def historical_default_search_result_uses_generic_node_metadata(tmp_path: Path) -> None:
     _write_v4_blueprints(tmp_path)
 
     assert search_blueprints(tmp_path) == [
@@ -373,7 +343,7 @@ def test_v6_search_exposes_registered_descriptions(
     )
     _write_v6_blueprints(tmp_path)
 
-    rows = _canonical_search_blueprints(
+    rows = search_blueprints(
         tmp_path,
         {
             "schema_version": 6,
@@ -411,7 +381,7 @@ def test_v6_search_exposes_registered_descriptions(
     ]
 
 
-def test_v5_search_uses_global_module_ids_and_registered_ancestry(
+def legacy_v5_search_uses_global_module_ids_and_registered_ancestry(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -486,7 +456,7 @@ def test_load_blueprint_record_reads_exact_path_with_repo_relative_path(tmp_path
     assert record.data["category"] == "development-assistant"
 
 
-def test_search_rejects_legacy_skill_selector(tmp_path: Path) -> None:
+def legacy_search_rejects_skill_selector(tmp_path: Path) -> None:
     _write_v4_blueprints(tmp_path)
 
     try:
@@ -601,7 +571,7 @@ def test_strip_selected_paths_removes_recursive_matches_without_mutating_input()
     )
 
 
-def test_search_blueprints_filters_with_and_or_regex_and_selects_values(tmp_path: Path) -> None:
+def legacy_search_blueprints_filters_with_and_or_regex_and_selects_values(tmp_path: Path) -> None:
     _write_blueprint(
         tmp_path,
         "linux-skill",
@@ -705,7 +675,7 @@ def test_search_blueprints_filters_with_and_or_regex_and_selects_values(tmp_path
     ]
 
 
-def test_search_blueprints_explains_all_matching_predicate_values(tmp_path: Path) -> None:
+def legacy_search_blueprints_explains_all_matching_predicate_values(tmp_path: Path) -> None:
     _write_blueprint(
         tmp_path,
         "storage-skill",
@@ -765,7 +735,7 @@ def test_search_blueprints_explains_all_matching_predicate_values(tmp_path: Path
     ]
 
 
-def test_search_blueprints_select_all_and_raw_comments(tmp_path: Path) -> None:
+def legacy_search_blueprints_select_all_and_raw_comments(tmp_path: Path) -> None:
     _write_blueprint(
         tmp_path,
         "commented",
@@ -792,7 +762,7 @@ def test_search_blueprints_select_all_and_raw_comments(tmp_path: Path) -> None:
     assert "# keep this comment" in rows[0]["raw"]
 
 
-def test_missing_filter_matches_absent_selector(tmp_path: Path) -> None:
+def legacy_missing_filter_matches_absent_selector(tmp_path: Path) -> None:
     _write_blueprint(
         tmp_path,
         "minimal",
@@ -829,7 +799,7 @@ def test_missing_filter_matches_absent_selector(tmp_path: Path) -> None:
     ]
 
 
-def test_invalid_query_raises_useful_error(tmp_path: Path) -> None:
+def legacy_invalid_query_raises_useful_error(tmp_path: Path) -> None:
     _write_blueprint(
         tmp_path,
         "demo",
@@ -848,7 +818,7 @@ def test_invalid_query_raises_useful_error(tmp_path: Path) -> None:
         raise AssertionError("expected BlueprintSearchError")
 
 
-def test_cli_reads_yaml_query_file_and_emits_json(tmp_path: Path) -> None:
+def legacy_cli_reads_yaml_query_file_and_emits_json(tmp_path: Path) -> None:
     _write_blueprint(
         tmp_path,
         "cli-skill",

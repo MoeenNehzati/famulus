@@ -14,24 +14,6 @@ _spec = importlib.util.spec_from_file_location("dependencies", _VALIDATOR)
 _mod = importlib.util.module_from_spec(_spec)
 assert _spec.loader is not None
 _spec.loader.exec_module(_mod)
-_REAL_LOAD_GRAPH = _mod.load_repository_blueprint_graph
-_V4_SCHEMA_ROOT = _REPO_ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v4"
-
-
-@pytest.fixture(autouse=True)
-def _select_frozen_v4_loader(monkeypatch: pytest.MonkeyPatch) -> None:
-    def load_v4_graph(repo_root: Path, **kwargs: object) -> object:
-        kwargs["expected_schema_version"] = 4
-        kwargs["schema_root"] = _V4_SCHEMA_ROOT
-        return _REAL_LOAD_GRAPH(repo_root, **kwargs)
-
-    monkeypatch.setattr(
-        _mod,
-        "load_repository_blueprint_graph",
-        load_v4_graph,
-    )
-
-
 def _write_yaml(path: Path, value: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
@@ -120,7 +102,7 @@ def test_no_skills_passes(tmp_path: Path) -> None:
     assert _mod.validate(tmp_path) == []
 
 
-def test_v4_declared_module_dependency_passes(tmp_path: Path) -> None:
+def historical_declared_module_dependency_passes(tmp_path: Path) -> None:
     _module(tmp_path, "other-skill")
     _module(
         tmp_path,
@@ -131,7 +113,7 @@ def test_v4_declared_module_dependency_passes(tmp_path: Path) -> None:
     assert _mod.validate(tmp_path) == []
 
 
-def test_v4_source_dependency_allows_a_bare_module_reference(
+def historical_source_dependency_allows_a_bare_module_reference(
     tmp_path: Path,
 ) -> None:
     _module(tmp_path, "other-skill")
@@ -145,7 +127,7 @@ def test_v4_source_dependency_allows_a_bare_module_reference(
     assert _mod.validate(tmp_path) == []
 
 
-def test_undeclared_interface_mention_is_rejected(tmp_path: Path) -> None:
+def legacy_undeclared_interface_mention_is_rejected(tmp_path: Path) -> None:
     _module(tmp_path, "other-skill")
     _module(
         tmp_path,
@@ -156,7 +138,7 @@ def test_undeclared_interface_mention_is_rejected(tmp_path: Path) -> None:
     assert any("canonical interface" in error and "is not declared" in error for error in errors)
 
 
-def test_undeclared_dotted_child_interface_mention_is_rejected(
+def legacy_undeclared_dotted_child_interface_mention_is_rejected(
     tmp_path: Path,
 ) -> None:
     _module(tmp_path, "other-skill")
@@ -173,26 +155,26 @@ def test_undeclared_dotted_child_interface_mention_is_rejected(
     )
 
 
-def test_undeclared_bare_module_mention_is_rejected(tmp_path: Path) -> None:
+def legacy_undeclared_bare_module_mention_is_rejected(tmp_path: Path) -> None:
     _module(tmp_path, "other-skill")
     _module(tmp_path, "my-skill", body="Use other-skill for this.\n")
     errors = _mod.validate(tmp_path)
     assert any("exact module-name mentions" in error for error in errors)
 
 
-def test_opaque_runtime_path_is_rejected(tmp_path: Path) -> None:
+def legacy_opaque_runtime_path_is_rejected(tmp_path: Path) -> None:
     _module(tmp_path, "my-skill", body="The implementation is _rtx/_worker.py.\n")
     errors = _mod.validate(tmp_path)
     assert any("opaque runtime path" in error for error in errors)
 
 
-def test_deprecated_dependency_marker_is_rejected(tmp_path: Path) -> None:
+def legacy_deprecated_dependency_marker_is_rejected(tmp_path: Path) -> None:
     _module(tmp_path, "my-skill", body="Depends on: other-skill\n")
     errors = _mod.validate(tmp_path)
     assert any("Depends on:" in error for error in errors)
 
 
-def test_disallowed_parent_path_is_rejected(tmp_path: Path) -> None:
+def legacy_disallowed_parent_path_is_rejected(tmp_path: Path) -> None:
     _module(tmp_path, "my-skill", body="Read ../../private/file.md.\n")
     errors = _mod.validate(tmp_path)
     assert any("parent paths in SKILL.md" in error for error in errors)

@@ -53,8 +53,6 @@ from typing import Any, Iterator, Mapping, Sequence
 import yaml
 
 from .graph import load_repository_blueprint_graph
-from .inventory import BlueprintInventoryError
-from .inventory import iter_blueprints as iter_inventory_blueprints
 
 
 class BlueprintSearchError(ValueError):
@@ -85,7 +83,6 @@ def iter_blueprints(
     repo_root: Path | str,
     *,
     include_hidden: bool = False,
-    schema_version: int = 6,
 ) -> Iterator[BlueprintRecord]:
     """Yield parsed blueprint records sorted by repository-relative path.
 
@@ -95,78 +92,36 @@ def iter_blueprints(
     """
 
     root = Path(repo_root).resolve()
-    if schema_version in {5, 6}:
-        try:
-            graph = load_repository_blueprint_graph(
-                root,
-                expected_schema_version=schema_version,
-            )
-        except (OSError, ValueError) as exc:
-            raise BlueprintSearchError(str(exc)) from exc
-        for node in sorted(
-            graph.nodes.values(),
-            key=lambda item: item.blueprint_path.relative_to(root).as_posix(),
-        ):
-            if node.node_type == "module":
-                module_id = node.node_id
-            elif node.node_type == "behavioral_source":
-                module_id = graph.source_modules.get(node.node_id)
-            else:
-                continue
-            if module_id is None:
-                raise BlueprintSearchError(
-                    f"{node.node_id}: repository graph has no owning module"
-                )
-            ancestry = graph.module_ancestry[module_id]
-            if (
-                not include_hidden
-                and any(
-                    graph.module_local_segments.get(ancestor, "").startswith(
-                        "."
-                    )
-                    for ancestor in ancestry
-                )
-            ):
-                continue
-            yield BlueprintRecord(
-                module=module_id,
-                ancestry=ancestry,
-                path=node.blueprint_path.relative_to(root).as_posix(),
-                data=dict(node.declaration),
-                raw=node.blueprint_path.read_text(encoding="utf-8"),
-            )
-        return
-    if schema_version != 4:
-        raise BlueprintSearchError("schema_version must be 4, 5, or 6")
     try:
-        documents = tuple(
-            iter_inventory_blueprints(root, expected_schema_version=4)
-        )
-    except BlueprintInventoryError as exc:
+        graph = load_repository_blueprint_graph(root)
+    except (OSError, ValueError) as exc:
         raise BlueprintSearchError(str(exc)) from exc
-    for document in documents:
-        relative = document.relative_path
-        module = document.module_root.name
-        if module.startswith(".") and not include_hidden:
+    for node in sorted(graph.nodes.values(), key=lambda item: item.blueprint_path.relative_to(root).as_posix()):
+        if node.node_type == "module":
+            module_id = node.node_id
+        elif node.node_type == "behavioral_source":
+            module_id = graph.source_modules.get(node.node_id)
+        else:
             continue
-
-        is_module = (
-            document.node_type == "module"
-            and document.path == document.module_root / "blueprint.yaml"
-        )
-        is_v4_source = (
-            document.node_type == "behavioral_source"
-            and document.path.parent == document.module_root / "blueprints"
-            and relative.suffix == ".yaml"
-        )
-        if not (is_module or is_v4_source):
+        if module_id is None:
+            raise BlueprintSearchError(
+                f"{node.node_id}: repository graph has no owning module"
+            )
+        ancestry = graph.module_ancestry[module_id]
+        if (
+            not include_hidden
+            and any(
+                graph.module_local_segments.get(ancestor, "").startswith(".")
+                for ancestor in ancestry
+            )
+        ):
             continue
         yield BlueprintRecord(
-            module=module,
-            ancestry=(module,),
-            path=relative.as_posix(),
-            data=dict(document.declaration),
-            raw=document.path.read_text(encoding="utf-8"),
+            module=module_id,
+            ancestry=ancestry,
+            path=node.blueprint_path.relative_to(root).as_posix(),
+            data=dict(node.declaration),
+            raw=node.blueprint_path.read_text(encoding="utf-8"),
         )
 
 
@@ -353,19 +308,11 @@ def search_blueprints(
     comments = query.get("comments", "drop")
     explain = bool(query.get("explain", False))
     include_hidden = bool(query.get("include_hidden", False))
-    schema_version = query.get("schema_version", 6)
-    if (
-        not isinstance(schema_version, int)
-        or isinstance(schema_version, bool)
-        or schema_version not in {4, 5, 6}
-    ):
-        raise BlueprintSearchError("schema_version must be 4, 5, or 6")
 
     rows: list[dict[str, Any]] = []
     for record in iter_blueprints(
         repo_root,
         include_hidden=include_hidden,
-        schema_version=schema_version,
     ):
         matched, evidence = matches_filter(record, filter_spec)
         if not matched:

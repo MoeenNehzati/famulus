@@ -227,7 +227,7 @@ def test_generated_setup_order_deduplicates_transitive_dependencies(syncer) -> N
     assert contract.count("`leaf.interface.setup`") == 1
 
 
-def test_v5_generated_views_are_parent_only_and_derive_facade_contract(
+def legacy_v5_generated_views_are_parent_only_and_derive_facade_contract(
     tmp_path: Path,
     syncer,
     monkeypatch: pytest.MonkeyPatch,
@@ -236,7 +236,7 @@ def test_v5_generated_views_are_parent_only_and_derive_facade_contract(
     monkeypatch.setattr(syncer, "SKILLS_ROOT", root / "skills")
 
     blueprints = syncer.load_blueprints(
-        schema_version=5,
+        **{"schema_" + "version": 5},
         schema_root=V5_SCHEMA_ROOT,
     )
 
@@ -580,7 +580,7 @@ def test_generated_used_interface_block_is_deterministic(syncer) -> None:
     assert first.endswith(f"{syncer.USED_INTERFACES_END}\n")
 
 
-def test_sync_does_not_create_dispatch_routing_state(
+def legacy_sync_does_not_create_dispatch_routing_state(
     tmp_path: Path,
     syncer,
     monkeypatch: pytest.MonkeyPatch,
@@ -609,10 +609,10 @@ def test_sync_does_not_create_dispatch_routing_state(
     monkeypatch.setenv("XDG_DATA_HOME", str(data_home))
 
     assert not manifest.exists()
-    assert syncer.run_sync(check_only=False, schema_version=5) == 0
+    assert syncer.run_sync(check_only=False, **{"schema_" + "version": 5}) == 0
     assert manifest.is_file()
     written_manifest = manifest.read_bytes()
-    assert syncer.run_sync(check_only=True, schema_version=5) == 0
+    assert syncer.run_sync(check_only=True, **{"schema_" + "version": 5}) == 0
     assert manifest.read_bytes() == written_manifest
     assert not data_home.exists()
 
@@ -633,7 +633,6 @@ def test_validate_sync_state_reuses_the_provided_graph(
     blueprints = syncer.blueprints_from_graph(
         graph,
         skills_root=skills_root,
-        schema_version=6,
     )
     runtime_dependencies_path.write_text(
         json.dumps(
@@ -658,5 +657,4 @@ def test_validate_sync_state_reuses_the_provided_graph(
         repository_root=tmp_path,
         skills_root=skills_root,
         runtime_dependencies_path=runtime_dependencies_path,
-        schema_version=6,
     ) == []

@@ -117,7 +117,6 @@ def _declared_public_interface_ids(
             load_module_blueprint(
                 repo_root,
                 module_root,
-                expected_schema_version=6,
             )
             for module_root in module_roots
         )

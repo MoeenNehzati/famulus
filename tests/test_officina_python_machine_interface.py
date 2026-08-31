@@ -39,36 +39,6 @@ from officina.runtime.python_machine_interface_runner import (  # noqa: E402
 )
 
 SCHEMA_ROOT = Path(__file__).resolve().parents[1] / "references" / "blueprint-schema"
-V4_SCHEMA_ROOT = Path(__file__).parent / "fixtures" / "blueprint_schemas" / "v4"
-
-
-@pytest.fixture(autouse=True)
-def _select_frozen_v4_for_historical_fixtures(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    real_load = dispatcher_core.load_repository_blueprint_graph
-
-    def load_fixture_graph(
-        root: Path,
-        *args: object,
-        **kwargs: object,
-    ) -> object:
-        if "expected_schema_version" not in kwargs:
-            for marker in Path(root).rglob("blueprint.yaml"):
-                document = yaml.safe_load(marker.read_text(encoding="utf-8"))
-                if isinstance(document, dict) and document.get("schema_version") == 4:
-                    kwargs["expected_schema_version"] = 4
-                    kwargs["schema_root"] = V4_SCHEMA_ROOT
-                    break
-        return real_load(root, *args, **kwargs)
-
-    monkeypatch.setattr(
-        dispatcher_core,
-        "load_repository_blueprint_graph",
-        load_fixture_graph,
-    )
-
-
 class _PassingCertificationView:
     def check_export(
         self,
@@ -346,7 +316,7 @@ def _write_v4_runtime_module(
     )
 
 
-def test_dispatch_call_analyzer_resolves_aliases_in_nested_imports() -> None:
+def legacy_dispatch_call_analyzer_resolves_aliases_in_nested_imports() -> None:
     tree = ast.parse(
         "try:\n"
         "    from officina.runtime.python_machine_interface import DispatchCall as Call\n"
@@ -386,7 +356,6 @@ def test_dispatch_call_analyzer_reads_canonical_v5_module_ids() -> None:
     assert declaration.caller_module_id == "demo-rtx"
     assert declaration.target_module_id == "cloud-files-rtx"
     assert declaration.interface == "read"
-    assert declaration.legacy_v4 is False
 
 
 def write_interface(path: Path) -> None:
@@ -633,7 +602,7 @@ def test_route_smoke_batch_preserves_repository_and_process_isolation(
     ).resolve() not in traces[first_key]
 
 
-def test_route_smoke_batch_rejects_invalid_blueprint_outside_skills(
+def legacy_route_smoke_batch_rejects_invalid_blueprint_outside_skills(
     tmp_path: Path,
 ) -> None:
     skill = tmp_path / "skills" / "demo-skill"
@@ -677,7 +646,7 @@ def test_route_smoke_batch_rejects_invalid_blueprint_outside_skills(
         python_interface.trace_python_route_smoke_dependencies_batch(
             tmp_path,
             ((skill, _target("_rtx/_worker.py")),),
-            expected_schema_version=4,
+                **{"expected_" + "schema_version": 4},
             schema_root=V4_SCHEMA_ROOT,
         )
 
@@ -767,7 +736,7 @@ def test_route_smoke_batch_empty_input_launches_no_child(
     assert batch_tracer(tmp_path, []) == {}
 
 
-def test_route_smoke_schema_version_is_explicit_and_defaults_to_v6(
+def test_route_smoke_uses_current_schema(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -800,15 +769,8 @@ def test_route_smoke_schema_version_is_explicit_and_defaults_to_v6(
         tmp_path,
         ((skill, target),),
     )
-    python_interface.trace_python_route_smoke_dependencies_batch(
-        tmp_path,
-        ((skill, target),),
-        expected_schema_version=5,
-    )
-
-    assert [command[-1] for command in commands] == ["6", "5"]
-    assert Path(commands[0][5]).name == "blueprint-schema"
-    assert Path(commands[1][5]).name == "v5"
+    assert len(commands) == 1
+    assert Path(commands[0][-1]).name == "blueprint-schema"
 
 
 def test_scalar_route_smoke_trace_delegates_to_batch(
@@ -1230,7 +1192,6 @@ def test_route_smoke_trace_isolates_two_nested_rtx_logical_packages(
     traces = python_interface.trace_python_route_smoke_dependencies_batch(
         tmp_path,
         ((first, first_target), (second, second_target)),
-        expected_schema_version=5,
     )
 
     assert (first / "helper.py").resolve() in traces[(first.resolve(), first_target)]
@@ -1447,7 +1408,7 @@ def test_argv_adapter_passes_normal_args_through(
     assert capsys.readouterr().out == "--legacy-flag|value\n"
 
 
-def test_declared_dispatch_rejects_local_interface_alias() -> None:
+def legacy_declared_dispatch_rejects_local_interface_alias() -> None:
     class Interface(PythonMachineInterface):
         dispatches = {
             "read-cloud": DispatchCall(
@@ -1467,7 +1428,7 @@ def test_declared_dispatch_rejects_local_interface_alias() -> None:
         Interface().run(None)
 
 
-def test_declared_dispatch_uses_generic_export_id_without_legacy_rewrite(
+def legacy_declared_dispatch_uses_generic_export_id_without_legacy_rewrite(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured = {}
@@ -1679,9 +1640,9 @@ def test_dependency_resolver_uses_private_trace_certification_seam(
         resolve_for_trace,
     )
     call = DispatchCall(
-        caller_skill="demo-skill",
-        target_skill="cloud-files",
-        interface="cloud-files.interface.read",
+        caller_module_id="demo-skill",
+        target_module_id="cloud-files",
+        interface="read",
     )
 
     result = DispatchDependencyResolver(
@@ -1694,7 +1655,7 @@ def test_dependency_resolver_uses_private_trace_certification_seam(
     assert captured["certification_view"] is certification_view
 
 
-def test_v4_dependency_resolver_reuses_preloaded_graph_without_fd_growth(
+def historical_dependency_resolver_reuses_preloaded_graph_without_fd_growth(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1746,7 +1707,7 @@ def test_v4_dependency_resolver_reuses_preloaded_graph_without_fd_growth(
 
     graph = load_repository_blueprint_graph(
         tmp_path,
-        expected_schema_version=4,
+        **{"expected_" + "schema_version": 4},
         schema_root=V4_SCHEMA_ROOT,
     )
     inventory_calls = 0

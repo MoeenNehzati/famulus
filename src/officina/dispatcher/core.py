@@ -109,12 +109,8 @@ def _resolve_dispatch_metadata_for_trace(
 
     repository_root = get_repo_root(repo_root)
     repository_config = repository_root / toml_io.repository_config_filename()
-    graph_schema_version = getattr(graph, "schema_version", None)
-    if (
-        graph_schema_version in {4, 5}
-        or not repository_config.is_file()
-    ):
-        return _resolve_legacy_trace_metadata(
+    if not repository_config.is_file():
+        return _resolve_unconfigured_trace_metadata(
             caller_module_id=caller_module_id,
             caller_source_id=caller_source_id,
             target=target,
@@ -137,7 +133,7 @@ def _resolve_dispatch_metadata_for_trace(
     ).metadata()
 
 
-def _resolve_legacy_trace_metadata(
+def _resolve_unconfigured_trace_metadata(
     *,
     caller_module_id: str,
     caller_source_id: str | None,
@@ -149,12 +145,8 @@ def _resolve_legacy_trace_metadata(
     certification_view: Any | None,
     graph: Any | None,
 ) -> ResolvedInvocationMetadata:
-    """Compatibility-only v4/v5 graph resolver for validators and old fixtures."""
+    """Resolve a v6 trace when no repository configuration is available."""
 
-    from officina.blueprints.authorization import (
-        AuthorizationRequest,
-        resolve_interface_authorization,
-    )
     from officina.blueprints.graph import resolve_export
     from officina.blueprints.process_binding import (
         compile_gateway_invocation,
@@ -164,56 +156,43 @@ def _resolve_legacy_trace_metadata(
     from officina.runtime.python_machine_interface import PythonProcessTarget
 
     selected_graph = graph or load_repository_blueprint_graph(repo_root)
+    if selected_graph.schema_version != 6:
+        raise InvocationError(
+            f"unsupported graph version {selected_graph.schema_version}"
+        )
     module, source, export = resolve_export(
         selected_graph,
         target,
-        None if selected_graph.schema_version == 5 else target_version,
+        target_version,
     )
     authorization = None
     terminal_module_id = module.node_id
     implementing_source_id = source.node_id
-    if selected_graph.schema_version == 5:
-        authorization = resolve_interface_authorization(
-            selected_graph,
-            AuthorizationRequest(
-                caller_module_id=caller_module_id,
-                caller_source_id=caller_source_id,
-                interface_id=export.interface_id,
-                version=export.version if target_version is None else target_version,
-            ),
+    caller = selected_graph.nodes.get(caller_module_id)
+    if caller is None or caller.node_type != "module":
+        raise CallerNotFoundError(f"caller module `{caller_module_id}` does not exist")
+    if caller_module_id != module.node_id:
+        declared = any(
+            isinstance(use, dict)
+            and use.get("interface") == export.interface_id
+            and use.get("version") == export.version
+            for source_id in selected_graph.module_sources.get(caller_module_id, ())
+            for use in selected_graph.nodes[source_id].declaration.get("uses_interfaces", [])
         )
-        if not authorization.allowed:
-            raise InvocationError(
-                f"{target}: authorization rejected [{authorization.diagnostic}]"
+        if not declared:
+            raise InterfaceUseUndeclaredError(
+                f"caller module `{caller_module_id}` does not declare use of `{target}`"
             )
-        terminal_module_id = authorization.terminal_module_id or module.node_id
-        implementing_source_id = authorization.implementing_source_id or source.node_id
-    else:
-        caller = selected_graph.nodes.get(caller_module_id)
-        if caller is None or caller.node_type != "module":
-            raise CallerNotFoundError(f"caller module `{caller_module_id}` does not exist")
-        if caller_module_id != module.node_id:
-            declared = any(
-                isinstance(use, dict)
-                and use.get("interface") == export.interface_id
-                and use.get("version") == export.version
-                for source_id in selected_graph.module_sources.get(caller_module_id, ())
-                for use in selected_graph.nodes[source_id].declaration.get("uses_interfaces", [])
+        access = export.export_declaration.get("access", {})
+        if (
+            access.get("allow_all_modules") is not True
+            and caller_module_id not in access.get("allowed_callers", [])
+        ):
+            raise UnauthorizedCallerError(
+                caller_module_id=caller_module_id,
+                target_module_id=module.node_id,
+                interface_id=target,
             )
-            if not declared:
-                raise InterfaceUseUndeclaredError(
-                    f"caller module `{caller_module_id}` does not declare use of `{target}`"
-                )
-            access = export.export_declaration.get("access", {})
-            if (
-                access.get("allow_all_modules") is not True
-                and caller_module_id not in access.get("allowed_callers", [])
-            ):
-                raise UnauthorizedCallerError(
-                    caller_module_id=caller_module_id,
-                    target_module_id=module.node_id,
-                    interface_id=target,
-                )
     compiled = (
         compile_route_smoke_invocation(source, export)
         if args == ["--route-smoke"] and not stdin_requested

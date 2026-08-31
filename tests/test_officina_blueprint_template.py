@@ -322,65 +322,19 @@ def test_write_regenerated_skill_blueprint_writes_tmp_output(tmp_path: Path) -> 
     assert "# @schema-doc path=name" in output.read_text(encoding="utf-8")
 
 
-def test_regeneration_rejects_pre_v5_blueprints(tmp_path: Path) -> None:
+def test_regeneration_rejects_pre_v6_blueprints(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     skill_dir = repo / "skills" / "demo-skill"
     skill_dir.mkdir(parents=True)
     blueprint = {"schema_version": 2, "blueprint_type": "skill", "id": "demo-skill"}
     (skill_dir / "blueprint.yaml").write_text(yaml.safe_dump(blueprint), encoding="utf-8")
 
-    with pytest.raises(ValueError, match="schema_version 5"):
+    with pytest.raises(ValueError, match="schema_version 6"):
         write_regenerated_skill_blueprint(
             "demo-skill",
             repo_root=repo,
             output_dir=tmp_path,
         )
-
-
-def test_v5_regeneration_selects_existing_module_schema_owner(tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
-    module_dir = repo / "skills" / "demo-skill"
-    schema_dir = repo / "references" / "blueprint-schema" / "migrations" / "v5"
-    module_dir.mkdir(parents=True)
-    schema_dir.mkdir(parents=True)
-    blueprint = {
-        "schema_version": 5,
-        "node_type": "module",
-        "id": "demo-skill",
-    }
-    (module_dir / "blueprint.yaml").write_text(
-        yaml.safe_dump(blueprint), encoding="utf-8"
-    )
-
-    def authoring_schema(marker: str, version: int, node_type: str) -> dict:
-        return {
-            "$schema": "http://json-schema.org/draft-07/schema#",
-            "type": "object",
-            "required": ["schema_version", "node_type", "id"],
-            "additionalProperties": False,
-            "properties": {
-                "schema_version": {"const": version, "description": marker},
-                "node_type": {"const": node_type},
-                "id": {"type": "string"},
-            },
-        }
-
-    (schema_dir / "schema.annotated-draft.json").write_text(
-        __import__("json").dumps(authoring_schema("legacy marker", 3, "skill")),
-        encoding="utf-8",
-    )
-    (schema_dir / "module.schema.json").write_text(
-        __import__("json").dumps(authoring_schema("module marker", 5, "module")),
-        encoding="utf-8",
-    )
-
-    output = write_regenerated_skill_blueprint(
-        "demo-skill", repo_root=repo, output_dir=tmp_path
-    )
-
-    text = output.read_text(encoding="utf-8")
-    assert "module marker" in text
-    assert "legacy marker" not in text
 
 
 def test_repository_managed_skill_generator_creates_parent_and_optional_child(
@@ -472,7 +426,6 @@ def test_repository_managed_skill_generator_creates_parent_and_optional_child(
     graph = load_repository_blueprint_graph(
         repo,
         schema_root=schema_root,
-        expected_schema_version=6,
     )
     assert set(graph.nodes) == {
         "demo-skill",

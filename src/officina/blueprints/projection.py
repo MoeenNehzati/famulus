@@ -276,7 +276,7 @@ def _v4_source_interface(
     return module, source, declaration
 
 
-def _collect_v4_vocabulary(
+def _collect_interface_vocabulary(
     declaration: Mapping[str, JsonValue], vocabulary: set[str]
 ) -> None:
     contract = declaration.get("contract")
@@ -396,7 +396,7 @@ def _project_v4_consumer_interfaces(
             projection["process_binding"] = resolver.transform(
                 deepcopy(process_binding)
             )
-        _collect_v4_vocabulary(declaration, vocabulary)
+        _collect_interface_vocabulary(declaration, vocabulary)
         _enforce_standalone_export_size(interface_id, projection)
         return projection
 
@@ -464,7 +464,7 @@ def _project_v4_consumer_interfaces(
     return InterfaceProjection(consumer_id, document, frozenset(vocabulary))
 
 
-def _project_v5_consumer_interfaces(
+def _project_consumer_interfaces(
     graph: RepositoryBlueprintGraph,
     consumer_id: str,
     certification: CertificationView,
@@ -632,7 +632,7 @@ def _project_v5_consumer_interfaces(
             projection["process_binding"] = resolver.transform(
                 deepcopy(process_binding)
             )
-        _collect_v4_vocabulary(declaration, vocabulary)
+        _collect_interface_vocabulary(declaration, vocabulary)
         _enforce_standalone_export_size(interface_id, projection)
         return projection
 
@@ -745,12 +745,12 @@ def project_consumer_interfaces(
 ) -> InterfaceProjection:
     """Select one behavioral source's direct interface uses and bounded helpers."""
 
-    if repository_graph.schema_version in {5, 6}:
-        return _project_v5_consumer_interfaces(
-            repository_graph,
-            consumer_id,
-            certification,
+    if repository_graph.schema_version != 6:
+        raise InterfaceProjectionError(
+            f"unsupported graph version {repository_graph.schema_version}"
         )
-    return _project_v4_consumer_interfaces(
-        repository_graph, consumer_id, certification
+    return _project_consumer_interfaces(
+        repository_graph,
+        consumer_id,
+        certification,
     )

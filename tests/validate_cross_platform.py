@@ -466,7 +466,7 @@ def test_registered_child_blueprint_authority_and_runtime_are_validated(
         }
     )
 
-    errors = validate.__globals__["_validate_v4_blueprints"](graph, tmp_path)
+    errors = validate.__globals__["_validate_blueprints"](graph, tmp_path)
 
     assert len([error for error in errors if "command `grep`" in error]) == 2
 

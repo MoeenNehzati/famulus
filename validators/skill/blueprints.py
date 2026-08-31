@@ -7,8 +7,6 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
-import yaml
-
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SRC_ROOT = _REPO_ROOT / "src"
 if str(_SRC_ROOT) not in sys.path:
@@ -35,26 +33,6 @@ CONTRACT_END = "<!-- END BLUEPRINT CONTRACT -->"
 INTERFACES_START = "<!-- BEGIN BLUEPRINT INTERFACES -->"
 INTERFACES_END = "<!-- END BLUEPRINT INTERFACES -->"
 _REGULAR_GIT_MODES = {"100644", "100755"}
-
-
-def repository_schema_version(repo_root: Path) -> int:
-    """Read the required canonical repository schema version."""
-
-    marker = repo_root / "references" / "blueprint-schema" / "blueprint.yaml"
-    try:
-        document = yaml.safe_load(marker.read_text(encoding="utf-8"))
-    except FileNotFoundError as exc:
-        raise ValueError(f"{marker}: canonical schema marker is missing") from exc
-    except (OSError, UnicodeError, yaml.YAMLError) as exc:
-        raise ValueError(
-            f"{marker}: cannot determine repository schema version"
-        ) from exc
-    version = document.get("schema_version") if isinstance(document, dict) else None
-    if version not in {4, 5, 6}:
-        raise ValueError(
-            f"{marker}: repository schema version must be 4, 5, or 6"
-        )
-    return int(version)
 
 
 def _git_tracked_files(
@@ -203,8 +181,6 @@ def _load_blueprint_syncer(repo_root: Path) -> ModuleType | None:
 
 def preflight(
     repo_root: Path,
-    *,
-    expected_schema_version: int = 6,
 ) -> tuple[list[str], RepositoryBlueprintGraph | None]:
     """Own repository graph loading and its canonical diagnostics."""
 
@@ -212,10 +188,6 @@ def preflight(
     skills_root = repo_root / "skills"
     blueprint_template = repo_root / "references" / "blueprint-schema" / "template.yaml"
     schema_root = repo_root / "references" / "blueprint-schema"
-    if expected_schema_version != 6:
-        schema_root = (
-            schema_root / "migrations" / f"v{expected_schema_version}"
-        )
 
     if not skills_root.is_dir():
         return errors, None
@@ -237,7 +209,6 @@ def preflight(
         graph = load_repository_blueprint_graph(
             repo_root,
             schema_root=schema_root,
-            expected_schema_version=expected_schema_version,
         )
     except BlueprintInventoryError as exc:
         errors.extend(
@@ -283,21 +254,13 @@ def validate_with_graph(
                     / "blueprint-schema"
                     / "runtime_dependencies.json"
                 ),
-                schema_version=graph.schema_version,
             )
         )
     return errors
 
 
-def validate(
-    repo_root: Path,
-    *,
-    expected_schema_version: int = 6,
-) -> list[str]:
-    errors, graph = preflight(
-        repo_root,
-        expected_schema_version=expected_schema_version,
-    )
+def validate(repo_root: Path) -> list[str]:
+    errors, graph = preflight(repo_root)
     if errors or graph is None:
         return errors
     return validate_with_graph(repo_root, graph)

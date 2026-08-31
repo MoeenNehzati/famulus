@@ -37,11 +37,11 @@ def render_pooled_review(
     *,
     root_id: str | None = None,
 ) -> str:
-    """Render a deterministic v4 review from current public certificates."""
+    """Render a deterministic review from current public certificates."""
 
     if not isinstance(graph, RepositoryBlueprintGraph):
         raise PooledReviewValidationError(
-            "pooled review accepts only a v4 repository graph"
+            "pooled review accepts only a repository blueprint graph"
         )
     if not hasattr(certification, "certificate_for"):
         raise PooledReviewValidationError(

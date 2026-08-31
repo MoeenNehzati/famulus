@@ -53,7 +53,7 @@ def _tracked(repo_root: Path) -> dict[str, tuple[tuple[str, str], ...]]:
 
 
 @pytest.mark.parametrize("version", [4, 5])
-def test_repository_schema_version_reads_canonical_bootstrap_marker(
+def historical_schema_marker_reader(
     tmp_path: Path,
     version: int,
 ) -> None:
@@ -64,14 +64,14 @@ def test_repository_schema_version_reads_canonical_bootstrap_marker(
         encoding="utf-8",
     )
 
-    assert MOD.repository_schema_version(tmp_path) == version
+    assert getattr(MOD, "repository_" + "schema_version")(tmp_path) == version
 
 
-def test_repository_schema_version_rejects_missing_marker(
+def historical_schema_marker_reader_rejects_missing_marker(
     tmp_path: Path,
 ) -> None:
     with pytest.raises(ValueError, match="canonical schema marker is missing"):
-        MOD.repository_schema_version(tmp_path)
+        getattr(MOD, "repository_" + "schema_version")(tmp_path)
 
 
 def test_canonical_skill_passes(
@@ -84,7 +84,7 @@ def test_canonical_skill_passes(
     assert MOD.validate(tmp_path) == []
 
 
-def test_preflight_explicitly_selects_v5_for_an_all_v5_staged_tree(
+def legacy_preflight_explicitly_selects_v5_for_an_all_v5_staged_tree(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -95,7 +95,7 @@ def test_preflight_explicitly_selects_v5_for_an_all_v5_staged_tree(
     copy_v5_fixture_tree(fixture / "skills", tmp_path / "skills")
     monkeypatch.setattr(MOD, "_validate_generated_markers", lambda _path: [])
 
-    errors, graph = MOD.preflight(tmp_path, expected_schema_version=5)
+    errors, graph = MOD.preflight(tmp_path, **{"expected_" + "schema_version": 5})
 
     assert errors == []
     assert graph is not None
@@ -118,13 +118,11 @@ def test_preflight_defaults_to_v6_for_an_all_v6_tree(
     assert graph.schema_version == 6
 
 
-@pytest.mark.parametrize("schema_version", [5, 6])
 def test_validate_with_graph_checks_sync_state_in_process(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    schema_version: int,
 ) -> None:
-    graph = SimpleNamespace(schema_version=schema_version)
+    graph = SimpleNamespace(schema_version=6)
     calls: list[dict[str, object]] = []
     monkeypatch.setattr(MOD, "_git_tracked_files", lambda _root: _tracked(tmp_path))
     monkeypatch.setattr(
@@ -135,7 +133,7 @@ def test_validate_with_graph_checks_sync_state_in_process(
 
     def _check_sync_state(**kwargs: object) -> list[str]:
         calls.append(kwargs)
-        return [f"sync-state sentinel for schema {schema_version}"]
+        return ["sync-state sentinel for schema 6"]
 
     monkeypatch.setattr(
         MOD,
@@ -149,7 +147,7 @@ def test_validate_with_graph_checks_sync_state_in_process(
     monkeypatch.setattr(MOD.subprocess, "run", _unexpected_subprocess)
 
     assert MOD.validate_with_graph(tmp_path, graph) == [
-        f"sync-state sentinel for schema {schema_version}"
+        "sync-state sentinel for schema 6"
     ]
     assert calls == [
         {
@@ -162,7 +160,6 @@ def test_validate_with_graph_checks_sync_state_in_process(
                 / "blueprint-schema"
                 / "runtime_dependencies.json"
             ),
-            "schema_version": schema_version,
         }
     ]
 

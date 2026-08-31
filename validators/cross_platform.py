@@ -440,7 +440,7 @@ def _command_violations(tokens: list[str], context: str, allowed_commands: set[s
     return errors
 
 
-def _validate_v4_blueprints(
+def _validate_blueprints(
     graph: RepositoryBlueprintGraph,
     repo_root: Path,
 ) -> list[str]:
@@ -1253,7 +1253,7 @@ def _validate(
     .officina.blueprints.graph.load_repository_blueprint_graph:
       why:
         constructs: "Builds standalone blueprint preparation when no graph is supplied."
-    ._validate_v4_blueprints:
+    ._validate_blueprints:
       why:
         constructs: "Builds declaration portability findings."
     ._validate_python:
@@ -1295,10 +1295,10 @@ def _validate(
             errors.append(str(exc))
         else:
             errors.extend(
-                _validate_v4_blueprints(repository_graph, repo_root)
+                _validate_blueprints(repository_graph, repo_root)
             )
     elif repository_graph is not None:
-        errors.extend(_validate_v4_blueprints(repository_graph, repo_root))
+        errors.extend(_validate_blueprints(repository_graph, repo_root))
     child_roots, non_python_gateways = _build_child_artifact_index(
         repository_graph
     )

@@ -179,15 +179,6 @@ class DispatchCallDeclaration:
     interface: str | None
     lineno: int
     keywords: Mapping[str, ast.Constant]
-    legacy_v4: bool = False
-
-    @property
-    def caller_skill(self) -> str | None:
-        return self.caller_module_id
-
-    @property
-    def target_skill(self) -> str | None:
-        return self.target_module_id
 
 
 def analyze_dispatch_call_declarations(
@@ -263,19 +254,13 @@ def analyze_dispatch_call_declarations(
             DispatchCallDeclaration(
                 caller_module_id=(
                     resolved(values.get("caller_module_id"))
-                    or resolved(values.get("caller_skill"))
                 ),
                 target_module_id=(
                     resolved(values.get("target_module_id"))
-                    or resolved(values.get("target_skill"))
                 ),
                 interface=resolved(values.get("interface")),
                 lineno=getattr(node, "lineno", 0),
                 keywords=keywords,
-                legacy_v4=(
-                    "caller_module_id" not in values
-                    and "target_module_id" not in values
-                ),
             )
         )
     return tuple(declarations)
@@ -350,13 +335,10 @@ def trace_python_route_smoke_dependencies_batch(
     repo_root: Path,
     specifications: Iterable[tuple[Path, PythonProcessTarget]],
     *,
-    expected_schema_version: int = 6,
     schema_root: Path | None = None,
 ) -> dict[tuple[Path, PythonProcessTarget], tuple[Path, ...]]:
     """Return isolated loaded-path traces from one Python child process."""
 
-    if expected_schema_version not in {4, 5, 6}:
-        raise ValueError("expected_schema_version must be 4, 5, or 6")
     repository_root = repo_root.resolve()
     normalized = _normalize_route_smoke_trace_specifications(
         repository_root,
@@ -375,17 +357,6 @@ def trace_python_route_smoke_dependencies_batch(
         package_schema_root = (
             Path(__file__).resolve().parents[3] / "references" / "blueprint-schema"
         )
-        if expected_schema_version in {4, 5}:
-            candidate_schema_root = (
-                candidate_schema_root
-                / "migrations"
-                / f"v{expected_schema_version}"
-            )
-            package_schema_root = (
-                package_schema_root
-                / "migrations"
-                / f"v{expected_schema_version}"
-            )
         selected_schema_root = (
             candidate_schema_root
             if (candidate_schema_root / "module.schema.json").is_file()
@@ -404,7 +375,6 @@ from pathlib import Path
 src_root = Path(sys.argv[1]).resolve()
 repo_root = Path(sys.argv[2]).resolve()
 schema_root = Path(sys.argv[3]).resolve()
-expected_schema_version = int(sys.argv[4])
 officina_root = src_root / "officina"
 sys.path.insert(0, str(src_root))
 
@@ -495,7 +465,6 @@ try:
     graph = load_repository_blueprint_graph(
         repo_root,
         schema_root=schema_root,
-        expected_schema_version=expected_schema_version,
     )
 except BlueprintGraphError as exc:
     if tuple(iter_blueprints(repo_root)):
@@ -507,6 +476,7 @@ except BlueprintGraphError as exc:
         export_edges=(),
         helper_edges=(),
         certification_edges=(),
+        schema_version=6,
     )
 resolver = DispatchDependencyResolver(
     repo_root=repo_root,
@@ -661,7 +631,6 @@ print(json.dumps(results))
             str(source_root),
             str(repository_root),
             str(selected_schema_root),
-            str(expected_schema_version),
         ],
         cwd=repository_root,
         input=specifications_json,
@@ -795,7 +764,6 @@ def trace_python_route_smoke_dependencies(
     repo_root: Path,
     python_target: PythonProcessTarget,
     *,
-    expected_schema_version: int = 6,
     schema_root: Path | None = None,
 ) -> tuple[Path, ...]:
     """Return Python files loaded by one route-smoke dependency traversal."""
@@ -807,8 +775,6 @@ def trace_python_route_smoke_dependencies(
     )
     key = normalized[0]
     options = {}
-    if expected_schema_version != 4:
-        options["expected_schema_version"] = expected_schema_version
     if schema_root is not None:
         options["schema_root"] = schema_root
     return trace_python_route_smoke_dependencies_batch(
@@ -828,7 +794,6 @@ class DispatchCall:
     version: int = 1
     smoke_args: tuple[str, ...] = ("--route-smoke",)
     smoke_stdin: bool = False
-    legacy_v4: bool = False
 
     def __init__(
         self,
@@ -838,56 +803,29 @@ class DispatchCall:
         version: int = 1,
         smoke_args: tuple[str, ...] = ("--route-smoke",),
         smoke_stdin: bool = False,
-        *,
-        caller_skill: str | None = None,
-        target_skill: str | None = None,
     ) -> None:
-        uses_legacy_keywords = caller_skill is not None or target_skill is not None
-        if uses_legacy_keywords and (
-            caller_module_id is not None or target_module_id is not None
-        ):
-            raise TypeError(
-                "canonical module IDs and legacy skill aliases cannot be mixed"
-            )
-        caller = (
-            caller_skill if uses_legacy_keywords else caller_module_id
-        )
-        target = (
-            target_skill if uses_legacy_keywords else target_module_id
-        )
-        if not isinstance(caller, str) or not caller:
+        if not isinstance(caller_module_id, str) or not caller_module_id:
             raise TypeError("caller_module_id is required")
-        if not isinstance(target, str) or not target:
+        if not isinstance(target_module_id, str) or not target_module_id:
             raise TypeError("target_module_id is required")
         if not isinstance(interface, str) or not interface:
             raise TypeError("interface is required")
-        if not uses_legacy_keywords and ".interface." in interface:
+        if ".interface." in interface:
             raise ValueError(
                 "canonical DispatchCall.interface must be a local interface name"
             )
         for name, value in (
-            ("caller_module_id", caller),
-            ("target_module_id", target),
+            ("caller_module_id", caller_module_id),
+            ("target_module_id", target_module_id),
             ("interface", interface),
             ("version", version),
             ("smoke_args", smoke_args),
             ("smoke_stdin", smoke_stdin),
-            ("legacy_v4", uses_legacy_keywords),
         ):
             object.__setattr__(self, name, value)
 
     @property
-    def caller_skill(self) -> str:
-        return self.caller_module_id
-
-    @property
-    def target_skill(self) -> str:
-        return self.target_module_id
-
-    @property
     def target_interface_id(self) -> str:
-        if self.legacy_v4:
-            return self.interface
         return f"{self.target_module_id}.interface.{self.interface}"
 
 
