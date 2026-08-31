@@ -41,12 +41,9 @@ Never ask the query to infer ownership or reconstruct a blueprint graph.
 
 ## Preflight
 
-Before querying policy, identify the selected registered component and directly
-affected implementation children from the current artifact and graph. Retain
-the query dry-run and verify caller, target `standards.interface.query-standard`,
-repository root,
-selected standard path, task facts, view, and refs. Reject mismatches rather
-than executing against another checkout or inferred target.
+Before querying policy, identify the selected component and affected implementation
+children. Retain the dry-run and verify caller, target `standards.interface.query-standard`, repository root,
+selected standard path, task facts, view, and refs. Reject mismatches and inferred targets.
 
 ## Standards retrieval
 
@@ -69,10 +66,13 @@ the source root. For other mixed work, query each applicable root separately
 and combine the returned requirements. A whole-skill audit queries both
 instruction roots plus every declared Python module and source root.
 
-If selected work touches test files or their fixtures or helpers, also query
+If selected work touches test files or their fixtures or helpers, query
 `references/node-standards/code-testing.standard.yaml` as an additional
-independent root with `task.kind=refactor`. Test files are those collected or
-executed by the repository runner. Do not query it for Markdown-only work.
+independent root with `task.kind=refactor`. Set
+`task.optimizes-test-performance` true for performance work and false otherwise.
+Test artifacts are collected or executed by configured test or validation runner.
+Markdown-only means no executable test file, fixture, or helper changes. Test
+code that validates Markdown remains test code.
 
 Imported documents arrive in the complete pinned import closure; never query
 them separately. Apply `requirements.true`, resolve material

@@ -1,6 +1,6 @@
 schema_version: 6
 standard_version: 1.0.0
-revision: 1
+revision: 2
 id: node-standards.code-testing
 canonical_path: references/node-standards/code-testing.standard.yaml
 title: Code Test Design and Performance Standard
@@ -73,10 +73,10 @@ standards:
   - kind: rule
     id: code-testing.requirements.parallel-awareness
     assertions:
-    - id: xdist-scope-is-per-worker
+    - id: sharing-scope-isolation-domain
       modality: required
-      statement: Treat pytest module and session fixture scope as per worker under xdist; prove reuse by counting
-        physical setup at the target worker count rather than inferring it from fixture scope.
+      statement: Treat runner-declared shared setup scope as local to each process, worker, or isolation domain unless
+        cross-domain reuse is mechanically proven.
   - kind: rule
     id: code-testing.requirements.distinct-cases
     assertions:
@@ -107,21 +107,35 @@ standards:
       statement: After mutation, refresh every affected hash, projection, graph, index entry, cache key, or other
         derived input; reuse path-bound state only when the changed bytes cannot affect stored or consumed data.
   - kind: rule
+    id: code-testing.requirements.determinism-and-bounded-execution
+    assertions:
+    - id: control-nondeterminism
+      modality: required
+      statement: Control or record behavior-relevant time, randomness, locale, timezone, scheduling, network, and
+        external-service inputs so failures can be reproduced without hiding the production contract.
+    - id: bounded-concurrency-and-process-evidence
+      modality: required
+      statement: Concurrency and subprocess tests use deterministic synchronization and bounded completion rather
+        than arbitrary sleeps alone, and preserve applicable exit status, signal, stdout, stderr, and final-state evidence.
+  - kind: rule
     id: code-testing.requirements.performance-evidence
+    applies_when:
+      fact: task.optimizes-test-performance
+      equals: true
     assertions:
     - id: comparable-measurement
       modality: required
-      statement: Performance comparisons hold code revision or change set, suite selection, worker count,
-        repository view or projection, sandbox capability, and relevant host state constant and reject runs
-        contaminated by competing work or systemic slowdown.
+      statement: Performance comparisons hold code or build revision, selected tests, execution mode, worker count,
+        input corpus or projection, capabilities, toolchain and platform, and relevant host state constant, and reject
+        runs contaminated by competing work or systemic slowdown.
     - id: capability-attribution
       modality: required
       statement: Classify failures caused solely by missing harness capabilities as environment evidence rather than
         product regressions, and rerun with the required capability before accepting correctness or timing.
     - id: measure-work-and-wall
       modality: required
-      statement: Record runner wall time, pytest wall time, aggregate item or file work, pass and skip counts,
-        setup-operation counts where relevant, and raw evidence; use repeated comparable runs when variance is material.
+      statement: Record enclosing-harness wall time, test-runner wall time when distinct, aggregate item or file work,
+        outcomes, setup-operation counts where relevant, and raw evidence; repeat comparable runs when variance is material.
     - id: net-material-benefit
       modality: required
       statement: Set a materiality threshold before editing; accept an optimization only when measured savings exceed
@@ -162,7 +176,8 @@ standards:
 - kind: family
   id: code-testing.smells.unsafe-reuse
   title: Shared mutable fixture, fixture drift, or incomplete cache provenance
-  summary: Search terms include cache, fixture fidelity, mutable state, copy isolation, invalidation, and provenance.
+  summary: Search terms include cache, fixture fidelity, mutable state, copy isolation, invalidation, provenance,
+    teardown, cleanup, and order-dependent behavior.
   children:
   - kind: definition
     id: code-testing.smells.unsafe-reuse.signal
@@ -172,7 +187,8 @@ standards:
 - kind: family
   id: code-testing.smells.failure-unsafe-lifecycle
   title: Resource lifecycle leaks after setup, assertions, or injected failures interrupt
-  summary: Search terms include finally, process reap, reader join, thread, socket, lock, environment, and temporary state.
+  summary: Search terms include finally, teardown, cleanup, timeout, process reap, reader join, thread, socket, lock,
+    environment, and temporary state.
   children:
   - kind: definition
     id: code-testing.smells.failure-unsafe-lifecycle.signal
@@ -182,7 +198,8 @@ standards:
 - kind: family
   id: code-testing.smells.overbroad-input-space
   title: Broad copies, pointless parameter products, excess concurrency, or one expensive call per finding
-  summary: Search terms include parametrization, matrix, transitive closure, repeated diagnostics, broad copy, and race volume.
+  summary: Search terms include parametrization, parametrize, parameterized, matrix, transitive closure, repeated
+    diagnostics, broad copy, and race volume.
   children:
   - kind: definition
     id: code-testing.smells.overbroad-input-space.signal
@@ -221,43 +238,56 @@ standards:
     meaning: Success follows from discovering no inputs, making no calls, accepting extra findings, or checking
       only a broad empty or truthy result rather than the exact intended behavior.
 - kind: family
+  id: code-testing.smells.nondeterministic-or-unbounded-execution
+  title: Flaky, order-dependent, sleeping, hanging, or unbounded test execution
+  summary: Search terms include flaky, flakiness, order-dependent, timeout, hang, sleep, random, clock, locale,
+    timezone, scheduling, network, subprocess, signal, stdout, stderr, and external service.
+  children:
+  - kind: definition
+    id: code-testing.smells.nondeterministic-or-unbounded-execution.signal
+    term: Signal
+    meaning: A test leaves behavior-relevant nondeterminism uncontrolled, relies on arbitrary delay as its only
+      synchronization, can wait indefinitely, or loses applicable process outcome and final-state evidence.
+- kind: family
   id: code-testing.smells.invalid-performance-claim
   title: Contaminated benchmark, case-count proxy, or unverified suite deferral
-  summary: Search terms include wall time, aggregate work, worker count, host load, repository view, and suite selection.
+  summary: Search terms include slow test, benchmark, wall time, aggregate work, worker count, host load, input
+    projection, platform, toolchain, and suite selection.
   children:
   - kind: definition
     id: code-testing.smells.invalid-performance-claim.signal
     term: Signal
-    meaning: A comparison changes worker count, repository view, capability, selection, or host load; treats fewer
-      cases as saved work; reports only wall time; or moves broad evidence without mechanically proving destination
-      selection and routine enforcement.
+    meaning: A comparison changes revision, selected tests, execution mode, workers, input corpus or projection,
+      capability, toolchain, platform, or host load; treats fewer cases as saved work; reports only one timing layer;
+      or moves broad evidence without mechanically proving destination selection and routine enforcement.
 - kind: family
   id: code-testing.smells.misplaced-broad-integration
   title: Broad integration nested in a fast feedback suite
-  summary: Search terms include precommit, pre-push, full suite, nested pytest, canary, and exact node selection.
+  summary: Search terms include fast gate, slow gate, precommit, pre-push, full suite, nested runner, canary, and
+    exact test selection.
   children:
   - kind: definition
     id: code-testing.smells.misplaced-broad-integration.signal
     term: Signal
-    meaning: A fast pooled suite launches another broad repository collection, or expensive integration evidence sits
-      in the fast gate despite retained canaries and a routinely enforced slower destination.
+    meaning: A fast required gate launches another broad collection, or expensive integration evidence remains there
+      despite retained canaries and a routinely enforced slower destination.
 
 - kind: family
   id: code-testing.remedies
-  title: Test cleanup remedies
-  summary: Apply in risk order; preserve exact evidence ownership before reducing physical work.
+  title: Test design and optimization remedies
+  summary: Preserve exact evidence ownership; when reducing existing cost, apply the applicable remedies in risk order.
   children:
   - kind: procedure
     id: code-testing.remedies.map-evidence-and-cost
-    title: Map the contract, owner, observable, and physical cost
+    title: Map the contract, owner, observable, and applicable cost
     ordered: true
     steps:
     - {kind: step, id: identify-contract, instruction: "Name the supported contract, initial state, action, exact observable, and current retained or overlapping owners."}
     - {kind: step, id: prove-execution, instruction: "Name positive discovery or call evidence and the exact expected findings, including a clean valid-input case.", requires: [identify-contract]}
-    - {kind: step, id: count-boundaries, instruction: "Measure serial and target-worker wall and count repository builds, graph or schema loads, scans, copies, subprocesses, and other physical setup.", requires: [prove-execution]}
-    - {kind: step, id: classify-history, instruction: "Check whether the cost is new, pre-existing, or amplified by repository growth, using a known-fast revision when available.", requires: [count-boundaries]}
+    - {kind: step, id: count-boundaries, instruction: "For performance work, measure relevant harness and runner time and count repeated physical setup or execution.", requires: [prove-execution]}
+    - {kind: step, id: classify-history, instruction: "For performance work, check whether cost is new, pre-existing, or amplified by input growth, using a known-fast revision when available.", requires: [count-boundaries]}
     invariants: [{id: no-runtime-only-deletion, statement: "Runtime alone is not evidence that a supported contract is redundant."}]
-    completion_conditions: [{id: owner-and-cost-recorded, statement: "The exact evidence owner and repeated physical work are explicit."}]
+    completion_conditions: [{id: owner-and-cost-recorded, statement: "The exact evidence owner is explicit; for performance work, repeated physical work is also explicit."}]
     risk: {level: low, statement: "Read-only diagnosis."}
   - kind: procedure
     id: code-testing.remedies.delete-or-consolidate-duplicate-evidence
@@ -285,13 +315,25 @@ standards:
     title: Reuse immutable preparation with private mutable copies
     ordered: true
     steps:
-    - {kind: step, id: identify-immutable-product, instruction: "After delete, consolidation, and narrowing are exhausted, separate deterministic immutable preparation from invocation-local findings and mutable state."}
+    - {kind: step, id: identify-immutable-product, instruction: "When reducing existing cost, exhaust deletion, consolidation, and narrowing first; then separate deterministic immutable preparation from invocation-local findings and mutable state."}
     - {kind: step, id: bind-provenance, instruction: "Group only consumers with identical fidelity and mutation needs, then validate the applicable provenance requirements above.", requires: [identify-immutable-product]}
     - {kind: step, id: isolate-consumers, instruction: "Pilot a small consumer set, publish safely when publication exists, and return a private copy to every mutating consumer.", requires: [bind-provenance]}
-    - {kind: step, id: prove-net-saving, instruction: "Count physical preparation serially and at the target worker count and reject reuse whose coordination cost consumes the saving.", requires: [isolate-consumers]}
+    - {kind: step, id: verify-publication-and-fallback, instruction: "For published or cross-domain reuse, test trusted storage, invalidation, corruption, competing publishers, cleanup, failure replay, and direct-run fallback.", requires: [isolate-consumers]}
+    - {kind: step, id: justify-reuse, instruction: "Demonstrate the claimed benefit; for performance claims, count physical preparation in each target execution mode and reject reuse whose coordination cost consumes the saving.", requires: [verify-publication-and-fallback]}
     invariants: [{id: no-shared-mutation, statement: "No consumer can mutate state observed by another test or worker."}]
-    completion_conditions: [{id: fidelity-isolation-performance, statement: "Production fidelity, consumer isolation, applicable invalidation or publication failures, and net savings are demonstrated."}]
+    completion_conditions: [{id: fidelity-isolation-benefit, statement: "Production fidelity, consumer isolation, applicable invalidation or publication failures, and the claimed benefit are demonstrated; a performance benefit clears its threshold when applicable."}]
     risk: {level: high, statement: "Caches and shared templates can create stale, unsafe, or order-dependent evidence."}
+  - kind: procedure
+    id: code-testing.remedies.restore-fixture-fidelity
+    title: Restore fixture fidelity to a supported production state
+    ordered: true
+    steps:
+    - {kind: step, id: compare-consumed-properties, instruction: "Identify every production property consumed by the tested layer and compare it with the fixture, including bytes, metadata, identity, environment, and structure."}
+    - {kind: step, id: repair-minimal-state, instruction: "Repair the smallest fixture state so it represents a supported production state without adding unrelated setup.", requires: [compare-consumed-properties]}
+    - {kind: step, id: add-fidelity-proof, instruction: "Add a focused fixture-contract assertion for each behavior-relevant property whose drift would invalidate downstream evidence.", requires: [repair-minimal-state]}
+    invariants: [{id: no-impossible-state, statement: "The fixture does not create a state that production cannot support."}]
+    completion_conditions: [{id: consumed-properties-match, statement: "Every property consumed by the tested layer matches a supported production state."}]
+    risk: {level: medium, statement: "A convenient but impossible fixture can make downstream tests misleading."}
   - kind: procedure
     id: code-testing.remedies.reduce-input-space
     title: Remove input combinations that add no branch or observable
@@ -325,15 +367,27 @@ standards:
     completion_conditions: [{id: success-and-failure-clean, statement: "Both successful and interrupted paths release every owned resource."}]
     risk: {level: medium, statement: "Incorrect cleanup ordering can deadlock, leak, or replace the primary failure."}
   - kind: procedure
+    id: code-testing.remedies.stabilize-nondeterministic-or-unbounded-execution
+    title: Make nondeterministic and concurrent evidence reproducible and bounded
+    ordered: true
+    steps:
+    - {kind: step, id: identify-variable-inputs, instruction: "Name behavior-relevant time, randomness, locale, timezone, scheduling, network, external-service, and process inputs."}
+    - {kind: step, id: control-or-record, instruction: "Control or record those inputs without hiding the production contract; use barriers, hooks, events, or observed state instead of arbitrary sleeps alone.", requires: [identify-variable-inputs]}
+    - {kind: step, id: bound-and-observe, instruction: "Set bounded completion and assert applicable exit status, signal, stdout, stderr, ordering, uniqueness, atomicity, and final state.", requires: [control-or-record]}
+    invariants: [{id: preserve-real-boundary, statement: "Determinism does not replace the process, concurrency, clock, or external boundary being tested."}]
+    completion_conditions: [{id: reproducible-bounded-result, statement: "The scenario is reproducible, terminates within a justified bound, and preserves its exact outcome evidence."}]
+    risk: {level: medium, statement: "Over-control can make a concurrency or integration test cease to exercise its real boundary."}
+  - kind: procedure
     id: code-testing.remedies.place-and-benchmark-evidence
     title: Place broad evidence deliberately and benchmark comparably
     ordered: true
     steps:
-    - {kind: step, id: preserve-fast-canary, instruction: "If moving an exact broad node, keep fast targeted evidence in precommit before using a slower gate."}
-    - {kind: step, id: prove-selection, instruction: "For a moved node, mechanically prove the destination selects, routinely executes, and passes it with the intended repository view.", requires: [preserve-fast-canary]}
-    - {kind: step, id: benchmark-idle-equivalent-runs, instruction: "Compare equivalent serial and target-worker selections on an idle host and record runner wall, pytest wall, aggregate work, counts, and raw evidence; when a node moved, first complete its selection proof."}
-    - {kind: step, id: run-verification-ladder, instruction: "Compare collected node IDs and the contract or parameter map around collection-affecting changes; run changed nodes, fixture neighbors, canonical owner, focused serial and parallel suites, selection checks, formatting, then the full target suite.", requires: [benchmark-idle-equivalent-runs]}
-    invariants: [{id: no-silent-deferral, statement: "Broad evidence is never removed from precommit without retained fast evidence and enforced destination ownership."}]
+    - {kind: step, id: preserve-fast-canary, instruction: "If moving broad evidence, keep fast targeted evidence in the required fast gate before using a slower enforced gate."}
+    - {kind: step, id: prove-selection, instruction: "For moved evidence, mechanically prove the destination selects, routinely executes, and passes the exact test identities with the intended inputs and environment.", requires: [preserve-fast-canary]}
+    - {kind: step, id: establish-required-capabilities, instruction: "Distinguish missing harness capabilities from product failures and rerun with every required capability before accepting correctness or timing."}
+    - {kind: step, id: benchmark-idle-equivalent-runs, instruction: "Compare equivalent selections and execution modes on an idle host and record harness time, runner time, aggregate work, outcomes, and raw evidence; when evidence moved, first complete its selection proof.", requires: [establish-required-capabilities]}
+    - {kind: step, id: run-verification-ladder, instruction: "Compare collected test identities and the contract or parameter map around collection-affecting changes; run changed tests, fixture neighbors, canonical owner, focused execution modes, gate-selection checks, formatting, then the full target gate.", requires: [benchmark-idle-equivalent-runs]}
+    invariants: [{id: no-silent-deferral, statement: "Broad evidence is never removed from a required fast gate without retained fast evidence and enforced destination ownership."}]
     completion_conditions: [{id: correctness-and-materiality, statement: "Correctness owners pass and a comparable measurement demonstrates material net benefit."}]
     risk: {level: medium, statement: "Suite movement can convert routinely enforced evidence into nominal coverage."}
 
@@ -342,12 +396,16 @@ links:
   unique-evidence-remedy: {source: {kind: rule, ref: code-testing.requirements.unique-evidence}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.delete-or-consolidate-duplicate-evidence}, lifecycle: active, resolution: {state: resolved}}
   honest-boundary-remedy: {source: {kind: rule, ref: code-testing.requirements.lowest-honest-boundary}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.narrow-to-observable}, lifecycle: active, resolution: {state: resolved}}
   fixture-isolation-remedy: {source: {kind: rule, ref: code-testing.requirements.fixture-isolation-and-fidelity}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.prepare-once-copy-before-mutation}, lifecycle: active, resolution: {state: resolved}}
+  fixture-restoration-remedy: {source: {kind: rule, ref: code-testing.requirements.fixture-isolation-and-fidelity}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.restore-between-scenarios}, lifecycle: active, resolution: {state: resolved}}
+  fixture-fidelity-remedy: {source: {kind: rule, ref: code-testing.requirements.fixture-isolation-and-fidelity}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.restore-fixture-fidelity}, lifecycle: active, resolution: {state: resolved}}
   failure-safe-lifecycle-remedy: {source: {kind: rule, ref: code-testing.requirements.failure-safe-lifecycle}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.make-lifecycle-cleanup-failure-safe}, lifecycle: active, resolution: {state: resolved}}
   safe-reuse-remedy: {source: {kind: rule, ref: code-testing.requirements.safe-reuse}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.prepare-once-copy-before-mutation}, lifecycle: active, resolution: {state: resolved}}
   parallel-awareness-remedy: {source: {kind: rule, ref: code-testing.requirements.parallel-awareness}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.prepare-once-copy-before-mutation}, lifecycle: active, resolution: {state: resolved}}
   distinct-cases-remedy: {source: {kind: rule, ref: code-testing.requirements.distinct-cases}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.reduce-input-space}, lifecycle: active, resolution: {state: resolved}}
+  distinct-cases-evidence-remedy: {source: {kind: rule, ref: code-testing.requirements.distinct-cases}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.map-evidence-and-cost}, lifecycle: active, resolution: {state: resolved}}
   conservative-fast-path-remedy: {source: {kind: rule, ref: code-testing.requirements.conservative-fast-paths}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.narrow-to-observable}, lifecycle: active, resolution: {state: resolved}}
   derived-state-remedy: {source: {kind: rule, ref: code-testing.requirements.derived-state-consistency}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.restore-between-scenarios}, lifecycle: active, resolution: {state: resolved}}
+  deterministic-execution-remedy: {source: {kind: rule, ref: code-testing.requirements.determinism-and-bounded-execution}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.stabilize-nondeterministic-or-unbounded-execution}, lifecycle: active, resolution: {state: resolved}}
   performance-evidence-remedy: {source: {kind: rule, ref: code-testing.requirements.performance-evidence}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.place-and-benchmark-evidence}, lifecycle: active, resolution: {state: resolved}}
   boundary-inflation-remedy: {source: {kind: family, ref: code-testing.smells.boundary-inflation}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.narrow-to-observable}, lifecycle: active, resolution: {state: resolved}}
   duplicate-owner-remedy: {source: {kind: family, ref: code-testing.smells.duplicate-evidence-owner}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.delete-or-consolidate-duplicate-evidence}, lifecycle: active, resolution: {state: resolved}}
@@ -358,5 +416,6 @@ links:
   unsafe-fast-path-remedy: {source: {kind: family, ref: code-testing.smells.unsafe-fast-path}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.narrow-to-observable}, lifecycle: active, resolution: {state: resolved}}
   stale-state-remedy: {source: {kind: family, ref: code-testing.smells.stale-derived-state}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.restore-between-scenarios}, lifecycle: active, resolution: {state: resolved}}
   weak-proof-remedy: {source: {kind: family, ref: code-testing.smells.weak-execution-proof}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.map-evidence-and-cost}, lifecycle: active, resolution: {state: resolved}}
+  nondeterministic-execution-remedy: {source: {kind: family, ref: code-testing.smells.nondeterministic-or-unbounded-execution}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.stabilize-nondeterministic-or-unbounded-execution}, lifecycle: active, resolution: {state: resolved}}
   invalid-performance-remedy: {source: {kind: family, ref: code-testing.smells.invalid-performance-claim}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.place-and-benchmark-evidence}, lifecycle: active, resolution: {state: resolved}}
   misplaced-integration-remedy: {source: {kind: family, ref: code-testing.smells.misplaced-broad-integration}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.place-and-benchmark-evidence}, lifecycle: active, resolution: {state: resolved}}

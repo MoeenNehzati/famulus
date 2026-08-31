@@ -59,10 +59,13 @@ A Python runtime child adds python-module; each registered Python source adds
 python-behavioral-source. Query neither absent components nor inferred targets,
 owners, or languages.
 
-If selected work touches test files or their fixtures or helpers, also query
+If selected work touches test files or their fixtures or helpers, query
 `references/node-standards/code-testing.standard.yaml` as an additional
-independent root with `task.kind=author-skill`. Test files are those collected
-or executed by the repository runner. Do not query it for Markdown-only work.
+independent root with `task.kind=author-skill`. Set
+`task.optimizes-test-performance` true for performance work and false otherwise.
+Test artifacts are collected or executed by configured test or validation runner.
+Markdown-only means no executable test file, fixture, or helper changes. Test
+code that validates Markdown remains test code.
 
 Each root returns its complete pinned import closure; never query imported
 documents separately.

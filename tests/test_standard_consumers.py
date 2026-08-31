@@ -116,7 +116,10 @@ def test_test_code_affecting_skill_work_queries_the_code_testing_standard() -> N
         assert "If selected work touches test files or their fixtures or helpers" in skill
         assert testing_root in skill
         assert "additional independent root" in skill
-        assert "Do not query it for Markdown-only work" in skill
+        assert "task.optimizes-test-performance" in skill
+        assert "configured test or validation runner" in skill
+        assert "Markdown-only means no executable test file, fixture, or helper changes" in skill
+        assert "Test code that validates Markdown" in skill
 
 
 def test_language_routes_use_the_whole_applicable_closure() -> None:

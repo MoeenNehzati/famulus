@@ -22,6 +22,9 @@ PYTHON_MODULE_STANDARD = Path(
     "references/node-standards/python-module.standard.yaml"
 )
 REFACTORING_STANDARD = Path("references/node-standards/refactoring.standard.yaml")
+CODE_TESTING_STANDARD = Path(
+    "references/node-standards/code-testing.standard.yaml"
+)
 REFACTOR_FACTS = {"task.kind": "refactor"}
 REFACTOR_QUERY = {
     "filter": {
@@ -227,6 +230,78 @@ def test_process_interface_accepts_a_standard_path_not_a_target() -> None:
 
     assert args.standard_path == PYTHON_MODULE_STANDARD.as_posix()
     assert not hasattr(args, "target")
+
+
+def test_code_testing_performance_requirements_need_an_optimization_fact() -> None:
+    ordinary = query(
+        REPO_ROOT,
+        CODE_TESTING_STANDARD,
+        facts={
+            "task.kind": "refactor",
+            "task.optimizes-test-performance": False,
+        },
+    )
+    optimization = query(
+        REPO_ROOT,
+        CODE_TESTING_STANDARD,
+        facts={
+            "task.kind": "refactor",
+            "task.optimizes-test-performance": True,
+        },
+    )
+
+    prefix = "code-testing.requirements.performance-evidence#"
+    ordinary_ids = {
+        requirement["id"] for requirement in ordinary["requirements"]["true"]
+    }
+    optimization_ids = {
+        requirement["id"]
+        for requirement in optimization["requirements"]["true"]
+    }
+
+    assert not any(item.startswith(prefix) for item in ordinary_ids)
+    assert {
+        f"{prefix}comparable-measurement",
+        f"{prefix}capability-attribution",
+        f"{prefix}measure-work-and-wall",
+        f"{prefix}net-material-benefit",
+    } <= optimization_ids
+
+    assert (
+        "code-testing.requirements.parallel-awareness#sharing-scope-isolation-domain"
+        in ordinary_ids
+    )
+    assert not any("xdist" in item for item in ordinary_ids)
+
+    ordinary_remedies = query(
+        REPO_ROOT,
+        CODE_TESTING_STANDARD,
+        facts={
+            "task.kind": "refactor",
+            "task.optimizes-test-performance": False,
+        },
+        view="remedies",
+        refs=[
+            {
+                "document": "node-standards.code-testing",
+                "ref": "code-testing.requirements.fixture-isolation-and-fidelity",
+            },
+            {
+                "document": "node-standards.code-testing",
+                "ref": "code-testing.requirements.distinct-cases",
+            },
+        ],
+    )
+    completion_statements = {
+        condition["statement"]
+        for procedure in ordinary_remedies["procedures"]
+        for condition in procedure["content"].get("completion_conditions", [])
+    }
+    assert "The exact evidence owner and repeated physical work are explicit." not in completion_statements
+    assert (
+        "Production fidelity, consumer isolation, applicable invalidation or publication failures, and net savings are demonstrated."
+        not in completion_statements
+    )
 
 
 def test_common_module_exports_the_process_interface_to_its_consumers() -> None:
