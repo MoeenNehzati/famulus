@@ -132,8 +132,6 @@ class DiagnosticReport:
 _REQUIRED_COMMANDS = (
     "dispatcher",
     "invoke-skill",
-    "llm-wakeup",
-    "lw",
     "background_run",
 )
 def _apply_command(context: InstallationContext) -> str:

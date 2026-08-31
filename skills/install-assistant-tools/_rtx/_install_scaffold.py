@@ -1,14 +1,5 @@
 #!/usr/bin/env python3
 """
-scaffold.py — Install universal dispatcher, wakeup, and invoke-skill launchers.
-
-This is the Phase-1 floor: every skill's SKILL.md invokes scripts via a bare
-`dispatcher --caller-skill ...` command, and recurring-tasks systemd/cron
-jobs invoke `invoke-skill <name>`. The guarded session scheduler is exposed as
-`llm-wakeup` and `lw`. These commands need to exist and be on PATH regardless
-of plugin vs dev-mode, and regardless of which agent launchers
-(assistant/collab/coauthor/tw) the user wants. Run this first, always.
-
 Required third-party Python packages declared by blueprint executable
 interfaces are provisioned into the managed-runtime release venv by
 officina.install.managed_runtime.build_candidate_release, which
@@ -187,7 +178,7 @@ def warn_if_managed_release_missing(
     if not current_pointer.exists():
         log(
             "  NOTE: no managed-runtime release is active yet "
-            f"({current_pointer} not found). dispatcher/llm-wakeup/lw/invoke-skill will "
+            f"({current_pointer} not found). dispatcher/invoke-skill will "
             "not work until officina.install.managed_runtime.build_candidate_release "
             "has run (see _phase_entry.py)."
         )
@@ -375,9 +366,6 @@ def run(
     capability_results = [
         launcher_installer.install_dispatcher_launcher(
             repo_root, bin_dir, dry_run, manifest, home=home, runtime_root=runtime_root
-        ),
-        launcher_installer.install_wakeup_launcher(
-            bin_dir, dry_run, manifest, home=home, runtime_root=runtime_root
         ),
         launcher_installer.install_invoke_skill_launcher(
             bin_dir, dry_run, manifest, home=home, runtime_root=runtime_root

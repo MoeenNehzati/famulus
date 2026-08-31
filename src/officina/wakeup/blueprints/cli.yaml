@@ -37,6 +37,18 @@ dependencies:
   source: wakeup.source.monitor
   version: 1
   reason: Capture and inspect provider quota observations.
+- blueprint: {base: repository-root, path: src/officina/common/blueprints/atomic-files.yaml}
+  source: common.source.atomic-files
+  version: 2
+  reason: Replace feature integration state without exposing partial files.
+- blueprint: {base: repository-root, path: src/officina/common/blueprints/command-files.yaml}
+  source: common.source.command-files
+  version: 1
+  reason: Install the two feature-owned command files through the neutral helper.
+- blueprint: {base: repository-root, path: src/officina/recurring/blueprints/runtime.yaml}
+  source: recurring.source.runtime
+  version: 1
+  reason: Reconcile Task 9 native registrations after exact legacy-preset suppression or restoration.
 interfaces:
   wakeup.source.cli.interface.auto-policy:
     content:
@@ -720,5 +732,73 @@ interfaces:
             maximum: 1
     usage: <claude|codex> <session-id> <reset-time> [--message <message>] [--delay
       <duration>]
+    version: 1
+  wakeup.source.cli.interface.setup:
+    content: [cli\.py, claude_codex_cli\.py]
+    uses_interfaces: []
+    contract:
+      arguments:
+        operation: {description: Install or remove the wakeup-owned integration., required: true, sensitivity: public, type: {kind: string}}
+        canonical-python: {description: Canonical Task 2 Python executable for setup., required: false, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+        plugin-root: {description: Current selected Famulus plugin root for setup., required: false, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+        bin-dir: {description: Platform command directory., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+        native-root: {description: Platform user-registration directory., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+        jobs-file: {description: Optional canonical recurring jobs file checked for legacy handoff., required: false, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+      caller_warnings:
+      - external-side-effect: Setup changes command files and one native registration; teardown removes only wakeup-owned state.
+      direct_io:
+        network: []
+        reads:
+        - {id: selected-inputs, access: read, content: selected Python plugin and optional recurring jobs, formats: [python, yaml], medium: local-filesystem, sensitivity: user-private}
+        writes:
+        - {id: command-write, access: configure, content: wakeup command files, formats: [python, batch], medium: local-filesystem, sensitivity: user-private, system: filesystem}
+        - {id: native-write, access: configure, content: due-delivery registration, formats: [systemd-unit, plist, batch], medium: local-system, sensitivity: user-private, system: native-scheduler}
+      execution:
+        consistency: {live: Inputs and existing owner state are validated immediately before reconciliation.}
+        effects:
+        - id: wakeup-integration
+          action: configure
+          direct_io_ref: native-write
+          value_source: {kind: argument, argument_ref: operation}
+          confirmation_evidence: {kind: direct-io, direct_io_ref: native-write}
+          reversibility: {reversible: Invoke teardown or rerun setup with the intended selected plugin.}
+          may_occur_in_outcomes: [completed]
+        lifecycle: finite
+        mutation_safety:
+          atomicity: {per_effect_only: Files are atomically replaced and legacy suppression occurs only after native registration succeeds.}
+          concurrent_invocations: {unsafe: Concurrent feature setup calls are not serialized.}
+          idempotency: {idempotent: Repeating setup converges to one fixed registration and two command files.}
+          on_uncertain_completion: {verify_then_decide: Inspect the owner marker and fixed native registration before retrying.}
+          partial_effects_on_failure: {possible: Native state can be observed briefly before rollback completes.}
+          rollback_on_failure: {available: Captured feature files and the legacy jobs document are restored automatically.}
+        state_effect: mutating
+        verification: [{method: direct-io-state, direct_io_ref: native-write}]
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes:
+      - {id: completed, class: success, caller_action: Report the selected operation as complete., effects: [wakeup-integration], outputs: []}
+      - {id: conflict, class: error, caller_action: Report the conflicting recurring due job without mutating it., effects: [], outputs: []}
+      outputs: []
+      preconditions: []
+    description: Reconcile or remove the feature-owned wakeup integration.
+    process_binding:
+      kind: process
+      entry: Interface
+      patterns:
+      - name: setup
+        positional_patterns: {'0': ^setup$}
+        min_positionals: 1
+        max_positionals: 1
+        allowed_flags: [--canonical-python, --plugin-root, --bin-dir, --native-root, --jobs-file]
+        required_flags: [--canonical-python, --plugin-root, --bin-dir, --native-root]
+        flag_patterns: {--canonical-python: ^.+$, --plugin-root: ^.+$, --bin-dir: ^.+$, --native-root: ^.+$, --jobs-file: ^.+$}
+      - name: teardown
+        positional_patterns: {'0': ^teardown$}
+        min_positionals: 1
+        max_positionals: 1
+        allowed_flags: [--bin-dir, --native-root]
+        required_flags: [--bin-dir, --native-root]
+        flag_patterns: {--bin-dir: ^.+$, --native-root: ^.+$}
+    usage: <setup|teardown> --bin-dir DIR --native-root DIR [--canonical-python FILE --plugin-root DIR] [--jobs-file FILE]
     version: 1
 uses_interfaces: []

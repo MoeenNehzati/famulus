@@ -22,8 +22,6 @@ from officina.common.command_files import (
 from . import (
     DISPATCHER_WORKFLOWS,
     INVOKE_SKILL_WORKFLOWS,
-    WAKEUP_COMMANDS,
-    WAKEUP_WORKFLOWS,
 )
 
 # Fixed, immutable location of the stable launch resolver beneath a given
@@ -179,37 +177,6 @@ class LinuxLauncherInstaller(LauncherInstallerBase):
                     ),
                     executable=True,
                 ),
-            ],
-        )
-        return self.install_bundle(bundle, dry_run=dry_run, manifest=manifest)
-
-    def install_wakeup_launcher(
-        self,
-        bin_dir: Path,
-        dry_run: bool,
-        manifest: Manifest | None = None,
-        *,
-        home: Path | None = None,
-        runtime_root: Path | None = None,
-    ) -> LauncherInstallResult:
-        """Install both public wakeup names as resolver-backed POSIX shims."""
-        content = _unix_module_content(
-            "officina.wakeup.cli",
-            "Run officina.wakeup.cli via the stable managed-runtime resolver.",
-            home=home,
-            runtime_root=runtime_root,
-        )
-        bundle = LauncherBundleSpec(
-            name="llm-wakeup",
-            workflows=WAKEUP_WORKFLOWS,
-            files=[
-                LauncherFileSpec(
-                    destination=bin_dir / command,
-                    mode="generate",
-                    content=content,
-                    executable=True,
-                )
-                for command in WAKEUP_COMMANDS
             ],
         )
         return self.install_bundle(bundle, dry_run=dry_run, manifest=manifest)

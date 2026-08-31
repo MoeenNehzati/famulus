@@ -209,7 +209,7 @@ def test_windows_path_pending_intent_recovers_hard_interrupt_after_write(
     assert writes == [f"{bin_dir};{prior}"]
 
 
-def test_run_writes_dispatcher_wakeup_and_invoke_skill_launchers(tmp_path, monkeypatch):
+def test_run_writes_only_general_installer_launchers(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "platform", "linux")
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
@@ -220,18 +220,14 @@ def test_run_writes_dispatcher_wakeup_and_invoke_skill_launchers(tmp_path, monke
     status = scaffold.run(repo_root=repo_root, home=tmp_path, bin_dir=bin_dir, shell_rc=rc_file, dry_run=False, environ=dict(os.environ))
 
     dispatcher = bin_dir / "dispatcher"
-    llm_wakeup = bin_dir / "llm-wakeup"
-    lw = bin_dir / "lw"
     invoke_skill = bin_dir / "invoke-skill"
     assert status == 0
     assert dispatcher.is_file()
-    assert llm_wakeup.is_file()
-    assert lw.is_file()
+    assert not (bin_dir / "llm-wakeup").exists()
+    assert not (bin_dir / "lw").exists()
     assert invoke_skill.is_file()
     if os.name != "nt":
         assert dispatcher.stat().st_mode & 0o111
-        assert llm_wakeup.stat().st_mode & 0o111
-        assert lw.stat().st_mode & 0o111
     dispatcher_text = dispatcher.read_text()
     invoke_text = invoke_skill.read_text(encoding="utf-8")
     assert str(repo_root) not in dispatcher_text
@@ -311,7 +307,7 @@ def test_invoke_skill_uses_selected_home_instead_of_ambient_home(tmp_path, monke
     assert ambient_home not in rendered_resolver.parents
 
 
-def test_run_writes_windows_dispatcher_wakeup_and_invoke_skill_launchers(tmp_path, monkeypatch, capsys):
+def test_run_writes_only_windows_general_installer_launchers(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(sys, "platform", "win32")
     monkeypatch.setattr(scaffold, "ensure_path_windows", lambda *args, **kwargs: None)
     # A real Windows host always has LOCALAPPDATA set; resolving the
@@ -335,13 +331,11 @@ def test_run_writes_windows_dispatcher_wakeup_and_invoke_skill_launchers(tmp_pat
 
     output = capsys.readouterr().out
     dispatcher = bin_dir / "dispatcher.bat"
-    llm_wakeup = bin_dir / "llm-wakeup.bat"
-    lw = bin_dir / "lw.bat"
     invoke_skill = bin_dir / "invoke-skill.bat"
     assert status == 0
     assert dispatcher.is_file()
-    assert llm_wakeup.is_file()
-    assert lw.is_file()
+    assert not (bin_dir / "llm-wakeup.bat").exists()
+    assert not (bin_dir / "lw.bat").exists()
     assert invoke_skill.is_file()
     dispatcher_text = dispatcher.read_text(encoding="utf-8")
     assert "-m officina.dispatcher.cli %*" in dispatcher_text
@@ -354,7 +348,7 @@ def test_run_writes_windows_dispatcher_wakeup_and_invoke_skill_launchers(tmp_pat
         in invoke_skill.read_text(encoding="utf-8")
     )
     assert "OK: dispatcher" in output
-    assert "OK: llm-wakeup" in output
+    assert "llm-wakeup" not in output
     assert "OK: invoke-skill" in output
     assert not (bin_dir / "dispatcher").exists()
     assert not (bin_dir / "llm-wakeup").exists()
@@ -446,10 +440,8 @@ def test_run_dry_run_reports_required_capabilities(tmp_path, monkeypatch, capsys
     assert status == 0
     assert "Scaffold capability report:" in output
     assert "WOULD-INSTALL: dispatcher" in output
-    assert "WOULD-INSTALL: llm-wakeup" in output
     assert "WOULD-INSTALL: invoke-skill" in output
     assert "machine-interface dispatch" in output
-    assert "guarded LLM session wakeups" in output
     assert "recurring automation" in output
 
 

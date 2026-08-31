@@ -19,12 +19,14 @@ interfaces:
       version: 1
     - interface: wakeup.interface.explicit-schedule
       version: 1
+    - interface: wakeup.interface.setup
+      version: 1
     contract:
       arguments:
         request:
           description: User request to schedule a wakeup, infer one from a usage-limit
-            event, or manage automatic scheduling and its level for a provider
-            session.
+            event, manage automatic scheduling for a provider session, or set up,
+            refresh, or tear down the feature-owned integration.
           required: true
           sensitivity: user-private
           type:
@@ -32,7 +34,8 @@ interfaces:
             sensitivity: user-private
       caller_warnings:
       - external-side-effect: Delegated wakeup interfaces can persist a wakeup job
-          or change per-session automatic scheduling policy.
+          or change per-session automatic scheduling policy, command files, and the
+          dedicated native due-delivery registration.
       direct_io:
         network: []
         reads:
@@ -65,7 +68,7 @@ interfaces:
         mode: unattended
       outcomes:
       - caller_action: Present the resolved provider, canonical session, scheduled
-          local time, or automatic policy state and level.
+          local time, automatic policy state, or integration result.
         class: success
         effects: []
         id: completed
@@ -107,6 +110,8 @@ uses_interfaces:
 - interface: wakeup.interface.infer-schedule
   version: 1
 - interface: wakeup.interface.explicit-schedule
+  version: 1
+- interface: wakeup.interface.setup
   version: 1
 version: 1
 maturity: stable

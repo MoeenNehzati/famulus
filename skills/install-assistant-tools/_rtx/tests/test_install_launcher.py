@@ -142,83 +142,9 @@ def test_invoke_skill_delegates_agent_policy_to_managed_module(tmp_path):
     assert "background_run" not in invoke_text
 
 
-# famulus-skip: category=platform-contract; reason=the Linux wakeup bundle executes POSIX launchers; alternate=test_windows_dispatcher_and_invoke_skill_are_batch_launchers covers native Windows launchers
-@pytest.mark.skipif(os.name == "nt", reason="POSIX launcher execution")
-def test_linux_wakeup_bundle_runs_both_names_through_managed_resolver(tmp_path, monkeypatch):
-    """The shared Linux/macOS command file keeps a spaced runtime path as argv[0]."""
-    installer = platform_launcher_installer("linux")
-    bin_dir = tmp_path / "bin"
-    home = tmp_path / "home"
-    runtime_root = tmp_path / "selected plugin environment"
-    monkeypatch.setattr(sys, "platform", "linux")
-    monkeypatch.setenv("XDG_DATA_HOME", str(home / ".local" / "share"))
-
-    result = installer.install_wakeup_launcher(
-        bin_dir,
-        dry_run=False,
-        home=home,
-        runtime_root=runtime_root,
-    )
-
-    assert result.status == "installed"
-    resolver = runtime_root / "bootstrap" / "resolvers" / "v1" / "launch.py"
-    resolver.parent.mkdir(parents=True)
-    resolver.write_text(
-        "#!/usr/bin/env python3\n"
-        "import json\n"
-        "import sys\n"
-        "print(json.dumps(sys.argv))\n",
-        encoding="utf-8",
-    )
-    resolver.chmod(0o755)
-
-    for command in ("llm-wakeup", "lw"):
-        launcher = bin_dir / command
-        assert launcher.is_file()
-        if os.name != "nt":
-            assert launcher.stat().st_mode & 0o111
-        completed = subprocess.run(
-            [str(launcher), "doctor", "--example"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="strict",
-            check=False,
-        )
-        assert completed.returncode == 0, completed.stderr
-        assert json.loads(completed.stdout) == [
-            str(resolver),
-            "-m",
-            "officina.wakeup.cli",
-            "doctor",
-            "--example",
-        ]
-        content = launcher.read_text(encoding="utf-8")
-        assert str(tmp_path / "repo") not in content
-        assert sys.executable not in content
-
-
-def test_osx_wakeup_bundle_installs_both_unix_commands(tmp_path, monkeypatch):
-    """Overriding the macOS adapter without the wakeup bundle would drop its public commands."""
-    installer = platform_launcher_installer("darwin")
-    bin_dir = tmp_path / "bin"
-    runtime_root = tmp_path / "selected plugin environment"
-    monkeypatch.setattr(sys, "platform", "darwin")
-
-    result = installer.install_wakeup_launcher(
-        bin_dir,
-        dry_run=False,
-        home=tmp_path / "home",
-        runtime_root=runtime_root,
-    )
-
-    assert result.status == "installed"
-    assert (bin_dir / "llm-wakeup").is_file()
-    assert (bin_dir / "lw").is_file()
-    assert not (bin_dir / "llm-wakeup.bat").exists()
-    assert not (bin_dir / "lw.bat").exists()
-    resolver = runtime_root / "bootstrap" / "resolvers" / "v1" / "launch.py"
-    assert f"RESOLVER = {str(resolver)!r}" in (bin_dir / "llm-wakeup").read_text(encoding="utf-8")
+def test_general_launcher_installers_do_not_own_wakeup_commands():
+    for platform in ("linux", "darwin", "win32"):
+        assert not hasattr(platform_launcher_installer(platform), "install_wakeup_launcher")
 
 
 def test_generated_dispatcher_does_not_embed_repo_root_or_sys_executable(tmp_repo_root, tmp_path):
@@ -300,38 +226,6 @@ def test_windows_dispatcher_and_invoke_skill_are_batch_launchers(tmp_path):
     assert "-m officina.launchers.agent --invoke-skill %*" in invoke_content
     assert "ASSISTANT_DEFAULT" not in invoke_content
     assert not (bin_dir / "invoke-skill").exists()
-
-
-def test_windows_wakeup_bundle_installs_both_batch_commands(tmp_path, monkeypatch):
-    """Dropping the Windows alias or its resolver forwarding breaks the cross-platform command contract."""
-    installer = platform_launcher_installer("win32")
-    bin_dir = tmp_path / "bin"
-    monkeypatch.setattr(sys, "platform", "win32")
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
-    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
-    with mock.patch.object(
-        windows_launcher.shutil,
-        "which",
-        side_effect=lambda name: r"C:\Python312\python.exe" if name == "python" else None,
-    ):
-        result = installer.install_wakeup_launcher(
-            bin_dir,
-            dry_run=False,
-            home=tmp_path / "home",
-        )
-
-    assert result.status == "installed"
-    for command in ("llm-wakeup.bat", "lw.bat"):
-        launcher = bin_dir / command
-        assert launcher.is_file()
-        content = launcher.read_text(encoding="utf-8")
-        assert "-m officina.wakeup.cli %*" in content
-        assert "bootstrap" in content
-        assert "resolvers" in content
-        assert "launch.py" in content
-        assert r'"C:\Python312\python.exe"' in content
-    assert not (bin_dir / "llm-wakeup").exists()
-    assert not (bin_dir / "lw").exists()
 
 
 def test_windows_dispatcher_bakes_in_resolved_python_path(tmp_path):

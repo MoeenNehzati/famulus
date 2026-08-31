@@ -86,7 +86,7 @@ def _write_healthy_installation(context: InstallationContext) -> None:
         '{"schema_version": 1, "default_backend": "claude"}\n', encoding="utf-8"
     )
     context.paths.user_bin.mkdir(parents=True, exist_ok=True)
-    for command in ("dispatcher", "invoke-skill", "llm-wakeup", "lw", "background_run"):
+    for command in ("dispatcher", "invoke-skill", "background_run"):
         path = context.paths.user_bin / (
             f"{command}.bat" if sys.platform == "win32" else command
         )
@@ -445,7 +445,7 @@ def test_recovery_commands_use_registered_routes_and_real_installer_flags(
 def test_doctor_accepts_windows_batch_command_origins(tmp_path: Path, monkeypatch) -> None:
     context = _standard_context(tmp_path)
     _write_healthy_installation(context)
-    for command in ("dispatcher", "invoke-skill", "llm-wakeup", "lw", "background_run"):
+    for command in ("dispatcher", "invoke-skill", "background_run"):
         source = context.paths.user_bin / command
         destination = context.paths.user_bin / f"{command}.bat"
         if source.exists():

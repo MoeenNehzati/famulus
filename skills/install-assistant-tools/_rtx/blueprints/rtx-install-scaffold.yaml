@@ -13,7 +13,7 @@ dependencies:
   reason: Imports Python source from _rtx/_install_launcher/__init__.py.
   source: install-assistant-tools._rtx.source.rtx-install-launcher-init
   version: 1
-description: Installs dispatcher, llm-wakeup, and invoke-skill launchers and, in standard mode only, ensures the context command directory is on PATH.
+description: Installs dispatcher and invoke-skill launchers and, in standard mode only, ensures the context command directory is on PATH.
 gateway:
   language: Python
   path: _install_scaffold.py
@@ -127,7 +127,7 @@ interfaces:
       interaction:
         mode: unattended
       outcomes:
-      - caller_action: Verify dispatcher, llm-wakeup, and invoke-skill.
+      - caller_action: Verify dispatcher and invoke-skill.
         class: success
         effects:
         - scaffold-state

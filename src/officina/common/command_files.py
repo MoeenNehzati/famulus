@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import shutil
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Literal
@@ -220,3 +221,36 @@ CommandBundleSpec = LauncherBundleSpec
 CommandFileInstaller = LauncherInstallerBase
 write_generated_command_file = write_generated_launcher_file
 install_static_command_file = install_static_launcher_file
+
+
+@dataclass(frozen=True)
+class CommandFileSnapshot:
+    """Exact restorable state for one feature-owned command path."""
+
+    content: bytes | None
+    mode: int | None
+    symlink_target: str | None
+
+
+def snapshot_command_file(path: Path) -> CommandFileSnapshot:
+    """Capture absence, regular-file bytes/mode, or symlink identity."""
+
+    if path.is_symlink():
+        return CommandFileSnapshot(None, None, str(path.readlink()))
+    if not path.exists():
+        return CommandFileSnapshot(None, None, None)
+    return CommandFileSnapshot(path.read_bytes(), stat.S_IMODE(path.stat().st_mode), None)
+
+
+def restore_command_file(path: Path, snapshot: CommandFileSnapshot) -> None:
+    """Restore a command path exactly after a failed feature transaction."""
+
+    if path.is_symlink() or path.exists():
+        path.unlink()
+    if snapshot.symlink_target is not None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.symlink_to(snapshot.symlink_target)
+    elif snapshot.content is not None and snapshot.mode is not None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(snapshot.content)
+        path.chmod(snapshot.mode)

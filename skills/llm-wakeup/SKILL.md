@@ -44,6 +44,9 @@ Skill: llm-wakeup
   invoke `infer-schedule`.
 - Schedule when provider, session, and reset are all explicit: invoke
   `explicit-schedule`.
+- Set up, refresh, or tear down the optional wakeup commands and dedicated
+  due-delivery registration: invoke `setup`. For setup, first obtain the exact
+  selected Python fingerprint and current plugin root; do not discover Python.
 
 Pass `message` and `delay` only when the user supplies them. Otherwise preserve
 the interface defaults.
