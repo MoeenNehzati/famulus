@@ -4,22 +4,6 @@ description: >-
   Use when `wrap-up` needs to identify recent work sessions that may still require a handoff. Do not invoke directly for transcript review, interpretation, or summarization.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: assistant-interaction; topics: session-management, task-automation; visibility: hidden
-Activation: skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces:
-- `find-handoff-candidates.source.gateway -> find-handoff-candidates._rtx.interface.calibrate@1`
-- `find-handoff-candidates.source.gateway -> find-handoff-candidates._rtx.interface.scan@1`
-- `find-handoff-candidates.source.gateway -> prepare-handoff.interface.default@1`
-
-Public Interfaces:
-- `find-handoff-candidates.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
@@ -44,7 +28,7 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
 Instruction Interfaces:
 
 These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `find-handoff-candidates.interface.default` — Primary LLM-facing skill instructions.
+- `prepare-handoff.interface.default@1` — Review recent work, obtain approval, encode project-local continuity, and close with exact machine-readable sentinels.
 <!-- END BLUEPRINT INTERFACES -->
 # Find Handoff Candidates
 

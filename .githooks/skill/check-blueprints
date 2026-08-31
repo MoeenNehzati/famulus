@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Repository-validation owner for the live v6 module/source graph, tracked
-# blueprint files, ownership paths, and generated contract synchronization.
-# Certification remains a separate gate and is not duplicated here.
+# blueprint files, ownership paths, and generated interface-block synchronization.
+# Certification and migration remain separate gates and are not duplicated here.
 set -uo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"

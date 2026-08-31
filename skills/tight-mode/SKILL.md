@@ -4,27 +4,11 @@ description: >-
   Use when the user explicitly asks for tight mode or emphasizes that rigor, verification, or careful attention to detail should take priority over speed or breadth. Do not use for ordinary requests that merely expect baseline accuracy.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: assistant-interaction; topics: reasoning-control; visibility: featured
-Activation: user-request; persistent modifier: yes
-
-Skill Version: 2
-
-Uses Interfaces: none
-
-Public Interfaces:
-- `tight-mode.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Instruction Interfaces:
-
-These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `tight-mode.interface.default` — Answer under persistent tight-mode rules and stop at diagnosis when a material gap requires user agreement before repair.
+Used Interfaces: none
 <!-- END BLUEPRINT INTERFACES -->
 ## Core principle
 

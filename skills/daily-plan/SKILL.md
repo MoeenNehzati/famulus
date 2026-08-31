@@ -4,22 +4,6 @@ description: >-
   Use when the user asks to plan their day, decide what to work on today, or review an existing daily plan. Do not use for a standalone calendar or list request, or for an end-of-day wrap-up.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: personal-assistance; topics: planning, personal-organization; visibility: featured
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces:
-- `daily-plan.source.gateway -> daily-plan._rtx.interface.mutate-plan@1`
-- `daily-plan.source.gateway -> daily-plan._rtx.interface.orchestrate@1`
-- `daily-plan.source.gateway -> daily-plan._rtx.interface.render-plan@1`
-
-Public Interfaces:
-- `daily-plan.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
@@ -59,7 +43,7 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
 Instruction Interfaces:
 
 These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `daily-plan.interface.default` — Primary LLM-facing skill instructions.
+- `setup-python-environment.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact selected Python environment without MCP.
 <!-- END BLUEPRINT INTERFACES -->
 Before invoking any daily-plan interface, follow
 `setup-python-environment.interface.repair-selected-packages` for this owner's exact

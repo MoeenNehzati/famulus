@@ -1,6 +1,6 @@
 schema_version: 6
 standard_version: 2.0.0
-revision: 15
+revision: 16
 id: node-standards.module
 canonical_path: references/node-standards/module.standard.yaml
 title: Module Standard
@@ -9,8 +9,8 @@ imports:
   node:
     standard_id: node-standards.node
     standard_version: 2.0.0
-    revision: 15
-    digest: sha256:7f1060c87fe6f5e664280f31cdc7fc626607e84aa4df452c32ac65c2690c0ef5
+    revision: 16
+    digest: sha256:f7cd7edbbc7c9957b0694de2a398a3bf0398c3e74b7380e2b8aa73b9cc2a893f
     artifact:
       kind: artifact
       ref: artifact.node-standard

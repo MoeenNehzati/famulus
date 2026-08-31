@@ -4,26 +4,10 @@ description: >-
   Use when the user asks whether a specific mathematical theorem, method, framework, or formalism applies to a target problem. Do not use for generic software tools, line-by-line proof review, or broad strategy without a candidate mathematical tool.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: research; topics: mathematical-reasoning; visibility: featured
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces: none
-
-Public Interfaces:
-- `tool-applicability.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Instruction Interfaces:
-
-These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `tool-applicability.interface.default` — Determine the exact role and deliverable of a candidate mathematical tool without blurring current assumptions, added hypotheses, or target strength.
+Used Interfaces: none
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

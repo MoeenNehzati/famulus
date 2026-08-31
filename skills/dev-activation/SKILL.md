@@ -3,20 +3,6 @@ name: dev-activation
 description: Use when a developer needs an assistant or editor to run against one Famulus checkout without discovering globally installed skills or plugins.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: software-development; topics: repository-workflow, assistant-assurance; visibility: listed
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 1
-
-Uses Interfaces:
-- `dev-activation.source.gateway -> dev-activation._rtx.interface.activation@1`
-
-Public Interfaces:
-- `dev-activation.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
@@ -31,10 +17,6 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
     {"options": {"--checkout": "absolute-path", "--platform": "platform"}, "positionals": ["create|validate|report"], "stdin": null}
     Required options: []; positional arity: 1..1; stdin: forbidden
 
-Instruction Interfaces:
-
-These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `dev-activation.interface.default` — Primary development-activation instructions.
 <!-- END BLUEPRINT INTERFACES -->
 Skill: dev-activation
 

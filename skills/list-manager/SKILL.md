@@ -4,42 +4,6 @@ description: >-
   Use when the user asks to view or change a persistent personal list. Do not use for an ad hoc generated list, repository inventory, or prose checklist.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: personal-assistance; topics: personal-organization, storage-and-sync; visibility: featured
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces:
-- `list-manager.source.gateway -> list-manager._rtx.interface.beautify-list@1`
-- `list-manager.source.gateway -> list-manager._rtx.interface.cloud-create-entry@1`
-- `list-manager.source.gateway -> list-manager._rtx.interface.cloud-delete@1`
-- `list-manager.source.gateway -> list-manager._rtx.interface.cloud-init@1`
-- `list-manager.source.gateway -> list-manager._rtx.interface.cloud-list-categories@1`
-- `list-manager.source.gateway -> list-manager._rtx.interface.cloud-read-beautify@1`
-- `list-manager.source.gateway -> list-manager._rtx.interface.cloud-read@1`
-- `list-manager.source.gateway -> list-manager._rtx.interface.cloud-update@1`
-- `list-manager.source.gateway -> list-manager._rtx.interface.create-entry@1`
-- `list-manager.source.gateway -> list-manager._rtx.interface.describe-schema@1`
-- `list-manager.source.gateway -> list-manager._rtx.interface.generate-id@1`
-- `list-manager.source.gateway -> list-manager._rtx.interface.init-list@1`
-- `list-manager.source.gateway -> list-manager._rtx.interface.migrate-markdown@1`
-- `list-manager.source.gateway -> list-manager._rtx.interface.read-beautify@1`
-- `list-manager.source.gateway -> list-manager._rtx.interface.read-list@1`
-- `list-manager.source.gateway -> list-manager._rtx.interface.update-list@1`
-
-Setup Requires Setup Of:
-- `connect-google.interface.setup@1`
-Setup Order:
-1. `connect-google.interface.setup`
-2. `list-manager.interface.setup`
-
-Public Interfaces:
-- `list-manager.interface.default`
-- `list-manager.interface.setup`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
@@ -178,8 +142,7 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
 Instruction Interfaces:
 
 These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `list-manager.interface.default` — Primary LLM-facing skill instructions.
-- `list-manager.interface.setup` — Primary LLM-facing skill instructions.
+- `setup-python-environment.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact selected Python environment without MCP.
 <!-- END BLUEPRINT INTERFACES -->
 Before any local or cloud list machine interface, follow
 `setup-python-environment.interface.repair-selected-packages` for list-manager's exact

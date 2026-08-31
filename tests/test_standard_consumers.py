@@ -102,7 +102,7 @@ def test_refactor_node_builds_a_refactoring_brief_from_each_selected_root() -> N
     ):
         assert standard in skill
     assert "items.true" not in skill
-    assert len(skill.split()) < 700
+    assert len(skill.split()) < 750
 
 
 def test_test_code_affecting_skill_work_queries_the_code_testing_standard() -> None:

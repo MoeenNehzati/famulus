@@ -4,26 +4,10 @@ description: >-
   Use when the user asks for sentence-level editing of technical prose while preserving its substance. Do not use for proof, notation, document-flow, or substantive review.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: research; topics: research-writing, scholarly-documents; visibility: featured
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces: none
-
-Public Interfaces:
-- `formal-prose-review.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Instruction Interfaces:
-
-These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `formal-prose-review.interface.default` — Review grammar, clarity, concision, and formal tone without silently changing mathematical or substantive content.
+Used Interfaces: none
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

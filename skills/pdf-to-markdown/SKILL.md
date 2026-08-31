@@ -6,21 +6,6 @@ tools:
   - marker_single
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: research; topics: scholarly-documents; visibility: listed
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces:
-- `pdf-to-markdown.source.gateway -> pdf-to-markdown._rtx.interface.scripts-check-marker-models@1`
-- `pdf-to-markdown.source.gateway -> pdf-to-markdown._rtx.interface.scripts-fetch-arxiv-source@1`
-
-Public Interfaces:
-- `pdf-to-markdown.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -46,7 +31,7 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
 Instruction Interfaces:
 
 These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `pdf-to-markdown.interface.default` — Primary LLM-facing skill instructions.
+- `setup-python-environment.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact selected Python environment without MCP.
 <!-- END BLUEPRINT INTERFACES -->
 # PDF to Markdown
 

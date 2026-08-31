@@ -707,9 +707,11 @@ def test_comprehension_fixture_is_an_uncoached_generated_candidate() -> None:
     assert "Executable Interfaces:" in (
         ROOT / fixture["cases"][1]["skill"]
     ).read_text(encoding="utf-8")
-    assert "Instruction Interfaces:" in (
-        ROOT / fixture["cases"][2]["skill"]
-    ).read_text(encoding="utf-8")
+    instruction_only = (ROOT / fixture["cases"][2]["skill"]).read_text(
+        encoding="utf-8"
+    )
+    assert "Used Interfaces: none" in instruction_only
+    assert "Executable Interfaces:" not in instruction_only
     assert "Executable Interfaces:" not in (
         ROOT / fixture["cases"][2]["skill"]
     ).read_text(encoding="utf-8")

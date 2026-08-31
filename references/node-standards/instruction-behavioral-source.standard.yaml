@@ -1,6 +1,6 @@
 schema_version: 6
 standard_version: 1.0.0
-revision: 17
+revision: 18
 id: node-standards.instruction-behavioral-source
 canonical_path: references/node-standards/instruction-behavioral-source.standard.yaml
 title: Instruction Behavioral Source Standard
@@ -9,16 +9,16 @@ imports:
   behavioral-source:
     standard_id: node-standards.behavioral-source
     standard_version: 1.0.0
-    revision: 15
-    digest: sha256:2c5c8f09048ee519efe5624e9585f05158c7bdd221576d0586353e2cbe2638e3
+    revision: 16
+    digest: sha256:ceb1805eaaba0e02057627e0941bc47cdcd02c4480441aea4ab44160bede073e
     artifact:
       kind: artifact
       ref: artifact.behavioral-source-standard
   instruction-node:
     standard_id: node-standards.instruction-node
     standard_version: 1.0.0
-    revision: 16
-    digest: sha256:11b14b4fff1976323aa838d46c0c2dd7c225d6747228a8040386df520ff6b817
+    revision: 17
+    digest: sha256:42ca3594e2b5aced1266b4f2e436fc9ef3bda1c0f7eace3365aa5f26784aabf5
     artifact:
       kind: artifact
       ref: artifact.instruction-node-standard
@@ -46,7 +46,7 @@ standards:
         language: markdown
         content: Run `tmp.py` after editing.
       exceptions:
-      - condition: The reference occurs only inside a generated contract or interface block.
+      - condition: The reference occurs only inside a generated interface block.
         effect: waive
     - id: no-opaque-runtime-paths
       modality: prohibited
@@ -57,7 +57,7 @@ standards:
         language: markdown
         content: The command implementation is `_rtx/_worker.py`.
       exceptions:
-      - condition: The path occurs only inside a generated contract or interface block.
+      - condition: The path occurs only inside a generated interface block.
         effect: waive
     - id: execution-behind-interface
       modality: required
@@ -93,7 +93,7 @@ standards:
     - declare-binding
   - kind: step
     id: regenerate-views
-    instruction: Regenerate all derived contract and interface blocks from the updated blueprint graph.
+    instruction: Regenerate the derived interface block from the updated blueprint graph.
     requires:
     - export-interface
   - kind: step
@@ -162,7 +162,7 @@ standards:
     assertions:
     - id: source-block
       modality: required
-      statement: The generated blocks must be sufficient for a first-attempt correct invocation.
+      statement: The generated interface block must be sufficient for a first-attempt correct invocation.
       atomicity: pending
   - kind: rule
     id: skill-guidelines.canonical-blueprint-ownership.requirement-005
@@ -384,8 +384,8 @@ tests:
         ref: instruction-source.skill-body-execution
       relation: tests-check
       polarity: mixed
-      coverage_description: Exercises clean instruction sources, executable references, generated blocks,
-        and opaque runtime paths.
+      coverage_description: Exercises clean instruction sources, executable references, generated interface
+        blocks, legacy contract text, and opaque runtime paths.
   instruction-source.private-runtime-reference-tests:
     artifact:
       kind: artifact

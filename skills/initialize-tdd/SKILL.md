@@ -4,20 +4,6 @@ description: >-
   Use when the user asks to initialize a brand-new TDD project. Do not use for adding TDD to an existing project.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: software-development; topics: repository-workflow, assistant-assurance; visibility: listed
-Activation: user-request; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces:
-- `initialize-tdd.source.gateway -> initialize-tdd._rtx.interface.setup-compat-aliases@1`
-
-Public Interfaces:
-- `initialize-tdd.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -33,10 +19,6 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
     {"options": {}, "positionals": ["project-dir"], "stdin": null}
     Required options: []; positional arity: 1..1; stdin: forbidden
 
-Instruction Interfaces:
-
-These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `initialize-tdd.interface.default` — Create a new approval-gated TDD project scaffold from explicit project name and language inputs, verify the Python starter when selected, and never commit it.
 <!-- END BLUEPRINT INTERFACES -->
 # Initialize TDD Project
 

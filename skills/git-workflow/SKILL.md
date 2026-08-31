@@ -4,27 +4,11 @@ description: >-
   Use when a task will edit a Git repository or the user asks to inspect or change Git state. Do not use solely because a read-only task happens inside a repository.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: software-development; topics: repository-workflow; visibility: listed
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces: none
-
-Public Interfaces:
-- `git-workflow.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Instruction Interfaces:
-
-These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `git-workflow.interface.default` — Check branch and ownership boundaries first, then perform only explicitly authorized and exactly scoped Git mutations.
+Used Interfaces: none
 <!-- END BLUEPRINT INTERFACES -->
 ## Branch safety (always check first)
 

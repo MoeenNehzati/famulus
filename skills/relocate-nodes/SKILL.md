@@ -3,20 +3,6 @@ name: relocate-nodes
 description: Use when registered Officina nodes or their owned files must be moved while mechanically updating blueprint ownership, references, generated artifacts, and callers. Do not use for behavioral refactoring or certification.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: assistant-development; topics: assistant-architecture, repository-workflow, assistant-assurance; visibility: listed
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 1
-
-Uses Interfaces:
-- `relocate-nodes.source.gateway -> relocate-nodes._rtx.interface.relocate@2`
-
-Public Interfaces:
-- `relocate-nodes.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
@@ -38,10 +24,6 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
     {"options": {"--apply": true, "--manifest": "MANIFEST", "--report": "REPORT", "--root": "ROOT"}, "positionals": [], "stdin": null}
     Required options: ["--manifest"]; positional arity: 0..0; stdin: forbidden
 
-Instruction Interfaces:
-
-These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `relocate-nodes.interface.default` — Require mechanical preflight, complete semantic occurrence adjudication, accepted application, and an empty target-side postflight.
 <!-- END BLUEPRINT INTERFACES -->
 ## Machine routes
 

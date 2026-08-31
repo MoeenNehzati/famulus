@@ -4,33 +4,6 @@ description: >-
   Use when the user asks to access or manage email or a registered email account. Do not use when the primary request is inbox triage or shared Google authentication setup.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: personal-assistance; topics: communications, external-integrations; visibility: featured
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces:
-- `email-client.source.gateway -> connect-google.interface.default@1`
-- `email-client.source.gateway -> email-client._rtx.interface.accounts-add@1`
-- `email-client.source.gateway -> email-client._rtx.interface.accounts-list@1`
-- `email-client.source.gateway -> email-client._rtx.interface.accounts-remove@1`
-- `email-client.source.gateway -> email-client._rtx.interface.accounts-set-password@1`
-- `email-client.source.gateway -> email-client._rtx.interface.accounts-update@1`
-- `email-client.source.gateway -> email-client._rtx.interface.live-smoke@1`
-- `email-client.source.gateway -> email-client._rtx.interface.mail-attachments@1`
-- `email-client.source.gateway -> email-client._rtx.interface.mail-folders@1`
-- `email-client.source.gateway -> email-client._rtx.interface.mail-list@1`
-- `email-client.source.gateway -> email-client._rtx.interface.mail-read@1`
-- `email-client.source.gateway -> email-client._rtx.interface.mail-save-attachments@1`
-- `email-client.source.gateway -> email-client._rtx.interface.send-email@1`
-- `email-client.source.gateway -> setup-python-environment.interface.repair-selected-packages@1`
-
-Public Interfaces:
-- `email-client.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
@@ -65,13 +38,6 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--nickname": "nick", "--purpose": "imap|smtp"}, "positionals": [], "stdin": null}
     Required options: ["--nickname", "--purpose"]; positional arity: 0..0; stdin: permitted
-- `email-client._rtx.interface.accounts-setup-oauth` — Complete Gmail OAuth setup for an account using a Google desktop OAuth client JSON file. Prints the authorization URL and completion status, stores refresh-token and client-secret keys, and persists Gmail OAuth metadata in accounts.json.
-  - Caller: `email-client`
-  - Version: 1
-  - Alternative: `owner`
-    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
-    {"options": {"--client-config": "path", "--nickname": "nick", "--no-open-browser": true}, "positionals": [], "stdin": null}
-    Required options: ["--client-config", "--nickname"]; positional arity: 0..0; stdin: forbidden
 - `email-client._rtx.interface.accounts-update` — Update fields on an existing account nickname.
   - Caller: `email-client`
   - Version: 1
@@ -79,20 +45,6 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--auth": "app-password|gmail-oauth", "--display-name": "name", "--email": "addr", "--imap-host": "H", "--imap-port": "P", "--nickname": "nick", "--smtp-host": "H", "--smtp-port": "P"}, "positionals": [], "stdin": null}
     Required options: ["--nickname"]; positional arity: 0..0; stdin: forbidden
-- `email-client._rtx.interface.accounts-use-google-credential` — Bind one account nickname to a shared connect-google credential_id after validating it carries Gmail scope, storing only the opaque identifier (never the client secret or refresh token) on that account's own registry record. Other accounts and other fields on this account are untouched. The pre-existing per-account Gmail OAuth path (accounts-setup-oauth) remains the unchanged fallback for accounts that have not adopted the shared credential.
-  - Caller: `email-client`
-  - Version: 1
-  - Alternative: `owner`
-    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
-    {"options": {"--credential-id": "id", "--home": "dir", "--nickname": "nick"}, "positionals": [], "stdin": null}
-    Required options: ["--credential-id", "--home", "--nickname"]; positional arity: 0..0; stdin: forbidden
-- `email-client._rtx.interface.accounts-use-google-credential-file` — Validate and live-probe a Gmail credential descriptor before storing only its normalized path and Gmail OAuth mode on one named account.
-  - Caller: `email-client`
-  - Version: 1
-  - Alternative: `default`
-    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
-    {"options": {"--allow-account-change": true, "--credential-file": "path", "--home": "dir", "--nickname": "name"}, "positionals": [], "stdin": null}
-    Required options: ["--credential-file", "--home", "--nickname"]; positional arity: 0..0; stdin: forbidden
 - `email-client._rtx.interface.live-smoke` — Run explicit live provider smoke checks for one account. --imap and --smtp-auth authenticate without sending; --send-self sends a test email to the account's own address.
   - Caller: `email-client`
   - Version: 1
@@ -178,7 +130,8 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
 Instruction Interfaces:
 
 These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `email-client.interface.default` — Primary LLM-facing skill instructions.
+- `connect-google.interface.default@1` — Route Google OAuth-client preparation according to whether a valid Desktop client is already installed.
+- `setup-python-environment.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact selected Python environment without MCP.
 <!-- END BLUEPRINT INTERFACES -->
 # Email
 

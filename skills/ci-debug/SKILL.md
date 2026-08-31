@@ -3,26 +3,6 @@ name: ci-debug
 description: Use when GitHub Actions CI is red, matrix failures need isolated repair, or repeated full reruns make remote diagnosis inefficient.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: software-development; topics: repository-workflow, task-automation, assistant-assurance; visibility: listed
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 1
-
-Uses Interfaces:
-- `ci-debug.source.gateway -> ci-debug._rtx.interface.run-ci@1`
-- `ci-debug.source.gateway -> ci-debug._rtx.interface.run-targeted-tests@1`
-- `ci-debug.source.gateway -> ci-debug.source.instructions-repair-element.interface.repair-element@1`
-- `ci-debug.source.gateway -> git-workflow.interface.default@1`
-- `ci-debug.source.instructions-repair-element -> ci-debug._rtx.interface.run-targeted-tests@1`
-- `ci-debug.source.instructions-repair-element -> git-workflow.interface.default@1`
-
-Public Interfaces:
-- `ci-debug.interface.default`
-- `ci-debug.interface.repair-element`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
@@ -59,8 +39,8 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
 Instruction Interfaces:
 
 These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `ci-debug.interface.default` — Coordinate evidence-bounded CI repair until the complete matrix is green or one repair element returns a concrete blocker.
-- `ci-debug.interface.repair-element` — Repair and verify one assigned CI matrix element without integrating it or claiming overall CI success.
+- `ci-debug.source.instructions-repair-element.interface.repair-element@1` — Repair and verify one assigned CI matrix element without integrating it or claiming overall CI success.
+- `git-workflow.interface.default@1` — Check branch and ownership boundaries first, then perform only explicitly authorized and exactly scoped Git mutations.
 <!-- END BLUEPRINT INTERFACES -->
 # CI Debug
 

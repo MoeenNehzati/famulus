@@ -4,21 +4,6 @@ description: >-
   Use when the user asks to audit a bibliography or apply corrections identified by a bibliography audit. Do not use for general LaTeX citation editing.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: research; topics: scholarly-documents, research-writing; visibility: featured
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces:
-- `bib-audit.source.gateway -> bib-audit._rtx.interface.scripts-bib-similarity@1`
-- `bib-audit.source.gateway -> bib-audit._rtx.interface.scripts-bib-validate-bibtex@1`
-
-Public Interfaces:
-- `bib-audit.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
@@ -43,7 +28,7 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
 Instruction Interfaces:
 
 These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `bib-audit.interface.default` — Primary LLM-facing skill instructions.
+- `setup-python-environment.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact selected Python environment without MCP.
 <!-- END BLUEPRINT INTERFACES -->
 # Bibliography Audit
 

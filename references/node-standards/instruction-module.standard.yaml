@@ -1,6 +1,6 @@
 schema_version: 6
 standard_version: 1.0.0
-revision: 19
+revision: 20
 id: node-standards.instruction-module
 canonical_path: references/node-standards/instruction-module.standard.yaml
 title: Instruction Module Standard
@@ -9,24 +9,24 @@ imports:
   refactoring:
     standard_id: node-standards.refactoring
     standard_version: 2.0.0
-    revision: 6
-    digest: sha256:33eaf4fee728af0e7387eebc1790d37d5a54b48afbd39f9176a67a5edd7c4e76
+    revision: 7
+    digest: sha256:755593fe48002bc32880cda05267086aa82ce4ccef292e4b9d5781f9f8af5af1
     artifact:
       kind: artifact
       ref: artifact.refactoring-standard
   module:
     standard_id: node-standards.module
     standard_version: 2.0.0
-    revision: 15
-    digest: sha256:e46301f68e1002ad175ddc755e0b692bc4a3c8fb6ae9e225618b84edbb98e04c
+    revision: 16
+    digest: sha256:f86316798aa05d29153318ecaa6410a8957104d00a2e21c92335e3a8522cca44
     artifact:
       kind: artifact
       ref: artifact.module-standard
   instruction-node:
     standard_id: node-standards.instruction-node
     standard_version: 1.0.0
-    revision: 16
-    digest: sha256:11b14b4fff1976323aa838d46c0c2dd7c225d6747228a8040386df520ff6b817
+    revision: 17
+    digest: sha256:42ca3594e2b5aced1266b4f2e436fc9ef3bda1c0f7eace3365aa5f26784aabf5
     artifact:
       kind: artifact
       ref: artifact.instruction-node-standard
@@ -70,8 +70,8 @@ standards:
     assertions:
     - id: source-block
       modality: required
-      statement: Generated contract blocks, interface sections, and repository manifests are derived;
-        do not edit them by hand.
+      statement: Generated interface blocks and repository manifests are derived; do not edit them by
+        hand.
       atomicity: pending
 - kind: family
   id: skill-guidelines.skill-taxonomy

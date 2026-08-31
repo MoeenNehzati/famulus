@@ -218,7 +218,7 @@ def test_unbalanced_generated_markers_are_rejected(
     skill_file = skill / "SKILL.md"
     skill_file.write_text(
         skill_file.read_text(encoding="utf-8").replace(
-            MOD.CONTRACT_END,
+            MOD.INTERFACES_END,
             "",
         ),
         encoding="utf-8",
@@ -227,7 +227,7 @@ def test_unbalanced_generated_markers_are_rejected(
 
     errors = MOD.validate(tmp_path)
 
-    assert any("contract markers are unbalanced" in error for error in errors)
+    assert any("blueprint interface markers are unbalanced" in error for error in errors)
 
 
 def test_authored_inputs_must_be_tracked(

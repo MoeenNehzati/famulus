@@ -6,28 +6,10 @@ tools:
   - python
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: assistant-operations; topics: assistant-installation, system-maintenance; visibility: listed
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 1
-
-Uses Interfaces: none
-
-Public Interfaces:
-- `setup-python-environment.interface.repair-selected-packages`
-- `setup-python-environment.interface.setup`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Instruction Interfaces:
-
-These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `setup-python-environment.interface.repair-selected-packages` — Repair the core or one caller-owned package declaration in the exact selected Python environment without MCP.
-- `setup-python-environment.interface.setup` — Repair the core or one caller-owned package declaration in the exact selected Python environment without MCP.
+Used Interfaces: none
 <!-- END BLUEPRINT INTERFACES -->
 Skill: setup-python-environment
 

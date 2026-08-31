@@ -4,22 +4,6 @@ description: >-
   Use when the user asks to send feedback, report a problem, or describe a failed Famulus workflow to its maintainer. Do not use for ordinary email or for reviewing document content.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: personal-assistance; topics: communications, assistant-assurance; visibility: featured
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces:
-- `send-feedback.source.gateway -> email-client.interface.default@3`
-- `send-feedback.source.gateway -> send-feedback._rtx.interface.check-route@1`
-- `send-feedback.source.gateway -> send-feedback._rtx.interface.file-issue@1`
-
-Public Interfaces:
-- `send-feedback.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
@@ -44,7 +28,7 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
 Instruction Interfaces:
 
 These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `send-feedback.interface.default` — Prepare a reviewed Famulus feedback report and delegate its delivery to the configured project or recipient.
+- `email-client.interface.default@3` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->
 # Send Feedback
 Use the current session as the evidence base. Do not run additional diagnostics.

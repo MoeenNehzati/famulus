@@ -15,9 +15,9 @@ from llmhooks.lib.cross_host import CrossHostHook, HookInput, HookResult, parse_
 
 DISPATCHER_CORE = """\
 ## Skill interfaces
-When a skill lists `Executable Interfaces`, invoke them through the `famulus` MCP server using the invocation metadata and `Arguments JSON` shown for that interface; do not invoke private scripts directly. `Instruction Interfaces` are LLM-readable instructions: read and follow them directly, without an MCP call.
+For SKILL.md `BEGIN BLUEPRINT INTERFACES`, use injected interfaces instead of blueprint.yaml; do not invoke private scripts directly. Call `Executable Interfaces` through the `famulus` MCP server using invocation metadata and `Arguments JSON`. `Instruction Interfaces` are LLM-readable instructions; follow them directly without an MCP call.
 
-At session start, check `famulus.invoke`. If absent or a call fails, report Famulus MCP unavailable and ask permission to follow `setup-python-environment`.\
+At session start, check `famulus.invoke`. If absent or a call fails, report it and ask permission to follow `setup-python-environment`.\
 """
 
 

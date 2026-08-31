@@ -47,9 +47,9 @@ def test_default_workflow_declares_both_machine_routes() -> None:
     ]
 
 
-def test_skill_documents_both_machine_routes_outside_generated_contract() -> None:
+def test_skill_documents_both_machine_routes_outside_generated_interfaces() -> None:
     skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
-    instructions = skill.split("<!-- END BLUEPRINT CONTRACT -->", 1)[-1]
+    instructions = skill.split("<!-- END BLUEPRINT INTERFACES -->", 1)[-1]
 
     assert "relocate-nodes._rtx.interface.build-review-packet@1" in instructions
     assert "relocate-nodes._rtx.interface.relocate@2" in instructions

@@ -4,27 +4,11 @@ description: >-
   Use when the user asks to audit the soundness, coherence, or redundancy of a mathematical proof or claimed implication. Do not use to write a new proof or for notation, prose, computation, code, or LaTeX work.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: research; topics: mathematical-reasoning, research-writing, scholarly-documents; visibility: featured
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces: none
-
-Public Interfaces:
-- `proof-audit.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Instruction Interfaces:
-
-These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `proof-audit.interface.default` — Audit a proof in its document context and diagnose the first material issue without silently rewriting the argument.
+Used Interfaces: none
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

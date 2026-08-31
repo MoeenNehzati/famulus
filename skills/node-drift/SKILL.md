@@ -4,21 +4,6 @@ description: >-
   Use when the user asks whether Officina node certificates are current or stale, or asks for canonical node hashes. Do not use to issue certificates.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: assistant-development; topics: assistant-assurance, assistant-architecture; visibility: listed
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 4
-
-Uses Interfaces:
-- `node-drift.source.gateway -> node-drift._rtx.interface.compute-hashes@2`
-- `node-drift.source.gateway -> node-drift._rtx.interface.drift-status@3`
-
-Public Interfaces:
-- `node-drift.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
@@ -43,7 +28,7 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
 Instruction Interfaces:
 
 These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `node-drift.interface.default` — Instructions for exact-target certificate drift, stale worklists, and canonical node-hash checks.
+- `setup-python-environment.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact selected Python environment without MCP.
 <!-- END BLUEPRINT INTERFACES -->
 Before computing hashes or reading certificate state, follow
 `setup-python-environment.interface.repair-selected-packages` for this owner's exact

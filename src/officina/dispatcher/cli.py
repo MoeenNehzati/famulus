@@ -30,8 +30,8 @@ def _print_warning(diagnostic: InvocationDiagnostic) -> None:
 def _split_target_version(raw: str) -> tuple[str, int | None]:
     """Split an optional trailing ``@<version>`` pin off a target id.
 
-    Contract blocks in SKILL.md spell pinned dependencies as
-    ``<module>.interface.<name>@<version>``, so accept that spelling directly.
+    Generated interface blocks in SKILL.md spell pinned uses as
+    ``<module>.interface.<name>@<version>``, so accept that form directly.
     A target with no pin, or with a suffix that is not a positive decimal
     integer, is returned unchanged for the normal id validation to reject.
     """

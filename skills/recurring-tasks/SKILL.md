@@ -4,28 +4,6 @@ description: >-
   Use when the user asks to set up or manage a recurring AI job. Do not use for one-off commands or generic scheduler questions.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: assistant-operations; topics: task-automation, system-maintenance; visibility: featured
-Activation: user-request, skill-workflow, scheduled-job; persistent modifier: no
-
-Skill Version: 3
-
-Uses Interfaces:
-- `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-disable@1`
-- `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-enable@1`
-- `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-healthcheck@1`
-- `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-remove-context@1`
-- `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-setup@1`
-- `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-status@1`
-- `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-sync@1`
-- `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-test@1`
-- `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-view-logs@1`
-
-Public Interfaces:
-- `recurring-tasks.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -100,7 +78,7 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
 Instruction Interfaces:
 
 These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `recurring-tasks.interface.default` — Primary LLM-facing skill instructions.
+- `setup-python-environment.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact selected Python environment without MCP.
 <!-- END BLUEPRINT INTERFACES -->
 
 # Recurring Tasks

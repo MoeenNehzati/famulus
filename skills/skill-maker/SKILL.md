@@ -4,21 +4,6 @@ description: >-
   Use when the user asks to create a personal skill or change an existing personal skill's intended behavior or public interface in the shared skills directory. Do not use for behavior-preserving refactoring, blueprint regeneration, certificate work, or standards maintenance.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: assistant-development; topics: assistant-authoring, assistant-architecture, assistant-assurance, repository-workflow; visibility: featured
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 5
-
-Uses Interfaces:
-- `skill-maker.source.gateway -> skill-maker._rtx.interface.sync-blueprints@1`
-- `skill-maker.source.gateway -> standards.interface.query-standard@1`
-
-Public Interfaces:
-- `skill-maker.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -26,7 +11,7 @@ Public Interfaces:
 Executable Interfaces:
 
 Call `famulus.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
-- `skill-maker._rtx.interface.sync-blueprints` — Validate every skill blueprint and either check or refresh generated SKILL.md contract blocks and the runtime-dependency manifest.
+- `skill-maker._rtx.interface.sync-blueprints` — Validate every skill blueprint and either check or refresh generated SKILL.md interface blocks and the runtime-dependency manifest.
   - Caller: `skill-maker`
   - Version: 1
   - Alternative: `sync`
@@ -37,11 +22,14 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--check": true}, "positionals": [], "stdin": null}
     Required options: ["--check"]; positional arity: 0..0; stdin: forbidden
+- `standards.interface.query-standard` — Query one explicit standard and its complete pinned import closure.
+  - Caller: `skill-maker`
+  - Version: 1
+  - Alternative: `standard-and-options`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--facts-json": "JSON", "--query-json": "JSON", "--refs-json": "JSON", "--repo-root": "PATH", "--view": "requirements|context|evidence|remedies|full"}, "positionals": ["standard-path"], "stdin": null}
+    Required options: []; positional arity: 1..1; stdin: forbidden
 
-Instruction Interfaces:
-
-These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `skill-maker.interface.default` — Create or edit a personal skill under the repository's canonical module, interface, validation, and Git-safety standards.
 <!-- END BLUEPRINT INTERFACES -->
 ## Research option when creating a skill
 

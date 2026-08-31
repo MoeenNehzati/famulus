@@ -4,24 +4,6 @@ description: >-
   Use when fresh certificates are requested for one or more Officina nodes. Do not use merely to check certificate currentness or canonical node hashes.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: assistant-development; topics: assistant-assurance, assistant-architecture; visibility: listed
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 6
-
-Uses Interfaces:
-- `node-certify.source.gateway -> node-certify._rtx.interface.certify@2`
-- `node-certify.source.gateway -> node-certify._rtx.interface.semantic-audit-scheduler@1`
-- `node-certify.source.gateway -> node-certify.source.audit-behavioral-source.interface.audit@2`
-- `node-certify.source.gateway -> node-certify.source.audit-interface.interface.audit@2`
-- `node-certify.source.gateway -> node-certify.source.audit-module.interface.audit@2`
-- `node-certify.source.gateway -> node-drift._rtx.interface.drift-status@4`
-
-Public Interfaces: none
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
@@ -42,7 +24,21 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": ["OPERATION", "PREFIX", "TASK_ID", "options"], "stdin": null}
     Required options: []; positional arity: 2..unbounded; stdin: forbidden
+- `node-drift._rtx.interface.drift-status` — Read signed certificate currentness, exact structured drift causes, and the dependency-first stale worklist for exact or installed v6 modules without writing certification state.
+  - Caller: `node-certify`
+  - Version: 4
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--all": true, "--dag-file": "PATH", "--json": true, "--repo-root": "ROOT", "--skill-root": "ROOT"}, "positionals": ["target..."], "stdin": null}
+    Required options: []; positional arity: 0..unbounded; stdin: forbidden
 
+Instruction Interfaces:
+
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
+- `node-certify.source.audit-behavioral-source.interface.audit@2` — Audit one behavioral source and return bounded semantic evidence and a verdict.
+- `node-certify.source.audit-interface.interface.audit@2` — Audit one source interface and return bounded semantic evidence and a verdict.
+- `node-certify.source.audit-module.interface.audit@2` — Audit one module and return bounded semantic evidence and a verdict.
+- `setup-python-environment.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact selected Python environment without MCP.
 <!-- END BLUEPRINT INTERFACES -->
 Before drift inspection, semantic audit, or certification, follow
 `setup-python-environment.interface.repair-selected-packages` for this owner's exact

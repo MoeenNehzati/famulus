@@ -4,42 +4,12 @@ description: >-
   Use when the user asks to view or change their Google Calendar. Do not use for daily planning.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: personal-assistance; topics: planning, personal-organization, external-integrations; visibility: featured
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces:
-- `online-calendar.source.gateway -> connect-google.interface.default@1`
-- `online-calendar.source.gateway -> online-calendar._rtx.interface.scripts-gcal@1`
-- `online-calendar.source.gateway -> setup-python-environment.interface.repair-selected-packages@1`
-
-Setup Requires Setup Of:
-- `connect-google.interface.setup@1`
-Setup Order:
-1. `connect-google.interface.setup`
-2. `online-calendar.interface.setup`
-
-Public Interfaces:
-- `online-calendar.interface.default`
-- `online-calendar.interface.setup`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
 Executable Interfaces:
 
 Call `famulus.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
-- `online-calendar._rtx.interface.ensure-oauth` — Check online-calendar OAuth status; print setup guidance or launch browser authorization as needed. Invoke directly (caller-skill online-calendar) as part of connecting remotes.
-  - Caller: `online-calendar`
-  - Version: 1
-  - Alternative: `default`
-    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
-    {"options": {"--dry-run": true, "--home": "dir"}, "positionals": [], "stdin": null}
-    Required options: ["--home"]; positional arity: 0..0; stdin: forbidden
 - `online-calendar._rtx.interface.scripts-gcal` — Query or modify Google Calendar events via the Python calendar CLI (agenda, search, create, update, delete, etc.).
   - Caller: `online-calendar`
   - Version: 1
@@ -79,33 +49,12 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--event-id": "ID", "--from": "CALENDAR_ID", "--to": "CALENDAR_ID"}, "positionals": ["move"], "stdin": null}
     Required options: ["--event-id", "--to"]; positional arity: 1..1; stdin: forbidden
-- `online-calendar._rtx.interface.setup-oauth` — Run the OAuth setup flow to generate or refresh Google Calendar credentials.
-  - Caller: `online-calendar`
-  - Version: 1
-  - Alternative: `default`
-    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
-    {"options": {"--from-json": "/path/to/client.json"}, "positionals": [], "stdin": null}
-    Required options: []; positional arity: 0..0; stdin: forbidden
-- `online-calendar._rtx.interface.use-google-credential` — Bind online-calendar to a shared connect-google credential_id after validating it carries Calendar scope, storing only the opaque identifier (never the client secret or refresh token) in online-calendar's own config.json. The pre-existing per-service OAuth path (ensure-oauth) remains the unchanged fallback for callers who have not adopted the shared credential.
-  - Caller: `online-calendar`
-  - Version: 1
-  - Alternative: `default`
-    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
-    {"options": {"--credential-id": "id", "--home": "dir"}, "positionals": [], "stdin": null}
-    Required options: ["--credential-id", "--home"]; positional arity: 0..0; stdin: forbidden
-- `online-calendar._rtx.interface.use-google-credential-file` — Validate and live-probe a Calendar credential descriptor before storing only its normalized absolute path in online-calendar config.
-  - Caller: `online-calendar`
-  - Version: 1
-  - Alternative: `default`
-    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
-    {"options": {"--allow-account-change": true, "--credential-file": "path", "--home": "dir"}, "positionals": [], "stdin": null}
-    Required options: ["--credential-file", "--home"]; positional arity: 0..0; stdin: forbidden
 
 Instruction Interfaces:
 
 These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `online-calendar.interface.default` — Primary LLM-facing skill instructions.
-- `online-calendar.interface.setup` — Primary LLM-facing skill instructions.
+- `connect-google.interface.default@1` — Route Google OAuth-client preparation according to whether a valid Desktop client is already installed.
+- `setup-python-environment.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact selected Python environment without MCP.
 <!-- END BLUEPRINT INTERFACES -->
 # Google Calendar
 

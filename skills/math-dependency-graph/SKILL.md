@@ -4,24 +4,6 @@ description: >-
   Use when the user asks for a direct assumptions-to-results dependency graph of a LaTeX mathematical document. Do not use for proof, notation, prose, or literature review.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: research; topics: mathematical-reasoning, visualization, scholarly-documents; visibility: featured
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 3
-
-Uses Interfaces:
-- `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph@1`
-- `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-extract-mathjax-macros@1`
-- `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-serve-graph@1`
-- `math-dependency-graph.source.gateway -> math-dependency-graph.interface.extract@1`
-
-Public Interfaces:
-- `math-dependency-graph.interface.default`
-- `math-dependency-graph.interface.extract`
-<!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
@@ -61,8 +43,7 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
 Instruction Interfaces:
 
 These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `math-dependency-graph.interface.default` — Primary LLM-facing skill instructions.
-- `math-dependency-graph.interface.extract` — Extracts a notation-faithful direct mathematical dependency graph into canonical JSON.
+- `math-dependency-graph.interface.extract@1` — Extracts a notation-faithful direct mathematical dependency graph into canonical JSON.
 <!-- END BLUEPRINT INTERFACES -->
 
 # Mathematical Dependency Graph

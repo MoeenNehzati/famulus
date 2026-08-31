@@ -4,20 +4,6 @@ description: >-
   Use when the user asks about weather for the current location or a named location, including a specific day or date range.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: personal-assistance; topics: planning, external-integrations; visibility: featured
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces:
-- `get-weather.source.gateway -> get-weather._rtx.interface.scripts-weather@1`
-
-Public Interfaces:
-- `get-weather.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
@@ -32,10 +18,6 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
     {"options": {"--date": "YYYY-MM-DD", "--end-date": "YYYY-MM-DD", "--location": "loc"}, "positionals": [], "stdin": null}
     Required options: []; positional arity: 0..0; stdin: forbidden
 
-Instruction Interfaces:
-
-These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `get-weather.interface.default` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

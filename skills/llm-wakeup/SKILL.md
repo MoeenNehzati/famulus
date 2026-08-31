@@ -4,23 +4,6 @@ description: >-
   Use when the user asks to schedule or manage an automatic assistant-session wakeup after a usage reset or timeout.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: assistant-interaction; topics: session-management, task-automation; visibility: listed
-Activation: user-request, skill-workflow, scheduled-job; persistent modifier: no
-
-Skill Version: 1
-
-Uses Interfaces:
-- `llm-wakeup.source.gateway -> wakeup.interface.auto-policy@1`
-- `llm-wakeup.source.gateway -> wakeup.interface.explicit-schedule@1`
-- `llm-wakeup.source.gateway -> wakeup.interface.infer-schedule@1`
-- `llm-wakeup.source.gateway -> wakeup.interface.setup@1`
-
-Public Interfaces:
-- `llm-wakeup.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
@@ -60,10 +43,6 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
     {"options": {"--bin-dir": "DIR", "--native-root": "DIR"}, "positionals": ["teardown"], "stdin": null}
     Required options: ["--bin-dir", "--native-root"]; positional arity: 1..1; stdin: forbidden
 
-Instruction Interfaces:
-
-These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `llm-wakeup.interface.default` — Primary LLM-facing wakeup routing instructions.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

@@ -4,20 +4,6 @@ description: >-
   Use when an existing skill blueprint needs regeneration, whether requested directly or required by another skill. Do not use for ordinary blueprint editing or synchronization.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: assistant-development; topics: assistant-authoring, assistant-architecture; visibility: listed
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces:
-- `regenerate-blueprints.source.gateway -> regenerate-blueprints._rtx.interface.regenerate-blueprint@1`
-
-Public Interfaces:
-- `regenerate-blueprints.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
@@ -32,10 +18,6 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
     {"options": {}, "positionals": ["skill-name"], "stdin": null}
     Required options: []; positional arity: 1..1; stdin: forbidden
 
-Instruction Interfaces:
-
-These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `regenerate-blueprints.interface.default` — Regenerate one existing skill blueprint into /tmp, report its path or validation failure, and never modify the source blueprint.
 <!-- END BLUEPRINT INTERFACES -->
 ## Purpose
 

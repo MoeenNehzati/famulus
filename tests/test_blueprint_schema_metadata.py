@@ -27,7 +27,7 @@ REQUIRED_RULES = {
     "direct-io-description",
     "filesystem-ownership",
     "gateway-file",
-    "generated-contract-block",
+    "generated-interface-block",
     "interface-body-use",
     "relationship-edge",
     "relationship-matrix",

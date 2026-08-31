@@ -304,19 +304,14 @@ def test_actual_owner_instructions_put_repair_before_external_boundaries() -> No
         assert "failure" in repair_paragraph.casefold()
 
 
-def test_generated_google_owner_contracts_expose_selected_python_repair() -> None:
+def test_generated_google_owner_interfaces_expose_selected_python_repair() -> None:
     syncer = _load_syncer()
     blueprints = syncer.load_blueprints()
 
     for owner in GOOGLE_OWNERS:
         blueprint = blueprints[owner]
-        block = syncer.generated_contract_block(
-            owner, blueprint.data, blueprint.repository_graph
-        )
-        assert (
-            f"`{owner}.source.gateway -> "
-            "setup-python-environment.interface.repair-selected-packages@1`"
-        ) in block
+        block = syncer.generated_interface_block(owner, blueprint.repository_graph)
+        assert "`setup-python-environment.interface.repair-selected-packages@1`" in block
 
 
 def test_core_does_not_own_google_packages() -> None:

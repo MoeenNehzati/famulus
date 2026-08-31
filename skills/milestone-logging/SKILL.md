@@ -3,21 +3,6 @@ name: milestone-logging
 description: Use when starting or completing substantive agent work that needs durable, role-labelled progress records and optional run recovery.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: assistant-operations; topics: task-automation, assistant-assurance; visibility: listed
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 1
-
-Uses Interfaces:
-- `milestone-logging.source.gateway -> milestone-logging._rtx.interface.record@1`
-- `milestone-logging.source.gateway -> milestone-logging._rtx.interface.timeline@1`
-
-Public Interfaces:
-- `milestone-logging.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
@@ -39,10 +24,6 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
     {"options": {"--json": true, "--list": true, "--run": "ID", "--slow": "SECONDS", "-l": true}, "positionals": ["SESSION"], "stdin": null}
     Required options: []; positional arity: 0..1; stdin: forbidden
 
-Instruction Interfaces:
-
-These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `milestone-logging.interface.default` — Record a role-labelled progress event or inspect existing milestone records.
 <!-- END BLUEPRINT INTERFACES -->
 Skill: milestone-logging
 

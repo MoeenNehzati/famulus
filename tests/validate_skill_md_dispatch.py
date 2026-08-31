@@ -1,4 +1,4 @@
-"""Tests for version-4 generated SKILL.md dispatcher exposure."""
+"""Tests for version-6 generated SKILL.md direct-interface exposure."""
 from __future__ import annotations
 
 import importlib.util
@@ -112,6 +112,7 @@ def test_child_process_export_is_projected_as_famulus_interface(
     assert len(observed) == 1
     assert observed[0][0] == skill / "SKILL.md"
     assert "get-weather._rtx.interface.scripts-weather" in interface_block
+    assert "get-weather.interface.default" not in interface_block
     assert "Executable Interfaces:" in interface_block
     assert "dispatcher --caller-skill" not in interface_block
 
