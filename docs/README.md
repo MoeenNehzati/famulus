@@ -14,8 +14,15 @@ Officina is and routes to everything below.
 - [Certification and Drift](./officina/certification_and_drift.md)
 - [Blueprints](./officina/blueprints.md)
 - [Blueprint Search](./officina/blueprint_search.md)
+- [Standards](./officina/standards.md)
+- [Refactoring Officina Nodes](./officina/refactor.md)
+- [Configured Schemas](./officina/configured-schema.md)
 - [Docstring Contract](./officina/docstring.md)
+- [Compass and Rutter](./officina/compass-rutter.md)
+- [Visualization](./officina/visualization.md)
 - [Installation](./officina/installation.md)
+- [Maintainer Scaffolding](./officina/scaffolding/README.md)
+- [Utility Map](./officina/utility-map.md)
 
 ## Famulus
 
@@ -37,9 +44,9 @@ Officina is and routes to everything below.
 
 ## Skill Domains
 
-- [Personal Assistance inventory](./domains/personal-assistance.md)
+- [Personal Assistance Inventory](./domains/personal-assistance.md)
 - [Assistant Interaction](./domains/assistant-interaction.md)
-- [Research inventory](./domains/research.md)
+- [Research Inventory](./domains/research.md)
 - [Assistant Operations](./domains/assistant-operations.md)
 - [Software Development](./contributors/README.md#software-development)
 - [Assistant Development](./contributors/README.md#assistant-development)

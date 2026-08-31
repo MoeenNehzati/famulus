@@ -1,6 +1,8 @@
 # Contributor Guide
 
-This is the maintainer and skill-extension entrypoint for Famulus. Start here if you want to understand how the skill system is organized, how new skills are added, and how documentation and validation stay aligned with the live blueprints.
+This is the maintainer and skill-extension entry point for Famulus. Start here
+to understand how the skill system is organized, how new skills are added, and
+how documentation and validation stay aligned with live blueprints.
 
 For a compact map of which authoring, refactoring, blueprint, standards, and
 certification skill to use, start with the
@@ -12,15 +14,18 @@ The skill system is built around a small set of explicit authored surfaces:
 
 - [`SKILL.md`](../../skills/skill-maker/SKILL.md) for trigger and usage guidance
 - [`blueprint.yaml`](../../skills/skill-maker/blueprint.yaml) for the module boundary, exports, access, and discovery
-- `blueprints/*.yaml` for behavioral sources, intrinsic interfaces, dependencies, and process bindings
+- `blueprints/*.yaml` under each module root for that module's behavioral
+  sources, intrinsic interfaces, dependencies, and process bindings
+- an optional `_rtx/` child module for owned executable behavior
 - private runtime files, tests, schemas, and references for implementation
 
 Start with these architecture and contract references:
 
-- [docs/officina/blueprints.md](../officina/blueprints.md)
-- [references/blueprint-schema/schema.json](../../references/blueprint-schema/schema.json)
-- [references/blueprint-schema/template.yaml](../../references/blueprint-schema/template.yaml)
-- Layered [node standards](../../references/node-standards/node.standard.yaml), queried through `refactor-node`
+- [Blueprints](../officina/blueprints.md)
+- [Blueprint schema](../../references/blueprint-schema/schema.json)
+- [Blueprint authoring template](../../references/blueprint-schema/template.yaml)
+- [Layered node standards](../../references/node-standards/node.standard.yaml),
+  queried through `refactor-node`
 
 ## How Skills Stay in Sync
 
@@ -38,7 +43,8 @@ artifacts. Do not reach past the interface to the file behind it: the syncer is
 private `_rtx` content, and a bare `python3` runs outside the managed runtime,
 so importing `officina` fails before the syncer does anything.
 
-Cross-skill script calls should go through the dispatcher boundary, not direct script reach-through:
+Cross-skill behavior should go through the dispatcher boundary, not direct
+invocation of another skill's private scripts:
 
 ```bash
 dispatcher --caller-skill <caller> <callee>.interface.<name> [args...]
@@ -53,7 +59,7 @@ Famulus enforces the documentation and skill contracts through repo validators, 
 - [`.github/workflows/python-tests.yml`](../../.github/workflows/python-tests.yml)
 
 For hook order, CI behavior, and Python test-suite boundaries, see
-[docs/testing.md](../testing.md).
+[Repository Testing](../testing.md).
 
 ## Development-Facing Skill Areas
 
@@ -92,7 +98,11 @@ For task-oriented routing, see the
 
 ## Where To Go Next
 
-- [docs/officina/scaffolding/README.md](../officina/scaffolding/README.md) — long-form explanation of the scaffolding layer and why it exists
-- [docs/contributors/documentation-system.md](documentation-system.md) — how doc generation and doc validation work
-- [docs/testing.md](../testing.md) — test commands, suite policy, hooks, CI, and parallel execution
-- [references/blueprint-schema/README.md](../../references/blueprint-schema/README.md) — blueprint reference index
+- [Maintainer Scaffolding](../officina/scaffolding/README.md) — the repository
+  machinery around authored and generated skill surfaces
+- [Documentation System](documentation-system.md) — documentation generation,
+  publication, and validation
+- [Repository Testing](../testing.md) — test commands, suite policy, hooks, CI,
+  and parallel execution
+- [Blueprint References](../../references/blueprint-schema/README.md) — the
+  concrete blueprint contract index

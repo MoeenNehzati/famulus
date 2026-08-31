@@ -1,123 +1,134 @@
 # Maintainer Scaffolding
 
-This document describes the repository machinery that keeps modules explicit,
-composable, and checkable. Start with
-[`skills/skill-maker/`](../../../skills/skill-maker/): it owns blueprint
-synchronization and the skill-system validators.
+This guide explains the repository machinery around an Officina skill: which
+surfaces are authored, which views are generated, which public boundaries run
+the machinery, and which checks establish confidence. For the architectural
+meaning of blueprint fields, start with [Blueprints](../blueprints.md).
 
-## Authored surfaces
+## 1. Authored surfaces
 
-A skill module normally contains:
+A discoverable skill module owns its instruction behavior and may contain one
+non-discoverable runtime child for executable behavior:
 
 ```text
-skills/<name>/
+skills/<skill-id>/
   SKILL.md
   blueprint.yaml
   blueprints/
     gateway.yaml
-    <implementation>.yaml
-  _rtx/
-    tests/
+    <instruction-source>.yaml
   tests/
+  _rtx/                         # optional
+    blueprint.yaml
+    __init__.py
+    blueprints/
+      <runtime-source>.yaml
+    <implementation files>
+    tests/
 ```
 
-- `SKILL.md` is the discoverable instruction gateway.
-- `blueprint.yaml` defines the module boundary, contained sources, exports,
-  access, authority, and discovery.
-- `blueprints/*.yaml` define behavioral sources, their intrinsic interfaces,
-  dependencies, process bindings, and direct I/O.
-- `_rtx/` holds the private implementation, and `_rtx/tests/` the tests of it.
-- `tests/` holds the module's own gateway contract: the instruction wording it
-  promises, routing between its interfaces, and the shape of its declared
-  exports. Runtime tests do not belong here, and gateway tests do not belong
-  beside the runtime, because the two cover different authored surfaces. See
-  [Repository testing](../../testing.md#adding-tests).
+The parent `blueprint.yaml` defines the skill module's identity, discovery,
+authority, sources, children, exports, and access policy. Its
+`blueprints/*.yaml` files describe behavioral sources owned directly by that
+module.
 
-The module blueprint and behavioral-source blueprints are authored authority.
-Generated documentation blocks and indexes are derived views. Certificate logs
-are certification state.
+When the skill owns executable behavior, `_rtx/` is a registered,
+non-discoverable child module. Its blueprint owns the executable namespace and
+its `blueprints/*.yaml` files own runtime sources and machine interfaces. An
+instruction-only skill need not have this child.
 
-## Generated views
+Root `tests/` exercise the discoverable gateway and its routing contract.
+`_rtx/tests/` exercise private runtime behavior. The two test surfaces follow
+the behavior they verify; see [Repository Testing](../../testing.md#adding-tests).
 
-[`skills/skill-maker/_rtx/_blueprint_syncer.py`](../../../skills/skill-maker/_rtx/_blueprint_syncer.py)
-derives:
+Blueprints state architectural facts; gateways realize behavior. Both are
+authored surfaces. Generated blocks and indexes are derived views, while
+certificates are assurance state. None of these derived artifacts create new
+nodes or relationships.
 
-- blueprint contract and interface blocks in `SKILL.md`;
-- `references/blueprint-schema/runtime_dependencies.json`;
-- other registered generated documentation.
+## 2. Synchronization
 
-Do not edit generated blocks by hand. Run the exported check:
+`skill-maker._rtx.interface.sync-blueprints` is the public synchronization
+boundary. It checks or refreshes generated blueprint contract/interface blocks
+in `SKILL.md` and repository-level generated artifacts such as the runtime
+dependency index.
+
+Check without changing generated files:
 
 ```bash
 dispatcher --caller-skill node-certify \
   skill-maker._rtx.interface.sync-blueprints --check
 ```
 
-Run without `--check` only when intentionally refreshing generated artifacts.
+Run the same interface without `--check` only when intentionally refreshing
+derived artifacts. Do not invoke the private syncer implementation directly.
 
-## Runtime boundary
+## 3. Validation and certification
 
-Cross-module execution uses one public form:
+The repository separates three forms of assurance:
+
+1. The version-6 schemas under
+   [`references/blueprint-schema/`](../../../references/blueprint-schema/)
+   validate closed document shapes.
+2. Repository validators under [`validators/skill/`](../../../validators/skill/)
+   check graph-wide facts such as identity, ownership, dependencies, exports,
+   access, bindings, and generated-view consistency.
+3. `node-certify` performs semantic review and records certificates for the
+   exact committed node state.
+
+Run validators and tests through the repository entry point:
+
+```bash
+python3 repo_checks.py --suite validators
+python3 repo_checks.py --suite precommit
+```
+
+`node-drift` reads certificate currentness. It does not write a parallel health
+or conformance state.
+
+## 4. Runtime boundary
+
+Cross-module invocation goes through one exported interface:
 
 ```bash
 dispatcher --caller-skill <caller-module> \
   <provider-module>.interface.<export> [arguments...]
 ```
 
-The dispatcher:
-
-1. loads only the exact repository configuration, caller/target ancestry, and
-   selected source blueprint; unrelated blueprint defects are not read;
-2. resolves the module export to its contained source interface;
-3. checks the immediately calling module against each target-side access
-   policy; source identity and `uses_interfaces` do not grant permission;
-4. reports unavailable or stale certificates as warnings;
-5. compiles the source-owned process binding;
-6. invokes the gateway through its runtime provider.
+Dispatcher resolves only the relevant caller and target blueprint chain,
+checks each crossed access policy, compiles the source-owned process binding,
+and invokes the gateway. It does not repair blueprints or validate unrelated
+modules. Certification status is advisory during dispatch; authority still
+comes from the target-side blueprint policies.
 
 Callers do not invoke another module's private runtime path or private source
-interface. Runtime declarations must name the module that owns their Python
-file; repository validation checks this against the deepest registered module.
+interface. The [Dispatcher](../dispatcher.md) guide owns the complete runtime
+contract.
 
-## Validation and certification
+## 5. Safe change routes
 
-Validation has three layers:
+For a normal module change:
 
-- the v6 schemas validate closed document shapes;
-- repository validators check identities, ownership, exports, dependencies,
-  access, process bindings, and generated views;
-- `node-certify` performs semantic review and issues append-only signed
-  certificates for the exact committed graph state.
-
-`node-drift` is a read-only certificate-currentness consumer. It does not
-write a parallel health or conformance state.
-
-## Safe change routes
-
-When changing a module:
-
-1. Edit the module or source blueprint that owns the fact.
-2. Edit its gateway or content as needed.
-3. Run blueprint sync in check mode, then refresh intentionally if required.
+1. Edit the blueprint or gateway that owns the fact.
+2. Declare dependencies, interfaces, authority, and effects at their canonical
+   owners.
+3. Check synchronization, then refresh derived views intentionally if needed.
 4. Run the affected validators and tests.
-5. Review the final blueprints against actual behavior.
-6. Certify the exact committed state.
+5. Review blueprint claims against actual behavior.
+6. Certify the exact committed state when fresh certification is required.
 
-When changing the architecture or schema:
-
-1. Update the existing schema, graph, compiler, or validator owner; do not add
-   a parallel authority.
-2. Use `update-standards` to change the smallest applicable document under
-   `references/node-standards/`, then update its pinned dependent closure.
-3. Update the relevant conceptual documentation.
-4. Run the complete validation and certification suites.
+For a structural change, use [Refactoring Officina Nodes](../refactor.md) to
+choose between in-place refactoring and relocation. For a standards change,
+use `update-standards` so the selected authority and its pinned dependent
+closure remain aligned.
 
 ## Canonical references
 
-- [Architectural principles](../architectural-principles.md)
-- [Dispatcher](../dispatcher.md)
+- [Architectural Principles](../architectural-principles.md)
 - [Blueprints](../blueprints.md)
-- [Certification and drift](../certification_and_drift.md)
-- [Blueprint search](../blueprint_search.md)
+- [Dispatcher](../dispatcher.md)
+- [Certification and Drift](../certification_and_drift.md)
+- [Standards](../standards.md)
+- [Blueprint Search](../blueprint_search.md)
 - [Blueprint schemas](../../../references/blueprint-schema/README.md)
 - [Layered node standards](../../../references/node-standards/node.standard.yaml)
