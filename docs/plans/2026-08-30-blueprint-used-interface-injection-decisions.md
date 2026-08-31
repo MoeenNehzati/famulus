@@ -2,9 +2,9 @@
 
 Implementation worktree: `feat/blueprint-used-interface-injection`, based on `9a16f37b`.
 
-Status: implementation validation is complete and final re-review is pending.
-The complete staged candidate passed pre-commit with loopback socket capability.
-This record makes no merge or release-readiness claim before final review closes.
+Status: implementation validation is complete. Final plan and documentation
+review gates are green with no unresolved findings. The complete staged
+candidate passed pre-commit with loopback socket capability.
 
 This record documents decisions made while implementing
 `2026-08-30-blueprint-used-interface-injection.md`. The implementation reports in
@@ -63,7 +63,7 @@ marker, stale-standard, or missing-evidence finding attached to each hunk.
 
 This decision record is itself an unbudgeted new file at
 `docs/plans/2026-08-30-blueprint-used-interface-injection-decisions.md`. It was
-initially reviewed while untracked and is now staged in the complete candidate.
+initially reviewed while untracked and was then staged in the complete candidate.
 Cost if wrong: remove the record before commit, losing the durable budget, scope,
 digest, and restoration-cost rationale collected here.
 
@@ -212,4 +212,5 @@ the durable scope/restoration rationale for both final-review fix rounds.
 
 The controller staged the complete candidate, including this decision record,
 and the exact staged pre-commit route passed with the result recorded above.
-Final reviewer approval remains pending; no commit-readiness claim is made here.
+Final plan and documentation reviewers approved the candidate with no unresolved
+findings; the candidate was ready for its coherent commits.
