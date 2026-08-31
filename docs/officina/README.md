@@ -238,8 +238,6 @@ it. Everything below explains how those principles are realized.
 
 Then, depending on what you need:
 
-- [Architecture](architecture.md) — how the principles are implemented:
-  nodes, gateways, blueprints, interfaces, discovery, and the graph
 - [Dispatcher](dispatcher.md) — direct route resolution, authorization,
   execution, failures, and performance budgets
 - [Certification and Drift](certification_and_drift.md) — certificate
@@ -250,8 +248,8 @@ Then, depending on what you need:
   generic LLM-facing operating protocol
 - [Blueprint Discovery Metadata](blueprint-discovery-metadata.md) — how
   discoverable modules declare when they apply
-- [Source Relocation](source-relocation.md) — safely moving a source and its
-  blueprint metadata while updating repository references
+- [Refactoring Officina Nodes](refactor.md) — choosing between in-place node
+  refactoring and registered relocation
 - [Configured Schemas](configured-schema.md) — the configuration and
   JSON Schema loading boundary
 - [Docstring Contract](docstring.md) — the docstring policy, grammar, and

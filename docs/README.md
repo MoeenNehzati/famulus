@@ -9,8 +9,6 @@ Officina is and routes to everything below.
 - [Overview](./officina/README.md)
 - [Architectural Principles](./officina/architectural-principles.md) — the
   normative rules
-- [Architecture](./officina/architecture.md) — how the principles are
-  implemented
 - [Dispatcher](./officina/dispatcher.md) — direct routing, authorization, and
   launch behavior
 - [Certification and Drift](./officina/certification_and_drift.md)

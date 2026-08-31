@@ -114,7 +114,7 @@ When changing the architecture or schema:
 
 ## Canonical references
 
-- [Architecture](../architecture.md)
+- [Architectural principles](../architectural-principles.md)
 - [Dispatcher](../dispatcher.md)
 - [Skill blueprints](../skill-blueprints.md)
 - [Certification and drift](../certification_and_drift.md)

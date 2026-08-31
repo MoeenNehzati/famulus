@@ -148,7 +148,7 @@ routing state. Those operations belong to explicit offline tools.
 
 ## Related documentation
 
-- [Architecture](architecture.md)
+- [Architectural principles](architectural-principles.md)
 - [Skill blueprints](skill-blueprints.md)
 - [Certification and drift](certification_and_drift.md)
 - [Installation](installation.md)

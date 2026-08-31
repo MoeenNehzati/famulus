@@ -217,7 +217,7 @@ relationships.
 
 ## Related documentation
 
-- [Architecture](architecture.md)
+- [Architectural principles](architectural-principles.md)
 - [Dispatcher](dispatcher.md)
 - [Certification and drift](certification_and_drift.md)
 - [Blueprint search](blueprint_search.md)
