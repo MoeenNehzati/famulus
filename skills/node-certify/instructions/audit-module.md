@@ -1,5 +1,10 @@
 # Audit a Module
 
+Audit only the assigned task from its scheduler input file. Do not recursively
+audit, schedule, or delegate dependencies. If required dependency evidence is
+missing, inconsistent, or cannot be evaluated, return `verdict: "abort"`. Do
+not modify or certify repository state.
+
 Audit one module after its affected or required child nodes have been reviewed.
 The module judgment covers its declaration, directly owned content, exports,
 namespace authority, and composition of already-audited child nodes.
@@ -8,8 +13,9 @@ namespace authority, and composition of already-audited child nodes.
 
 Read the current module blueprint, module-owned content, child registrations,
 exports, namespace routes, authority declarations, and child audit results.
-Read child implementation content only when a child result requests expansion;
-otherwise consume the bounded result supplied by that child audit.
+Do not inspect child implementation content. Consume the bounded passing result
+or reusable certificate evidence supplied for each direct child. Return
+`abort` when that evidence cannot establish the required composition facts.
 
 ## Audit
 
@@ -26,20 +32,15 @@ Establish that:
 - every required child audit passed and the combined module surface is
   coherent.
 
-Return `needs-context` for a missing child result or the smallest unresolved
-module evidence. Reject invalid exports, authority, topology, or composition.
+Return `abort` for a missing child result or unresolved module evidence. Reject
+invalid exports, authority, topology, or composition.
 
 ## Result
 
-Return exactly these sections:
-
-- `Subject`: canonical module id and version.
-- `Verdict`: `pass`, `reject`, or `needs-context`.
-- `Child results`: child ids, versions, and verdicts consumed.
-- `Evidence`: module declarations, content, routes, authority, changes, and
-  child results actually examined.
-- `Findings`: module-level mismatches or `none`.
-- `Requested context`: the smallest required expansion or `none`.
+Return exactly one `node-certify.semantic-audit-result/v1` JSON object and no
+surrounding prose. Use the assigned task ID; set `verdict` to `pass`, `reject`,
+or `abort`; list evidence strings and direct passing dependency results actually
+consumed; use an empty `findings` array only for `pass`.
 
 Do not sign or write certificate history. A `pass` result authorizes the
 gateway to request deterministic certification; it is not itself a signed

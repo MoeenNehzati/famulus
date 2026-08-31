@@ -353,7 +353,12 @@ def _v6_certifier_repository(tmp_path: Path) -> tuple[Path, Path]:
     mechanical_module["content"] = [
         pattern
         for pattern in mechanical_module["content"]
-        if pattern != "tests/.*"
+        if pattern
+        not in {
+            "tests/.*",
+            r"_semantic_audit_scheduler\.py",
+            r"schemas/semantic-audit-result\.schema\.json",
+        }
     ]
     _write_yaml(mechanical_module_path, mechanical_module)
 
@@ -364,9 +369,44 @@ def _v6_certifier_repository(tmp_path: Path) -> tuple[Path, Path]:
     gateway_blueprint["uses_interfaces"] = [
         dependency
         for dependency in gateway_blueprint["uses_interfaces"]
-        if dependency["interface"] != "node-drift._rtx.interface.drift-status"
+        if dependency["interface"]
+        not in {
+            "node-drift._rtx.interface.drift-status",
+            "node-certify._rtx.interface.semantic-audit-scheduler",
+        }
     ]
     _write_yaml(gateway_blueprint_path, gateway_blueprint)
+
+    runtime_blueprint_path = certifier_root / "_rtx" / "blueprint.yaml"
+    runtime_blueprint = yaml.safe_load(
+        runtime_blueprint_path.read_text(encoding="utf-8")
+    )
+    runtime_blueprint["sources"].pop(
+        "node-certify._rtx.source.semantic-audit-scheduler"
+    )
+    runtime_blueprint["exports"].pop(
+        "node-certify._rtx.interface.semantic-audit-scheduler"
+    )
+    _write_yaml(runtime_blueprint_path, runtime_blueprint)
+    (
+        certifier_root
+        / "_rtx"
+        / "blueprints"
+        / "rtx-semantic-audit-scheduler.yaml"
+    ).unlink(missing_ok=True)
+
+    module_blueprint_path = certifier_root / "blueprint.yaml"
+    module_blueprint = yaml.safe_load(
+        module_blueprint_path.read_text(encoding="utf-8")
+    )
+    runtime_namespace = module_blueprint["namespace_exports"]["_rtx"]
+    runtime_namespace["surface"]["only"].pop(
+        "node-certify._rtx.interface.semantic-audit-scheduler"
+    )
+    runtime_namespace["interface_access"].pop(
+        "node-certify._rtx.interface.semantic-audit-scheduler"
+    )
+    _write_yaml(module_blueprint_path, module_blueprint)
 
     mechanical_blueprint_path = (
         certifier_root / "_rtx" / "blueprints" / "rtx-certifier.yaml"

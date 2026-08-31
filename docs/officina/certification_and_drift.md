@@ -26,6 +26,13 @@ adds no certification edge. An edge records the target node and its exact
 version. A node's local hash does not recursively include dependency bytes;
 certificates record direct dependency node hashes separately.
 
+Semantic-audit ordering uses a separate neutral projection,
+`officina.certification-dependency-dag/v1`. It contains every module,
+behavioral source, and interface facet. In addition to facet-attributed direct
+uses, it orders an interface before its owning source, a source before its
+owning module, and a child module before its parent. It omits evidence-only
+`certified-under` relations and contains no audit or worker state.
+
 Every authored node has one blueprint. Every behavioral source has one
 whole-file gateway. A module with discovery also has a whole-file gateway; a
 dependency-only module may omit discovery. Blueprint declarations are graph
@@ -314,14 +321,35 @@ aggregate certifier node hash because the structured interface records carry
 that identity.
 
 When drift exists, certification uses the stale worklist for selective
-bottom-up semantic review: stale leaf interfaces first, then affected
-behavioral-source and module ancestors. An unchanged facet reuses evidence only
-when its claim is authenticated by the latest valid signed certificate and
-still matches canonical state; wider evidence is read only after
-`needs-context`. The signature covers the facet manifest and dependencies plus
-the certificate's whole-node semantic-review pass. Selective reuse interprets
-that pass as covering each included unchanged facet; it is not an independent
-per-facet semantic attestation.
+bottom-up semantic review. Exact interface drift selects that interface, its
+source, and module ancestors; remainder drift selects its source and module
+ancestors; an unattributed stale source conservatively selects all its
+interfaces. A sole mechanical `certified-under` change selects no semantic
+task. An unchanged facet reuses evidence only when its claim is authenticated
+by the latest valid signed certificate and still matches canonical state. The
+signature covers the facet manifest and dependencies plus the certificate's
+whole-node semantic-review pass. Selective reuse interprets that pass as
+covering each included unchanged facet; it is not an independent per-facet
+semantic attestation.
+
+Code, not the orchestrating LLM, traverses this graph. The
+`node-certify._rtx.interface.semantic-audit-scheduler` keeps one locked run
+state and returns only dependency-ready task IDs, kinds, bounded input-file
+handles, and counts. Each input identifies the exact repository and assigned
+vertex without exposing the full DAG. The orchestrator fills a bounded pool
+with one fresh subagent per task, submits each exact
+`node-certify.semantic-audit-result/v1` report, and refills available slots.
+Workers audit only their assigned vertex; they must not recursively audit,
+schedule, or delegate dependencies. Missing or inconsistent prerequisite
+evidence produces `abort`, and any malformed, rejected, aborted, lost, or
+failed task terminates the run before signing.
+
+Only a scheduler-complete run reaches the mechanical certifier. The mechanical
+certifier then independently reloads current repository state, skips current
+nodes, route-smokes the stale issuance worklist, and issues certificates
+dependency-first. Semantic scheduling therefore reduces LLM context without
+weakening final freshness checks.
+
 Selectivity applies only while `certification_basis_hash` matches. Because the
 aggregate hash does not identify which basis input changed, a basis mismatch
 remains semantically invalidating until the separate node/interface-only basis

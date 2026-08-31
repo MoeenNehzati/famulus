@@ -20,14 +20,16 @@ uses_interfaces:
 - interface: setup-python-environment.interface.repair-selected-packages
   version: 1
 - interface: node-drift._rtx.interface.drift-status
-  version: 3
+  version: 4
+- interface: node-certify._rtx.interface.semantic-audit-scheduler
+  version: 1
 - interface: node-certify.source.audit-behavioral-source.interface.audit
-  version: 1
+  version: 2
 - interface: node-certify.source.audit-interface.interface.audit
-  version: 1
+  version: 2
 - interface: node-certify.source.audit-module.interface.audit
-  version: 1
+  version: 2
 - interface: node-certify._rtx.interface.certify
   version: 2
-version: 5
+version: 6
 maturity: stable

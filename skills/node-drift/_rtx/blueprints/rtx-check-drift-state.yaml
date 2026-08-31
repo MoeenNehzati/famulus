@@ -9,7 +9,8 @@ dependencies:
   version: 1
 description: Resolves exact or installed v6 modules, derives canonical node hashes,
   structured drift causes, and dependency-first stale worklists through the shared
-  certification view, and optionally saves a Markdown report.
+  certification view, optionally writes a neutral dependency DAG for one exact
+  repository, and optionally saves a Markdown report.
 gateway:
   language: Python
   path: _check_drift_state.py
@@ -233,6 +234,10 @@ interfaces:
     content:
     - _check_drift_state\.py
     uses_interfaces:
+    - interface: certification.interface.dependency-dag
+      version: 1
+    - interface: common.interface.atomic-files
+      version: 2
     - interface: certification.interface.hashing
       version: 1
     - interface: certification.interface.records
@@ -243,6 +248,12 @@ interfaces:
       version: 1
     contract:
       arguments:
+        dag-file:
+          description: Exact output path for the complete neutral dependency DAG; requires exact repo-root and JSON mode.
+          direct_io_ref: write-4
+          required: false
+          sensitivity: user-private
+          type: {access: write, kind: file, must_exist: false, relative_to: caller-cwd, syntax: literal, opaque_content: true}
         all:
           default: false
           description: Check all observed installed modules and reject combination
@@ -375,6 +386,16 @@ interfaces:
           reason: Report invocation-wide failures.
           sensitivity: derived-private
           system: agent-runtime
+        - access: write
+          content: complete neutral certification dependency DAG
+          formats: [json]
+          id: write-4
+          medium: local-filesystem
+          path: $dag-file
+          path_match: exact
+          reason: Pass the complete graph to certification-side scheduler code without putting it in LLM context.
+          sensitivity: derived-private
+          system: filesystem
       execution:
         consistency:
           snapshot: Certificate currentness and hashes come from one shared repository
@@ -497,12 +518,14 @@ interfaces:
         - --all
         - --repo-root
         - --skill-root
+        - --dag-file
         flag_patterns:
           --repo-root: ^.+$
           --skill-root: ^.+$
+          --dag-file: ^.+$
         min_positionals: 0
-    usage: '[target ...] [--all] [--repo-root ROOT | --skill-root ROOT] [--json]'
-    version: 3
+    usage: '[target ...] [--all] [--repo-root ROOT | --skill-root ROOT] [--json] [--dag-file PATH]'
+    version: 4
 node_type: behavioral_source
 platform_support:
   linux: true
@@ -511,6 +534,10 @@ platform_support:
 runtime_dependencies: []
 schema_version: 6
 uses_interfaces:
+- interface: certification.interface.dependency-dag
+  version: 1
+- interface: common.interface.atomic-files
+  version: 2
 - interface: certification.interface.hashing
   version: 1
 - interface: certification.interface.records
@@ -519,5 +546,5 @@ uses_interfaces:
   version: 1
 - interface: certification.interface.view
   version: 1
-version: 3
+version: 4
 maturity: stable

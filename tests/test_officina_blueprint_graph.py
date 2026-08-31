@@ -64,12 +64,13 @@ def test_recurring_module_owns_shared_job_schema_source() -> None:
         "standards-schema.source.standard-renderer": {
             "render_standard_v6.py",
         },
-            "standards-schema.source.docstring-schema": {
-                "docstring.standard.lark",
-                "docstring.standard.yaml",
-                "docstring_format.schema.json",
-            },
+        "standards-schema.source.docstring-schema": {
+            "docstring.standard.lark",
+            "docstring.standard.yaml",
+            "docstring_format.schema.json",
+        },
         "certification-policy.source.node-hash-policy": {
+            "certification-dependency-dag.schema.json",
             "node-hash-policy.schema.json",
             "node-hash-policy.yaml",
         },

@@ -48,6 +48,7 @@ CANONICAL_NODE_HASH_POLICY = Path(
 CERTIFIER_NODE_ID = "node-certify"
 CERTIFIER_INTERFACE_ID = "node-certify._rtx.interface.certify"
 CERTIFIER_INTERFACE_VERSION = 2
+CERTIFIER_AUDIT_INTERFACE_VERSION = 2
 CERTIFIER_AUDIT_INTERFACES = {
     "interface": "node-certify.source.audit-interface.interface.audit",
     "remainder": "node-certify.source.audit-behavioral-source.interface.audit",
@@ -1697,7 +1698,7 @@ def _compute_node_hash_states(
         if CERTIFIER_NODE_ID in graph.nodes:
             versions = {CERTIFIER_INTERFACE_ID: CERTIFIER_INTERFACE_VERSION}
             versions.update(
-                (interface_id, 1)
+                (interface_id, CERTIFIER_AUDIT_INTERFACE_VERSION)
                 for interface_id in CERTIFIER_AUDIT_INTERFACES.values()
             )
             try:

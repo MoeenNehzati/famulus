@@ -1,0 +1,82 @@
+schema_version: 6
+node_type: behavioral_source
+id: node-certify._rtx.source.semantic-audit-scheduler
+version: 1
+maturity: stable
+description: Atomically claims dependency-ready semantic audit tasks for a bounded worker pool.
+gateway: {path: _semantic_audit_scheduler.py, language: Python}
+content: [_semantic_audit_scheduler\.py, schemas/semantic-audit-result\.schema\.json]
+dependencies: []
+uses_interfaces:
+- {interface: certification.interface.dependency-dag, version: 1}
+- {interface: common.interface.atomic-files, version: 2}
+interfaces:
+  node-certify._rtx.source.semantic-audit-scheduler.interface.schedule:
+    version: 1
+    description: Initialize or transition one locked semantic-audit run.
+    content: [_semantic_audit_scheduler\.py, schemas/semantic-audit-result\.schema\.json]
+    uses_interfaces:
+    - {interface: certification.interface.dependency-dag, version: 1}
+    - {interface: common.interface.atomic-files, version: 2}
+    contract:
+      arguments:
+        operation:
+          description: Scheduler operation.
+          required: true
+          sensitivity: public
+          type: {kind: enum, values: [{value: initialize, description: Create state.}, {value: claim, description: Claim ready tasks.}, {value: complete, description: Record a report.}, {value: fail, description: Fail a worker task.}, {value: status, description: Read compact state.}, {value: abort, description: Abort the run.}]}
+        prefix: {description: Confined run prefix., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+        task-id: {description: Task for complete or fail., required: false, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+        capacity: {description: Maximum concurrent tasks for claim., required: false, sensitivity: public, type: {kind: integer, minimum: 0, maximum: 64}}
+        dag-file: {description: Complete neutral DAG for initialize., required: false, direct_io_ref: scheduler-input, sensitivity: user-private, type: {kind: file, access: read, must_exist: true, relative_to: caller-cwd, syntax: literal, opaque_content: true}}
+        drift-file: {description: Drift JSON containing stale_vertices for initialize., required: false, direct_io_ref: scheduler-input, sensitivity: user-private, type: {kind: file, access: read, must_exist: true, relative_to: caller-cwd, syntax: literal, opaque_content: true}}
+        report-file: {description: Exact semantic audit report for complete., required: false, direct_io_ref: scheduler-input, sensitivity: user-private, type: {kind: file, access: read, must_exist: true, relative_to: caller-cwd, syntax: literal, opaque_content: true}}
+        reason: {description: Failure or abort reason., required: false, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+      preconditions: []
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads:
+        - {id: scheduler-input, medium: local-filesystem, content: DAG drift report or worker result, formats: [json], path: $argument, path_match: exact, access: read, sensitivity: derived-private, system: filesystem}
+        writes:
+        - {id: scheduler-state, medium: local-filesystem, content: locked scheduler state and bounded task packets, formats: [json], path: skills/node-certify/_build/semantic-audit-runs/**, path_match: glob, access: write, sensitivity: derived-private, system: filesystem}
+        - {id: response, medium: stdout, content: compact scheduler result, formats: [json], sensitivity: derived-private, system: agent-runtime, access: write}
+        - {id: error, medium: stderr, content: scheduler error, formats: [text], sensitivity: derived-private, system: agent-runtime, access: write}
+      execution:
+        effects:
+        - id: scheduler-state
+          action: update
+          direct_io_ref: scheduler-state
+          value_source: {kind: argument, argument_ref: operation}
+          may_occur_in_outcomes: [completed]
+          confirmation_evidence: {kind: direct-io, direct_io_ref: scheduler-state}
+          reversibility: {reversible: A new run prefix starts independent state.}
+        lifecycle: finite
+        state_effect: mutating
+        consistency: {snapshot: Every operation holds the run's single exclusive lock.}
+        verification: [{method: output-schema, output_ref: result}]
+        mutation_safety:
+          atomicity: {per_effect_only: Task packets and the single state file are each atomic.}
+          concurrent_invocations: {serialized: One run lock serializes all claims and transitions.}
+          idempotency: {non_idempotent: Initialize is idempotent for identical input; claim and completion transitions are single-use.}
+          on_uncertain_completion: {verify_then_decide: Call status before deciding whether to retry.}
+          partial_effects_on_failure: {possible: A bounded packet may exist before its state claim is published.}
+          rollback_on_failure: {unavailable: Fail or abort the run.}
+      interaction: {mode: unattended}
+      helpers: []
+      outcomes:
+      - {id: completed, class: success, outputs: [result], effects: [scheduler-state], caller_action: Follow returned task IDs and status exactly.}
+      - {id: failed, class: error, outputs: [error], effects: [], caller_action: Stop certification and report the error.}
+      outputs:
+      - {id: result, audience: machine, cardinality: {minimum: 1, maximum: 1}, description: Compact counts status and claimed task handles., direct_io_ref: response, empty: Never empty., ordering: stable, pagination: {kind: none}, truncation: {kind: none}, type: {kind: string, sensitivity: derived-private}}
+      - {id: error, audience: human, cardinality: {minimum: 0, maximum: 1}, description: Scheduler failure., direct_io_ref: error, empty: Empty on success., ordering: stable, pagination: {kind: none}, truncation: {kind: none}, type: {kind: string, sensitivity: derived-private}}
+    process_binding:
+      kind: process
+      entry: Interface
+      patterns:
+      - allow_extra_positionals: true
+        allow_stdin: false
+        allowed_flags: [--capacity, --dag-file, --drift-file, --report-file, --reason]
+        flag_patterns: {--capacity: '^[0-9]+$', --dag-file: '^.+$', --drift-file: '^.+$', --report-file: '^.+$', --reason: '^.+$'}
+        min_positionals: 2
+    usage: 'OPERATION PREFIX [TASK_ID] [options]'

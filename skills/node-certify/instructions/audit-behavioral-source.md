@@ -1,5 +1,10 @@
 # Audit a Behavioral Source
 
+Audit only the assigned task from its scheduler input file. Do not recursively
+audit, schedule, or delegate dependencies. If required dependency evidence is
+missing, inconsistent, or cannot be evaluated, return `verdict: "abort"`. Do
+not modify or certify repository state.
+
 Audit one behavioral source after its required interface audits have completed.
 The source judgment covers the gateway, source-wide declarations, remainder
 content, direct source dependencies, and integration of its interfaces.
@@ -32,21 +37,16 @@ Establish that:
 - the source description and behavior agree with the combined interface and
   remainder evidence.
 
-Return `needs-context` when an interface result or the smallest necessary
-source evidence is absent. Reject when any interface rejected or the source
-composition is materially inaccurate.
+Return `abort` when an interface result or necessary source evidence is absent.
+Reject when any interface rejected or the source composition is materially
+inaccurate.
 
 ## Result
 
-Return exactly these sections:
-
-- `Subject`: canonical behavioral-source id and version.
-- `Verdict`: `pass`, `reject`, or `needs-context`.
-- `Interface results`: interface ids, versions, and verdicts consumed.
-- `Evidence`: source declarations, remainder content, behavior, changes, and
-  dependencies actually examined.
-- `Findings`: source-level mismatches or `none`.
-- `Requested context`: the smallest required expansion or `none`.
+Return exactly one `node-certify.semantic-audit-result/v1` JSON object and no
+surrounding prose. Use the assigned task ID; set `verdict` to `pass`, `reject`,
+or `abort`; list evidence strings and direct passing dependency results actually
+consumed; use an empty `findings` array only for `pass`.
 
 Do not sign, write certificate history, or claim that the parent module is
 certified.

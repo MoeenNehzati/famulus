@@ -34,10 +34,10 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
     Required options: []; positional arity: 0..unbounded; stdin: forbidden
 - `node-drift._rtx.interface.drift-status` — Read signed certificate currentness, exact structured drift causes, and the dependency-first stale worklist for exact or installed v6 modules without writing certification state.
   - Caller: `node-drift`
-  - Version: 3
+  - Version: 4
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
-    {"options": {"--all": true, "--json": true, "--repo-root": "ROOT", "--skill-root": "ROOT"}, "positionals": ["target..."], "stdin": null}
+    {"options": {"--all": true, "--dag-file": "PATH", "--json": true, "--repo-root": "ROOT", "--skill-root": "ROOT"}, "positionals": ["target..."], "stdin": null}
     Required options: []; positional arity: 0..unbounded; stdin: forbidden
 
 Instruction Interfaces:
@@ -71,10 +71,16 @@ JSON status is certification-state read-only. Human-readable status also saves
 a derived report under `_build/certificate-drift-<timestamp>.md`; that report
 has no certification authority. Hash output never writes a report.
 
+For one exact repository, JSON status may receive `--dag-file PATH`. It writes
+the complete neutral dependency DAG as
+`officina.certification-dependency-dag/v1` and adds `dag_file` plus the sorted
+`stale_vertices` projection to stdout. The DAG and projection describe drift;
+they contain no audit state and do not authorize certification.
+
 Report `certificate-current` only when every selected node has a valid signed
 certificate matching its current node hash, dependencies, certification basis,
 certifier functional identity, and expected checks. The signed `source_commit`
-is issuance provenance for restoring the audited snapshot; it is not required
+is issuance provenance for restoring the issued snapshot; it is not required
 to equal current `HEAD`. Otherwise report `certificate-stale` with a stale
 worklist that maps exact changed file, interface, or dependency causes to the
 affected facets and nodes. Manifest mismatches name added, removed, or changed

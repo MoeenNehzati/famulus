@@ -8,6 +8,7 @@ gateway:
   path: node-hash-policy.yaml
   language: YAML
 content:
+- certification-dependency-dag\.schema\.json
 - node-hash-policy\.schema\.json
 - node-hash-policy\.yaml
 dependencies: []

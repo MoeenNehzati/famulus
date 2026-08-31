@@ -13,6 +13,8 @@ authority:
 children: {}
 content:
 - _node_certifier\.py
+- _semantic_audit_scheduler\.py
+- schemas/semantic-audit-result\.schema\.json
 - tests/.*
 - __init__\.py
 description: Code module for the node-certify skill.
@@ -23,6 +25,12 @@ exports:
       allowed_callers:
       - node-certify
     source_interface: node-certify._rtx.source.rtx-certifier.interface.certify
+  node-certify._rtx.interface.semantic-audit-scheduler:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - node-certify
+    source_interface: node-certify._rtx.source.semantic-audit-scheduler.interface.schedule
 gateway:
   language: Python>=3.11
   path: __init__.py
@@ -31,9 +39,13 @@ namespace_exports: {}
 node_type: module
 schema_version: 6
 sources:
+  node-certify._rtx.source.semantic-audit-scheduler:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-semantic-audit-scheduler.yaml
   node-certify._rtx.source.rtx-certifier:
     blueprint:
       base: module-root
       path: blueprints/rtx-certifier.yaml
-version: 2
+version: 3
 maturity: stable

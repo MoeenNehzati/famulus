@@ -22,6 +22,8 @@ exports:
       - recurring
       - node-certify
       - node-certify._rtx
+      - node-drift
+      - node-drift._rtx
       - skill-maker
       - skill-maker._rtx
       - credentials

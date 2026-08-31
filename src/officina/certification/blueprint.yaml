@@ -3,12 +3,20 @@ authority:
 children: {}
 content:
 - __init__\.py
+- dependency_dag\.py
 - hashing\.py
 - records\.py
 - view\.py
 description: Canonical certification hashing, signed certificate records, and read-only
   certificate currentness views.
 exports:
+  certification.interface.dependency-dag:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - node-certify._rtx
+      - node-drift._rtx
+    source_interface: certification.source.dependency-dag.interface.python-api
   certification.interface.records:
     access:
       allow_all_modules: false
@@ -44,6 +52,10 @@ namespace_exports: {}
 node_type: module
 schema_version: 6
 sources:
+  certification.source.dependency-dag:
+    blueprint:
+      base: module-root
+      path: blueprints/dependency-dag.yaml
   certification.source.hashing:
     blueprint:
       base: module-root
@@ -56,5 +68,5 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/view.yaml
-version: 1
+version: 2
 maturity: stable
