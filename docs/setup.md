@@ -11,12 +11,10 @@ system.
 
 ## 1. Install the core system
 
-The core installation has two parts. The host plugin makes Famulus's skills
-visible to Claude Code or Codex. The assistant-tools installation then provides
-the runtime through which those skills perform machine operations.
-
-Famulus requires a plugin-capable Claude Code or Codex installation, Python
-3.11 or newer, and network access during the initial setup.
+Famulus uses the host plugin plus the exact environment reached by `python`.
+That command must resolve to Python 3.11 or newer with a functional
+`python -m pip`. Famulus does not install or alias Python, create an environment,
+bootstrap pip, use `uv`, or create a managed runtime.
 
 ### 1.1 Install the host plugin
 
@@ -44,25 +42,18 @@ codex plugin add famulus@nullkit --json
 Restart the host after installing the plugin so that it discovers the new
 skills.
 
-### 1.2 Install the assistant tools
+### 1.2 Prepare the selected Python
 
-The plugin supplies the skills, but those skills still need a local runtime and
-an authorized route for machine operations. Ask the assistant:
+Confirm that `python -m pip` can install packages into the selected environment.
+If the packaged `famulus` MCP server reports a missing core dependency, ask the
+host to use `setup-python-environment`. It validates that exact environment
+before repairing only the declared core packages; missing pip, an externally
+managed environment, or a non-writable target fails before package mutation.
 
-```text
-Install the assistant tools.
-```
-
-The `install-assistant-tools` skill installs the runtime and registers the
-dispatcher as an MCP server. The dispatcher is essential to Famulus. It
-resolves declared interfaces, checks whether one node may call another, and
-routes each permitted operation to its implementation. Without the dispatcher,
-skills cannot reliably perform the machine operations on which they depend.
-
-The [dispatcher reference](officina/dispatcher.md) explains its routing and
-authorization model. The more detailed
-[installation guide](officina/installation.md) covers installation contexts,
-updates, repair, diagnosis, and removal.
+The plugin declares one shared `famulus` MCP server. Executable skill
+interfaces use its generated JSON invocation projection; instruction interfaces
+are read and followed directly. The [dispatcher reference](officina/dispatcher.md)
+explains routing and authorization.
 
 ### 1.3 Setup is demand-driven
 
@@ -79,6 +70,11 @@ to the requested workflow.
 You therefore do not configure the whole system in advance. Setup follows
 actual use: a capability asks for its accounts, credentials, or platform
 integration only when a requested workflow reaches it.
+
+Persistent features remain independently owned: `install-launchers` configures
+interactive launchers, `recurring-tasks` configures recurring work,
+`llm-wakeup` configures due-session delivery, and `connect-google` configures
+Google services. Each installs only its own residual declared packages.
 
 ## 2. Connect personal-assistant services
 

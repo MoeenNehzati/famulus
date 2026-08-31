@@ -8,6 +8,7 @@ import json
 import subprocess
 import sys
 from datetime import datetime
+from pathlib import Path
 
 from . import DEFAULT_MESSAGE, WakeupError
 from .claude_codex_service import run_due, schedule
@@ -73,7 +74,35 @@ def _parser() -> argparse.ArgumentParser:
     monitor.set_defaults(handler=_monitor)
     doctor = commands.add_parser("doctor", help="inspect local wakeup capabilities")
     doctor.set_defaults(handler=_doctor)
+    for name, handler in (("setup", _setup), ("teardown", _teardown)):
+        integration = commands.add_parser(name, help=f"{name} feature-owned wakeup integration")
+        integration.add_argument("--bin-dir", type=Path, required=True)
+        integration.add_argument("--native-root", type=Path, required=True)
+        if name == "setup":
+            integration.add_argument("--canonical-python", type=Path, required=True)
+            integration.add_argument("--plugin-root", type=Path, required=True)
+        integration.set_defaults(handler=handler)
     return parser
+
+
+def _setup(args: argparse.Namespace) -> None:
+    from .linux_osx_windows import setup_integration
+
+    setup_integration(
+        python=args.canonical_python,
+        plugin_root=args.plugin_root,
+        bin_dir=args.bin_dir,
+        native_root=args.native_root,
+    )
+
+
+def _teardown(args: argparse.Namespace) -> None:
+    from .linux_osx_windows import teardown_integration
+
+    teardown_integration(
+        bin_dir=args.bin_dir,
+        native_root=args.native_root,
+    )
 
 
 def _print_scheduled(job: dict) -> None:

@@ -51,9 +51,16 @@ To install Famulus you need:
 
 - a plugin-capable Claude Code or Codex installation; there is no published
   minimum host version
-- Python 3.11 or newer to launch the workstation installer
-- network access during first setup so the installer can obtain its pinned
-  `uv`, managed CPython, and hash-locked Python packages
+- the exact command `python` resolving to Python 3.11 or newer, with a
+  functional `python -m pip` and permission to install the declared core
+  packages into that same environment
+
+Exposing `python` is a deliberate user prerequisite on Linux, macOS, and
+Windows. An existing writable virtual environment is suitable when it is the
+environment reached by that exact command. Famulus repairs only the declared
+core packages in that environment; it does not install or alias Python,
+bootstrap pip, create an environment, use `uv`, select `python3` or `py`, or
+create a managed runtime.
 
 ## Quick Start
 
@@ -86,32 +93,35 @@ codex plugin add famulus@nullkit --json
 
 Restart the host afterwards so it loads the newly installed plugin.
 
-### 2. Install the assistant tools
+### 2. Prepare the selected Python
 
-Installing the plugin makes the skills visible, but it does not create the local
-commands they depend on: `dispatcher`, `llm-wakeup`/`lw`, `invoke-skill`, the
-required `background_run` launcher, profile files, and `PATH` wiring.
+Confirm that `python` is Python 3.11 or newer and that `python -m pip` works
+and may install packages into that environment. If the packaged `famulus` MCP
+server reports that a core dependency is unavailable, ask the host to use
+`setup-python-environment`. It checks the exact selected environment before
+repairing only the declared core packages; a missing pip, an externally managed
+environment, or a non-writable target fails before package mutation.
 
-Ask your assistant:
+Executable skill interfaces are invoked through the shared `famulus` MCP
+server using their generated JSON invocation projection. Instruction interfaces
+are read and followed directly by the host agent.
 
-```text
-Install the assistant tools.
-```
+### 3. Configure selected features
 
-The `install-assistant-tools` skill walks you through the setup, confirms what
-it resolved before changing anything, then checks its own work and explains the
-optional Google and recurring-job steps without running them. Choose `standard`
-unless you are developing Famulus itself from a checkout. Open a new shell
-afterwards when the installer reports a search-path change.
+Optional commands and persistent integrations are independently configured by
+their feature owners: `install-launchers` for interactive agents,
+`recurring-tasks` for recurring work, `llm-wakeup` for due-session delivery,
+and `connect-google` for Google services. Select only the features you intend
+to use. Each feature installs only its own residual declared packages; core
+setup does not install keyring or Google-service packages, and selecting one
+Google service does not mutate another unselected service.
 
-Your installation does not depend on where you cloned or unpacked anything, so
-you can move or delete the original directory afterwards.
+Recurring first setup creates only its scheduler and unattended substrate. It
+does not enable email triage, daily planning, or wakeup delivery unless you
+explicitly select a preset or already have validated jobs. `llm-wakeup` alone
+owns the product-managed due-delivery registration.
 
-Later updates and repairs use this same workflow. Setup options, diagnosis,
-removal, and verification are covered in the
-[Installation Guide](docs/officina/installation.md).
-
-### 3. Choose a workflow
+### 4. Choose a workflow
 
 Start with the quickstart closest to what you want to do:
 
@@ -214,8 +224,7 @@ Famulus inspects the bibliography for structural problems and consistency issues
 ### Connect Google
 
 The calendar, mail, and cloud-list flows above need Google access. Connecting it
-grants Famulus broad OAuth scopes, and disconnect, server-side revocation,
-uninstall, and purge are not yet one command, so read the
+grants Famulus broad OAuth scopes, so read the
 [security and privacy boundary](docs/security-and-privacy.md) first.
 
 After installation, ask:
@@ -255,16 +264,17 @@ once you approve. We will fix it upstream.
 
 ## Agents and Launchers
 
-The installer can provide three main agent launchers:
+`install-launchers` can set up an explicitly selected subset of three main
+agent launchers:
 
 - `assistant` for day-to-day personal assistant work
 - `collab` for longer project sessions with continuity and handoff behavior
 - `coauthor` for writing-focused sessions
 
-It also installs `background_run`, a non-interactive launcher required by
-`invoke-skill` for explicitly enabled recurring jobs. It is not an ordinary
-interactive launcher. Scheduled invocations use host approval/sandbox bypass
-modes so they cannot pause for a person who is not present; review the
+It can also prepare non-interactive background support for explicitly enabled
+recurring jobs. It is not an ordinary interactive launcher. Scheduled
+invocations use host approval/sandbox bypass modes so they cannot pause for a
+person who is not present; review the
 [unattended execution boundary](docs/security-and-privacy.md#authorization-and-confirmation-boundaries)
 before enabling any recurring job.
 
@@ -288,38 +298,32 @@ claude plugin update famulus@nullkit
 codex plugin marketplace upgrade nullkit --json
 ```
 
-Then restart the host and ask your assistant to install the assistant tools
-again, so the managed runtime and local commands match the refreshed package.
+Then restart the host. In this first release, a plugin cache or path update can
+require rerunning each selected feature's setup so it refreshes its captured
+plugin implementation path. There is no generic Famulus updater.
 
-## Uninstall
+## Removing an old installation
 
-Removing Famulus takes three steps, and the order matters.
+Famulus has no general uninstaller or managed runtime. Before removing a
+selected optional integration, use that feature's own teardown or disable route;
+for example, disable recurring jobs before removing their scheduler support.
+Removing a plugin does not revoke Google access or delete service data.
 
-1. **Disable recurring jobs first.** Ask your assistant to disable this
-   installation's recurring jobs and remove their scheduler registration.
-   Removal reaches your operating system's scheduler, so it has to happen while
-   the runtime that knows how to reach it is still present. Uninstall refuses
-   to proceed if registrations remain.
-2. **Remove the installation.** Ask your assistant to run the uninstaller while
-   the source is still available. This removes installer-owned files and leaves
-   your credentials, worker content, and recurring history in place.
-3. **Revoke Google access yourself.** Uninstalling does not revoke anything.
-   Remove Famulus from your Google account's third-party access settings and
-   delete the local credential files. Famulus does not do this for you.
-
-Exact commands, the difference between uninstall and purge, and the separate
-credential-revocation steps are in the
-[installation lifecycle](docs/officina/installation.md#uninstall-versus-purge).
+Migration of a pre-plugin installation is out of scope. If you deliberately
+clean one up, inspect it manually and non-destructively first. Historical
+artifacts can include `dispatcher`, `invoke-skill`, and wakeup launchers,
+`famulus-env`, a managed runtime or `current.json`, and an old PATH block. This
+is not a current setup route or an automated cleanup procedure. Revoke Google
+access separately through your Google account.
 
 ## Learn More
 
 - [Skill Index](docs/skills.md) — the complete list of available skills
 - [Security and Privacy](docs/security-and-privacy.md) — permissions, credentials, model data, destructive actions, and removal
-- [Installation Guide](docs/officina/installation.md) — setup, diagnosis, repair, and removal
 - [Launchers](docs/launchers.md) — agent launchers, backend selection, and the `tw` tmux wrapper
-- [Dependency and Bootstrap Audit](docs/dependency-and-bootstrap-audit.md) — release dependency, bootstrap, and vendored-asset audit
+- [Setup](docs/setup.md) — selected-Python requirements, shared MCP routing, and demand-driven feature setup
 - [Assistant Interaction](docs/domains/assistant-interaction.md) — reasoning modes, session continuity, handoffs, and wakeups
-- [Assistant Operations](docs/domains/assistant-operations.md) — storage, authentication, automation, installation, and repair utilities
+- [Assistant Operations](docs/domains/assistant-operations.md) — storage, authentication, automation, and repair utilities
 
 ## Support
 

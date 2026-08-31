@@ -55,22 +55,16 @@ _CHECK_ROOTS = ["skills", "references", "agents", "CLAUDE.md", "src/officina"]
 _EXCLUDED_PARTS = {"tests", "validators", ".git", ".claude-plugin", ".codex-plugin"}
 _EXCLUDED_PATHS = {
     Path("references/node-standards"),
-    Path("skills/install-assistant-tools"),
+    Path("skills/install-launchers"),
     Path("skills/latex-workshop"),
     Path("skills/recurring-tasks"),
 }
 _PLATFORM_METADATA_TOOLING_PATHS = {
     Path("skills/skill-maker/_rtx/_blueprint_syncer.py"),
-    Path("src/officina/install/runtime_lock.py"),
 }
 _BINDING_CROSS_HOST_ORCHESTRATION_PATHS = {
     Path("skills/relocate-nodes/_rtx/_relocation_engine.py"),
-    Path("src/officina/install/assistant_access.py"),
-    Path("src/officina/install/context.py"),
-    Path("src/officina/install/development_activation.py"),
-    Path("src/officina/install/doctor.py"),
-    Path("src/officina/install/runtime_pointer.py"),
-    Path("src/officina/install/resolvers/launch.py"),
+    Path("skills/dev-activation/_rtx/_development_activation.py"),
     Path("src/officina/launchers/agent.py"),
     Path("src/officina/recurring/runtime.py"),
     Path("src/officina/recurring/healthcheck.py"),
@@ -89,11 +83,7 @@ _HOST_PATTERN = re.compile(r"(?i:(\.claude|claude|\.codex|codex))")
 _PLATFORM_METADATA_LINE_RE = re.compile(
     r"^\s*(?:#\s*)?[\"']?(?:linux|macos|windows)[\"']?\s*:\s*(?:true|false|\{)"
 )
-_PEP508_PLATFORM_MARKER_LINE_RE = re.compile(
-    r";.*\bsys_platform\s*==\s*['\"](?:linux|darwin|win32)['\"]"
-)
 _METADATA_PLATFORM_KEYS = "platform-keys"
-_METADATA_PEP508_MARKER = "pep508-marker"
 _METADATA_ALL_NON_HOST_LINES = "all-non-host-lines"
 _UNCLASSIFIED_METADATA = object()
 REQUIRES_BLUEPRINT_GRAPH = True
@@ -127,8 +117,6 @@ def _platform_metadata_exemption_kind(rel_path: Path) -> str | None:
         return _METADATA_PLATFORM_KEYS
     if rel_path == Path("references/blueprint-schema/runtime_dependencies.json"):
         return _METADATA_PLATFORM_KEYS
-    if rel_path == Path("references/runtime/requirements-core.lock"):
-        return _METADATA_PEP508_MARKER
     if rel_path in _PLATFORM_METADATA_TOOLING_PATHS:
         return _METADATA_ALL_NON_HOST_LINES
     return None
@@ -173,8 +161,6 @@ def _is_allowed_platform_metadata_line(
         return False
     if exemption_kind == _METADATA_PLATFORM_KEYS:
         return _PLATFORM_METADATA_LINE_RE.search(line) is not None
-    if exemption_kind == _METADATA_PEP508_MARKER:
-        return _PEP508_PLATFORM_MARKER_LINE_RE.search(line) is not None
     return exemption_kind == _METADATA_ALL_NON_HOST_LINES
 
 

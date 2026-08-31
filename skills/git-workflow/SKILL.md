@@ -23,7 +23,7 @@ Public Interfaces:
 
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `git-workflow.interface.default` — Check branch and ownership boundaries first, then perform only explicitly authorized and exactly scoped Git mutations.
 <!-- END BLUEPRINT INTERFACES -->
 ## Branch safety (always check first)

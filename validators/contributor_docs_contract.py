@@ -9,8 +9,9 @@ from docs_tooling.render import render_doc_with_updated_blocks
 
 _README_REQUIRED = (
     "blueprint.yaml",
-    "skill-maker._rtx.interface.sync-blueprints --check",
-    "dispatcher --caller-skill <caller> <callee>.interface.<name> [args...]",
+    '"interface":"skill-maker._rtx.interface.sync-blueprints","version":1',
+    '"--check":true',
+    '"caller":"<caller>","interface":"<callee>.interface.<name>"',
     "repo_checks.py",
     ".githooks/pre-commit",
     "../officina/blueprints.md",

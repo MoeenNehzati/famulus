@@ -39,7 +39,7 @@ def _registration_failure(schedule: ManagedSchedule, job: dict[str, object]) -> 
     name = str(job["name"])
     root = schedule.native_registration_root
     if sys.platform.startswith("linux"):
-        service, timer = linux_names(name, schedule.installation_id)
+        service, timer = linux_names(name)
         expected = {root / service: render_linux_service(schedule, job), root / timer: render_linux_timer(schedule, job)}
         for path, content in expected.items():
             try:
@@ -56,16 +56,16 @@ def _registration_failure(schedule: ManagedSchedule, job: dict[str, object]) -> 
             stale = True
         if stale:
             return f"{name}: managed registration is missing or stale ({path})"
-        active = subprocess.run(["launchctl", "print", f"gui/{os.getuid()}/{launchd_label(name, schedule.installation_id)}"], capture_output=True).returncode == 0
+        active = subprocess.run(["launchctl", "print", f"gui/{os.getuid()}/{launchd_label(name)}"], capture_output=True).returncode == 0
     else:
-        path = root / windows_wrapper_name(name, schedule.installation_id)
+        path = root / windows_wrapper_name(name)
         try:
             stale = path.read_text(encoding="utf-8") != render_windows_wrapper(schedule, job).replace("\r\n", "\n")
         except OSError:
             stale = True
         if stale:
             return f"{name}: managed wrapper is missing or stale ({path})"
-        active = subprocess.run(["schtasks", "/Query", "/TN", windows_task_name(name, schedule.installation_id)], capture_output=True).returncode == 0
+        active = subprocess.run(["schtasks", "/Query", "/TN", windows_task_name(name)], capture_output=True).returncode == 0
     return None if active else f"{name}: registration is not active"
 
 
@@ -125,7 +125,7 @@ def run(schedule: ManagedSchedule, *, cron: bool) -> int:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--runtime-root", type=Path, required=True)
+    parser.add_argument("--plugin-root", type=Path, required=True)
     parser.add_argument("--descriptor", type=Path, required=True)
     parser.add_argument("--log-root", type=Path, required=True)
     parser.add_argument("--cron", action="store_true")
@@ -135,7 +135,8 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        schedule = load_managed_schedule(runtime_root=args.runtime_root, descriptor_path=args.descriptor, log_root=args.log_root)
+        schedule = load_managed_schedule(descriptor_path=args.descriptor, log_root=args.log_root)
+        if args.plugin_root.resolve() != schedule.plugin_root: raise ValueError("plugin root does not match descriptor")
         return run(schedule, cron=args.cron)
     except Exception as exc:
         print(f"recurring healthcheck: {exc}", file=sys.stderr)

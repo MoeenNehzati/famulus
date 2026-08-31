@@ -5,12 +5,9 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "famulus-officina"
 version = "0.0.0"
-description = "Blueprint-authorized direct dispatcher and installation runtime"
+description = "Shared Famulus MCP and blueprint-authorized Dispatcher implementation"
 requires-python = ">=3.11"
-dependencies = ["PyYAML>=6", "jsonschema>=4,<5"]
-
-[project.scripts]
-dispatcher = "officina.dispatcher.cli:main"
+dependencies = ["PyYAML>=6", "jsonschema>=4,<5", "mcp>=1,<2"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

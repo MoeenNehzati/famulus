@@ -1,0 +1,56 @@
+authority:
+  owns_filesystem: []
+children:
+  _rtx: {}
+content:
+- (?:SKILL\.md|instructions/claude\-codex\-routes\.md)
+description: Activates one checkout for isolated assistant or editor development sessions.
+discovery:
+  mechanism: skill
+  catalog:
+    domain: software-development
+    topics:
+    - repository-workflow
+    - assistant-assurance
+    visibility: listed
+  activated_by:
+  - user-request
+  - skill-workflow
+  persistent_modifier: false
+exports:
+  dev-activation.interface.default:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: dev-activation.source.gateway.interface.default
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: dev-activation
+installation_tier: core
+maturity: stable
+namespace_exports:
+  _rtx:
+    version: 1
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - dev-activation
+    surface:
+      only:
+        dev-activation._rtx.interface.activation: 1
+    interface_access:
+      dev-activation._rtx.interface.activation:
+        allow_all_modules: false
+        allowed_callers:
+        - dev-activation
+node_type: module
+personal_preference:
+  applies: false
+schema_version: 6
+sources:
+  dev-activation.source.gateway:
+    blueprint:
+      base: module-root
+      path: blueprints/gateway.yaml
+version: 1

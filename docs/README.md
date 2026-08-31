@@ -20,14 +20,13 @@ Officina is and routes to everything below.
 - [Docstring Contract](./officina/docstring.md)
 - [Compass and Rutter](./officina/compass-rutter.md)
 - [Visualization](./officina/visualization.md)
-- [Installation](./officina/installation.md)
 - [Maintainer Scaffolding](./officina/scaffolding/README.md)
 - [Utility Map](./officina/utility-map.md)
 
 ## Famulus
 
+- [Setup](./setup.md)
 - [Security and Privacy](./security-and-privacy.md)
-- [Dependency and Bootstrap Audit](./dependency-and-bootstrap-audit.md)
 - [Launchers](./launchers.md)
 - [Repository Testing](./testing.md)
 - [Continuous Integration Handbook](./ci-handbook.md)

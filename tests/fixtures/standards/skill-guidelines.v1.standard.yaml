@@ -357,7 +357,7 @@ standards:
 
       _rtx/_mail_transport.py
 
-      _rtx/_install_launcher/_windows_launcher.py
+      _rtx/_platform_adapter/_windows_adapter.py
 
       ```'
   - kind: rule

@@ -373,6 +373,13 @@ def v6_repository(
 
 def _v6_certifier_repository(tmp_path: Path) -> tuple[Path, Path]:
     root, policy = _v6_repository(tmp_path)
+    _write_module(root, "setup-python-environment", schema_version=6)
+    setup_module_path = root / "skills" / "setup-python-environment" / "blueprint.yaml"
+    setup_module = yaml.safe_load(setup_module_path.read_text(encoding="utf-8"))
+    setup_module["exports"][
+        "setup-python-environment.interface.repair-selected-packages"
+    ] = setup_module["exports"].pop("setup-python-environment.interface.run")
+    _write_yaml(setup_module_path, setup_module)
     certifier_root = root / "skills" / "node-certify"
     certifier_fixture_paths = (
         "blueprint.yaml",

@@ -21,6 +21,27 @@ Uses Interfaces:
 
 Public Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
+<!-- BEGIN BLUEPRINT INTERFACES -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
+
+Executable Interfaces:
+
+Call `famulus.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+- `node-certify._rtx.interface.certify` — Certify exact v6 module closures by skipping current nodes and appending signed certificate histories for stale nodes at an explicit reviewed repository commit.
+  - Caller: `node-certify`
+  - Version: 2
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--allow-non-atomic": true, "--json": true, "--reviewed-commit": "COMMIT", "--reviewed-repository": "ROOT"}, "positionals": ["certify", "target..."], "stdin": null}
+    Required options: []; positional arity: 1..unbounded; stdin: forbidden
+
+<!-- END BLUEPRINT INTERFACES -->
+Before drift inspection, semantic audit, or certification, follow
+`setup-python-environment.interface.repair-selected-packages` for this owner's exact
+declaration `["cryptography", "keyring", "pyflakes", "pytest", "pytest-xdist"]`.
+Complete the full Task 2 fingerprint procedure; on any failure, stop before invoking a
+drift, audit, or certify interface.
+
 ## Certification algorithm
 
 Resolve the requested target and hold its reviewed repository and commit

@@ -26,7 +26,6 @@ SUPPORTED_TASKS = {
     "native:scheduler",
     "validators",
     "tests:shared",
-    "tests:install",
     "tests:browser",
     "tests:docstrings",
     "tests:portability",

@@ -23,7 +23,7 @@ Public Interfaces:
 
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `semantic-integration.interface.default` — Recreate every accepted effect during a complicated, high-divergence integration against the first branch's authoritative architecture, then record source ancestry through a mandatory vacuous merge.
 <!-- END BLUEPRINT INTERFACES -->
 # Semantic integration

@@ -22,14 +22,37 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
+Executable Interfaces:
+
+Call `famulus.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+- `bib-audit._rtx.interface.scripts-bib-similarity` — Detect duplicate and version-pair candidates in a .bib file by scoring all entry pairs.
+  - Caller: `bib-audit`
+  - Version: 1
+  - Alternative: `owner`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--threshold": "0.3"}, "positionals": ["file.bib"], "stdin": null}
+    Required options: []; positional arity: 1..1; stdin: forbidden
+- `bib-audit._rtx.interface.scripts-bib-validate-bibtex` — Validate a BibTeX/natbib .bib file for syntax errors and missing required fields (not for biblatex projects).
+  - Caller: `bib-audit`
+  - Version: 1
+  - Alternative: `owner`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {}, "positionals": ["file.bib"], "stdin": null}
+    Required options: []; positional arity: 1..1; stdin: forbidden
+
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `bib-audit.interface.default` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->
 # Bibliography Audit
 
 Conservative bibliography auditor. Default behavior: produce a structured report. Apply transformations only on explicit user approval.
+
+Before validating or comparing bibliography entries, follow
+`setup-python-environment.interface.repair-selected-packages` for this owner's exact
+declaration `["bibtexparser"]`. Complete the full Task 2 fingerprint procedure; on any
+failure, stop before invoking either bibliography interface.
 
 ## Invocation
 

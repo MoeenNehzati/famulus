@@ -23,7 +23,7 @@ Public Interfaces:
 
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `loose-mode.interface.default` — Explore a request breadth-first, label uncertainty, and present concise strategic structure without silently leaving loose mode.
 <!-- END BLUEPRINT INTERFACES -->
 ## Core principle

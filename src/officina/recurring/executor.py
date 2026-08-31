@@ -68,8 +68,6 @@ def _exact_argv(
         backend = selected_backend
         if backend not in schedule.backend_executables:
             raise ValueError("ASSISTANT_DEFAULT must select claude or codex")
-        if schedule.launcher_resources is None:
-            raise ValueError("active runtime pointer has no launcher resources")
         skill = argv[1]
         arguments = (
             ["--permission-mode", "bypassPermissions", "-p", f"/{skill}"]
@@ -78,14 +76,12 @@ def _exact_argv(
         )
         built = build_agent_command(
             agent="background_run", backend=backend,
-            resources=schedule.launcher_resources,
+            resources=schedule.plugin_root,
             claude_home=Path(schedule.environment["CLAUDE_CONFIG_DIR"]),
             args=[*arguments, *argv[2:]],
         )
         return [str(schedule.backend_executables[backend]), *built[1:]]
-    if command_name in {"launch.py", "launch.py.exe"}:
-        return [sys.executable, str(schedule.runtime_resolver), *argv[1:]]
-    raise ValueError("job executable must select claude, codex, invoke-skill, or the fixed resolver")
+    raise ValueError("job executable must select claude, codex, or invoke-skill")
 
 
 def run_job(*, schedule: ManagedSchedule, job_name: str) -> int:
@@ -135,7 +131,7 @@ def run_job(*, schedule: ManagedSchedule, job_name: str) -> int:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--runtime-root", type=Path, required=True)
+    parser.add_argument("--plugin-root", type=Path, required=True)
     parser.add_argument("--descriptor", type=Path, required=True)
     parser.add_argument("--job", required=True)
     parser.add_argument("--log-root", type=Path, required=True)
@@ -145,7 +141,8 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        schedule = load_managed_schedule(runtime_root=args.runtime_root, descriptor_path=args.descriptor, log_root=args.log_root)
+        schedule = load_managed_schedule(descriptor_path=args.descriptor, log_root=args.log_root)
+        if args.plugin_root.resolve() != schedule.plugin_root: raise ValueError("plugin root does not match descriptor")
         return run_job(schedule=schedule, job_name=args.job)
     except Exception as exc:
         print(f"recurring executor: {exc}", file=sys.stderr)

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -10,44 +9,13 @@ from pathlib import Path
 import pytest
 
 from officina.common.famulus_paths import resolve_famulus_paths
-from officina.install.context import InstallationContext, resolve_installation_context
-from officina.install.development_activation import build_interactive_environment
-
+from officina.launchers import agent as agent_module
 from officina.launchers.agent import (
     LauncherConfigurationError,
     ensure_launcher_configuration,
     load_launcher_configuration,
     select_backend,
 )
-from officina.launchers import agent as agent_module
-
-
-def test_launcher_module_starts_in_a_fresh_interpreter(tmp_path: Path) -> None:
-    """Catch package-level import cycles before a generated launcher delegates."""
-    repo_root = Path(__file__).resolve().parents[1]
-    environ = os.environ.copy()
-    environ["PYTHONPATH"] = str(repo_root / "src")
-
-    result = subprocess.run(
-        [sys.executable, "-m", "officina.launchers.agent", "--help"],
-        cwd=tmp_path,
-        env=environ,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="strict",
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stderr
-    assert "RuntimeWarning" not in result.stderr
-
-
-def test_launcher_packages_preserve_lazy_compatibility_exports() -> None:
-    from officina import install, launchers
-
-    assert install.diagnose_installation.__module__ == "officina.install.doctor"
-    assert launchers.build_agent_command.__module__ == "officina.launchers.agent"
 
 
 class RecordingManifest:
@@ -58,236 +26,14 @@ class RecordingManifest:
         self.entries.append((kind, fields))
 
 
-def _isolated_standard_environment(home: Path) -> dict[str, str]:
-    environ = {"HOME": str(home)}
-    if agent_module.sys.platform == "win32":
-        environ.update(
-            {
-                "USERPROFILE": str(home),
-                "LOCALAPPDATA": str(home / "AppData" / "Local"),
-                "APPDATA": str(home / "AppData" / "Roaming"),
-            }
-        )
-    return environ
-
-
-def _write_active_standard_launcher(tmp_path: Path) -> tuple[InstallationContext, Path]:
-    source = Path(__file__).resolve().parents[1]
-    context = InstallationContext(
-        mode="standard",
-        source_root=source,
-        development_root=None,
-        paths=resolve_famulus_paths(
-            platform=agent_module.sys.platform,
-            home=tmp_path,
-            environ=_isolated_standard_environment(tmp_path),
-        ),
-        selected_home=tmp_path,
-        codex_home=tmp_path / ".codex",
-        claude_home=tmp_path / ".claude",
-        installation_id="standard",
-    )
-    release = context.paths.releases_root / "release-a"
-    python_bin = release / "venv" / "bin" / "python"
-    python_bin.parent.mkdir(parents=True)
-    python_bin.write_text("python\n", encoding="utf-8")
-    resources = release / "launcher-resources"
-    (resources / "agents").mkdir(parents=True)
-    (resources / "profiles").mkdir()
-    for name in ("assistant", "collab", "coauthor", "background_run"):
-        (resources / "agents" / f"{name}.md").write_text(
-            f"---\ndescription: {name}\n---\n{name} prompt\n", encoding="utf-8"
-        )
-    (resources / "profiles" / "background_run.config.toml").write_text(
-        "approval_policy = \"never\"\n", encoding="utf-8"
-    )
-    (resources / "profiles" / "background_run_claude_setting.json").write_text(
-        "{}\n", encoding="utf-8"
-    )
-    record = release / "installation-context.json"
-    record.write_text(
-        json.dumps(
-            {
-                "schema_version": 2,
-                "release_id": release.name,
-                "mode": "standard",
-                "installation_id": "standard",
-                "source_root": str(source),
-                "development_root": None,
-                "selected_home": str(context.selected_home),
-                "codex_home": str(context.codex_home),
-                "claude_home": str(context.claude_home),
-            }
-        ),
-        encoding="utf-8",
-    )
-    context.paths.current_pointer.parent.mkdir(parents=True, exist_ok=True)
-    context.paths.current_pointer.write_text(
-        json.dumps(
-            {
-                "schema_version": 3,
-                "release_id": release.name,
-                "runtime_source": str(release),
-                "python_bin": str(python_bin),
-                "repository_config": str(source / "officina.toml"),
-                "launcher_resources": str(resources),
-                "installation_context": str(record),
-            }
-        ),
-        encoding="utf-8",
-    )
-    context.paths.config_root.mkdir(parents=True, exist_ok=True)
-    (context.paths.config_root / "launchers.json").write_text(
-        '{"schema_version": 1, "default_backend": "codex"}\n', encoding="utf-8"
-    )
-    return context, resources
-
-
-def test_managed_launch_environment_removes_legacy_state_overrides() -> None:
-    cleaned = agent_module._managed_launch_environment(
-        {
-            "ASSISTANT_LOGS": "/hostile/logs",
-            "EMAIL_TRIAGE_STATE_DIR": "/hostile/triage",
-            "LIST_MANAGER_CLOUD_LOCK_DIR": "/hostile/locks",
-            "LLM_WAKEUP_HOME": "/hostile/wakeup",
-            "HOME": "/selected/home",
-        }
-    )
-
-    assert cleaned == {"HOME": "/selected/home"}
-
-
-def test_fresh_launcher_accepts_active_generation_interpreter_trust(
-    tmp_path: Path,
-) -> None:
-    """Catch launchers that read the retired fixed resolver trust sidecar."""
-    context, _resources = _write_active_standard_launcher(tmp_path)
-    pointer = json.loads(context.paths.current_pointer.read_text(encoding="utf-8"))
-    python_bin = Path(pointer["python_bin"])
-    python_bin.unlink()
-    python_root = tmp_path / "uv-python"
-    external_python = python_root / "bin" / "python3"
-    external_python.parent.mkdir(parents=True)
-    external_python.write_text("python\n", encoding="utf-8")
-    python_bin.symlink_to(external_python)
-
-    generation = "a" * 64
-    generation_root = (
-        context.paths.runtime_root
-        / "bootstrap"
-        / "resolvers"
-        / "generations"
-        / generation
-    )
-    generation_root.mkdir(parents=True)
-    (generation_root / "launch.py").write_text("# resolver\n", encoding="utf-8")
-    (generation_root / "trusted-roots.json").write_text(
-        json.dumps([str(python_root)]), encoding="utf-8"
-    )
-    fixed_root = context.paths.runtime_root / "bootstrap" / "resolvers" / "v1"
-    fixed_root.mkdir(parents=True)
-    (fixed_root / "active.json").write_text(
-        json.dumps({"schema_version": 1, "generation": generation}),
-        encoding="utf-8",
-    )
-
-    fake_bin = tmp_path / "fake-bin"
-    fake_bin.mkdir()
-    fake_codex = fake_bin / ("codex.exe" if sys.platform == "win32" else "codex")
-    shutil.copy2(sys.executable, fake_codex)
+def test_launcher_module_imports_in_a_fresh_interpreter(tmp_path: Path) -> None:
+    """Catch a stale import of the deleted install package."""
     repo_root = Path(__file__).resolve().parents[1]
     environ = os.environ.copy()
-    for name in (
-        "CODEX_HOME",
-        "CLAUDE_CONFIG_DIR",
-        "CLAUDE_HOME",
-        "XDG_DATA_HOME",
-        "XDG_CONFIG_HOME",
-        "XDG_STATE_HOME",
-        "XDG_CACHE_HOME",
-    ):
-        environ.pop(name, None)
-    environ.update(_isolated_standard_environment(tmp_path))
-    environ.update(
-        {
-            "PATH": os.pathsep.join((str(fake_bin), environ.get("PATH", ""))),
-            "PYTHONPATH": str(repo_root / "src"),
-        }
-    )
-
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "officina.launchers.agent",
-            "--runtime-root",
-            str(context.paths.runtime_root),
-            "--agent",
-            "assistant",
-            "--codex",
-            "--version",
-        ],
-        cwd=tmp_path,
-        env=environ,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="strict",
-        check=False,
-    )
-
-    assert "RuntimePointerError" not in result.stderr
-    assert "model_instructions_file" in result.stderr
-
-
-def test_fresh_launcher_rejects_relative_interpreter_trust(tmp_path: Path) -> None:
-    context, _resources = _write_active_standard_launcher(tmp_path)
-    generation = "b" * 64
-    generation_root = (
-        context.paths.runtime_root
-        / "bootstrap"
-        / "resolvers"
-        / "generations"
-        / generation
-    )
-    generation_root.mkdir(parents=True)
-    (generation_root / "launch.py").write_text("# resolver\n", encoding="utf-8")
-    (generation_root / "trusted-roots.json").write_text(
-        json.dumps(["relative-root"]), encoding="utf-8"
-    )
-    fixed_root = context.paths.runtime_root / "bootstrap" / "resolvers" / "v1"
-    fixed_root.mkdir(parents=True)
-    (fixed_root / "active.json").write_text(
-        json.dumps({"schema_version": 1, "generation": generation}),
-        encoding="utf-8",
-    )
-    repo_root = Path(__file__).resolve().parents[1]
-    environ = os.environ.copy()
-    for name in (
-        "CODEX_HOME",
-        "CLAUDE_CONFIG_DIR",
-        "CLAUDE_HOME",
-        "XDG_DATA_HOME",
-        "XDG_CONFIG_HOME",
-        "XDG_STATE_HOME",
-        "XDG_CACHE_HOME",
-    ):
-        environ.pop(name, None)
-    environ.update(_isolated_standard_environment(tmp_path))
     environ["PYTHONPATH"] = str(repo_root / "src")
 
     result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "officina.launchers.agent",
-            "--runtime-root",
-            str(context.paths.runtime_root),
-            "--agent",
-            "assistant",
-            "--codex",
-            "--version",
-        ],
+        [sys.executable, "-c", "import officina.launchers.agent"],
         cwd=tmp_path,
         env=environ,
         capture_output=True,
@@ -297,103 +43,27 @@ def test_fresh_launcher_rejects_relative_interpreter_trust(tmp_path: Path) -> No
         check=False,
     )
 
-    assert result.returncode != 0
-    assert "resolver trusted roots must be absolute path strings" in result.stderr
+    assert result.returncode == 0, result.stderr
 
 
-def _write_active_development_launcher(
-    tmp_path: Path,
-) -> tuple[InstallationContext, Path, Path]:
-    checkout = tmp_path / "live checkout ü"
-    checkout.mkdir()
-    (checkout / "officina.toml").write_text(
-        'schema_version = 1\n[modules]\nroots = ["skills"]\n', encoding="utf-8"
-    )
-    (checkout / "skills").mkdir()
-    install_id = "dev-" + "a" * 32
-    (checkout / ".famulus").mkdir()
-    (checkout / ".famulus" / "install-id").write_text(install_id + "\n", encoding="utf-8")
-    host_home = tmp_path / "host home"
-    host_home.mkdir()
-    context = resolve_installation_context(
-        mode="development",
-        source_root=checkout,
-        development_root=checkout,
-        platform=agent_module.sys.platform,
-        home=host_home,
-        environ={"HOME": str(host_home)},
-        installation_id=install_id,
-    )
-    release = context.paths.releases_root / "release-dev"
-    python_bin = release / "venv" / "bin" / "python"
-    python_bin.parent.mkdir(parents=True)
-    python_bin.write_text("python\n", encoding="utf-8")
-    (checkout / "agents").mkdir()
-    (checkout / "profiles").mkdir()
-    for name in ("assistant", "collab", "coauthor", "background_run"):
-        (checkout / "agents" / f"{name}.md").write_text(
-            f"---\ndescription: {name}\n---\n{name} prompt\n", encoding="utf-8"
-        )
-        (checkout / "profiles" / f"{name}_claude_setting.json").write_text(
-            "{}\n", encoding="utf-8"
-        )
-    (checkout / "profiles" / "background_run.config.toml").write_text(
-        "approval_policy = \"never\"\n", encoding="utf-8"
-    )
-    record = release / "installation-context.json"
-    record.write_text(
-        json.dumps(
-            {
-                "schema_version": 2,
-                "release_id": release.name,
-                "mode": "development",
-                "installation_id": install_id,
-                "source_root": str(checkout),
-                "development_root": str(checkout),
-                "selected_home": str(context.selected_home),
-                "codex_home": str(context.codex_home),
-                "claude_home": str(context.claude_home),
-            }
-        ),
-        encoding="utf-8",
-    )
-    context.paths.current_pointer.parent.mkdir(parents=True, exist_ok=True)
-    context.paths.current_pointer.write_text(
-        json.dumps(
-            {
-                "schema_version": 3,
-                "release_id": release.name,
-                "runtime_source": str(release),
-                "python_bin": str(python_bin),
-                "repository_config": str(checkout / "officina.toml"),
-                "launcher_resources": str(checkout),
-                "installation_context": str(record),
-            }
-        ),
-        encoding="utf-8",
-    )
-    context.paths.config_root.mkdir(parents=True, exist_ok=True)
-    (context.paths.config_root / "launchers.json").write_text(
-        '{"schema_version": 1, "default_backend": "claude"}\n', encoding="utf-8"
-    )
-    return context, checkout, host_home
+def test_launcher_package_preserves_live_lazy_export() -> None:
+    from officina import launchers
+
+    assert launchers.build_agent_command.__module__ == "officina.launchers.agent"
 
 
 def test_launcher_configuration_is_created_atomically_with_manifest_identity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     replacements: list[Path] = []
-    from officina.launchers import agent
-
-    real_replace = agent.atomic_replace_bytes
+    real_replace = agent_module.atomic_replace_bytes
 
     def recording_replace(path: Path, *args: object, **kwargs: object) -> None:
         replacements.append(path)
         real_replace(path, *args, **kwargs)
 
-    monkeypatch.setattr(agent, "atomic_replace_bytes", recording_replace)
+    monkeypatch.setattr(agent_module, "atomic_replace_bytes", recording_replace)
     manifest = RecordingManifest()
-
     configured = ensure_launcher_configuration(
         config_root=tmp_path, default_backend="codex", manifest=manifest
     )
@@ -476,7 +146,7 @@ def test_process_local_backend_override_wins_without_mutating_configuration(
     assert load_launcher_configuration(config_root=tmp_path).default_backend == "claude"
 
 
-def test_agent_specific_process_override_precedes_assistant_override(tmp_path: Path) -> None:
+def test_agent_specific_override_precedes_assistant_override(tmp_path: Path) -> None:
     configured = ensure_launcher_configuration(
         config_root=tmp_path, default_backend="claude"
     )
@@ -488,140 +158,60 @@ def test_agent_specific_process_override_precedes_assistant_override(tmp_path: P
     ) == "claude"
 
 
-def test_production_agent_launches_use_active_context_and_durable_backend_without_legacy_selectors(
+def test_selected_plugin_launch_preserves_spaced_argument_and_drops_state_overrides(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """ASSISTANT_DEFAULT and agent-specific defaults are process overrides only;
-    absent overrides select launchers.json, never cwd, AI, or FAMULUS_REPO_ROOT.
-    """
-    context, resources = _write_active_standard_launcher(tmp_path)
-    unrelated = tmp_path / "unrelated cwd"
-    unrelated.mkdir()
-    monkeypatch.chdir(unrelated)
-    for name in (
-        "AI",
-        "FAMULUS_REPO_ROOT",
-        "ASSISTANT_DEFAULT",
-        "COLLAB_DEFAULT",
-        "COAUTHOR_DEFAULT",
-        "BACKGROUND_RUN_DEFAULT",
-        "CODEX_HOME",
-        "CLAUDE_CONFIG_DIR",
-    ):
-        monkeypatch.delenv(name, raising=False)
-    for name, value in _isolated_standard_environment(tmp_path).items():
-        monkeypatch.setenv(name, value)
+    """Catch pointer fallback or argv splitting in the Task 8 launcher route."""
+    plugin_root = Path(agent_module.__file__).resolve().parents[3]
+    home = tmp_path / "home with spaces"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("ASSISTANT_LOGS", str(tmp_path / "foreign logs"))
+    paths = resolve_famulus_paths(
+        platform=agent_module.sys.platform,
+        home=home,
+        environ=os.environ,
+    )
+    ensure_launcher_configuration(
+        config_root=paths.config_root,
+        default_backend="codex",
+    )
     launched: list[list[str]] = []
-    monkeypatch.setattr(agent_module, "_launch_command", lambda command: launched.append(command) or 0)
+    monkeypatch.setattr(
+        agent_module,
+        "_launch_command",
+        lambda command: launched.append(command) or 0,
+    )
 
-    for name in ("assistant", "collab", "coauthor", "background_run"):
-        assert agent_module.main(
-            ["--runtime-root", str(context.paths.runtime_root), "--agent", name, "--local"]
-        ) == 0
+    assert agent_module.main(
+        [str(plugin_root), "assistant", "--local", "--codex", "argument with spaces"]
+    ) == 0
 
-    assert [command[0] for command in launched] == ["codex"] * 4
-    assert all(str(resources / "agents") in " ".join(command) for command in launched)
-    assert os.environ["FAMULUS_LAUNCHER_RESOURCES"] == str(resources)
+    assert launched[0][0] == "codex"
+    assert launched[0][-1] == "argument with spaces"
+    assert os.environ["FAMULUS_LAUNCHER_RESOURCES"] == str(plugin_root)
+    assert "ASSISTANT_LOGS" not in agent_module._launch_environment(os.environ)
 
 
-def test_background_run_hook_command_consumes_only_process_local_pointer_resources(
+def test_runtime_root_route_is_rejected() -> None:
+    """Catch accidental restoration of the deleted pointer/context launch branch."""
+    with pytest.raises(LauncherConfigurationError, match="selected plugin root"):
+        agent_module.main(["--runtime-root", "/tmp/obsolete", "--agent", "assistant"])
+
+
+def test_background_hook_uses_common_python_and_process_local_plugin_resources(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """FAMULUS_LAUNCHER_RESOURCES is a process-local pointer product; the
-    background hook does not persist or consult AI/FAMULUS_REPO_ROOT.
-    """
-    resources = tmp_path / "immutable release" / "launcher-resources"
+    resources = tmp_path / "selected plugin with spaces"
     monkeypatch.setenv("FAMULUS_LAUNCHER_RESOURCES", str(resources))
     payload = json.loads(
         (Path(__file__).resolve().parents[1] / "profiles" / "background_run_claude_setting.json")
         .read_text(encoding="utf-8")
     )
-    command = payload["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+    hook = payload["hooks"]["SessionStart"][0]["hooks"][0]
 
-    assert os.path.expandvars(command) == (
-        f'python3 "{resources}/llmhooks/inject_dispatcher_context.py" --claude'
-    )
-
-
-def test_development_agent_launches_use_exact_live_resources_without_legacy_selectors_or_cwd(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    context, checkout, host_home = _write_active_development_launcher(tmp_path)
-    unrelated = tmp_path / "foreign cwd"
-    unrelated.mkdir()
-    monkeypatch.chdir(unrelated)
-    for name in (
-        "AI",
-        "FAMULUS_REPO_ROOT",
-        "ASSISTANT_DEFAULT",
-        "COLLAB_DEFAULT",
-        "COAUTHOR_DEFAULT",
-        "BACKGROUND_RUN_DEFAULT",
-        "CODEX_HOME",
-        "CLAUDE_CONFIG_DIR",
-    ):
-        monkeypatch.delenv(name, raising=False)
-    activated = build_interactive_environment(
-        context,
-        environ={"HOME": str(host_home), "PATH": os.environ.get("PATH", "")},
-        platform=agent_module.sys.platform,
-    )
-    for name, value in activated.items():
-        monkeypatch.setenv(name, value)
-    launched: list[list[str]] = []
-    monkeypatch.setattr(agent_module, "_launch_command", lambda command: launched.append(command) or 0)
-
-    for name in ("assistant", "collab", "coauthor", "background_run"):
-        assert agent_module.main(
-            ["--runtime-root", str(context.paths.runtime_root), "--agent", name, "--local"]
-        ) == 0
-
-    assert [command[0] for command in launched] == ["claude"] * 4
-    assert all(str(checkout / "profiles") in " ".join(command) for command in launched)
-    assert os.environ["FAMULUS_LAUNCHER_RESOURCES"] == str(checkout)
-
-
-def test_development_agent_launch_derives_its_own_environment_from_the_pointer(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A development launch must work from an ordinary, unprepared shell.
-
-    The generated user-bin shim knows only the resolver path and the target
-    module, so it hands the launcher the caller's ambient environment. Earlier
-    coverage pre-applied build_interactive_environment() before calling main(),
-    which supplied exactly what the shim never sets -- so every real invocation
-    failed context validation while the suite stayed green.
-    """
-    context, checkout, host_home = _write_active_development_launcher(tmp_path)
-    local_root = checkout / ".famulus"
-
-    monkeypatch.setenv("HOME", str(host_home))
-    # A real shell leaks this from the user's profile; it must be overridden.
-    monkeypatch.setenv("CODEX_HOME", str(host_home / ".codex"))
-    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
-
-    launched: list[list[str]] = []
-    monkeypatch.setattr(
-        agent_module, "_launch_command", lambda command: launched.append(command) or 0
-    )
-
-    assert agent_module.main(
-        ["--runtime-root", str(context.paths.runtime_root),
-         "--agent", "background_run", "--local"]
-    ) == 0
-
-    assert [command[0] for command in launched] == ["claude"]
-    assert os.environ["HOME"] == str(local_root / "home")
-    assert os.environ["CLAUDE_CONFIG_DIR"] == str(local_root / "homes" / "claude")
-    assert os.environ["CODEX_HOME"] == str(local_root / "homes" / "codex")
-
-
-def test_standard_agent_launch_leaves_the_ambient_environment_alone(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Environment derivation is development-only; standard must be a no-op."""
-    context, _home = _write_active_standard_launcher(tmp_path)
-    before = dict(os.environ)
-    agent_module._apply_context_environment(context.paths.runtime_root)
-    for name in ("HOME", "CODEX_HOME", "CLAUDE_CONFIG_DIR"):
-        assert os.environ.get(name) == before.get(name)
+    assert hook["command"] == "python"
+    assert [os.path.expandvars(argument) for argument in hook["args"]] == [
+        f"{resources}/llmhooks/inject_dispatcher_context.py",
+        "--claude",
+    ]

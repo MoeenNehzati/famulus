@@ -11,10 +11,8 @@ INTRO_SNIPPETS = (
 )
 REQUIRED_SNIPPETS = (
     "install the plugin",
-    "Install the assistant tools",
     "https://moeennehzati.github.io/famulus/",
     "https://github.com/MoeenNehzati/famulus/issues",
-    "docs/officina/installation.md",
     "Plan my day",
     "Wrap up today",
     "Build a math dependency graph",
@@ -39,6 +37,7 @@ FORBIDDEN_SNIPPETS = (
     "_config_bridge.py",
     "_agent_launchers.py",
     "docs/officina/blueprints.md",
+    "docs/officina/skill-blueprints.md",
     "validators/` and `skills/skill-maker/validators/",
 )
 

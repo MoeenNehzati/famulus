@@ -3,7 +3,7 @@ id: recurring.source.control
 version: 1
 maturity: experimental
 node_type: behavioral_source
-description: Performs exactly one validated recurring control operation through the fixed resolver.
+description: Performs exactly one validated recurring-owned control operation through direct selected-plugin argv.
 gateway: {language: Python, path: control.py}
 content: [control\.py]
 dependencies:
@@ -17,7 +17,7 @@ interfaces:
     uses_interfaces: [{interface: common.interface.atomic-files, version: 2}]
     contract:
       arguments:
-        runtime-root: {description: Active runtime root injected by the fixed resolver., required: true, sensitivity: user-private, direct_io_ref: authority, type: {kind: dir, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read}}
+        plugin-root: {description: Selected current Famulus plugin root captured by recurring setup., required: true, sensitivity: user-private, direct_io_ref: authority, type: {kind: dir, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read}}
         descriptor: {description: Canonical schedule descriptor., required: true, sensitivity: user-private, direct_io_ref: authority, type: {kind: file, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read, opaque_content: true}}
         operation: {description: Exactly one recurring control operation., required: true, sensitivity: public, type: {kind: enum, values: [{value: setup, description: Set up registrations.}, {value: sync, description: Synchronize registrations.}, {value: enable, description: Enable one job.}, {value: disable, description: Disable one job.}, {value: status, description: Show status.}, {value: test, description: Test one job.}, {value: healthcheck, description: Check health.}, {value: view-logs, description: View logs.}, {value: remove-context, description: Remove only this context's native recurring state.}]}}
       preconditions: []
@@ -31,7 +31,7 @@ interfaces:
         consistency: {live: Authority is revalidated immediately before one operation.}
         effects:
         - {id: recurring-state, direct_io_ref: recurring-state, action: update, value_source: {kind: argument, argument_ref: operation}, may_occur_in_outcomes: [completed], confirmation_evidence: {kind: direct-io, direct_io_ref: recurring-state}, reversibility: {compensatable: A later sync or inverse enable disable operation repairs recurring-owned state.}}
-        mutation_safety: {atomicity: {per_effect_only: Job configuration replacement is atomic while native scheduler updates are separate effects.}, concurrent_invocations: {serialized: Mutating operations acquire the selected context lifecycle lock shared with installer teardown.}, idempotency: {idempotent: Repeating setup sync enable disable or status converges on the same selected context.}, on_uncertain_completion: {verify_then_decide: Run status and healthcheck before retrying.}, partial_effects_on_failure: {possible: Native scheduler updates may partially complete before a host command fails.}, rollback_on_failure: {unavailable: Retry sync after correcting the reported host failure.}}
+        mutation_safety: {atomicity: {per_effect_only: Job configuration replacement is atomic while native scheduler reconciliation restores the last successful owner on failure.}, concurrent_invocations: {serialized: Native mutations acquire the shared host-account scheduler lock.}, idempotency: {idempotent: Repeating setup sync enable disable or status converges on the selected durable configuration.}, on_uncertain_completion: {verify_then_decide: Run status and healthcheck before retrying.}, partial_effects_on_failure: {possible: A host command can fail before the previous complete set is restored.}, rollback_on_failure: {automatic: Failed reconciliation restores the previous successful owner and native set.}}
         verification: [{method: output-schema, output_ref: result}]
       helpers: []
       direct_io:
@@ -39,9 +39,9 @@ interfaces:
         reads: [{id: authority, medium: local-filesystem, access: read, content: Active recurring authority and state., formats: [json, yaml, files], sensitivity: user-private, path: <selected-context>/**, path_match: glob}]
         writes:
         - {id: recurring-state, medium: local-filesystem, access: read-write, content: Canonical recurring configuration logs and wrapper state., formats: [yaml, json, files], sensitivity: user-private, path: $famulus-recurring-root/**, path_match: glob}
-        - {id: native-registrations, medium: local-system, access: read-write, content: Installation-namespaced systemd launchd or Task Scheduler registrations., formats: [files], sensitivity: user-private}
+        - {id: native-registrations, medium: local-system, access: read-write, content: Shared systemd launchd or Task Scheduler registrations and owner record., formats: [files, json], sensitivity: user-private}
         - {id: result, medium: local-system, access: write, content: Operation result., formats: [text], sensitivity: derived-private}
-    process_binding: {kind: process, entry: Interface, patterns: [{name: operation, min_positionals: 1, max_positionals: 2, allowed_flags: [--runtime-root, --descriptor, --lines], required_flags: [--runtime-root, --descriptor], allow_stdin: false}]}
-    usage: --runtime-root ROOT --descriptor FILE <operation> [name] [--lines N]
+    process_binding: {kind: process, entry: Interface, patterns: [{name: operation, min_positionals: 1, max_positionals: 2, allowed_flags: [--plugin-root, --descriptor, --lines], required_flags: [--plugin-root, --descriptor], allow_stdin: false}]}
+    usage: --plugin-root DIR --descriptor FILE <operation> [name] [--lines N]
 platform_support: {linux: true, macos: true, windows: true}
 runtime_dependencies: []

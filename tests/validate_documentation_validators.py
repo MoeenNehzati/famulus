@@ -185,8 +185,9 @@ def _seed_docs(repo_root: Path) -> None:
             [
                 "# Contributor Guide",
                 "blueprint.yaml",
-                "skill-maker._rtx.interface.sync-blueprints --check",
-                "dispatcher --caller-skill <caller> <callee>.interface.<name> [args...]",
+                '"interface":"skill-maker._rtx.interface.sync-blueprints","version":1',
+                '"--check":true',
+                '"caller":"<caller>","interface":"<callee>.interface.<name>"',
                 "python3 repo_checks.py --suite validators",
                 ".githooks/pre-commit",
                 "[Blueprints](../officina/blueprints.md)",
@@ -285,6 +286,11 @@ def test_readme_validator_reports_distinct_user_contract_violations(
             CLEAN_README
             + "\n[Blueprints](docs/officina/blueprints.md)\n",
             ("docs/officina/blueprints.md",),
+        ),
+        (
+            CLEAN_README
+            + "\n[Blueprints](docs/officina/skill-blueprints.md)\n",
+            ("docs/officina/skill-blueprints.md",),
         ),
     )
 

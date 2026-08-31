@@ -55,9 +55,8 @@ dependency index.
 
 Check without changing generated files:
 
-```bash
-dispatcher --caller-skill node-certify \
-  skill-maker._rtx.interface.sync-blueprints --check
+```json
+{"caller":"node-certify","interface":"skill-maker._rtx.interface.sync-blueprints","version":1,"arguments":{"positionals":[],"options":{"--check":true},"stdin":null},"dry_run":false}
 ```
 
 Run the same interface without `--check` only when intentionally refreshing
@@ -90,9 +89,8 @@ or conformance state.
 
 Cross-module invocation goes through one exported interface:
 
-```bash
-dispatcher --caller-skill <caller-module> \
-  <provider-module>.interface.<export> [arguments...]
+```json
+{"caller":"<caller-module>","interface":"<provider-module>.interface.<export>","version":1,"arguments":{"positionals":[],"options":{},"stdin":null},"dry_run":false}
 ```
 
 Dispatcher resolves only the relevant caller and target blueprint chain,

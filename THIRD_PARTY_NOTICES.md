@@ -16,8 +16,8 @@ this repository retain their own upstream licenses.
   - `src/officina/visualization/html_renderer/vendor/elk-worker.min.js`
 
 Both distributed files are exact byte matches to their paths in the official
-`elkjs-0.10.0.tgz` npm package. Their SHA-256 values are recorded in
-[`docs/dependency-and-bootstrap-audit.md`](docs/dependency-and-bootstrap-audit.md).
+`elkjs-0.10.0.tgz` npm package. Their SHA-256 values are locked by
+[`tests/test_vendored_asset_provenance.py`](tests/test_vendored_asset_provenance.py).
 
 ## MathJax 3.2.2
 
@@ -28,8 +28,8 @@ Both distributed files are exact byte matches to their paths in the official
 - License text: [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt)
 - Copyright: The MathJax Consortium
 - Distributed file:
-  - `src/officina/visualization/html_renderer/vendor/mathjax-3.2.2-tex-svg.js`
+  - `src/officina/visualization/html_renderer/vendor/mathjax-3.2.2-tex-svg-full.js`
 
 The distributed file is an exact byte match to `es5/tex-svg.js` in the
-official `mathjax-3.2.2.tgz` npm package. Its SHA-256 value is recorded in
-[`docs/dependency-and-bootstrap-audit.md`](docs/dependency-and-bootstrap-audit.md).
+official `mathjax-3.2.2.tgz` npm package. Its SHA-256 value is locked by
+[`tests/test_vendored_asset_provenance.py`](tests/test_vendored_asset_provenance.py).

@@ -19,6 +19,7 @@ Uses Interfaces:
 - `connect-google.source.gateway -> connect-google._rtx.interface.install-client@1`
 - `connect-google.source.gateway -> connect-google.source.instructions-connect-services.interface.connect-services@1`
 - `connect-google.source.gateway -> connect-google.source.instructions-create-client.interface.create-client@1`
+- `connect-google.source.gateway -> setup-python-environment.interface.repair-selected-packages@1`
 - `connect-google.source.instructions-connect-services -> connect-google._rtx.interface.bind-credential-file@1`
 - `connect-google.source.instructions-connect-services -> connect-google._rtx.interface.client-status@1`
 - `connect-google.source.instructions-connect-services -> connect-google._rtx.interface.connect-services@1`
@@ -38,9 +39,41 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
+Executable Interfaces:
+
+Call `famulus.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+- `connect-google._rtx.interface.bind-credential-file` — Retry service-owned binding with an existing credential descriptor; never invoke OAuth authorization.
+  - Caller: `connect-google`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--allow-account-change": "comma-separated-list", "--credential-file": "path", "--gmail-nickname": "name", "--home": "dir", "--services": "comma-separated-list"}, "positionals": [], "stdin": null}
+    Required options: ["--credential-file", "--home", "--services"]; positional arity: 0..0; stdin: forbidden
+- `connect-google._rtx.interface.client-status` — Report whether the canonical Google Desktop OAuth client is missing, valid, invalid, or needs migration from plaintext, including whether its opaque client-secret reference resolves, without exposing secrets.
+  - Caller: `connect-google`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--home": "dir"}, "positionals": [], "stdin": null}
+    Required options: []; positional arity: 0..0; stdin: forbidden
+- `connect-google._rtx.interface.connect-services` — Run one combined OAuth authorization and bind its new credential file through the fixed service-owner map.
+  - Caller: `connect-google`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--account-hint": "email", "--allow-account-change": "comma-separated-list", "--callback-port": "port", "--gmail-nickname": "name", "--home": "dir", "--no-open-browser": true, "--services": "comma-separated-list"}, "positionals": [], "stdin": null}
+    Required options: ["--home", "--services"]; positional arity: 0..0; stdin: forbidden
+- `connect-google._rtx.interface.install-client` — Validate a Google Desktop OAuth client JSON and atomically install a private canonical copy.
+  - Caller: `connect-google`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--from-json": "client-json", "--home": "dir", "--replace": true}, "positionals": [], "stdin": null}
+    Required options: ["--from-json"]; positional arity: 0..0; stdin: forbidden
+
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `connect-google.interface.connect-services` — Install or reuse a Google Desktop OAuth client and hand selected Google services to their owning skills.
 - `connect-google.interface.create-client` — Guide a user through creating and privately downloading a Google Desktop OAuth client for selected Famulus services.
 - `connect-google.interface.default` — Route Google OAuth-client preparation according to whether a valid Desktop client is already installed.
@@ -49,6 +82,17 @@ These interfaces are documented prompt surfaces. They are not executed through `
 Skill: connect-google
 
 This is the shared router for Google OAuth-client preparation.
+
+Before client inspection, authorization, or service binding, use the host-loaded
+`setup-python-environment.interface.repair-selected-packages` procedure for
+feature `connect-google` and its exact declaration `["keyring"]`. Complete the
+initial fingerprint, pip and target checks, conditional repair, and byte-equal
+final fingerprint; stop without Google or credential activity on any failure.
+For each explicitly selected service, run that same procedure separately for
+its fixed owner and exact declaration `["keyring"]` before invoking it: Drive is
+`cloud-files`, Calendar is `online-calendar`, and Gmail is `email-client`. Do not
+inspect or repair an unselected owner. A later satisfied declaration is a
+no-install result, so shared keyring is installed at most once.
 
 1. Use `connect-google._rtx.interface.client-status` before asking the user for a file.
 2. If the stored client is valid, use `connect-google.interface.connect-services`.

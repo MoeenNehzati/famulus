@@ -4,6 +4,7 @@ Description=Deliver due LLM session wakeups
 [Service]
 # The installer substitutes an absolute Python launcher path. No shell is used.
 Type=oneshot
+Environment="PYTHONPATH=@LLM_WAKEUP_SOURCE@"
 ExecStart=@LLM_WAKEUP_EXECUTABLE@ run-due
 # Worker events are line-oriented key/value records intended for journald.
 StandardOutput=journal

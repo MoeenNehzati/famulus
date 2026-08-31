@@ -1,8 +1,8 @@
 """Structured dispatcher failures: every raise site produces a typed error
 with a stable machine-readable code and safe context, never raw credentials
 or tracebacks in the payload. Every class here remains an InvocationError
-subclass so existing `except InvocationError` handlers (including
-script_dispatcher's re-export) keep working unchanged.
+subclass so existing Officina Dispatcher `except InvocationError` handlers
+keep working unchanged.
 
 `InvocationError` itself lives here (not in `core.py`) because it has no
 dependency on anything in `core.py`, and `core.py` needs to import it (and

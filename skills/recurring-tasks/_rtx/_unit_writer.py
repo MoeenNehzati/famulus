@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Regenerate host scheduler entries from jobs.yaml."""
 
 from __future__ import annotations

@@ -1,0 +1,29 @@
+authority:
+  owns_filesystem: []
+  suggested_permissions:
+    bash: []
+    network: []
+children: {}
+content:
+- _agent_launchers\.py
+- assets/bin/tmux\-workspace
+- assets/bin/tw\-break
+- assets/bin/tw\-join
+- assets/bin/tw\-monitor
+- assets/bin/tw\-help
+- tests/.*
+description: Feature runtime for explicit optional interactive launcher setup.
+exports:
+  install-launchers._rtx.interface.agent-launchers:
+    access: {allow_all_modules: false, allowed_callers: [install-launchers]}
+    source_interface: install-launchers._rtx.source.agent-launchers.interface.setup
+gateway: {language: Python>=3.11, path: _agent_launchers.py}
+id: install-launchers._rtx
+namespace_exports: {}
+node_type: module
+schema_version: 6
+sources:
+  install-launchers._rtx.source.agent-launchers:
+    blueprint: {base: module-root, path: blueprints/agent-launchers.yaml}
+version: 1
+maturity: stable

@@ -26,7 +26,7 @@ Public Interfaces:
 
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `wrap-up.interface.default` — Collect one consolidated user response, orchestrate declared planning and list interfaces, relay mechanical handoff candidates without transcript inspection, and summarize results.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:

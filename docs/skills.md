@@ -44,6 +44,7 @@ This page is the complete skill inventory. For workflows and examples, start fro
 ### Listed
 
 - `ci-debug` — GitHub Actions CI is red, matrix failures need isolated repair, or repeated full reruns make remote diagnosis inefficient _(topics: repository-workflow, task-automation, assistant-assurance; activated by: user request, skill workflow)_
+- `dev-activation` — A developer needs an assistant or editor to run against one Famulus checkout without discovering globally installed skills or plugins _(topics: repository-workflow, assistant-assurance; activated by: user request, skill workflow)_
 - `git-workflow` — Branch-safety checks and commit hygiene for any repo _(topics: repository-workflow; activated by: user request, skill workflow)_
 - `initialize-tdd` — Scaffold a staged, approval-gated TDD project _(topics: repository-workflow, assistant-assurance; activated by: user request)_
 
@@ -74,8 +75,9 @@ This page is the complete skill inventory. For workflows and examples, start fro
 
 - `cloud-files` — Bounded read/write of plain files under a configured Google Drive root _(topics: external-integrations, storage-and-sync; activated by: user request, skill workflow)_
 - `connect-google` — The user needs to set up or restore Google authentication for Famulus _(topics: external-integrations; activated by: user request, skill workflow)_
-- `install-assistant-tools` — Install or update launchers, wiring, hooks, and environment on a machine _(topics: assistant-installation, system-maintenance; activated by: user request)_
+- `install-launchers` — Install or repair an explicit subset of the optional assistant, collab, coauthor, and tw launchers _(topics: assistant-installation; activated by: user request, skill workflow)_
 - `milestone-logging` — Starting or completing substantive agent work that needs durable, role-labelled progress records and optional run recovery _(topics: task-automation, assistant-assurance; activated by: user request, skill workflow)_
+- `setup-python-environment` — Famulus MCP cannot start because its selected Python or a bundled core package is unavailable _(topics: assistant-installation, system-maintenance; activated by: user request, skill workflow)_
 - `using-compass` — A user or another skill directs the agent to use a named compass _(topics: task-automation, session-management; activated by: user request, skill workflow)_
 
 ## Assistant Interaction

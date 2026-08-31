@@ -23,11 +23,49 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
+Executable Interfaces:
+
+Call `famulus.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+- `daily-plan._rtx.interface.mutate-plan` — Apply a mutation (hide, show, keep, remove, mark-done, reject, set-deadline, add) to a dated plan and display the refreshed result. Defaults to today when --date is omitted.
+  - Caller: `daily-plan`
+  - Version: 1
+  - Alternative: `indexed-or-add`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--date": "M-D-YY|YYYY-MM-DD"}, "positionals": ["hide|show|keep|remove|mark-done|reject|add", "actions|triage", "indices-or-item-id"], "stdin": null}
+    Required options: []; positional arity: 3..3; stdin: forbidden
+  - Alternative: `set-deadline`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--date": "M-D-YY|YYYY-MM-DD"}, "positionals": ["set-deadline", "actions|triage", "indices-or-item-id", "deadline-for-set-deadline"], "stdin": null}
+    Required options: []; positional arity: 4..4; stdin: forbidden
+- `daily-plan._rtx.interface.orchestrate` — Generate today's plan (or show the existing one, refreshing its Todo/Triage blocks from current list state). Pass --forced to regenerate even if a plan already exists.
+  - Caller: `daily-plan`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {}, "positionals": [], "stdin": null}
+    Required options: []; positional arity: 0..0; stdin: forbidden
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--forced": true}, "positionals": [], "stdin": null}
+    Required options: ["--forced"]; positional arity: 0..0; stdin: forbidden
+- `daily-plan._rtx.interface.render-plan` — Extract or reassemble sections of a plan file for rendering.
+  - Caller: `daily-plan`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {}, "positionals": ["extract|reassemble", "plan-file", "dir"], "stdin": null}
+    Required options: []; positional arity: 3..3; stdin: forbidden
+
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `daily-plan.interface.default` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->
+Before invoking any daily-plan interface, follow
+`setup-python-environment.interface.repair-selected-packages` for this owner's exact
+declaration `["keyring", "rich"]`. Complete the full Task 2 fingerprint procedure; on
+any failure, stop before `orchestrate` or another daily-plan interface.
+
 When this skill is used, invoke `orchestrate`. To force regeneration of an existing plan, pass `--forced`.
 
 Data sources: `online-calendar` (schedule), `get-weather` (forecast), `list-manager` (todo/triage), `cloud-files` (plan persistence).

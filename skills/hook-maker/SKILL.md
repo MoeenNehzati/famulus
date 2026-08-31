@@ -22,7 +22,7 @@ Public Interfaces:
 
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `hook-maker.interface.default` — Design or implement a hook from semantic purpose through explicit host bindings, adapters, registration, and golden verification.
 <!-- END BLUEPRINT INTERFACES -->
 ## Core rule

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Set up recurring-tasks scheduler state for this host."""
 
 from __future__ import annotations
@@ -32,13 +31,10 @@ class Interface(PythonArgvMachineInterface):
 def main(argv: list[str] | None = None) -> int:
     """Run recurring-task host setup and return the managed status."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--migrate-cron", action="store_true")
+    parser.add_argument("--canonical-python", type=Path, required=True)
+    parser.add_argument("--plugin-root", type=Path, required=True)
     args = parser.parse_args(argv)
-    if args.migrate_cron:
-        raise ValueError(
-            "legacy cron migration remains owned by the later migration checkpoint"
-        )
-    return run_managed_control("setup")
+    return run_managed_control("setup", python=args.canonical_python, plugin_root=args.plugin_root)
 
 
 if __name__ == "__main__":

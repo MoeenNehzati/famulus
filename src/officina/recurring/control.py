@@ -102,18 +102,31 @@ def run_operation(schedule: ManagedSchedule, *, operation: str, name: str | None
     with exclusive_file_lock(
         lifecycle_lock_path(schedule.state_root), allowed_root=schedule.state_root
     ):
-        schedule = load_managed_schedule(
-            runtime_root=schedule.runtime_root,
-            descriptor_path=schedule.descriptor_path,
-        )
+        current = schedule
+        if schedule.descriptor_path.exists():
+            loaded = load_managed_schedule(descriptor_path=schedule.descriptor_path)
+            if operation == "setup":
+                identity = (
+                    "owner_id",
+                    "descriptor_path",
+                    "config_root",
+                    "state_root",
+                    "native_registration_root",
+                )
+                if any(getattr(loaded, field) != getattr(schedule, field) for field in identity):
+                    raise ValueError("schedule authority changed before recurring setup")
+            elif loaded != schedule:
+                raise ValueError("schedule authority changed before recurring mutation")
+            else:
+                current = loaded
         return _run_operation_unlocked(
-            schedule, operation=operation, name=name, lines=lines
+            current, operation=operation, name=name, lines=lines
         )
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--runtime-root", type=Path, required=True)
+    parser.add_argument("--plugin-root", type=Path, required=True)
     parser.add_argument("--descriptor", type=Path, required=True)
     parser.add_argument("operation", choices=("setup", "sync", "enable", "disable", "status", "test", "healthcheck", "view-logs", "remove-context"))
     parser.add_argument("name", nargs="?")
@@ -124,10 +137,11 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        schedule = load_managed_schedule(runtime_root=args.runtime_root, descriptor_path=args.descriptor)
+        schedule = load_managed_schedule(descriptor_path=args.descriptor)
+        if args.plugin_root.resolve() != schedule.plugin_root: raise ValueError("plugin root does not match descriptor")
         return run_operation(schedule, operation=args.operation, name=args.name, lines=args.lines)
     except Exception as exc:
-        print(f"recurring control: {exc}; run Famulus apply to repair the active recurring runtime", file=sys.stderr)
+        print(f"recurring control: {exc}; rerun recurring-tasks setup", file=sys.stderr)
         return 1
 
 

@@ -55,44 +55,14 @@ def load_repository_blueprint_graph(
     )
 
 
-def test_repository_v6_declarations_register_cross_module_contracts() -> None:
+def test_recurring_module_owns_shared_job_schema_source() -> None:
     repository = Path(__file__).resolve().parents[1]
-    install_root = repository / "skills" / "install-assistant-tools"
-    install_module = yaml.safe_load(
-        (install_root / "blueprint.yaml").read_text(encoding="utf-8")
-    )
-    install_source = yaml.safe_load(
-        (install_root / "blueprints" / "gateway.yaml").read_text(encoding="utf-8")
-    )
-    export = install_module["exports"]["install-assistant-tools.interface.diagnose"]
-    source_interface_id = export["source_interface"]
-
-    assert install_module["id"] == "install-assistant-tools"
-    assert install_source["id"] == "install-assistant-tools.source.gateway"
-    assert source_interface_id == (
-        "install-assistant-tools.source.gateway.interface.diagnose"
-    )
-    assert export == {
-        "access": {"allow_all_modules": True, "allowed_callers": []},
-        "source_interface": "install-assistant-tools.source.gateway.interface.diagnose",
-    }
-    source_interface = install_source["interfaces"][source_interface_id]
-    assert source_interface["uses_interfaces"] == [
-        {
-            "interface": "install-assistant-tools._rtx.interface.scripts-doctor",
-            "version": 1,
-        }
-    ]
-    assert "process_binding" not in source_interface
-    skill = (install_root / "SKILL.md").read_text(encoding="utf-8")
-    assert "Instruction Interfaces:" in skill
-    assert "`install-assistant-tools.interface.diagnose`" in skill
     recurring_root = repository / "src" / "officina" / "recurring"
-    recurring = yaml.safe_load(
+    blueprint = yaml.safe_load(
         (recurring_root / "blueprint.yaml").read_text(encoding="utf-8")
     )
 
-    assert r"jobs\.py" in recurring["content"]
+    assert r"jobs\.py" in blueprint["content"]
     assert (recurring_root / "jobs.py").is_file()
 
     expected_sources = {

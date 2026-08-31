@@ -21,9 +21,20 @@ Public Interfaces:
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
+Executable Interfaces:
+
+Call `famulus.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+- `get-weather._rtx.interface.scripts-weather` — Fetch weather data for a location and date range, returning hourly forecast JSON.
+  - Caller: `get-weather`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--date": "YYYY-MM-DD", "--end-date": "YYYY-MM-DD", "--location": "loc"}, "positionals": [], "stdin": null}
+    Required options: []; positional arity: 0..0; stdin: forbidden
+
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `get-weather.interface.default` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:

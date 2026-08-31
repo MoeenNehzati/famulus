@@ -1,4 +1,4 @@
-source_sha256: 2ed65f9c5b93832221181a330a16ca72871c364925416c7d4712d42b18b52307
+source_sha256: 9b4d081de0dbbaf116b3a5e46db9a21b3f09d254a2801bbf305d458990c99d05
 units:
 - id: guidelines-semantic-001
   kind: semantic
@@ -546,10 +546,10 @@ units:
 
     _rtx/_mail_transport.py
 
-    _rtx/_install_launcher/_windows_launcher.py
+    _rtx/_platform_adapter/_windows_adapter.py
 
     ```'
-  content_digest: sha256:79a94a660967524e2471906b985a36d0d21ab3db793507c81611195e60431394
+  content_digest: sha256:24251219eab47d210335ba48f1f79253e25d3ad179944ce6b21a67dedf245a58
   target:
     target_ref: skill-guidelines.private-runtime-files.example-001
     field: /statement
@@ -559,7 +559,7 @@ units:
 
       _rtx/_mail_transport.py
 
-      _rtx/_install_launcher/_windows_launcher.py
+      _rtx/_platform_adapter/_windows_adapter.py
 
       ```'
 - id: guidelines-semantic-039

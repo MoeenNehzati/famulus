@@ -43,6 +43,12 @@ exports:
       allow_all_modules: true
       allowed_callers: []
     source_interface: wakeup.source.cli.interface.explicit-schedule
+  wakeup.interface.setup:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    setup_requires_setup_of: []
+    source_interface: wakeup.source.cli.interface.setup
 gateway:
   language: Python>=3.11
   path: __init__.py

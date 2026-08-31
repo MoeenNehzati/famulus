@@ -51,7 +51,29 @@ def test_repo_without_modules_passes(tmp_path: Path) -> None:
     assert MOD.validate(tmp_path) == []
 
 
-def test_weather_repository_discovers_only_parent_prompt_export(
+def test_valid_v4_generated_block_passes(tmp_path: Path) -> None:
+    _copy_weather_module(tmp_path)
+
+    assert MOD.validate(tmp_path) == []
+
+
+def test_missing_interface_block_is_rejected(tmp_path: Path) -> None:
+    skill = _copy_weather_module(tmp_path)
+    skill_file = skill / "SKILL.md"
+    start = skill_file.read_text(encoding="utf-8").index(
+        "<!-- BEGIN BLUEPRINT INTERFACES -->"
+    )
+    end_marker = "<!-- END BLUEPRINT INTERFACES -->"
+    text = skill_file.read_text(encoding="utf-8")
+    end = text.index(end_marker, start) + len(end_marker)
+    skill_file.write_text(text[:start] + text[end:], encoding="utf-8")
+
+    errors = MOD.validate(tmp_path)
+
+    assert any("missing generated blueprint interface block" in error for error in errors)
+
+
+def test_child_process_export_is_projected_as_famulus_interface(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -84,17 +106,13 @@ def test_weather_repository_discovers_only_parent_prompt_export(
         1
     ].split("<!-- END BLUEPRINT INTERFACES -->", 1)[0]
 
-    assert MOD.validate(tmp_path) == []
-    assert observed == [
-        (
-            skill / "SKILL.md",
-            ["get-weather.interface.default"],
-            ["get-weather.interface.default"],
-            [],
-        )
-    ]
-    assert "get-weather.interface.default" in interface_block
-    assert "get-weather._rtx.interface.scripts-weather" not in interface_block
+    errors = MOD.validate(tmp_path)
+
+    assert errors == []
+    assert len(observed) == 1
+    assert observed[0][0] == skill / "SKILL.md"
+    assert "get-weather._rtx.interface.scripts-weather" in interface_block
+    assert "Executable Interfaces:" in interface_block
     assert "dispatcher --caller-skill" not in interface_block
 
 

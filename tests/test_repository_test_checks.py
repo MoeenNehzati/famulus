@@ -398,12 +398,11 @@ def _deselected_tests(args: list[str]) -> set[str]:
     }
 
 
-def test_precommit_defers_installation_chrome_docstring_and_performance_tests() -> None:
+def test_precommit_defers_chrome_docstring_and_performance_tests() -> None:
     deselected = _deselected_tests(
         runner._suite_pytest_args("precommit", verbose=False)
     )
 
-    assert runner.INSTALLATION_TESTS <= deselected
     assert runner.CHROME_TESTS <= deselected
     assert runner.DOCSTRING_TESTS <= deselected
     assert runner.PERFORMANCE_TESTS <= deselected
@@ -510,21 +509,6 @@ def test_functional_phase_uses_native_discovery_without_explicit_roots(
     assert _deselected_tests(command) == (
         runner.CHROME_TESTS | runner.PERFORMANCE_TESTS
     )
-    assert command[command.index("not github_install") - 1] == "-m"
-
-
-def test_github_install_tests_are_reserved_for_their_own_task(tmp_path: Path) -> None:
-    command = runner._pytest_phase_command(
-        "full",
-        "tests:github",
-        verbose=False,
-        jobs=1,
-        cache_dir=tmp_path / "cache",
-        timing_path=None,
-    )
-
-    assert command[command.index("github_install") - 1] == "-m"
-    assert runner.GITHUB_INSTALL_TEST_ROOT in command
 
 
 def test_combined_command_enables_validators_in_the_same_xdist_session(
@@ -605,25 +589,6 @@ def test_full_runs_performance_before_pooled_and_browser_phases(
     )
     assert "--officina-run-validators" in commands[1]
     assert commands[2][-len(runner.CHROME_TESTS) :] == sorted(runner.CHROME_TESTS)
-
-
-def test_precommit_native_discovery_ignores_install_test_roots(
-    tmp_path: Path,
-) -> None:
-    command = runner._pytest_phase_command(
-        "precommit",
-        "tests:shared",
-        verbose=False,
-        jobs=1,
-        cache_dir=tmp_path / "cache",
-        timing_path=None,
-    )
-
-    assert {
-        argument.partition("=")[2]
-        for argument in command
-        if argument.startswith("--ignore=")
-    } == runner.PRECOMMIT_EXCLUDED_TEST_DIRS
 
 
 def test_task_selector_runs_only_the_requested_phase(
@@ -1243,41 +1208,16 @@ def test_ci_workflow_preserves_execution_dispatch_and_evidence_contracts() -> No
     assert workflow.count("timeout-minutes: 20") == 1
     assert workflow.count("timeout-minutes: 10") == 1
 
-    # Unified installation lifecycle on every supported host.
-    assert "name: unified installation lifecycle (${{ matrix.os }})" in workflow
-    for operating_system in (
-        "ubuntu-latest",
-        "macos-latest",
-        "windows-latest",
-    ):
-        assert f"          - os: {operating_system}" in workflow
-    assert workflow.count("--exclude-validator repo/docstrings") >= 3
-    assert "--task-id" not in workflow
-    assert "--sequential" not in workflow
-    for selector in (
-        "tests/test_officina_install_context.py",
-        "tests/test_officina_development_activation.py",
-        "tests/test_officina_runtime_pointer.py",
-        "tests/test_officina_managed_runtime.py",
-        "tests/test_officina_install_doctor.py",
-        "tests/test_officina_recurring_managed.py",
-        "tests/test_officina_recurring_state.py",
-        "tests/test_install_context_consumers.py",
-        "skills/install-assistant-tools/_rtx/tests/test_install.py",
-        "skills/install-assistant-tools/_rtx/tests/test_uninstall.py",
-        "skills/install-assistant-tools/_rtx/tests/test_doctor.py",
-        "skills/install-assistant-tools/_rtx/tests/test_e2e_lifecycle.py",
-    ):
-        assert f"--selector {selector}" in workflow
-    assert "Run lifecycle renderer and migration evidence" in workflow
-    assert "Run lifecycle native scheduler evidence where available" in workflow
-    lifecycle_native = workflow.split(
-        "- name: Run lifecycle native scheduler evidence where available", 1
-    )[1].split("- name:", 1)[0]
-    assert "FAMULUS_RUN_SCHEDULER_SMOKE: '1'" in lifecycle_native
-    assert workflow.count("FAMULUS_RUN_SCHEDULER_SMOKE: '1'") == 1
+def test_ci_workflow_dispatches_a_full_matrix_or_one_safe_probe() -> None:
+    """Catch remote debugging inputs that bypass exact-SHA or argv boundaries."""
 
-    # Safe full-matrix or single-probe remote dispatch.
+    workflow = (
+        Path(__file__).resolve().parents[1]
+        / ".github"
+        / "workflows"
+        / "python-tests.yml"
+    ).read_text(encoding="utf-8")
+
     assert "workflow_dispatch:" in workflow
     for input_name in (
         "mode",
@@ -1329,43 +1269,19 @@ def test_ci_workflow_preserves_execution_dispatch_and_evidence_contracts() -> No
         if in_run_block:
             assert "${{ inputs." not in line
 
-    # Hidden and separately scoped uploaded evidence.
-    upload_count = workflow.count("uses: actions/upload-artifact@")
-    assert upload_count == 4
-    assert workflow.count("path: .repo-checks/*.json") == 2
-    assert "path: .repo-checks/unified-*.json" in workflow
-    assert (
-        "path: .repo-checks/assistant-access-${{ matrix.evidence_os }}.json"
-        in workflow
-    )
-    assert workflow.count("include-hidden-files: true") == upload_count
-    access_upload = workflow.split("- name: Upload assistant access evidence", 1)[1]
-    access_upload = access_upload.split("- name:", 1)[0]
-    assert "if-no-files-found: error" in access_upload
-
-    # Assistant-access pins, control roots, and credential boundaries.
-    pinned = "npm install -g @anthropic-ai/claude-code@2.1.237 @openai/codex@0.149.0"
-    unpinned = "npm install -g @anthropic-ai/claude-code @openai/codex"
-    assert workflow.count(pinned) == 1
-    assert workflow.count(unpinned) == 2
-    assert "id: assistant-access-control" in workflow
-    assert "Path.home()" in workflow
-    assert "--control-root \"${{ steps.assistant-access-control.outputs.control_root }}\"" in workflow
-    assert (
-        "codex sandbox -c 'sandbox_mode=\"workspace-write\"' "
-        "-c sandbox_workspace_write.network_access=true --"
-    ) in workflow
-    assert "Stage Linux assistant evidence in configured writable root" in workflow
-    assert "Collect Linux assistant evidence outside the sandbox" in workflow
-    assert '"$HOME/.assistant-logs/assistant-access-linux.json"' in workflow
-    assert "Enable Codex user namespaces on hosted Ubuntu" in workflow
-    assert "Restore hosted Ubuntu user namespace restriction" in workflow
-    assert workflow.count(
-        "kernel.apparmor_restrict_unprivileged_userns="
-    ) == 2
-    assert "FAMULUS_CLAUDE_ACCESS_SMOKE_API_KEY" in workflow
-    assert "ANTHROPIC_API_KEY: ${{ secrets.FAMULUS_CLAUDE_ACCESS_SMOKE_API_KEY }}" in workflow
     assert "<<:" not in workflow
+    for retired_task in ("tests:github", "tests:install"):
+        assert retired_task not in workflow
+
+    remote = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "officina"
+        / "repository"
+        / "checks"
+        / "remote.py"
+    ).read_text(encoding="utf-8")
+    assert '"tests:install"' not in remote
 
 
 def test_ci_dependency_lock_covers_the_complete_test_environment() -> None:
@@ -1378,6 +1294,7 @@ def test_ci_dependency_lock_covers_the_complete_test_environment() -> None:
         "pytest-xdist==3.8.0",
         "PyYAML==6.0.2",
         "jsonschema==4.23.0",
+        "mcp>=1,<2",
         "keyring==25.6.0",
         "cryptography==44.0.1",
         "lark==1.3.1",

@@ -27,19 +27,6 @@ from officina.common.python_source_cache import PythonSourceCache
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
-PRECOMMIT_EXCLUDED_TEST_DIRS = {
-    "skills/install-assistant-tools/_rtx/tests",
-    "skills/install-assistant-tools/tests",
-}
-INSTALLATION_TESTS = {
-    "tests/test_install_lifecycle.py",
-    "tests/test_officina_famulus_paths.py",
-    "tests/test_officina_install_info.py",
-    "tests/test_officina_launcher_entry.py",
-    "tests/test_officina_managed_runtime.py",
-    "tests/test_officina_runtime_pointer.py",
-    "tests/test_officina_uv_bootstrap.py",
-}
 def discover_browser_tests(repo_root: Path) -> set[str]:
     """Return browser modules selected by the repository naming convention."""
     return {
@@ -80,13 +67,6 @@ PRECOMMIT_DEFERRED_INTEGRATION_TESTS = {
     "tests/test_repository_validator_checks.py::"
     "test_run_all_isolates_unmerged_index_and_restores_git_environment",
 }
-# These install what is published on GitHub's default branch, so they report on
-# the remote's health rather than on the working tree under test. Pooled phases
-# would inherit a network dependency that says nothing about the local diff.
-# Selection goes through a marker rather than filenames: the files are named for
-# the assistant hosts they install, and this module stays host-neutral.
-GITHUB_INSTALL_MARKER = "github_install"
-GITHUB_INSTALL_TEST_ROOT = "skills/install-assistant-tools/_rtx/tests"
 NATIVE_KEYRING_TESTS = {
     "tests/test_officina_secret_store.py::"
     "test_default_backend_native_roundtrip_when_available"
@@ -95,7 +75,6 @@ NATIVE_SCHEDULER_TESTS = {
     "tests/test_officina_recurring_managed.py",
 }
 PRECOMMIT_EXCLUDED_TESTS = {
-    *INSTALLATION_TESTS,
     *CHROME_TESTS,
     *DOCSTRING_TESTS,
     *PERFORMANCE_TESTS,
@@ -1495,8 +1474,6 @@ SELECTABLE_TEST_TASKS = {
     "native:keyring": tuple(sorted(NATIVE_KEYRING_TESTS)),
     "native:scheduler": tuple(sorted(NATIVE_SCHEDULER_TESTS)),
     "tests:shared": None,
-    "tests:github": (GITHUB_INSTALL_TEST_ROOT,),
-    "tests:install": tuple(sorted(INSTALLATION_TESTS)),
     "tests:browser": tuple(sorted(CHROME_TESTS)),
     "tests:docstrings": tuple(sorted(DOCSTRING_TESTS)),
     "tests:portability": tuple(sorted(PORTABILITY_TESTS)),
@@ -1786,8 +1763,6 @@ def _suite_pytest_args(
         distribution=distribution,
     )
     if name == "precommit":
-        for test_dir in sorted(PRECOMMIT_EXCLUDED_TEST_DIRS):
-            args.append(f"--ignore={test_dir}")
         for test in sorted(PRECOMMIT_EXCLUDED_TESTS):
             args.extend(["--deselect", test])
     elif name == "pre-push":
@@ -2152,7 +2127,6 @@ def _pytest_phase_command(
         if profile == "full":
             for test in sorted(PERFORMANCE_TESTS):
                 pytest_args.extend(["--deselect", test])
-        pytest_args.extend(["-m", f"not {GITHUB_INSTALL_MARKER}"])
         targets = list(PORTABILITY_TESTS) if profile == "portability" else []
     elif task_id == "validators":
         pytest_args = _pytest_args(verbose=verbose, jobs=jobs)
@@ -2164,13 +2138,6 @@ def _pytest_phase_command(
         pytest_args = _pytest_args(verbose=verbose, jobs=1)
         pytest_args.append("--maxfail=1")
         targets = sorted(CHROME_TESTS)
-    elif task_id == "tests:github":
-        pytest_args = _pytest_args(verbose=verbose, jobs=jobs)
-        pytest_args.extend(["-m", GITHUB_INSTALL_MARKER])
-        targets = [GITHUB_INSTALL_TEST_ROOT]
-    elif task_id == "tests:install":
-        pytest_args = _pytest_args(verbose=verbose, jobs=jobs)
-        targets = sorted(INSTALLATION_TESTS)
     elif task_id == "tests:docstrings":
         pytest_args = _pytest_args(verbose=verbose, jobs=1)
         targets = sorted(DOCSTRING_TESTS)

@@ -12,6 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 import yaml
+from validators.platform_neutral import _validate
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -121,6 +122,334 @@ def test_syncer_loads_canonical_module_and_generates_export_blocks(
     assert "`loose-mode.interface.default`" in interfaces
 
 
+def test_generated_executable_interface_uses_famulus_metadata(syncer) -> None:
+    """Break caught: generated skill guidance falls back to Dispatcher syntax."""
+    blueprints = syncer.load_blueprints()
+
+    interfaces = syncer.generated_interface_block(
+        "milestone-logging",
+        blueprints["milestone-logging"].repository_graph,
+    )
+
+    assert "Executable Interfaces:" in interfaces
+    assert "Caller: `milestone-logging`" in interfaces
+    assert "Version: 1" in interfaces
+    assert '"positionals": ["DOING", "PREV"]' in interfaces
+    assert '"--role": "ROLE"' in interfaces
+    assert '"--done": "PREV"' in interfaces
+    assert '"--path": true' in interfaces
+    assert "Omit optional positionals and options that are not needed." in interfaces
+    assert "Ordered outer JSON" not in interfaces
+    assert "Alternative: `milestone`" in interfaces
+    assert "dispatcher --caller-skill" not in interfaces
+
+
+def test_generated_interface_block_requires_direct_source_backing(syncer) -> None:
+    """Break caught: direct gateway uses do not reach public MCP guidance."""
+    gateway = "consumer.source.gateway"
+    process = "provider.interface.run"
+    owner = "consumer.interface.owner"
+    unused = "provider.interface.unused"
+    instructions = "provider.interface.instructions"
+    source = "provider.source.cli"
+    unused_source = "provider.source.unused"
+    process_spec = {
+        "description": "Run the provider.",
+        "usage": "",
+        "process_binding": {
+            "kind": "process",
+            "entry": "Interface",
+            "patterns": [
+                {
+                    "name": "default",
+                    "min_positionals": 0,
+                    "max_positionals": 0,
+                    "allow_stdin": False,
+                }
+            ],
+        },
+    }
+    graph = SimpleNamespace(
+        schema_version=6,
+        module_sources={"consumer": (gateway,)},
+        module_ancestry={"consumer": ("consumer",), "provider": ("provider",)},
+        nodes={
+            "consumer": SimpleNamespace(gateway_path=Path("SKILL.md")),
+            gateway: SimpleNamespace(node_id=gateway, gateway_path=Path("SKILL.md")),
+            source: SimpleNamespace(version=1),
+            unused_source: SimpleNamespace(version=1),
+        },
+        exports={
+            process: SimpleNamespace(
+                interface_id=process,
+                version=1,
+                module_node_id="provider",
+                declaration=process_spec,
+                source_node_id=source,
+            ),
+            instructions: SimpleNamespace(
+                interface_id=instructions,
+                version=1,
+                module_node_id="provider",
+                declaration={"description": "Read the provider."},
+                source_node_id=source,
+            ),
+            owner: SimpleNamespace(
+                interface_id=owner,
+                version=1,
+                module_node_id="consumer",
+                declaration=process_spec,
+                source_node_id=source,
+            ),
+            unused: SimpleNamespace(
+                interface_id=unused,
+                version=1,
+                module_node_id="provider",
+                declaration=process_spec,
+                source_node_id=unused_source,
+            ),
+        },
+        source_interfaces={},
+        node_edges=(
+            SimpleNamespace(
+                relation="uses-source",
+                source_id=gateway,
+                target_id=source,
+                required_version=1,
+            ),
+            SimpleNamespace(
+                relation="uses-source",
+                source_id=gateway,
+                target_id=unused_source,
+                required_version=1,
+            ),
+            SimpleNamespace(
+                relation="uses-export",
+                source_id=gateway,
+                target_id=process,
+                required_version=1,
+            ),
+            SimpleNamespace(
+                relation="uses-export",
+                source_id=gateway,
+                target_id=owner,
+                required_version=1,
+            ),
+            SimpleNamespace(
+                relation="uses-export",
+                source_id=gateway,
+                target_id=process,
+                required_version=1,
+            ),
+            SimpleNamespace(
+                relation="uses-export",
+                source_id=gateway,
+                target_id=instructions,
+                required_version=1,
+            ),
+            SimpleNamespace(
+                relation="uses-export",
+                source_id="consumer.source.worker",
+                target_id="provider.interface.transitive",
+                required_version=1,
+            ),
+        ),
+    )
+
+    rendered = syncer.generated_interface_block("consumer", graph)
+
+    assert "`provider.interface.run`" in rendered
+    assert rendered.count("`provider.interface.run`") == 1
+    assert rendered.count("`consumer.interface.owner`") == 1
+    assert "Caller: `consumer`" in rendered
+    assert instructions not in rendered
+    assert unused not in rendered
+    assert "provider.interface.transitive" not in rendered
+
+    original_edges = graph.node_edges
+    graph.node_edges = tuple(
+        edge for edge in graph.node_edges if edge.relation != "uses-source"
+    )
+    assert process not in syncer.generated_interface_block("consumer", graph)
+
+    graph.node_edges = tuple(
+        SimpleNamespace(
+            relation=edge.relation,
+            source_id=edge.source_id,
+            target_id=edge.target_id,
+            required_version=(
+                2
+                if edge.relation == "uses-export" and edge.target_id == process
+                else edge.required_version
+            ),
+        )
+        for edge in original_edges
+    )
+    with pytest.raises(syncer.BlueprintError, match="use version"):
+        syncer.generated_interface_block("consumer", graph)
+
+
+def test_llm_wakeup_generated_contract_and_interfaces_are_exact(syncer) -> None:
+    blueprint = syncer.load_blueprints()["llm-wakeup"]
+    skill = blueprint.path.parent / "SKILL.md"
+    generated = skill.read_text(encoding="utf-8")
+
+    assert syncer.generated_contract_block(
+        blueprint.name, blueprint.data, blueprint.repository_graph
+    ) in generated
+    assert syncer.generated_interface_block(
+        blueprint.name, blueprint.repository_graph
+    ) in generated
+
+
+def test_generated_llm_wakeup_arguments_are_platform_neutral(
+    syncer, tmp_path: Path
+) -> None:
+    graph = syncer.load_blueprints()["llm-wakeup"].repository_graph
+    skill = tmp_path / "skills" / "llm-wakeup" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text(
+        syncer.generated_interface_block("llm-wakeup", graph), encoding="utf-8"
+    )
+
+    assert _validate(tmp_path, frozenset()) == []
+
+
+def test_public_syncer_repairs_corrupt_llm_wakeup_entry(
+    syncer, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Break caught: public sync check does not repair a selected external use."""
+    repository = tmp_path / "repository"
+    shutil.copytree(REPO_ROOT / "skills", repository / "skills")
+    shutil.copytree(
+        REPO_ROOT / "references" / "blueprint-schema",
+        repository / "references" / "blueprint-schema",
+    )
+    shutil.copytree(REPO_ROOT / "src", repository / "src")
+    shutil.copytree(
+        REPO_ROOT / "references" / "node-standards",
+        repository / "references" / "node-standards",
+    )
+    shutil.copy2(REPO_ROOT / "officina.toml", repository / "officina.toml")
+    monkeypatch.setattr(syncer, "REPO_ROOT", repository)
+    monkeypatch.setattr(syncer, "SKILLS_ROOT", repository / "skills")
+    monkeypatch.setattr(
+        syncer,
+        "BLUEPRINT_SCHEMA_ROOT",
+        repository / "references" / "blueprint-schema",
+    )
+    monkeypatch.setattr(
+        syncer,
+        "RUNTIME_DEPENDENCIES_PATH",
+        repository / "references" / "blueprint-schema" / "runtime_dependencies.json",
+    )
+    skill = repository / "skills" / "llm-wakeup" / "SKILL.md"
+    original = skill.read_text(encoding="utf-8")
+    start = original.index(syncer.INTERFACES_START)
+    skill.write_text(
+        original[:start]
+        + original[start:].replace(
+            "`wakeup.interface.explicit-schedule`", "`wakeup.interface.removed`", 1
+        ),
+        encoding="utf-8",
+    )
+
+    check = SimpleNamespace(check=True, schema_version=6)
+    assert syncer.Interface().run(check) == 1
+    assert syncer.Interface().run(SimpleNamespace(check=False, schema_version=6)) == 0
+
+    blueprint = syncer.load_blueprints()["llm-wakeup"]
+    repaired = skill.read_text(encoding="utf-8")
+    assert syncer.generated_contract_block(
+        blueprint.name, blueprint.data, blueprint.repository_graph
+    ) in repaired
+    assert syncer.generated_interface_block(
+        blueprint.name, blueprint.repository_graph
+    ) in repaired
+    assert syncer.Interface().run(check) == 0
+
+
+def test_generated_executable_patterns_preserve_alternatives_and_arity(syncer) -> None:
+    """Break caught: a short-account template admits the forbidden long form."""
+    graph = syncer.load_blueprints()["email-client"].repository_graph
+
+    interfaces = syncer.generated_interface_block("email-client._rtx", graph)
+    start = interfaces.index("email-client._rtx.interface.mail-attachments")
+    end = interfaces.index("email-client._rtx.interface.mail-folders")
+    attachments = interfaces[start:end]
+
+    assert "Alternative: `short-account`" in attachments
+    short_attachments = attachments[:attachments.index("Alternative: `long-account`")]
+    assert 'Required options: ["-a"]; positional arity: 1..unbounded; stdin: forbidden' in short_attachments
+    assert '"positionals": ["uid", "uid..."]' in short_attachments
+    assert '"-a": "nickname"' in short_attachments
+    assert '"--folder": "inbox|sent|drafts|trash|all|<literal>"' in short_attachments
+    assert '"--account":' not in short_attachments
+    long_attachments = attachments[attachments.index("Alternative: `long-account`"):]
+    assert '"positionals": ["uid", "uid..."]' in long_attachments
+    assert '"--account": "nickname"' in long_attachments
+    assert '"-a":' not in long_attachments
+    folders = interfaces[interfaces.index("email-client._rtx.interface.mail-folders"):]
+    assert "Alternative: `long-account`" in folders
+    assert 'Required options: ["--account"]' in folders
+    assert "stdin: permitted" in interfaces
+
+
+def test_generated_executable_rejects_ambiguous_usage(syncer) -> None:
+    graph = syncer.load_blueprints()["email-client"].repository_graph
+    export = graph.exports["email-client._rtx.interface.mail-attachments"]
+    spec, _source_id = syncer._generated_export_binding(
+        graph, export.interface_id, export
+    )
+    spec["usage"] = ""
+
+    with pytest.raises(ValueError, match="usage cannot be projected unambiguously"):
+        syncer.generated_interface_block("email-client", graph)
+
+
+def test_generated_executable_preserves_nested_placeholders_without_fallbacks(syncer) -> None:
+    blueprints = syncer.load_blueprints()
+    graph = blueprints["email-client"].repository_graph
+
+    interfaces = syncer.generated_interface_block("email-client._rtx", graph)
+
+    assert '"--attach": "/path[:DisplayName]"' in interfaces
+    for skill in ("email-client", "daily-plan", "node-certify", "node-drift"):
+        blueprint = blueprints[skill]
+        generated = syncer.generated_interface_block(
+            skill, blueprint.repository_graph
+        )
+        assert "POSITIONAL_" not in generated
+
+    daily = syncer.generated_interface_block(
+        "daily-plan", blueprints["daily-plan"].repository_graph
+    )
+    indexed = daily[daily.index("Alternative: `indexed-or-add`"):daily.index("Alternative: `set-deadline`")]
+    assert "set-deadline" not in indexed
+    assert '"positionals": ["set-deadline", "actions|triage", "indices-or-item-id", "deadline-for-set-deadline"]' in daily
+
+    triage = syncer.generated_interface_block(
+        "email-triage", blueprints["email-triage"].repository_graph
+    )
+    assert '"--total-scanned": "N"' in triage
+    assert '"--added-todo": "N"' in triage
+
+
+def test_generated_executable_rejects_ambiguous_option_alias(syncer) -> None:
+    graph = syncer.load_blueprints()["email-client"].repository_graph
+    export = graph.exports["email-client._rtx.interface.mail-folders"]
+    spec, _source_id = syncer._generated_export_binding(
+        graph, export.interface_id, export
+    )
+    long_pattern = spec["process_binding"]["patterns"][1]
+    spec["process_binding"]["patterns"] = [long_pattern]
+    spec["usage"] = "-a <nickname> -b <other>"
+    long_pattern["forbidden_flags"] = ["-a", "-b"]
+
+    with pytest.raises(ValueError, match="ambiguous option alias"):
+        syncer.generated_interface_block("email-client", graph)
+
+
 def test_generated_contract_keeps_setup_requirements_separate(syncer) -> None:
     module_id = "consumer"
     source_id = f"{module_id}.source.gateway"
@@ -181,6 +510,24 @@ def test_generated_contract_keeps_setup_requirements_separate(syncer) -> None:
     uses, setup = contract.split("Setup Requires Setup Of:", 1)
     assert prerequisite_id not in uses
     assert prerequisite_id in setup
+
+
+def test_real_setup_contracts_do_not_cross_contaminate(syncer) -> None:
+    blueprints = syncer.load_blueprints()
+    google = syncer.generated_contract_block(
+        "connect-google",
+        blueprints["connect-google"].data,
+        blueprints["connect-google"].repository_graph,
+    )
+    lists = syncer.generated_contract_block(
+        "list-manager",
+        blueprints["list-manager"].data,
+        blueprints["list-manager"].repository_graph,
+    )
+
+    assert "Setup Requires Setup Of: none" in google
+    assert "Setup Requires Setup Of: none" in lists
+    assert "connect-google.interface.setup" not in lists
 
 
 def test_generated_setup_order_deduplicates_transitive_dependencies(syncer) -> None:
@@ -257,7 +604,9 @@ def test_v5_generated_views_are_parent_only_and_derive_facade_contract(
     assert "demo.source.gateway -> demo.interface.execute@3" not in contract
     assert "demo-rtx.interface.execute" not in contract + interfaces
     assert "`demo.interface.execute` — Execute the demo." in interfaces
-    assert "dispatcher --caller-skill demo demo.interface.execute" in interfaces
+    assert "Caller: `demo`" in interfaces
+    assert "Version: 3" in interfaces
+    assert '"positionals": []' in interfaces
     assert set(manifest["skills"]) == {"demo"}
     assert manifest["version"] == 2
     assert manifest["skills"]["demo"]["interfaces"]["demo.interface.execute"] == {

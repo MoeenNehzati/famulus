@@ -66,14 +66,10 @@ namespace_exports:
         allow_all_modules: false
         allowed_callers:
         - connect-google
-        - install-assistant-tools
-        - install-assistant-tools._rtx
       connect-google._rtx.interface.connect-services:
         allow_all_modules: false
         allowed_callers:
         - connect-google
-        - install-assistant-tools
-        - install-assistant-tools._rtx
       connect-google._rtx.interface.install-client:
         allow_all_modules: false
         allowed_callers:
@@ -107,6 +103,6 @@ sources:
       path: blueprints/personal-preferences-default.yaml
 version: 2
 maturity: experimental
-installation_tier: core
+installation_tier: optional
 personal_preference:
   applies: false

@@ -22,7 +22,7 @@ Public Interfaces:
 
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `latex-workshop.interface.default` — Resolve effective settings, execute the matching build, inspect the correct artifacts, and report the source of truth.
 <!-- END BLUEPRINT INTERFACES -->
 Skill: latex-workshop

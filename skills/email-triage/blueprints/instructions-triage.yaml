@@ -1,6 +1,12 @@
 content:
 - instructions/triage\.md
-dependencies: []
+dependencies:
+- blueprint:
+    base: repository-root
+    path: skills/setup-python-environment/blueprints/gateway.yaml
+  reason: Repair only email-triage's residual declaration before fetching envelopes.
+  source: setup-python-environment.source.gateway
+  version: 1
 description: Owns the LLM-directed, watermark-safe email triage workflow and its routing
   decisions.
 gateway:
@@ -12,6 +18,8 @@ interfaces:
     content:
     - instructions/triage\.md
     uses_interfaces:
+    - interface: setup-python-environment.interface.repair-selected-packages
+      version: 1
     - interface: email-client.interface.default
       version: 3
     - interface: email-triage._rtx.interface.fetch-filtered-envelopes
@@ -94,6 +102,8 @@ interfaces:
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
+- interface: setup-python-environment.interface.repair-selected-packages
+  version: 1
 - interface: email-client.interface.default
   version: 3
 - interface: email-triage._rtx.interface.fetch-filtered-envelopes

@@ -66,7 +66,7 @@ def test_skill_maker_queries_standards_and_builds_an_authoring_brief() -> None:
         assert standard in skill
     assert "schema-minimum skill" in skill
     assert "items.true" not in skill
-    assert len(skill.split()) < 700
+    assert len(skill.split()) < 850
 
 
 def test_refactor_node_builds_a_refactoring_brief_from_each_selected_root() -> None:

@@ -12,9 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Mapping
 
-from officina.install.context import InstallationContext
-
-from .runtime import ManagedSchedule, native_registration_root
+from .runtime import ManagedSchedule, load_managed_schedule
 from officina.common.atomic_files import atomic_replace_bytes, exclusive_file_lock
 from .jobs import confined_child, validate_job, validate_job_name, validate_jobs_payload
 
@@ -27,23 +25,18 @@ def linux_session_environment() -> dict[str, str]:
     }
 
 
-def registration_token(installation_id: str) -> str:
-    return "" if installation_id == "standard" else f"{installation_id}-"
-
-
 def executor_argv(schedule: ManagedSchedule, job_name: str) -> list[str]:
     job_name = validate_job_name(job_name)
     return [
-        str(schedule.runtime_resolver), "-m", "officina.recurring.executor",
+        str(schedule.python), "-m", "officina.recurring.executor",
+        "--plugin-root", str(schedule.plugin_root),
         "--descriptor", str(schedule.descriptor_path), "--job", job_name,
         "--log-root", str(schedule.log_root),
     ]
 
 
 def windows_executor_argv(schedule: ManagedSchedule, job_name: str) -> list[str]:
-    if schedule.bootstrap_python is None:
-        raise ValueError("Windows schedule descriptor has no validated bootstrap interpreter")
-    return [str(schedule.bootstrap_python), *executor_argv(schedule, job_name)]
+    return executor_argv(schedule, job_name)
 
 
 def _systemd_quote(value: str) -> str:
@@ -116,7 +109,7 @@ def cron_to_systemd(value: str) -> str:
     )
 
 
-def linux_names(job_name: str, installation_id: str) -> tuple[str, str]:
+def linux_names(job_name: str) -> tuple[str, str]:
     job_name = validate_job_name(job_name)
     stem = f"ai-{job_name}"
     return stem + ".service", stem + ".timer"
@@ -124,7 +117,7 @@ def linux_names(job_name: str, installation_id: str) -> tuple[str, str]:
 
 def render_linux_service(schedule: ManagedSchedule, job: Mapping[str, object]) -> str:
     job = validate_job(job)
-    argv = ["/usr/bin/python3", *executor_argv(schedule, str(job["name"]))]
+    argv = executor_argv(schedule, str(job["name"]))
     rendered_environment = "".join(
         f"Environment={_systemd_quote(name + '=' + value)}\n"
         for name, value in _environment(schedule)
@@ -140,7 +133,7 @@ def render_linux_service(schedule: ManagedSchedule, job: Mapping[str, object]) -
 
 def render_linux_timer(schedule: ManagedSchedule, job: Mapping[str, object]) -> str:
     job = validate_job(job)
-    service, _ = linux_names(str(job["name"]), schedule.installation_id)
+    service, _ = linux_names(str(job["name"]))
     return (
         "[Unit]\n" f"Description=Timer for AI job: {job.get('description', job['name'])}\n\n"
         "[Timer]\n" f"OnCalendar={cron_to_systemd(str(job['schedule']))}\n"
@@ -148,7 +141,7 @@ def render_linux_timer(schedule: ManagedSchedule, job: Mapping[str, object]) -> 
     )
 
 
-def launchd_label(job_name: str, installation_id: str) -> str:
+def launchd_label(job_name: str) -> str:
     if job_name:
         job_name = validate_job_name(job_name)
     return f"com.famulus.ai.{job_name}"
@@ -187,7 +180,7 @@ def render_macos_plist(schedule: ManagedSchedule, job: Mapping[str, object]) -> 
     log = schedule.log_root / name / "run.log"
     environment = dict(_environment(schedule))
     return plistlib.dumps({
-        "Label": launchd_label(name, schedule.installation_id),
+        "Label": launchd_label(name),
         "ProgramArguments": executor_argv(schedule, name),
         "StandardErrorPath": str(log), "StandardOutPath": str(log),
         "StartCalendarInterval": _cron_values(str(job["schedule"])),
@@ -196,16 +189,16 @@ def render_macos_plist(schedule: ManagedSchedule, job: Mapping[str, object]) -> 
     }, sort_keys=True)
 
 
-def windows_task_name(job_name: str, installation_id: str) -> str:
+def windows_task_name(job_name: str) -> str:
     if job_name:
         job_name = validate_job_name(job_name)
     return f"Famulus-AI-ai-{job_name}"
 
 
-def windows_wrapper_name(job_name: str, installation_id: str) -> str:
+def windows_wrapper_name(job_name: str) -> str:
     if job_name:
         job_name = validate_job_name(job_name)
-    return windows_task_name(job_name, installation_id) + ".cmd"
+    return windows_task_name(job_name) + ".cmd"
 
 
 def _cmd_quote(value: str) -> str:
@@ -242,7 +235,7 @@ def cron_to_schtasks_args(value: str) -> list[str]:
     return ["/SC", "DAILY", "/ST", start] if weekday is None else ["/SC", "WEEKLY", "/D", weekday, "/ST", start]
 
 
-def _context_job(name: str, prefix: str, suffix: str, installation_id: str) -> str | None:
+def _context_job(name: str, prefix: str, suffix: str) -> str | None:
     if not name.startswith(prefix) or not name.endswith(suffix): return None
     job = name[len(prefix):] if not suffix else name[len(prefix):len(name) - len(suffix)]
     try:
@@ -261,100 +254,6 @@ class _NativeInventory:
     available: bool
     entries: tuple[str, ...] = ()
     detail: str = ""
-
-
-@dataclass(frozen=True)
-class RegistrationNamespaceStatus:
-    certain: bool
-    registrations_present: bool
-    names: tuple[str, ...] = ()
-    detail: str = ""
-
-
-def inspect_registration_namespace(
-    *,
-    installation_id: str,
-    state_root: Path,
-    native_registration_root: Path,
-    platform: str,
-) -> RegistrationNamespaceStatus:
-    """Read recurring-owned durable and native state without mutating it."""
-    names: set[str] = set()
-    state_present = False
-    for filename in ("registrations.json", "registrations.pending.json"):
-        path = state_root / filename
-        if not path.exists():
-            continue
-        if filename == "registrations.pending.json":
-            state_present = True
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-            registrations = payload.get("registrations")
-            expected_keys = {"schema_version", "installation_id", "registrations"}
-            if filename == "registrations.pending.json":
-                expected_keys.add("publication_state")
-            if (
-                not isinstance(payload, dict)
-                or set(payload) != expected_keys
-                or payload.get("schema_version") != 1
-                or payload.get("installation_id") != installation_id
-                or (
-                    filename == "registrations.pending.json"
-                    and payload.get("publication_state") != "pending"
-                )
-                or not isinstance(registrations, list)
-            ):
-                raise ValueError("state does not match the selected installation")
-            names.update(validate_job_name(name) for name in registrations)
-        except (OSError, UnicodeError, ValueError) as exc:
-            return RegistrationNamespaceStatus(False, True, detail=f"{path}: {exc}")
-
-    if installation_id == "standard":
-        owner = native_registration_root / "install-owner.json"
-    else:
-        owner = native_registration_root / f"install-owner-{installation_id}.json"
-    state_present = state_present or owner.exists()
-
-    if platform.startswith("linux"):
-        prefix = "ai-"
-        inventory = _systemd_unit_inventory(
-            prefix, installation_id, linux_session_environment()
-        )
-        patterns = ((f"{prefix}*.service", ".service"), (f"{prefix}*.timer", ".timer"))
-    elif platform == "darwin":
-        prefix = "ai-"
-        inventory = _launchd_label_inventory(installation_id)
-        patterns = ((f"{prefix}*.plist", ".plist"),)
-    elif platform == "win32":
-        prefix = windows_task_name("", installation_id)
-        inventory = _windows_task_inventory()
-        patterns = ((f"{prefix}*.cmd", ".cmd"),)
-    else:
-        return RegistrationNamespaceStatus(False, state_present, detail=f"unsupported scheduler platform: {platform}")
-    if not inventory.available:
-        return RegistrationNamespaceStatus(False, state_present, tuple(sorted(names)), inventory.detail)
-
-    for entry in inventory.entries:
-        short = entry.rsplit("\\", 1)[-1]
-        suffix = ".timer" if short.endswith(".timer") else ".service" if short.endswith(".service") else ""
-        native_prefix = launchd_label("", installation_id) if platform == "darwin" else prefix
-        job = _context_job(short, native_prefix, suffix, installation_id)
-        if job is not None:
-            names.add(job)
-    for pattern, suffix in patterns:
-        for path in native_registration_root.glob(pattern):
-            job = _context_job(path.name, prefix, suffix, installation_id)
-            if job is None:
-                return RegistrationNamespaceStatus(False, True, tuple(sorted(names)), f"invalid owned artifact: {path}")
-            names.add(job)
-    if platform.startswith("linux"):
-        try:
-            marker = _sentinel_marker(installation_id)
-            if any(line.rstrip().endswith(marker) for line in _read_crontab().splitlines()):
-                state_present = True
-        except RuntimeError as exc:
-            return RegistrationNamespaceStatus(False, True, tuple(sorted(names)), str(exc))
-    return RegistrationNamespaceStatus(True, state_present or bool(names), tuple(sorted(names)))
 
 
 def _windows_task_inventory() -> _NativeInventory:
@@ -390,7 +289,7 @@ def _launchd_service_state(service: str) -> tuple[bool | None, str]:
     return None, detail or f"exit {result.returncode}"
 
 
-def _launchd_label_inventory(installation_id: str) -> _NativeInventory:
+def _launchd_label_inventory() -> _NativeInventory:
     result = subprocess.run(
         ["launchctl", "list"], capture_output=True, text=True,
         encoding="utf-8", errors="replace"
@@ -398,7 +297,7 @@ def _launchd_label_inventory(installation_id: str) -> _NativeInventory:
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "").strip()
         return _NativeInventory(False, detail=detail or f"exit {result.returncode}")
-    prefix = launchd_label("", installation_id)
+    prefix = launchd_label("")
     entries = []
     for line in (result.stdout or "").splitlines():
         fields = line.split()
@@ -450,7 +349,7 @@ def _systemd_unit_state(
 
 
 def _systemd_unit_inventory(
-    prefix: str, installation_id: str, environment: Mapping[str, str]
+    prefix: str, environment: Mapping[str, str]
 ) -> _NativeInventory:
     result = subprocess.run(
         [
@@ -475,7 +374,7 @@ def _systemd_unit_inventory(
             continue
         unit = fields[0]
         suffix = ".timer" if unit.endswith(".timer") else ".service"
-        if _context_job(unit, prefix, suffix, installation_id) is not None:
+        if _context_job(unit, prefix, suffix) is not None:
             selected.append(unit)
     return _NativeInventory(True, tuple(selected))
 
@@ -503,7 +402,7 @@ def _registration_payload(schedule: ManagedSchedule, registrations: list[str]) -
         raise ValueError("registration summary contains duplicate job names")
     return {
         "schema_version": 1,
-        "installation_id": schedule.installation_id,
+        "owner_id": schedule.owner_id,
         "registrations": selected,
     }
 
@@ -546,7 +445,7 @@ def write_registration_summary(
     _write_registration_state(schedule, registrations, pending=False)
 
 
-def _sentinel_marker(installation_id: str) -> str:
+def _sentinel_marker() -> str:
     return "# ai-recurring-healthcheck"
 
 
@@ -577,7 +476,8 @@ def _write_crontab(content: str) -> None:
 
 def _sentinel_script(schedule: ManagedSchedule) -> str:
     arguments = [
-        "/usr/bin/python3", str(schedule.runtime_resolver), "-m", "officina.recurring.healthcheck",
+        str(schedule.python), "-m", "officina.recurring.healthcheck",
+        "--plugin-root", str(schedule.plugin_root),
         "--descriptor", str(schedule.descriptor_path),
         "--log-root", str(schedule.log_root), "--cron",
     ]
@@ -599,12 +499,12 @@ def _sentinel_script(schedule: ManagedSchedule) -> str:
 
 
 def _sentinel_line(schedule: ManagedSchedule) -> str:
-    return f"0 */4 * * * /bin/sh {shlex.quote(str(_native_child(schedule, 'ai-recurring-healthcheck.sh')))} {_sentinel_marker(schedule.installation_id)}"
+    return f"0 */4 * * * /bin/sh {shlex.quote(str(_native_child(schedule, 'ai-recurring-healthcheck.sh')))} {_sentinel_marker()}"
 
 
 def _update_sentinel(schedule: ManagedSchedule, *, remove: bool) -> None:
     existing = _read_crontab()
-    marker = _sentinel_marker(schedule.installation_id)
+    marker = _sentinel_marker()
     kept = [
         line for line in existing.splitlines(keepends=True)
         if not line.rstrip("\r\n").rstrip().endswith(marker)
@@ -619,19 +519,14 @@ def _update_sentinel(schedule: ManagedSchedule, *, remove: bool) -> None:
 
 
 def _owner_path(schedule: ManagedSchedule) -> Path:
-    name = (
-        "install-owner.json"
-        if schedule.installation_id == "standard"
-        else f"install-owner-{schedule.installation_id}.json"
-    )
-    return schedule.native_registration_root / name
+    return schedule.native_registration_root / "install-owner.json"
 
 
 def _write_owner(schedule: ManagedSchedule) -> None:
     target = _owner_path(schedule)
     raw = (
         json.dumps(
-            {"schema_version": 3, "installation_id": schedule.installation_id,
+            {"schema_version": 4, "owner_id": schedule.owner_id,
              "descriptor": str(schedule.descriptor_path)},
             ensure_ascii=False,
             indent=2,
@@ -675,14 +570,14 @@ def _recorded_registration_names(schedule: ManagedSchedule) -> set[str]:
         except (OSError, UnicodeError, ValueError) as exc:
             raise ValueError(f"cannot read recurring registration state at {path}: {exc}") from exc
         registrations = payload.get("registrations") if isinstance(payload, dict) else None
-        expected_keys = {"schema_version", "installation_id", "registrations"}
+        expected_keys = {"schema_version", "owner_id", "registrations"}
         if path == _pending_path(schedule):
             expected_keys.add("publication_state")
         if (
             not isinstance(payload, dict)
             or set(payload) != expected_keys
             or payload.get("schema_version") != 1
-            or payload.get("installation_id") != schedule.installation_id
+            or payload.get("owner_id") != schedule.owner_id
             or (
                 path == _pending_path(schedule)
                 and payload.get("publication_state") != "pending"
@@ -708,7 +603,7 @@ def _teardown_incomplete(schedule: ManagedSchedule, remaining: set[str]) -> None
     selected = sorted(remaining) or ["<native-teardown-incomplete>"]
     raise RuntimeError(
         "recurring native teardown is incomplete for "
-        f"{schedule.installation_id}: {', '.join(selected)}; "
+        f"{schedule.owner_id}: {', '.join(selected)}; "
         "retry recurring-tasks remove-context"
     )
 
@@ -717,7 +612,13 @@ def sync(schedule: ManagedSchedule) -> None:
     root = schedule.native_registration_root
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     with exclusive_file_lock(root / ".ai-recurring.lock", allowed_root=root):
-        _sync_unlocked(schedule)
+        previous = _load_owner(schedule)
+        try:
+            _sync_unlocked(schedule)
+        except Exception:
+            if previous is not None:
+                _sync_unlocked(previous)
+            raise
 
 
 def _sync_unlocked(schedule: ManagedSchedule) -> None:
@@ -730,20 +631,20 @@ def _sync_unlocked(schedule: ManagedSchedule) -> None:
     if sys.platform.startswith("linux"):
         session_environment = linux_session_environment()
         for job in enabled:
-            service, timer = linux_names(str(job["name"]), schedule.installation_id)
+            service, timer = linux_names(str(job["name"]))
             _write_native_bytes(schedule, service, render_linux_service(schedule, job).encode("utf-8"))
             _write_native_bytes(schedule, timer, render_linux_timer(schedule, job).encode("utf-8"))
         prefix = "ai-"
         enabled_names = {str(job["name"]) for job in enabled}
         for timer_path in sorted(root.glob(f"{prefix}*.timer")):
-            name = _context_job(timer_path.name, prefix, ".timer", schedule.installation_id)
+            name = _context_job(timer_path.name, prefix, ".timer")
             if name is not None and name not in enabled_names:
                 subprocess.run(["systemctl", "--user", "disable", "--now", timer_path.name], check=False, env=session_environment)
                 _unlink_native(schedule, timer_path.name)
-                _unlink_native(schedule, linux_names(name, schedule.installation_id)[0])
+                _unlink_native(schedule, linux_names(name)[0])
         subprocess.run(["systemctl", "--user", "daemon-reload"], check=True, env=session_environment)
         for job in enabled:
-            subprocess.run(["systemctl", "--user", "enable", "--now", linux_names(str(job['name']), schedule.installation_id)[1]], check=True, env=session_environment)
+            subprocess.run(["systemctl", "--user", "enable", "--now", linux_names(str(job['name']))[1]], check=True, env=session_environment)
         _write_native_bytes(schedule, "ai-recurring-healthcheck.sh", (_sentinel_script(schedule) + "\n").encode("utf-8"))
         _update_sentinel(schedule, remove=False)
     elif sys.platform == "darwin":
@@ -751,36 +652,36 @@ def _sync_unlocked(schedule: ManagedSchedule) -> None:
         enabled_names = {str(job["name"]) for job in enabled}
         prefix = "ai-"
         for path in sorted(root.glob(f"{prefix}*.plist")):
-            name = _context_job(path.name, prefix, ".plist", schedule.installation_id)
+            name = _context_job(path.name, prefix, ".plist")
             if name is not None and name not in enabled_names:
-                service = f"{target}/{launchd_label(name, schedule.installation_id)}"
+                service = f"{target}/{launchd_label(name)}"
                 if subprocess.run(["launchctl", "print", service], capture_output=True).returncode == 0:
                     subprocess.run(["launchctl", "bootout", service], capture_output=True)
                 _unlink_native(schedule, path.name)
         for job in enabled:
             name = f"ai-{job['name']}.plist"
             path = _write_native_bytes(schedule, name, render_macos_plist(schedule, job))
-            service = f"{target}/{launchd_label(str(job['name']), schedule.installation_id)}"
+            service = f"{target}/{launchd_label(str(job['name']))}"
             if subprocess.run(["launchctl", "print", service], capture_output=True).returncode == 0:
                 subprocess.run(["launchctl", "bootout", service], capture_output=True)
             subprocess.run(["launchctl", "bootstrap", target, str(path)], check=True)
     elif sys.platform == "win32":
         enabled_names = {str(job["name"]) for job in enabled}
-        prefix = windows_task_name("", schedule.installation_id)
+        prefix = windows_task_name("")
         existing_tasks = _windows_existing_tasks()
         for existing in existing_tasks:
             short = existing.rsplit("\\", 1)[-1]
-            name = _context_job(short, prefix, "", schedule.installation_id)
+            name = _context_job(short, prefix, "")
             if name is not None and name not in enabled_names:
                 subprocess.run(["schtasks", "/Delete", "/TN", existing, "/F"], capture_output=True)
-                _unlink_native(schedule, windows_wrapper_name(name, schedule.installation_id))
+                _unlink_native(schedule, windows_wrapper_name(name))
         for job in enabled:
             path = _write_native_bytes(
                 schedule,
-                windows_wrapper_name(str(job["name"]), schedule.installation_id),
+                windows_wrapper_name(str(job["name"])),
                 render_windows_wrapper(schedule, job).encode("utf-8"),
             )
-            subprocess.run(["schtasks", "/Create", "/TN", windows_task_name(str(job['name']), schedule.installation_id), "/TR", f'cmd.exe /d /s /c "{path}"', "/F", *cron_to_schtasks_args(str(job["schedule"]))], check=True)
+            subprocess.run(["schtasks", "/Create", "/TN", windows_task_name(str(job['name'])), "/TR", f'cmd.exe /d /s /c "{path}"', "/F", *cron_to_schtasks_args(str(job["schedule"]))], check=True)
     else:
         raise RuntimeError(f"unsupported scheduler platform: {sys.platform}")
     for owner in root.glob("install-owner*.json"):
@@ -790,25 +691,15 @@ def _sync_unlocked(schedule: ManagedSchedule) -> None:
     _settle_registration_summary(schedule, selected_names)
 
 
-@dataclass(frozen=True)
-class _RegistrationTeardownContext:
-    installation_id: str
-    jobs_file: Path
-    state_root: Path
-    native_registration_root: Path
-
-
-def remove_installation_context(
-    context: InstallationContext, platform: str
-) -> None:
-    """Remove native recurring state for one explicit installation context."""
-    schedule = _RegistrationTeardownContext(
-        installation_id=context.installation_id,
-        jobs_file=context.paths.recurring_config_root / "jobs.yaml",
-        state_root=context.paths.recurring_state_root,
-        native_registration_root=native_registration_root(context, platform),
-    )
-    _remove_context(schedule, platform)
+def _load_owner(schedule: ManagedSchedule) -> ManagedSchedule | None:
+    try:
+        payload = json.loads(_owner_path(schedule).read_text(encoding="utf-8"))
+        expected = {"schema_version", "owner_id", "descriptor"}
+        if set(payload) != expected or payload["schema_version"] != 4:
+            raise ValueError("unsupported owner schema")
+        return load_managed_schedule(descriptor_path=Path(payload["descriptor"]))
+    except FileNotFoundError:
+        return None
 
 
 def remove_context(schedule: ManagedSchedule) -> None:
@@ -816,19 +707,19 @@ def remove_context(schedule: ManagedSchedule) -> None:
 
 
 def _remove_context(
-    schedule: ManagedSchedule | _RegistrationTeardownContext, platform: str
+    schedule: ManagedSchedule, platform: str
 ) -> None:
     root = schedule.native_registration_root
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     with exclusive_file_lock(root / ".ai-recurring.lock", allowed_root=root):
-        if not _owner_path(schedule).exists():
-            _settle_registration_summary(schedule, [])
+        owner = _load_owner(schedule)
+        if owner is None or owner.owner_id != schedule.owner_id:
             return
         _remove_context_unlocked(schedule, platform)
 
 
 def _remove_context_unlocked(
-    schedule: ManagedSchedule | _RegistrationTeardownContext, platform: str
+    schedule: ManagedSchedule, platform: str
 ) -> None:
     root = schedule.native_registration_root
     candidates = _teardown_candidates(schedule)
@@ -837,30 +728,28 @@ def _remove_context_unlocked(
     if platform.startswith("linux"):
         prefix = "ai-"
         session_environment = linux_session_environment()
-        inventory = _systemd_unit_inventory(
-            prefix, schedule.installation_id, session_environment
-        )
+        inventory = _systemd_unit_inventory(prefix, session_environment)
         if not inventory.available:
             _teardown_incomplete(schedule, candidates or {"<unit-inventory>"})
         for unit in inventory.entries:
             suffix = ".timer" if unit.endswith(".timer") else ".service"
-            name = _context_job(unit, prefix, suffix, schedule.installation_id)
+            name = _context_job(unit, prefix, suffix)
             if name is not None:
                 candidates.add(name)
         for timer_path in sorted(root.glob(f"{prefix}*.timer")):
             name = _context_job(
-                timer_path.name, prefix, ".timer", schedule.installation_id
+                timer_path.name, prefix, ".timer"
             )
             if name is not None:
                 candidates.add(name)
         for service_path in sorted(root.glob(f"{prefix}*.service")):
             name = _context_job(
-                service_path.name, prefix, ".service", schedule.installation_id
+                service_path.name, prefix, ".service"
             )
             if name is not None:
                 candidates.add(name)
         for name in sorted(candidates):
-            service, timer = linux_names(name, schedule.installation_id)
+            service, timer = linux_names(name)
             timer_active, _ = _systemd_unit_state(
                 timer, "is-active", session_environment
             )
@@ -923,7 +812,7 @@ def _remove_context_unlocked(
             remaining.update(candidates or {"<daemon-reload>"})
         elif not remaining:
             for name in sorted(candidates):
-                service, timer = linux_names(name, schedule.installation_id)
+                service, timer = linux_names(name)
                 final_states = (
                     _systemd_unit_state(timer, "is-active", session_environment)[0],
                     _systemd_unit_state(service, "is-active", session_environment)[0],
@@ -936,35 +825,33 @@ def _remove_context_unlocked(
                     or (root / service).exists()
                 ):
                     remaining.add(name)
-            final_inventory = _systemd_unit_inventory(
-                prefix, schedule.installation_id, session_environment
-            )
+            final_inventory = _systemd_unit_inventory(prefix, session_environment)
             if not final_inventory.available:
                 remaining.update(candidates or {"<unit-inventory>"})
             else:
                 for unit in final_inventory.entries:
                     suffix = ".timer" if unit.endswith(".timer") else ".service"
-                    name = _context_job(unit, prefix, suffix, schedule.installation_id)
+                    name = _context_job(unit, prefix, suffix)
                     if name is not None:
                         remaining.add(name)
     elif platform == "darwin":
         prefix = "ai-"
         target = f"gui/{os.getuid()}"
-        inventory = _launchd_label_inventory(schedule.installation_id)
+        inventory = _launchd_label_inventory()
         if not inventory.available:
             _teardown_incomplete(schedule, candidates or {"<launchd-inventory>"})
-        label_prefix = launchd_label("", schedule.installation_id)
+        label_prefix = launchd_label("")
         for label in inventory.entries:
             name = label[len(label_prefix):]
             if name:
                 candidates.add(name)
         for path in sorted(root.glob(f"{prefix}*.plist")):
-            name = _context_job(path.name, prefix, ".plist", schedule.installation_id)
+            name = _context_job(path.name, prefix, ".plist")
             if name is not None:
                 candidates.add(name)
         for name in sorted(candidates):
             path = root / f"{prefix}{name}.plist"
-            service = f"{target}/{launchd_label(name, schedule.installation_id)}"
+            service = f"{target}/{launchd_label(name)}"
             active, _ = _launchd_service_state(service)
             if active is None:
                 remaining.add(name)
@@ -982,7 +869,7 @@ def _remove_context_unlocked(
             if final_active is None or final_active or path.exists():
                 remaining.add(name)
         if not remaining:
-            final_inventory = _launchd_label_inventory(schedule.installation_id)
+            final_inventory = _launchd_label_inventory()
             if not final_inventory.available:
                 remaining.update(candidates or {"<launchd-inventory>"})
             else:
@@ -991,7 +878,7 @@ def _remove_context_unlocked(
                     if name:
                         remaining.add(name)
     elif platform == "win32":
-        prefix = windows_task_name("", schedule.installation_id)
+        prefix = windows_task_name("")
         inventory = _windows_task_inventory()
         if not inventory.available:
             _teardown_incomplete(schedule, candidates or {"<task-inventory>"})
@@ -999,13 +886,13 @@ def _remove_context_unlocked(
         selected_tasks: dict[str, str] = {}
         for existing in existing_tasks:
             short = existing.rsplit("\\", 1)[-1]
-            name = _context_job(short, prefix, "", schedule.installation_id)
+            name = _context_job(short, prefix, "")
             if name is not None:
                 candidates.add(name)
                 selected_tasks[name] = existing
-        wrapper_prefix = windows_wrapper_name("", schedule.installation_id).removesuffix(".cmd")
+        wrapper_prefix = windows_wrapper_name("").removesuffix(".cmd")
         for path in sorted(root.glob(f"{wrapper_prefix}*.cmd")):
-            name = _context_job(path.name, wrapper_prefix, ".cmd", schedule.installation_id)
+            name = _context_job(path.name, wrapper_prefix, ".cmd")
             if name is not None:
                 candidates.add(name)
         for name in sorted(candidates):
@@ -1021,23 +908,23 @@ def _remove_context_unlocked(
                 current = _windows_task_inventory()
                 if not current.available or any(
                     item.rsplit("\\", 1)[-1]
-                    == windows_task_name(name, schedule.installation_id)
+                    == windows_task_name(name)
                     for item in current.entries
                 ):
                     remaining.add(name)
                     continue
-            _unlink_native(schedule, windows_wrapper_name(name, schedule.installation_id))
+            _unlink_native(schedule, windows_wrapper_name(name))
         final_inventory = _windows_task_inventory()
         if not final_inventory.available:
             remaining.update(candidates or {"<task-inventory>"})
         else:
             for existing in final_inventory.entries:
                 short = existing.rsplit("\\", 1)[-1]
-                name = _context_job(short, prefix, "", schedule.installation_id)
+                name = _context_job(short, prefix, "")
                 if name is not None:
                     remaining.add(name)
             for name in candidates:
-                if (root / windows_wrapper_name(name, schedule.installation_id)).exists():
+                if (root / windows_wrapper_name(name)).exists():
                     remaining.add(name)
     else:
         raise RuntimeError(f"unsupported scheduler platform: {platform}")
@@ -1046,7 +933,7 @@ def _remove_context_unlocked(
     if platform.startswith("linux"):
         try:
             _update_sentinel(schedule, remove=True)
-            marker = _sentinel_marker(schedule.installation_id)
+            marker = _sentinel_marker()
             if any(
                 line.rstrip("\r\n").rstrip().endswith(marker)
                 for line in _read_crontab().splitlines(keepends=True)
@@ -1066,28 +953,28 @@ def status(schedule: ManagedSchedule) -> str:
         chunks = []
         prefix = "ai-"
         for path in sorted(schedule.native_registration_root.glob(f"{prefix}*.plist")):
-            name = _context_job(path.name, prefix, ".plist", schedule.installation_id)
+            name = _context_job(path.name, prefix, ".plist")
             if name is not None:
-                selected = subprocess.run(["launchctl", "print", f"gui/{os.getuid()}/{launchd_label(name, schedule.installation_id)}"], capture_output=True, text=True, encoding="utf-8", errors="replace")
+                selected = subprocess.run(["launchctl", "print", f"gui/{os.getuid()}/{launchd_label(name)}"], capture_output=True, text=True, encoding="utf-8", errors="replace")
                 chunks.append(selected.stdout or selected.stderr)
         return "\n".join(chunk.rstrip() for chunk in chunks if chunk)
     else:
-        prefix = windows_task_name("", schedule.installation_id)
-        return "\n".join(name for name in _windows_existing_tasks() if _context_job(name.rsplit("\\", 1)[-1], prefix, "", schedule.installation_id) is not None)
+        prefix = windows_task_name("")
+        return "\n".join(name for name in _windows_existing_tasks() if _context_job(name.rsplit("\\", 1)[-1], prefix, "") is not None)
     return result.stdout or result.stderr
 
 
 def trigger(schedule: ManagedSchedule, job_name: str) -> bool:
     if sys.platform.startswith("linux"):
-        command = ["systemctl", "--user", "start", "--wait", linux_names(job_name, schedule.installation_id)[0]]
+        command = ["systemctl", "--user", "start", "--wait", linux_names(job_name)[0]]
     elif sys.platform == "darwin":
-        command = ["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/{launchd_label(job_name, schedule.installation_id)}"]
+        command = ["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/{launchd_label(job_name)}"]
     else:
-        command = ["schtasks", "/Run", "/TN", windows_task_name(job_name, schedule.installation_id)]
+        command = ["schtasks", "/Run", "/TN", windows_task_name(job_name)]
     kwargs = {"capture_output": True}
     if sys.platform.startswith("linux"):
         kwargs["env"] = linux_session_environment()
     return subprocess.run(command, **kwargs).returncode == 0
 
 
-__all__ = ["RegistrationNamespaceStatus", "executor_argv", "inspect_registration_namespace", "linux_session_environment", "load_jobs", "remove_context", "remove_installation_context", "render_linux_service", "render_linux_timer", "render_macos_plist", "render_windows_wrapper", "status", "sync", "trigger", "windows_executor_argv", "write_registration_summary"]
+__all__ = ["executor_argv", "linux_session_environment", "load_jobs", "remove_context", "render_linux_service", "render_linux_timer", "render_macos_plist", "render_windows_wrapper", "status", "sync", "trigger", "windows_executor_argv", "write_registration_summary"]

@@ -135,9 +135,6 @@ def test_repository_setup_order_is_explicit_and_dependency_first(
 ) -> None:
     graph = ordinary_repository_graph
 
-    assert setup_order(graph, "install-assistant-tools.interface.setup") == (
-        "install-assistant-tools.interface.setup",
-    )
     assert setup_order(graph, "connect-google.interface.setup") == (
         "connect-google.interface.setup",
     )
@@ -148,11 +145,10 @@ def test_repository_setup_order_is_explicit_and_dependency_first(
     assert setup_order(graph, "online-calendar.interface.setup") == expected + (
         "online-calendar.interface.setup",
     )
-    assert setup_order(graph, "list-manager.interface.setup") == expected + (
+    assert setup_order(graph, "list-manager.interface.setup") == (
         "list-manager.interface.setup",
     )
     for module_id in (
-        "install-assistant-tools",
         "connect-google",
         "cloud-files",
         "online-calendar",
@@ -278,3 +274,20 @@ def test_setup_requirements_reject_invalid_targets(
 
     with pytest.raises(BlueprintGraphError, match=message):
         _setup_requirements(exports)
+
+
+def test_setup_exports_alias_existing_default_behavior(
+    ordinary_repository_graph: RepositoryBlueprintGraph,
+) -> None:
+    graph = ordinary_repository_graph
+
+    for module_id in (
+        "connect-google",
+        "cloud-files",
+        "online-calendar",
+        "list-manager",
+    ):
+        assert (
+            graph.exports[f"{module_id}.interface.setup"].source_interface_id
+            == graph.exports[f"{module_id}.interface.default"].source_interface_id
+        )

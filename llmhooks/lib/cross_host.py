@@ -131,7 +131,7 @@ class CrossHostHook:
         return InstallBinding(
             event=self.resolved_event(host),
             matcher=self.resolved_matcher(host),
-            argv=("python3", script_path, f"--{host}"),
+            argv=("python", script_path, f"--{host}"),
         )
 
     def run(self, host: Host) -> int:

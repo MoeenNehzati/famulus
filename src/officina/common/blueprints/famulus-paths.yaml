@@ -1,9 +1,9 @@
 content:
 - famulus_paths/__init__\.py
 dependencies: []
-description: Resolves platform-correct Famulus install, config, state, and runtime
-  paths from an explicit environment mapping, avoiding ambient process state and
-  the user's Documents folder on every platform.
+description: Resolves platform-correct durable Famulus application paths from an
+  explicit environment mapping, avoiding ambient process state and the user's
+  Documents folder on every platform.
 gateway:
   language: Python
   path: famulus_paths/__init__.py
@@ -67,8 +67,8 @@ interfaces:
       outputs:
       - id: result
         audience: machine
-        description: FamulusPaths dataclass instance with data, config, state, runtime,
-          and user-bin path fields.
+        description: FamulusPaths dataclass instance with durable data, config, state,
+          user-bin, worker, and feature-state paths.
         direct_io_ref: return-value
         cardinality:
           minimum: 1
@@ -89,8 +89,7 @@ interfaces:
         outputs:
         - result
         effects: []
-        caller_action: Use the returned FamulusPaths fields to locate install, config,
-          state, and runtime directories.
+        caller_action: Use durable returned fields for application and feature paths.
       - id: invalid-home
         class: refusal
         outputs: []

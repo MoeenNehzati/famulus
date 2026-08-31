@@ -68,6 +68,6 @@ sources:
       path: blueprints/gateway.yaml
 version: 5
 maturity: stable
-installation_tier: core
+installation_tier: optional
 personal_preference:
   applies: false

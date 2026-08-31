@@ -2,6 +2,12 @@ content:
 - SKILL\.md
 dependencies:
 - blueprint:
+    base: repository-root
+    path: skills/setup-python-environment/blueprints/gateway.yaml
+  reason: Repair only the coordinator-owned keyring declaration in the selected Python.
+  source: setup-python-environment.source.gateway
+  version: 1
+- blueprint:
     base: module-root
     path: blueprints/personal-preferences-default.yaml
   reason: Apply the user's optional routing preferences.
@@ -18,6 +24,8 @@ interfaces:
     content:
     - SKILL\.md
     uses_interfaces:
+    - interface: setup-python-environment.interface.repair-selected-packages
+      version: 1
     - interface: connect-google._rtx.interface.bind-credential-file
       version: 1
     - interface: connect-google._rtx.interface.client-status
@@ -124,6 +132,8 @@ interfaces:
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
+- interface: setup-python-environment.interface.repair-selected-packages
+  version: 1
 - interface: connect-google._rtx.interface.bind-credential-file
   version: 1
 - interface: connect-google._rtx.interface.client-status

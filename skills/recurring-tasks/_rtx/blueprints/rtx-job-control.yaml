@@ -4,11 +4,11 @@ dependencies:
 - blueprint:
     base: module-root
     path: blueprints/rtx-managed-control.yaml
-  reason: Delegates each public job-control operation through the shared managed-runtime command helper.
+  reason: Delegates each public job-control operation through recurring-owned direct command construction.
   source: recurring-tasks._rtx.source.rtx-managed-control
   version: 1
 description: Delegates enable, disable, immediate-run, status, log-view, synchronization,
-  and context-removal operations to the canonical managed recurring runtime.
+  and owner-checked teardown to recurring-owned control.
 gateway:
   language: Python
   path: _job_control.py
@@ -379,13 +379,12 @@ interfaces:
     contract:
       arguments: {}
       caller_warnings:
-      - external-side-effect: Removes only the active context's native registrations,
-          sentinel, and owner record while preserving recurring configuration and history.
+      - external-side-effect: Removes the shared registrations, sentinel, and owner record only when the selected durable config root is the persisted owner.
       direct_io:
         network: []
         reads:
         - access: read
-          content: active-context recurring authority
+          content: recurring-owned authority
           formats: [json, yaml]
           id: read-1
           medium: local-filesystem
@@ -394,7 +393,7 @@ interfaces:
           sensitivity: user-private
         writes:
         - access: configure
-          content: selected-context scheduler state
+          content: shared owner-checked scheduler state
           formats: [files]
           id: write-1
           medium: local-system
@@ -408,7 +407,7 @@ interfaces:
           sensitivity: derived-private
       execution:
         consistency:
-          live: Revalidates the active descriptor before selecting exact context artifacts.
+          live: Revalidates the recurring-owned descriptor and persisted shared owner under the scheduler lock.
         effects:
         - action: delete
           confirmation_evidence: {kind: direct-io, direct_io_ref: write-1}
@@ -416,14 +415,14 @@ interfaces:
           id: remove-native-state
           may_occur_in_outcomes: [removed]
           reversibility:
-            reversible: Run recurring setup to recreate this context's registrations.
+            reversible: Run recurring setup to recreate registrations from preserved jobs.
           value_source: {kind: direct-io, direct_io_ref: read-1}
         lifecycle: finite
         mutation_safety:
-          atomicity: {per_effect_only: Registration summary replacement is atomic; host teardown consists of separate exact-context effects.}
-          concurrent_invocations: {unsafe: Do not run setup or sync concurrently with teardown.}
-          idempotency: {idempotent: Repeated teardown converges on no native state for this installation ID.}
-          on_uncertain_completion: {verify_then_decide: Inspect this context's registration summary and retry remove-context.}
+          atomicity: {per_effect_only: Owner record replacement is atomic; host teardown consists of separate shared-set effects.}
+          concurrent_invocations: {serialized: Teardown uses the same shared scheduler lock as reconciliation.}
+          idempotency: {idempotent: Repeated owner teardown converges on no shared native state; non-owner teardown is a no-op.}
+          on_uncertain_completion: {verify_then_decide: Inspect the shared owner and registration set before retrying.}
           partial_effects_on_failure: {possible: A host command may fail after another exact-context artifact was removed.}
           rollback_on_failure: {unavailable: Retry teardown or setup after correcting the reported host error.}
         state_effect: mutating
@@ -433,7 +432,7 @@ interfaces:
       helpers: []
       interaction: {mode: unattended}
       outcomes:
-      - caller_action: Installer removal may proceed for this exact context.
+      - caller_action: Confirm whether owner-checked removal changed the shared set.
         class: success
         effects: [remove-native-state]
         id: removed
@@ -455,7 +454,7 @@ interfaces:
         truncation: {kind: none}
         type: {kind: string, sensitivity: derived-private}
       preconditions: []
-    description: Remove only the active installation context's native recurring state.
+    description: Remove the shared native set only when the selected recurring config root is its current owner.
     process_binding:
       args_prefix: [remove-context]
       entry: Interface

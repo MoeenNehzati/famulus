@@ -107,17 +107,12 @@ substituting a similar-looking rule.
 The consumer skills invoke the interface through Officina's dispatcher. A
 requirements query has this shape:
 
-```text
-dispatcher --caller-skill skill-maker \
-  standards.interface.query-standard \
-  references/node-standards/instruction-module.standard.yaml \
-  --repo-root /path/to/repository \
-  --facts-json '{"task.kind":"author-skill"}' \
-  --view requirements
+```json
+{"caller":"skill-maker","interface":"standards.interface.query-standard","version":1,"arguments":{"positionals":["references/node-standards/instruction-module.standard.yaml"],"options":{"--repo-root":"/path/to/repository","--facts-json":"{\"task.kind\":\"author-skill\"}","--view":"requirements"},"stdin":null},"dry_run":false}
 ```
 
 The caller, selected root, repository, facts, and view are explicit. A caller
-can dry-run the dispatch first to verify that the query targets the intended
+can set `dry_run` to `true` first to verify that the query targets the intended
 interface and checkout before it reads the closure.
 
 ## 3. How authoring and refactoring skills use the system

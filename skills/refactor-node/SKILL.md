@@ -27,7 +27,7 @@ Public Interfaces:
 
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `refactor-node.interface.default` — Resolve node ownership and gateway language, then invoke the supported refactoring route without crossing scope boundaries.
 - `refactor-node.interface.refactor-instructions` — Diagnose and repair an owned instruction source from its applicable standards.
 - `refactor-node.interface.refactor-python` — Diagnose and, after approval, apply one verified behavior-preserving Python OOD refactoring move at a time.
@@ -35,15 +35,17 @@ These interfaces are documented prompt surfaces. They are not executed through `
 # Refactor Node
 
 Use `standards.interface.query-standard` as the sole repository-policy query.
-Select the root from the scope already established from the request and current
-artifact; the query validates and returns its complete pinned import closure.
-Never ask the query to infer ownership or reconstruct a blueprint graph.
+Select the root from the established request scope; the query returns its
+complete pinned import closure. Never ask it to infer ownership or reconstruct
+a blueprint graph.
 
 ## Preflight
 
-Before querying policy, identify the selected component and affected implementation
-children. Retain the dry-run and verify caller, target `standards.interface.query-standard`, repository root,
-selected standard path, task facts, view, and refs. Reject mismatches and inferred targets.
+Before querying policy, identify the selected component and affected
+implementation children. Retain
+the dry-run; verify caller, target `standards.interface.query-standard`,
+repository root, selected standard path, task facts, view, and refs. Reject
+mismatches and inferred targets.
 
 ## Standards retrieval
 

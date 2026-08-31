@@ -251,7 +251,7 @@ interfaces:
           sensitivity: derived-private
       preconditions: []
     description: Check online-calendar OAuth status; print setup guidance or launch browser
-      authorization as needed. Relocated from install-assistant-tools — invoke directly
+      authorization as needed. Invoke directly
       (caller-skill online-calendar) as part of connecting remotes.
     process_binding:
       args_prefix:

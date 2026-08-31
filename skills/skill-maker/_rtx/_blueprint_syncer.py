@@ -60,6 +60,76 @@ RUNTIME_DEPENDENCY_KINDS = (
     "runtime",
     "model-data",
 )
+USAGE_TOKEN = re.compile(r"<[^>]+>(?:\s*\.\.\.)?|\{[^}]+\}|--?[\w-]+|(?!\|--?)[^\s\[\](){}]+(?:\[[^\]\s]*\])?(?:\s*\.\.\.)?|[\[\](){}|]")
+
+
+def _usage_label(value: str) -> str:
+    value = re.sub(r"\s+\.\.\.$", "...", value)
+    suffix = "..." if value.endswith("...") else ""
+    value = value.removesuffix(suffix)
+    if len(value) > 1 and (value[0], value[-1]) in {("<", ">"), ("{", "}")}:
+        value = value[1:-1].replace(",", "|")
+    return value + suffix
+
+def _usage_projection(usage: object, pattern: dict, patterns: list[dict]) -> tuple[list[str], dict]:
+    note = pattern.get("notes")
+    quoted = re.search(r"`([^`]+)`", note) if isinstance(note, str) else None
+    source = quoted.group(1) if quoted else usage.strip() if isinstance(usage, str) else ""
+    required = set(pattern.get("required_flags", ()))
+    allowed = set(pattern.get("allowed_flags", ())) | required
+    known = set().union(*(set(item.get("allowed_flags", ())) | set(item.get("required_flags", ())) for item in patterns))
+    value_flags = set().union(*(set(item.get("flag_patterns", {})) for item in patterns))
+    argument_options = {item["name"] for item in pattern.get("arguments", {}).values() if item.get("kind") == "option"}
+    known |= argument_options
+    allowed |= argument_options
+    value_flags |= argument_options
+    tokens = USAGE_TOKEN.findall(source)
+    if "".join("".join(tokens).split()) != "".join(source.split()):
+        raise ValueError("usage cannot be projected unambiguously: incomplete tokenization")
+    present = set(tokens) & known
+    aliases = {}
+    for missing in required - present:
+        candidates = {old for old in present - allowed if any(
+            allowed ^ set(other.get("allowed_flags", ())) == {old, missing}
+            and required ^ set(other.get("required_flags", ())) == {old, missing}
+            and missing in set(other.get("forbidden_flags", ())) for other in patterns
+        )}
+        if len(candidates) != 1:
+            raise ValueError("usage cannot be projected unambiguously: ambiguous option alias")
+        aliases[candidates.pop()] = missing
+    option_indexes = [index for index, token in enumerate(tokens) if token in known]
+    options = {
+        aliases.get(tokens[index], tokens[index]): (
+            _usage_label(tokens[index + 1]) if tokens[index] in value_flags else True
+        )
+        for index in option_indexes
+        if aliases.get(tokens[index], tokens[index]) in allowed
+    }
+    if required - set(options):
+        raise ValueError(f"usage cannot be projected unambiguously: missing option label {sorted(required - set(options))} in {source!r}")
+    consumed = set(option_indexes) | {index + 1 for index in option_indexes if tokens[index] in value_flags}
+    atoms = [token for index, token in enumerate(tokens) if index not in consumed and token not in "[](){}|"]
+    if pattern.get("allow_stdin") and atoms[-2:-1] == ["<"]:
+        atoms = atoms[:-2]
+    positionals = [_usage_label(atom) for atom in atoms]
+    positional_names = {
+        item["position"]: name
+        for name, item in pattern.get("arguments", {}).items()
+        if item.get("kind") == "positional" and isinstance(item.get("position"), int)
+    }
+    maximum = pattern.get("max_positionals", len(positionals))
+    selected = positionals if pattern.get("allow_extra_positionals") else positionals[:maximum]
+    selected = [positional_names.get(index, value) if "|" in value else value for index, value in enumerate(selected)]
+    for index, validator in pattern.get("positional_patterns", {}).items():
+        choices = selected[int(index)].split("|") if int(index) < len(selected) else []
+        matching = [choice for choice in choices if re.fullmatch(validator, choice)]
+        selected[int(index)] = "|".join(matching) if matching else selected[int(index)]
+    too_many = "max_positionals" in pattern and not pattern.get("allow_extra_positionals") and len(positionals) > max(item.get("max_positionals", 0) for item in patterns)
+    if len(selected) < pattern.get("min_positionals", 0) or too_many:
+        raise ValueError("usage cannot be projected unambiguously: positional labels")
+    return selected, options
+
+
 @dataclass(frozen=True)
 class ModuleBlueprint:
     name: str
@@ -300,7 +370,7 @@ def generated_interface_block(
     process_exports = []
     instruction_exports = []
     for export_id, export in sorted(repository_graph.exports.items()):
-        if export.module_node_id != module_id:
+        if module_id not in repository_graph.module_ancestry[export.module_node_id] or any(candidate.interface_id != export_id and candidate.module_node_id == module_id and candidate.terminal_interface_id == export_id for candidate in repository_graph.exports.values()):
             continue
         spec, _source_id = _generated_export_binding(
             repository_graph,
@@ -310,25 +380,43 @@ def generated_interface_block(
         description = spec.get("description")
         binding = spec.get("process_binding")
         if isinstance(binding, dict):
-            patterns = binding.get("patterns") or []
-            notes = [
-                (pattern.get("name"), pattern.get("notes"))
-                for pattern in patterns
-                if isinstance(pattern, dict)
-                and (pattern.get("name") or pattern.get("notes"))
-            ]
             process_exports.append(
                 (
                     export_id,
                     description.strip()
                     if isinstance(description, str) and description.strip()
                     else None,
-                    spec.get("usage") if isinstance(spec.get("usage"), str) else None,
-                    notes,
+                    export.version,
+                    spec.get("usage"),
+                    binding,
                 )
             )
         elif isinstance(description, str) and description.strip():
             instruction_exports.append((export_id, spec))
+    gateway = _host_gateway_source(module_id, repository_graph)
+    dependencies = {(edge.target_id, edge.required_version) for edge in repository_graph.node_edges if edge.source_id == gateway.node_id and edge.relation == "uses-source"}
+    selected = {entry[0] for entry in process_exports + instruction_exports}
+    direct_uses = sorted((edge for edge in repository_graph.node_edges if edge.source_id == gateway.node_id and edge.relation in {"uses-export", "uses-private-interface"}), key=lambda edge: edge.target_id)
+    for edge in direct_uses:
+        if edge.target_id in selected:
+            continue
+        export = repository_graph.exports.get(edge.target_id) or repository_graph.source_interfaces.get(edge.target_id)
+        if export is None:
+            raise BlueprintError(f"{gateway.node_id}: unresolved interface {edge.target_id}")
+        spec, source_id = _generated_export_binding(repository_graph, edge.target_id, export)
+        binding = spec.get("process_binding")
+        if not isinstance(binding, dict):
+            continue
+        source = repository_graph.nodes.get(source_id) if source_id else None
+        if edge.required_version != export.version:
+            raise BlueprintError(f"{edge.target_id}: use version does not match export")
+        if source is None or (source_id, source.version) not in dependencies:
+            continue
+        description = spec.get("description")
+        if not isinstance(description, str) or not description.strip():
+            raise BlueprintError(f"{edge.target_id}: description must be non-empty")
+        process_exports.append((edge.target_id, description.strip(), export.version, spec.get("usage"), binding))
+        selected.add(edge.target_id)
     if not process_exports and not instruction_exports:
         return ""
 
@@ -339,27 +427,35 @@ def generated_interface_block(
     ]
     if process_exports:
         lines.extend([
-            "Dispatcher Interfaces:",
+            "Executable Interfaces:",
             "",
-            "Use the installed `dispatcher` command for these process-bound interfaces:",
+            "Call `famulus.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.",
         ])
-        for interface_name, description, usage, pattern_notes in process_exports:
-            lines.append(f"- `{interface_name}` — {description}")
-            args = f" {usage}" if usage else ("" if usage == "" else " ...")
-            lines.append(
-                f"  - `dispatcher --caller-skill {module_id} {interface_name}{args}`"
-            )
-            for pat_name, pat_notes in pattern_notes:
-                if pat_name and pat_notes:
-                    lines.append(f"  - {pat_name}: {pat_notes}")
-                elif pat_notes:
-                    lines.append(f"  - {pat_notes}")
+        for interface_name, description, version, usage, binding in process_exports:
+            lines.extend([
+                f"- `{interface_name}` — {description}",
+                f"  - Caller: `{module_id}`",
+                f"  - Version: {version}",
+            ])
+            patterns = binding.get("patterns", [binding])
+            for pattern in patterns:
+                required = set(pattern.get("required_flags", ()))
+                positionals, options = _usage_projection(usage, pattern, patterns)
+                arguments = {"positionals": positionals, "options": options, "stdin": None}
+                minimum = pattern.get("min_positionals", sum(item["arity"]["minimum"] for item in pattern.get("arguments", {}).values() if item.get("kind") == "positional"))
+                maximum = "unbounded" if pattern.get("allow_extra_positionals") else pattern.get("max_positionals", sum(item["arity"]["maximum"] for item in pattern.get("arguments", {}).values() if item.get("kind") == "positional"))
+                lines.extend([
+                    f"  - Alternative: `{pattern.get('name', 'default')}`",
+                    "    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.",
+                    f"    {json.dumps(arguments, sort_keys=True)}",
+                    f"    Required options: {json.dumps(sorted(required))}; positional arity: {minimum}..{maximum}; stdin: {'permitted' if pattern.get('allow_stdin') else 'forbidden'}",
+                ])
         lines.append("")
     if instruction_exports:
         lines.extend([
             "Instruction Interfaces:",
             "",
-            "These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:",
+            "These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.",
         ])
         for interface_name, spec in instruction_exports:
             lines.append(f"- `{interface_name}` — {spec['description'].strip()}")

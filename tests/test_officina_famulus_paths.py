@@ -6,14 +6,7 @@ from officina.common.famulus_paths import resolve_famulus_paths
 
 
 def _assert_derived_fields(paths):
-    assert paths.runtime_root == paths.data_root / "runtime"
-    assert paths.releases_root == paths.runtime_root / "releases"
-    assert paths.current_pointer == paths.runtime_root / "current.json"
-    assert paths.install_state_root == paths.state_root / "install"
-    assert paths.uv_bin == paths.data_root / "tools" / "uv"
-    assert paths.python_install_dir == paths.data_root / "python"
     assert paths.worker_root == paths.state_root / "workers"
-    assert paths.launcher_profile_root == paths.data_root / "launcher-profiles"
     assert paths.recurring_config_root == paths.config_root / "recurring-tasks"
     assert paths.recurring_state_root == paths.state_root / "recurring-tasks"
     assert paths.email_triage_state_root == paths.state_root / "email-triage"
@@ -66,14 +59,24 @@ def test_windows_paths_resolve_under_localappdata(monkeypatch, tmp_path):
     _assert_derived_fields(paths)
 
 
-def test_xdg_data_home_override_is_honored(monkeypatch, tmp_path):
+def test_xdg_overrides_redirect_every_durable_mutable_path(tmp_path):
     override = tmp_path / "custom-xdg"
     paths = resolve_famulus_paths(
-        platform="linux", home=tmp_path, environ={"XDG_DATA_HOME": str(override)}
+        platform="linux",
+        home=tmp_path,
+        environ={
+            "XDG_DATA_HOME": str(override / "data"),
+            "XDG_CONFIG_HOME": str(override / "config"),
+            "XDG_STATE_HOME": str(override / "state"),
+        },
     )
-    assert str(paths.data_root).startswith(str(override))
-    assert paths.data_root == override / "famulus"
-    _assert_derived_fields(paths)
+    assert paths.data_root == override / "data" / "famulus"
+    assert paths.config_root == override / "config" / "famulus"
+    assert paths.state_root == override / "state" / "famulus"
+    assert paths.worker_root == override / "state" / "famulus" / "workers"
+    assert paths.recurring_config_root == override / "config" / "famulus" / "recurring-tasks"
+    assert paths.recurring_state_root == override / "state" / "famulus" / "recurring-tasks"
+    assert paths.email_triage_state_root == override / "state" / "famulus" / "email-triage"
 
 
 def test_relative_home_is_rejected():

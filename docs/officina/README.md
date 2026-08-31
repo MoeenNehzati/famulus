@@ -66,15 +66,13 @@ current repository implementation; it is not a permanent packaging contract.
 - `blueprints/` — blueprint loading, graph construction, authorization,
   projection, process binding, templates, and search
 - `certification/` — node hashing, certificate records, and currentness views
-- `common/` — small shared primitives for atomic files, paths, TOML, dates, and
-  source caching
+- `common/` — small shared primitives for atomic files, command files, paths,
+  TOML, dates, and source caching
 - `configuration/` — configured schemas and repository configuration
 - `credentials/` — Google credentials, OAuth data, and secret storage
 - `dispatcher/` — bounded interface resolution, authorization, and launch
 - `docstring/` — structured-docstring parsing, policy, and validation
 - `git/` — repository provenance and pinned snapshots
-- `install/` — managed runtimes, activation, launch entries, and uninstall
-  ownership
 - `launchers/` — managed agent-launch policy and backend selection
 - `recurring/` — recurring-task control, execution, health checks, and native
   scheduler rendering
@@ -90,6 +88,9 @@ current repository implementation; it is not a permanent packaging contract.
 These packages are current implementation owners, not compatibility facades.
 For task-to-module routing, use the [Utility Map](utility-map.md).
 
+`launchers/` and `recurring/` carry a Famulus roster as data — the agent names
+one launches and the jobs the other can schedule — but neither is Famulus.
+
 ### Machine-readable contracts — [`references/`](../../references/)
 
 - [`blueprint-schema/`](../../references/blueprint-schema/) — live blueprint,
@@ -102,8 +103,6 @@ For task-to-module routing, use the [Utility Map](utility-map.md).
   guidance
 - [`certification-policy/`](../../references/certification-policy/) — node-hash
   policy and certification-basis roots
-- [`runtime/`](../../references/runtime/) — managed-runtime requirements and
-  their locked resolution
 
 `references/document-standards/` contains research-document policy used by
 Famulus skills. It uses Officina's standards machinery, but its subject matter
@@ -131,8 +130,6 @@ The main workflows that author or operate the current framework are:
   Markdown procedure into a Rutter and operable Voyage dispenser
 - [`using-compass`](../../skills/using-compass/) — operate a named Rutter
   through its public dispenser
-- [`install-assistant-tools`](../../skills/install-assistant-tools/) — install
-  or repair an Officina project on a machine
 - [`llm-wakeup`](../../skills/llm-wakeup/) — manage scheduled host sessions
   around usage resets
 
@@ -156,7 +153,6 @@ normative model. Then choose the guide that owns the concern:
 - [Docstring Contract](docstring.md) — structured Python documentation
 - [Compass and Rutter](compass-rutter.md) — durable LLM-operated algorithms
 - [Visualization](visualization.md) — graph extraction and rendering
-- [Installation](installation.md) — installation and manifest-based uninstall
 - [Maintainer Scaffolding](scaffolding/README.md) — repository authoring and
   validation machinery
 - [Utility Map](utility-map.md) — task-to-package routing

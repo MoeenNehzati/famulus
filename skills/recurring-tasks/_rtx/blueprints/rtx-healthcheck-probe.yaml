@@ -4,10 +4,10 @@ dependencies:
 - blueprint:
     base: module-root
     path: blueprints/rtx-managed-control.yaml
-  reason: Delegates health checking through the shared managed-runtime command helper.
+  reason: Delegates health checking through recurring-owned direct command construction.
   source: recurring-tasks._rtx.source.rtx-managed-control
   version: 1
-description: Delegates recurring-task health checking to the canonical managed runtime.
+description: Delegates recurring-task health checking to recurring-owned control.
 gateway:
   language: Python
   path: _healthcheck_probe.py

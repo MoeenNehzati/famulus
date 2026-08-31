@@ -10,14 +10,14 @@ from officina.dispatcher.errors import (
 
 def test_dispatcher_error_has_schema_version_and_code():
     err = InterfaceNotFoundError(
-        caller_module_id="install-assistant-tools",
+        caller_module_id="milestone-logging",
         target_module_id="install",
         interface_id="install.interface.does-not-exist",
     )
     payload = err.as_payload()
     assert payload["schema_version"] == 1
     assert payload["code"] == "dispatcher.interface_not_found"
-    assert payload["caller_module_id"] == "install-assistant-tools"
+    assert payload["caller_module_id"] == "milestone-logging"
     assert payload["target_module_id"] == "install"
 
 

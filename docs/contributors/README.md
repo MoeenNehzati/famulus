@@ -33,21 +33,21 @@ The module and contained-source blueprints are the canonical machine-readable
 graph. Generated `SKILL.md` blocks and repository indexes are refreshed through
 `skill-maker`'s exported sync interface. Check whether they are current:
 
-```bash
-dispatcher --caller-skill node-certify \
-  skill-maker._rtx.interface.sync-blueprints --check
+```json
+{"caller":"node-certify","interface":"skill-maker._rtx.interface.sync-blueprints","version":1,"arguments":{"positionals":[],"options":{"--check":true},"stdin":null},"dry_run":false}
 ```
 
 Run it without `--check` only when intentionally refreshing the generated
 artifacts. Do not reach past the interface to the file behind it: the syncer is
-private `_rtx` content, and a bare `python3` runs outside the managed runtime,
-so importing `officina` fails before the syncer does anything.
+private `_rtx` content. Use the documented dispatcher route from the repository
+environment rather than running that private file directly. Host agents use
+the shared `famulus` MCP server's `invoke` tool for this object.
 
 Cross-skill behavior should go through the dispatcher boundary, not direct
 invocation of another skill's private scripts:
 
-```bash
-dispatcher --caller-skill <caller> <callee>.interface.<name> [args...]
+```json
+{"caller":"<caller>","interface":"<callee>.interface.<name>","version":1,"arguments":{"positionals":[],"options":{},"stdin":null},"dry_run":false}
 ```
 
 ## Validation and Enforcement
@@ -91,6 +91,7 @@ For task-oriented routing, see the
 > Generated from live blueprints. Do not edit this block by hand.
 
 - `ci-debug` — GitHub Actions CI is red, matrix failures need isolated repair, or repeated full reruns make remote diagnosis inefficient
+- `dev-activation` — A developer needs an assistant or editor to run against one Famulus checkout without discovering globally installed skills or plugins
 - `git-workflow` — Branch-safety checks and commit hygiene for any repo
 - `initialize-tdd` — Scaffold a staged, approval-gated TDD project
 - `semantic-integration` — Integrating substantially diverged Git branches and merge or rebase is inadequate because it produces broad structural conflicts, or because mechanical application would place source changes into structures the target architecture has replaced and thereby lose their intent

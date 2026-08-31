@@ -48,7 +48,7 @@ authority:
       - officina.runtime.python_machine_interface_runner
       - _ensure_oauth.py
       - Interface
-      reason: Check OAuth status and write config.json (relocated from install-assistant-tools).
+      reason: Check OAuth status and write feature-owned config.json.
     network: []
 children: {}
 content:

@@ -75,7 +75,7 @@ def test_text_scan_reports_governed_content_and_skips_exclusions(
     tests.mkdir()
     (tests / "test_something.py").write_text("# test for Claude or Codex\n")
 
-    excluded_install = tmp_path / "skills" / "install-assistant-tools"
+    excluded_install = tmp_path / "skills" / "install-launchers"
     excluded_install.mkdir(parents=True)
     (excluded_install / "SKILL.md").write_text("Install Claude Code here.\n")
 
@@ -172,12 +172,7 @@ def test_exact_cross_host_allowlists_and_nearby_rejections_share_one_scan(
 ) -> None:
     binding_paths = {
         Path("skills/relocate-nodes/_rtx/_relocation_engine.py"),
-        Path("src/officina/install/assistant_access.py"),
-        Path("src/officina/install/context.py"),
-        Path("src/officina/install/development_activation.py"),
-        Path("src/officina/install/doctor.py"),
-        Path("src/officina/install/runtime_pointer.py"),
-        Path("src/officina/install/resolvers/launch.py"),
+        Path("skills/dev-activation/_rtx/_development_activation.py"),
         Path("src/officina/launchers/agent.py"),
         Path("src/officina/recurring/runtime.py"),
         Path("src/officina/recurring/healthcheck.py"),
@@ -202,7 +197,7 @@ def test_exact_cross_host_allowlists_and_nearby_rejections_share_one_scan(
         source.write_text(content)
 
     rejected = (
-        Path("src/officina/install/context_helper.py"),
+        Path("src/officina/common/context_helper.py"),
         Path("src/officina/recurring/helper.py"),
         Path("skills/milestone-logging/_rtx/_helper.py"),
     )

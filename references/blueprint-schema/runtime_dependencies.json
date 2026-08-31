@@ -3,7 +3,7 @@
   "skills": {
     "bib-audit": {
       "maturity": "stable",
-      "installation_tier": "core",
+      "installation_tier": "optional",
       "personal_preference": {
         "applies": false
       },
@@ -57,7 +57,7 @@
     },
     "cloud-files": {
       "maturity": "experimental",
-      "installation_tier": "core",
+      "installation_tier": "optional",
       "personal_preference": {
         "applies": false
       },
@@ -231,7 +231,7 @@
     },
     "connect-google": {
       "maturity": "experimental",
-      "installation_tier": "core",
+      "installation_tier": "optional",
       "personal_preference": {
         "applies": false
       },
@@ -366,7 +366,7 @@
     },
     "daily-plan": {
       "maturity": "stable",
-      "installation_tier": "core",
+      "installation_tier": "optional",
       "personal_preference": {
         "applies": false
       },
@@ -1001,6 +1001,18 @@
         }
       }
     },
+    "dev-activation": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {
+        "dev-activation._rtx.interface.activation": {
+          "dependencies": []
+        }
+      }
+    },
     "distill-to-rutters": {
       "maturity": "experimental",
       "installation_tier": "core",
@@ -1038,7 +1050,7 @@
     },
     "email-client": {
       "maturity": "stable",
-      "installation_tier": "core",
+      "installation_tier": "optional",
       "personal_preference": {
         "applies": false
       },
@@ -1866,7 +1878,7 @@
     },
     "email-triage": {
       "maturity": "stable",
-      "installation_tier": "core",
+      "installation_tier": "optional",
       "personal_preference": {
         "applies": false
       },
@@ -2187,109 +2199,15 @@
         }
       }
     },
-    "install-assistant-tools": {
+    "install-launchers": {
       "maturity": "stable",
-      "installation_tier": "core",
+      "installation_tier": "optional",
       "personal_preference": {
         "applies": false
       },
       "interfaces": {
-        "install-assistant-tools._rtx.interface.scripts-dev-link": {
-          "dependencies": [
-            {
-              "kind": "binary",
-              "name": "git",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Configures repository hook settings during development installs."
-            },
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Parses canonical recurring jobs configuration."
-            }
-          ]
-        },
-        "install-assistant-tools._rtx.interface.scripts-doctor": {
-          "dependencies": [
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Parses canonical recurring jobs configuration."
-            }
-          ]
-        },
-        "install-assistant-tools._rtx.interface.scripts-install": {
-          "dependencies": [
-            {
-              "kind": "binary",
-              "name": "git",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Configures repository hook settings during development installs."
-            },
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Parses canonical recurring jobs configuration."
-            }
-          ]
-        },
-        "install-assistant-tools._rtx.interface.scripts-launchers": {
-          "dependencies": [
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Parses canonical recurring jobs configuration."
-            }
-          ]
-        },
-        "install-assistant-tools._rtx.interface.scripts-scaffold": {
-          "dependencies": [
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Parses canonical recurring jobs configuration."
-            }
-          ]
+        "install-launchers._rtx.interface.agent-launchers": {
+          "dependencies": []
         }
       }
     },
@@ -2303,7 +2221,7 @@
     },
     "list-manager": {
       "maturity": "stable",
-      "installation_tier": "core",
+      "installation_tier": "optional",
       "personal_preference": {
         "applies": false
       },
@@ -4747,7 +4665,7 @@
     },
     "node-certify": {
       "maturity": "stable",
-      "installation_tier": "core",
+      "installation_tier": "optional",
       "personal_preference": {
         "applies": false
       },
@@ -4826,7 +4744,7 @@
     },
     "node-drift": {
       "maturity": "stable",
-      "installation_tier": "core",
+      "installation_tier": "optional",
       "personal_preference": {
         "applies": false
       },
@@ -4895,7 +4813,7 @@
     },
     "online-calendar": {
       "maturity": "experimental",
-      "installation_tier": "core",
+      "installation_tier": "optional",
       "personal_preference": {
         "applies": false
       },
@@ -7148,6 +7066,14 @@
         }
       }
     },
+    "setup-python-environment": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {}
+    },
     "skill-maker": {
       "maturity": "stable",
       "installation_tier": "core",
@@ -7238,7 +7164,6 @@
     ],
     "binary": [
       "crontab",
-      "git",
       "journalctl",
       "launchctl",
       "schtasks",

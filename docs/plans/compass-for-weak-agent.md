@@ -680,7 +680,11 @@ Expected: PASS with version 12 covering both `help-compass` and the public worke
 
 - [ ] **Step 1: Start a fresh development Codex VS Code session**
 
-First load `famulus:install-assistant-tools` and select development mode with the exact target checkout. Run its dry run, obtain explicit mutation approval, apply once, follow its environment-reload instruction, and run its development diagnosis. Stop as `HARNESS_INVALID` unless pointer, source, runtime, command origin, and repository configuration all resolve to the target SHA. Then use the same worktree and model recorded by the original session metadata:
+First load `famulus:dev-activation` for the exact target checkout and follow its
+development activation instructions. Stop as `HARNESS_INVALID` unless the
+selected Python, plugin root, command origin, and repository configuration all
+resolve to the target checkout. Then use the same worktree and model recorded
+by the original session metadata:
 
 ```text
 cwd: repository root of the target worktree
@@ -690,9 +694,9 @@ model: gpt-5.4-mini
 
 Before sending the scenario prompt, run this exact non-mutating preflight from the worktree:
 
-```bash
-dispatcher --caller-skill math-dependency-graph --dry-run math-dependency-graph._rtx.interface.inventory-voyage-dispenser@12 help-compass
-dispatcher --caller-skill math-dependency-graph math-dependency-graph._rtx.interface.inventory-voyage-dispenser@12 help-compass
+```json
+{"caller":"math-dependency-graph","interface":"math-dependency-graph._rtx.interface.inventory-voyage-dispenser","version":12,"arguments":{"positionals":["help-compass"],"options":{},"stdin":null},"dry_run":true}
+{"caller":"math-dependency-graph","interface":"math-dependency-graph._rtx.interface.inventory-voyage-dispenser","version":12,"arguments":{"positionals":["help-compass"],"options":{},"stdin":null},"dry_run":false}
 ```
 
 The dry run must compile an argv ending in `help-compass`. The live read must return protocol version 1, every operation argv template, controller sequence, assignment schema, worker branches, and final-report schema. Record exact Git SHA/diff, repository configuration and resolved dispatcher provenance, CLI/model versions, protocol checksum, input hash, available agent capacity, and main session ID. If any preflight fact is absent or mismatched, classify the attempt `HARNESS_INVALID` and do not try aliases or private launchers.

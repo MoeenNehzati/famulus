@@ -5,6 +5,7 @@ content:
 - __init__\.py
 - atomic_files\.py
 - codex_toml\.py
+- command_files\.py
 - dates\.py
 - famulus_paths/__init__\.py
 - repository_paths\.py
@@ -16,9 +17,6 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers:
-      - install
-      - install-assistant-tools
-      - install-assistant-tools._rtx
       - recurring-tasks
       - recurring-tasks._rtx
       - recurring
@@ -34,10 +32,7 @@ exports:
   common.interface.codex-toml:
     access:
       allow_all_modules: false
-      allowed_callers:
-      - install
-      - install-assistant-tools
-      - install-assistant-tools._rtx
+      allowed_callers: []
     source_interface: common.source.codex-toml.interface.python-api
   common.interface.dates:
     access:
@@ -52,9 +47,7 @@ exports:
       allowed_callers:
       - email-triage
       - email-triage._rtx
-      - install-assistant-tools
-      - install-assistant-tools._rtx
-      - install
+      - install-launchers._rtx
       - list-manager
       - list-manager._rtx
       - recurring-tasks
@@ -74,8 +67,7 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers:
-      - install-assistant-tools
-      - install-assistant-tools._rtx
+      - install-launchers._rtx
       - configuration
     source_interface: common.source.toml-io.interface.python-api
 gateway:
@@ -86,6 +78,10 @@ namespace_exports: {}
 node_type: module
 schema_version: 6
 sources:
+  common.source.command-files:
+    blueprint:
+      base: module-root
+      path: blueprints/command-files.yaml
   common.source.atomic-files:
     blueprint:
       base: module-root

@@ -30,9 +30,7 @@ exports:
       allow_all_modules: true
       allowed_callers: []
     source_interface: list-manager.source.gateway.interface.default
-    setup_requires_setup_of:
-    - interface: connect-google.interface.setup
-      version: 1
+    setup_requires_setup_of: []
 gateway:
   language: Markdown
   path: SKILL.md
@@ -126,6 +124,6 @@ sources:
       path: blueprints/gateway.yaml
 version: 2
 maturity: stable
-installation_tier: core
+installation_tier: optional
 personal_preference:
   applies: false

@@ -203,15 +203,10 @@ def test_calendar_gateway_declares_complete_oauth_route_invariants(
     )
 
     assert {edge["interface"] for edge in gateway["uses_interfaces"]} == {
+        "setup-python-environment.interface.repair-selected-packages",
         "connect-google.interface.default",
         "online-calendar._rtx.interface.scripts-gcal",
     }
-
-
-def test_installer_does_not_depend_on_connect_google() -> None:
-    text = authored_skill("install-assistant-tools")
-    assert "5. explain that `connect-google`" in text
-    assert "do not invoke either or make installation success" in text
 
 
 def test_legacy_setup_exports_still_exist_for_compatibility(

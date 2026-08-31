@@ -71,8 +71,8 @@ of test directories.
 | `portability` | working | Seven cross-platform boundary sentinels. |
 | `full` | working | Performance thresholds serially, then validators and browser-free functional tests together, then Chrome-backed tests serially. |
 
-The precommit selection excludes installation tests, Chrome tests, docstring
-tests, performance thresholds, the docstring validator, and the nested-module
+The precommit selection excludes Chrome tests, docstring tests, performance
+thresholds, the docstring validator, and the nested-module
 inventory assertion that requires a clean committed checkout. The latter is
 incompatible with a hook that necessarily runs while changes are staged.
 

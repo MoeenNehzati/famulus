@@ -1,6 +1,12 @@
 content:
 - SKILL\.md
-dependencies: []
+dependencies:
+- blueprint:
+    base: repository-root
+    path: skills/setup-python-environment/blueprints/gateway.yaml
+  reason: Repair only the Marker fallback declaration after source lookup fails.
+  source: setup-python-environment.source.gateway
+  version: 1
 description: Directs source-first paper extraction, model-cache consent checks, and
   PDF fallback conversion into LLM-readable text.
 gateway:
@@ -12,6 +18,8 @@ interfaces:
     content:
     - SKILL\.md
     uses_interfaces:
+    - interface: setup-python-environment.interface.repair-selected-packages
+      version: 1
     - interface: pdf-to-markdown._rtx.interface.scripts-check-marker-models
       version: 1
     - interface: pdf-to-markdown._rtx.interface.scripts-fetch-arxiv-source
@@ -114,6 +122,8 @@ interfaces:
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
+- interface: setup-python-environment.interface.repair-selected-packages
+  version: 1
 - interface: pdf-to-markdown._rtx.interface.scripts-check-marker-models
   version: 1
 - interface: pdf-to-markdown._rtx.interface.scripts-fetch-arxiv-source

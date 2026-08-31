@@ -22,7 +22,7 @@ Public Interfaces:
 
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `make-tex-docstring.interface.default` — Inspect a TeX document against the canonical profile standard, infer cautiously, and gate any edit on approval.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:

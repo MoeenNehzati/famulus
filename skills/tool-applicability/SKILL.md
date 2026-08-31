@@ -22,7 +22,7 @@ Public Interfaces:
 
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `tool-applicability.interface.default` — Determine the exact role and deliverable of a candidate mathematical tool without blurring current assumptions, added hypotheses, or target strength.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:

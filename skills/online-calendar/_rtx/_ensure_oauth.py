@@ -2,7 +2,7 @@
 """
 ensure_oauth.py — Check online-calendar OAuth status and guide setup if needed.
 
-Relocated from install-assistant-tools' shared Google-OAuth chooser — see
+Owned by online-calendar's Google OAuth setup route — see
 cloud-files/_rtx/_ensure_oauth.py for the sibling implementation and the
 rationale (each service owns its own guidance and setup flow now).
 """

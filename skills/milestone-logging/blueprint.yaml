@@ -33,8 +33,6 @@ namespace_exports:
     access:
       allow_all_modules: false
       allowed_callers:
-      - install-assistant-tools
-      - install-assistant-tools._rtx
       - milestone-logging
     surface:
       only:
@@ -44,14 +42,10 @@ namespace_exports:
       milestone-logging._rtx.interface.record:
         allow_all_modules: false
         allowed_callers:
-        - install-assistant-tools
-        - install-assistant-tools._rtx
         - milestone-logging
       milestone-logging._rtx.interface.timeline:
         allow_all_modules: false
         allowed_callers:
-        - install-assistant-tools
-        - install-assistant-tools._rtx
         - milestone-logging
 node_type: module
 schema_version: 6
