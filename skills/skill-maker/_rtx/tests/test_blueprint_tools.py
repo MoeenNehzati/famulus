@@ -12,6 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 import yaml
+from validators.platform_neutral import _validate
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -162,6 +163,231 @@ def test_generated_executable_interface_uses_famulus_metadata(syncer) -> None:
     assert "Ordered outer JSON" not in interfaces
     assert "Alternative: `milestone`" in interfaces
     assert "dispatcher --caller-skill" not in interfaces
+
+
+def test_generated_interface_block_requires_direct_source_backing(syncer) -> None:
+    """Break caught: direct gateway uses do not reach public MCP guidance."""
+    gateway = "consumer.source.gateway"
+    process = "provider.interface.run"
+    owner = "consumer.interface.owner"
+    unused = "provider.interface.unused"
+    instructions = "provider.interface.instructions"
+    source = "provider.source.cli"
+    unused_source = "provider.source.unused"
+    process_spec = {
+        "description": "Run the provider.",
+        "usage": "",
+        "process_binding": {
+            "kind": "process",
+            "entry": "Interface",
+            "patterns": [
+                {
+                    "name": "default",
+                    "min_positionals": 0,
+                    "max_positionals": 0,
+                    "allow_stdin": False,
+                }
+            ],
+        },
+    }
+    graph = SimpleNamespace(
+        schema_version=6,
+        module_sources={"consumer": (gateway,)},
+        module_ancestry={"consumer": ("consumer",), "provider": ("provider",)},
+        nodes={
+            "consumer": SimpleNamespace(gateway_path=Path("SKILL.md")),
+            gateway: SimpleNamespace(node_id=gateway, gateway_path=Path("SKILL.md")),
+            source: SimpleNamespace(version=1),
+            unused_source: SimpleNamespace(version=1),
+        },
+        exports={
+            process: SimpleNamespace(
+                interface_id=process,
+                version=1,
+                module_node_id="provider",
+                declaration=process_spec,
+                source_node_id=source,
+            ),
+            instructions: SimpleNamespace(
+                interface_id=instructions,
+                version=1,
+                module_node_id="provider",
+                declaration={"description": "Read the provider."},
+                source_node_id=source,
+            ),
+            owner: SimpleNamespace(
+                interface_id=owner,
+                version=1,
+                module_node_id="consumer",
+                declaration=process_spec,
+                source_node_id=source,
+            ),
+            unused: SimpleNamespace(
+                interface_id=unused,
+                version=1,
+                module_node_id="provider",
+                declaration=process_spec,
+                source_node_id=unused_source,
+            ),
+        },
+        source_interfaces={},
+        node_edges=(
+            SimpleNamespace(
+                relation="uses-source",
+                source_id=gateway,
+                target_id=source,
+                required_version=1,
+            ),
+            SimpleNamespace(
+                relation="uses-source",
+                source_id=gateway,
+                target_id=unused_source,
+                required_version=1,
+            ),
+            SimpleNamespace(
+                relation="uses-export",
+                source_id=gateway,
+                target_id=process,
+                required_version=1,
+            ),
+            SimpleNamespace(
+                relation="uses-export",
+                source_id=gateway,
+                target_id=owner,
+                required_version=1,
+            ),
+            SimpleNamespace(
+                relation="uses-export",
+                source_id=gateway,
+                target_id=process,
+                required_version=1,
+            ),
+            SimpleNamespace(
+                relation="uses-export",
+                source_id=gateway,
+                target_id=instructions,
+                required_version=1,
+            ),
+            SimpleNamespace(
+                relation="uses-export",
+                source_id="consumer.source.worker",
+                target_id="provider.interface.transitive",
+                required_version=1,
+            ),
+        ),
+    )
+
+    rendered = syncer.generated_interface_block("consumer", graph)
+
+    assert "`provider.interface.run`" in rendered
+    assert rendered.count("`provider.interface.run`") == 1
+    assert rendered.count("`consumer.interface.owner`") == 1
+    assert "Caller: `consumer`" in rendered
+    assert instructions not in rendered
+    assert unused not in rendered
+    assert "provider.interface.transitive" not in rendered
+
+    original_edges = graph.node_edges
+    graph.node_edges = tuple(
+        edge for edge in graph.node_edges if edge.relation != "uses-source"
+    )
+    assert process not in syncer.generated_interface_block("consumer", graph)
+
+    graph.node_edges = tuple(
+        SimpleNamespace(
+            relation=edge.relation,
+            source_id=edge.source_id,
+            target_id=edge.target_id,
+            required_version=(
+                2
+                if edge.relation == "uses-export" and edge.target_id == process
+                else edge.required_version
+            ),
+        )
+        for edge in original_edges
+    )
+    with pytest.raises(syncer.BlueprintError, match="use version"):
+        syncer.generated_interface_block("consumer", graph)
+
+
+def test_llm_wakeup_generated_contract_and_interfaces_are_exact(syncer) -> None:
+    blueprint = syncer.load_blueprints()["llm-wakeup"]
+    skill = blueprint.path.parent / "SKILL.md"
+    generated = skill.read_text(encoding="utf-8")
+
+    assert syncer.generated_contract_block(
+        blueprint.name, blueprint.data, blueprint.repository_graph
+    ) in generated
+    assert syncer.generated_interface_block(
+        blueprint.name, blueprint.repository_graph
+    ) in generated
+
+
+def test_generated_llm_wakeup_arguments_are_platform_neutral(
+    syncer, tmp_path: Path
+) -> None:
+    graph = syncer.load_blueprints()["llm-wakeup"].repository_graph
+    skill = tmp_path / "skills" / "llm-wakeup" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text(
+        syncer.generated_interface_block("llm-wakeup", graph), encoding="utf-8"
+    )
+
+    assert _validate(tmp_path, frozenset()) == []
+
+
+def test_public_syncer_repairs_corrupt_llm_wakeup_entry(
+    syncer, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Break caught: public sync check does not repair a selected external use."""
+    repository = tmp_path / "repository"
+    shutil.copytree(REPO_ROOT / "skills", repository / "skills")
+    shutil.copytree(
+        REPO_ROOT / "references" / "blueprint-schema",
+        repository / "references" / "blueprint-schema",
+    )
+    shutil.copytree(REPO_ROOT / "src", repository / "src")
+    shutil.copytree(
+        REPO_ROOT / "references" / "node-standards",
+        repository / "references" / "node-standards",
+    )
+    shutil.copy2(REPO_ROOT / "officina.toml", repository / "officina.toml")
+    monkeypatch.setattr(syncer, "REPO_ROOT", repository)
+    monkeypatch.setattr(syncer, "SKILLS_ROOT", repository / "skills")
+    monkeypatch.setattr(
+        syncer,
+        "BLUEPRINT_SCHEMA_ROOT",
+        repository / "references" / "blueprint-schema",
+    )
+    monkeypatch.setattr(
+        syncer,
+        "RUNTIME_DEPENDENCIES_PATH",
+        repository / "references" / "blueprint-schema" / "runtime_dependencies.json",
+    )
+    skill = repository / "skills" / "llm-wakeup" / "SKILL.md"
+    original = skill.read_text(encoding="utf-8")
+    start = original.index(syncer.INTERFACES_START)
+    skill.write_text(
+        original[:start]
+        + original[start:].replace(
+            "`wakeup.interface.explicit-schedule`", "`wakeup.interface.removed`", 1
+        ),
+        encoding="utf-8",
+    )
+
+    check = SimpleNamespace(check=True, schema_version=6)
+    assert syncer.Interface().run(check) == 1
+    assert syncer.Interface().run(SimpleNamespace(check=False, schema_version=6)) == 0
+
+    blueprint = syncer.load_blueprints()["llm-wakeup"]
+    repaired = skill.read_text(encoding="utf-8")
+    assert syncer.generated_contract_block(
+        blueprint.name, blueprint.data, blueprint.repository_graph
+    ) in repaired
+    assert syncer.generated_interface_block(
+        blueprint.name, blueprint.repository_graph
+    ) in repaired
+    assert syncer.Interface().run(check) == 0
 
 
 def test_generated_executable_patterns_preserve_alternatives_and_arity(syncer) -> None:

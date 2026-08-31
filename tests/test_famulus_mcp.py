@@ -520,6 +520,137 @@ def test_generated_outer_payload_uses_real_tool_field_names(tmp_path: Path) -> N
     assert result.structuredContent["result"]["target"] == outer["interface"]
 
 
+def test_llm_wakeup_skill_renders_every_public_wakeup_invocation() -> None:
+    """Break caught: the gateway loses the source dependency for wakeup calls."""
+    generated = (ROOT / "skills" / "llm-wakeup" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    expected = {
+        "wakeup.interface.auto-policy": (
+            "default",
+            {
+                    "positionals": ["action", "provider", "session-id"],
+                "options": {},
+                "stdin": None,
+            },
+            {"positionals": ["on", "claude", "session-id"], "options": {}, "stdin": None},
+        ),
+        "wakeup.interface.infer-schedule": (
+            "default",
+            {
+                "positionals": [],
+                "options": {
+                    "--text": "timeout-or-resume-text",
+                    "--message": "message",
+                    "--delay": "duration",
+                },
+                "stdin": None,
+            },
+            {"positionals": [], "options": {}, "stdin": None},
+        ),
+        "wakeup.interface.explicit-schedule": (
+            "default",
+            {
+                    "positionals": ["provider", "session-id", "reset-time"],
+                "options": {"--message": "message", "--delay": "duration"},
+                "stdin": None,
+            },
+            {"positionals": ["claude", "session-id", "1 minute"], "options": {}, "stdin": None},
+        ),
+        "wakeup.interface.setup": (
+            "setup",
+            {
+                "positionals": ["setup"],
+                "options": {
+                    "--canonical-python": "FILE",
+                    "--plugin-root": "DIR",
+                    "--bin-dir": "DIR",
+                    "--native-root": "DIR",
+                },
+                "stdin": None,
+            },
+            {
+                "positionals": ["setup"],
+                "options": {
+                    "--canonical-python": "/opt/famulus/python",
+                    "--plugin-root": "/opt/famulus/plugin",
+                    "--bin-dir": "/opt/famulus/bin",
+                    "--native-root": "/opt/famulus/native",
+                },
+                "stdin": None,
+            },
+        ),
+        "wakeup.interface.setup teardown": (
+            "teardown",
+            {
+                "positionals": ["teardown"],
+                "options": {"--bin-dir": "DIR", "--native-root": "DIR"},
+                "stdin": None,
+            },
+            {
+                "positionals": ["teardown"],
+                "options": {
+                    "--bin-dir": "/opt/famulus/bin",
+                    "--native-root": "/opt/famulus/native",
+                },
+                "stdin": None,
+            },
+        ),
+    }
+    assert "Executable Interfaces:" in generated
+    assert "Alternative: `setup`" in generated
+    assert "Alternative: `teardown`" in generated
+    for interface, (alternative, rendered_arguments, _invocation_arguments) in expected.items():
+        interface_id = interface.removesuffix(" teardown")
+        assert f"`{interface_id}`" in generated
+        assert f"Alternative: `{alternative}`" in generated
+        assert json.dumps(rendered_arguments, sort_keys=True) in generated
+
+    FastMCP = pytest.importorskip("mcp.server.fastmcp").FastMCP
+    server = _load_server()
+    mcp = FastMCP("famulus")
+    mcp.tool()(server.invoke)
+    assert asyncio.run(mcp.list_tools())[0].name == "invoke"
+    concrete = {
+        "action": "on",
+        "provider": "claude",
+        "session-id": "session-id",
+        "timeout-or-resume-text": "quota resets in 1 minute",
+        "duration": "1 minute",
+        "message": "message",
+        "reset-time": "1 minute",
+        "setup": "setup",
+        "teardown": "teardown",
+        "FILE": "/opt/famulus/python",
+        "DIR": "/opt/famulus",
+    }
+    for interface, (_alternative, rendered_arguments, _arguments) in expected.items():
+        interface_id = interface.removesuffix(" teardown")
+        arguments = {
+            "positionals": [
+                concrete[value] for value in rendered_arguments["positionals"]
+            ],
+            "options": {
+                name: concrete[value]
+                for name, value in rendered_arguments["options"].items()
+            },
+            "stdin": rendered_arguments["stdin"],
+        }
+        _content, payload = asyncio.run(
+            mcp.call_tool(
+                "invoke",
+                {
+                    "caller": "llm-wakeup",
+                    "interface": interface_id,
+                    "version": 1,
+                    "arguments": arguments,
+                    "dry_run": True,
+                },
+            )
+        )
+        assert payload["result"]["target"] == interface_id
+
+
 def test_ordered_arguments_match_email_pattern_and_reject_mixed_alternative() -> None:
     """Break caught: a projected short-account alternative permits --account too."""
     server = _load_server()

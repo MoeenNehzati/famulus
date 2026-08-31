@@ -1,6 +1,10 @@
 content:
 - SKILL\.md
-dependencies: []
+dependencies:
+- blueprint: {base: repository-root, path: src/officina/wakeup/blueprints/cli.yaml}
+  source: wakeup.source.cli
+  version: 1
+  reason: Renders the public executable wakeup interfaces used by this gateway.
 description: Selects automatic-policy, inferred-scheduling, or explicit-scheduling
   behavior from the user's wakeup request and reports the resulting target plus
   policy state or scheduled time.

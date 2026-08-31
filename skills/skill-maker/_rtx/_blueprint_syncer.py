@@ -79,6 +79,10 @@ def _usage_projection(usage: object, pattern: dict, patterns: list[dict]) -> tup
     allowed = set(pattern.get("allowed_flags", ())) | required
     known = set().union(*(set(item.get("allowed_flags", ())) | set(item.get("required_flags", ())) for item in patterns))
     value_flags = set().union(*(set(item.get("flag_patterns", {})) for item in patterns))
+    argument_options = {item["name"] for item in pattern.get("arguments", {}).values() if item.get("kind") == "option"}
+    known |= argument_options
+    allowed |= argument_options
+    value_flags |= argument_options
     tokens = USAGE_TOKEN.findall(source)
     if "".join("".join(tokens).split()) != "".join(source.split()):
         raise ValueError("usage cannot be projected unambiguously: incomplete tokenization")
@@ -108,15 +112,19 @@ def _usage_projection(usage: object, pattern: dict, patterns: list[dict]) -> tup
     if pattern.get("allow_stdin") and atoms[-2:-1] == ["<"]:
         atoms = atoms[:-2]
     positionals = [_usage_label(atom) for atom in atoms]
+    positional_names = {
+        item["position"]: name
+        for name, item in pattern.get("arguments", {}).items()
+        if item.get("kind") == "positional" and isinstance(item.get("position"), int)
+    }
     maximum = pattern.get("max_positionals", len(positionals))
     selected = positionals if pattern.get("allow_extra_positionals") else positionals[:maximum]
+    selected = [positional_names.get(index, value) if "|" in value else value for index, value in enumerate(selected)]
     for index, validator in pattern.get("positional_patterns", {}).items():
         choices = selected[int(index)].split("|") if int(index) < len(selected) else []
         matching = [choice for choice in choices if re.fullmatch(validator, choice)]
         selected[int(index)] = "|".join(matching) if matching else selected[int(index)]
-    too_many = not pattern.get("allow_extra_positionals") and len(positionals) > max(
-        item.get("max_positionals", 0) for item in patterns
-    )
+    too_many = "max_positionals" in pattern and not pattern.get("allow_extra_positionals") and len(positionals) > max(item.get("max_positionals", 0) for item in patterns)
     if len(selected) < pattern.get("min_positionals", 0) or too_many:
         raise ValueError("usage cannot be projected unambiguously: positional labels")
     return selected, options
@@ -365,6 +373,30 @@ def generated_interface_block(
             )
         elif isinstance(description, str) and description.strip():
             instruction_exports.append((export_id, spec))
+    gateway = _host_gateway_source(module_id, repository_graph)
+    dependencies = {(edge.target_id, edge.required_version) for edge in repository_graph.node_edges if edge.source_id == gateway.node_id and edge.relation == "uses-source"}
+    selected = {entry[0] for entry in process_exports + instruction_exports}
+    direct_uses = sorted((edge for edge in repository_graph.node_edges if edge.source_id == gateway.node_id and edge.relation in {"uses-export", "uses-private-interface"}), key=lambda edge: edge.target_id)
+    for edge in direct_uses:
+        if edge.target_id in selected:
+            continue
+        export = repository_graph.exports.get(edge.target_id) or repository_graph.source_interfaces.get(edge.target_id)
+        if export is None:
+            raise BlueprintError(f"{gateway.node_id}: unresolved interface {edge.target_id}")
+        spec, source_id = _generated_export_binding(repository_graph, edge.target_id, export)
+        binding = spec.get("process_binding")
+        if not isinstance(binding, dict):
+            continue
+        source = repository_graph.nodes.get(source_id) if source_id else None
+        if edge.required_version != export.version:
+            raise BlueprintError(f"{edge.target_id}: use version does not match export")
+        if source is None or (source_id, source.version) not in dependencies:
+            continue
+        description = spec.get("description")
+        if not isinstance(description, str) or not description.strip():
+            raise BlueprintError(f"{edge.target_id}: description must be non-empty")
+        process_exports.append((edge.target_id, description.strip(), export.version, spec.get("usage"), binding))
+        selected.add(edge.target_id)
     if not process_exports and not instruction_exports:
         return ""
 
@@ -390,12 +422,13 @@ def generated_interface_block(
                 required = set(pattern.get("required_flags", ()))
                 positionals, options = _usage_projection(usage, pattern, patterns)
                 arguments = {"positionals": positionals, "options": options, "stdin": None}
-                maximum = "unbounded" if pattern.get("allow_extra_positionals") else pattern.get("max_positionals", 0)
+                minimum = pattern.get("min_positionals", sum(item["arity"]["minimum"] for item in pattern.get("arguments", {}).values() if item.get("kind") == "positional"))
+                maximum = "unbounded" if pattern.get("allow_extra_positionals") else pattern.get("max_positionals", sum(item["arity"]["maximum"] for item in pattern.get("arguments", {}).values() if item.get("kind") == "positional"))
                 lines.extend([
                     f"  - Alternative: `{pattern.get('name', 'default')}`",
                     "    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.",
                     f"    {json.dumps(arguments, sort_keys=True)}",
-                    f"    Required options: {json.dumps(sorted(required))}; positional arity: {pattern.get('min_positionals', 0)}..{maximum}; stdin: {'permitted' if pattern.get('allow_stdin') else 'forbidden'}",
+                    f"    Required options: {json.dumps(sorted(required))}; positional arity: {minimum}..{maximum}; stdin: {'permitted' if pattern.get('allow_stdin') else 'forbidden'}",
                 ])
         lines.append("")
     if instruction_exports:
