@@ -34,8 +34,6 @@ exports:
       - install-assistant-tools
       - install-assistant-tools._rtx
       - launchers
-      - recurring-tasks._rtx
-      - recurring
     source_interface: install.source.context.interface.python-api
   install.interface.assistant-access:
     access:
@@ -64,8 +62,6 @@ exports:
       - install-assistant-tools
       - install-assistant-tools._rtx
       - launchers
-      - recurring-tasks._rtx
-      - recurring
     source_interface: install.source.runtime-pointer.interface.python-api
   install.interface.managed-runtime:
     access:

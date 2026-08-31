@@ -19,7 +19,7 @@ from officina.install.context import (
     resolve_installation_context,
 )
 from officina.recurring import runtime as recurring_runtime
-from officina.recurring.runtime import ManagedSchedule, _bounded_environment
+from officina.recurring.runtime import ManagedSchedule
 from officina.wakeup import policies, store
 from officina.wakeup.providers.claude import ClaudeAdapter
 from officina.wakeup.providers.codex import CodexAdapter
@@ -699,20 +699,12 @@ def test_recurring_email_triage_environment_is_context_selected_and_sanitized(
         "EMAIL_CLIENT_PASSWORD": "ambient-secret",
     }
     backend = Path(sys.executable).resolve()
-    scheduled = _bounded_environment(
-        context,
-        {"claude": backend, "codex": backend},
-        None,
-        sys.platform,
-        hostile,
-        "release-test",
-    )
+    scheduled = {name: hostile[name] for name in ("HOME", "PATH", "CODEX_HOME", "CLAUDE_CONFIG_DIR")}
     schedule = ManagedSchedule(
         descriptor_path=context.paths.recurring_config_root / "schedule-descriptor.json",
-        runtime_root=context.paths.runtime_root,
-        runtime_resolver=context.paths.runtime_root / "bootstrap/resolvers/v1/launch.py",
-        bootstrap_python=None,
-        installation_id=context.installation_id,
+        owner_id=str(context.paths.recurring_config_root),
+        python=backend,
+        plugin_root=checkout,
         jobs_file=context.paths.recurring_config_root / "jobs.yaml",
         log_root=context.paths.recurring_state_root / "logs",
         config_root=context.paths.recurring_config_root,
@@ -721,7 +713,6 @@ def test_recurring_email_triage_environment_is_context_selected_and_sanitized(
         default_backend="codex",
         backend_executables={"claude": backend, "codex": backend},
         environment=scheduled,
-        launcher_bin=context.paths.user_bin,
     )
     schedule.descriptor_path.parent.mkdir(parents=True, mode=0o700)
     schedule.descriptor_path.write_text(
@@ -729,11 +720,8 @@ def test_recurring_email_triage_environment_is_context_selected_and_sanitized(
         encoding="utf-8",
     )
     schedule.descriptor_path.chmod(0o600)
-    monkeypatch.setattr(recurring_runtime, "_expected_schedule", lambda **kwargs: schedule)
     loaded = recurring_runtime.load_managed_schedule(
-        runtime_root=schedule.runtime_root,
         descriptor_path=schedule.descriptor_path,
-        environ=hostile,
     )
     serialized = json.loads(schedule.descriptor_path.read_text())["environment"]
     assert serialized == loaded.environment

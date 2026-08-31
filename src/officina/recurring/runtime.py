@@ -9,8 +9,7 @@ from pathlib import Path
 from typing import Mapping
 
 from officina.common.atomic_files import atomic_replace_bytes
-from officina.install.context import InstallationContext, load_active_context
-from officina.install.runtime_pointer import decode_current_pointer, load_deployed_resolver_trusted_roots
+from officina.common.famulus_paths import resolve_famulus_paths
 
 
 class RecurringRuntimeError(ValueError):
@@ -21,27 +20,15 @@ class RecurringPrerequisiteError(RecurringRuntimeError):
     pass
 
 
-def lifecycle_lock_path(state_root: Path) -> Path:
-    """Return the stable per-installation recurring lifecycle lock."""
-    return Path(state_root) / "lifecycle.lock"
-
-
 _BACKENDS = ("claude", "codex")
-_FIELDS = {
-    "schema_version", "installation_id", "runtime_root", "runtime_resolver",
-    "bootstrap_python", "launcher_bin", "backend_executables", "jobs_file",
-    "log_root", "config_root", "state_root", "native_registration_root",
-    "default_backend", "environment",
-}
 
 
 @dataclass(frozen=True)
 class ManagedSchedule:
     descriptor_path: Path
-    runtime_root: Path
-    runtime_resolver: Path
-    bootstrap_python: Path | None
-    installation_id: str
+    owner_id: str
+    python: Path
+    plugin_root: Path
     jobs_file: Path
     log_root: Path
     config_root: Path
@@ -50,9 +37,6 @@ class ManagedSchedule:
     default_backend: str
     backend_executables: Mapping[str, Path]
     environment: Mapping[str, str]
-    launcher_bin: Path | None = None
-    launcher_resources: Path | None = None
-
 
 def _absolute(path: Path, label: str) -> Path:
     if not str(path) or not path.is_absolute() or "\r" in str(path) or "\n" in str(path):
@@ -68,39 +52,15 @@ def _no_symlink_components(path: Path, label: str) -> None:
             raise RecurringRuntimeError(f"{label} contains a symlink component: {current}")
 
 
-def _posix_account_home() -> Path:
-    try:
-        import pwd
-        return _absolute(Path(pwd.getpwuid(os.getuid()).pw_dir), "host account home")
-    except (AttributeError, ImportError, KeyError, OSError) as exc:
-        raise RecurringRuntimeError("cannot resolve the host account home") from exc
-
-
-def _windows_account_local_app_data() -> Path:
-    import ctypes, uuid
-    folder_id = (ctypes.c_ubyte * 16).from_buffer_copy(uuid.UUID("f1b32785-6fba-4fcf-9d55-7b8e7f157091").bytes_le)
-    selected = ctypes.c_wchar_p()
-    result = ctypes.windll.shell32.SHGetKnownFolderPath(ctypes.byref(folder_id), 0, None, ctypes.byref(selected))
-    if result != 0 or not selected.value:
-        raise RecurringRuntimeError("cannot resolve the host account LocalAppData")
-    try:
-        return _absolute(Path(selected.value), "host account LocalAppData")
-    finally:
-        ctypes.windll.ole32.CoTaskMemFree(ctypes.cast(selected, ctypes.c_void_p))
-
-
-def _native_root(context: InstallationContext, platform: str) -> Path:
-    if platform == "win32":
-        return _windows_account_local_app_data() / "Famulus" / "recurring-tasks" / "native"
-    home = _posix_account_home()
-    if platform == "darwin":
-        return home / "Library" / "LaunchAgents"
-    return home / ".config" / "systemd" / "user"
-
-
-def native_registration_root(context: InstallationContext, platform: str) -> Path:
-    """Return the recurring owner's native namespace for an explicit context."""
-    return _native_root(context, platform)
+def _roots(environ: Mapping[str, str], platform: str):
+    home_name = "USERPROFILE" if platform == "win32" else "HOME"
+    home = _absolute(Path(environ.get(home_name, "")), home_name).resolve(strict=False)
+    paths = resolve_famulus_paths(platform=platform, home=home, environ=environ)
+    native = paths.data_root / "recurring-tasks" / "native"
+    if platform != "win32":
+        relative = "Library/LaunchAgents" if platform == "darwin" else ".config/systemd/user"
+        native = home / relative
+    return home, paths, native
 
 
 def _which(name: str, *, platform: str, environ: Mapping[str, str]) -> str | None:
@@ -137,158 +97,66 @@ def _resolve_executable(
     return resolved
 
 
-def _bootstrap_python(platform: str, environ: Mapping[str, str]) -> Path | None:
-    if platform != "win32":
-        return None
-    for name in ("python", "py"):
-        try:
-            selected = _which(name, platform=platform, environ=environ)
-        except OSError as exc:
-            raise RecurringPrerequisiteError(
-                f"Windows bootstrap interpreter lookup failed for {name!r}"
-            ) from exc
-        if selected:
-            try:
-                resolved = Path(selected).resolve(strict=True)
-            except OSError as exc:
-                raise RecurringPrerequisiteError(
-                    f"Windows bootstrap interpreter {name!r} is unreadable"
-                ) from exc
-            if not resolved.is_file() or not os.access(resolved, os.X_OK):
-                raise RecurringPrerequisiteError(
-                    f"Windows bootstrap interpreter {name!r} is not executable"
-                )
-            return resolved
-    raise RecurringPrerequisiteError("Windows bootstrap interpreter is missing")
-
-
-def _bounded_environment(
-    context: InstallationContext,
-    backends: Mapping[str, Path],
-    bootstrap: Path | None,
-    platform: str,
-    environ: Mapping[str, str],
-    release_id: str,
-) -> dict[str, str]:
-    home_name = "USERPROFILE" if platform == "win32" else "HOME"
-    home = _absolute(Path(environ.get(home_name, "")), home_name)
-    directories = [context.paths.user_bin]
-    for name in _BACKENDS:
-        if backends[name].parent not in directories:
-            directories.append(backends[name].parent)
-    if bootstrap is not None and bootstrap.parent not in directories:
-        directories.append(bootstrap.parent)
-    result = {
-        "HOME": str(home), "PATH": os.pathsep.join(str(path) for path in directories),
-        "CODEX_HOME": str(context.codex_home), "CLAUDE_CONFIG_DIR": str(context.claude_home),
-        "FAMULUS_ACTIVE_RELEASE": release_id,
+def build_managed_schedule(*, python: Path, plugin_root: Path, environ: Mapping[str, str], platform: str | None = None) -> ManagedSchedule:
+    platform = sys.platform if platform is None else platform
+    home, paths, native = _roots(environ, platform)
+    config = _absolute(paths.recurring_config_root, "config root").resolve(strict=False)
+    state = _absolute(paths.recurring_state_root, "state root").resolve(strict=False)
+    python = _absolute(python, "selected Python").resolve(strict=False)
+    plugin_root = _absolute(plugin_root, "plugin root").resolve(strict=False)
+    if not python.is_file() or not plugin_root.is_dir():
+        raise RecurringPrerequisiteError("selected Python and plugin root must exist")
+    backends = {name: _resolve_executable(name, environ, platform=platform) for name in _BACKENDS}
+    environment = {
+        "HOME": str(home),
+        "PATH": os.pathsep.join(dict.fromkeys(
+            [str(python.parent), *(str(path.parent) for path in backends.values())]
+        )),
+        "PYTHONPATH": str(plugin_root / "src"),
+        "CODEX_HOME": environ.get("CODEX_HOME", str(home / ".codex")),
+        "CLAUDE_CONFIG_DIR": environ.get("CLAUDE_CONFIG_DIR", str(home / ".claude")),
     }
     if platform == "win32":
-        result.update({"USERPROFILE": str(home), "LOCALAPPDATA": str(context.paths.data_root.parent), "APPDATA": str(context.paths.config_root.parent)})
-    elif context.mode == "development" and platform != "darwin":
-        result.update({"XDG_DATA_HOME": str(context.paths.data_root.parent), "XDG_CONFIG_HOME": str(context.paths.config_root.parent), "XDG_STATE_HOME": str(context.paths.state_root.parent)})
-    return result
-
-
-def _identity(value: os.stat_result) -> tuple[int, int, int, int, int]:
-    return value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns
-
-
-def _pointer_snapshot(runtime_root: Path, environ: Mapping[str, str]):
-    pointer_path = runtime_root / "current.json"
-    for _ in range(3):
-        try:
-            fd = os.open(pointer_path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
-            with os.fdopen(fd, "rb") as stream:
-                before = os.fstat(stream.fileno())
-                if not stat.S_ISREG(before.st_mode):
-                    raise RecurringRuntimeError("active runtime pointer must be a regular file")
-                payload = json.loads(stream.read())
-                after = os.fstat(stream.fileno())
-            if _identity(before) != _identity(after):
-                continue
-            pointer = decode_current_pointer(payload, runtime_root=runtime_root, trusted_interpreter_roots=load_deployed_resolver_trusted_roots(runtime_root=runtime_root))
-            context = load_active_context(runtime_root=runtime_root, environ=environ)
-            selected = os.stat(pointer_path, follow_symlinks=False)
-        except (OSError, UnicodeError, ValueError) as exc:
-            if isinstance(exc, RecurringRuntimeError):
-                raise
-            raise RecurringRuntimeError(f"cannot read active runtime pointer: {exc}") from exc
-        if _identity(before) == _identity(selected):
-            return context, pointer
-    raise RecurringRuntimeError("active runtime pointer changed while building schedule authority")
-
-
-def _expected_schedule(*, runtime_root: Path, environ: Mapping[str, str], platform: str) -> ManagedSchedule:
-    runtime_root = _absolute(runtime_root, "runtime_root")
-    context, pointer = _pointer_snapshot(runtime_root, environ)
-    resolver = runtime_root / "bootstrap" / "resolvers" / "v1" / "launch.py"
-    _no_symlink_components(resolver, "runtime resolver")
-    if not resolver.is_file():
-        raise RecurringPrerequisiteError(f"runtime resolver is missing: {resolver}")
-    backends = {
-        name: _resolve_executable(name, environ, platform=platform)
-        for name in _BACKENDS
-    }
-    bootstrap = _bootstrap_python(platform, environ)
-    if pointer.runtime_source.parent.resolve(strict=False) != (runtime_root / "releases").resolve(strict=False):
-        raise RecurringRuntimeError("current pointer runtime source is outside this runtime")
+        environment.update({
+            "USERPROFILE": str(home),
+            "LOCALAPPDATA": str(paths.data_root.parent),
+            "APPDATA": str(paths.config_root.parent),
+        })
     return ManagedSchedule(
-        descriptor_path=context.paths.recurring_config_root / "schedule-descriptor.json",
-        runtime_root=runtime_root, runtime_resolver=resolver, bootstrap_python=bootstrap,
-        installation_id=context.installation_id,
-        jobs_file=context.paths.recurring_config_root / "jobs.yaml",
-        log_root=context.paths.recurring_state_root / "logs",
-        config_root=context.paths.recurring_config_root, state_root=context.paths.recurring_state_root,
-        native_registration_root=_native_root(context, platform), default_backend="claude",
+        descriptor_path=config / "schedule-descriptor.json",
+        owner_id=str(config),
+        python=python,
+        plugin_root=plugin_root,
+        jobs_file=config / "jobs.yaml",
+        log_root=state / "logs",
+        config_root=config,
+        state_root=state,
+        native_registration_root=native,
+        default_backend="claude",
         backend_executables=backends,
-        environment=_bounded_environment(context, backends, bootstrap, platform, environ, pointer.release_id),
-        launcher_bin=context.paths.user_bin,
-        launcher_resources=pointer.launcher_resources,
+        environment=environment,
     )
 
 
-def _payload(schedule: ManagedSchedule) -> dict[str, object]:
+def _payload(s: ManagedSchedule) -> dict[str, object]:
     return {
-        "schema_version": 1, "installation_id": schedule.installation_id,
-        "runtime_root": str(schedule.runtime_root), "runtime_resolver": str(schedule.runtime_resolver),
-        "bootstrap_python": str(schedule.bootstrap_python) if schedule.bootstrap_python else None,
-        "launcher_bin": str(schedule.launcher_bin),
-        "backend_executables": {name: str(schedule.backend_executables[name]) for name in _BACKENDS},
-        "jobs_file": str(schedule.jobs_file), "log_root": str(schedule.log_root),
-        "config_root": str(schedule.config_root), "state_root": str(schedule.state_root),
-        "native_registration_root": str(schedule.native_registration_root),
-        "default_backend": schedule.default_backend, "environment": dict(schedule.environment),
+        "schema_version": 2,
+        "owner_id": s.owner_id,
+        "python": str(s.python),
+        "plugin_root": str(s.plugin_root),
+        "jobs_file": str(s.jobs_file),
+        "log_root": str(s.log_root),
+        "config_root": str(s.config_root),
+        "state_root": str(s.state_root),
+        "native_registration_root": str(s.native_registration_root),
+        "default_backend": s.default_backend,
+        "backend_executables": {name: str(path) for name, path in s.backend_executables.items()},
+        "environment": dict(s.environment),
     }
 
 
-def discover_runtime_root(*, executable: Path | None = None) -> Path:
-    selected = _absolute((Path(sys.executable) if executable is None else executable).absolute(), "managed interpreter")
-    indices = [index for index, part in enumerate(selected.parts) if part == "releases"]
-    if not indices or indices[-1] + 2 >= len(selected.parts):
-        raise RecurringRuntimeError("managed interpreter is not beneath runtime_root/releases/<release>")
-    return Path(*selected.parts[: indices[-1]])
-
-
-def resolve_managed_schedule_authority(
-    *, runtime_root: Path, environ: Mapping[str, str], platform: str | None = None
-) -> ManagedSchedule:
-    try:
-        return _expected_schedule(
-            runtime_root=runtime_root,
-            environ=environ,
-            platform=sys.platform if platform is None else platform,
-        )
-    except RecurringPrerequisiteError:
-        raise
-    except (OSError, RecurringRuntimeError) as exc:
-        raise RecurringPrerequisiteError(
-            f"managed schedule authority cannot be reconstructed: {exc}"
-        ) from exc
-
-
-def write_managed_schedule(*, runtime_root: Path, environ: Mapping[str, str]) -> ManagedSchedule:
-    expected = resolve_managed_schedule_authority(runtime_root=runtime_root, environ=environ)
+def write_managed_schedule(*, python: Path, plugin_root: Path, environ: Mapping[str, str]) -> ManagedSchedule:
+    expected = build_managed_schedule(python=python, plugin_root=plugin_root, environ=environ)
     parent = expected.descriptor_path.parent
     _no_symlink_components(parent, "descriptor parent")
     parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -299,18 +167,7 @@ def write_managed_schedule(*, runtime_root: Path, environ: Mapping[str, str]) ->
     return expected
 
 
-def load_managed_schedule(
-    *, runtime_root: Path, descriptor_path: Path, environ: Mapping[str, str] | None = None,
-    log_root: Path | None = None, platform: str | None = None,
-) -> ManagedSchedule:
-    selected_environment = os.environ if environ is None else environ
-    expected = resolve_managed_schedule_authority(
-        runtime_root=runtime_root,
-        environ=selected_environment,
-        platform=platform,
-    )
-    if descriptor_path != expected.descriptor_path:
-        raise RecurringRuntimeError(f"descriptor is not canonical for the active context: {expected.descriptor_path}")
+def load_managed_schedule(*, descriptor_path: Path, log_root: Path | None = None) -> ManagedSchedule:
     _no_symlink_components(descriptor_path, "descriptor path")
     try:
         payload = json.loads(descriptor_path.read_text(encoding="utf-8"))
@@ -318,22 +175,51 @@ def load_managed_schedule(
         parent_mode = stat.S_IMODE(descriptor_path.parent.stat().st_mode)
     except (OSError, UnicodeError, ValueError) as exc:
         raise RecurringRuntimeError(f"cannot read schedule descriptor: {exc}") from exc
-    if not isinstance(payload, dict) or set(payload) != _FIELDS or payload.get("schema_version") != 1:
+    required = {
+        "schema_version", "owner_id", "python", "plugin_root", "jobs_file",
+        "log_root", "config_root", "state_root", "native_registration_root",
+        "default_backend", "backend_executables", "environment",
+    }
+    if set(payload) != required or payload.get("schema_version") != 2:
         raise RecurringRuntimeError("schedule descriptor has an unsupported exact schema")
     if os.name != "nt" and (mode & 0o077 or parent_mode & 0o077):
         raise RecurringRuntimeError("schedule descriptor and directory permissions must be user-only")
-    if payload != _payload(expected):
-        if payload.get("installation_id") != expected.installation_id:
-            raise RecurringRuntimeError("descriptor installation_id does not match active installation")
-        raise RecurringRuntimeError("schedule descriptor does not match active context, pointer, launchers, executables, environment, or platform adapter")
-    if log_root is not None and log_root != expected.log_root:
-        raise RecurringRuntimeError("log root override does not match the canonical descriptor")
-    return expected
+    def path(name: str) -> Path:
+        return _absolute(Path(str(payload[name])), name).resolve(strict=False)
+
+    schedule = ManagedSchedule(
+        descriptor_path=descriptor_path,
+        owner_id=str(payload["owner_id"]),
+        python=path("python"),
+        plugin_root=path("plugin_root"),
+        jobs_file=path("jobs_file"),
+        log_root=path("log_root"),
+        config_root=path("config_root"),
+        state_root=path("state_root"),
+        native_registration_root=path("native_registration_root"),
+        default_backend=str(payload["default_backend"]),
+        backend_executables={
+            name: _absolute(Path(str(value)), name).resolve(strict=False)
+            for name, value in payload["backend_executables"].items()
+        },
+        environment=dict(payload["environment"]),
+    )
+    if not (
+        schedule.owner_id == str(schedule.config_root)
+        and descriptor_path == schedule.config_root / "schedule-descriptor.json"
+        and schedule.jobs_file == schedule.config_root / "jobs.yaml"
+        and (log_root is None or log_root == schedule.log_root)
+        and payload == _payload(schedule)
+    ):
+        raise RecurringRuntimeError("schedule descriptor is not canonical")
+    return schedule
 
 
-def load_public_schedule(*, runtime_root: Path, environ: Mapping[str, str]) -> ManagedSchedule:
-    context = load_active_context(runtime_root=runtime_root, environ=environ)
-    return load_managed_schedule(runtime_root=runtime_root, descriptor_path=context.paths.recurring_config_root / "schedule-descriptor.json", environ=environ)
+def load_public_schedule(*, environ: Mapping[str, str], platform: str | None = None) -> ManagedSchedule:
+    selected_platform = sys.platform if platform is None else platform
+    paths = _roots(environ, selected_platform)[1]
+    descriptor = paths.recurring_config_root.resolve(strict=False) / "schedule-descriptor.json"
+    return load_managed_schedule(descriptor_path=descriptor)
 
 
-__all__ = ["ManagedSchedule", "RecurringPrerequisiteError", "RecurringRuntimeError", "discover_runtime_root", "lifecycle_lock_path", "load_managed_schedule", "load_public_schedule", "native_registration_root", "resolve_managed_schedule_authority", "write_managed_schedule"]
+__all__ = ["ManagedSchedule", "RecurringPrerequisiteError", "RecurringRuntimeError", "build_managed_schedule", "load_managed_schedule", "load_public_schedule", "write_managed_schedule"]

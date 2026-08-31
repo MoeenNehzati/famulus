@@ -151,17 +151,6 @@ def _apply_command(context: InstallationContext) -> str:
     return shlex.join(command)
 
 
-def _recurring_remove_context_command() -> str:
-    return shlex.join(
-        [
-            "dispatcher",
-            "--caller-skill",
-            "recurring-tasks",
-            "recurring-tasks._rtx.interface.scripts-remove-context",
-        ]
-    )
-
-
 def _check_pointer(context: InstallationContext) -> DiagnosticCheck:
     if not context.paths.current_pointer.exists():
         return DiagnosticCheck(
@@ -375,104 +364,6 @@ def _check_assistant_access(context: InstallationContext) -> DiagnosticCheck:
     )
 
 
-def _check_recurring(
-    context: InstallationContext, *, environ: Mapping[str, str], platform: str
-) -> DiagnosticCheck:
-    from officina.recurring.runtime import (
-        RecurringPrerequisiteError,
-        RecurringRuntimeError,
-        load_managed_schedule,
-        resolve_managed_schedule_authority,
-    )
-
-    descriptor_path = context.paths.recurring_config_root / "schedule-descriptor.json"
-    summary_path = context.paths.recurring_state_root / "registrations.json"
-    if not descriptor_path.exists() and not summary_path.exists():
-        return DiagnosticCheck("recurring", "ok", "No recurring registrations are recorded.")
-    recovery = _recurring_remove_context_command()
-    descriptor_absent = not descriptor_path.exists()
-    try:
-        schedule = (
-            resolve_managed_schedule_authority(
-                runtime_root=context.paths.runtime_root,
-                environ=environ,
-                platform=platform,
-            )
-            if descriptor_absent
-            else load_managed_schedule(
-                runtime_root=context.paths.runtime_root,
-                descriptor_path=descriptor_path,
-                environ=environ,
-                platform=platform,
-            )
-        )
-    except RecurringPrerequisiteError as exc:
-        return DiagnosticCheck(
-            "recurring",
-            "error",
-            f"Recurring scheduling prerequisite is unavailable: {exc}",
-            _apply_command(context),
-        )
-    except RecurringRuntimeError as exc:
-        return DiagnosticCheck(
-            "recurring",
-            "error",
-            f"Recurring descriptor does not match the active authority: {exc}",
-            recovery,
-        )
-    if descriptor_absent:
-        return DiagnosticCheck(
-            "recurring",
-            "error",
-            "Recurring registrations exist but the canonical descriptor is absent.",
-            recovery,
-        )
-    if not summary_path.exists():
-        return DiagnosticCheck(
-            "recurring",
-            "ok",
-            "Recurring descriptor: schema 1, "
-            f"backend {schedule.default_backend}; registrations: 0",
-        )
-    try:
-        payload = json.loads(summary_path.read_text(encoding="utf-8"))
-        registrations = payload.get("registrations")
-    except (OSError, UnicodeError, ValueError, AttributeError) as exc:
-        return DiagnosticCheck(
-            "recurring",
-            "error",
-            f"Recurring registration summary is malformed: {exc}",
-            recovery,
-        )
-    if (
-        not isinstance(payload, dict)
-        or set(payload) != {"schema_version", "installation_id", "registrations"}
-        or payload.get("schema_version") != 1
-        or payload.get("installation_id") != context.installation_id
-        or not isinstance(registrations, list)
-        or any(not isinstance(name, str) or not name for name in registrations)
-    ):
-        return DiagnosticCheck(
-            "recurring",
-            "error",
-            "Recurring registration summary does not match the selected installation context.",
-            recovery,
-        )
-    if registrations:
-        return DiagnosticCheck(
-            "recurring",
-            "ok",
-            "Recurring descriptor: schema 1, "
-            f"backend {schedule.default_backend}; registrations: {len(registrations)}",
-        )
-    return DiagnosticCheck(
-        "recurring",
-        "ok",
-        "Recurring descriptor: schema 1, "
-        f"backend {schedule.default_backend}; registrations: 0",
-    )
-
-
 def diagnose_installation(
     *, context: InstallationContext, environ: Mapping[str, str], platform: str
 ) -> DiagnosticReport:
@@ -483,7 +374,6 @@ def diagnose_installation(
         _check_commands(context, environ=environ, platform=platform),
         _check_manifest(context),
         _check_assistant_access(context),
-        _check_recurring(context, environ=environ, platform=platform),
     )
     status = "healthy" if all(check.status == "ok" for check in checks) else "unhealthy"
     return DiagnosticReport(1, context.mode, context.installation_id, status, checks)

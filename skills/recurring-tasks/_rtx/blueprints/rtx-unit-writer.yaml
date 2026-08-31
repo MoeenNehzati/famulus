@@ -4,10 +4,10 @@ dependencies:
 - blueprint:
     base: module-root
     path: blueprints/rtx-managed-control.yaml
-  reason: Delegates scheduler synchronization through the shared managed-runtime command helper.
+  reason: Delegates scheduler synchronization through recurring-owned direct command construction.
   source: recurring-tasks._rtx.source.rtx-managed-control
   version: 1
-description: Delegates recurring scheduler synchronization to the canonical managed runtime.
+description: Delegates recurring scheduler synchronization to recurring-owned control.
 gateway:
   language: Python
   path: _unit_writer.py

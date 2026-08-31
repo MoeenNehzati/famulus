@@ -1,9 +1,9 @@
 content:
 - _managed_control\.py
 dependencies: []
-description: Resolves the active managed recurring runtime, materializes or loads its
-  canonical schedule descriptor, and invokes one control operation through the fixed
-  runtime resolver.
+description: Reconciles setup from caller-selected Python and plugin values before
+  publishing the recurring-owned descriptor, or loads that descriptor and invokes
+  one direct later control operation.
 gateway:
   language: Python
   path: _managed_control.py

@@ -55,12 +55,11 @@ def _portable_simulated_uid(monkeypatch: pytest.MonkeyPatch) -> None:
 def _managed_schedule(tmp_path: Path) -> ManagedSchedule:
     backend = Path(sys.executable).resolve()
     descriptor = tmp_path / "config" / "schedule-descriptor.json"
-    return ManagedSchedule(
+    schedule = ManagedSchedule(
         descriptor_path=descriptor,
-        runtime_root=tmp_path / "runtime",
-        runtime_resolver=tmp_path / "runtime" / "bootstrap" / "resolvers" / "v1" / "launch.py",
-        bootstrap_python=None,
-        installation_id="standard",
+        owner_id=str(descriptor.parent),
+        python=backend,
+        plugin_root=_REPO_ROOT,
         jobs_file=descriptor.parent / "jobs.yaml",
         log_root=tmp_path / "state" / "logs",
         config_root=descriptor.parent,
@@ -69,8 +68,12 @@ def _managed_schedule(tmp_path: Path) -> ManagedSchedule:
         default_backend="codex",
         backend_executables={"claude": backend, "codex": backend},
         environment={"HOME": str(tmp_path), "PATH": str(backend.parent), "CODEX_HOME": str(tmp_path / "codex"), "CLAUDE_CONFIG_DIR": str(tmp_path / "claude"), "FAMULUS_ACTIVE_RELEASE": "release-a"},
-        launcher_bin=tmp_path / "bin",
     )
+    schedule.config_root.mkdir(parents=True, exist_ok=True)
+    schedule.config_root.chmod(0o700)
+    schedule.descriptor_path.write_text(json.dumps(runtime._payload(schedule)), encoding="utf-8")
+    schedule.descriptor_path.chmod(0o600)
+    return schedule
 
 
 def _native_capability() -> None:
@@ -234,31 +237,17 @@ def _retired_managed_public_control_live_sync_trigger_record_and_selected_remova
                 canary.unlink(missing_ok=True)
 
 
-@pytest.mark.parametrize(
-    "field,value",
-    [
-        ("environment", {"HOME": "/tmp", "SECRET": "injected"}),
-        ("native_registration_root", "/tmp/redirected-native"),
-        ("bootstrap_python", "/tmp/redirected-python"),
-        ("launcher_bin", "/tmp/redirected-bin"),
-        ("backend_executables", {"claude": "/tmp/claude", "codex": "/tmp/codex"}),
-    ],
-)
-def test_managed_descriptor_rejects_every_authority_tamper(tmp_path, monkeypatch, field, value):
+@pytest.mark.parametrize("field,value", [("owner_id", "/tmp/other"), ("unexpected", "value")])
+def test_managed_descriptor_rejects_noncanonical_authority(tmp_path, field, value):
     expected = _managed_schedule(tmp_path)
-    expected.descriptor_path.parent.mkdir(mode=0o700)
+    expected.descriptor_path.parent.mkdir(mode=0o700, exist_ok=True)
+    expected.descriptor_path.parent.chmod(0o700)
     payload = runtime._payload(expected)
     payload[field] = value
     expected.descriptor_path.write_text(__import__("json").dumps(payload), encoding="utf-8")
     expected.descriptor_path.chmod(0o600)
-    monkeypatch.setattr(runtime, "_expected_schedule", lambda **kwargs: expected)
-
-    with pytest.raises(RecurringRuntimeError, match="does not match active context"):
-        runtime.load_managed_schedule(
-            runtime_root=expected.runtime_root,
-            descriptor_path=expected.descriptor_path,
-            environ={"SECRET_CANARY": "must not be trusted"},
-        )
+    with pytest.raises(RecurringRuntimeError, match="canonical|schema"):
+        runtime.load_managed_schedule(descriptor_path=expected.descriptor_path)
 
 
 @pytest.mark.parametrize(
@@ -269,7 +258,7 @@ def test_managed_descriptor_rejects_every_authority_tamper(tmp_path, monkeypatch
         ("officina.recurring.healthcheck", ["--log-root", "/tmp/logs"]),
     ],
 )
-def test_managed_recurring_entrypoints_publish_runtime_root_and_descriptor_cli(
+def test_recurring_entrypoints_publish_plugin_root_and_descriptor_cli(
     module, extra
 ):
     result = subprocess.run(
@@ -282,18 +271,9 @@ def test_managed_recurring_entrypoints_publish_runtime_root_and_descriptor_cli(
     )
 
     assert result.returncode == 0, result.stderr
-    assert "--runtime-root" in result.stdout
+    assert "--plugin-root" in result.stdout
+    assert "--runtime-root" not in result.stdout
     assert "--descriptor" in result.stdout
-
-
-def test_windows_bootstrap_disappearing_after_path_resolution_is_a_prerequisite_error(
-    tmp_path: Path, monkeypatch
-) -> None:
-    disappeared = tmp_path / "python.exe"
-    monkeypatch.setattr(runtime, "_which", lambda *args, **kwargs: str(disappeared))
-
-    with pytest.raises(RecurringPrerequisiteError, match="bootstrap.*unreadable"):
-        runtime._bootstrap_python("win32", {"PATH": str(tmp_path)})
 
 
 def test_managed_executor_runs_after_skill_source_disappears(tmp_path):
@@ -318,21 +298,7 @@ def test_managed_executor_runs_after_skill_source_disappears(tmp_path):
         encoding="utf-8",
     )
     backend = Path(sys.executable).resolve()
-    schedule = ManagedSchedule(
-        descriptor_path=jobs_file.parent / "schedule-descriptor.json",
-        runtime_root=tmp_path / "runtime",
-        runtime_resolver=tmp_path / "runtime" / "bootstrap" / "resolvers" / "v1" / "launch.py",
-        bootstrap_python=None,
-        installation_id="standard",
-        jobs_file=jobs_file,
-        log_root=log_root,
-        config_root=jobs_file.parent,
-        state_root=log_root.parent,
-        native_registration_root=tmp_path / "native",
-        default_backend="codex",
-        backend_executables={"claude": backend, "codex": backend},
-        environment={"HOME": str(tmp_path), "PATH": os.environ.get("PATH", "")},
-    )
+    schedule = ManagedSchedule(**{**_managed_schedule(tmp_path).__dict__, "jobs_file": jobs_file, "log_root": log_root, "config_root": jobs_file.parent, "state_root": log_root.parent, "descriptor_path": jobs_file.parent / "schedule-descriptor.json", "owner_id": str(jobs_file.parent), "backend_executables": {"claude": backend, "codex": backend}})
 
     assert not missing_skill_source.exists()
     assert executor.run_job(schedule=schedule, job_name="demo") == 0
@@ -350,7 +316,7 @@ def test_executor_launches_exact_descriptor_backend_as_process_origin(tmp_path, 
     exact.write_text("trusted", encoding="utf-8")
     backends = dict(schedule.backend_executables)
     backends[backend] = exact
-    schedule = ManagedSchedule(**{**schedule.__dict__, "backend_executables": backends, "launcher_resources": resources})
+    schedule = ManagedSchedule(**{**schedule.__dict__, "backend_executables": backends, "plugin_root": resources})
     schedule.jobs_file.parent.mkdir(parents=True, exist_ok=True)
     schedule.jobs_file.write_text(yaml.safe_dump({"jobs": [{"name": "demo", "command": "invoke-skill demo", "backend": backend, "schedule": "0 * * * *", "enabled": True}]}), encoding="utf-8")
     observed = []
@@ -363,21 +329,7 @@ def test_executor_launches_exact_descriptor_backend_as_process_origin(tmp_path, 
 def test_control_and_healthcheck_implementations_do_not_depend_on_skill_source(
     tmp_path, monkeypatch, capsys
 ):
-    schedule = ManagedSchedule(
-        descriptor_path=tmp_path / "config" / "schedule-descriptor.json",
-        runtime_root=tmp_path / "runtime",
-        runtime_resolver=tmp_path / "runtime" / "resolver.py",
-        bootstrap_python=None,
-        installation_id="standard",
-        jobs_file=tmp_path / "config" / "jobs.yaml",
-        log_root=tmp_path / "state" / "logs",
-        config_root=tmp_path / "config",
-        state_root=tmp_path / "state",
-        native_registration_root=tmp_path / "native",
-        default_backend="codex",
-        backend_executables={},
-        environment={"HOME": str(tmp_path), "PATH": ""},
-    )
+    schedule = _managed_schedule(tmp_path)
     monkeypatch.setattr(control, "status", lambda selected: "managed status")
     monkeypatch.setattr(healthcheck, "_manager_failure", lambda: None)
     monkeypatch.setattr(healthcheck, "load_jobs", lambda selected: [])
@@ -455,7 +407,7 @@ def test_linux_sync_disables_and_removes_stale_context_units(tmp_path, monkeypat
     schedule.jobs_file.parent.mkdir(parents=True, exist_ok=True)
     schedule.jobs_file.write_text(yaml.safe_dump({"jobs": [{"name": "old", "command": "invoke-skill old", "schedule": "0 * * * *", "enabled": False}]}), encoding="utf-8")
     schedule.native_registration_root.mkdir()
-    service, timer = native.linux_names("old", schedule.installation_id)
+    service, timer = native.linux_names("old")
     (schedule.native_registration_root / service).write_text("stale", encoding="utf-8")
     (schedule.native_registration_root / timer).write_text("stale", encoding="utf-8")
     calls = []
@@ -472,9 +424,10 @@ def test_linux_sync_disables_and_removes_stale_context_units(tmp_path, monkeypat
 def test_linux_sync_from_another_installation_replaces_the_shared_set(tmp_path, monkeypatch):
     shared = tmp_path / "native"
     first = ManagedSchedule(**{**_managed_schedule(tmp_path / "first").__dict__, "native_registration_root": shared})
-    second = ManagedSchedule(**{**_managed_schedule(tmp_path / "second").__dict__, "installation_id": "dev-0123456789abcdef0123456789abcdef", "native_registration_root": shared})
+    second = ManagedSchedule(**{**_managed_schedule(tmp_path / "second").__dict__, "native_registration_root": shared})
     for schedule, name in ((first, "old"), (second, "new")):
-        schedule.jobs_file.parent.mkdir(parents=True)
+        schedule.descriptor_path.write_text(json.dumps(runtime._payload(schedule)), encoding="utf-8")
+        schedule.jobs_file.parent.mkdir(parents=True, exist_ok=True)
         schedule.jobs_file.write_text(yaml.safe_dump({"jobs": [{"name": name, "command": f"invoke-skill {name}", "schedule": "0 * * * *", "enabled": True}]}), encoding="utf-8")
     monkeypatch.setattr(native.sys, "platform", "linux")
     monkeypatch.setattr(native, "_read_crontab", lambda: "")
@@ -489,23 +442,98 @@ def test_linux_sync_from_another_installation_replaces_the_shared_set(tmp_path, 
     ]
     assert str(second.descriptor_path) in (shared / "ai-new.service").read_text()
     assert str(second.descriptor_path) in (shared / "ai-recurring-healthcheck.sh").read_text()
-    assert not (shared / "install-owner.json").exists()
-    assert (shared / f"install-owner-{second.installation_id}.json").exists()
+    assert json.loads((shared / "install-owner.json").read_text())["owner_id"] == second.owner_id
 
     native.remove_context(first)
     assert (shared / "ai-new.service").exists()
+    assert json.loads((shared / "install-owner.json").read_text())["owner_id"] == second.owner_id
+
+    monkeypatch.setattr(native, "_systemd_unit_inventory", lambda *_args: native._NativeInventory(True, ()))
+    monkeypatch.setattr(native, "_systemd_unit_state", lambda *_args: (False, ""))
+    native.remove_context(second)
+    assert not (shared / "ai-new.service").exists()
+    assert not (shared / "install-owner.json").exists()
 
 
-def test_scheduler_names_are_shared_across_installations():
-    development = "dev-0123456789abcdef0123456789abcdef"
-    assert native.linux_names("demo", "standard") == native.linux_names("demo", development)
-    assert native.launchd_label("demo", "standard") == native.launchd_label("demo", development)
-    assert native.windows_task_name("demo", "standard") == native.windows_task_name("demo", development)
+def test_failed_reconciliation_restores_previous_owner_and_complete_set(tmp_path, monkeypatch):
+    shared = tmp_path / "native"
+    first = ManagedSchedule(**{**_managed_schedule(tmp_path / "first").__dict__, "native_registration_root": shared})
+    second = ManagedSchedule(**{**_managed_schedule(tmp_path / "second").__dict__, "native_registration_root": shared})
+    for schedule, name in ((first, "old"), (second, "new")):
+        schedule.descriptor_path.write_text(json.dumps(runtime._payload(schedule)), encoding="utf-8")
+        schedule.jobs_file.parent.mkdir(parents=True, exist_ok=True)
+        schedule.jobs_file.write_text(yaml.safe_dump({"jobs": [{"name": name, "command": f"invoke-skill {name}", "schedule": "0 * * * *", "enabled": True}]}), encoding="utf-8")
+    monkeypatch.setattr(native.sys, "platform", "linux")
+    monkeypatch.setattr(native, "_read_crontab", lambda: "")
+    monkeypatch.setattr(native, "_write_crontab", lambda _value: None)
+    calls = 0
+
+    def run(argv, **kwargs):
+        nonlocal calls
+        pending = second.state_root / "registrations.pending.json"
+        if pending.exists() and second.owner_id in pending.read_text(encoding="utf-8") and argv[-1] == "ai-new.timer" and calls == 0:
+            calls += 1
+            raise subprocess.CalledProcessError(1, argv)
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(native.subprocess, "run", run)
+    native.sync(first)
+
+    with pytest.raises(subprocess.CalledProcessError):
+        native.sync(second)
+
+    assert sorted(path.name for path in shared.glob("ai-*.*")) == [
+        "ai-old.service", "ai-old.timer", "ai-recurring-healthcheck.sh"
+    ]
+    assert json.loads((shared / "install-owner.json").read_text())["owner_id"] == first.owner_id
+
+
+def test_failed_same_owner_setup_keeps_previous_descriptor_plugin_and_native_set(tmp_path, monkeypatch):
+    first = _managed_schedule(tmp_path)
+    old_plugin = tmp_path / "plugin one"
+    new_plugin = tmp_path / "plugin two"
+    old_plugin.mkdir()
+    new_plugin.mkdir()
+    first = ManagedSchedule(**{**first.__dict__, "plugin_root": old_plugin})
+    second = ManagedSchedule(**{**first.__dict__, "plugin_root": new_plugin})
+    first.descriptor_path.write_text(json.dumps(runtime._payload(first)), encoding="utf-8")
+    first.jobs_file.write_text(yaml.safe_dump({"jobs": [{"name": "same", "command": "invoke-skill same", "schedule": "0 * * * *", "enabled": True}]}), encoding="utf-8")
+    monkeypatch.setattr(native.sys, "platform", "linux")
+    monkeypatch.setattr(native, "_read_crontab", lambda: "")
+    monkeypatch.setattr(native, "_write_crontab", lambda _value: None)
+    failed = False
+
+    def run(argv, **kwargs):
+        nonlocal failed
+        if not failed and argv[-1] == "daemon-reload" and new_plugin.as_posix() in (first.native_registration_root / "ai-same.service").read_text():
+            failed = True
+            raise subprocess.CalledProcessError(1, argv)
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(native.subprocess, "run", run)
+    native.sync(first)
+    monkeypatch.setattr(managed_control, "build_managed_schedule", lambda **_kwargs: second)
+    writer = mock.Mock()
+    monkeypatch.setattr(managed_control, "write_managed_schedule", writer)
+
+    with pytest.raises(subprocess.CalledProcessError):
+        managed_control.run("setup", python=second.python, plugin_root=new_plugin)
+
+    assert json.loads(first.descriptor_path.read_text())["plugin_root"] == str(old_plugin)
+    assert old_plugin.as_posix() in (first.native_registration_root / "ai-same.service").read_text()
+    assert old_plugin.as_posix() in (first.native_registration_root / "ai-recurring-healthcheck.sh").read_text()
+    assert json.loads((first.native_registration_root / "install-owner.json").read_text())["owner_id"] == first.owner_id
+    writer.assert_not_called()
+
+
+def test_scheduler_names_are_one_shared_namespace():
+    assert native.linux_names("demo") == ("ai-demo.service", "ai-demo.timer")
+    assert native.launchd_label("demo") == "com.famulus.ai.demo"
+    assert native.windows_task_name("demo") == "Famulus-AI-ai-demo"
 
 
 def test_windows_native_root_is_shared_across_installations(tmp_path, monkeypatch):
-    monkeypatch.setattr(runtime, "_windows_account_local_app_data", lambda: tmp_path)
-    assert runtime._native_root(object(), "win32") == tmp_path / "Famulus" / "recurring-tasks" / "native"
+    assert runtime._roots({"USERPROFILE": str(tmp_path), "LOCALAPPDATA": str(tmp_path)}, "win32")[2] == tmp_path / "Famulus" / "recurring-tasks" / "native"
 
 
 def test_macos_step_schedule_expands_and_sync_reloads_exact_label(tmp_path, monkeypatch):
@@ -520,7 +548,7 @@ def test_macos_step_schedule_expands_and_sync_reloads_exact_label(tmp_path, monk
     native.sync(schedule)
 
     assert [entry["Minute"] for entry in payload["StartCalendarInterval"]] == [0, 15, 30, 45]
-    target = f"gui/{os.getuid()}/{native.launchd_label('quarter', schedule.installation_id)}"
+    target = f"gui/{os.getuid()}/{native.launchd_label('quarter')}"
     assert ["launchctl", "print", target] in calls
     assert ["launchctl", "bootout", target] in calls
     assert any(call[:2] == ["launchctl", "bootstrap"] for call in calls)
@@ -528,7 +556,6 @@ def test_macos_step_schedule_expands_and_sync_reloads_exact_label(tmp_path, monk
 
 def test_windows_sync_preserves_cron_semantics(tmp_path, monkeypatch):
     schedule = _managed_schedule(tmp_path)
-    schedule = ManagedSchedule(**{**schedule.__dict__, "bootstrap_python": Path(sys.executable)})
     schedule.jobs_file.parent.mkdir(parents=True, exist_ok=True)
     schedule.jobs_file.write_text(yaml.safe_dump({"jobs": [{"name": "quarter", "command": "invoke-skill quarter", "schedule": "*/15 * * * *", "enabled": True}]}), encoding="utf-8")
     calls = []
@@ -550,7 +577,7 @@ def test_native_renderers_preserve_only_exact_bounded_environment(tmp_path):
         "CLAUDE_CONFIG_DIR": str(tmp_path / "claude % ! 雪"),
         "FAMULUS_ACTIVE_RELEASE": "release % ! 雪",
     }
-    schedule = ManagedSchedule(**{**schedule.__dict__, "environment": bounded, "bootstrap_python": Path(sys.executable)})
+    schedule = ManagedSchedule(**{**schedule.__dict__, "environment": bounded})
     job = {"name": "demo", "command": "invoke-skill demo", "schedule": "0 * * * *", "enabled": True}
 
     linux = native.render_linux_service(schedule, job)
@@ -569,16 +596,15 @@ def test_native_renderers_preserve_only_exact_bounded_environment(tmp_path):
 @pytest.mark.parametrize("renderer", [native.render_linux_service, native.render_macos_plist, native.render_windows_wrapper])
 def test_native_renderers_reject_crlf_environment(tmp_path, renderer):
     schedule = _managed_schedule(tmp_path)
-    schedule = ManagedSchedule(**{**schedule.__dict__, "environment": {"HOME": str(tmp_path), "PATH": "bad\nvalue"}, "bootstrap_python": Path(sys.executable)})
+    schedule = ManagedSchedule(**{**schedule.__dict__, "environment": {"HOME": str(tmp_path), "PATH": "bad\nvalue"}})
     with pytest.raises(ValueError, match="CR or LF"):
         renderer(schedule, {"name": "demo", "command": "invoke-skill demo", "schedule": "0 * * * *", "enabled": True})
 
 
-def test_managed_identities_are_shared():
-    installation = "dev-0123456789abcdef0123456789abcdef"
-    assert native.launchd_label("same-job", installation) == "com.famulus.ai.same-job"
-    assert native.windows_task_name("same-job", installation) == "Famulus-AI-ai-same-job"
-    assert native.windows_wrapper_name("same-job", installation) == "Famulus-AI-ai-same-job.cmd"
+def test_managed_identities_have_no_context_parameter():
+    assert native.launchd_label("same-job") == "com.famulus.ai.same-job"
+    assert native.windows_task_name("same-job") == "Famulus-AI-ai-same-job"
+    assert native.windows_wrapper_name("same-job") == "Famulus-AI-ai-same-job.cmd"
 
 
 def _retired_windows_sync_migrates_only_this_contexts_old_managed_identity(tmp_path, monkeypatch):
@@ -691,37 +717,6 @@ def _retired_windows_sync_sweeps_removed_legacy_jobs_without_cross_context_delet
     assert not orphan_wrapper.exists()
 
 
-def test_macos_sync_sweeps_disabled_and_removed_legacy_labels_before_plist_delete(tmp_path, monkeypatch):
-    installation = "dev-0123456789abcdef0123456789abcdef"
-    schedule = _managed_schedule(tmp_path)
-    schedule = ManagedSchedule(**{**schedule.__dict__, "installation_id": installation})
-    schedule.jobs_file.parent.mkdir(parents=True, exist_ok=True)
-    schedule.jobs_file.write_text(yaml.safe_dump({"jobs": [{"name": "disabled", "command": "invoke-skill disabled", "schedule": "0 * * * *", "enabled": False}]}), encoding="utf-8")
-    schedule.native_registration_root.mkdir()
-    old_disabled = f"com.famulus.ai.{installation}-disabled"
-    old_removed = f"com.famulus.ai.{installation}-removed"
-    other = "com.famulus.ai.dev-ffffffffffffffffffffffffffffffff-removed"
-    for name, label in (("disabled", old_disabled), ("removed", old_removed)):
-        (schedule.native_registration_root / f"ai-{installation}-{name}.plist").write_bytes(__import__("plistlib").dumps({"Label": label}))
-    calls = []
-    monkeypatch.setattr(native.sys, "platform", "darwin")
-
-    def observed(argv, **kwargs):
-        calls.append(argv)
-        if argv == ["launchctl", "list"]:
-            return subprocess.CompletedProcess(argv, 0, stdout=f"-\t0\t{old_removed}\n-\t0\t{other}\n")
-        return subprocess.CompletedProcess(argv, 0, stdout="loaded")
-
-    monkeypatch.setattr(native.subprocess, "run", observed)
-    native.sync(schedule)
-
-    target = f"gui/{os.getuid()}"
-    assert ["launchctl", "bootout", f"{target}/{old_disabled}"] in calls
-    assert ["launchctl", "bootout", f"{target}/{old_removed}"] in calls
-    assert not any(other in call for call in calls)
-    assert not list(schedule.native_registration_root.glob("*.plist"))
-
-
 @pytest.mark.parametrize("platform", ["darwin", "win32"])
 def test_status_queries_only_the_selected_context_namespace(tmp_path, monkeypatch, platform):
     schedule = _managed_schedule(tmp_path)
@@ -735,6 +730,6 @@ def test_status_queries_only_the_selected_context_namespace(tmp_path, monkeypatc
     native.status(schedule)
 
     if platform == "darwin":
-        assert calls == [["launchctl", "print", f"gui/{os.getuid()}/{native.launchd_label('demo', schedule.installation_id)}"]]
+        assert calls == [["launchctl", "print", f"gui/{os.getuid()}/{native.launchd_label('demo')}"]]
     else:
         assert calls == [["schtasks", "/Query", "/FO", "CSV", "/NH"]]

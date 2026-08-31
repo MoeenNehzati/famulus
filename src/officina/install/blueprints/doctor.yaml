@@ -34,7 +34,7 @@ dependencies:
 description: Diagnoses one explicit installation context without mutation, including
   exact Codex config.toml writable_roots ownership and Claude settings.json
   additionalDirectories ownership, accepts the active resolver's trusted interpreter
-  roots, warns that recurring configuration grants scheduled-command authority, and
+  roots, warns that the separately owned recurring configuration root grants scheduled-command authority, and
   renders human or schema-versioned JSON reports.
 gateway:
   language: Python
@@ -73,7 +73,7 @@ interfaces:
         reads:
         - access: read
           content: Pointer, active resolver trust, source, launcher selection, command
-            origins, manifest, and recurring summary for the selected context.
+            origins, and manifest for the selected context.
           formats: [json, files, paths]
           id: installation-state
           medium: local-filesystem

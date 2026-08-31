@@ -165,18 +165,11 @@ def _new_standard_candidate(
     }, context
 
 
-@pytest.mark.parametrize("mode", ["standard", "development"])
-def test_sanitized_scheduler_environment_reloads_active_context_and_descriptor(tmp_path, mode):
-    runtime_root, environ, _source = _active_candidate(tmp_path, mode=mode)
-    resolver = runtime_root / "bootstrap" / "resolvers" / "v1" / "launch.py"
-    resolver.parent.mkdir(parents=True)
-    resolver.write_text("#!/usr/bin/env python3\n", encoding="utf-8")
-    resolver.chmod(0o700)
-    context = load_active_context(runtime_root=runtime_root, environ=environ)
-    context.paths.config_root.mkdir(parents=True, exist_ok=True)
-    (context.paths.config_root / "launchers.json").write_text(
-        json.dumps({"schema_version": 1, "default_backend": "codex"}), encoding="utf-8"
-    )
+def test_recurring_owned_descriptor_sanitizes_persistent_environment(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    plugin_root = tmp_path / "selected plugin"
+    plugin_root.mkdir()
     backend_root = tmp_path / "backend with spaces 雪"
     backend_root.mkdir()
     for name in ("claude", "codex"):
@@ -187,9 +180,25 @@ def test_sanitized_scheduler_environment_reloads_active_context_and_descriptor(t
             shutil.copy2(sys.executable, executable.with_suffix(".exe"))
     if sys.platform == "win32":
         shutil.copy2(sys.executable, backend_root / "python.exe")
-        environ["PATHEXT"] = os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD")
-    authority_environment = {**environ, "PATH": str(backend_root), "SECRET_CANARY": "must-not-persist"}
-    schedule = write_managed_schedule(runtime_root=runtime_root, environ=authority_environment)
+    authority_environment = {
+        "HOME": str(home),
+        "USERPROFILE": str(home),
+        "XDG_CONFIG_HOME": str(tmp_path / "config"),
+        "XDG_STATE_HOME": str(tmp_path / "state"),
+        "XDG_DATA_HOME": str(tmp_path / "data"),
+        "APPDATA": str(tmp_path / "appdata"),
+        "LOCALAPPDATA": str(tmp_path / "localappdata"),
+        "CODEX_HOME": str(tmp_path / "codex"),
+        "CLAUDE_CONFIG_DIR": str(tmp_path / "claude"),
+        "PATH": str(backend_root),
+        "PATHEXT": os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD"),
+        "SECRET_CANARY": "must-not-persist",
+    }
+    schedule = write_managed_schedule(
+        python=Path(sys.executable).resolve(),
+        plugin_root=plugin_root,
+        environ=authority_environment,
+    )
     rendered = plistlib.loads(
         render_macos_plist(
             schedule,
@@ -203,12 +212,8 @@ def test_sanitized_scheduler_environment_reloads_active_context_and_descriptor(t
     )["EnvironmentVariables"]
 
     assert "SECRET_CANARY" not in rendered
-    loaded = load_managed_schedule(
-        runtime_root=runtime_root,
-        descriptor_path=schedule.descriptor_path,
-        environ=rendered,
-    )
-    assert loaded.installation_id == schedule.installation_id
+    loaded = load_managed_schedule(descriptor_path=schedule.descriptor_path)
+    assert loaded == schedule
 
 
 def _inject_posix_atomic_boundary(

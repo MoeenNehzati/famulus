@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """assistant_desktop_notify.py — cross-platform desktop notifications with a
 logging fallback.
 

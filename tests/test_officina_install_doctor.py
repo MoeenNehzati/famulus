@@ -21,7 +21,6 @@ from officina.install.doctor import (
     render_diagnostic_json,
     render_diagnostic_text,
 )
-from officina.recurring.runtime import write_managed_schedule
 
 
 def _standard_context(tmp_path: Path) -> InstallationContext:
@@ -177,23 +176,6 @@ def _diagnose(context: InstallationContext) -> DiagnosticReport:
         context=context,
         environ=_context_environment(context),
         platform=sys.platform,
-    )
-
-
-def _write_recurring_descriptor(context: InstallationContext) -> None:
-    resolver = context.paths.runtime_root / "bootstrap" / "resolvers" / "v1" / "launch.py"
-    resolver.parent.mkdir(parents=True, exist_ok=True)
-    resolver.write_text("# managed resolver\n", encoding="utf-8")
-    for backend in ("claude", "codex"):
-        path = context.paths.user_bin / backend
-        if sys.platform == "win32":
-            shutil.copy2(sys.executable, path.with_suffix(".exe"))
-        else:
-            path.write_text("#!/bin/sh\n", encoding="utf-8")
-            path.chmod(0o755)
-    write_managed_schedule(
-        runtime_root=context.paths.runtime_root,
-        environ=_context_environment(context),
     )
 
 
@@ -385,170 +367,6 @@ def test_doctor_rejects_schema2_manifest_bound_to_another_context(tmp_path: Path
     assert "selected installation context" in check.summary
 
 
-def test_valid_recurring_descriptor_and_registrations_are_an_informational_healthy_summary(
-    tmp_path: Path,
-) -> None:
-    context = _standard_context(tmp_path)
-    _write_healthy_installation(context)
-    _write_recurring_descriptor(context)
-    context.paths.recurring_state_root.mkdir(parents=True)
-    (context.paths.recurring_state_root / "registrations.json").write_text(
-        '{"schema_version": 1, "installation_id": "standard", '
-        '"registrations": ["daily", "triage"]}\n',
-        encoding="utf-8",
-    )
-
-    report = _diagnose(context)
-
-    recurring = next(check for check in report.checks if check.id == "recurring")
-    assert report.status == "healthy"
-    assert recurring.status == "ok"
-    assert recurring.summary == "Recurring descriptor: schema 1, backend claude; registrations: 2"
-    assert recurring.recovery == ""
-
-
-@pytest.mark.parametrize(
-    ("field", "replacement"),
-    [
-        ("runtime_resolver", "/tmp/foreign-resolver.py"),
-        ("bootstrap_python", "/tmp/foreign-python"),
-        ("backend_executables", {"claude": "/tmp/foreign-claude", "codex": "/tmp/foreign-codex"}),
-        ("native_registration_root", "/tmp/foreign-native-root"),
-        ("environment", {"HOME": "/tmp/redirected", "INJECTED": "1"}),
-    ],
-)
-def test_doctor_rejects_every_mutable_recurring_authority_field_with_teardown_recovery(
-    tmp_path: Path, field: str, replacement: object
-) -> None:
-    context = _standard_context(tmp_path)
-    _write_healthy_installation(context)
-    _write_recurring_descriptor(context)
-    descriptor = context.paths.recurring_config_root / "schedule-descriptor.json"
-    payload = json.loads(descriptor.read_text(encoding="utf-8"))
-    payload[field] = replacement
-    descriptor.write_text(json.dumps(payload), encoding="utf-8")
-
-    recurring = next(check for check in _diagnose(context).checks if check.id == "recurring")
-
-    assert recurring.status == "error"
-    assert recurring.recovery == (
-        "dispatcher --caller-skill recurring-tasks "
-        "recurring-tasks._rtx.interface.scripts-remove-context"
-    )
-
-
-def test_doctor_names_missing_recurring_backend_and_uses_install_recovery(tmp_path: Path) -> None:
-    context = _standard_context(tmp_path)
-    _write_healthy_installation(context)
-    _write_recurring_descriptor(context)
-    _backend_path(context, "claude").unlink()
-
-    recurring = next(check for check in _diagnose(context).checks if check.id == "recurring")
-
-    assert recurring.status == "error"
-    assert "claude" in recurring.summary
-    assert recurring.recovery == (
-        "dispatcher --caller-skill install-assistant-tools "
-        "install-assistant-tools._rtx.interface.scripts-install "
-        "--no-dev-mode --non-interactive --yes"
-    )
-
-
-@pytest.mark.parametrize("optional_state", ["absent", "malformed"])
-def test_doctor_ignores_absent_or_malformed_optional_launcher_state(
-    tmp_path: Path, optional_state: str
-) -> None:
-    context = _standard_context(tmp_path)
-    _write_healthy_installation(context)
-    _write_recurring_descriptor(context)
-    launcher_state = context.paths.config_root / "launchers.json"
-    if optional_state == "absent":
-        launcher_state.unlink()
-    else:
-        launcher_state.write_text("{", encoding="utf-8")
-
-    report = _diagnose(context)
-    recurring = next(check for check in report.checks if check.id == "recurring")
-
-    assert report.status == "healthy"
-    assert recurring.status == "ok"
-    assert recurring.recovery == ""
-
-
-def test_doctor_validates_reconstruction_before_missing_descriptor_teardown_recovery(
-    tmp_path: Path,
-) -> None:
-    context = _standard_context(tmp_path)
-    _write_healthy_installation(context)
-    _write_recurring_descriptor(context)
-    (context.paths.recurring_config_root / "schedule-descriptor.json").unlink()
-    _backend_path(context, "claude").unlink()
-    context.paths.recurring_state_root.mkdir(parents=True)
-    (context.paths.recurring_state_root / "registrations.json").write_text(
-        '{"schema_version": 1, "installation_id": "standard", "registrations": ["daily"]}\n',
-        encoding="utf-8",
-    )
-
-    recurring = next(check for check in _diagnose(context).checks if check.id == "recurring")
-
-    assert recurring.status == "error"
-    assert "claude" in recurring.summary
-    assert recurring.recovery == (
-        "dispatcher --caller-skill install-assistant-tools "
-        "install-assistant-tools._rtx.interface.scripts-install "
-        "--no-dev-mode --non-interactive --yes"
-    )
-
-
-@pytest.mark.parametrize("artifact", ["descriptor", "registrations"])
-def test_doctor_rejects_recurring_artifacts_for_another_context_with_exact_teardown_recovery(
-    tmp_path: Path, artifact: str
-) -> None:
-    context = _standard_context(tmp_path)
-    _write_healthy_installation(context)
-    _write_recurring_descriptor(context)
-    descriptor = context.paths.recurring_config_root / "schedule-descriptor.json"
-    descriptor_payload = json.loads(descriptor.read_text(encoding="utf-8"))
-    descriptor_payload["installation_id"] = "dev-" + "f" * 32
-    descriptor.write_text(json.dumps(descriptor_payload), encoding="utf-8")
-    context.paths.recurring_state_root.mkdir(parents=True)
-    summary = context.paths.recurring_state_root / "registrations.json"
-    summary.write_text(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "installation_id": "dev-" + "f" * 32,
-                "registrations": ["daily"],
-            }
-        ),
-        encoding="utf-8",
-    )
-    if artifact == "descriptor":
-        summary.write_text(
-            json.dumps(
-                {
-                    "schema_version": 1,
-                    "installation_id": context.installation_id,
-                    "registrations": ["daily"],
-                }
-            ),
-            encoding="utf-8",
-        )
-    else:
-        descriptor_payload["installation_id"] = context.installation_id
-        descriptor.write_text(json.dumps(descriptor_payload), encoding="utf-8")
-
-    report = _diagnose(context)
-    recurring = next(check for check in report.checks if check.id == "recurring")
-
-    assert report.status == "unhealthy"
-    assert recurring.status == "error"
-    assert recurring.recovery == (
-        "dispatcher --caller-skill recurring-tasks "
-        "recurring-tasks._rtx.interface.scripts-remove-context"
-    )
-
-
 def test_doctor_accepts_external_interpreter_symlink_from_active_resolver_trust(
     tmp_path: Path,
 ) -> None:
@@ -658,12 +476,6 @@ def test_doctor_accepts_windows_batch_command_origins(tmp_path: Path, monkeypatc
         ("missing-source", "source", "restore source"),
         ("stale-command", "commands", "scripts-install --no-dev-mode --non-interactive --yes"),
         ("manifest", "manifest", "scripts-install --no-dev-mode --non-interactive --yes"),
-        (
-            "recurring-malformed",
-            "recurring",
-            "dispatcher --caller-skill recurring-tasks "
-            "recurring-tasks._rtx.interface.scripts-remove-context",
-        ),
     ],
 )
 def test_doctor_classifies_unhealthy_states_with_safe_recovery(
@@ -704,13 +516,6 @@ def test_doctor_classifies_unhealthy_states_with_safe_recovery(
         command.unlink()
     elif mutation == "manifest":
         (context.paths.install_state_root / "install-manifest.json").write_text("[]", encoding="utf-8")
-    elif mutation == "recurring-malformed":
-        _write_recurring_descriptor(context)
-        context.paths.recurring_state_root.mkdir(parents=True)
-        (context.paths.recurring_state_root / "registrations.json").write_text(
-            "{", encoding="utf-8"
-        )
-
     report = _diagnose(context)
 
     assert report.status == "unhealthy"

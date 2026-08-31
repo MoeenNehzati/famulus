@@ -19,8 +19,3 @@ jobs:
   enabled: true
   success:
     require_inner_status: ok
-- name: llm-wakeup
-  description: Deliver any wakeups that have come due
-  command: launch.py -m officina.wakeup.cli run-due
-  schedule: '*/10 * * * *'
-  enabled: true

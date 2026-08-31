@@ -54,20 +54,20 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": [], "stdin": null}
     Required options: []; positional arity: 0..0; stdin: forbidden
-- `recurring-tasks._rtx.interface.scripts-remove-context` — Remove only the active installation context's native recurring state.
+- `recurring-tasks._rtx.interface.scripts-remove-context` — Remove the shared native set only when the selected recurring config root is its current owner.
   - Caller: `recurring-tasks`
   - Version: 1
   - Alternative: `owner`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": [], "stdin": null}
     Required options: []; positional arity: 0..0; stdin: forbidden
-- `recurring-tasks._rtx.interface.scripts-setup` — Verify prerequisites, sync native scheduler entries from jobs.yaml, install recurring health checks, and list active timers/tasks.
+- `recurring-tasks._rtx.interface.scripts-setup` — Capture the selected Python and plugin root, initialize recurring-owned state without default jobs, and reconcile the shared scheduler set.
   - Caller: `recurring-tasks`
   - Version: 1
   - Alternative: `owner`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
-    {"options": {"--migrate-cron": true}, "positionals": [], "stdin": null}
-    Required options: []; positional arity: 0..0; stdin: forbidden
+    {"options": {"--canonical-python": "FILE", "--plugin-root": "DIR"}, "positionals": [], "stdin": null}
+    Required options: ["--canonical-python", "--plugin-root"]; positional arity: 0..0; stdin: forbidden
 - `recurring-tasks._rtx.interface.scripts-status` — List active recurring scheduler entries, next fire times, and service status.
   - Caller: `recurring-tasks`
   - Version: 1
@@ -105,49 +105,53 @@ These are LLM-readable instruction surfaces. Read and follow them directly; do n
 
 # Recurring Tasks
 
-Manage explicitly authorized recurring AI jobs through the active installation
-context and its native per-user scheduler. Installation only makes this skill
-available; it does not create, enable, or run a job.
+Manage explicitly authorized recurring AI jobs through recurring-owned durable
+state and the native per-user scheduler. Making this skill available does not
+create, enable, or run a job.
 
 ## Context and ownership
 
-Load the active installation before every operation. If no valid active
-context exists, complete or repair installation before recurring setup.
+Use the host-loaded
+`setup-python-environment.interface.repair-selected-packages` procedure for
+feature `recurring-tasks` and the exact deduplicated declaration `["PyYAML"]`.
+Run its complete initial literal-`python` fingerprint, pip/installability and
+target-writability checks, repair and dry-run steps, and final fingerprint.
+Require the final fingerprint to be byte-equal to the initial fingerprint.
+Retain its canonical absolute executable; do not select or repair another
+Python.
 
-All installations share one native scheduler set for the host account. Every
-setup, sync, enable, or disable operation replaces that set from the active
-installation's complete enabled-job configuration. The rendered tasks point
-directly to that installation's validated schedule descriptor, making the last
-successful scheduling operation the owner.
+Resolve the current selected plugin root from the host-loaded location of this
+skill. Invoke `scripts-setup` with that root and the retained canonical Python.
+Setup captures both values in the validated recurring-owned descriptor. A
+plugin-cache path change is repaired by rerunning setup; there is no generic
+updater or installer-runtime indirection.
 
-Job definitions, logs, outcome records, and in-flight state remain local to
-each installation. Render registrations only from the validated descriptor and
-job configuration. A non-owner removal must leave the shared scheduler set
-unchanged.
-
-On the first standard operation, migrate only recognized legacy standard jobs,
-logs, owner records, registrations, and healthcheck markers. Refuse ambiguous
-or foreign state rather than adopting it.
+All feature contexts share one native scheduler set for the host account.
+Setup, sync, enable, or disable replaces that complete set from the selected
+durable jobs configuration. The canonical absolute durable recurring config
+root is the `owner_id`; the last successful reconciliation owns the set. A
+failed reconciliation cannot claim ownership, and non-owner removal leaves the
+shared set unchanged.
 
 ## Operations
 
 Use the generated interfaces as follows:
 
-- `scripts-setup` initializes the selected context, migrates recognized legacy
-  standard state when needed, and replaces the shared scheduler set and
-  healthcheck sentinel where the platform supports it.
+- `scripts-setup` creates or refreshes recurring-owned integration and replaces
+  the shared scheduler set and healthcheck sentinel where supported. First
+  setup creates an empty jobs file unless validated user or legacy jobs exist.
 - `scripts-sync` replaces the shared scheduler set from enabled definitions.
 - `scripts-enable` and `scripts-disable` change authorization for one job and
   reconcile its registration.
 - `scripts-status` reports configured state and the shared native set.
 - `scripts-test` triggers one job and waits, bounded, for a fresh outcome
   record; never treat scheduler trigger acceptance as job success.
-- `scripts-view-logs` reads this context's bounded job log.
+- `scripts-view-logs` reads the selected durable context's bounded job log.
 - `scripts-healthcheck` checks descriptor, source, scheduler, registration,
   activity, and outcome health. On platforms without the independent sentinel,
   invoke it on demand.
-- `scripts-remove-context` removes the shared registrations only when this
-  context is their current owner, while preserving definitions, logs, and history.
+- `scripts-remove-context` removes shared registrations only when the selected
+  durable config root is their owner, while preserving definitions and history.
 
 Before invoking an interface, read the selected job and current status needed
 for its arguments. Report a failed operation without claiming scheduler state
@@ -182,12 +186,20 @@ before enabling a job. Enabled jobs run without an interactive approval prompt
 and may run outside the host sandbox; disabling a job ends that continuing
 authorization.
 
+Do not adopt presets merely because recurring setup was selected. Install a
+preset only after explicit user selection. Preserve validated user-authored and
+migrated legacy jobs, including a pre-existing legacy due-wakeup entry; do not
+replace them from `default_jobs.yaml`. Recurring setup does not install
+interactive launchers, wakeup integration, or unrelated optional packages.
+
 ## Execution and health invariants
 
-The scheduler invokes the immutable managed executor through the active
-resolver, with explicit context-owned job and log roots. It does not execute
-mutable runner files from a checkout or package cache and does not capture
-ambient secrets.
+The scheduler invokes the recurring executor with ordered shell-free argv using
+the captured canonical Python, selected plugin root, descriptor, job, and log
+roots. Paths containing spaces remain one argument. Do not introduce
+the former runtime pointer, resolver coupling, legacy resolver entry point,
+Python discovery, or a generic runtime wrapper. `invoke-skill` remains the
+intentional virtual job token and enters the existing agent-command path.
 
 The executor alone decides success from the process exit code, current-run
 status, and declared success contract. It records one outcome with a unique run
@@ -199,17 +211,13 @@ applies the job timeout; otherwise it verifies registration activity and a
 fresh successful outcome. Logs rotate after the configured cap with one prior
 generation retained.
 
-If the active source disappears, report the exact source failure. Restore that
-package or development checkout, repair the same installation context, then
-run `scripts-sync`. Do not rewrite native registrations or
-the schedule descriptor by hand.
+If the captured source disappears, report the exact source failure. Restore the
+selected plugin or rerun recurring setup, then run `scripts-sync`. Do not
+rewrite native registrations or the schedule descriptor by hand.
 
 ## Removal
 
-Installer uninstall or purge automatically delegates this context's native
-registration and sentinel teardown here before removing installer artifacts.
-Direct `scripts-remove-context` remains available for standalone teardown and
-recovery. Both paths fail closed unless native removal can be verified.
-
-Context removal preserves recurring configuration and history. Delete those
-only in a separately authorized data-retention operation.
+The general installer does not own recurring setup, diagnosis, repair, or
+teardown. Use `scripts-remove-context` for owner-checked native teardown.
+Removal preserves recurring configuration and history; delete those only in a
+separately authorized data-retention operation.

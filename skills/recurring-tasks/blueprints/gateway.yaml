@@ -1,6 +1,10 @@
 content:
 - SKILL\.md
-dependencies: []
+dependencies:
+- blueprint: {base: repository-root, path: skills/setup-python-environment/blueprints/gateway.yaml}
+  reason: Follows the exact selected-Python fingerprint and repairs recurring-owned PyYAML.
+  source: setup-python-environment.source.gateway
+  version: 1
 description: Owns the LLM-facing instructions for managing and diagnosing recurring
   assistant jobs.
 gateway:
@@ -12,6 +16,8 @@ interfaces:
     content:
     - SKILL\.md
     uses_interfaces:
+    - interface: setup-python-environment.interface.repair-selected-packages
+      version: 1
     - interface: recurring-tasks._rtx.interface.scripts-disable
       version: 1
     - interface: recurring-tasks._rtx.interface.scripts-enable
@@ -106,6 +112,8 @@ interfaces:
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
+- interface: setup-python-environment.interface.repair-selected-packages
+  version: 1
 - interface: recurring-tasks._rtx.interface.scripts-disable
   version: 1
 - interface: recurring-tasks._rtx.interface.scripts-enable

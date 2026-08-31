@@ -33,7 +33,7 @@ interfaces:
         network: []
         reads:
         - access: read
-          content: Selected context pointer, runtime, source, commands, manifest, and recurring registrations.
+          content: Selected context pointer, runtime, source, commands, and manifest.
           formats: [json, files, paths]
           id: installation-state
           medium: local-filesystem

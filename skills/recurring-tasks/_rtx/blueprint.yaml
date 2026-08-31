@@ -12,32 +12,32 @@ authority:
     - recurring-tasks._rtx.interface.scripts-view-logs
     match: exact
     path: $famulus-recurring-config-root/schedule-descriptor.json
-    reason: recurring-tasks is the sole writer of the sealed installation schedule descriptor.
+    reason: recurring-tasks is the sole writer of the sealed recurring-owned schedule descriptor.
   suggested_permissions:
     bash:
     - command:
-      - python3
+      - python
       - -m
       - officina.runtime.python_machine_interface_runner
       - _setup_runner.py
       - Interface
       reason: 'Initial setup: syncs unit files, installs healthcheck cron entry.'
     - command:
-      - python3
+      - python
       - -m
       - officina.runtime.python_machine_interface_runner
       - _unit_writer.py
       - Interface
       reason: Write/remove systemd user unit files to match jobs.yaml.
     - command:
-      - python3
+      - python
       - -m
       - officina.runtime.python_machine_interface_runner
       - _job_control.py
       - Interface
       reason: 'Consolidated interface: enable/disable/test/view-logs jobs.'
     - command:
-      - python3
+      - python
       - -m
       - officina.runtime.python_machine_interface_runner
       - _healthcheck_probe.py

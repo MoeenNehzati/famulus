@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-"""Manage recurring jobs through the canonical managed runtime."""
+"""Manage recurring jobs through recurring-owned control."""
 
 from __future__ import annotations
 

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Separates "the scheduler triggered a process" from "the job actually
 succeeded" by recording process exit code and inner task status together,
 evaluated against each job's declared success contract.

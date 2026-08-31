@@ -64,11 +64,6 @@ from officina.install.context import (
     resolve_installation_context,
     validate_development_boundaries,
 )
-from officina.recurring.native import (
-    inspect_registration_namespace,
-    remove_installation_context,
-)
-from officina.recurring.runtime import lifecycle_lock_path, native_registration_root
 from officina.common import codex_toml, toml_io
 from officina.common.atomic_files import exclusive_file_lock
 
@@ -1131,68 +1126,6 @@ def _manifest_matches_context(manifest: Manifest, context: InstallationContext) 
     return manifest.installation == expected
 
 
-def _teardown_recurring_context(
-    context: InstallationContext,
-    report: Report,
-    *,
-    platform: str,
-    dry_run: bool,
-) -> bool:
-    status = inspect_registration_namespace(
-        installation_id=context.installation_id,
-        state_root=context.paths.recurring_state_root,
-        native_registration_root=native_registration_root(context, platform),
-        platform=platform,
-    )
-    if not status.certain:
-        report.add(
-            "FAILED",
-            f"recurring namespace certainty for {context.installation_id}",
-            (status.detail or "native scheduler inventory unavailable")
-            + "; no installer artifacts were changed",
-        )
-        return False
-    if not status.registrations_present:
-        return True
-    action = f"recurring registrations for {context.installation_id}"
-    if dry_run:
-        report.add("removed", action, "(dry-run)")
-        return True
-    try:
-        remove_installation_context(context, platform)
-    except Exception as exc:
-        report.add(
-            "FAILED",
-            action,
-            f"automatic context teardown failed: {exc}; retry uninstall",
-        )
-        return False
-    verified = inspect_registration_namespace(
-        installation_id=context.installation_id,
-        state_root=context.paths.recurring_state_root,
-        native_registration_root=native_registration_root(context, platform),
-        platform=platform,
-    )
-    if not verified.certain:
-        report.add(
-            "FAILED",
-            action,
-            (verified.detail or "native scheduler inventory unavailable")
-            + "; automatic teardown could not be verified; retry uninstall",
-        )
-        return False
-    if verified.registrations_present:
-        report.add(
-            "FAILED",
-            action,
-            "recurring registrations are still present after automatic teardown; "
-            "retry uninstall",
-        )
-        return False
-    report.add("removed", action, "automatic context teardown completed")
-    return True
-
-
 def _development_entry_is_contained(entry: dict, context: InstallationContext) -> bool:
     if context.development_root is None:
         return True
@@ -1286,10 +1219,6 @@ def uninstall_context(
         return report
 
     if dry_run:
-        if not _teardown_recurring_context(
-            context, report, platform=platform, dry_run=True
-        ):
-            return report
         _exclude_development_install_id(manifest, context)
         _replay_manifest_unlocked(
             manifest,
@@ -1302,38 +1231,29 @@ def uninstall_context(
         )
         return report
 
-    recurring_lock_root = context.paths.recurring_state_root
-    recurring_lock_root.mkdir(mode=0o700, parents=True, exist_ok=True)
     install_lock_root = context.paths.install_state_root
     install_lock_root.mkdir(mode=0o700, parents=True, exist_ok=True)
     with exclusive_file_lock(
-        lifecycle_lock_path(recurring_lock_root), allowed_root=recurring_lock_root
+        install_lock_root / "assistant-access.lock",
+        allowed_root=install_lock_root,
     ):
-        with exclusive_file_lock(
-            install_lock_root / "assistant-access.lock",
-            allowed_root=install_lock_root,
-        ):
-            try:
-                manifest.reload()
-            except InstallManifestError as exc:
-                report.add("FAILED", "install manifest preflight", str(exc))
-                return report
-            if not _validate_loaded_manifest(manifest, context, report):
-                return report
-            if not _teardown_recurring_context(
-                context, report, platform=platform, dry_run=False
-            ):
-                return report
-            _exclude_development_install_id(manifest, context)
-            _replay_manifest_unlocked(
-                manifest,
-                report,
-                dry_run=False,
-                purge=purge,
-                no_pip=no_pip,
-                no_git_hooks=no_git_hooks,
-                context=context,
-            )
+        try:
+            manifest.reload()
+        except InstallManifestError as exc:
+            report.add("FAILED", "install manifest preflight", str(exc))
+            return report
+        if not _validate_loaded_manifest(manifest, context, report):
+            return report
+        _exclude_development_install_id(manifest, context)
+        _replay_manifest_unlocked(
+            manifest,
+            report,
+            dry_run=False,
+            purge=purge,
+            no_pip=no_pip,
+            no_git_hooks=no_git_hooks,
+            context=context,
+        )
     return report
 
 
