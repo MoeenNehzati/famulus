@@ -5,7 +5,7 @@ children:
 content:
 - SKILL\.md
 description: Defines the personal skill-authoring workflow and owns repository skill
-  conformance validators plus generated blueprint-contract synchronization.
+  conformance validators plus generated blueprint interface synchronization.
 discovery:
   mechanism: skill
   catalog:

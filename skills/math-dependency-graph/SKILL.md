@@ -4,33 +4,26 @@ description: >-
   Use when the user asks for a direct assumptions-to-results dependency graph of a LaTeX mathematical document. Do not use for proof, notation, prose, or literature review.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: research; topics: mathematical-reasoning, visualization, scholarly-documents; visibility: featured
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 3
-
-Uses Interfaces:
-- `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph@1`
-- `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-extract-mathjax-macros@1`
-- `math-dependency-graph.source.gateway -> math-dependency-graph._rtx.interface.scripts-serve-graph@1`
-- `math-dependency-graph.source.gateway -> math-dependency-graph.interface.extract@1`
-
-Public Interfaces:
-- `math-dependency-graph.interface.default`
-- `math-dependency-graph.interface.extract`
-<!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
+Dispatcher Interfaces:
+
+Use the installed `dispatcher` command for these process-bound interfaces:
+- `math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph@1` — Render an interactive HTML math dependency graph from canonical JSON; the saved document loads ELK and MathJax from jsDelivr when opened.
+  - `dispatcher --caller-skill math-dependency-graph math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph <source.json> [--tex-entry <entrypoint.tex>] [--html-out <path>] [--macro-file <path>] [--refresh-macros] [--reduce-transitive-edges]`
+- `math-dependency-graph._rtx.interface.scripts-extract-mathjax-macros@1` — Extract MathJax macro definitions from a TeX entrypoint, recursively following \input/\include.
+  - `dispatcher --caller-skill math-dependency-graph math-dependency-graph._rtx.interface.scripts-extract-mathjax-macros <entrypoint.tex> [--out <path>]`
+- `math-dependency-graph._rtx.interface.scripts-read-tex-labels@1` — Resolve TeX label numbering by compiling the document, so numbers match what the paper prints instead of being derived by inspection.
+  - `dispatcher --caller-skill math-dependency-graph math-dependency-graph._rtx.interface.scripts-read-tex-labels <entrypoint.tex> [--out <path>]`
+- `math-dependency-graph._rtx.interface.scripts-serve-graph@1` — Serve graph HTML from a local directory with no-cache headers for repeated browser inspection.
+  - `dispatcher --caller-skill math-dependency-graph math-dependency-graph._rtx.interface.scripts-serve-graph [--directory <path>] [--host <host>] [--port <port>]`
+
 Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `math-dependency-graph.interface.default` — Primary LLM-facing skill instructions.
-- `math-dependency-graph.interface.extract` — Extracts a notation-faithful direct mathematical dependency graph into canonical JSON.
+- `math-dependency-graph.interface.extract@1` — Extracts a notation-faithful direct mathematical dependency graph into canonical JSON.
 <!-- END BLUEPRINT INTERFACES -->
 
 # Mathematical Dependency Graph

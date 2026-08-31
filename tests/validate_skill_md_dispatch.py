@@ -93,9 +93,13 @@ def test_weather_repository_discovers_only_parent_prompt_export(
             [],
         )
     ]
-    assert "get-weather.interface.default" in interface_block
-    assert "get-weather._rtx.interface.scripts-weather" not in interface_block
-    assert "dispatcher --caller-skill" not in interface_block
+    assert (
+        "- `get-weather._rtx.interface.scripts-weather@1` — Fetch weather data "
+        "for a location and date range, returning hourly forecast JSON.\n"
+        f"  - `{DISPATCH} [--date <YYYY-MM-DD>] [--end-date <YYYY-MM-DD>] "
+        "[--location <loc>]`"
+    ) in interface_block
+    assert "get-weather.interface.default" not in interface_block
 
 
 def test_skill_text_diagnostics_are_exact_and_side_effect_free() -> None:

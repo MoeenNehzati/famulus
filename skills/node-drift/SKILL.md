@@ -4,28 +4,17 @@ description: >-
   Use when the user asks whether Officina node certificates are current or stale, or asks for canonical node hashes. Do not use to issue certificates.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: assistant-development; topics: assistant-assurance, assistant-architecture; visibility: listed
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 4
-
-Uses Interfaces:
-- `node-drift.source.gateway -> node-drift._rtx.interface.compute-hashes@2`
-- `node-drift.source.gateway -> node-drift._rtx.interface.drift-status@3`
-
-Public Interfaces:
-- `node-drift.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Instruction Interfaces:
+Dispatcher Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `node-drift.interface.default` — Instructions for exact-target certificate drift, stale worklists, and canonical node-hash checks.
+Use the installed `dispatcher` command for these process-bound interfaces:
+- `node-drift._rtx.interface.compute-hashes@2` — Compute canonical certification-basis and v6 node hashes for exact or installed modules.
+  - `dispatcher --caller-skill node-drift node-drift._rtx.interface.compute-hashes [target ...] [--repo-root ROOT | --skill-root ROOT] [--json]`
+- `node-drift._rtx.interface.drift-status@3` — Read signed certificate currentness, exact structured drift causes, and the dependency-first stale worklist for exact or installed v6 modules without writing certification state.
+  - `dispatcher --caller-skill node-drift node-drift._rtx.interface.drift-status [target ...] [--all] [--repo-root ROOT | --skill-root ROOT] [--json]`
+
 <!-- END BLUEPRINT INTERFACES -->
 Use `node-drift._rtx.interface.drift-status` to read signed certificate
 currentness and `node-drift._rtx.interface.compute-hashes` to read the canonical

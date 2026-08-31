@@ -85,8 +85,18 @@ def test_repository_v6_declarations_register_cross_module_contracts() -> None:
     ]
     assert "process_binding" not in source_interface
     skill = (install_root / "SKILL.md").read_text(encoding="utf-8")
-    assert "Instruction Interfaces:" in skill
-    assert "`install-assistant-tools.interface.diagnose`" in skill
+    interface_block = skill.split("<!-- BEGIN BLUEPRINT INTERFACES -->", 1)[
+        1
+    ].split("<!-- END BLUEPRINT INTERFACES -->", 1)[0]
+    assert (
+        "- `install-assistant-tools._rtx.interface.scripts-doctor@1` — Diagnose "
+        "one explicit context; mode is never inferred from cwd and no state is "
+        "mutated.\n"
+        "  - `dispatcher --caller-skill install-assistant-tools "
+        "install-assistant-tools._rtx.interface.scripts-doctor --mode "
+        "{standard,development} [--checkout ABSOLUTE_PATH] [--home DIR] [--json]`"
+    ) in interface_block
+    assert "`install-assistant-tools.interface.diagnose`" not in interface_block
     recurring_root = repository / "src" / "officina" / "recurring"
     recurring = yaml.safe_load(
         (recurring_root / "blueprint.yaml").read_text(encoding="utf-8")

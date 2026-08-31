@@ -4,28 +4,12 @@ description: >-
   Use when the user explicitly asks for a handoff, or when pausing, ending, or switching away from substantial project work that produced continuity-relevant knowledge. Do not use for ordinary remember-this requests, short clarifications, incidental switching, or formal closure with no handoff need.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: assistant-interaction; topics: session-management, repository-workflow; visibility: listed
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces: none
-
-Public Interfaces:
-- `prepare-handoff.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
-
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Instruction Interfaces:
-
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `prepare-handoff.interface.default` — Review recent work, obtain approval, encode project-local continuity, and close with exact machine-readable sentinels.
+Used Interfaces: none
 <!-- END BLUEPRINT INTERFACES -->
+
 # Prepare Handoff
 
 ## Purpose

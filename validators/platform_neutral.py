@@ -22,6 +22,8 @@ subject to the normal checks. Validated blueprint files are descriptive graph
 artifacts rather than module content; once the canonical graph validates them,
 this text guard scans their owned files instead of their declaration metadata.
 Frozen version-4 blueprint fixtures retain the line-level checks below.
+Generated, marker-bounded interface projections in ``SKILL.md`` are excluded;
+frontmatter and hand-authored skill text remain subject to this prose policy.
 """
 from __future__ import annotations
 
@@ -32,14 +34,18 @@ from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SRC_ROOT = _REPO_ROOT / "src"
-if str(_SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(_SRC_ROOT))
+for import_root in (_REPO_ROOT, _SRC_ROOT):
+    if str(import_root) not in sys.path:
+        sys.path.insert(0, str(import_root))
 
 from officina.blueprints.graph import (  # noqa: E402
     BlueprintGraphError,
     load_repository_blueprint_graph,
 )
 from officina.blueprints.inventory import BlueprintInventoryError  # noqa: E402
+from validators.skill_md_body import (  # noqa: E402
+    strip_generated_blueprint_blocks,
+)
 
 _PLATFORM_GROUPS: dict[str, tuple[set[str], re.Pattern[str]]] = {
     "claude": ({"claude"}, re.compile(r"(?i:(\.claude|claude))")),
@@ -400,6 +406,7 @@ def _validate(
     ----------
     - for path in eligible files:
       - set pattern = file-specific matcher
+      - remove the generated interface block from skill instructions
       - for line in decodable file lines:
         - if line contains a non-exempt match:
           - return formatted finding
@@ -419,6 +426,9 @@ def _validate(
     ._platform_metadata_exemption_kind:
       why:
         computes: "Preclassifies whether each file can contain exempt metadata."
+    .validators.skill_md_body.strip_generated_blueprint_blocks:
+      why:
+        computes: "Projects SKILL.md to text owned by authors while preserving line numbers."
 
     InstantiationsFromRepo
     ----------------------
@@ -442,6 +452,8 @@ def _validate(
             text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             continue
+        if rel.parts[:1] == ("skills",) and rel.name == "SKILL.md":
+            text = strip_generated_blueprint_blocks(text)
         for lineno, line in enumerate(text.splitlines(), start=1):
             if metadata_exemption is not None and _is_allowed_platform_metadata_line(
                 rel,

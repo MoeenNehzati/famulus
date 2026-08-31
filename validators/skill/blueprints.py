@@ -1,4 +1,4 @@
-"""Validate canonical blueprint source files and generated skill blocks."""
+"""Validate canonical blueprint source files and the generated interface block."""
 from __future__ import annotations
 
 import importlib.util
@@ -30,8 +30,6 @@ from officina.common.repository_paths import (  # noqa: E402
 )
 
 
-CONTRACT_START = "<!-- BEGIN BLUEPRINT CONTRACT -->"
-CONTRACT_END = "<!-- END BLUEPRINT CONTRACT -->"
 INTERFACES_START = "<!-- BEGIN BLUEPRINT INTERFACES -->"
 INTERFACES_END = "<!-- END BLUEPRINT INTERFACES -->"
 _REGULAR_GIT_MODES = {"100644", "100755"}
@@ -158,20 +156,19 @@ def _validate_generated_markers(skill_file: Path) -> list[str]:
         return [f"{skill_file}: cannot read SKILL.md: {exc}"]
     errors: list[str] = []
     pairs = (
-        ("blueprint contract", CONTRACT_START, CONTRACT_END),
         ("blueprint interface", INTERFACES_START, INTERFACES_END),
     )
     for label, start, end in pairs:
         start_count = text.count(start)
         end_count = text.count(end)
-        if start_count != end_count:
-            errors.append(f"{skill_file}: {label} markers are unbalanced")
-        if start_count > 1 or end_count > 1:
-            errors.append(f"{skill_file}: {label} block must appear at most once")
-    if CONTRACT_START not in text:
-        errors.append(
-            f"{skill_file}: local skill is missing generated blueprint contract block"
+        reversed_pair = (
+            start_count == end_count == 1
+            and text.find(start) > text.find(end)
         )
+        if start_count != end_count or reversed_pair:
+            errors.append(f"{skill_file}: {label} markers are unbalanced")
+        if start_count != 1 or end_count != 1:
+            errors.append(f"{skill_file}: {label} block must appear exactly once")
     return errors
 
 
@@ -271,7 +268,7 @@ def validate_with_graph(
         return errors
 
     syncer = _load_blueprint_syncer(repo_root)
-    if syncer is not None:
+    if syncer is not None and graph.schema_version == 6:
         errors.extend(
             syncer.validate_sync_state(
                 repository_graph=graph,
@@ -283,7 +280,6 @@ def validate_with_graph(
                     / "blueprint-schema"
                     / "runtime_dependencies.json"
                 ),
-                schema_version=graph.schema_version,
             )
         )
     return errors

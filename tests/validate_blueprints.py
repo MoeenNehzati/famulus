@@ -148,9 +148,13 @@ def test_validate_with_graph_checks_sync_state_in_process(
 
     monkeypatch.setattr(MOD.subprocess, "run", _unexpected_subprocess)
 
-    assert MOD.validate_with_graph(tmp_path, graph) == [
-        f"sync-state sentinel for schema {schema_version}"
-    ]
+    result = MOD.validate_with_graph(tmp_path, graph)
+    if schema_version == 5:
+        assert result == []
+        assert calls == []
+        return
+
+    assert result == [f"sync-state sentinel for schema {schema_version}"]
     assert calls == [
         {
             "repository_graph": graph,
@@ -162,8 +166,69 @@ def test_validate_with_graph_checks_sync_state_in_process(
                 / "blueprint-schema"
                 / "runtime_dependencies.json"
             ),
-            "schema_version": schema_version,
         }
+    ]
+
+
+def test_validate_with_graph_returns_syncer_authoring_diagnostic(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    skill_dir = tmp_path / "skills" / "consumer"
+    skill_dir.mkdir(parents=True)
+    blueprint_path = skill_dir / "blueprint.yaml"
+    blueprint_path.write_text("fixture: true\n", encoding="utf-8")
+    skill_path = skill_dir / "SKILL.md"
+    skill_path.write_text(
+        "---\nname: consumer\n---\n\nInstructions.\n",
+        encoding="utf-8",
+    )
+    gateway_path = skill_path
+    interface_id = "provider.interface.run"
+    graph = SimpleNamespace(
+        schema_version=6,
+        nodes={
+            "consumer": SimpleNamespace(
+                node_type="module",
+                node_id="consumer",
+                blueprint_path=blueprint_path,
+                declaration={},
+                gateway_path=gateway_path,
+            ),
+            "consumer.source.gateway": SimpleNamespace(
+                node_type="behavioral_source",
+                node_id="consumer.source.gateway",
+                gateway_path=gateway_path,
+            ),
+        },
+        module_sources={"consumer": ("consumer.source.gateway",)},
+        node_edges=(
+            SimpleNamespace(
+                source_id="consumer.source.gateway",
+                relation="uses-export",
+                target_id=interface_id,
+                required_version=1,
+            ),
+        ),
+        exports={
+            interface_id: SimpleNamespace(
+                declaration={"description": " ", "process_binding": {}},
+            ),
+        },
+        source_interfaces={},
+    )
+    syncer = MOD._load_blueprint_syncer(REPO_ROOT)
+    assert syncer is not None
+    monkeypatch.setattr(MOD, "_git_tracked_files", lambda _root: {})
+    monkeypatch.setattr(
+        MOD,
+        "_validate_authored_input_files",
+        lambda _graph, _root, _tracked_files: [],
+    )
+    monkeypatch.setattr(MOD, "_load_blueprint_syncer", lambda _root: syncer)
+
+    assert MOD.validate_with_graph(tmp_path, graph) == [
+        "provider.interface.run: description must be non-empty"
     ]
 
 
@@ -263,24 +328,54 @@ def test_canonical_module_marker_requires_module_node_type(
     assert any("node_type module" in error for error in errors)
 
 
-def test_unbalanced_generated_markers_are_rejected(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    skill = _copy_canonical_skill(tmp_path)
-    skill_file = skill / "SKILL.md"
+def test_legacy_contract_markers_are_not_validator_owned(tmp_path: Path) -> None:
+    skill_file = tmp_path / "SKILL.md"
     skill_file.write_text(
-        skill_file.read_text(encoding="utf-8").replace(
-            MOD.CONTRACT_END,
-            "",
-        ),
+        "<!-- BEGIN BLUEPRINT CONTRACT -->\n"
+        "legacy contract fixture\n"
+        "<!-- END BLUEPRINT CONTRACT -->\n"
+        "<!-- BEGIN BLUEPRINT INTERFACES -->\n"
+        "current interface fixture\n"
+        "<!-- END BLUEPRINT INTERFACES -->\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(MOD, "_git_tracked_files", lambda _root: _tracked(tmp_path))
 
-    errors = MOD.validate(tmp_path)
+    assert MOD._validate_generated_markers(skill_file) == []
 
-    assert any("contract markers are unbalanced" in error for error in errors)
+
+@pytest.mark.parametrize(
+    ("generated_text", "expected"),
+    [
+        ("Instructions only.\n", "blueprint interface block must appear exactly once"),
+        (
+            "<!-- END BLUEPRINT INTERFACES -->\n"
+            "<!-- BEGIN BLUEPRINT INTERFACES -->\n",
+            "blueprint interface markers are unbalanced",
+        ),
+        (
+            "<!-- BEGIN BLUEPRINT INTERFACES -->\n"
+            "one\n"
+            "<!-- END BLUEPRINT INTERFACES -->\n"
+            "<!-- BEGIN BLUEPRINT INTERFACES -->\n"
+            "two\n"
+            "<!-- END BLUEPRINT INTERFACES -->\n",
+            "blueprint interface block must appear exactly once",
+        ),
+    ],
+    ids=("missing", "unbalanced", "duplicate"),
+)
+def test_interface_marker_block_must_be_well_formed_and_appear_exactly_once(
+    tmp_path: Path,
+    generated_text: str,
+    expected: str,
+) -> None:
+    skill_file = tmp_path / "SKILL.md"
+    skill_file.write_text(generated_text, encoding="utf-8")
+
+    assert any(
+        expected in error
+        for error in MOD._validate_generated_markers(skill_file)
+    )
 
 
 def test_authored_inputs_must_be_tracked(

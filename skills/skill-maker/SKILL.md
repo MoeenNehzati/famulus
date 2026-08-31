@@ -4,30 +4,21 @@ description: >-
   Use when the user asks to create a personal skill or change an existing personal skill's intended behavior or public interface in the shared skills directory. Do not use for behavior-preserving refactoring, blueprint regeneration, certificate work, or standards maintenance.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: assistant-development; topics: assistant-authoring, assistant-architecture, assistant-assurance, repository-workflow; visibility: featured
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 5
-
-Uses Interfaces:
-- `skill-maker.source.gateway -> skill-maker._rtx.interface.sync-blueprints@1`
-- `skill-maker.source.gateway -> standards.interface.query-standard@1`
-
-Public Interfaces:
-- `skill-maker.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
-
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Instruction Interfaces:
+Dispatcher Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `skill-maker.interface.default` — Create or edit a personal skill under the repository's canonical module, interface, validation, and Git-safety standards.
+Use the installed `dispatcher` command for these process-bound interfaces:
+- `skill-maker._rtx.interface.sync-blueprints@1` — Validate every skill blueprint and either check or refresh generated SKILL.md interface blocks and the runtime-dependency manifest.
+  - `dispatcher --caller-skill skill-maker skill-maker._rtx.interface.sync-blueprints [--check]`
+  - sync: Refresh generated files from blueprint.yaml.
+  - check: Validate blueprints and fail if generated files are out of sync.
+- `standards.interface.query-standard@1` — Query one explicit standard and its complete pinned import closure.
+  - `dispatcher --caller-skill skill-maker standards.interface.query-standard <standard-path> [--repo-root PATH] [--facts-json JSON] [--view requirements|context|evidence|remedies|full] [--refs-json JSON] [--query-json JSON]`
+
 <!-- END BLUEPRINT INTERFACES -->
+
 ## Research option when creating a skill
 
 Before creating a skill, ask whether to research current documentation and

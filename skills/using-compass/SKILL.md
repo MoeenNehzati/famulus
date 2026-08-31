@@ -3,27 +3,13 @@ name: using-compass
 description: Use when a user or another skill directs the agent to use a named compass.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: assistant-operations; topics: task-automation, session-management; visibility: listed
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 12
-
-Uses Interfaces:
-- `using-compass.source.gateway -> rutter.interface.dispenser@5`
-
-Public Interfaces:
-- `using-compass.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
 Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `using-compass.interface.default` — Read the dispenser help, initialize one fresh run, assign one agent per returned Voyage ID, and keep every agent scoped to its assignment.
+- `rutter.interface.dispenser@5` — Construct one VoyageDispenser from self-describing modes, unique run initialization, optionally prefix-filtered ID enumeration, Voyage resolution, and Voyage-or-run release callbacks.
 <!-- END BLUEPRINT INTERFACES -->
 # Using Compass
 

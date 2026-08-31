@@ -4,29 +4,18 @@ description: >-
   Use when the user asks to initialize a brand-new TDD project. Do not use for adding TDD to an existing project.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: software-development; topics: repository-workflow, assistant-assurance; visibility: listed
-Activation: user-request; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces:
-- `initialize-tdd.source.gateway -> initialize-tdd._rtx.interface.setup-compat-aliases@1`
-
-Public Interfaces:
-- `initialize-tdd.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
-
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Instruction Interfaces:
+Dispatcher Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `initialize-tdd.interface.default` — Create a new approval-gated TDD project scaffold from explicit project name and language inputs, verify the Python starter when selected, and never commit it.
+Use the installed `dispatcher` command for these process-bound interfaces:
+- `initialize-tdd._rtx.interface.setup-compat-aliases@1` — Create every host compatibility alias symlink (e.g. a legacy filename some host looks for specifically) in a freshly scaffolded project directory.
+  - `dispatcher --caller-skill initialize-tdd initialize-tdd._rtx.interface.setup-compat-aliases <project-dir>`
+  - First positional is the scaffolded project's directory path. Discovers and runs every compat-alias helper next to this script; adding a new host's alias later needs no change here.
+
 <!-- END BLUEPRINT INTERFACES -->
+
 # Initialize TDD Project
 
 Require the human-readable project name and implementation language before

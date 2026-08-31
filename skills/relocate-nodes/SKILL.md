@@ -3,27 +3,17 @@ name: relocate-nodes
 description: Use when registered Officina nodes or their owned files must be moved while mechanically updating blueprint ownership, references, generated artifacts, and callers. Do not use for behavioral refactoring or certification.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: assistant-development; topics: assistant-architecture, repository-workflow, assistant-assurance; visibility: listed
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 1
-
-Uses Interfaces:
-- `relocate-nodes.source.gateway -> relocate-nodes._rtx.interface.relocate@2`
-
-Public Interfaces:
-- `relocate-nodes.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Instruction Interfaces:
+Dispatcher Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `relocate-nodes.interface.default` — Require mechanical preflight, complete semantic occurrence adjudication, accepted application, and an empty target-side postflight.
+Use the installed `dispatcher` command for these process-bound interfaces:
+- `relocate-nodes._rtx.interface.build-review-packet@1` — Group one exhaustive relocation preflight for user-assisted false-positive filtering.
+  - `dispatcher --caller-skill relocate-nodes relocate-nodes._rtx.interface.build-review-packet --root ROOT --report REPORT --output OUTPUT`
+- `relocate-nodes._rtx.interface.relocate@2` — Preflight or publish one manifest-driven registered-node relocation as one recovery-backed failure-atomic change set.
+  - `dispatcher --caller-skill relocate-nodes relocate-nodes._rtx.interface.relocate --manifest MANIFEST [--root ROOT] [--report REPORT] [--apply]`
+
 <!-- END BLUEPRINT INTERFACES -->
 ## Machine routes
 

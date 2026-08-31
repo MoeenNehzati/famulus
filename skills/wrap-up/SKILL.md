@@ -4,30 +4,22 @@ description: >-
   Use when the user explicitly asks to wrap up or formally close the workday or current session. Do not use for status or completeness questions such as “anything else remaining?” or “are we done here?”, ordinary task completion, or a handoff-only request.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: personal-assistance; topics: planning, personal-organization, session-management; visibility: featured
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces:
-- `wrap-up.source.gateway -> daily-plan.interface.default@1`
-- `wrap-up.source.gateway -> find-handoff-candidates._rtx.interface.scan@1`
-- `wrap-up.source.gateway -> list-manager.interface.default@1`
-- `wrap-up.source.gateway -> prepare-handoff.interface.default@1`
-
-Public Interfaces:
-- `wrap-up.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
+
+Dispatcher Interfaces:
+
+Use the installed `dispatcher` command for these process-bound interfaces:
+- `find-handoff-candidates._rtx.interface.scan@1` — Scan session transcripts across every configured host (default: trailing 2 days), and report sessions whose conversation since their last completed handoff exceeds a per-host threshold, using mechanical extraction only (no LLM judgment).
+  - `dispatcher --caller-skill wrap-up find-handoff-candidates._rtx.interface.scan [--min-gap-chars N] [--days N | --date YYYY-MM-DD]`
+  - No positionals. --min-gap-chars overrides every host's built-in default threshold (each host is calibrated separately, since they differ by roughly an order of magnitude in bytes per unit of work) with a single shared value. --days (default 2) scans the trailing N days ending today, inclusive; --date pins to one exact day instead (mutually exclusive with --days; mainly useful for backtesting/calibration). Output is a JSON array; each entry's handoff_status is one of none, started, complete -- a complete entry can still be flagged if gap_net_chars (conversation since that completion) exceeds the threshold.
 
 Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `wrap-up.interface.default` — Collect one consolidated user response, orchestrate declared planning and list interfaces, relay mechanical handoff candidates without transcript inspection, and summarize results.
+- `daily-plan.interface.default@1` — Primary LLM-facing skill instructions.
+- `list-manager.interface.default@1` — Primary LLM-facing skill instructions.
+- `prepare-handoff.interface.default@1` — Review recent work, obtain approval, encode project-local continuity, and close with exact machine-readable sentinels.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

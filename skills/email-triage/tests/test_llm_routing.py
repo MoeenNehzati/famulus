@@ -28,7 +28,7 @@ def _source_for_export(root: dict, export_id: str) -> tuple[dict, dict]:
 
 def test_default_interface_routes_to_triage_and_declares_generated_dispatches() -> None:
     root = _load_yaml(SKILL_ROOT / "blueprint.yaml")
-    default, default_interface = _source_for_export(
+    _default, default_interface = _source_for_export(
         root, "email-triage.interface.default"
     )
 
@@ -46,7 +46,7 @@ def test_default_interface_routes_to_triage_and_declares_generated_dispatches() 
     assert default_interface["version"] == 2
     declared = {
         (entry["interface"], entry["version"])
-        for entry in default["uses_interfaces"]
+        for entry in default_interface["uses_interfaces"]
     }
     body = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
     generated_block = body.split("<!-- BEGIN BLUEPRINT INTERFACES -->", 1)[
@@ -68,15 +68,25 @@ def test_default_interface_routes_to_triage_and_declares_generated_dispatches() 
         "email-triage.source.instructions-triage.interface.triage",
         2,
     )
+    process_routes = {
+        ("email-triage._rtx.interface.fetch-filtered-envelopes", 1),
+        ("email-triage._rtx.interface.scripts-clear-failure", 1),
+        ("email-triage._rtx.interface.scripts-filter-envelopes", 1),
+        ("email-triage._rtx.interface.scripts-finalize-triage", 1),
+        ("email-triage._rtx.interface.scripts-get-cutoff", 1),
+        ("email-triage._rtx.interface.scripts-log-decision", 1),
+        ("email-triage._rtx.interface.scripts-mark-failure", 1),
+        ("email-triage._rtx.interface.scripts-prune-log", 1),
+        ("email-triage._rtx.interface.scripts-update-watermark", 1),
+        ("email-triage._rtx.interface.scripts-write-metrics", 1),
+    }
 
-    assert generated_dispatch_ids == set()
-    assert generated_dispatches <= declared
-    assert triage_route in declared - generated_dispatches
-    assert all(
-        interface_id == triage_route[0]
-        or ".source." not in interface_id
-        for interface_id, _version in declared - generated_dispatches
-    )
+    assert generated_dispatch_ids == {
+        interface_id for interface_id, _version in process_routes
+    }
+    assert generated_dispatches == process_routes
+    assert declared == process_routes | {triage_route}
+    assert f"`{triage_route[0]}@{triage_route[1]}`" in generated_block
 
     authored = body.split("<!-- END BLUEPRINT INTERFACES -->", 1)[1]
     assert "email-triage.interface.triage" in authored

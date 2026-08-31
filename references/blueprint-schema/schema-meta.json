@@ -441,21 +441,21 @@
           "note": "The process-binding schema validates the declared pattern shape."
         }
       },
-      "generated-contract-block": {
+      "generated-interface-block": {
         "rule_kind": "repository-validation",
-        "description": "Require generated SKILL.md contract and interface blocks to match the discoverable module and its exports.",
-        "creation": "Generate both blocks from the module and source declarations; do not hand-maintain them.",
+        "description": "Require the generated SKILL.md interface block to match the gateway source's declared interface uses.",
+        "creation": "Generate the interface block from the gateway source's declared interface uses; do not hand-maintain it.",
         "validator": "validators/skill/blueprints.py",
         "tests": [
           "tests/validate_blueprints.py",
           "tests/validate_skill_body_execution.py"
         ],
-        "template": "The example discoverable module includes both generated marker blocks.",
+        "template": "The example discoverable module includes one generated interface marker block.",
         "enforcement": {
           "state": "current",
           "task": "current",
           "acceptance": "isolated-validator",
-          "note": "Blueprint and skill-body validation compare generated blocks with the unified graph."
+          "note": "Blueprint and skill-body validation compare the generated interface block with the unified graph."
         }
       },
       "interface-body-use": {

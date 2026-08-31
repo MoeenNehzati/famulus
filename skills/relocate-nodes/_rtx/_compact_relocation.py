@@ -138,7 +138,7 @@ def _mechanical(relative: str, payload: bytes, address_pairs: list[tuple[str, st
         return _python_imports(payload, python_pairs, relative)
     if Path(relative).name == "SKILL.md":
         text = payload.decode("utf-8", errors="strict")
-        start, end = "<!-- BEGIN BLUEPRINT CONTRACT -->", "<!-- END BLUEPRINT INTERFACES -->"
+        start, end = "<!-- BEGIN BLUEPRINT INTERFACES -->", "<!-- END BLUEPRINT INTERFACES -->"
         if start in text and end in text:
             stop = text.index(end) + len(end)
             return _replace(text[:stop].encode(), address_pairs) + text[stop:].encode()

@@ -135,6 +135,17 @@ def _snapshot(root: Path) -> dict[str, bytes]:
     }
 
 
+def test_skill_relocation_rewrites_through_generated_interface_block() -> None:
+    payload = (b"Legacy old-node.\n<!-- BEGIN BLUEPRINT INTERFACES -->\n"
+               b"`old-node.interface.run@1`\n<!-- END BLUEPRINT INTERFACES -->\nBody old-node.\n")
+    updated = relocation._mechanical(
+        "skills/old-node/SKILL.md", payload, [("old-node", "new-node")], []
+    )
+    expected = (b"Legacy new-node.\n<!-- BEGIN BLUEPRINT INTERFACES -->\n"
+                b"`new-node.interface.run@1`\n<!-- END BLUEPRINT INTERFACES -->\nBody old-node.\n")
+    assert updated == expected
+
+
 def test_plan_mechanically_rewrites_blueprints_and_python_only(tmp_path: Path) -> None:
     manifest = _fixture(tmp_path)
     manifest["inventory_exclusions"] = [".claude", ".codex", ".superpowers"]

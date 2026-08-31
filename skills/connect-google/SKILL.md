@@ -4,47 +4,26 @@ description: >-
   Use when the user needs to set up or restore Google authentication for Famulus. Do not use for ordinary Google-service operations.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: assistant-operations; topics: external-integrations; visibility: listed
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces:
-- `connect-google.source.gateway -> connect-google._rtx.interface.bind-credential-file@1`
-- `connect-google.source.gateway -> connect-google._rtx.interface.client-status@1`
-- `connect-google.source.gateway -> connect-google._rtx.interface.connect-services@1`
-- `connect-google.source.gateway -> connect-google._rtx.interface.install-client@1`
-- `connect-google.source.gateway -> connect-google.source.instructions-connect-services.interface.connect-services@1`
-- `connect-google.source.gateway -> connect-google.source.instructions-create-client.interface.create-client@1`
-- `connect-google.source.instructions-connect-services -> connect-google._rtx.interface.bind-credential-file@1`
-- `connect-google.source.instructions-connect-services -> connect-google._rtx.interface.client-status@1`
-- `connect-google.source.instructions-connect-services -> connect-google._rtx.interface.connect-services@1`
-- `connect-google.source.instructions-connect-services -> connect-google._rtx.interface.install-client@1`
-- `connect-google.source.instructions-create-client -> connect-google.source.instructions-connect-services.interface.connect-services@1`
-
-Setup Requires Setup Of: none
-Setup Order:
-1. `connect-google.interface.setup`
-
-Public Interfaces:
-- `connect-google.interface.connect-services`
-- `connect-google.interface.create-client`
-- `connect-google.interface.default`
-- `connect-google.interface.setup`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
+
+Dispatcher Interfaces:
+
+Use the installed `dispatcher` command for these process-bound interfaces:
+- `connect-google._rtx.interface.bind-credential-file@1` — Retry service-owned binding with an existing credential descriptor; never invoke OAuth authorization.
+  - `dispatcher --caller-skill connect-google connect-google._rtx.interface.bind-credential-file --credential-file <path> --services <comma-separated-list> --home <dir> [--gmail-nickname <name>] [--allow-account-change <comma-separated-list>]`
+- `connect-google._rtx.interface.client-status@1` — Report whether the canonical Google Desktop OAuth client is missing, valid, invalid, or needs migration from plaintext, including whether its opaque client-secret reference resolves, without exposing secrets.
+  - `dispatcher --caller-skill connect-google connect-google._rtx.interface.client-status [--home <dir>]`
+- `connect-google._rtx.interface.connect-services@1` — Run one combined OAuth authorization and bind its new credential file through the fixed service-owner map.
+  - `dispatcher --caller-skill connect-google connect-google._rtx.interface.connect-services --services <comma-separated-list> --home <dir> [--account-hint <email>] [--gmail-nickname <name>] [--allow-account-change <comma-separated-list>] [--no-open-browser] [--callback-port <port>]`
+- `connect-google._rtx.interface.install-client@1` — Validate a Google Desktop OAuth client JSON and atomically install a private canonical copy.
+  - `dispatcher --caller-skill connect-google connect-google._rtx.interface.install-client --from-json <client-json> [--replace] [--home <dir>]`
 
 Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `connect-google.interface.connect-services` — Install or reuse a Google Desktop OAuth client and hand selected Google services to their owning skills.
-- `connect-google.interface.create-client` — Guide a user through creating and privately downloading a Google Desktop OAuth client for selected Famulus services.
-- `connect-google.interface.default` — Route Google OAuth-client preparation according to whether a valid Desktop client is already installed.
-- `connect-google.interface.setup` — Route Google OAuth-client preparation according to whether a valid Desktop client is already installed.
+- `connect-google.source.instructions-connect-services.interface.connect-services@1` — Install or reuse a Google Desktop OAuth client and hand selected Google services to their owning skills.
+- `connect-google.source.instructions-create-client.interface.create-client@1` — Guide a user through creating and privately downloading a Google Desktop OAuth client for selected Famulus services.
 <!-- END BLUEPRINT INTERFACES -->
 Skill: connect-google
 

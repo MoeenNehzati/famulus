@@ -4,28 +4,12 @@ description: >-
   Use when the user explicitly asks to enter or continue loose mode. Do not infer it from an ordinary request for ideas, options, strategy, or an overview.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: assistant-interaction; topics: reasoning-control; visibility: featured
-Activation: user-request; persistent modifier: yes
-
-Skill Version: 2
-
-Uses Interfaces: none
-
-Public Interfaces:
-- `loose-mode.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
-
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Instruction Interfaces:
-
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `loose-mode.interface.default` — Explore a request breadth-first, label uncertainty, and present concise strategic structure without silently leaving loose mode.
+Used Interfaces: none
 <!-- END BLUEPRINT INTERFACES -->
+
 ## Core principle
 
 Prioritize strategy, decomposition, and options over rigor. Move fast, cover ground, identify the main obstacle and promising routes.

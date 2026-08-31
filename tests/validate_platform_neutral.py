@@ -95,6 +95,29 @@ def test_text_scan_reports_governed_content_and_skips_exclusions(
     }
 
 
+def test_generated_skill_interface_tokens_are_ignored_but_authored_tokens_fail(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    skill = tmp_path / "skills" / "my-skill" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    platform_line = (
+        "- `dispatcher --caller-skill my-skill my-skill.interface.run "
+        "<claude|codex>`"
+    )
+    skill.write_text(
+        "<!-- BEGIN BLUEPRINT INTERFACES -->\n"
+        f"{platform_line}\n"
+        "<!-- END BLUEPRINT INTERFACES -->\n"
+        f"{platform_line}\n",
+        encoding="utf-8",
+    )
+
+    assert _validate_text(tmp_path, monkeypatch) == [
+        f"skills/my-skill/SKILL.md:4: {platform_line}"
+    ]
+
+
 def test_git_ignored_paths_are_not_scanned(tmp_path: Path, monkeypatch) -> None:
     source = tmp_path / "skills" / "my-skill" / "runtime.log"
     source.parent.mkdir(parents=True)

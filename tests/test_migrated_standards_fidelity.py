@@ -146,9 +146,12 @@ def test_interface_design_is_one_source_owned_authority():
     ).read_text(encoding="utf-8")
     assert "references/skill-standards/interface-design.md" not in consumer
     assert "skill-standards.source.interface-design" not in consumer_blueprint
-def test_skill_hooks_describe_the_live_v5_guideline_contract():
+def test_skill_hooks_describe_the_live_interface_only_guideline_contract():
     blueprint_hook = (ROOT / ".githooks/skill/check-blueprints").read_text(encoding="utf-8")
-    assert "v5 module/source" in blueprint_hook
+    assert "Repository-validation owner for the live module/source graph" in blueprint_hook
+    assert "generated interface-block synchronization" in blueprint_hook
+    assert "v5 module/source" not in blueprint_hook
+    assert "generated contract synchronization" not in blueprint_hook
     assert "v3" not in blueprint_hook
     assert "machine" "-module" not in blueprint_hook
 

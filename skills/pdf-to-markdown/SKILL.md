@@ -6,30 +6,19 @@ tools:
   - marker_single
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: research; topics: scholarly-documents; visibility: listed
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces:
-- `pdf-to-markdown.source.gateway -> pdf-to-markdown._rtx.interface.scripts-check-marker-models@1`
-- `pdf-to-markdown.source.gateway -> pdf-to-markdown._rtx.interface.scripts-fetch-arxiv-source@1`
-
-Public Interfaces:
-- `pdf-to-markdown.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
-
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Instruction Interfaces:
+Dispatcher Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `pdf-to-markdown.interface.default` — Primary LLM-facing skill instructions.
+Use the installed `dispatcher` command for these process-bound interfaces:
+- `pdf-to-markdown._rtx.interface.scripts-check-marker-models@1` — Check whether required Marker/Surya models are downloaded and cached locally.
+  - `dispatcher --caller-skill pdf-to-markdown pdf-to-markdown._rtx.interface.scripts-check-marker-models`
+- `pdf-to-markdown._rtx.interface.scripts-fetch-arxiv-source@1` — Download and extract the LaTeX source tarball for a paper from arXiv.
+  - `dispatcher --caller-skill pdf-to-markdown pdf-to-markdown._rtx.interface.scripts-fetch-arxiv-source <arxiv-id> [<output-dir>]`
+
 <!-- END BLUEPRINT INTERFACES -->
+
 # PDF to Markdown
 
 ## Overview

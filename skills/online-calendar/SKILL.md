@@ -4,36 +4,28 @@ description: >-
   Use when the user asks to view or change their Google Calendar. Do not use for daily planning.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: personal-assistance; topics: planning, personal-organization, external-integrations; visibility: featured
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces:
-- `online-calendar.source.gateway -> connect-google.interface.default@1`
-- `online-calendar.source.gateway -> online-calendar._rtx.interface.scripts-gcal@1`
-
-Setup Requires Setup Of:
-- `connect-google.interface.setup@1`
-Setup Order:
-1. `connect-google.interface.setup`
-2. `online-calendar.interface.setup`
-
-Public Interfaces:
-- `online-calendar.interface.default`
-- `online-calendar.interface.setup`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
+
+Dispatcher Interfaces:
+
+Use the installed `dispatcher` command for these process-bound interfaces:
+- `online-calendar._rtx.interface.scripts-gcal@1` — Query or modify Google Calendar events via the Python calendar CLI (agenda, search, create, update, delete, etc.).
+  - `dispatcher --caller-skill online-calendar online-calendar._rtx.interface.scripts-gcal <mode shown below>`
+  - token-or-calendars: `token` — Mint a bearer token only for an explicitly scoped one-off API operation; `calendars` — list accessible calendar IDs, roles, and names.
+  - create-calendar: `create-calendar --summary TEXT [--description TEXT] [--color-id ID] [--timezone TZ]` — Timezone defaults to the local IANA zone.
+  - agenda: `agenda [--calendar ID] [--all-calendars] [--from ISO] [--to ISO] [--days N]` — Calendar defaults to primary and the window to today in local time; ISO datetimes require a UTC offset; --days extends from --from or today; --all-calendars merges and time-sorts.
+  - search: `search QUERY [--calendar ID] [--all-calendars] [--from ISO] [--to ISO] [--days N]` — Calendar defaults to primary and the window to the previous 7 days through the next 30 days; ISO datetimes require a UTC offset; --days extends from --from or today; --all-calendars merges and time-sorts.
+  - get: `get --event-id ID [--calendar ID]` — Calendar defaults to primary.
+  - create: `create --summary TEXT --start ISO --end ISO [--calendar ID] [--description TEXT] [--location TEXT] [--timezone TZ] [--all-day]` — Calendar defaults to primary and timezone to the local IANA zone; timed ISO values require a UTC offset; all-day end dates are exclusive.
+  - update: `update --event-id ID [--calendar ID] [--summary TEXT] [--description TEXT] [--location TEXT] [--start ISO] [--end ISO] [--timezone TZ]` — Calendar defaults to primary; timed ISO values require a UTC offset; supply at least one changed field.
+  - delete: `delete --event-id ID [--calendar ID]` — Calendar defaults to primary.
+  - move: `move --event-id ID --to CALENDAR_ID [--from CALENDAR_ID]` — Source calendar defaults to primary.
 
 Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `online-calendar.interface.default` — Primary LLM-facing skill instructions.
-- `online-calendar.interface.setup` — Primary LLM-facing skill instructions.
+- `connect-google.interface.default@1` — Route Google OAuth-client preparation according to whether a valid Desktop client is already installed.
 <!-- END BLUEPRINT INTERFACES -->
 # Google Calendar
 

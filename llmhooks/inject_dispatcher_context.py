@@ -18,7 +18,7 @@ from llmhooks.lib.cross_host import CrossHostHook, HookInput, HookResult, parse_
 
 DISPATCHER_CORE = """\
 ## Skill dispatcher
-When SKILL.md has `BEGIN BLUEPRINT CONTRACT`, treat `scripts/` as private; read only with approval. Use injected interfaces, not blueprint.yaml.
+When SKILL.md has `BEGIN BLUEPRINT INTERFACES`, treat `scripts/` as private; read only with approval. Use injected interfaces, not blueprint.yaml.
 Invoke: dispatcher --caller-skill <skill> [--dry-run] <interface-id> <arguments>.
 Dry-run prints compiled argv without gateway execution or stdin reads. Supply positionals first in position order, then options/switches in any order with each option beside its values. Dispatcher adds fixed arguments; do not supply them.\
 """
@@ -69,7 +69,7 @@ CONTEXT_DISPATCHER_MISSING = """\
 ## Skill System — Dispatcher Unavailable
 
 The dispatcher is not installed. For blueprint-managed skills (those whose \
-SKILL.md contains a `<!-- BEGIN BLUEPRINT CONTRACT -->` block), the normal \
+SKILL.md contains a `<!-- BEGIN BLUEPRINT INTERFACES -->` block), the normal \
 permission enforcement is inactive — calls that would ordinarily be rejected \
 will not be caught.
 

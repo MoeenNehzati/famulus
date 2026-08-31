@@ -4,26 +4,10 @@ description: >-
   Use when the user asks to create, change, or audit a canonical repository standard. Do not use for generic policy or documentation work.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: assistant-development; topics: assistant-authoring, assistant-architecture, assistant-assurance; visibility: listed
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces: none
-
-Public Interfaces:
-- `update-standards.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Instruction Interfaces:
-
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `update-standards.interface.default` — Update a canonical standard and keep its pinned closure, registered views, and declared evidence aligned.
+Used Interfaces: none
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

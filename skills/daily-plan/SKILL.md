@@ -4,29 +4,19 @@ description: >-
   Use when the user asks to plan their day, decide what to work on today, or review an existing daily plan. Do not use for a standalone calendar or list request, or for an end-of-day wrap-up.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: personal-assistance; topics: planning, personal-organization; visibility: featured
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces:
-- `daily-plan.source.gateway -> daily-plan._rtx.interface.mutate-plan@1`
-- `daily-plan.source.gateway -> daily-plan._rtx.interface.orchestrate@1`
-- `daily-plan.source.gateway -> daily-plan._rtx.interface.render-plan@1`
-
-Public Interfaces:
-- `daily-plan.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Instruction Interfaces:
+Dispatcher Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `daily-plan.interface.default` — Primary LLM-facing skill instructions.
+Use the installed `dispatcher` command for these process-bound interfaces:
+- `daily-plan._rtx.interface.mutate-plan@1` — Apply a mutation (hide, show, keep, remove, mark-done, reject, set-deadline, add) to a dated plan and display the refreshed result. Defaults to today when --date is omitted.
+  - `dispatcher --caller-skill daily-plan daily-plan._rtx.interface.mutate-plan [--date <M-D-YY|YYYY-MM-DD>] {hide,show,keep,remove,mark-done,reject,set-deadline,add} ...`
+- `daily-plan._rtx.interface.orchestrate@1` — Generate today's plan (or show the existing one, refreshing its Todo/Triage blocks from current list state). Pass --forced to regenerate even if a plan already exists.
+  - `dispatcher --caller-skill daily-plan daily-plan._rtx.interface.orchestrate [--forced]`
+- `daily-plan._rtx.interface.render-plan@1` — Extract or reassemble sections of a plan file for rendering.
+  - `dispatcher --caller-skill daily-plan daily-plan._rtx.interface.render-plan <extract|reassemble> <plan-file> <dir>`
+
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, invoke `orchestrate`. To force regeneration of an existing plan, pass `--forced`.
 

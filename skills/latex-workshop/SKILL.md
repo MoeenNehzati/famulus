@@ -4,26 +4,10 @@ description: >-
   Use when compiling or troubleshooting a LaTeX document inside a VS Code project whose build is governed by LaTeX Workshop. Do not use for LaTeX compilation outside a VS Code project.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: research; topics: scholarly-documents, research-writing; visibility: featured
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces: none
-
-Public Interfaces:
-- `latex-workshop.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Instruction Interfaces:
-
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `latex-workshop.interface.default` — Resolve effective settings, execute the matching build, inspect the correct artifacts, and report the source of truth.
+Used Interfaces: none
 <!-- END BLUEPRINT INTERFACES -->
 Skill: latex-workshop
 

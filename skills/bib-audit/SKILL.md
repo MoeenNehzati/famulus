@@ -4,28 +4,17 @@ description: >-
   Use when the user asks to audit a bibliography or apply corrections identified by a bibliography audit. Do not use for general LaTeX citation editing.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: research; topics: scholarly-documents, research-writing; visibility: featured
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces:
-- `bib-audit.source.gateway -> bib-audit._rtx.interface.scripts-bib-similarity@1`
-- `bib-audit.source.gateway -> bib-audit._rtx.interface.scripts-bib-validate-bibtex@1`
-
-Public Interfaces:
-- `bib-audit.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Instruction Interfaces:
+Dispatcher Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `bib-audit.interface.default` — Primary LLM-facing skill instructions.
+Use the installed `dispatcher` command for these process-bound interfaces:
+- `bib-audit._rtx.interface.scripts-bib-similarity@1` — Detect duplicate and version-pair candidates in a .bib file by scoring all entry pairs.
+  - `dispatcher --caller-skill bib-audit bib-audit._rtx.interface.scripts-bib-similarity <file.bib> [--threshold 0.3]`
+- `bib-audit._rtx.interface.scripts-bib-validate-bibtex@1` — Validate a BibTeX/natbib .bib file for syntax errors and missing required fields (not for biblatex projects).
+  - `dispatcher --caller-skill bib-audit bib-audit._rtx.interface.scripts-bib-validate-bibtex <file.bib>`
+
 <!-- END BLUEPRINT INTERFACES -->
 # Bibliography Audit
 

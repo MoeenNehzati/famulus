@@ -4,27 +4,15 @@ description: >-
   Use when an existing skill blueprint needs regeneration, whether requested directly or required by another skill. Do not use for ordinary blueprint editing or synchronization.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: assistant-development; topics: assistant-authoring, assistant-architecture; visibility: listed
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces:
-- `regenerate-blueprints.source.gateway -> regenerate-blueprints._rtx.interface.regenerate-blueprint@1`
-
-Public Interfaces:
-- `regenerate-blueprints.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Instruction Interfaces:
+Dispatcher Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `regenerate-blueprints.interface.default` — Regenerate one existing skill blueprint into /tmp, report its path or validation failure, and never modify the source blueprint.
+Use the installed `dispatcher` command for these process-bound interfaces:
+- `regenerate-blueprints._rtx.interface.regenerate-blueprint@1` — Generate a refreshed blueprint YAML for one existing skill under /tmp.
+  - `dispatcher --caller-skill regenerate-blueprints regenerate-blueprints._rtx.interface.regenerate-blueprint <skill-name>`
+
 <!-- END BLUEPRINT INTERFACES -->
 ## Purpose
 

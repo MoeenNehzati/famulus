@@ -4,29 +4,21 @@ description: >-
   Use when the user asks to send feedback, report a problem, or describe a failed Famulus workflow to its maintainer. Do not use for ordinary email or for reviewing document content.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: personal-assistance; topics: communications, assistant-assurance; visibility: featured
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces:
-- `send-feedback.source.gateway -> email-client.interface.default@3`
-- `send-feedback.source.gateway -> send-feedback._rtx.interface.check-route@1`
-- `send-feedback.source.gateway -> send-feedback._rtx.interface.file-issue@1`
-
-Public Interfaces:
-- `send-feedback.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
+
+Dispatcher Interfaces:
+
+Use the installed `dispatcher` command for these process-bound interfaces:
+- `send-feedback._rtx.interface.check-route@1` — Report the configured feedback repository and which delivery route is currently available.
+  - `dispatcher --caller-skill send-feedback send-feedback._rtx.interface.check-route`
+- `send-feedback._rtx.interface.file-issue@1` — File a reviewed report as a public issue, or return a prepared submission URL when the issue-filing command is unavailable.
+  - `dispatcher --caller-skill send-feedback send-feedback._rtx.interface.file-issue --title <title> --body-file <path>`
 
 Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `send-feedback.interface.default` — Prepare a reviewed Famulus feedback report and delegate its delivery to the configured project or recipient.
+- `email-client.interface.default@3` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->
 # Send Feedback
 Use the current session as the evidence base. Do not run additional diagnostics.

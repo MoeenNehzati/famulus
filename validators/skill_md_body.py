@@ -4,16 +4,14 @@ from __future__ import annotations
 import re
 
 
-CONTRACT_START = "<!-- BEGIN BLUEPRINT CONTRACT -->"
-CONTRACT_END = "<!-- END BLUEPRINT CONTRACT -->"
 INTERFACES_START = "<!-- BEGIN BLUEPRINT INTERFACES -->"
 INTERFACES_END = "<!-- END BLUEPRINT INTERFACES -->"
 
 _FRONTMATTER_RE = re.compile(r"\A---\s*\n.*?\n---\s*\n", re.DOTALL)
 _GENERATED_BLOCK_RE = re.compile(
-    r"<!-- BEGIN BLUEPRINT (?:CONTRACT|INTERFACES) -->"
+    r"<!-- BEGIN BLUEPRINT INTERFACES -->"
     r".*?"
-    r"<!-- END BLUEPRINT (?:CONTRACT|INTERFACES) -->",
+    r"<!-- END BLUEPRINT INTERFACES -->",
     re.DOTALL,
 )
 
@@ -24,7 +22,7 @@ def strip_frontmatter(text: str) -> str:
 
 
 def strip_generated_blueprint_blocks(text: str) -> str:
-    """Return text without generated blueprint contract/interface blocks."""
+    """Return text without the generated blueprint interface block."""
     return _GENERATED_BLOCK_RE.sub(lambda match: "\n" * match.group(0).count("\n"), text)
 
 

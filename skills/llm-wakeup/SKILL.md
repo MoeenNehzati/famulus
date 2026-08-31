@@ -4,29 +4,19 @@ description: >-
   Use when the user asks to schedule or manage an automatic assistant-session wakeup after a usage reset or timeout.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: assistant-interaction; topics: session-management, task-automation; visibility: listed
-Activation: user-request, skill-workflow, scheduled-job; persistent modifier: no
-
-Skill Version: 1
-
-Uses Interfaces:
-- `llm-wakeup.source.gateway -> wakeup.interface.auto-policy@1`
-- `llm-wakeup.source.gateway -> wakeup.interface.explicit-schedule@1`
-- `llm-wakeup.source.gateway -> wakeup.interface.infer-schedule@1`
-
-Public Interfaces:
-- `llm-wakeup.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Instruction Interfaces:
+Dispatcher Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `llm-wakeup.interface.default` — Primary LLM-facing wakeup routing instructions.
+Use the installed `dispatcher` command for these process-bound interfaces:
+- `wakeup.interface.auto-policy@1` — Manage opt-in automatic near-limit wakeup scheduling for one provider session.
+  - `dispatcher --caller-skill llm-wakeup wakeup.interface.auto-policy <on|off|status> [claude|codex] [session-id]`
+- `wakeup.interface.explicit-schedule@1` — Persist a guarded wakeup for an explicitly identified provider session and reset time.
+  - `dispatcher --caller-skill llm-wakeup wakeup.interface.explicit-schedule <claude|codex> <session-id> <reset-time> [--message <message>] [--delay <duration>]`
+- `wakeup.interface.infer-schedule@1` — Infer provider, canonical session, and reset time before persisting a guarded wakeup.
+  - `dispatcher --caller-skill llm-wakeup wakeup.interface.infer-schedule [--text <timeout-or-resume-text>] [--message <message>] [--delay <duration>]`
+
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

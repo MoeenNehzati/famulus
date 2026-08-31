@@ -4,26 +4,10 @@ description: >-
   Use when the user asks to create or change an assistant lifecycle hook that must support multiple hosts or runtimes. Do not use for ordinary Git hooks or single-host automation.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: assistant-development; topics: assistant-authoring, assistant-architecture; visibility: listed
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces: none
-
-Public Interfaces:
-- `hook-maker.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Instruction Interfaces:
-
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `hook-maker.interface.default` — Design or implement a hook from semantic purpose through explicit host bindings, adapters, registration, and golden verification.
+Used Interfaces: none
 <!-- END BLUEPRINT INTERFACES -->
 ## Core rule
 

@@ -4,33 +4,20 @@ description: >-
   Use when the user asks for a behavior-preserving audit or refactor of a registered Officina node or one of its owned sources. Do not use for feature work, bug fixes, generic code review, or files outside registered node ownership.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: assistant-development; topics: assistant-authoring, assistant-architecture, assistant-assurance, repository-workflow; visibility: featured
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 6
-
-Uses Interfaces:
-- `refactor-node.source.gateway -> refactor-node.source.instruction-refactoring.interface.refactor-instructions@1`
-- `refactor-node.source.gateway -> refactor-node.source.python-refactoring.interface.refactor-python@1`
-- `refactor-node.source.gateway -> standards.interface.query-standard@1`
-
-Public Interfaces:
-- `refactor-node.interface.default`
-- `refactor-node.interface.refactor-instructions`
-- `refactor-node.interface.refactor-python`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
+
+Dispatcher Interfaces:
+
+Use the installed `dispatcher` command for these process-bound interfaces:
+- `standards.interface.query-standard@1` — Query one explicit standard and its complete pinned import closure.
+  - `dispatcher --caller-skill refactor-node standards.interface.query-standard <standard-path> [--repo-root PATH] [--facts-json JSON] [--view requirements|context|evidence|remedies|full] [--refs-json JSON] [--query-json JSON]`
 
 Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `refactor-node.interface.default` — Resolve node ownership and gateway language, then invoke the supported refactoring route without crossing scope boundaries.
-- `refactor-node.interface.refactor-instructions` — Diagnose and repair an owned instruction source from its applicable standards.
-- `refactor-node.interface.refactor-python` — Diagnose and, after approval, apply one verified behavior-preserving Python OOD refactoring move at a time.
+- `refactor-node.source.instruction-refactoring.interface.refactor-instructions@1` — Diagnose and repair an owned instruction source from its applicable standards.
+- `refactor-node.source.python-refactoring.interface.refactor-python@1` — Diagnose and, after approval, apply one verified behavior-preserving Python OOD refactoring move at a time.
 <!-- END BLUEPRINT INTERFACES -->
 # Refactor Node
 

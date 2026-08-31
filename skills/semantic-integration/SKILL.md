@@ -4,27 +4,13 @@ description: >-
   Use when integrating substantially diverged Git branches and merge or rebase is inadequate because it produces broad structural conflicts, or because mechanical application would place source changes into structures the target architecture has replaced and thereby lose their intent. Do not use when direct application and localized conflict resolution can preserve both branches' intended behavior.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: software-development; topics: repository-workflow; visibility: featured
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 1
-
-Uses Interfaces:
-- `semantic-integration.source.gateway -> git-workflow.interface.default@1`
-
-Public Interfaces:
-- `semantic-integration.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
 Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `semantic-integration.interface.default` — Recreate every accepted effect during a complicated, high-divergence integration against the first branch's authoritative architecture, then record source ancestry through a mandatory vacuous merge.
+- `git-workflow.interface.default@1` — Check branch and ownership boundaries first, then perform only explicitly authorized and exactly scoped Git mutations.
 <!-- END BLUEPRINT INTERFACES -->
 # Semantic integration
 

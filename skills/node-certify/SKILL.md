@@ -4,23 +4,24 @@ description: >-
   Use when fresh certificates are requested for one or more Officina nodes. Do not use merely to check certificate currentness or canonical node hashes.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
+<!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Catalog: assistant-development; topics: assistant-assurance, assistant-architecture; visibility: listed
-Activation: user-request, skill-workflow; persistent modifier: no
+Dispatcher Interfaces:
 
-Skill Version: 5
+Use the installed `dispatcher` command for these process-bound interfaces:
+- `node-certify._rtx.interface.certify@2` — Certify exact v6 module closures by skipping current nodes and appending signed certificate histories for stale nodes at an explicit reviewed repository commit.
+  - `dispatcher --caller-skill node-certify node-certify._rtx.interface.certify certify [target ...] --reviewed-repository ROOT --reviewed-commit COMMIT [--json] [--allow-non-atomic]`
+- `node-drift._rtx.interface.drift-status@3` — Read signed certificate currentness, exact structured drift causes, and the dependency-first stale worklist for exact or installed v6 modules without writing certification state.
+  - `dispatcher --caller-skill node-certify node-drift._rtx.interface.drift-status [target ...] [--all] [--repo-root ROOT | --skill-root ROOT] [--json]`
 
-Uses Interfaces:
-- `node-certify.source.gateway -> node-certify._rtx.interface.certify@2`
-- `node-certify.source.gateway -> node-certify.source.audit-behavioral-source.interface.audit@1`
-- `node-certify.source.gateway -> node-certify.source.audit-interface.interface.audit@1`
-- `node-certify.source.gateway -> node-certify.source.audit-module.interface.audit@1`
-- `node-certify.source.gateway -> node-drift._rtx.interface.drift-status@3`
+Instruction Interfaces:
 
-Public Interfaces: none
-<!-- END BLUEPRINT CONTRACT -->
+These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
+- `node-certify.source.audit-behavioral-source.interface.audit@1` — Audit one behavioral source and return bounded semantic evidence and a verdict.
+- `node-certify.source.audit-interface.interface.audit@1` — Audit one source interface and return bounded semantic evidence and a verdict.
+- `node-certify.source.audit-module.interface.audit@1` — Audit one module and return bounded semantic evidence and a verdict.
+<!-- END BLUEPRINT INTERFACES -->
 ## Certification algorithm
 
 Resolve the requested target and hold its reviewed repository and commit

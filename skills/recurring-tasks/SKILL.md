@@ -4,36 +4,32 @@ description: >-
   Use when the user asks to set up or manage a recurring AI job. Do not use for one-off commands or generic scheduler questions.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: assistant-operations; topics: task-automation, system-maintenance; visibility: featured
-Activation: user-request, skill-workflow, scheduled-job; persistent modifier: no
-
-Skill Version: 3
-
-Uses Interfaces:
-- `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-disable@1`
-- `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-enable@1`
-- `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-healthcheck@1`
-- `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-remove-context@1`
-- `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-setup@1`
-- `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-status@1`
-- `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-sync@1`
-- `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-test@1`
-- `recurring-tasks.source.gateway -> recurring-tasks._rtx.interface.scripts-view-logs@1`
-
-Public Interfaces:
-- `recurring-tasks.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Instruction Interfaces:
+Dispatcher Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `recurring-tasks.interface.default` — Primary LLM-facing skill instructions.
+Use the installed `dispatcher` command for these process-bound interfaces:
+- `recurring-tasks._rtx.interface.scripts-disable@1` — Disable a job by setting enabled: false in jobs.yaml and syncing native scheduler entries.
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks._rtx.interface.scripts-disable <name>`
+- `recurring-tasks._rtx.interface.scripts-enable@1` — Enable a job by setting enabled: true in jobs.yaml and syncing native scheduler entries.
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks._rtx.interface.scripts-enable <name>`
+- `recurring-tasks._rtx.interface.scripts-healthcheck@1` — Run pre-flight and per-job health checks for all enabled recurring tasks and return nonzero when any check fails.
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks._rtx.interface.scripts-healthcheck`
+- `recurring-tasks._rtx.interface.scripts-remove-context@1` — Remove only the active installation context's native recurring state.
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks._rtx.interface.scripts-remove-context`
+- `recurring-tasks._rtx.interface.scripts-setup@1` — Verify prerequisites, sync native scheduler entries from jobs.yaml, install recurring health checks, and list active timers/tasks.
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks._rtx.interface.scripts-setup [--migrate-cron]`
+- `recurring-tasks._rtx.interface.scripts-status@1` — List active recurring scheduler entries, next fire times, and service status.
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks._rtx.interface.scripts-status`
+- `recurring-tasks._rtx.interface.scripts-sync@1` — Regenerate native scheduler entries from jobs.yaml.
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks._rtx.interface.scripts-sync`
+- `recurring-tasks._rtx.interface.scripts-test@1` — Trigger a job immediately through the native scheduler, then wait (bounded) for its run record and report whether the job actually succeeded.
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks._rtx.interface.scripts-test <name>`
+- `recurring-tasks._rtx.interface.scripts-view-logs@1` — Tail the run log for a job (default 50 lines).
+  - `dispatcher --caller-skill recurring-tasks recurring-tasks._rtx.interface.scripts-view-logs <job-name> [--lines N]`
+
 <!-- END BLUEPRINT INTERFACES -->
 
 # Recurring Tasks

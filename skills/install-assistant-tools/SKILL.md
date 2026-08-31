@@ -4,41 +4,28 @@ description: >-
   Use when the user asks to install, update, propagate, or repair the `assistant`, `collab`, `coauthor`, or workspace helper commands, including missing or stale launchers and shell integration. Do not use for unrelated software or plugin installation.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: assistant-operations; topics: assistant-installation, system-maintenance; visibility: listed
-Activation: user-request; persistent modifier: no
-
-Skill Version: 3
-
-Uses Interfaces:
-- `install-assistant-tools.source.gateway -> connect-google.interface.default@1`
-- `install-assistant-tools.source.gateway -> install-assistant-tools._rtx.interface.scripts-dev-link@2`
-- `install-assistant-tools.source.gateway -> install-assistant-tools._rtx.interface.scripts-doctor@1`
-- `install-assistant-tools.source.gateway -> install-assistant-tools._rtx.interface.scripts-install@2`
-- `install-assistant-tools.source.gateway -> install-assistant-tools._rtx.interface.scripts-launchers@3`
-- `install-assistant-tools.source.gateway -> install-assistant-tools._rtx.interface.scripts-scaffold@2`
-- `install-assistant-tools.source.gateway -> recurring-tasks.interface.default@1`
-
-Setup Requires Setup Of: none
-Setup Order:
-1. `install-assistant-tools.interface.setup`
-
-Public Interfaces:
-- `install-assistant-tools.interface.default`
-- `install-assistant-tools.interface.diagnose`
-- `install-assistant-tools.interface.setup`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
+
+Dispatcher Interfaces:
+
+Use the installed `dispatcher` command for these process-bound interfaces:
+- `install-assistant-tools._rtx.interface.scripts-dev-link@2` — Project live checkout skills and hooks into isolated context homes, install milestone and agent-timeline when referenced, and set local git hooksPath.
+  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools._rtx.interface.scripts-dev-link --repo-root DIR [--no-claude] [--no-codex] [--home DIR] [--claude-home DIR] [--codex-home DIR] [--shell-rc FILE] [--dry-run]`
+- `install-assistant-tools._rtx.interface.scripts-doctor@1` — Diagnose one explicit context; mode is never inferred from cwd and no state is mutated.
+  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools._rtx.interface.scripts-doctor --mode {standard,development} [--checkout ABSOLUTE_PATH] [--home DIR] [--json]`
+- `install-assistant-tools._rtx.interface.scripts-install@2` — Choose mode, confirm choices, apply once, diagnose the same context, and explain optional next steps without invoking them.
+  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools._rtx.interface.scripts-install [--dry-run] [--non-interactive --yes] [--dev-mode --repo-path DIR|--no-dev-mode] [--agents LIST] [--default-llm {claude,codex}] [--optional-modules LIST] [--home DIR] [--bin-dir DIR] [--shell-rc FILE] [--codex-home DIR] [--claude-home DIR]`
+- `install-assistant-tools._rtx.interface.scripts-launchers@3` — Install per-agent bin launcher, profile config, worker dir, and durable launchers.json backend selection for the given agents. Direct invocation of this interface installs exactly the --agents selection; tw selects one complete tmux-workspace, tw, tw-break, tw-join, tw-monitor, and tw-help bundle. When this runs as part of the five-stage apply orchestrator, assistant is additionally forced into the installed set regardless of selection, because it is a required invoke-skill prerequisite (feedback item 18) and is not user-selectable. background_run is installed with invoke-skill. Worker directories are created under the platform Famulus state dir in standard mode or under the selected isolated context in development mode (--mode development, an explicit live checkout).
+  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools._rtx.interface.scripts-launchers --repo-root DIR --agents LIST [--home DIR] [--bin-dir DIR] [--codex-home DIR] [--claude-home DIR] [--shell-rc FILE] [--default-llm {claude,codex}] [--mode {development,plugin}] [--dry-run]`
+- `install-assistant-tools._rtx.interface.scripts-scaffold@2` — Install the shared launcher floor using an exact context; persist PATH only for standard mode.
+  - `dispatcher --caller-skill install-assistant-tools install-assistant-tools._rtx.interface.scripts-scaffold --repo-root DIR [--home DIR] [--bin-dir DIR] [--shell-rc FILE] [--dry-run]`
 
 Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `install-assistant-tools.interface.default` — Primary LLM-facing skill instructions.
-- `install-assistant-tools.interface.diagnose` — Diagnose one explicitly selected Famulus installation context through the canonical read-only child diagnostic route.
-- `install-assistant-tools.interface.setup` — Primary LLM-facing skill instructions.
+- `connect-google.interface.default@1` — Route Google OAuth-client preparation according to whether a valid Desktop client is already installed.
+- `recurring-tasks.interface.default@1` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->
 # Install Assistant Tools
 

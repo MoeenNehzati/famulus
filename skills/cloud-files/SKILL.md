@@ -4,42 +4,38 @@ description: >-
   Use when the user or another skill needs to read from or write to the configured LLM root of a remote. Do not use for local files or remote paths outside that LLM root.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: assistant-operations; topics: external-integrations, storage-and-sync; visibility: listed
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces:
-- `cloud-files.source.gateway -> cloud-files._rtx.interface.lists-delete@1`
-- `cloud-files.source.gateway -> cloud-files._rtx.interface.lists-read@1`
-- `cloud-files.source.gateway -> cloud-files._rtx.interface.lists-write@1`
-- `cloud-files.source.gateway -> cloud-files._rtx.interface.plans-delete@1`
-- `cloud-files.source.gateway -> cloud-files._rtx.interface.plans-read@1`
-- `cloud-files.source.gateway -> cloud-files._rtx.interface.plans-write@1`
-- `cloud-files.source.gateway -> cloud-files._rtx.interface.write-config@1`
-- `cloud-files.source.gateway -> connect-google.interface.default@1`
-
-Setup Requires Setup Of:
-- `connect-google.interface.setup@1`
-Setup Order:
-1. `connect-google.interface.setup`
-2. `cloud-files.interface.setup`
-
-Public Interfaces:
-- `cloud-files.interface.default`
-- `cloud-files.interface.setup`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
+
+Dispatcher Interfaces:
+
+Use the installed `dispatcher` command for these process-bound interfaces:
+- `cloud-files._rtx.interface.lists-delete@1` — Delete a file from cloud storage under the lists/ directory.
+  - `dispatcher --caller-skill cloud-files cloud-files._rtx.interface.lists-delete lists/<path>`
+  - Delete list files from cloud storage. Restricted to lists/ directory.
+- `cloud-files._rtx.interface.lists-read@1` — Read a file from cloud storage under the lists/ directory.
+  - `dispatcher --caller-skill cloud-files cloud-files._rtx.interface.lists-read lists/<path>`
+  - Read list files from cloud storage. Restricted to lists/ directory.
+- `cloud-files._rtx.interface.lists-write@1` — Write content (from stdin) to a file in cloud storage under the lists/ directory.
+  - `dispatcher --caller-skill cloud-files cloud-files._rtx.interface.lists-write lists/<path>`
+  - Write list files to cloud storage. Restricted to lists/ directory.
+- `cloud-files._rtx.interface.plans-delete@1` — Delete a file from cloud storage under the plans/ directory.
+  - `dispatcher --caller-skill cloud-files cloud-files._rtx.interface.plans-delete plans/<path>`
+  - Delete plan files from cloud storage. Restricted to plans/ directory.
+- `cloud-files._rtx.interface.plans-read@1` — Read a file from cloud storage under the plans/ directory.
+  - `dispatcher --caller-skill cloud-files cloud-files._rtx.interface.plans-read plans/<path>`
+  - Read plan files from cloud storage. Restricted to plans/ directory.
+- `cloud-files._rtx.interface.plans-write@1` — Write content (from stdin) to a file in cloud storage under the plans/ directory.
+  - `dispatcher --caller-skill cloud-files cloud-files._rtx.interface.plans-write plans/<path>`
+  - Write plan files to cloud storage. Restricted to plans/ directory.
+- `cloud-files._rtx.interface.write-config@1` — Write ~/.config/cloud-files/config.json with the given remote LLM root. Relocated from install-assistant-tools.
+  - `dispatcher --caller-skill cloud-files cloud-files._rtx.interface.write-config --home <dir> [--remote-llm-root <path>] [--dry-run]`
+  - Write cloud-files config.json.
 
 Instruction Interfaces:
 
 These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `cloud-files.interface.default` — Primary LLM-facing skill instructions.
-- `cloud-files.interface.setup` — Primary LLM-facing skill instructions.
+- `connect-google.interface.default@1` — Route Google OAuth-client preparation according to whether a valid Desktop client is already installed.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 
