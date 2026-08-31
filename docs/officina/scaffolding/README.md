@@ -116,7 +116,7 @@ When changing the architecture or schema:
 
 - [Architectural principles](../architectural-principles.md)
 - [Dispatcher](../dispatcher.md)
-- [Skill blueprints](../skill-blueprints.md)
+- [Blueprints](../blueprints.md)
 - [Certification and drift](../certification_and_drift.md)
 - [Blueprint search](../blueprint_search.md)
 - [Blueprint schemas](../../../references/blueprint-schema/README.md)

@@ -149,7 +149,7 @@ routing state. Those operations belong to explicit offline tools.
 ## Related documentation
 
 - [Architectural principles](architectural-principles.md)
-- [Skill blueprints](skill-blueprints.md)
+- [Blueprints](blueprints.md)
 - [Certification and drift](certification_and_drift.md)
 - [Installation](installation.md)
 - [Blueprint schemas](../../references/blueprint-schema/README.md)

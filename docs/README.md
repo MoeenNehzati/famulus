@@ -12,7 +12,7 @@ Officina is and routes to everything below.
 - [Dispatcher](./officina/dispatcher.md) — direct routing, authorization, and
   launch behavior
 - [Certification and Drift](./officina/certification_and_drift.md)
-- [Skill Blueprints](./officina/skill-blueprints.md)
+- [Blueprints](./officina/blueprints.md)
 - [Blueprint Search](./officina/blueprint_search.md)
 - [Docstring Contract](./officina/docstring.md)
 - [Installation](./officina/installation.md)

@@ -17,7 +17,7 @@ The skill system is built around a small set of explicit authored surfaces:
 
 Start with these architecture and contract references:
 
-- [docs/officina/skill-blueprints.md](../officina/skill-blueprints.md)
+- [docs/officina/blueprints.md](../officina/blueprints.md)
 - [references/blueprint-schema/schema.json](../../references/blueprint-schema/schema.json)
 - [references/blueprint-schema/template.yaml](../../references/blueprint-schema/template.yaml)
 - Layered [node standards](../../references/node-standards/node.standard.yaml), queried through `refactor-node`

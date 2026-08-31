@@ -13,7 +13,7 @@ _README_REQUIRED = (
     "dispatcher --caller-skill <caller> <callee>.interface.<name> [args...]",
     "repo_checks.py",
     ".githooks/pre-commit",
-    "docs/officina/skill-blueprints.md",
+    "docs/officina/blueprints.md",
     "references/blueprint-schema/schema.json",
     "references/blueprint-schema/template.yaml",
     "docs/officina/scaffolding/README.md",

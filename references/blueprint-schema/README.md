@@ -2,7 +2,7 @@
 
 The concrete schemas in this directory are the canonical source for blueprint
 shape and field-level authoring rules. See
-[`docs/officina/skill-blueprints.md`](../../docs/officina/skill-blueprints.md) for the current
+[`docs/officina/blueprints.md`](../../docs/officina/blueprints.md) for the current
 contributor overview and [`docs/officina/certification_and_drift.md`](../../docs/officina/certification_and_drift.md)
 for the version-6 input and certificate contract.
 

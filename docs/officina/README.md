@@ -242,12 +242,11 @@ Then, depending on what you need:
   execution, failures, and performance budgets
 - [Certification and Drift](certification_and_drift.md) — certificate
   lifecycle, drift evaluation, and what makes a certificate stale
-- [Skill Blueprints](skill-blueprints.md) — authoring blueprints in practice
+- [Blueprints](blueprints.md) — the blueprint model, declarations, discovery,
+  and authoring guidance
 - [Blueprint Search](blueprint_search.md) — querying the graph
 - [Compass and Rutter](compass-rutter.md) — durable algorithms and their
   generic LLM-facing operating protocol
-- [Blueprint Discovery Metadata](blueprint-discovery-metadata.md) — how
-  discoverable modules declare when they apply
 - [Refactoring Officina Nodes](refactor.md) — choosing between in-place node
   refactoring and registered relocation
 - [Configured Schemas](configured-schema.md) — the configuration and

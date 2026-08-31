@@ -189,7 +189,7 @@ def _seed_docs(repo_root: Path) -> None:
                 "dispatcher --caller-skill <caller> <callee>.interface.<name> [args...]",
                 "python3 repo_checks.py --suite validators",
                 ".githooks/pre-commit",
-                "docs/officina/skill-blueprints.md",
+                "docs/officina/blueprints.md",
                 "references/blueprint-schema/schema.json",
                 "references/blueprint-schema/template.yaml",
                 "docs/officina/scaffolding/README.md",
@@ -221,7 +221,7 @@ def _seed_docs(repo_root: Path) -> None:
     )
     _write(repo_root / "docs/officina/scaffolding/README.md", "# Scaffolding\n")
     _write(repo_root / "references/blueprint-schema/README.md", "# Blueprint Reference\n")
-    _write(repo_root / "docs/officina/skill-blueprints.md", "# Skill Blueprints\n")
+    _write(repo_root / "docs/officina/blueprints.md", "# Blueprints\n")
     _write(repo_root / "references/blueprint-schema/schema.json", "{}\n")
     _write(repo_root / "references/blueprint-schema/template.yaml", "discovery: {}\n")
 
@@ -283,8 +283,8 @@ def test_readme_validator_reports_distinct_user_contract_violations(
         ),
         (
             CLEAN_README
-            + "\n[Blueprints](docs/officina/skill-blueprints.md)\n",
-            ("docs/officina/skill-blueprints.md",),
+            + "\n[Blueprints](docs/officina/blueprints.md)\n",
+            ("docs/officina/blueprints.md",),
         ),
     )
 

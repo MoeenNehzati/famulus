@@ -38,7 +38,7 @@ FORBIDDEN_SNIPPETS = (
     "_install_scaffold.py",
     "_config_bridge.py",
     "_agent_launchers.py",
-    "docs/officina/skill-blueprints.md",
+    "docs/officina/blueprints.md",
     "validators/` and `skills/skill-maker/validators/",
 )
 
