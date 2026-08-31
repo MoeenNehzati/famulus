@@ -58,8 +58,9 @@ Famulus enforces the documentation and skill contracts through repo validators, 
 - [`.githooks/pre-commit`](../../.githooks/pre-commit)
 - [`.github/workflows/python-tests.yml`](../../.github/workflows/python-tests.yml)
 
-For hook order, CI behavior, and Python test-suite boundaries, see
-[Repository Testing](../testing.md).
+For hook purpose, activation, order, and side effects, see
+[Repository Git Hooks](git-hooks.md). For CI behavior and Python test-suite
+boundaries, see [Repository Testing](../testing.md).
 
 ## Development-Facing Skill Areas
 

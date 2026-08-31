@@ -116,6 +116,11 @@ to use. Each feature installs only its own residual declared packages; core
 setup does not install keyring or Google-service packages, and selecting one
 Google service does not mutate another unselected service.
 
+Ask the assistant to use `connect-google` to add Google services or
+`recurring-tasks` to schedule selected skills to run in the background on a
+recurring basis; see [Setting up Famulus](docs/setup.md) for prerequisites and
+further directions.
+
 Recurring first setup creates only its scheduler and unattended substrate. It
 does not enable email triage, daily planning, or wakeup delivery unless you
 explicitly select a preset or already have validated jobs. `llm-wakeup` alone

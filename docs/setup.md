@@ -50,6 +50,12 @@ host to use `setup-python-environment`. It validates that exact environment
 before repairing only the declared core packages; missing pip, an externally
 managed environment, or a non-writable target fails before package mutation.
 
+The session-start hook acts as the core setup sentinel: it instructs the
+assistant to check that `famulus.invoke` is available. If the tool is absent or
+an invocation fails, the assistant reports that Famulus MCP is unavailable and
+asks permission before following `setup-python-environment`. Node-specific
+setup remains demand-driven through the setup interfaces described below.
+
 The plugin declares one shared `famulus` MCP server. Executable skill
 interfaces use its generated JSON invocation projection; instruction interfaces
 are read and followed directly. The [dispatcher reference](officina/dispatcher.md)
