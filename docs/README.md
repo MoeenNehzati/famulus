@@ -28,6 +28,7 @@ Officina is and routes to everything below.
 - [Setup](./setup.md)
 - [Security and Privacy](./security-and-privacy.md)
 - [Launchers](./launchers.md)
+- [LLM Lifecycle Hooks](./lifecycle-hooks.md)
 - [Repository Testing](./testing.md)
 - [Continuous Integration Handbook](./ci-handbook.md)
 - [Skill Index](./skills.md)
