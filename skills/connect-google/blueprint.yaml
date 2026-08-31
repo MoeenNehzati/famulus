@@ -66,14 +66,10 @@ namespace_exports:
         allow_all_modules: false
         allowed_callers:
         - connect-google
-        - install-assistant-tools
-        - install-assistant-tools._rtx
       connect-google._rtx.interface.connect-services:
         allow_all_modules: false
         allowed_callers:
         - connect-google
-        - install-assistant-tools
-        - install-assistant-tools._rtx
       connect-google._rtx.interface.install-client:
         allow_all_modules: false
         allowed_callers:

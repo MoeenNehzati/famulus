@@ -7,7 +7,8 @@ one session after a usage reset or timeout.
 
 ## Before enabling a job
 
-1. Install or repair the assistant launchers with `install-assistant-tools`.
+1. Configure the assistant launchers with `install-launchers` if the job needs
+   unattended agent execution.
 2. Configure and test the skill the job will invoke. For personal planning and
    inbox automation, complete the
    [Personal Assistance Quickstart](personal-assistance.md) first.
@@ -34,7 +35,7 @@ send it only after you review and approve the complete message.
 
 | Need | Skill |
 |---|---|
-| Install or repair assistant commands and background execution support | `install-assistant-tools` |
+| Configure assistant commands and background execution support | `install-launchers` |
 | Connect Google services needed by a job | `connect-google` |
 | Enable, disable, test, inspect, or repair a recurring assistant job | `recurring-tasks` |
 | Run the work once right now | Invoke the underlying skill directly |

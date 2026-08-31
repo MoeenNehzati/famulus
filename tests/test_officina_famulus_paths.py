@@ -6,14 +6,7 @@ from officina.common.famulus_paths import resolve_famulus_paths
 
 
 def _assert_derived_fields(paths):
-    assert paths.runtime_root == paths.data_root / "runtime"
-    assert paths.releases_root == paths.runtime_root / "releases"
-    assert paths.current_pointer == paths.runtime_root / "current.json"
-    assert paths.install_state_root == paths.state_root / "install"
-    assert paths.uv_bin == paths.data_root / "tools" / "uv"
-    assert paths.python_install_dir == paths.data_root / "python"
     assert paths.worker_root == paths.state_root / "workers"
-    assert paths.launcher_profile_root == paths.data_root / "launcher-profiles"
     assert paths.recurring_config_root == paths.config_root / "recurring-tasks"
     assert paths.recurring_state_root == paths.state_root / "recurring-tasks"
     assert paths.email_triage_state_root == paths.state_root / "email-triage"

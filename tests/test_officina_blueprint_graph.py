@@ -54,34 +54,6 @@ def load_repository_blueprint_graph(
     )
 
 
-def test_install_assistant_tools_exports_public_diagnose_instruction_contract() -> None:
-    repository = Path(__file__).resolve().parents[1]
-    graph = load_repository_blueprint_graph(repository, expected_schema_version=6)
-
-    module, source, export = resolve_export(
-        graph, "install-assistant-tools.interface.diagnose", 1
-    )
-
-    assert module.node_id == "install-assistant-tools"
-    assert source.node_id == "install-assistant-tools.source.gateway"
-    assert export.source_interface_id == (
-        "install-assistant-tools.source.gateway.interface.diagnose"
-    )
-    assert export.export_declaration == {
-        "access": {"allow_all_modules": True, "allowed_callers": []},
-        "source_interface": "install-assistant-tools.source.gateway.interface.diagnose",
-    }
-    assert graph.interface_uses[export.source_interface_id] == (
-        ("install-assistant-tools._rtx.interface.scripts-doctor", 1),
-    )
-    assert "process_binding" not in export.declaration
-    skill = (repository / "skills" / "install-assistant-tools" / "SKILL.md").read_text(
-        encoding="utf-8"
-    )
-    assert "Instruction Interfaces:" in skill
-    assert "`install-assistant-tools.interface.diagnose`" in skill
-
-
 def test_recurring_module_owns_shared_job_schema_source() -> None:
     repository = Path(__file__).resolve().parents[1]
     blueprint = yaml.safe_load(

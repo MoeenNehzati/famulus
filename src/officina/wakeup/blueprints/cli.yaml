@@ -45,10 +45,6 @@ dependencies:
   source: common.source.command-files
   version: 1
   reason: Install the two feature-owned command files through the neutral helper.
-- blueprint: {base: repository-root, path: src/officina/recurring/blueprints/runtime.yaml}
-  source: recurring.source.runtime
-  version: 1
-  reason: Reconcile Task 9 native registrations after exact legacy-preset suppression or restoration.
 interfaces:
   wakeup.source.cli.interface.auto-policy:
     content:
@@ -743,13 +739,12 @@ interfaces:
         plugin-root: {description: Current selected Famulus plugin root for setup., required: false, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
         bin-dir: {description: Platform command directory., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
         native-root: {description: Platform user-registration directory., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
-        jobs-file: {description: Optional canonical recurring jobs file checked for legacy handoff., required: false, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
       caller_warnings:
       - external-side-effect: Setup changes command files and one native registration; teardown removes only wakeup-owned state.
       direct_io:
         network: []
         reads:
-        - {id: selected-inputs, access: read, content: selected Python plugin and optional recurring jobs, formats: [python, yaml], medium: local-filesystem, sensitivity: user-private}
+        - {id: selected-inputs, access: read, content: selected Python plugin, formats: [python], medium: local-filesystem, sensitivity: user-private}
         writes:
         - {id: command-write, access: configure, content: wakeup command files, formats: [python, batch], medium: local-filesystem, sensitivity: user-private, system: filesystem}
         - {id: native-write, access: configure, content: due-delivery registration, formats: [systemd-unit, plist, batch], medium: local-system, sensitivity: user-private, system: native-scheduler}
@@ -765,19 +760,18 @@ interfaces:
           may_occur_in_outcomes: [completed]
         lifecycle: finite
         mutation_safety:
-          atomicity: {per_effect_only: Files are atomically replaced and legacy suppression occurs only after native registration succeeds.}
+          atomicity: {per_effect_only: Files are atomically replaced after validation.}
           concurrent_invocations: {unsafe: Concurrent feature setup calls are not serialized.}
           idempotency: {idempotent: Repeating setup converges to one fixed registration and two command files.}
           on_uncertain_completion: {verify_then_decide: Inspect the owner marker and fixed native registration before retrying.}
           partial_effects_on_failure: {possible: Native state can be observed briefly before rollback completes.}
-          rollback_on_failure: {available: Captured feature files and the legacy jobs document are restored automatically.}
+          rollback_on_failure: {available: Captured feature files are restored automatically.}
         state_effect: mutating
         verification: [{method: direct-io-state, direct_io_ref: native-write}]
       helpers: []
       interaction: {mode: unattended}
       outcomes:
       - {id: completed, class: success, caller_action: Report the selected operation as complete., effects: [wakeup-integration], outputs: []}
-      - {id: conflict, class: error, caller_action: Report the conflicting recurring due job without mutating it., effects: [], outputs: []}
       outputs: []
       preconditions: []
     description: Reconcile or remove the feature-owned wakeup integration.
@@ -789,9 +783,9 @@ interfaces:
         positional_patterns: {'0': ^setup$}
         min_positionals: 1
         max_positionals: 1
-        allowed_flags: [--canonical-python, --plugin-root, --bin-dir, --native-root, --jobs-file]
+        allowed_flags: [--canonical-python, --plugin-root, --bin-dir, --native-root]
         required_flags: [--canonical-python, --plugin-root, --bin-dir, --native-root]
-        flag_patterns: {--canonical-python: ^.+$, --plugin-root: ^.+$, --bin-dir: ^.+$, --native-root: ^.+$, --jobs-file: ^.+$}
+        flag_patterns: {--canonical-python: ^.+$, --plugin-root: ^.+$, --bin-dir: ^.+$, --native-root: ^.+$}
       - name: teardown
         positional_patterns: {'0': ^teardown$}
         min_positionals: 1
@@ -799,6 +793,6 @@ interfaces:
         allowed_flags: [--bin-dir, --native-root]
         required_flags: [--bin-dir, --native-root]
         flag_patterns: {--bin-dir: ^.+$, --native-root: ^.+$}
-    usage: <setup|teardown> --bin-dir DIR --native-root DIR [--canonical-python FILE --plugin-root DIR] [--jobs-file FILE]
+    usage: <setup|teardown> --bin-dir DIR --native-root DIR [--canonical-python FILE --plugin-root DIR]
     version: 1
 uses_interfaces: []

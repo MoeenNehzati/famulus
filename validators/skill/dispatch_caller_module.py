@@ -117,10 +117,7 @@ def _dispatch_aliases(tree: ast.AST) -> tuple[set[str], set[str], list[int]]:
     modules: set[str] = set()
     legacy_famulus_lines: list[int] = []
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module in {
-            "script_dispatcher",
-            "officina.dispatcher",
-        }:
+        if isinstance(node, ast.ImportFrom) and node.module == "officina.dispatcher":
             for alias in node.names:
                 if alias.name == "dispatch":
                     direct.add(alias.asname or alias.name)
@@ -128,7 +125,7 @@ def _dispatch_aliases(tree: ast.AST) -> tuple[set[str], set[str], list[int]]:
             legacy_famulus_lines.append(getattr(node, "lineno", 0))
         elif isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name in {"script_dispatcher", "officina.dispatcher"}:
+                if alias.name == "officina.dispatcher":
                     modules.add(alias.asname or alias.name)
                 elif alias.name == "famulus.dispatcher":
                     legacy_famulus_lines.append(getattr(node, "lineno", 0))

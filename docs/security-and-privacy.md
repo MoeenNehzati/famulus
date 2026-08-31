@@ -5,7 +5,7 @@ audited at commit `777b8c03a103` on 2026-08-13 and delta-reviewed through
 commit `a7d2fb28` on 2026-08-22. The first delta review, through `e74b8ad7`,
 covered the credential-module relocation, process-local Drive access-token
 caching and error reporting, the dedicated `background_run` agent and
-unattended launch path, and the current-source managed-runtime bootstrap. The
+unattended launch path, and the selected Python environment. The
 second covered `51c06606`, which unified the installation contexts, and
 `a68a6389`, which grants a managed assistant the state roots described under
 [Roots granted to a managed assistant](#roots-granted-to-a-managed-assistant). It is an implementation inventory,
@@ -56,7 +56,7 @@ personal-assistant workflows.
 | `daily-plan` | Calendar data, weather, lists, and existing plans | Writes plans and plan metadata to Drive; list-changing requests can update master lists |
 | `wrap-up` | Plans, lists, and session context | Updates plans and lists after a consolidated user review |
 | `recurring-tasks` | Context-specific job definitions, run status, and captured job output | Installs and removes per-user jobs namespaced by `installation_id`; enabled jobs may invoke other skills without a new interactive prompt |
-| `install-assistant-tools` | Host configuration and the selected installation source | Installs launchers, hooks, profiles, runtime files, and the unattended `background_run` prerequisite; it does not enable jobs, and uninstall/purge remove only resources they currently own |
+| `install-launchers` | Selected plugin and launcher configuration | Installs only feature-owned launcher commands and the unattended `background_run` prerequisite; it does not enable jobs |
 | `get-weather` | A location supplied by the user or another workflow | Sends that location to Open-Meteo geocoding and forecast services; it uses no credential |
 | `send-feedback` | A reviewed, redacted diagnostic report | Publishes the report as a public issue on the configured project, or sends it by email, only after preview and explicit approval; it refuses vulnerability reports and routes them to the private security channel |
 
@@ -123,7 +123,7 @@ the selected context, never from process overrides, so `ASSISTANT_LOGS` and its
 siblings cannot widen the grant.
 
 What the grant refuses is the more useful half. A resolved root that overlaps
-the credential root, the managed runtime, either assistant home, or the install
+the credential root, either assistant home, or feature-owned
 state root raises `AssistantAccessBoundaryError` and the apply stops. The
 assistant is therefore granted the state it writes and denied the state that
 would let it rewrite its own installation or read the Google credentials.

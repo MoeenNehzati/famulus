@@ -2199,51 +2199,6 @@
         }
       }
     },
-    "install-assistant-tools": {
-      "maturity": "stable",
-      "installation_tier": "core",
-      "personal_preference": {
-        "applies": false
-      },
-      "interfaces": {
-        "install-assistant-tools._rtx.interface.scripts-dev-link": {
-          "dependencies": [
-            {
-              "kind": "binary",
-              "name": "git",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Configures repository hook settings during development installs."
-            }
-          ]
-        },
-        "install-assistant-tools._rtx.interface.scripts-doctor": {
-          "dependencies": []
-        },
-        "install-assistant-tools._rtx.interface.scripts-install": {
-          "dependencies": [
-            {
-              "kind": "binary",
-              "name": "git",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Configures repository hook settings during development installs."
-            }
-          ]
-        },
-        "install-assistant-tools._rtx.interface.scripts-scaffold": {
-          "dependencies": []
-        }
-      }
-    },
     "install-launchers": {
       "maturity": "stable",
       "installation_tier": "optional",
@@ -7209,7 +7164,6 @@
     ],
     "binary": [
       "crontab",
-      "git",
       "journalctl",
       "launchctl",
       "schtasks",

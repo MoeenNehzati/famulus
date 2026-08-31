@@ -2,7 +2,7 @@
 """
 ensure_oauth.py — Check cloud-files OAuth status and guide setup if needed.
 
-Relocated from install-assistant-tools' shared Google-OAuth chooser: each
+Owned by cloud-files' Google OAuth setup route: each
 service now owns its own guidance text and setup flow instead of a shared
 script batching cloud-files and online-calendar together. This wraps
 setup_oauth.py (the actual token exchange) with the "is this already

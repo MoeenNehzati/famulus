@@ -39,7 +39,7 @@ Public Interfaces:
 Executable Interfaces:
 
 Call `famulus.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
-- `cloud-files._rtx.interface.ensure-oauth` — Check cloud-files OAuth status; print setup guidance or launch browser authorization as needed. Relocated from install-assistant-tools — invoke directly (caller-skill cloud-files) as part of connecting remotes.
+- `cloud-files._rtx.interface.ensure-oauth` — Check cloud-files OAuth status; print setup guidance or launch browser authorization as needed. Invoke directly (caller-skill cloud-files) as part of connecting remotes.
   - Caller: `cloud-files`
   - Version: 1
   - Alternative: `default`
@@ -109,7 +109,7 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--allow-account-change": true, "--credential-file": "path", "--home": "dir"}, "positionals": [], "stdin": null}
     Required options: ["--credential-file", "--home"]; positional arity: 0..0; stdin: forbidden
-- `cloud-files._rtx.interface.write-config` — Write ~/.config/cloud-files/config.json with the given remote LLM root. Relocated from install-assistant-tools.
+- `cloud-files._rtx.interface.write-config` — Write ~/.config/cloud-files/config.json with the given remote LLM root. Owned by cloud-files.
   - Caller: `cloud-files`
   - Version: 1
   - Alternative: `default`

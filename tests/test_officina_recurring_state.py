@@ -10,7 +10,6 @@ from pathlib import Path
 import pytest
 import yaml
 
-from officina.install.context import resolve_installation_context
 from officina.recurring import control, executor, native, runtime as recurring_runtime, state
 from officina.recurring.jobs import validate_jobs_payload
 from officina.recurring.records import RunRecord, write_record

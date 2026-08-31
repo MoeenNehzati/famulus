@@ -75,7 +75,6 @@ This page is the complete skill inventory. For workflows and examples, start fro
 
 - `cloud-files` — Bounded read/write of plain files under a configured Google Drive root _(topics: external-integrations, storage-and-sync; activated by: user request, skill workflow)_
 - `connect-google` — The user needs to set up or restore Google authentication for Famulus _(topics: external-integrations; activated by: user request, skill workflow)_
-- `install-assistant-tools` — Install or update launchers, wiring, hooks, and environment on a machine _(topics: assistant-installation, system-maintenance; activated by: user request)_
 - `install-launchers` — Install or repair an explicit subset of the optional assistant, collab, coauthor, and tw launchers _(topics: assistant-installation; activated by: user request, skill workflow)_
 - `milestone-logging` — Starting or completing substantive agent work that needs durable, role-labelled progress records and optional run recovery _(topics: task-automation, assistant-assurance; activated by: user request, skill workflow)_
 - `setup-python-environment` — Famulus MCP cannot start because its selected Python or a bundled core package is unavailable _(topics: assistant-installation, system-maintenance; activated by: user request, skill workflow)_

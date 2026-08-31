@@ -9,7 +9,6 @@ that for Claude via hook_started/hook_response events, but not for Codex.
 
 from __future__ import annotations
 
-import importlib
 import importlib.util
 import json
 import os
@@ -17,7 +16,6 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -75,53 +73,6 @@ def test_background_profile_declares_common_python_and_shared_hook() -> None:
     ]
 
 
-def _available(*, cli: bool = True, pkg: bool = True):
-    missing = []
-    if not cli:
-        missing.append("dispatcher CLI not on PATH")
-    if not pkg:
-        missing.append("script_dispatcher Python package not importable")
-    return patch.object(_mod, "dispatcher_available", return_value=(not missing, missing))
-
-
-def _env_with_generated_dispatcher(tmp_path: Path) -> dict[str, str]:
-    installer = importlib.import_module(
-        "skills.install-assistant-tools._rtx._install_launcher"
-    )
-    platform_launcher_installer = installer.platform_launcher_installer
-
-    bin_dir = tmp_path / "bin"
-    home = tmp_path / "home"
-    result = platform_launcher_installer().install_dispatcher_launcher(
-        _REPO_ROOT,
-        bin_dir,
-        dry_run=False,
-        manifest=None,
-        home=home,
-    )
-    assert not result.blocks_install(), result.reason
-    env = os.environ.copy()
-    env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
-    env["PYTHONPATH"] = str(_REPO_ROOT) + os.pathsep + env.get("PYTHONPATH", "")
-    return env
-
-
-@pytest.fixture(scope="module")
-def generated_dispatcher_env(
-    tmp_path_factory: pytest.TempPathFactory,
-) -> dict[str, str]:
-    """Install one immutable launcher tree for all subprocess contract tests.
-
-    The subprocesses only execute the generated launcher; none of them edits
-    its binary, manifest, or synthetic home. Sharing the installation avoids
-    repeating identical import, directory, and launcher-generation work while
-    each invocation still receives its own copied environment mapping.
-    """
-    return _env_with_generated_dispatcher(
-        tmp_path_factory.mktemp("dispatcher-hook-launcher")
-    )
-
-
 class TestHookMetadata:
     def test_shared_binding_metadata_is_exposed(self):
         hook = _mod.InjectDispatcherContextHook()
@@ -174,8 +125,7 @@ class TestOutputs:
 
     def test_codex_output_is_nested_hook_specific_output(self):
         hook = _mod.InjectDispatcherContextHook()
-        with _available():
-            result = hook.build(_mod.HookInput(host="codex", event_name="SessionStart", source="startup", raw={}))
+        result = hook.build(_mod.HookInput(host="codex", event_name="SessionStart", source="startup", raw={}))
         output = hook.codex_output(
             _mod.HookInput(host="codex", event_name="SessionStart", source="startup", raw={}),
             result,
@@ -186,8 +136,7 @@ class TestOutputs:
 
     def test_claude_output_matches_same_nested_shape(self):
         hook = _mod.InjectDispatcherContextHook()
-        with _available():
-            result = hook.build(_mod.HookInput(host="claude", event_name="SessionStart", source="startup", raw={}))
+        result = hook.build(_mod.HookInput(host="claude", event_name="SessionStart", source="startup", raw={}))
         output = hook.claude_output(
             _mod.HookInput(host="claude", event_name="SessionStart", source="startup", raw={}),
             result,
@@ -198,26 +147,13 @@ class TestOutputs:
 
     def test_cursor_output_uses_snake_case(self):
         hook = _mod.InjectDispatcherContextHook()
-        with _available():
-            result = hook.build(_mod.HookInput(host="cursor", event_name="SessionStart", source="startup", raw={}))
+        result = hook.build(_mod.HookInput(host="cursor", event_name="SessionStart", source="startup", raw={}))
         output = hook.cursor_output(
             _mod.HookInput(host="cursor", event_name="SessionStart", source="startup", raw={}),
             result,
         )
         assert "additional_context" in output
         _assert_dispatcher_context(output["additional_context"])
-
-    def test_missing_dispatcher_emits_system_message(self):
-        hook = _mod.InjectDispatcherContextHook()
-        with _available(cli=False, pkg=True):
-            result = hook.build(_mod.HookInput(host="codex", event_name="SessionStart", source="startup", raw={}))
-        output = hook.codex_output(
-            _mod.HookInput(host="codex", event_name="SessionStart", source="startup", raw={}),
-            result,
-        )
-        assert "systemMessage" in output["hookSpecificOutput"]
-        assert "dispatcher CLI" in output["hookSpecificOutput"]["systemMessage"]
-
 
 class TestEntryPoint:
     def _run_script(
@@ -245,28 +181,20 @@ class TestEntryPoint:
             )
         return result
 
-    def test_codex_entrypoint_emits_valid_json_with_nested_output(
-        self,
-        generated_dispatcher_env: dict[str, str],
-    ):
+    def test_codex_entrypoint_emits_valid_json_with_nested_output(self):
         result = self._run_script(
             "--codex",
             stdin_obj={"hook_event_name": "SessionStart", "source": "startup"},
-            env_base=generated_dispatcher_env,
         )
         output = json.loads(result.stdout)
         assert "hookSpecificOutput" in output
         assert output["hookSpecificOutput"]["hookEventName"] == "SessionStart"
         _assert_dispatcher_context(output["hookSpecificOutput"]["additionalContext"])
 
-    def test_claude_entrypoint_is_stable_under_noisy_env(
-        self,
-        generated_dispatcher_env: dict[str, str],
-    ):
+    def test_claude_entrypoint_is_stable_under_noisy_env(self):
         result = self._run_script(
             "--claude",
             stdin_obj={"hook_event_name": "SessionStart", "source": "startup"},
-            env_base=generated_dispatcher_env,
             env_overrides={"CLAUDECODE": "", "CLAUDE_PLUGIN_ROOT": "", "COPILOT_CLI": "1"},
         )
         output = json.loads(result.stdout)
@@ -277,52 +205,6 @@ class TestEntryPoint:
     def test_missing_platform_selector_exits_nonzero(self):
         result = self._run_script(check=False)
         assert result.returncode != 0
-
-
-class TestPluginShim:
-    _SHIM = Path(__file__).resolve().parents[1] / "inject_dispatcher_context.py"
-
-    def _run_shim(
-        self,
-        env_overrides: dict[str, str],
-        generated_dispatcher_env: dict[str, str],
-    ) -> dict:
-        env = dict(generated_dispatcher_env)
-        env["PYTHONPATH"] = str(self._SHIM.parents[1]) + os.pathsep + env.get("PYTHONPATH", "")
-        env.update(env_overrides)
-        result = subprocess.run(
-            [sys.executable, str(self._SHIM)],
-            input='{"hook_event_name":"SessionStart","source":"startup"}',
-            capture_output=True,
-            text=True,
-            env=env,
-        )
-        assert result.returncode == 0, result.stderr
-        return json.loads(result.stdout)
-
-    def test_plugin_root_selects_codex_shape_without_explicit_flag(
-        self,
-        generated_dispatcher_env: dict[str, str],
-    ):
-        output = self._run_shim(
-            {"PLUGIN_ROOT": "/tmp/plugin", "CLAUDE_PLUGIN_ROOT": ""},
-            generated_dispatcher_env,
-        )
-        assert "hookSpecificOutput" in output
-        assert output["hookSpecificOutput"]["hookEventName"] == "SessionStart"
-        _assert_dispatcher_context(output["hookSpecificOutput"]["additionalContext"])
-
-    def test_claude_plugin_root_selects_claude_shape_without_explicit_flag(
-        self,
-        generated_dispatcher_env: dict[str, str],
-    ):
-        output = self._run_shim(
-            {"PLUGIN_ROOT": "", "CLAUDE_PLUGIN_ROOT": "/tmp/plugin"},
-            generated_dispatcher_env,
-        )
-        assert "hookSpecificOutput" in output
-        assert output["hookSpecificOutput"]["hookEventName"] == "SessionStart"
-        _assert_dispatcher_context(output["hookSpecificOutput"]["additionalContext"])
 
 
 if __name__ == "__main__":

@@ -19,17 +19,8 @@ from officina.common.command_files import (
     restore_command_file,
     snapshot_command_file,
 )
-from officina.recurring.jobs import validate_jobs_payload
-
 from . import WakeupError
 
-_LEGACY = {
-    "name": "llm-wakeup",
-    "description": "Deliver any wakeups that have come due",
-    "command": "launch.py -m officina.wakeup.cli run-due",
-    "schedule": "*/10 * * * *",
-    "enabled": True,
-}
 _OWNER = "famulus-llm-wakeup-owner.json"
 
 
@@ -174,60 +165,19 @@ def _run_native(
             )
 
 
-def _legacy_job(
-    jobs_file: Path | None,
-) -> tuple[list[dict[str, object]] | None, int | None]:
-    if jobs_file is None or not jobs_file.exists():
-        return None, None
-    try:
-        raw = jobs_file.read_bytes()
-        import yaml
-        payload = yaml.safe_load(raw.decode("utf-8")) or {}
-        jobs = validate_jobs_payload(payload)
-    except Exception as exc:
-        raise WakeupError(f"cannot validate recurring jobs: {exc}") from exc
-    selected = None
-    for index, job in enumerate(jobs):
-        command = str(job.get("command", ""))
-        due = job.get("name") == "llm-wakeup" or (
-            "officina.wakeup.cli" in command and "run-due" in command
-        )
-        recognized = dict(job, enabled=True) == _LEGACY
-        if due and not recognized:
-            raise WakeupError("recurring jobs contain a conflicting user-authored due-wakeup job")
-        if due:
-            selected = index
-    return jobs, selected
-
-
-def _sync_recurring(jobs_file: Path) -> None:
-    """Reconcile Task 9 after changing the canonical jobs document."""
-
-    from officina.recurring.native import sync
-    from officina.recurring.runtime import load_managed_schedule
-
-    schedule = load_managed_schedule(
-        descriptor_path=jobs_file.parent / "schedule-descriptor.json"
-    )
-    sync(schedule)
-
-
 def setup_integration(
     *,
     python: Path,
     plugin_root: Path,
     bin_dir: Path,
     native_root: Path,
-    jobs_file: Path | None = None,
     platform: str | None = None,
     run: Callable[..., object] = subprocess.run,
-    sync_recurring: Callable[[Path], None] = _sync_recurring,
 ) -> None:
     platform = sys.platform if platform is None else platform
     python, plugin_root = python.resolve(), plugin_root.resolve()
     if not python.is_file() or not python.is_absolute() or not plugin_root.is_dir():
         raise WakeupError("canonical Python and plugin root must be existing absolute paths")
-    jobs, legacy_index = _legacy_job(jobs_file)
     native = _render_native(python, plugin_root, native_root, platform)
     suffix = ".bat" if platform == "win32" else ""
     command_paths = tuple(bin_dir / f"{name}{suffix}" for name in ("llm-wakeup", "lw"))
@@ -236,8 +186,6 @@ def setup_integration(
         path: snapshot_command_file(path)
         for path in (*native, owner, *command_paths)
     }
-    jobs_snapshot = snapshot_command_file(jobs_file) if jobs_file is not None else None
-    legacy_changed = False
     try:
         native_root.mkdir(parents=True, exist_ok=True)
         for path, raw in native.items():
@@ -253,18 +201,6 @@ def setup_integration(
             allowed_root=native_root,
             mode=0o600,
         )
-        if legacy_index is not None and jobs_file is not None and jobs is not None:
-            jobs[legacy_index]["enabled"] = False
-            import yaml
-
-            atomic_replace_bytes(
-                jobs_file,
-                yaml.safe_dump({"jobs": jobs}, sort_keys=False).encode(),
-                allowed_root=jobs_file.parent,
-                mode=0o600,
-            )
-            legacy_changed = True
-            sync_recurring(jobs_file)
     except Exception:
         try:
             _run_native(native_root, platform, remove=True, run=run)
@@ -272,10 +208,6 @@ def setup_integration(
             pass
         for path, snapshot in snapshots.items():
             restore_command_file(path, snapshot)
-        if jobs_snapshot is not None and jobs_file is not None:
-            restore_command_file(jobs_file, jobs_snapshot)
-            if legacy_changed:
-                sync_recurring(jobs_file)
         owner_snapshot = snapshots[owner]
         if owner_snapshot.content is not None or owner_snapshot.symlink_target is not None:
             _run_native(native_root, platform, remove=False, run=run)

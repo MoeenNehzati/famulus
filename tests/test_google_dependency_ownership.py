@@ -14,8 +14,6 @@ import webbrowser
 import pytest
 import yaml
 
-from officina.install.managed_runtime import optional_runtime_modules
-from officina.install.runtime_lock import RuntimeLockError, selected_runtime_module_ids
 from officina.credentials import google as google_credentials
 from officina.credentials import secret_store
 from officina.runtime.python_machine_interface import PythonMachineInterface
@@ -321,19 +319,11 @@ def test_generated_google_owner_contracts_expose_selected_python_repair() -> Non
         ) in block
 
 
-def test_core_and_general_installer_do_not_own_google_packages() -> None:
+def test_core_does_not_own_google_packages() -> None:
     core_packages = json.loads((ROOT / "mcp-core.json").read_text(encoding="utf-8"))[
         "core_packages"
     ]
     assert core_packages == ["mcp>=1,<2", "PyYAML>=6", "jsonschema>=4,<5"]
-    advertised = {module["id"] for module in optional_runtime_modules(MANIFEST, platform="linux")}
-    assert advertised.isdisjoint(GOOGLE_OWNERS)
-    assert "pdf-to-markdown" not in advertised
-    assert "install-launchers" in advertised
-
-    for owner in GOOGLE_OWNERS:
-        with pytest.raises(RuntimeLockError, match="feature-owned"):
-            selected_runtime_module_ids(MANIFEST, optional_module_ids=(owner,))
 
 
 def test_core_only_runs_no_google_owner_or_package_procedure(

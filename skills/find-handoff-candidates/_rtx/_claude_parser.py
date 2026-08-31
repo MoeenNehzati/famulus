@@ -2,8 +2,8 @@
 
 Transcript layout: ~/.claude/projects/<escaped-cwd>/<session_id>.jsonl
 (overridable via the CLAUDE_HOME env var, which points at ~/.claude by
-default -- matching the convention used elsewhere in this repo, e.g.
-skills/install-assistant-tools). One JSON object per line; each line
+default -- matching the convention used elsewhere in this repo). One JSON
+object per line; each line
 carries a top-level "cwd" field and a top-level "timestamp" field. The
 session id is not stored in the JSON -- it's the filename stem.
 

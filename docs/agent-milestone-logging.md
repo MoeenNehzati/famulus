@@ -20,17 +20,9 @@ the skill owns the protocol details.
 `milestone-logging._rtx.interface.timeline@1` runtime interfaces. The record
 route composes the log path, timestamp, and JSON record; the timeline route
 merges milestone logs with harness transcripts. Agents follow the skill through
-its private `record` and `timeline` runtime routes; the public instruction
-interface owns when and how those routes are used. The stable `milestone` and
-`agent-timeline` commands are retained for compatibility and human diagnostics.
-
-**The installer-owned projection.** `install-assistant-tools` projects those
-stable commands into the selected installation context's command directory and
-records the links in that context's install manifest. Its small launcher assets
-dispatch through explicitly authorized skill runtime interfaces, so the
-installer does not reach into another skill's private files. The installer owns
-this compatibility layer; the skill owns the logging behavior. Apply the
-context wherever the root instruction is delivered.
+its `record` and `timeline` runtime routes; the public instruction interface
+owns when and how those routes are used. Agents invoke those routes through the
+shared `famulus` MCP server.
 
 `CLAUDE.md`/`AGENTS.md` is delivered by the harness to every subagent on both
 supported hosts, so no cooperation from the spawning parent is needed. Two

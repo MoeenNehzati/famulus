@@ -8,8 +8,6 @@ import re
 import pytest
 import yaml
 
-from officina.install.managed_runtime import optional_runtime_modules
-from officina.install.runtime_lock import RuntimeLockError, selected_runtime_module_ids
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -231,20 +229,6 @@ def test_list_setup_is_local_and_google_remains_explicit() -> None:
     assert "connect-google" not in paragraph
     assert "google connection setup" in paragraph.casefold()
     assert "cloud" in paragraph.casefold()
-
-
-def test_old_installer_refuses_all_residual_owners() -> None:
-    advertised = {
-        module["id"] for module in optional_runtime_modules(MANIFEST, platform="linux")
-    }
-    assert advertised.isdisjoint(RESIDUAL)
-
-    for owner in RESIDUAL:
-        with pytest.raises(RuntimeLockError, match="feature-owned"):
-            selected_runtime_module_ids(MANIFEST, optional_module_ids=(owner,))
-
-    with pytest.raises(RuntimeLockError, match="unknown optional module"):
-        selected_runtime_module_ids(MANIFEST, optional_module_ids=("not-a-module",))
 
 
 @dataclass

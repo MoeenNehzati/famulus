@@ -130,7 +130,7 @@ private naming convention.
 ```text
 _rtx/_Calendar_Gateway.py
 _rtx/_mail_transport.py
-_rtx/_install_launcher/_windows_launcher.py
+_rtx/_platform_adapter/_windows_adapter.py
 ```
 
 Every private directory name and every runtime filename stem must match:

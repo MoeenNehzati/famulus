@@ -66,11 +66,6 @@ def _copy_plugin(plugin_root: Path, *, include_graph: bool = False) -> None:
         destination = packaged / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(registered / relative, destination)
-    for relative in ("blueprint.yaml", "_rtx/blueprint.yaml"):
-        source = ROOT / "skills" / "install-assistant-tools" / relative
-        destination = plugin_root / "skills" / "install-assistant-tools" / relative
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, destination)
     git_workflow = plugin_root / "skills" / "git-workflow" / "blueprint.yaml"
     git_workflow.parent.mkdir(parents=True)
     shutil.copy2(ROOT / "skills" / "git-workflow" / "blueprint.yaml", git_workflow)
@@ -701,8 +696,6 @@ def test_packaged_fixture_has_only_selected_registered_asset_closure(
     }
 
     assert packaged == {
-        "skills/install-assistant-tools/blueprint.yaml",
-        "skills/install-assistant-tools/_rtx/blueprint.yaml",
         "skills/git-workflow/blueprint.yaml",
         "skills/milestone-logging/blueprint.yaml",
         "skills/milestone-logging/_rtx/blueprint.yaml",

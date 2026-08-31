@@ -13,8 +13,6 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers:
-      - install-assistant-tools
-      - install-assistant-tools._rtx
       - node-certify
       - node-certify._rtx
       - node-drift

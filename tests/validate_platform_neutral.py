@@ -63,13 +63,6 @@ def test_platform_reference_in_skill_detected(tmp_path: Path) -> None:
     assert "Claude" in errors[0]
 
 
-def test_excluded_install_path_skipped(tmp_path: Path) -> None:
-    d = tmp_path / "skills" / "install-assistant-tools"
-    d.mkdir(parents=True)
-    (d / "SKILL.md").write_text("Install Claude Code here.\n")
-    assert validate(tmp_path) == []
-
-
 def test_standard_documents_are_excluded(
     tmp_path: Path,
 ) -> None:
@@ -224,10 +217,7 @@ def test_generically_named_file_may_not_mention_operating_system(tmp_path: Path)
 @pytest.mark.parametrize(
     "relative_path",
     (
-        Path("src/officina/install/context.py"),
         Path("skills/dev-activation/_rtx/_development_activation.py"),
-        Path("src/officina/install/runtime_pointer.py"),
-        Path("src/officina/install/resolvers/launch.py"),
         Path("src/officina/launchers/agent.py"),
         Path("src/officina/recurring/runtime.py"),
         Path("src/officina/recurring/healthcheck.py"),
@@ -249,13 +239,13 @@ def test_binding_cross_host_orchestration_files_are_exactly_allowed(
 
 
 def test_nearby_generic_orchestration_file_remains_rejected(tmp_path: Path) -> None:
-    source = tmp_path / "src" / "officina" / "install" / "context_helper.py"
+    source = tmp_path / "src" / "officina" / "common" / "context_helper.py"
     source.parent.mkdir(parents=True)
     source.write_text("# Coordinates Claude, Codex, Windows, macOS, and Linux.\n")
 
     errors = validate(tmp_path)
     assert errors == [
-        "src/officina/install/context_helper.py:1: "
+        "src/officina/common/context_helper.py:1: "
         "# Coordinates Claude, Codex, Windows, macOS, and Linux."
     ]
 

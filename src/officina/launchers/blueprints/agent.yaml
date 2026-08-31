@@ -3,7 +3,7 @@ id: launchers.source.agent
 version: 1
 maturity: stable
 node_type: behavioral_source
-description: Launch a named agent through either validated managed context or an explicitly selected plugin root, and own optional interactive backend configuration.
+description: Launch a named agent from an explicitly selected plugin root and own optional interactive backend configuration.
 gateway:
   language: Python
   path: agent.py
@@ -15,10 +15,6 @@ uses_interfaces:
   version: 2
 - interface: common.interface.famulus-paths
   version: 1
-- interface: install.interface.context
-  version: 1
-- interface: install.interface.runtime-pointer
-  version: 1
 interfaces:
   launchers.source.agent.interface.python-api:
     version: 1
@@ -28,10 +24,6 @@ interfaces:
     - interface: common.interface.atomic-files
       version: 2
     - interface: common.interface.famulus-paths
-      version: 1
-    - interface: install.interface.context
-      version: 1
-    - interface: install.interface.runtime-pointer
       version: 1
     contract:
       arguments:
@@ -46,21 +38,8 @@ interfaces:
               description: Validate and return launchers.json.
             - value: ensure-configuration
               description: Create, preserve, or explicitly change launchers.json.
-            - value: launch-agent
-              description: Resolve the active schema-3 context and launch one agent.
             - value: launch-selected-agent
               description: Launch one interactive agent from the explicit current plugin root captured by install-launchers.
-        runtime-root:
-          description: Absolute active runtime root injected by the fixed resolver for launch-agent.
-          required: false
-          sensitivity: user-private
-          direct_io_ref: runtime-state
-          type:
-            kind: dir
-            syntax: literal
-            relative_to: caller-cwd
-            must_exist: true
-            access: read
         config-root:
           description: Absolute context configuration root owning launchers.json.
           required: false
@@ -117,12 +96,12 @@ interfaces:
         class: error
         outputs: []
         effects: []
-        caller_action: Repair the active pointer, context record, or launcher configuration before retrying.
+        caller_action: Repair the selected plugin root or launcher configuration before retrying.
       execution:
         state_effect: mutating
         lifecycle: finite
         consistency:
-          live: Managed pointer/context or the explicit selected plugin root and optional configuration are validated at invocation time.
+          live: The explicit selected plugin root and optional configuration are validated at invocation time.
         effects:
         - id: launcher-state
           direct_io_ref: launcher-configuration
@@ -157,14 +136,6 @@ interfaces:
       direct_io:
         network: []
         reads:
-        - id: runtime-state
-          medium: local-filesystem
-          access: read
-          content: Active current.json, installation context, and launcher resources.
-          formats:
-          - json
-          sensitivity: user-private
-          path: <runtime-root>
         - id: launcher-configuration
           medium: local-filesystem
           access: read-write
@@ -196,4 +167,4 @@ interfaces:
           - json
           sensitivity: user-private
           path: <famulus-config-root>/launchers.json
-    description: Own optional interactive backend selection and reuse one agent launch policy for managed and explicitly selected plugin routes.
+    description: Own optional interactive backend selection and launch only from the explicitly selected plugin route.

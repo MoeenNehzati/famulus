@@ -161,11 +161,7 @@ from a dependency.
 - `visualization/` — graph extraction, projection, rendering, and browser assets
 - `common/` — small cross-cutting primitives such as atomic file operations,
   repository paths, TOML handling, dates, and Python-source caching
-- `install/` — installing an Officina project onto a machine: managed runtime,
-  launcher entries, resolvers, runtime pointer, uv bootstrap, the assistant
-  access roots granted to a launched agent, and the ownership-aware install
-  manifest that makes uninstall exact
-- `launchers/` — managed runtime policy for agent launch commands and durable
+- `launchers/` — selected-plugin policy for agent launch commands and durable
   backend selection
 - `recurring/` — recurring-task control, execution, healthcheck, and native
   scheduler rendering
@@ -173,9 +169,7 @@ from a dependency.
 - `wakeup/` — host-session lifecycle across supported hosts
 
 `launchers/` and `recurring/` carry a Famulus roster as data — the agent names
-one launches, the jobs the other ships enabled by default — but neither is
-Famulus. What they are *for* is the same machinery `install/` and `wakeup/`
-provide: policy that a host applies to whatever roster it is given.
+one launches and the jobs the other can schedule — but neither is Famulus.
 
 ### Machine-readable contracts — [`references/`](../../references/)
 
@@ -192,8 +186,6 @@ provide: policy that a host applies to whatever roster it is given.
   guidelines
 - [`certification-policy/`](../../references/certification-policy/) — node-hash policy and
   the certification-basis roots
-- [`runtime/`](../../references/runtime/) — the core requirement set and the
-  hash-locked resolution of it that every managed runtime is built from
 
 `references/document-standards/` is **not** part of Officina. It holds the
 research-document profile consumed by Famulus's writing skills. It is written
@@ -219,8 +211,6 @@ These skills exist to operate on the framework itself:
 - [`update-standards`](../../skills/update-standards/) — change a canonical
   standard together with its pinned dependents, generated views, and
   enforcement artifacts
-- [`install-assistant-tools`](../../skills/install-assistant-tools/) — install
-  or repair an Officina project on a machine
 - [`llm-wakeup`](../../skills/llm-wakeup/) — schedule and manage host sessions
   around usage resets; the instruction side of `src/officina/wakeup/`
 - [`using-compass`](../../skills/using-compass/) — the generic LLM-facing

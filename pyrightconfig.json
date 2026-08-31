@@ -2,8 +2,7 @@
   "include": [
     "src",
     "skills",
-    "tests",
-    "script_dispatcher/src"
+    "tests"
   ],
   "exclude": [
     "**/.claude",

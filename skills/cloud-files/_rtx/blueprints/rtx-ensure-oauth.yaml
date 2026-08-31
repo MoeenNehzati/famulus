@@ -225,7 +225,7 @@ interfaces:
           kind: string
       preconditions: []
     description: Check cloud-files OAuth status; print setup guidance or launch browser
-      authorization as needed. Relocated from install-assistant-tools — invoke directly
+      authorization as needed. Invoke directly
       (caller-skill cloud-files) as part of connecting remotes.
     process_binding:
       args_prefix:
@@ -728,7 +728,7 @@ interfaces:
           sensitivity: derived-private
       preconditions: []
     description: Write ~/.config/cloud-files/config.json with the given remote LLM
-      root. Relocated from install-assistant-tools.
+      root. Owned by cloud-files.
     process_binding:
       args_prefix:
       - write-config

@@ -349,12 +349,7 @@ def test_feature_blueprints_own_one_portable_runtime_surface() -> None:
 
 
 def test_old_install_owned_activation_surface_is_absent() -> None:
-    assert not (ROOT / "src" / "officina" / "install" / "development_activation.py").exists()
-    assert not (ROOT / "src" / "officina" / "install" / "blueprints" / "development-activation.yaml").exists()
-    install_init = (ROOT / "src" / "officina" / "install" / "__init__.py").read_text()
-    install_blueprint = yaml.safe_load((ROOT / "src" / "officina" / "install" / "blueprint.yaml").read_text())
-    assert "development_activation" not in install_init
-    assert "development-activation" not in install_blueprint["sources"]
+    assert not (ROOT / "src" / "officina" / "install").exists()
 
 
 # famulus-skip: category=platform-contract; reason=direnv and Bash sourcing are POSIX-only; alternate=test_cmd_wrapper_declares_controlled_ordered_argv covers the Windows outer boundary over the same shared runtime

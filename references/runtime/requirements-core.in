@@ -1,9 +1,0 @@
-# Generated from references/blueprint-schema/runtime_dependencies.json.
-# Do not edit by hand.
-
-jsonschema
-jsonschema>=4
-PyYAML
-PyYAML==6.0.2
-PyYAML>=6
-setuptools==80.9.0

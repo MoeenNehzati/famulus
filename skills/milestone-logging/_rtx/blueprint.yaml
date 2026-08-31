@@ -31,16 +31,12 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers:
-      - install-assistant-tools
-      - install-assistant-tools._rtx
       - milestone-logging
     source_interface: milestone-logging._rtx.source.rtx-milestone-writer.interface.record
   milestone-logging._rtx.interface.timeline:
     access:
       allow_all_modules: false
       allowed_callers:
-      - install-assistant-tools
-      - install-assistant-tools._rtx
       - milestone-logging
     source_interface: milestone-logging._rtx.source.rtx-agent-timeline.interface.timeline
 gateway:

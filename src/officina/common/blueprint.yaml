@@ -17,9 +17,6 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers:
-      - install
-      - install-assistant-tools
-      - install-assistant-tools._rtx
       - recurring-tasks
       - recurring-tasks._rtx
       - recurring
@@ -35,10 +32,7 @@ exports:
   common.interface.codex-toml:
     access:
       allow_all_modules: false
-      allowed_callers:
-      - install
-      - install-assistant-tools
-      - install-assistant-tools._rtx
+      allowed_callers: []
     source_interface: common.source.codex-toml.interface.python-api
   common.interface.dates:
     access:
@@ -53,10 +47,7 @@ exports:
       allowed_callers:
       - email-triage
       - email-triage._rtx
-      - install-assistant-tools
-      - install-assistant-tools._rtx
       - install-launchers._rtx
-      - install
       - list-manager
       - list-manager._rtx
       - recurring-tasks
@@ -76,8 +67,6 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers:
-      - install-assistant-tools
-      - install-assistant-tools._rtx
       - install-launchers._rtx
       - configuration
     source_interface: common.source.toml-io.interface.python-api

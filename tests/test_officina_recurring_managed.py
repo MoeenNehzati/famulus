@@ -1,14 +1,9 @@
 from __future__ import annotations
 
-import subprocess
-import importlib.util
-import sys
-import os
 import json
-import platform
-import shlex
-import shutil
-import uuid
+import os
+import subprocess
+import sys
 from pathlib import Path
 from unittest import mock
 
@@ -22,28 +17,11 @@ from officina.recurring.runtime import (
     RecurringPrerequisiteError,
     RecurringRuntimeError,
 )
-from officina.install.context import (
-    load_or_create_development_installation_id,
-    resolve_installation_context,
-)
-from officina.install.managed_runtime import _deploy_resolver, _publish_installation_context
-from officina.install.runtime_pointer import activate_release
-from officina.launchers.agent import ensure_launcher_configuration
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _MANAGED_CONTROL_ROOT = _REPO_ROOT / "skills" / "recurring-tasks" / "_rtx"
 sys.path.insert(0, str(_MANAGED_CONTROL_ROOT))
 import _managed_control as managed_control
-
-
-def _development_activation_module():
-    path = _REPO_ROOT / "skills" / "dev-activation" / "_rtx" / "_development_activation.py"
-    spec = importlib.util.spec_from_file_location("task6_recurring_development_activation", path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
 
 
 @pytest.fixture(autouse=True)
@@ -74,167 +52,6 @@ def _managed_schedule(tmp_path: Path) -> ManagedSchedule:
     schedule.descriptor_path.write_text(json.dumps(runtime._payload(schedule)), encoding="utf-8")
     schedule.descriptor_path.chmod(0o600)
     return schedule
-
-
-def _native_capability() -> None:
-    if platform.system() == "Linux":
-        result = subprocess.run(
-            ["systemctl", "--user", "is-system-running"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace",
-        )
-        if result.returncode != 0:
-            # famulus-skip: category=native-backend-unavailable; reason=systemd user manager is unavailable; alternate=managed renderer migration and teardown tests run in the normal suite
-            pytest.skip(result.stderr.strip() or result.stdout.strip() or "systemd user manager unavailable")
-        return
-    if platform.system() == "Darwin":
-        result = subprocess.run(
-            ["launchctl", "print", f"gui/{os.getuid()}"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace",
-        )
-        if result.returncode != 0:
-            # famulus-skip: category=native-backend-unavailable; reason=launchd user manager is unavailable; alternate=managed renderer migration and teardown tests run in the normal suite
-            pytest.skip(result.stderr.strip() or result.stdout.strip() or "launchd user manager unavailable")
-        return
-    if platform.system() == "Windows":
-        if os.environ.get("GITHUB_ACTIONS", "").lower() == "true":
-            # famulus-skip: category=native-backend-unavailable; reason=hosted Windows runners have no interactive user session for the production current-user task identity; alternate=Windows managed renderer migration identity and teardown tests run in the normal suite
-            pytest.skip("hosted Windows has no interactive scheduler identity")
-        result = subprocess.run(
-            ["schtasks", "/Query", "/FO", "LIST"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace",
-        )
-        if result.returncode != 0:
-            # famulus-skip: category=native-backend-unavailable; reason=Task Scheduler is unavailable; alternate=managed renderer migration and teardown tests run in the normal suite
-            pytest.skip(result.stderr.strip() or result.stdout.strip() or "Task Scheduler unavailable")
-        return
-    # famulus-skip: category=unsupported-platform; reason=no managed scheduler backend exists for this OS; alternate=Linux macOS and Windows managed backend tests cover supported systems
-    pytest.skip(f"no managed scheduler backend for {platform.system()}")
-
-
-def _active_live_development_runtime(tmp_path: Path):
-    checkout = tmp_path / "managed scheduler checkout 雪"
-    (checkout / "skills").mkdir(parents=True)
-    (checkout / "src" / "officina").mkdir(parents=True)
-    (checkout / "officina.toml").write_text(
-        'schema_version = 1\n[modules]\nroots = ["skills", "src/officina"]\n',
-        encoding="utf-8",
-    )
-    stable_home = tmp_path / "stable home"
-    installation_id = load_or_create_development_installation_id(
-        checkout, platform=sys.platform, home=stable_home, environ={}
-    )
-    context = resolve_installation_context(
-        mode="development", source_root=checkout, development_root=checkout,
-        platform=sys.platform, home=stable_home, environ={},
-        installation_id=installation_id,
-    )
-    environment = _development_activation_module().build_activation_environment(
-        checkout, environ=os.environ, platform=sys.platform
-    )
-    backend_root = tmp_path / "exact backend executables"
-    backend_root.mkdir()
-    suffix = ".exe" if sys.platform == "win32" else ""
-    for backend in ("claude", "codex"):
-        executable = backend_root / f"{backend}{suffix}"
-        shutil.copy2(sys.executable, executable)
-        executable.chmod(0o755)
-    environment["PATH"] = os.pathsep.join((str(backend_root), environment.get("PATH", "")))
-    environment["PYTHONPATH"] = str(_REPO_ROOT / "src")
-    release = context.paths.releases_root / "managed-live-smoke"
-    python_dir = release / "venv" / ("Scripts" if sys.platform == "win32" else "bin")
-    python_dir.mkdir(parents=True)
-    python_bin = python_dir / ("python.exe" if sys.platform == "win32" else "python")
-    shutil.copy2(sys.executable, python_bin)
-    python_bin.chmod(0o755)
-    record = _publish_installation_context(release_dir=release, context=context)
-    _deploy_resolver(runtime_root=context.paths.runtime_root, trusted_interpreter_roots=())
-    activate_release(
-        runtime_root=context.paths.runtime_root, release_dir=release,
-        python_bin=python_bin, repository_config=checkout / "officina.toml",
-        launcher_resources=checkout, installation_context=record,
-    )
-    ensure_launcher_configuration(config_root=context.paths.config_root, default_backend="codex")
-    return context, environment
-
-
-# famulus-skip: category=live-smoke-opt-in; reason=managed live scheduler smoke mutates uniquely namespaced host scheduler state; alternate=managed renderer migration identity and teardown tests run in the normal suite
-@pytest.mark.skipif(
-    os.environ.get("FAMULUS_RUN_SCHEDULER_SMOKE") != "1",
-    reason="managed live scheduler smoke is opt-in; set FAMULUS_RUN_SCHEDULER_SMOKE=1",
-)
-def _retired_managed_public_control_live_sync_trigger_record_and_selected_removal(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    if os.environ.get("GITHUB_ACTIONS", "").lower() == "true":
-        # famulus-skip: category=native-backend-unavailable; reason=hosted runners do not expose a representative persistent installed context to scheduled processes; alternate=managed control renderer migration and teardown tests run on every matrix OS
-        pytest.skip("hosted runner has no representative persistent scheduler context")
-    _native_capability()
-    context, environment = _active_live_development_runtime(tmp_path)
-    marker_script = tmp_path / "write managed marker.py"
-    marker = tmp_path / "managed marker 雪.json"
-    marker_script.write_text(
-        "import json,sys\nfrom pathlib import Path\n"
-        "Path(sys.argv[1]).write_text(json.dumps({'managed': True}) + '\\n', encoding='utf-8')\n",
-        encoding="utf-8",
-    )
-    command = (
-        subprocess.list2cmdline(["codex", str(marker_script), str(marker)])
-        if sys.platform == "win32"
-        else shlex.join(["codex", str(marker_script), str(marker)])
-    )
-    job_name = f"managed-live-{uuid.uuid4().hex}"
-    jobs_file = context.paths.recurring_config_root / "jobs.yaml"
-    jobs_file.parent.mkdir(parents=True, exist_ok=True)
-    jobs_file.write_text(
-        yaml.safe_dump({"jobs": [{"name": job_name, "description": "managed live smoke", "command": command, "schedule": "0 0 * * *", "enabled": True}]}, sort_keys=False),
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(managed_control, "discover_runtime_root", lambda: context.paths.runtime_root)
-    for name, value in environment.items():
-        monkeypatch.setenv(name, value)
-    selected = None
-    canary = None
-    canary_bytes = b"foreign native registration must survive\x00\xff"
-    try:
-        assert managed_control.run("setup") == 0
-        selected = runtime.load_public_schedule(
-            runtime_root=context.paths.runtime_root, environ=os.environ
-        )
-        canary = selected.native_registration_root / f"famulus-foreign-{uuid.uuid4().hex}.canary"
-        canary.write_bytes(canary_bytes)
-        assert managed_control.run("sync") == 0
-        assert managed_control.run("test", [job_name]) == 0
-        record = json.loads(
-            (selected.log_root / job_name / "latest.json").read_text(encoding="utf-8")
-        )
-        assert record["success"] is True and record["process_exit_code"] == 0
-        assert json.loads(marker.read_text(encoding="utf-8")) == {"managed": True}
-        assert managed_control.run("remove-context") == 0
-        if sys.platform.startswith("linux"):
-            service, timer = native.linux_names(job_name, selected.installation_id)
-            assert not (selected.native_registration_root / service).exists()
-            assert not (selected.native_registration_root / timer).exists()
-        elif sys.platform == "darwin":
-            assert not (selected.native_registration_root / f"ai-{native.registration_token(selected.installation_id)}{job_name}.plist").exists()
-        else:
-            assert not (selected.native_registration_root / native.windows_wrapper_name(job_name, selected.installation_id)).exists()
-        assert canary.read_bytes() == canary_bytes
-    finally:
-        if selected is None and (
-            context.paths.recurring_config_root / "schedule-descriptor.json"
-        ).is_file():
-            try:
-                selected = runtime.load_public_schedule(
-                    runtime_root=context.paths.runtime_root, environ=os.environ
-                )
-            except Exception:
-                selected = None
-        try:
-            if selected is not None:
-                native.remove_context(selected)
-        finally:
-            if canary is not None:
-                canary.unlink(missing_ok=True)
 
 
 @pytest.mark.parametrize("field,value", [("owner_id", "/tmp/other"), ("unexpected", "value")])

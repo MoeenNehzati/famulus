@@ -53,18 +53,6 @@ _SCHEDULER_ENV = {
 }
 
 
-def _installed_resolver() -> Path | None:
-    """Return the installed managed-runtime resolver, or None when absent."""
-    home = os.environ.get("HOME")
-    if not home:
-        return None
-    resolver = (
-        Path(home)
-        / ".local/share/famulus/runtime/bootstrap/resolvers/v1/launch.py"
-    )
-    return resolver if resolver.is_file() else None
-
-
 def _write_jobs_file(tmp_path: Path) -> Path:
     """Write a jobs file whose one job is a harmless command."""
     jobs_file = tmp_path / "jobs.yaml"
@@ -135,13 +123,6 @@ def test_executor_writes_a_record_under_a_scheduler_environment(tmp_path):
     assert result.returncode == 0, result.stderr
     assert "--descriptor" in result.stdout
     assert "--log-root" in result.stdout
-
-
-def test_executor_writes_a_record_through_the_installed_resolver(tmp_path):
-    """The scheduled implementation lives in the immutable managed package."""
-    from officina.recurring import executor
-
-    assert "skills/recurring-tasks" not in str(Path(executor.__file__).as_posix())
 
 
 def test_healthcheck_probe_starts_under_a_cron_environment():

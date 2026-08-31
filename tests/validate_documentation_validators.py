@@ -95,14 +95,9 @@ def _seed_docs(repo_root: Path) -> None:
                 "",
                 "### Step 1: install the plugin",
                 "",
-                "### Step 2: Install the assistant tools",
-                "",
-                "",
                 "https://moeennehzati.github.io/famulus/",
                 "",
                 "https://github.com/MoeenNehzati/famulus/issues",
-                "",
-                "[docs/officina/installation.md](docs/officina/installation.md)",
                 "",
                 "## Featured Workflows",
                 "",
@@ -282,18 +277,17 @@ def test_readme_validator_flags_missing_skill_index_link(tmp_path: Path) -> None
     assert any("docs/skills.md" in error for error in errors)
 
 
-def test_readme_validator_rejects_code_level_install_entities(tmp_path: Path) -> None:
+def test_readme_validator_rejects_private_runtime_entities(tmp_path: Path) -> None:
     repo_root = _make_repo(tmp_path)
     readme = repo_root / "README.md"
     readme.write_text(
         readme.read_text(encoding="utf-8")
-        + "\npython3 <FAMULUS_DIR>/skills/install-assistant-tools/_rtx/_phase_entry.py\n",
+        + "\npython3 <FAMULUS_DIR>/skills/example/_rtx/_private_entry.py\n",
         encoding="utf-8",
     )
 
     errors = validate_readme(repo_root)
 
-    assert any("_phase_entry.py" in error for error in errors)
     assert any("_rtx" in error for error in errors)
 
 

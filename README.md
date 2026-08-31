@@ -86,30 +86,13 @@ codex plugin add famulus@nullkit --json
 
 Restart the host afterwards so it loads the newly installed plugin.
 
-### 2. Install the assistant tools
+### 2. Configure selected features
 
-Installing the plugin makes the skills visible, but it does not create the local
-commands they depend on: `dispatcher`, `llm-wakeup`/`lw`, `invoke-skill`, the
-required `background_run` launcher, profile files, and `PATH` wiring.
-
-Ask your assistant:
-
-```text
-Install the assistant tools.
-```
-
-The `install-assistant-tools` skill walks you through the setup, confirms what
-it resolved before changing anything, then checks its own work and explains the
-optional Google and recurring-job steps without running them. Choose `standard`
-unless you are developing Famulus itself from a checkout. Open a new shell
-afterwards when the installer reports a search-path change.
-
-Your installation does not depend on where you cloned or unpacked anything, so
-you can move or delete the original directory afterwards.
-
-Later updates and repairs use this same workflow. Setup options, diagnosis,
-removal, and verification are covered in the
-[Installation Guide](docs/officina/installation.md).
+The host plugin exposes the shared `famulus` MCP server directly. Optional
+commands and persistent integrations are configured by their feature owners:
+`install-launchers` for interactive agents, `recurring-tasks` for recurring
+work, and `llm-wakeup` for due-session delivery. Select only the features you
+intend to use.
 
 ### 3. Choose a workflow
 
@@ -288,8 +271,8 @@ claude plugin update famulus@nullkit
 codex plugin marketplace upgrade nullkit --json
 ```
 
-Then restart the host and ask your assistant to install the assistant tools
-again, so the managed runtime and local commands match the refreshed package.
+Then restart the host. Selected feature-owned commands continue to target the
+current plugin implementation.
 
 ## Uninstall
 

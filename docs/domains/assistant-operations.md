@@ -9,7 +9,6 @@ and repair, see the [installation guide](../officina/installation.md).
 
 - `cloud-files` — Bounded read/write of plain files under a configured Google Drive root
 - `connect-google` — The user needs to set up or restore Google authentication for Famulus
-- `install-assistant-tools` — Install or update launchers, wiring, hooks, and environment on a machine
 - `install-launchers` — Install or repair an explicit subset of the optional assistant, collab, coauthor, and tw launchers
 - `milestone-logging` — Starting or completing substantive agent work that needs durable, role-labelled progress records and optional run recovery
 - `recurring-tasks` — Manage recurring AI jobs through the host's native per-user scheduler

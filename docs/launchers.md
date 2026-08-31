@@ -33,10 +33,9 @@ live below the platform Famulus state root; development workers live below the
 checkout's `.famulus/` tree. Use `-l` or `--local` to stay in the current
 directory instead.
 
-An installed command or development adapter locates its context through its
-self-locating resolver and that context's `runtime/current.json`. Launcher
-operation does not depend on the caller's current directory or the original
-clone location.
+Each command captures the selected plugin root and canonical Python executable
+when `install-launchers` configures it. Launcher operation does not discover a
+old installation state or choose another plugin from the caller's current directory.
 
 Examples:
 
@@ -51,8 +50,8 @@ Profiles and model settings for these launchers are summarized in [PROFILES.md](
 
 `background_run` has its own instructions, profile, model settings, and worker
 directory so scheduled work does not silently inherit an interactive
-assistant's configuration. Core installation creates those local resources but
-does not create or enable a schedule.
+assistant's configuration. Launcher setup creates those resources but does not
+create or enable a schedule.
 
 When an explicitly enabled recurring job calls `invoke-skill`, the launcher
 uses Claude's `bypassPermissions` mode or Codex's

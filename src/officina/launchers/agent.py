@@ -1,7 +1,6 @@
-"""Manage durable backend selection and launch managed agents."""
+"""Manage durable backend selection and launch selected-plugin agents."""
 from __future__ import annotations
 
-import argparse
 import hashlib
 import json
 import os
@@ -19,18 +18,6 @@ if __package__ in {None, ""}:
 from officina.common.atomic_files import atomic_replace_bytes
 from officina.common.famulus_paths import resolve_famulus_paths
 import officina.common.toml_io as toml_io
-from officina.install.context import (
-    InstallationContext,
-    build_development_environment,
-    load_context_from_pointer,
-)
-from officina.install.runtime_pointer import (
-    RuntimePointer,
-    RuntimePointerError,
-    load_deployed_resolver_trusted_roots,
-    load_current_pointer,
-    load_installed_context_record,
-)
 
 Backend = Literal["claude", "codex"]
 _BACKENDS = frozenset({"claude", "codex"})
@@ -155,53 +142,6 @@ def select_backend(
     return configuration.default_backend
 
 
-def _apply_context_environment(runtime_root: Path) -> None:
-    """Adopt the selected installation's own environment before validation.
-
-    The user-bin shim intentionally knows only the resolver path and the target
-    module, so a development launch arrives carrying the caller's ambient
-    environment. The pointer already records ``development_root``, so the exact
-    child environment is derivable here rather than demanded from the caller.
-    Without this, every development launch fails validation, and a launch that
-    skipped validation would still hand the backend the caller's real home.
-    """
-    pointer = load_current_pointer(
-        runtime_root=runtime_root,
-        trusted_interpreter_roots=load_deployed_resolver_trusted_roots(
-            runtime_root=runtime_root
-        ),
-    )
-    if pointer.installation_context is None:
-        return
-    record = load_installed_context_record(pointer.installation_context)
-    if record.mode != "development":
-        return
-    if record.development_root is None:
-        raise RuntimePointerError("development pointer is missing development_root")
-    os.environ.update(
-        build_development_environment(
-            record.development_root, environ=os.environ, platform=sys.platform
-        )
-    )
-
-
-def _active_context(
-    *, runtime_root: Path, home: Path, environ: Mapping[str, str]
-) -> tuple[RuntimePointer, InstallationContext]:
-    pointer = load_current_pointer(
-        runtime_root=runtime_root,
-        trusted_interpreter_roots=load_deployed_resolver_trusted_roots(
-            runtime_root=runtime_root
-        ),
-    )
-    if pointer.installation_context is None or pointer.launcher_resources is None:
-        raise RuntimePointerError("managed agent launch requires a schema-3 pointer")
-    context = load_context_from_pointer(
-        pointer=pointer, runtime_root=runtime_root, environ=environ
-    )
-    return pointer, context
-
-
 def _parse_agent_markdown(resources: Path, agent: str) -> tuple[str, str]:
     text = (resources / "agents" / f"{agent}.md").read_text(encoding="utf-8")
     parts = text.split("---", 2)
@@ -283,8 +223,8 @@ def _launch_command(command: list[str]) -> int:
     return 1
 
 
-def _managed_launch_environment(environ: Mapping[str, str]) -> dict[str, str]:
-    """Drop mutable state selectors before launching a managed assistant."""
+def _launch_environment(environ: Mapping[str, str]) -> dict[str, str]:
+    """Drop mutable state selectors before launching an assistant."""
     return {name: value for name, value in environ.items() if name not in _MANAGED_STATE_OVERRIDES}
 
 
@@ -311,7 +251,7 @@ def _selected_plugin_main(plugin_root: Path, agent: str, remaining: list[str]) -
     expected = plugin_root / "src" / "officina" / "launchers" / "agent.py"
     if not plugin_root.is_absolute() or Path(__file__).resolve() != expected.resolve():
         raise LauncherConfigurationError("selected plugin root does not own this launcher entry")
-    environ = _managed_launch_environment(os.environ)
+    environ = _launch_environment(os.environ)
     paths = resolve_famulus_paths(platform=sys.platform, home=Path.home(), environ=environ)
     selected_agent, local, explicit_backend, args = _agent_args([agent, *remaining])
     configured = load_launcher_configuration(config_root=paths.config_root)
@@ -334,70 +274,9 @@ def _selected_plugin_main(plugin_root: Path, agent: str, remaining: list[str]) -
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    if argv and not argv[0].startswith("-"):
-        if len(argv) < 2:
-            raise LauncherConfigurationError("selected plugin root and agent are required")
-        return _selected_plugin_main(Path(argv[0]), argv[1], argv[2:])
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--runtime-root", type=Path, required=True)
-    action = parser.add_mutually_exclusive_group(required=True)
-    action.add_argument("--agent", choices=sorted(_AGENTS))
-    action.add_argument("--invoke-skill")
-    known, remaining = parser.parse_known_args(argv)
-    _apply_context_environment(known.runtime_root)
-    environ = _managed_launch_environment(os.environ)
-    for name in _MANAGED_STATE_OVERRIDES:
-        os.environ.pop(name, None)
-    pointer, context = _active_context(
-        runtime_root=known.runtime_root, home=Path.home(), environ=environ
-    )
-    assert pointer.launcher_resources is not None
-    # The hook embedded in launcher settings consumes this process-local,
-    # pointer-validated address.  It is deliberately overwritten rather than
-    # inherited, so neither legacy root selectors nor cwd can choose hook code.
-    os.environ["FAMULUS_LAUNCHER_RESOURCES"] = str(pointer.launcher_resources)
-    try:
-        configured = load_launcher_configuration(config_root=context.paths.config_root)
-    except LauncherConfigurationError:
-        if known.invoke_skill is None and known.agent != "background_run":
-            raise
-        configured = LauncherConfiguration(default_backend="claude", identity="absent")
-    if known.invoke_skill is not None:
-        agent = "background_run"
-        backend = select_backend(agent=agent, configuration=configured, environ=environ)
-        if backend == "claude":
-            remaining = [
-                "--permission-mode",
-                "bypassPermissions",
-                "-p",
-                f"/{known.invoke_skill}",
-            ]
-        else:
-            remaining = [
-                "exec",
-                "--skip-git-repo-check",
-                "--dangerously-bypass-approvals-and-sandbox",
-                f"${known.invoke_skill}",
-            ]
-        local = True
-    else:
-        assert known.agent is not None
-        agent, local, explicit_backend, remaining = _agent_args([known.agent, *remaining])
-        backend = explicit_backend or select_backend(
-            agent=agent, configuration=configured, environ=environ
-        )
-    if not local:
-        worker = context.paths.worker_root / agent
-        worker.mkdir(parents=True, exist_ok=True)
-        os.chdir(worker)
-    command = build_agent_command(
-        agent=agent,
-        backend=backend,
-        resources=pointer.launcher_resources,
-        claude_home=context.claude_home,
-        args=remaining,
-    )
-    return _launch_command(command)
+    if len(argv) < 2 or argv[0].startswith("-"):
+        raise LauncherConfigurationError("selected plugin root and agent are required")
+    return _selected_plugin_main(Path(argv[0]), argv[1], argv[2:])
 
 
 if __name__ == "__main__":

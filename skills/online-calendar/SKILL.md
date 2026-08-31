@@ -33,7 +33,7 @@ Public Interfaces:
 Executable Interfaces:
 
 Call `famulus.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
-- `online-calendar._rtx.interface.ensure-oauth` — Check online-calendar OAuth status; print setup guidance or launch browser authorization as needed. Relocated from install-assistant-tools — invoke directly (caller-skill online-calendar) as part of connecting remotes.
+- `online-calendar._rtx.interface.ensure-oauth` — Check online-calendar OAuth status; print setup guidance or launch browser authorization as needed. Invoke directly (caller-skill online-calendar) as part of connecting remotes.
   - Caller: `online-calendar`
   - Version: 1
   - Alternative: `default`

@@ -3,8 +3,7 @@ content:
 dependencies: []
 description: Resolves platform-correct durable Famulus application paths from an
   explicit environment mapping, avoiding ambient process state and the user's
-  Documents folder on every platform. Temporary installer/runtime compatibility
-  fields remain only for surviving installer callers until Task 11 removes them.
+  Documents folder on every platform.
 gateway:
   language: Python
   path: famulus_paths/__init__.py
@@ -69,8 +68,7 @@ interfaces:
       - id: result
         audience: machine
         description: FamulusPaths dataclass instance with durable data, config, state,
-          user-bin, worker, launcher-profile, and feature-state paths. Temporary
-          installer/runtime compatibility fields remain pending Task 11.
+          user-bin, worker, and feature-state paths.
         direct_io_ref: return-value
         cardinality:
           minimum: 1
@@ -91,8 +89,7 @@ interfaces:
         outputs:
         - result
         effects: []
-        caller_action: Use durable returned fields for application paths. Only the
-          temporary old installer may use its retained installer/runtime fields.
+        caller_action: Use durable returned fields for application and feature paths.
       - id: invalid-home
         class: refusal
         outputs: []

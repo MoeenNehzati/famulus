@@ -23,7 +23,7 @@ if str(_SRC_ROOT) not in sys.path:
 
 from officina.common.python_source_cache import PythonSourceCache
 
-_CHECK_ROOTS = ["skills", "src", "script_dispatcher"]
+_CHECK_ROOTS = ["skills", "src"]
 _SKIP_PARTS = {"tests", "validators", "__pycache__", ".git", ".claude-plugin", ".codex-plugin", "logs"}
 _NON_PORTABLE_STRFTIME = re.compile(r"(?<!%)%[-_#0][A-Za-z]")
 

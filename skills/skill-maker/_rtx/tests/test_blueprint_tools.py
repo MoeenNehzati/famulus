@@ -248,11 +248,6 @@ def test_generated_executable_rejects_ambiguous_option_alias(syncer) -> None:
 def test_generated_contract_keeps_setup_requirements_separate(syncer) -> None:
     blueprints = syncer.load_blueprints()
 
-    installer = syncer.generated_contract_block(
-        "install-assistant-tools",
-        blueprints["install-assistant-tools"].data,
-        blueprints["install-assistant-tools"].repository_graph,
-    )
     google = syncer.generated_contract_block(
         "connect-google",
         blueprints["connect-google"].data,
@@ -264,7 +259,6 @@ def test_generated_contract_keeps_setup_requirements_separate(syncer) -> None:
         blueprints["list-manager"].repository_graph,
     )
 
-    assert "Setup Requires Setup Of: none" in installer
     assert "Setup Requires Setup Of: none" in google
     assert "Setup Requires Setup Of: none" in lists
     assert "connect-google.interface.setup" not in lists

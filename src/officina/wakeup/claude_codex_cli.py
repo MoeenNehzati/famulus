@@ -81,7 +81,6 @@ def _parser() -> argparse.ArgumentParser:
         if name == "setup":
             integration.add_argument("--canonical-python", type=Path, required=True)
             integration.add_argument("--plugin-root", type=Path, required=True)
-            integration.add_argument("--jobs-file", type=Path)
         integration.set_defaults(handler=handler)
     return parser
 
@@ -94,7 +93,6 @@ def _setup(args: argparse.Namespace) -> None:
         plugin_root=args.plugin_root,
         bin_dir=args.bin_dir,
         native_root=args.native_root,
-        jobs_file=args.jobs_file,
     )
 
 

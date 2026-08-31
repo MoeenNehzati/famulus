@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import importlib.util
 import sys
 from pathlib import Path
 
@@ -20,35 +19,6 @@ When a skill lists `Executable Interfaces`, invoke them through the `famulus` MC
 """
 
 
-CONTEXT_DISPATCHER_MISSING = """\
-## Skill System — Dispatcher Unavailable
-
-The dispatcher is not installed. For blueprint-managed skills (those whose \
-SKILL.md contains a `<!-- BEGIN BLUEPRINT CONTRACT -->` block), the normal \
-permission enforcement is inactive — calls that would ordinarily be rejected \
-will not be caught.
-
-As a fallback you may invoke scripts under a skill's `scripts/` directory \
-directly, but proceed carefully: the usual guardrails are not in place.\
-"""
-
-
-def dispatcher_available() -> tuple[bool, list[str]]:
-    """Return (ok, missing_components) where missing_components lists what's broken."""
-    import shutil
-
-    missing = []
-    if shutil.which("dispatcher") is None:
-        missing.append("dispatcher CLI not on PATH")
-    # The package is provided beside this exact pointer-selected hook resource;
-    # it is deliberately not pip-installed, so ambient importability is not
-    # required. No repository root or cwd discovery is permitted here.
-    package_src = _REPO_ROOT / "script_dispatcher" / "src" / "script_dispatcher"
-    if not package_src.is_dir() and importlib.util.find_spec("script_dispatcher") is None:
-        missing.append("script_dispatcher source not found in repo")
-    return len(missing) == 0, missing
-
-
 class InjectDispatcherContextHook(CrossHostHook):
     hook_name = "inject-dispatcher-context"
 
@@ -56,21 +26,7 @@ class InjectDispatcherContextHook(CrossHostHook):
     matcher = "startup|clear|compact"
 
     def build(self, hook_input: HookInput) -> HookResult:
-        ok, missing = dispatcher_available()
-        if ok:
-            return HookResult(additional_context=DISPATCHER_CORE)
-
-        details = "; ".join(missing)
-        system_message = (
-            f"⚠️ Skill dispatcher not fully installed ({details}) — "
-            "dynamic permission checks are inactive. "
-            "To restore enforcement: re-run the install-assistant-tools skill "
-            "(it generates the dispatcher launcher)"
-        )
-        return HookResult(
-            additional_context=CONTEXT_DISPATCHER_MISSING,
-            system_message=system_message,
-        )
+        return HookResult(additional_context=DISPATCHER_CORE)
 
 
 def main(argv: list[str] | None = None) -> int:

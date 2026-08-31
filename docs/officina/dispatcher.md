@@ -8,16 +8,15 @@ synchronize repository state.
 
 ## Invocation
 
-On first installation, the host registry locates the Famulus package and its
-package-relative installer. After apply, both standard commands and
-development adapters use a self-locating fixed resolver, then the selected
-context's `runtime/current.json`, then the active managed runtime. Neither
-chain discovers a checkout from the current directory.
+The shared `famulus` MCP server resolves the current plugin package and invokes
+Dispatcher internally. Developers may also run the module form directly from
+an explicitly configured checkout. Neither route discovers a checkout from the
+current directory.
 
-Host callers use the installed command:
+The module-form developer/debug surface is:
 
 ```bash
-dispatcher --caller-skill <top-level-skill> \
+python -m officina.dispatcher.cli --caller-skill <top-level-skill> \
   <module>.interface.<name> [arguments...]
 ```
 
@@ -33,10 +32,8 @@ as its identity.
 
 ## Repository configuration
 
-The installed launcher supplies one exact absolute `officina.toml` path from
-the active managed-runtime pointer. Development adapters select their own
-checkout-local context, while standard launchers select platform Famulus
-roots. Users cannot override that value. The
+The MCP runtime and development activation supply one exact absolute
+`officina.toml` path from the selected plugin or checkout. The
 configuration file's directory is the repository root and its ordered
 `modules.roots` entries are the only blueprint lookup roots:
 
@@ -96,7 +93,7 @@ facts. They do not independently grant runtime authority.
 
 Dispatcher accepts only a process-bindable exported interface. It compiles
 arguments and stdin against the selected source declaration before launch.
-Python gateways run through the managed interpreter and a confined importer
+Python gateways run through the selected interpreter and a confined importer
 rooted at the selected module. Ambient import paths that expose configured
 repository modules are removed.
 
@@ -119,15 +116,9 @@ expired, malformed, or unavailable status produces a warning but cannot grant
 or deny permission. Certification and drift tools remain authoritative for
 reviewing and signing repository state outside the live route.
 
-## Launcher and performance
+## Process and performance
 
-The public command is a small platform launcher. On Unix it enters a stable,
-dependency-free resolver; on Windows a batch launcher invokes the same
-resolver contract. The resolver validates `current.json`, rejects attempts to
-override `repository_config`, and replaces itself with the active managed
-Python interpreter running `officina.dispatcher.cli`.
-
-Fresh-process measurements include interpreter and launcher startup. They are
+Fresh-process measurements include interpreter and module startup. They are
 not measurements of authorization alone. The repository performance gates
 require warm in-process resolution below 50 ms median, and fresh CLI resolution
 below a median that `_fresh_cli_budget_ms` sets per OS family: 125 ms on Linux,

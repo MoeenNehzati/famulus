@@ -13,7 +13,7 @@ FROZEN_GUIDELINES_VIEW = FIXTURES / "skill-guidelines.v1.md"
 PROFILE = ROOT / "references/document-standards/document-profile.standard.yaml"
 PROFILE_VIEW = ROOT / "references/document-standards/document-profile.md"
 SOURCE_DIGESTS = {
-    "skill-guidelines.md": "2ed65f9c5b93832221181a330a16ca72871c364925416c7d4712d42b18b52307",
+    "skill-guidelines.md": "9b4d081de0dbbaf116b3a5e46db9a21b3f09d254a2801bbf305d458990c99d05",
     "document-profile-schema.md": "178bbd7c1fc076208fe576f871ab7bba936941fce83fdb7a46f784b1cb28d967",
 }
 

@@ -31,15 +31,8 @@ class FamulusPaths:
     state_root: Path
     user_bin: Path
 
-    # Runtime and install layout, derived from data_root/state_root.
-    runtime_root: Path
-    releases_root: Path
-    current_pointer: Path
-    install_state_root: Path
-    uv_bin: Path
-    python_install_dir: Path
+    # Shared feature layout, derived from data_root/state_root.
     worker_root: Path
-    launcher_profile_root: Path
 
     # Feature-specific config/state subdirectories.
     recurring_config_root: Path
@@ -100,20 +93,12 @@ def resolve_famulus_paths(
         state_root = xdg_state / "famulus" if xdg_state else home / ".local" / "state" / "famulus"
         user_bin = home / ".local" / "bin"
 
-    runtime_root = data_root / "runtime"
     return FamulusPaths(
         data_root=data_root,
         config_root=config_root,
         state_root=state_root,
         user_bin=user_bin,
-        runtime_root=runtime_root,
-        releases_root=runtime_root / "releases",
-        current_pointer=runtime_root / "current.json",
-        install_state_root=state_root / "install",
-        uv_bin=data_root / "tools" / "uv",
-        python_install_dir=data_root / "python",
         worker_root=state_root / "workers",
-        launcher_profile_root=data_root / "launcher-profiles",
         recurring_config_root=config_root / "recurring-tasks",
         recurring_state_root=state_root / "recurring-tasks",
         email_triage_state_root=state_root / "email-triage",

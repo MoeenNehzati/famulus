@@ -58,9 +58,6 @@ def test_repository_setup_order_is_explicit_and_dependency_first() -> None:
         expected_schema_version=6,
     )
 
-    assert setup_order(graph, "install-assistant-tools.interface.setup") == (
-        "install-assistant-tools.interface.setup",
-    )
     assert setup_order(graph, "connect-google.interface.setup") == (
         "connect-google.interface.setup",
     )
@@ -200,7 +197,6 @@ def test_setup_exports_alias_existing_default_behavior() -> None:
     )
 
     for module_id in (
-        "install-assistant-tools",
         "connect-google",
         "cloud-files",
         "online-calendar",

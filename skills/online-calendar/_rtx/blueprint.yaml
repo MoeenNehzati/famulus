@@ -26,7 +26,7 @@ authority:
       - officina.runtime.python_machine_interface_runner
       - _ensure_oauth.py
       - Interface
-      reason: Check OAuth status and guide setup (relocated from install-assistant-tools).
+      reason: Check OAuth status and guide feature-owned setup.
     network: []
 children: {}
 content:
