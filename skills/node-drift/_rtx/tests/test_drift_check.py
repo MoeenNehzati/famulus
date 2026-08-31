@@ -15,10 +15,6 @@ if str(SRC_ROOT) not in sys.path:
 from officina.blueprints.graph import BlueprintNode, RepositoryBlueprintGraph
 from officina.certification.hashing import NodeHashState
 from officina.certification.records import certificate_public_key_root
-from test_support.v4_certification_fixtures import (
-    create_certified_fixture,
-    materialize_v4_repository,
-)
 from .. import _check_drift_state as checker
 
 def test_drift_does_not_expose_legacy_audit_health_readers() -> None:
@@ -34,13 +30,6 @@ def test_drift_does_not_expose_legacy_audit_health_readers() -> None:
         "record_digest_matches",
     ):
         assert not hasattr(checker, name)
-
-
-def _certified(repo: Path):
-    graph, _states, _commit, public_key_root, _backend, _key = (
-        create_certified_fixture(repo)
-    )
-    return graph, public_key_root
 
 
 def _synthetic_report_state(
@@ -65,7 +54,7 @@ def _synthetic_report_state(
             module_root=module_root,
             blueprint_path=module_root / "blueprint.yaml",
             gateway_path=module_root / "SKILL.md",
-            declaration={"schema_version": 4, "node_type": "module"},
+            declaration={"schema_version": 6, "node_type": "module"},
         )
         nodes[source_id] = BlueprintNode(
             node_id=source_id,
@@ -75,7 +64,7 @@ def _synthetic_report_state(
             blueprint_path=module_root / "blueprints" / "gateway.yaml",
             gateway_path=module_root / "SKILL.md",
             declaration={
-                "schema_version": 4,
+                "schema_version": 6,
                 "node_type": "behavioral_source",
             },
         )
@@ -106,7 +95,7 @@ def _synthetic_report_state(
         helper_edges=(),
         certification_edges=(),
         module_sources=module_sources,
-        schema_version=4,
+        schema_version=6,
     )
     return graph, states
 
@@ -135,87 +124,6 @@ def _make_unsupported_module(package_root: Path, name: str) -> Path:
         encoding="utf-8",
     )
     return skill_root
-
-
-def test_real_repository_drift_and_hash_histories_preserve_exact_contracts(
-    tmp_path: Path,
-) -> None:
-    graph, public_key_root = _certified(tmp_path)
-    target_ids = tuple(sorted(graph.nodes))
-
-    report = checker._check_v4_repository(
-        tmp_path,
-        target_ids,
-        public_key_root=public_key_root,
-        expected_schema_version=4,
-    )
-
-    assert report.current
-    assert set(report.nodes) == set(target_ids)
-    assert all(status.current for status in report.nodes.values())
-
-    missing_target = "demo-skill"
-    missing_log = checker.certificate_log_path(graph.nodes[missing_target])
-    missing_bytes = missing_log.read_bytes()
-    missing_log.unlink()
-
-    missing_report = checker._check_v4_repository(
-        tmp_path,
-        (missing_target,),
-        public_key_root=public_key_root,
-        expected_schema_version=4,
-    )
-
-    assert not missing_report.current
-    assert missing_report.nodes[missing_target].concerns == (
-        "missing-certificate-log",
-    )
-    missing_log.write_bytes(missing_bytes)
-
-    suspect_target = graph.module_sources["demo-skill"][0]
-    suspect_log = checker.certificate_log_path(graph.nodes[suspect_target])
-    suspect_bytes = suspect_log.read_bytes()
-    with suspect_log.open("ab") as stream:
-        stream.write(b"{}\n")
-
-    suspect_report = checker._check_v4_repository(
-        tmp_path,
-        (suspect_target,),
-        public_key_root=public_key_root,
-        expected_schema_version=4,
-    )
-
-    assert not suspect_report.current
-    assert suspect_report.nodes[suspect_target].concerns == (
-        "suspect-certificate-log",
-    )
-    suspect_log.write_bytes(suspect_bytes)
-
-    source = checker.SkillSource(
-        source="test",
-        package_root=tmp_path,
-        skills_root=tmp_path / "skills",
-    )
-    scope = checker.RequestedScope(source, ("demo-skill",))
-
-    reports, failures = checker.hash_reports_for_scopes(
-        (scope,),
-        expected_schema_version=4,
-    )
-
-    assert failures == []
-    assert len(reports) == 1
-    hashes = reports[0].hashes
-    assert hashes["certification_basis"].startswith("sha256:")
-    assert set(hashes["nodes"]) == {
-        node_id
-        for node_id, node in graph.nodes.items()
-        if node.module_root == tmp_path / "skills" / "demo-skill"
-    }
-    assert all(
-        node["node_hash"].startswith("sha256:")
-        for node in hashes["nodes"].values()
-    )
 
 
 def test_exact_cli_status_and_hash_routes_are_read_only(
@@ -469,7 +377,7 @@ def test_reports_preserve_facet_drift_and_dependency_first_worklist(
             for node_id in graph.nodes
         }
     )
-    derived = checker._V4DerivedState(
+    derived = checker.RepositoryDerivedState(
         graph=graph,
         states=states,
         basis_hash="sha256:" + "e" * 64,
@@ -488,7 +396,6 @@ def test_reports_preserve_facet_drift_and_dependency_first_worklist(
 
     reports = checker.reports_for_scopes(
         (checker.RequestedScope(source, (module_id,)),),
-        expected_schema_version=4,
     )
 
     assert reports[0].stale_worklist == (external_id, module_id)
@@ -519,7 +426,7 @@ def test_reports_share_one_canonical_repository_worklist_across_modules(
             for node_id in graph.nodes
         }
     )
-    derived = checker._V4DerivedState(
+    derived = checker.RepositoryDerivedState(
         graph=graph,
         states=states,
         basis_hash="sha256:" + "e" * 64,
@@ -543,7 +450,6 @@ def test_reports_share_one_canonical_repository_worklist_across_modules(
                 tuple(reversed(module_ids)),
             ),
         ),
-        expected_schema_version=4,
     )
     expected = checker.certificate_stale_worklist(
         graph,
@@ -602,65 +508,6 @@ def test_top_level_worklist_qualifies_identical_ids_from_distinct_repositories(
     assert all(f"### {identifier} / node {node_id}" in text for identifier in qualified)
 
 
-def test_v4_drift_propagates_explicit_non_atomic_fallback(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    graph, states = _synthetic_report_state(tmp_path)
-    target = "demo-skill"
-    public_key_root = tmp_path / "public-keys"
-    observed: list[tuple[Path, dict[str, object]]] = []
-    currentness = checker.CertificateCurrentnessReport(
-        nodes={
-            node_id: checker.CertificateNodeCurrentness(
-                node_id=node_id,
-                current=True,
-                concerns=(),
-                certificate=None,
-            )
-            for node_id in graph.nodes
-        }
-    )
-
-    def derive_with_fallback(*args: object, **kwargs: object):
-        observed.append((args[0], kwargs))
-        return SimpleNamespace(
-            graph=graph,
-            states=states,
-            certification_basis_hash="sha256:" + "e" * 64,
-            currentness=currentness,
-        )
-
-    monkeypatch.setattr(
-        checker,
-        "derive_repository_certification_state",
-        derive_with_fallback,
-    )
-
-    report = checker._check_v4_repository(
-        tmp_path,
-        (target,),
-        public_key_root=public_key_root,
-        expected_schema_version=4,
-        allow_non_atomic=True,
-    )
-
-    assert report.nodes[target].current
-    assert observed == [
-        (
-            tmp_path.resolve(),
-            {
-                "public_key_root": public_key_root,
-                "expected_schema_version": 4,
-                "schema_root": tmp_path.resolve()
-                / "references"
-                / "blueprint-schema",
-                "allow_non_atomic": True,
-            },
-        )
-    ]
-
-
 def test_default_public_key_location_is_certifier_owned(tmp_path: Path) -> None:
     assert certificate_public_key_root(tmp_path) == (
         tmp_path
@@ -669,54 +516,6 @@ def test_default_public_key_location_is_certifier_owned(tmp_path: Path) -> None:
         / ".certificates"
         / "public-keys"
     )
-
-
-@pytest.mark.parametrize("schema_version", (5, 6))
-def test_drift_derivation_delegates_schema_selection_to_canonical_owner(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    schema_version: int,
-) -> None:
-    observed = []
-    derived = SimpleNamespace(
-        graph="graph",
-        states={},
-        source_commit="a" * 40,
-        certification_basis_hash="sha256:" + "b" * 64,
-        certifier_identity={},
-    )
-
-    def capture(root, **kwargs):
-        observed.append((root, kwargs))
-        return derived
-
-    monkeypatch.setattr(
-        checker,
-        "derive_repository_certification_state",
-        capture,
-    )
-
-    result = checker._v4_repository_state(
-        tmp_path,
-        expected_schema_version=schema_version,
-    )
-
-    assert result[0] == "graph"
-    expected_schema_root = (
-        tmp_path.resolve() / "references" / "blueprint-schema"
-        if schema_version == 6
-        else None
-    )
-    assert observed == [
-        (
-            tmp_path.resolve(),
-            {
-                "expected_schema_version": schema_version,
-                "schema_root": expected_schema_root,
-                "allow_non_atomic": False,
-            },
-        )
-    ]
 
 
 def test_public_v6_drift_uses_live_schema_root(
@@ -746,12 +545,10 @@ def test_public_v6_drift_uses_live_schema_root(
         skills_root=tmp_path / "skills",
     )
 
-    result = checker._derive_for_source(source, expected_schema_version=6)
+    result = checker._derive_for_source(source)
 
     assert result.graph == "graph"
-    assert observed[0]["schema_root"] == (
-        tmp_path / "references" / "blueprint-schema"
-    )
+    assert "schema_root" not in observed[0]
 
 
 def test_drift_node_selection_uses_exact_global_module_id() -> None:
@@ -776,80 +573,6 @@ def test_drift_node_selection_uses_exact_global_module_id() -> None:
         "demo-rtx",
         "demo-rtx.source.runtime",
     )
-
-
-def test_v5_explicit_child_id_is_reportable_without_a_physical_skill_root(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    source = checker.SkillSource(
-        source="test",
-        package_root=tmp_path,
-        skills_root=tmp_path / "skills",
-    )
-    scope = checker.RequestedScope(source, ("demo-rtx",))
-    module = SimpleNamespace(node_type="module")
-    runtime = SimpleNamespace(node_type="behavioral_source")
-    derived = checker._V4DerivedState(
-        graph=SimpleNamespace(
-            nodes={
-                "demo-rtx": module,
-                "demo-rtx.source.runtime": runtime,
-            },
-            module_sources={
-                "demo-rtx": ("demo-rtx.source.runtime",),
-            },
-        ),
-        states={
-            "demo-rtx": SimpleNamespace(
-                node_hash="sha256:" + "a" * 64,
-                dependency_hashes=(),
-            ),
-            "demo-rtx.source.runtime": SimpleNamespace(
-                node_hash="sha256:" + "b" * 64,
-                dependency_hashes=(),
-            ),
-        },
-        basis_hash="sha256:" + "c" * 64,
-        currentness=SimpleNamespace(
-            nodes={
-                node_id: SimpleNamespace(current=True, concerns=())
-                for node_id in (
-                    "demo-rtx",
-                    "demo-rtx.source.runtime",
-                )
-            },
-        ),
-    )
-    observed_versions: list[int] = []
-
-    def derive(_source, *, expected_schema_version):
-        observed_versions.append(expected_schema_version)
-        return derived
-
-    monkeypatch.setattr(checker, "_derive_for_source", derive)
-    monkeypatch.setattr(
-        checker,
-        "certificate_log_path",
-        lambda node: tmp_path / f"{node.node_type}.jsonl",
-    )
-
-    status_reports = checker.reports_for_scopes(
-        (scope,),
-        expected_schema_version=5,
-    )
-    hash_reports, failures = checker.hash_reports_for_scopes(
-        (scope,),
-        expected_schema_version=5,
-    )
-
-    assert [report.skill for report in status_reports] == ["demo-rtx"]
-    assert set(hash_reports[0].hashes["nodes"]) == {
-        "demo-rtx",
-        "demo-rtx.source.runtime",
-    }
-    assert failures == []
-    assert observed_versions == [5, 5]
 
 
 def test_installed_sources_ignore_codex_plugin_cache_without_active_registry(
@@ -1071,44 +794,6 @@ def test_unsupported_active_plugin_commands_never_reach_certification_derivation
             "repair installed_plugins.json or pass --skill-root, --skills-root, "
             "or --repo-root"
         ) in captured.err
-
-
-def test_active_v4_plugin_is_rejected_after_canonical_v5_cutover(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    codex_home = tmp_path / "codex-home"
-    claude_home = tmp_path / "claude-home"
-    active = claude_home / "plugins" / "cache" / "market" / "demo" / "2"
-    stale = claude_home / "plugins" / "cache" / "market" / "demo" / "1"
-    materialize_v4_repository(active)
-    _make_unsupported_module(stale, "stale-skill")
-    _write_json(
-        claude_home / "plugins" / "installed_plugins.json",
-        {
-            "version": 2,
-            "plugins": {
-                "demo@market": [
-                    {
-                        "version": "2",
-                        "scope": "user",
-                        "installPath": str(active),
-                    }
-                ]
-            },
-        },
-    )
-    monkeypatch.setenv("CODEX_HOME", str(codex_home))
-    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_home))
-
-    exit_code = checker.main(["compute-hashes", "--json"])
-
-    captured = capsys.readouterr()
-    assert exit_code == 2
-    assert captured.out == ""
-    assert "schema_version 6" in captured.err
-    assert "stale-skill" not in captured.err
 
 
 def test_malformed_plugin_registry_fails_with_remediation(

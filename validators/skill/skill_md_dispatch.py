@@ -144,6 +144,7 @@ def validate(repo_root: Path) -> list[str]:
 
     schema_root = repo_root / "references" / "blueprint-schema"
     try:
+        # The canonical loader owns the repository's fixed v6 boundary.
         repository_graph = load_repository_blueprint_graph(
             repo_root,
             schema_root=schema_root if (schema_root / "module.schema.json").is_file() else None,

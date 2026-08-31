@@ -10,8 +10,6 @@ from types import ModuleType, SimpleNamespace
 import pytest
 import yaml
 
-from test_support.v5_blueprint_fixtures import copy_v5_fixture_tree
-
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VALIDATOR = REPO_ROOT / "validators" / "skill" / "blueprints.py"
@@ -26,14 +24,6 @@ def _copy_schema_root(repo_root: Path) -> None:
         REPO_ROOT / "references" / "blueprint-schema",
         repo_root / "references" / "blueprint-schema",
         ignore=shutil.ignore_patterns("blueprint.yaml", "blueprints"),
-    )
-
-
-def _copy_v5_schema_root(repo_root: Path) -> None:
-    shutil.copytree(
-        REPO_ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v5",
-        repo_root / "references" / "blueprint-schema" / "migrations" / "v5",
-        dirs_exist_ok=True,
     )
 
 
@@ -52,28 +42,6 @@ def _tracked(repo_root: Path) -> dict[str, tuple[tuple[str, str], ...]]:
     }
 
 
-@pytest.mark.parametrize("version", [4, 5])
-def historical_schema_marker_reader(
-    tmp_path: Path,
-    version: int,
-) -> None:
-    marker = tmp_path / "references" / "blueprint-schema" / "blueprint.yaml"
-    marker.parent.mkdir(parents=True)
-    marker.write_text(
-        f"schema_version: {version}\nnode_type: module\n",
-        encoding="utf-8",
-    )
-
-    assert getattr(MOD, "repository_" + "schema_version")(tmp_path) == version
-
-
-def historical_schema_marker_reader_rejects_missing_marker(
-    tmp_path: Path,
-) -> None:
-    with pytest.raises(ValueError, match="canonical schema marker is missing"):
-        getattr(MOD, "repository_" + "schema_version")(tmp_path)
-
-
 def test_canonical_skill_passes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -82,24 +50,6 @@ def test_canonical_skill_passes(
     monkeypatch.setattr(MOD, "_git_tracked_files", lambda _root: _tracked(tmp_path))
 
     assert MOD.validate(tmp_path) == []
-
-
-def legacy_preflight_explicitly_selects_v5_for_an_all_v5_staged_tree(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _copy_schema_root(tmp_path)
-    _copy_v5_schema_root(tmp_path)
-    fixture = REPO_ROOT / "tests" / "fixtures" / "blueprint_v5" / "authorization"
-    copy_v5_fixture_tree(fixture / "modules", tmp_path / "modules")
-    copy_v5_fixture_tree(fixture / "skills", tmp_path / "skills")
-    monkeypatch.setattr(MOD, "_validate_generated_markers", lambda _path: [])
-
-    errors, graph = MOD.preflight(tmp_path, **{"expected_" + "schema_version": 5})
-
-    assert errors == []
-    assert graph is not None
-    assert graph.schema_version == 5
 
 
 def test_preflight_defaults_to_v6_for_an_all_v6_tree(

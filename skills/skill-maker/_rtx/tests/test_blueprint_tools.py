@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Focused tests for canonical version-5 blueprint synchronization."""
+"""Focused tests for canonical blueprint synchronization."""
 
 from __future__ import annotations
 
@@ -11,18 +11,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-from test_support.v5_blueprint_fixtures import copy_v5_fixture_tree
 
 
 SYNCER_PATH = REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py"
-V5_SCHEMA_ROOT = REPO_ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v5"
-V5_AUTHORIZATION_FIXTURE = (
-    REPO_ROOT / "tests" / "fixtures" / "blueprint_v5" / "authorization"
-)
 
 
 def load_module(module_name: str, path: Path):
@@ -37,53 +31,13 @@ def load_module(module_name: str, path: Path):
 
 @pytest.fixture(scope="module")
 def syncer():
-    return load_module("sync_module_blueprints_v5_tests", SYNCER_PATH)
+    return load_module("sync_module_blueprints_tests", SYNCER_PATH)
 
 
 def _copy_managed_skill(repo_root: Path) -> Path:
     target = repo_root / "skills" / "loose-mode"
     shutil.copytree(REPO_ROOT / "skills" / "loose-mode", target)
     return target
-
-
-def _copy_v5_managed_skill(repo_root: Path) -> tuple[Path, dict[str, object]]:
-    root = copy_v5_fixture_tree(V5_AUTHORIZATION_FIXTURE, repo_root)
-
-    runtime_path = (
-        root
-        / "skills"
-        / "demo"
-        / "_rtx"
-        / "blueprints"
-        / "runtime.yaml"
-    )
-    runtime = yaml.safe_load(runtime_path.read_text(encoding="utf-8"))
-    dependency = {
-        "kind": "python-package",
-        "name": "PyYAML",
-        "version": ">=6",
-        "platforms": {"linux": True, "macos": True, "windows": True},
-        "reason": "Parses YAML.",
-    }
-    runtime["platform_support"] = {
-        "linux": True,
-        "macos": True,
-        "windows": True,
-    }
-    runtime["runtime_dependencies"] = [dependency]
-    runtime["interfaces"][
-        "demo-rtx.source.runtime.interface.execute"
-    ]["process_binding"] = {
-        "kind": "process",
-        "entry": "Interface",
-        "arguments": {},
-        "fixed": [],
-    }
-    runtime_path.write_text(
-        yaml.safe_dump(runtime, sort_keys=False),
-        encoding="utf-8",
-    )
-    return root, dependency
 
 
 def test_syncer_loads_canonical_module_and_generates_export_blocks(
@@ -225,79 +179,6 @@ def test_generated_setup_order_deduplicates_transitive_dependencies(syncer) -> N
         "4. `root.interface.setup`"
     ) in contract
     assert contract.count("`leaf.interface.setup`") == 1
-
-
-def legacy_v5_generated_views_are_parent_only_and_derive_facade_contract(
-    tmp_path: Path,
-    syncer,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    root, dependency = _copy_v5_managed_skill(tmp_path / "repo")
-    monkeypatch.setattr(syncer, "SKILLS_ROOT", root / "skills")
-
-    blueprints = syncer.load_blueprints(
-        **{"schema_" + "version": 5},
-        schema_root=V5_SCHEMA_ROOT,
-    )
-
-    assert set(blueprints) == {"demo"}
-    blueprint = blueprints["demo"]
-    contract = syncer.generated_contract_block(
-        blueprint.name,
-        blueprint.data,
-        blueprint.repository_graph,
-    )
-    interfaces = syncer.generated_interface_block(
-        blueprint.name,
-        blueprint.repository_graph,
-    )
-    manifest = syncer.generated_runtime_dependencies_manifest(blueprints)
-
-    assert "`demo.interface.execute`" in contract
-    assert "demo.source.gateway -> demo.interface.execute@3" not in contract
-    assert "demo-rtx.interface.execute" not in contract + interfaces
-    assert "`demo.interface.execute` — Execute the demo." in interfaces
-    assert "dispatcher --caller-skill demo demo.interface.execute" in interfaces
-    assert set(manifest["skills"]) == {"demo"}
-    assert manifest["version"] == 2
-    assert manifest["skills"]["demo"]["interfaces"]["demo.interface.execute"] == {
-        "dependencies": [dependency],
-    }
-    terminal = blueprint.repository_graph.exports[
-        "demo-rtx.interface.execute"
-    ]
-    assert isinstance(terminal.export_declaration, dict)
-    original_access = terminal.export_declaration["access"]
-    terminal.export_declaration["access"] = {
-        "allow_all_modules": False,
-        "allowed_callers": ["outsider"],
-    }
-
-    interfaces = syncer.generated_interface_block(
-        blueprint.name,
-        blueprint.repository_graph,
-    )
-
-    assert "`demo.interface.execute` — Execute the demo." in interfaces
-    assert "demo-rtx.interface.execute" not in interfaces
-    terminal.export_declaration["access"] = original_access
-
-    gateway = blueprint.repository_graph.nodes["demo.source.gateway"].declaration
-    original_uses = gateway["uses_interfaces"]
-    gateway["uses_interfaces"] = [
-        entry
-        for entry in gateway["uses_interfaces"]
-        if entry["interface"] != "demo.interface.execute"
-    ]
-
-    assert syncer.validate_gateway_declares_generated_dispatches(
-        blueprint.name,
-        blueprint.repository_graph,
-    ) == [
-        "demo.source.gateway: generated dispatcher exports are missing from "
-        "uses_interfaces: demo.interface.execute@3"
-    ]
-    gateway["uses_interfaces"] = original_uses
 
 
 def test_generated_contract_requires_catalog_discovery(syncer) -> None:
@@ -578,43 +459,6 @@ def test_generated_used_interface_block_is_deterministic(syncer) -> None:
     assert first == second
     assert first.startswith(syncer.USED_INTERFACES_START)
     assert first.endswith(f"{syncer.USED_INTERFACES_END}\n")
-
-
-def legacy_sync_does_not_create_dispatch_routing_state(
-    tmp_path: Path,
-    syncer,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    repo_root, _dependency = _copy_v5_managed_skill(tmp_path / "repo")
-    skill_file = repo_root / "skills" / "demo" / "SKILL.md"
-    skill_file.write_text(
-        "---\nname: demo\ndescription: Test fixture.\n---\n\nInstructions.\n",
-        encoding="utf-8",
-    )
-    manifest = repo_root / "references" / "blueprint-schema" / "runtime_dependencies.json"
-    manifest.parent.mkdir(parents=True)
-    monkeypatch.setattr(syncer, "REPO_ROOT", repo_root)
-    monkeypatch.setattr(syncer, "SKILLS_ROOT", repo_root / "skills")
-    monkeypatch.setattr(syncer, "RUNTIME_DEPENDENCIES_PATH", manifest)
-    original_load_blueprints = syncer.load_blueprints
-    monkeypatch.setattr(
-        syncer,
-        "load_blueprints",
-        lambda **kwargs: original_load_blueprints(
-            schema_root=V5_SCHEMA_ROOT,
-            **kwargs,
-        ),
-    )
-    data_home = tmp_path / "data"
-    monkeypatch.setenv("XDG_DATA_HOME", str(data_home))
-
-    assert not manifest.exists()
-    assert syncer.run_sync(check_only=False, **{"schema_" + "version": 5}) == 0
-    assert manifest.is_file()
-    written_manifest = manifest.read_bytes()
-    assert syncer.run_sync(check_only=True, **{"schema_" + "version": 5}) == 0
-    assert manifest.read_bytes() == written_manifest
-    assert not data_home.exists()
 
 
 def test_validate_sync_state_reuses_the_provided_graph(

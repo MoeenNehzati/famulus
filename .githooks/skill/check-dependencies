@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Guideline v5 — dependencies: every exact cross-module skill-name mention in a
+# Guideline v6 — dependencies: every exact cross-module skill-name mention in a
 # SKILL.md body must be represented by the owning source `uses_interfaces`.
 # Local references: parent paths in SKILL.md may only point to ../references/,
 # ../../tools/, or ../../scripts/.

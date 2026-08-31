@@ -6,6 +6,6 @@
   "$ref": "schema.json",
   "x-famulus": {
     "schema_version": 6,
-    "authoring": "Select module or behavioral_source with node_type and author schema_version 6. Declare maturity as stable or experimental. Discoverable modules additionally declare installation_tier as core or optional and personal_preference. Older schemas are migration inputs only."
+    "authoring": "Select module or behavioral_source with node_type and author schema_version 6. Declare maturity as stable or experimental. Discoverable modules additionally declare installation_tier as core or optional and personal_preference."
   }
 }

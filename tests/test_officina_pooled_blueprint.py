@@ -50,7 +50,7 @@ def _renderer_graph(
             blueprint_path=module_root / "blueprint.yaml",
             gateway_path=module_root / "SKILL.md",
             declaration={
-                "schema_version": 4,
+                "schema_version": 6,
                 "node_type": "module",
                 "id": module_id,
                 "version": 1,
@@ -64,7 +64,7 @@ def _renderer_graph(
             blueprint_path=module_root / "blueprints" / "gateway.yaml",
             gateway_path=module_root / "gateway.py",
             declaration={
-                "schema_version": 4,
+                "schema_version": 6,
                 "node_type": "behavioral_source",
                 "id": source_id,
                 "version": 1,
@@ -89,7 +89,7 @@ def _renderer_graph(
         helper_edges=(),
         certification_edges=(),
         module_sources=module_sources,
-        schema_version=4,
+        schema_version=6,
         source_modules=source_modules,
     )
 

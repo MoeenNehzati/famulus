@@ -43,7 +43,7 @@ dependencies:
   reason: Imports canonical repository-relative path serialization from repository_paths.py.
   source: common.source.repository-paths
   version: 1
-description: Evaluates signed certificate logs against current v4 node hashes, dependency
+description: Evaluates signed certificate logs against current v6 node hashes, dependency
   state, source commit, certifier identity, and checks, then exposes read-only module-export
   and source-certificate decisions.
 gateway:
@@ -75,7 +75,7 @@ interfaces:
             - description: Derive the canonical append-only certificate-log path for
                 one node.
               value: certificate-log-path
-            - description: Evaluate every v4 node certificate against current derived
+            - description: Evaluate every v6 node certificate against current derived
                 graph state and Git inputs.
               value: evaluate-currentness
             - description: Build a read-only view over already verified current certificate

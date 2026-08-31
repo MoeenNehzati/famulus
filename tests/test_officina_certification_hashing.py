@@ -70,104 +70,29 @@ def test_stable_checks_are_canonical_and_reject_failed_or_duplicate_checks() -> 
         normalize_node_checks([checks[0], checks[0]])
 
 
-def test_v4_and_v6_certifier_identities_are_derived_from_minimal_state() -> None:
+def test_v6_certifier_check_registry_is_exact() -> None:
+    assert [check["id"] for check in expected_certifier_checks()] == [
+        "blueprint-accuracy",
+        "route-smoke-dependencies",
+        "v6-deterministic",
+    ]
+    assert [check["version"] for check in expected_certifier_checks()] == [3, 3, 1]
+
+
+def test_v6_certifier_identity_uses_the_runtime_interface() -> None:
     state = NodeHashState(node_hash=f"sha256:{'a' * 64}")
-    commit = "b" * 40
-    cases = (
-        (
-            "v4 facade",
-            4,
-            InterfaceExport(
-                interface_id="node-certify.interface.certify",
-                version=1,
-                local_name="certify",
-                module_node_id="node-certify",
-                declaration={},
-            ),
-            {
-                "interface": "node-certify.interface.certify",
-                "version": 1,
-                "node_hash": state.node_hash,
-                "source_commit": commit,
-            },
-        ),
-        (
-            "v6 runtime",
-            6,
-            InterfaceExport(
-                interface_id="node-certify._rtx.interface.certify",
-                version=2,
-                local_name="certify",
-                module_node_id="node-certify._rtx",
-                declaration={},
-            ),
-            {
-                "interface": "node-certify._rtx.interface.certify",
-                "version": 2,
-                "node_hash": state.node_hash,
-                "source_commit": commit,
-            },
-        ),
+    node = BlueprintNode(
+        "node-certify", "module", 1, Path("/repo"), Path("/repo/blueprint.yaml"), None, {})
+    export = InterfaceExport(
+        "node-certify._rtx.interface.certify", 2, "certify", "node-certify._rtx", {})
+    graph = RepositoryBlueprintGraph(
+        nodes={node.node_id: node}, node_edges=(), exports={export.interface_id: export},
+        export_edges=(), helper_edges=(), certification_edges=(), schema_version=6,
     )
-
-    for label, schema_version, export, expected in cases:
-        node = BlueprintNode(
-            node_id="node-certify",
-            node_type="module",
-            version=1,
-            module_root=Path("/repo/skills/node-certify"),
-            blueprint_path=Path("/repo/skills/node-certify/blueprint.yaml"),
-            gateway_path=None,
-            declaration={"schema_version": schema_version},
-        )
-        graph = RepositoryBlueprintGraph(
-            nodes={node.node_id: node},
-            node_edges=(),
-            exports={export.interface_id: export},
-            export_edges=(),
-            helper_edges=(),
-            certification_edges=(),
-            schema_version=schema_version,
-        )
-        assert derive_certifier_identity(
-            graph,
-            {node.node_id: state},
-            commit,
-        ) == expected, label
-
-
-def test_versioned_certifier_check_registries_are_exact() -> None:
-    expected_by_schema = {
-        4: (
-            ("blueprint-accuracy", 1),
-            ("route-smoke-dependencies", 1),
-            ("v4-deterministic", 1),
-        ),
-        5: (
-            ("blueprint-accuracy", 2),
-            ("route-smoke-dependencies", 2),
-            ("v5-deterministic", 1),
-        ),
-        6: (
-            ("blueprint-accuracy", 3),
-            ("route-smoke-dependencies", 3),
-            ("v6-deterministic", 1),
-        ),
+    assert derive_certifier_identity(graph, {node.node_id: state}, "b" * 40) == {
+        "interface": export.interface_id, "version": 2,
+        "node_hash": state.node_hash, "source_commit": "b" * 40,
     }
-    for schema_version, expected_entries in expected_by_schema.items():
-        expected = tuple(
-            {
-                "id": check_id,
-                "version": version,
-                "passed": True,
-                "findings": [],
-            }
-            for check_id, version in expected_entries
-        )
-        assert (
-            expected_certifier_checks(expected_schema_version=schema_version)
-            == expected
-        ), f"schema v{schema_version}"
 
 
 def test_current_canonical_basis_covers_certification_runtime_dependencies() -> None:
@@ -175,7 +100,6 @@ def test_current_canonical_basis_covers_certification_runtime_dependencies() -> 
         path.relative_to(REPO_ROOT)
         for path in resolve_certification_basis_paths(
             REPO_ROOT,
-            expected_schema_version=6,
         )
     }
     assert Path(

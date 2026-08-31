@@ -94,11 +94,9 @@ def iter_blueprints(
     root = Path(repo_root).resolve()
     try:
         graph = load_repository_blueprint_graph(root)
-    except (OSError, ValueError) as exc:
-        raise BlueprintSearchError(str(exc)) from exc
+    except (OSError, ValueError) as exc: raise BlueprintSearchError(str(exc)) from exc
     for node in sorted(graph.nodes.values(), key=lambda item: item.blueprint_path.relative_to(root).as_posix()):
-        if node.node_type == "module":
-            module_id = node.node_id
+        if node.node_type == "module": module_id = node.node_id
         elif node.node_type == "behavioral_source":
             module_id = graph.source_modules.get(node.node_id)
         else:
@@ -302,6 +300,7 @@ def search_blueprints(
     query = query or {}
     if not isinstance(query, Mapping):
         raise BlueprintSearchError("query must be a mapping")
+    if set(query) - {"filter", "select", "comments", "explain", "include_hidden"}: raise BlueprintSearchError("unsupported query key")
 
     filter_spec = query.get("filter")
     select_spec = query.get("select")

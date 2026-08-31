@@ -196,7 +196,7 @@
         "creation": "Render each module and behavioral-source document from its concrete schema and reject values outside that schema before graph construction.",
         "validator": "references/blueprint-schema/schema.json",
         "tests": [
-          "tests/test_nested_module_v5_schemas.py"
+          "tests/test_direct_blueprint_v6_schemas.py"
         ],
         "template": "Render every module and behavioral source from its concrete schema.",
         "enforcement": {
@@ -497,7 +497,7 @@
         "creation": "Register each physical direct child with an empty record keyed by its local directory segment.",
         "validator": "references/blueprint-schema/module.schema.json",
         "tests": [
-          "tests/test_nested_module_v5_schemas.py"
+          "tests/test_direct_blueprint_v6_schemas.py"
         ],
         "template": "The example module declares an explicit children mapping.",
         "enforcement": {
@@ -513,7 +513,7 @@
         "creation": "Declare exact canonical descendant interface IDs and versions under surface.only.",
         "validator": "references/blueprint-schema/module.schema.json",
         "tests": [
-          "tests/test_nested_module_v5_schemas.py"
+          "tests/test_direct_blueprint_v6_schemas.py"
         ],
         "template": "The example module declares an explicit namespace_exports mapping.",
         "enforcement": {
@@ -529,7 +529,7 @@
         "creation": "Use a globally unique module ID or a relative reference such as ._rtx or ..parser.",
         "validator": "references/blueprint-schema/common.schema.json",
         "tests": [
-          "tests/test_nested_module_v5_schemas.py"
+          "tests/test_direct_blueprint_v6_schemas.py"
         ],
         "template": "Caller allowlists use exact global or leading-dot relative references.",
         "enforcement": {

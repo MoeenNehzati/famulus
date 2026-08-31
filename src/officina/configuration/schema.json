@@ -134,7 +134,6 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "allow_legacy_flat": {"type": "boolean"},
             "require_why": {"type": "boolean"}
           }
         },
@@ -142,7 +141,6 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "allow_legacy_string": {"type": "boolean"},
             "misc_min_chars": {"type": "integer", "minimum": 1},
             "actions": {"$ref": "#/definitions/nonEmptyStrings"},
             "section_actions": {
@@ -186,7 +184,6 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "dependency_why_action": {"type": "boolean"},
             "instantiation_product_pseudocode": {"type": "boolean"},
             "pseudocode_dataflow": {"type": "boolean"},
             "pseudocode_output_use": {"type": "boolean"},

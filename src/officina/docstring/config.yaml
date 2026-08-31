@@ -8,11 +8,9 @@ names_for_dependency_sections:
   dispatches: Dispatches
 
 dependency_syntax:
-  allow_legacy_flat: false
   require_why: true
 
 dependency_why:
-  allow_legacy_string: false
   misc_min_chars: 80
   actions:
     - reads
@@ -69,7 +67,6 @@ profiles:
       - skills/*/_rtx/*.py
       - skills/*/_rtx/**/*.py
     checks:
-      dependency_why_action: true
       pseudocode_output_use: true
       repeated_template_detection: true
   tests_lightweight:

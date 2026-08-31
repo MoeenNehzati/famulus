@@ -14,32 +14,14 @@ from officina.blueprints.inventory import (
     iter_blueprints,
 )
 from test_support.git_repository import GitTestRepository
-from test_support.v5_blueprint_fixtures import copy_v5_fixture_tree
 
 
-_V5_INVENTORY_FIXTURES = (
-    Path(__file__).parent / "fixtures" / "blueprint_v5" / "inventory"
-)
 _canonical_collect_blueprints = collect_blueprints
 
 
 def _write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
-
-
-def _copy_v5_inventory_fixture(name: str, tmp_path: Path) -> Path:
-    root = copy_v5_fixture_tree(
-        _V5_INVENTORY_FIXTURES / name,
-        tmp_path / "repo",
-    )
-    for path in root.rglob("*.yaml"):
-        declaration = yaml.safe_load(path.read_text(encoding="utf-8"))
-        if isinstance(declaration, dict) and declaration.get("schema_version") == 5:
-            declaration["schema_version"] = 6
-            declaration.setdefault("maturity", "stable")
-            _write(path, yaml.safe_dump(declaration, sort_keys=False))
-    return root
 
 
 def _v5_module_text(
@@ -60,7 +42,7 @@ def _v5_module_text(
         "content": [gateway.replace(".", r"\.")],
         "authority": {"owns_filesystem": []},
         "sources": {},
-        "children": children or {},
+        "children": {segment: {} for segment in (children or {})},
         "namespace_exports": {},
         "exports": {},
     }
@@ -77,10 +59,11 @@ def _write_v5_module(
     discovery: bool = False,
     gateway: str = "README.md",
 ) -> None:
+    derived_id = ".".join(module_root.parts[module_root.parts.index("modules") + 1 :]) if "modules" in module_root.parts else module_id  # noqa: E501
     _write(
         module_root / "blueprint.yaml",
         _v5_module_text(
-            module_id,
+            derived_id,
             children=children,
             discovery=discovery,
             gateway=gateway,
@@ -216,6 +199,7 @@ def test_v5_inventory_rejects_child_registered_by_duplicate_parents(
 
     with pytest.raises(
         BlueprintInventoryError,
+        match="child segment 'leaf' does not identify 'outer.leaf'",
     ):
         collect_blueprints(tmp_path)
 
@@ -233,7 +217,10 @@ def test_v5_inventory_rejects_registration_cycle(tmp_path: Path) -> None:
         },
     )
 
-    with pytest.raises(BlueprintInventoryError):
+    with pytest.raises(
+        BlueprintInventoryError,
+        match="child segment 'alpha' does not identify 'alpha.alpha'",
+    ):
         collect_blueprints(tmp_path)
 
 
@@ -262,6 +249,7 @@ def test_v5_inventory_requires_registration_by_nearest_physical_parent(
 
     with pytest.raises(
         BlueprintInventoryError,
+        match="unregistered nested module marker was not consumed exactly once",
     ):
         collect_blueprints(tmp_path)
 
@@ -284,7 +272,10 @@ def test_v5_inventory_rejects_registration_into_ignored_path(
     )
     _write_v5_module(outer / "ignored", "ignored")
 
-    with pytest.raises(BlueprintInventoryError):
+    with pytest.raises(
+        BlueprintInventoryError,
+        match="child segment 'ignored' does not identify 'outer.ignored'",
+    ):
         collect_blueprints(root)
 
 
@@ -339,24 +330,6 @@ def test_v5_inventory_rejects_symlinked_registered_marker(tmp_path: Path) -> Non
 
     with pytest.raises(BlueprintInventoryError):
         collect_blueprints(root)
-
-
-def test_v5_inventory_accepts_managed_skill_without_rtx(
-    tmp_path: Path,
-) -> None:
-    root = _copy_v5_inventory_fixture("managed-skill", tmp_path)
-    skill_root = root / "skills" / "demo"
-    parent_path = skill_root / "blueprint.yaml"
-    parent = yaml.safe_load(parent_path.read_text(encoding="utf-8"))
-    parent["children"] = {}
-    _write(parent_path, yaml.safe_dump(parent, sort_keys=False))
-    (skill_root / "_rtx" / "blueprint.yaml").unlink()
-    (skill_root / "_rtx" / "__init__.py").unlink()
-    (skill_root / "_rtx").rmdir()
-
-    result = collect_blueprints(root)
-
-    assert [document.node_id for document in result.documents] == ["demo"]
 
 
 def test_inventory_uses_its_relocated_module() -> None:

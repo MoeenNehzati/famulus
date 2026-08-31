@@ -201,6 +201,29 @@ def test_schema_rejects_non_scalar_values(
         assert any("schema validation failed" in error for error in errors), label
 
 
+def test_schema_removes_conversion_audit_fields_but_retains_derived_origins(
+    prepared_schema_validator,
+) -> None:
+    for field in ("sources", "source_units", "migration"):
+        value = document()
+        value[field] = {}
+
+        errors = validate_document(value, ROOT, _schema_validator=prepared_schema_validator)
+        assert any("schema validation failed" in error for error in errors), field
+    value = document()
+    value["standards"][0]["origin"] = {
+        "kind": "imported",
+        "source_units": [{"kind": "source-unit", "ref": "legacy"}],
+    }
+    errors = validate_document(value, ROOT, _schema_validator=prepared_schema_validator)
+    assert any("schema validation failed" in error for error in errors)
+    value["standards"][0]["origin"] = {
+        "kind": "derived",
+        "derived_from": [{"kind": "family", "ref": "skill-refactoring.refactoring-moves"}],
+    }
+    assert validate_document(value, ROOT, _schema_validator=prepared_schema_validator) == []
+
+
 def test_applicability_predicates_use_three_valued_logic() -> None:
     facts = {"gateway.language": "python", "node.public": True}
 
@@ -552,7 +575,7 @@ def _set_imported_domain(
     )
 
 
-def test_update_standards_acceptance_cascades_pins_evidence_and_view(
+def test_update_standards_acceptance_cascades_pins_and_view(
     tmp_path: Path,
     prepared_schema_validator,
 ) -> None:
@@ -561,26 +584,11 @@ def test_update_standards_acceptance_cascades_pins_evidence_and_view(
     dependent_path = (
         root / "references" / "standards-schema" / "dependent.standard.yaml"
     )
-    source_path = root / "evidence" / "policy.md"
     view_path = root / "references" / "standards-schema" / "base.md"
-    source_path.parent.mkdir(parents=True)
-    source_path.write_text("policy v1\n", encoding="utf-8")
 
     base = document()
     base["id"] = "base"
     base["canonical_path"] = "references/standards-schema/base.standard.yaml"
-    base["artifacts"]["policy-source"] = {
-        "path": "evidence/policy.md",
-        "format": "markdown",
-        "roles": ["documentation"],
-    }
-    base["sources"] = {
-        "policy": {
-            "artifact": {"kind": "artifact", "ref": "policy-source"},
-            "revision": "v1",
-            "digest": "sha256:" + hashlib.sha256(source_path.read_bytes()).hexdigest(),
-        }
-    }
     _write_standard(base_path, base)
     view_path.write_text(render_document(base), encoding="utf-8")
 
@@ -610,17 +618,10 @@ def test_update_standards_acceptance_cascades_pins_evidence_and_view(
         == []
     )
 
-    source_path.write_text("policy v2\n", encoding="utf-8")
     base["revision"] = 2
     base["purpose"] = "Diagnose skill smells under the revised policy."
     _write_standard(base_path, base)
 
-    assert any(
-        "sources.policy" in error and "digest" in error
-        for error in validate_file(
-            base_path, root=root, _schema_validator=prepared_schema_validator
-        )
-    )
     assert any(
         "imports.base" in error and "digest mismatch" in error
         for error in validate_file(
@@ -629,11 +630,6 @@ def test_update_standards_acceptance_cascades_pins_evidence_and_view(
     )
     assert view_path.read_text(encoding="utf-8") != render_document(base)
 
-    base["sources"]["policy"]["revision"] = "v2"
-    base["sources"]["policy"]["digest"] = (
-        "sha256:" + hashlib.sha256(source_path.read_bytes()).hexdigest()
-    )
-    _write_standard(base_path, base)
     dependent["revision"] = 2
     dependent["imports"]["base"]["revision"] = base["revision"]
     dependent["imports"]["base"]["digest"] = (
@@ -716,16 +712,13 @@ def test_validate_file_checks_import_domain_compatibility(
     )
 
 
-def test_validate_file_rejects_unbounded_import_and_source_artifacts(
+def test_validate_file_rejects_unbounded_import_artifacts(
     tmp_path: Path, prepared_schema_validator
 ) -> None:
     root = tmp_path / "repo"
     standard = root / "standards" / "main.standard.yaml"
     outside = tmp_path / "outside.md"
     outside.write_text("outside\n")
-    linked = root / "sources" / "linked.md"
-    linked.parent.mkdir(parents=True)
-    linked.symlink_to(outside)
     value = document()
     value["artifacts"].update(
         {
@@ -739,11 +732,6 @@ def test_validate_file_rejects_unbounded_import_and_source_artifacts(
                 "format": "yaml",
                 "roles": ["other"],
             },
-            "linked-source": {
-                "path": "sources/linked.md",
-                "format": "markdown",
-                "roles": ["documentation"],
-            },
         }
     )
     value["imports"] = {
@@ -756,13 +744,6 @@ def test_validate_file_rejects_unbounded_import_and_source_artifacts(
         }
         for alias in ("absolute", "escape")
     }
-    value["sources"] = {
-        "linked": {
-            "artifact": {"kind": "artifact", "ref": "linked-source"},
-            "revision": "migration-input",
-            "digest": "sha256:" + hashlib.sha256(outside.read_bytes()).hexdigest(),
-        }
-    }
     _write_standard(standard, value)
 
     errors = validate_file(
@@ -771,7 +752,3 @@ def test_validate_file_rejects_unbounded_import_and_source_artifacts(
 
     assert "imports.absolute: artifact path must be repository-relative" in errors
     assert "imports.escape: artifact path escapes repository root" in errors
-    assert any(
-        "sources.linked: artifact path escapes repository root" in error
-        for error in errors
-    )

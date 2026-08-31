@@ -12,14 +12,11 @@ import pytest
 
 import officina.git.provenance as git_provenance
 from officina.git.provenance import (
-    BLUEPRINT_V4_MECHANICAL_REF,
     GitMaterializationError,
     GitSnapshot,
-    blueprint_v4_mechanical_commit,
     capture_git_snapshot,
     check_commit_readiness,
     materialize_git_commit,
-    pin_blueprint_v4_mechanical_commit,
     run_git,
     snapshot_head_matches,
 )
@@ -392,27 +389,6 @@ def test_materialize_git_commit_ignores_export_attribute_transformations(
     ) == "$Format:%H$\n"
     if os.name == "posix":
         assert (destination / "run.sh").stat().st_mode & stat.S_IXUSR
-
-
-def test_blueprint_v4_mechanical_ref_is_pinned_once(repo: Path) -> None:
-    mechanical = _git(repo, "rev-parse", "HEAD").stdout.decode().strip()
-    snapshot = capture_git_snapshot(repo)
-
-    assert pin_blueprint_v4_mechanical_commit(repo, mechanical) == mechanical
-    assert blueprint_v4_mechanical_commit(repo) == mechanical
-    assert (
-        _git(repo, "rev-parse", BLUEPRINT_V4_MECHANICAL_REF)
-        .stdout.decode()
-        .strip()
-        == mechanical
-    )
-
-    commit_unrelated_change(repo)
-    assert not snapshot_head_matches(snapshot)
-    reviewed = _git(repo, "rev-parse", "HEAD").stdout.decode().strip()
-    with pytest.raises(GitMaterializationError, match="already pinned"):
-        pin_blueprint_v4_mechanical_commit(repo, reviewed)
-    assert blueprint_v4_mechanical_commit(repo) == mechanical
 
 
 @pytest.fixture

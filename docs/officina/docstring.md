@@ -47,22 +47,22 @@ The canonical dependency syntax is a YAML-like tree. Shared logical prefixes
 should be nested once and flattened by the parser into dotted paths or ids:
 
 ```yaml
-CallsFromRepo:
-  ._node_certifier._v4_module_renames:
-    why:
-      transforms: "Maps legacy subject ids to canonical review targets."
+CallsFromRepo
+-------------
   officina.common:
     repository_paths:
       repository_relative_path:
         why:
           transforms: "Normalizes candidate blueprint paths to repo-relative format."
 
-InstantiationsFromRepo:
-  ._node_certifier.V4LegacyReviewContext:
+InstantiationsFromRepo
+----------------------
+  officina.validators.snapshot.ValidatorRunnerError:
     why:
-      constructs: "Constructs typed rows describing legacy skill interface claims."
+      raises: "Reports a failure to run a repository validation subprocess."
 
-Dispatches:
+Dispatches
+----------
   skills.node-certify.source.audit-interface.interface.audit:
     why:
       dispatches: "Dispatches CLI invocation to the interface entrypoint."
@@ -268,7 +268,6 @@ profiles:
       - src/**/*.py
       - skills/*/_rtx/**/*.py
     checks:
-      dependency_why_action: true
       pseudocode_output_use: true
       repeated_template_detection: true
   tests_lightweight:
@@ -285,9 +284,7 @@ profiles:
 ```
 
 Config loading validates profile keys so misspelled checks fail early instead
-of silently disabling enforcement. Supported check keys are
-`dependency_why_action`, `instantiation_product_pseudocode`,
-`pseudocode_dataflow`, `pseudocode_output_use`, and `repeated_template_detection`.
+of silently disabling enforcement. Supported check keys are `instantiation_product_pseudocode`, `pseudocode_dataflow`, `pseudocode_output_use`, and `repeated_template_detection`.
 
 The standard includes phrase-level guards for known filler and a
 `docstring.repeated-template` behavioral check for generated boilerplate. The

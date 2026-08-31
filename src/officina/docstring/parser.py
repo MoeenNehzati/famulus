@@ -1776,7 +1776,7 @@ def _parse_dependency_implicit_from_name(
     *,
     allow_implicit: bool,
 ) -> tuple[str, bool] | None:
-    """Extract legacy ``[implicit]`` markers from tree dependency keys.
+    """Extract ``[implicit]`` markers from tree dependency keys.
 
     Intent
     ------
@@ -2177,10 +2177,9 @@ def _parse_module_dependency_section(
     lines: Iterable[str],
     *,
     allow_implicit: bool,
-    allow_legacy_flat: bool,
     require_why: bool,
 ) -> tuple[list[ModuleDependencyRef], list[str]]:
-    """Parse a module dependency section using tree syntax plus optional legacy flat syntax.
+    """Parse a module dependency section using structured tree syntax.
 
     Intent
     ------
@@ -2205,9 +2204,6 @@ def _parse_module_dependency_section(
     ._parse_dependency_section_tree:
       why:
         constructs: "parse dependency section tree produces a value carried by parse module dependency section; this edge is documented from the observed product position in the body."
-    ._parse_module_dependency_ref:
-      why:
-        constructs: "parse module dependency ref produces a value carried by parse module dependency section; this edge is documented from the observed product position in the body."
     """
     raw_lines = [line.rstrip() for line in lines if line.strip()]
     tree_entries, tree_invalid = _parse_dependency_section_tree(
@@ -2215,31 +2211,15 @@ def _parse_module_dependency_section(
         allow_implicit=allow_implicit,
         require_why=require_why,
     )
-    if tree_entries or not allow_legacy_flat:
-        return tree_entries, tree_invalid
-
-    legacy_entries: list[ModuleDependencyRef] = []
-    legacy_invalid: list[str] = []
-    for line in raw_lines:
-        parsed = _parse_module_dependency_ref(
-            line,
-            allow_implicit=allow_implicit,
-            require_why=require_why,
-        )
-        if parsed is None:
-            legacy_invalid.append(line.strip())
-            continue
-        legacy_entries.append(parsed)
-    return legacy_entries, legacy_invalid
+    return tree_entries, tree_invalid
 
 
 def _parse_dispatch_dependency_section(
     lines: Iterable[str],
     *,
-    allow_legacy_flat: bool,
     require_why: bool,
 ) -> tuple[list[DispatchDependencyRef], list[str]]:
-    """Parse a dispatch dependency section using tree syntax plus optional flat syntax.
+    """Parse a dispatch dependency section using structured tree syntax.
 
     Intent
     ------
@@ -2267,39 +2247,13 @@ def _parse_dispatch_dependency_section(
     ._parse_dispatch_section_tree:
       why:
         constructs: "parse dispatch section tree produces a value carried by parse dispatch dependency section; this edge is documented from the observed product position in the body."
-    ._parse_module_dependency_ref:
-      why:
-        constructs: "parse module dependency ref produces a value carried by parse dispatch dependency section; this edge is documented from the observed product position in the body."
     """
     raw_lines = [line.rstrip() for line in lines if line.strip()]
     tree_entries, tree_invalid = _parse_dispatch_section_tree(
         raw_lines,
         require_why=require_why,
     )
-    if tree_entries or not allow_legacy_flat:
-        return tree_entries, tree_invalid
-
-    legacy_entries: list[DispatchDependencyRef] = []
-    legacy_invalid: list[str] = []
-    for line in raw_lines:
-        parsed = _parse_module_dependency_ref(
-            line,
-            allow_implicit=False,
-            require_why=require_why,
-        )
-        if parsed is None:
-            legacy_invalid.append(line.strip())
-            continue
-        legacy_entries.append(
-            DispatchDependencyRef(
-                id=parsed.name,
-                why=parsed.why,
-                why_action=parsed.why_action,
-                why_legacy_string=parsed.why_legacy_string,
-                why_action_count=parsed.why_action_count,
-            )
-        )
-    return legacy_entries, legacy_invalid
+    return tree_entries, tree_invalid
 
 
 def _parse_resource_section(
@@ -2800,7 +2754,6 @@ def parse_graph_block(docstring: str, *, section_names: frozenset[str] | None = 
         _parse_module_dependency_section(
             spec.sections.get(module_dependency_rules.calls_section, []),
             allow_implicit=module_dependency_rules.allow_implicit,
-            allow_legacy_flat=module_dependency_rules.allow_legacy_flat,
             require_why=module_dependency_rules.require_why,
         )[0]
     )
@@ -2808,14 +2761,12 @@ def parse_graph_block(docstring: str, *, section_names: frozenset[str] | None = 
         _parse_module_dependency_section(
             spec.sections.get(module_dependency_rules.instantiates_section, []),
             allow_implicit=module_dependency_rules.allow_implicit,
-            allow_legacy_flat=module_dependency_rules.allow_legacy_flat,
             require_why=module_dependency_rules.require_why,
         )[0]
     )
     spec.dispatches.extend(
         _parse_dispatch_dependency_section(
             spec.sections.get(module_dependency_rules.dispatches_section, []),
-            allow_legacy_flat=module_dependency_rules.allow_legacy_flat,
             require_why=module_dependency_rules.require_why,
         )[0]
     )

@@ -5,9 +5,7 @@ import ast
 import importlib.util
 from pathlib import Path
 
-from officina.blueprints.graph import load_repository_blueprint_graph
 from officina.common.python_source_cache import PythonSourceCache
-from test_support.v5_blueprint_fixtures import copy_v5_fixture_tree
 
 
 _VALIDATOR = (
@@ -18,11 +16,6 @@ _spec = importlib.util.spec_from_file_location("dispatch_caller_module", _VALIDA
 _mod = importlib.util.module_from_spec(_spec)
 assert _spec.loader is not None
 _spec.loader.exec_module(_mod)
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-_V5_SCHEMA_ROOT = _REPO_ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v5"
-_V5_FIXTURE = _REPO_ROOT / "tests" / "fixtures" / "blueprint_v5" / "authorization"
-
-
 def test_empty_skills_passes(tmp_path: Path) -> None:
     (tmp_path / "skills").mkdir()
     assert _mod.validate(tmp_path) == []
@@ -45,60 +38,6 @@ def test_injected_cache_preserves_findings_and_ast(tmp_path: Path) -> None:
 
     assert _mod._validate(tmp_path, None, source_cache) == expected
     assert ast.dump(tree, include_attributes=True) == before
-
-
-def legacy_v5_dispatch_caller_uses_deepest_registered_module(
-    tmp_path: Path,
-) -> None:
-    copy_v5_fixture_tree(_V5_FIXTURE / "skills", tmp_path / "skills")
-    graph = load_repository_blueprint_graph(
-        tmp_path,
-        schema_root=_V5_SCHEMA_ROOT,
-        **{"expected_" + "schema_version": 5},
-    )
-    runtime = tmp_path / "skills" / "demo" / "_rtx" / "runtime.py"
-    runtime.write_text(
-        "from officina.dispatcher import dispatch\n"
-        "dispatch(caller_skill='demo-rtx', target='leaf.interface.run')\n",
-        encoding="utf-8",
-    )
-
-    assert _mod.validate_with_graph(tmp_path, graph) == []
-
-    runtime.write_text(
-        "from officina.dispatcher import dispatch\n"
-        "dispatch(caller_skill='demo', target='leaf.interface.run')\n",
-        encoding="utf-8",
-    )
-    errors = _mod.validate_with_graph(tmp_path, graph)
-    assert any("expected `demo-rtx`" in error for error in errors)
-
-
-def legacy_v5_validator_checks_registered_modules_outside_skills(
-    tmp_path: Path,
-) -> None:
-    copy_v5_fixture_tree(_V5_FIXTURE / "modules", tmp_path / "modules")
-    copy_v5_fixture_tree(_V5_FIXTURE / "skills", tmp_path / "skills")
-    graph = load_repository_blueprint_graph(
-        tmp_path,
-        schema_root=_V5_SCHEMA_ROOT,
-        **{"expected_" + "schema_version": 5},
-    )
-    caller = tmp_path / "modules" / "outsider" / "caller.py"
-    caller.write_text(
-        "from officina.runtime.python_machine_interface import DispatchCall\n"
-        "CALL = DispatchCall(caller_module_id='root', "
-        "target_module_id='leaf', interface='run')\n",
-        encoding="utf-8",
-    )
-
-    errors = _mod.validate_with_graph(tmp_path, graph)
-
-    assert any(
-        "modules/outsider/caller.py" in error
-        and "expected `outsider`" in error
-        for error in errors
-    )
 
 
 def test_registered_child_tests_are_not_runtime_caller_declarations(
@@ -198,26 +137,6 @@ def test_dispatch_call_missing_caller_skill_flagged(tmp_path: Path) -> None:
     )
     errors = _mod.validate(tmp_path)
     assert any("DispatchCall() must include caller_module_id" in error for error in errors)
-
-
-def legacy_v5_dispatch_call_keywords_flagged(tmp_path: Path) -> None:
-    copy_v5_fixture_tree(_V5_FIXTURE / "skills", tmp_path / "skills")
-    graph = load_repository_blueprint_graph(
-        tmp_path,
-        schema_root=_V5_SCHEMA_ROOT,
-        **{"expected_" + "schema_version": 5},
-    )
-    runtime = tmp_path / "skills" / "demo" / "_rtx" / "runtime.py"
-    runtime.write_text(
-        "from officina.runtime.python_machine_interface import DispatchCall\n"
-        "DISPATCHES = {\n"
-        "    'read': DispatchCall(caller_skill='demo-rtx', target_skill='other', interface='x')\n"
-        "}\n",
-        encoding="utf-8",
-    )
-
-    errors = _mod.validate_with_graph(tmp_path, graph)
-    assert any("caller_module_id and target_module_id" in error for error in errors)
 
 
 def test_wrong_skill_flagged(tmp_path: Path) -> None:

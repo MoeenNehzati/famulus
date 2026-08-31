@@ -1,8 +1,0 @@
-examples:
-  module: blueprint.yaml
-  behavioral_sources:
-    - blueprints/gateway.yaml
-    - blueprints/runner.yaml
-generated_outputs:
-  - SKILL.md blueprint contract block
-  - SKILL.md blueprint interface block

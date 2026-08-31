@@ -108,6 +108,8 @@ def _resolve_dispatch_metadata_for_trace(
     """Resolve offline traces without putting graph work on the live path."""
 
     repository_root = get_repo_root(repo_root)
+    if graph is not None and graph.schema_version != 6:
+        raise InvocationError(f"unsupported graph version {graph.schema_version}")
     repository_config = repository_root / toml_io.repository_config_filename()
     if not repository_config.is_file():
         return _resolve_unconfigured_trace_metadata(

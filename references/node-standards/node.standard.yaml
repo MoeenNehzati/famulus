@@ -1,6 +1,6 @@
 schema_version: 6
-standard_version: 1.0.0
-revision: 14
+standard_version: 2.0.0
+revision: 15
 id: node-standards.node
 canonical_path: references/node-standards/node.standard.yaml
 title: Node Standard
@@ -16,16 +16,16 @@ imports:
       ref: artifact.refactoring-standard
 standards:
 - kind: family
-  id: skill-guidelines.module-behavioral-source-v5
-  title: Version 5 nested modules and behavioral sources
+  id: skill-guidelines.module-behavioral-source-v6
+  title: Version 6 nested modules and behavioral sources
   summary: This family is the sole live blueprint and interface authoring authority.
   children:
   - kind: rule
-    id: skill-guidelines.module-behavioral-source-v5.node-kinds
+    id: skill-guidelines.module-behavioral-source-v6.node-kinds
     assertions:
     - id: blueprint-node-type
       modality: required
-      statement: "Every new or edited blueprint uses `schema_version: 5` and exactly one live `node_type`,
+      statement: "Every new or edited blueprint uses `schema_version: 6` and exactly one live `node_type`,
         either `module` or `behavioral_source`."
     - id: optional-implementation-child
       modality: required
@@ -34,9 +34,9 @@ standards:
     - id: implementation-child-contract
       modality: required
       statement: "A discoverable skill's implementation child, when present, has global ID `<skill-id>-rtx`,
-        marker `_rtx/blueprint.yaml`, gateway `_rtx/__init__.py`, no `discovery`, and no version-5 module below it."
+        marker `_rtx/blueprint.yaml`, gateway `_rtx/__init__.py`, no `discovery`, and no version-6 module below it."
   - kind: rule
-    id: skill-guidelines.module-behavioral-source-v5.ownership
+    id: skill-guidelines.module-behavioral-source-v6.ownership
     assertions:
     - id: direct-ownership
       modality: required
@@ -46,14 +46,14 @@ standards:
       atomicity: pending
 - kind: family
   id: skill-guidelines.blueprint-authoring
-  title: 'Blueprint authoring — REQUIRED: Use the version 5 schemas'
+  title: 'Blueprint authoring — REQUIRED: Use the version 6 schemas'
   children:
   - kind: rule
     id: skill-guidelines.blueprint-authoring.requirement-002
     assertions:
     - id: schema-driven-authoring
       modality: required
-      statement: Author version-5 blueprints from the current schema and canonical templates rather than
+      statement: Author version-6 blueprints from the current schema and canonical templates rather than
         inferring fields from older examples.
 - kind: family
   id: skill-guidelines.state-ownership
@@ -490,7 +490,7 @@ assurances:
   node.blueprint-node-type:
     assertion:
       kind: assertion
-      ref: skill-guidelines.module-behavioral-source-v5.node-kinds#blueprint-node-type
+      ref: skill-guidelines.module-behavioral-source-v6.node-kinds#blueprint-node-type
     mechanism:
       kind: check
       ref: node.blueprint-contract
@@ -499,7 +499,7 @@ assurances:
     aspects:
     - schema-version
     - node-type
-    coverage_description: Validates version-5 blueprints against the selected module or behavioral-source
+    coverage_description: Validates version-6 blueprints against the selected module or behavioral-source
       schema and rejects incompatible canonical markers.
     lifecycle: active
     resolution:
@@ -507,7 +507,7 @@ assurances:
   node.optional-implementation-child:
     assertion:
       kind: assertion
-      ref: skill-guidelines.module-behavioral-source-v5.node-kinds#optional-implementation-child
+      ref: skill-guidelines.module-behavioral-source-v6.node-kinds#optional-implementation-child
     mechanism:
       kind: check
       ref: node.blueprint-contract
@@ -526,7 +526,7 @@ assurances:
   node.implementation-child-contract:
     assertion:
       kind: assertion
-      ref: skill-guidelines.module-behavioral-source-v5.node-kinds#implementation-child-contract
+      ref: skill-guidelines.module-behavioral-source-v6.node-kinds#implementation-child-contract
     mechanism:
       kind: check
       ref: node.blueprint-contract
@@ -564,7 +564,7 @@ assurances:
 semantic_reviews:
   node.identity:
     coverage:
-    - target: {kind: family, ref: skill-guidelines.module-behavioral-source-v5}
+    - target: {kind: family, ref: skill-guidelines.module-behavioral-source-v6}
       strength: supporting
       aspects: [naming, discovery, taxonomy, compatibility, permissions]
       scope: node-and-descendants
@@ -697,7 +697,7 @@ semantic_reviews:
     reviewer_kinds: [human, llm]
     instructions: {artifact: {kind: artifact, ref: artifact.semantic-review-instructions}, instruction_id: review-validation}
 links:
-  node-kinds-remedy: {source: {kind: family, ref: skill-guidelines.module-behavioral-source-v5}, relation: remedied-by, target: {kind: procedure, ref: node-standards.remedies.repair-node-registration-and-ownership}, lifecycle: active, resolution: {state: resolved}}
+  node-kinds-remedy: {source: {kind: family, ref: skill-guidelines.module-behavioral-source-v6}, relation: remedied-by, target: {kind: procedure, ref: node-standards.remedies.repair-node-registration-and-ownership}, lifecycle: active, resolution: {state: resolved}}
   blueprint-authoring-remedy: {source: {kind: family, ref: skill-guidelines.blueprint-authoring}, relation: remedied-by, target: {kind: procedure, ref: node-standards.remedies.repair-blueprint-from-schema}, lifecycle: active, resolution: {state: resolved}}
   state-ownership-remedy: {source: {kind: family, ref: skill-guidelines.state-ownership}, relation: remedied-by, target: {kind: procedure, document: refactoring, ref: skill-refactoring.remedies.relocate-state}, lifecycle: active, resolution: {state: resolved}}
   sensitive-config-remedy: {source: {kind: family, ref: skill-guidelines.sensitive-configs}, relation: remedied-by, target: {kind: procedure, document: refactoring, ref: skill-refactoring.remedies.relocate-credentials}, lifecycle: active, resolution: {state: resolved}}

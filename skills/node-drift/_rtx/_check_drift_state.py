@@ -58,121 +58,13 @@ class DriftCheckError(RuntimeError):
 
 
 @dataclass(frozen=True)
-class _V4DerivedState:
+class RepositoryDerivedState:
     graph: RepositoryBlueprintGraph
     states: dict[str, NodeHashState]
     basis_hash: str
     currentness: CertificateCurrentnessReport
 
 
-def _schema_root_for_version(root: Path, schema_version: int) -> Path | None:
-    """Return the live schema root unless v5 selects its retired owner."""
-
-    return root / "references" / "blueprint-schema" if schema_version in {4, 6} else None
-
-
-def _v4_repository_state(
-    repo_root: Path,
-    *,
-    expected_schema_version: int = 6,
-    allow_non_atomic: bool = False,
-) -> tuple[
-    RepositoryBlueprintGraph,
-    dict[str, NodeHashState],
-    str,
-    str,
-    Path,
-    dict[str, object],
-]:
-    """Return the canonical graph, hashes, basis, and certifier identity."""
-
-    root = Path(repo_root).resolve()
-    try:
-        derived = derive_repository_certification_state(
-            root,
-            expected_schema_version=expected_schema_version,
-            schema_root=_schema_root_for_version(root, expected_schema_version),
-            allow_non_atomic=allow_non_atomic,
-        )
-    except (CertificationHashError, RepositoryCertificationError, OSError, ValueError) as exc:
-        raise DriftCheckError(str(exc)) from exc
-    return (
-        derived.graph,
-        dict(derived.states),
-        derived.source_commit,
-        derived.certification_basis_hash,
-        root / "references" / "blueprint-schema",
-        dict(derived.certifier_identity),
-    )
-
-
-def _derive_v4_repository_state(
-    repo_root: Path,
-    target_node_ids: Sequence[str],
-    *,
-    public_key_root: Path,
-    expected_schema_version: int = 6,
-    allow_non_atomic: bool = False,
-) -> _V4DerivedState:
-    root = Path(repo_root).resolve()
-    try:
-        derived = derive_repository_certification_state(
-            root,
-            public_key_root=public_key_root,
-            expected_schema_version=expected_schema_version,
-            schema_root=_schema_root_for_version(root, expected_schema_version),
-            allow_non_atomic=allow_non_atomic,
-        )
-    except (CertificationHashError, RepositoryCertificationError, OSError, ValueError) as exc:
-        raise DriftCheckError(str(exc)) from exc
-    unknown = sorted(set(target_node_ids) - set(derived.graph.nodes))
-    if unknown:
-        raise DriftCheckError(
-            "unknown exact drift target: " + ", ".join(unknown)
-        )
-    stale_worklist = certificate_stale_worklist(
-        derived.graph,
-        derived.states,
-        derived.currentness,
-        target_node_ids,
-    )
-    target_set = set(target_node_ids)
-    return _V4DerivedState(
-        graph=derived.graph,
-        states=dict(derived.states),
-        basis_hash=derived.certification_basis_hash,
-        currentness=CertificateCurrentnessReport(
-            nodes={
-                node_id: derived.currentness.nodes[node_id]
-                for node_id in target_node_ids
-            },
-            stale_worklist=stale_worklist,
-            dependency_nodes={
-                node_id: derived.currentness.nodes[node_id]
-                for node_id in stale_worklist
-                if node_id not in target_set
-            },
-        ),
-    )
-
-
-def _check_v4_repository(
-    repo_root: Path,
-    target_node_ids: Sequence[str],
-    *,
-    public_key_root: Path,
-    expected_schema_version: int = 6,
-    allow_non_atomic: bool = False,
-) -> CertificateCurrentnessReport:
-    """Return public-key-only currentness for exact node IDs."""
-
-    return _derive_v4_repository_state(
-        repo_root,
-        target_node_ids,
-        public_key_root=public_key_root,
-        expected_schema_version=expected_schema_version,
-        allow_non_atomic=allow_non_atomic,
-    ).currentness
 
 
 @dataclass(frozen=True)
@@ -326,7 +218,7 @@ class ModuleDriftReport:
 
 
 def _node_drift_status(
-    derived: _V4DerivedState,
+    derived: RepositoryDerivedState,
     node_id: str,
 ) -> NodeDriftStatus:
     """Adapt one shared currentness result without dropping structured drift.
@@ -543,22 +435,15 @@ def _module_node_ids(
 
 def _derive_for_source(
     source: SkillSource,
-    *,
-    expected_schema_version: int = 6,
-) -> _V4DerivedState:
+) -> RepositoryDerivedState:
     try:
         derived = derive_repository_certification_state(
             source.package_root,
             public_key_root=certificate_public_key_root(source.package_root),
-            expected_schema_version=expected_schema_version,
-            schema_root=_schema_root_for_version(
-                source.package_root,
-                expected_schema_version,
-            ),
         )
     except (CertificationHashError, RepositoryCertificationError, OSError, ValueError) as exc:
         raise DriftCheckError(str(exc)) from exc
-    return _V4DerivedState(
+    return RepositoryDerivedState(
         graph=derived.graph,
         states=dict(derived.states),
         basis_hash=derived.certification_basis_hash,
@@ -568,29 +453,20 @@ def _derive_for_source(
 
 def reports_for_scopes(
     scopes: tuple[RequestedScope, ...],
-    *,
-    expected_schema_version: int = 6,
 ) -> list[ModuleDriftReport]:
     reports: list[ModuleDriftReport] = []
     requested = {name for scope in scopes for name in scope.skill_names}
     found: set[str] = set()
-    cache: dict[Path, _V4DerivedState] = {}
+    cache: dict[Path, RepositoryDerivedState] = {}
     requested_node_ids: dict[Path, set[str]] = {}
     for scope in scopes:
         key = scope.source.package_root.resolve()
         for skill_name in scope.skill_names:
-            if expected_schema_version == 4 and not (
-                scope.source.skills_root / skill_name / "SKILL.md"
-            ).is_file():
-                continue
             if key not in cache:
-                cache[key] = _derive_for_source(
-                    scope.source,
-                    expected_schema_version=expected_schema_version,
-                )
+                cache[key] = _derive_for_source(scope.source)
             derived = cache[key]
             node_ids = _module_node_ids(derived.graph, skill_name)
-            if expected_schema_version in {5, 6} and not node_ids:
+            if not node_ids:
                 continue
             found.add(skill_name)
             if not node_ids:
@@ -648,30 +524,21 @@ def reports_for_scopes(
 
 def hash_reports_for_scopes(
     scopes: tuple[RequestedScope, ...],
-    *,
-    expected_schema_version: int = 6,
 ) -> tuple[list[SkillHashReport], list[SkillHashFailure]]:
     reports: list[SkillHashReport] = []
     failures: list[SkillHashFailure] = []
     requested = {name for scope in scopes for name in scope.skill_names}
     found: set[str] = set()
-    cache: dict[Path, _V4DerivedState] = {}
+    cache: dict[Path, RepositoryDerivedState] = {}
     for scope in scopes:
         key = scope.source.package_root.resolve()
         for skill_name in scope.skill_names:
-            if expected_schema_version == 4 and not (
-                scope.source.skills_root / skill_name / "SKILL.md"
-            ).is_file():
-                continue
             try:
                 if key not in cache:
-                    cache[key] = _derive_for_source(
-                        scope.source,
-                        expected_schema_version=expected_schema_version,
-                    )
+                    cache[key] = _derive_for_source(scope.source)
                 derived = cache[key]
                 node_ids = _module_node_ids(derived.graph, skill_name)
-                if expected_schema_version in {5, 6} and not node_ids:
+                if not node_ids:
                     continue
                 found.add(skill_name)
                 if not node_ids:

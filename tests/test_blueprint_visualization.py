@@ -94,7 +94,7 @@ def test_selected_skill_scope_summarizes_crossing_relationships() -> None:
         source_modules={source.node_id: skill.node_id, outside_source.node_id: outside.node_id},
         module_parents={skill.node_id: None, outside.node_id: None},
         module_children={skill.node_id: (), outside.node_id: ()},
-        schema_version=5,
+        schema_version=6,
     )
 
     payload = build_payload_from_repository_graph(
@@ -200,7 +200,7 @@ def _presentation_node_graph() -> RepositoryBlueprintGraph:
         module_sources={node_id: () for node_id in nodes},
         module_parents={"alpha": None, "alpha.runtime": "alpha", "beta": None},
         module_children={"alpha": ("alpha.runtime",), "alpha.runtime": (), "beta": ()},
-        schema_version=5,
+        schema_version=6,
     )
 
 

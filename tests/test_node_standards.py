@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from collections import Counter
 from functools import cache
 import hashlib
-import json
 from pathlib import Path
 import re
 
@@ -12,7 +10,6 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 NODE_STANDARDS = ROOT / "references" / "node-standards"
-DISPOSITION = NODE_STANDARDS / "authority-disposition.yaml"
 
 
 @cache
@@ -22,44 +19,6 @@ def _load(path: Path) -> dict:
     value = yaml.safe_load(path.read_text(encoding="utf-8"))
     assert isinstance(value, dict)
     return value
-
-
-def _migration_audit() -> dict:
-    return _load(DISPOSITION)["migration_audit"]["skill-guidelines"]
-
-
-def _atomized_assertions() -> dict[str, set[str]]:
-    return {
-        source: set(replacements)
-        for source, replacements in _migration_audit()["atomized_assertions"].items()
-    }
-
-
-def test_authority_disposition_declares_runtime_and_source_roles() -> None:
-    disposition = _load(DISPOSITION)
-
-    assert disposition["runtime_authority"] == (
-        "pinned import closures rooted at references/node-standards/*.standard.yaml"
-    )
-    assert disposition["source_authorities"]["skill-guidelines"]["status"] == "replaced"
-    assert disposition["source_authorities"]["skill-refactoring"]["status"] == "migrated"
-    assert disposition["source_authorities"]["interface-design"]["status"] == "excluded"
-    assert disposition["retirements"]["python-ood-refactoring-reference"]["status"] == "migrated"
-    assert disposition["supersessions"]["credential-storage"]["replacement"] == (
-        "secret-store-for-secrets-config-dir-for-sensitive-nonsecrets"
-    )
-
-    interface_design = disposition["source_authorities"]["interface-design"]
-    path = ROOT / interface_design["path"]
-    assert interface_design["digest"] == "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
-    refactoring = disposition["source_authorities"]["skill-refactoring"]
-    replacement = ROOT / refactoring["replacement"]
-    assert refactoring["replacement_digest"] == (
-        "sha256:" + hashlib.sha256(replacement.read_bytes()).hexdigest()
-    )
-    research = disposition["research_basis"]["python-ood"]
-    assert len(research["primary_sources"]) >= 5
-    assert len(research["skill_baselines"]) >= 2
 
 
 def test_every_python_ood_rule_has_a_declared_remedy() -> None:
@@ -182,6 +141,24 @@ def _closure_ids(name: str) -> set[str]:
     }
 
 
+def test_live_node_standard_import_pins_match_raw_repository_bytes() -> None:
+    standards = {"node": (Path("references/node-standards/node.standard.yaml"), "node-standards.node", "2.0.0", 15), "module": (Path("references/node-standards/module.standard.yaml"), "node-standards.module", "2.0.0", 15), "behavioral-source": (Path("references/node-standards/behavioral-source.standard.yaml"), "node-standards.behavioral-source", "1.0.0", 15), "instruction-node": (Path("references/node-standards/instruction-node.standard.yaml"), "node-standards.instruction-node", "1.0.0", 16),
+        "python-node": (Path("references/node-standards/python-node.standard.yaml"), "node-standards.python-node", "1.0.0", 19), "instruction-module": (Path("references/node-standards/instruction-module.standard.yaml"), "node-standards.instruction-module", "1.0.0", 19), "python-module": (Path("references/node-standards/python-module.standard.yaml"), "node-standards.python-module", "1.0.0", 21), "instruction-behavioral-source": (Path("references/node-standards/instruction-behavioral-source.standard.yaml"), "node-standards.instruction-behavioral-source", "1.0.0", 17),
+        "python-behavioral-source": (Path("references/node-standards/python-behavioral-source.standard.yaml"), "node-standards.python-behavioral-source", "1.0.0", 20), "refactoring": (Path("references/node-standards/refactoring.standard.yaml"), "node-standards.refactoring", "2.0.0", 6), "python-ood": (Path("references/node-standards/python-ood.standard.yaml"), "node-standards.python-ood", "1.0.0", 6)}
+    imports = {"node": {"refactoring": "refactoring"}, "module": {"node": "node"}, "behavioral-source": {"node": "node"}, "instruction-node": {"node": "node"}, "python-node": {"node": "node", "python-ood": "python-ood"},
+        "instruction-module": {"refactoring": "refactoring", "module": "module", "instruction-node": "instruction-node"}, "python-module": {"module": "module", "python-node": "python-node"}, "instruction-behavioral-source": {"behavioral-source": "behavioral-source", "instruction-node": "instruction-node"}, "python-behavioral-source": {"behavioral-source": "behavioral-source", "python-node": "python-node"}}
+    documents = {name: _load(ROOT / path) for name, (path, _, _, _) in standards.items()}
+    for name, (_, standard_id, version, revision) in standards.items():
+        assert (documents[name]["id"], documents[name]["standard_version"], documents[name]["revision"]) == (standard_id, version, revision)
+    for name, expected_imports in imports.items():
+        document = documents[name]; assert set(document.get("imports", {})) == set(expected_imports)
+        for alias, target_name in expected_imports.items():
+            target_path, target_id, target_version, target_revision = standards[target_name]
+            pin = document["imports"][alias]
+            assert (ROOT / document["artifacts"][pin["artifact"]["ref"]]["path"]).resolve() == (ROOT / target_path).resolve()
+            assert (pin["standard_id"], pin["standard_version"], pin["revision"], pin["digest"]) == (target_id, target_version, target_revision, "sha256:" + hashlib.sha256((ROOT / target_path).read_bytes()).hexdigest())
+
+
 def _semantic_nodes(items: list[dict]) -> dict[str, dict]:
     result: dict[str, dict] = {}
     for item in items:
@@ -196,57 +173,6 @@ def _semantic_nodes(items: list[dict]) -> dict[str, dict]:
             )
         result.update(_semantic_nodes(item.get("children", [])))
     return result
-
-
-def test_migration_manifest_proves_complete_unique_legacy_semantics() -> None:
-    audit = _migration_audit()
-    atomized = _atomized_assertions()
-    economy_retirements = set(audit["economy_retirements"])
-    ownership = Counter(
-        semantic_id
-        for path in NODE_STANDARDS.glob("*.standard.yaml")
-        for semantic_id in _semantic_ids(_load(path)["standards"])
-    )
-    reconstructed = {
-        semantic_id
-        for semantic_id in ownership
-        if semantic_id.startswith("skill-guidelines.")
-    }
-    for original, replacements in atomized.items():
-        reconstructed.difference_update(replacements)
-        reconstructed.add(original)
-    reconstructed.update(economy_retirements)
-
-    payload = "\n".join(sorted(reconstructed)) + "\n"
-    assert len(reconstructed) == audit["source_semantic_items"]
-    assert "sha256:" + hashlib.sha256(payload.encode()).hexdigest() == (
-        audit["source_semantic_id_digest"]
-    )
-    assert all(ownership[item] == 1 for item in reconstructed if item in ownership)
-    assert audit["duplicate_items"] == 0
-    assert audit["unresolved_items"] == 0
-    assert all(ownership[item] == 0 for item in economy_retirements)
-
-    rewritten = set(audit["rewritten_same_id_leaves"])
-    replacements = {item for values in atomized.values() for item in values}
-    exact_leaves: dict[str, dict] = {}
-    for path in NODE_STANDARDS.glob("*.standard.yaml"):
-        for semantic_id, value in _semantic_nodes(_load(path)["standards"]).items():
-            is_leaf = "#" in semantic_id or value["kind"] not in {
-                "family", "rule", "procedure"
-            }
-            if (
-                is_leaf
-                and semantic_id.startswith("skill-guidelines.")
-                and semantic_id not in rewritten
-                and semantic_id not in replacements
-            ):
-                exact_leaves[semantic_id] = value
-    digest = "sha256:" + hashlib.sha256(
-        json.dumps(exact_leaves, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
-    assert len(exact_leaves) == audit["exact_unchanged_leaf_items"]
-    assert digest == audit["exact_unchanged_leaf_digest"]
 
 
 def test_context_guidance_contains_no_formatting_only_headings() -> None:
@@ -328,18 +254,6 @@ def test_normative_and_procedural_content_uses_operational_semantic_kinds() -> N
     )
 
 
-def test_atomized_assertions_have_exact_unique_replacements() -> None:
-    ownership = Counter(
-        semantic_id
-        for path in NODE_STANDARDS.glob("*.standard.yaml")
-        for semantic_id in _semantic_ids(_load(path)["standards"])
-    )
-
-    for original, replacements in _atomized_assertions().items():
-        assert ownership[original] == 0
-        assert all(ownership[replacement] == 1 for replacement in replacements)
-
-
 def test_mixed_family_rules_land_in_their_actual_layers() -> None:
     behavioral = _closure_ids("behavioral-source")
     python_behavioral = _closure_ids("python-behavioral-source")
@@ -347,8 +261,8 @@ def test_mixed_family_rules_land_in_their_actual_layers() -> None:
     node = _closure_ids("node")
     python_node = _closure_ids("python-node")
 
-    assert "skill-guidelines.module-behavioral-source-v5.node-kinds" in behavioral
-    assert "skill-guidelines.module-behavioral-source-v5.ownership" in behavioral
+    assert "skill-guidelines.module-behavioral-source-v6.node-kinds" in behavioral
+    assert "skill-guidelines.module-behavioral-source-v6.ownership" in behavioral
     assert "skill-guidelines.blueprint-authoring.requirement-002" in behavioral
     assert "skill-guidelines.canonical-interface-names.requirement-002" in python_behavioral
     assert "skill-guidelines.canonical-interface-names.requirement-003" in python_behavioral

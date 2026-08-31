@@ -1606,6 +1606,27 @@ def test_dependency_resolver_builds_v5_target_from_local_interface(
     assert captured["target"] == "cloud-files-rtx.interface.read"
 
 
+@pytest.mark.parametrize("configured", [False, True], ids=["no-config", "configured"])
+def test_trace_rejects_supplied_non_v6_graph_before_route_selection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    configured: bool,
+) -> None:
+    if configured:
+        (tmp_path / "officina.toml").write_text("", encoding="utf-8")
+        monkeypatch.setattr(
+            dispatcher_core,
+            "_resolve_dispatch",
+            lambda **_kwargs: pytest.fail("configured dispatch reached"),
+        )
+
+    with pytest.raises(dispatcher_core.InvocationError, match="unsupported graph version 5"):
+        dispatcher_core._resolve_dispatch_metadata_for_trace(
+            caller_module_id="demo", target="provider.interface.run",
+            repo_root=tmp_path, graph=type("Graph", (), {"schema_version": 5})(),
+        )
+
+
 def test_dependency_resolver_rejects_mismatched_runtime_caller_context(
     tmp_path: Path,
 ) -> None:
