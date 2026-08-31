@@ -21,6 +21,9 @@ _PLATFORM_MARKERS = {
 # Skill-owned dependencies remain authoritative in the generated blueprint
 # manifest; these two requirements are the managed-runtime bootstrap policy.
 BOOTSTRAP_REQUIREMENTS = ("PyYAML==6.0.2", "setuptools==80.9.0")
+FEATURE_OWNED_MODULE_IDS = frozenset(
+    {"connect-google", "cloud-files", "online-calendar", "email-client"}
+)
 
 _HEADER_PATTERN = re.compile(r"^# ([a-z][a-z0-9-]*): (.+)$")
 _EXACT_REQUIREMENT_PATTERN = re.compile(
@@ -92,6 +95,8 @@ def selected_runtime_module_ids(
         if payload["version"] == 1 or module.get("installation_tier", "core") == "core":
             selected.add(module_id)
     for module_id in optional_module_ids:
+        if module_id in FEATURE_OWNED_MODULE_IDS:
+            raise RuntimeLockError(f"feature-owned module is not installer-selectable: {module_id}")
         module = skills.get(module_id)
         if not isinstance(module, dict) or module.get("installation_tier") != "optional":
             raise RuntimeLockError(f"unknown optional module: {module_id}")

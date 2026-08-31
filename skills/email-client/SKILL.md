@@ -26,6 +26,7 @@ Uses Interfaces:
 - `email-client.source.gateway -> email-client._rtx.interface.mail-read@1`
 - `email-client.source.gateway -> email-client._rtx.interface.mail-save-attachments@1`
 - `email-client.source.gateway -> email-client._rtx.interface.send-email@1`
+- `email-client.source.gateway -> setup-python-environment.interface.repair-selected-packages@1`
 
 Public Interfaces:
 - `email-client.interface.default`
@@ -180,6 +181,13 @@ These are LLM-readable instruction surfaces. Read and follow them directly; do n
 - `email-client.interface.default` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->
 # Email
+
+Before any Gmail, credential, IMAP, or SMTP action, use the host-loaded
+`setup-python-environment.interface.repair-selected-packages` procedure for
+feature `email-client` and its exact declaration `["keyring"]`. Require its
+complete selected-Python preflight and byte-equal final fingerprint. On failure,
+stop before OAuth, network, configuration, or other owner activity; never repair
+another feature's declaration.
 
 Accounts are selected by registered nickname. If the nickname is unknown, invoke
 `email-client._rtx.interface.accounts-list` and use its JSON result; do not infer an

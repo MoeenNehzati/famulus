@@ -21,6 +21,7 @@ Uses Interfaces:
 - `cloud-files.source.gateway -> cloud-files._rtx.interface.plans-write@1`
 - `cloud-files.source.gateway -> cloud-files._rtx.interface.write-config@1`
 - `cloud-files.source.gateway -> connect-google.interface.default@1`
+- `cloud-files.source.gateway -> setup-python-environment.interface.repair-selected-packages@1`
 
 Setup Requires Setup Of:
 - `connect-google.interface.setup@1`
@@ -130,6 +131,13 @@ Skill: cloud-files
 
 This skill owns Google Drive transport. Other skills should call this skill's
 scripts rather than speaking to the Drive API directly.
+
+Before any Drive or credential action, use the host-loaded
+`setup-python-environment.interface.repair-selected-packages` procedure for
+feature `cloud-files` and its exact declaration `["keyring"]`. Require its
+complete selected-Python preflight and byte-equal final fingerprint. On failure,
+stop before OAuth, network, configuration, or other owner activity; never repair
+another feature's declaration.
 
 Install-time config lives at `~/.config/cloud-files/config.json`.
 Legacy OAuth credentials live at `~/.config/cloud-files/credentials.json`.

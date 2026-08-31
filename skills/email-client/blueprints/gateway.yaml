@@ -1,6 +1,12 @@
 content:
 - SKILL\.md
-dependencies: []
+dependencies:
+- blueprint:
+    base: repository-root
+    path: skills/setup-python-environment/blueprints/gateway.yaml
+  reason: Repair only the Gmail-owner keyring declaration in the selected Python.
+  source: setup-python-environment.source.gateway
+  version: 1
 description: LLM-facing routing and safety instructions for account configuration,
   IMAP reads, attachment handling, SMTP sends, OAuth setup, and live checks.
 gateway:
@@ -12,6 +18,8 @@ interfaces:
     content:
     - SKILL\.md
     uses_interfaces:
+    - interface: setup-python-environment.interface.repair-selected-packages
+      version: 1
     - interface: connect-google.interface.default
       version: 1
     - interface: email-client._rtx.interface.accounts-add
@@ -113,6 +121,8 @@ interfaces:
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
+- interface: setup-python-environment.interface.repair-selected-packages
+  version: 1
 - interface: connect-google.interface.default
   version: 1
 - interface: email-client._rtx.interface.accounts-add

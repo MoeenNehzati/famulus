@@ -1,6 +1,12 @@
 content:
 - SKILL\.md
-dependencies: []
+dependencies:
+- blueprint:
+    base: repository-root
+    path: skills/setup-python-environment/blueprints/gateway.yaml
+  reason: Repair only the Calendar-owner keyring declaration in the selected Python.
+  source: setup-python-environment.source.gateway
+  version: 1
 description: Interprets calendar requests, invokes the calendar client, and routes
   missing OAuth setup through connect-google and the local bootstrap interface.
 gateway:
@@ -12,6 +18,8 @@ interfaces:
     content:
     - SKILL\.md
     uses_interfaces:
+    - interface: setup-python-environment.interface.repair-selected-packages
+      version: 1
     - interface: connect-google.interface.default
       version: 1
     - interface: online-calendar._rtx.interface.scripts-gcal
@@ -105,6 +113,8 @@ interfaces:
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
+- interface: setup-python-environment.interface.repair-selected-packages
+  version: 1
 - interface: connect-google.interface.default
   version: 1
 - interface: online-calendar._rtx.interface.scripts-gcal

@@ -57,7 +57,7 @@
     },
     "cloud-files": {
       "maturity": "experimental",
-      "installation_tier": "core",
+      "installation_tier": "optional",
       "personal_preference": {
         "applies": false
       },
@@ -231,7 +231,7 @@
     },
     "connect-google": {
       "maturity": "experimental",
-      "installation_tier": "core",
+      "installation_tier": "optional",
       "personal_preference": {
         "applies": false
       },
@@ -1050,7 +1050,7 @@
     },
     "email-client": {
       "maturity": "stable",
-      "installation_tier": "core",
+      "installation_tier": "optional",
       "personal_preference": {
         "applies": false
       },
@@ -4858,7 +4858,7 @@
     },
     "online-calendar": {
       "maturity": "experimental",
-      "installation_tier": "core",
+      "installation_tier": "optional",
       "personal_preference": {
         "applies": false
       },

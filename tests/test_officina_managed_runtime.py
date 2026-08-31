@@ -351,7 +351,10 @@ def test_selected_optional_module_adds_its_platform_dependency_without_package_p
 
 def test_optional_runtime_modules_describes_pdf_to_markdown():
     modules = optional_runtime_modules(REAL_MANIFEST, platform="linux")
-    assert modules == ({"id": "pdf-to-markdown", "packages": ("marker-pdf",)},)
+    assert modules == (
+        {"id": "install-launchers", "packages": ()},
+        {"id": "pdf-to-markdown", "packages": ("marker-pdf",)},
+    )
 
 
 def test_package_size_estimates_use_wheel_or_sdist_metadata_or_report_unavailable():

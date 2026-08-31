@@ -15,6 +15,7 @@ Skill Version: 2
 Uses Interfaces:
 - `online-calendar.source.gateway -> connect-google.interface.default@1`
 - `online-calendar.source.gateway -> online-calendar._rtx.interface.scripts-gcal@1`
+- `online-calendar.source.gateway -> setup-python-environment.interface.repair-selected-packages@1`
 
 Setup Requires Setup Of:
 - `connect-google.interface.setup@1`
@@ -107,6 +108,13 @@ These are LLM-readable instruction surfaces. Read and follow them directly; do n
 - `online-calendar.interface.setup` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->
 # Google Calendar
+
+Before any Calendar or credential action, use the host-loaded
+`setup-python-environment.interface.repair-selected-packages` procedure for
+feature `online-calendar` and its exact declaration `["keyring"]`. Require its
+complete selected-Python preflight and byte-equal final fingerprint. On failure,
+stop before OAuth, network, configuration, or other owner activity; never repair
+another feature's declaration.
 
 Use `online-calendar._rtx.interface.scripts-gcal` for calendar reads and writes. Invoke one
 interface call per operation, minimize network round trips, and issue independent calls

@@ -158,6 +158,8 @@ def optional_runtime_modules(manifest_path: Path, *, platform: str) -> tuple[dic
     core = set(declared_python_packages(manifest_path, platform=platform))
     result: list[dict[str, object]] = []
     for module_id, module in sorted(skills.items()):
+        if module_id in runtime_lock.FEATURE_OWNED_MODULE_IDS:
+            continue
         if not isinstance(module, dict) or module.get("installation_tier") != "optional":
             continue
         packages = set(declared_python_packages(
