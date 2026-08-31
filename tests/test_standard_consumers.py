@@ -105,6 +105,20 @@ def test_refactor_node_builds_a_refactoring_brief_from_each_selected_root() -> N
     assert len(skill.split()) < 700
 
 
+def test_test_code_affecting_skill_work_queries_the_code_testing_standard() -> None:
+    testing_root = "references/node-standards/code-testing.standard.yaml"
+
+    for relative in (
+        "skills/skill-maker/SKILL.md",
+        "skills/refactor-node/SKILL.md",
+    ):
+        skill = _normalized(relative)
+        assert "If selected work touches test files or their fixtures or helpers" in skill
+        assert testing_root in skill
+        assert "additional independent root" in skill
+        assert "Do not query it for Markdown-only work" in skill
+
+
 def test_language_routes_use_the_whole_applicable_closure() -> None:
     python = _normalized("skills/refactor-node/instructions/python-refactoring.md")
     instructions = _normalized(

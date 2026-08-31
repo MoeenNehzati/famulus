@@ -1,0 +1,362 @@
+schema_version: 6
+standard_version: 1.0.0
+revision: 1
+id: node-standards.code-testing
+canonical_path: references/node-standards/code-testing.standard.yaml
+title: Code Test Design and Performance Standard
+purpose: Govern test-code files while preserving unique behavioral evidence and preventing avoidable setup, execution, and suite-placement cost.
+domain_facts:
+  node.skill-owned: true
+standards:
+- kind: family
+  id: code-testing.requirements
+  title: Test evidence and cost requirements
+  summary: Requirements for tests, fixtures, shared preparation, consolidation, and performance claims.
+  children:
+  - kind: rule
+    id: code-testing.requirements.unique-evidence
+    assertions:
+    - id: retained-owner
+      modality: required
+      statement: Every supported contract affected by deletion, consolidation, narrowing, or suite movement has
+        an identified retained test, canonical validator, or public integration owner; age, runtime, inconvenience,
+        and test count alone neither justify deletion nor retention.
+    - id: uncertainty-preserves-evidence
+      modality: required
+      statement: If support status or unique ownership is unresolved, retain the evidence and record the gap.
+  - kind: rule
+    id: code-testing.requirements.lowest-honest-boundary
+    assertions:
+    - id: setup-matches-observable
+      modality: required
+      statement: Exercise the lowest stable layer that owns the claimed observable; retain separate public-route
+        evidence when a lower-level test does not prove adapter, process, repository, or integration behavior.
+    - id: physical-boundary-earned
+      modality: required
+      statement: Real Git, signing, sockets, processes, filesystem races, repository-wide graphs, and equivalent
+        physical boundaries are retained only where the assertion observes behavior unique to that boundary.
+  - kind: rule
+    id: code-testing.requirements.fixture-isolation-and-fidelity
+    assertions:
+    - id: mutable-state-isolated
+      modality: required
+      statement: Mutable repositories, graphs, documents, caches, environment, logs, and derived state are
+        isolated by test and worker or completely restored between labeled scenarios.
+    - id: fixture-matches-production
+      modality: required
+      statement: Reusable starting state preserves every behavior-relevant production property, including bytes,
+        modes, identity, branch, symlink shape, encoding, environment, schema, and key names.
+  - kind: rule
+    id: code-testing.requirements.failure-safe-lifecycle
+    assertions:
+    - id: cleanup-after-interruption
+      modality: required
+      statement: Processes, threads, sockets, locks, temporary state, and environment changes are released or
+        restored when assertions or injected failures interrupt a scenario.
+  - kind: rule
+    id: code-testing.requirements.safe-reuse
+    assertions:
+    - id: immutable-preparation-only
+      modality: required
+      statement: Share only immutable preparation; give every mutating consumer a private copy or mechanically
+        proven complete reset.
+    - id: provenance-bound
+      modality: required
+      statement: Reusable state is keyed and validated against every input and provenance property that can affect
+        its semantics; serialized, persistent, runner-provided, or cross-worker artifacts additionally validate
+        normalized root and view, versions, embedded types, and relevant failure state.
+    - id: failure-safe-fallback
+      modality: required
+      statement: Published or cross-worker reuse preserves corruption handling, atomic or locked publication,
+        competing-publisher behavior, cleanup, failure replay, direct-run fallback, and consumer isolation. Serialized
+        reuse is accepted only from trusted run-private storage; never deserialize a user-controlled cache.
+  - kind: rule
+    id: code-testing.requirements.parallel-awareness
+    assertions:
+    - id: xdist-scope-is-per-worker
+      modality: required
+      statement: Treat pytest module and session fixture scope as per worker under xdist; prove reuse by counting
+        physical setup at the target worker count rather than inferring it from fixture scope.
+  - kind: rule
+    id: code-testing.requirements.distinct-cases
+    assertions:
+    - id: branch-or-observable
+      modality: required
+      statement: Every parameter axis, separate expensive invocation, and concurrency participant maps to a
+        distinct production branch, observable, isolation boundary, or masking behavior.
+    - id: exact-evidence
+      modality: required
+      statement: Consolidated tests assert exact labeled outcomes and prove discovery or execution occurred;
+        an empty finding set alone is not execution evidence.
+    - id: behavior-not-incidental-architecture
+      modality: required
+      statement: Assert public behavior and evidence ownership; assert helper calls or operation counts only when
+        repeated work is itself the regression contract.
+  - kind: rule
+    id: code-testing.requirements.conservative-fast-paths
+    assertions:
+    - id: authoritative-fallback
+      modality: required
+      statement: Lexical, token, cache, and pre-parse shortcuts preserve normalization, decoding, syntax, discovery,
+        and fail-closed behavior; ambiguous inputs fall back to the authoritative path.
+  - kind: rule
+    id: code-testing.requirements.derived-state-consistency
+    assertions:
+    - id: refresh-dependent-state
+      modality: required
+      statement: After mutation, refresh every affected hash, projection, graph, index entry, cache key, or other
+        derived input; reuse path-bound state only when the changed bytes cannot affect stored or consumed data.
+  - kind: rule
+    id: code-testing.requirements.performance-evidence
+    assertions:
+    - id: comparable-measurement
+      modality: required
+      statement: Performance comparisons hold code revision or change set, suite selection, worker count,
+        repository view or projection, sandbox capability, and relevant host state constant and reject runs
+        contaminated by competing work or systemic slowdown.
+    - id: capability-attribution
+      modality: required
+      statement: Classify failures caused solely by missing harness capabilities as environment evidence rather than
+        product regressions, and rerun with the required capability before accepting correctness or timing.
+    - id: measure-work-and-wall
+      modality: required
+      statement: Record runner wall time, pytest wall time, aggregate item or file work, pass and skip counts,
+        setup-operation counts where relevant, and raw evidence; use repeated comparable runs when variance is material.
+    - id: net-material-benefit
+      modality: required
+      statement: Set a materiality threshold before editing; accept an optimization only when measured savings exceed
+        that threshold plus serialization, copying, locking, isolation, and maintenance costs under the target mode,
+        and revert correct changes that do not clear it.
+
+- kind: family
+  id: code-testing.smells.boundary-inflation
+  title: Boundary inflation, whole-repository setup, or nested integration
+  summary: Search terms include whole repository, authored inventory, traversal, ordering, nested repository,
+    symlink, graph, subprocess, and nested suite.
+  children:
+  - kind: definition
+    id: code-testing.smells.boundary-inflation.signal
+    term: Signal
+    meaning: A local rendering, projection, filtering, or diagnostic claim loads a whole repository or graph, or
+      a physical process is used for logic whose asserted behavior is wholly owned by a stable in-process layer.
+- kind: family
+  id: code-testing.smells.duplicate-evidence-owner
+  title: Duplicate, weaker, obsolete, or competing evidence owner
+  summary: Search terms include duplicate coverage, canonical validator, obsolete compatibility, and live owner.
+  children:
+  - kind: definition
+    id: code-testing.smells.duplicate-evidence-owner.signal
+    term: Signal
+    meaning: Two tests exercise the same live conformance boundary, a weaker assertion is subsumed by a stronger
+      retained owner, or a test enforces a private or compatibility route absent from supported production behavior.
+- kind: family
+  id: code-testing.smells.repeated-preparation
+  title: Repeated construction, parsing, scanning, schema, graph, or Git preparation
+  summary: Search terms include fixture scope, xdist, repository template, schema load, parsing, and scanning.
+  children:
+  - kind: definition
+    id: code-testing.smells.repeated-preparation.signal
+    term: Signal
+    meaning: Tests repeatedly create the same starting state or immutable product before observing different
+      downstream behavior, including when module or session fixture scope merely repeats once per xdist worker.
+- kind: family
+  id: code-testing.smells.unsafe-reuse
+  title: Shared mutable fixture, fixture drift, or incomplete cache provenance
+  summary: Search terms include cache, fixture fidelity, mutable state, copy isolation, invalidation, and provenance.
+  children:
+  - kind: definition
+    id: code-testing.smells.unsafe-reuse.signal
+    term: Signal
+    meaning: Consumers share mutable state, merged scenarios accumulate mutations, a fixture differs from
+      production metadata, or a cache omits content, root, view, schema, version, type, failure, or isolation checks.
+- kind: family
+  id: code-testing.smells.failure-unsafe-lifecycle
+  title: Resource lifecycle leaks after setup, assertions, or injected failures interrupt
+  summary: Search terms include finally, process reap, reader join, thread, socket, lock, environment, and temporary state.
+  children:
+  - kind: definition
+    id: code-testing.smells.failure-unsafe-lifecycle.signal
+    term: Signal
+    meaning: A process, reader, thread, socket, lock, environment mutation, or temporary artifact is cleaned up only
+      on the success path, leaving live resources or residual state after an exception or failed assertion.
+- kind: family
+  id: code-testing.smells.overbroad-input-space
+  title: Broad copies, pointless parameter products, excess concurrency, or one expensive call per finding
+  summary: Search terms include parametrization, matrix, transitive closure, repeated diagnostics, broad copy, and race volume.
+  children:
+  - kind: definition
+    id: code-testing.smells.overbroad-input-space.signal
+    term: Signal
+    meaning: Setup copies more than the exact transitive closure; a parameter axis or concurrency participant reaches
+      no distinct branch, observable, or overlap; or independent findings rebuild identical state although they can coexist.
+- kind: family
+  id: code-testing.smells.unsafe-fast-path
+  title: Unsafe token, lexical, cache, or pre-parse fast path
+  summary: Search terms include NFKC, Unicode, escaped YAML, aliases, tags, multiline, raw token, UTF-8, syntax error,
+    decode failure, fail closed, and authoritative fallback.
+  children:
+  - kind: definition
+    id: code-testing.smells.unsafe-fast-path.signal
+    term: Signal
+    meaning: A shortcut assumes raw ASCII tokens, skips decoding or parsing, hides authoritative failure behavior,
+      or tests private cache state rather than equivalent public findings.
+- kind: family
+  id: code-testing.smells.stale-derived-state
+  title: Recomputed stable state or stale derived evidence after mutation
+  summary: Search terms include mutation reset, hash, projection, graph reload, cache key, and index restoration.
+  children:
+  - kind: definition
+    id: code-testing.smells.stale-derived-state.signal
+    term: Signal
+    meaning: Topology or other unaffected state is rebuilt after a byte-only change, or affected digests,
+      projections, graphs, index entries, and cache identities are not refreshed before the next assertion.
+- kind: family
+  id: code-testing.smells.weak-execution-proof
+  title: Permissive assertion or missing proof of discovery and execution
+  summary: Search terms include empty findings, false green, discovery count, call count, and exact result set.
+  children:
+  - kind: definition
+    id: code-testing.smells.weak-execution-proof.signal
+    term: Signal
+    meaning: Success follows from discovering no inputs, making no calls, accepting extra findings, or checking
+      only a broad empty or truthy result rather than the exact intended behavior.
+- kind: family
+  id: code-testing.smells.invalid-performance-claim
+  title: Contaminated benchmark, case-count proxy, or unverified suite deferral
+  summary: Search terms include wall time, aggregate work, worker count, host load, repository view, and suite selection.
+  children:
+  - kind: definition
+    id: code-testing.smells.invalid-performance-claim.signal
+    term: Signal
+    meaning: A comparison changes worker count, repository view, capability, selection, or host load; treats fewer
+      cases as saved work; reports only wall time; or moves broad evidence without mechanically proving destination
+      selection and routine enforcement.
+- kind: family
+  id: code-testing.smells.misplaced-broad-integration
+  title: Broad integration nested in a fast feedback suite
+  summary: Search terms include precommit, pre-push, full suite, nested pytest, canary, and exact node selection.
+  children:
+  - kind: definition
+    id: code-testing.smells.misplaced-broad-integration.signal
+    term: Signal
+    meaning: A fast pooled suite launches another broad repository collection, or expensive integration evidence sits
+      in the fast gate despite retained canaries and a routinely enforced slower destination.
+
+- kind: family
+  id: code-testing.remedies
+  title: Test cleanup remedies
+  summary: Apply in risk order; preserve exact evidence ownership before reducing physical work.
+  children:
+  - kind: procedure
+    id: code-testing.remedies.map-evidence-and-cost
+    title: Map the contract, owner, observable, and physical cost
+    ordered: true
+    steps:
+    - {kind: step, id: identify-contract, instruction: "Name the supported contract, initial state, action, exact observable, and current retained or overlapping owners."}
+    - {kind: step, id: prove-execution, instruction: "Name positive discovery or call evidence and the exact expected findings, including a clean valid-input case.", requires: [identify-contract]}
+    - {kind: step, id: count-boundaries, instruction: "Measure serial and target-worker wall and count repository builds, graph or schema loads, scans, copies, subprocesses, and other physical setup.", requires: [prove-execution]}
+    - {kind: step, id: classify-history, instruction: "Check whether the cost is new, pre-existing, or amplified by repository growth, using a known-fast revision when available.", requires: [count-boundaries]}
+    invariants: [{id: no-runtime-only-deletion, statement: "Runtime alone is not evidence that a supported contract is redundant."}]
+    completion_conditions: [{id: owner-and-cost-recorded, statement: "The exact evidence owner and repeated physical work are explicit."}]
+    risk: {level: low, statement: "Read-only diagnosis."}
+  - kind: procedure
+    id: code-testing.remedies.delete-or-consolidate-duplicate-evidence
+    title: Delete obsolete evidence or consolidate compatible assertions
+    ordered: true
+    steps:
+    - {kind: step, id: prove-overlap, instruction: "Map every assertion and parameter axis to a stronger retained owner or verify that the enforced behavior is no longer supported."}
+    - {kind: step, id: consolidate-compatible-cases, instruction: "Combine compatible labeled findings or read-only assertions that consume the same expensive state; keep masking, ordering, and isolation boundaries separate.", requires: [prove-overlap]}
+    - {kind: step, id: remove-only-redundancy, instruction: "Remove only evidence whose complete supported contract remains owned and selected.", requires: [consolidate-compatible-cases]}
+    invariants: [{id: preserve-unique-failures, statement: "Unique failures, races, security properties, provenance, and public boundaries remain independently observable."}]
+    completion_conditions: [{id: retained-owner-named, statement: "Every removed assertion names its retained owner."}]
+    risk: {level: high, statement: "Incorrect overlap analysis can silently remove coverage."}
+  - kind: procedure
+    id: code-testing.remedies.narrow-to-observable
+    title: Replace oversized setup with the lowest honest test layer
+    ordered: true
+    steps:
+    - {kind: step, id: remove-unobserved-boundaries, instruction: "Replace unobserved whole-repository or physical setup with minimal schema-faithful inputs; make shortcuts conservative and fall back to the authoritative path for ambiguous input."}
+    - {kind: step, id: retain-public-owner, instruction: "Retain one canonical public or physical-boundary owner whenever the narrowed test no longer proves that route.", requires: [remove-unobserved-boundaries]}
+    invariants: [{id: no-impossible-fixtures, statement: "Minimal inputs still satisfy every production invariant consumed by the tested layer."}]
+    completion_conditions: [{id: boundary-ownership-split, statement: "Pure logic and public-boundary evidence have explicit, nonduplicative owners."}]
+    risk: {level: medium, statement: "Narrowing can accidentally stop testing integration behavior."}
+  - kind: procedure
+    id: code-testing.remedies.prepare-once-copy-before-mutation
+    title: Reuse immutable preparation with private mutable copies
+    ordered: true
+    steps:
+    - {kind: step, id: identify-immutable-product, instruction: "After delete, consolidation, and narrowing are exhausted, separate deterministic immutable preparation from invocation-local findings and mutable state."}
+    - {kind: step, id: bind-provenance, instruction: "Group only consumers with identical fidelity and mutation needs, then validate the applicable provenance requirements above.", requires: [identify-immutable-product]}
+    - {kind: step, id: isolate-consumers, instruction: "Pilot a small consumer set, publish safely when publication exists, and return a private copy to every mutating consumer.", requires: [bind-provenance]}
+    - {kind: step, id: prove-net-saving, instruction: "Count physical preparation serially and at the target worker count and reject reuse whose coordination cost consumes the saving.", requires: [isolate-consumers]}
+    invariants: [{id: no-shared-mutation, statement: "No consumer can mutate state observed by another test or worker."}]
+    completion_conditions: [{id: fidelity-isolation-performance, statement: "Production fidelity, consumer isolation, applicable invalidation or publication failures, and net savings are demonstrated."}]
+    risk: {level: high, statement: "Caches and shared templates can create stale, unsafe, or order-dependent evidence."}
+  - kind: procedure
+    id: code-testing.remedies.reduce-input-space
+    title: Remove input combinations that add no branch or observable
+    ordered: true
+    steps:
+    - {kind: step, id: map-axes, instruction: "Map every copied input or dependency, parameter, repeated invocation, and concurrency participant to the production branch or observable it uniquely exercises."}
+    - {kind: step, id: trim-or-merge, instruction: "Declare and copy only the exact transitive closure and prove behavior with unrelated siblings absent; remove unmapped axes, merge compatible findings, and use the minimum synchronized concurrency that proves overlap.", requires: [map-axes]}
+    invariants: [{id: preserve-masking-cases, statement: "Cases remain separate when one failure masks another or process, ordering, or mutation isolation is the claim."}]
+    completion_conditions: [{id: every-case-earned, statement: "Every retained case has a distinct branch, observable, or boundary."}]
+    risk: {level: medium, statement: "An apparently redundant value may exercise hidden dispatch or masking behavior."}
+  - kind: procedure
+    id: code-testing.remedies.restore-between-scenarios
+    title: Restore mutable and derived state between labeled scenarios
+    ordered: true
+    steps:
+    - {kind: step, id: snapshot-state, instruction: "Snapshot every behavior-relevant changed byte, field, mode, index entry, environment value, log, object, and dependent projection; use a fresh private copy when complete restoration cannot be proven."}
+    - {kind: step, id: restore-and-refresh, instruction: "Restore primary state and refresh exactly the dependent hashes, graphs, projections, and cache identities before the next scenario.", requires: [snapshot-state]}
+    - {kind: step, id: prove-independent-transitions, instruction: "Run scenarios in an alternate order or from fresh copies and prove each transition fails independently when its target behavior is broken.", requires: [restore-and-refresh]}
+    invariants: [{id: no-accumulated-mutations, statement: "Later assertions do not depend on an earlier scenario's residual state."}]
+    completion_conditions: [{id: transitions-independent, statement: "Every labeled scenario starts from its declared state and proves its own transition."}]
+    risk: {level: medium, statement: "Incomplete restoration produces false positives and order dependence."}
+  - kind: procedure
+    id: code-testing.remedies.make-lifecycle-cleanup-failure-safe
+    title: Make resource cleanup failure-safe
+    ordered: true
+    steps:
+    - {kind: step, id: own-lifecycle, instruction: "Acquire processes, readers, threads, sockets, locks, environment mutations, and temporary state under one explicit lifecycle owner."}
+    - {kind: step, id: cleanup-in-finally, instruction: "Release, reap, join, restore, and remove owned resources in a context manager, finally block, or equivalent failure-safe cleanup.", requires: [own-lifecycle]}
+    - {kind: step, id: inject-interruption, instruction: "Inject failure after acquisition and prove no resource remains live and no residual state reaches the next test.", requires: [cleanup-in-finally]}
+    invariants: [{id: preserve-primary-failure, statement: "Cleanup does not hide the assertion, process, or production failure that triggered it."}]
+    completion_conditions: [{id: success-and-failure-clean, statement: "Both successful and interrupted paths release every owned resource."}]
+    risk: {level: medium, statement: "Incorrect cleanup ordering can deadlock, leak, or replace the primary failure."}
+  - kind: procedure
+    id: code-testing.remedies.place-and-benchmark-evidence
+    title: Place broad evidence deliberately and benchmark comparably
+    ordered: true
+    steps:
+    - {kind: step, id: preserve-fast-canary, instruction: "If moving an exact broad node, keep fast targeted evidence in precommit before using a slower gate."}
+    - {kind: step, id: prove-selection, instruction: "For a moved node, mechanically prove the destination selects, routinely executes, and passes it with the intended repository view.", requires: [preserve-fast-canary]}
+    - {kind: step, id: benchmark-idle-equivalent-runs, instruction: "Compare equivalent serial and target-worker selections on an idle host and record runner wall, pytest wall, aggregate work, counts, and raw evidence; when a node moved, first complete its selection proof."}
+    - {kind: step, id: run-verification-ladder, instruction: "Compare collected node IDs and the contract or parameter map around collection-affecting changes; run changed nodes, fixture neighbors, canonical owner, focused serial and parallel suites, selection checks, formatting, then the full target suite.", requires: [benchmark-idle-equivalent-runs]}
+    invariants: [{id: no-silent-deferral, statement: "Broad evidence is never removed from precommit without retained fast evidence and enforced destination ownership."}]
+    completion_conditions: [{id: correctness-and-materiality, statement: "Correctness owners pass and a comparable measurement demonstrates material net benefit."}]
+    risk: {level: medium, statement: "Suite movement can convert routinely enforced evidence into nominal coverage."}
+
+artifacts: {}
+links:
+  unique-evidence-remedy: {source: {kind: rule, ref: code-testing.requirements.unique-evidence}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.delete-or-consolidate-duplicate-evidence}, lifecycle: active, resolution: {state: resolved}}
+  honest-boundary-remedy: {source: {kind: rule, ref: code-testing.requirements.lowest-honest-boundary}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.narrow-to-observable}, lifecycle: active, resolution: {state: resolved}}
+  fixture-isolation-remedy: {source: {kind: rule, ref: code-testing.requirements.fixture-isolation-and-fidelity}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.prepare-once-copy-before-mutation}, lifecycle: active, resolution: {state: resolved}}
+  failure-safe-lifecycle-remedy: {source: {kind: rule, ref: code-testing.requirements.failure-safe-lifecycle}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.make-lifecycle-cleanup-failure-safe}, lifecycle: active, resolution: {state: resolved}}
+  safe-reuse-remedy: {source: {kind: rule, ref: code-testing.requirements.safe-reuse}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.prepare-once-copy-before-mutation}, lifecycle: active, resolution: {state: resolved}}
+  parallel-awareness-remedy: {source: {kind: rule, ref: code-testing.requirements.parallel-awareness}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.prepare-once-copy-before-mutation}, lifecycle: active, resolution: {state: resolved}}
+  distinct-cases-remedy: {source: {kind: rule, ref: code-testing.requirements.distinct-cases}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.reduce-input-space}, lifecycle: active, resolution: {state: resolved}}
+  conservative-fast-path-remedy: {source: {kind: rule, ref: code-testing.requirements.conservative-fast-paths}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.narrow-to-observable}, lifecycle: active, resolution: {state: resolved}}
+  derived-state-remedy: {source: {kind: rule, ref: code-testing.requirements.derived-state-consistency}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.restore-between-scenarios}, lifecycle: active, resolution: {state: resolved}}
+  performance-evidence-remedy: {source: {kind: rule, ref: code-testing.requirements.performance-evidence}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.place-and-benchmark-evidence}, lifecycle: active, resolution: {state: resolved}}
+  boundary-inflation-remedy: {source: {kind: family, ref: code-testing.smells.boundary-inflation}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.narrow-to-observable}, lifecycle: active, resolution: {state: resolved}}
+  duplicate-owner-remedy: {source: {kind: family, ref: code-testing.smells.duplicate-evidence-owner}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.delete-or-consolidate-duplicate-evidence}, lifecycle: active, resolution: {state: resolved}}
+  repeated-preparation-remedy: {source: {kind: family, ref: code-testing.smells.repeated-preparation}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.prepare-once-copy-before-mutation}, lifecycle: active, resolution: {state: resolved}}
+  unsafe-reuse-remedy: {source: {kind: family, ref: code-testing.smells.unsafe-reuse}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.prepare-once-copy-before-mutation}, lifecycle: active, resolution: {state: resolved}}
+  failure-unsafe-lifecycle-remedy: {source: {kind: family, ref: code-testing.smells.failure-unsafe-lifecycle}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.make-lifecycle-cleanup-failure-safe}, lifecycle: active, resolution: {state: resolved}}
+  overbroad-input-remedy: {source: {kind: family, ref: code-testing.smells.overbroad-input-space}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.reduce-input-space}, lifecycle: active, resolution: {state: resolved}}
+  unsafe-fast-path-remedy: {source: {kind: family, ref: code-testing.smells.unsafe-fast-path}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.narrow-to-observable}, lifecycle: active, resolution: {state: resolved}}
+  stale-state-remedy: {source: {kind: family, ref: code-testing.smells.stale-derived-state}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.restore-between-scenarios}, lifecycle: active, resolution: {state: resolved}}
+  weak-proof-remedy: {source: {kind: family, ref: code-testing.smells.weak-execution-proof}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.map-evidence-and-cost}, lifecycle: active, resolution: {state: resolved}}
+  invalid-performance-remedy: {source: {kind: family, ref: code-testing.smells.invalid-performance-claim}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.place-and-benchmark-evidence}, lifecycle: active, resolution: {state: resolved}}
+  misplaced-integration-remedy: {source: {kind: family, ref: code-testing.smells.misplaced-broad-integration}, relation: remedied-by, target: {kind: procedure, ref: code-testing.remedies.place-and-benchmark-evidence}, lifecycle: active, resolution: {state: resolved}}

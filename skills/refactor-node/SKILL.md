@@ -69,6 +69,11 @@ the source root. For other mixed work, query each applicable root separately
 and combine the returned requirements. A whole-skill audit queries both
 instruction roots plus every declared Python module and source root.
 
+If selected work touches test files or their fixtures or helpers, also query
+`references/node-standards/code-testing.standard.yaml` as an additional
+independent root with `task.kind=refactor`. Test files are those collected or
+executed by the repository runner. Do not query it for Markdown-only work.
+
 Imported documents arrive in the complete pinned import closure; never query
 them separately. Apply `requirements.true`, resolve material
 `requirements.unknown` and missing facts. Never silently discard a material
