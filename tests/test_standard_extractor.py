@@ -186,7 +186,7 @@ def test_extract_standard_materializes_and_queries_the_validated_closure() -> No
         "missing_facts": [],
         "title": "Python Module Standard",
         "standard_version": "1.0.0",
-        "revision": 20,
+        "revision": 21,
         "statements": [],
     }
 

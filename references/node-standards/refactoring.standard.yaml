@@ -1,6 +1,6 @@
 schema_version: 6
 standard_version: 2.0.0
-revision: 6
+revision: 7
 id: node-standards.refactoring
 canonical_path: references/node-standards/refactoring.standard.yaml
 title: Node Refactoring Standard
@@ -28,10 +28,10 @@ standards:
           - {kind: definition, id: skill-refactoring.smells.executable-logic.signal, term: Signal, meaning: "Shell commands, Python snippets, or other runnable code appears inline in SKILL.md rather than behind a blueprint interface and private `_rtx/` runtime file."}
       - kind: family
         id: skill-refactoring.smells.missing-contract-artifacts
-        title: Missing or incomplete contract artifacts
+        title: Missing or incomplete interface artifacts
         applies_when: *instruction-module
         children:
-          - {kind: definition, id: skill-refactoring.smells.missing-contract-artifacts.signal, term: Signal, meaning: "A migrated skill is missing `blueprint.yaml`, its generated `SKILL.md` contract/interface blocks are stale, or repo-level blueprint manifests are out of sync."}
+          - {kind: definition, id: skill-refactoring.smells.missing-contract-artifacts.signal, term: Signal, meaning: "A migrated skill is missing `blueprint.yaml`, its generated `SKILL.md` interface block is stale, or repo-level blueprint manifests are out of sync."}
       - kind: family
         id: skill-refactoring.smells.duplicated-guidelines
         title: Duplicated guidelines
@@ -142,11 +142,11 @@ standards:
             risk: {level: low, statement: "None."}
           - kind: procedure
             id: skill-refactoring.remedies.sync-generated-contract-artifacts
-            title: Sync generated contract artifacts
+            title: Sync generated interface artifacts
             applies_when: *instruction-module
-            summary: Update `blueprint.yaml` and regenerate the generated contract/interface blocks in `SKILL.md` plus repo-level blueprint manifests for a blueprint-migrated skill.
+            summary: Update `blueprint.yaml` and regenerate the generated interface block in `SKILL.md` plus repo-level blueprint manifests for a blueprint-migrated skill.
             ordered: true
-            steps: [{kind: step, id: regenerate-artifacts, instruction: "Regenerate all contract artifacts from the updated blueprint."}]
+            steps: [{kind: step, id: regenerate-artifacts, instruction: "Regenerate all interface artifacts from the updated blueprint."}]
             invariants: []
             risk: {level: medium, statement: "Regeneration can replace or remove stale derived content; inspect the exact generated diff."}
           - kind: procedure
@@ -155,9 +155,9 @@ standards:
             applies_when: *instruction-module
             summary: Create or correct `blueprint.yaml` for a migrated skill, preserving the source smell’s explicit unmatched remedy.
             ordered: true
-            steps: [{kind: step, id: create-or-correct-blueprint, instruction: "Create or correct `blueprint.yaml`, then synchronize its generated contract artifacts."}]
-            invariants: [{id: preserve-contract, statement: "Existing contract artifacts remain complete and synchronized."}]
-            risk: {level: low, statement: "None when the blueprint records the existing contract without behavioral change."}
+            steps: [{kind: step, id: create-or-correct-blueprint, instruction: "Create or correct `blueprint.yaml`, then synchronize its generated interface artifacts."}]
+            invariants: [{id: preserve-contract, statement: "Existing interface artifacts remain complete and synchronized."}]
+            risk: {level: low, statement: "None when the blueprint records the existing interface declaration without behavioral change."}
       - kind: family
         id: skill-refactoring.moves.medium
         title: Medium moves — apply after safe moves are done

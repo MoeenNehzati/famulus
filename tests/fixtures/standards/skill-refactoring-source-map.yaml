@@ -1,4 +1,6 @@
 superseded_targets:
+  skill-refactoring.smells.missing-contract-artifacts: Legacy source terminology described the deleted generated contract block; the live target now names only generated interface artifacts.
+  skill-refactoring.remedies.sync-generated-contract-artifacts: Legacy source terminology described the deleted generated contract block; the stable-ID live remedy now synchronizes only generated interface artifacts.
   skill-refactoring.remedies.extract-sub-skill: Legacy mutation steps crossed into a new unqueried owner; the live procedure now stops with an expanded-scope proposal.
   skill-refactoring.remedies.decompose-script: Legacy steps edited SKILL.md and interfaces from a Python-source route; the live procedure is owner-local.
   skill-refactoring.remedies.inline-thin-skill: Legacy deletion lacked direct and external caller proof; the live procedure stops for public-identity approval.

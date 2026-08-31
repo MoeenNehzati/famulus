@@ -14,7 +14,7 @@ source_authorities:
     last_digest: sha256:f84eb2662c3e318ac0d4732daf3116114de84b6fa623ded8261333c7bfc6738f
     status: migrated
     replacement: references/node-standards/refactoring.standard.yaml
-    replacement_digest: sha256:33eaf4fee728af0e7387eebc1790d37d5a54b48afbd39f9176a67a5edd7c4e76
+    replacement_digest: sha256:755593fe48002bc32880cda05267086aa82ce4ccef292e4b9d5781f9f8af5af1
     disposition: Diagnostic signals and remedies moved into the node-standards closure;
       analogy-only labels were retired because they do not affect diagnosis or repair.
   interface-design:
@@ -55,8 +55,8 @@ migration_audit:
     source_semantic_items: 238
     same_id_items: 164
     source_semantic_id_digest: sha256:54059558b8150329ea0de5abf35c1d4dd5a6e8012fc8fd3512ab59200776be84
-    exact_unchanged_leaf_items: 45
-    exact_unchanged_leaf_digest: sha256:ba79ca62d9b4c85d2b70a859e6f4d59b350da28b6612919f1854c163c994bea9
+    exact_unchanged_leaf_items: 44
+    exact_unchanged_leaf_digest: sha256:4921ff67b4d26bee9663f3fd5d2b0c116b59350beecdb5db955d9f24999a3f0d
     duplicate_items: 0
     unresolved_items: 0
     economy_retirements:
@@ -232,6 +232,8 @@ migration_audit:
         narration while preserving generated-view ownership.
       skill-guidelines.canonical-blueprint-ownership.requirement-003#source-block: Compressed the declaration
         ownership rule without changing its meaning.
+      skill-guidelines.canonical-blueprint-ownership.requirement-004#source-block: Updated the generated-view
+        assertion from the retired contract-and-interface projection to the surviving interface block.
       skill-guidelines.canonical-blueprint-ownership.requirement-005#source-block: Compressed the behavioral-source
         ownership rule without changing its meaning.
       skill-guidelines.canonical-interface-names.requirement-001#source-block: Joined the fragment into one
