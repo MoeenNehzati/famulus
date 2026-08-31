@@ -1,8 +1,9 @@
 # Assistant Operations
 
 This page lists supporting infrastructure skills. For recurring assistant jobs,
-see the [Automation Quickstart](../quickstarts/automation.md). For installation
-and repair, see the [installation guide](../officina/installation.md).
+see the [Automation Quickstart](../quickstarts/automation.md). For the exact
+selected-Python prerequisite and core-package repair, use
+`setup-python-environment`.
 
 <!-- BEGIN AUTO-GENERATED DOCS: assistant-operations -->
 > Generated from live blueprints. Do not edit this block by hand.

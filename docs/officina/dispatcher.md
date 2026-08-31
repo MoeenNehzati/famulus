@@ -142,5 +142,4 @@ routing state. Those operations belong to explicit offline tools.
 - [Architecture](architecture.md)
 - [Skill blueprints](skill-blueprints.md)
 - [Certification and drift](certification_and_drift.md)
-- [Installation](installation.md)
 - [Blueprint schemas](../../references/blueprint-schema/README.md)

@@ -35,8 +35,8 @@ dispatcher --caller-skill node-certify \
 
 Run it without `--check` only when intentionally refreshing the generated
 artifacts. Do not reach past the interface to the file behind it: the syncer is
-private `_rtx` content, and a bare `python3` runs outside the managed runtime,
-so importing `officina` fails before the syncer does anything.
+private `_rtx` content. Use the documented dispatcher route from the repository
+environment rather than running that private file directly.
 
 Cross-skill script calls should go through the dispatcher boundary, not direct script reach-through:
 

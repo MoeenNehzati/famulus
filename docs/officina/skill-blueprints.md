@@ -25,18 +25,19 @@ identifies a node still being evaluated. This is readiness metadata, not an
 installation decision: either maturity may be `core` or `optional`.
 
 Every discoverable skill module also declares `installation_tier: core` or
-`installation_tier: optional`. Core modules are selected by default. Optional
-modules are selected as complete module units: their contained behavioral
-sources and runtime-dependency closure are included together. A module may
-also declare `personal_preference.applies`. When true, its nonempty
+`installation_tier: optional`. These are historical discovery metadata, not
+package-selection authority. Task 1's exact `mcp-core.json` declaration is the
+sole core-package authority. Core setup repairs only that declaration in the
+exact selected Python environment and does not inspect blueprint tiers or a
+repository-wide dependency inventory.
+
+An optional feature owns its own exact selected-package declaration and checks
+or repairs it only when that feature's setup route is selected. Selecting one
+feature neither inspects nor installs packages owned by another, and Famulus
+has no install-all or dependency-reconciliation route. A module may also
+declare `personal_preference.applies`. When true, its nonempty
 `personal_preference.description` records the user-specific workflow choice;
 when false, no description is needed.
-
-Installation computes package changes from the selected modules' resolved,
-platform-applicable runtime dependencies. It reports package names and a
-resolver-provided download/install-size estimate when available; an unavailable
-estimate remains explicitly unavailable. Blueprints do not carry a copied cost
-field or infer a tier from dependency names.
 
 An interface is owned by a behavioral source. It is private to the containing
 module unless the module exports it. An export adds a public ID and access

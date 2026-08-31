@@ -17,7 +17,6 @@ Officina is and routes to everything below.
 - [Skill Blueprints](./officina/skill-blueprints.md)
 - [Blueprint Search](./officina/blueprint_search.md)
 - [Docstring Contract](./officina/docstring.md)
-- [Installation](./officina/installation.md)
 
 ## Famulus
 

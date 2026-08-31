@@ -249,8 +249,5 @@ Then, depending on what you need:
 - [Visualization](visualization.md) — the Officina visualization module
 - [Scaffolding](scaffolding/README.md) — the scaffolding layer and why it
   exists
-- [Installation](installation.md) — how an Officina project is installed, and
-  the manifest-based uninstall process
-
 If you are extending Famulus rather than working on Officina itself, start
 from the [Contributor Guide](../contributors/README.md) instead.

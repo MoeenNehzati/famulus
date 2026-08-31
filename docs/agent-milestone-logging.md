@@ -46,37 +46,60 @@ agent as free text rather than read from the environment.
 
 ## Calling It
 
-```bash
-milestone --role "<a few words naming your overall task>" \
-          "<what you are starting now>" "<how the previous piece ended>"
-milestone --role "trace config loading" "locate the loader" ""
-milestone --role "trace config loading" --done "<how the last piece ended>"
-milestone --path          # print the log path and exit
+Call the generated `milestone-logging._rtx.interface.record` interface through
+the shared `famulus` MCP server. Its generated projection supplies `caller`,
+`interface`, `version`, and `arguments`; for example, a progress record uses:
+
+```json
+{
+  "caller": "milestone-logging",
+  "interface": "milestone-logging._rtx.interface.record",
+  "version": 1,
+  "arguments": {
+    "positionals": ["locate the loader", ""],
+    "options": {"--role": "trace config loading"},
+    "stdin": null
+  }
+}
 ```
+
+For a completion, omit the positionals and use the `--done` and `--role`
+options. Use `--path: true` only to return the selected log path without
+recording. There is no standalone `milestone` launcher.
 
 Every record carries `--role`. It is the only thing separating two agents that
 share a log file, so a record written without it is a record the reader cannot
 attribute. `--path` records nothing and takes none.
 
-A job that outlives the session that started it adds `--run`:
+A job that outlives the session that started it adds the `--run` option to the
+same generated record interface:
 
-```bash
-milestone --role "corpus sweep" --run nightly-01 --event run-start --step 1 \
-          "sweep the corpus" ""
-milestone --role "corpus sweep" --run nightly-01 --event task --task extract \
-          --state failed --attempt 1 \
-          "audit the failure" "schema audit rejected 3 records"
-milestone --run nightly-01 --path    # print the run journal path and exit
+```json
+{
+  "caller": "milestone-logging",
+  "interface": "milestone-logging._rtx.interface.record",
+  "version": 1,
+  "arguments": {
+    "positionals": ["audit the failure", "schema audit rejected 3 records"],
+    "options": {
+      "--role": "corpus sweep",
+      "--run": "nightly-01",
+      "--event": "task",
+      "--task": "extract",
+      "--state": "failed",
+      "--attempt": "1"
+    },
+    "stdin": null
+  }
+}
 ```
 
 ## Log Format
 
-One JSON object per line is appended below the active context's log root. The
-standalone writer falls back to
-`~/.assistant-logs/<YYYY-MM-DD>/<session>.<agent>.jsonl` when no context is
-available. `ASSISTANT_LOGS` is a process-local compatibility override only;
-the installer does not persist it, and shell or scheduler configuration should
-not either.
+One JSON object per line is appended below the record interface's resolved log
+root. `ASSISTANT_LOGS` is a process-local compatibility override only; it is
+not a setup selector and must not be persisted in shell or scheduler
+configuration.
 
 The fields are `ts`, `role`, `cwd`, `doing`, and `prev`; a record written with
 `--run` carries further optional keys, described under
@@ -97,13 +120,25 @@ agents on read.
 
 ## Reading A Timeline
 
-```bash
-agent-timeline --list          # known sessions, oldest first
-agent-timeline <session-id>    # merged timeline; default is the newest session
-agent-timeline <session-id> --slow 30
-agent-timeline --run <run-id>          # one run, across every session that wrote to it
-agent-timeline --run <run-id> --json   # the same reconstruction, machine-readable
+Use the generated `milestone-logging._rtx.interface.timeline` interface through
+the shared `famulus` MCP server. Its `--list`, `--slow`, `--run`, and `--json`
+options respectively list sessions, mark slow gaps, reconstruct a durable run,
+and return that reconstruction as JSON. For example:
+
+```json
+{
+  "caller": "milestone-logging",
+  "interface": "milestone-logging._rtx.interface.timeline",
+  "version": 1,
+  "arguments": {
+    "positionals": [],
+    "options": {"--run": "nightly-01", "--json": true},
+    "stdin": null
+  }
+}
 ```
+
+There is no standalone `agent-timeline` launcher.
 
 Milestone rows are marked `▸`; unmarked rows are tool calls from the transcript.
 Each row shows wall-clock time, seconds since the session started, and the agent
@@ -137,8 +172,9 @@ agents are ignoring it.
 
 A milestone log is addressed by session, and an overnight job outlives the
 session that started it: the first assistant session ends, a later one resumes
-the work, and each writes under its own session and thread id. `--run` adds the
-second address. The record is written unchanged to the session log **and**
+the work, and each writes under its own session and thread id. The record
+interface's `--run` option adds the second address. The record is written
+unchanged to the session log **and**
 mirrored into one journal per run, below the same log root the session logs
 resolve to (see [Log Format](#log-format)):
 
@@ -156,14 +192,14 @@ compares timestamps to sequence events that different sessions contributed.
 A run id becomes a path component and a lookup key, so it must match
 `[A-Za-z0-9][A-Za-z0-9._-]{0,63}` — no separator, no leading dot, 64 characters
 at most. Both the writer and the reader reject anything else rather than
-normalizing it; `--run ""` is a rejected id, not an absent one.
+normalizing it; an empty `--run` option is a rejected id, not an absent one.
 
 ### The Structured Fields
 
 `doing` and `prev` stay exactly what they were, and recovery never reads them.
 Anything a resuming agent must act on goes in a typed field instead:
 
-| Flag | Key | Meaning |
+| Record option | Key | Meaning |
 | --- | --- | --- |
 | `--run ID` | `run` | the durable run this belongs to |
 | `--event NAME` | `event` | what kind of event this is, e.g. `run-start`, `task`, `run-end` |
@@ -188,34 +224,32 @@ layer records and returns what the caller supplied; whichever pipeline owns the
 run owns its own state machine. Three consequences follow. A field that is not
 passed leaves no key behind, so a record never claims a state it was not told.
 Records that carry a run also carry `run`, `session` and `agent`, because the
-journal is read without its filename for context. And passing any typed field
+journal is read without its filename for context. And passing any typed option
 without `--run` is an error, not a silent human-only entry — structured data
 outside a journal could never be recovered.
 
 ### One Run, Start To Finish
 
-```bash
-milestone --role "corpus sweep" --run nightly-01 --event run-start --step 1 \
-          "sweep the corpus" ""
-milestone --role "corpus sweep" --run nightly-01 --event task --task extract \
-          --state started --attempt 1 \
-          "extract entities" "step 1 opened 412 sources"
-# ... the assistant session ends here; a later one picks the run back up ...
-milestone --role "corpus sweep" --run nightly-01 --event task --task extract \
-          --state failed --attempt 1 \
-          "audit the failure" "schema audit rejected 3 records"
-milestone --role "corpus sweep" --run nightly-01 --event task --task extract \
-          --state succeeded --attempt 2 --evidence out/extract.json \
-          "render the graph" "second attempt passed the audit"
-milestone --role "corpus sweep" --run nightly-01 --event task --task preview \
-          --state skipped \
-          "close out" "preview needs a browser this host lacks"
-milestone --role "corpus sweep" --run nightly-01 --event run-end --step 9 \
-          --done "graph written to out/graph.json"
+```text
+Call the generated record interface for each event with `--role: corpus sweep`
+and `--run: nightly-01` in its options. Use these successive argument values:
+
+1. positionals `sweep the corpus`, ``; options `--event: run-start`, `--step: 1`
+2. positionals `extract entities`, `step 1 opened 412 sources`; options
+   `--event: task`, `--task: extract`, `--state: started`, `--attempt: 1`
+3. after a later session resumes, positionals `audit the failure`,
+   `schema audit rejected 3 records`; options `--event: task`,
+   `--task: extract`, `--state: failed`, `--attempt: 1`
+4. positionals `render the graph`, `second attempt passed the audit`; options
+   `--event: task`, `--task: extract`, `--state: succeeded`, `--attempt: 2`,
+   `--evidence: out/extract.json`
+5. positionals `close out`, `preview needs a browser this host lacks`; options
+   `--event: task`, `--task: preview`, `--state: skipped`
+6. empty positionals; options `--event: run-end`, `--step: 9`, and
+   `--done: graph written to out/graph.json`
 ```
 
 ```
-$ agent-timeline --run nightly-01
 run nightly-01
 ----------------------------------------------------------------------
 02:14:09 +     0s  sess-one/session  ▸ sweep the corpus
@@ -240,10 +274,10 @@ run nightly-01
 6 events from 2 session(s) — /home/you/.assistant-logs/runs/nightly-01.jsonl
 ```
 
-`agent-timeline --run <id> --json` prints the same reconstruction as a
-machine-readable object — `run`, `path`, `sessions`, `agents`, `events` (the records
-verbatim, in append order) and `malformed` — which is what a resuming agent
-reads instead of the rendering.
+The generated timeline interface with `--run` and `--json` returns the same
+reconstruction as a machine-readable object — `run`, `path`, `sessions`,
+`agents`, `events` (the records verbatim, in append order), and `malformed` —
+which is what a resuming agent reads instead of the rendering.
 
 ### Damage And Absence
 
@@ -261,17 +295,17 @@ and leaves that judgment to whichever pipeline owns the run.
 
 ### What Did Not Change
 
-Callers that pass no `--run` are unaffected: same flags, same log path, and a
+Calls that omit the `--run` option are unaffected: the same log path and a
 record with exactly the original `ts`, `role`, `cwd`, `doing`, `prev` keys and
 no others. Records written before run journals existed stay readable, since
-every new key is optional and read with a default. `agent-timeline` without
-`--run` behaves as it always did, and `--list` does not offer run journals as
-sessions — `runs/` is excluded from the session glob.
+every new key is optional and read with a default. The generated timeline
+interface without `--run` renders sessions, while `--list` does not offer run
+journals as sessions — `runs/` is excluded from the session glob.
 
 ## Limitations
 
-- Installer projection and its extension-less compatibility launchers are
-  POSIX-only. Windows support is not provided by this workflow.
+- There is no standalone milestone or timeline launcher. Use the generated
+  record and timeline interfaces through the shared `famulus` MCP server.
 - Sessions with no available session id are all named `unknown`. The reader
   keeps them apart by filename, so each renders alone, but they carry no id to
   tie them back to a harness transcript.
@@ -280,10 +314,8 @@ sessions — `runs/` is excluded from the session glob.
   compensates by matching every thread id seen in the milestone logs, but a
   subagent that logged nothing cannot be found this way.
 - There is no rotation or pruning. The log directory grows without bound.
-- A checkout whose development context has not been applied may have the
-  instruction but no `milestone` on its isolated command path. Apply that
-  context before treating logging as available.
-- A run journal is written only when a caller passes `--run`. Nothing infers
+- A run journal is written only when a caller passes the `--run` option.
+  Nothing infers
   one, so a run whose milestones were logged without it cannot be reassembled
   afterwards except by reading `doing` and `prev` by eye.
 - The journal duplicates each record into a second file. A write that succeeds
