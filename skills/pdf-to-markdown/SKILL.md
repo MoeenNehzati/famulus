@@ -80,6 +80,12 @@ If LaTeX source found anywhere: download, extract, done.
 
 If no LaTeX source found, convert the PDF directly.
 
+Only after selecting this PDF/Marker fallback, follow
+`setup-python-environment.interface.repair-selected-packages` for this owner's exact
+declaration `["marker-pdf"]`. Complete the full Task 2 fingerprint procedure; on any
+failure, stop before probing Marker models or running `marker_single`. Source-only success
+must not invoke this repair.
+
 **Before running:** check whether models are cached using the `scripts-check-marker-models` interface.
 If any models are missing, warn the user: "Running marker will download missing models (~3GB total to `~/.cache/datalab/models/`). Proceed?" Do not run `marker_single` until confirmed.
 

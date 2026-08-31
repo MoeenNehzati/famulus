@@ -71,7 +71,7 @@ def test_repository_setup_order_is_explicit_and_dependency_first() -> None:
     assert setup_order(graph, "online-calendar.interface.setup") == expected + (
         "online-calendar.interface.setup",
     )
-    assert setup_order(graph, "list-manager.interface.setup") == expected + (
+    assert setup_order(graph, "list-manager.interface.setup") == (
         "list-manager.interface.setup",
     )
 

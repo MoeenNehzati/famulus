@@ -834,9 +834,9 @@ def test_optional_module_prompt_names_packages_and_unavailable_estimates(monkeyp
     assert install._prompt_optional_modules(manifest_path=manifest, platform_name="linux") == []
 
     output = capsys.readouterr().out
-    assert "pdf-to-markdown" in output
-    assert "marker-pdf" in output
-    assert "estimate unavailable" in output
+    assert "pdf-to-markdown" not in output
+    assert "marker-pdf" not in output
+    assert "install-launchers" in output
 
 
 def test_optional_module_prompt_all_selects_every_module(monkeypatch):

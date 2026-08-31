@@ -79,7 +79,7 @@ def _write_test_runtime_lock(tmp_path: Path, manifest_path: Path) -> tuple[Path,
     rendered = render_runtime_requirements(manifest_path)
     input_path.write_text(rendered, encoding="utf-8")
     input_sha256 = hashlib.sha256(rendered.encode("utf-8")).hexdigest()
-    lock_body = f"rich==13.9.4 --hash=sha256:{'a' * 64}\n"
+    lock_body = f"jsonschema==4.25.1 --hash=sha256:{'a' * 64}\n"
     lock_content_sha256 = hashlib.sha256(lock_body.encode("utf-8")).hexdigest()
     lock_path.write_text(
         "# famulus-runtime-lock-schema: 1\n"
@@ -98,14 +98,11 @@ def build_candidate_release(**kwargs):
     """Supply the release-lock contract to legacy scenarios in this module."""
     if "lock_input_path" not in kwargs:
         manifest_path = Path(kwargs["manifest_path"])
-        if manifest_path == REAL_MANIFEST:
-            runtime_refs = REPO_ROOT / "references" / "runtime"
-            kwargs["lock_input_path"] = runtime_refs / "requirements-core.in"
-            kwargs["lock_path"] = runtime_refs / "requirements-core.lock"
-        else:
-            kwargs["lock_input_path"], kwargs["lock_path"] = _write_test_runtime_lock(
-                manifest_path.parent, manifest_path
-            )
+        lock_root = Path(kwargs["runtime_root"]).parent / "test-runtime-lock"
+        lock_root.mkdir(parents=True, exist_ok=True)
+        kwargs["lock_input_path"], kwargs["lock_path"] = _write_test_runtime_lock(
+            lock_root, manifest_path
+        )
     kwargs.setdefault("uv_version", PINNED_UV_VERSION)
     if kwargs.get("python_version") == "3.11":
         kwargs["python_version"] = PINNED_PYTHON_VERSION
@@ -302,16 +299,8 @@ def test_packaged_source_revision_rejects_symlinks_even_in_bytecode_paths(
 def test_declared_python_packages_defaults_to_core_module_selection():
     packages = declared_python_packages(REAL_MANIFEST, platform="linux")
     assert packages == (
-        "bibtexparser",
-        "cryptography>=44.0.1",
-        "dateparser",
         "jsonschema>=4",
-        "keyring",
-        "pyflakes==3.2.0",
-        "pytest-xdist==3.8.0",
-        "pytest==8.3.4",
         "PyYAML>=6",
-        "rich",
     )
 
 
@@ -342,19 +331,16 @@ def test_declared_python_packages_rejects_unsupported_schema_version(tmp_path):
         declared_python_packages(manifest, platform="linux")
 
 
-def test_selected_optional_module_adds_its_platform_dependency_without_package_policy():
-    packages = declared_python_packages(
-        REAL_MANIFEST, platform="linux", selected_module_ids=("pdf-to-markdown",)
-    )
-    assert "marker-pdf" in packages
+def test_selected_feature_owned_module_is_rejected_by_old_runtime():
+    with pytest.raises(ManagedRuntimeError, match="feature-owned"):
+        declared_python_packages(
+            REAL_MANIFEST, platform="linux", selected_module_ids=("pdf-to-markdown",)
+        )
 
 
-def test_optional_runtime_modules_describes_pdf_to_markdown():
+def test_optional_runtime_modules_excludes_feature_owned_modules():
     modules = optional_runtime_modules(REAL_MANIFEST, platform="linux")
-    assert modules == (
-        {"id": "install-launchers", "packages": ()},
-        {"id": "pdf-to-markdown", "packages": ("marker-pdf",)},
-    )
+    assert modules == ({"id": "install-launchers", "packages": ()},)
 
 
 def test_package_size_estimates_use_wheel_or_sdist_metadata_or_report_unavailable():
@@ -459,7 +445,7 @@ def test_build_candidate_release_creates_venv_then_one_batch_pip_install(monkeyp
     assert pip_call[4] == str(pointer.python_bin)
     assert pip_call[-3:] == [
         "--require-hashes", "-r",
-        str(REPO_ROOT / "references" / "runtime" / "requirements-core.lock"),
+        str(tmp_path / "test-runtime-lock" / "requirements-core.lock"),
     ]
     assert python_dir_call == [str(FAKE_UV_BIN), "python", "dir"]
     assert pointer.python_bin.exists()
@@ -485,7 +471,7 @@ def test_build_candidate_release_core_lock_does_not_include_optional_module(monk
     assert "marker-pdf" not in Path(pip_call[-1]).read_text(encoding="utf-8")
 
 
-def test_optional_candidate_generates_hash_checked_selection_lock_and_records_it(monkeypatch, tmp_path):
+def test_feature_owned_candidate_is_rejected_before_lock_generation(monkeypatch, tmp_path):
     calls: list = []
     monkeypatch.setattr(
         "subprocess.run", fake_uv_subprocess_run(calls, trusted_python_dir=tmp_path / "uv-python-store")
@@ -501,23 +487,19 @@ def test_optional_candidate_generates_hash_checked_selection_lock_and_records_it
         return RuntimeLockMetadata("i" * 64, PINNED_UV_VERSION, PINNED_PYTHON_VERSION, "l" * 64)
 
     monkeypatch.setattr("officina.install.managed_runtime.runtime_lock.generate_runtime_lock", generate)
-    pointer = build_candidate_release(
-        runtime_root=tmp_path / "runtime",
-        manifest_path=REAL_MANIFEST,
-        platform="linux",
-        uv_bin=FAKE_UV_BIN,
-        python_version="3.11",
-        repo_root=REPO_ROOT,
-        optional_module_ids=("pdf-to-markdown",),
-    )
+    with pytest.raises(ManagedRuntimeError, match="feature-owned"):
+        build_candidate_release(
+            runtime_root=tmp_path / "runtime",
+            manifest_path=REAL_MANIFEST,
+            platform="linux",
+            uv_bin=FAKE_UV_BIN,
+            python_version="3.11",
+            repo_root=REPO_ROOT,
+            optional_module_ids=("pdf-to-markdown",),
+        )
 
-    assert generated["selected_module_ids"] == ("pdf-to-markdown",)
-    lock_install = next(call for call in calls if "--require-hashes" in call)
-    assert lock_install[-1].endswith("requirements-selected.lock")
-    artifact = json.loads((pointer.runtime_source / "artifact.json").read_text(encoding="utf-8"))
-    assert artifact["selected_module_ids"] == ["pdf-to-markdown"]
-    assert artifact["runtime_lock"]["input_sha256"] == "i" * 64
-    assert artifact["runtime_lock"]["sha256"] == "l" * 64
+    assert generated == {}
+    assert calls == []
 
 
 def test_build_candidate_release_provisions_venv_before_installing_packages(monkeypatch, tmp_path):

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import re
 import subprocess
 
 import pytest
@@ -13,6 +14,9 @@ from officina.install.runtime_lock import (
     render_runtime_requirements,
     validate_runtime_lock,
 )
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _write_manifest(path: Path) -> None:
@@ -68,7 +72,7 @@ def _write_manifest(path: Path) -> None:
                             },
                         }
                     },
-                    "pdf-to-markdown": {
+                    "example-optional": {
                         "maturity": "stable",
                         "installation_tier": "optional",
                         "personal_preference": {"applies": False},
@@ -122,13 +126,50 @@ def test_render_runtime_requirements_pools_constraints_and_platforms(tmp_path: P
     )
 
 
-def test_selected_optional_module_extends_the_core_dependency_pool(tmp_path: Path) -> None:
+def test_checked_core_lock_matches_real_manifest_and_excludes_feature_packages() -> None:
+    manifest = REPO_ROOT / "references" / "blueprint-schema" / "runtime_dependencies.json"
+    input_path = REPO_ROOT / "references" / "runtime" / "requirements-core.in"
+    lock_path = REPO_ROOT / "references" / "runtime" / "requirements-core.lock"
+
+    metadata = validate_runtime_lock(
+        manifest_path=manifest,
+        input_path=input_path,
+        lock_path=lock_path,
+        expected_uv_version="0.11.29",
+        expected_python_version="3.11.15",
+    )
+
+    assert metadata.uv_version == "0.11.29"
+    assert metadata.python_version == "3.11.15"
+    assert input_path.read_text(encoding="utf-8") == render_runtime_requirements(manifest)
+    package_lines = {
+        re.split(r"[<>=!~ ;]", line, maxsplit=1)[0].casefold()
+        for text in (input_path.read_text(encoding="utf-8"), lock_path.read_text(encoding="utf-8"))
+        for line in text.splitlines()
+        if line and not line.startswith(("#", " "))
+    }
+    assert package_lines.isdisjoint(
+        {
+            "bibtexparser",
+            "cryptography",
+            "dateparser",
+            "keyring",
+            "marker-pdf",
+            "pyflakes",
+            "pytest",
+            "pytest-xdist",
+            "rich",
+        }
+    )
+
+
+def test_selected_generic_optional_module_extends_the_core_dependency_pool(tmp_path: Path) -> None:
     """The optional module ID, rather than a package name, selects marker-pdf."""
     manifest = tmp_path / "runtime_dependencies.json"
     _write_manifest(manifest)
 
     assert "marker-pdf ; sys_platform == 'linux'\n" in render_runtime_requirements(
-        manifest, selected_module_ids=("pdf-to-markdown",)
+        manifest, selected_module_ids=("example-optional",)
     )
 
 

@@ -328,7 +328,8 @@ def test_core_and_general_installer_do_not_own_google_packages() -> None:
     assert core_packages == ["mcp>=1,<2", "PyYAML>=6", "jsonschema>=4,<5"]
     advertised = {module["id"] for module in optional_runtime_modules(MANIFEST, platform="linux")}
     assert advertised.isdisjoint(GOOGLE_OWNERS)
-    assert "pdf-to-markdown" in advertised
+    assert "pdf-to-markdown" not in advertised
+    assert "install-launchers" in advertised
 
     for owner in GOOGLE_OWNERS:
         with pytest.raises(RuntimeLockError, match="feature-owned"):

@@ -181,6 +181,13 @@ These are LLM-readable instruction surfaces. Read and follow them directly; do n
 - `list-manager.interface.default` — Primary LLM-facing skill instructions.
 - `list-manager.interface.setup` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->
+Before any local or cloud list machine interface, follow
+`setup-python-environment.interface.repair-selected-packages` for list-manager's exact
+declaration `["dateparser", "keyring", "rich"]`. Complete the full Task 2 fingerprint
+procedure; on any failure, stop before list activity. Local/default selection repairs only
+this declaration. Google connection setup remains a separate user-selected step only for
+cloud routes; local/default setup never selects it.
+
 When this skill is used, begin with:
 
 Skill: list-manager

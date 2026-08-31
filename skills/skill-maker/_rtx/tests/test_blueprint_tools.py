@@ -266,15 +266,8 @@ def test_generated_contract_keeps_setup_requirements_separate(syncer) -> None:
 
     assert "Setup Requires Setup Of: none" in installer
     assert "Setup Requires Setup Of: none" in google
-    assert "`connect-google.interface.setup@1`" in lists
-    assert (
-        "Setup Order:\n"
-        "1. `connect-google.interface.setup`\n"
-        "2. `list-manager.interface.setup`"
-    ) in lists
-    uses, setup = lists.split("Setup Requires Setup Of:", 1)
-    assert "connect-google.interface.setup" not in uses
-    assert "connect-google.interface.setup" in setup
+    assert "Setup Requires Setup Of: none" in lists
+    assert "connect-google.interface.setup" not in lists
 
 
 def test_generated_setup_order_deduplicates_transitive_dependencies(syncer) -> None:

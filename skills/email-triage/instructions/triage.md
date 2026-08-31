@@ -4,6 +4,11 @@ Scans emails received since the last triage run. Extracts action items and route
 
 Use `email-client.interface.default` to read and send email. Use `list-manager.interface.default` to read and update destination lists.
 
+Before any account lookup or envelope fetch, follow
+`setup-python-environment.interface.repair-selected-packages` for email-triage's exact
+declaration `["keyring"]`. Complete the full Task 2 fingerprint procedure; on any
+failure, stop before email, network, list, or triage activity.
+
 **IMPORTANT: Never ask the user for a lookback period or watermark date. The date always comes from the `email-triage._rtx.interface.scripts-get-cutoff` interface. If that interface emits a warning or fails, report it to the user — but do not ask them to supply a date instead.**
 
 **IMPORTANT: A triage run must never stop to ask the user a question.** This

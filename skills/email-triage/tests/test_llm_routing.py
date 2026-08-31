@@ -117,7 +117,22 @@ def test_triage_contract_has_no_preference_source_or_read() -> None:
     )
 
     assert triage["version"] == 2
-    assert triage_source["dependencies"] == []
+    assert [
+        (
+            dependency["blueprint"]["base"],
+            dependency["blueprint"]["path"],
+            dependency["source"],
+            dependency["version"],
+        )
+        for dependency in triage_source["dependencies"]
+    ] == [
+        (
+            "repository-root",
+            "skills/setup-python-environment/blueprints/gateway.yaml",
+            "setup-python-environment.source.gateway",
+            1,
+        )
+    ]
     assert all(
         entry.get("path") != "references/personal-preferences.md"
         for entry in triage["contract"]["direct_io"]["reads"]

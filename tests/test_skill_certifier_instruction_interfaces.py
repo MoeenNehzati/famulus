@@ -85,6 +85,7 @@ def test_certifier_gateway_orchestrates_audits_without_default_interface() -> No
     expected_uses = interface_ids | {
         drift_interface,
         "node-certify._rtx.interface.certify",
+        "setup-python-environment.interface.repair-selected-packages",
     }
 
     assert gateway["interfaces"] == {}
@@ -124,9 +125,13 @@ def test_certifier_gateway_orchestrates_audits_without_default_interface() -> No
     for use in (*gateway["uses_interfaces"], *drift_gateway["uses_interfaces"]):
         if use["interface"] == drift_interface:
             assert use["version"] == drift_status_version
-    assert drift_gateway["interfaces"][
-        "node-drift.source.gateway.interface.default"
-    ]["uses_interfaces"][1] == {
+    assert next(
+        use
+        for use in drift_gateway["interfaces"][
+            "node-drift.source.gateway.interface.default"
+        ]["uses_interfaces"]
+        if use["interface"] == drift_interface
+    ) == {
         "interface": drift_interface,
         "version": drift_status_version,
     }

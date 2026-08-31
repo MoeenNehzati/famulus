@@ -22,7 +22,19 @@ _PLATFORM_MARKERS = {
 # manifest; these two requirements are the managed-runtime bootstrap policy.
 BOOTSTRAP_REQUIREMENTS = ("PyYAML==6.0.2", "setuptools==80.9.0")
 FEATURE_OWNED_MODULE_IDS = frozenset(
-    {"connect-google", "cloud-files", "online-calendar", "email-client"}
+    {
+        "bib-audit",
+        "cloud-files",
+        "connect-google",
+        "daily-plan",
+        "email-client",
+        "email-triage",
+        "list-manager",
+        "node-certify",
+        "node-drift",
+        "online-calendar",
+        "pdf-to-markdown",
+    }
 )
 
 _HEADER_PATTERN = re.compile(r"^# ([a-z][a-z0-9-]*): (.+)$")

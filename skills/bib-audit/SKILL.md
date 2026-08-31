@@ -49,6 +49,11 @@ These are LLM-readable instruction surfaces. Read and follow them directly; do n
 
 Conservative bibliography auditor. Default behavior: produce a structured report. Apply transformations only on explicit user approval.
 
+Before validating or comparing bibliography entries, follow
+`setup-python-environment.interface.repair-selected-packages` for this owner's exact
+declaration `["bibtexparser"]`. Complete the full Task 2 fingerprint procedure; on any
+failure, stop before invoking either bibliography interface.
+
 ## Invocation
 
 Ask for:
