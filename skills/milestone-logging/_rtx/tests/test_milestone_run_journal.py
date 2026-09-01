@@ -118,6 +118,8 @@ def test_writer_contract_declares_the_selected_log_root() -> None:
     assert direct_io["writes"][0]["path"] == "<selected-milestone-log-root>/**"
     assert direct_io["writes"][0]["medium"] == "local-filesystem"
     assert "ASSISTANT_LOGS" in direct_io["writes"][0]["reason"]
+    assert "plugin MCP" in direct_io["writes"][0]["reason"]
+    assert "logging-path" in direct_io["writes"][0]["reason"]
     assert "$HOME/.assistant-logs" in direct_io["writes"][0]["reason"]
 
 
@@ -131,6 +133,8 @@ def test_timeline_contract_declares_every_transcript_root() -> None:
     assert reads["read-1"]["path"] == "<selected-milestone-log-root>/**"
     assert reads["read-1"]["medium"] == "local-filesystem"
     assert "ASSISTANT_LOGS" in reads["read-1"]["reason"]
+    assert "plugin MCP" in reads["read-1"]["reason"]
+    assert "logging-path" in reads["read-1"]["reason"]
     assert "$HOME/.assistant-logs" in reads["read-1"]["reason"]
     assert reads["read-2"]["path"] == "$HOME/.claude/projects/**"
     assert reads["read-3"]["path"] == "<selected-codex-home>/sessions/**"

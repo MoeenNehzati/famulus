@@ -1,0 +1,112 @@
+content:
+- setup\.md
+dependencies:
+- blueprint:
+    base: repository-root
+    path: src/officina/common/blueprints/famulus-paths-get.yaml
+  reason: Resolve the plugin-projected milestone root and readiness record.
+  source: common.source.famulus-paths-get
+  version: 1
+description: Verifies the host-managed milestone logging root and plugin readiness record.
+gateway:
+  language: Markdown
+  path: setup.md
+id: milestone-logging.source.setup
+interfaces:
+  milestone-logging.source.setup.interface.default:
+    content:
+    - setup\.md
+    uses_interfaces:
+    - interface: common.interface.famulus-paths-get
+      version: 1
+    contract:
+      arguments:
+        request:
+          description: Request to verify durable plugin-managed milestone logging.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: setup request
+          formats:
+          - text
+          id: read-1
+          medium: prompt
+          sensitivity: user-private
+          system: agent-runtime
+        - access: read
+          content: plugin readiness record
+          formats:
+          - json
+          id: read-2
+          medium: local-filesystem
+          path: <setup-status>
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        writes:
+        - access: write
+          content: setup result
+          formats:
+          - markdown
+          id: write-1
+          medium: prompt
+          sensitivity: derived-private
+          system: agent-runtime
+      execution:
+        consistency:
+          live: The result reflects the plugin readiness record observed during setup.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: response
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Continue with milestone logging.
+        class: success
+        effects: []
+        id: completed
+        outputs:
+        - response
+      - caller_action: Start Famulus through a supported plugin host and inspect the readiness record.
+        class: error
+        effects: []
+        id: clarification-required
+        outputs:
+        - response
+      outputs:
+      - audience: human
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: The completed setup result or the required client-specific next action.
+        direct_io_ref: write-1
+        empty: Never empty.
+        id: response
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Verify the host-managed plugin logging root and readiness record.
+    version: 1
+node_type: behavioral_source
+schema_version: 6
+uses_interfaces:
+- interface: common.interface.famulus-paths-get
+  version: 1
+version: 1
+maturity: stable

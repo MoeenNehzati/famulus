@@ -8,6 +8,7 @@ content:
 - command_files\.py
 - dates\.py
 - famulus_paths/__init__\.py
+- famulus_paths/_get_interface\.py
 - repository_paths\.py
 - toml_io\.py
 description: Shared, narrowly exported Python helpers for secure file updates, project
@@ -57,6 +58,11 @@ exports:
       - credentials
       - launchers
     source_interface: common.source.famulus-paths.interface.python-api
+  common.interface.famulus-paths-get:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: common.source.famulus-paths-get.interface.get
   common.interface.repository-paths:
     access:
       allow_all_modules: false
@@ -100,6 +106,10 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/famulus-paths.yaml
+  common.source.famulus-paths-get:
+    blueprint:
+      base: module-root
+      path: blueprints/famulus-paths-get.yaml
   common.source.repository-paths:
     blueprint:
       base: module-root

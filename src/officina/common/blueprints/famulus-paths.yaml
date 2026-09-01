@@ -1,9 +1,8 @@
 content:
 - famulus_paths/__init__\.py
 dependencies: []
-description: Resolves platform-correct durable Famulus application paths from an
-  explicit environment mapping, avoiding ambient process state and the user's
-  Documents folder on every platform.
+description: Resolves platform-correct durable Famulus application paths and optional
+  normalized plugin context from explicit inputs without filesystem mutation.
 gateway:
   language: Python
   path: famulus_paths/__init__.py
@@ -35,15 +34,26 @@ interfaces:
             must_exist: false
             access: read
         environ:
-          description: Explicit environment mapping containing any XDG, APPDATA,
-            LOCALAPPDATA, or assistant-home overrides selected by the caller. Missing
-            platform path overrides use conventions below the explicit home.
+          description: Explicit environment mapping containing platform root overrides
+            and, together or not at all, normalized FAMULUS_HOST and
+            FAMULUS_PLUGIN_DATA plugin context. Native client variable names are ignored.
           required: true
           sensitivity: user-private
           type:
             kind: string
             description: Read-only string-to-string mapping; ambient os.environ
               is never consulted.
+        name:
+          description: Optional declared plugin path selected by FamulusPaths.get;
+            omitted when resolving the complete dataclass.
+          required: false
+          sensitivity: public
+          type:
+            kind: enum
+            values:
+            - {value: plugin-data, description: Client-managed persistent plugin root.}
+            - {value: logging-path, description: Milestone directory below plugin data.}
+            - {value: setup-status, description: Setup readiness file below plugin data.}
       preconditions:
       - id: absolute-home
         description: home must be an absolute path.
@@ -61,14 +71,20 @@ interfaces:
           predicate: present
         unmet_outcome: invalid-home
         caller_action: Remove the override or supply a non-empty absolute path.
+      - id: complete-plugin-context
+        description: Normalized plugin host and data variables are absent together or
+          contain one supported host and an absolute data root.
+        check: {kind: argument, argument_ref: environ, predicate: present}
+        unmet_outcome: invalid-plugin-context
+        caller_action: Supply valid FAMULUS_HOST and FAMULUS_PLUGIN_DATA together.
       interaction:
         mode: unattended
       caller_warnings: []
       outputs:
       - id: result
         audience: machine
-        description: FamulusPaths dataclass instance with durable data, config, state,
-          user-bin, worker, and feature-state paths.
+        description: FamulusPaths with legacy roots plus all-or-none plugin fields,
+          or one selected absolute plugin path from FamulusPaths.get.
         direct_io_ref: return-value
         cardinality:
           minimum: 1
@@ -82,7 +98,7 @@ interfaces:
         type:
           kind: string
           sensitivity: user-private
-          description: Python FamulusPaths dataclass instance.
+          description: Python FamulusPaths dataclass instance or selected pathlib.Path.
       outcomes:
       - id: completed
         class: success
@@ -95,6 +111,21 @@ interfaces:
         outputs: []
         effects: []
         caller_action: Supply an absolute home directory path.
+      - id: invalid-plugin-context
+        class: refusal
+        outputs: []
+        effects: []
+        caller_action: Supply supported, complete normalized plugin context.
+      - id: plugin-context-required
+        class: refusal
+        outputs: []
+        effects: []
+        caller_action: Request the named path only from a hosted plugin process.
+      - id: unknown-path
+        class: refusal
+        outputs: []
+        effects: []
+        caller_action: Select one of the three declared plugin path names.
       execution:
         state_effect: read-only
         lifecycle: finite
@@ -125,7 +156,7 @@ interfaces:
           - text
           sensitivity: user-private
         network: []
-    description: Provides Famulus path resolution to Python callers.
+    description: Provides complete path resolution and finite named plugin-path lookup.
     version: 1
 node_type: behavioral_source
 schema_version: 6

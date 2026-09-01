@@ -31,6 +31,8 @@ Use `record` before the first substantive action, before each distinct work item
 
 If one `record` invocation fails, report that exact failure once and continue the task; do not invent a record or retry blindly.
 
+To tell the user where this session's milestones are being written, invoke `milestone-logging._rtx.interface.record` with only `--path` and report the complete returned path verbatim.
+
 Use the durable-run mode only for work that must outlive the current session. Put recovery-relevant state in its typed fields.
 
 For a diagnostic read, invoke `timeline`; use its explicit list or run route to inspect existing records.

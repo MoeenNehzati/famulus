@@ -106,6 +106,12 @@ account. Backend ownership is durable in each context's `launchers.json`.
 `AI` and `FAMULUS_REPO_ROOT` are not installation selectors and must not be
 persisted.
 
+When a supported host starts the Famulus plugin, that host supplies a private
+`plugin_data` directory to the Famulus MCP subprocess. Famulus stores milestone
+logs below `<plugin_data>/milestones/` and writes the current host readiness
+record to `<plugin_data>/setup/status.json`. Claude and Codex roots remain
+separate, and no pre-existing `~/.assistant-logs` content is migrated or merged.
+
 ### Roots granted to a managed assistant
 
 Both hosts confine an agent to directories the user has approved, and a Famulus
@@ -187,6 +193,8 @@ a known hardening gap.
 | Email | The registered IMAP/SMTP account; selected headers and bodies can enter the model session |
 | Saved attachments | A user-selected local directory; filenames are reduced to a basename before writing |
 | Email-triage state | `<STATE>/email-triage/` |
+| Plugin milestone logs | `<plugin_data>/milestones/` for the active Claude or Codex plugin instance |
+| Plugin readiness record | `<plugin_data>/setup/status.json` |
 | Email-triage classification log | `<PLUGIN>/skills/email-triage/_rtx/triage.log`; includes account, message ID, sender, subject, decision, and reason |
 | List-manager category cache | `<PLUGIN>/skills/list-manager/_rtx/tmp/categories.<list>.yaml`; contains list category paths and cache counters, not list entries |
 | Daily-plan run status | `<PLUGIN>/skills/daily-plan/state/status.json` |
