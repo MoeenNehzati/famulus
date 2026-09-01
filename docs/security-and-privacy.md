@@ -108,9 +108,16 @@ persisted.
 
 When a supported host starts the Famulus plugin, that host supplies a private
 `plugin_data` directory to the Famulus MCP subprocess. Famulus stores milestone
-logs below `<plugin_data>/milestones/` and writes the current host readiness
-record to `<plugin_data>/setup/status.json`. Claude and Codex roots remain
-separate, and no pre-existing `~/.assistant-logs` content is migrated or merged.
+logs below `<plugin_data>/milestones/`; MCP startup creates and confines that
+directory and publishes it to the subprocess as `ASSISTANT_LOGS`. It does not
+write a host-readiness record. The hidden setup manager separately owns its
+schema-versioned receipt ledger at the one absolute `setup-status` path returned
+by `common.interface.famulus-paths-get@1`. In a supported host context that
+getter currently selects `<plugin_data>/setup/status.json`. The ledger records
+verified managed setup state and active lifecycle flow, not whether the MCP
+process is currently reachable; live `famulus.invoke` availability is the MCP
+readiness signal. Claude and Codex roots remain separate, and no pre-existing
+`~/.assistant-logs` content is migrated or merged.
 
 ### Roots granted to a managed assistant
 
@@ -194,7 +201,7 @@ a known hardening gap.
 | Saved attachments | A user-selected local directory; filenames are reduced to a basename before writing |
 | Email-triage state | `<STATE>/email-triage/` |
 | Plugin milestone logs | `<plugin_data>/milestones/` for the active Claude or Codex plugin instance |
-| Plugin readiness record | `<plugin_data>/setup/status.json` |
+| Managed setup ledger | The absolute `setup-status` path returned by `common.interface.famulus-paths-get@1`; currently `<plugin_data>/setup/status.json` in a supported host context. Contains verified interface/version receipts, root claims, and at most one active lifecycle flow; it is not an MCP-readiness record. |
 | Email-triage classification log | `<PLUGIN>/skills/email-triage/_rtx/triage.log`; includes account, message ID, sender, subject, decision, and reason |
 | List-manager category cache | `<PLUGIN>/skills/list-manager/_rtx/tmp/categories.<list>.yaml`; contains list category paths and cache counters, not list entries |
 | Daily-plan run status | `<PLUGIN>/skills/daily-plan/state/status.json` |
