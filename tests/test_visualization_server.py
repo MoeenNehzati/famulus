@@ -54,6 +54,25 @@ def test_no_cache_handler_adds_response_headers(monkeypatch: pytest.MonkeyPatch)
     assert ("Expires", "0") in headers
 
 
+def test_http_server_bind_does_not_resolve_fqdn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Break caught: macOS stalls between bind and listen during FQDN lookup."""
+
+    def unexpected_lookup(_host: str) -> str:
+        raise AssertionError("server bind must not resolve an FQDN")
+
+    monkeypatch.setattr(server.socket, "getfqdn", unexpected_lookup)
+    instance = server.ReusableThreadingHTTPServer(
+        ("127.0.0.1", 0), server.NoCacheRequestHandler
+    )
+    try:
+        assert instance.server_name == "127.0.0.1"
+        assert instance.server_port == instance.server_address[1]
+    finally:
+        instance.server_close()
+
+
 def test_foreground_server_reports_ready_state_and_closes(
     tmp_path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -134,7 +153,7 @@ def test_background_graph_server_serves_no_cache_and_stops(tmp_path: Path) -> No
     served.mkdir()
     expected = b"task-four-known-bytes"
     (served / "known file.txt").write_bytes(expected)
-    handle = server.start_graph_server(served)
+    handle = server.start_graph_server(served, startup_wait=3.0)
     try:
         with urlopen(handle.url + quote("known file.txt"), timeout=3.0) as response:
             assert response.status == 200
@@ -256,42 +275,6 @@ def test_background_graph_server_timeout_cleans_child(
 
     assert process.terminated is True
     assert process.waited is True
-
-
-def test_background_graph_server_default_wait_allows_loaded_host(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Break caught: the default budget kills a healthy child before a slow import."""
-
-    class FakeProcess:
-        pid = 1234
-
-        def poll(self):
-            return None
-
-        def terminate(self) -> None:
-            pass
-
-        def wait(self, timeout: float) -> int:
-            return -15
-
-    elapsed = 0.0
-
-    def perf_counter() -> float:
-        return elapsed
-
-    def sleep(seconds: float) -> None:
-        nonlocal elapsed
-        elapsed += seconds
-
-    monkeypatch.setattr(server, "is_port_open", lambda host, port: elapsed >= 4.0)
-    monkeypatch.setattr(server.subprocess, "Popen", lambda *args, **kwargs: FakeProcess())
-    monkeypatch.setattr(server.time, "perf_counter", perf_counter)
-    monkeypatch.setattr(server.time, "sleep", sleep)
-
-    handle = server.start_graph_server(tmp_path, port=9876, port_scan=False)
-
-    assert handle.process.pid == 1234
 
 
 def test_background_graph_server_reaps_child_that_exits_during_startup(

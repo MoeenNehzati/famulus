@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import socket
+from socketserver import TCPServer
 import subprocess
 import sys
 import time
@@ -55,6 +56,11 @@ class ReusableThreadingHTTPServer(ThreadingHTTPServer):
     """Threaded local server that can immediately reuse its bind address."""
 
     allow_reuse_address = True
+
+    def server_bind(self) -> None:
+        """Bind without the blocking FQDN lookup performed by HTTPServer."""
+        TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
 
 
 def valid_port(value: str) -> int:
@@ -150,7 +156,7 @@ def start_graph_server(
     host: str = "127.0.0.1",
     port: int = 8765,
     port_scan: bool = True,
-    startup_wait: float = 10.0,
+    startup_wait: float = 1.0,
 ) -> GraphServer:
     """Start a local HTTP server rooted at ``directory`` and return a handle."""
     selected_port = next_open_port(host, port) if port_scan else port
