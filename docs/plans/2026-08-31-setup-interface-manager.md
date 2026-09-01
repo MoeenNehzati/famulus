@@ -8,6 +8,8 @@
 
 **Tech stack:** Python 3.11+, Officina V6 blueprints, `RepositoryBlueprintGraph`, `PythonMachineInterface`, Famulus MCP, pytest, and `repo_checks.py`.
 
+**Implementation status (2026-09-01):** Tasks 1–10 are implemented on `feat/setup-interface-manager`; Tasks 1–9 are committed through `a46f7f68`, and Task 10's isolated campaign passed all 20 production and synthetic scenarios plus the staged repository gate. See [the interactive experiment report](../testing/setup-interface-manager-interactive.md) for evidence boundaries, review corrections, fixture-only rulings, discarded attempts, and the repeat procedure.
+
 ## Release boundary and prerequisites
 
 - Treat `common.interface.famulus-paths-get@1 setup-status` as the sole path source. The getter implementation and path choice are a prerequisite supplied by the Famulus-path work; this plan does not change them.
