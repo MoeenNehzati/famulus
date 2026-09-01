@@ -4658,6 +4658,12 @@
         "milestone-logging._rtx.interface.record": {
           "dependencies": []
         },
+        "milestone-logging._rtx.interface.setup-status": {
+          "dependencies": []
+        },
+        "milestone-logging._rtx.interface.teardown-status": {
+          "dependencies": []
+        },
         "milestone-logging._rtx.interface.timeline": {
           "dependencies": []
         }

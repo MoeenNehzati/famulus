@@ -1,0 +1,45 @@
+content: [teardown\.md]
+dependencies: []
+description: Defines retention-preserving milestone logging teardown as an external no-op.
+gateway: {language: Markdown, path: teardown.md}
+id: milestone-logging.source.teardown
+interfaces:
+  milestone-logging.source.teardown.interface.default:
+    content: [teardown\.md]
+    uses_interfaces: []
+    contract:
+      arguments: {}
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads: []
+        writes:
+        - {access: write, content: teardown result, formats: [markdown], id: response-write, medium: prompt, sensitivity: derived-private, system: agent-runtime}
+      execution:
+        consistency: {live: The result reflects the declared no-op teardown completed during this invocation.}
+        lifecycle: finite
+        state_effect: read-only
+        verification: [{method: output-schema, output_ref: response}]
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes:
+      - {id: completed, class: success, outputs: [response], effects: [], caller_action: Proceed to the independent teardown verifier without removing retained state.}
+      outputs:
+      - id: response
+        audience: human
+        description: Confirmation that the retention-preserving no-op action is complete.
+        direct_io_ref: response-write
+        cardinality: {minimum: 1, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: Never empty.
+        type: {kind: string, sensitivity: derived-private}
+      preconditions: []
+    description: Perform no external mutation and retain all milestone logging state.
+    version: 1
+node_type: behavioral_source
+schema_version: 6
+uses_interfaces: []
+version: 1
+maturity: stable

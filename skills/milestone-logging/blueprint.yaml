@@ -3,7 +3,7 @@ authority:
 children:
   _rtx: {}
 content:
-- (?:SKILL\.md|setup\.md)
+- (?:SKILL\.md|setup\.md|teardown\.md)
 description: Owns durable agent-progress logging instructions and the compatible writer and timeline interfaces.
 discovery:
   mechanism: skill
@@ -28,7 +28,22 @@ exports:
       allow_all_modules: true
       allowed_callers: []
     setup_requires_setup_of: []
+    setup_management:
+      setup_verifier:
+        interface: milestone-logging._rtx.interface.setup-status
+        version: 1
+      teardown:
+        interface: milestone-logging.interface.teardown
+        version: 1
+        verifier:
+          interface: milestone-logging._rtx.interface.teardown-status
+          version: 1
     source_interface: milestone-logging.source.setup.interface.default
+  milestone-logging.interface.teardown:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: milestone-logging.source.teardown.interface.default
 gateway:
   language: Markdown
   path: SKILL.md
@@ -40,9 +55,12 @@ namespace_exports:
       allow_all_modules: false
       allowed_callers:
       - milestone-logging
+      - setup-interface-manager._rtx
     surface:
       only:
         milestone-logging._rtx.interface.record: 1
+        milestone-logging._rtx.interface.setup-status: 1
+        milestone-logging._rtx.interface.teardown-status: 1
         milestone-logging._rtx.interface.timeline: 1
     interface_access:
       milestone-logging._rtx.interface.record:
@@ -53,6 +71,16 @@ namespace_exports:
         allow_all_modules: false
         allowed_callers:
         - milestone-logging
+      milestone-logging._rtx.interface.setup-status:
+        allow_all_modules: false
+        allowed_callers:
+        - milestone-logging
+        - setup-interface-manager._rtx
+      milestone-logging._rtx.interface.teardown-status:
+        allow_all_modules: false
+        allowed_callers:
+        - milestone-logging
+        - setup-interface-manager._rtx
 node_type: module
 schema_version: 6
 sources:
@@ -64,6 +92,10 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/setup.yaml
+  milestone-logging.source.teardown:
+    blueprint:
+      base: module-root
+      path: blueprints/teardown.yaml
 version: 1
 maturity: stable
 installation_tier: core

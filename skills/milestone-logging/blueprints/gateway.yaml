@@ -1,6 +1,10 @@
 content:
 - SKILL\.md
-dependencies: []
+dependencies:
+- blueprint: {base: repository-root, path: skills/setup-interface-manager/_rtx/blueprints/rtx-manager.yaml}
+  reason: Enforce the managed setup gate before milestone logging operations.
+  source: setup-interface-manager._rtx.source.rtx-manager
+  version: 1
 description: Defines the LLM-facing protocol for recording durable agent milestones and reading timeline diagnostics.
 gateway:
   language: Markdown
@@ -11,6 +15,18 @@ interfaces:
     content:
     - SKILL\.md
     uses_interfaces:
+    - interface: setup-interface-manager._rtx.interface.status
+      version: 1
+    - interface: setup-interface-manager._rtx.interface.begin
+      version: 1
+    - interface: setup-interface-manager._rtx.interface.run-markdown
+      version: 1
+    - interface: setup-interface-manager._rtx.interface.run-python
+      version: 1
+    - interface: setup-interface-manager._rtx.interface.settle
+      version: 1
+    - interface: setup-interface-manager._rtx.interface.authorize
+      version: 1
     - interface: milestone-logging._rtx.interface.record
       version: 1
     - interface: milestone-logging._rtx.interface.timeline
@@ -91,6 +107,18 @@ interfaces:
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
+- interface: setup-interface-manager._rtx.interface.status
+  version: 1
+- interface: setup-interface-manager._rtx.interface.begin
+  version: 1
+- interface: setup-interface-manager._rtx.interface.run-markdown
+  version: 1
+- interface: setup-interface-manager._rtx.interface.run-python
+  version: 1
+- interface: setup-interface-manager._rtx.interface.settle
+  version: 1
+- interface: setup-interface-manager._rtx.interface.authorize
+  version: 1
 - interface: milestone-logging._rtx.interface.record
   version: 1
 - interface: milestone-logging._rtx.interface.timeline

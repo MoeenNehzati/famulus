@@ -1,0 +1,52 @@
+content: [_teardown_status_interface\.py]
+dependencies: []
+description: Reports successful completion of milestone logging's declared no-op teardown.
+gateway: {language: Python, path: _teardown_status_interface.py}
+id: milestone-logging._rtx.source.rtx-teardown-status
+interfaces:
+  milestone-logging._rtx.source.rtx-teardown-status.interface.teardown-status:
+    content: [_teardown_status_interface\.py]
+    uses_interfaces: []
+    contract:
+      arguments: {}
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads: []
+        writes:
+        - {access: write, content: exact teardown status object, formats: [json], id: result-write, medium: stdout, sensitivity: derived-private, system: agent-runtime}
+      execution:
+        consistency: {live: The result confirms the declared no-op action without consulting or mutating external state.}
+        lifecycle: finite
+        state_effect: read-only
+        verification: [{method: output-schema, output_ref: result}]
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes:
+      - {id: completed, class: success, outputs: [result], effects: [], caller_action: Accept teardown only when torn_down is true.}
+      outputs:
+      - id: result
+        audience: machine
+        description: One JSON object containing only the torn_down boolean.
+        direct_io_ref: result-write
+        cardinality: {minimum: 1, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: Never empty.
+        type: {kind: string, sensitivity: derived-private, format: {named: json}}
+      preconditions: []
+    description: Return exactly whether the retention-preserving no-op teardown is complete.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns: [{allow_stdin: false, min_positionals: 0, max_positionals: 0}]
+    usage: ''
+    version: 1
+node_type: behavioral_source
+platform_support: {linux: true, macos: true, windows: true}
+runtime_dependencies: []
+schema_version: 6
+uses_interfaces: []
+version: 1
+maturity: stable

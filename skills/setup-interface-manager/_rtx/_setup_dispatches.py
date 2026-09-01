@@ -92,8 +92,69 @@ class ManagedInterfaceBinding:
             raise ValueError("managed positional arguments must be contiguous")
 
 
-PRODUCTION_BINDINGS: Mapping[str, ManagedInterfaceBinding] = MappingProxyType({})
-PRODUCTION_ACTION_CALLS: Mapping[str, DispatchCall] = MappingProxyType({})
+MILESTONE_SETUP_KEY = "milestone-logging-setup"
+MILESTONE_SETUP_STATUS_KEY = "milestone-logging-setup-status"
+MILESTONE_TEARDOWN_KEY = "milestone-logging-teardown"
+MILESTONE_TEARDOWN_STATUS_KEY = "milestone-logging-teardown-status"
+
+PRODUCTION_BINDINGS: Mapping[str, ManagedInterfaceBinding] = MappingProxyType(
+    {
+        "milestone-logging.interface.setup": ManagedInterfaceBinding(
+            setup_interface="milestone-logging.interface.setup",
+            setup_version=1,
+            setup_kind="markdown",
+            setup_dispatch_key=MILESTONE_SETUP_KEY,
+            setup_instructions=(
+                "Invoke common.interface.famulus-paths-get@1 with logging-path, "
+                "require one absolute path, then create that directory and missing "
+                "parents idempotently. Do not read or write setup-status, change "
+                "MCP configuration, or remove existing contents."
+            ),
+            setup_verifier_interface="milestone-logging._rtx.interface.setup-status",
+            setup_verifier_version=1,
+            setup_verifier_dispatch_key=MILESTONE_SETUP_STATUS_KEY,
+            teardown_interface="milestone-logging.interface.teardown",
+            teardown_version=1,
+            teardown_dispatch_key=MILESTONE_TEARDOWN_KEY,
+            teardown_instructions=(
+                "Perform no external mutation. Retain the logging directory, its "
+                "contents, environment, and plugin state; proceed directly to "
+                "settlement."
+            ),
+            teardown_verifier_interface="milestone-logging._rtx.interface.teardown-status",
+            teardown_verifier_version=1,
+            teardown_verifier_dispatch_key=MILESTONE_TEARDOWN_STATUS_KEY,
+        )
+    }
+)
+PRODUCTION_ACTION_CALLS: Mapping[str, DispatchCall] = MappingProxyType(
+    {
+        MILESTONE_SETUP_KEY: DispatchCall(
+            caller_module_id="setup-interface-manager._rtx",
+            target_module_id="milestone-logging",
+            interface="setup",
+            smoke_args=(),
+        ),
+        MILESTONE_SETUP_STATUS_KEY: DispatchCall(
+            caller_module_id="setup-interface-manager._rtx",
+            target_module_id="milestone-logging._rtx",
+            interface="setup-status",
+            smoke_args=(),
+        ),
+        MILESTONE_TEARDOWN_KEY: DispatchCall(
+            caller_module_id="setup-interface-manager._rtx",
+            target_module_id="milestone-logging",
+            interface="teardown",
+            smoke_args=(),
+        ),
+        MILESTONE_TEARDOWN_STATUS_KEY: DispatchCall(
+            caller_module_id="setup-interface-manager._rtx",
+            target_module_id="milestone-logging._rtx",
+            interface="teardown-status",
+            smoke_args=(),
+        ),
+    }
+)
 
 
 def production_dispatches(

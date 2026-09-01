@@ -22,6 +22,8 @@ content:
 - __init__\.py
 - _milestone_interface\.py
 - _milestone_writer\.py
+- _setup_status_interface\.py
+- _teardown_status_interface\.py
 - _timeline_interface\.py
 - _agent_timeline\.py
 - tests/.*
@@ -39,6 +41,20 @@ exports:
       allowed_callers:
       - milestone-logging
     source_interface: milestone-logging._rtx.source.rtx-agent-timeline.interface.timeline
+  milestone-logging._rtx.interface.setup-status:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - milestone-logging
+      - setup-interface-manager._rtx
+    source_interface: milestone-logging._rtx.source.rtx-setup-status.interface.setup-status
+  milestone-logging._rtx.interface.teardown-status:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - milestone-logging
+      - setup-interface-manager._rtx
+    source_interface: milestone-logging._rtx.source.rtx-teardown-status.interface.teardown-status
 gateway:
   language: Python>=3.11
   path: __init__.py
@@ -55,5 +71,13 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/rtx-agent-timeline.yaml
+  milestone-logging._rtx.source.rtx-setup-status:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-setup-status.yaml
+  milestone-logging._rtx.source.rtx-teardown-status:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-teardown-status.yaml
 version: 1
 maturity: stable

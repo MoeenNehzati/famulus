@@ -63,6 +63,7 @@ def dispatch(
     interface: str,
     *args: str,
     logs: Path,
+    env_overrides: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Invoke one public runtime interface against this exact worktree."""
     env = dict(os.environ)
@@ -71,6 +72,8 @@ def dispatch(
         CLAUDE_CODE_SESSION_ID="dispatch-test",
         PYTHONPATH=str(ROOT / "src"),
     )
+    if env_overrides:
+        env.update(env_overrides)
     return subprocess.run(
         [
             sys.executable,
@@ -293,6 +296,56 @@ def test_runtime_interfaces_render_help(tmp_path: Path) -> None:
     assert "--role ROLE" in record_help.stdout
     assert timeline_help.returncode == 0, timeline_help.stderr
     assert "--slow SLOW" in timeline_help.stdout
+
+
+def test_setup_status_uses_only_the_getter_projected_logging_directory(
+    tmp_path: Path,
+) -> None:
+    """Catches legacy MCP readiness reads or any verifier shape besides set_up."""
+    plugin_data = tmp_path / "plugin-data"
+    context = {
+        "FAMULUS_HOST": "codex",
+        "FAMULUS_PLUGIN_DATA": str(plugin_data),
+    }
+
+    missing = dispatch(
+        "milestone-logging._rtx.interface.setup-status",
+        logs=tmp_path / "unused-logs",
+        env_overrides=context,
+    )
+    assert missing.returncode == 0, missing.stderr
+    assert json.loads(missing.stdout) == {"set_up": False}
+
+    (plugin_data / "milestones").mkdir(parents=True)
+    ready = dispatch(
+        "milestone-logging._rtx.interface.setup-status",
+        logs=tmp_path / "unused-logs",
+        env_overrides=context,
+    )
+    assert ready.returncode == 0, ready.stderr
+    assert json.loads(ready.stdout) == {"set_up": True}
+
+
+def test_teardown_status_is_an_exact_read_only_noop_verifier(tmp_path: Path) -> None:
+    """Catches teardown status mutating retained milestone data or changing shape."""
+    plugin_data = tmp_path / "plugin-data"
+    retained = plugin_data / "milestones" / "2026-09-01" / "kept.jsonl"
+    retained.parent.mkdir(parents=True)
+    retained.write_text('{"kept":true}\n', encoding="utf-8")
+    before = retained.read_bytes()
+
+    verified = dispatch(
+        "milestone-logging._rtx.interface.teardown-status",
+        logs=tmp_path / "unused-logs",
+        env_overrides={
+            "FAMULUS_HOST": "codex",
+            "FAMULUS_PLUGIN_DATA": str(plugin_data),
+        },
+    )
+
+    assert verified.returncode == 0, verified.stderr
+    assert json.loads(verified.stdout) == {"torn_down": True}
+    assert retained.read_bytes() == before
 
 
 # ── backward compatibility ───────────────────────────────────────────────────
