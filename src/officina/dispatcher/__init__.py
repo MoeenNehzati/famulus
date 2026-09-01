@@ -8,6 +8,7 @@ __all__ = [
     "InvocationError",
     "ResolvedInvocation",
     "ResolvedInvocationMetadata",
+    "authorize_host_caller",
     "dispatch",
     "resolve_direct_invocation",
     "resolve_dispatch",

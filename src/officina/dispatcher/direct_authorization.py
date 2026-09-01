@@ -306,6 +306,35 @@ def _certification_diagnostics(
     return tuple(diagnostics)
 
 
+def _require_discoverable_host_caller(
+    caller_modules: tuple[DirectModule, ...], caller_module_id: str
+) -> None:
+    """Enforce the public host identity rule on one loaded caller ancestry."""
+
+    caller = caller_modules[-1]
+    discovery = caller.declaration.get("discovery")
+    if (
+        len(caller_modules) != 1
+        or not isinstance(discovery, Mapping)
+        or discovery.get("mechanism") != "skill"
+    ):
+        raise DirectBlueprintError(
+            f"host caller must be a discoverable top-level skill: {caller_module_id}",
+            code="dispatcher.host_caller_invalid",
+            target_module_id=caller_module_id,
+        )
+
+
+def authorize_host_caller(
+    *, configuration: RepositoryConfiguration, caller_module_id: str
+) -> None:
+    """Authorize one public host identity without resolving a target binding."""
+
+    repository = DirectBlueprintRepository(configuration)
+    caller_modules = repository.load_ancestry(caller_module_id)
+    _require_discoverable_host_caller(caller_modules, caller_module_id)
+
+
 def resolve_direct_invocation(
     *,
     configuration: RepositoryConfiguration,
@@ -323,18 +352,7 @@ def resolve_direct_invocation(
     repository = DirectBlueprintRepository(configuration)
     caller_modules = repository.load_ancestry(caller_module_id)
     if host_caller:
-        caller = caller_modules[-1]
-        discovery = caller.declaration.get("discovery")
-        if (
-            len(caller_modules) != 1
-            or not isinstance(discovery, Mapping)
-            or discovery.get("mechanism") != "skill"
-        ):
-            raise DirectBlueprintError(
-                f"host caller must be a discoverable top-level skill: {caller_module_id}",
-                code="dispatcher.host_caller_invalid",
-                target_module_id=caller_module_id,
-            )
+        _require_discoverable_host_caller(caller_modules, caller_module_id)
     target_modules = repository.load_ancestry(target_module_id)
     caller_ancestry = tuple(module.module_id for module in caller_modules)
     target_ancestry = tuple(module.module_id for module in target_modules)
@@ -626,4 +644,4 @@ def resolve_direct_invocation(
     )
 
 
-__all__ = ["resolve_direct_invocation"]
+__all__ = ["authorize_host_caller", "resolve_direct_invocation"]

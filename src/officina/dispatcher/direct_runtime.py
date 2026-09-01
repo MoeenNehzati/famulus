@@ -22,7 +22,10 @@ from officina.configuration.repository import (
     RepositoryConfigurationError,
     load_repository_configuration,
 )
-from officina.dispatcher.direct_authorization import resolve_direct_invocation
+from officina.dispatcher.direct_authorization import (
+    authorize_host_caller as authorize_direct_host_caller,
+    resolve_direct_invocation,
+)
 from officina.dispatcher.direct_models import (
     InvocationDiagnostic,
     ResolvedInvocationMetadata,
@@ -322,6 +325,30 @@ def _resolve_host_dispatch_metadata(
     )
 
 
+def authorize_host_caller(
+    *, caller_skill: str, repository_config: Path
+) -> None:
+    """Authorize one public host identity without resolving process binding."""
+
+    caller = caller_skill.strip()
+    if not caller:
+        raise InvalidRequestError("caller_skill must be a non-empty string")
+    configuration = _load_configuration(
+        _config_path(
+            repository_config,
+            None,
+            caller_module_id=caller,
+            target=caller,
+        ),
+        caller_module_id=caller,
+        target=caller,
+    )
+    authorize_direct_host_caller(
+        configuration=configuration,
+        caller_module_id=caller,
+    )
+
+
 def resolve_dispatch(
     *,
     caller_skill: str,
@@ -453,6 +480,7 @@ __all__ = [
     "_resolve_dispatch",
     "_resolve_host_dispatch_metadata",
     "_run_resolved_invocation",
+    "authorize_host_caller",
     "dispatch",
     "resolve_dispatch",
     "resolve_dispatch_metadata",

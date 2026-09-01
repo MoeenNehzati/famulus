@@ -22,6 +22,11 @@ ROOT = Path(__file__).resolve().parents[1]
 SERVER = ROOT / "mcp_server.py"
 CORE = ROOT / "mcp-core.json"
 COMPREHENSION_FIXTURE = ROOT / "tests" / "fixtures" / "famulus_comprehension_payloads.json"
+# Real stdio cases finish in about 6s sequentially and at most 10.71s in an
+# isolated -n8 run. Full-hook worker contention can exceed 15s while the MCP
+# server is still progressing, so this remains a bounded capacity allowance,
+# not a substitute for detecting a hung session.
+REAL_MCP_INTEGRATION_TIMEOUT_SECONDS = 30
 
 
 def _json(path: Path) -> dict[str, object]:
@@ -55,29 +60,15 @@ def _copy_plugin(plugin_root: Path, *, include_graph: bool = False) -> None:
     shutil.copy2(ROOT / "plugin.json", plugin_root / "plugin.json")
     shutil.copy2(ROOT / "mcp.json", plugin_root / "mcp.json")
     shutil.copytree(ROOT / "src", plugin_root / "src")
-    registered = ROOT / "skills" / "milestone-logging"
-    packaged = plugin_root / "skills" / "milestone-logging"
-    for relative in (
-        "blueprint.yaml",
-        "_rtx/__init__.py",
-        "_rtx/blueprint.yaml",
-        "_rtx/_milestone_interface.py",
-        "_rtx/_milestone_writer.py",
-        "_rtx/blueprints/rtx-milestone-writer.yaml",
-    ):
-        destination = packaged / relative
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(registered / relative, destination)
-    git_workflow = plugin_root / "skills" / "git-workflow" / "blueprint.yaml"
-    git_workflow.parent.mkdir(parents=True)
-    shutil.copy2(ROOT / "skills" / "git-workflow" / "blueprint.yaml", git_workflow)
+    shutil.copytree(
+        ROOT / "skills",
+        plugin_root / "skills",
+    )
+    shutil.copytree(ROOT / "references", plugin_root / "references")
     shutil.copytree(ROOT / ".claude-plugin", plugin_root / ".claude-plugin")
     shutil.copytree(ROOT / ".codex-plugin", plugin_root / ".codex-plugin")
     if include_graph:
-        shutil.copytree(
-            ROOT / "skills" / "math-dependency-graph",
-            plugin_root / "skills" / "math-dependency-graph",
-        )
+        assert (plugin_root / "skills" / "math-dependency-graph").is_dir()
 
 
 def _declared_launch(host: str, plugin_root: Path) -> tuple[str, list[str], Path | None]:
@@ -126,11 +117,18 @@ async def _invoke_through_mcp(host: str, plugin_root: Path, home: Path):
     from mcp.client.stdio import stdio_client
 
     command, args, cwd = _declared_launch(host, plugin_root)
+    environment = _selected_environment(home)
+    environment.update(
+        {
+            "FAMULUS_HOST": host,
+            "FAMULUS_PLUGIN_DATA": str(home / "plugin-data"),
+        }
+    )
     parameters = StdioServerParameters(
         command=command,
         args=args,
         cwd=cwd,
-        env=_selected_environment(home),
+        env=environment,
     )
     async with stdio_client(parameters) as (read, write):
         async with ClientSession(read, write) as session:
@@ -281,7 +279,7 @@ def test_plugin_persistence_is_inert_without_plugin_context(
 
 
 @pytest.mark.parametrize("host", ["claude", "codex"])
-def test_plugin_persistence_writes_exact_private_status_and_overrides_logs(
+def test_plugin_persistence_prepares_logs_without_claiming_manager_ledger(
     host: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Break caught: startup selects the wrong root, payload, or file mode."""
@@ -297,16 +295,33 @@ def test_plugin_persistence_writes_exact_private_status_and_overrides_logs(
 
     server.configure_plugin_persistence()
 
-    status = plugin_data / "setup" / "status.json"
     assert os.environ["ASSISTANT_LOGS"] == str(plugin_data / "milestones")
     assert (plugin_data / "milestones").is_dir()
-    assert status.parent.is_dir()
-    assert status.read_bytes() == (
-        f'{{"host":"{host}","schema_version":1,"status":"ready"}}\n'.encode()
-    )
-    assert status.stat().st_mode & 0o777 == 0o600
+    assert not (plugin_data / "setup").exists()
     assert marker.read_text(encoding="utf-8") == "untouched"
     assert list(canary.iterdir()) == [marker]
+
+
+def test_plugin_persistence_never_overwrites_existing_manager_ledger(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Break caught: MCP startup replaces manager receipts with legacy readiness."""
+    server = _load_server()
+    plugin_data = tmp_path / "plugin-data"
+    status = plugin_data / "setup" / "status.json"
+    status.parent.mkdir(parents=True)
+    ledger = (
+        b'{"active_flow":null,"interfaces":{"root.interface.setup":'
+        b'{"required_by":["root.interface.setup"],"version":1}},'
+        b'"schema_version":1}\n'
+    )
+    status.write_bytes(ledger)
+    monkeypatch.setenv("FAMULUS_HOST", "codex")
+    monkeypatch.setenv("FAMULUS_PLUGIN_DATA", str(plugin_data))
+
+    server.configure_plugin_persistence()
+
+    assert status.read_bytes() == ledger
 
 
 @pytest.mark.parametrize(
@@ -350,11 +365,10 @@ def test_invalid_plugin_context_fails_before_partial_output(
     assert not plugin_data.exists()
 
 
-@pytest.mark.parametrize("obstacle", ["milestones-symlink", "setup-symlink", "status-directory"])
-def test_plugin_persistence_rejects_unsafe_layout_before_publishing_logs(
-    obstacle: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+def test_plugin_persistence_rejects_unsafe_log_layout_before_publishing_logs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Break caught: unsafe/status-failed startup publishes a writable log root."""
+    """Break caught: unsafe startup publishes a writable external log root."""
     server = _load_server()
     plugin_data = tmp_path / "plugin-data"
     outside = tmp_path / "outside"
@@ -362,15 +376,11 @@ def test_plugin_persistence_rejects_unsafe_layout_before_publishing_logs(
     outside.mkdir()
     marker = outside / "marker"
     marker.write_text("untouched", encoding="utf-8")
-    if obstacle.endswith("symlink"):
-        child = plugin_data / obstacle.removesuffix("-symlink")
-        try:
-            child.symlink_to(outside, target_is_directory=True)
-        except OSError as exc:
-            # famulus-skip: category=platform-contract; reason=directory symlink creation is unavailable on some hosts; alternate=regular-directory and failed-status cases retain confinement and publication coverage
-            pytest.skip(f"directory symlinks unavailable: {exc}")
-    else:
-        (plugin_data / "setup" / "status.json").mkdir(parents=True)
+    try:
+        (plugin_data / "milestones").symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        # famulus-skip: category=platform-contract; reason=directory symlink creation is unavailable on some hosts; alternate=regular-directory confinement coverage remains
+        pytest.skip(f"directory symlinks unavailable: {exc}")
     canary = tmp_path / "inherited-logs"
     monkeypatch.setenv("FAMULUS_HOST", "codex")
     monkeypatch.setenv("FAMULUS_PLUGIN_DATA", str(plugin_data))
@@ -400,13 +410,17 @@ def test_real_mcp_persists_status_and_milestone_below_selected_host_root(
     request = _record_through_persistent_mcp(
         host, plugin, tmp_path / "home", plugin_data, canary
     )
-    called = asyncio.run(asyncio.wait_for(request, timeout=15))
+    called = asyncio.run(
+        asyncio.wait_for(
+            request, timeout=REAL_MCP_INTEGRATION_TIMEOUT_SECONDS
+        )
+    )
 
     result = called.structuredContent["result"]
     assert called.isError is False
     assert result["exit_code"] == 0, result
     assert (plugin_data / "setup" / "status.json").read_bytes() == (
-        f'{{"host":"{host}","schema_version":1,"status":"ready"}}\n'.encode()
+        b'{"active_flow":null,"interfaces":{},"schema_version":1}\n'
     )
     logs = sorted((plugin_data / "milestones").glob("*/*.jsonl"))
     assert len(logs) == 1
@@ -424,11 +438,18 @@ async def _serve_graph_through_mcp(
     from mcp.client.stdio import stdio_client
 
     command, args, cwd = _declared_launch(host, plugin_root)
+    environment = _selected_environment(home)
+    environment.update(
+        {
+            "FAMULUS_HOST": host,
+            "FAMULUS_PLUGIN_DATA": str(home / "plugin-data"),
+        }
+    )
     parameters = StdioServerParameters(
         command=command,
         args=args,
         cwd=cwd,
-        env=_selected_environment(home),
+        env=environment,
     )
     pid: int | None = None
     completed = False
@@ -510,7 +531,7 @@ def test_graph_server_returns_through_real_mcp_and_survives(
         listed, called, after, finite, body, cache_control, alive = asyncio.run(
             asyncio.wait_for(
                 _serve_graph_through_mcp(host, plugin, tmp_path / "home", served),
-                timeout=15,
+                timeout=REAL_MCP_INTEGRATION_TIMEOUT_SECONDS,
             )
         )
         result = called.structuredContent["result"]
@@ -555,7 +576,7 @@ def test_packaged_host_declaration_invokes_dispatcher_through_real_mcp(
     listed, called, unauthorized, numeric, ordered_positionals, after = asyncio.run(
         asyncio.wait_for(
             _invoke_through_mcp(host, plugin, tmp_path / "home"),
-            timeout=15,
+            timeout=REAL_MCP_INTEGRATION_TIMEOUT_SECONDS,
         )
     )
 
@@ -724,7 +745,11 @@ def test_generated_outer_payload_uses_real_tool_field_names(tmp_path: Path) -> N
                 assert tool.inputSchema["required"] == ["caller", "interface", "version", "arguments"]
                 return await session.call_tool("invoke", arguments={**outer, "arguments": {"positionals": [], "options": {"--path": True}, "stdin": None}, "dry_run": True})
 
-    result = asyncio.run(asyncio.wait_for(call(), timeout=15))
+    result = asyncio.run(
+        asyncio.wait_for(
+            call(), timeout=REAL_MCP_INTEGRATION_TIMEOUT_SECONDS
+        )
+    )
     assert result.structuredContent["result"]["target"] == outer["interface"]
 
 
@@ -927,8 +952,13 @@ def test_comprehension_fixture_is_an_uncoached_generated_candidate() -> None:
         assert set(case) == {"case_id", "skill", "user_task"}
 
 
-def test_execution_captures_dispatcher_output_without_mcp_stdout() -> None:
+def test_execution_captures_dispatcher_output_without_mcp_stdout(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     server = _load_server()
+    monkeypatch.setenv("FAMULUS_HOST", "codex")
+    monkeypatch.setenv("FAMULUS_PLUGIN_DATA", str(tmp_path / "plugin-data"))
+    server.configure_plugin_persistence()
     result = server.invoke(
         "milestone-logging",
         "milestone-logging._rtx.interface.record",
@@ -1032,7 +1062,7 @@ def test_host_declarations_normalize_to_common_command_contract() -> None:
     }
 
 
-def test_packaged_fixture_has_only_selected_registered_asset_closure(
+def test_packaged_fixture_has_complete_registered_repository_graph(
     tmp_path: Path,
 ) -> None:
     plugin = tmp_path / "plugin"
@@ -1043,15 +1073,15 @@ def test_packaged_fixture_has_only_selected_registered_asset_closure(
         if path.is_file()
     }
 
-    assert packaged == {
-        "skills/git-workflow/blueprint.yaml",
+    assert {
         "skills/milestone-logging/blueprint.yaml",
-        "skills/milestone-logging/_rtx/blueprint.yaml",
-        "skills/milestone-logging/_rtx/__init__.py",
-        "skills/milestone-logging/_rtx/_milestone_interface.py",
-        "skills/milestone-logging/_rtx/_milestone_writer.py",
-        "skills/milestone-logging/_rtx/blueprints/rtx-milestone-writer.yaml",
-    }
+        "skills/setup-interface-manager/_rtx/_setup_manager.py",
+        "skills/math-dependency-graph/blueprint.yaml",
+    } <= packaged
+    assert (
+        "skills/setup-interface-manager/_rtx/tests/test_setup_manager.py"
+        in packaged
+    )
 
 
 def test_ordered_options_preserve_literal_separator() -> None:

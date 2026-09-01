@@ -8,6 +8,7 @@ import pytest
 import yaml
 
 import officina.dispatcher as dispatcher_package
+import officina.dispatcher.direct_runtime as direct_runtime
 from officina.configuration.repository import RepositoryConfiguration
 from officina.dispatcher.direct_authorization import resolve_direct_invocation
 from officina.dispatcher.direct_runtime import (
@@ -633,4 +634,24 @@ def test_host_rejects_private_child_caller_identity(tmp_path: Path) -> None:
             repository_config=configuration.config_path,
         )
 
+    assert caught.value.code == "dispatcher.host_caller_invalid"
+
+
+def test_prebinding_host_authorization_accepts_only_discoverable_top_level_skill(
+    tmp_path: Path,
+) -> None:
+    """Catches lifecycle preflight admitting a nested private module as host caller."""
+    assert dispatcher_package.authorize_host_caller is direct_runtime.authorize_host_caller
+    configuration = _repository(tmp_path, terminal_access=_access(public=True))
+
+    direct_runtime.authorize_host_caller(
+        caller_skill="root",
+        repository_config=configuration.config_path,
+    )
+
+    with pytest.raises(DirectBlueprintError) as caught:
+        direct_runtime.authorize_host_caller(
+            caller_skill="root.alpha.leaf",
+            repository_config=configuration.config_path,
+        )
     assert caught.value.code == "dispatcher.host_caller_invalid"
