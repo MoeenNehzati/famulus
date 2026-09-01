@@ -209,11 +209,12 @@ def teardown_plan(graph, root_setup_interface: str, ledger: SetupLedger) -> tupl
 
 ### Task 4: Register the hidden manager and runners
 
-**Files:** create `skills/setup-interface-manager/{SKILL.md,blueprint.yaml,blueprints/gateway.yaml}` and `_rtx/{blueprint.yaml,blueprints/rtx-manager.yaml,_setup_manager.py,_setup_dispatches.py,tests/test_setup_manager.py}`; include the reviewed Task 2–3 manager-owned files; modify `src/officina/common/blueprint.yaml`.
+**Files:** create `skills/setup-interface-manager/{SKILL.md,blueprint.yaml,blueprints/gateway.yaml}` and `_rtx/{blueprint.yaml,blueprints/rtx-manager.yaml,_setup_manager.py,_setup_dispatches.py,tests/test_setup_manager.py}`; include the reviewed Task 2–3 manager-owned files; modify `src/officina/common/blueprint.yaml`, `src/officina/runtime/python_machine_interface.py`, `tests/test_officina_python_machine_interface.py`, and generated runtime-dependency metadata.
 
 - [ ] Test every public signature, state/exit code, exact current-step enforcement, stdin redaction, ready-only authorization, Python run-and-verify, Markdown settlement, teardown settlement, busy flow, retry/cancel, and non-activation from generic setup prose.
 - [ ] Run the manager test; expect missing-node failure.
 - [ ] Register a hidden `skill-workflow` manager with no production managed targets yet; tests install a finite Python fixture map. Grant its `_rtx` module atomic-files access and declare its canonical getter/atomic-files uses. Declare the getter dependency as `DispatchCall(caller_module_id="setup-interface-manager._rtx", target_module_id="common", interface="famulus-paths-get", smoke_args=("setup-status",))`; runtime calls use `self.dispatch(GETTER_KEY, args=("setup-status",))`. Construct `LedgerStore` only from the captured absolute stdout. No public path or arbitrary interface ID is accepted. Task 7 adds the first production target only after its interfaces exist.
+- [ ] Expose a runtime-owned `is_dispatch_invocation_error(exc)` classifier from `python_machine_interface.py`. The skill may use it to translate only real dispatcher invocation failures to redacted domain responses without importing raw dispatcher modules or changing `PythonMachineInterface.dispatch()` exception compatibility; arbitrary programmer exceptions still propagate.
 - [ ] Run the state, evaluation, and manager tests plus `./repo_checks.py --task validators --validator skill-maker/blueprints --jobs 1`; expect PASS. Commit the complete registered `skills/setup-interface-manager` tree and common caller grant as `feat: add setup interface manager`.
 
 ### Task 5: Add the generated Markdown gate
@@ -227,12 +228,13 @@ def teardown_plan(graph, root_setup_interface: str, ledger: SetupLedger) -> tupl
 
 ### Task 6: Add MCP preflight and remove readiness-file ownership
 
-**Files:** modify `mcp_server.py`, `tests/test_famulus_mcp.py`; create `tests/test_mcp_setup_preflight.py`.
+**Files:** modify `mcp_server.py`, `tests/test_famulus_mcp.py`, `src/officina/dispatcher/{__init__.py,direct_authorization.py,direct_runtime.py}`, and `tests/test_dispatcher_direct_authorization.py`; create `tests/test_mcp_setup_preflight.py`.
 
 - [ ] Test unmanaged/ready/pending/child targets, suffixes, busy flow, redaction, dry-run/manager exemptions, and exact setup and teardown redirection.
 - [ ] Define `setup_required` as an ordinary-call refusal with root, ordered path, next setup, manager `begin`, and redacted continuation; `setup_managed` as direct setup/teardown redirection with operation/root/manager; and `setup_busy` with flow ID/recovery route but no arguments.
 - [ ] Run the MCP tests; expect failure.
 - [ ] Split preflight at the existing authorization seams. After canonical export lookup and access authorization—but before process-binding resolution—intercept exact managed setup/teardown exports and return `setup_managed`; this permits informative routing for Markdown instruction interfaces that are intentionally not process-bindable. For ordinary executable exports, resolve the process route, then run status/`authorize` immediately before launch. Remove MCP startup writing of the old `{"host", "schema_version", "status"}` readiness payload; live `famulus.invoke` availability is authoritative.
+- [ ] Reuse a public direct-authorization helper for pre-binding host authorization so lifecycle interception enforces the same discoverable-top-level-skill caller rule as ordinary host dispatch without compiling a process binding. Nonzero manager exits are redacted runtime-misconfiguration refusals; only successful manager JSON may produce setup states, and `setup_busy` requires a nonempty flow ID.
 - [ ] Rerun; expect PASS. Commit as `feat: enforce managed setup in Famulus MCP`.
 
 ### Task 7: Migrate the Markdown canary
@@ -262,13 +264,28 @@ def teardown_plan(graph, root_setup_interface: str, ledger: SetupLedger) -> tupl
 - [ ] Run:
 
 ```bash
-./repo_checks.py --task tests:shared --selector tests/test_officina_setup_requirements.py --selector tests/test_setup_interface_manager_coverage.py --selector tests/test_setup_interface_manager_integration.py --selector tests/test_mcp_setup_preflight.py --selector skills/setup-interface-manager/_rtx/tests --selector skills/skill-maker/_rtx/tests/test_blueprint_tools.py --selector skills/milestone-logging/_rtx/tests/test_milestone_run_journal.py --jobs 1
+./repo_checks.py --task tests:shared --selector tests/test_officina_setup_requirements.py --selector tests/test_setup_interface_manager_coverage.py --selector tests/test_setup_interface_manager_integration.py --selector tests/test_mcp_setup_preflight.py --selector skills/setup-interface-manager/_rtx/tests/test_setup_evaluation.py --selector skills/setup-interface-manager/_rtx/tests/test_setup_state.py --selector skills/setup-interface-manager/_rtx/tests/test_setup_manager.py --selector skills/skill-maker/_rtx/tests/test_blueprint_tools.py --selector skills/milestone-logging/_rtx/tests/test_milestone_run_journal.py --jobs 1
 ./repo_checks.py --suite validators --jobs 1
 ```
 
 - [ ] Document session-hook bootstrap, opt-in setup, ledger versus live MCP readiness, invalidation, teardown, recovery, argument handling, and canaries.
 - [ ] Stage every Task 1-9 file explicitly, confirm `git diff --cached --name-only` has no unrelated paths, and run `./repo_checks.py --suite precommit --jobs 1 --repository-view staged`. Require PASS, including a host-capable rerun for any sandbox-only failure.
 - [ ] Commit the integration test and documentation as `test: verify managed setup task switching`.
+
+### Task 10: Run isolated interactive setup experiments
+
+**Source prompt:** `~/Desktop/interactive-prompt.md`.
+
+**Files:** create `docs/testing/setup-interface-manager-interactive.md`; modify implementation/tests only when an experiment proves a defect, with every repair attributed to its owning Task 1–9 area and independently reviewed before commit.
+
+- [ ] Use the current supported Codex/plugin installation procedure to create a task-owned isolated directory and isolated Codex home. Do not change the user's normal Codex profile, plugin installation, or persisted setup ledger. Record the exact tested build/commit, host capabilities, installation commands, and isolation boundaries.
+- [ ] Keep production evidence separate from a second isolated synthetic-fixture installation. Build the fixture from the exact tested commit plus a reviewable Task-10-only overlay containing fixed, effect-confined managed nodes `A -> B -> C` and `D -> C`, dedicated setup/teardown/verifier routes, child probes, finite manager bindings, and focused validation. Record the overlay file list and digest, require the production manager/MCP state-machine files to remain byte-identical, never include the fixture in release inventory, and remove only the task-owned fixture lane during cleanup. Label every fixture result as synthetic interactive evidence rather than shipped production behavior.
+- [ ] Build a scenario inventory before execution. It must include the user's first-use managed-skill trigger, following the suggested setup, persistence across fresh sessions, and a deep `A → B → C` managed setup chain. Add negative/edge scenarios for an unmanaged skill, duplicate/busy invocation, interruption plus retry/cancel, stale receipt/invalidation suffix repair, shared-dependency claims and teardown, malformed ledger, exact setup/teardown redirection, argument redaction, and exactly-once original-call resumption.
+- [ ] Convert each scenario into a detailed pipeline with preconditions, fresh-agent/session boundary, action, expected trigger/stack/state, persisted evidence, cleanup/recovery, and pass/fail criteria. Execute scenarios one by one using fresh subagents for the user-facing interactions; subagents must not inherit the controller's implementation context.
+- [ ] Preserve redacted commands, outputs, ledger snapshots, and session outcomes in the report. Distinguish product defects from sandbox/host capability limits and experimental setup errors. Never treat a scripted/unit result as interactive evidence.
+- [ ] When a scenario fails, reproduce it minimally, repair only the owning implementation area through TDD, obtain scoped independent green review, rerun the failed scenario in a fresh isolated session, and record both failure and corrected result. Do not weaken an expected behavior to make the experiment pass.
+- [ ] Maintain a reusable lessons ledger in the report: scenario design improvements, reliable isolation/install strategy, failure injection patterns, evidence collection, cleanup, and a template for repeating this class of plugin-behavior experiment.
+- [ ] Run a fresh post-experiment acceptance/precommit verification for every implementation or documentation change. Obtain independent review that the experiment covered the source prompt and that results support each claim. Commit the interactive report and any reviewed repairs in coherent owning-area chunks; use `test: exercise setup manager interactively` for the report-only checkpoint.
 
 ## Acceptance criteria
 
@@ -283,3 +300,4 @@ def teardown_plan(graph, root_setup_interface: str, ledger: SetupLedger) -> tupl
 - Exact setup/teardown calls receive informative manager routes.
 - One active flow prevents duplicate managed actions; recovery is explicit.
 - Release coverage contains exactly the milestone-logging production canary; the Python runner passes its registered fixture contract without claiming parameterized production state.
+- Isolated interactive evidence demonstrates first-use setup guidance, persistence across fresh sessions, deep dependency setup, recovery/teardown edge cases, and exactly-once resumption without mutating the user's normal Codex state; limitations and failures remain visible in the reusable experiment ledger.
