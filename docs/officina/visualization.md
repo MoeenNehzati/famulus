@@ -1,11 +1,33 @@
-# Officina visualization module
+# Visualizing Officina graphs
 
-`officina.visualization` is the shared graph payload and rendering layer
-for repository visualizations. Domain-specific extractors should produce the
-canonical JSON shape in
-`src/officina/visualization/graph_specification.schema.json`; the common
-renderer then handles validation, layout, HTML rendering, serving, and generic
-graph operations.
+A visualization is a view of Officina's declared structure, not a second
+authority for that structure. Blueprint views come from the canonical blueprint
+graph; docstring views come from validated docstring metadata. If a view is
+wrong, correct the owning blueprint, docstring, or adapter rather than editing a
+rendered artifact.
+
+`officina.visualization` separates domain meaning from presentation.
+Domain-specific adapters select and translate authoritative data into the
+canonical graph payload. The generic renderer validates that payload and owns
+layout, HTML rendering, serving, and domain-neutral graph interactions. This
+keeps one renderer reusable without asking it to infer blueprint or docstring
+semantics.
+
+Choose the route that matches the work:
+
+1. **Use an existing visualization.** Use the [blueprint
+   adapter](#blueprint-graph-adapter) for repository architecture or the
+   [docstring adapter](#docstring-graph-adapter) for Python dependency graphs.
+2. **Add a visualization domain.** Implement the small adapter described by the
+   [extension rule](#extension-rule), then reuse the shared payload and renderer.
+3. **Maintain renderer internals.** Start with the [architecture](#architecture),
+   then use the [renderer maintenance
+   guide](https://github.com/MoeenNehzati/famulus/blob/master/src/officina/visualization/html_renderer/README.md).
+
+The canonical payload is defined by [`graph_specification.schema.json`](../../src/officina/visualization/graph_specification.schema.json).
+For context, see the [Overview](README.md), [Getting
+Started](getting-started.md), [Blueprints](blueprints.md), [Schemas](schema.md),
+[Docstring Contract](docstring.md), and [Utility Map](utility-map.md).
 
 ## Architecture
 

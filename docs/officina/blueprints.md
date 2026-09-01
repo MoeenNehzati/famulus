@@ -30,6 +30,12 @@ This guide explains that model and the judgment involved in authoring it. It
 does not repeat every schema rule. When an exact key, type, pattern, or required
 field matters, consult the concrete schema.
 
+If node boundaries, gateways, or modules and behavioral sources are new to
+you, the [Overview](README.md) and
+[Getting Started](getting-started.md) provide background. The walkthrough supplies one
+concrete profile; this guide explains the authoring decisions without
+repeating that profile.
+
 ## 1. The blueprint model
 
 Every blueprint describes exactly one node. Officina has two node kinds:
@@ -260,7 +266,30 @@ The schema checks vocabulary, shape, uniqueness, and the relationship between
 `persistent_modifier` and `reasoning-control`. Whether a valid label tells the
 truth about runtime behavior or workflow intent still requires semantic review.
 
-## 7. Authoring workflow
+## 7. What to decide when authoring a blueprint
+
+Before choosing fields, decide:
+
+1. **Boundary:** which behavior must be understood and changed together, and
+   whether it needs its own module authority or belongs in a behavioral source.
+2. **Ownership:** which files the node owns directly, which children it
+   contains, and where dependencies cross ownership boundaries.
+3. **Operational face:** which whole-file gateway realizes the behavior and
+   which language or notation interprets it.
+4. **Interaction:** which source owns each contract, which interfaces remain
+   private, and which require module exports or namespace routes.
+5. **Authority and effects:** which callers, resources, privileges, direct I/O,
+   and outcomes the behavior actually requires.
+6. **Contract form:** whether inline types and invocation grammar fully express
+   the boundary or a referenced JSON Schema is needed. See
+   [Schemas](schema.md) for that distinction.
+7. **Evidence:** which facts validators can establish and which claims still
+   require semantic review and certification.
+
+Only then encode those decisions in the schema-defined fields. A structurally
+valid blueprint is not evidence that the decisions are complete or true.
+
+## 8. Authoring workflow
 
 1. Define the module boundary, registered children, sources, gateways, and
    direct ownership.
@@ -279,7 +308,10 @@ certification skill rather than reaching into its private runtime files.
 
 ## Related documentation
 
+- [Overview](README.md)
+- [Getting Started](getting-started.md)
 - [Architectural principles](architectural-principles.md)
+- [Schemas](schema.md)
 - [Blueprint search](blueprint_search.md)
 - [Certification and drift](certification_and_drift.md)
 - [Dispatcher](dispatcher.md)

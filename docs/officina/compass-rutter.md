@@ -1,9 +1,34 @@
 # Compass, Voyage dispensers, and Rutter
 
-Rutter owns durable algorithm traversal. A `VoyageDispenser` is the
-process-safe public boundary for creating and operating an authorized
-collection of Voyages. Compass is the thin LLM-facing controller that follows
-that dispenser contract.
+Some algorithms cannot safely live in one LLM conversation. They have durable
+state, constrained transitions, machine work between decisions, and a need to
+resume after the process or conversation ends. Rutter is the subsystem that
+owns that problem. It is not required for basic Officina onboarding.
+
+Four concepts define the relationship:
+
+1. A **Rutter** defines the allowed evolutions, transition behavior,
+   validation, machine work, faults, and recovery for one durable algorithm.
+2. A **Voyage** is one persisted traversal of that Rutter. Its stored
+   Reckoning—not conversation history—determines where execution resumes.
+3. A **VoyageDispenser** is the process-safe authority for creating and
+   operating an authorized collection of Voyages through opaque IDs.
+4. **Compass** is the thin LLM-facing controller. It follows the dispenser
+   contract, assigns Voyages to agents, and never reaches into Rutter storage or
+   passes Python runtime objects through the prompt boundary.
+
+The flow is therefore `Compass -> VoyageDispenser -> Voyage -> Rutter`.
+Compass sees only versioned dispenser operations and public Voyage results.
+The dispenser owns run isolation and storage; the Voyage owns persisted
+progress; the Rutter owns which transition is valid. A fresh process can resume
+an existing Voyage by its ID without reconstructing state from the transcript.
+
+For the main documentation path, see the [Overview](README.md) and [Getting
+Started](getting-started.md). See [Dispatcher](dispatcher.md) for the authorized
+process boundary and the [Utility Map](utility-map.md) for current implementation
+ownership.
+
+## Authority boundaries
 
 The boundary is deliberate:
 
@@ -54,39 +79,37 @@ internal storage. For example, an inventory dispenser may require a document
 entrypoint and chunk count in its default mode, while a debug mode additionally
 requires a gold-standard path so it can attach diagnostic hooks.
 
-`initiate` is run-scoped. It fails if that run prefix is already initialized,
-and it returns only the Voyage IDs created for the selected run. A mode's
-required arguments must be supplied exactly; missing or unexpected arguments
-are usage errors.
+Every `initiate` call creates a fresh run and returns only the Voyage IDs for
+that run. Reusing a prefix creates another run inside the same caller-selected
+group. A mode's required arguments must be supplied exactly; missing or
+unexpected arguments are usage errors.
 
 ## Run prefixes and Voyage IDs
 
 `--run-prefix` isolates independently initialized runs of the same dispenser.
-When it is omitted, the selected mode name is the prefix. A caller can therefore
-use the conventional `default` and `debug` runs directly, or supply a distinct
-prefix for repeated or concurrent work.
+It is an optional grouping label, not a run identifier. The dispenser creates a
+fresh `r-<uuid>` run for every initiation. Without a prefix, Voyage IDs have the
+form `r-<uuid>/<numeric-index>`; with one, they have the form
+`<prefix>/r-<uuid>/<numeric-index>`.
 
-Every Voyage ID begins with its run prefix, for example
-`debug-voyage-7f3a...`. The complete ID remains the authority used by `status`,
-`validate`, `advance`, and `release`; those operations do not take a separate
-prefix.
+The complete Voyage ID remains the authority used by `status`, `validate`,
+`advance`, and `release`; those operations do not take a separate prefix.
 
 A bare `list` is a global inventory across the dispenser's active runs.
-`list --run-prefix PREFIX` is the scoped discovery operation for one run.
-Compass must not treat an unscoped list as the assignment set for a newly
-requested run.
+`list --run-prefix PREFIX` is recovery and discovery for all retained runs in
+one prefix group. It may contain several runs, so neither form is the assignment
+set for a fresh initiation.
 
 ## Compass operating loop
 
 The controller follows this sequence:
 
 1. Invoke `help`, then `modes` when initialization may be required.
-2. Select the requested run prefix, or let `initiate` default it to the selected
-   mode.
-3. Invoke the prefix-scoped `list`. If that run is not initialized and all
-   advertised mode arguments are available, invoke `initiate` exactly once.
-4. Assign exactly one independent agent to every Voyage ID returned for that
-   run. Agents do not share or switch IDs.
+2. Select the mode, its required arguments, and an optional grouping prefix.
+3. Invoke `initiate` exactly once and retain the Voyage IDs it returns. Use
+   `list`, optionally scoped by prefix, only to recover or inspect retained work.
+4. Assign exactly one independent agent to every Voyage ID returned by that
+   initiation. Agents do not share or switch IDs.
 5. Each agent reads `status`. For a Message, it performs the instruction,
    validates its response, and advances only after successful validation. For
    ready automatic work, it advances without a response.

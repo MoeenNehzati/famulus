@@ -2,26 +2,10 @@
 
 ## Officina
 
-The framework: node standards, blueprints, validators, and certification.
-Start from the [Officina overview](./officina/README.md), which explains what
-Officina is and routes to everything below.
-
-- [Overview](./officina/README.md)
-- [Architectural Principles](./officina/architectural-principles.md) — the
-  normative rules
-- [Dispatcher](./officina/dispatcher.md) — direct routing, authorization, and
-  launch behavior
-- [Certification and Drift](./officina/certification_and_drift.md)
-- [Blueprints](./officina/blueprints.md)
-- [Blueprint Search](./officina/blueprint_search.md)
-- [Standards](./officina/standards.md)
-- [Refactoring Officina Nodes](./officina/refactor.md)
-- [Configured Schemas](./officina/configured-schema.md)
-- [Docstring Contract](./officina/docstring.md)
-- [Compass and Rutter](./officina/compass-rutter.md)
-- [Visualization](./officina/visualization.md)
-- [Maintainer Scaffolding](./officina/scaffolding/README.md)
-- [Utility Map](./officina/utility-map.md)
+Officina structures mixed model-interpreted and machine-executable systems as
+explicit, checkable nodes. Read the [Overview](./officina/README.md), then
+follow [Getting Started](./officina/getting-started.md); the overview contains
+the complete task-based document map.
 
 ## Famulus
 

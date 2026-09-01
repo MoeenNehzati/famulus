@@ -1,10 +1,28 @@
 # Dispatcher
 
+## Operating model
+
 This document is the operational reference for the version-6 dispatcher. The
 dispatcher is a bounded router and authorization checker: it resolves one
 declared interface, checks the relevant blueprint policies, compiles the
 declared process binding, and launches the gateway. It does not repair or
 synchronize repository state.
+
+For the end-to-end role of dispatch, see [Getting Started](getting-started.md).
+[Blueprints](blueprints.md) explains the declarations Dispatcher consumes.
+
+For each invocation, Dispatcher follows one bounded path:
+
+```text
+resolve -> authorize -> bind -> execute
+```
+
+It resolves the canonical caller and target, authorizes every crossed module
+boundary, binds supplied arguments and stdin to the declared process grammar,
+then executes the selected gateway. It mechanically enforces that invocation
+grammar. It does not generally verify gateway output against a declared output
+schema; the producer, consumer, or owning adapter must perform that validation
+where the contract requires it. See [Schemas](schema.md).
 
 ## Invocation
 
@@ -134,7 +152,10 @@ routing state. Those operations belong to explicit offline tools.
 
 ## Related documentation
 
+- [Overview](README.md)
+- [Getting Started](getting-started.md)
 - [Architectural principles](architectural-principles.md)
 - [Blueprints](blueprints.md)
+- [Schemas](schema.md)
 - [Certification and drift](certification_and_drift.md)
 - [Blueprint schemas](../../references/blueprint-schema/README.md)

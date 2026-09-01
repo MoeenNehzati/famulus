@@ -1,5 +1,48 @@
 # Certification and Drift
 
+For an introduction to retained assurance, see [Getting
+Started](getting-started.md). The
+[Architectural Principles](architectural-principles.md) govern that role;
+[Blueprints](blueprints.md) explains the declarations being assessed, and
+[Schemas](schema.md) explains what structural validation can and cannot prove.
+
+## Assurance model
+
+Five ideas must remain distinct:
+
+1. **Structural validity** means an artifact has the permitted machine-readable
+   shape and satisfies mechanically expressible structural rules.
+2. **Semantic accuracy** means the artifact truthfully and completely describes
+   the behavior or policy it represents.
+3. **Certification** retains mechanical results and semantic review evidence
+   for one exact repository state.
+4. **Currentness** means that retained evidence still matches every state and
+   dependency on which it relies.
+5. **Drift** is a relevant mismatch that makes the retained assurance suspect;
+   it is not by itself proof that the changed state is wrong.
+
+The lifecycle is:
+
+```text
+validate structure -> review meaning -> certify exact state
+                   -> compare current state -> report drift or remain current
+```
+
+Schema validity does not establish semantic truth. Certification combines the
+mechanical and semantic questions; currentness then determines whether the
+recorded answer still applies.
+
+Read the remaining contract in four parts:
+
+1. **Graph and certifiability:** nodes, dependencies, structural validity, and
+   semantic completeness.
+2. **Identity of reviewed state:** input policy, manifests, Git provenance,
+   node hashes, and facets.
+3. **Retained evidence:** certificate payloads, signatures, checks, history,
+   and the certification basis.
+4. **Ongoing assurance:** currentness, drift selection, issuance order, and
+   the authority and security boundary.
+
 This document defines the live version-6 certification contract.
 
 Certification is repository-bound. The public certifier requires an explicit
@@ -64,8 +107,10 @@ certificate.
 ## Resolving node inputs
 
 The certifier loads one project policy from
-`references/certification-policy/node-hash-policy.yaml` and validates it through the
-central `src/officina/configuration/schema.json`. The historical
+[`references/certification-policy/node-hash-policy.yaml`](../../references/certification-policy/node-hash-policy.yaml)
+and validates it through the central `src/officina/configuration/schema.json`.
+The [certification policy directory](../../references/certification-policy/)
+contains the policy and its retained historical contract. The historical
 `references/certification-policy/node-hash-policy.schema.json` remains in the
 certification basis for existing records but is not the active runtime
 validator. The canonical policy has this shape:
@@ -398,3 +443,12 @@ same-UID processes. A malicious process running as the same OS user may access
 signing material or certificate outputs. Signatures and currentness detect
 drift, corruption, and changes outside the supported writer contract; they do
 not defend against that attacker.
+
+## Related documentation
+
+- [Overview](README.md)
+- [Getting Started](getting-started.md)
+- [Architectural Principles](architectural-principles.md)
+- [Blueprints](blueprints.md)
+- [Schemas](schema.md)
+- [Certification policy](../../references/certification-policy/)

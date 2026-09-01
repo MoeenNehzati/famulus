@@ -24,6 +24,9 @@ This gives the system two useful properties at once:
 2. Skills can ask focused questions without loading or interpreting the whole
    standards collection on every task.
 
+If nodes, blueprints, validation, and certification are unfamiliar,
+[Getting Started](getting-started.md) provides background.
+
 ## 1. Standards are semantic authorities
 
 The canonical node standards consumed by Officina's authoring and refactoring
@@ -57,10 +60,11 @@ enforce a rule, but it does not become the authority that defines the rule.
 Likewise, mechanical success does not erase a declared semantic-review
 remainder.
 
-The complete field-level contract is defined by the
-[`standard-v6` schema](../../references/standards-schema/standard-v6.schema.json).
-The schema, rather than this guide or an older example, is authoritative for
-the shape and meaning of individual fields.
+The JSON
+[`standard-v6` schema](../../references/standards-schema/standard-v6.schema.json)
+governs the permitted document shape. Each standard document is the authority
+for its semantic policy; satisfying the schema does not establish that a rule
+is correct, applicable, or supported by its stated evidence.
 
 This structure becomes operational when a consumer can retrieve the relevant
 meaning without reinterpreting the entire standards collection. That is the
@@ -186,3 +190,14 @@ The result is a standards system that can evolve without turning its consumers
 into competing authorities. Users adjust policy once at its canonical owner;
 pinned closures propagate that decision, and focused queries deliver its
 meaning where authoring and refactoring work need it.
+
+## Related documentation
+
+- [Overview](README.md)
+- [Getting Started](getting-started.md)
+- [Architectural Principles](architectural-principles.md)
+- [Blueprints](blueprints.md)
+- [Schemas](schema.md)
+- [Refactoring Officina Nodes](refactor.md)
+- [Canonical node standards](../../references/node-standards/)
+- [Standards schemas and validator](../../references/standards-schema/)

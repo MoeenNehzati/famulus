@@ -29,6 +29,10 @@ The distinction is the invariant under change: `refactor-node` preserves
 behavior while implementation structure changes; `relocate-nodes` preserves
 behavior while location changes.
 
+If the terms below are unfamiliar, [Getting Started](getting-started.md)
+introduces the node model and [Blueprints](blueprints.md) explains the
+declarations that make a change architectural rather than merely physical.
+
 ## 1. Choosing the tool
 
 | Problem | Tool |
@@ -41,6 +45,11 @@ A task that needs both semantic refactoring and relocation contains two
 different changes. Keep them distinct so that each preservation claim can be
 reviewed and verified. Do not hide a behavioral change inside an address
 rewrite.
+
+In-place refactoring stops when unchanged behavior cannot be demonstrated or
+when the proposed work becomes a feature, defect fix, public-interface change,
+or cross-node redesign. Those are different changes with different owners and
+evidence requirements; do not force them through a behavior-preserving route.
 
 ## 2. Refactoring a node in place
 
@@ -115,3 +124,10 @@ changed, what was preserved, and what evidence is required.
 For exact invocation, inputs, and approval requirements, follow the live
 [`refactor-node`](../../skills/refactor-node/) and
 [`relocate-nodes`](../../skills/relocate-nodes/) skills.
+
+## Related documentation
+
+- [Officina Overview](README.md)
+- [Getting Started](getting-started.md)
+- [Blueprints](blueprints.md)
+- [Standards](standards.md)
