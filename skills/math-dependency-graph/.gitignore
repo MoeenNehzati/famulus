@@ -1,4 +1,6 @@
 assets/**/*.pdf
+assets/**/results/*
+!assets/**/results/extraction-latest.json
 _rtx/_inventory_pipeline/artifacts/
 _rtx/_inventory_pipeline/voyages/
 assets/**/source/

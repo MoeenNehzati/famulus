@@ -3,7 +3,7 @@ authority:
 children:
   _rtx: {}
 content:
-- (?:SKILL\.md|instructions/extract\.md|resources/graph-base\.json)
+- (?:\.gitignore|SKILL\.md|instructions/extract\.md|resources/graph-base\.json)
 description: Extracts a direct dependency graph from mathematical LaTeX, renders canonical
   graph JSON as interactive HTML, and serves the result locally for inspection.
 discovery:
