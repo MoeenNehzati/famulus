@@ -1,0 +1,105 @@
+content:
+- setup\.md
+dependencies:
+- blueprint:
+    base: repository-root
+    path: src/officina/common/blueprints/famulus-paths-get.yaml
+  reason: Derive the platform-correct milestone logging root before configuring client permissions.
+  source: common.source.famulus-paths-get
+  version: 1
+description: Instructs the LLM client to make the Famulus milestone logging root permanently writable.
+gateway:
+  language: Markdown
+  path: setup.md
+id: milestone-logging.source.setup
+interfaces:
+  milestone-logging.source.setup.interface.default:
+    content:
+    - setup\.md
+    uses_interfaces:
+    - interface: common.interface.famulus-paths-get
+      version: 1
+    contract:
+      arguments:
+        request:
+          description: Request to configure durable milestone logging permissions.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            sensitivity: user-private
+      caller_warnings:
+      - external-side-effect: Following these instructions permanently changes the LLM client's writable directories.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: setup request
+          formats:
+          - text
+          id: read-1
+          medium: prompt
+          sensitivity: user-private
+          system: agent-runtime
+        writes:
+        - access: write
+          content: setup result
+          formats:
+          - markdown
+          id: write-1
+          medium: prompt
+          sensitivity: derived-private
+          system: agent-runtime
+      execution:
+        consistency:
+          live: The result reflects the LLM client's writable-directory configuration observed during setup.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - method: output-schema
+          output_ref: response
+      helpers: []
+      interaction:
+        channel: tty
+        mode: interactive
+        unattended_outcome: clarification-required
+      outcomes:
+      - caller_action: Continue with milestone logging.
+        class: success
+        effects: []
+        id: completed
+        outputs:
+        - response
+      - caller_action: Identify the LLM client's writable-directory setting.
+        class: refusal
+        effects: []
+        id: clarification-required
+        outputs:
+        - response
+      outputs:
+      - audience: human
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: The completed setup result or the required client-specific next action.
+        direct_io_ref: write-1
+        empty: Never empty.
+        id: response
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Configure the Famulus logging root as a permanently writable directory for the LLM client.
+    version: 1
+node_type: behavioral_source
+schema_version: 6
+uses_interfaces:
+- interface: common.interface.famulus-paths-get
+  version: 1
+version: 1
+maturity: stable

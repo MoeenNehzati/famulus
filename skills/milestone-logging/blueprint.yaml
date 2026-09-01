@@ -3,7 +3,7 @@ authority:
 children:
   _rtx: {}
 content:
-- SKILL\.md
+- (?:SKILL\.md|setup\.md)
 description: Owns durable agent-progress logging instructions and the compatible writer and timeline interfaces.
 discovery:
   mechanism: skill
@@ -23,6 +23,12 @@ exports:
       allow_all_modules: true
       allowed_callers: []
     source_interface: milestone-logging.source.gateway.interface.default
+  milestone-logging.interface.setup:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    setup_requires_setup_of: []
+    source_interface: milestone-logging.source.setup.interface.default
 gateway:
   language: Markdown
   path: SKILL.md
@@ -54,6 +60,10 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
+  milestone-logging.source.setup:
+    blueprint:
+      base: module-root
+      path: blueprints/setup.yaml
 version: 1
 maturity: stable
 installation_tier: core
