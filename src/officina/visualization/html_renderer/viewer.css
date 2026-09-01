@@ -481,6 +481,11 @@
       text-transform: uppercase;
       color: #566573;
     }
+    .legend-group-title[data-legend-kind="relations"] {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
     .legend-subgroup-title {
       grid-column: 1 / -1;
       margin-top: 0.2rem;

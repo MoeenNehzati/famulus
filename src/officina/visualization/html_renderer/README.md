@@ -227,7 +227,9 @@ replaces the selection, Ctrl/Cmd-click toggles membership, and a search selects
 matching nodes plus both endpoints of matching relations. Hide and Dim are bulk
 actions over that selection; user dimming preserves layout and is distinct from
 category exclusion. The most recently selected member remains the primary node
-for inspection and ancestor focus.
+for inspection and ancestor focus. Relation-row arrows expand the selection
+transitively through one visible relation type; the arrows beside the Relations
+heading perform the same traversal through every visible relation type.
 
 Ordinary filters use the fast interaction path and preserve the current layout.
 Changing `detail_level` is intentionally structural: it runs the full layout,

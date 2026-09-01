@@ -316,6 +316,7 @@
       .forEach(edgeType => visitEdgeCategory(edgeType, 0));
 
     function syncEdgeLegendRows() {
+      const hasVisibleSelection = Array.from(selectedNodeIds).some(nodeId => !isHiddenNode(nodeId));
       legend.querySelectorAll(".legend-row[data-legend-kind='edge']").forEach(row => {
         const edgeType = row.dataset.type;
         const inactive = edgeCategorySetContains(edgeType, filterState.excludedEdgeTypes);
@@ -327,13 +328,19 @@
         row.setAttribute("aria-disabled", blockedByParent ? "true" : "false");
         row.tabIndex = blockedByParent ? -1 : 0;
         row.querySelectorAll(".relation-traverse-button").forEach(button => {
-          button.disabled = blockedByParent || inactive || selectedNodeIds.size === 0;
+          button.disabled = blockedByParent || inactive || !hasVisibleSelection;
         });
       });
+      legend.querySelectorAll(".relation-traverse-button[data-relation-scope='all']")
+        .forEach(button => {
+          button.disabled = !hasVisibleSelection;
+        });
     }
 
-    function relationConstituentsForCategory(edge, edgeType) {
-      return edgeConstituents(edge).filter(constituent =>
+    function relationConstituentsForTraversal(edge, edgeType) {
+      const constituents = edgeConstituents(edge);
+      if (edgeType === null) return constituents;
+      return constituents.filter(constituent =>
         edgeCategorySetContains(String(constituent.type || edge.type || "unknown"), new Set([edgeType]))
       );
     }
@@ -346,7 +353,7 @@
         if (path.style.display === "none") return;
         const edge = path.__edgeMeta;
         if (!edge) return;
-        relationConstituentsForCategory(edge, edgeType).forEach(constituent => {
+        relationConstituentsForTraversal(edge, edgeType).forEach(constituent => {
           const source = String(constituent.source || edge.source);
           const target = String(constituent.target || edge.target);
           const from = direction === "ancestors" ? target : source;
@@ -369,9 +376,36 @@
       setNodeSelection(reached, selectedNodeId, "explicit");
     }
 
+    function createRelationTraversalActions(edgeType, scopeLabel) {
+      const actions = document.createElement("div");
+      actions.className = "legend-relation-actions";
+      [["ancestors", "←", "Select ancestors"], ["successors", "→", "Select successors"]]
+        .forEach(([direction, symbol, actionLabel]) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "relation-traverse-button";
+          button.dataset.direction = direction;
+          button.dataset.relationScope = edgeType === null ? "all" : "type";
+          button.textContent = symbol;
+          button.title = `${actionLabel} through ${scopeLabel}`;
+          button.setAttribute("aria-label", `${actionLabel} through ${scopeLabel}`);
+          button.addEventListener("click", event => {
+            event.stopPropagation();
+            selectRelationTraversal(edgeType, direction);
+          });
+          actions.appendChild(button);
+        });
+      return actions;
+    }
+
     const edgeLegendColumn = document.createElement("div");
     edgeLegendColumn.className = "legend-column";
-    if (legendEdgeTypes.length > 0) edgeLegendColumn.appendChild(createLegendGroupTitle("Relations"));
+    if (legendEdgeTypes.length > 0) {
+      const relationsTitle = createLegendGroupTitle("Relations");
+      relationsTitle.dataset.legendKind = "relations";
+      relationsTitle.appendChild(createRelationTraversalActions(null, "all visible relations"));
+      edgeLegendColumn.appendChild(relationsTitle);
+    }
     legendEdgeTypes.forEach(({edgeType, depth}) => {
       const style = edgeStyleForType(edgeType);
       const row = document.createElement("div");
@@ -394,24 +428,7 @@
       const labelText = category.label || edgeType;
       label.textContent = labelText;
       row.appendChild(label);
-      const actions = document.createElement("div");
-      actions.className = "legend-relation-actions";
-      [["ancestors", "←", "Select ancestors"], ["successors", "→", "Select successors"]]
-        .forEach(([direction, symbol, actionLabel]) => {
-          const button = document.createElement("button");
-          button.type = "button";
-          button.className = "relation-traverse-button";
-          button.dataset.direction = direction;
-          button.textContent = symbol;
-          button.title = `${actionLabel} through ${labelText}`;
-          button.setAttribute("aria-label", `${actionLabel} through ${labelText}`);
-          button.addEventListener("click", event => {
-            event.stopPropagation();
-            selectRelationTraversal(edgeType, direction);
-          });
-          actions.appendChild(button);
-        });
-      row.appendChild(actions);
+      row.appendChild(createRelationTraversalActions(edgeType, labelText));
       bindLegendTooltip(row, labelText, category.description || "");
       row.addEventListener("click", () => {
         if (edgeCategorySetContains(

@@ -437,6 +437,78 @@ def test_relation_direction_controls_select_union_and_color_legend_selects_kind(
     )
 
 
+def test_relations_heading_traverses_all_visible_relation_types() -> None:
+    payload = {
+        "schema_version": 2,
+        "graph_id": "all-relation-selection-controls",
+        "categories": [{"id": "node", "label": "Node"}],
+        "edge_categories": [
+            {"id": "first", "label": "First"},
+            {"id": "second", "label": "Second"},
+        ],
+        "entities": [
+            {
+                "id": "a",
+                "type": "node",
+                "short_title": "A",
+                "position": 0,
+                "connects_to": [{"to": "b", "type": "first"}],
+            },
+            {
+                "id": "b",
+                "type": "node",
+                "short_title": "B",
+                "position": 1,
+                "connects_to": [{"to": "c", "type": "second"}],
+            },
+            {
+                "id": "d",
+                "type": "node",
+                "short_title": "D",
+                "position": 2,
+                "connects_to": [{"to": "b", "type": "second"}],
+            },
+            {
+                "id": "c",
+                "type": "node",
+                "short_title": "C",
+                "position": 3,
+                "connects_to": [],
+            },
+        ],
+    }
+    _run_browser_case(
+        "all-relation-selection-controls",
+        payload,
+        """
+        const relationsTitle = document.querySelector('.legend-group-title[data-legend-kind="relations"]');
+        const successor = relationsTitle?.querySelector('.relation-traverse-button[data-direction="successors"]');
+        const ancestor = relationsTitle?.querySelector('.relation-traverse-button[data-direction="ancestors"]');
+        if (!successor || !ancestor) throw new Error("all-relation traversal controls unavailable");
+        if (!successor.disabled || !ancestor.disabled) throw new Error("all-relation controls enabled without a selection");
+
+        setNodeSelection(["a"], "a", "explicit");
+        if (successor.disabled || ancestor.disabled) throw new Error("all-relation controls disabled with a selection");
+        successor.click();
+        await delay(20);
+        if (selectedNodeIds.size !== 3 || !selectedNodeIds.has("a") || !selectedNodeIds.has("b") || !selectedNodeIds.has("c")) {
+          throw new Error("all-relation successor traversal did not cross relation types");
+        }
+        if (selectedNodeId !== "a") throw new Error("all-relation traversal changed the primary node");
+
+        setNodeSelection(["c"], "c", "explicit");
+        ancestor.click();
+        await delay(20);
+        if (selectedNodeIds.size !== 4 || !selectedNodeIds.has("a") || !selectedNodeIds.has("b") || !selectedNodeIds.has("c") || !selectedNodeIds.has("d")) {
+          throw new Error("all-relation ancestor traversal did not union incoming relation types");
+        }
+        document.getElementById("visibility-undo-btn").click();
+        await delay(20);
+        if (selectedNodeIds.size !== 1 || selectedNodeId !== "c") throw new Error("all-relation traversal selection is not undoable");
+        """,
+    )
+
+
 def test_advanced_edge_geometries_are_distinct_and_reversible() -> None:
     _run_browser_case(
         "advanced-bezier-geometry",
