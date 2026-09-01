@@ -396,10 +396,11 @@ def test_failed_same_owner_setup_keeps_previous_descriptor_plugin_and_native_set
     monkeypatch.setattr(native, "_read_crontab", lambda: "")
     monkeypatch.setattr(native, "_write_crontab", lambda _value: None)
     failed = False
+    rendered_new_plugin = str(new_plugin).replace("\\", "\\\\")
 
     def run(argv, **kwargs):
         nonlocal failed
-        if not failed and argv[-1] == "daemon-reload" and "plugin two" in (first.native_registration_root / "ai-same.service").read_text():
+        if not failed and argv[-1] == "daemon-reload" and rendered_new_plugin in (first.native_registration_root / "ai-same.service").read_text():
             failed = True
             raise subprocess.CalledProcessError(1, argv)
         return subprocess.CompletedProcess(argv, 0, stdout="")
@@ -414,8 +415,9 @@ def test_failed_same_owner_setup_keeps_previous_descriptor_plugin_and_native_set
         managed_control.run("setup", python=second.python, plugin_root=new_plugin)
 
     assert json.loads(first.descriptor_path.read_text())["plugin_root"] == str(old_plugin)
-    assert old_plugin.as_posix() in (first.native_registration_root / "ai-same.service").read_text()
-    assert old_plugin.as_posix() in (first.native_registration_root / "ai-recurring-healthcheck.sh").read_text()
+    rendered_old_plugin = str(old_plugin).replace("\\", "\\\\")
+    assert rendered_old_plugin in (first.native_registration_root / "ai-same.service").read_text()
+    assert str(old_plugin) in (first.native_registration_root / "ai-recurring-healthcheck.sh").read_text()
     assert json.loads((first.native_registration_root / "install-owner.json").read_text())["owner_id"] == first.owner_id
     writer.assert_not_called()
 
