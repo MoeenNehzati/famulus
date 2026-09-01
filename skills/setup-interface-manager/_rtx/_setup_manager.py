@@ -794,9 +794,11 @@ class _ManagerInterface(PythonMachineInterface):
         self,
         manager_factory: Callable[[], SetupManager] | None = None,
         graph_loader: Callable[[Path], object] = load_repository_blueprint_graph,
+        bindings: Mapping[str, ManagedInterfaceBinding] = PRODUCTION_BINDINGS,
     ) -> None:
         self._manager_factory = manager_factory
         self._graph_loader = graph_loader
+        self._bindings = dict(bindings)
 
     def parse_args(self, parser: argparse.ArgumentParser, argv: list[str]):
         try:
@@ -842,7 +844,7 @@ class _ManagerInterface(PythonMachineInterface):
             graph=graph,
             store=store,
             dispatch=dispatch,
-            bindings=PRODUCTION_BINDINGS,
+            bindings=self._bindings,
         )
 
     def _malformed(self, message: str) -> int:

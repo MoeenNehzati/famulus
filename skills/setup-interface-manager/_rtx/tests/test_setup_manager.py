@@ -1,13 +1,15 @@
 """Behavioral tests for the finite managed-setup controller and public routes."""
 from __future__ import annotations
 
+from contextlib import redirect_stdout
+import importlib.util
 import io
 import json
 import os
 from pathlib import Path
 import subprocess
-from types import SimpleNamespace
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -32,6 +34,13 @@ SCRIPT_DIR = Path(__file__).resolve().parents[1]
 REPO_ROOT = SCRIPT_DIR.parents[2]
 LOGICAL_PACKAGE = logical_python_package_name("setup-interface-manager._rtx")
 LOGICAL_ENTRYPOINT = f"{LOGICAL_PACKAGE}._setup_manager"
+FIXTURE_REPO = (
+    REPO_ROOT / "tests" / "fixtures" / "setup_interface_manager" / "repository"
+)
+FIXTURE_MODULE_PATH = FIXTURE_REPO / "python-canary" / "python_canary.py"
+FIXTURE_TEARDOWN_MODULE_PATH = (
+    FIXTURE_REPO / "python-canary" / "python_canary_teardown.py"
+)
 
 
 def _load_runtime_modules():
@@ -152,6 +161,101 @@ def _binding(item: ManagedSetup) -> setup_dispatches.ManagedInterfaceBinding:
         teardown_verifier_dispatch_key=f"{stem}-teardown-status",
         arguments=(),
     )
+
+
+PYTHON_CANARY_BINDING = setup_dispatches.ManagedInterfaceBinding(
+    setup_interface="python-canary.interface.setup",
+    setup_version=1,
+    setup_kind="python",
+    setup_dispatch_key="python-canary-setup",
+    setup_instructions="",
+    setup_verifier_interface="python-canary.interface.setup-status",
+    setup_verifier_version=1,
+    setup_verifier_dispatch_key="python-canary-setup-status",
+    teardown_interface="python-canary.interface.teardown",
+    teardown_version=1,
+    teardown_dispatch_key="python-canary-teardown",
+    teardown_instructions="",
+    teardown_verifier_interface="python-canary.interface.teardown-status",
+    teardown_verifier_version=1,
+    teardown_verifier_dispatch_key="python-canary-teardown-status",
+)
+PYTHON_CANARY_CALLS = {
+    key: DispatchCall(
+        caller_module_id="setup-interface-manager._rtx",
+        target_module_id="python-canary",
+        interface=interface,
+        smoke_args=(),
+    )
+    for key, interface in (
+        ("python-canary-setup", "setup"),
+        ("python-canary-setup-status", "setup-status"),
+        ("python-canary-teardown", "teardown"),
+        ("python-canary-teardown-status", "teardown-status"),
+    )
+}
+
+
+def _load_python_canary(name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("unable to load Python canary fixture")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+python_canary = _load_python_canary(
+    "setup_interface_manager_python_canary", FIXTURE_MODULE_PATH
+)
+python_canary_teardown = _load_python_canary(
+    "setup_interface_manager_python_canary_teardown", FIXTURE_TEARDOWN_MODULE_PATH
+)
+
+
+class FixtureRuntime(manager.StatusInterface):
+    """Runtime using a registered graph and one fixed test-only dispatch map."""
+
+    dispatches = {
+        setup_dispatches.GETTER_KEY: setup_dispatches.GETTER_CALL,
+        **PYTHON_CANARY_CALLS,
+    }
+
+    def __init__(self, ledger_path: Path) -> None:
+        super().__init__(
+            graph_loader=lambda _root: load_repository_blueprint_graph(FIXTURE_REPO),
+            bindings={PYTHON_CANARY_BINDING.setup_interface: PYTHON_CANARY_BINDING},
+        )
+        self.ledger_path = ledger_path
+        self.overrides: dict[str, subprocess.CompletedProcess[str]] = {}
+        self.action_calls: list[str] = []
+        self.on_dispatch = lambda _key: None
+
+    def dispatch(self, key: str, **_kwargs: object):
+        if key == setup_dispatches.GETTER_KEY:
+            return subprocess.CompletedProcess([], 0, f"{self.ledger_path}\n", "")
+        self.action_calls.append(key)
+        self.on_dispatch(key)
+        if key in self.overrides:
+            return self.overrides[key]
+        entry = {
+            "setup": python_canary.SetupInterface,
+            "setup-status": python_canary.SetupStatusInterface,
+            "teardown": python_canary_teardown.TeardownInterface,
+            "teardown-status": python_canary_teardown.TeardownStatusInterface,
+        }[self.dispatches[key].interface]
+        output = io.StringIO()
+        with redirect_stdout(output):
+            code = run_python_machine_interface(entry(), [])
+        return subprocess.CompletedProcess([], code, output.getvalue(), "")
+
+
+def _fixture_controller(tmp_path: Path) -> tuple[manager.SetupManager, FixtureRuntime]:
+    python_canary.reset_state()
+    python_canary_teardown.reset_state()
+    runtime = FixtureRuntime(tmp_path / "private" / "ledger.json")
+    return runtime.build_manager(), runtime
 
 
 class DispatchHarness:
@@ -345,6 +449,184 @@ def test_python_failure_never_records_a_receipt(
 
     assert code == 2
     assert payload["state"] == expected_state
+    assert controller.store.read().interfaces == {}
+    assert controller.store.read().active_flow is not None
+
+
+def test_registered_python_fixture_has_fixed_action_and_verifier_bindings() -> None:
+    """Catches an unregistered canary or a caller-selectable lifecycle action."""
+    graph = load_repository_blueprint_graph(FIXTURE_REPO)
+
+    assert graph.managed_setups == {
+        "python-canary.interface.setup": ManagedSetup(
+            setup_interface="python-canary.interface.setup",
+            setup_version=1,
+            teardown_interface="python-canary.interface.teardown",
+            teardown_version=1,
+            setup_verifier_interface="python-canary.interface.setup-status",
+            setup_verifier_version=1,
+            teardown_verifier_interface="python-canary.interface.teardown-status",
+            teardown_verifier_version=1,
+            kind="python",
+        )
+    }
+    assert {
+        interface_id: export.declaration["process_binding"]["entry"]
+        for interface_id, export in graph.exports.items()
+    } == {
+        "python-canary.interface.setup": "SetupInterface",
+        "python-canary.interface.setup-status": "SetupStatusInterface",
+        "python-canary.interface.teardown": "TeardownInterface",
+        "python-canary.interface.teardown-status": "TeardownStatusInterface",
+    }
+    assert {
+        key: call.target_interface_id for key, call in PYTHON_CANARY_CALLS.items()
+    } == {
+        "python-canary-setup": "python-canary.interface.setup",
+        "python-canary-setup-status": "python-canary.interface.setup-status",
+        "python-canary-teardown": "python-canary.interface.teardown",
+        "python-canary-teardown-status": "python-canary.interface.teardown-status",
+    }
+
+
+def test_registered_python_fixture_runs_and_verifies_before_receipt_mutation(
+    tmp_path: Path,
+) -> None:
+    """Catches opposite-action dispatch or receipt mutation before verification."""
+    controller, runtime = _fixture_controller(tmp_path)
+    item = controller.graph.managed_setups["python-canary.interface.setup"]
+    begun = _begin_setup(controller, item)
+    flow_id = begun["flow_id"]
+    assert isinstance(flow_id, str)
+    observed_setup_receipts: list[dict[str, state.SetupReceipt]] = []
+    observed_teardown_receipts: list[dict[str, state.SetupReceipt]] = []
+
+    def observe_receipts(key: str) -> None:
+        if key == "python-canary-setup-status":
+            observed_setup_receipts.append(
+                dict(controller.store.read().interfaces)
+            )
+        if key == "python-canary-teardown-status":
+            observed_teardown_receipts.append(
+                dict(controller.store.read().interfaces)
+            )
+
+    runtime.on_dispatch = observe_receipts
+
+    code, wrong = controller.run_python(
+        flow_id, "python-canary.interface.teardown", "{}"
+    )
+    assert code == 2
+    assert wrong["state"] == "failed"
+    assert runtime.action_calls == []
+    assert controller.store.read().interfaces == {}
+
+    code, completed = controller.run_python(
+        flow_id, "python-canary.interface.setup", "{}"
+    )
+    assert code == 0
+    assert completed["state"] == "ready"
+    assert observed_setup_receipts == [{}]
+    assert controller.store.read().interfaces == {
+        "python-canary.interface.setup": state.SetupReceipt(
+            1, frozenset({"python-canary.interface.setup"})
+        )
+    }
+    assert runtime.action_calls == [
+        "python-canary-setup",
+        "python-canary-setup-status",
+    ]
+
+    code, begun = controller.begin(
+        "teardown",
+        item.setup_interface,
+        "fixture-caller",
+        item.teardown_interface,
+        1,
+    )
+    assert code == 0
+    assert begun["current_step"]["interface"] == item.teardown_interface
+    teardown_flow_id = begun["flow_id"]
+    assert isinstance(teardown_flow_id, str)
+    code, wrong = controller.run_python(
+        teardown_flow_id, item.setup_interface, "{}"
+    )
+    assert code == 2
+    assert wrong["state"] == "failed"
+    assert runtime.action_calls == [
+        "python-canary-setup",
+        "python-canary-setup-status",
+    ]
+    assert controller.store.read().interfaces == {
+        "python-canary.interface.setup": state.SetupReceipt(
+            1, frozenset({"python-canary.interface.setup"})
+        )
+    }
+
+    code, completed = controller.run_python(
+        teardown_flow_id, item.teardown_interface, "{}"
+    )
+    assert code == 0
+    assert completed["state"] == "ready"
+    assert observed_teardown_receipts == [
+        {
+            "python-canary.interface.setup": state.SetupReceipt(
+                1, frozenset({"python-canary.interface.setup"})
+            )
+        }
+    ]
+    assert controller.store.read().interfaces == {}
+    assert runtime.action_calls == [
+        "python-canary-setup",
+        "python-canary-setup-status",
+        "python-canary-teardown",
+        "python-canary-teardown-status",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("override_key", "result", "expected_state", "expected_calls"),
+    [
+        (
+            "python-canary-setup",
+            subprocess.CompletedProcess([], 9, "", "bounded failure"),
+            "failed",
+            ["python-canary-setup"],
+        ),
+        (
+            "python-canary-setup-status",
+            subprocess.CompletedProcess([], 0, '{"set_up":false}\n', ""),
+            "failed",
+            ["python-canary-setup", "python-canary-setup-status"],
+        ),
+        (
+            "python-canary-setup-status",
+            subprocess.CompletedProcess([], 0, "not-json\n", ""),
+            "recovery-required",
+            ["python-canary-setup", "python-canary-setup-status"],
+        ),
+    ],
+)
+def test_registered_python_fixture_failures_never_record_receipts(
+    tmp_path: Path,
+    override_key: str,
+    result: subprocess.CompletedProcess[str],
+    expected_state: str,
+    expected_calls: list[str],
+) -> None:
+    """Catches nonzero or invalid verifier evidence mutating readiness state."""
+    controller, runtime = _fixture_controller(tmp_path)
+    item = controller.graph.managed_setups["python-canary.interface.setup"]
+    runtime.overrides[override_key] = result
+    begun = _begin_setup(controller, item)
+    flow_id = begun["flow_id"]
+    assert isinstance(flow_id, str)
+
+    code, payload = controller.run_python(flow_id, item.setup_interface, "{}")
+
+    assert code == 2
+    assert payload["state"] == expected_state
+    assert runtime.action_calls == expected_calls
     assert controller.store.read().interfaces == {}
     assert controller.store.read().active_flow is not None
 

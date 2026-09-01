@@ -1,0 +1,44 @@
+schema_version: 6
+node_type: module
+id: python-canary
+version: 1
+maturity: experimental
+description: Registered effect-free Python lifecycle fixture for setup-manager tests.
+gateway: {language: Python>=3.11, path: python_canary.py}
+content: [python_canary\.py, python_canary_teardown\.py]
+authority: {owns_filesystem: []}
+children: {}
+namespace_exports: {}
+exports:
+  python-canary.interface.setup:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    setup_requires_setup_of: []
+    setup_management:
+      setup_verifier: {interface: python-canary.interface.setup-status, version: 1}
+      teardown:
+        interface: python-canary.interface.teardown
+        version: 1
+        verifier: {interface: python-canary.interface.teardown-status, version: 1}
+    source_interface: python-canary.source.setup.interface.setup
+  python-canary.interface.setup-status:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: python-canary.source.setup.interface.setup-status
+  python-canary.interface.teardown:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: python-canary.source.teardown.interface.teardown
+  python-canary.interface.teardown-status:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: python-canary.source.teardown.interface.teardown-status
+sources:
+  python-canary.source.setup:
+    blueprint: {base: module-root, path: blueprints/lifecycle.yaml}
+  python-canary.source.teardown:
+    blueprint: {base: module-root, path: blueprints/teardown.yaml}
