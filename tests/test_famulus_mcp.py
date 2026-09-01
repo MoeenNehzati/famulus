@@ -891,6 +891,60 @@ def test_stdio_transport_ignores_only_a_clean_shutdown_send_race(
     assert any(isinstance(error, ValueError) for error in caught.value.exceptions)
 
 
+def test_invoke_through_mcp_preserves_result_when_session_teardown_breaks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import anyio
+    import mcp
+    import mcp.client.stdio
+
+    @asynccontextmanager
+    async def clean_transport(_parameters):
+        yield object(), object()
+
+    class TeardownRaceSession:
+        def __init__(self, _read, _write) -> None:
+            self.listed = iter(("listed before", "listed after"))
+            self.called = iter(
+                ("called", "unauthorized", "numeric", "ordered positionals")
+            )
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, _exc_type, _exc, _traceback) -> None:
+            raise BaseExceptionGroup(
+                "session shutdown", [anyio.BrokenResourceError()]
+            )
+
+        async def initialize(self) -> None:
+            return None
+
+        async def list_tools(self):
+            return next(self.listed)
+
+        async def call_tool(self, _name, **_kwargs):
+            return next(self.called)
+
+    monkeypatch.setattr(mcp.client.stdio, "stdio_client", clean_transport)
+    monkeypatch.setattr(mcp, "ClientSession", TeardownRaceSession)
+    plugin = tmp_path / "Plugin Cache" / "famulus"
+    _copy_plugin(plugin)
+
+    result = asyncio.run(
+        _invoke_through_mcp("claude", plugin, tmp_path / "home")
+    )
+
+    assert result == (
+        "listed before",
+        "called",
+        "unauthorized",
+        "numeric",
+        "ordered positionals",
+        "listed after",
+    )
+
+
 def test_host_declarations_normalize_to_common_command_contract() -> None:
     contract = _json(CORE)
     claude = _json(ROOT / ".claude-plugin" / "plugin.json")["mcpServers"][
