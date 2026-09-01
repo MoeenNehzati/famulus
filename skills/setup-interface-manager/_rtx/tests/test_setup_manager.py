@@ -955,6 +955,35 @@ def test_production_dispatch_map_includes_every_finite_binding_and_is_immutable(
     assert manager._ManagerInterface.dispatches is setup_dispatches.PRODUCTION_DISPATCHES
 
 
+def test_markdown_binding_dispatch_map_exposes_only_machine_run_verifiers() -> None:
+    """Catches route smoke compiling Markdown instructions as process calls."""
+    binding = _binding(_managed("canary", kind="markdown"))
+    calls = {
+        key: DispatchCall(
+            caller_module_id="setup-interface-manager._rtx",
+            target_module_id="canary",
+            interface=interface,
+            smoke_args=(),
+        )
+        for key, interface in (
+            (binding.setup_dispatch_key, "setup"),
+            (binding.setup_verifier_dispatch_key, "setup-status"),
+            (binding.teardown_dispatch_key, "teardown"),
+            (binding.teardown_verifier_dispatch_key, "teardown-status"),
+        )
+    }
+
+    dispatches = setup_dispatches.production_dispatches(
+        bindings={binding.setup_interface: binding}, action_calls=calls
+    )
+
+    assert set(dispatches) == {
+        setup_dispatches.GETTER_KEY,
+        binding.setup_verifier_dispatch_key,
+        binding.teardown_verifier_dispatch_key,
+    }
+
+
 def test_production_bindings_register_the_milestone_markdown_lifecycle() -> None:
     """Catches the production canary missing any fixed action or verifier route."""
     setup_interface = "milestone-logging.interface.setup"
@@ -996,7 +1025,8 @@ def test_production_bindings_register_the_milestone_markdown_lifecycle() -> None
     }
     assert set(setup_dispatches.PRODUCTION_DISPATCHES) == {
         setup_dispatches.GETTER_KEY,
-        *setup_dispatches.PRODUCTION_ACTION_CALLS,
+        "milestone-logging-setup-status",
+        "milestone-logging-teardown-status",
     }
 
 

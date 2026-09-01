@@ -59,8 +59,8 @@ def test_release_has_only_the_milestone_markdown_canary() -> None:
     assert parameterized_setups.isdisjoint(production_managed)
 
 
-def test_production_map_contains_only_the_canary_pair_and_verifiers() -> None:
-    """Catches a missing canary route or an undeclared production lifecycle action."""
+def test_production_map_contains_only_machine_run_canary_routes() -> None:
+    """Catches Markdown instructions leaking into machine-run dispatch routes."""
     bindings, dispatches = _setup_dispatches()
     binding = bindings["milestone-logging.interface.setup"]
 
@@ -81,8 +81,6 @@ def test_production_map_contains_only_the_canary_pair_and_verifiers() -> None:
         for key, call in dispatches.items()
         if key != "setup-status-path"
     } == {
-        "milestone-logging-setup": "milestone-logging.interface.setup",
         "milestone-logging-setup-status": "milestone-logging._rtx.interface.setup-status",
-        "milestone-logging-teardown": "milestone-logging.interface.teardown",
         "milestone-logging-teardown-status": "milestone-logging._rtx.interface.teardown-status",
     }

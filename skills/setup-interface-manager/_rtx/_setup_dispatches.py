@@ -181,7 +181,20 @@ def production_dispatches(
             "finite production action dispatches do not match bindings: "
             f"missing={missing}, extra={extra}"
         )
-    dispatches.update(action_calls)
+    runtime_action_keys = {
+        key
+        for binding in bindings.values()
+        for key in (
+            binding.setup_verifier_dispatch_key,
+            binding.teardown_verifier_dispatch_key,
+            *(
+                (binding.setup_dispatch_key, binding.teardown_dispatch_key)
+                if binding.setup_kind == "python"
+                else ()
+            ),
+        )
+    }
+    dispatches.update({key: action_calls[key] for key in runtime_action_keys})
     return MappingProxyType(dispatches)
 
 
