@@ -273,70 +273,6 @@ async def _record_through_persistent_mcp(
                     "stdin": None,
                 },
             }
-            pending = await session.call_tool(
-                "invoke",
-                arguments=record_arguments,
-            )
-            requirement = pending.structuredContent["result"]
-            assert requirement["code"] == "setup_required"
-            assert requirement["root_setup_interface"] == (
-                "milestone-logging.interface.setup"
-            )
-
-            begin_route = requirement["manager"]
-            begun = await session.call_tool(
-                "invoke",
-                arguments={"caller": "milestone-logging", **begin_route},
-            )
-            begun_result = begun.structuredContent["result"]
-            assert begun_result["exit_code"] == 0, begun_result
-            flow = json.loads(begun_result["stdout"])
-            step = flow["current_step"]
-            assert step == {
-                "interface": "milestone-logging.interface.setup",
-                "version": 1,
-                "kind": "markdown",
-                "action": "run-setup",
-            }
-
-            run_markdown = await session.call_tool(
-                "invoke",
-                arguments={
-                    "caller": "milestone-logging",
-                    "interface": (
-                        "setup-interface-manager._rtx.interface.run-markdown"
-                    ),
-                    "version": 1,
-                    "arguments": {
-                        "positionals": [flow["flow_id"], step["interface"]],
-                        "options": {},
-                        "stdin": None,
-                    },
-                },
-            )
-            run_result = run_markdown.structuredContent["result"]
-            assert run_result["exit_code"] == 0, run_result
-            awaiting = json.loads(run_result["stdout"])
-            assert awaiting["state"] == "awaiting-settlement"
-
-            settled = await session.call_tool(
-                "invoke",
-                arguments={
-                    "caller": "milestone-logging",
-                    "interface": "setup-interface-manager._rtx.interface.settle",
-                    "version": 1,
-                    "arguments": {
-                        "positionals": [flow["flow_id"], step["interface"]],
-                        "options": {},
-                        "stdin": None,
-                    },
-                },
-            )
-            settled_result = settled.structuredContent["result"]
-            assert settled_result["exit_code"] == 0, settled_result
-            ready = json.loads(settled_result["stdout"])
-            assert ready["state"] == "ready"
-
             return await session.call_tool("invoke", arguments=record_arguments)
 
 
@@ -512,12 +448,7 @@ def test_real_mcp_persists_status_and_milestone_below_selected_host_root(
     assert result["exit_code"] == 0, result
     assert _json(plugin_data / "setup" / "status.json") == {
         "active_flow": None,
-        "interfaces": {
-            "milestone-logging.interface.setup": {
-                "required_by": ["milestone-logging.interface.setup"],
-                "version": 1,
-            }
-        },
+        "interfaces": {},
         "schema_version": 1,
     }
     logs = sorted((plugin_data / "milestones").glob("*/*.jsonl"))

@@ -31,8 +31,8 @@ def _setup_dispatches():
     return globals_["PRODUCTION_BINDINGS"], globals_["PRODUCTION_DISPATCHES"]
 
 
-def test_release_has_only_the_milestone_markdown_canary() -> None:
-    """Catches bootstrap or parameterized production setup opting in to release one."""
+def test_release_has_no_production_managed_setups() -> None:
+    """Catches any managed setup opting in without an explicit release decision."""
     graph = load_repository_blueprint_graph(REPO_ROOT)
 
     fixture_managed = {
@@ -45,8 +45,7 @@ def test_release_has_only_the_milestone_markdown_canary() -> None:
     production_managed = set(graph.managed_setups) - fixture_managed
 
     assert fixture_managed == {"python-canary.interface.setup"}
-    assert production_managed == {"milestone-logging.interface.setup"}
-    assert graph.managed_setups["milestone-logging.interface.setup"].kind == "markdown"
+    assert production_managed == set()
     assert "setup-python-environment.interface.setup" not in graph.managed_setups
 
     parameterized_setups = {
@@ -59,28 +58,9 @@ def test_release_has_only_the_milestone_markdown_canary() -> None:
     assert parameterized_setups.isdisjoint(production_managed)
 
 
-def test_production_map_contains_only_machine_run_canary_routes() -> None:
-    """Catches Markdown instructions leaking into machine-run dispatch routes."""
+def test_production_map_has_no_managed_setup_routes() -> None:
+    """Catches a production binding or action route escaping blueprint review."""
     bindings, dispatches = _setup_dispatches()
-    binding = bindings["milestone-logging.interface.setup"]
 
-    assert set(bindings) == {"milestone-logging.interface.setup"}
-    assert {
-        binding.setup_interface,
-        binding.setup_verifier_interface,
-        binding.teardown_interface,
-        binding.teardown_verifier_interface,
-    } == {
-        "milestone-logging.interface.setup",
-        "milestone-logging._rtx.interface.setup-status",
-        "milestone-logging.interface.teardown",
-        "milestone-logging._rtx.interface.teardown-status",
-    }
-    assert {
-        key: call.target_interface_id
-        for key, call in dispatches.items()
-        if key != "setup-status-path"
-    } == {
-        "milestone-logging-setup-status": "milestone-logging._rtx.interface.setup-status",
-        "milestone-logging-teardown-status": "milestone-logging._rtx.interface.teardown-status",
-    }
+    assert set(bindings) == set()
+    assert set(dispatches) == {"setup-status-path"}

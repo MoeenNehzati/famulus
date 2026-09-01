@@ -362,7 +362,7 @@ def test_public_workflow_switches_dependency_first_and_resumes_once_after_restar
 def test_pending_mcp_call_crosses_real_routes_and_launches_original_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Catches MCP losing, leaking, mutating, or duplicating a suspended call."""
+    """Catches an unmanaged milestone call entering setup or launching twice."""
     plugin_data = tmp_path / "plugin-data"
     monkeypatch.setenv("FAMULUS_HOST", "codex")
     monkeypatch.setenv("FAMULUS_PLUGIN_DATA", str(plugin_data))
@@ -382,116 +382,45 @@ def test_pending_mcp_call_crosses_real_routes_and_launches_original_once(
         dict(original_arguments.options),
         original_arguments.stdin,
     )
-    manager_payloads: list[dict[str, object]] = []
     preflight_operations: list[str] = []
     original_launches: list[tuple[list[str], object]] = []
 
-    def observe_boundaries(module) -> None:
-        real_manager_call = module._manager_call
-        real_run = module._run_resolved_invocation
+    real_manager_call = server._manager_call
+    real_run = server._run_resolved_invocation
 
-        def observed_manager_call(
-            caller: str, operation: str, arguments: list[str]
-        ) -> dict[str, object]:
-            preflight_operations.append(operation)
-            payload = real_manager_call(caller, operation, arguments)
-            manager_payloads.append(payload)
-            return payload
+    def observed_manager_call(
+        caller: str, operation: str, arguments: list[str]
+    ) -> dict[str, object]:
+        preflight_operations.append(operation)
+        return real_manager_call(caller, operation, arguments)
 
-        def observed_run(resolved, *args: object, **kwargs: object):
-            if resolved.target == target:
-                original_launches.append(
-                    (list(resolved.metadata().command), kwargs.get("stdin"))
-                )
-            return real_run(resolved, *args, **kwargs)
+    def observed_run(resolved, *args: object, **kwargs: object):
+        if resolved.target == target:
+            original_launches.append(
+                (list(resolved.metadata().command), kwargs.get("stdin"))
+            )
+        return real_run(resolved, *args, **kwargs)
 
-        module._manager_call = observed_manager_call
-        module._run_resolved_invocation = observed_run
-
-    def invoke_manager_route(
-        module, route: dict[str, object]
-    ) -> tuple[dict[str, object], dict[str, object]]:
-        raw_arguments = route["arguments"]
-        assert isinstance(raw_arguments, dict)
-        arguments = module.CompactArguments(
-            positionals=list(raw_arguments["positionals"]),
-            options=dict(raw_arguments["options"]),
-            stdin=raw_arguments["stdin"],
-        )
-        result = module.invoke(
-            "milestone-logging",
-            route["interface"],
-            route["version"],
-            arguments,
-        )
-        assert isinstance(result, dict) and result["exit_code"] == 0, result
-        payload = json.loads(result["stdout"])
-        assert isinstance(payload, dict)
-        manager_payloads.append(payload)
-        return result, payload
-
-    observe_boundaries(server)
-    pending = server.invoke(
+    server._manager_call = observed_manager_call
+    server._run_resolved_invocation = observed_run
+    result = server.invoke(
         "milestone-logging", target, 1, original_arguments
     )
-    assert isinstance(pending, dict)
-    assert pending["code"] == "setup_required"
-    assert original_launches == []
-    assert (
-        original_arguments.positionals,
-        original_arguments.options,
-        original_arguments.stdin,
-    ) == original_snapshot
-    _begin_result, begun = invoke_manager_route(server, pending["manager"])
-    assert begun["state"] == "run-step"
-
-    # A fresh MCP module simulates a host restart; the manager subprocesses are
-    # already fresh per route and reconstruct from the getter-selected ledger.
-    server = _load_mcp_server("setup_manager_acceptance_mcp_after_restart")
-    observe_boundaries(server)
-    step = begun["current_step"]
-    assert isinstance(step, dict)
-    run_route = {
-        "interface": "setup-interface-manager._rtx.interface.run-markdown",
-        "version": 1,
-        "arguments": {
-            "positionals": [begun["flow_id"], step["interface"]],
-            "options": {},
-            "stdin": None,
-        },
-    }
-    _run_result, awaiting = invoke_manager_route(server, run_route)
-    assert awaiting["state"] == "awaiting-settlement"
-    settle_route = {
-        "interface": "setup-interface-manager._rtx.interface.settle",
-        "version": 1,
-        "arguments": run_route["arguments"],
-    }
-    _settle_result, settled = invoke_manager_route(server, settle_route)
-    assert settled["state"] == "ready"
-    assert settled["resume_original"] is False
-
-    resumed = server.invoke(
-        "milestone-logging", target, 1, original_arguments
-    )
-    assert isinstance(resumed, dict) and resumed["exit_code"] == 0, resumed
+    assert isinstance(result, dict) and result["exit_code"] == 0, result
     assert original_launches == [
         ([f"record {secret}", "--role", f"acceptance-{secret}"], None)
     ]
-    assert preflight_operations == ["status", "status", "authorize"]
+    assert preflight_operations == ["status"]
     assert (
         original_arguments.positionals,
         original_arguments.options,
         original_arguments.stdin,
     ) == original_snapshot
-
-    encoded_boundaries = json.dumps(
-        [pending, *manager_payloads], sort_keys=True
-    )
-    assert secret not in encoded_boundaries
-    ledger = plugin_data / "setup" / "status.json"
-    assert ledger.is_file()
-    assert secret not in ledger.read_text(encoding="utf-8")
+    assert json.loads((plugin_data / "setup" / "status.json").read_text()) == {
+        "active_flow": None,
+        "interfaces": {},
+        "schema_version": 1,
+    }
 
 
 def test_stale_suffix_invalidation_and_reverse_teardown_use_persisted_state(

@@ -12,22 +12,6 @@ dependencies:
   reason: Resolves the sole private setup-status ledger path.
   source: common.source.famulus-paths-get
   version: 1
-- blueprint: {base: repository-root, path: skills/milestone-logging/blueprints/setup.yaml}
-  reason: Bind the sole production Markdown setup action.
-  source: milestone-logging.source.setup
-  version: 1
-- blueprint: {base: repository-root, path: skills/milestone-logging/blueprints/teardown.yaml}
-  reason: Bind the sole production Markdown teardown action.
-  source: milestone-logging.source.teardown
-  version: 1
-- blueprint: {base: repository-root, path: skills/milestone-logging/_rtx/blueprints/rtx-setup-status.yaml}
-  reason: Independently verify the production setup action.
-  source: milestone-logging._rtx.source.rtx-setup-status
-  version: 1
-- blueprint: {base: repository-root, path: skills/milestone-logging/_rtx/blueprints/rtx-teardown-status.yaml}
-  reason: Independently verify the production teardown action.
-  source: milestone-logging._rtx.source.rtx-teardown-status
-  version: 1
 description: Implements the finite managed setup and teardown protocol over one getter-selected private ledger.
 gateway: {language: Python, path: _setup_manager.py}
 id: setup-interface-manager._rtx.source.rtx-manager
@@ -37,10 +21,6 @@ interfaces:
     uses_interfaces: &uses
     - {interface: common.interface.famulus-paths-get, version: 1}
     - {interface: common.interface.atomic-files, version: 2}
-    - {interface: milestone-logging.interface.setup, version: 1}
-    - {interface: milestone-logging._rtx.interface.setup-status, version: 1}
-    - {interface: milestone-logging.interface.teardown, version: 1}
-    - {interface: milestone-logging._rtx.interface.teardown-status, version: 1}
     contract:
       arguments:
         target-interface: &target_argument

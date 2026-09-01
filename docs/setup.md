@@ -141,13 +141,6 @@ cancel removes claims added by completed steps and clears the flow without
 guessing whether the interrupted external action finished. Invalidation is
 refused until the active flow is recovered or cancelled.
 
-Release one has one production canary:
-`milestone-logging.interface.setup@1`, a Markdown-managed lifecycle whose
-verifiers inspect only the getter-projected logging directory. Its teardown is
-a verified no-op that retains that directory and its contents. The Python
-runner is covered by the registered, effect-free `python-canary` test fixture;
-parameterized production setup is intentionally outside this release.
-
 Persistent features remain independently owned: `install-launchers` configures
 interactive launchers, `recurring-tasks` configures recurring work,
 `llm-wakeup` configures due-session delivery, and `connect-google` configures

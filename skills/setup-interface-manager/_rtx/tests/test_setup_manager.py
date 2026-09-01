@@ -984,52 +984,6 @@ def test_markdown_binding_dispatch_map_exposes_only_machine_run_verifiers() -> N
     }
 
 
-def test_production_bindings_register_the_milestone_markdown_lifecycle() -> None:
-    """Catches the production canary missing any fixed action or verifier route."""
-    setup_interface = "milestone-logging.interface.setup"
-    binding = setup_dispatches.PRODUCTION_BINDINGS[setup_interface]
-
-    assert binding == setup_dispatches.ManagedInterfaceBinding(
-        setup_interface=setup_interface,
-        setup_version=1,
-        setup_kind="markdown",
-        setup_dispatch_key="milestone-logging-setup",
-        setup_instructions=(
-            "Invoke common.interface.famulus-paths-get@1 with logging-path, require "
-            "one absolute path, then create that directory and missing parents "
-            "idempotently. Do not read or write setup-status, change MCP "
-            "configuration, or remove existing contents."
-        ),
-        setup_verifier_interface="milestone-logging._rtx.interface.setup-status",
-        setup_verifier_version=1,
-        setup_verifier_dispatch_key="milestone-logging-setup-status",
-        teardown_interface="milestone-logging.interface.teardown",
-        teardown_version=1,
-        teardown_dispatch_key="milestone-logging-teardown",
-        teardown_instructions=(
-            "Perform no external mutation. Retain the logging directory, its "
-            "contents, environment, and plugin state; proceed directly to settlement."
-        ),
-        teardown_verifier_interface="milestone-logging._rtx.interface.teardown-status",
-        teardown_verifier_version=1,
-        teardown_verifier_dispatch_key="milestone-logging-teardown-status",
-    )
-    assert {
-        key: (call.target_module_id, call.interface)
-        for key, call in setup_dispatches.PRODUCTION_ACTION_CALLS.items()
-    } == {
-        "milestone-logging-setup": ("milestone-logging", "setup"),
-        "milestone-logging-setup-status": ("milestone-logging._rtx", "setup-status"),
-        "milestone-logging-teardown": ("milestone-logging", "teardown"),
-        "milestone-logging-teardown-status": ("milestone-logging._rtx", "teardown-status"),
-    }
-    assert set(setup_dispatches.PRODUCTION_DISPATCHES) == {
-        setup_dispatches.GETTER_KEY,
-        "milestone-logging-setup-status",
-        "milestone-logging-teardown-status",
-    }
-
-
 @pytest.mark.parametrize(
     "failure",
     ["getter-invocation-error", "getter-nonzero", "path", "graph"],
