@@ -9,8 +9,11 @@ from officina.blueprints.graph import (
     BlueprintNode,
     BlueprintGraphError,
     InterfaceExport,
+    ManagedSetup,
     RepositoryBlueprintGraph,
+    _managed_setup_metadata,
     _setup_requirements,
+    managed_setup_order,
     setup_order,
 )
 
@@ -127,6 +130,110 @@ def _export(
         module_node_id=interface_id.split(".interface.", 1)[0],
         declaration={},
         export_declaration=declaration,
+    )
+
+
+def _lifecycle_export(
+    interface_id: str,
+    *,
+    version: int = 1,
+    source_id: str | None = None,
+    executable: bool = False,
+    read_only: bool = True,
+    arguments: dict[str, object] | None = None,
+    management: object = None,
+    prerequisites: object = None,
+) -> InterfaceExport:
+    declaration: dict[str, object] = {
+        "source_interface": f"{interface_id}.source",
+        "access": {"allow_all_modules": True, "allowed_callers": []},
+    }
+    if prerequisites is not None:
+        declaration["setup_requires_setup_of"] = prerequisites
+    if management is not None:
+        declaration["setup_management"] = management
+    source_declaration: dict[str, object] = {}
+    if executable:
+        source_declaration["process_binding"] = {"kind": "process"}
+    if arguments is not None or not read_only:
+        source_declaration["contract"] = {
+            "arguments": arguments or {},
+            "execution": {"state_effect": "read-only" if read_only else "mutating"},
+        }
+    return InterfaceExport(
+        interface_id=interface_id,
+        version=version,
+        local_name=interface_id.rsplit(".interface.", 1)[-1],
+        module_node_id=interface_id.split(".interface.", 1)[0],
+        declaration=source_declaration,
+        source_node_id=source_id or f"{interface_id}.source",
+        source_interface_id=f"{interface_id}.source",
+        export_declaration=declaration,
+    )
+
+
+def _managed_exports(
+    *,
+    setup_id: str = "demo.interface.setup",
+    setup_version: int = 3,
+    setup_source_id: str = "demo.source.setup",
+    teardown_source_id: str = "demo.source.teardown",
+    setup_verifier_source_id: str = "demo.source.setup-status",
+    teardown_verifier_source_id: str = "demo.source.teardown-status",
+    setup_executable: bool = True,
+) -> dict[str, InterfaceExport]:
+    module_id = setup_id.split(".interface.", 1)[0]
+    setup_verifier_id = f"{module_id}.interface.setup-status"
+    teardown_id = f"{module_id}.interface.teardown"
+    teardown_verifier_id = f"{module_id}.interface.teardown-status"
+    return {
+        setup_id: _lifecycle_export(
+            setup_id,
+            version=setup_version,
+            source_id=setup_source_id,
+            executable=setup_executable,
+            prerequisites=[],
+            management={
+                "setup_verifier": {"interface": setup_verifier_id, "version": 5},
+                "teardown": {
+                    "interface": teardown_id,
+                    "version": 4,
+                    "verifier": {"interface": teardown_verifier_id, "version": 6},
+                },
+            },
+        ),
+        setup_verifier_id: _lifecycle_export(
+            setup_verifier_id,
+            version=5,
+            source_id=setup_verifier_source_id,
+            executable=True,
+            arguments={},
+        ),
+        teardown_id: _lifecycle_export(
+            teardown_id,
+            version=4,
+            source_id=teardown_source_id,
+        ),
+        teardown_verifier_id: _lifecycle_export(
+            teardown_verifier_id,
+            version=6,
+            source_id=teardown_verifier_source_id,
+            executable=True,
+            arguments={},
+        ),
+    }
+
+
+def _managed_graph(exports: dict[str, InterfaceExport]) -> RepositoryBlueprintGraph:
+    return RepositoryBlueprintGraph(
+        nodes={},
+        node_edges=(),
+        exports=exports,
+        export_edges=(),
+        helper_edges=(),
+        certification_edges=(),
+        setup_requirements=_setup_requirements(exports),
+        managed_setups=_managed_setup_metadata(exports),
     )
 
 
@@ -291,3 +398,283 @@ def test_setup_exports_alias_existing_default_behavior(
             graph.exports[f"{module_id}.interface.setup"].source_interface_id
             == graph.exports[f"{module_id}.interface.default"].source_interface_id
         )
+
+
+def test_managed_setup_order_projects_immutable_lifecycle_metadata() -> None:
+    graph = _managed_graph(_managed_exports())
+
+    assert graph.managed_setups == {
+        "demo.interface.setup": ManagedSetup(
+            setup_interface="demo.interface.setup",
+            setup_version=3,
+            teardown_interface="demo.interface.teardown",
+            teardown_version=4,
+            setup_verifier_interface="demo.interface.setup-status",
+            setup_verifier_version=5,
+            teardown_verifier_interface="demo.interface.teardown-status",
+            teardown_verifier_version=6,
+            kind="python",
+        )
+    }
+    assert managed_setup_order(graph, "demo.interface.setup") == (
+        graph.managed_setups["demo.interface.setup"],
+    )
+
+
+def test_managed_setup_order_projects_markdown_source_kind() -> None:
+    graph = _managed_graph(_managed_exports(setup_executable=False))
+
+    assert graph.managed_setups["demo.interface.setup"].kind == "markdown"
+
+
+def test_managed_setup_order_preserves_setup_order_for_a_managed_closure() -> None:
+    exports = _managed_exports(setup_id="root.interface.setup")
+    exports.update(_managed_exports(setup_id="leaf.interface.setup"))
+    root = exports["root.interface.setup"]
+    exports["root.interface.setup"] = InterfaceExport(
+        **{
+            **root.__dict__,
+            "export_declaration": {
+                **(root.export_declaration or {}),
+                "setup_requires_setup_of": [
+                    {"interface": "leaf.interface.setup", "version": 3}
+                ],
+            },
+        }
+    )
+    graph = _managed_graph(exports)
+
+    assert tuple(step.setup_interface for step in managed_setup_order(graph, "root.interface.setup")) == (
+        "leaf.interface.setup",
+        "root.interface.setup",
+    )
+
+
+def test_managed_setup_metadata_rejects_management_on_non_setup_export() -> None:
+    exports = _managed_exports()
+    default = _lifecycle_export(
+        "demo.interface.default",
+        management={
+            "setup_verifier": {"interface": "demo.interface.setup-status", "version": 5},
+            "teardown": {
+                "interface": "demo.interface.teardown",
+                "version": 4,
+                "verifier": {"interface": "demo.interface.teardown-status", "version": 6},
+            },
+        },
+    )
+    exports[default.interface_id] = default
+
+    with pytest.raises(BlueprintGraphError, match="only public setup interfaces"):
+        _managed_setup_metadata(exports)
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement", "message"),
+    [
+        (
+            "setup_verifier",
+            {"interface": "other.interface.setup-status", "version": 5},
+            "same top-level module",
+        ),
+        (
+            "setup_verifier",
+            {"interface": "demo.interface.missing", "version": 5},
+            "must exist",
+        ),
+        (
+            "setup_verifier",
+            {"interface": "demo.interface.setup-status", "version": 4},
+            "pins version",
+        ),
+    ],
+)
+def test_managed_setup_metadata_requires_pinned_local_lifecycle_exports(
+    field: str,
+    replacement: dict[str, object],
+    message: str,
+) -> None:
+    exports = _managed_exports()
+    if replacement["interface"] == "other.interface.setup-status":
+        exports["other.interface.setup-status"] = _lifecycle_export(
+            "other.interface.setup-status",
+            version=5,
+            executable=True,
+            arguments={},
+        )
+    setup = exports["demo.interface.setup"]
+    management = dict((setup.export_declaration or {})["setup_management"])
+    management[field] = replacement
+    exports[setup.interface_id] = InterfaceExport(
+        **{
+            **setup.__dict__,
+            "export_declaration": {
+                **(setup.export_declaration or {}),
+                "setup_management": management,
+            },
+        }
+    )
+
+    with pytest.raises(BlueprintGraphError, match=message):
+        _managed_setup_metadata(exports)
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement", "message"),
+    [
+        (
+            "teardown",
+            {"interface": "other.interface.teardown", "version": 4},
+            "same top-level module",
+        ),
+        (
+            "teardown",
+            {"interface": "demo.interface.teardown", "version": 3},
+            "pins version",
+        ),
+        (
+            "teardown.verifier",
+            {"interface": "other.interface.teardown-status", "version": 6},
+            "same top-level module",
+        ),
+        (
+            "teardown.verifier",
+            {"interface": "demo.interface.teardown-status", "version": 5},
+            "pins version",
+        ),
+    ],
+)
+def test_managed_setup_metadata_pins_local_teardown_references(
+    field: str,
+    replacement: dict[str, object],
+    message: str,
+) -> None:
+    exports = _managed_exports()
+    if replacement["interface"].startswith("other."):
+        exports[replacement["interface"]] = _lifecycle_export(
+            replacement["interface"],
+            version=replacement["version"],
+            executable=field == "teardown.verifier",
+            arguments={} if field == "teardown.verifier" else None,
+        )
+    setup = exports["demo.interface.setup"]
+    management = dict((setup.export_declaration or {})["setup_management"])
+    teardown = dict(management["teardown"])
+    if field == "teardown":
+        replacement_with_verifier = dict(replacement)
+        replacement_with_verifier["verifier"] = teardown["verifier"]
+        management["teardown"] = replacement_with_verifier
+    else:
+        teardown["verifier"] = replacement
+        management["teardown"] = teardown
+    exports[setup.interface_id] = InterfaceExport(
+        **{
+            **setup.__dict__,
+            "export_declaration": {
+                **(setup.export_declaration or {}),
+                "setup_management": management,
+            },
+        }
+    )
+
+    with pytest.raises(BlueprintGraphError, match=message):
+        _managed_setup_metadata(exports)
+
+
+def test_managed_setup_metadata_requires_the_teardown_and_verifiers() -> None:
+    for removed_id in (
+        "demo.interface.teardown",
+        "demo.interface.setup-status",
+        "demo.interface.teardown-status",
+    ):
+        exports = _managed_exports()
+        del exports[removed_id]
+
+        with pytest.raises(BlueprintGraphError, match="must exist"):
+            _managed_setup_metadata(exports)
+
+
+def test_managed_setup_metadata_requires_dedicated_setup_and_teardown_sources() -> None:
+    exports = _managed_exports(teardown_source_id="demo.source.setup")
+
+    with pytest.raises(BlueprintGraphError, match="dedicated sources"):
+        _managed_setup_metadata(exports)
+
+
+@pytest.mark.parametrize(
+    ("target", "kwargs", "message"),
+    [
+        ("demo.interface.setup-status", {"executable": False}, "must be executable"),
+        (
+            "demo.interface.setup-status",
+            {"executable": True, "read_only": False},
+            "must be read-only",
+        ),
+        (
+            "demo.interface.teardown-status",
+            {"executable": False},
+            "must be executable",
+        ),
+        (
+            "demo.interface.teardown-status",
+            {"executable": True, "read_only": False},
+            "must be read-only",
+        ),
+        (
+            "demo.interface.setup-status",
+            {"executable": True, "arguments": {"path": object()}},
+            "take no arguments",
+        ),
+        (
+            "demo.interface.teardown-status",
+            {"executable": True, "arguments": {"path": object()}},
+            "take no arguments",
+        ),
+    ],
+)
+def test_managed_setup_metadata_requires_read_only_argument_free_verifiers(
+    target: str,
+    kwargs: dict[str, object],
+    message: str,
+) -> None:
+    exports = _managed_exports()
+    old = exports[target]
+    exports[target] = _lifecycle_export(
+        target,
+        version=old.version,
+        source_id=old.source_node_id,
+        **kwargs,
+    )
+
+    with pytest.raises(BlueprintGraphError, match=message):
+        _managed_setup_metadata(exports)
+
+
+def test_managed_setup_metadata_rejects_an_unmanaged_closure_member() -> None:
+    exports = _managed_exports(setup_id="root.interface.setup")
+    leaf = _lifecycle_export(
+        "leaf.interface.setup",
+        prerequisites=[],
+    )
+    exports[leaf.interface_id] = leaf
+    root = exports["root.interface.setup"]
+    exports[root.interface_id] = InterfaceExport(
+        **{
+            **root.__dict__,
+            "export_declaration": {
+                **(root.export_declaration or {}),
+                "setup_requires_setup_of": [
+                    {"interface": "leaf.interface.setup", "version": 1}
+                ],
+            },
+        }
+    )
+    with pytest.raises(BlueprintGraphError, match="unmanaged closure member"):
+        _managed_setup_metadata(exports)
+
+
+def test_managed_setup_metadata_excludes_bootstrap_setup() -> None:
+    exports = _managed_exports(setup_id="setup-python-environment.interface.setup")
+
+    with pytest.raises(BlueprintGraphError, match="setup-python-environment cannot opt in"):
+        _managed_setup_metadata(exports)

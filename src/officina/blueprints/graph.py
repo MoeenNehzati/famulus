@@ -11,7 +11,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import stat
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any, Callable, Literal, Mapping, Sequence
 
 import jsonschema
 import yaml
@@ -190,6 +190,21 @@ class InterfaceExport:
     export_declaration: Mapping[str, JsonValue] | None = None
     terminal_interface_id: str | None = None
     terminal_module_node_id: str | None = None
+
+
+@dataclass(frozen=True)
+class ManagedSetup:
+    """Immutable lifecycle metadata projected from one managed setup export."""
+
+    setup_interface: str
+    setup_version: int
+    teardown_interface: str
+    teardown_version: int
+    setup_verifier_interface: str
+    setup_verifier_version: int
+    teardown_verifier_interface: str
+    teardown_verifier_version: int
+    kind: Literal["markdown", "python"]
 
 
 @dataclass(frozen=True)
@@ -373,6 +388,7 @@ class RepositoryBlueprintGraph:
     setup_requirements: Mapping[str, tuple[tuple[str, int], ...]] = field(
         default_factory=dict
     )
+    managed_setups: Mapping[str, ManagedSetup] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -3867,6 +3883,165 @@ def setup_order(
     return tuple(order)
 
 
+def _managed_setup_metadata(
+    exports: Mapping[str, InterfaceExport],
+    setup_requirements: Mapping[str, tuple[tuple[str, int], ...]] | None = None,
+) -> dict[str, ManagedSetup]:
+    """Validate and project opted-in setup lifecycle metadata."""
+
+    managed: dict[str, ManagedSetup] = {}
+
+    def reference(
+        owner_id: str,
+        value: object,
+        *,
+        field: str,
+        owner_module_id: str,
+    ) -> tuple[str, int, InterfaceExport]:
+        if not isinstance(value, Mapping):
+            raise BlueprintGraphError(
+                f"{owner_id}: setup_management.{field} must be a mapping"
+            )
+        interface_id = value.get("interface")
+        version = value.get("version")
+        if not isinstance(interface_id, str) or type(version) is not int or version < 1:
+            raise BlueprintGraphError(
+                f"{owner_id}: setup_management.{field} must pin an interface and version"
+            )
+        target = exports.get(interface_id)
+        if target is None:
+            raise BlueprintGraphError(
+                f"{owner_id}: setup_management.{field} target {interface_id!r} must exist"
+            )
+        if target.module_node_id.split(".", 1)[0] != owner_module_id.split(".", 1)[0]:
+            raise BlueprintGraphError(
+                f"{owner_id}: setup_management.{field} target {interface_id!r} "
+                "must belong to the same top-level module"
+            )
+        if target.version != version:
+            raise BlueprintGraphError(
+                f"{owner_id}: setup_management.{field} target {interface_id!r} "
+                f"pins version {version}, but target version is {target.version}"
+            )
+        return interface_id, version, target
+
+    def verifier(owner_id: str, field: str, target: InterfaceExport) -> None:
+        binding = target.declaration.get("process_binding")
+        if not isinstance(binding, Mapping) or binding.get("kind") != "process":
+            raise BlueprintGraphError(
+                f"{owner_id}: setup_management.{field} verifier must be executable"
+            )
+        contract = target.declaration.get("contract")
+        execution = contract.get("execution") if isinstance(contract, Mapping) else None
+        if (
+            not isinstance(execution, Mapping)
+            or execution.get("state_effect") != "read-only"
+        ):
+            raise BlueprintGraphError(
+                f"{owner_id}: setup_management.{field} verifier must be read-only"
+            )
+        if isinstance(contract, Mapping) and contract.get("arguments") not in (None, {}):
+            raise BlueprintGraphError(
+                f"{owner_id}: setup_management.{field} verifier must take no arguments"
+            )
+
+    for export_id, export in sorted(exports.items()):
+        declaration = export.export_declaration or {}
+        raw = declaration.get("setup_management")
+        if raw is None:
+            continue
+        if not export_id.endswith(".interface.setup"):
+            raise BlueprintGraphError(
+                f"{export_id}: setup_management is allowed only public setup interfaces"
+            )
+        if export.module_node_id.split(".", 1)[0] == "setup-python-environment":
+            raise BlueprintGraphError(
+                "setup-python-environment cannot opt in to setup management"
+            )
+        if not isinstance(raw, Mapping):
+            raise BlueprintGraphError(f"{export_id}: setup_management must be a mapping")
+        setup_verifier_id, setup_verifier_version, setup_verifier = reference(
+            export_id,
+            raw.get("setup_verifier"),
+            field="setup_verifier",
+            owner_module_id=export.module_node_id,
+        )
+        teardown = raw.get("teardown")
+        if not isinstance(teardown, Mapping):
+            raise BlueprintGraphError(
+                f"{export_id}: setup_management.teardown must be a mapping"
+            )
+        teardown_id, teardown_version, teardown_export = reference(
+            export_id,
+            teardown,
+            field="teardown",
+            owner_module_id=export.module_node_id,
+        )
+        teardown_verifier_id, teardown_verifier_version, teardown_verifier = reference(
+            export_id,
+            teardown.get("verifier"),
+            field="teardown.verifier",
+            owner_module_id=export.module_node_id,
+        )
+        if export.source_node_id == teardown_export.source_node_id:
+            raise BlueprintGraphError(
+                f"{export_id}: setup and teardown must use dedicated sources"
+            )
+        verifier(export_id, "setup_verifier", setup_verifier)
+        verifier(export_id, "teardown.verifier", teardown_verifier)
+        managed[export_id] = ManagedSetup(
+            setup_interface=export_id,
+            setup_version=export.version,
+            teardown_interface=teardown_id,
+            teardown_version=teardown_version,
+            setup_verifier_interface=setup_verifier_id,
+            setup_verifier_version=setup_verifier_version,
+            teardown_verifier_interface=teardown_verifier_id,
+            teardown_verifier_version=teardown_verifier_version,
+            kind=(
+                "python"
+                if isinstance(export.declaration.get("process_binding"), Mapping)
+                else "markdown"
+            ),
+        )
+    requirements = (
+        _setup_requirements(exports)
+        if setup_requirements is None
+        else setup_requirements
+    )
+    graph = RepositoryBlueprintGraph(
+        nodes={},
+        node_edges=(),
+        exports={},
+        export_edges=(),
+        helper_edges=(),
+        certification_edges=(),
+        setup_requirements=requirements,
+        managed_setups=managed,
+    )
+    for root_setup_interface in managed:
+        managed_setup_order(graph, root_setup_interface)
+    return dict(sorted(managed.items()))
+
+
+def managed_setup_order(
+    graph: RepositoryBlueprintGraph,
+    root_setup_interface: str,
+) -> tuple[ManagedSetup, ...]:
+    """Return validated managed setup metadata in dependency-first setup order."""
+
+    order = setup_order(graph, root_setup_interface)
+    steps: list[ManagedSetup] = []
+    for interface_id in order:
+        metadata = graph.managed_setups.get(interface_id)
+        if metadata is None:
+            raise BlueprintGraphError(
+                f"{root_setup_interface}: unmanaged closure member {interface_id!r}"
+            )
+        steps.append(metadata)
+    return tuple(steps)
+
+
 def _namespace_routes(
     modules: Mapping[str, BlueprintNode],
     exports: Mapping[str, InterfaceExport],
@@ -4384,6 +4559,7 @@ def _load_v6_repository_blueprint_graph(
         module_local_segments,
     )
     setup_requirements = _setup_requirements(exports)
+    managed_setups = _managed_setup_metadata(exports, setup_requirements)
     namespace_routes, routed_interfaces = _namespace_routes(
         modules,
         exports,
@@ -4659,6 +4835,7 @@ def _load_v6_repository_blueprint_graph(
         interface_content_paths=interface_content_paths,
         interface_uses=interface_uses,
         setup_requirements=setup_requirements,
+        managed_setups=managed_setups,
     )
 
 
