@@ -149,6 +149,7 @@ async def _invoke_through_mcp(host: str, plugin_root: Path, home: Path):
         cwd=cwd,
         env=_selected_environment(home),
     )
+    result = None
     async with _stdio_transport(parameters) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
@@ -206,7 +207,7 @@ async def _invoke_through_mcp(host: str, plugin_root: Path, home: Path):
                 },
             )
             after_rejections = await session.list_tools()
-            return (
+            result = (
                 listed,
                 called,
                 unauthorized,
@@ -214,6 +215,8 @@ async def _invoke_through_mcp(host: str, plugin_root: Path, home: Path):
                 ordered_positionals,
                 after_rejections,
             )
+    assert result is not None
+    return result
 
 
 def _pid_is_alive(pid: int) -> bool:
@@ -246,6 +249,7 @@ async def _serve_graph_through_mcp(
     )
     pid: int | None = None
     completed = False
+    result = None
     try:
         async with _stdio_transport(parameters) as (read, write):
             async with ClientSession(read, write) as session:
@@ -294,7 +298,7 @@ async def _serve_graph_through_mcp(
                     },
                 )
                 completed = True
-                return (
+                result = (
                     listed,
                     called,
                     after,
@@ -303,6 +307,8 @@ async def _serve_graph_through_mcp(
                     cache_control,
                     _pid_is_alive(pid),
                 )
+        assert result is not None
+        return result
     finally:
         if not completed and pid is not None and _pid_is_alive(pid):
             _terminate_pid(pid)
@@ -532,12 +538,15 @@ def test_generated_outer_payload_uses_real_tool_field_names(tmp_path: Path) -> N
         plugin = tmp_path / "Plugin Cache" / "famulus"
         _copy_plugin(plugin)
         command, args, cwd = _declared_launch("claude", plugin)
+        result = None
         async with _stdio_transport(StdioServerParameters(command=command, args=args, cwd=cwd, env=_selected_environment(tmp_path / "home"))) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 tool = (await session.list_tools()).tools[0]
                 assert tool.inputSchema["required"] == ["caller", "interface", "version", "arguments"]
-                return await session.call_tool("invoke", arguments={**outer, "arguments": {"positionals": [], "options": {"--path": True}, "stdin": None}, "dry_run": True})
+                result = await session.call_tool("invoke", arguments={**outer, "arguments": {"positionals": [], "options": {"--path": True}, "stdin": None}, "dry_run": True})
+        assert result is not None
+        return result
 
     result = asyncio.run(asyncio.wait_for(call(), timeout=15))
     assert result.structuredContent["result"]["target"] == outer["interface"]
@@ -847,12 +856,15 @@ def test_stdio_transport_ignores_only_a_clean_shutdown_send_race(
 
     asyncio.run(use_transport())
 
-    async def nested_teardown_race() -> None:
+    async def nested_teardown_race() -> str:
+        result = None
         async with _stdio_transport(object()):
             async with shutdown_race(object()):
-                pass
+                result = "produced value"
+        assert result is not None
+        return result
 
-    asyncio.run(nested_teardown_race())
+    assert asyncio.run(nested_teardown_race()) == "produced value"
 
     async def fail_in_body() -> None:
         async with _stdio_transport(object()):
