@@ -68,7 +68,6 @@ def _copy_plugin(plugin_root: Path, *, include_graph: bool = False) -> None:
     shutil.copy2(CORE, plugin_root / CORE.name)
     shutil.copy2(ROOT / "officina.toml", plugin_root / "officina.toml")
     shutil.copy2(ROOT / ".mcp.json", plugin_root / ".mcp.json")
-    shutil.copy2(ROOT / "plugin.json", plugin_root / "plugin.json")
     shutil.copy2(ROOT / "mcp.json", plugin_root / "mcp.json")
     shutil.copytree(ROOT / "src", plugin_root / "src")
     shutil.copytree(

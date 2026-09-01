@@ -6,8 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/llmhooks/inject_dispatcher_context.py", "--claude"],
+            "command": "python \"${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT}}/llmhooks/inject_dispatcher_context.py\" --claude",
             "async": false
           }
         ]

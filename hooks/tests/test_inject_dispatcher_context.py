@@ -45,16 +45,30 @@ def _assert_dispatcher_context(text: str) -> None:
     assert len(text) <= 750
 
 
-def test_packaged_hook_declares_common_python_and_shared_hook() -> None:
-    """Break caught: the packaged hook bypasses the shared Python contract."""
+@pytest.mark.parametrize("plugin_root_variable", ["CLAUDE_PLUGIN_ROOT", "PLUGIN_ROOT"])
+def test_packaged_hook_command_runs_without_separate_args(
+    tmp_path: Path, plugin_root_variable: str
+) -> None:
+    """Break caught: Codex ignores a separate args field for command hooks."""
     payload = json.loads((_REPO_ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))
     hook = payload["hooks"]["SessionStart"][0]["hooks"][0]
+    python_bin = tmp_path / "bin"
+    python_bin.mkdir()
+    (python_bin / "python").symlink_to(sys.executable)
 
-    assert hook["command"] == "python"
-    assert hook["args"] == [
-        "${CLAUDE_PLUGIN_ROOT}/llmhooks/inject_dispatcher_context.py",
-        "--claude",
-    ]
+    result = subprocess.run(
+        hook["command"],
+        shell=True,
+        input=json.dumps({"hook_event_name": "SessionStart", "source": "startup"}),
+        text=True,
+        capture_output=True,
+        env={plugin_root_variable: str(_REPO_ROOT), "PATH": str(python_bin)},
+    )
+
+    assert result.returncode == 0, result.stderr
+    output = json.loads(result.stdout)
+    assert output["hookSpecificOutput"]["hookEventName"] == "SessionStart"
+    _assert_dispatcher_context(output["hookSpecificOutput"]["additionalContext"])
 
 
 def test_background_profile_declares_common_python_and_shared_hook() -> None:

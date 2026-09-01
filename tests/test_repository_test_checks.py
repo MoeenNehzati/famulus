@@ -1370,10 +1370,6 @@ def test_precommit_hook_commits_synchronized_plugin_versions(
             '{\n  "name": "famulus",\n  "version": "0.1.0"\n}\n',
             encoding="utf-8",
         )
-    (repository.root / "plugin.json").write_text(
-        '{\n  "name": "famulus",\n  "version": "0.1.0"\n}\n',
-        encoding="utf-8",
-    )
     hooks = repository.root / ".githooks"
     scripts = repository.root / "scripts"
     hooks.mkdir()
@@ -1450,11 +1446,6 @@ def test_precommit_hook_commits_synchronized_plugin_versions(
         assert json.loads(
             (repository.root / directory / "plugin.json").read_text(encoding="utf-8")
         )["version"] == "0.1.0"
-    for reference in ("HEAD:plugin.json", ":plugin.json"):
-        assert json.loads(repository.git("show", reference).stdout)["version"] == "0.1.0"
-    assert json.loads(
-        (repository.root / "plugin.json").read_text(encoding="utf-8")
-    )["version"] == "0.1.0"
     assert os.environ["GIT_INDEX_FILE"] == str(ambient_index)
     assert not ambient_index.exists()
 
@@ -1483,11 +1474,6 @@ def test_precommit_hook_commits_synchronized_plugin_versions(
         assert json.loads(
             (repository.root / directory / "plugin.json").read_text(encoding="utf-8")
         )["version"] == "1.2.3"
-    for reference in ("HEAD:plugin.json", ":plugin.json"):
-        assert json.loads(repository.git("show", reference).stdout)["version"] == "1.2.3"
-    assert json.loads(
-        (repository.root / "plugin.json").read_text(encoding="utf-8")
-    )["version"] == "1.2.3"
     assert os.environ["GIT_INDEX_FILE"] == str(ambient_index)
     assert not ambient_index.exists()
 
