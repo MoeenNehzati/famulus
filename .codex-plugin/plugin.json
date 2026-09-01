@@ -1,7 +1,7 @@
 {
   "name": "famulus",
   "version": "0.0.0",
-  "description": "Personal productivity, writing, math, and automation skills",
+  "description": "Personal and research assistant combining model guidance with Python code",
   "author": {
     "name": "Moeen Nehzati",
     "url": "https://github.com/MoeenNehzati"
@@ -22,8 +22,8 @@
   "hooks": "./hooks/hooks.json",
   "interface": {
     "displayName": "Famulus",
-    "shortDescription": "Personal writing, math, and productivity skills",
-    "longDescription": "Personal skill library for technical writing, mathematical review, LaTeX workflows, planning, lists, calendar, email, weather, and local automation.",
+    "shortDescription": "Personal and research assistant with Python-backed skills",
+    "longDescription": "A personal and research assistant plugin that combines model-interpreted instructions with machine-executable Python for writing, mathematical review, planning, lists, calendar, email, weather, and local automation.",
     "developerName": "Moeen Nehzati",
     "category": "Productivity",
     "capabilities": [

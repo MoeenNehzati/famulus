@@ -1,6 +1,6 @@
 {
   "name": "famulus",
-  "description": "Personal productivity skills \u2014 daily planning, calendar, lists, writing, and math tooling",
+  "description": "Personal and research assistant combining model guidance with machine-executable Python",
   "author": {
     "name": "Moeen Nehzati"
   },

@@ -1,8 +1,10 @@
 # Personal Assistance Quickstart
 
-Personal assistance combines lists, email, calendar, weather, daily planning,
-session continuity, and end-of-day review. Most users start with `daily-plan`
-and invoke the narrower skills only for a standalone task.
+Famulus's personal-assistance subsystem is organized around two core lists
+managed by `list-manager`: `todo`, for actions you have committed to, and
+`triage`, for possibilities awaiting your decision. The surrounding skills
+capture items, plan work from them, and reconcile outcomes back into the same
+persistent state.
 
 ## Start here
 
@@ -15,51 +17,29 @@ Recurring assistant jobs are also experimental and must be enabled explicitly.
 Review the [security and privacy boundary](../security-and-privacy.md) before
 connecting an account or scheduling a job.
 
-## What to use when
-
-| Need | Skill |
-|---|---|
-| Connect or restore Google Drive, Calendar, or Gmail | `connect-google` |
-| Initialize, inspect, or change a persistent list; accept a triage item | `list-manager` |
-| Plan the day or review today's plan | `daily-plan` |
-| Process the whole inbox for possible actions | `email-triage` |
-| Read, reply to, send, or otherwise manage specific email | `email-client` |
-| View or change calendar events without making a daily plan | `online-calendar` |
-| Check weather without making a daily plan | `get-weather` |
-| Schedule daily planning, inbox triage, or another assistant job | [`recurring-tasks`](automation.md) |
-| Preserve decisions and lessons from a substantial work session | `prepare-handoff` |
-| Resume a session after a usage reset or timeout | `llm-wakeup` |
-| Review progress and close the day | `wrap-up` |
-| Report a failed or incorrect Famulus workflow | `send-feedback` |
-
-`cloud-files` is the storage boundary used by `list-manager` and `daily-plan`;
-users normally reach it through those skills rather than invoking it directly.
-
-## How the workflow fits together
+## How a day fits together
 
 ### Lists and inbox triage
 
-`list-manager` maintains two central lists. `todo` contains committed actions
+`list-manager` governs the two core lists. `todo` contains committed actions
 and uses the states `incomplete`, `inprogress`, and `complete`. `triage`
 contains suggestions awaiting a decision and uses `undecided`, `accepted`, and
 `rejected`. Accepting a triage item creates a matching incomplete todo item.
 Items have a title, deadline, and state, and may also include a description or
 physical location.
 
-`email-triage` reads new mail through `email-client`, skips clear promotional
-material, and extracts possible actions. Explicit obligations such as bills,
-owed replies, and follow-up commitments go to `todo`; optional opportunities
-such as seminars, calls for papers, and signups go to `triage`. Use
-`recurring-tasks` when you want this scan to run automatically in the
-background. See the [Automation Quickstart](automation.md) before enabling an
-unattended job.
+`email-triage` reads new mail through `email-client` and identifies possible
+actions. Explicit obligations such as bills, owed replies, and follow-up
+commitments go to `todo`; optional opportunities such as seminars, calls for
+papers, and signups go to `triage` for your decision.
 
 ### Daily planning
 
 `daily-plan` combines today's calendar, upcoming birthday events, the weather,
-near-deadline todo items, and undecided triage items. It works with both lists
-through `list-manager`, so list decisions and completed actions remain aligned
-with the daily plan.
+deadline-prioritized todo items, and undecided triage items. It presents the
+list items alongside an approximate free-time estimate; you decide what fits
+into the day. List decisions and completed actions remain aligned with the
+stored daily plan.
 
 Use the plan to choose what to do today, then report progress as the day
 continues. For a calendar-only, email-only, list-only, or weather-only request,
@@ -79,6 +59,43 @@ At the end of the day, use `wrap-up`. It reviews the daily plan, collects one
 update about completed and unplanned work, and updates the plan and lists. It
 also uses `find-handoff-candidates` to identify recent sessions that may still
 need `prepare-handoff` and adds them to `triage` for review.
+
+## What the model and Python each do
+
+The model handles interpretation: for example, deciding whether an email
+contains an obligation or merely an opportunity, and helping you choose what
+to do today. Python tools handle the repeatable mechanics around that judgment,
+including filtering previously processed mail, validating list changes,
+ordering items, persisting plans, and tracking scheduled runs.
+
+## Automate repeated steps
+
+Use `recurring-tasks` when you want inbox triage or daily planning to run
+automatically in the background. Scheduled `email-triage` runs can add items to
+the two lists, and scheduled `daily-plan` runs can prepare a plan from their
+current state. No recurring jobs are enabled by default: configure and test the
+underlying skill first, then see the [Automation Quickstart](automation.md).
+
+## What to use when
+
+| Need | Skill |
+|---|---|
+| Connect or restore Google Drive, Calendar, or Gmail | `connect-google` |
+| Initialize, inspect, or change a persistent list; accept a triage item | `list-manager` |
+| Plan the day or review today's plan | `daily-plan` |
+| Process the whole inbox for possible actions | `email-triage` |
+| Read, reply to, send, or otherwise manage specific email | `email-client` |
+| View or change calendar events without making a daily plan | `online-calendar` |
+| Check weather without making a daily plan | `get-weather` |
+| Schedule daily planning, inbox triage, or another assistant job | [`recurring-tasks`](automation.md) |
+| Preserve decisions and lessons from a substantial work session | `prepare-handoff` |
+| Resume a session after a usage reset or timeout | `llm-wakeup` |
+| Review progress and close the day | `wrap-up` |
+| Report a failed or incorrect Famulus workflow | `send-feedback` |
+
+`cloud-files` provides storage beneath the lists and plans. Users normally
+reach it through `list-manager` and `daily-plan` rather than invoking it
+directly.
 
 ### Reporting problems
 

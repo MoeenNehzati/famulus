@@ -5,9 +5,14 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/MoeenNehzati/famulus/blob/master/LICENSE)
 
-Famulus is a collection of skills for Claude Code and Codex. You can ask it to
-plan your day, review a paper or proof, work safely in a codebase, schedule
-recurring tasks, or preserve the context needed for the next session.
+Famulus is a plugin for Claude Code and Codex designed to serve as a personal
+and research assistant. You can ask it to plan your day, review a paper or
+proof, work safely in a codebase, schedule recurring tasks, or preserve the
+context needed for the next session.
+
+Famulus combines model-interpreted instructions with machine-executable code,
+currently primarily Python, so complex tasks do not rely on model judgment at
+every step.
 
 Once it is installed, you just ask:
 
@@ -30,13 +35,35 @@ For personal organization, Famulus can:
 - extract triage items from your email
 - close loose ends by updating project documentation and preserving useful lessons
 
-It can use your calendar and lists to plan the day, record your progress when
-you wrap up, and flag sessions that still need a handoff.
+This part of Famulus is organized around `list-manager` and two core lists.
+`todo` records actions you have committed to, while `triage` holds possibilities
+awaiting your decision. `email-triage` adds direct obligations and possible
+actions from incoming mail. `daily-plan` places deadline-prioritized list items
+alongside calendar commitments and an approximate free-time estimate, helping
+you decide what fits into the day. `wrap-up` reconciles completed, unplanned,
+and unresolved work with the plan and lists, and flags sessions that may still
+need a handoff. Inbox triage and daily planning can also run automatically
+after you explicitly configure and test them.
 
 For research and writing, Famulus can review document flow and prose, check
 notation consistency across a paper, audit mathematical proofs, draw dependency
 graphs for mathematical results, and inspect bibliographies for version
 mismatches, hallucinated metadata, and newer available versions.
+
+## How Famulus Works
+
+You interact with Famulus in ordinary language. The model interprets your
+request, applies judgment, and coordinates the relevant tools. Local Python
+code handles repeatable operations such as validating and persisting lists,
+ordering items by deadline, filtering previously processed email, rendering
+and storing plans, tracking run state, and scheduling background jobs. This
+division reduces how much of the task must be carried out through model
+judgment, which can lower token use, cost, and opportunities for stochastic
+failure.
+
+[Officina](docs/officina/README.md) keeps these model-interpreted instructions
+and machine-executable components organized as one maintainable system. It
+makes their ownership, interfaces, dependencies, and authority explicit.
 
 ## Requirements
 
@@ -116,7 +143,8 @@ Start with the quickstart closest to what you want to do:
   disable recurring assistant jobs
 - [Skill Development](docs/quickstarts/skill-development.md) — create,
   refactor, maintain, and certify skills with
-  [Officina](docs/officina/README.md), the framework behind Famulus
+  [Officina](docs/officina/README.md), the framework that structures Famulus's
+  model-interpreted and machine-executable components
 
 See [Security and Privacy](docs/security-and-privacy.md) before connecting an
 account or enabling unattended work.
@@ -138,7 +166,9 @@ Example prompts:
 - `What's on the plan?`
 
 Result:
-Famulus assembles a current plan, highlights what fits into the day, and stores the plan so later workflows can build on it.
+Famulus places calendar commitments, an approximate free-time estimate, and
+deadline-prioritized todo and triage items in one plan, then stores it so later
+actions can build on it.
 
 ### Prepare a handoff
 
@@ -218,9 +248,10 @@ For a broader list of skills and prompt ideas, see the
 
 Famulus is designed to be cross-platform. The plugin is written to the
 intersection of the Claude Code and Codex plugin standards, so one package
-serves both hosts, and almost all of the logic lives in Python rather than in
-shell, so the same code runs on every operating system. CI covers the install
-and packaging paths on Linux, macOS, and Windows.
+serves both hosts. Its machine-executable runtime is written primarily in
+Python rather than shell, while its model-interpreted instructions are
+host-neutral. CI covers the install and packaging paths on Linux, macOS, and
+Windows.
 
 That said, Famulus has only been thoroughly exercised by hand on Linux, so
 installation and day-to-day behavior on macOS and Windows may be rougher. The
@@ -293,7 +324,8 @@ through your Google account if you no longer want Famulus to use it.
 - [Setup](docs/setup.md) — selected-Python requirements, shared MCP routing,
   and demand-driven feature setup
 - [Officina](docs/officina/README.md) — the framework for developing and
-  operating mixed LLM and code systems
+  maintaining systems that combine model-interpreted instructions with
+  machine-executable code
 
 ## Support
 

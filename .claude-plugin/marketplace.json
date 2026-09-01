@@ -3,12 +3,12 @@
   "owner": {
     "name": "Moeen Nehzati"
   },
-  "description": "Famulus skills for Claude Code",
+  "description": "Famulus personal and research assistant plugin for Claude Code",
   "plugins": [
     {
       "name": "famulus",
       "source": "./",
-      "description": "Personal productivity skills — daily planning, calendar, lists, writing, and math tooling"
+      "description": "Personal and research assistant combining model guidance with machine-executable Python"
     }
   ]
 }

@@ -49,8 +49,11 @@ the job once and confirm that it produced the expected result. If it fails or
 stops running, use `recurring-tasks` to inspect the failure and help repair it.
 
 Common recurring workflows include inbox triage and daily planning:
-`email-triage` updates the personal lists, while `daily-plan` creates the day's
-plan.
+`email-triage` can add obligations to `todo` and opportunities to `triage`,
+while `daily-plan` prepares the day's plan from the current lists and calendar.
+These jobs operate on the same persistent personal-assistance state as their
+interactive versions; scheduling changes when they run, not what data they
+use.
 
 ## Operate and troubleshoot
 

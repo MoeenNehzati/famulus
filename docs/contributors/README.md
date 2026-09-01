@@ -1,8 +1,10 @@
 # Contributor Guide
 
-This is the maintainer and skill-extension entry point for Famulus. Start here
-to understand how the skill system is organized, how new skills are added, and
-how documentation and validation stay aligned with live blueprints.
+This is the maintainer and skill-extension entry point for Famulus. Famulus
+combines model-interpreted instructions with machine-executable components;
+start here to understand how those components are organized, how new behavior
+is added, and how documentation and validation stay aligned with live
+blueprints.
 
 For a compact map of which authoring, refactoring, blueprint, standards, and
 certification skill to use, start with the
@@ -12,12 +14,22 @@ certification skill to use, start with the
 
 The skill system is built around a small set of explicit authored surfaces:
 
-- [`SKILL.md`](../../skills/skill-maker/SKILL.md) for trigger and usage guidance
+- [`SKILL.md`](../../skills/skill-maker/SKILL.md) for model-interpreted trigger
+  and usage guidance
 - [`blueprint.yaml`](../../skills/skill-maker/blueprint.yaml) for the module boundary, exports, access, and discovery
 - `blueprints/*.yaml` under each module root for that module's behavioral
   sources, intrinsic interfaces, dependencies, and process bindings
-- an optional `_rtx/` child module for owned executable behavior
+- an optional `_rtx/` child module for owned machine-executable behavior
 - private runtime files, tests, schemas, and references for implementation
+
+Contributors should use the most formal adequate representation for each part
+of the behavior: deterministic code for mechanically decidable operations,
+structured contracts for formal facts, and free-form instructions for the
+semantic remainder. When behavior crosses an ownership boundary, declare the
+dependency and use an exposed interface rather than relying on physical access
+to another node's internals. The
+[Architectural Principles](../officina/architectural-principles.md) state these
+rules in full.
 
 Start with these architecture and contract references:
 

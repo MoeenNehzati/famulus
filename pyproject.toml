@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "famulus-officina"
 version = "0.0.0"
-description = "Shared Famulus MCP and blueprint-authorized Dispatcher implementation"
+description = "Python runtime and shared infrastructure for the Famulus plugin"
 requires-python = ">=3.11"
 dependencies = ["PyYAML>=6", "jsonschema>=4,<5", "mcp>=1,<2"]
 

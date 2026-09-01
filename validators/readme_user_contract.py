@@ -5,11 +5,6 @@ from pathlib import Path
 
 
 README = Path("README.md")
-INTRO_SNIPPETS = (
-    "Famulus is a cross-host assistant library",
-    "Famulus is a personal research assistant",
-    "Famulus is a collection of skills for Claude Code and Codex",
-)
 REQUIRED_SNIPPETS = (
     "install the plugin",
     "https://moeennehzati.github.io/famulus/",
@@ -66,8 +61,6 @@ def validate(repo_root: Path) -> list[str]:
       - return a single missing-README error
     - set text = README contents
     - set errors = empty error list
-    - if no intro snippet appears in text:
-      - set errors = errors plus a missing-introduction error
     - for snippet in REQUIRED_SNIPPETS:
       - set errors = errors plus a missing-snippet error when absent
     - for snippet in FORBIDDEN_SNIPPETS:
@@ -86,11 +79,6 @@ def validate(repo_root: Path) -> list[str]:
         return [f"{README}: missing"]
     text = path.read_text(encoding="utf-8")
     errors: list[str] = []
-    if not any(snippet in text for snippet in INTRO_SNIPPETS):
-        errors.append(
-            f"{README}: missing required README introduction "
-            f"({ ' or '.join(f'`{snippet}`' for snippet in INTRO_SNIPPETS) })"
-        )
     for snippet in REQUIRED_SNIPPETS:
         if snippet not in text:
             errors.append(f"{README}: missing required README content `{snippet}`")

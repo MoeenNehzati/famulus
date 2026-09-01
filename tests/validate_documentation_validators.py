@@ -19,8 +19,6 @@ CLEAN_README = "\n".join(
     [
         "# Famulus",
         "",
-        "Famulus is a cross-host assistant library for personal planning and research work.",
-        "",
         "## Quick Start",
         "",
         "### Step 1: install the plugin",

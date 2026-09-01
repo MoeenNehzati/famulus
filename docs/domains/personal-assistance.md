@@ -1,7 +1,14 @@
 # Personal Assistance
 
-This page lists the skills in the personal-assistance domain. For first-time
-setup, skill routing, and the typical daily workflow, see the
+The personal-assistance domain is organized around `list-manager` and two core
+lists: `todo` for committed actions and `triage` for possibilities awaiting a
+decision. Other skills produce, consume, or reconcile this shared state:
+`email-triage` captures actions, `daily-plan` uses list items in planning, and
+`wrap-up` records outcomes and unresolved handoffs. These model-directed skills
+use Python tools for repeatable operations such as validation, persistence,
+ordering, filtering, and run-state tracking.
+
+For first-time setup, skill routing, and the typical daily sequence, see the
 [Personal Assistance Quickstart](../quickstarts/personal-assistance.md).
 
 <!-- BEGIN AUTO-GENERATED DOCS: personal-assistance -->
