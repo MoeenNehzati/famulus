@@ -8,8 +8,11 @@ __all__ = [
     "InvocationError",
     "ResolvedInvocation",
     "ResolvedInvocationMetadata",
+    "authorize_direct_invocation",
     "authorize_host_caller",
     "dispatch",
+    "load_direct_setup_projection",
+    "materialize_authorized_invocation",
     "resolve_direct_invocation",
     "resolve_dispatch",
     "resolve_dispatch_metadata",
@@ -21,10 +24,13 @@ def __getattr__(name: str):
 
     if name not in __all__:
         raise AttributeError(name)
-    if name == "resolve_direct_invocation":
-        from .direct_authorization import resolve_direct_invocation
+    if name in {"authorize_direct_invocation", "resolve_direct_invocation"}:
+        module = import_module(".direct_authorization", __name__)
+        value = getattr(module, name)
+    elif name == "load_direct_setup_projection":
+        from officina.blueprints.direct_setup import load_direct_setup_projection
 
-        value = resolve_direct_invocation
+        value = load_direct_setup_projection
     else:
         value = getattr(import_module(".direct_runtime", __name__), name)
     globals()[name] = value

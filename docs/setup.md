@@ -90,6 +90,17 @@ Famulus MCP preflight use the same lifecycle:
    `authorize@1`, and resumes the original request exactly once only when
    `resume_original` is true.
 
+For its direct classification, MCP authorizes the requested route once and
+reuses that invocation's repository and loaded target ancestry. Blueprint paths
+are derived directly as `module_id -> configured root/module segments/blueprint.yaml`;
+MCP does not catalogue modules. A route whose loaded ancestry proves it
+unmanaged bypasses setup-interface-manager entirely. For a managed route,
+among manager routes only `status@1` and `authorize@1` load a fresh route-local
+sparse graph containing the target ancestry and explicit setup prerequisite
+closure. Setup, teardown, run/settle/recover, and invalidation keep the canonical
+full repository graph because their semantics are not limited to the ordinary
+preflight hot path.
+
 The caller retains the original arguments and stdin throughout this switch.
 The manager stores only caller, interface, and version as continuation identity.
 For a Python setup action it accepts one JSON object on stdin and projects only
@@ -110,7 +121,8 @@ the single absolute `setup-status` path returned by
 file through its confined atomic adapter; no public manager route accepts a
 ledger path. An exact interface/version receipt means the declared verifier
 passed. Its `required_by` roots record which managed workflows still claim that
-state.
+state. MCP never reads or writes this ledger directly; setup-interface-manager
+remains its sole authority.
 
 The ledger does not say whether the shared Famulus MCP process is currently
 reachable. Live `famulus.invoke` availability is the MCP readiness signal, and

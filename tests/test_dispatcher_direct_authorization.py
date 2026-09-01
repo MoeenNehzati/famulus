@@ -8,6 +8,7 @@ import pytest
 import yaml
 
 import officina.dispatcher as dispatcher_package
+import officina.dispatcher.direct_authorization as direct_authorization
 import officina.dispatcher.direct_runtime as direct_runtime
 from officina.configuration.repository import RepositoryConfiguration
 from officina.dispatcher.direct_authorization import resolve_direct_invocation
@@ -29,6 +30,36 @@ SOURCE_INTERFACE_ID = f"{SOURCE_ID}.interface.execute"
 
 def test_dispatcher_package_exports_direct_resolver() -> None:
     assert dispatcher_package.resolve_direct_invocation is resolve_direct_invocation
+
+
+def test_authorize_then_compile_matches_public_direct_resolution(tmp_path: Path) -> None:
+    configuration = _repository(
+        tmp_path,
+        terminal_access=_access(public=True),
+        with_value_argument=True,
+    )
+    expected = resolve_direct_invocation(
+        configuration=configuration,
+        caller_module_id="root",
+        interface_id=INTERFACE_ID,
+        interface_version=3,
+        argv=["value"],
+        stdin_requested=False,
+    )
+
+    authorized = direct_authorization.authorize_direct_invocation(
+        configuration=configuration,
+        caller_module_id="root",
+        interface_id=INTERFACE_ID,
+        interface_version=3,
+    )
+    actual = direct_authorization.compile_direct_invocation(
+        authorized,
+        argv=["value"],
+        stdin_requested=False,
+    )
+
+    assert actual == expected
 
 
 def _access(*callers: str, public: bool = False) -> dict[str, object]:
@@ -89,6 +120,7 @@ def _repository(
     terminal_access: dict[str, object],
     root_gate: dict[str, object] | None = None,
     alpha_gate: dict[str, object] | None = None,
+    with_value_argument: bool = False,
 ) -> RepositoryConfiguration:
     modules = tmp_path / "skills"
     modules.mkdir()
@@ -123,6 +155,39 @@ def _repository(
     }
     for module_id, document in documents.items():
         _write_yaml(modules.joinpath(*module_id.split("."), "blueprint.yaml"), document)
+    source_interface: dict[str, object] = {
+        "version": 3,
+        "contract": {"arguments": {}},
+        "process_binding": {
+            "kind": "process",
+            "entry": "Interface",
+            "args_prefix": ["read"],
+            "arguments": {},
+        },
+    }
+    if with_value_argument:
+        source_interface["contract"] = {
+            "arguments": {
+                "value": {
+                    "description": "Value.",
+                    "required": True,
+                    "sensitivity": "public",
+                    "type": {"kind": "string"},
+                }
+            }
+        }
+        source_interface["process_binding"] = {
+            "kind": "process",
+            "entry": "Interface",
+            "args_prefix": ["read"],
+            "arguments": {
+                "value": {
+                    "kind": "positional",
+                    "position": 0,
+                    "arity": {"minimum": 1, "maximum": 1},
+                }
+            },
+        }
     source = {
         "schema_version": 6,
         "node_type": "behavioral_source",
@@ -133,16 +198,7 @@ def _repository(
         "dependencies": [],
         "uses_interfaces": [],
         "interfaces": {
-            SOURCE_INTERFACE_ID: {
-                "version": 3,
-                "contract": {"arguments": {}},
-                "process_binding": {
-                    "kind": "process",
-                    "entry": "Interface",
-                    "args_prefix": ["read"],
-                    "arguments": {},
-                },
-            }
+            SOURCE_INTERFACE_ID: source_interface
         },
     }
     _write_yaml(modules / "root" / "alpha" / "leaf" / "blueprints" / "runtime.yaml", source)

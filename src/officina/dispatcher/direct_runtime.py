@@ -23,7 +23,10 @@ from officina.configuration.repository import (
     load_repository_configuration,
 )
 from officina.dispatcher.direct_authorization import (
+    AuthorizedDirectInvocation,
+    authorize_direct_invocation,
     authorize_host_caller as authorize_direct_host_caller,
+    compile_direct_invocation,
     resolve_direct_invocation,
 )
 from officina.dispatcher.direct_models import (
@@ -139,50 +142,30 @@ def _confined_environment(
     return env
 
 
-def _materialize(
-    *,
-    repository_config: Path,
-    caller_module_id: str,
-    target: str,
-    args: list[str],
-    stdin_requested: bool,
-    target_version: int | None,
-    host_caller: bool,
+def _materialize_metadata(
+    configuration: RepositoryConfiguration,
+    metadata: ResolvedInvocationMetadata,
 ) -> ResolvedInvocation:
-    """Authorize one route and construct its confined Python runner command.
+    """Construct the confined Python runner command for compiled metadata.
 
     The selected source must produce a complete logical Python target. Missing
     runner metadata is reported as authored runtime misconfiguration before a
     subprocess exists. No gateway module is imported in the dispatcher.
     """
 
-    configuration = _load_configuration(
-        repository_config,
-        caller_module_id=caller_module_id,
-        target=target,
-    )
-    metadata = resolve_direct_invocation(
-        configuration=configuration,
-        caller_module_id=caller_module_id,
-        interface_id=target,
-        interface_version=target_version,
-        argv=args,
-        stdin_requested=stdin_requested,
-        host_caller=host_caller,
-    )
     python_target = metadata.python_target
     if python_target is None:
         raise RuntimeMisconfiguredError(
-            f"{target}: direct route has no Python target",
-            caller_module_id=caller_module_id,
+            f"{metadata.target}: direct route has no Python target",
+            caller_module_id=metadata.caller_module_id,
             target_module_id=metadata.target_module_id,
         )
     logical_package = python_target.logical_package
     logical_entrypoint = python_target.logical_entrypoint
     if logical_package is None or logical_entrypoint is None:
         raise RuntimeMisconfiguredError(
-            f"{target}: direct route has no logical Python package",
-            caller_module_id=caller_module_id,
+            f"{metadata.target}: direct route has no logical Python package",
+            caller_module_id=metadata.caller_module_id,
             target_module_id=metadata.target_module_id,
         )
     command = [
@@ -214,6 +197,53 @@ def _materialize(
         metadata_value=metadata,
         command=command,
         env=_confined_environment(configuration, metadata.cwd),
+    )
+
+
+def materialize_authorized_invocation(
+    authorized: AuthorizedDirectInvocation,
+    *,
+    argv: list[str],
+    stdin_requested: bool,
+) -> ResolvedInvocation:
+    """Compile one authorized route and construct its confined runner."""
+
+    metadata = compile_direct_invocation(
+        authorized,
+        argv=argv,
+        stdin_requested=stdin_requested,
+    )
+    return _materialize_metadata(authorized.repository.configuration, metadata)
+
+
+def _materialize(
+    *,
+    repository_config: Path,
+    caller_module_id: str,
+    target: str,
+    args: list[str],
+    stdin_requested: bool,
+    target_version: int | None,
+    host_caller: bool,
+) -> ResolvedInvocation:
+    """Authorize one route and construct its confined Python runner command."""
+
+    configuration = _load_configuration(
+        repository_config,
+        caller_module_id=caller_module_id,
+        target=target,
+    )
+    authorized = authorize_direct_invocation(
+        configuration=configuration,
+        caller_module_id=caller_module_id,
+        interface_id=target,
+        interface_version=target_version,
+        host_caller=host_caller,
+    )
+    return materialize_authorized_invocation(
+        authorized,
+        argv=args,
+        stdin_requested=stdin_requested,
     )
 
 
