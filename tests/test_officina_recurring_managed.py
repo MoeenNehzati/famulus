@@ -328,7 +328,8 @@ def test_linux_sync_from_another_installation_replaces_the_shared_set(tmp_path, 
     assert sorted(path.name for path in shared.glob("ai-*.*")) == [
         "ai-new.service", "ai-new.timer", "ai-recurring-healthcheck.sh"
     ]
-    assert str(second.descriptor_path) in (shared / "ai-new.service").read_text()
+    rendered_descriptor = str(second.descriptor_path).replace("\\", "\\\\")
+    assert rendered_descriptor in (shared / "ai-new.service").read_text()
     assert str(second.descriptor_path) in (shared / "ai-recurring-healthcheck.sh").read_text()
     assert json.loads((shared / "install-owner.json").read_text())["owner_id"] == second.owner_id
 
@@ -359,7 +360,12 @@ def test_failed_reconciliation_restores_previous_owner_and_complete_set(tmp_path
     def run(argv, **kwargs):
         nonlocal calls
         pending = second.state_root / "registrations.pending.json"
-        if pending.exists() and second.owner_id in pending.read_text(encoding="utf-8") and argv[-1] == "ai-new.timer" and calls == 0:
+        pending_owner = (
+            json.loads(pending.read_text(encoding="utf-8"))["owner_id"]
+            if pending.exists()
+            else None
+        )
+        if pending_owner == second.owner_id and argv[-1] == "ai-new.timer" and calls == 0:
             calls += 1
             raise subprocess.CalledProcessError(1, argv)
         return subprocess.CompletedProcess(argv, 0)
@@ -393,10 +399,10 @@ def test_failed_same_owner_setup_keeps_previous_descriptor_plugin_and_native_set
 
     def run(argv, **kwargs):
         nonlocal failed
-        if not failed and argv[-1] == "daemon-reload" and new_plugin.as_posix() in (first.native_registration_root / "ai-same.service").read_text():
+        if not failed and argv[-1] == "daemon-reload" and "plugin two" in (first.native_registration_root / "ai-same.service").read_text():
             failed = True
             raise subprocess.CalledProcessError(1, argv)
-        return subprocess.CompletedProcess(argv, 0)
+        return subprocess.CompletedProcess(argv, 0, stdout="")
 
     monkeypatch.setattr(native.subprocess, "run", run)
     native.sync(first)
