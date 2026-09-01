@@ -20,7 +20,7 @@ RUNTIME_PATH = Path(__file__).resolve().parents[1] / "_compact_relocation.py"
 
 def _write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    path.write_bytes(text.encode("utf-8"))
 
 
 def _fixture(root: Path) -> dict[str, object]:
@@ -284,7 +284,8 @@ def test_failed_verification_rolls_back_every_change(tmp_path: Path) -> None:
         if path.is_file()
     }
     assert after == before
-    assert source_directory.stat().st_mode & 0o777 == 0o750
+    if os.name != "nt":
+        assert source_directory.stat().st_mode & 0o777 == 0o750
     assert unrelated_empty.is_dir()
 
 

@@ -517,7 +517,7 @@ def _validate_blueprints(
                         )
                     ):
                         context = (
-                            f"{rel_path}: authority.suggested_permissions."
+                            f"{rel_path.as_posix()}: authority.suggested_permissions."
                             f"bash[{index}]"
                         )
                         tokens = [*command, *args_prefix]
@@ -559,7 +559,9 @@ def _validate_blueprints(
                 for platform in ("linux", "macos", "windows")
             ):
                 continue
-            context = f"{rel_path}: runtime_dependencies[{index}].name"
+            context = (
+                f"{rel_path.as_posix()}: runtime_dependencies[{index}].name"
+            )
             errors.extend(_command_violations([name], context))
     return errors
 
@@ -916,7 +918,7 @@ def _validate_raw_git_test(
         )
         if annotation is None:
             errors.append(
-                f"{rel_path}:{node.lineno}: {kind} call requires an immediately "
+                f"{rel_path.as_posix()}:{node.lineno}: {kind} call requires an immediately "
                 "preceding famulus-raw-git annotation"
             )
             continue
@@ -924,12 +926,12 @@ def _validate_raw_git_test(
         reason = annotation.group(2).strip()
         if category not in _RAW_GIT_CATEGORIES:
             errors.append(
-                f"{rel_path}:{node.lineno}: unknown famulus-raw-git category "
+                f"{rel_path.as_posix()}:{node.lineno}: unknown famulus-raw-git category "
                 f"`{category}`"
             )
         elif not reason:
             errors.append(
-                f"{rel_path}:{node.lineno}: famulus-raw-git reason must not be empty"
+                f"{rel_path.as_posix()}:{node.lineno}: famulus-raw-git reason must not be empty"
             )
     return errors
 
@@ -974,7 +976,7 @@ def _validate_composite_python_targets(
         ):
             continue
         errors.append(
-            f"{rel_path}:{node.lineno}: composite Python process target is not "
+            f"{rel_path.as_posix()}:{node.lineno}: composite Python process target is not "
             "allowed; carry gateway path and process entry separately"
         )
     return errors
@@ -1077,7 +1079,7 @@ def _validate_runner_permission_documents(
                 None,
             )
             if composite is not None:
-                rel_path = path.relative_to(repo_root)
+                rel_path = path.relative_to(repo_root).as_posix()
                 errors.append(
                     f"{rel_path}: composite runner permission target "
                     f"`{composite}` is not allowed"
@@ -1175,11 +1177,15 @@ def _validate_python(
     try:
         analysis = _python_analysis(path, source_cache, analyses)
     except SyntaxError as exc:
-        return [f"{rel_path}:{exc.lineno}: failed to parse Python: {exc.msg}"]
+        return [
+            f"{rel_path.as_posix()}:{exc.lineno}: failed to parse Python: {exc.msg}"
+        ]
 
     for node in analysis.calls:
         if _is_os_system(node):
-            errors.append(f"{rel_path}:{node.lineno}: os.system is not cross-platform")
+            errors.append(
+                f"{rel_path.as_posix()}:{node.lineno}: os.system is not cross-platform"
+            )
             continue
 
         if not _is_subprocess_call(node):
@@ -1187,14 +1193,20 @@ def _validate_python(
 
         for kw in node.keywords:
             if kw.arg == "shell" and _is_true_constant(kw.value):
-                errors.append(f"{rel_path}:{node.lineno}: shell=True is not allowed")
+                errors.append(
+                    f"{rel_path.as_posix()}:{node.lineno}: shell=True is not allowed"
+                )
 
         if not node.args:
             continue
         tokens = _literal_string_tokens(node.args[0])
         if not tokens:
             continue
-        for error in _command_violations(tokens, f"{rel_path}:{node.lineno}", allowed_commands):
+        for error in _command_violations(
+            tokens,
+            f"{rel_path.as_posix()}:{node.lineno}",
+            allowed_commands,
+        ):
             errors.append(error)
 
     return errors
@@ -1312,7 +1324,9 @@ def _validate(
         ):
             continue
         if path.suffix in FORBIDDEN_SUFFIXES and _is_runtime_script(rel_path):
-            errors.append(f"{rel_path}: shell scripts are not allowed in shared skills")
+            errors.append(
+                f"{rel_path.as_posix()}: shell scripts are not allowed in shared skills"
+            )
             continue
         if path.name == "blueprint.yaml":
             continue

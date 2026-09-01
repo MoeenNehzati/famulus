@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Mapping
 
 from ..blueprints.graph import RepositoryBlueprintGraph
@@ -11,6 +11,10 @@ from .hashing import EVIDENCE_ONLY_RELATIONS, NodeHashState
 
 DAG_SCHEMA_VERSION = "officina.certification-dependency-dag/v1"
 _KINDS = {"module", "behavioral-source", "interface"}
+
+
+def _is_absolute_path_on_supported_host(path: str) -> bool:
+    return PurePosixPath(path).is_absolute() or PureWindowsPath(path).is_absolute()
 
 
 class DependencyDagError(ValueError):
@@ -142,7 +146,11 @@ def decode_dependency_dag(payload: object) -> dict[str, Any]:
     if payload["schema_version"] != DAG_SCHEMA_VERSION:
         raise DependencyDagError("unsupported dependency DAG schema")
     repository = payload["repository"]
-    if not isinstance(repository, str) or not repository or not Path(repository).is_absolute():
+    if (
+        not isinstance(repository, str)
+        or not repository
+        or not _is_absolute_path_on_supported_host(repository)
+    ):
         raise DependencyDagError("repository must be an absolute path")
     raw_nodes = payload["nodes"]
     if not isinstance(raw_nodes, list):

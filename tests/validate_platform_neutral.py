@@ -230,7 +230,8 @@ def test_exact_cross_host_allowlists_and_nearby_rejections_share_one_scan(
         source.write_text(content)
 
     assert set(_validate_text(tmp_path, monkeypatch)) == {
-        f"{relative_path}:1: {content.rstrip()}" for relative_path in rejected
+        f"{relative_path.as_posix()}:1: {content.rstrip()}"
+        for relative_path in rejected
     }
 
 

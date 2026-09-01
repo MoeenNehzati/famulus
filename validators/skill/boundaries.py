@@ -359,7 +359,7 @@ def validate_gateway_sys_path(repo_root: Path) -> list[str]:
                 continue
             if _guards_on_package(statement):
                 continue
-            rel = path.relative_to(repo_root)
+            rel = path.relative_to(repo_root).as_posix()
             errors.append(
                 f"{rel}:{statement.lineno}: unguarded module-scope sys.path "
                 f"mutation in a dispatcher-reachable gateway; guard it on "

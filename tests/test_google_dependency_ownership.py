@@ -123,6 +123,10 @@ def _expand(argv: list[str], canonical: str, packages: tuple[str, ...]) -> list[
     return result
 
 
+def _absolute_test_python(directory: str) -> str:
+    return str(Path(Path.cwd().anchor) / "tmp" / directory / "python")
+
+
 @dataclass
 class _OwnerHarness:
     failure: str | None = None
@@ -137,7 +141,9 @@ class _OwnerHarness:
     boundary_actions: list[tuple[str, str]] = field(default_factory=list)
     repaired_owners: set[str] = field(default_factory=set)
     fingerprint_counts: dict[str, int] = field(default_factory=dict)
-    canonical: str = "/tmp/Selected Python/python"
+    canonical: str = field(
+        default_factory=lambda: _absolute_test_python("Selected Python")
+    )
 
     def run(self, owner: str, argv: list[str]) -> tuple[int, str]:
         self.calls.append((owner, argv))
@@ -153,11 +159,11 @@ class _OwnerHarness:
             if active_failure == "relative-python" and self.fingerprint_counts[owner] == 1:
                 executable = "relative/python"
             if active_failure == "fingerprint-drift" and self.fingerprint_counts[owner] == 2:
-                executable = "/tmp/Other Python/python"
+                executable = _absolute_test_python("Other Python")
             fingerprint = {
                 "executable": executable,
-                "prefix": "/tmp/Selected Python",
-                "base_prefix": "/tmp/Selected Python",
+                "prefix": str(Path(self.canonical).parent),
+                "base_prefix": str(Path(self.canonical).parent),
                 "version": version,
             }
             return 0, json.dumps(fingerprint)

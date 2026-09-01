@@ -220,10 +220,11 @@ def _validate_python(
       why:
         constructs: "Builds the keyword lookup used by the policy checks."
     """
+    display_path = rel_path.as_posix()
     try:
         source, tree = source_cache.read_parse(path)
     except SyntaxError as exc:
-        return [f"{rel_path}:{exc.lineno}: failed to parse Python: {exc.msg}"]
+        return [f"{display_path}:{exc.lineno}: failed to parse Python: {exc.msg}"]
 
     if "subprocess" not in unicodedata.normalize("NFKC", source):
         return []
@@ -238,7 +239,7 @@ def _validate_python(
             continue
         if "encoding" not in keywords or "errors" not in keywords:
             errors.append(
-                f"{rel_path}:{node.lineno}: subprocess text mode must set "
+                f"{display_path}:{node.lineno}: subprocess text mode must set "
                 "both encoding and errors explicitly"
             )
     return errors

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import plistlib
 import stat
 from pathlib import Path
@@ -85,7 +86,8 @@ def test_late_failure_restores_command_file_identity(tmp_path: Path, monkeypatch
         )
 
     assert command.read_text() == "original command\n"
-    assert stat.S_IMODE(command.stat().st_mode) == 0o751
+    if os.name != "nt":
+        assert stat.S_IMODE(command.stat().st_mode) == 0o751
     assert alias.is_symlink()
     assert alias.readlink() == target
 
@@ -101,3 +103,22 @@ def test_controlled_outer_adapters_preserve_spaced_paths(tmp_path: Path, platfor
     else:
         assert str(python.resolve()) in (native / "famulus-llm-wakeup-due.cmd").read_text()
         assert calls[-1][-1] == str(native / "famulus-llm-wakeup-due.cmd")
+
+
+def test_darwin_setup_does_not_require_host_getuid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    python, plugin, bin_dir, native = roots(tmp_path)
+    calls = []
+    monkeypatch.delattr(os, "getuid", raising=False)
+
+    setup_integration(
+        python=python,
+        plugin_root=plugin,
+        bin_dir=bin_dir,
+        native_root=native,
+        platform="darwin",
+        run=lambda argv, **kwargs: calls.append(argv),
+    )
+
+    assert calls[-1][:3] == ["launchctl", "bootstrap", "gui/0"]

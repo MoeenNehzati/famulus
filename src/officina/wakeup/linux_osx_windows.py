@@ -147,7 +147,7 @@ def _run_native(
                 check=True,
             )
     elif platform == "darwin":
-        domain = f"gui/{os.getuid()}"
+        domain = f"gui/{os.getuid() if hasattr(os, 'getuid') else 0}"
         run(["launchctl", "bootout", domain, "com.famulus.llm-wakeup"], check=False)
         if not remove:
             run(["launchctl", "bootstrap", domain, str(targets[0])], check=True)

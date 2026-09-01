@@ -542,6 +542,17 @@ def test_validate_artifact_accepts_each_stage_in_a_complete_chain(
     assert result.errors == ()
 
 
+def test_validate_artifact_accepts_crlf_fenced_contract(repository: Path) -> None:
+    contract = _load_module("artifact_contract")
+    artifact = _write_artifact_chain(repository, "breakdown")["breakdown"]
+    artifact.write_bytes(artifact.read_bytes().replace(b"\n", b"\r\n"))
+
+    result = contract.validate_artifact(artifact, "breakdown")
+
+    assert result.valid is True
+    assert result.errors == ()
+
+
 @pytest.mark.parametrize(
     "stage",
     ("design-implementation", "implement", "finalize", "verify"),

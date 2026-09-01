@@ -559,7 +559,7 @@ def test_native_confined_reader_supports_readiness_and_rejects_changed_bytes(
     repo = tmp_path / "repo"
     path = repo / "skills" / "demo" / "SKILL.md"
     path.parent.mkdir(parents=True)
-    path.write_text("original\n", encoding="utf-8")
+    path.write_bytes(b"original\n")
     snapshot = GitSnapshot(repo.resolve(), "a" * 40)
     monkeypatch.setattr(
         git_provenance,
@@ -601,7 +601,7 @@ def test_native_confined_reader_supports_readiness_and_rejects_changed_bytes(
 
     assert result.stamp_worthy
     assert observed == [True]
-    path.write_text("changed\n", encoding="utf-8")
+    path.write_bytes(b"changed\n")
 
     changed = check_commit_readiness(snapshot, [path], {})
 

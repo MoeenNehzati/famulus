@@ -79,6 +79,7 @@ def _object_without_duplicates(pairs: list[tuple[str, object]]) -> dict[str, obj
 
 
 def _manifest_output(data: bytes, path: Path, version: str) -> bytes:
+    display_path = path.as_posix()
     try:
         text = data.decode("utf-8", errors="strict")
         payload = json.loads(
@@ -86,12 +87,18 @@ def _manifest_output(data: bytes, path: Path, version: str) -> bytes:
             object_pairs_hook=_object_without_duplicates,
         )
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise SynchronizationError(f"{path}: malformed UTF-8 JSON: {exc}") from exc
+        raise SynchronizationError(
+            f"{display_path}: malformed UTF-8 JSON: {exc}"
+        ) from exc
     if not isinstance(payload, dict):
-        raise SynchronizationError(f"{path}: top-level JSON value must be an object")
+        raise SynchronizationError(
+            f"{display_path}: top-level JSON value must be an object"
+        )
     current = payload.get("version")
     if not isinstance(current, str):
-        raise SynchronizationError(f"{path}: top-level version must be a string")
+        raise SynchronizationError(
+            f"{display_path}: top-level version must be a string"
+        )
     if current == version:
         return data
     depth = 0
@@ -101,7 +108,9 @@ def _manifest_output(data: bytes, path: Path, version: str) -> bytes:
         if character == '"':
             token = _JSON_STRING_RE.match(text, position)
             if token is None:
-                raise SynchronizationError(f"{path}: malformed JSON string")
+                raise SynchronizationError(
+                    f"{display_path}: malformed JSON string"
+                )
             after_key = token.end()
             while after_key < len(text) and text[after_key].isspace():
                 after_key += 1
@@ -117,7 +126,7 @@ def _manifest_output(data: bytes, path: Path, version: str) -> bytes:
                 value = _JSON_STRING_RE.match(text, value_start)
                 if value is None:
                     raise SynchronizationError(
-                        f"{path}: top-level version must be a string"
+                        f"{display_path}: top-level version must be a string"
                     )
                 replacement = json.dumps(version, ensure_ascii=True)
                 return (text[:value_start] + replacement + text[value.end() :]).encode(
@@ -130,7 +139,9 @@ def _manifest_output(data: bytes, path: Path, version: str) -> bytes:
         elif character in "]}":
             depth -= 1
         position += 1
-    raise SynchronizationError(f"{path}: top-level version field not found")
+    raise SynchronizationError(
+        f"{display_path}: top-level version field not found"
+    )
 
 
 def _temporary_index_active(root: Path) -> bool:

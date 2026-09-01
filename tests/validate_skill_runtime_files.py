@@ -146,7 +146,7 @@ def test_gateway_ownership_requires_exact_non_python_behavioral_source(
     orphan_payload = child_root / "bin/assistant"
     module_gateway = child_root / "module.yaml"
     wrong_gateway = child_root / "wrong.yaml"
-    relative_paths = tuple(str(path.relative_to(tmp_path)) for path in (
+    relative_paths = tuple(path.relative_to(tmp_path).as_posix() for path in (
         jobs,
         python_gateway,
         python_payload,

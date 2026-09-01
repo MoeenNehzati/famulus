@@ -145,7 +145,7 @@ def test_macos_activation_and_durable_paths_stay_below_isolated_home(tmp_path: P
     assert not any(name.startswith("XDG_") for name in activated)
     for value in vars(paths).values():
         assert Path(value).is_relative_to(isolated)
-    assert "Library/Application Support" in str(paths.data_root)
+    assert "Library/Application Support" in paths.data_root.as_posix()
 
 
 @pytest.mark.parametrize("platform", ["linux", "darwin", "win32"])
@@ -250,6 +250,9 @@ def test_codex_server_map_is_rejected_as_claude_project_config(tmp_path: Path) -
         "CLAUDE_CONFIG_DIR": str(isolated / ".claude"),
         "XDG_CONFIG_HOME": str(isolated / ".config"),
     }
+    for name in ("SystemRoot", "SYSTEMROOT"):
+        if name in os.environ:
+            env[name] = os.environ[name]
     result = subprocess.run(
         [claude, "--mcp-config", str(checkout / ".mcp.json"), "--strict-mcp-config", "mcp", "list"],
         cwd=checkout, env=env, text=True, encoding="utf-8", errors="strict",
@@ -295,7 +298,7 @@ def test_direct_portable_exec_uses_isolated_environment(tmp_path: Path) -> None:
     inherited.pop("PYTHONPATH")
     probe = "import json,os; print(json.dumps({k: os.environ.get(k) for k in ['HOME','CODEX_HOME','CLAUDE_CONFIG_DIR','PATH','PYTHONPATH']}))"
     result = subprocess.run(
-        ["python", str(RUNTIME), "exec", "--checkout", str(checkout), "--platform", "linux", "--", "python", "-c", probe],
+        [sys.executable, str(RUNTIME), "exec", "--checkout", str(checkout), "--platform", "linux", "--", sys.executable, "-c", probe],
         env=inherited,
         text=True,
         encoding="utf-8",
@@ -311,7 +314,7 @@ def test_direct_portable_exec_uses_isolated_environment(tmp_path: Path) -> None:
 def test_direct_portable_report_emits_json(tmp_path: Path) -> None:
     checkout = _checkout(tmp_path)
     result = subprocess.run(
-        ["python", str(RUNTIME), "report", "--checkout", str(checkout), "--platform", "linux"],
+        [sys.executable, str(RUNTIME), "report", "--checkout", str(checkout), "--platform", "linux"],
         text=True, encoding="utf-8", errors="strict", capture_output=True, check=True,
     )
     payload = json.loads(result.stdout)

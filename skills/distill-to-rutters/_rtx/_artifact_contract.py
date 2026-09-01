@@ -113,7 +113,7 @@ _ENVELOPE_RE = re.compile(
     re.DOTALL,
 )
 _BODY_RE = re.compile(
-    r"^```distill-contract[ \t]*\r?\n(?P<yaml>.*?)\r?\n```[ \t]*$",
+    r"^```distill-contract[ \t]*\r?\n(?P<yaml>.*?)\r?\n```[ \t]*\r?$",
     re.DOTALL | re.MULTILINE,
 )
 
