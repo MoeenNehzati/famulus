@@ -24,6 +24,13 @@ class PythonProcessTargetError(ValueError):
     """Raised when a Python gateway and process entry are not canonical."""
 
 
+def is_dispatch_invocation_error(exc: BaseException) -> bool:
+    """Return whether *exc* is the dispatcher's public compatibility error."""
+    from officina.dispatcher.errors import InvocationError
+
+    return isinstance(exc, InvocationError)
+
+
 def logical_python_package_name(module_id: str) -> str:
     """Return a reversible, import-safe package name for one global module ID."""
 

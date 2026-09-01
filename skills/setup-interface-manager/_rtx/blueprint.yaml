@@ -1,0 +1,46 @@
+authority:
+  owns_filesystem: []
+children: {}
+content:
+- __init__\.py
+- _setup_dispatches\.py
+- _setup_evaluation\.py
+- _setup_manager\.py
+- _setup_state\.py
+- tests/.*
+description: Finite runtime controller, graph evaluation, and private ledger support for managed setup.
+exports:
+  setup-interface-manager._rtx.interface.status:
+    access: {allow_all_modules: true, allowed_callers: []}
+    source_interface: setup-interface-manager._rtx.source.rtx-manager.interface.status
+  setup-interface-manager._rtx.interface.authorize:
+    access: {allow_all_modules: true, allowed_callers: []}
+    source_interface: setup-interface-manager._rtx.source.rtx-manager.interface.authorize
+  setup-interface-manager._rtx.interface.begin:
+    access: {allow_all_modules: true, allowed_callers: []}
+    source_interface: setup-interface-manager._rtx.source.rtx-manager.interface.begin
+  setup-interface-manager._rtx.interface.run-markdown:
+    access: {allow_all_modules: true, allowed_callers: []}
+    source_interface: setup-interface-manager._rtx.source.rtx-manager.interface.run-markdown
+  setup-interface-manager._rtx.interface.run-python:
+    access: {allow_all_modules: true, allowed_callers: []}
+    source_interface: setup-interface-manager._rtx.source.rtx-manager.interface.run-python
+  setup-interface-manager._rtx.interface.settle:
+    access: {allow_all_modules: true, allowed_callers: []}
+    source_interface: setup-interface-manager._rtx.source.rtx-manager.interface.settle
+  setup-interface-manager._rtx.interface.invalidate:
+    access: {allow_all_modules: true, allowed_callers: []}
+    source_interface: setup-interface-manager._rtx.source.rtx-manager.interface.invalidate
+  setup-interface-manager._rtx.interface.recover:
+    access: {allow_all_modules: true, allowed_callers: []}
+    source_interface: setup-interface-manager._rtx.source.rtx-manager.interface.recover
+gateway: {language: Python>=3.11, path: __init__.py}
+id: setup-interface-manager._rtx
+namespace_exports: {}
+node_type: module
+schema_version: 6
+sources:
+  setup-interface-manager._rtx.source.rtx-manager:
+    blueprint: {base: module-root, path: blueprints/rtx-manager.yaml}
+version: 1
+maturity: experimental

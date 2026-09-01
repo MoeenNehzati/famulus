@@ -67,6 +67,20 @@ def _logical_target(module_id: str) -> PythonProcessTarget:
     )
 
 
+def test_dispatch_invocation_error_classifier_accepts_real_invocation_error() -> None:
+    """Catches a classifier that misses the dispatcher's compatibility base."""
+    error = dispatcher_core.InvocationError("expected dispatch failure")
+
+    assert python_interface.is_dispatch_invocation_error(error)
+
+
+def test_dispatch_invocation_error_classifier_rejects_arbitrary_runtime_error() -> None:
+    """Catches broad classification that would hide programmer defects."""
+    error = RuntimeError("programmer defect")
+
+    assert not python_interface.is_dispatch_invocation_error(error)
+
+
 def _write_logical_runtime(
     module_root: Path,
     *,

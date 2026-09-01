@@ -1,0 +1,53 @@
+authority:
+  owns_filesystem: []
+children:
+  _rtx: {}
+content:
+- SKILL\.md
+description: Hidden workflow entry for finite, verifier-backed managed setup and teardown.
+discovery:
+  mechanism: skill
+  catalog:
+    domain: assistant-operations
+    topics: [task-automation]
+    visibility: hidden
+  activated_by: [skill-workflow]
+  persistent_modifier: false
+exports:
+  setup-interface-manager.interface.default:
+    access: {allow_all_modules: true, allowed_callers: []}
+    source_interface: setup-interface-manager.source.gateway.interface.default
+gateway: {language: Markdown, path: SKILL.md}
+id: setup-interface-manager
+namespace_exports:
+  _rtx:
+    version: 1
+    access: {allow_all_modules: true, allowed_callers: []}
+    surface:
+      only:
+        setup-interface-manager._rtx.interface.status: 1
+        setup-interface-manager._rtx.interface.authorize: 1
+        setup-interface-manager._rtx.interface.begin: 1
+        setup-interface-manager._rtx.interface.run-markdown: 1
+        setup-interface-manager._rtx.interface.run-python: 1
+        setup-interface-manager._rtx.interface.settle: 1
+        setup-interface-manager._rtx.interface.invalidate: 1
+        setup-interface-manager._rtx.interface.recover: 1
+    interface_access:
+      setup-interface-manager._rtx.interface.status: {allow_all_modules: true, allowed_callers: []}
+      setup-interface-manager._rtx.interface.authorize: {allow_all_modules: true, allowed_callers: []}
+      setup-interface-manager._rtx.interface.begin: {allow_all_modules: true, allowed_callers: []}
+      setup-interface-manager._rtx.interface.run-markdown: {allow_all_modules: true, allowed_callers: []}
+      setup-interface-manager._rtx.interface.run-python: {allow_all_modules: true, allowed_callers: []}
+      setup-interface-manager._rtx.interface.settle: {allow_all_modules: true, allowed_callers: []}
+      setup-interface-manager._rtx.interface.invalidate: {allow_all_modules: true, allowed_callers: []}
+      setup-interface-manager._rtx.interface.recover: {allow_all_modules: true, allowed_callers: []}
+node_type: module
+schema_version: 6
+sources:
+  setup-interface-manager.source.gateway:
+    blueprint: {base: module-root, path: blueprints/gateway.yaml}
+version: 1
+maturity: experimental
+installation_tier: core
+personal_preference: {applies: false}

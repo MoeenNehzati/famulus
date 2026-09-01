@@ -1,0 +1,73 @@
+content: [SKILL\.md]
+dependencies:
+- blueprint: {base: module-root, path: _rtx/blueprints/rtx-manager.yaml}
+  reason: Routes only exact generated lifecycle work to the finite machine controller.
+  source: setup-interface-manager._rtx.source.rtx-manager
+  version: 1
+description: Restricts LLM activation to generated managed-setup lifecycle routes.
+gateway: {language: Markdown, path: SKILL.md}
+id: setup-interface-manager.source.gateway
+interfaces:
+  setup-interface-manager.source.gateway.interface.default:
+    content: [SKILL\.md]
+    uses_interfaces:
+    - {interface: setup-interface-manager._rtx.interface.status, version: 1}
+    - {interface: setup-interface-manager._rtx.interface.authorize, version: 1}
+    - {interface: setup-interface-manager._rtx.interface.begin, version: 1}
+    - {interface: setup-interface-manager._rtx.interface.run-markdown, version: 1}
+    - {interface: setup-interface-manager._rtx.interface.run-python, version: 1}
+    - {interface: setup-interface-manager._rtx.interface.settle, version: 1}
+    - {interface: setup-interface-manager._rtx.interface.invalidate, version: 1}
+    - {interface: setup-interface-manager._rtx.interface.recover, version: 1}
+    contract:
+      arguments:
+        request:
+          description: Structured generated setup or teardown lifecycle route.
+          required: true
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+      caller_warnings:
+      - external-side-effect: Exact lifecycle routes can execute a declared setup or teardown action and update its private receipt ledger.
+      direct_io:
+        network: []
+        reads:
+        - {access: read, content: generated lifecycle route, formats: [text], id: read-1, medium: prompt, sensitivity: user-private}
+        writes:
+        - {access: write, content: exact next lifecycle action, formats: [markdown], id: write-1, medium: prompt, sensitivity: derived-private}
+      execution:
+        consistency: {live: The response reflects the manager state returned during this invocation.}
+        lifecycle: finite
+        state_effect: read-only
+        verification: [{method: output-schema, output_ref: response}]
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes:
+      - {id: completed, class: success, outputs: [response], effects: [], caller_action: Follow only the exact current step and resume only when authorized.}
+      - {id: failed, class: error, outputs: [response], effects: [], caller_action: Report the structured failure or use its exact recovery route.}
+      outputs:
+      - id: response
+        audience: both
+        description: Exact finite-manager result without original request arguments or stdin.
+        direct_io_ref: write-1
+        cardinality: {minimum: 1, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: Never empty.
+        type: {kind: string, sensitivity: derived-private}
+      preconditions: []
+    description: Handle only an exact generated managed-setup lifecycle route.
+    version: 1
+node_type: behavioral_source
+schema_version: 6
+uses_interfaces:
+- {interface: setup-interface-manager._rtx.interface.status, version: 1}
+- {interface: setup-interface-manager._rtx.interface.authorize, version: 1}
+- {interface: setup-interface-manager._rtx.interface.begin, version: 1}
+- {interface: setup-interface-manager._rtx.interface.run-markdown, version: 1}
+- {interface: setup-interface-manager._rtx.interface.run-python, version: 1}
+- {interface: setup-interface-manager._rtx.interface.settle, version: 1}
+- {interface: setup-interface-manager._rtx.interface.invalidate, version: 1}
+- {interface: setup-interface-manager._rtx.interface.recover, version: 1}
+version: 1
+maturity: experimental

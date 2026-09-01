@@ -7069,6 +7069,39 @@
         }
       }
     },
+    "setup-interface-manager": {
+      "maturity": "experimental",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {
+        "setup-interface-manager._rtx.interface.authorize": {
+          "dependencies": []
+        },
+        "setup-interface-manager._rtx.interface.begin": {
+          "dependencies": []
+        },
+        "setup-interface-manager._rtx.interface.invalidate": {
+          "dependencies": []
+        },
+        "setup-interface-manager._rtx.interface.recover": {
+          "dependencies": []
+        },
+        "setup-interface-manager._rtx.interface.run-markdown": {
+          "dependencies": []
+        },
+        "setup-interface-manager._rtx.interface.run-python": {
+          "dependencies": []
+        },
+        "setup-interface-manager._rtx.interface.settle": {
+          "dependencies": []
+        },
+        "setup-interface-manager._rtx.interface.status": {
+          "dependencies": []
+        }
+      }
+    },
     "setup-python-environment": {
       "maturity": "stable",
       "installation_tier": "core",

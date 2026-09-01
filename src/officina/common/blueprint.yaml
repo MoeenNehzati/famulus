@@ -31,6 +31,7 @@ exports:
       - rutter
       - math-dependency-graph._rtx
       - launchers
+      - setup-interface-manager._rtx
     source_interface: common.source.atomic-files.interface.python-api
   common.interface.codex-toml:
     access:

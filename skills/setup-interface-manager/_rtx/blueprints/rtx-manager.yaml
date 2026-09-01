@@ -1,0 +1,303 @@
+content:
+- _setup_dispatches\.py
+- _setup_evaluation\.py
+- _setup_manager\.py
+- _setup_state\.py
+dependencies:
+- blueprint: {base: repository-root, path: src/officina/common/blueprints/atomic-files.yaml}
+  reason: Uses the restricted confined private-directory, lock, read, and exact compare-replace operations.
+  source: common.source.atomic-files
+  version: 2
+- blueprint: {base: repository-root, path: src/officina/common/blueprints/famulus-paths-get.yaml}
+  reason: Resolves the sole private setup-status ledger path.
+  source: common.source.famulus-paths-get
+  version: 1
+description: Implements the finite managed setup and teardown protocol over one getter-selected private ledger.
+gateway: {language: Python, path: _setup_manager.py}
+id: setup-interface-manager._rtx.source.rtx-manager
+interfaces:
+  setup-interface-manager._rtx.source.rtx-manager.interface.status:
+    content: [_setup_dispatches\.py, _setup_evaluation\.py, _setup_manager\.py, _setup_state\.py]
+    uses_interfaces: &uses
+    - {interface: common.interface.famulus-paths-get, version: 1}
+    - {interface: common.interface.atomic-files, version: 2}
+    contract:
+      arguments:
+        target-interface: &target_argument
+          description: Exact target export to evaluate without mutation.
+          required: true
+          sensitivity: public
+          type: {kind: string}
+      caller_warnings: []
+      direct_io: &read_io
+        network: []
+        reads:
+        - {access: read, content: validated repository blueprint graph, formats: [yaml], id: read-1, medium: repository-filesystem, path: $repo/**/blueprint.yaml, path_match: glob, sensitivity: public, system: filesystem}
+        - {access: read, content: private managed setup ledger, formats: [json], id: read-2, medium: local-filesystem, path: <getter-selected-setup-status-path>, path_match: exact, sensitivity: derived-private, system: filesystem}
+        writes:
+        - &stdout_write {access: write, content: one redacted finite-manager JSON result, formats: [json], id: write-1, medium: stdout, sensitivity: derived-private, system: agent-runtime}
+      execution: &read_execution
+        consistency: {live: The result reflects the validated graph and exact ledger bytes observed during this invocation.}
+        lifecycle: finite
+        state_effect: read-only
+        verification: [{method: output-schema, output_ref: response}]
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes: &read_outcomes
+      - {id: completed, class: success, outputs: [response], effects: [], caller_action: Use the returned status without treating it as authorization.}
+      - {id: failed, class: error, outputs: [response], effects: [], caller_action: Resolve the malformed call or fail-closed ledger error.}
+      outputs: &json_outputs
+      - id: response
+        audience: machine
+        description: One JSON object with only the finite protocol fields for this operation.
+        direct_io_ref: write-1
+        cardinality: {minimum: 1, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: Never empty.
+        type: {kind: string, sensitivity: derived-private, format: {named: json}}
+      preconditions: []
+    description: Return unmanaged, ready, setup-required, or setup-busy without mutating claims.
+    process_binding:
+      entry: StatusInterface
+      kind: process
+      patterns:
+      - {allow_stdin: false, min_positionals: 1, max_positionals: 1}
+    usage: TARGET_INTERFACE
+    version: 1
+
+  setup-interface-manager._rtx.source.rtx-manager.interface.authorize:
+    content: [_setup_dispatches\.py, _setup_evaluation\.py, _setup_manager\.py, _setup_state\.py]
+    uses_interfaces: *uses
+    contract:
+      arguments:
+        target-interface: *target_argument
+        original-caller: &caller_argument {description: Non-sensitive original caller module identity., required: true, sensitivity: public, type: {kind: string}}
+        original-interface: &interface_argument {description: Non-sensitive original interface identity., required: true, sensitivity: public, type: {kind: string}}
+        original-version: &version_argument {description: Positive original interface version., required: true, sensitivity: public, type: {kind: integer, minimum: 1}}
+      caller_warnings:
+      - external-side-effect: A ready managed target atomically adds its root claim to every exact closure receipt.
+      direct_io: &mutating_io
+        network: []
+        reads:
+        - {access: read, content: validated repository blueprint graph, formats: [yaml], id: read-1, medium: repository-filesystem, path: $repo/**/blueprint.yaml, path_match: glob, sensitivity: public, system: filesystem}
+        - {access: read, content: private managed setup ledger, formats: [json], id: read-2, medium: local-filesystem, path: <getter-selected-setup-status-path>, path_match: exact, sensitivity: derived-private, system: filesystem}
+        writes:
+        - &ledger_write {access: write, content: canonical private managed setup ledger, formats: [json], id: ledger-write, medium: local-filesystem, path: <getter-selected-setup-status-path>, path_match: exact, sensitivity: derived-private, system: filesystem}
+        - *stdout_write
+      execution: &mutating_execution
+        consistency: {live: Every mutation compares the complete canonical predecessor while holding the stable exclusive lock.}
+        effects:
+        - id: ledger-update
+          direct_io_ref: ledger-write
+          action: update
+          value_source: {kind: direct-io, direct_io_ref: read-2}
+          may_occur_in_outcomes: [completed, failed]
+          confirmation_evidence: {kind: direct-io, direct_io_ref: ledger-write}
+          reversibility: {compensatable: "Explicit invalidation, teardown, or cancel applies the protocol-defined compensation."}
+        lifecycle: finite
+        mutation_safety:
+          atomicity: {per_effect_only: Each ledger transition is one confined compare-and-replace plus post-write verification.}
+          concurrent_invocations: {safe: One stable exclusive lock and one active-flow record serialize cooperating mutations.}
+          idempotency: {non_idempotent: "Ready authorization is idempotent, but lifecycle actions advance a finite persisted flow."}
+          on_uncertain_completion: {verify_then_decide: Reread canonical bytes and use the explicit retry or cancel route.}
+          partial_effects_on_failure: {possible: An external managed action can finish before its verifier or receipt transition.}
+          rollback_on_failure: {available: Cancel removes verified incomplete-root claims but never guesses current external completion.}
+        state_effect: mutating
+        verification:
+        - {method: direct-io-state, direct_io_ref: read-2}
+        - {method: output-schema, output_ref: response}
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes: &mutating_outcomes
+      - {id: completed, class: success, outputs: [response], effects: [ledger-update], caller_action: Follow current_step or resume only when resume_original is true.}
+      - {id: failed, class: error, outputs: [response], effects: [ledger-update], caller_action: Use only the exact recovery route returned by the manager.}
+      outputs: *json_outputs
+      preconditions: []
+    description: Resume only unmanaged or ready targets and atomically claim every ready managed receipt.
+    process_binding:
+      entry: AuthorizeInterface
+      kind: process
+      patterns:
+      - {allow_stdin: false, min_positionals: 4, max_positionals: 4, positional_patterns: {'3': '^[1-9][0-9]*$'}}
+    usage: TARGET_INTERFACE ORIGINAL_CALLER ORIGINAL_INTERFACE ORIGINAL_VERSION
+    version: 1
+
+  setup-interface-manager._rtx.source.rtx-manager.interface.begin:
+    content: [_setup_dispatches\.py, _setup_evaluation\.py, _setup_manager\.py, _setup_state\.py]
+    uses_interfaces: *uses
+    contract:
+      arguments:
+        operation: {description: Exact lifecycle operation setup or teardown., required: true, sensitivity: public, type: {kind: string}}
+        root-setup: {description: Exact managed root setup export., required: true, sensitivity: public, type: {kind: string}}
+        original-caller: *caller_argument
+        original-interface: *interface_argument
+        original-version: *version_argument
+      caller_warnings:
+      - external-side-effect: Creates at most one active lifecycle flow in the private ledger.
+      direct_io: *mutating_io
+      execution: *mutating_execution
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes: *mutating_outcomes
+      outputs: *json_outputs
+      preconditions: []
+    description: Begin exactly one setup or teardown flow for a managed root and redacted continuation.
+    process_binding:
+      entry: BeginInterface
+      kind: process
+      patterns:
+      - allow_stdin: false
+        min_positionals: 5
+        max_positionals: 5
+        positional_patterns: {'0': '^(setup|teardown)$', '4': '^[1-9][0-9]*$'}
+    usage: OPERATION ROOT_SETUP ORIGINAL_CALLER ORIGINAL_INTERFACE ORIGINAL_VERSION
+    version: 1
+
+  setup-interface-manager._rtx.source.rtx-manager.interface.run-markdown:
+    content: [_setup_dispatches\.py, _setup_evaluation\.py, _setup_manager\.py, _setup_state\.py]
+    uses_interfaces: *uses
+    contract:
+      arguments:
+        flow-id: &flow_argument {description: Exact active flow identity., required: true, sensitivity: public, type: {kind: string}}
+        interface: &step_argument {description: Exact current managed action interface., required: true, sensitivity: public, type: {kind: string}}
+      caller_warnings: []
+      direct_io: *read_io
+      execution: *read_execution
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes: *read_outcomes
+      outputs: *json_outputs
+      preconditions: []
+    description: Return only the finite map's exact Markdown instructions and await independent settlement.
+    process_binding:
+      entry: RunMarkdownInterface
+      kind: process
+      patterns:
+      - {allow_stdin: false, min_positionals: 2, max_positionals: 2}
+    usage: FLOW_ID INTERFACE
+    version: 1
+
+  setup-interface-manager._rtx.source.rtx-manager.interface.run-python:
+    content: [_setup_dispatches\.py, _setup_evaluation\.py, _setup_manager\.py, _setup_state\.py]
+    uses_interfaces: *uses
+    contract:
+      arguments:
+        flow-id: *flow_argument
+        interface: *step_argument
+        request:
+          description: One JSON object containing only arguments declared by the exact finite action binding.
+          required: true
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private, format: {named: json}}
+      caller_warnings:
+      - external-side-effect: Runs only the exact current finite action, independently verifies it, then records success.
+      direct_io:
+        network: []
+        reads:
+        - {access: read, content: validated repository blueprint graph, formats: [yaml], id: read-1, medium: repository-filesystem, path: $repo/**/blueprint.yaml, path_match: glob, sensitivity: public, system: filesystem}
+        - {access: read, content: private managed setup ledger, formats: [json], id: read-2, medium: local-filesystem, path: <getter-selected-setup-status-path>, path_match: exact, sensitivity: derived-private, system: filesystem}
+        - {access: read, content: declared action arguments, formats: [json], id: stdin-read, medium: stdin, sensitivity: user-private, system: agent-runtime}
+        writes:
+        - *ledger_write
+        - {access: execute, content: exact finite managed Python action and verifier, formats: [argv, json], id: action-exec, medium: subprocess, path: <finite-declared-managed-interfaces>, path_match: exact, reason: Run and verify only the exact current binding., sensitivity: user-private, system: dispatcher}
+        - *stdout_write
+      execution: *mutating_execution
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes: *mutating_outcomes
+      outputs: *json_outputs
+      preconditions: []
+    description: Run the exact current Python action, its verifier, and the receipt transition in one call.
+    process_binding:
+      entry: RunPythonInterface
+      kind: process
+      patterns:
+      - {allow_stdin: true, min_positionals: 2, max_positionals: 2}
+    usage: FLOW_ID INTERFACE
+    version: 1
+
+  setup-interface-manager._rtx.source.rtx-manager.interface.settle:
+    content: [_setup_dispatches\.py, _setup_evaluation\.py, _setup_manager\.py, _setup_state\.py]
+    uses_interfaces: *uses
+    contract:
+      arguments:
+        flow-id: *flow_argument
+        interface: *step_argument
+      caller_warnings:
+      - external-side-effect: Invokes only the declared verifier and records success only for its exact true payload.
+      direct_io: *mutating_io
+      execution: *mutating_execution
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes: *mutating_outcomes
+      outputs: *json_outputs
+      preconditions: []
+    description: Independently verify and settle only the exact current Markdown action.
+    process_binding:
+      entry: SettleInterface
+      kind: process
+      patterns:
+      - {allow_stdin: false, min_positionals: 2, max_positionals: 2}
+    usage: FLOW_ID INTERFACE
+    version: 1
+
+  setup-interface-manager._rtx.source.rtx-manager.interface.invalidate:
+    content: [_setup_dispatches\.py, _setup_evaluation\.py, _setup_manager\.py, _setup_state\.py]
+    uses_interfaces: *uses
+    contract:
+      arguments:
+        setup-interface: {description: Exact setup receipt to invalidate with all managed dependents., required: true, sensitivity: public, type: {kind: string}}
+      caller_warnings:
+      - external-side-effect: Removes the selected exact receipt and every managed dependent receipt while preserving orphans.
+      direct_io: *mutating_io
+      execution: *mutating_execution
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes: *mutating_outcomes
+      outputs: *json_outputs
+      preconditions: []
+    description: Invalidate one setup receipt and its live managed dependents only while idle.
+    process_binding:
+      entry: InvalidateInterface
+      kind: process
+      patterns:
+      - {allow_stdin: false, min_positionals: 1, max_positionals: 1}
+    usage: SETUP_INTERFACE
+    version: 1
+
+  setup-interface-manager._rtx.source.rtx-manager.interface.recover:
+    content: [_setup_dispatches\.py, _setup_evaluation\.py, _setup_manager\.py, _setup_state\.py]
+    uses_interfaces: *uses
+    contract:
+      arguments:
+        flow-id: *flow_argument
+        action: {description: Exact recovery action retry or cancel., required: true, sensitivity: public, type: {kind: string}}
+      caller_warnings:
+      - external-side-effect: Retry invokes the exact current verifier; cancel removes incomplete-root claims from verified steps and clears the flow.
+      direct_io: *mutating_io
+      execution: *mutating_execution
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes: *mutating_outcomes
+      outputs: *json_outputs
+      preconditions: []
+    description: Retry by verifying first, or cancel without guessing the current external action's completion.
+    process_binding:
+      entry: RecoverInterface
+      kind: process
+      patterns:
+      - allow_stdin: false
+        min_positionals: 2
+        max_positionals: 2
+        positional_patterns: {'1': '^(retry|cancel)$'}
+    usage: FLOW_ID ACTION
+    version: 1
+node_type: behavioral_source
+platform_support: {linux: true, macos: true, windows: true}
+runtime_dependencies: []
+schema_version: 6
+uses_interfaces: *uses
+version: 1
+maturity: experimental
