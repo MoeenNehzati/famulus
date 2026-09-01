@@ -22,8 +22,8 @@ REQUIRED_SNIPPETS = (
     "docs/quickstarts/development.md",
     "docs/quickstarts/automation.md",
     "docs/quickstarts/skill-development.md",
-    "docs/domains/assistant-interaction.md",
-    "docs/domains/assistant-operations.md",
+    "docs/README.md",
+    "docs/officina/README.md",
     "docs/skills.md",
     "docs/contributors/README.md",
 )
@@ -39,6 +39,8 @@ FORBIDDEN_SNIPPETS = (
     "_agent_launchers.py",
     "docs/officina/blueprints.md",
     "docs/officina/skill-blueprints.md",
+    "docs/domains/assistant-interaction.md",
+    "docs/domains/assistant-operations.md",
     "validators/` and `skills/skill-maker/validators/",
 )
 

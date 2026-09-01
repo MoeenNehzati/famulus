@@ -3,7 +3,7 @@
 [![Python Tests](https://github.com/MoeenNehzati/famulus/actions/workflows/python-tests.yml/badge.svg)](https://github.com/MoeenNehzati/famulus/actions/workflows/python-tests.yml)
 [![Documentation](https://github.com/MoeenNehzati/famulus/actions/workflows/pages.yml/badge.svg)](https://moeennehzati.github.io/famulus/)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/MoeenNehzati/famulus/blob/master/LICENSE)
 
 Famulus is a collection of skills for Claude Code and Codex. You can ask it to
 plan your day, review a paper or proof, work safely in a codebase, schedule
@@ -106,13 +106,17 @@ See [Setting up Famulus](docs/setup.md) for details.
 
 Start with the quickstart closest to what you want to do:
 
-- **Famulus**
-  - [Personal Assistance](docs/quickstarts/personal-assistance.md) — plan the day, manage lists, triage email, and wrap up
-  - [Research](docs/quickstarts/research.md) — choose the right research review, editing, conversion, or build skill
-- **[Officina](docs/officina/README.md)** — the framework behind Famulus for developing and operating skill libraries
-  - [Software Development](docs/quickstarts/development.md) — work safely with repositories, CI, TDD, integration, and handoffs
-  - [Skill Development](docs/quickstarts/skill-development.md) — create, refactor, maintain, and certify skills
-  - [Automation](docs/quickstarts/automation.md) — schedule, inspect, change, or disable recurring assistant jobs
+- [Personal Assistance](docs/quickstarts/personal-assistance.md) — plan the day,
+  manage lists, triage email, and wrap up
+- [Research](docs/quickstarts/research.md) — choose the right research review,
+  editing, conversion, or build skill
+- [Software Development](docs/quickstarts/development.md) — work safely with
+  repositories, CI, TDD, integration, and handoffs
+- [Automation](docs/quickstarts/automation.md) — schedule, inspect, change, or
+  disable recurring assistant jobs
+- [Skill Development](docs/quickstarts/skill-development.md) — create,
+  refactor, maintain, and certify skills with
+  [Officina](docs/officina/README.md), the framework behind Famulus
 
 See [Security and Privacy](docs/security-and-privacy.md) before connecting an
 account or enabling unattended work.
@@ -279,12 +283,17 @@ through your Google account if you no longer want Famulus to use it.
 
 ## Learn More
 
+- [Documentation Index](docs/README.md) — the entry point for all Famulus and
+  Officina documentation
 - [Skill Index](docs/skills.md) — the complete list of available skills
-- [Security and Privacy](docs/security-and-privacy.md) — permissions, credentials, model data, destructive actions, and removal
-- [Launchers](docs/launchers.md) — agent launchers, backend selection, and the `tw` tmux wrapper
-- [Setup](docs/setup.md) — selected-Python requirements, shared MCP routing, and demand-driven feature setup
-- [Assistant Interaction](docs/domains/assistant-interaction.md) — reasoning modes, session continuity, handoffs, and wakeups
-- [Assistant Operations](docs/domains/assistant-operations.md) — storage, authentication, automation, and repair utilities
+- [Security and Privacy](docs/security-and-privacy.md) — permissions,
+  credentials, model data, destructive actions, and removal
+- [Launchers](docs/launchers.md) — agent launchers, backend selection, and the
+  `tw` tmux wrapper
+- [Setup](docs/setup.md) — selected-Python requirements, shared MCP routing,
+  and demand-driven feature setup
+- [Officina](docs/officina/README.md) — the framework for developing and
+  operating mixed LLM and code systems
 
 ## Support
 
@@ -296,9 +305,9 @@ issue.
 
 ## For Maintainers
 
-- [docs/contributors/README.md](docs/contributors/README.md) — maintainer and skill-extension entrypoint
-- [docs/contributors/documentation-system.md](docs/contributors/documentation-system.md) — documentation generation and validation
-- [docs/testing.md](docs/testing.md) — repository checks, test commands, suite policy, hooks, CI, and benchmarks
+Start with the [Contributor Guide](docs/contributors/README.md) for skill
+development, repository checks, documentation, testing, and framework
+maintenance.
 
 ## License
 

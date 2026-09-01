@@ -45,8 +45,8 @@ CLEAN_README = "\n".join(
         "- [docs/quickstarts/development.md](docs/quickstarts/development.md)",
         "- [docs/quickstarts/automation.md](docs/quickstarts/automation.md)",
         "- [docs/quickstarts/skill-development.md](docs/quickstarts/skill-development.md)",
-        "- [docs/domains/assistant-interaction.md](docs/domains/assistant-interaction.md)",
-        "- [docs/domains/assistant-operations.md](docs/domains/assistant-operations.md)",
+        "- [docs/README.md](docs/README.md)",
+        "- [docs/officina/README.md](docs/officina/README.md)",
         "- [docs/skills.md](docs/skills.md)",
         "- [docs/contributors/README.md](docs/contributors/README.md)",
         "",
@@ -276,6 +276,19 @@ def test_readme_validator_reports_distinct_user_contract_violations(
         (
             CLEAN_README.replace("docs/skills.md", "docs/missing.md"),
             ("docs/skills.md",),
+        ),
+        (
+            CLEAN_README.replace("docs/README.md", "docs/missing.md"),
+            ("docs/README.md",),
+        ),
+        (
+            CLEAN_README.replace("docs/officina/README.md", "docs/missing.md"),
+            ("docs/officina/README.md",),
+        ),
+        (
+            CLEAN_README
+            + "\n[Assistant Operations](docs/domains/assistant-operations.md)\n",
+            ("docs/domains/assistant-operations.md",),
         ),
         (
             CLEAN_README
