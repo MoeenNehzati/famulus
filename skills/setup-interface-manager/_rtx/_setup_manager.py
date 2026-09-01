@@ -11,7 +11,11 @@ import sys
 from typing import Callable, Mapping, Sequence
 from uuid import uuid4
 
-from officina.blueprints.graph import BlueprintGraphError, load_repository_blueprint_graph
+from officina.blueprints.graph import (
+    BlueprintGraphError,
+    load_repository_blueprint_graph,
+    managed_setup_order,
+)
 from officina.common import atomic_files
 from officina.runtime.python_machine_interface import (
     PythonMachineInterface,
@@ -48,6 +52,7 @@ from ._setup_state import (
     SetupLedger,
     SetupReceipt,
     begin_flow,
+    claim_receipts,
 )
 
 
@@ -518,6 +523,14 @@ class SetupManager:
                 if evaluation.code != "setup_required" or not evaluation.pending_stack:
                     raise ManagerDomainError("managed setup cannot begin in the current state")
                 step: SetupStep | TeardownStep = evaluation.pending_stack[-1]
+                setup_order = tuple(
+                    managed.setup_interface
+                    for managed in managed_setup_order(
+                        self.graph, root_setup_interface
+                    )
+                )
+                current_index = setup_order.index(step.setup_interface)
+                verified_steps = setup_order[:current_index]
             else:
                 plan = teardown_plan(self.graph, root_setup_interface, ledger)
                 if not plan:
@@ -529,16 +542,36 @@ class SetupManager:
                         original=original,
                     )
                 step = plan[0]
+                verified_steps = ()
             self._binding(step.setup_interface)
             flow = ActiveFlow(
                 flow_id=self._new_flow_id(),
                 operation=operation,  # type: ignore[arg-type]
                 root=root_setup_interface,
                 current_step=step.setup_interface,
-                verified_steps=(),
+                verified_steps=verified_steps,
                 continuation=original,
             )
-            self.store.update(lambda current: begin_flow(current, flow))
+
+            def start(current: SetupLedger) -> SetupLedger:
+                if operation == "setup":
+                    live = evaluate_target(
+                        self.graph, root_setup_interface, current
+                    )
+                    if (
+                        live.code != "setup_required"
+                        or not live.pending_stack
+                        or live.pending_stack[-1] != step
+                    ):
+                        raise FlowConflict(
+                            "managed setup changed before the flow began"
+                        )
+                    current = claim_receipts(
+                        current, root_setup_interface, verified_steps
+                    )
+                return begin_flow(current, flow)
+
+            self.store.update(start)
             if operation == "teardown":
                 flow, step = self._advance_release_claims(flow, step)
             return self._result_response(operation, original, flow, step)

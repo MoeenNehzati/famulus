@@ -397,6 +397,41 @@ def test_begin_enforces_one_active_flow_and_redacts_request_data(tmp_path: Path)
     assert b"stdin" not in raw
 
 
+def test_begin_setup_claims_the_exact_ready_prefix_before_suffix_settlement(
+    tmp_path: Path,
+) -> None:
+    """Catches a shared or stale-prefix setup flow becoming impossible to settle."""
+    leaf = _managed("leaf")
+    root = _managed("root")
+    graph = _graph(leaf, root)
+    graph.setup_requirements[root.setup_interface] = ((leaf.setup_interface, 1),)
+    dispatch = DispatchHarness()
+    root_binding = _binding(root)
+    dispatch.queue(root_binding.setup_dispatch_key, "")
+    dispatch.queue(root_binding.setup_verifier_dispatch_key, '{"set_up":true}\n')
+    controller = _controller(
+        tmp_path, graph, dispatch, _binding(leaf), root_binding
+    )
+    _seed_ready(controller.store, leaf, "other.interface.setup")
+
+    begun = _begin_setup(controller, root)
+
+    assert begun["current_step"]["interface"] == root.setup_interface
+    active = controller.store.read().active_flow
+    assert active is not None
+    assert active.verified_steps == (leaf.setup_interface,)
+    assert controller.store.read().interfaces[leaf.setup_interface].required_by == {
+        "other.interface.setup",
+        root.setup_interface,
+    }
+
+    code, completed = controller.run_python(
+        "flow-1", root.setup_interface, "{}"
+    )
+    assert code == 0
+    assert completed["state"] == "ready"
+
+
 def test_python_run_requires_exact_step_runs_verifier_then_records(tmp_path: Path) -> None:
     """Catches interface substitution or receipt writes before verifier success."""
     item = _managed("canary")
