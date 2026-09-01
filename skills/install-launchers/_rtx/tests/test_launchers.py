@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+import tomllib
 from pathlib import Path
 
 
@@ -54,9 +55,12 @@ def test_selected_profile_and_worker_use_selected_plugin_root(tmp_path: Path) ->
         mode="plugin",
     )
 
-    assert str(plugin / "agents" / "assistant.md") in (
-        home / ".codex" / "assistant.config.toml"
-    ).read_text()
+    installed_profile = tomllib.loads(
+        (home / ".codex" / "assistant.config.toml").read_text(encoding="utf-8")
+    )
+    assert installed_profile["model_instructions_file"] == str(
+        plugin / "agents" / "assistant.md"
+    )
     assert launchers.worker_root_for_mode(
         "plugin", plugin, home, environ={}
     ) != plugin / "workers"
@@ -87,7 +91,7 @@ def test_tw_checks_tmux_only_when_selected(tmp_path: Path, monkeypatch) -> None:
     )
     assert calls == [["tmux", "-V"]]
     if sys.platform == "win32":
-        assert not (home / "tw-bin").exists()
+        assert not any((home / "tw-bin").iterdir())
     else:
         assert {path.name for path in (home / "tw-bin").iterdir()} == {
             "tmux-workspace", "tw", "tw-break", "tw-join", "tw-monitor", "tw-help"

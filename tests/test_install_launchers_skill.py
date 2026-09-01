@@ -77,7 +77,7 @@ def test_each_launcher_selection_is_independent(
 
     bin_dir = tmp_path / "home" / "bin"
     if selected == "tw" and sys.platform == "win32":
-        assert not bin_dir.exists()
+        assert not any(bin_dir.iterdir())
         return
     if selected == "tw":
         expected = {"tmux-workspace", "tw", "tw-break", "tw-join", "tw-monitor", "tw-help"}
@@ -245,11 +245,12 @@ def test_selected_repair_and_plugin_refresh_leave_unrelated_sentinels(tmp_path: 
 
     module.run(canonical_python=canonical_python, repo_root=first, agents=["assistant"], home=home, bin_dir=bin_dir, manifest=records)
     selected = bin_dir / ("assistant.bat" if sys.platform == "win32" else "assistant")
-    selected.write_text("damaged")
+    selected.write_text("damaged", encoding="utf-8")
     module.run(canonical_python=canonical_python, repo_root=second, agents=["assistant"], home=home, bin_dir=bin_dir, manifest=records)
 
-    assert str(second) in selected.read_text()
-    assert str(first) not in selected.read_text()
+    refreshed = selected.read_text(encoding="utf-8")
+    assert str(second) in refreshed
+    assert str(first) not in refreshed
     assert unrelated.read_bytes() == b"unrelated sentinel"
     assert nonlauncher.read_bytes() == b"non-launcher sentinel"
     assert str(selected) in records.paths

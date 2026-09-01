@@ -131,13 +131,11 @@ async def _stdio_transport(parameters):
     """Ignore the MCP SDK's Windows-only clean-shutdown send race."""
     from mcp.client.stdio import stdio_client
 
-    body_completed = False
     try:
         async with stdio_client(parameters) as streams:
             yield streams
-            body_completed = True
     except BaseExceptionGroup as error:
-        if not body_completed or not _only_broken_resource_errors(error):
+        if not _only_broken_resource_errors(error):
             raise
 
 
@@ -235,7 +233,7 @@ def _terminate_pid(pid: int) -> None:
 
 
 async def _serve_graph_through_mcp(
-    host: str, plugin_root: Path, home: Path, served: Path
+    host: str, plugin_root: Path, home: Path, served: Path, port: int
 ) -> tuple[object, object, object, object, bytes, str, bool]:
     from mcp import ClientSession, StdioServerParameters
 
@@ -266,7 +264,7 @@ async def _serve_graph_through_mcp(
                             "options": {
                                 "--directory": str(served),
                                 "--host": "127.0.0.1",
-                                "--port": "8765",
+                                "--port": str(port),
                             },
                             "stdin": None,
                         },
@@ -312,7 +310,7 @@ async def _serve_graph_through_mcp(
 
 @pytest.mark.parametrize("host", ["claude", "codex"])
 def test_graph_server_returns_through_real_mcp_and_survives(
-    host: str, tmp_path: Path
+    host: str, tmp_path: Path, free_tcp_port: int
 ) -> None:
     """Break caught: the graph child holds MCP pipes or dies with its gateway."""
     plugin = tmp_path / "Plugin Cache" / "famulus"
@@ -325,7 +323,9 @@ def test_graph_server_returns_through_real_mcp_and_survives(
     try:
         listed, called, after, finite, body, cache_control, alive = asyncio.run(
             asyncio.wait_for(
-                _serve_graph_through_mcp(host, plugin, tmp_path / "home", served),
+                _serve_graph_through_mcp(
+                    host, plugin, tmp_path / "home", served, free_tcp_port
+                ),
                 timeout=15,
             )
         )
@@ -847,12 +847,36 @@ def test_stdio_transport_ignores_only_a_clean_shutdown_send_race(
 
     asyncio.run(use_transport())
 
+    async def nested_teardown_race() -> None:
+        async with _stdio_transport(object()):
+            async with shutdown_race(object()):
+                pass
+
+    asyncio.run(nested_teardown_race())
+
     async def fail_in_body() -> None:
         async with _stdio_transport(object()):
             raise ValueError("body failure")
 
     with pytest.raises(ValueError, match="body failure"):
         asyncio.run(fail_in_body())
+
+    @asynccontextmanager
+    async def mixed_teardown_error(_parameters):
+        yield object(), object()
+        raise BaseExceptionGroup(
+            "mixed teardown",
+            [anyio.BrokenResourceError(), ValueError("body failure")],
+        )
+
+    async def fail_with_mixed_error() -> None:
+        async with _stdio_transport(object()):
+            async with mixed_teardown_error(object()):
+                pass
+
+    with pytest.raises(BaseExceptionGroup, match="mixed teardown") as caught:
+        asyncio.run(fail_with_mixed_error())
+    assert any(isinstance(error, ValueError) for error in caught.value.exceptions)
 
 
 def test_host_declarations_normalize_to_common_command_contract() -> None:
