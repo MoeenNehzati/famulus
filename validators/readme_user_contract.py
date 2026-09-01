@@ -8,6 +8,7 @@ README = Path("README.md")
 INTRO_SNIPPETS = (
     "Famulus is a cross-host assistant library",
     "Famulus is a personal research assistant",
+    "Famulus is a collection of skills for Claude Code and Codex",
 )
 REQUIRED_SNIPPETS = (
     "install the plugin",

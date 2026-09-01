@@ -5,9 +5,9 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-Famulus is a personal research assistant, delivered as a skills library that
-runs on both Claude Code and Codex. It covers day-to-day planning and inbox work
-on one side, and research-heavy reading and writing on the other.
+Famulus is a collection of skills for Claude Code and Codex. You can ask it to
+plan your day, review a paper or proof, work safely in a codebase, schedule
+recurring tasks, or preserve the context needed for the next session.
 
 Once it is installed, you just ask:
 
@@ -18,49 +18,43 @@ Build a math dependency graph for paper.tex.
 Prepare a handoff.
 ```
 
-[40 skills](docs/skills.md) are available. The
-[featured flows](#featured-flows) below show what a few of them do.
+See the [Skill Index](docs/skills.md) for the complete list. The
+[examples](#examples) below show what a few of the skills do.
 
 ## What It Is Good At
 
-On the personal side, Famulus:
+For personal organization, Famulus can:
 
-- connects to your email and calendar
-- manages your todo and triage lists in a cloud-backed list manager
-- extracts triage items from your email
-- prepares handoffs by updating session documentation and lessons
+- connect to your email and calendar
+- manage your todo list and a triage list for items that may become todos
+- extract triage items from your email
+- close loose ends by updating project documentation and preserving useful lessons
 
-Most importantly, it can plan your day from your calendar and lists, then
-document your progress at the end of the day and remind you about sessions that
-still need handoff.
+It can use your calendar and lists to plan the day, record your progress when
+you wrap up, and flag sessions that still need a handoff.
 
-On the research side, it provides skills for reviewing document flow and prose,
-checking notation consistency across a paper, auditing mathematical proofs,
-drawing dependency graphs for mathematical results, and inspecting bibliographies
-for version mismatches, hallucinated metadata, and newer available versions.
+For research and writing, Famulus can review document flow and prose, check
+notation consistency across a paper, audit mathematical proofs, draw dependency
+graphs for mathematical results, and inspect bibliographies for version
+mismatches, hallucinated metadata, and newer available versions.
 
 ## Requirements
 
-Famulus is under active development. The research and writing skills need
-no credentials and are the easiest place to start. The Google integrations and
-unattended recurring jobs are the newest parts and the ones that ask most of
-your trust, so read [security and privacy](docs/security-and-privacy.md) before
-enabling them.
+Famulus is under active development. Using it as a personal assistant requires
+a Google account: plans and lists are stored in Google Drive, while daily
+planning and email triage read information from Google Calendar and Gmail. The
+research, writing, and software-development skills do not require Google
+access.
+
+Before connecting an account or enabling unattended recurring jobs, read
+[Security and Privacy](docs/security-and-privacy.md).
 
 To install Famulus you need:
 
 - a plugin-capable Claude Code or Codex installation; there is no published
   minimum host version
-- the exact command `python` resolving to Python 3.11 or newer, with a
-  functional `python -m pip` and permission to install the declared core
-  packages into that same environment
-
-Exposing `python` is a deliberate user prerequisite on Linux, macOS, and
-Windows. An existing writable virtual environment is suitable when it is the
-environment reached by that exact command. Famulus repairs only the declared
-core packages in that environment; it does not install or alias Python,
-bootstrap pip, create an environment, use `uv`, select `python3` or `py`, or
-create a managed runtime.
+- Python 3.11 or newer, available as `python`, with pip enabled and permission
+  to install the required packages
 
 ## Quick Start
 
@@ -93,70 +87,37 @@ codex plugin add famulus@nullkit --json
 
 Restart the host afterwards so it loads the newly installed plugin.
 
-### 2. Prepare the selected Python
+### 2. Check Python
 
-Confirm that `python` is Python 3.11 or newer and that `python -m pip` works
-and may install packages into that environment. If the packaged `famulus` MCP
-server reports that a core dependency is unavailable, ask the host to use
-`setup-python-environment`. It checks the exact selected environment before
-repairing only the declared core packages; a missing pip, an externally managed
-environment, or a non-writable target fails before package mutation.
+Confirm that `python` is Python 3.11 or newer and that `python -m pip` works. If
+Famulus reports a missing core dependency, ask it to use
+`setup-python-environment`.
 
-Executable skill interfaces are invoked through the shared `famulus` MCP
-server using their generated JSON invocation projection. Instruction interfaces
-are read and followed directly by the host agent.
+### 3. Set up optional features
 
-### 3. Configure selected features
+Some parts of Famulus need additional setup, such as connecting a Google
+account or scheduling recurring tasks. You do not need to configure them when
+you first install Famulus. Famulus keeps track of what is ready and guides you
+through any required setup when you request a feature that needs it.
 
-Optional commands and persistent integrations are independently configured by
-their feature owners: `install-launchers` for interactive agents,
-`recurring-tasks` for recurring work, `llm-wakeup` for due-session delivery,
-and `connect-google` for Google services. Select only the features you intend
-to use. Each feature installs only its own residual declared packages; core
-setup does not install keyring or Google-service packages, and selecting one
-Google service does not mutate another unselected service.
+See [Setting up Famulus](docs/setup.md) for details.
 
-Ask the assistant to use `connect-google` to add Google services or
-`recurring-tasks` to schedule selected skills to run in the background on a
-recurring basis; see [Setting up Famulus](docs/setup.md) for prerequisites and
-further directions.
-
-Recurring first setup creates only its scheduler and unattended substrate. It
-does not enable email triage, daily planning, or wakeup delivery unless you
-explicitly select a preset or already have validated jobs. `llm-wakeup` alone
-owns the product-managed due-delivery registration.
-
-### 4. Choose a workflow
+### 4. Choose a quickstart
 
 Start with the quickstart closest to what you want to do:
 
-- [Personal Assistance](docs/quickstarts/personal-assistance.md) — plan the day, manage lists, triage email, and wrap up
-- [Research](docs/quickstarts/research.md) — choose the right research review, editing, conversion, or build skill
-- [Software Development](docs/quickstarts/development.md) — work safely with repositories, CI, TDD, integration, and handoffs
-- [Skill Development](docs/quickstarts/skill-development.md) — create, refactor, maintain, and certify Famulus skills
-- [Automation](docs/quickstarts/automation.md) — schedule, inspect, change, or disable recurring assistant jobs
+- **Famulus**
+  - [Personal Assistance](docs/quickstarts/personal-assistance.md) — plan the day, manage lists, triage email, and wrap up
+  - [Research](docs/quickstarts/research.md) — choose the right research review, editing, conversion, or build skill
+- **[Officina](docs/officina/README.md)** — the framework behind Famulus for developing and operating skill libraries
+  - [Software Development](docs/quickstarts/development.md) — work safely with repositories, CI, TDD, integration, and handoffs
+  - [Skill Development](docs/quickstarts/skill-development.md) — create, refactor, maintain, and certify skills
+  - [Automation](docs/quickstarts/automation.md) — schedule, inspect, change, or disable recurring assistant jobs
 
 See [Security and Privacy](docs/security-and-privacy.md) before connecting an
 account or enabling unattended work.
 
-## What Leaves Your Machine
-
-Famulus is a collection of LLM instructions and local programs. It does not add
-a separate Famulus account or hosted runtime service, and it has no
-Famulus-operated telemetry endpoint.
-
-It does connect your host agent to services you select, and network requests
-happen only as part of functionality you chose: your Claude or Codex provider
-processes model-session content, Google processes OAuth and Drive, Calendar and
-Gmail requests, a registered non-Gmail mail provider processes IMAP/SMTP,
-Open-Meteo receives weather locations, and the configured feedback mailbox
-receives reports you approve. Anything returned to Claude or Codex becomes part
-of that provider's model session.
-
-Full detail, including what each connected service can reach, is in
-[Security and Privacy](docs/security-and-privacy.md).
-
-## Featured Flows
+## Examples
 
 ### Plan my day
 
@@ -185,7 +146,8 @@ Example prompts:
 - `I'm switching tracks.`
 
 Result:
-Famulus separates workflow updates, documentation updates, and residual lessons so the next session will not miss any context the current session has.
+Famulus updates the relevant project documentation and records useful lessons
+so another session can pick up the work.
 
 ### Wrap up today
 
@@ -197,7 +159,9 @@ Example prompts:
 - `Review today's plan and wrap up.`
 
 Result:
-Famulus updates the day's plan with completions and unplanned work, closes the loop on follow-up items, and surfaces sessions that still need handoff attention so work does not disappear into an undocumented transcript. The potential missing handoffs are added to the triage.
+Famulus records completed and unplanned work, captures follow-up items, and
+flags sessions that still need a handoff. It adds possible missing handoffs to
+the triage list.
 
 ### Build a math dependency graph
 
@@ -238,14 +202,12 @@ After installation, ask:
 Connect Famulus to Google.
 ```
 
-Famulus recommends Drive, Calendar, and Gmail, while letting you connect only
-the subset you want. `connect-google` guides you through creating a Google
-Cloud project and Desktop OAuth client, then cloud-files, online-calendar, and
-email-client perform and own their respective authorizations. Never commit the
-client JSON to GitHub. Each service keeps its resulting user tokens in its own
-local credential storage.
+Famulus recommends Drive, Calendar, and Gmail, but you choose which services to
+connect. `connect-google` guides you through creating a Google Cloud project
+and Desktop OAuth client. Never commit the client JSON to GitHub. Each service
+stores its user tokens locally.
 
-For a broader list of workflows and prompt ideas, see the
+For a broader list of skills and prompt ideas, see the
 [Skill Index](docs/skills.md).
 
 ## Platform Support
@@ -269,17 +231,13 @@ once you approve. We will fix it upstream.
 
 ## Agents and Launchers
 
-`install-launchers` can set up an explicitly selected subset of three main
-agent launchers:
+`install-launchers` can set up any of three main agent launchers:
 
 - `assistant` for day-to-day personal assistant work
 - `collab` for longer project sessions with continuity and handoff behavior
 - `coauthor` for writing-focused sessions
 
-It can also prepare non-interactive background support for explicitly enabled
-recurring jobs. It is not an ordinary interactive launcher. Scheduled
-invocations use host approval/sandbox bypass modes so they cannot pause for a
-person who is not present; review the
+It can also prepare background support for recurring jobs. Review the
 [unattended execution boundary](docs/security-and-privacy.md#authorization-and-confirmation-boundaries)
 before enabling any recurring job.
 
@@ -290,7 +248,9 @@ with assistant, terminal, scratch, and logs panes/windows.
 Usage details, backend selection, and documentation for the launchers are in
 [docs/launchers.md](docs/launchers.md).
 
-## Update
+## Maintenance
+
+### Update Famulus
 
 Refresh the host plugin first:
 
@@ -303,23 +263,19 @@ claude plugin update famulus@nullkit
 codex plugin marketplace upgrade nullkit --json
 ```
 
-Then restart the host. In this first release, a plugin cache or path update can
-require rerunning each selected feature's setup so it refreshes its captured
-plugin implementation path. There is no generic Famulus updater.
+Then restart the host. In this first release, you may need to rerun setup for
+optional features after an update.
 
-## Removing an old installation
+### Remove Famulus
 
-Famulus has no general uninstaller or managed runtime. Before removing a
-selected optional integration, use that feature's own teardown or disable route;
-for example, disable recurring jobs before removing their scheduler support.
-Removing a plugin does not revoke Google access or delete service data.
+There is no single command that removes Famulus and all of its optional
+features. Disable or remove optional features individually; for example,
+disable recurring jobs before removing their scheduler support. Removing the
+plugin does not revoke Google access or delete service data.
 
-Migration of a pre-plugin installation is out of scope. If you deliberately
-clean one up, inspect it manually and non-destructively first. Historical
-artifacts can include `dispatcher`, `invoke-skill`, and wakeup launchers,
-`famulus-env`, a managed runtime or `current.json`, and an old PATH block. This
-is not a current setup route or an automated cleanup procedure. Revoke Google
-access separately through your Google account.
+Famulus does not automatically remove installations that predate the plugin.
+Inspect and remove an older installation separately, and revoke Google access
+through your Google account if you no longer want Famulus to use it.
 
 ## Learn More
 
