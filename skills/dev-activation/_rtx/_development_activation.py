@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import shlex
+import subprocess
 import sys
 from pathlib import Path
 from typing import Mapping, Sequence
@@ -131,6 +132,12 @@ def run_action(action: str, checkout: Path, *, environ: Mapping[str, str], platf
     root, environment = _activate(checkout, environ, platform, action != "validate")
     return _report(root, platform) if action == "report" else environment
 
+def _execute_command(command: list[str], environment: Mapping[str, str]) -> int:
+    if sys.platform == "win32":
+        return subprocess.run(command, env=environment, check=False).returncode
+    os.execvpe(command[0], command, environment)
+    return 0
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="dev-activation")
     parser.add_argument("action", choices=("create", "validate", "report", "export", "exec", "launch"))
@@ -146,7 +153,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.action in {"create", "validate", "report"}:
             result = run_action(args.action, args.checkout, environ=os.environ, platform=args.platform)
             if args.action == "report":
-                print(json.dumps(result, ensure_ascii=False))
+                print(json.dumps(result, ensure_ascii=True))
             return 0
         environment = create_activation(args.checkout, environ=os.environ, platform=args.platform)
         if args.action == "export":
@@ -160,7 +167,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             command = host_command(args.checkout, args.host, command)
         if not command:
             raise ActivationError(f"{args.action} requires a command after --")
-        os.execvpe(command[0], command, environment)
+        return _execute_command(command, environment)
     except (ActivationError, OSError) as exc:
         print(f"dev-activation: {exc}", file=sys.stderr)
         return 2
