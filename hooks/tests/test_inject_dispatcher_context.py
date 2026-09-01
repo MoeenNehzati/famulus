@@ -45,6 +45,24 @@ def _assert_dispatcher_context(text: str) -> None:
     assert len(text) <= 750
 
 
+def test_dispatcher_context_defers_availability_check_until_first_use() -> None:
+    """Break caught: SessionStart triggers an eager Famulus MCP probe."""
+    text = _mod.DISPATCHER_CORE
+
+    assert "At session start" not in text
+    assert "only when an executable interface is needed" in text
+
+
+def test_both_plugin_manifests_register_the_shared_hook_file() -> None:
+    """Break caught: one packaged host silently stops loading shared hooks."""
+    for manifest_path in (
+        _REPO_ROOT / ".claude-plugin" / "plugin.json",
+        _REPO_ROOT / ".codex-plugin" / "plugin.json",
+    ):
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        assert manifest["hooks"] == "./hooks/hooks.json"
+
+
 @pytest.mark.parametrize("plugin_root_variable", ["CLAUDE_PLUGIN_ROOT", "PLUGIN_ROOT"])
 def test_packaged_hook_command_runs_without_separate_args(
     tmp_path: Path, plugin_root_variable: str
