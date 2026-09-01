@@ -516,9 +516,10 @@ def test_public_syncer_repairs_corrupt_llm_wakeup_entry(
     assert syncer.Interface().run(check) == 0
 
 
-def test_generated_executable_patterns_preserve_alternatives_and_arity(syncer) -> None:
-    """Break caught: a short-account template admits the forbidden long form."""
-    graph = syncer.load_blueprints()["email-client"].repository_graph
+def test_generated_executable_preserves_patterns_placeholders_and_arity(syncer) -> None:
+    """Catch lossy aliases, arity, placeholders, or generated fallbacks."""
+    blueprints = syncer.load_blueprints()
+    graph = blueprints["email-client"].repository_graph
 
     interfaces = syncer.generated_interface_block("email-client", graph)
     start = interfaces.index("email-client._rtx.interface.mail-attachments")
@@ -540,23 +541,6 @@ def test_generated_executable_patterns_preserve_alternatives_and_arity(syncer) -
     assert "Alternative: `long-account`" in folders
     assert 'Required options: ["--account"]' in folders
     assert "stdin: permitted" in interfaces
-
-
-def test_generated_executable_rejects_ambiguous_usage(syncer) -> None:
-    graph = syncer.load_blueprints()["email-client"].repository_graph
-    export = graph.exports["email-client._rtx.interface.mail-attachments"]
-    spec = export.declaration
-    spec["usage"] = ""
-
-    with pytest.raises(syncer.BlueprintError, match="usage cannot be projected unambiguously"):
-        syncer.generated_interface_block("email-client", graph)
-
-
-def test_generated_executable_preserves_nested_placeholders_without_fallbacks(syncer) -> None:
-    blueprints = syncer.load_blueprints()
-    graph = blueprints["email-client"].repository_graph
-
-    interfaces = syncer.generated_interface_block("email-client", graph)
 
     assert '"--attach": "/path[:DisplayName]"' in interfaces
     for skill in ("email-client", "daily-plan", "node-certify", "node-drift"):
@@ -580,8 +564,21 @@ def test_generated_executable_preserves_nested_placeholders_without_fallbacks(sy
     assert '"--added-todo": "N"' in triage
 
 
-def test_generated_executable_rejects_ambiguous_option_alias(syncer) -> None:
+def test_generated_executable_rejects_ambiguous_usage_and_option_alias(syncer) -> None:
     graph = syncer.load_blueprints()["email-client"].repository_graph
+    attachments = graph.exports[
+        "email-client._rtx.interface.mail-attachments"
+    ].declaration
+    original_usage = attachments["usage"]
+    attachments["usage"] = ""
+
+    with pytest.raises(
+        syncer.BlueprintError,
+        match="usage cannot be projected unambiguously",
+    ):
+        syncer.generated_interface_block("email-client", graph)
+
+    attachments["usage"] = original_usage
     export = graph.exports["email-client._rtx.interface.mail-folders"]
     spec = export.declaration
     long_pattern = spec["process_binding"]["patterns"][1]

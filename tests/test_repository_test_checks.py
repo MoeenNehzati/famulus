@@ -410,6 +410,16 @@ def test_precommit_defers_chrome_docstring_and_performance_tests() -> None:
 
 def test_only_precommit_defers_reviewed_expensive_integration_nodes() -> None:
     exact_deferred = {
+        "skills/skill-maker/_rtx/tests/test_blueprint_tools.py::"
+        "test_public_syncer_repairs_corrupt_llm_wakeup_entry",
+        "tests/test_famulus_mcp.py::"
+        "test_real_mcp_persists_status_and_milestone_below_selected_host_root",
+        "tests/test_famulus_mcp.py::"
+        "test_graph_server_returns_through_real_mcp_and_survives",
+        "tests/test_famulus_mcp.py::"
+        "test_packaged_host_declaration_invokes_dispatcher_through_real_mcp",
+        "tests/test_setup_interface_manager_integration.py::"
+        "test_pending_mcp_call_crosses_real_routes_and_launches_original_once",
         "skills/node-certify/_rtx/tests/test_certifier.py::"
         "test_private_writer_noop_then_renews_only_stale_parent",
         "skills/node-certify/_rtx/tests/test_certifier.py::"
@@ -452,6 +462,28 @@ def test_only_precommit_defers_reviewed_expensive_integration_nodes() -> None:
         "test_run_all_isolates_unmerged_index_and_restores_git_environment"
     )
     assert unmerged_environment in runner.PORTABILITY_TESTS
+
+
+def test_explicit_selector_overrides_precommit_integration_deferral(
+    tmp_path: Path,
+) -> None:
+    selected = (
+        "tests/test_setup_interface_manager_integration.py::"
+        "test_pending_mcp_call_crosses_real_routes_and_launches_original_once"
+    )
+
+    command = runner._pytest_phase_command(
+        "precommit",
+        "tests:shared",
+        verbose=False,
+        jobs=1,
+        cache_dir=tmp_path / "cache",
+        timing_path=None,
+        selectors=(selected,),
+    )
+
+    assert selected in command
+    assert selected not in _deselected_tests(command)
 
 
 def test_prepush_defers_browser_and_slow_tests_from_parallel_pool() -> None:

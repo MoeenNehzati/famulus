@@ -26,6 +26,12 @@ def _load_server():
     return module
 
 
+@pytest.fixture(scope="module")
+def server():
+    """Load the immutable MCP module once per pytest isolation domain."""
+    return _load_server()
+
+
 def _arguments(server, *, secret: str = "original-secret"):
     return server.CompactArguments(
         positionals=[secret], options={"--token": secret}, stdin=secret
@@ -74,10 +80,9 @@ def _resolved(events: list[str], *, target: str = "root.interface.run"):
     ],
 )
 def test_exact_managed_lifecycle_redirects_before_process_binding_and_redacts(
-    monkeypatch: pytest.MonkeyPatch, interface: str, operation: str
+    server, monkeypatch: pytest.MonkeyPatch, interface: str, operation: str
 ) -> None:
     """Catches launching a managed setup/teardown or returning its secret payload."""
-    server = _load_server()
     host_authorization_calls: list[tuple[str, Path]] = []
     monkeypatch.setattr(server, "_repository_graph", lambda: _managed_graph())
     monkeypatch.setattr(
@@ -127,10 +132,9 @@ def test_exact_managed_lifecycle_redirects_before_process_binding_and_redacts(
 
 
 def test_pending_child_target_returns_pop_ordered_suffix_and_redacted_begin(
-    monkeypatch: pytest.MonkeyPatch,
+    server, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Catches reversing the suffix or exposing arguments in a setup refusal."""
-    server = _load_server()
     events: list[str] = []
     pending_stack = [
         {"interface": "root.interface.setup", "version": 1, "kind": "markdown", "action": "run-setup"},
@@ -192,10 +196,9 @@ def test_pending_child_target_returns_pop_ordered_suffix_and_redacted_begin(
 
 
 def test_busy_refusal_returns_only_flow_and_argument_free_recovery_route(
-    monkeypatch: pytest.MonkeyPatch,
+    server, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Catches leaking the suspended call or inventing a recovery action."""
-    server = _load_server()
     monkeypatch.setattr(server, "resolve_dispatch", lambda **_kwargs: _resolved([]))
     monkeypatch.setattr(
         server,
@@ -225,10 +228,9 @@ def test_busy_refusal_returns_only_flow_and_argument_free_recovery_route(
 
 @pytest.mark.parametrize("flow_id", [None, ""])
 def test_busy_refusal_requires_nonempty_flow_id(
-    monkeypatch: pytest.MonkeyPatch, flow_id: object
+    server, monkeypatch: pytest.MonkeyPatch, flow_id: object
 ) -> None:
     """Catches malformed busy state being returned as a recoverable setup flow."""
-    server = _load_server()
     monkeypatch.setattr(server, "resolve_dispatch", lambda **_kwargs: _resolved([]))
     monkeypatch.setattr(
         server,
@@ -254,10 +256,9 @@ def test_busy_refusal_requires_nonempty_flow_id(
 
 
 def test_real_manager_nonzero_status_is_a_redacted_refusal(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    server, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Catches an exit-2 recovery payload being mistaken for normal busy status."""
-    server = _load_server()
     secret = "manager-ledger-secret"
     plugin_data = tmp_path / "plugin-data"
     setup = plugin_data / "setup"
@@ -278,10 +279,9 @@ def test_real_manager_nonzero_status_is_a_redacted_refusal(
 
 @pytest.mark.parametrize("status_code", ["unmanaged", "ready"])
 def test_ordinary_call_authorizes_ready_only_immediately_before_launch(
-    monkeypatch: pytest.MonkeyPatch, status_code: str
+    server, monkeypatch: pytest.MonkeyPatch, status_code: str
 ) -> None:
     """Catches authorization on unmanaged state or launch before ready claims."""
-    server = _load_server()
     events: list[str] = []
     resolved_context = _resolved(events)
     monkeypatch.setattr(server, "resolve_dispatch", lambda **_kwargs: resolved_context)
@@ -331,10 +331,9 @@ def test_ordinary_call_authorizes_ready_only_immediately_before_launch(
 
 
 def test_dry_run_and_manager_targets_do_not_activate_ordinary_preflight(
-    monkeypatch: pytest.MonkeyPatch,
+    server, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Catches recursive manager preflight or ledger mutation during dry-run."""
-    server = _load_server()
     events: list[str] = []
     monkeypatch.setattr(server, "resolve_dispatch", lambda **kwargs: _resolved(events, target=kwargs["target"]))
     monkeypatch.setattr(
@@ -368,10 +367,9 @@ def test_dry_run_and_manager_targets_do_not_activate_ordinary_preflight(
 
 
 def test_generic_setup_words_do_not_activate_lifecycle_redirection(
-    monkeypatch: pytest.MonkeyPatch,
+    server, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Catches activation from argument prose instead of exact managed exports."""
-    server = _load_server()
     events: list[str] = []
     monkeypatch.setattr(server, "_repository_graph", lambda: _managed_graph())
     monkeypatch.setattr(server, "resolve_dispatch", lambda **_kwargs: _resolved(events))

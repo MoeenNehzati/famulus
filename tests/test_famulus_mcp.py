@@ -46,6 +46,12 @@ def _load_server(path: Path = SERVER):
     return module
 
 
+@pytest.fixture(scope="module")
+def server():
+    """Load the immutable in-process MCP module once per isolation domain."""
+    return _load_server()
+
+
 def _arguments(server, payload: dict[str, object]):
     argument_type = (
         server.OrderedArguments
@@ -328,10 +334,9 @@ def _terminate_pid(pid: int) -> None:
 
 
 def test_plugin_persistence_is_inert_without_plugin_context(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    server, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Break caught: ordinary MCP startup rewrites direct-run logging state."""
-    server = _load_server()
     canary = tmp_path / "inherited-logs"
     monkeypatch.setenv("ASSISTANT_LOGS", str(canary))
     monkeypatch.setenv("XDG_DATA_HOME", "relative-but-irrelevant")
@@ -346,10 +351,9 @@ def test_plugin_persistence_is_inert_without_plugin_context(
 
 @pytest.mark.parametrize("host", ["claude", "codex"])
 def test_plugin_persistence_prepares_logs_without_claiming_manager_ledger(
-    host: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    server, host: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Break caught: startup selects the wrong root, payload, or file mode."""
-    server = _load_server()
     plugin_data = tmp_path / host / "plugin data"
     canary = tmp_path / "inherited-canary"
     canary.mkdir()
@@ -369,10 +373,9 @@ def test_plugin_persistence_prepares_logs_without_claiming_manager_ledger(
 
 
 def test_plugin_persistence_never_overwrites_existing_manager_ledger(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    server, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Break caught: MCP startup replaces manager receipts with legacy readiness."""
-    server = _load_server()
     plugin_data = tmp_path / "plugin-data"
     status = plugin_data / "setup" / "status.json"
     status.parent.mkdir(parents=True)
@@ -401,13 +404,13 @@ def test_plugin_persistence_never_overwrites_existing_manager_ledger(
     ],
 )
 def test_invalid_plugin_context_fails_before_partial_output(
+    server,
     host: str | None,
     data_kind: str | None,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     """Break caught: invalid provenance mutates logs or creates partial state."""
-    server = _load_server()
     plugin_data = tmp_path / "must-not-exist"
     canary = tmp_path / "inherited-logs"
     monkeypatch.setenv("ASSISTANT_LOGS", str(canary))
@@ -432,10 +435,9 @@ def test_invalid_plugin_context_fails_before_partial_output(
 
 
 def test_plugin_persistence_rejects_unsafe_log_layout_before_publishing_logs(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    server, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Break caught: unsafe startup publishes a writable external log root."""
-    server = _load_server()
     plugin_data = tmp_path / "plugin-data"
     outside = tmp_path / "outside"
     plugin_data.mkdir()
@@ -762,10 +764,9 @@ def test_packaged_server_imports_its_own_src_without_pythonpath(tmp_path: Path) 
     assert result.returncode == 0, result.stderr
 
 
-def test_dry_run_matches_direct_dispatcher_resolution() -> None:
+def test_dry_run_matches_direct_dispatcher_resolution(server) -> None:
     from officina.dispatcher.direct_runtime import resolve_dispatch_metadata
 
-    server = _load_server()
     expected = resolve_dispatch_metadata(
         caller_skill="milestone-logging",
         target="milestone-logging._rtx.interface.record",
@@ -826,7 +827,7 @@ def test_generated_outer_payload_uses_real_tool_field_names(tmp_path: Path) -> N
     assert result.structuredContent["result"]["target"] == outer["interface"]
 
 
-def test_llm_wakeup_skill_renders_every_public_wakeup_invocation() -> None:
+def test_llm_wakeup_skill_renders_every_public_wakeup_invocation(server) -> None:
     """Break caught: the gateway loses the source dependency for wakeup calls."""
     generated = (ROOT / "skills" / "llm-wakeup" / "SKILL.md").read_text(
         encoding="utf-8"
@@ -913,7 +914,6 @@ def test_llm_wakeup_skill_renders_every_public_wakeup_invocation() -> None:
         assert json.dumps(rendered_arguments, sort_keys=True) in generated
 
     FastMCP = pytest.importorskip("mcp.server.fastmcp").FastMCP
-    server = _load_server()
     mcp = FastMCP("famulus")
     mcp.tool()(server.invoke)
     assert asyncio.run(mcp.list_tools())[0].name == "invoke"
@@ -957,9 +957,8 @@ def test_llm_wakeup_skill_renders_every_public_wakeup_invocation() -> None:
         assert payload["result"]["target"] == interface_id
 
 
-def test_ordered_arguments_match_email_pattern_and_reject_mixed_alternative() -> None:
+def test_ordered_arguments_match_email_pattern_and_reject_mixed_alternative(server) -> None:
     """Break caught: a projected short-account alternative permits --account too."""
-    server = _load_server()
     accepted = server.invoke(
         "email-client",
         "email-client._rtx.interface.mail-attachments",
@@ -1026,9 +1025,8 @@ def test_comprehension_fixture_is_an_uncoached_generated_candidate() -> None:
 
 
 def test_execution_captures_dispatcher_output_without_mcp_stdout(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    server, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    server = _load_server()
     monkeypatch.setenv("FAMULUS_HOST", "codex")
     monkeypatch.setenv("FAMULUS_PLUGIN_DATA", str(tmp_path / "plugin-data"))
     server.configure_plugin_persistence()
@@ -1048,8 +1046,7 @@ def test_execution_captures_dispatcher_output_without_mcp_stdout(
     assert result["dispatcher"]["target"] == "common.interface.famulus-paths-get"
 
 
-def test_structured_dispatcher_error_is_returned() -> None:
-    server = _load_server()
+def test_structured_dispatcher_error_is_returned(server) -> None:
     result = server.invoke(
         "missing-caller",
         "milestone-logging._rtx.interface.record",
@@ -1072,11 +1069,10 @@ def test_structured_dispatcher_error_is_returned() -> None:
     ],
 )
 def test_json_envelope_matches_direct_dispatcher(
-    target: str, arguments: dict[str, object], argv: list[str]
+    server, target: str, arguments: dict[str, object], argv: list[str]
 ) -> None:
     from officina.dispatcher.direct_runtime import resolve_dispatch_metadata
 
-    server = _load_server()
     typed_arguments = _arguments(server, arguments)
     assert server.caller_argv(typed_arguments) == argv
     assert server.invoke(
@@ -1090,8 +1086,7 @@ def test_json_envelope_matches_direct_dispatcher(
     ).as_payload()
 
 
-def test_python_prerequisite_has_no_platform_fallback() -> None:
-    server = _load_server()
+def test_python_prerequisite_has_no_platform_fallback(server) -> None:
     with pytest.raises(RuntimeError, match="python >=3.11"):
         server.require_python((3, 10))
 
@@ -1160,17 +1155,15 @@ def test_packaged_fixture_has_complete_registered_repository_graph(
     )
 
 
-def test_ordered_options_preserve_literal_separator() -> None:
-    server = _load_server()
+def test_ordered_options_preserve_literal_separator(server) -> None:
     arguments = {"positionals": [], "options": ["--", "--role"], "stdin": None}
     assert server.caller_argv(_arguments(server, arguments)) == ["--", "--role"]
 
 
-def test_ordered_options_are_lossless_for_repeated_flags() -> None:
+def test_ordered_options_are_lossless_for_repeated_flags(server) -> None:
     from officina.dispatcher.direct_runtime import resolve_dispatch_metadata
     from officina.dispatcher.errors import InvocationError
 
-    server = _load_server()
     argv = [
         "--run", "nightly", "--evidence", "first", "--evidence", "second", "--role", "task"
     ]
@@ -1196,8 +1189,7 @@ def test_ordered_options_are_lossless_for_repeated_flags() -> None:
     assert result["dispatcher"] == direct.value.as_payload()
 
 
-def test_compact_options_reject_ambiguous_list_values() -> None:
-    server = _load_server()
+def test_compact_options_reject_ambiguous_list_values(server) -> None:
     with pytest.raises(ValueError, match="use ordered options"):
         server.caller_argv(
             server.CompactArguments(

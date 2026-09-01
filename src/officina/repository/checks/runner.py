@@ -42,6 +42,16 @@ DOCSTRING_TESTS = {
 }
 PERFORMANCE_TESTS = {"tests/test_dispatcher_performance.py"}
 PRECOMMIT_DEFERRED_INTEGRATION_TESTS = {
+    "skills/skill-maker/_rtx/tests/test_blueprint_tools.py::"
+    "test_public_syncer_repairs_corrupt_llm_wakeup_entry",
+    "tests/test_famulus_mcp.py::"
+    "test_real_mcp_persists_status_and_milestone_below_selected_host_root",
+    "tests/test_famulus_mcp.py::"
+    "test_graph_server_returns_through_real_mcp_and_survives",
+    "tests/test_famulus_mcp.py::"
+    "test_packaged_host_declaration_invokes_dispatcher_through_real_mcp",
+    "tests/test_setup_interface_manager_integration.py::"
+    "test_pending_mcp_call_crosses_real_routes_and_launches_original_once",
     "skills/node-certify/_rtx/tests/test_certifier.py::"
     "test_private_writer_noop_then_renews_only_stale_parent",
     "skills/node-certify/_rtx/tests/test_certifier.py::"
@@ -2098,6 +2108,8 @@ def _pytest_phase_command(
       - set pytest_arguments = arguments plus validator plugin inputs
       - if execution is parallel and a private snapshot path exists:
         - set pytest_arguments = arguments plus graph snapshot path
+    - if explicit selectors overlap suite deselections:
+      - remove only the overlapping deselections
     - set pytest_arguments = arguments plus cache and optional timing path
     - return Python pytest command
 
@@ -2147,6 +2159,31 @@ def _pytest_phase_command(
         raise ValueError(f"not a pytest phase: {task_id}")
     if selectors:
         targets = list(selectors)
+        retained_args: list[str] = []
+        index = 0
+        while index < len(pytest_args):
+            argument = pytest_args[index]
+            if argument == "--deselect" and index + 1 < len(pytest_args):
+                deselected = pytest_args[index + 1]
+                deselected_file, deselected_separator, _ = deselected.partition("::")
+                overridden = False
+                for selector in selectors:
+                    selected_file, selected_separator, _ = selector.partition("::")
+                    if selected_file != deselected_file:
+                        continue
+                    if (
+                        not selected_separator
+                        or not deselected_separator
+                        or selector == deselected
+                    ):
+                        overridden = True
+                        break
+                if overridden:
+                    index += 2
+                    continue
+            retained_args.append(argument)
+            index += 1
+        pytest_args = retained_args
     if task_id in {"combined", "validators"}:
         if (
             validator_root is None
