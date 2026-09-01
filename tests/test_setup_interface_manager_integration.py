@@ -7,6 +7,7 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -16,7 +17,10 @@ import pytest
 
 from officina.blueprints.graph import ManagedSetup
 from officina.common import atomic_files
-from officina.runtime.python_machine_interface import logical_python_package_name
+from officina.runtime.python_machine_interface import (
+    logical_python_package_name,
+    set_runtime_dispatch_context,
+)
 from officina.runtime.python_machine_interface_runner import (
     load_interface,
     run_python_machine_interface,
@@ -277,6 +281,82 @@ class Scenario:
         return results
 
 
+def test_real_direct_status_is_read_only_and_authorize_claims_atomically(
+    tmp_path: Path,
+) -> None:
+    """Catches hot routes bypassing the sparse loader or changing ledger semantics."""
+    ledger_path = tmp_path / "private" / "setup-status.json"
+    target = "python-canary.interface.setup"
+    store = state.LedgerStore._from_atomic_files(ledger_path, AtomicFiles())
+    store.update(
+        lambda _ledger: state.SetupLedger(
+            interfaces={
+                target: state.SetupReceipt(version=1, required_by=frozenset())
+            },
+            active_flow=None,
+        )
+    )
+    before_status = ledger_path.read_bytes()
+    fixture_root = (
+        REPO_ROOT
+        / "tests"
+        / "fixtures"
+        / "setup_interface_manager"
+        / "repository"
+    )
+    repository_root = tmp_path / "direct-repository"
+    shutil.copytree(
+        fixture_root / "python-canary",
+        repository_root / "modules" / "python-canary",
+    )
+    configuration_path = repository_root / "officina.toml"
+    configuration_path.write_text(
+        'schema_version = 1\n\n[modules]\nroots = ["modules"]\n',
+        encoding="utf-8",
+    )
+
+    class Runtime:
+        @staticmethod
+        def interface(interface_type: type):
+            class BoundInterface(interface_type):
+                def dispatch(self, key: str, **_kwargs: object):
+                    assert key == setup_dispatches.GETTER_KEY
+                    return subprocess.CompletedProcess(
+                        [], 0, str(ledger_path) + "\n", ""
+                    )
+
+            instance = BoundInterface()
+            set_runtime_dispatch_context(
+                instance,
+                repo_root=REPO_ROOT / "wrong-ambient-root",
+                repository_config=configuration_path,
+            )
+            return instance
+
+    output = io.StringIO()
+    with redirect_stdout(output):
+        status_code = run_python_machine_interface(
+            Runtime.interface(manager.StatusInterface), [target]
+        )
+    status = json.loads(output.getvalue())
+
+    assert status_code == 0
+    assert status["code"] == "ready"
+    assert ledger_path.read_bytes() == before_status
+
+    output = io.StringIO()
+    with redirect_stdout(output):
+        authorize_code = run_python_machine_interface(
+            Runtime.interface(manager.AuthorizeInterface),
+            [target, "acceptance-caller", target, "1"],
+        )
+    authorized = json.loads(output.getvalue())
+
+    assert authorize_code == 0
+    assert authorized["resume_original"] is True
+    assert store.read().interfaces[target].required_by == {target}
+
+
 def test_public_workflow_switches_dependency_first_and_resumes_once_after_restart(
     tmp_path: Path,
 ) -> None:
@@ -359,7 +439,7 @@ def test_public_workflow_switches_dependency_first_and_resumes_once_after_restar
     )
 
 
-def test_pending_mcp_call_crosses_real_routes_and_launches_original_once(
+def test_unmanaged_pending_mcp_call_skips_manager_and_launches_original_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Catches an unmanaged milestone call entering setup or launching twice."""
@@ -410,17 +490,13 @@ def test_pending_mcp_call_crosses_real_routes_and_launches_original_once(
     assert original_launches == [
         ([f"record {secret}", "--role", f"acceptance-{secret}"], None)
     ]
-    assert preflight_operations == ["status"]
+    assert preflight_operations == []
     assert (
         original_arguments.positionals,
         original_arguments.options,
         original_arguments.stdin,
     ) == original_snapshot
-    assert json.loads((plugin_data / "setup" / "status.json").read_text()) == {
-        "active_flow": None,
-        "interfaces": {},
-        "schema_version": 1,
-    }
+    assert not (plugin_data / "setup" / "status.json").exists()
 
 
 def test_stale_suffix_invalidation_and_reverse_teardown_use_persisted_state(

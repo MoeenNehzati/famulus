@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from shutil import copytree
 
 import pytest
+import yaml
 
 import conftest as root_conftest
 from officina.blueprints.graph import (
@@ -13,6 +15,7 @@ from officina.blueprints.graph import (
     RepositoryBlueprintGraph,
     _managed_setup_metadata,
     _setup_requirements,
+    load_repository_blueprint_graph,
     managed_setup_order,
     setup_order,
 )
@@ -475,7 +478,7 @@ def test_managed_setup_metadata_rejects_management_on_non_setup_export() -> None
         (
             "setup_verifier",
             {"interface": "other.interface.setup-status", "version": 5},
-            "same top-level module",
+            "same module",
         ),
         (
             "setup_verifier",
@@ -519,13 +522,116 @@ def test_managed_setup_metadata_requires_pinned_local_lifecycle_exports(
         _managed_setup_metadata(exports)
 
 
+def _write_nested_managed_setup_repository(repo: Path) -> None:
+    fixture = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "setup_interface_manager"
+        / "repository"
+        / "python-canary"
+    )
+    for segment in ("left", "right"):
+        module = repo / "skills" / "root" / segment
+        copytree(
+            fixture,
+            module,
+            ignore=lambda _path, names: {"__pycache__"} & set(names),
+        )
+        for blueprint in module.rglob("*.yaml"):
+            blueprint.write_text(
+                blueprint.read_text(encoding="utf-8").replace(
+                    "python-canary", f"root.{segment}"
+                ),
+                encoding="utf-8",
+            )
+
+    root = repo / "skills" / "root"
+    (root / "SKILL.md").write_text("# root fixture\n", encoding="utf-8")
+    (root / "blueprint.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": 6,
+                "node_type": "module",
+                "id": "root",
+                "version": 1,
+                "maturity": "experimental",
+                "description": "Nested managed-setup lifecycle test fixture.",
+                "gateway": {"language": "Markdown", "path": "SKILL.md"},
+                "content": [r"SKILL\.md"],
+                "authority": {"owns_filesystem": []},
+                "children": {"left": {}, "right": {}},
+                "namespace_exports": {
+                    segment: {
+                        "version": 1,
+                        "access": {"allow_all_modules": True, "allowed_callers": []},
+                        "surface": {
+                            "only": {
+                                f"root.{segment}.interface.{name}": 1
+                                for name in (
+                                    "setup",
+                                    "setup-status",
+                                    "teardown",
+                                    "teardown-status",
+                                )
+                            }
+                        },
+                    }
+                    for segment in ("left", "right")
+                },
+                "exports": {},
+                "sources": {},
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_repository_graph_requires_same_module_lifecycle_references(
+    tmp_path: Path,
+) -> None:
+    """Catches graph loading that accepts a sibling-module lifecycle verifier."""
+
+    repo = tmp_path / "repository"
+    _write_nested_managed_setup_repository(repo)
+    load_repository_blueprint_graph(repo)
+
+    blueprint_path = repo / "skills" / "root" / "left" / "blueprint.yaml"
+    blueprint = yaml.safe_load(blueprint_path.read_text(encoding="utf-8"))
+    management = blueprint["exports"]["root.left.interface.setup"]["setup_management"]
+    management["teardown"]["verifier"] = {
+        "interface": "root.right.interface.teardown-status",
+        "version": 1,
+    }
+    blueprint_path.write_text(
+        yaml.safe_dump(blueprint, sort_keys=False), encoding="utf-8"
+    )
+
+    with pytest.raises(BlueprintGraphError, match="same module"):
+        load_repository_blueprint_graph(repo)
+
+
+def test_managed_setup_metadata_allows_at_most_one_managed_setup_per_module() -> None:
+    """Catches recording multiple managed lifecycle owners for one module."""
+
+    exports = _managed_exports(setup_id="first.interface.setup")
+    duplicate_module_exports = _managed_exports(setup_id="second.interface.setup")
+    for export_id, export in duplicate_module_exports.items():
+        exports[export_id] = InterfaceExport(
+            **{**export.__dict__, "module_node_id": "first"}
+        )
+
+    with pytest.raises(BlueprintGraphError, match="at most one managed setup"):
+        _managed_setup_metadata(exports)
+
+
 @pytest.mark.parametrize(
     ("field", "replacement", "message"),
     [
         (
             "teardown",
             {"interface": "other.interface.teardown", "version": 4},
-            "same top-level module",
+            "same module",
         ),
         (
             "teardown",
@@ -535,7 +641,7 @@ def test_managed_setup_metadata_requires_pinned_local_lifecycle_exports(
         (
             "teardown.verifier",
             {"interface": "other.interface.teardown-status", "version": 6},
-            "same top-level module",
+            "same module",
         ),
         (
             "teardown.verifier",

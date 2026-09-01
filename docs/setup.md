@@ -70,6 +70,96 @@ Configure and operate persistent features through their owning skills, and use
 the [Personal Assistance Quickstart](quickstarts/personal-assistance.md) and
 [Automation Quickstart](quickstarts/automation.md) for normal workflow order.
 
+Everything else is opt-in and demand-driven. A Famulus skill is an Officina
+node, but merely exporting a setup interface does not make it managed. Its
+blueprint must declare `setup_management` for Boolean whole-node state, with
+fixed setup and teardown interfaces and read-only verifiers. It may declare
+prerequisites through `setup_requires_setup_of`. Generic discussion about
+setup, installation, configuration, or teardown does not activate the manager.
+
+When an ordinary managed interface is requested, its generated gate and the
+Famulus MCP preflight use the same lifecycle:
+
+1. `setup-interface-manager._rtx.interface.status@1` classifies the target as
+   `unmanaged`, `ready`, `setup_required`, or `setup_busy` without changing
+   claims.
+2. A pending target switches through
+   `setup-interface-manager._rtx.interface.begin@1` to the returned
+   prerequisite-first stack. `run-markdown@1` returns the exact declared
+   instructions and `settle@1` runs its verifier; `run-python@1` runs the fixed
+   action and verifier together. Only verifier success records a receipt.
+3. After the flow reports ready, the caller rechecks `status@1`, calls
+   `authorize@1`, and resumes the original request exactly once only when
+   `resume_original` is true.
+
+For its direct classification, MCP authorizes the requested route once and
+reuses that invocation's repository and loaded target ancestry. Blueprint paths
+are derived directly as `module_id -> configured root/module segments/blueprint.yaml`;
+MCP does not catalogue modules. A route whose loaded ancestry proves it
+unmanaged bypasses setup-interface-manager entirely. For a managed route,
+among manager routes only `status@1` and `authorize@1` load a fresh route-local
+sparse graph containing the target ancestry and explicit setup prerequisite
+closure. Setup, teardown, run/settle/recover, and invalidation keep the canonical
+full repository graph because their semantics are not limited to the ordinary
+preflight hot path.
+
+The caller retains the original arguments and stdin throughout this switch.
+The manager stores only caller, interface, and version as continuation identity.
+For a Python setup action it accepts one JSON object on stdin and projects only
+arguments declared by that fixed managed binding; undeclared, missing, or
+malformed input is refused. Arguments, stdin, environment, verifier output, and
+dispatcher diagnostics are never persisted in the ledger or echoed in manager
+responses.
+
+You therefore do not configure the whole system in advance. Setup follows
+actual use: a capability asks for its accounts, credentials, or platform
+integration only when a requested workflow reaches it.
+
+### 1.4 Persisted state and live MCP readiness are different
+
+The only persisted setup state is the manager's schema-versioned JSON ledger at
+the single absolute `setup-status` path returned by
+`common.interface.famulus-paths-get@1`. The manager creates and updates that
+file through its confined atomic adapter; no public manager route accepts a
+ledger path. An exact interface/version receipt means the declared verifier
+passed. Its `required_by` roots record which managed workflows still claim that
+state. MCP never reads or writes this ledger directly; setup-interface-manager
+remains its sole authority.
+
+The ledger does not say whether the shared Famulus MCP process is currently
+reachable. Live `famulus.invoke` availability is the MCP readiness signal, and
+MCP startup does not overwrite the setup ledger. A malformed or unsupported
+ledger fails closed instead of being treated as ready.
+
+Missing or stale prerequisites rerun only the affected dependent suffix. For a
+`leaf -> parent -> root` setup order, a stale parent reruns parent and root while
+retaining the exact leaf. While no flow is active,
+`setup-interface-manager._rtx.interface.invalidate@1` removes a selected
+receipt and every managed dependent receipt; the next use rebuilds the current
+closure from verified state.
+
+### 1.5 Teardown and recovery
+
+Exact managed setup and teardown calls are redirected to `begin@1`; they never
+launch a lifecycle interface directly. Teardown walks the setup order in
+reverse. It runs an external teardown only after the last root releases a
+receipt. If another root still claims a shared dependency, the manager removes
+only the current root's claim. A teardown verifier must return success before
+the receipt is removed, and teardown never resumes an ordinary request.
+
+Only one ledger-mutating flow can be active. A second action receives
+`setup_busy` with the existing flow identity. After an interruption,
+`setup-interface-manager._rtx.interface.recover@1` accepts only `retry` or
+`cancel`: retry checks the verifier before rerunning the exact current step;
+cancel removes claims added by completed steps and clears the flow without
+guessing whether the interrupted external action finished. Invalidation is
+refused until the active flow is recovered or cancelled.
+
+Persistent features remain independently owned: `install-launchers` configures
+interactive launchers, `recurring-tasks` configures recurring work,
+`llm-wakeup` configures due-session delivery, and `connect-google` configures
+Google services. Each installs only its own residual declared packages.
+
 ## 2. Connect personal-assistant services
 
 The personal-assistant subsystem is organized around persistent `todo` and

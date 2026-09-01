@@ -4,7 +4,6 @@ import json
 import os
 import sys
 from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
@@ -12,25 +11,25 @@ ROOT = Path(__file__).resolve().parent
 CONTRACT = json.loads((ROOT / "mcp-core.json").read_text(encoding="utf-8"))
 sys.path.insert(0, str(ROOT / "src"))
 os.environ["PYTHONPATH"] = str(ROOT / "src")
+from officina.configuration.repository import (
+    RepositoryConfigurationError,
+    load_repository_configuration,
+)
+from officina.dispatcher import (
+    authorize_direct_invocation,
+    load_direct_setup_projection,
+    materialize_authorized_invocation,
+)
 from officina.dispatcher.direct_runtime import (
     _run_resolved_invocation,
-    authorize_host_caller,
     resolve_dispatch,
 )
 from officina.dispatcher.errors import (
+    DirectBlueprintError,
     InvocationError,
     RuntimeMisconfiguredError,
-    UnauthorizedCallerError,
 )
-from officina.blueprints.authorization import (
-    AuthorizationRequest,
-    resolve_interface_authorization,
-)
-from officina.blueprints.graph import (
-    BlueprintGraphError,
-    load_repository_blueprint_graph,
-    resolve_export,
-)
+from officina.blueprints.graph import BlueprintGraphError
 from officina.common.famulus_paths import resolve_famulus_paths
 
 
@@ -150,52 +149,6 @@ def caller_argv(arguments: CompactArguments | OrderedArguments) -> list[str]:
         if value is not True:
             argv.append(value)
     return argv
-
-
-@lru_cache(maxsize=1)
-def _repository_graph():
-    """Load the canonical graph used to identify managed lifecycle exports."""
-
-    return load_repository_blueprint_graph(ROOT)
-
-
-def _managed_lifecycle(graph, interface: str, version: int):
-    """Return the exact managed root and operation, never an argument heuristic."""
-
-    for root, managed in graph.managed_setups.items():
-        if interface == managed.setup_interface and version == managed.setup_version:
-            return root, "setup"
-        if interface == managed.teardown_interface and version == managed.teardown_version:
-            return root, "teardown"
-    return None
-
-
-def _authorize_managed_lifecycle(
-    graph, caller: str, interface: str, version: int
-) -> None:
-    """Resolve and authorize one lifecycle export without compiling its gateway."""
-
-    module, _source, _export = resolve_export(graph, interface, version)
-    authorization = resolve_interface_authorization(
-        graph,
-        AuthorizationRequest(
-            caller_module_id=caller,
-            caller_source_id=None,
-            interface_id=interface,
-            version=version,
-        ),
-    )
-    if not authorization.allowed:
-        raise UnauthorizedCallerError(
-            caller_module_id=caller,
-            target_module_id=module.node_id,
-            interface_id=interface,
-            diagnostic=authorization.diagnostic,
-        )
-    authorize_host_caller(
-        caller_skill=caller,
-        repository_config=ROOT / "officina.toml",
-    )
 
 
 def _manager_call(caller: str, operation: str, arguments: list[str]) -> dict[str, Any]:
@@ -370,35 +323,92 @@ def _ordinary_preflight(
     )
 
 
-def invoke(caller: str, interface: str, version: int, arguments: CompactArguments | OrderedArguments, dry_run: bool = False) -> dict[str, Any] | ExecutionResult:
+def invoke(
+    caller: str,
+    interface: str,
+    version: int,
+    arguments: CompactArguments | OrderedArguments,
+    dry_run: bool = False,
+) -> dict[str, Any] | ExecutionResult:
     """Invoke one authorized Famulus interface through the existing Dispatcher."""
     try:
-        if not dry_run and not interface.startswith(MANAGER_PREFIX):
-            try:
-                graph = _repository_graph()
-                lifecycle = _managed_lifecycle(graph, interface, version)
-            except (BlueprintGraphError, OSError) as exc:
-                raise RuntimeMisconfiguredError(
-                    "managed setup graph is unavailable",
-                    caller_module_id=caller,
-                    target_module_id=interface.split(".interface.", 1)[0],
-                ) from exc
-            if lifecycle is not None:
-                _authorize_managed_lifecycle(graph, caller, interface, version)
-                root, operation = lifecycle
-                return _setup_managed(
-                    operation, root, caller, interface, version
+        if dry_run or interface.startswith(MANAGER_PREFIX):
+            with resolve_dispatch(
+                caller_skill=caller,
+                target=interface,
+                target_version=version,
+                args=caller_argv(arguments),
+                stdin_requested=arguments.stdin is not None,
+                repository_config=ROOT / "officina.toml",
+            ) as resolved:
+                dispatcher = resolved.metadata().as_payload()
+                if dry_run:
+                    return dispatcher
+                result = _run_resolved_invocation(
+                    resolved,
+                    stdin=arguments.stdin,
+                    capture_output=True,
+                    text=True,
                 )
-        with resolve_dispatch(caller_skill=caller, target=interface, target_version=version, args=caller_argv(arguments), stdin_requested=arguments.stdin is not None, repository_config=ROOT / "officina.toml") as resolved:
-            dispatcher = resolved.metadata().as_payload()
-            if dry_run:
-                return dispatcher
-            if not interface.startswith(MANAGER_PREFIX):
-                refusal = _ordinary_preflight(caller, interface, version)
-                if refusal is not None:
-                    return refusal
-            result = _run_resolved_invocation(resolved, stdin=arguments.stdin, capture_output=True, text=True)
-            return {"exit_code": result.returncode, "stdout": result.stdout, "stderr": result.stderr, "dispatcher": dispatcher}
+                return {
+                    "exit_code": result.returncode,
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                    "dispatcher": dispatcher,
+                }
+
+        try:
+            configuration = load_repository_configuration(ROOT / "officina.toml")
+        except RepositoryConfigurationError as exc:
+            raise RuntimeMisconfiguredError(
+                str(exc),
+                caller_module_id=caller,
+                target_module_id=interface.split(".interface.", 1)[0],
+            ) from exc
+        authorized = authorize_direct_invocation(
+            configuration=configuration,
+            caller_module_id=caller,
+            interface_id=interface,
+            interface_version=version,
+            host_caller=True,
+        )
+        try:
+            projection = load_direct_setup_projection(
+                authorized.repository,
+                authorized.target_modules,
+                authorized.export,
+            )
+        except (BlueprintGraphError, DirectBlueprintError, OSError) as exc:
+            raise RuntimeMisconfiguredError(
+                "managed setup graph is unavailable",
+                caller_module_id=caller,
+                target_module_id=interface.split(".interface.", 1)[0],
+            ) from exc
+        if projection.lifecycle is not None:
+            root, operation = projection.lifecycle
+            return _setup_managed(operation, root, caller, interface, version)
+        if projection.graph.managed_setups:
+            refusal = _ordinary_preflight(caller, interface, version)
+            if refusal is not None:
+                return refusal
+        resolved = materialize_authorized_invocation(
+            authorized,
+            argv=caller_argv(arguments),
+            stdin_requested=arguments.stdin is not None,
+        )
+        dispatcher = resolved.metadata().as_payload()
+        result = _run_resolved_invocation(
+            resolved,
+            stdin=arguments.stdin,
+            capture_output=True,
+            text=True,
+        )
+        return {
+            "exit_code": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "dispatcher": dispatcher,
+        }
     except InvocationError as error:
         payload = error.as_payload() if hasattr(error, "as_payload") else {"message": str(error)}
         return {"exit_code": 2, "stdout": "", "stderr": "", "dispatcher": payload}

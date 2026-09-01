@@ -3762,53 +3762,64 @@ def _interfaces_and_exports(
     )
 
 
+def _setup_requirement(
+    export_id: str,
+    export: InterfaceExport,
+) -> tuple[tuple[str, int], ...] | None:
+    """Validate one export's explicit setup-interface prerequisites."""
+
+    declaration = export.export_declaration or {}
+    raw = declaration.get("setup_requires_setup_of")
+    is_setup = export_id.endswith(".interface.setup")
+    if is_setup and raw is None:
+        raise BlueprintGraphError(
+            f"{export_id}: setup interface must declare setup_requires_setup_of"
+        )
+    if not is_setup and raw is not None:
+        raise BlueprintGraphError(
+            f"{export_id}: only setup interfaces may declare "
+            "setup_requires_setup_of"
+        )
+    if not is_setup:
+        return None
+    if not isinstance(raw, list):
+        raise BlueprintGraphError(
+            f"{export_id}: setup_requires_setup_of must be a list"
+        )
+    parsed: list[tuple[str, int]] = []
+    for index, entry in enumerate(raw):
+        if not isinstance(entry, Mapping):
+            raise BlueprintGraphError(
+                f"{export_id}: setup_requires_setup_of[{index}] must be a mapping"
+            )
+        target = entry.get("interface")
+        version = entry.get("version")
+        if (
+            not isinstance(target, str)
+            or type(version) is not int
+            or version < 1
+        ):
+            raise BlueprintGraphError(
+                f"{export_id}: invalid setup prerequisite at index {index}"
+            )
+        parsed.append((target, version))
+    if len(parsed) != len(set(parsed)):
+        raise BlueprintGraphError(
+            f"{export_id}: setup_requires_setup_of contains a duplicate"
+        )
+    return tuple(parsed)
+
+
 def _setup_requirements(
     exports: Mapping[str, InterfaceExport],
 ) -> dict[str, tuple[tuple[str, int], ...]]:
     """Validate and return explicit public setup-interface prerequisites."""
 
-    requirements: dict[str, tuple[tuple[str, int], ...]] = {}
-    for export_id, export in sorted(exports.items()):
-        declaration = export.export_declaration or {}
-        raw = declaration.get("setup_requires_setup_of")
-        is_setup = export_id.endswith(".interface.setup")
-        if is_setup and raw is None:
-            raise BlueprintGraphError(
-                f"{export_id}: setup interface must declare setup_requires_setup_of"
-            )
-        if not is_setup and raw is not None:
-            raise BlueprintGraphError(
-                f"{export_id}: only setup interfaces may declare "
-                "setup_requires_setup_of"
-            )
-        if not is_setup:
-            continue
-        if not isinstance(raw, list):
-            raise BlueprintGraphError(
-                f"{export_id}: setup_requires_setup_of must be a list"
-            )
-        parsed: list[tuple[str, int]] = []
-        for index, entry in enumerate(raw):
-            if not isinstance(entry, Mapping):
-                raise BlueprintGraphError(
-                    f"{export_id}: setup_requires_setup_of[{index}] must be a mapping"
-                )
-            target = entry.get("interface")
-            version = entry.get("version")
-            if (
-                not isinstance(target, str)
-                or type(version) is not int
-                or version < 1
-            ):
-                raise BlueprintGraphError(
-                    f"{export_id}: invalid setup prerequisite at index {index}"
-                )
-            parsed.append((target, version))
-        if len(parsed) != len(set(parsed)):
-            raise BlueprintGraphError(
-                f"{export_id}: setup_requires_setup_of contains a duplicate"
-            )
-        requirements[export_id] = tuple(parsed)
+    requirements = {
+        export_id: requirement
+        for export_id, export in sorted(exports.items())
+        if (requirement := _setup_requirement(export_id, export)) is not None
+    }
 
     for export_id, entries in requirements.items():
         for target_id, version in entries:
@@ -3883,13 +3894,12 @@ def setup_order(
     return tuple(order)
 
 
-def _managed_setup_metadata(
+def _managed_setup_for_export(
+    export_id: str,
+    export: InterfaceExport,
     exports: Mapping[str, InterfaceExport],
-    setup_requirements: Mapping[str, tuple[tuple[str, int], ...]] | None = None,
-) -> dict[str, ManagedSetup]:
-    """Validate and project opted-in setup lifecycle metadata."""
-
-    managed: dict[str, ManagedSetup] = {}
+) -> ManagedSetup | None:
+    """Validate and project the lifecycle metadata declared by one export."""
 
     def reference(
         owner_id: str,
@@ -3913,10 +3923,10 @@ def _managed_setup_metadata(
             raise BlueprintGraphError(
                 f"{owner_id}: setup_management.{field} target {interface_id!r} must exist"
             )
-        if target.module_node_id.split(".", 1)[0] != owner_module_id.split(".", 1)[0]:
+        if target.module_node_id != owner_module_id:
             raise BlueprintGraphError(
                 f"{owner_id}: setup_management.{field} target {interface_id!r} "
-                "must belong to the same top-level module"
+                "must belong to the same module"
             )
         if target.version != version:
             raise BlueprintGraphError(
@@ -3945,65 +3955,86 @@ def _managed_setup_metadata(
                 f"{owner_id}: setup_management.{field} verifier must take no arguments"
             )
 
+    declaration = export.export_declaration or {}
+    raw = declaration.get("setup_management")
+    if raw is None:
+        return None
+    if not export_id.endswith(".interface.setup"):
+        raise BlueprintGraphError(
+            f"{export_id}: setup_management is allowed only public setup interfaces"
+        )
+    if export.module_node_id.split(".", 1)[0] == "setup-python-environment":
+        raise BlueprintGraphError(
+            "setup-python-environment cannot opt in to setup management"
+        )
+    if not isinstance(raw, Mapping):
+        raise BlueprintGraphError(f"{export_id}: setup_management must be a mapping")
+    setup_verifier_id, setup_verifier_version, setup_verifier = reference(
+        export_id,
+        raw.get("setup_verifier"),
+        field="setup_verifier",
+        owner_module_id=export.module_node_id,
+    )
+    teardown = raw.get("teardown")
+    if not isinstance(teardown, Mapping):
+        raise BlueprintGraphError(
+            f"{export_id}: setup_management.teardown must be a mapping"
+        )
+    teardown_id, teardown_version, teardown_export = reference(
+        export_id,
+        teardown,
+        field="teardown",
+        owner_module_id=export.module_node_id,
+    )
+    teardown_verifier_id, teardown_verifier_version, teardown_verifier = reference(
+        export_id,
+        teardown.get("verifier"),
+        field="teardown.verifier",
+        owner_module_id=export.module_node_id,
+    )
+    if export.source_node_id == teardown_export.source_node_id:
+        raise BlueprintGraphError(
+            f"{export_id}: setup and teardown must use dedicated sources"
+        )
+    verifier(export_id, "setup_verifier", setup_verifier)
+    verifier(export_id, "teardown.verifier", teardown_verifier)
+    return ManagedSetup(
+        setup_interface=export_id,
+        setup_version=export.version,
+        teardown_interface=teardown_id,
+        teardown_version=teardown_version,
+        setup_verifier_interface=setup_verifier_id,
+        setup_verifier_version=setup_verifier_version,
+        teardown_verifier_interface=teardown_verifier_id,
+        teardown_verifier_version=teardown_verifier_version,
+        kind=(
+            "python"
+            if isinstance(export.declaration.get("process_binding"), Mapping)
+            else "markdown"
+        ),
+    )
+
+
+def _managed_setup_metadata(
+    exports: Mapping[str, InterfaceExport],
+    setup_requirements: Mapping[str, tuple[tuple[str, int], ...]] | None = None,
+) -> dict[str, ManagedSetup]:
+    """Validate and project opted-in setup lifecycle metadata."""
+
+    managed: dict[str, ManagedSetup] = {}
+    managed_owners: dict[str, str] = {}
     for export_id, export in sorted(exports.items()):
-        declaration = export.export_declaration or {}
-        raw = declaration.get("setup_management")
-        if raw is None:
+        metadata = _managed_setup_for_export(export_id, export, exports)
+        if metadata is None:
             continue
-        if not export_id.endswith(".interface.setup"):
+        previous_owner = managed_owners.get(export.module_node_id)
+        if previous_owner is not None:
             raise BlueprintGraphError(
-                f"{export_id}: setup_management is allowed only public setup interfaces"
+                f"{export_id}: module {export.module_node_id!r} may declare at most "
+                f"one managed setup (already declared by {previous_owner})"
             )
-        if export.module_node_id.split(".", 1)[0] == "setup-python-environment":
-            raise BlueprintGraphError(
-                "setup-python-environment cannot opt in to setup management"
-            )
-        if not isinstance(raw, Mapping):
-            raise BlueprintGraphError(f"{export_id}: setup_management must be a mapping")
-        setup_verifier_id, setup_verifier_version, setup_verifier = reference(
-            export_id,
-            raw.get("setup_verifier"),
-            field="setup_verifier",
-            owner_module_id=export.module_node_id,
-        )
-        teardown = raw.get("teardown")
-        if not isinstance(teardown, Mapping):
-            raise BlueprintGraphError(
-                f"{export_id}: setup_management.teardown must be a mapping"
-            )
-        teardown_id, teardown_version, teardown_export = reference(
-            export_id,
-            teardown,
-            field="teardown",
-            owner_module_id=export.module_node_id,
-        )
-        teardown_verifier_id, teardown_verifier_version, teardown_verifier = reference(
-            export_id,
-            teardown.get("verifier"),
-            field="teardown.verifier",
-            owner_module_id=export.module_node_id,
-        )
-        if export.source_node_id == teardown_export.source_node_id:
-            raise BlueprintGraphError(
-                f"{export_id}: setup and teardown must use dedicated sources"
-            )
-        verifier(export_id, "setup_verifier", setup_verifier)
-        verifier(export_id, "teardown.verifier", teardown_verifier)
-        managed[export_id] = ManagedSetup(
-            setup_interface=export_id,
-            setup_version=export.version,
-            teardown_interface=teardown_id,
-            teardown_version=teardown_version,
-            setup_verifier_interface=setup_verifier_id,
-            setup_verifier_version=setup_verifier_version,
-            teardown_verifier_interface=teardown_verifier_id,
-            teardown_verifier_version=teardown_verifier_version,
-            kind=(
-                "python"
-                if isinstance(export.declaration.get("process_binding"), Mapping)
-                else "markdown"
-            ),
-        )
+        managed_owners[export.module_node_id] = export_id
+        managed[export_id] = metadata
     requirements = (
         _setup_requirements(exports)
         if setup_requirements is None

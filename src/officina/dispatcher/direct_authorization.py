@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import stat
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 import yaml
@@ -335,36 +336,41 @@ def authorize_host_caller(
     _require_discoverable_host_caller(caller_modules, caller_module_id)
 
 
-def resolve_direct_invocation(
-    *,
-    configuration: RepositoryConfiguration,
-    caller_module_id: str,
+@dataclass(frozen=True)
+class AuthorizedDirectInvocation:
+    """One direct route authorized without caller argument compilation."""
+
+    repository: DirectBlueprintRepository
+    caller_modules: tuple[DirectModule, ...]
+    target_modules: tuple[DirectModule, ...]
+    source: DirectBlueprintNode
+    export: DirectInterfaceExport
+    authorization: AuthorizationResult
+    diagnostics: tuple[InvocationDiagnostic, ...]
+
+
+def resolve_direct_export_from_module(
+    module: DirectModule,
     interface_id: str,
     interface_version: int | None,
-    argv: list[str],
-    stdin_requested: bool,
-    certification_status: Mapping[str, object] | None = None,
-    host_caller: bool = False,
-) -> ResolvedInvocationMetadata:
-    """Authorize and compile one direct route using only relevant blueprints."""
+) -> tuple[DirectBlueprintNode, DirectInterfaceExport]:
+    """Resolve one terminal export, including its source and version checks."""
 
-    target_module_id, _local_name = parse_interface_id(interface_id)
-    repository = DirectBlueprintRepository(configuration)
-    caller_modules = repository.load_ancestry(caller_module_id)
-    if host_caller:
-        _require_discoverable_host_caller(caller_modules, caller_module_id)
-    target_modules = repository.load_ancestry(target_module_id)
-    caller_ancestry = tuple(module.module_id for module in caller_modules)
-    target_ancestry = tuple(module.module_id for module in target_modules)
-    terminal = target_modules[-1]
-    raw_export = terminal.declaration["exports"].get(interface_id)
+    target_module_id = module.module_id
+    interface_module_id, _local_name = parse_interface_id(interface_id)
+    if interface_module_id != target_module_id:
+        raise DirectBlueprintError(
+            f"interface {interface_id!r} is not owned by {target_module_id!r}",
+            code="dispatcher.interface_not_found",
+            target_module_id=target_module_id,
+        )
+    raw_export = module.declaration["exports"].get(interface_id)
     if not isinstance(raw_export, Mapping):
         raise DirectBlueprintError(
             f"interface not found: {interface_id}",
             code="dispatcher.interface_not_found",
             target_module_id=target_module_id,
         )
-
     source_interface_id = raw_export.get("source_interface")
     if not isinstance(source_interface_id, str) or ".source." not in source_interface_id:
         raise DirectBlueprintError(
@@ -379,8 +385,8 @@ def resolve_direct_invocation(
             code="dispatcher.source_interface_invalid",
             target_module_id=target_module_id,
         )
-    locator = terminal.declaration["sources"].get(source_id)
-    source, source_declaration = _load_source(terminal, source_id, locator)
+    locator = module.declaration["sources"].get(source_id)
+    source, source_declaration = _load_source(module, source_id, locator)
     interfaces = source_declaration.get("interfaces")
     raw_source_interface = (
         interfaces.get(source_interface_id) if isinstance(interfaces, Mapping) else None
@@ -410,6 +416,52 @@ def resolve_direct_invocation(
             code="dispatcher.interface_version_mismatch",
             target_module_id=target_module_id,
         )
+    return source, DirectInterfaceExport(
+        interface_id=interface_id,
+        version=interface_version,
+        local_name=source_local_name,
+        module_node_id=target_module_id,
+        declaration=raw_source_interface,
+        source_node_id=source_id,
+        source_interface_id=source_interface_id,
+        export_declaration=raw_export,
+        terminal_interface_id=interface_id,
+        terminal_module_node_id=target_module_id,
+    )
+
+
+def authorize_direct_invocation(
+    *,
+    configuration: RepositoryConfiguration,
+    caller_module_id: str,
+    interface_id: str,
+    interface_version: int | None,
+    certification_status: Mapping[str, object] | None = None,
+    host_caller: bool = False,
+) -> AuthorizedDirectInvocation:
+    """Authorize one direct route without compiling caller arguments."""
+
+    target_module_id, _local_name = parse_interface_id(interface_id)
+    repository = DirectBlueprintRepository(configuration)
+    caller_modules = repository.load_ancestry(caller_module_id)
+    if host_caller:
+        _require_discoverable_host_caller(caller_modules, caller_module_id)
+    target_modules = repository.load_ancestry(target_module_id)
+    caller_ancestry = tuple(module.module_id for module in caller_modules)
+    target_ancestry = tuple(module.module_id for module in target_modules)
+    terminal = target_modules[-1]
+    source, export = resolve_direct_export_from_module(
+        terminal,
+        interface_id,
+        interface_version,
+    )
+    interface_version = export.version
+    raw_export = export.export_declaration
+    assert raw_export is not None
+    source_id = export.source_node_id
+    source_interface_id = export.source_interface_id
+    assert source_id is not None
+    assert source_interface_id is not None
 
     crossed = []
     filters = []
@@ -524,35 +576,6 @@ def resolve_direct_invocation(
             diagnostic=f"caller-filtered:terminal-export:{interface_id}",
         )
 
-    export = DirectInterfaceExport(
-        interface_id=interface_id,
-        version=interface_version,
-        local_name=source_local_name,
-        module_node_id=target_module_id,
-        declaration=raw_source_interface,
-        source_node_id=source_id,
-        source_interface_id=source_interface_id,
-        export_declaration=raw_export,
-        terminal_interface_id=interface_id,
-        terminal_module_node_id=target_module_id,
-    )
-    try:
-        if argv == ["--route-smoke"] and not stdin_requested:
-            plan = compile_route_smoke_invocation(source, export)
-        else:
-            parsed = parse_caller_invocation(
-                export,
-                argv,
-                stdin_requested=stdin_requested,
-            )
-            plan = compile_gateway_invocation(source, export, parsed)
-    except ProcessBindingError as exc:
-        raise ResolutionFailedError(
-            f"cannot compile {interface_id}: {exc}",
-            caller_module_id=caller_module_id,
-            target_module_id=target_module_id,
-        ) from exc
-
     relations = tuple(
         AuthorizationRelation(
             "contains-module",
@@ -603,8 +626,47 @@ def resolve_direct_invocation(
         ),
     )
     diagnostics = _certification_diagnostics(tuple(node_versions), certification_status)
+    return AuthorizedDirectInvocation(
+        repository=repository,
+        caller_modules=caller_modules,
+        target_modules=target_modules,
+        source=source,
+        export=export,
+        authorization=authorization,
+        diagnostics=diagnostics,
+    )
+
+
+def compile_direct_invocation(
+    authorized: AuthorizedDirectInvocation,
+    *,
+    argv: list[str],
+    stdin_requested: bool,
+) -> ResolvedInvocationMetadata:
+    """Compile caller arguments and process metadata for an authorized route."""
+
+    source = authorized.source
+    export = authorized.export
+    authorization = authorized.authorization
+    try:
+        if argv == ["--route-smoke"] and not stdin_requested:
+            plan = compile_route_smoke_invocation(source, export)
+        else:
+            parsed = parse_caller_invocation(
+                export,
+                argv,
+                stdin_requested=stdin_requested,
+            )
+            plan = compile_gateway_invocation(source, export, parsed)
+    except ProcessBindingError as exc:
+        raise ResolutionFailedError(
+            f"cannot compile {export.interface_id}: {exc}",
+            caller_module_id=authorization.caller_module_id,
+            target_module_id=authorization.requested_owner_module_id,
+        ) from exc
+
     gateway_relative = source.gateway_path.relative_to(source.module_root)
-    logical_package = logical_python_package_name(target_module_id)
+    logical_package = logical_python_package_name(authorization.requested_owner_module_id)
     physical_parts = (
         gateway_relative.parent.parts
         if gateway_relative.name == "__init__.py"
@@ -621,27 +683,59 @@ def resolve_direct_invocation(
         )
     except PythonProcessTargetError as exc:
         raise ResolutionFailedError(
-            f"cannot build Python target for {interface_id}: {exc}",
-            caller_module_id=caller_module_id,
-            target_module_id=target_module_id,
+            f"cannot build Python target for {export.interface_id}: {exc}",
+            caller_module_id=authorization.caller_module_id,
+            target_module_id=authorization.requested_owner_module_id,
         ) from exc
     return ResolvedInvocationMetadata(
-        caller_module_id=caller_module_id,
-        target_module_id=target_module_id,
-        script_interface=source_interface_id,
-        target=interface_id,
+        caller_module_id=authorization.caller_module_id,
+        target_module_id=authorization.requested_owner_module_id,
+        script_interface=export.source_interface_id or "",
+        target=export.interface_id,
         pattern=plan.pattern_name or "",
-        cwd=terminal.blueprint_path.parent,
+        cwd=authorized.target_modules[-1].blueprint_path.parent,
         command=list(plan.argv),
         stdin=plan.stdin_argument_id is not None,
         python_target=python_target,
         caller_source_id=None,
-        terminal_module_id=target_module_id,
-        implementing_source_id=source_id,
+        terminal_module_id=authorization.terminal_module_id,
+        implementing_source_id=export.source_node_id,
         authorization=authorization,
         schema_version=6,
-        diagnostics=diagnostics,
+        diagnostics=authorized.diagnostics,
     )
 
 
-__all__ = ["authorize_host_caller", "resolve_direct_invocation"]
+def resolve_direct_invocation(
+    *,
+    configuration: RepositoryConfiguration,
+    caller_module_id: str,
+    interface_id: str,
+    interface_version: int | None,
+    argv: list[str],
+    stdin_requested: bool,
+    certification_status: Mapping[str, object] | None = None,
+    host_caller: bool = False,
+) -> ResolvedInvocationMetadata:
+    """Authorize and compile one direct route using only relevant blueprints."""
+
+    return compile_direct_invocation(
+        authorize_direct_invocation(
+            configuration=configuration,
+            caller_module_id=caller_module_id,
+            interface_id=interface_id,
+            interface_version=interface_version,
+            certification_status=certification_status,
+            host_caller=host_caller,
+        ),
+        argv=argv,
+        stdin_requested=stdin_requested,
+    )
+
+
+__all__ = [
+    "authorize_direct_invocation",
+    "authorize_host_caller",
+    "compile_direct_invocation",
+    "resolve_direct_invocation",
+]

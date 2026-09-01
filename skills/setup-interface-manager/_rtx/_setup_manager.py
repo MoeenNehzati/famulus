@@ -16,7 +16,15 @@ from officina.blueprints.graph import (
     load_repository_blueprint_graph,
     managed_setup_order,
 )
+from officina.blueprints.direct_setup import (
+    DirectBlueprintError,
+    load_direct_setup_graph,
+)
 from officina.common import atomic_files
+from officina.configuration.repository import (
+    RepositoryConfigurationError,
+    load_repository_configuration,
+)
 from officina.runtime.python_machine_interface import (
     PythonMachineInterface,
     is_dispatch_invocation_error,
@@ -839,7 +847,17 @@ class _ManagerInterface(PythonMachineInterface):
         except ManagerUsageError as exc:
             return argparse.Namespace(_manager_usage_error=str(exc))
 
-    def build_manager(self) -> SetupManager:
+    def build_graph(self, args: argparse.Namespace):
+        context = runtime_dispatch_context(self)
+        repo_root = Path(context.repo_root or REPO_ROOT)
+        try:
+            return self._graph_loader(repo_root)
+        except (BlueprintGraphError, OSError) as exc:
+            raise ManagerBootstrapError(
+                "repository blueprint graph is unavailable"
+            ) from exc
+
+    def build_manager(self, args: argparse.Namespace) -> SetupManager:
         if self._manager_factory is not None:
             return self._manager_factory()
         try:
@@ -859,14 +877,7 @@ class _ManagerInterface(PythonMachineInterface):
         if not path.is_absolute():
             raise LedgerPathError("setup-status getter must return one absolute path")
         store = LedgerStore._from_atomic_files(path, _AtomicFilesAdapter())
-        context = runtime_dispatch_context(self)
-        repo_root = context.repo_root or REPO_ROOT
-        try:
-            graph = self._graph_loader(Path(repo_root))
-        except (BlueprintGraphError, OSError) as exc:
-            raise ManagerBootstrapError(
-                "repository blueprint graph is unavailable"
-            ) from exc
+        graph = self.build_graph(args)
 
         def dispatch(
             key: str, *, args: tuple[str, ...] = (), stdin: str | None = None
@@ -902,7 +913,7 @@ class _ManagerInterface(PythonMachineInterface):
         if isinstance(message, str):
             return self._malformed(message)
         try:
-            return self._emit(self.invoke(self.build_manager(), args))
+            return self._emit(self.invoke(self.build_manager(args), args))
         except ManagerUsageError as exc:
             return self._malformed(str(exc))
         except (LedgerError, ManagerBootstrapError) as exc:
@@ -921,7 +932,30 @@ class _ManagerInterface(PythonMachineInterface):
         raise NotImplementedError
 
 
-class StatusInterface(_ManagerInterface):
+class _DirectPreflightInterface(_ManagerInterface):
+    """Load only one parsed target's setup closure for read/authorize preflight."""
+
+    def build_graph(self, args: argparse.Namespace):
+        context = runtime_dispatch_context(self)
+        if context.repository_config is None:
+            raise ManagerBootstrapError("repository configuration is unavailable")
+        try:
+            configuration = load_repository_configuration(
+                Path(context.repository_config)
+            )
+            return load_direct_setup_graph(configuration, args.target_interface)
+        except (
+            RepositoryConfigurationError,
+            DirectBlueprintError,
+            BlueprintGraphError,
+            OSError,
+        ) as exc:
+            raise ManagerBootstrapError(
+                "repository blueprint graph is unavailable"
+            ) from exc
+
+
+class StatusInterface(_DirectPreflightInterface):
     operation = "status"
 
     def build_parser(self) -> argparse.ArgumentParser:
@@ -933,7 +967,7 @@ class StatusInterface(_ManagerInterface):
         return controller.status(args.target_interface)
 
 
-class AuthorizeInterface(_ManagerInterface):
+class AuthorizeInterface(_DirectPreflightInterface):
     operation = "authorize"
 
     def build_parser(self) -> argparse.ArgumentParser:

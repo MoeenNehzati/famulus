@@ -1,6 +1,7 @@
 """Behavioral tests for the finite managed-setup controller and public routes."""
 from __future__ import annotations
 
+import argparse
 from contextlib import redirect_stdout
 import importlib.util
 import io
@@ -23,6 +24,7 @@ from officina.dispatcher.errors import InvocationError
 from officina.runtime.python_machine_interface import (
     DispatchCall,
     logical_python_package_name,
+    set_runtime_dispatch_context,
 )
 from officina.runtime.python_machine_interface_runner import (
     load_interface,
@@ -214,7 +216,7 @@ python_canary_teardown = _load_python_canary(
 )
 
 
-class FixtureRuntime(manager.StatusInterface):
+class FixtureRuntime(manager.BeginInterface):
     """Runtime using a registered graph and one fixed test-only dispatch map."""
 
     dispatches = {
@@ -255,7 +257,7 @@ def _fixture_controller(tmp_path: Path) -> tuple[manager.SetupManager, FixtureRu
     python_canary.reset_state()
     python_canary_teardown.reset_state()
     runtime = FixtureRuntime(tmp_path / "private" / "ledger.json")
-    return runtime.build_manager(), runtime
+    return runtime.build_manager(argparse.Namespace(target_interface="unused")), runtime
 
 
 class DispatchHarness:
@@ -894,7 +896,7 @@ def test_runtime_getter_is_canonical_and_captures_one_absolute_path(tmp_path: Pa
     assert setup_dispatches.GETTER_CALL.interface == "famulus-paths-get"
     assert setup_dispatches.GETTER_CALL.smoke_args == ("setup-status",)
 
-    class Runtime(manager.StatusInterface):
+    class Runtime(manager.BeginInterface):
         def __init__(self, stdout: str) -> None:
             super().__init__(graph_loader=lambda _root: _graph())
             self.stdout = stdout
@@ -906,14 +908,224 @@ def test_runtime_getter_is_canonical_and_captures_one_absolute_path(tmp_path: Pa
 
     ledger_path = tmp_path / "private" / "ledger.json"
     runtime = Runtime(f"{ledger_path}\n")
-    built = runtime.build_manager()
+    built = runtime.build_manager(argparse.Namespace())
     assert built.store.read() == state.SetupLedger.empty()
     assert runtime.calls == [
         (setup_dispatches.GETTER_KEY, {"args": ("setup-status",), "text": True})
     ]
 
     with pytest.raises(state.LedgerPathError):
-        Runtime(f"{ledger_path}\n{tmp_path / 'other'}\n").build_manager()
+        Runtime(f"{ledger_path}\n{tmp_path / 'other'}\n").build_manager(
+            argparse.Namespace(target_interface="unused")
+        )
+
+
+@pytest.mark.parametrize(
+    ("interface_type", "argv", "expected_code"),
+    [
+        (manager.StatusInterface, ["canary.interface.run"], 0),
+        (
+            manager.AuthorizeInterface,
+            ["canary.interface.run", "caller", "canary.interface.run", "1"],
+            2,
+        ),
+    ],
+)
+def test_status_and_authorize_load_one_route_local_graph_from_parsed_target(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    interface_type: type,
+    argv: list[str],
+    expected_code: int,
+) -> None:
+    """Catches either hot path loading the canonical graph or using unparsed input."""
+    item = _managed("canary")
+    sparse_graph = _graph(item)
+    configuration = object()
+    config_path = tmp_path / "repository" / "officina.toml"
+    config_calls: list[Path] = []
+    direct_calls: list[tuple[object, str]] = []
+
+    def load_configuration(path: Path) -> object:
+        config_calls.append(path)
+        return configuration
+
+    def load_direct(config: object, target_interface: str):
+        direct_calls.append((config, target_interface))
+        return sparse_graph
+
+    graph_globals = manager.StatusInterface.build_graph.__globals__
+    monkeypatch.setitem(
+        graph_globals, "load_repository_configuration", load_configuration
+    )
+    monkeypatch.setitem(graph_globals, "load_direct_setup_graph", load_direct)
+
+    class Runtime(interface_type):
+        def __init__(self) -> None:
+            super().__init__(
+                graph_loader=lambda _root: pytest.fail(
+                    "hot path called canonical graph loader"
+                ),
+                bindings={item.setup_interface: _binding(item)},
+            )
+
+        def dispatch(self, key: str, **_kwargs: object):
+            assert key == setup_dispatches.GETTER_KEY
+            return subprocess.CompletedProcess(
+                [], 0, str(tmp_path / "private" / "ledger.json") + "\n", ""
+            )
+
+    runtime = Runtime()
+    set_runtime_dispatch_context(
+        runtime,
+        repo_root=tmp_path / "wrong-root",
+        repository_config=config_path,
+    )
+
+    code = run_python_machine_interface(runtime, argv)
+    payload = json.loads(capsys.readouterr().out)
+
+    assert code == expected_code
+    if interface_type is manager.StatusInterface:
+        assert payload["code"] == "setup_required"
+    else:
+        assert payload["state"] == "failed"
+    assert config_calls == [config_path]
+    assert direct_calls == [(configuration, "canary.interface.run")]
+
+
+@pytest.mark.parametrize(
+    ("interface_type", "argv"),
+    [
+        (
+            manager.BeginInterface,
+            ["setup", "canary.interface.setup", "caller", "target", "1"],
+        ),
+        (manager.InvalidateInterface, ["canary.interface.setup"]),
+    ],
+)
+def test_lifecycle_routes_retain_the_canonical_full_graph_loader(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    interface_type: type,
+    argv: list[str],
+) -> None:
+    """Catches sparse projection leaking into mutation and lifecycle operations."""
+    item = _managed("canary")
+    full_graph = _graph(item)
+    repo_root = tmp_path / "canonical-repository"
+    calls: list[Path] = []
+
+    def load_full(path: Path):
+        calls.append(path)
+        return full_graph
+
+    graph_globals = manager.StatusInterface.build_graph.__globals__
+    monkeypatch.setitem(
+        graph_globals,
+        "load_direct_setup_graph",
+        lambda *_args: pytest.fail("lifecycle route called direct graph loader"),
+    )
+
+    class Runtime(interface_type):
+        def __init__(self) -> None:
+            super().__init__(
+                graph_loader=load_full,
+                bindings={item.setup_interface: _binding(item)},
+            )
+
+        def dispatch(self, key: str, **_kwargs: object):
+            assert key == setup_dispatches.GETTER_KEY
+            return subprocess.CompletedProcess(
+                [], 0, str(tmp_path / "private" / "ledger.json") + "\n", ""
+            )
+
+    runtime = Runtime()
+    set_runtime_dispatch_context(
+        runtime,
+        repo_root=repo_root,
+        repository_config=tmp_path / "must-not-be-used.toml",
+    )
+
+    code = run_python_machine_interface(runtime, argv)
+    json.loads(capsys.readouterr().out)
+
+    assert code == 0
+    assert calls == [repo_root]
+
+
+@pytest.mark.parametrize("route", ["status", "authorize"])
+def test_direct_hot_paths_parse_before_selecting_a_graph(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    route: str,
+) -> None:
+    """Catches malformed calls touching repository state before exit 64."""
+    graph_globals = manager.StatusInterface.build_graph.__globals__
+    monkeypatch.setitem(
+        graph_globals,
+        "load_direct_setup_graph",
+        lambda *_args: pytest.fail("malformed call selected a graph"),
+    )
+    interface = (
+        manager.StatusInterface()
+        if route == "status"
+        else manager.AuthorizeInterface()
+    )
+    argv = [] if route == "status" else ["target", "caller", "interface", "zero"]
+
+    code = run_python_machine_interface(interface, argv)
+
+    assert code == 64
+    assert json.loads(capsys.readouterr().out)["state"] == "failed"
+
+
+@pytest.mark.parametrize("failure", ["missing", "invalid"])
+def test_direct_hot_path_fails_closed_on_unavailable_repository_configuration(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    failure: str,
+) -> None:
+    """Catches ambient-root fallback or raw configuration diagnostics escaping."""
+    item = _managed("canary")
+    secret = "do-not-echo-config-secret"
+    config_path = tmp_path / "officina.toml"
+    config_path.write_text(
+        f'schema_version = 1\n{secret.replace("-", "_")} = true\n',
+        encoding="utf-8",
+    )
+
+    class Runtime(manager.StatusInterface):
+        def __init__(self) -> None:
+            super().__init__(
+                graph_loader=lambda _root: _graph(item),
+                bindings={item.setup_interface: _binding(item)},
+            )
+
+        def dispatch(self, key: str, **_kwargs: object):
+            assert key == setup_dispatches.GETTER_KEY
+            return subprocess.CompletedProcess(
+                [], 0, str(tmp_path / "private" / "ledger.json") + "\n", ""
+            )
+
+    runtime = Runtime()
+    if failure == "invalid":
+        set_runtime_dispatch_context(runtime, repository_config=config_path)
+
+    code = run_python_machine_interface(runtime, ["canary.interface.run"])
+    output = capsys.readouterr().out
+    payload = json.loads(output)
+
+    assert code == 2
+    assert payload["state"] == "recovery-required"
+    assert payload["error"] == (
+        "repository configuration is unavailable"
+        if failure == "missing"
+        else "repository blueprint graph is unavailable"
+    )
+    assert secret not in output
 
 
 def test_logical_package_route_smoke_loads_the_real_manager(
@@ -997,7 +1209,7 @@ def test_bootstrap_domain_failures_return_one_redacted_exit_2_object(
     secret = "do-not-echo-bootstrap-secret"
     ledger_path = tmp_path / "private" / "ledger.json"
 
-    class Runtime(manager.StatusInterface):
+    class Runtime(manager.BeginInterface):
         def __init__(self) -> None:
             super().__init__(graph_loader=self._load_graph)
 
@@ -1014,14 +1226,16 @@ def test_bootstrap_domain_failures_return_one_redacted_exit_2_object(
                 [], 9 if failure == "getter-nonzero" else 0, stdout + "\n", secret
             )
 
-    code = run_python_machine_interface(Runtime(), ["plain.interface.run"])
+    code = run_python_machine_interface(
+        Runtime(), ["setup", "canary.interface.setup", "caller", "target", "1"]
+    )
     output = capsys.readouterr().out
     payload = json.loads(output)
 
     assert code == 2
     assert output.count("\n") == 1
     assert secret not in output
-    assert payload["operation"] == "status"
+    assert payload["operation"] == "begin"
     assert payload["state"] == "recovery-required"
     assert payload["flow_id"] is None
     assert payload["current_step"] is None
@@ -1030,7 +1244,7 @@ def test_bootstrap_domain_failures_return_one_redacted_exit_2_object(
 
 def test_bootstrap_does_not_hide_an_arbitrary_programmer_error(tmp_path: Path) -> None:
     """Catches a broad exception handler converting code defects into domain JSON."""
-    class Runtime(manager.StatusInterface):
+    class Runtime(manager.BeginInterface):
         def __init__(self) -> None:
             super().__init__(graph_loader=self._load_graph)
 
@@ -1043,7 +1257,10 @@ def test_bootstrap_does_not_hide_an_arbitrary_programmer_error(tmp_path: Path) -
             )
 
     with pytest.raises(RuntimeError, match="programmer defect"):
-        run_python_machine_interface(Runtime(), ["plain.interface.run"])
+        run_python_machine_interface(
+            Runtime(),
+            ["setup", "canary.interface.setup", "caller", "target", "1"],
+        )
 
 
 def test_bootstrap_does_not_hide_an_arbitrary_dispatch_programmer_error() -> None:
