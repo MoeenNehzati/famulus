@@ -8,7 +8,7 @@
 
 **Tech stack:** Python 3.11+, Officina V6 blueprints, `RepositoryBlueprintGraph`, `PythonMachineInterface`, Famulus MCP, pytest, and `repo_checks.py`.
 
-**Implementation status (2026-09-01):** Tasks 1–10 are implemented on `feat/setup-interface-manager`; Tasks 1–9 are committed through `a46f7f68`, and Task 10's isolated campaign passed all 20 production and synthetic scenarios plus the staged repository gate. See [the interactive experiment report](../testing/setup-interface-manager-interactive.md) for evidence boundaries, review corrections, fixture-only rulings, discarded attempts, and the repeat procedure.
+**Implementation status (2026-09-01):** Tasks 1–10 are implemented on `feat/setup-interface-manager`; Tasks 1–9 are committed through `a46f7f68`, and Task 10's isolated campaign passed all 20 production and synthetic scenarios plus the staged repository gate. See the consolidated [interactive LLM testing dossier](interactive-llm-testing/README.md) for the source prompt, experiment report, redacted evidence, campaign index, lessons, and reusable-pipeline plan.
 
 ## Release boundary and prerequisites
 
@@ -276,9 +276,9 @@ def teardown_plan(graph, root_setup_interface: str, ledger: SetupLedger) -> tupl
 
 ### Task 10: Run isolated interactive setup experiments
 
-**Source prompt:** `~/Desktop/interactive-prompt.md`.
+**Source prompt:** [consolidated verbatim copy](interactive-llm-testing/source-prompt.md).
 
-**Files:** create `docs/testing/setup-interface-manager-interactive.md`; modify implementation/tests only when an experiment proves a defect, with every repair attributed to its owning Task 1–9 area and independently reviewed before commit.
+**Files:** create `docs/plans/interactive-llm-testing/experiment-report.md`; modify implementation/tests only when an experiment proves a defect, with every repair attributed to its owning Task 1–9 area and independently reviewed before commit.
 
 - [ ] Use the current supported Codex/plugin installation procedure to create a task-owned isolated directory and isolated Codex home. Do not change the user's normal Codex profile, plugin installation, or persisted setup ledger. Record the exact tested build/commit, host capabilities, installation commands, and isolation boundaries.
 - [ ] Keep production evidence separate from a second isolated synthetic-fixture installation. Build the fixture from the exact tested commit plus a reviewable Task-10-only overlay containing fixed, effect-confined managed nodes `A -> B -> C` and `D -> C`, dedicated setup/teardown/verifier routes, child probes, finite manager bindings, and focused validation. Record the overlay file list and digest, require the production manager/MCP state-machine files to remain byte-identical, never include the fixture in release inventory, and remove only the task-owned fixture lane during cleanup. Label every fixture result as synthetic interactive evidence rather than shipped production behavior.
