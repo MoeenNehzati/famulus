@@ -52,6 +52,8 @@ def _copy_plugin(plugin_root: Path, *, include_graph: bool = False) -> None:
     shutil.copy2(CORE, plugin_root / CORE.name)
     shutil.copy2(ROOT / "officina.toml", plugin_root / "officina.toml")
     shutil.copy2(ROOT / ".mcp.json", plugin_root / ".mcp.json")
+    shutil.copy2(ROOT / "plugin.json", plugin_root / "plugin.json")
+    shutil.copy2(ROOT / "mcp.json", plugin_root / "mcp.json")
     shutil.copytree(ROOT / "src", plugin_root / "src")
     registered = ROOT / "skills" / "milestone-logging"
     packaged = plugin_root / "skills" / "milestone-logging"
@@ -85,6 +87,10 @@ def _declared_launch(host: str, plugin_root: Path) -> tuple[str, list[str], Path
             "famulus": {
                 "command": "python",
                 "args": ["${CLAUDE_PLUGIN_ROOT}/mcp_server.py"],
+                "env": {
+                    "FAMULUS_HOST": "claude",
+                    "FAMULUS_PLUGIN_DATA": "${CLAUDE_PLUGIN_DATA}",
+                },
             }
         }
         # This is the documented result, not a replacement implementation of
@@ -193,6 +199,54 @@ async def _invoke_through_mcp(host: str, plugin_root: Path, home: Path):
             )
 
 
+def _persistent_launch(host: str, plugin_root: Path, plugin_data: Path):
+    if host == "claude":
+        declaration = _json(plugin_root / ".claude-plugin" / "plugin.json")[
+            "mcpServers"
+        ]["famulus"]
+        root_token = "${CLAUDE_PLUGIN_ROOT}"
+        data_token = "${CLAUDE_PLUGIN_DATA}"
+    else:
+        declaration = _json(plugin_root / "mcp.json")["mcpServers"]["famulus"]
+        root_token = "${PLUGIN_ROOT}"
+        data_token = "${PLUGIN_DATA}"
+    args = [value.replace(root_token, str(plugin_root)) for value in declaration["args"]]
+    environment = {
+        name: value.replace(data_token, str(plugin_data))
+        for name, value in declaration["env"].items()
+    }
+    return declaration["command"], args, environment
+
+
+async def _record_through_persistent_mcp(
+    host: str, plugin_root: Path, home: Path, plugin_data: Path, canary: Path
+):
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+
+    command, args, declared = _persistent_launch(host, plugin_root, plugin_data)
+    environment = _selected_environment(home)
+    environment.update(declared)
+    environment["ASSISTANT_LOGS"] = str(canary)
+    parameters = StdioServerParameters(command=command, args=args, env=environment)
+    async with stdio_client(parameters) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            return await session.call_tool(
+                "invoke",
+                arguments={
+                    "caller": "milestone-logging",
+                    "interface": "milestone-logging._rtx.interface.record",
+                    "version": 1,
+                    "arguments": {
+                        "positionals": ["persistent milestone"],
+                        "options": {"--role": "task-3-test"},
+                        "stdin": None,
+                    },
+                },
+            )
+
+
 def _pid_is_alive(pid: int) -> bool:
     try:
         os.kill(pid, 0)
@@ -207,6 +261,160 @@ def _terminate_pid(pid: int) -> None:
     while time.monotonic() < deadline and _pid_is_alive(pid):
         time.sleep(0.05)
     assert not _pid_is_alive(pid)
+
+
+def test_plugin_persistence_is_inert_without_plugin_context(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Break caught: ordinary MCP startup rewrites direct-run logging state."""
+    server = _load_server()
+    canary = tmp_path / "inherited-logs"
+    monkeypatch.setenv("ASSISTANT_LOGS", str(canary))
+    monkeypatch.setenv("XDG_DATA_HOME", "relative-but-irrelevant")
+    monkeypatch.delenv("FAMULUS_HOST", raising=False)
+    monkeypatch.delenv("FAMULUS_PLUGIN_DATA", raising=False)
+
+    server.configure_plugin_persistence()
+
+    assert os.environ["ASSISTANT_LOGS"] == str(canary)
+    assert not canary.exists()
+
+
+@pytest.mark.parametrize("host", ["claude", "codex"])
+def test_plugin_persistence_writes_exact_private_status_and_overrides_logs(
+    host: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Break caught: startup selects the wrong root, payload, or file mode."""
+    server = _load_server()
+    plugin_data = tmp_path / host / "plugin data"
+    canary = tmp_path / "inherited-canary"
+    canary.mkdir()
+    marker = canary / "marker.txt"
+    marker.write_text("untouched", encoding="utf-8")
+    monkeypatch.setenv("FAMULUS_HOST", host)
+    monkeypatch.setenv("FAMULUS_PLUGIN_DATA", str(plugin_data))
+    monkeypatch.setenv("ASSISTANT_LOGS", str(canary))
+
+    server.configure_plugin_persistence()
+
+    status = plugin_data / "setup" / "status.json"
+    assert os.environ["ASSISTANT_LOGS"] == str(plugin_data / "milestones")
+    assert (plugin_data / "milestones").is_dir()
+    assert status.parent.is_dir()
+    assert status.read_bytes() == (
+        f'{{"host":"{host}","schema_version":1,"status":"ready"}}\n'.encode()
+    )
+    assert status.stat().st_mode & 0o777 == 0o600
+    assert marker.read_text(encoding="utf-8") == "untouched"
+    assert list(canary.iterdir()) == [marker]
+
+
+@pytest.mark.parametrize(
+    ("host", "data_kind"),
+    [
+        ("claude", None),
+        (None, "absolute"),
+        ("unknown", "absolute"),
+        ("claude", "empty"),
+        ("claude", "relative"),
+    ],
+)
+def test_invalid_plugin_context_fails_before_partial_output(
+    host: str | None,
+    data_kind: str | None,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Break caught: invalid provenance mutates logs or creates partial state."""
+    server = _load_server()
+    plugin_data = tmp_path / "must-not-exist"
+    canary = tmp_path / "inherited-logs"
+    monkeypatch.setenv("ASSISTANT_LOGS", str(canary))
+    if host is None:
+        monkeypatch.delenv("FAMULUS_HOST", raising=False)
+    else:
+        monkeypatch.setenv("FAMULUS_HOST", host)
+    if data_kind is None:
+        monkeypatch.delenv("FAMULUS_PLUGIN_DATA", raising=False)
+    else:
+        value = {"empty": "", "relative": "relative/path"}.get(
+            data_kind, str(plugin_data)
+        )
+        monkeypatch.setenv("FAMULUS_PLUGIN_DATA", value)
+
+    with pytest.raises(ValueError, match="plugin|FAMULUS_"):
+        server.configure_plugin_persistence()
+
+    assert os.environ["ASSISTANT_LOGS"] == str(canary)
+    assert not canary.exists()
+    assert not plugin_data.exists()
+
+
+@pytest.mark.parametrize("obstacle", ["milestones-symlink", "setup-symlink", "status-directory"])
+def test_plugin_persistence_rejects_unsafe_layout_before_publishing_logs(
+    obstacle: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Break caught: unsafe/status-failed startup publishes a writable log root."""
+    server = _load_server()
+    plugin_data = tmp_path / "plugin-data"
+    outside = tmp_path / "outside"
+    plugin_data.mkdir()
+    outside.mkdir()
+    marker = outside / "marker"
+    marker.write_text("untouched", encoding="utf-8")
+    if obstacle.endswith("symlink"):
+        child = plugin_data / obstacle.removesuffix("-symlink")
+        try:
+            child.symlink_to(outside, target_is_directory=True)
+        except OSError as exc:
+            # famulus-skip: category=platform-contract; reason=directory symlink creation is unavailable on some hosts; alternate=regular-directory and failed-status cases retain confinement and publication coverage
+            pytest.skip(f"directory symlinks unavailable: {exc}")
+    else:
+        (plugin_data / "setup" / "status.json").mkdir(parents=True)
+    canary = tmp_path / "inherited-logs"
+    monkeypatch.setenv("FAMULUS_HOST", "codex")
+    monkeypatch.setenv("FAMULUS_PLUGIN_DATA", str(plugin_data))
+    monkeypatch.setenv("ASSISTANT_LOGS", str(canary))
+
+    with pytest.raises((OSError, RuntimeError)):
+        server.configure_plugin_persistence()
+
+    assert os.environ["ASSISTANT_LOGS"] == str(canary)
+    assert marker.read_text(encoding="utf-8") == "untouched"
+    assert list(outside.iterdir()) == [marker]
+
+
+@pytest.mark.parametrize("host", ["claude", "codex"])
+def test_real_mcp_persists_status_and_milestone_below_selected_host_root(
+    host: str, tmp_path: Path
+) -> None:
+    """Break caught: stdio children inherit the canary instead of plugin data."""
+    plugin = tmp_path / "Plugin Cache" / "famulus"
+    plugin_data = tmp_path / "host-data" / host
+    canary = tmp_path / "inherited-canary"
+    canary.mkdir()
+    marker = canary / "marker.txt"
+    marker.write_text("untouched", encoding="utf-8")
+    _copy_plugin(plugin)
+
+    request = _record_through_persistent_mcp(
+        host, plugin, tmp_path / "home", plugin_data, canary
+    )
+    called = asyncio.run(asyncio.wait_for(request, timeout=15))
+
+    result = called.structuredContent["result"]
+    assert called.isError is False
+    assert result["exit_code"] == 0, result
+    assert (plugin_data / "setup" / "status.json").read_bytes() == (
+        f'{{"host":"{host}","schema_version":1,"status":"ready"}}\n'.encode()
+    )
+    logs = sorted((plugin_data / "milestones").glob("*/*.jsonl"))
+    assert len(logs) == 1
+    records = [json.loads(line) for line in logs[0].read_text().splitlines()]
+    assert records[0]["role"] == "task-3-test"
+    assert records[0]["doing"] == "persistent milestone"
+    assert marker.read_text(encoding="utf-8") == "untouched"
+    assert list(canary.iterdir()) == [marker]
 
 
 async def _serve_graph_through_mcp(
@@ -806,15 +1014,22 @@ def test_host_declarations_normalize_to_common_command_contract() -> None:
     claude = _json(ROOT / ".claude-plugin" / "plugin.json")["mcpServers"][
         "famulus"
     ]
-    codex_manifest = _json(ROOT / ".codex-plugin" / "plugin.json")
-    codex = _json(ROOT / codex_manifest["mcpServers"])["famulus"]
+    codex = _json(ROOT / "mcp.json")["mcpServers"]["famulus"]
 
     assert contract["command"] == "python"
     assert contract["args"] == ["mcp_server.py"]
     assert claude["command"] == codex["command"] == contract["command"]
     assert claude["args"] == ["${CLAUDE_PLUGIN_ROOT}/" + contract["args"][0]]
-    assert codex["args"] == contract["args"]
-    assert codex["cwd"] == "."
+    assert claude["env"] == {
+        "FAMULUS_HOST": "claude",
+        "FAMULUS_PLUGIN_DATA": "${CLAUDE_PLUGIN_DATA}",
+    }
+    assert codex["args"] == ["${PLUGIN_ROOT}/" + contract["args"][0]]
+    assert codex["type"] == "stdio"
+    assert codex["env"] == {
+        "FAMULUS_HOST": "codex",
+        "FAMULUS_PLUGIN_DATA": "${PLUGIN_DATA}",
+    }
 
 
 def test_packaged_fixture_has_only_selected_registered_asset_closure(

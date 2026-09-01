@@ -1,0 +1,14 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "famulus": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["${PLUGIN_ROOT}/mcp_server.py"],
+      "env": {
+        "FAMULUS_HOST": "codex",
+        "FAMULUS_PLUGIN_DATA": "${PLUGIN_DATA}"
+      }
+    }
+  }
+}

@@ -18,6 +18,8 @@ Includes
     Declares the dates behavioral source contract.
 ``blueprints/famulus-paths.yaml``
     Declares the famulus paths behavioral source contract.
+``blueprints/famulus-paths-get.yaml``
+    Declares the finite executable path-selection contract.
 ``blueprints/repository-paths.yaml``
     Declares the repository paths behavioral source contract.
 ``blueprints/toml-io.yaml``
@@ -30,6 +32,8 @@ Includes
     Normalizes repository date values and date-oriented filenames.
 ``famulus_paths/``
     Resolves installed Famulus and repository paths across supported hosts.
+``famulus_paths/_get_interface.py``
+    Prints one declared plugin path for Dispatcher callers.
 ``python_source_cache.py``
     Caches parsed Python source while preserving path and content identity.
 ``repository_paths.py``

@@ -143,7 +143,13 @@ def test_macos_activation_and_durable_paths_stay_below_isolated_home(tmp_path: P
     paths = resolve_famulus_paths(platform="darwin", home=isolated, environ=activated)
     assert activated["HOME"] == str(isolated)
     assert not any(name.startswith("XDG_") for name in activated)
-    for value in vars(paths).values():
+    assert paths.assistant_host is None
+    assert paths.plugin_data is None
+    assert paths.logging_path is None
+    assert paths.setup_status is None
+    for name, value in vars(paths).items():
+        if name in {"assistant_host", "plugin_data", "logging_path", "setup_status"}:
+            continue
         assert Path(value).is_relative_to(isolated)
     assert "Library/Application Support" in str(paths.data_root)
 
@@ -282,7 +288,13 @@ def test_durable_linux_and_windows_state_is_below_isolated_home(tmp_path: Path) 
         activated = runtime.build_activation_environment(checkout, environ=inherited, platform=platform)
         isolated = checkout / ".famulus" / "home"
         paths = resolve_famulus_paths(platform=platform, home=isolated, environ=activated)
-        for value in vars(paths).values():
+        assert paths.assistant_host is None
+        assert paths.plugin_data is None
+        assert paths.logging_path is None
+        assert paths.setup_status is None
+        for name, value in vars(paths).items():
+            if name in {"assistant_host", "plugin_data", "logging_path", "setup_status"}:
+                continue
             path = Path(value)
             assert path.is_relative_to(isolated)
             assert not any(path.is_relative_to(root) for root in roots.values())

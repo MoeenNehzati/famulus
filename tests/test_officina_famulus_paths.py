@@ -1,7 +1,9 @@
+import importlib
 from pathlib import Path
 
 import pytest
 
+import officina.common.famulus_paths as famulus_paths
 from officina.common.famulus_paths import resolve_famulus_paths
 
 
@@ -143,3 +145,131 @@ def test_paths_with_spaces_separators_and_unicode_are_absolute(tmp_path):
         for value in vars(paths).values()
         if isinstance(value, Path)
     )
+
+
+def test_plugin_context_is_absent_without_normalized_host_variables(tmp_path):
+    paths = resolve_famulus_paths(platform="linux", home=tmp_path, environ={})
+
+    assert paths.assistant_host is None
+    assert paths.plugin_data is None
+    assert paths.logging_path is None
+    assert paths.setup_status is None
+    assert paths.data_root == tmp_path / ".local" / "share" / "famulus"
+    assert paths.state_root == tmp_path / ".local" / "state" / "famulus"
+
+
+@pytest.mark.parametrize("host", ["claude", "codex"])
+def test_plugin_context_derives_every_named_path_for_each_host(tmp_path, host):
+    plugin_data = tmp_path / host / "persistent plugin data"
+    environ = {
+        "FAMULUS_HOST": host,
+        "FAMULUS_PLUGIN_DATA": str(plugin_data),
+        "PLUGIN_DATA": str(tmp_path / "must-not-be-read"),
+        "CLAUDE_PLUGIN_DATA": str(tmp_path / "must-not-be-read-either"),
+    }
+
+    paths = resolve_famulus_paths(platform="linux", home=tmp_path, environ=environ)
+
+    assert paths.assistant_host == host
+    assert paths.plugin_data == plugin_data
+    assert paths.logging_path == plugin_data / "milestones"
+    assert paths.setup_status == plugin_data / "setup" / "status.json"
+    assert famulus_paths.FamulusPaths.get(
+        "plugin-data", platform="linux", home=tmp_path, environ=environ
+    ) == plugin_data
+    assert famulus_paths.FamulusPaths.get(
+        "logging-path", platform="linux", home=tmp_path, environ=environ
+    ) == plugin_data / "milestones"
+    assert famulus_paths.FamulusPaths.get(
+        "setup-status", platform="linux", home=tmp_path, environ=environ
+    ) == plugin_data / "setup" / "status.json"
+
+
+@pytest.mark.parametrize(
+    ("host", "plugin_data"),
+    [
+        ("claude", None),
+        (None, "absolute"),
+        ("", "absolute"),
+        ("claude", ""),
+        ("claude", "relative/path"),
+        ("other-client", "absolute"),
+        (" Claude ", "absolute"),
+    ],
+)
+def test_invalid_plugin_context_is_rejected(tmp_path, host, plugin_data):
+    environ = {}
+    if host is not None:
+        environ["FAMULUS_HOST"] = host
+    if plugin_data is not None:
+        environ["FAMULUS_PLUGIN_DATA"] = (
+            str(tmp_path / "plugin-data") if plugin_data == "absolute" else plugin_data
+        )
+
+    with pytest.raises(famulus_paths.InvalidFamulusPluginContextError):
+        resolve_famulus_paths(platform="linux", home=tmp_path, environ=environ)
+
+
+def test_get_rejects_unknown_names_before_context_lookup(tmp_path):
+    with pytest.raises(famulus_paths.UnknownFamulusPathError):
+        famulus_paths.FamulusPaths.get(
+            "data_root", platform="linux", home=tmp_path, environ={}
+        )
+
+
+def test_get_requires_plugin_context_for_known_names(tmp_path):
+    with pytest.raises(famulus_paths.FamulusPluginContextRequiredError):
+        famulus_paths.FamulusPaths.get(
+            "plugin-data", platform="linux", home=tmp_path, environ={}
+        )
+
+
+def test_get_requires_explicit_resolution_inputs():
+    with pytest.raises(TypeError):
+        famulus_paths.FamulusPaths.get("plugin-data")
+
+
+def test_exported_path_mapping_cannot_be_mutated():
+    fields = famulus_paths.FAMULUS_PATH_FIELDS
+    original = fields["plugin-data"]
+    try:
+        with pytest.raises(TypeError):
+            fields["plugin-data"] = "state_root"
+    finally:
+        if isinstance(fields, dict):
+            fields["plugin-data"] = original
+
+
+def test_resolve_and_get_do_not_create_plugin_paths(tmp_path):
+    plugin_data = tmp_path / "not-created"
+    environ = {
+        "FAMULUS_HOST": "codex",
+        "FAMULUS_PLUGIN_DATA": str(plugin_data),
+    }
+
+    resolve_famulus_paths(platform="linux", home=tmp_path, environ=environ)
+    famulus_paths.FamulusPaths.get(
+        "setup-status", platform="linux", home=tmp_path, environ=environ
+    )
+
+    assert not plugin_data.exists()
+
+
+def test_get_interface_prints_one_selected_absolute_path(monkeypatch, capsys, tmp_path):
+    plugin_data = tmp_path / "adapter-data"
+    monkeypatch.setenv("FAMULUS_HOST", "claude")
+    monkeypatch.setenv("FAMULUS_PLUGIN_DATA", str(plugin_data))
+    module = importlib.import_module("officina.common.famulus_paths._get_interface")
+
+    assert module.Interface().run(["setup-status"]) == 0
+
+    assert capsys.readouterr().out == f"{plugin_data / 'setup' / 'status.json'}\n"
+
+
+def test_get_interface_rejects_names_outside_finite_choices():
+    module = importlib.import_module("officina.common.famulus_paths._get_interface")
+
+    with pytest.raises(SystemExit) as error:
+        module.Interface().run(["data_root"])
+
+    assert error.value.code == 2

@@ -18,6 +18,7 @@ SCRIPT = REPO_ROOT / "scripts" / "sync-release-version.py"
 MANIFESTS = (
     Path(".claude-plugin/plugin.json"),
     Path(".codex-plugin/plugin.json"),
+    Path("plugin.json"),
 )
 
 
@@ -142,8 +143,8 @@ def test_public_sync_preserves_views_is_idempotent_and_rejects_deletion(
     assert not ambient_index.exists()
 
     repository.git("reset", "--hard", "HEAD")
-    repository.git("rm", MANIFESTS[0].as_posix())
-    surviving = repository.root / MANIFESTS[1]
+    repository.git("rm", MANIFESTS[2].as_posix())
+    surviving = repository.root / MANIFESTS[0]
     surviving_before = surviving.read_bytes()
     index_before_deletion_check = repository.git("ls-files", "--stage", "-z").stdout
     unrelated_before_deletion_check = repository.git("show", ":unrelated.txt").stdout
@@ -152,7 +153,7 @@ def test_public_sync_preserves_views_is_idempotent_and_rejects_deletion(
 
     assert deleted.returncode == 1
     assert deleted.stderr.startswith("error: ")
-    assert ":.claude-plugin/plugin.json" in deleted.stderr
+    assert "path 'plugin.json' does not exist" in deleted.stderr
     assert surviving.read_bytes() == surviving_before
     assert (
         repository.git("ls-files", "--stage", "-z").stdout
@@ -223,12 +224,13 @@ def test_synchronize_prepares_every_input_before_mutation(
         path = root / manifest
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b'{"version":"0.1.0"}\n')
-    (root / MANIFESTS[1]).write_bytes(b'{"version": }\n')
+    (root / MANIFESTS[2]).write_bytes(b'{"version": }\n')
     before = {manifest: (root / manifest).read_bytes() for manifest in MANIFESTS}
     index_inputs = {
         Path("pyproject.toml"): b'[project]\nversion = "1.2.3"\n',
         MANIFESTS[0]: b'{"version":"0.1.0"}\n',
         MANIFESTS[1]: b'{"version":"0.1.0"}\n',
+        MANIFESTS[2]: b'{"version":"0.1.0"}\n',
     }
     reads: list[Path] = []
     modes: list[Path] = []
@@ -259,11 +261,11 @@ def test_synchronize_prepares_every_input_before_mutation(
         module.synchronize()
 
     assert str(malformed.value) == (
-        ".codex-plugin/plugin.json: malformed UTF-8 JSON: "
+        "plugin.json: malformed UTF-8 JSON: "
         "Expecting value: line 1 column 13 (char 12)"
     )
-    assert reads == [Path("pyproject.toml"), MANIFESTS[0], MANIFESTS[1]]
-    assert modes == [MANIFESTS[0], MANIFESTS[1]]
+    assert reads == [Path("pyproject.toml"), *MANIFESTS]
+    assert modes == list(MANIFESTS)
     assert {manifest: (root / manifest).read_bytes() for manifest in MANIFESTS} == before
 
 
@@ -284,18 +286,19 @@ def test_synchronize_rolls_back_real_atomic_replacements_without_git(
     replacements: list[Path] = []
     failed = False
 
-    def fail_second_once(path: Path, data: bytes) -> None:
+    def fail_third_once(path: Path, data: bytes) -> None:
         nonlocal failed
         replacements.append(path)
-        if path == rollback_root / MANIFESTS[1] and not failed:
+        if path == rollback_root / MANIFESTS[2] and not failed:
             failed = True
-            raise OSError("injected second replacement failure")
+            raise OSError("injected third replacement failure")
         real_replace(path, data)
 
     rollback_index = {
         Path("pyproject.toml"): b'[project]\nversion = "1.2.3"\n',
         MANIFESTS[0]: rollback_before[MANIFESTS[0]],
         MANIFESTS[1]: rollback_before[MANIFESTS[1]],
+        MANIFESTS[2]: rollback_before[MANIFESTS[2]],
     }
     monkeypatch.setattr(module, "_repository_root", lambda: rollback_root)
     monkeypatch.setattr(
@@ -303,18 +306,20 @@ def test_synchronize_rolls_back_real_atomic_replacements_without_git(
     )
     monkeypatch.setattr(module, "_index_mode", lambda _root, _path: "100644")
     monkeypatch.setattr(module, "_temporary_index_active", lambda _root: False)
-    monkeypatch.setattr(module, "_atomic_replace", fail_second_once)
+    monkeypatch.setattr(module, "_atomic_replace", fail_third_once)
     monkeypatch.setattr(
         module,
         "_git",
         lambda *_args, **_kwargs: pytest.fail("rollback used a Git child"),
     )
 
-    with pytest.raises(OSError, match="^injected second replacement failure$"):
+    with pytest.raises(OSError, match="^injected third replacement failure$"):
         module.synchronize()
 
     assert replacements == [
         rollback_root / MANIFESTS[0],
+        rollback_root / MANIFESTS[1],
+        rollback_root / MANIFESTS[2],
         rollback_root / MANIFESTS[1],
         rollback_root / MANIFESTS[0],
     ]

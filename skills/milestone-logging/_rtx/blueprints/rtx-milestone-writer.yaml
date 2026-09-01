@@ -98,8 +98,8 @@ interfaces:
           medium: local-filesystem
           path: <selected-milestone-log-root>/**
           path_match: glob
-          reason: Uses ASSISTANT_LOGS when it is set and non-empty; otherwise
-            uses $HOME/.assistant-logs.
+          reason: A plugin MCP projects logging-path through ASSISTANT_LOGS;
+            direct runs use a non-empty ASSISTANT_LOGS or $HOME/.assistant-logs.
           sensitivity: user-private
           system: filesystem
         - access: write

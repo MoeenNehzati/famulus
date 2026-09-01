@@ -20,6 +20,7 @@ _JSON_STRING_RE = re.compile(r'"(?:\\.|[^"\\])*"')
 _MANIFESTS = (
     Path(".claude-plugin/plugin.json"),
     Path(".codex-plugin/plugin.json"),
+    Path("plugin.json"),
 )
 
 
