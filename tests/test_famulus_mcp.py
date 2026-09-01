@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 import importlib.util
 import json
 import os
@@ -115,9 +116,33 @@ def _selected_environment(home: Path) -> dict[str, str]:
     return environment
 
 
+def _only_broken_resource_errors(error: BaseException) -> bool:
+    import anyio
+
+    if isinstance(error, BaseExceptionGroup):
+        return bool(error.exceptions) and all(
+            _only_broken_resource_errors(child) for child in error.exceptions
+        )
+    return isinstance(error, anyio.BrokenResourceError)
+
+
+@asynccontextmanager
+async def _stdio_transport(parameters):
+    """Ignore the MCP SDK's Windows-only clean-shutdown send race."""
+    from mcp.client.stdio import stdio_client
+
+    body_completed = False
+    try:
+        async with stdio_client(parameters) as streams:
+            yield streams
+            body_completed = True
+    except BaseExceptionGroup as error:
+        if not body_completed or not _only_broken_resource_errors(error):
+            raise
+
+
 async def _invoke_through_mcp(host: str, plugin_root: Path, home: Path):
     from mcp import ClientSession, StdioServerParameters
-    from mcp.client.stdio import stdio_client
 
     command, args, cwd = _declared_launch(host, plugin_root)
     parameters = StdioServerParameters(
@@ -126,7 +151,7 @@ async def _invoke_through_mcp(host: str, plugin_root: Path, home: Path):
         cwd=cwd,
         env=_selected_environment(home),
     )
-    async with stdio_client(parameters) as (read, write):
+    async with _stdio_transport(parameters) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
             listed = await session.list_tools()
@@ -213,7 +238,6 @@ async def _serve_graph_through_mcp(
     host: str, plugin_root: Path, home: Path, served: Path
 ) -> tuple[object, object, object, object, bytes, str, bool]:
     from mcp import ClientSession, StdioServerParameters
-    from mcp.client.stdio import stdio_client
 
     command, args, cwd = _declared_launch(host, plugin_root)
     parameters = StdioServerParameters(
@@ -225,7 +249,7 @@ async def _serve_graph_through_mcp(
     pid: int | None = None
     completed = False
     try:
-        async with stdio_client(parameters) as (read, write):
+        async with _stdio_transport(parameters) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 listed = await session.list_tools()
@@ -504,12 +528,11 @@ def test_generated_outer_payload_uses_real_tool_field_names(tmp_path: Path) -> N
 
     async def call():
         from mcp import ClientSession, StdioServerParameters
-        from mcp.client.stdio import stdio_client
 
         plugin = tmp_path / "Plugin Cache" / "famulus"
         _copy_plugin(plugin)
         command, args, cwd = _declared_launch("claude", plugin)
-        async with stdio_client(StdioServerParameters(command=command, args=args, cwd=cwd, env=_selected_environment(tmp_path / "home"))) as (read, write):
+        async with _stdio_transport(StdioServerParameters(command=command, args=args, cwd=cwd, env=_selected_environment(tmp_path / "home"))) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 tool = (await session.list_tools()).tools[0]
@@ -792,13 +815,46 @@ def test_missing_exact_python_launch_fails_without_fallback(
     empty_path.mkdir()
 
     assert command == "python"
-    with pytest.raises(FileNotFoundError, match="python"):
-        subprocess.run(
-            [command, *args],
-            cwd=cwd,
-            env={"PATH": str(empty_path)},
-            check=False,
-        )
+    environment = {"PATH": str(empty_path)}
+    assert shutil.which(command, path=environment["PATH"]) is None
+    if os.name == "nt":
+        # CreateProcess may still resolve an unqualified executable beside the
+        # parent Python process even when PATH has no matching entry.
+        assert subprocess.run(
+            [command, *args], cwd=cwd, env=environment, check=False
+        ).returncode != 0
+    else:
+        with pytest.raises(FileNotFoundError, match="python"):
+            subprocess.run(
+                [command, *args], cwd=cwd, env=environment, check=False
+            )
+
+
+def test_stdio_transport_ignores_only_a_clean_shutdown_send_race(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import anyio
+    import mcp.client.stdio
+
+    @asynccontextmanager
+    async def shutdown_race(_parameters):
+        yield object(), object()
+        raise BaseExceptionGroup("shutdown", [anyio.BrokenResourceError()])
+
+    monkeypatch.setattr(mcp.client.stdio, "stdio_client", shutdown_race)
+
+    async def use_transport() -> None:
+        async with _stdio_transport(object()):
+            pass
+
+    asyncio.run(use_transport())
+
+    async def fail_in_body() -> None:
+        async with _stdio_transport(object()):
+            raise ValueError("body failure")
+
+    with pytest.raises(ValueError, match="body failure"):
+        asyncio.run(fail_in_body())
 
 
 def test_host_declarations_normalize_to_common_command_contract() -> None:
