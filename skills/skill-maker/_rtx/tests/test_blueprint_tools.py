@@ -341,6 +341,120 @@ def test_sync_interface_block_removes_legacy_contract_before_replacing_interface
     )
 
 
+def _managed_gate_graph(
+    *,
+    kind: str = "markdown",
+    opted_in: bool = True,
+    gateway_language: str = "Markdown",
+):
+    module_id = "managed"
+    gateway_id = "managed.source.gateway"
+    setup_interface = "managed.interface.setup"
+    return SimpleNamespace(
+        schema_version=6,
+        module_sources={module_id: (gateway_id,)},
+        module_ancestry={module_id: (module_id,)},
+        nodes={
+            module_id: SimpleNamespace(gateway_path=Path("SKILL.md")),
+            gateway_id: SimpleNamespace(
+                node_id=gateway_id,
+                gateway_path=Path("SKILL.md"),
+                declaration={"gateway": {"language": gateway_language}},
+            ),
+        },
+        node_edges=(),
+        exports={
+            setup_interface: SimpleNamespace(
+                interface_id=setup_interface,
+                module_node_id=module_id,
+                version=1,
+                declaration={"description": "Set up managed."},
+            )
+        },
+        source_interfaces={},
+        managed_setups=(
+            {
+                setup_interface: SimpleNamespace(
+                    setup_interface=setup_interface,
+                    setup_version=1,
+                    teardown_interface="managed.interface.teardown",
+                    teardown_version=1,
+                    kind=kind,
+                )
+            }
+            if opted_in
+            else {}
+        ),
+    )
+
+
+def test_generated_interface_block_includes_the_managed_markdown_protocol(syncer) -> None:
+    """Catches a gate that skips ready authorization or exposes continuation data."""
+    block = syncer.generated_interface_block("managed", _managed_gate_graph())
+
+    assert "### Managed setup gate" in block
+    assert "`managed.interface.setup@1`" in block
+    assert "`managed.interface.teardown@1`" in block
+    assert "`setup-interface-manager._rtx.interface.status@1`" in block
+    assert "`setup-interface-manager._rtx.interface.begin@1`" in block
+    assert "`setup-interface-manager._rtx.interface.run-markdown@1`" in block
+    assert "`setup-interface-manager._rtx.interface.settle@1`" in block
+    assert "`setup-interface-manager._rtx.interface.authorize@1`" in block
+    ordinary_protocol = block[block.index("For an ordinary invocation"):]
+    assert ordinary_protocol.index("status") < ordinary_protocol.index("permission") < ordinary_protocol.index("begin")
+    assert ordinary_protocol.index("ready recheck") < ordinary_protocol.index("authorize") < ordinary_protocol.index("Retry")
+    assert (
+        "begin(setup, ROOT_SETUP_INTERFACE, ORIGINAL_CALLER, ORIGINAL_INTERFACE, "
+        "ORIGINAL_VERSION)" in block
+    )
+    assert (
+        "begin(teardown, managed.interface.setup, ORIGINAL_CALLER, "
+        "ORIGINAL_INTERFACE, ORIGINAL_VERSION)" in block
+    )
+    assert "caller, interface, version, arguments, and stdin outside the ledger" in block
+    assert "exact structured current step" in block
+    assert "Generic setup prose does not activate this gate" in block
+    assert "path" not in block.lower()
+
+
+def test_generated_interface_block_limits_and_removes_the_managed_markdown_gate(syncer) -> None:
+    """Catches gates leaking to bootstrap/plain exports or surviving opt-out."""
+    managed = _managed_gate_graph()
+    block = syncer.generated_interface_block("managed", managed)
+    assert block == syncer.generated_interface_block("managed", managed)
+    assert "### Managed setup gate" not in syncer.generated_interface_block(
+        "managed", _managed_gate_graph(kind="python")
+    )
+    assert "### Managed setup gate" not in syncer.generated_interface_block(
+        "managed", _managed_gate_graph(gateway_language="Python")
+    )
+    assert "### Managed setup gate" not in syncer.generated_interface_block(
+        "managed", _managed_gate_graph(opted_in=False)
+    )
+    bootstrap = syncer.load_blueprints()["setup-python-environment"]
+    assert "### Managed setup gate" not in syncer.generated_interface_block(
+        bootstrap.name, bootstrap.repository_graph
+    )
+
+    original = (
+        "---\nname: managed\n---\n\n"
+        "<!-- BEGIN BLUEPRINT INTERFACES -->\nold\n"
+        "<!-- END BLUEPRINT INTERFACES -->\n\nBody bytes stay put.\n"
+    )
+    gated = syncer.sync_interface_block(original, block)
+    ungated = syncer.sync_interface_block(
+        gated,
+        syncer.generated_interface_block("managed", _managed_gate_graph(opted_in=False)),
+    )
+
+    assert gated.startswith("---\nname: managed\n---\n\n")
+    assert gated.endswith("\n\nBody bytes stay put.\n")
+    assert syncer.sync_interface_block(gated, block) == gated
+    assert "### Managed setup gate" not in ungated
+    assert ungated.startswith("---\nname: managed\n---\n\n")
+    assert ungated.endswith("\n\nBody bytes stay put.\n")
+
+
 def test_llm_wakeup_generated_interfaces_are_exact(syncer) -> None:
     blueprint = syncer.load_blueprints()["llm-wakeup"]
     skill = blueprint.path.parent / "SKILL.md"

@@ -183,6 +183,79 @@ def blueprints_from_graph(
     return blueprints
 
 
+def generated_setup_gate(
+    module_id: str,
+    repository_graph: RepositoryBlueprintGraph,
+) -> list[str]:
+    """Render the managed-setup protocol for one opted-in Markdown gateway."""
+
+    gateway = _host_gateway_source(module_id, repository_graph)
+    gateway_declaration = getattr(gateway, "declaration", None)
+    if not isinstance(gateway_declaration, Mapping):
+        return []
+    gateway_spec = gateway_declaration.get("gateway")
+    if not isinstance(gateway_spec, Mapping) or gateway_spec.get("language") != "Markdown":
+        return []
+
+    managed_setups = getattr(repository_graph, "managed_setups", {})
+    if not isinstance(managed_setups, Mapping):
+        return []
+    managed_entries = []
+    for setup_interface, managed in sorted(managed_setups.items()):
+        setup_export = repository_graph.exports.get(setup_interface)
+        if (
+            setup_export is not None
+            and setup_export.module_node_id == module_id
+            and managed.kind == "markdown"
+        ):
+            managed_entries.append(managed)
+    if not managed_entries:
+        return []
+
+    lines = [
+        "### Managed setup gate",
+        "",
+        "Activate this gate only for an invocation of this skill's interfaces or an exact managed lifecycle entry below. Generic setup prose does not activate this gate.",
+        "Keep the original caller, interface, version, arguments, and stdin outside the ledger; the manager receives only its public continuation identity.",
+        "",
+        "Managed lifecycle entries:",
+    ]
+    for managed in managed_entries:
+        lines.append(
+            f"- Setup `{managed.setup_interface}@{managed.setup_version}` routes to "
+            f"`begin(setup, {managed.setup_interface}, ORIGINAL_CALLER, "
+            f"ORIGINAL_INTERFACE, ORIGINAL_VERSION)`; teardown "
+            f"`{managed.teardown_interface}@{managed.teardown_version}` routes to "
+            f"`begin(teardown, {managed.setup_interface}, ORIGINAL_CALLER, "
+            f"ORIGINAL_INTERFACE, ORIGINAL_VERSION)`."
+        )
+    lines.extend([
+        "",
+        "For an ordinary invocation, use this exact sequence:",
+        "",
+        f"1. Call `{_MANAGER_STATUS}` for the original target interface. If it is `unmanaged`, run the original request normally. If it is `setup_busy`, follow only its recovery result.",
+        "2. If it is `setup_required`, obtain permission, then call "
+        f"`{_MANAGER_BEGIN}` as `begin(setup, ROOT_SETUP_INTERFACE, ORIGINAL_CALLER, "
+        "ORIGINAL_INTERFACE, ORIGINAL_VERSION)`, where `ROOT_SETUP_INTERFACE` is the returned root setup interface.",
+        f"3. Follow only the returned exact structured current step: call `{_MANAGER_RUN_MARKDOWN}` for a Markdown step, follow its returned instructions, then call `{_MANAGER_SETTLE}`; call `{_MANAGER_RUN_PYTHON}` for a Python step. Repeat until the flow is ready.",
+        f"4. Perform the ready recheck with `{_MANAGER_STATUS}` for the original target and require `ready`; then call `{_MANAGER_AUTHORIZE}` with the original target plus caller, interface, and version.",
+        "5. Retry the original request exactly once, with its original arguments and stdin, only when `authorize` returns `resume_original: true`.",
+        "",
+        "For an exact managed setup or teardown invocation, do not launch it directly; use its "
+        f"listed `{_MANAGER_BEGIN}` route. "
+        "A manager result that names an exact structured current step is the only bypass of this gate.",
+    ])
+    return lines
+
+
+_MANAGER_STATUS = "setup-interface-manager._rtx.interface.status@1"
+_MANAGER_AUTHORIZE = "setup-interface-manager._rtx.interface.authorize@1"
+_MANAGER_BEGIN = "setup-interface-manager._rtx.interface.begin@1"
+_MANAGER_RUN_MARKDOWN = "setup-interface-manager._rtx.interface.run-markdown@1"
+_MANAGER_RUN_PYTHON = "setup-interface-manager._rtx.interface.run-python@1"
+_MANAGER_SETTLE = "setup-interface-manager._rtx.interface.settle@1"
+
+
 def generated_interface_block(
     module_id: str,
     repository_graph: RepositoryBlueprintGraph,
@@ -227,6 +300,10 @@ def generated_interface_block(
         "> Generated from `blueprint.yaml`. Do not edit this block by hand.",
         "",
     ]
+    setup_gate = generated_setup_gate(module_id, repository_graph)
+    if setup_gate:
+        lines.extend(setup_gate)
+        lines.append("")
     if process_exports:
         lines.extend([
             "Executable Interfaces:",
