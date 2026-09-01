@@ -150,7 +150,7 @@ def start_graph_server(
     host: str = "127.0.0.1",
     port: int = 8765,
     port_scan: bool = True,
-    startup_wait: float = 1.0,
+    startup_wait: float = 10.0,
 ) -> GraphServer:
     """Start a local HTTP server rooted at ``directory`` and return a handle."""
     selected_port = next_open_port(host, port) if port_scan else port

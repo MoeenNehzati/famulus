@@ -61,9 +61,17 @@ def _run(module, tmp_path: Path, plugin: Path, selected: list[str]):
 
 
 @pytest.mark.parametrize("selected", ["assistant", "collab", "coauthor", "tw"])
-def test_each_launcher_selection_is_independent(tmp_path: Path, selected: str) -> None:
+def test_each_launcher_selection_is_independent(
+    tmp_path: Path, selected: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     module = _runtime()
     plugin = _plugin(tmp_path)
+    if selected == "tw":
+        monkeypatch.setattr(
+            module.subprocess,
+            "run",
+            lambda *_args, **_kwargs: subprocess.CompletedProcess(["tmux", "-V"], 0),
+        )
 
     assert _run(module, tmp_path, plugin, [selected])
 
