@@ -9,7 +9,7 @@ This campaign tests the setup manager through fresh Codex sessions in task-owned
 
 Scripted tests diagnose and reproduce failures; they never substitute for a fresh interactive rerun. Raw transcripts and secret-bearing artifacts remain under the mode-`0700` task root. This report contains only redacted evidence.
 
-The committed [evidence appendix](setup-interface-manager-interactive-evidence.md) preserves the exact redacted command templates, representative structured payloads and ledgers, final synthetic overlay identity, and complete overlay file list needed to repeat or audit the campaign after temporary raw evidence is removed.
+The committed [evidence appendix](experiment-evidence.md) preserves the exact redacted command templates, representative structured payloads and ledgers, final synthetic overlay identity, and complete overlay file list needed to repeat or audit the campaign without exposing private raw evidence.
 
 ## Installation and isolation manifest
 
