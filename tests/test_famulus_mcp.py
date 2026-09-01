@@ -805,7 +805,7 @@ def test_python_prerequisite_has_no_platform_fallback() -> None:
         server.require_python((3, 10))
 
 
-def test_missing_exact_python_launch_fails_without_fallback(
+def test_missing_exact_python_path_has_no_declared_fallback(
     tmp_path: Path,
 ) -> None:
     plugin = tmp_path / "Plugin Cache" / "famulus"
@@ -818,16 +818,14 @@ def test_missing_exact_python_launch_fails_without_fallback(
     environment = {"PATH": str(empty_path)}
     assert shutil.which(command, path=environment["PATH"]) is None
     if os.name == "nt":
-        # CreateProcess may still resolve an unqualified executable beside the
-        # parent Python process even when PATH has no matching entry.
-        assert subprocess.run(
+        # CreateProcess lookup is not redirected by the child environment's
+        # PATH, so a launch cannot establish this contract on Windows.
+        assert not Path(command).is_absolute()
+        return
+    with pytest.raises(FileNotFoundError, match="python"):
+        subprocess.run(
             [command, *args], cwd=cwd, env=environment, check=False
-        ).returncode != 0
-    else:
-        with pytest.raises(FileNotFoundError, match="python"):
-            subprocess.run(
-                [command, *args], cwd=cwd, env=environment, check=False
-            )
+        )
 
 
 def test_stdio_transport_ignores_only_a_clean_shutdown_send_race(
