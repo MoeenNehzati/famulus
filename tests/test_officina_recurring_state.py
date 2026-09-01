@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 import sys
 from contextlib import contextmanager
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import pytest
 import yaml
@@ -111,26 +112,30 @@ def test_healthcheck_sentinel_composes_the_exact_managed_command(
 ) -> None:
     schedule = ManagedSchedule(
         **{
-            **_schedule(tmp_path).__dict__,
+            **_schedule(tmp_path / "root with spaces").__dict__,
             "environment": {"HOME": "/home/alice", "PATH": "/opt/famulus/bin"},
         }
     )
     monkeypatch.setattr(native.os, "getuid", lambda: 1234)
+    health_root = schedule.log_root / "healthcheck"
 
     assert native._sentinel_script(schedule) == (
-        f"/bin/mkdir -p {schedule.log_root / 'healthcheck'}\n"
+        f"/bin/mkdir -p {shlex.quote(str(health_root))}\n"
         "HOME=/home/alice PATH=/opt/famulus/bin "
-        f"{schedule.python} -m officina.recurring.healthcheck --plugin-root {schedule.plugin_root} "
-        f"--descriptor {schedule.descriptor_path} --log-root {schedule.log_root} "
-        f"--cron >> {schedule.log_root / 'healthcheck' / 'run.log'} 2>&1 || "
+        f"{shlex.quote(str(schedule.python))} -m officina.recurring.healthcheck "
+        f"--plugin-root {shlex.quote(str(schedule.plugin_root))} "
+        f"--descriptor {shlex.quote(str(schedule.descriptor_path))} "
+        f"--log-root {shlex.quote(str(schedule.log_root))} "
+        f"--cron >> {shlex.quote(str(health_root / 'run.log'))} 2>&1 || "
         "XDG_RUNTIME_DIR=/run/user/1234 "
         "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1234/bus "
         "/usr/bin/notify-send --urgency=critical 'Recurring tasks need attention' "
-        f"\"$(cat {schedule.log_root / 'healthcheck' / 'last-failure.txt'} "
+        f"\"$(cat {shlex.quote(str(health_root / 'last-failure.txt'))} "
         "2>/dev/null || echo 'The recurring health check could not run.')\" "
     )
     assert native._sentinel_line(schedule) == (
-        f"0 */4 * * * /bin/sh {schedule.native_registration_root / 'ai-recurring-healthcheck.sh'} "
+        "0 */4 * * * /bin/sh "
+        f"{shlex.quote(str(schedule.native_registration_root / 'ai-recurring-healthcheck.sh'))} "
         "# ai-recurring-healthcheck"
     )
 
@@ -201,7 +206,18 @@ def test_healthcheck_sentinel_refuses_to_overwrite_an_unreadable_crontab(
 def test_linux_service_invokes_the_managed_executor_without_a_shell(
     tmp_path: Path,
 ) -> None:
-    schedule = ManagedSchedule(**{**_schedule(tmp_path).__dict__, "environment": {}})
+    schedule = ManagedSchedule(
+        **{
+            **_schedule(tmp_path).__dict__,
+            "descriptor_path": PureWindowsPath(
+                "C:/Users/Alice/Famulus/config/schedule-descriptor.json"
+            ),
+            "python": PureWindowsPath("C:/Program Files/Famulus/python.exe"),
+            "plugin_root": PureWindowsPath("C:/Famulus/plugin root"),
+            "log_root": PureWindowsPath("C:/Users/Alice/Famulus/state/logs"),
+            "environment": {},
+        }
+    )
     service = native.render_linux_service(
         schedule,
         {
@@ -214,10 +230,12 @@ def test_linux_service_invokes_the_managed_executor_without_a_shell(
     )
 
     assert service.splitlines()[-1] == (
-        f'ExecStart="{schedule.python}" "-m" '
-        f'"officina.recurring.executor" "--plugin-root" "{schedule.plugin_root}" "--descriptor" '
-        f'"{schedule.descriptor_path}" "--job" "demo" "--log-root" '
-        f'"{schedule.log_root}"'
+        r'ExecStart="C:\\Program Files\\Famulus\\python.exe" "-m" '
+        r'"officina.recurring.executor" "--plugin-root" '
+        r'"C:\\Famulus\\plugin root" "--descriptor" '
+        r'"C:\\Users\\Alice\\Famulus\\config\\schedule-descriptor.json" '
+        r'"--job" "demo" "--log-root" '
+        r'"C:\\Users\\Alice\\Famulus\\state\\logs"'
     )
     assert all(
         fragment not in service

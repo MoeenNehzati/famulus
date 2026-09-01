@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
+import tomllib
 from pathlib import Path
 
 
@@ -34,12 +36,16 @@ def _plugin(tmp_path: Path) -> Path:
     return root
 
 
+def _canonical_python(tmp_path: Path) -> Path:
+    return tmp_path / "Selected Python Ω" / "python"
+
+
 def test_selected_profile_and_worker_use_selected_plugin_root(tmp_path: Path) -> None:
     launchers = _runtime()
     plugin = _plugin(tmp_path)
     home = tmp_path / "home"
     launchers.run(
-        canonical_python=Path("/opt/python"),
+        canonical_python=_canonical_python(tmp_path),
         repo_root=plugin,
         agents=["assistant"],
         home=home,
@@ -49,9 +55,12 @@ def test_selected_profile_and_worker_use_selected_plugin_root(tmp_path: Path) ->
         mode="plugin",
     )
 
-    assert str(plugin / "agents" / "assistant.md") in (
-        home / ".codex" / "assistant.config.toml"
-    ).read_text()
+    installed_profile = tomllib.loads(
+        (home / ".codex" / "assistant.config.toml").read_text(encoding="utf-8")
+    )
+    assert installed_profile["model_instructions_file"] == str(
+        plugin / "agents" / "assistant.md"
+    )
     assert launchers.worker_root_for_mode(
         "plugin", plugin, home, environ={}
     ) != plugin / "workers"
@@ -71,19 +80,22 @@ def test_tw_checks_tmux_only_when_selected(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(launchers.subprocess, "run", record)
     home = tmp_path / "home"
     launchers.run(
-        canonical_python=Path("/opt/python"), repo_root=plugin,
+        canonical_python=_canonical_python(tmp_path), repo_root=plugin,
         agents=["assistant"], home=home, bin_dir=home / "bin",
     )
     assert calls == []
 
     launchers.run(
-        canonical_python=Path("/opt/python"), repo_root=plugin,
+        canonical_python=_canonical_python(tmp_path), repo_root=plugin,
         agents=["tw"], home=home, bin_dir=home / "tw-bin",
     )
     assert calls == [["tmux", "-V"]]
-    assert {path.name for path in (home / "tw-bin").iterdir()} == {
-        "tmux-workspace", "tw", "tw-break", "tw-join", "tw-monitor", "tw-help"
-    }
+    if sys.platform == "win32":
+        assert not any((home / "tw-bin").iterdir())
+    else:
+        assert {path.name for path in (home / "tw-bin").iterdir()} == {
+            "tmux-workspace", "tw", "tw-break", "tw-join", "tw-monitor", "tw-help"
+        }
 
 
 def test_deduplicated_selection_does_not_add_another_launcher(tmp_path: Path) -> None:
@@ -91,7 +103,8 @@ def test_deduplicated_selection_does_not_add_another_launcher(tmp_path: Path) ->
     plugin = _plugin(tmp_path)
     home = tmp_path / "home"
     launchers.run(
-        canonical_python=Path("/opt/python"), repo_root=plugin,
+        canonical_python=_canonical_python(tmp_path), repo_root=plugin,
         agents=["assistant", "assistant"], home=home, bin_dir=home / "bin",
     )
-    assert {path.name for path in (home / "bin").iterdir()} == {"assistant"}
+    expected = "assistant.bat" if sys.platform == "win32" else "assistant"
+    assert {path.name for path in (home / "bin").iterdir()} == {expected}

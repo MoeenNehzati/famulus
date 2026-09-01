@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 import importlib.util
 import json
 import os
@@ -122,9 +123,31 @@ def _selected_environment(home: Path) -> dict[str, str]:
     return environment
 
 
+def _only_broken_resource_errors(error: BaseException) -> bool:
+    import anyio
+
+    if isinstance(error, BaseExceptionGroup):
+        return bool(error.exceptions) and all(
+            _only_broken_resource_errors(child) for child in error.exceptions
+        )
+    return isinstance(error, anyio.BrokenResourceError)
+
+
+@asynccontextmanager
+async def _stdio_transport(parameters):
+    """Ignore the MCP SDK's Windows-only clean-shutdown send race."""
+    from mcp.client.stdio import stdio_client
+
+    try:
+        async with stdio_client(parameters) as streams:
+            yield streams
+    except BaseExceptionGroup as error:
+        if not _only_broken_resource_errors(error):
+            raise
+
+
 async def _invoke_through_mcp(host: str, plugin_root: Path, home: Path):
     from mcp import ClientSession, StdioServerParameters
-    from mcp.client.stdio import stdio_client
 
     command, args, cwd = _declared_launch(host, plugin_root)
     environment = _selected_environment(home)
@@ -140,7 +163,7 @@ async def _invoke_through_mcp(host: str, plugin_root: Path, home: Path):
         cwd=cwd,
         env=environment,
     )
-    async with stdio_client(parameters) as (read, write):
+    async with _stdio_transport(parameters) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
             listed = await session.list_tools()
@@ -507,10 +530,9 @@ def test_real_mcp_persists_status_and_milestone_below_selected_host_root(
 
 
 async def _serve_graph_through_mcp(
-    host: str, plugin_root: Path, home: Path, served: Path
+    host: str, plugin_root: Path, home: Path, served: Path, port: int
 ) -> tuple[object, object, object, object, bytes, str, bool]:
     from mcp import ClientSession, StdioServerParameters
-    from mcp.client.stdio import stdio_client
 
     command, args, cwd = _declared_launch(host, plugin_root)
     environment = _selected_environment(home)
@@ -529,7 +551,7 @@ async def _serve_graph_through_mcp(
     pid: int | None = None
     completed = False
     try:
-        async with stdio_client(parameters) as (read, write):
+        async with _stdio_transport(parameters) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 listed = await session.list_tools()
@@ -546,7 +568,7 @@ async def _serve_graph_through_mcp(
                             "options": {
                                 "--directory": str(served),
                                 "--host": "127.0.0.1",
-                                "--port": "8765",
+                                "--port": str(port),
                             },
                             "stdin": None,
                         },
@@ -592,7 +614,7 @@ async def _serve_graph_through_mcp(
 
 @pytest.mark.parametrize("host", ["claude", "codex"])
 def test_graph_server_returns_through_real_mcp_and_survives(
-    host: str, tmp_path: Path
+    host: str, tmp_path: Path, free_tcp_port: int
 ) -> None:
     """Break caught: the graph child holds MCP pipes or dies with its gateway."""
     plugin = tmp_path / "Plugin Cache" / "famulus"
@@ -605,7 +627,9 @@ def test_graph_server_returns_through_real_mcp_and_survives(
     try:
         listed, called, after, finite, body, cache_control, alive = asyncio.run(
             asyncio.wait_for(
-                _serve_graph_through_mcp(host, plugin, tmp_path / "home", served),
+                _serve_graph_through_mcp(
+                    host, plugin, tmp_path / "home", served, free_tcp_port
+                ),
                 timeout=REAL_MCP_INTEGRATION_TIMEOUT_SECONDS,
             )
         )
@@ -807,12 +831,11 @@ def test_generated_outer_payload_uses_real_tool_field_names(tmp_path: Path) -> N
 
     async def call():
         from mcp import ClientSession, StdioServerParameters
-        from mcp.client.stdio import stdio_client
 
         plugin = tmp_path / "Plugin Cache" / "famulus"
         _copy_plugin(plugin)
         command, args, cwd = _declared_launch("claude", plugin)
-        async with stdio_client(StdioServerParameters(command=command, args=args, cwd=cwd, env=_selected_environment(tmp_path / "home"))) as (read, write):
+        async with _stdio_transport(StdioServerParameters(command=command, args=args, cwd=cwd, env=_selected_environment(tmp_path / "home"))) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 tool = (await session.list_tools()).tools[0]
@@ -1091,7 +1114,7 @@ def test_python_prerequisite_has_no_platform_fallback(server) -> None:
         server.require_python((3, 10))
 
 
-def test_missing_exact_python_launch_fails_without_fallback(
+def test_missing_exact_python_path_has_no_declared_fallback(
     tmp_path: Path,
 ) -> None:
     plugin = tmp_path / "Plugin Cache" / "famulus"
@@ -1101,13 +1124,68 @@ def test_missing_exact_python_launch_fails_without_fallback(
     empty_path.mkdir()
 
     assert command == "python"
+    environment = {"PATH": str(empty_path)}
+    assert shutil.which(command, path=environment["PATH"]) is None
+    if os.name == "nt":
+        # CreateProcess lookup is not redirected by the child environment's
+        # PATH, so a launch cannot establish this contract on Windows.
+        assert not Path(command).is_absolute()
+        return
     with pytest.raises(FileNotFoundError, match="python"):
         subprocess.run(
-            [command, *args],
-            cwd=cwd,
-            env={"PATH": str(empty_path)},
-            check=False,
+            [command, *args], cwd=cwd, env=environment, check=False
         )
+
+
+def test_stdio_transport_ignores_only_a_clean_shutdown_send_race(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import anyio
+    import mcp.client.stdio
+
+    @asynccontextmanager
+    async def shutdown_race(_parameters):
+        yield object(), object()
+        raise BaseExceptionGroup("shutdown", [anyio.BrokenResourceError()])
+
+    monkeypatch.setattr(mcp.client.stdio, "stdio_client", shutdown_race)
+
+    async def use_transport() -> None:
+        async with _stdio_transport(object()):
+            pass
+
+    asyncio.run(use_transport())
+
+    async def nested_teardown_race() -> None:
+        async with _stdio_transport(object()):
+            async with shutdown_race(object()):
+                pass
+
+    asyncio.run(nested_teardown_race())
+
+    async def fail_in_body() -> None:
+        async with _stdio_transport(object()):
+            raise ValueError("body failure")
+
+    with pytest.raises(ValueError, match="body failure"):
+        asyncio.run(fail_in_body())
+
+    @asynccontextmanager
+    async def mixed_teardown_error(_parameters):
+        yield object(), object()
+        raise BaseExceptionGroup(
+            "mixed teardown",
+            [anyio.BrokenResourceError(), ValueError("body failure")],
+        )
+
+    async def fail_with_mixed_error() -> None:
+        async with _stdio_transport(object()):
+            async with mixed_teardown_error(object()):
+                pass
+
+    with pytest.raises(BaseExceptionGroup, match="mixed teardown") as caught:
+        asyncio.run(fail_with_mixed_error())
+    assert any(isinstance(error, ValueError) for error in caught.value.exceptions)
 
 
 def test_host_declarations_normalize_to_common_command_contract() -> None:

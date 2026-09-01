@@ -89,7 +89,7 @@ def test_late_failure_restores_command_file_identity(tmp_path: Path, monkeypatch
     if os.name != "nt":
         assert stat.S_IMODE(command.stat().st_mode) == 0o751
     assert alias.is_symlink()
-    assert alias.readlink() == target
+    assert os.path.samefile(alias.readlink(), target)
 
 
 @pytest.mark.parametrize("platform", ["darwin", "win32"])
