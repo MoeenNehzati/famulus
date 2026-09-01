@@ -50,7 +50,7 @@ def _plugin(tmp_path: Path) -> Path:
 def _run(module, tmp_path: Path, plugin: Path, selected: list[str]):
     home = tmp_path / "home"
     return module.run(
-        canonical_python=Path("/opt/Selected Python/python"),
+        canonical_python=tmp_path / "Selected Python Ω" / "python",
         repo_root=plugin,
         agents=selected,
         home=home,
@@ -76,11 +76,13 @@ def test_each_launcher_selection_is_independent(
     assert _run(module, tmp_path, plugin, [selected])
 
     bin_dir = tmp_path / "home" / "bin"
-    expected = (
-        {"tmux-workspace", "tw", "tw-break", "tw-join", "tw-monitor", "tw-help"}
-        if selected == "tw"
-        else {selected}
-    )
+    if selected == "tw" and sys.platform == "win32":
+        assert not bin_dir.exists()
+        return
+    if selected == "tw":
+        expected = {"tmux-workspace", "tw", "tw-break", "tw-join", "tw-monitor", "tw-help"}
+    else:
+        expected = {selected + ".bat" if sys.platform == "win32" else selected}
     assert {path.name for path in bin_dir.iterdir()} == expected
 
 
@@ -165,6 +167,8 @@ def test_empty_packages_execute_mandatory_task2_commands_without_pip_install(
     assert "empty" in text and "canonical" in text and "selected plugin root" in text
 
 
+# famulus-skip: category=platform-contract; reason=POSIX launchers cannot execute on Windows; alternate=controlled Windows adapter test covers argv quoting
+@pytest.mark.skipif(sys.platform == "win32", reason="executes the generated POSIX launcher")
 def test_native_posix_installed_launcher_preserves_ordered_spaced_argv(tmp_path: Path) -> None:
     module = _runtime()
     plugin = _plugin(tmp_path)
@@ -237,11 +241,12 @@ def test_selected_repair_and_plugin_refresh_leave_unrelated_sentinels(tmp_path: 
             self.paths.append(path)
 
     records = Records()
+    canonical_python = tmp_path / "Selected Python Ω" / "python"
 
-    module.run(canonical_python=Path("/opt/python"), repo_root=first, agents=["assistant"], home=home, bin_dir=bin_dir, manifest=records)
-    selected = bin_dir / "assistant"
+    module.run(canonical_python=canonical_python, repo_root=first, agents=["assistant"], home=home, bin_dir=bin_dir, manifest=records)
+    selected = bin_dir / ("assistant.bat" if sys.platform == "win32" else "assistant")
     selected.write_text("damaged")
-    module.run(canonical_python=Path("/opt/python"), repo_root=second, agents=["assistant"], home=home, bin_dir=bin_dir, manifest=records)
+    module.run(canonical_python=canonical_python, repo_root=second, agents=["assistant"], home=home, bin_dir=bin_dir, manifest=records)
 
     assert str(second) in selected.read_text()
     assert str(first) not in selected.read_text()
