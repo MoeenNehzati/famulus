@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
+import yaml
 
 import officina.common.atomic_files as atomic_files
 from officina.common.atomic_files import (
@@ -20,7 +21,149 @@ from officina.common.atomic_files import (
     atomic_compare_and_append_bytes,
     atomic_create_bytes,
     atomic_replace_bytes,
+    ensure_private_directory,
 )
+
+
+def test_ensure_private_directory_has_operation_specific_typed_contract() -> None:
+    """Catches routing directory creation through the file-only argument contract."""
+    blueprint_path = (
+        Path(__file__).resolve().parents[1]
+        / "src/officina/common/blueprints/atomic-files.yaml"
+    )
+    blueprint = yaml.safe_load(blueprint_path.read_text(encoding="utf-8"))
+    contract = blueprint["interfaces"][
+        "common.source.atomic-files.interface.python-api"
+    ]["contract"]
+    arguments = contract["arguments"]
+
+    assert arguments["path"]["required"] is False
+    assert arguments["path"]["type"]["kind"] == "file"
+    assert arguments["path"]["direct_io_ref"] == "target-file"
+    assert arguments["mode"]["default"] == 0o600
+    assert arguments["directory"]["required"] is False
+    assert arguments["directory"]["type"]["kind"] == "dir"
+    assert arguments["directory"]["type"]["must_exist"] is False
+    assert arguments["directory"]["direct_io_ref"] == "target-directory"
+    assert "directory-mode" not in arguments
+    assert {entry["id"] for entry in contract["direct_io"]["writes"]} == {
+        "target-file",
+        "target-directory",
+    }
+    assert {entry["id"] for entry in contract["execution"]["effects"]} == {
+        "file-state",
+        "directory-state",
+    }
+
+
+def test_ensure_private_directory_creates_restrictive_descendants(tmp_path: Path) -> None:
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    destination = allowed / "private" / "state"
+
+    ensure_private_directory(destination, allowed_root=allowed)
+
+    assert destination.is_dir()
+    assert stat.S_IMODE((allowed / "private").stat().st_mode) == 0o700
+    assert stat.S_IMODE(destination.stat().st_mode) == 0o700
+
+
+@pytest.mark.parametrize("requested_mode", [0o755, 0o777])
+def test_ensure_private_directory_rejects_caller_selected_mode(
+    tmp_path: Path, requested_mode: int
+) -> None:
+    """Catches exposing a mode that can weaken the private-directory invariant."""
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+
+    with pytest.raises(TypeError, match="unexpected keyword argument 'mode'"):
+        ensure_private_directory(
+            allowed / "private", allowed_root=allowed, mode=requested_mode
+        )
+
+
+def test_ensure_private_directory_allows_repeated_final_component_name(
+    tmp_path: Path,
+) -> None:
+    """Catches treating an earlier same-named ancestor as the final directory."""
+    allowed = tmp_path / "allowed"
+    ancestor = allowed / "private"
+    ancestor.mkdir(parents=True)
+    ancestor.chmod(0o755)
+    destination = ancestor / "child" / "private"
+
+    ensure_private_directory(destination, allowed_root=allowed)
+
+    assert stat.S_IMODE(ancestor.stat().st_mode) == 0o755
+    assert stat.S_IMODE(destination.stat().st_mode) == 0o700
+
+
+def test_ensure_private_directory_rejects_unsafe_components(tmp_path: Path) -> None:
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    link = allowed / "link"
+    link.symlink_to(outside, target_is_directory=True)
+    blocked = allowed / "blocked"
+    blocked.write_text("not a directory")
+
+    with pytest.raises(AtomicWriteError):
+        ensure_private_directory(link / "state", allowed_root=allowed)
+    with pytest.raises(AtomicWriteError):
+        ensure_private_directory(blocked / "state", allowed_root=allowed)
+
+
+# famulus-skip: category=platform-contract; reason=injects POSIX relative descriptor creation; alternate=Windows uses retained native directory handles and verifies their chain
+@pytest.mark.skipif(os.name != "posix", reason="POSIX descriptor implementation contract")
+def test_ensure_private_directory_swap_cannot_redirect_later_confined_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    private = allowed / "private"
+    displaced = allowed / "displaced"
+    original_mkdir = atomic_files.os.mkdir
+    swapped = False
+
+    def swap_after_create(name: str, mode: int, *, dir_fd: int) -> None:
+        nonlocal swapped
+        original_mkdir(name, mode, dir_fd=dir_fd)
+        if name == "private" and not swapped:
+            private.rename(displaced)
+            private.symlink_to(outside, target_is_directory=True)
+            swapped = True
+
+    monkeypatch.setattr(atomic_files.os, "mkdir", swap_after_create)
+
+    with pytest.raises(AtomicWriteError):
+        ensure_private_directory(private / "state", allowed_root=allowed)
+    assert not (outside / "state").exists()
+    with pytest.raises(AtomicWriteError):
+        atomic_create_bytes(
+            private / "state" / "ledger.json",
+            b"state",
+            allowed_root=allowed,
+            mode=0o600,
+        )
+    assert not (outside / "state" / "ledger.json").exists()
+
+
+# famulus-skip: category=platform-contract; reason=requires native Win32 handles and ACLs; alternate=defined here and run by the Windows suite
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows contract")
+def test_windows_native_ensure_private_directory_supports_confined_followup_write(
+    tmp_path: Path,
+) -> None:
+    private = tmp_path / "private" / "state"
+
+    ensure_private_directory(private, allowed_root=tmp_path)
+    atomic_create_bytes(
+        private / "ledger.json", b"state", allowed_root=tmp_path, mode=0o600
+    )
+
+    assert (private / "ledger.json").read_bytes() == b"state"
 
 
 def test_compare_replace_and_delete_reject_changed_preimages(tmp_path: Path) -> None:
@@ -145,6 +288,16 @@ def _windows_native_acl_is_restrictive(path: Path, allowed_root: Path) -> bool:
                 atomic_files._windows_close_handle(handle)
         finally:
             atomic_files._windows_close_chain(parents)
+
+
+def _windows_native_directory_acl_is_restrictive(
+    path: Path, allowed_root: Path
+) -> bool:
+    parents, _parts = atomic_files._windows_open_parent(path / "acl-probe", allowed_root)
+    try:
+        return atomic_files._windows_verify_handle_user_restrictive_acl(parents[-1])
+    finally:
+        atomic_files._windows_close_chain(parents)
 
 
 def test_existing_final_symlink_is_rejected(tmp_path: Path) -> None:
@@ -1145,6 +1298,44 @@ def test_windows_component_maximum_utf16_length_is_accepted() -> None:
     assert information.FileNameLength == 0xFFFC
 
 
+def test_windows_private_directory_allows_nonrestrictive_existing_ancestor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches requiring private ACLs on ordinary ancestors such as C:\\Users."""
+    allowed = tmp_path / "allowed"
+    destination = allowed / "shared" / "private" / "state"
+    handles = iter((11, 12, 13))
+
+    monkeypatch.setattr(atomic_files, "_windows_open_root", lambda _root: 10)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_security_material",
+        lambda: (object(), object(), object(), object()),
+    )
+
+    def open_component(
+        _parent: int, name: str, **_kwargs: object
+    ) -> tuple[int, int]:
+        return next(handles), 1 if name == "shared" else 2
+
+    def require_private_acl(_handle: int, name: str) -> None:
+        if name == "shared":
+            raise AtomicWriteError("ordinary existing ancestor is not private")
+
+    monkeypatch.setattr(atomic_files, "_windows_open_validated", open_component)
+    monkeypatch.setattr(atomic_files, "_windows_set_user_restrictive_acl", lambda *_args: None)
+    monkeypatch.setattr(atomic_files, "_windows_require_restrictive_acl", require_private_acl)
+    monkeypatch.setattr(atomic_files, "_windows_file_id", lambda handle: (1, bytes([handle]) * 16))
+    monkeypatch.setattr(atomic_files, "_windows_verify_parent_chain", lambda *_args: None)
+    monkeypatch.setattr(atomic_files, "_windows_close_handle", lambda _handle: None)
+    monkeypatch.setattr(atomic_files, "_windows_close_chain", lambda _handles: None)
+
+    atomic_files._windows_ensure_private_directory(
+        destination, allowed_root=allowed
+    )
+
+
 # famulus-skip: category=platform-contract; reason=requires native Win32 handles and ACLs; alternate=defined here and run by the Windows suite
 @pytest.mark.skipif(sys.platform != "win32", reason="native Windows contract")
 def test_windows_native_secure_create_replace_append_and_acl(tmp_path: Path) -> None:
@@ -1164,6 +1355,99 @@ def test_windows_native_secure_create_replace_append_and_acl(tmp_path: Path) -> 
     atomic_replace_bytes(target, b"replacement\n", allowed_root=tmp_path, mode=0o600)
     assert target.read_bytes() == b"replacement\n"
     assert _windows_native_acl_is_restrictive(target, tmp_path)
+
+
+# famulus-skip: category=platform-contract; reason=requires native Win32 directory reparse-point behavior; alternate=defined here and run by the Windows suite
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows contract")
+def test_windows_native_private_directory_rejects_intermediate_junction(
+    tmp_path: Path,
+) -> None:
+    allowed = tmp_path / "allowed"
+    outside = tmp_path / "outside"
+    allowed.mkdir()
+    outside.mkdir()
+    junction = allowed / "private"
+    result = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(junction), str(outside)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode:
+        # famulus-skip: category=platform-contract; reason=junction creation is unavailable on this Windows host; alternate=the native directory ACL and swap contracts run separately
+        pytest.skip(f"Windows junction creation unavailable: {result.stderr}")
+
+    with pytest.raises(AtomicWriteError, match="reparse"):
+        ensure_private_directory(junction / "state", allowed_root=allowed)
+
+    assert not (outside / "state").exists()
+
+
+# famulus-skip: category=platform-contract; reason=requires native Win32 retained directory handles; alternate=defined here and run by the Windows suite
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows contract")
+def test_windows_native_private_directory_detects_ancestor_swap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    allowed = tmp_path / "allowed"
+    private = allowed / "private"
+    displaced = allowed / "displaced"
+    private.mkdir(parents=True)
+    original_open = atomic_files._windows_open_validated
+    swapped = False
+
+    def swap_before_child_open(*args: object, **kwargs: object):
+        nonlocal swapped
+        if not swapped and len(args) > 1 and args[1] == "state":
+            private.rename(displaced)
+            private.mkdir()
+            swapped = True
+        return original_open(*args, **kwargs)
+
+    monkeypatch.setattr(atomic_files, "_windows_open_validated", swap_before_child_open)
+
+    with pytest.raises(AtomicWriteError, match="parent changed"):
+        ensure_private_directory(private / "state", allowed_root=allowed)
+
+    assert not (private / "state").exists()
+
+
+# famulus-skip: category=platform-contract; reason=requires native Win32 DACL behavior; alternate=defined here and run by the Windows suite
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows contract")
+def test_windows_native_private_directory_rejects_nonrestrictive_existing_acl(
+    tmp_path: Path,
+) -> None:
+    allowed = tmp_path / "allowed"
+    private = allowed / "private"
+    private.mkdir(parents=True)
+    result = subprocess.run(
+        ["icacls", str(private), "/grant", "*S-1-1-0:F"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode:
+        # famulus-skip: category=platform-contract; reason=ACL mutation is unavailable on this Windows host; alternate=the native created-directory restrictive-ACL contract runs separately
+        pytest.skip(f"Windows ACL mutation unavailable: {result.stderr}")
+    assert not _windows_native_directory_acl_is_restrictive(private, allowed)
+
+    with pytest.raises(AtomicWriteError, match="ACL"):
+        ensure_private_directory(private / "state", allowed_root=allowed)
+
+    assert not (private / "state").exists()
+
+
+# famulus-skip: category=platform-contract; reason=requires native Win32 directory ACL behavior; alternate=defined here and run by the Windows suite
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows contract")
+def test_windows_native_created_private_directories_have_restrictive_acl(
+    tmp_path: Path,
+) -> None:
+    private = tmp_path / "private" / "state"
+
+    ensure_private_directory(private, allowed_root=tmp_path)
+
+    assert _windows_native_directory_acl_is_restrictive(tmp_path / "private", tmp_path)
+    assert _windows_native_directory_acl_is_restrictive(private, tmp_path)
 
 
 # famulus-skip: category=platform-contract; reason=requires native Win32 delete-on-close cleanup; alternate=the one-byte disposition ABI and failure-reporting tests run on every host

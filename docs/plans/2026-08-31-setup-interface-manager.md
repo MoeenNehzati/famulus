@@ -26,9 +26,9 @@
 |---|---|
 | Managed metadata and graph projection | `src/officina/blueprints/graph.py` plus V6 schemas |
 | Path selection | existing `common.interface.famulus-paths-get` contract |
-| Ledger parsing, confinement, and atomic mutation | `skills/setup-interface-manager/_rtx/_state.py` |
-| Setup/teardown evaluation | `skills/setup-interface-manager/_rtx/_evaluation.py` |
-| Finite orchestration and runners | `skills/setup-interface-manager/_rtx/_manager.py`, `_dispatches.py` |
+| Ledger parsing, confinement, and atomic mutation | `skills/setup-interface-manager/_rtx/_setup_state.py` |
+| Setup/teardown evaluation | `skills/setup-interface-manager/_rtx/_setup_evaluation.py` |
+| Finite orchestration and runners | `skills/setup-interface-manager/_rtx/_setup_manager.py`, `_setup_dispatches.py` |
 | Markdown enforcement | existing blueprint syncer generated block |
 | Executable enforcement | `mcp_server.py` |
 | Production evidence | canary-owned verifier interfaces |
@@ -174,7 +174,7 @@ For each candidate, remove the root claim without external teardown when another
 
 ### Task 2: Implement confined ledger I/O and claims
 
-**Files:** create `skills/setup-interface-manager/_rtx/_state.py` and `skills/setup-interface-manager/_rtx/tests/test_state.py`.
+**Files:** create `skills/setup-interface-manager/_rtx/_setup_state.py` and `skills/setup-interface-manager/_rtx/tests/test_setup_state.py`; modify `src/officina/common/atomic_files.py`, `src/officina/common/blueprints/atomic-files.yaml`, and `tests/test_officina_atomic_files.py`.
 
 ```python
 class LedgerStore:
@@ -187,12 +187,12 @@ Only the manager constructs `LedgerStore`, using the path returned by its declar
 
 - [ ] Add failing tests for absent parent/file, strict parsing, deterministic encoding, modes, symlink/non-regular rejection, compare-and-swap retry, orphan preservation, idempotent claims, and one active flow.
 - [ ] Run the state test; expect missing-module failure.
-- [ ] Implement using injected atomic-file adapters with exact predecessor bytes; Task 4 wires the registered restricted interface after the manager module exists.
-- [ ] Rerun; expect PASS. Commit the listed paths as `feat: add setup lifecycle ledger`.
+- [ ] Extend the restricted atomic-files Python API with a confined `ensure-private-directory` operation that creates missing descendants with mode `0700`, rejects symlink/reparse/non-directory components, and retains descriptor/handle-relative confinement on POSIX and Windows. Implement the ledger using an injected adapter for that operation plus a stable exclusive lock, confined reads, exact-predecessor compare-and-replace, and post-write verification/recovery; do not claim portable byte CAS. Task 4 wires the registered restricted interface after the manager module exists.
+- [ ] Rerun; expect PASS. Commit the reviewed common atomic-files extension as `feat: add confined private directory operation`. Keep the manager-owned state files uncommitted until Task 4 registers the hidden node; the repository hook rejects partial unregistered runtime trees. Task 4 commits the reviewed Task 2–4 manager-owned files together.
 
 ### Task 3: Implement evaluation and teardown planning
 
-**Files:** create `skills/setup-interface-manager/_rtx/_evaluation.py` and `_rtx/tests/test_evaluation.py`.
+**Files:** create `skills/setup-interface-manager/_rtx/_setup_evaluation.py` and `_rtx/tests/test_setup_evaluation.py`.
 
 ```python
 def evaluate_target(graph, target_interface: str, ledger: SetupLedger) -> SetupEvaluation: ...
@@ -205,16 +205,16 @@ def teardown_plan(graph, root_setup_interface: str, ledger: SetupLedger) -> tupl
 
 - [ ] Test unmanaged/root/child targets, chains, diamonds, stale suffixes, invalidation, out-of-order settlement, root authorization, reverse teardown, and both shared-dependency histories.
 - [ ] Run the new test; expect failure. Implement owner resolution through `graph.module_parents` and all mutations through `LedgerStore`.
-- [ ] Rerun; expect PASS. Commit as `feat: evaluate managed setup lifecycle state`.
+- [ ] Rerun; expect PASS. Keep the reviewed evaluation files uncommitted for the registered-node commit in Task 4.
 
 ### Task 4: Register the hidden manager and runners
 
-**Files:** create `skills/setup-interface-manager/{SKILL.md,blueprint.yaml,blueprints/gateway.yaml}` and `_rtx/{blueprint.yaml,blueprints/rtx-manager.yaml,_manager.py,_dispatches.py,tests/test_manager.py}`; modify `src/officina/common/blueprint.yaml`.
+**Files:** create `skills/setup-interface-manager/{SKILL.md,blueprint.yaml,blueprints/gateway.yaml}` and `_rtx/{blueprint.yaml,blueprints/rtx-manager.yaml,_setup_manager.py,_setup_dispatches.py,tests/test_setup_manager.py}`; include the reviewed Task 2–3 manager-owned files; modify `src/officina/common/blueprint.yaml`.
 
 - [ ] Test every public signature, state/exit code, exact current-step enforcement, stdin redaction, ready-only authorization, Python run-and-verify, Markdown settlement, teardown settlement, busy flow, retry/cancel, and non-activation from generic setup prose.
 - [ ] Run the manager test; expect missing-node failure.
 - [ ] Register a hidden `skill-workflow` manager with no production managed targets yet; tests install a finite Python fixture map. Grant its `_rtx` module atomic-files access and declare its canonical getter/atomic-files uses. Declare the getter dependency as `DispatchCall(caller_module_id="setup-interface-manager._rtx", target_module_id="common", interface="famulus-paths-get", smoke_args=("setup-status",))`; runtime calls use `self.dispatch(GETTER_KEY, args=("setup-status",))`. Construct `LedgerStore` only from the captured absolute stdout. No public path or arbitrary interface ID is accepted. Task 7 adds the first production target only after its interfaces exist.
-- [ ] Run the manager test and `./repo_checks.py --task validators --validator skill-maker/blueprints --jobs 1`; expect PASS. Commit `skills/setup-interface-manager` as `feat: add setup interface manager`.
+- [ ] Run the state, evaluation, and manager tests plus `./repo_checks.py --task validators --validator skill-maker/blueprints --jobs 1`; expect PASS. Commit the complete registered `skills/setup-interface-manager` tree and common caller grant as `feat: add setup interface manager`.
 
 ### Task 5: Add the generated Markdown gate
 
@@ -237,7 +237,7 @@ def teardown_plan(graph, root_setup_interface: str, ledger: SetupLedger) -> tupl
 
 ### Task 7: Migrate the Markdown canary
 
-**Files:** modify `skills/milestone-logging/{blueprint.yaml,setup.md,blueprints/gateway.yaml,blueprints/setup.yaml,_rtx/blueprint.yaml,_rtx/tests/test_milestone_run_journal.py}`, `skills/setup-interface-manager/{blueprint.yaml,_rtx/blueprint.yaml,_rtx/_dispatches.py}`; create `skills/milestone-logging/{teardown.md,blueprints/teardown.yaml,_rtx/_setup_status_interface.py,_rtx/_teardown_status_interface.py,_rtx/blueprints/rtx-setup-status.yaml,_rtx/blueprints/rtx-teardown-status.yaml}`.
+**Files:** modify `skills/milestone-logging/{blueprint.yaml,setup.md,blueprints/gateway.yaml,blueprints/setup.yaml,_rtx/blueprint.yaml,_rtx/tests/test_milestone_run_journal.py}`, `skills/setup-interface-manager/{blueprint.yaml,_rtx/blueprint.yaml,_rtx/_setup_dispatches.py}`; create `skills/milestone-logging/{teardown.md,blueprints/teardown.yaml,_rtx/_setup_status_interface.py,_rtx/_teardown_status_interface.py,_rtx/blueprints/rtx-setup-status.yaml,_rtx/blueprints/rtx-teardown-status.yaml}`.
 
 - [ ] Test dedicated setup/teardown plus executable read-only setup and teardown verifiers. Bind the setup-status and teardown-status sources to `_setup_status_interface.py` and `_teardown_status_interface.py`; export both through `_rtx/blueprint.yaml` and the parent namespace surface; declare the getter use needed by setup-status. Setup verifies only the getter-projected logging path and returns exactly `{"set_up": boolean}` without reading `setup-status` as MCP readiness. Teardown makes no external mutation and returns exactly `{"torn_down": boolean}`; after verifier success the manager removes the claim/receipt.
 - [ ] Run the owner test; expect failure. Add opt-in metadata, dedicated instructions, both verifiers, and the manager's finite production dispatch/use entries for this now-existing pair.
@@ -245,7 +245,7 @@ def teardown_plan(graph, root_setup_interface: str, ledger: SetupLedger) -> tupl
 
 ### Task 8: Prove the Python runner without parameterized production state
 
-**Files:** modify `skills/setup-interface-manager/_rtx/tests/test_manager.py`; create `tests/fixtures/setup_interface_manager/repository/officina.toml`, `tests/fixtures/setup_interface_manager/repository/python-canary/blueprint.yaml`, `tests/fixtures/setup_interface_manager/repository/python-canary/blueprints/lifecycle.yaml`, `tests/fixtures/setup_interface_manager/repository/python-canary/python_canary.py`, and `tests/test_setup_interface_manager_coverage.py`.
+**Files:** modify `skills/setup-interface-manager/_rtx/tests/test_setup_manager.py`; create `tests/fixtures/setup_interface_manager/repository/officina.toml`, `tests/fixtures/setup_interface_manager/repository/python-canary/blueprint.yaml`, `tests/fixtures/setup_interface_manager/repository/python-canary/blueprints/lifecycle.yaml`, `tests/fixtures/setup_interface_manager/repository/python-canary/python_canary.py`, and `tests/test_setup_interface_manager_coverage.py`.
 
 - [ ] Add a registered test-only Python setup/teardown/verifier fixture with no external effects. Its setup and teardown interfaces have fixed process bindings; the dispatch map cannot select the opposite action. The setup verifier returns `{"set_up": true}` only after the fixture setup succeeds, and teardown verifier returns `{"torn_down": true}` only after teardown succeeds.
 - [ ] Test zero exit plus verifier success, nonzero exit, malformed/false verifier output, wrong current interface, and receipt mutation only after verification.

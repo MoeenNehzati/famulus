@@ -2,8 +2,9 @@ content:
 - atomic_files\.py
 dependencies: []
 description: Implements confined regular-file reads, secure replace, create, append,
-  compare-and-append, compare-and-replace, compare-and-delete, and advisory sidecar
-  locking on POSIX and Windows, with an explicit non-atomic fallback.
+  compare-and-append, compare-and-replace, compare-and-delete, advisory sidecar
+  locking, and private-directory creation on POSIX and Windows, with an explicit
+  non-atomic file fallback.
 gateway:
   language: Python
   path: atomic_files.py
@@ -24,7 +25,8 @@ interfaces:
           type:
             kind: boolean
         allowed-root:
-          description: Directory boundary that must contain path.
+          description: Existing directory boundary that must contain the selected
+            file path or private directory.
           direct_io_ref: target-file
           required: true
           sensitivity: user-private
@@ -35,7 +37,8 @@ interfaces:
             relative_to: caller-cwd
             syntax: literal
         data:
-          description: Bytes written or appended by mutation operations.
+          description: Bytes written or appended by file mutation operations; omitted
+            for read, exclusive-lock, and ensure-private-directory.
           required: false
           sensitivity: user-private
           type:
@@ -61,7 +64,8 @@ interfaces:
             minimum: 0
         mode:
           default: 384
-          description: Requested file permission bits for mutation operations.
+          description: Requested file permission bits for file mutation operations;
+            not used by ensure-private-directory.
           required: false
           sensitivity: public
           type:
@@ -91,10 +95,26 @@ interfaces:
               value: compare-and-delete
             - description: Hold one confined regular sidecar as a cooperative process lock.
               value: exclusive-lock
+            - description: Create missing confined directory descendants with fixed POSIX mode 0700 or an equivalent restrictive Windows ACL.
+              value: ensure-private-directory
+        directory:
+          description: Destination directory used only by ensure-private-directory,
+            confined beneath allowed-root. Its permissions are fixed at POSIX mode
+            0700 or an equivalent restrictive Windows ACL.
+          direct_io_ref: target-directory
+          required: false
+          sensitivity: user-private
+          type:
+            access: read-write
+            kind: dir
+            must_exist: false
+            relative_to: caller-cwd
+            syntax: literal
         path:
-          description: Destination or source file confined beneath allowed-root.
+          description: Destination or source file used by every operation except
+            ensure-private-directory, confined beneath allowed-root.
           direct_io_ref: target-file
-          required: true
+          required: false
           sensitivity: user-private
           type:
             access: read-write
@@ -104,7 +124,8 @@ interfaces:
             relative_to: caller-cwd
             syntax: literal
       caller_warnings:
-      - external-side-effect: Mutation operations create, change, or remove a local file;
+      - external-side-effect: Mutation operations create, change, or remove a local file
+          or create private directory descendants;
           compare operations may fail when another writer changes it. Exclusive locking serializes only callers
           that acquire the same stable sidecar; it does not govern direct edits or external
           systems. Handle confinement rejects path and symlink swaps, but a noncooperating
@@ -121,6 +142,12 @@ interfaces:
           medium: local-filesystem
           path: <path> beneath <allowed-root>
           sensitivity: user-private
+        - access: read
+          content: Confined directory identity, type, and fixed POSIX 0700 or equivalent restrictive Windows permissions.
+          id: target-directory
+          medium: local-filesystem
+          path: <directory> beneath <allowed-root>
+          sensitivity: user-private
         writes:
         - access: read-write
           content: confined regular-file bytes
@@ -130,11 +157,18 @@ interfaces:
           medium: local-filesystem
           path: <path> beneath <allowed-root>
           sensitivity: user-private
+        - access: read-write
+          content: Confined private directory descendants with fixed POSIX mode 0700 or an equivalent restrictive Windows ACL.
+          id: target-directory
+          medium: local-filesystem
+          path: <directory> beneath <allowed-root>
+          sensitivity: user-private
       execution:
         consistency:
-          live: Reads and mutations operate on the file state observed during the
-            call; an exclusive-lock operation retains its sidecar lock for the caller's
-            context-manager scope.
+          live: Reads and file mutations operate on the file state observed during
+            the call; ensure-private-directory validates each retained directory
+            descriptor or handle; an exclusive-lock operation retains its sidecar
+            lock for the caller's context-manager scope.
         effects:
         - action: update
           confirmation_evidence:
@@ -148,6 +182,20 @@ interfaces:
             irreversible: The helper does not retain the previous bytes for rollback.
           value_source:
             argument_ref: data
+            kind: argument
+        - action: create
+          confirmation_evidence:
+            direct_io_ref: target-directory
+            kind: direct-io
+          direct_io_ref: target-directory
+          id: directory-state
+          may_occur_in_outcomes:
+          - directory-completed
+          reversibility:
+            irreversible: The helper does not record which directory descendants
+              were newly created for rollback.
+          value_source:
+            argument_ref: directory
             kind: argument
         lifecycle: finite
         mutation_safety:
@@ -167,12 +215,15 @@ interfaces:
               before retrying.
           partial_effects_on_failure:
             possible: The explicit non-atomic fallback or a late durability failure
-              can leave changed file state.
+              can leave changed file state; directory creation can leave a securely
+              created prefix when a later component fails.
           rollback_on_failure:
             unavailable: No previous content is retained.
         state_effect: mutating
         verification:
         - direct_io_ref: target-file
+          method: direct-io-state
+        - direct_io_ref: target-directory
           method: direct-io-state
       helpers: []
       interaction:
@@ -198,6 +249,14 @@ interfaces:
         effects: []
         id: conflict
         outputs: []
+      - caller_action: Continue after the requested private directory exists with
+          restrictive permissions.
+        class: success
+        effects:
+        - directory-state
+        id: directory-completed
+        outputs:
+        - directory-result
       outputs:
       - audience: machine
         cardinality:
@@ -217,15 +276,35 @@ interfaces:
           description: Python return value whose concrete type depends on operation.
           kind: string
           sensitivity: user-private
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: Successful completion of ensure-private-directory.
+        direct_io_ref: target-directory
+        empty: The operation returns no value after directory verification.
+        id: directory-result
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          description: Python None return after successful directory verification.
+          kind: string
+          sensitivity: public
       preconditions:
-      - caller_action: Pass a regular-file path beneath an existing allowed root.
+      - caller_action: Pass path for a file operation or directory for ensure-private-directory,
+          beneath an existing allowed root; do not pass the other target argument.
         check:
-          argument_ref: path
+          argument_ref: operation
           kind: argument
           predicate: present
-        description: path must resolve beneath allowed-root without an unsafe symlink
-          or non-regular final entry.
-        id: confined-path
+        description: File operations require path and use mode; ensure-private-directory
+          requires directory and always enforces fixed POSIX mode 0700 or an equivalent
+          restrictive Windows ACL. The selected target must remain
+          beneath allowed-root without unsafe symlink, reparse, or wrong-type entries.
+        id: operation-target
         unmet_outcome: rejected
     description: Provides atomic file operations to Python callers.
     version: 2

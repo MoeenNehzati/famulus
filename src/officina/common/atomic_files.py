@@ -12,6 +12,7 @@ from typing import Iterator
 
 
 _CAPABILITY_ERROR = "secure directory-relative replacement is unavailable"
+_PRIVATE_DIRECTORY_MODE = 0o700
 _UNCONDITIONAL_APPEND = object()
 _DIR_FD_OPERATIONS = (os.open, os.stat, os.unlink, os.link, os.rename)
 _NOFOLLOW_OPERATIONS = (os.stat, os.link)
@@ -270,6 +271,74 @@ def _open_parent(path: Path, allowed_root: Path) -> tuple[int, str]:
         except BaseException:
             pass
         raise
+
+
+def _posix_ensure_private_directory(path: Path, *, allowed_root: Path) -> None:
+    """Create one confined directory chain without following any component."""
+    _require_secure_operations()
+    directory = Path(path).absolute()
+    root = Path(allowed_root).absolute()
+    try:
+        relative = directory.relative_to(root)
+    except ValueError as exc:
+        raise AtomicWriteError(f"invalid directory outside allowed root: {path}") from exc
+    if not relative.parts or any(part in {"", ".", ".."} for part in relative.parts):
+        raise AtomicWriteError(f"invalid private directory path: {path}")
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    try:
+        descriptor = _secure_open(root, flags)
+    except AtomicWriteError:
+        raise
+    except OSError as exc:
+        raise AtomicWriteError(f"cannot securely open allowed root: {allowed_root}") from exc
+    try:
+        for index, component in enumerate(relative.parts):
+            child = -1
+            created = False
+            try:
+                child = _secure_open(component, flags, dir_fd=descriptor)
+            except FileNotFoundError:
+                try:
+                    os.mkdir(component, _PRIVATE_DIRECTORY_MODE, dir_fd=descriptor)
+                    created = True
+                except FileExistsError:
+                    pass
+                except (NotImplementedError, TypeError) as exc:
+                    raise AtomicWriteError(_CAPABILITY_ERROR) from exc
+                except OSError as exc:
+                    raise AtomicWriteError(
+                        f"cannot create private directory component: {component}"
+                    ) from exc
+                try:
+                    child = _secure_open(component, flags, dir_fd=descriptor)
+                except OSError as exc:
+                    raise AtomicWriteError(
+                        f"cannot securely open private directory component: {component}"
+                    ) from exc
+            except OSError as exc:
+                raise AtomicWriteError(
+                    f"cannot securely open private directory component: {component}"
+                ) from exc
+            try:
+                metadata = os.fstat(child)
+                if not stat.S_ISDIR(metadata.st_mode):
+                    raise AtomicWriteError(
+                        f"private directory component is not a directory: {component}"
+                    )
+                if created:
+                    _secure_fchmod(child, _PRIVATE_DIRECTORY_MODE)
+                    metadata = os.fstat(child)
+                if (
+                    index == len(relative.parts) - 1
+                    and stat.S_IMODE(metadata.st_mode) != _PRIVATE_DIRECTORY_MODE
+                ):
+                    raise AtomicWriteError("private directory mode is not 0700")
+            finally:
+                os.close(descriptor)
+                descriptor = child
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
 
 
 def _reject_unsafe_final(parent_fd: int, name: str) -> bool:
@@ -1149,6 +1218,39 @@ def _windows_open_parent(
         raise
 
 
+def _windows_ensure_private_directory(path: Path, *, allowed_root: Path) -> None:
+    """Create a confined directory chain through retained native handles."""
+    root, relative = _windows_path_parts(path, allowed_root)
+    if not relative.parts:
+        raise AtomicWriteError(f"invalid private directory path: {path}")
+    handles = [_windows_open_root(root)]
+    try:
+        _sid_buffer, _sid, acl, descriptor = _windows_security_material()
+        for index, component in enumerate(relative.parts):
+            child, information = _windows_open_validated(
+                handles[-1],
+                str(component),
+                access=_WIN_DIR_ACCESS | 0x00020000,
+                disposition=3,
+                options=0x1 | 0x20,
+                directory=True,
+                security_descriptor=descriptor,
+            )
+            try:
+                if information == 2:
+                    _windows_set_user_restrictive_acl(child, acl)
+                if information == 2 or index == len(relative.parts) - 1:
+                    _windows_require_restrictive_acl(child, str(component))
+                _windows_file_id(child)
+            except BaseException:
+                _windows_close_handle(child)
+                raise
+            handles.append(child)
+        _windows_verify_parent_chain(handles, tuple(str(part) for part in relative.parts))
+    finally:
+        _windows_close_chain(handles)
+
+
 def _windows_verify_parent_chain(handles: list[int], parts: tuple[str, ...]) -> None:
     """Reopen each retained child from its retained parent and compare IDs."""
 
@@ -1833,6 +1935,14 @@ def _windows_atomic_compare_and_delete(path: Path, *, expected_previous_bytes: b
 
 def _is_capability_error(error: BaseException) -> bool:
     return isinstance(error, AtomicWriteError) and str(error) == _CAPABILITY_ERROR
+
+
+def ensure_private_directory(path: Path, *, allowed_root: Path) -> None:
+    """Create a confined directory chain with fixed private permissions."""
+    if os.name == "nt":
+        _windows_ensure_private_directory(path, allowed_root=allowed_root)
+    else:
+        _posix_ensure_private_directory(path, allowed_root=allowed_root)
 
 
 def read_regular_file_bytes(
