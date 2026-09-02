@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from copy import deepcopy
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -566,6 +567,17 @@ def _graph_visible_math_segments(payload: dict) -> Iterable[str]:
         yield from _math_segments(value)
 
 
+def _json_integer(value: object) -> int | None:
+    """Normalize one finite, integer-compatible JSON number."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and math.isfinite(value) and value.is_integer():
+        return int(value)
+    return None
+
+
 def _normalize_macro_value(value: object, *, context: str) -> MacroValue:
     """Normalize legacy and native macro tuples to MathJax-native order.
 
@@ -597,10 +609,12 @@ def _normalize_macro_value(value: object, *, context: str) -> MacroValue:
             "a two/three-item parameter tuple."
         )
     first, second = value[:2]
-    if isinstance(first, str) and isinstance(second, int) and not isinstance(second, bool):
-        replacement, argc = first, second
-    elif isinstance(first, int) and not isinstance(first, bool) and isinstance(second, str):
-        replacement, argc = second, first
+    first_count = _json_integer(first)
+    second_count = _json_integer(second)
+    if isinstance(first, str) and second_count is not None:
+        replacement, argc = first, second_count
+    elif first_count is not None and isinstance(second, str):
+        replacement, argc = second, first_count
     else:
         raise ValueError(
             f"Invalid MathJax macro tuple at {context}: expected [replacement, argc] "

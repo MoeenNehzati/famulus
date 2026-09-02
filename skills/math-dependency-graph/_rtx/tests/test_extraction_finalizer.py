@@ -589,6 +589,40 @@ def test_finalizer_accepts_semantically_identical_legacy_and_native_tuples(
     assert _mathjax_macros(payload)["ConcordPair"] == ["#1+#2", 2]
 
 
+def test_finalizer_normalizes_integer_compatible_float_macro_arity(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "float-arity-project"
+    entrypoint = _write_tex(project, "Fixture without custom commands.")
+    draft = _write_draft(
+        project / "draft.json",
+        r"$\FloatPair{x}{y}+\FloatLegacy{x}{y}$",
+        renderer_dependencies=[
+            {
+                "id": "mathjax",
+                "version": "3",
+                "configuration": {
+                    "macros": {
+                        "FloatPair": ["#1+#2", 2.0],
+                        "FloatLegacy": [2.0, "#1+#2"],
+                    }
+                },
+            }
+        ],
+    )
+
+    finalize_extraction(
+        draft_path=draft,
+        tex_entrypoint=entrypoint,
+        output_path=project / "canonical.json",
+        label_map_path=None,
+    )
+
+    payload = json.loads((project / "canonical.json").read_text(encoding="utf-8"))
+    assert _mathjax_macros(payload)["FloatPair"] == ["#1+#2", 2]
+    assert _mathjax_macros(payload)["FloatLegacy"] == ["#1+#2", 2]
+
+
 def test_finalizer_rejects_duplicate_mathjax_dependencies(tmp_path: Path) -> None:
     project = tmp_path / "duplicate-project"
     entrypoint = _write_tex(project, r"\newcommand{\SingleFlare}{\mathbb{F}}")
