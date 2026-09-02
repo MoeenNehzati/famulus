@@ -642,7 +642,24 @@ raise SystemExit(writer.main(sys.argv[1:]))
             ):
                 break
             time.sleep(0.01)
-        assert {path.name for path in ready.iterdir()} == expected_ready
+        observed_ready = {path.name for path in ready.iterdir()}
+        early_exits = []
+        for index, process in enumerate(processes):
+            if process.poll() is not None:
+                stdout, stderr = process.communicate(timeout=1)
+                early_exits.append(
+                    {
+                        "writer": index,
+                        "session": f"sess-{index % 3}",
+                        "returncode": process.returncode,
+                        "stdout": stdout,
+                        "stderr": stderr,
+                    }
+                )
+        assert observed_ready == expected_ready, {
+            "ready": sorted(observed_ready),
+            "early_exits": early_exits,
+        }
         assert all(process.poll() is None for process in processes)
         release.touch()
         completion_deadline = time.monotonic() + phase_timeout
