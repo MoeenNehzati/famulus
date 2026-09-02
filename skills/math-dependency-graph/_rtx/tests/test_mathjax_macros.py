@@ -8,7 +8,10 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from collections.abc import Callable
 from pathlib import Path
+
+import pytest
 
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
@@ -19,8 +22,10 @@ sys.path.insert(0, str(REPO_SRC))
 sys.path.insert(0, str(SCRIPT_DIR))
 
 if __package__ and __package__.count(".") >= 1:
+    from .. import _tex_macro_reader
     from .._tex_macro_reader import default_output_path, extract_macros
 else:
+    import _tex_macro_reader  # noqa: E402
     from _tex_macro_reader import default_output_path, extract_macros  # noqa: E402
 
 
@@ -32,7 +37,48 @@ def script_env() -> dict[str, str]:
     return env
 
 
+class MissingRenderableExtractorAPI(AssertionError):
+    """Expected RED checkpoint failure for the absent relevant extractor."""
+
+
+EXTRACTOR_XFAIL = pytest.mark.xfail(
+    condition=not callable(getattr(_tex_macro_reader, "extract_renderable_macros", None)),
+    reason="Task 2 has not added extract_renderable_macros yet",
+    raises=MissingRenderableExtractorAPI,
+    strict=True,
+)
+
+
 class MathJaxMacroExtractionTest(unittest.TestCase):
+    SYNTHETIC_NAMES = (
+        "RootBloom",
+        "NestedQuill",
+        "PairWeave",
+        "ShadeFold",
+        "SupportSpore",
+        "IdleComet",
+        "CopperSeed",
+        "TangentNest",
+        "KnownSprig",
+        "MissingNebula",
+        "LoopAsh",
+        "LoopFern",
+        "ConflictArc",
+        "ConcordPair",
+        "SingleFlare",
+        "DetachedGlyph",
+        "DetachedMap",
+    )
+
+    def renderable_extractor(self) -> Callable[..., dict[str, object]]:
+        extractor = getattr(_tex_macro_reader, "extract_renderable_macros", None)
+        if not callable(extractor):
+            raise MissingRenderableExtractorAPI(
+                "missing extract_renderable_macros(tex_entrypoint=..., graph_text=...) "
+                "for relevant project-macro closure"
+            )
+        return extractor
+
     def test_extracts_recursive_and_mid_document_macros(self) -> None:
         macros = extract_macros(FIXTURE_DIR / "main.tex")
 
@@ -134,6 +180,79 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
             self.assertGreater(payload["macros_from_file"], 0)
             html = html_out.read_text(encoding="utf-8")
             self.assertIn('"QTC": "\\\\vQ^{\\\\Pi_{\\\\TC_X}}"', html)
+
+    @EXTRACTOR_XFAIL
+    def test_extracts_only_the_recursive_closure_used_by_graph_text(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            entrypoint = Path(tmp) / "main.tex"
+            entrypoint.write_text(
+                r"""
+                \newcommand{\RootBloom}{\mathbb{B}}
+                \newcommand{\NestedQuill}{\RootBloom^{\star}}
+                \newcommand{\PairWeave}[2]{\langle #1,#2\rangle}
+                \newcommand{\SupportSpore}{\mathcal{S}}
+                \newcommand{\ShadeFold}[2][q]{#1+\PairWeave{#2}{\SupportSpore}}
+                \newcommand{\IdleComet}{\mathrm{idle}}
+                """,
+                encoding="utf-8",
+            )
+
+            macros = self.renderable_extractor()(
+                tex_entrypoint=entrypoint,
+                graph_text=[
+                    r"$\RootBloom+\NestedQuill+\PairWeave{x}{y}+\ShadeFold[z]{w}$"
+                ],
+            )
+
+            self.assertEqual(
+                macros,
+                {
+                    "RootBloom": r"\mathbb{B}",
+                    "NestedQuill": r"\RootBloom^{\star}",
+                    "PairWeave": [r"\langle #1,#2\rangle", 2],
+                    "SupportSpore": r"\mathcal{S}",
+                    "ShadeFold": [r"#1+\PairWeave{#2}{\SupportSpore}", 2, "q"],
+                },
+            )
+
+    @EXTRACTOR_XFAIL
+    def test_same_extractor_handles_a_disjoint_macro_vocabulary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            entrypoint = Path(tmp) / "second.tex"
+            entrypoint.write_text(
+                r"""
+                \newcommand{\CopperSeed}{\mathcal{C}}
+                \newcommand{\TangentNest}[1]{\CopperSeed_{#1}}
+                """,
+                encoding="utf-8",
+            )
+
+            macros = self.renderable_extractor()(
+                tex_entrypoint=entrypoint,
+                graph_text=[r"The second fixture uses $\TangentNest{k}$ only."],
+            )
+
+            self.assertEqual(
+                macros,
+                {
+                    "CopperSeed": r"\mathcal{C}",
+                    "TangentNest": [r"\CopperSeed_{#1}", 1],
+                },
+            )
+
+    def test_synthetic_macro_names_are_fixture_only(self) -> None:
+        production_paths = list(SCRIPT_DIR.glob("*.py"))
+        visualization_root = REPO_SRC / "officina" / "visualization"
+        production_paths.extend(
+            path
+            for path in visualization_root.rglob("*")
+            if path.suffix in {".py", ".js", ".html"} and "vendor" not in path.parts
+        )
+
+        for path in production_paths:
+            source = path.read_text(encoding="utf-8")
+            for name in self.SYNTHETIC_NAMES:
+                self.assertNotIn(name, source, f"{name} was hard-coded in {path}")
 
 
 if __name__ == "__main__":
