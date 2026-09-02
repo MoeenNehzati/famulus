@@ -47,6 +47,7 @@ No acceptance statement may shorten “all valid managed setup receipts in the s
 - Give each receipt one plan entry and at most one successful settlement/removal. Normal execution invokes its teardown and verifier once; recovery re-verifies and reruns only after exact false.
 - Accept only verifier result `{"torn_down": true}` as successful settlement. Effect reversal remains the owner's contract.
 - Preflight the complete receipt set before flow creation or dispatch. Unknown interfaces, setup-version mismatches, missing metadata, missing finite bindings, or nonempty binding arguments fail without byte changes; only a valid empty ledger yields an empty plan.
+- Mixed execution kinds keep that full preflight boundary. Machine-executable steps run automatically; instruction-mediated steps suspend through the existing run-markdown/settle flow, and successful settlement resumes the deterministic remainder. Add no runner, owner, or platform special case, and do not require one `teardown_all()` call to drain a ledger containing instruction-mediated steps.
 - Order receipt-bearing nodes by unioning `managed_setup_order()` for sorted receipt keys, deduplicating, filtering absent receipts, and reversing. Add no traversal.
 - Recompute the deterministic remainder before dispatch and settlement; its first step must equal the persisted current step. Invalid current state becomes recovery-required, never an alternate action.
 - Retry verifies before rerunning. Cancel verifies first: true atomically removes the current receipt and clears the flow; exact false clears the flow without removal; uncertainty retains a recovery-required flow. Later receipts remain unchanged.
@@ -54,33 +55,34 @@ No acceptance statement may shorten “all valid managed setup receipts in the s
 
 ## Scope harness against overscoping
 
-Changed LOC means additions plus deletions from `git diff --numstat BASE_SHA`; replacement costs two. Generated files count and binary diffs are forbidden. The combined hard ceiling is **745 changed LOC**.
+Changed LOC means additions plus deletions from `git diff --numstat BASE_SHA`; replacement costs two. Generated files count and binary diffs are forbidden. The combined hard ceiling is **787 changed LOC**.
 
-- **Stage A ceiling: 580 changed LOC.** Ten exact paths: the nine generic graph/state/evaluation/manager/integration paths below, plus at most 10 LOC in coverage solely asserting structural route absence.
+- **Stage A ceiling: 622 changed LOC.** Ten exact paths: the nine generic graph/state/evaluation/manager/integration paths below, plus at most 10 LOC in coverage solely asserting structural route absence.
 - **Stage B reserve: 165 changed LOC.** Publication may use the remaining allowed mutations, including the manager interface class and the remaining coverage allowance.
-- Exact arithmetic: **580 + 165 = 745**. Stage ceilings are cumulative and do not replace the unchanged per-file cumulative caps. A file touched in both stages must remain within its single original cap across both stages.
+- **Budget checkpoint:** independent confidence scores `8, 9, 8` average `8.33`, above the required threshold; suggested combined ceilings `785, 785, 790` average `786.67`, rounded to the integer ceiling `787`. The additional 42 LOC is concentrated in the manager and manager tests, with one LOC each added to coverage and integration; scope is unchanged.
+- Exact arithmetic: **622 + 165 = 787**. The Stage A allocations below sum to 622; each shared path's cumulative cap minus its Stage A allocation contributes to the 165-LOC Stage B reserve.
 - No file may be created, deleted, renamed, or moved. If another path, larger cap, second manifest/traversal, or new runner is needed, stop and revise/review the plan before editing.
 
-| Exact path | Exact allowed cumulative mutation | Cap | Stage A permission |
-|---|---|---:|---|
-| `src/officina/blueprints/graph.py` | Validate kind equality and zero action/verifier arguments only | 30 | Yes |
-| `tests/test_officina_setup_requirements.py` | Focused lifecycle-shape accept/reject cases | 40 | Yes |
-| `skills/setup-interface-manager/_rtx/_setup_state.py` | Schema-v2 tagged flow; v1 reads; global nullability/validation | 60 | Yes |
-| `skills/setup-interface-manager/_rtx/tests/test_setup_state.py` | v1/v2, migration, nullability, malformed-state cases | 45 | Yes |
-| `skills/setup-interface-manager/_rtx/_setup_evaluation.py` | Global plan and shared teardown-settlement core | 80 | Yes |
-| `skills/setup-interface-manager/_rtx/tests/test_setup_evaluation.py` | Planning and ordinary/global shared-core cases | 65 | Yes |
-| `skills/setup-interface-manager/_rtx/_setup_manager.py` | Internal manager operation, recovery branches, and Stage B interface class | 130 | Yes, except interface class |
-| `skills/setup-interface-manager/_rtx/tests/test_setup_manager.py` | Direct injected-manager tests; Stage B signature cases | 110 | Yes, except route/signature cases |
-| `skills/setup-interface-manager/_rtx/blueprints/rtx-manager.yaml` | Stage B zero-argument machine interface | 15 | No |
-| `skills/setup-interface-manager/_rtx/blueprint.yaml` | Stage B source export | 10 | No |
-| `skills/setup-interface-manager/blueprints/gateway.yaml` | Stage B used-interface reference | 10 | No |
-| `skills/setup-interface-manager/blueprint.yaml` | Stage B private namespace/export | 10 | No |
-| `skills/setup-interface-manager/SKILL.md` | Stage B route prose and generated block only | 25 | No |
-| `references/blueprint-schema/runtime_dependencies.json` | Stage B mechanical dependency regeneration | 10 | No |
-| `tests/test_setup_interface_manager_coverage.py` | Stage A absence assertions (maximum 10 LOC); Stage B registration/activation assertions | 25 | Absence only |
-| `tests/test_setup_interface_manager_integration.py` | Direct synthetic internal integration; Stage B route/production activation case | 55 | Synthetic internal only |
-| `docs/setup.md` | Stage B published-route semantics and bounded exclusions | 25 | No |
-| **Combined** | **17 exact paths; no other product changes** | **745** | **10 paths now** |
+| Exact path | Exact allowed cumulative mutation | Cap | Stage A allocation |
+|---|---|---:|---:|
+| `src/officina/blueprints/graph.py` | Validate kind equality and zero action/verifier arguments only | 30 | 30 |
+| `tests/test_officina_setup_requirements.py` | Focused lifecycle-shape accept/reject cases | 40 | 40 |
+| `skills/setup-interface-manager/_rtx/_setup_state.py` | Schema-v2 tagged flow; v1 reads; global nullability/validation | 60 | 60 |
+| `skills/setup-interface-manager/_rtx/tests/test_setup_state.py` | v1/v2, migration, nullability, malformed-state cases | 45 | 45 |
+| `skills/setup-interface-manager/_rtx/_setup_evaluation.py` | Global plan and shared teardown-settlement core | 80 | 80 |
+| `skills/setup-interface-manager/_rtx/tests/test_setup_evaluation.py` | Planning and ordinary/global shared-core cases | 65 | 65 |
+| `skills/setup-interface-manager/_rtx/_setup_manager.py` | Internal manager operation, recovery branches, and Stage B interface class | 155 | 140 |
+| `skills/setup-interface-manager/_rtx/tests/test_setup_manager.py` | Direct injected-manager tests; Stage B signature cases | 125 | 115 |
+| `skills/setup-interface-manager/_rtx/blueprints/rtx-manager.yaml` | Stage B zero-argument machine interface | 15 | 0 |
+| `skills/setup-interface-manager/_rtx/blueprint.yaml` | Stage B source export | 10 | 0 |
+| `skills/setup-interface-manager/blueprints/gateway.yaml` | Stage B used-interface reference | 10 | 0 |
+| `skills/setup-interface-manager/blueprint.yaml` | Stage B private namespace/export | 10 | 0 |
+| `skills/setup-interface-manager/SKILL.md` | Stage B route prose and generated block only | 25 | 0 |
+| `references/blueprint-schema/runtime_dependencies.json` | Stage B mechanical dependency regeneration | 10 | 0 |
+| `tests/test_setup_interface_manager_coverage.py` | Stage A absence assertions; Stage B registration/activation assertions | 26 | 10 |
+| `tests/test_setup_interface_manager_integration.py` | Direct synthetic internal integration; Stage B route/production activation case | 56 | 37 |
+| `docs/setup.md` | Stage B published-route semantics and bounded exclusions | 25 | 0 |
+| **Combined** | **17 exact paths; no other product changes** | **787** | **622** |
 
 Stage A explicitly prohibits owner/platform files, `_setup_dispatches.py`, all blueprint files, generated metadata, `SKILL.md`, route documentation, and publication assertions. The Stage A budget command names only its ten paths; Stage B uses the complete 17-path table.
 
@@ -94,7 +96,7 @@ Stage A explicitly prohibits owner/platform files, `_setup_dispatches.py`, all b
 - [ ] Require empty output from `git status --porcelain=v1 --untracked-files=all` and `git diff --name-status BASE_SHA`.
 - [ ] Run focused graph, state, evaluation, manager, integration, and coverage baselines. A pre-existing publication route or failing negative absence assertion blocks Stage A.
 - [ ] After every Stage A task, permit only tracked `M` entries on these ten paths; reject untracked/add/delete/rename/copy/type changes and owner/platform/publication paths.
-- [ ] After every Stage A task, run `git diff --numstat BASE_SHA` over the ten Stage A paths. Enforce each cumulative per-file cap, the coverage sub-cap of 10, and the Stage A total of 580.
+- [ ] After every Stage A task, run `git diff --numstat BASE_SHA` over the ten Stage A paths. Enforce each Stage A per-file allocation, the coverage sub-cap of 10, and the Stage A total of 622.
 
 ```bash
 ./repo_checks.py --task tests:shared --selector tests/test_officina_setup_requirements.py --selector tests/test_setup_interface_manager_coverage.py --selector tests/test_setup_interface_manager_integration.py --selector skills/setup-interface-manager/_rtx/tests/test_setup_evaluation.py --selector skills/setup-interface-manager/_rtx/tests/test_setup_state.py --selector skills/setup-interface-manager/_rtx/tests/test_setup_manager.py --jobs 1
@@ -118,10 +120,11 @@ git diff --numstat BASE_SHA -- src/officina/blueprints/graph.py tests/test_offic
 
 **Files:** `_setup_manager.py`, its test, synthetic integration test, and coverage absence test.
 
-- [ ] Test `SetupManager.teardown_all()` directly with injected synthetic graph/bindings: valid empty no-op, full preflight, dependents-first dispatch, no setup dispatch, terminal empty ledger, and unchanged v1/v2 bytes on preflight failure.
+- [ ] Test `SetupManager.teardown_all()` directly with injected synthetic graph/bindings: valid empty no-op, full preflight, dependents-first dispatch, no setup dispatch, machine-only terminal empty ledger, mixed-kind suspension/settlement/resumption, and unchanged v1/v2 bytes on preflight failure.
 - [ ] Test CAS plan equality against racing ledger state, action/verifier failures, busy behavior, stale graph/binding recovery, retry verify-first, and cancellation true/false/uncertain outcomes.
 - [ ] Translate `BlueprintGraphError` to the manager's structured domain failure before mutation or dispatch.
 - [ ] Implement only `SetupManager.teardown_all() -> tuple[int, dict[str, object]]` and the minimum generic tagged-flow branches. Reuse existing runners and dispatch boundary; extract verifier parsing once so cancel distinguishes exact false from uncertainty without changing ordinary semantics.
+- [ ] After full-ledger preflight, auto-run machine-executable steps. For an instruction-mediated step, suspend through the existing run-markdown/settle flow; successful settle resumes the deterministic remainder. Add no new runner or owner/platform branch, and do not require the initiating call to drain such a mixed-kind ledger.
 - [ ] Do **not** add `TeardownAllInterface`, registration, exports, gateway references, dependencies, documentation, or a capability flag.
 - [ ] Add synthetic internal integration cases for ordering, receipt removal, interruption/restart/retry, stale/malformed fail-closed behavior, and terminal empty state. Do not invoke a Dispatcher route.
 - [ ] Add at most 10 LOC of coverage assertions proving the interface class, declarations, exports, gateway use, runtime dependency, and exact route remain absent. Existing empty-production assertions remain.
@@ -152,7 +155,7 @@ git diff --numstat BASE_SHA -- src/officina/blueprints/graph.py tests/test_offic
 - [ ] Document exact invocation, selected-context scope, ordering, recovery, retained empty ledger, existing individual teardown route, and bounded exclusions.
 - [ ] State explicitly that owners prove effect reversal and repeat safety; manager verifier success alone does not.
 - [ ] Run all six focused test files, validators, the declared blueprint-sync check interface, every fully expanded owner suite from the activation record, and staged-view precommit with eight workers.
-- [ ] Stage exact allowed paths only; reject every untracked/add/delete/rename/copy/type change. Enforce cumulative file caps, Stage A <=580, Stage B incremental <=165, and combined <=745. Commit only after independent review.
+- [ ] Stage exact allowed paths only; reject every untracked/add/delete/rename/copy/type change. Enforce cumulative file caps, Stage A <=622, Stage B incremental <=165, and combined <=787. Commit only after independent review.
 
 ```bash
 ./repo_checks.py --task tests:shared --selector tests/test_officina_setup_requirements.py --selector tests/test_setup_interface_manager_coverage.py --selector tests/test_setup_interface_manager_integration.py --selector skills/setup-interface-manager/_rtx/tests/test_setup_evaluation.py --selector skills/setup-interface-manager/_rtx/tests/test_setup_state.py --selector skills/setup-interface-manager/_rtx/tests/test_setup_manager.py --jobs 1
@@ -175,15 +178,15 @@ git diff --cached --numstat BASE_SHA -- src/officina/blueprints/graph.py tests/t
 
 ### Stage A dormant core
 
-- Internal manager execution exhausts every valid synthetic managed receipt through exact injected teardown/verifier bindings with deterministic dependents-first ordering and at most one successful settlement per receipt.
+- Internal manager execution plus the existing settlement/resumption flow exhausts every valid synthetic managed receipt through exact injected teardown/verifier bindings with deterministic dependents-first ordering and at most one successful settlement per receipt; an instruction-mediated step may suspend the initiating call.
 - Invalid inventory blocks all dispatch; persisted current-step and verify-first recovery do not lose or invent completion; ordinary managed setup/teardown behavior remains intact.
 - The ledger remains the sole manager manifest, and no owner/platform code, new runner, traversal, registry, or effect inventory is introduced.
 - No interface class, declaration, export, gateway use, runtime dependency, generated block, documentation, or Dispatcher/MCP route exposes the operation.
-- The final Stage A diff contains only tracked modifications to the ten-path allowlist, respects cumulative file caps and the coverage 10-LOC sub-cap, and is at most 580 changed LOC.
+- The final Stage A diff contains only tracked modifications to the ten-path allowlist, respects the Stage A per-file allocations and coverage 10-LOC sub-cap, and is at most 622 changed LOC.
 
 ### Stage B publication
 
 - The exact zero-argument route is published only after the approved activation condition and every current owner's complete admission evidence pass.
 - Public execution preserves the proven dormant-core semantics and returns no continuation/original resumption.
-- The combined diff remains within all 17 paths, every unchanged cumulative per-file cap, the 165-LOC Stage B reserve, and the 745-LOC total.
+- The combined diff remains within all 17 paths, every cumulative per-file cap, the 165-LOC Stage B reserve, and the 787-LOC total.
 - No claim extends beyond all valid managed setup receipts in the selected context; broader uninstall/purge remains a separate design.
