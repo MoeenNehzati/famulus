@@ -359,7 +359,7 @@ def test_teardown_all_preflight_failures_preserve_exact_bytes(tmp_path: Path, ca
     controller = _controller(tmp_path, graph, DispatchHarness(), *bindings)
     receipt = state.SetupReceipt(1, frozenset())
     controller.store.update(lambda _: state.SetupLedger({"canary.interface.setup": receipt}, None, schema_version))
-    path = tmp_path / "private" / "ledger.json"
+    path = tmp_path / "private" / "state" / "ledger.json"
     before = path.read_bytes()
     code, payload = controller.teardown_all()
     assert (code, payload["state"]) == (2, "failed")
