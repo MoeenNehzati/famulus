@@ -7099,6 +7099,9 @@
         },
         "setup-interface-manager._rtx.interface.status": {
           "dependencies": []
+        },
+        "setup-interface-manager._rtx.interface.teardown-all": {
+          "dependencies": []
         }
       }
     },

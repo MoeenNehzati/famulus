@@ -1447,6 +1447,15 @@ def test_public_interface_output_is_one_json_object_and_stdin_is_private(
     assert payload["state"] == "failed"
 
 
+def test_teardown_all_interface_is_exact_zero_argument_adapter(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    controller = _controller(tmp_path, _graph(), DispatchHarness())
+    interface = manager.TeardownAllInterface(manager_factory=lambda: controller)
+    assert run_python_machine_interface(interface, []) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert (payload["original"], payload["resume_original"]) == (None, False)
+    assert run_python_machine_interface(interface, ["unexpected"]) == 64
+
+
 def test_registered_manager_is_hidden_and_only_workflow_activated() -> None:
     """Catches generic setup prose or user requests activating the hidden controller."""
     graph = load_repository_blueprint_graph(REPO_ROOT)
@@ -1476,6 +1485,7 @@ def test_registered_manager_is_hidden_and_only_workflow_activated() -> None:
         "setup-interface-manager._rtx.interface.run-python",
         "setup-interface-manager._rtx.interface.settle",
         "setup-interface-manager._rtx.interface.invalidate",
+        "setup-interface-manager._rtx.interface.teardown-all",
         "setup-interface-manager._rtx.interface.recover",
     }
     assert "setup-interface-manager._rtx" in graph.exports[

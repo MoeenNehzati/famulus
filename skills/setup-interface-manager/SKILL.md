@@ -65,6 +65,13 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": ["TARGET_INTERFACE"], "stdin": null}
     Required options: []; positional arity: 1..1; stdin: forbidden
+- `setup-interface-manager._rtx.interface.teardown-all` — Tear down all valid managed setup receipts in the selected context.
+  - Caller: `setup-interface-manager`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {}, "positionals": [], "stdin": null}
+    Required options: []; positional arity: 0..0; stdin: forbidden
 
 <!-- END BLUEPRINT INTERFACES -->
 Skill: setup-interface-manager

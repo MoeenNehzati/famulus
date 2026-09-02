@@ -60,17 +60,20 @@ def test_release_has_no_production_managed_setups() -> None:
 
 
 def test_production_map_has_no_managed_setup_routes() -> None:
-    """Catches a production binding or action route escaping blueprint review."""
+    """Catches publication drift or an owner route escaping blueprint review."""
     bindings, dispatches = _setup_dispatches()
 
     assert set(bindings) == set()
     assert set(dispatches) == {"setup-status-path"}
     route = "setup-interface-manager._rtx.interface.teardown-all"
     graph = load_repository_blueprint_graph(REPO_ROOT)
-    assert "TeardownAllInterface" not in getattr(_setup_dispatches, "runtime")
-    assert route not in graph.source_interfaces and route not in graph.exports
-    assert all(route != target for uses in graph.interface_uses.values() for target, _version in uses)
-    assert route not in (REPO_ROOT / "references/blueprint-schema/runtime_dependencies.json").read_text()
+    export = graph.exports[route]
+    assert "TeardownAllInterface" in getattr(_setup_dispatches, "runtime")
+    assert export.source_interface_id == "setup-interface-manager._rtx.source.rtx-manager.interface.teardown-all"
+    assert export.declaration["contract"]["arguments"] == {}
+    assert export.declaration["process_binding"]["patterns"] == [{"allow_stdin": False, "min_positionals": 0, "max_positionals": 0}]
+    assert any(route == target for uses in graph.interface_uses.values() for target, _version in uses)
+    assert route in (REPO_ROOT / "references/blueprint-schema/runtime_dependencies.json").read_text()
     assert "teardown-all" not in dispatches
-    assert route not in (REPO_ROOT / "skills/setup-interface-manager/SKILL.md").read_text()
+    assert route in (REPO_ROOT / "skills/setup-interface-manager/SKILL.md").read_text()
     assert route not in (REPO_ROOT / "docs/setup.md").read_text()

@@ -1184,6 +1184,13 @@ class InvalidateInterface(_ManagerInterface):
         return controller.invalidate(args.setup_interface)
 
 
+class TeardownAllInterface(_ManagerInterface):
+    operation = "teardown-all"
+
+    def invoke(self, controller: SetupManager, args: argparse.Namespace):
+        return controller.teardown_all()
+
+
 class RecoverInterface(_ManagerInterface):
     operation = "recover"
 
@@ -1218,4 +1225,5 @@ __all__ = [
     "SettleInterface",
     "SetupManager",
     "StatusInterface",
+    "TeardownAllInterface",
 ]
