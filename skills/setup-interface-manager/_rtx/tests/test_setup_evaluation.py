@@ -51,7 +51,9 @@ class AtomicFiles:
 
 
 def _store(tmp_path: Path) -> state.LedgerStore:
-    return state.LedgerStore._from_atomic_files(tmp_path / "ledger.json", AtomicFiles())
+    return state.LedgerStore._from_atomic_files(
+        tmp_path / "private" / "state" / "ledger.json", AtomicFiles()
+    )
 
 
 def _managed(setup: str) -> ManagedSetup:

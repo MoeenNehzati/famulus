@@ -195,7 +195,7 @@ class Scenario:
         graph: SimpleNamespace,
         bindings: tuple[object, ...],
     ) -> None:
-        self.path = tmp_path / "private" / "setup-status.json"
+        self.path = tmp_path / "private" / "state" / "setup-status.json"
         self.graph = graph
         self.bindings = {binding.setup_interface: binding for binding in bindings}
         self.dispatch = DispatchBoundary()
@@ -285,7 +285,7 @@ def test_real_direct_status_is_read_only_and_authorize_claims_atomically(
     tmp_path: Path,
 ) -> None:
     """Catches hot routes bypassing the sparse loader or changing ledger semantics."""
-    ledger_path = tmp_path / "private" / "setup-status.json"
+    ledger_path = tmp_path / "private" / "state" / "setup-status.json"
     target = "python-canary.interface.setup"
     store = state.LedgerStore._from_atomic_files(ledger_path, AtomicFiles())
     store.update(

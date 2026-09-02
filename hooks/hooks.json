@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT}}/llmhooks/inject_dispatcher_context.py\" --claude",
+            "command": "python -c \"import os,runpy,sys; claude=os.environ.get('CLAUDE_PLUGIN_ROOT'); root=claude or os.environ['PLUGIN_ROOT']; sys.argv=['inject_dispatcher_context.py','--claude' if claude else '--codex']; runpy.run_path(os.path.join(root,'llmhooks','inject_dispatcher_context.py'),run_name='__main__')\"",
             "async": false
           }
         ]

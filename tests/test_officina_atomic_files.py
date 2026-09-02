@@ -1143,6 +1143,103 @@ def test_windows_directory_handle_requests_relative_rename_target_access() -> No
     assert atomic_files._WIN_DIR_ACCESS & 0x40
 
 
+def test_windows_private_directory_requests_dacl_mutation_access(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # SetSecurityInfo requires WRITE_DAC on the retained directory handle.
+    accesses: list[int] = []
+
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_path_parts",
+        lambda _path, _root: (Path("/allowed"), Path("private")),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_open_root", lambda _root: 10)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_security_material",
+        lambda: (object(), object(), object(), object()),
+    )
+
+    def open_validated(
+        _parent: int,
+        _name: str,
+        *,
+        access: int,
+        **_options: object,
+    ) -> tuple[int, int]:
+        accesses.append(access)
+        return 20, 2
+
+    monkeypatch.setattr(atomic_files, "_windows_open_validated", open_validated)
+    monkeypatch.setattr(atomic_files, "_windows_set_user_restrictive_acl", lambda *_: None)
+    monkeypatch.setattr(atomic_files, "_windows_require_restrictive_acl", lambda *_: None)
+    monkeypatch.setattr(atomic_files, "_windows_file_id", lambda _handle: (1, 2))
+    monkeypatch.setattr(atomic_files, "_windows_verify_parent_chain", lambda *_: None)
+    monkeypatch.setattr(atomic_files, "_windows_close_chain", lambda _handles: None)
+
+    atomic_files._windows_ensure_private_directory(
+        Path("/allowed/private"),
+        allowed_root=Path("/allowed"),
+    )
+
+    assert accesses == [
+        atomic_files._WIN_DIR_ACCESS | 0x00020000 | 0x00040000
+    ]
+    assert accesses[0] & 0x00040000
+
+
+def test_windows_private_directory_rejects_permissive_immediate_parent_before_descent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_path_parts",
+        lambda _path, _root: (Path("/allowed"), Path("private/state")),
+    )
+    monkeypatch.setattr(atomic_files, "_windows_open_root", lambda _root: 10)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_security_material",
+        lambda: (object(), object(), object(), object()),
+    )
+
+    def open_validated(
+        _parent: int,
+        name: str,
+        **_options: object,
+    ) -> tuple[int, int]:
+        calls.append(f"open:{name}")
+        return 20 + len(calls), 1
+
+    def require_restrictive(_handle: int, name: str) -> None:
+        calls.append(f"require:{name}")
+        if name == "private":
+            raise AtomicWriteError("permissive immediate parent")
+
+    monkeypatch.setattr(atomic_files, "_windows_open_validated", open_validated)
+    monkeypatch.setattr(atomic_files, "_windows_set_user_restrictive_acl", lambda *_: None)
+    monkeypatch.setattr(
+        atomic_files,
+        "_windows_require_restrictive_acl",
+        require_restrictive,
+    )
+    monkeypatch.setattr(atomic_files, "_windows_file_id", lambda _handle: (1, 2))
+    monkeypatch.setattr(atomic_files, "_windows_verify_parent_chain", lambda *_: None)
+    monkeypatch.setattr(atomic_files, "_windows_close_handle", lambda _handle: None)
+    monkeypatch.setattr(atomic_files, "_windows_close_chain", lambda _handles: None)
+
+    with pytest.raises(AtomicWriteError, match="permissive immediate parent"):
+        atomic_files._windows_ensure_private_directory(
+            Path("/allowed/private/state"),
+            allowed_root=Path("/allowed"),
+        )
+
+    assert calls == ["open:private", "require:private"]
+
+
 def test_windows_rename_retries_legacy_handle_relative_class(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1406,7 +1503,8 @@ def test_windows_native_private_directory_detects_ancestor_swap(
     allowed = tmp_path / "allowed"
     private = allowed / "private"
     displaced = allowed / "displaced"
-    private.mkdir(parents=True)
+    allowed.mkdir()
+    ensure_private_directory(private, allowed_root=allowed)
     original_open = atomic_files._windows_open_validated
     swapped = False
 

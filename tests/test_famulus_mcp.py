@@ -137,11 +137,17 @@ async def _stdio_transport(parameters):
     """Ignore the MCP SDK's Windows-only clean-shutdown send race."""
     from mcp.client.stdio import stdio_client
 
+    completed = False
+
+    def mark_complete() -> None:
+        nonlocal completed
+        completed = True
+
     try:
         async with stdio_client(parameters) as streams:
-            yield streams
+            yield (*streams, mark_complete)
     except BaseExceptionGroup as error:
-        if not _only_broken_resource_errors(error):
+        if not completed or not _only_broken_resource_errors(error):
             raise
 
 
@@ -163,7 +169,7 @@ async def _invoke_through_mcp(host: str, plugin_root: Path, home: Path):
         env=environment,
     )
     result = None
-    async with _stdio_transport(parameters) as (read, write):
+    async with _stdio_transport(parameters) as (read, write, mark_complete):
         async with ClientSession(read, write) as session:
             await session.initialize()
             listed = await session.list_tools()
@@ -228,6 +234,7 @@ async def _invoke_through_mcp(host: str, plugin_root: Path, home: Path):
                 ordered_positionals,
                 after_rejections,
             )
+            mark_complete()
     assert result is not None
     return result
 
@@ -255,14 +262,13 @@ async def _record_through_persistent_mcp(
     host: str, plugin_root: Path, home: Path, plugin_data: Path, canary: Path
 ):
     from mcp import ClientSession, StdioServerParameters
-    from mcp.client.stdio import stdio_client
-
     command, args, declared = _persistent_launch(host, plugin_root, plugin_data)
     environment = _selected_environment(home)
     environment.update(declared)
     environment["ASSISTANT_LOGS"] = str(canary)
     parameters = StdioServerParameters(command=command, args=args, env=environment)
-    async with stdio_client(parameters) as (read, write):
+    result = None
+    async with _stdio_transport(parameters) as (read, write, mark_complete):
         async with ClientSession(read, write) as session:
             await session.initialize()
             record_arguments = {
@@ -275,7 +281,10 @@ async def _record_through_persistent_mcp(
                     "stdin": None,
                 },
             }
-            return await session.call_tool("invoke", arguments=record_arguments)
+            result = await session.call_tool("invoke", arguments=record_arguments)
+            mark_complete()
+    assert result is not None
+    return result
 
 
 def _pid_is_alive(pid: int) -> bool:
@@ -481,7 +490,7 @@ async def _serve_graph_through_mcp(
     completed = False
     result = None
     try:
-        async with _stdio_transport(parameters) as (read, write):
+        async with _stdio_transport(parameters) as (read, write, mark_complete):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 listed = await session.list_tools()
@@ -537,6 +546,7 @@ async def _serve_graph_through_mcp(
                     cache_control,
                     _pid_is_alive(pid),
                 )
+                mark_complete()
         assert result is not None
         return result
     finally:
@@ -768,12 +778,30 @@ def test_generated_outer_payload_uses_real_tool_field_names(tmp_path: Path) -> N
         _copy_plugin(plugin)
         command, args, cwd = _declared_launch("claude", plugin)
         result = None
-        async with _stdio_transport(StdioServerParameters(command=command, args=args, cwd=cwd, env=_selected_environment(tmp_path / "home"))) as (read, write):
+        parameters = StdioServerParameters(
+            command=command,
+            args=args,
+            cwd=cwd,
+            env=_selected_environment(tmp_path / "home"),
+        )
+        async with _stdio_transport(parameters) as (read, write, mark_complete):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 tool = (await session.list_tools()).tools[0]
                 assert tool.inputSchema["required"] == ["caller", "interface", "version", "arguments"]
-                result = await session.call_tool("invoke", arguments={**outer, "arguments": {"positionals": [], "options": {"--path": True}, "stdin": None}, "dry_run": True})
+                result = await session.call_tool(
+                    "invoke",
+                    arguments={
+                        **outer,
+                        "arguments": {
+                            "positionals": [],
+                            "options": {"--path": True},
+                            "stdin": None,
+                        },
+                        "dry_run": True,
+                    },
+                )
+                mark_complete()
         assert result is not None
         return result
 
@@ -1086,16 +1114,17 @@ def test_stdio_transport_ignores_only_a_clean_shutdown_send_race(
     monkeypatch.setattr(mcp.client.stdio, "stdio_client", shutdown_race)
 
     async def use_transport() -> None:
-        async with _stdio_transport(object()):
-            pass
+        async with _stdio_transport(object()) as (_read, _write, mark_complete):
+            mark_complete()
 
     asyncio.run(use_transport())
 
     async def nested_teardown_race() -> str:
         result = None
-        async with _stdio_transport(object()):
+        async with _stdio_transport(object()) as (_read, _write, mark_complete):
             async with shutdown_race(object()):
                 result = "produced value"
+                mark_complete()
         assert result is not None
         return result
 
@@ -1107,6 +1136,15 @@ def test_stdio_transport_ignores_only_a_clean_shutdown_send_race(
 
     with pytest.raises(ValueError, match="body failure"):
         asyncio.run(fail_in_body())
+
+    async def broken_resource_in_body() -> None:
+        async with _stdio_transport(object()):
+            raise BaseExceptionGroup(
+                "body failure", [anyio.BrokenResourceError()]
+            )
+
+    with pytest.raises(BaseExceptionGroup, match="body failure"):
+        asyncio.run(broken_resource_in_body())
 
     @asynccontextmanager
     async def mixed_teardown_error(_parameters):

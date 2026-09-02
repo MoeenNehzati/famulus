@@ -1240,7 +1240,7 @@ def _windows_ensure_private_directory(path: Path, *, allowed_root: Path) -> None
             child, information = _windows_open_validated(
                 handles[-1],
                 str(component),
-                access=_WIN_DIR_ACCESS | 0x00020000,
+                access=_WIN_DIR_ACCESS | 0x00020000 | 0x00040000,
                 disposition=3,
                 options=0x1 | 0x20,
                 directory=True,
@@ -1249,7 +1249,7 @@ def _windows_ensure_private_directory(path: Path, *, allowed_root: Path) -> None
             try:
                 if information == 2:
                     _windows_set_user_restrictive_acl(child, acl)
-                if information == 2 or index == len(relative.parts) - 1:
+                if information == 2 or index >= len(relative.parts) - 2:
                     _windows_require_restrictive_acl(child, str(component))
                 _windows_file_id(child)
             except BaseException:

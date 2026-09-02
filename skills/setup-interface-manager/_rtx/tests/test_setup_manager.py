@@ -100,7 +100,9 @@ class AtomicFiles:
 
 
 def _store(tmp_path: Path) -> state.LedgerStore:
-    return state.LedgerStore._from_atomic_files(tmp_path / "private" / "ledger.json", AtomicFiles())
+    return state.LedgerStore._from_atomic_files(
+        tmp_path / "private" / "state" / "ledger.json", AtomicFiles()
+    )
 
 
 def _managed(stem: str, *, kind: str = "python") -> ManagedSetup:
@@ -256,7 +258,7 @@ class FixtureRuntime(manager.BeginInterface):
 def _fixture_controller(tmp_path: Path) -> tuple[manager.SetupManager, FixtureRuntime]:
     python_canary.reset_state()
     python_canary_teardown.reset_state()
-    runtime = FixtureRuntime(tmp_path / "private" / "ledger.json")
+    runtime = FixtureRuntime(tmp_path / "private" / "state" / "ledger.json")
     return runtime.build_manager(argparse.Namespace(target_interface="unused")), runtime
 
 
@@ -906,7 +908,7 @@ def test_runtime_getter_is_canonical_and_captures_one_absolute_path(tmp_path: Pa
             self.calls.append((key, kwargs))
             return subprocess.CompletedProcess([], 0, self.stdout, "")
 
-    ledger_path = tmp_path / "private" / "ledger.json"
+    ledger_path = tmp_path / "private" / "state" / "ledger.json"
     runtime = Runtime(f"{ledger_path}\n")
     built = runtime.build_manager(argparse.Namespace())
     assert built.store.read() == state.SetupLedger.empty()
@@ -973,7 +975,7 @@ def test_status_and_authorize_load_one_route_local_graph_from_parsed_target(
         def dispatch(self, key: str, **_kwargs: object):
             assert key == setup_dispatches.GETTER_KEY
             return subprocess.CompletedProcess(
-                [], 0, str(tmp_path / "private" / "ledger.json") + "\n", ""
+                [], 0, str(tmp_path / "private" / "state" / "ledger.json") + "\n", ""
             )
 
     runtime = Runtime()
@@ -1039,7 +1041,7 @@ def test_lifecycle_routes_retain_the_canonical_full_graph_loader(
         def dispatch(self, key: str, **_kwargs: object):
             assert key == setup_dispatches.GETTER_KEY
             return subprocess.CompletedProcess(
-                [], 0, str(tmp_path / "private" / "ledger.json") + "\n", ""
+                [], 0, str(tmp_path / "private" / "state" / "ledger.json") + "\n", ""
             )
 
     runtime = Runtime()
@@ -1107,7 +1109,7 @@ def test_direct_hot_path_fails_closed_on_unavailable_repository_configuration(
         def dispatch(self, key: str, **_kwargs: object):
             assert key == setup_dispatches.GETTER_KEY
             return subprocess.CompletedProcess(
-                [], 0, str(tmp_path / "private" / "ledger.json") + "\n", ""
+                [], 0, str(tmp_path / "private" / "state" / "ledger.json") + "\n", ""
             )
 
     runtime = Runtime()
@@ -1207,7 +1209,7 @@ def test_bootstrap_domain_failures_return_one_redacted_exit_2_object(
 ) -> None:
     """Catches bootstrap exceptions escaping as tracebacks or leaking boundary details."""
     secret = "do-not-echo-bootstrap-secret"
-    ledger_path = tmp_path / "private" / "ledger.json"
+    ledger_path = tmp_path / "private" / "state" / "ledger.json"
 
     class Runtime(manager.BeginInterface):
         def __init__(self) -> None:
