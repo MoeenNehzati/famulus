@@ -210,7 +210,7 @@ Result:
 Famulus extracts a canonical dependency graph and can render it as a standalone interactive HTML view.
 
 Public example:
-The graph for *Inference From Random Restarts* is available at <https://moeennehzati.github.io/assets/html/nehzati2026inference.html>, and the paper is at <https://arxiv.org/abs/2602.13450>.
+A rendered graph of the appendix of *Inference From Random Restarts* ships with the plugin and is published at <https://moeennehzati.github.io/famulus/graphs/math-dependency.html>. The paper is at <https://arxiv.org/abs/2602.13450>.
 
 ### Audit a bibliography
 
