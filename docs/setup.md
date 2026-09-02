@@ -160,6 +160,28 @@ interactive launchers, `recurring-tasks` configures recurring work,
 `llm-wakeup` configures due-session delivery, and `connect-google` configures
 Google services. Each installs only its own residual declared packages.
 
+### 1.6 Tear down all managed setup state
+
+Call `setup-interface-manager._rtx.interface.teardown-all@1` with no arguments
+and no stdin to tear down every valid managed setup receipt in the selected
+repository context. The manager plans dependents before prerequisites, runs
+each receipt's declared teardown and verifier, and retains the canonical empty
+ledger when the operation completes. Its response always has `original: null`
+and `resume_original: false`.
+
+An interrupted operation remains recoverable through `recover@1`; retry checks
+the current verifier before rerunning, while cancel follows the persisted-flow
+rules above. To tear down only one managed root and its unshared closure, keep
+using `begin@1` with the `teardown` operation and that root's setup interface.
+
+This route covers only valid managed setup receipts in the selected context.
+It is not plugin/runtime uninstall or general purge, and it does not remove
+unmanaged, host, credential, remote-authority, historical, or irreversible
+effects. Each admitted owner separately proves effect reversal, repeat safety,
+and recovery; manager verifier success alone proves none of those properties.
+No production managed owner is currently admitted, so the accessible route is
+a retained-empty-ledger no-op until an owner completes that admission contract.
+
 ## 2. Connect personal-assistant services
 
 The personal-assistant subsystem is organized around persistent `todo` and

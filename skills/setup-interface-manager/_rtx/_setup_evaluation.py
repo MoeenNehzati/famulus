@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Literal
 
-from officina.blueprints.graph import ManagedSetup, managed_setup_order
+from officina.blueprints.graph import BlueprintGraphError, ManagedSetup, managed_setup_order
 
 from ._setup_state import (
     ActiveFlow,
@@ -87,7 +87,7 @@ class FlowResult:
     """The exact next action after one successful managed settlement."""
 
     flow_id: str
-    operation: Literal["setup", "teardown"]
+    operation: Literal["setup", "teardown", "teardown-all"]
     state: Literal["run-step", "ready"]
     current_step: SetupStep | TeardownStep | None
 
@@ -272,39 +272,98 @@ def teardown_plan(
     return tuple(plan)
 
 
+def teardown_all_plan(graph, ledger: SetupLedger) -> tuple[TeardownStep, ...]:
+    """Return every exact receipt once in deterministic reverse setup order."""
+    ordered: list[ManagedSetup] = []
+    seen: set[str] = set()
+    for setup_interface in sorted(ledger.interfaces):
+        receipt = ledger.interfaces[setup_interface]
+        managed = graph.managed_setups.get(setup_interface)
+        if managed is None:
+            raise BlueprintGraphError(
+                f"{setup_interface!r} is not a public managed setup interface"
+            )
+        if receipt.version != managed.setup_version:
+            raise BlueprintGraphError(
+                f"{setup_interface!r} receipt version does not match live metadata"
+            )
+        for candidate in managed_setup_order(graph, setup_interface):
+            if candidate.setup_interface not in seen:
+                seen.add(candidate.setup_interface)
+                ordered.append(candidate)
+    return tuple(
+        TeardownStep.from_managed(managed, "run-teardown")
+        for managed in reversed(ordered)
+        if managed.setup_interface in ledger.interfaces
+    )
+
+
 def record_teardown_success(
     store: LedgerStore, graph, flow_id: str, step: TeardownStep
 ) -> FlowResult:
     """Apply one verified teardown or claim release and advance in reverse order."""
+    return _record_teardown_success(store, graph, flow_id, step, "teardown", True)
+
+
+def record_teardown_all_success(
+    store: LedgerStore, graph, flow_id: str, step: TeardownStep, *, advance: bool = True,
+) -> FlowResult:
+    """Apply one verified global teardown, optionally clearing after settlement."""
+    return _record_teardown_success(
+        store, graph, flow_id, step, "teardown-all", advance
+    )
+
+
+def _record_teardown_success(
+    store: LedgerStore, graph, flow_id: str, step: TeardownStep,
+    operation: Literal["teardown", "teardown-all"], advance: bool,
+) -> FlowResult:
+    """Settle one exact teardown step using operation-specific planning."""
     result: FlowResult | None = None
 
     def settle(ledger: SetupLedger) -> SetupLedger:
         nonlocal result
-        flow = _active_flow(ledger, flow_id, "teardown")
-        plan = teardown_plan(graph, flow.root, ledger)
+        flow = _active_flow(ledger, flow_id, operation)
+        if operation == "teardown":
+            if flow.root is None:
+                raise FlowConflict("ordinary teardown flow lacks a root")
+            plan = teardown_plan(graph, flow.root, ledger)
+        else:
+            plan = teardown_all_plan(graph, ledger)
         if not plan or flow.current_step != step.setup_interface or plan[0] != step:
             raise FlowConflict("teardown settlement does not match the current step")
         interfaces = dict(ledger.interfaces)
         receipt = interfaces[step.setup_interface]
-        if step.action == "release-claim":
+        if operation == "teardown" and step.action == "release-claim":
             interfaces[step.setup_interface] = SetupReceipt(
                 receipt.version, receipt.required_by - {flow.root}
             )
         else:
             del interfaces[step.setup_interface]
         intermediate = SetupLedger(interfaces=interfaces, active_flow=flow)
-        remaining = teardown_plan(graph, flow.root, intermediate)
+        if not advance:
+            result = FlowResult(flow_id, operation, "ready", None)
+            return clear_flow(intermediate, flow_id)
+        if operation == "teardown":
+            assert flow.root is not None
+            remaining = teardown_plan(graph, flow.root, intermediate)
+        else:
+            remaining = teardown_all_plan(graph, intermediate)
         if not remaining:
-            result = FlowResult(flow_id, "teardown", "ready", None)
+            result = FlowResult(flow_id, operation, "ready", None)
             return clear_flow(intermediate, flow_id)
         next_step = remaining[0]
-        result = FlowResult(flow_id, "teardown", "run-step", next_step)
+        result = FlowResult(flow_id, operation, "run-step", next_step)
         return SetupLedger(
             interfaces=interfaces,
             active_flow=replace(
                 flow,
                 current_step=next_step.setup_interface,
-                verified_steps=flow.verified_steps + (step.setup_interface,),
+                verified_steps=(
+                    flow.verified_steps + (step.setup_interface,)
+                    if operation == "teardown"
+                    else ()
+                ),
             ),
         )
 

@@ -267,6 +267,18 @@ interfaces:
     usage: SETUP_INTERFACE
     version: 1
 
+  setup-interface-manager._rtx.source.rtx-manager.interface.teardown-all:
+    content: [_setup_dispatches\.py, _setup_evaluation\.py, _setup_manager\.py, _setup_state\.py]
+    uses_interfaces: *uses
+    contract: {arguments: {}, caller_warnings: [{external-side-effect: Runs every valid managed setup receipt teardown in dependents-first order.}], direct_io: *mutating_io, execution: *mutating_execution, helpers: [], interaction: {mode: unattended}, outcomes: *mutating_outcomes, outputs: *json_outputs, preconditions: []}
+    description: Tear down all valid managed setup receipts in the selected context.
+    process_binding:
+      entry: TeardownAllInterface
+      kind: process
+      patterns: [{allow_stdin: false, min_positionals: 0, max_positionals: 0}]
+    usage: ''
+    version: 1
+
   setup-interface-manager._rtx.source.rtx-manager.interface.recover:
     content: [_setup_dispatches\.py, _setup_evaluation\.py, _setup_manager\.py, _setup_state\.py]
     uses_interfaces: *uses

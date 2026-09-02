@@ -3955,6 +3955,18 @@ def _managed_setup_for_export(
                 f"{owner_id}: setup_management.{field} verifier must take no arguments"
             )
 
+    def action(owner_id: str, field: str, target: InterfaceExport) -> str:
+        contract = target.declaration.get("contract")
+        if isinstance(contract, Mapping) and contract.get("arguments") not in (None, {}):
+            raise BlueprintGraphError(
+                f"{owner_id}: setup_management.{field} must take no arguments"
+            )
+        return (
+            "python"
+            if isinstance(target.declaration.get("process_binding"), Mapping)
+            else "markdown"
+        )
+
     declaration = export.export_declaration or {}
     raw = declaration.get("setup_management")
     if raw is None:
@@ -3996,6 +4008,11 @@ def _managed_setup_for_export(
         raise BlueprintGraphError(
             f"{export_id}: setup and teardown must use dedicated sources"
         )
+    kind = action(export_id, "setup", export)
+    if action(export_id, "teardown", teardown_export) != kind:
+        raise BlueprintGraphError(
+            f"{export_id}: setup and teardown must use the same execution kind"
+        )
     verifier(export_id, "setup_verifier", setup_verifier)
     verifier(export_id, "teardown.verifier", teardown_verifier)
     return ManagedSetup(
@@ -4007,11 +4024,7 @@ def _managed_setup_for_export(
         setup_verifier_version=setup_verifier_version,
         teardown_verifier_interface=teardown_verifier_id,
         teardown_verifier_version=teardown_verifier_version,
-        kind=(
-            "python"
-            if isinstance(export.declaration.get("process_binding"), Mapping)
-            else "markdown"
-        ),
+        kind=kind,
     )
 
 

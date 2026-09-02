@@ -13,7 +13,7 @@ from types import MappingProxyType
 from typing import Callable, ContextManager, Literal, Mapping, Protocol
 
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 _LEDGER_MODE = 0o600
 _MAX_COMPARE_RETRIES = 8
 
@@ -122,17 +122,16 @@ class ActiveFlow:
     """The sole in-progress managed action, without request payload data."""
 
     flow_id: str
-    operation: Literal["setup", "teardown"]
-    root: str
+    operation: Literal["setup", "teardown", "teardown-all"]
+    root: str | None
     current_step: str
     verified_steps: tuple[str, ...]
-    continuation: ContinuationIdentity
+    continuation: ContinuationIdentity | None
 
     def __post_init__(self) -> None:
         _require_identifier(self.flow_id, "active_flow.flow_id")
-        if self.operation not in {"setup", "teardown"}:
-            raise LedgerFormatError("active_flow.operation must be setup or teardown")
-        _require_identifier(self.root, "active_flow.root")
+        if not isinstance(self.operation, str) or self.operation not in {"setup", "teardown", "teardown-all"}:
+            raise LedgerFormatError("active_flow.operation is unsupported")
         _require_identifier(self.current_step, "active_flow.current_step")
         if not isinstance(self.verified_steps, tuple):
             object.__setattr__(self, "verified_steps", tuple(self.verified_steps))
@@ -140,16 +139,25 @@ class ActiveFlow:
             raise LedgerFormatError("active_flow.verified_steps must not repeat steps")
         for step in self.verified_steps:
             _require_identifier(step, "active_flow.verified_steps entry")
-        if not isinstance(self.continuation, ContinuationIdentity):
-            raise LedgerFormatError("active_flow.continuation is invalid")
+        if self.operation == "teardown-all":
+            if self.root is not None or self.continuation is not None or self.verified_steps:
+                raise LedgerFormatError("teardown-all flow must not carry ordinary context")
+        elif (
+            not isinstance(self.root, str)
+            or not isinstance(self.continuation, ContinuationIdentity)
+        ):
+            raise LedgerFormatError("ordinary flow requires root and continuation")
+        else:
+            _require_identifier(self.root, "active_flow.root")
 
 
 @dataclass(frozen=True)
 class SetupLedger:
-    """Schema-v1 setup receipts plus at most one active lifecycle flow."""
+    """Setup receipts plus at most one active lifecycle flow."""
 
     interfaces: Mapping[str, SetupReceipt]
     active_flow: ActiveFlow | None
+    schema_version: Literal[1, 2] = _SCHEMA_VERSION
 
     def __post_init__(self) -> None:
         copied: dict[str, SetupReceipt] = {}
@@ -160,6 +168,11 @@ class SetupLedger:
         object.__setattr__(self, "interfaces", MappingProxyType(copied))
         if self.active_flow is not None and not isinstance(self.active_flow, ActiveFlow):
             raise LedgerFormatError("active_flow is invalid")
+        if type(self.schema_version) is not int or self.schema_version not in {1, 2}:
+            raise LedgerFormatError("unsupported ledger schema version")
+        if self.schema_version == 1 and self.active_flow is not None:
+            if self.active_flow.operation == "teardown-all":
+                raise LedgerFormatError("schema-v1 cannot store teardown-all")
 
     @classmethod
     def empty(cls) -> SetupLedger:
@@ -193,14 +206,15 @@ def _decode_receipt(value: object) -> SetupReceipt:
     return SetupReceipt(version=version, required_by=frozenset(roots))
 
 
-def _decode_flow(value: object) -> ActiveFlow:
+def _decode_flow(value: object, schema_version: int) -> ActiveFlow:
     raw = _require_exact_keys(
         value,
         {"flow_id", "operation", "root", "current_step", "verified_steps", "continuation"},
         "active_flow",
     )
-    continuation_raw = _require_exact_keys(
-        raw["continuation"], {"caller", "interface", "version"}, "continuation"
+    continuation_value = raw["continuation"]
+    continuation_raw = None if continuation_value is None else _require_exact_keys(
+        continuation_value, {"caller", "interface", "version"}, "continuation"
     )
     verified_steps = raw["verified_steps"]
     if not isinstance(verified_steps, list):
@@ -208,13 +222,13 @@ def _decode_flow(value: object) -> ActiveFlow:
     return ActiveFlow(
         flow_id=_require_identifier(raw["flow_id"], "active_flow.flow_id"),
         operation=raw["operation"],  # type: ignore[arg-type]
-        root=_require_identifier(raw["root"], "active_flow.root"),
+        root=None if raw["root"] is None else _require_identifier(raw["root"], "active_flow.root"),
         current_step=_require_identifier(raw["current_step"], "active_flow.current_step"),
         verified_steps=tuple(
             _require_identifier(step, "active_flow.verified_steps entry")
             for step in verified_steps
         ),
-        continuation=ContinuationIdentity(
+        continuation=None if continuation_raw is None else ContinuationIdentity(
             caller=_require_identifier(continuation_raw["caller"], "continuation.caller"),
             interface=_require_identifier(
                 continuation_raw["interface"], "continuation.interface"
@@ -225,7 +239,7 @@ def _decode_flow(value: object) -> ActiveFlow:
 
 
 def parse_ledger(raw: bytes) -> SetupLedger:
-    """Parse only canonical schema-v1 bytes, failing closed on every deviation."""
+    """Parse canonical schema-v1/v2 bytes, failing closed on every deviation."""
     if not isinstance(raw, bytes):
         raise LedgerFormatError("ledger must contain bytes")
     try:
@@ -240,7 +254,8 @@ def parse_ledger(raw: bytes) -> SetupLedger:
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise LedgerFormatError("ledger is not valid UTF-8 JSON") from exc
     root = _require_exact_keys(value, {"schema_version", "interfaces", "active_flow"}, "ledger")
-    if root["schema_version"] != _SCHEMA_VERSION:
+    schema_version = root["schema_version"]
+    if schema_version not in {1, 2}:
         raise LedgerFormatError("unsupported ledger schema version")
     interfaces_raw = root["interfaces"]
     if not isinstance(interfaces_raw, Mapping):
@@ -250,7 +265,8 @@ def parse_ledger(raw: bytes) -> SetupLedger:
             _require_identifier(interface, "interface key"): _decode_receipt(receipt)
             for interface, receipt in interfaces_raw.items()
         },
-        active_flow=None if root["active_flow"] is None else _decode_flow(root["active_flow"]),
+        active_flow=None if root["active_flow"] is None else _decode_flow(root["active_flow"], schema_version),
+        schema_version=schema_version,
     )
     if encode_ledger(ledger) != raw:
         raise LedgerFormatError("ledger bytes are not canonical")
@@ -258,7 +274,7 @@ def parse_ledger(raw: bytes) -> SetupLedger:
 
 
 def encode_ledger(ledger: SetupLedger) -> bytes:
-    """Return the one deterministic schema-v1 representation of *ledger*."""
+    """Return the deterministic representation for the ledger's schema."""
     if not isinstance(ledger, SetupLedger):
         raise LedgerFormatError("ledger is invalid")
     active_flow: dict[str, object] | None
@@ -272,14 +288,14 @@ def encode_ledger(ledger: SetupLedger) -> bytes:
             "root": flow.root,
             "current_step": flow.current_step,
             "verified_steps": list(flow.verified_steps),
-            "continuation": {
+            "continuation": None if flow.continuation is None else {
                 "caller": flow.continuation.caller,
                 "interface": flow.continuation.interface,
                 "version": flow.continuation.version,
             },
         }
     value = {
-        "schema_version": _SCHEMA_VERSION,
+        "schema_version": ledger.schema_version,
         "interfaces": {
             interface: {
                 "version": receipt.version,

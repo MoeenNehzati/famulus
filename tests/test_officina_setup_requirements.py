@@ -216,6 +216,7 @@ def _managed_exports(
             teardown_id,
             version=4,
             source_id=teardown_source_id,
+            executable=setup_executable,
         ),
         teardown_verifier_id: _lifecycle_export(
             teardown_verifier_id,
@@ -428,6 +429,44 @@ def test_managed_setup_order_projects_markdown_source_kind() -> None:
     graph = _managed_graph(_managed_exports(setup_executable=False))
 
     assert graph.managed_setups["demo.interface.setup"].kind == "markdown"
+
+
+def test_managed_setup_metadata_requires_matching_action_kinds() -> None:
+    """Catches dispatching teardown through a different execution boundary."""
+    exports = _managed_exports()
+    teardown = exports["demo.interface.teardown"]
+    exports[teardown.interface_id] = InterfaceExport(
+        **{**teardown.__dict__, "declaration": {}}
+    )
+
+    with pytest.raises(BlueprintGraphError, match="same execution kind"):
+        _managed_setup_metadata(exports)
+
+
+@pytest.mark.parametrize(
+    "target_id",
+    ["demo.interface.setup", "demo.interface.teardown",
+     "demo.interface.setup-status", "demo.interface.teardown-status"],
+)
+def test_managed_setup_metadata_requires_argument_free_lifecycle(target_id: str) -> None:
+    """Catches admitting a fixed lifecycle action that needs persisted inputs."""
+    exports = _managed_exports()
+    target = exports[target_id]
+    exports[target_id] = InterfaceExport(
+        **{
+            **target.__dict__,
+            "declaration": {
+                **target.declaration,
+                "contract": {
+                    "arguments": {"value": {}},
+                    "execution": {"state_effect": "read-only"},
+                },
+            },
+        }
+    )
+
+    with pytest.raises(BlueprintGraphError, match="must take no arguments"):
+        _managed_setup_metadata(exports)
 
 
 def test_managed_setup_order_preserves_setup_order_for_a_managed_closure() -> None:

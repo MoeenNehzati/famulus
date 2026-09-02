@@ -32,6 +32,7 @@ namespace_exports:
         setup-interface-manager._rtx.interface.run-python: 1
         setup-interface-manager._rtx.interface.settle: 1
         setup-interface-manager._rtx.interface.invalidate: 1
+        setup-interface-manager._rtx.interface.teardown-all: 1
         setup-interface-manager._rtx.interface.recover: 1
     interface_access:
       setup-interface-manager._rtx.interface.status: {allow_all_modules: true, allowed_callers: []}
@@ -41,6 +42,7 @@ namespace_exports:
       setup-interface-manager._rtx.interface.run-python: {allow_all_modules: true, allowed_callers: []}
       setup-interface-manager._rtx.interface.settle: {allow_all_modules: true, allowed_callers: []}
       setup-interface-manager._rtx.interface.invalidate: {allow_all_modules: true, allowed_callers: []}
+      setup-interface-manager._rtx.interface.teardown-all: {allow_all_modules: true, allowed_callers: []}
       setup-interface-manager._rtx.interface.recover: {allow_all_modules: true, allowed_callers: []}
 node_type: module
 schema_version: 6

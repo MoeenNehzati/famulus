@@ -28,7 +28,9 @@ def _setup_dispatches():
     finally:
         os.chdir(previous)
     globals_ = interface.__class__.run.__globals__
-    return globals_["PRODUCTION_BINDINGS"], globals_["PRODUCTION_DISPATCHES"]
+    _setup_dispatches.runtime = globals_  # type: ignore[attr-defined]
+    dispatch_globals = globals_["ManagedInterfaceBinding"].__post_init__.__globals__
+    return globals_["PRODUCTION_BINDINGS"], dispatch_globals["PRODUCTION_ACTION_CALLS"], globals_["PRODUCTION_DISPATCHES"]
 
 
 def test_release_has_no_production_managed_setups() -> None:
@@ -59,8 +61,21 @@ def test_release_has_no_production_managed_setups() -> None:
 
 
 def test_production_map_has_no_managed_setup_routes() -> None:
-    """Catches a production binding or action route escaping blueprint review."""
-    bindings, dispatches = _setup_dispatches()
+    """Catches publication drift or an owner route escaping blueprint review."""
+    bindings, action_calls, dispatches = _setup_dispatches()
 
     assert set(bindings) == set()
+    assert set(action_calls) == set()
     assert set(dispatches) == {"setup-status-path"}
+    route = "setup-interface-manager._rtx.interface.teardown-all"
+    graph = load_repository_blueprint_graph(REPO_ROOT)
+    export = graph.exports[route]
+    assert "TeardownAllInterface" in getattr(_setup_dispatches, "runtime")
+    assert export.source_interface_id == "setup-interface-manager._rtx.source.rtx-manager.interface.teardown-all"
+    assert export.declaration["contract"]["arguments"] == {}
+    assert export.declaration["process_binding"]["patterns"] == [{"allow_stdin": False, "min_positionals": 0, "max_positionals": 0}]
+    assert any(route == target for uses in graph.interface_uses.values() for target, _version in uses)
+    assert route in (REPO_ROOT / "references/blueprint-schema/runtime_dependencies.json").read_text()
+    assert "teardown-all" not in dispatches
+    assert route in (REPO_ROOT / "skills/setup-interface-manager/SKILL.md").read_text()
+    assert route in (REPO_ROOT / "docs/setup.md").read_text()
