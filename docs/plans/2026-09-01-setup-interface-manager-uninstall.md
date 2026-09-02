@@ -18,7 +18,7 @@
 - Stage A has one activation authority: structural unreachability. It must add no `TeardownAllInterface`, machine-interface declaration, source or namespace export, gateway use, runtime dependency, generated interface block, route documentation, or other capability flag. Coverage must positively assert those surfaces remain absent.
 - **Stage B is publication.** It activates only when an approved record identifies either (a) at least two independent production managed roots plus a release decision requiring one selected-context reset operation, or (b) a named bulk consumer whose requirements repeated ordinary root teardown cannot satisfy.
 - The activation record must inventory every current production managed owner, prove exact equality among production managed metadata, `PRODUCTION_BINDINGS`, and `PRODUCTION_ACTION_CALLS`, and supply fully expanded green commands for each owner's teardown-equivalence, repeat-safety, lifecycle-epoch, and recovery suite.
-- Until that record exists, do not execute Tasks 0B, 3, or 4B. Dormant-core implementation and synthetic tests do not relax this publication gate.
+- Until that record exists, Gate 0B cannot pass and Tasks 3 and 4B must not execute. Dormant-core implementation and synthetic tests do not relax this publication gate.
 - The ledger is the only manager-owned manifest: each receipt pins the setup interface/version and root claims, while live blueprint metadata remains authoritative for the exact teardown interface/version/verifier/kind. Do not add another manifest, command log, traversal, or effect registry.
 - Only already-admitted fixed whole-node managed setup is in scope. Do not persist arguments, stdin, environment, commands, credentials, paths, or arbitrary verifier payloads.
 
@@ -86,9 +86,9 @@ Stage A explicitly prohibits owner/platform files, `_setup_dispatches.py`, all b
 
 ---
 
-### Task 0A: Lock the dormant-core scope
+### Gate 0A: Lock the dormant-core scope before Task 1
 
-**Files:** None.
+**Checkpoint:** This is a precondition, not an implementation task, and creates no commit. Its evidence is recorded in the execution record before Task 1 begins.
 
 - [ ] Record exact `BASE_SHA` from this clean isolated worktree and the ten-path Stage A allowlist.
 - [ ] Require empty output from `git status --porcelain=v1 --untracked-files=all` and `git diff --name-status BASE_SHA`.
@@ -127,9 +127,9 @@ git diff --numstat BASE_SHA -- src/officina/blueprints/graph.py tests/test_offic
 - [ ] Add at most 10 LOC of coverage assertions proving the interface class, declarations, exports, gateway use, runtime dependency, and exact route remain absent. Existing empty-production assertions remain.
 - [ ] Run focused manager/integration/coverage tests and the Stage A scope/budget gates. Independently review Task 2, then commit it.
 
-### Task 0B: Authorize publication
+### Gate 0B: Authorize publication before Task 3
 
-**Files:** None.
+**Checkpoint:** This is a publication precondition, not an implementation task, and creates no commit. Its evidence is recorded in the execution record before Task 3 begins.
 
 - [ ] Require the approved activation record described above. Refuse publication if it is absent, incomplete, or ordinary teardown already satisfies the named need.
 - [ ] Require exact equality among production managed metadata, bindings, and action calls, plus every fully expanded owner suite green.
@@ -163,12 +163,13 @@ git diff --cached --numstat BASE_SHA -- src/officina/blueprints/graph.py tests/t
 
 ### Task 5: Independent final subagent audit
 
-**Files:** None unless a defect is returned to the owning task and fixed in a new reviewed commit.
+**Files:** None unless a defect is returned to the owning task and fixed in a new reviewed commit. A successful no-change audit is still a task checkpoint and requires an explicit empty commit.
 
 - [ ] Assign fresh subagents who did not implement the relevant task to audit plan conformance, generic-manager boundaries, ordinary-flow regressions, structural publication state, tests, staged/tree scope, and LOC arithmetic.
-- [ ] For a Stage A-only completion, require explicit evidence that the dormant core is structurally unreachable and Tasks 0B/3/4B remain gated and untouched.
+- [ ] For a Stage A-only completion, require explicit evidence that the dormant core is structurally unreachable and Gate 0B plus Tasks 3/4B remain gated and untouched.
 - [ ] For published completion, require exact activation evidence and all Stage B gates. Do not infer publication authorization from synthetic fixtures.
 - [ ] Return every finding to the owning implementation task, add a focused regression test where applicable, commit the fix separately, and repeat the independent audit until clear.
+- [ ] Once the audit is clear, record the task checkpoint without inventing a file: use `git commit --allow-empty -m "audit: verify teardown-all dormant core"` for Stage A-only completion or `git commit --allow-empty -m "audit: verify teardown-all publication"` after Stage B. Verify that the empty commit's tree equals its parent and record the audit evidence with the commit SHA.
 
 ## Acceptance criteria
 
