@@ -17,6 +17,7 @@ SCHEMA_PATH = REPO_SRC / "officina" / "visualization" / "graph_specification.sch
 sys.path.insert(0, str(REPO_SRC))
 sys.path.insert(0, str(RTX_DIR))
 
+import _extraction_finalizer  # noqa: E402
 import _tex_macro_reader  # noqa: E402
 from _extraction_finalizer import finalize_extraction  # noqa: E402
 from officina.visualization.base_renderer_cli import main as render_canonical_html  # noqa: E402
@@ -186,25 +187,84 @@ def test_finalizer_writes_schema_valid_detachable_relevant_macro_closure(
     assert '"ShadeFold": [' in html
 
 
-def test_finalizer_rejects_unresolved_graph_visible_project_macro(
+def test_finalizer_preserves_unclassified_leaf_for_renderer_validation(
     tmp_path: Path,
 ) -> None:
     project = tmp_path / "unresolved-project"
-    entrypoint = _write_tex(project, r"\newcommand{\KnownSprig}{\mathbb{K}}")
-    draft = _write_draft(project / "draft.json", r"$\MissingNebula{x}$")
+    entrypoint = _write_tex(
+        project,
+        r"\newcommand{\KnownSprig}{\MissingNebula}",
+    )
+    draft = _write_draft(project / "draft.json", r"$\KnownSprig$")
 
-    with pytest.raises(ValueError) as caught:
-        finalize_extraction(
-            draft_path=draft,
-            tex_entrypoint=entrypoint,
-            output_path=project / "canonical.json",
-            label_map_path=None,
-        )
+    canonical = project / "canonical.json"
+    finalize_extraction(
+        draft_path=draft,
+        tex_entrypoint=entrypoint,
+        output_path=canonical,
+        label_map_path=None,
+    )
 
-    message = str(caught.value)
-    assert "unresolved" in message.lower()
-    assert "MissingNebula" in message
-    assert str(entrypoint) in message
+    assert _mathjax_macros(json.loads(canonical.read_text(encoding="utf-8"))) == {
+        "KnownSprig": r"\MissingNebula",
+    }
+
+
+def test_finalizer_ignores_commands_in_non_math_prose(tmp_path: Path) -> None:
+    project = tmp_path / "prose-project"
+    entrypoint = _write_tex(project, "Fixture without project macros.")
+    draft = _write_draft(project / "draft.json", "No rendered mathematics.")
+    payload = json.loads(draft.read_text(encoding="utf-8"))
+    payload["entities"][0]["description"] = (
+        r"The appendix restates this through \lemLipschitz*, which is provenance."
+    )
+    payload["metadata"] = {
+        "restatement": r"Source note: \propMeasurable* appears outside scope."
+    }
+    draft.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    canonical = project / "canonical.json"
+
+    finalize_extraction(
+        draft_path=draft,
+        tex_entrypoint=entrypoint,
+        output_path=canonical,
+        label_map_path=None,
+    )
+
+    assert _mathjax_macros(json.loads(canonical.read_text(encoding="utf-8"))) == {}
+
+
+def test_finalizer_extracts_from_each_renderer_math_delimiter(tmp_path: Path) -> None:
+    project = tmp_path / "delimiter-project"
+    entrypoint = _write_tex(
+        project,
+        r"\newcommand{\DollarRoot}{D}"
+        r"\newcommand{\DisplayDollarRoot}{DD}"
+        r"\newcommand{\ParenRoot}{P}"
+        r"\newcommand{\BracketRoot}{B}",
+    )
+    draft = _write_draft(
+        project / "draft.json",
+        (
+            r"prose \IgnoredProse, then $\DollarRoot$, "
+            r"$$\DisplayDollarRoot$$, \(\ParenRoot\), and \[\BracketRoot\]"
+        ),
+    )
+    canonical = project / "canonical.json"
+
+    finalize_extraction(
+        draft_path=draft,
+        tex_entrypoint=entrypoint,
+        output_path=canonical,
+        label_map_path=None,
+    )
+
+    assert _mathjax_macros(json.loads(canonical.read_text(encoding="utf-8"))) == {
+        "DollarRoot": "D",
+        "DisplayDollarRoot": "DD",
+        "ParenRoot": "P",
+        "BracketRoot": "B",
+    }
 
 
 def test_finalizer_rejects_cyclic_relevant_definitions(tmp_path: Path) -> None:
@@ -478,3 +538,31 @@ def test_finalizer_validates_before_atomically_replacing_existing_output(
     assert "schema" in message.lower()
     assert "schema_version" in message
     assert canonical.read_text(encoding="utf-8") == "preserved canonical bytes\n"
+
+
+def test_finalizer_serialization_failure_preserves_output_and_cleans_temp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "serialization-project"
+    entrypoint = _write_tex(project, "Fixture without custom commands.")
+    draft = _write_draft(project / "draft.json", "No rendered mathematics.")
+    canonical = project / "canonical.json"
+    canonical.write_text("preserved canonical bytes\n", encoding="utf-8")
+
+    def fail_serialization(payload: object, handle: object, **kwargs: object) -> None:
+        handle.write("partial")
+        raise OSError("synthetic serialization failure")
+
+    monkeypatch.setattr(_extraction_finalizer.json, "dump", fail_serialization)
+
+    with pytest.raises(OSError, match="synthetic serialization failure"):
+        finalize_extraction(
+            draft_path=draft,
+            tex_entrypoint=entrypoint,
+            output_path=canonical,
+            label_map_path=None,
+        )
+
+    assert canonical.read_text(encoding="utf-8") == "preserved canonical bytes\n"
+    assert not list(project.glob(".canonical.json.*.tmp"))

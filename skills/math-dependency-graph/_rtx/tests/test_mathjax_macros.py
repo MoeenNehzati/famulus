@@ -65,6 +65,13 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
         "DistroAlias",
         "DistroWrap",
         "DuplicatePulse",
+        "CommonShadow",
+        "ProjectAlias",
+        "ProjectTarget",
+        "MissingLeaf",
+        "DistroClassMacro",
+        "AfterInclude",
+        "WideProjectMacro",
     )
 
     def test_extracts_recursive_and_mid_document_macros(self) -> None:
@@ -319,25 +326,183 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
             self.assertEqual(
                 macros,
                 {
-                    "DistroAlias": [r"\boldsymbol{#1}", 1],
+                    "DistroAlias": r"\boldsymbol",
                     "DistroWrap": [r"\DistroAlias{#1}", 1],
                 },
             )
+
+    def test_source_definition_shadows_a_common_mathjax_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            entrypoint = Path(tmp) / "main.tex"
+            entrypoint.write_text(
+                r"\newcommand{\bm}[1]{\mathrm{local}(#1)}"
+                r"\newcommand{\CommonShadow}[1]{\bm{#1}}",
+                encoding="utf-8",
+            )
+
+            macros = extract_renderable_macros(
+                tex_entrypoint=entrypoint,
+                graph_text=[r"$\CommonShadow{x}$"],
+            )
+
+            self.assertEqual(
+                macros,
+                {
+                    "bm": [r"\mathrm{local}(#1)", 1],
+                    "CommonShadow": [r"\bm{#1}", 1],
+                },
+            )
+
+    def test_common_mathjax_commands_do_not_require_project_definitions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            entrypoint = Path(tmp) / "main.tex"
+            entrypoint.write_text("No project macros.", encoding="utf-8")
+
+            macros = extract_renderable_macros(
+                tex_entrypoint=entrypoint,
+                graph_text=[
+                    r"$\mathfrak{F}+\underbrace{x}_{y}+\overset{a}{b}$",
+                ],
+            )
+
+            self.assertEqual(macros, {})
+
+    def test_project_to_project_let_alias_is_general(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            entrypoint = Path(tmp) / "main.tex"
+            entrypoint.write_text(
+                r"\newcommand{\ProjectTarget}[2]{#1+#2}"
+                r"\let\ProjectAlias\ProjectTarget",
+                encoding="utf-8",
+            )
+
+            macros = extract_renderable_macros(
+                tex_entrypoint=entrypoint,
+                graph_text=[r"$\ProjectAlias{x}{y}$"],
+            )
+
+            self.assertEqual(
+                macros,
+                {
+                    "ProjectTarget": ["#1+#2", 2],
+                    "ProjectAlias": r"\ProjectTarget",
+                },
+            )
+
+    def test_unclassified_leaf_is_preserved_for_renderer_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            entrypoint = Path(tmp) / "main.tex"
+            entrypoint.write_text(
+                r"\newcommand{\CommonShadow}{\MissingLeaf}",
+                encoding="utf-8",
+            )
+
+            macros = extract_renderable_macros(
+                tex_entrypoint=entrypoint,
+                graph_text=[r"$\CommonShadow$"],
+            )
+
+            self.assertEqual(macros, {"CommonShadow": r"\MissingLeaf"})
+
+    def test_reachable_unsupported_project_arity_is_source_located(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            entrypoint = Path(tmp) / "main.tex"
+            entrypoint.write_text(
+                r"\newcommand{\WideProjectMacro}[10]{#1}",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, r"WideProjectMacro.*arity.*10") as caught:
+                extract_renderable_macros(
+                    tex_entrypoint=entrypoint,
+                    graph_text=[r"$\WideProjectMacro{x}$"],
+                )
+
+            self.assertIn(f"{entrypoint}:1:1", str(caught.exception))
 
     def test_extractor_does_not_reverse_tex_let_assignment(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp)
             entrypoint = project / "main.tex"
             entrypoint.write_text(
+                r"\newcommand{\RightHandGhost}{rhs}"
                 r"\let\boldsymbol\RightHandGhost",
                 encoding="utf-8",
             )
 
-            with self.assertRaisesRegex(ValueError, r"\\RightHandGhost"):
+            macros = extract_renderable_macros(
+                tex_entrypoint=entrypoint,
+                graph_text=[r"$\boldsymbol$"],
+            )
+
+            self.assertEqual(
+                macros,
+                {
+                    "RightHandGhost": "rhs",
+                    "boldsymbol": r"\RightHandGhost",
+                },
+            )
+
+    def test_extractor_resolves_a_distribution_class_definition(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "project"
+            texmf = Path(tmp) / "texmf"
+            project.mkdir()
+            texmf.mkdir()
+            entrypoint = project / "main.tex"
+            entrypoint.write_text(
+                r"\documentclass{distro-frame}"
+                r"\newcommand{\DistroWrap}{\DistroClassMacro}",
+                encoding="utf-8",
+            )
+            distribution_class = texmf / "distro-frame.cls"
+            distribution_class.write_text(
+                r"\newcommand{\DistroClassMacro}{\mathcal{D}}",
+                encoding="utf-8",
+            )
+
+            def controlled_distribution(filename: str) -> Path | None:
+                return distribution_class if filename == "distro-frame.cls" else None
+
+            with mock.patch.object(
+                _tex_macro_reader,
+                "tex_distribution_path",
+                side_effect=controlled_distribution,
+            ):
+                macros = extract_renderable_macros(
+                    tex_entrypoint=entrypoint,
+                    graph_text=[r"$\DistroWrap$"],
+                )
+
+            self.assertEqual(
+                macros,
+                {
+                    "DistroClassMacro": r"\mathcal{D}",
+                    "DistroWrap": r"\DistroClassMacro",
+                },
+            )
+
+    def test_same_line_definition_after_include_has_absolute_column(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            entrypoint = project / "main.tex"
+            included = project / "defs.tex"
+            entrypoint.write_text(
+                r"\input{defs}\newcommand{\AfterInclude}{main}",
+                encoding="utf-8",
+            )
+            included.write_text(
+                r"\newcommand{\AfterInclude}{included}",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "Conflicting definitions") as caught:
                 extract_renderable_macros(
                     tex_entrypoint=entrypoint,
-                    graph_text=[r"$\RightHandGhost{x}$"],
+                    graph_text=[r"$\AfterInclude$"],
                 )
+
+            self.assertIn(f"{entrypoint}:1:13", str(caught.exception))
 
     def test_extractor_closes_over_macros_used_by_optional_defaults(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

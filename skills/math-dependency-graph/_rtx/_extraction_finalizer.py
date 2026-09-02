@@ -250,16 +250,61 @@ def apply_presentation_base(doc: dict) -> dict:
     return result
 
 
-def _graph_visible_strings(payload: dict) -> Iterable[str]:
-    """Yield strings that may be rendered as graph-visible TeX.
+def _math_segments(text: str) -> Iterable[str]:
+    """Yield balanced TeX segments recognized by the renderer lifecycle.
 
     Intent
     ------
-    Expose renderable text while excluding dependency metadata and source paths.
+    Isolate content enclosed by the renderer's configured inline and display delimiters.
+
+    Rationale
+    ---------
+    Macro roots must come from strings that MathJax will actually typeset.
+
+    Pseudocode
+    ----------
+    - set math_segments = balanced renderer-delimited contents in text
+    - return math_segments
+
+    Wraps
+    -----
+    - none
+    """
+    delimiters = (("$$", "$$"), (r"\[", r"\]"), (r"\(", r"\)"), ("$", "$"))
+    cursor = 0
+    while cursor < len(text):
+        candidates = [
+            (start, -len(opening), opening, closing)
+            for opening, closing in delimiters
+            if (start := text.find(opening, cursor)) >= 0
+        ]
+        if not candidates:
+            return
+        start, _, opening, closing = min(candidates)
+        end = text.find(closing, start + len(opening))
+        if end < 0:
+            cursor = start + len(opening)
+            continue
+        yield text[start + len(opening) : end]
+        cursor = end + len(closing)
+
+
+def _graph_visible_math_segments(payload: dict) -> Iterable[str]:
+    """Yield TeX segments that the renderer will pass to MathJax.
+
+    Intent
+    ------
+    Expose only balanced configured math delimiters outside dependency metadata.
 
     Rationale
     ---------
     Macro reachability should follow displayed content, not configuration strings.
+
+    CallsFromRepo
+    -------------
+      ._math_segments:
+        why:
+          transforms: "Extracts balanced renderer-delimited content from eligible strings."
 
     Pseudocode
     ----------
@@ -282,17 +327,23 @@ def _graph_visible_strings(payload: dict) -> Iterable[str]:
         ---------
         Renderable strings can be nested below multiple schema containers.
 
-    Pseudocode
-    ----------
-    - set descendant_strings = eligible strings beneath node
-    - return descendant_strings
+        CallsFromRepo
+        -------------
+          ._math_segments:
+            why:
+              transforms: "Extracts balanced renderer-delimited content from leaf strings."
+
+        Pseudocode
+        ----------
+        - set descendant_strings = eligible strings beneath node
+        - return descendant_strings
 
         Wraps
         -----
         - none
         """
         if isinstance(node, str):
-            yield node
+            yield from _math_segments(node)
         elif isinstance(node, list):
             for item in node:
                 yield from walk(item)
@@ -599,7 +650,7 @@ def finalize_extraction(
       ._merge_mathjax_macros:
         why:
           transforms: "Produces the canonical single-dependency macro payload."
-      ._graph_visible_strings:
+      ._graph_visible_math_segments:
         why:
           transforms: "Selects graph text that determines the reachable macro closure."
       ._read_json_object:
@@ -619,7 +670,7 @@ def finalize_extraction(
     ----------
     - draft_payload = _read_json_object(draft_path)
     - label_map = _read_json_object(label_map_path)
-    - graph_strings = _graph_visible_strings(draft_payload)
+    - graph_strings = _graph_visible_math_segments(draft_payload)
     - set embedded_bodies = renderer macro bodies
     - set extracted_macros = closure from graph_strings and embedded_bodies
     - finalized_payload = _merge_mathjax_macros(draft_payload, extracted_macros)
@@ -656,12 +707,11 @@ def finalize_extraction(
             candidate_macros = configuration.get("macros", {})
             if isinstance(candidate_macros, dict):
                 embedded_macros.update(candidate_macros)
-    graph_text = list(_graph_visible_strings(payload))
+    graph_text = list(_graph_visible_math_segments(payload))
     graph_text.extend(macro_body_text(value) for value in embedded_macros.values())
     extracted = _extract_renderable_macro_definitions(
         tex_entrypoint=tex_entrypoint,
         graph_text=graph_text,
-        known_commands=embedded_macros,
     )
     finalized = _merge_mathjax_macros(
         payload,

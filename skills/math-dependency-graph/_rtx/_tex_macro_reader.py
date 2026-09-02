@@ -19,104 +19,6 @@ from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 MacroValue = str | list[object]
 
 
-# Commands supplied by the TeX input jax or the extensions bundled by the
-# renderer. A graph-visible command outside this set must either have a source
-# definition or be reported: otherwise a supposedly detachable artifact can
-# silently render the literal command name.
-BUILTIN_COMMANDS = frozenset(
-    """
-    above acute aleph alpha amalg angle approx arg array arccos arcsin arctan
-    atop bar begin beta bf big Big bigg Bigg bigl Bigl biggl Biggl bigr Bigr
-    biggr Biggr binom boldsymbol bot bowtie boxed breve bullet cap caption cases
-    cdot cdotp cdots check chi circ cite citet citep colon complement cong coprod
-    cos cosh cot coth csc cup ddagger ddot ddots def deg delta Delta det dfrac
-    diag diamond dim displaymath displaystyle div document documentclass dot
-    dots downarrow Downarrow ell emptyset emph end epsilon eqref equiv eta exists
-    exp fbox frac Gamma gamma gcd ge geq geqq gets gg glb grad gt hbar hat help
-    hom hookleftarrow hookrightarrow hphantom hspace iff Im imath in include
-    inf infty input int iota jmath ker label lambda Lambda land langle lbrace
-    lceil ldotp ldots le left Left leftarrow Leftarrow leftharpoondown
-    leftharpoonup leftrightarrow Leftrightarrow leq leqq lfloor lg lim liminf
-    limsup ll llap lnot log longleftarrow Longleftarrow longleftrightarrow
-    Longleftrightarrow longmapsto longrightarrow Longrightarrow lor lower lt
-    mapsto mathbb mathbf mathcal mathchoice mathclose mathinner mathit mathop
-    mathopen mathord mathpunct mathrel mathrm mathsf mathtt matrix max mbox mid min
-    mod mp mu nabla natural ne nearrow neg neq newcommand ni nonumber not notag
-    nu nwarrow odot oint omega Omega ominus operatorname oplus oslash otimes
-    overbrace overline parallel partial phi Phi pi Pi pm pmod Pr prod
-    providecommand qquad quad raise rangle rbrace rceil Re ref renewcommand
-    RequirePackage right Right rightarrow Rightarrow rightharpoondown
-    rightharpoonup rightleftharpoons rlapped rfloor rho rm sec section searrow
-    setminus sigma Sigma sin sinh smallmatrix space sqrt sqsubset sqsubseteq
-    sqsupset sqsupseteq star subset subseteq subsetneq sum sup supset supseteq
-    supsetneq swarrow tan tanh tau text textbf textit textnormal textrm textsf
-    textstyle texttt theta Theta tilde times to top triangle triangleleft
-    triangleright uparrow Uparrow updownarrow Updownarrow upsilon Upsilon
-    usepackage varepsilon varphi varpi varrho varsigma vartheta vdash vdots vec
-    vee vphantom vspace wedge widehat widetilde wp xi Xi zeta
-    DeclareMathOperator DeclareMathSymbol DeclareSymbolFont LoadClass
-    LoadClassWithOptions NeedsTeXFormat ProvidesClass ProvidesPackage
-    RequirePackageWithOptions
-    """.split()
-)
-
-MATHJAX_COMMAND_ARITIES = {
-    "boldsymbol": 1,
-    "hspace": 1,
-    "mathbf": 1,
-    "mathcal": 1,
-    "mathrm": 1,
-    "vspace": 1,
-}
-
-# Package spellings with a semantically equivalent command in the bundled
-# MathJax input jax.
-PACKAGE_COMMAND_EQUIVALENTS: dict[str, str] = {
-    "bm": "boldsymbol",
-    "bold": "boldsymbol",
-    "hs": "hspace",
-    "vs": "vspace",
-}
-
-MATHJAX_EXTENSIONS: frozenset[str] = frozenset(
-    {
-        "action",
-        "ams",
-        "amscd",
-        "amsfonts",
-        "amsmath",
-        "amssymb",
-        "bbox",
-        "boldsymbol",
-        "braket",
-        "bussproofs",
-        "cancel",
-        "cases",
-        "centernot",
-        "color",
-        "colortbl",
-        "empheq",
-        "enclose",
-        "extpfeil",
-        "html",
-        "mathtools",
-        "mhchem",
-        "newcommand",
-        "noerrors",
-        "noundefined",
-        "physics",
-        "require",
-        "setoptions",
-        "tagformat",
-        "textcomp",
-        "textmacros",
-        "unicode",
-        "upgreek",
-        "verb",
-    }
-)
-
-
 LOCAL_INCLUDE_RE = re.compile(
     r"\\(?P<cmd>input|include|usepackage|RequirePackage(?:WithOptions)?|"
     r"documentclass|LoadClass(?:WithOptions)?)"
@@ -142,9 +44,6 @@ DEF_RE = re.compile(r"\\def\s*\\([A-Za-z@]+)")
 NEWCOMMAND_RE = re.compile(
     r"\\(?P<kind>(?:re)?newcommand|providecommand)\s*\*?\s*"
 )
-USEPACKAGE_RE = re.compile(r"\\usepackage\s*(?:\[[^\]]*\])?\s*\{([^}]*)\}")
-
-
 @dataclass(frozen=True)
 class MacroDefinition:
     """Store one normalized macro definition and its source provenance.
@@ -214,7 +113,7 @@ class TexChunk:
 
     Pseudocode
     ----------
-    - set tex_chunk = source path, text, line offset, and ownership
+    - set tex_chunk = source path, text, line and column offsets, and ownership
     - return tex_chunk
 
     Wraps
@@ -225,6 +124,7 @@ class TexChunk:
     source_path: Path
     text: str
     line_offset: int
+    column_offset: int
     project_owned: bool
 
 
@@ -631,6 +531,7 @@ def collect_tex_chunks(
                 source_path,
                 text[last : match.start()],
                 text.count("\n", 0, last),
+                last - text.rfind("\n", 0, last) - 1,
                 project_owned,
             )
         )
@@ -644,6 +545,7 @@ def collect_tex_chunks(
             source_path,
             text[last:],
             text.count("\n", 0, last),
+            last - text.rfind("\n", 0, last) - 1,
             project_owned,
         )
     )
@@ -1048,7 +950,8 @@ def _line_column(chunk: TexChunk, index: int) -> tuple[int, int]:
     """
     line = chunk.line_offset + chunk.text.count("\n", 0, index) + 1
     prior_newline = chunk.text.rfind("\n", 0, index)
-    return line, index - prior_newline
+    column_offset = chunk.column_offset if prior_newline < 0 else 0
+    return line, column_offset + index - prior_newline
 
 
 def _definition_records_from_chunk(
@@ -1154,21 +1057,12 @@ def _definition_records_from_chunk(
         if alias:
             left = alias.group("left")
             right = alias.group("right")
-            builtin: str | None = None
-            alias_name: str | None = None
-            if right in MATHJAX_COMMAND_ARITIES and left not in BUILTIN_COMMANDS:
-                builtin, alias_name = right, left
-            if builtin is not None and alias_name is not None:
-                argc = MATHJAX_COMMAND_ARITIES[builtin]
-                arguments = "".join(f"{{#{number}}}" for number in range(1, argc + 1))
-                value: MacroValue = f"\\{builtin}{arguments}"
-                if argc:
-                    value = [value, argc]
+            if left != right:
                 line, column = _line_column(chunk, idx)
                 records.append(
                     MacroDefinition(
-                        name=alias_name,
-                        value=value,
+                        name=left,
+                        value=f"\\{right}",
                         source_path=chunk.source_path,
                         line=line,
                         column=column,
@@ -1250,108 +1144,50 @@ def referenced_macros(body: object) -> set[str]:
     }
 
 
-def _normalize_package_value(value: MacroValue) -> tuple[MacroValue, dict[str, int]]:
-    """Normalize one macro body and tuple to MathJax-native semantics.
+def _normalize_macro_value(value: MacroValue) -> tuple[MacroValue, dict[str, int]]:
+    """Normalize one macro tuple to MathJax-native semantics.
 
     Intent
     ------
-    Rewrite supported package commands and enforce replacement-first tuple order.
+    Enforce replacement-first tuple order without changing source commands.
 
     Rationale
     ---------
-    Normalized values support deterministic closure and semantic conflict checks.
+    Tuple normalization supports semantic comparison while preserving TeX meaning.
 
     Pseudocode
     ----------
-    - set normalized_body = supported package-command substitutions
     - if macro value is parameterized:
-      - set normalized_value = replacement-first tuple using normalized_body
-    - else:
-      - set normalized_value = normalized_body
-    - return normalized_value and substitution counts
+      - set normalized_value = replacement-first tuple
+    - return normalized_value and an empty compatibility count
 
     Wraps
     -----
     - none
     """
-    applied: dict[str, int] = {}
-    pattern = re.compile(
-        r"\\("
-        + "|".join(sorted(PACKAGE_COMMAND_EQUIVALENTS, key=len, reverse=True))
-        + r")(?![A-Za-z])"
-    )
-
-    def rewrite(text: str) -> str:
-        """Rewrite supported package commands within one replacement string.
-
-        Intent
-        ------
-        Substitute only commands with declared MathJax equivalents.
-
-        Rationale
-        ---------
-        Text-level replacement is safe only for the closed equivalence table.
-
-        Pseudocode
-        ----------
-        - set rewritten_text = equivalent command substitutions in text
-        - return rewritten_text
-
-        Wraps
-        -----
-        - none
-        """
-
-        def swap(match: re.Match[str]) -> str:
-            """Replace one matched package spelling and record its use.
-
-            Intent
-            ------
-            Return the declared MathJax command for one regex match.
-
-            Rationale
-            ---------
-            Counts keep compatibility reporting separate from transformed values.
-
-            Pseudocode
-            ----------
-            - set substitution_count = incremented count for matched command
-            - return equivalent MathJax command
-
-            Wraps
-            -----
-            - none
-            """
-            name = match.group(1)
-            applied[name] = applied.get(name, 0) + 1
-            return "\\" + PACKAGE_COMMAND_EQUIVALENTS[name]
-
-        return pattern.sub(swap, text)
-
     if isinstance(value, str):
-        return rewrite(value), applied
+        return value, {}
     if len(value) not in {2, 3}:
-        return value, applied
+        return value, {}
     if isinstance(value[0], int) and isinstance(value[1], str):
-        normalized: list[object] = [rewrite(value[1]), value[0]]
+        normalized: list[object] = [value[1], value[0]]
     elif isinstance(value[0], str) and isinstance(value[1], int):
-        normalized = [rewrite(value[0]), value[1]]
+        normalized = [value[0], value[1]]
     else:
-        return value, applied
+        return value, {}
     if len(value) == 3:
-        default = value[2]
-        normalized.append(rewrite(default) if isinstance(default, str) else default)
-    return normalized, applied
+        normalized.append(value[2])
+    return normalized, {}
 
 
 def normalize_package_commands(
     macros: dict[str, object],
 ) -> tuple[dict[str, MacroValue], dict[str, int]]:
-    """Normalize package spellings and tuple order for MathJax configuration.
+    """Normalize tuple order for MathJax configuration.
 
     Intent
     ------
-    Adapt a value-only macro map to canonical renderer definitions.
+    Preserve the compatibility API without rewriting source command semantics.
 
     Rationale
     ---------
@@ -1359,31 +1195,28 @@ def normalize_package_commands(
 
     InstantiationsFromRepo
     ----------------------
-      ._normalize_package_value:
+      ._normalize_macro_value:
         why:
           transforms: "Produces each canonical macro value and rewrite count."
 
     Pseudocode
     ----------
     - for macro_definition in macros:
-      - normalized_value = _normalize_package_value(macro_definition)
+      - normalized_value = _normalize_macro_value(macro_definition)
       - set normalized_macros = normalized_macros with normalized_value
-    - return normalized_macros and aggregate rewrite counts
+    - return normalized_macros and an empty rewrite-count mapping
 
     Wraps
     -----
     - none
     """
     normalized: dict[str, MacroValue] = {}
-    applied: dict[str, int] = {}
     for name, value in macros.items():
         if not isinstance(value, (str, list)):
             continue
-        normalized_value, counts = _normalize_package_value(value)
+        normalized_value, _ = _normalize_macro_value(value)
         normalized[name] = normalized_value
-        for command, count in counts.items():
-            applied[command] = applied.get(command, 0) + count
-    return normalized, applied
+    return normalized, {}
 
 
 def _definition_catalog(
@@ -1407,7 +1240,7 @@ def _definition_catalog(
 
     InstantiationsFromRepo
     ----------------------
-      ._normalize_package_value:
+      ._normalize_macro_value:
         why:
           transforms: "Canonicalizes each record before semantic comparison."
       .collect_tex_chunks:
@@ -1419,7 +1252,7 @@ def _definition_catalog(
     - source_chunks = collect_tex_chunks(tex_entrypoint)
     - for source_chunk in source_chunks:
       - definition_records = @._definition_records_from_chunk(source_chunk)
-      - normalized_record = _normalize_package_value(definition_records)
+      - normalized_record = _normalize_macro_value(definition_records)
       - if normalized_record is an intentional override:
         - set effective_definitions = effective_definitions with normalized_record
       - else:
@@ -1438,7 +1271,7 @@ def _definition_catalog(
 
     for chunk in chunks:
         for record in _definition_records_from_chunk(chunk, symbol_fonts):
-            normalized, _ = _normalize_package_value(record.value)
+            normalized, _ = _normalize_macro_value(record.value)
             record = replace(record, value=normalized)
             previous = definitions.get(record.name)
             if previous is None:
@@ -1491,13 +1324,12 @@ def _extract_renderable_macro_definitions(
     *,
     tex_entrypoint: Path,
     graph_text: Iterable[str],
-    known_commands: Iterable[str] = (),
 ) -> dict[str, MacroDefinition]:
     """Select the source-aware recursive macro closure used by graph text.
 
     Intent
     ------
-    Traverse relevant definitions and reject unknown commands, conflicts, or cycles.
+    Traverse source-defined roots and reject relevant conflicts or cycles.
 
     Rationale
     ---------
@@ -1522,8 +1354,7 @@ def _extract_renderable_macro_definitions(
     ----------
     - definition_catalog = _definition_catalog(tex_entrypoint)
     - graph_commands = @._command_names(graph_text)
-    - if graph_commands contain commands absent from definition_catalog and known_commands:
-      - raise entrypoint-located unresolved command error
+    - set roots = graph_commands present in definition_catalog
     - set direct_dependencies = @.referenced_macros(definition_catalog replacements)
     - for root_command in graph_commands:
       - set selected_definitions = direct_dependencies selected with cycle checks
@@ -1537,29 +1368,11 @@ def _extract_renderable_macro_definitions(
     if not entrypoint.is_file():
         raise ValueError(f"TeX entrypoint not found: {entrypoint}")
     definitions, conflicts = _definition_catalog(entrypoint)
-    known = frozenset(known_commands)
     roots: list[str] = []
-    unresolved: list[str] = []
     for name in _command_names(graph_text):
         definition = definitions.get(name)
-        if definition is not None:
-            if not definition.native_identity and (
-                definition.project_owned or name not in BUILTIN_COMMANDS
-            ):
-                roots.append(name)
-            continue
-        if (
-            name not in known
-            and name not in BUILTIN_COMMANDS
-            and name not in PACKAGE_COMMAND_EQUIVALENTS
-        ):
-            unresolved.append(name)
-    if unresolved:
-        commands = ", ".join(f"\\{name}" for name in unresolved)
-        raise ValueError(
-            f"Unresolved graph-visible TeX command(s) for {entrypoint}: {commands}. "
-            "Define them in the reachable TeX source tree or remove them from graph text."
-        )
+        if definition is not None and not definition.native_identity:
+            roots.append(name)
 
     selected: dict[str, MacroDefinition] = {}
     visiting: list[str] = []
@@ -1607,6 +1420,17 @@ def _extract_renderable_macro_definitions(
         definition = definitions.get(name)
         if definition is None or definition.native_identity:
             return
+        if (
+            isinstance(definition.value, list)
+            and len(definition.value) in {2, 3}
+            and isinstance(definition.value[1], int)
+            and not isinstance(definition.value[1], bool)
+            and not 0 <= definition.value[1] <= 9
+        ):
+            raise ValueError(
+                f"Relevant macro \\{name} has unsupported MathJax arity "
+                f"{definition.value[1]} at {definition.location}; expected 0 through 9."
+            )
         duplicates = conflicts.get(name)
         if duplicates:
             locations = ", ".join(item.location for item in duplicates)
@@ -1678,13 +1502,12 @@ def dependency_closure(
         if name in closed:
             return True
         if name not in macros:
-            return name in BUILTIN_COMMANDS
+            return True
         if name in visiting:
             return False
         visiting.add(name)
         valid = all(
             dependency == name
-            or dependency in BUILTIN_COMMANDS
             or dependency not in macros
             or visit(dependency)
             for dependency in referenced_macros(macros[name])
@@ -1740,46 +1563,6 @@ def extract_macros(entrypoint: Path) -> dict[str, MacroValue]:
     )
 
 
-def unsupported_packages(entrypoint: Path) -> list[str]:
-    """List requested packages without a declared bundled MathJax extension.
-
-    Intent
-    ------
-    Retain non-fatal compatibility reporting for the macro-reader CLI.
-
-    Rationale
-    ---------
-    Package support warnings must never prevent otherwise valid macro extraction.
-
-    InstantiationsFromRepo
-    ----------------------
-      .flatten_tex:
-        why:
-          transforms: "Produces dependency-expanded source for package inspection."
-
-    Pseudocode
-    ----------
-    - flattened_source = flatten_tex(entrypoint)
-    - set unsupported_names = package names in flattened_source outside bundled extensions
-    - return unsupported_names
-
-    Wraps
-    -----
-    - none
-    """
-    try:
-        text = flatten_tex(entrypoint)
-    except Exception:  # pragma: no cover - diagnostics must not break extraction
-        return []
-    names: list[str] = []
-    for match in USEPACKAGE_RE.finditer(text):
-        for raw in match.group(1).split(","):
-            name = raw.strip()
-            if name and name not in MATHJAX_EXTENSIONS and name not in names:
-                names.append(name)
-    return names
-
-
 def default_output_path(entrypoint: Path) -> Path:
     return entrypoint.resolve().parent / "_build" / f"{entrypoint.stem}-mathjax-macros.json"
 
@@ -1821,7 +1604,6 @@ def main(argv: Iterable[str] | None = None) -> None:
                 "entrypoint": str(entrypoint),
                 "out": str(out_path),
                 "macros": len(macros),
-                "packages_without_mathjax_support": unsupported_packages(entrypoint),
             },
             indent=2,
         )
