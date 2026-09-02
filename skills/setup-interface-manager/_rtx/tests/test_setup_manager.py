@@ -426,8 +426,8 @@ def test_teardown_all_revalidates_races_and_marks_stale_recovery(tmp_path: Path)
     assert dispatch.calls == []
     controller.store.update = original_update
     controller._bindings[later.setup_interface] = _binding(later)
-    original_update(lambda ledger: state.begin_flow(ledger, state.ActiveFlow("flow-1", "teardown-all", None, later.setup_interface, (), None)))
-    assert controller.teardown_all()[1]["state"] == "busy"
+    original_update(lambda ledger: state.begin_flow(ledger, state.ActiveFlow("ordinary", "setup", item.setup_interface, later.setup_interface, (), state.ContinuationIdentity("caller", "target", 1))))
+    busy = controller.teardown_all()[1]; assert (busy["state"], busy["original"], busy["resume_original"]) == ("busy", None, False); original_update(lambda ledger: state.SetupLedger(ledger.interfaces, replace(ledger.active_flow, flow_id="flow-1", operation="teardown-all", root=None, continuation=None)))
     controller._dispatch = lambda *_args, **_kwargs: (original_update(lambda ledger: state.SetupLedger(ledger.interfaces, replace(ledger.active_flow, current_step=item.setup_interface))), subprocess.CompletedProcess([], 0, '{"torn_down":false}\n', ""))[1]
     assert controller.recover("flow-1", "retry")[1]["state"] == "recovery-required"
 

@@ -500,7 +500,7 @@ class SetupManager:
                 active, active_step, _binding = self._flow_step(ledger)
                 return self._domain_failure(
                     "teardown-all", "another managed flow is active", state_name="busy",
-                    flow=active, step=active_step, original=active.continuation,
+                    flow=active, step=active_step, original=None,
                 )
             plan = teardown_all_plan(self.graph, ledger)
             if not plan:
