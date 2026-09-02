@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+import ctypes
 import importlib.util
 import json
 import os
@@ -288,6 +289,37 @@ async def _record_through_persistent_mcp(
 
 
 def _pid_is_alive(pid: int) -> bool:
+    if sys.platform == "win32":
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.argtypes = [
+            wintypes.DWORD,
+            wintypes.BOOL,
+            wintypes.DWORD,
+        ]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        kernel32.WaitForSingleObject.restype = wintypes.DWORD
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+        handle = kernel32.OpenProcess(0x00100000, False, pid)
+        if not handle:
+            error = ctypes.get_last_error()
+            if error == 87:
+                return False
+            raise ctypes.WinError(error)
+        try:
+            status = int(kernel32.WaitForSingleObject(handle, 0))
+            if status == 0x102:
+                return True
+            if status == 0:
+                return False
+            if status == 0xFFFFFFFF:
+                raise ctypes.WinError(ctypes.get_last_error())
+            raise OSError(f"unexpected Windows process wait status: {status}")
+        finally:
+            kernel32.CloseHandle(handle)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -544,11 +576,10 @@ async def _serve_graph_through_mcp(
                     finite,
                     body,
                     cache_control,
-                    _pid_is_alive(pid),
                 )
                 mark_complete()
         assert result is not None
-        return result
+        return (*result, _pid_is_alive(pid))
     finally:
         if not completed and pid is not None and _pid_is_alive(pid):
             _terminate_pid(pid)
@@ -603,6 +634,27 @@ def test_graph_server_returns_through_real_mcp_and_survives(
     finally:
         if pid is not None and _pid_is_alive(pid):
             _terminate_pid(pid)
+
+
+# famulus-skip: category=platform-contract; reason=requires native Windows process handles; alternate=POSIX kill-zero liveness is exercised by both graph-server cases
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows contract")
+def test_windows_pid_probe_is_nondestructive() -> None:
+    process = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(30)"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        assert _pid_is_alive(process.pid)
+        assert process.poll() is None
+        assert _pid_is_alive(process.pid)
+        with pytest.raises(subprocess.TimeoutExpired):
+            process.wait(timeout=0.2)
+    finally:
+        process.terminate()
+        process.wait(timeout=5)
+    assert not _pid_is_alive(process.pid)
 
 
 @pytest.mark.parametrize("host", ["claude", "codex"])
