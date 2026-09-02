@@ -1,392 +1,317 @@
 # Platform Semantic Replay Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` or `superpowers:executing-plans` task by task.
 
-**Goal:** Replay only functional tests that implicitly reach the `famulus-paths` semantic boundary under Linux-hosted macOS and Windows policy models.
+**Goal:** Turn native macOS/Windows CI failures into a small committed registry of exact pytest nodes, then replay those known semantic regressions on Linux during pre-push and full CI.
 
-**Architecture:** Functional tests remain platform-independent. A context-local boundary observer records the exact passing pytest nodes that used implicit host policy during the existing serial portability task; the child pytest process publishes one alternate-model manifest. The repository runner adds that focused portability phase to the central precommit profile and launches fresh serial subprocesses for only the selected nodes. Native CI remains authoritative for physical operating-system behavior.
-
-**Tech Stack:** Python 3.11+, `contextvars`, pytest protocol/report hooks, one atomic JSON manifest, and Officina repository checks.
+**Architecture:** Native CI is the discovery mechanism. `ci-debug` registers a test only after isolating an exact native failure and proving that a production semantic boundary reproduces it. One strict registry loader and one pytest replay plugin serve targeted diagnosis, pre-push, and full Linux CI. The first and only boundary is `famulus-paths`; physical OS behavior remains native-only.
 
 **Spec:** `docs/plans/2026-09-01-platform-semantic-replay-design.md`
 
-## Functional versus system-specific evidence
+## Scope and budget
 
-- Selected tests are ordinary functional tests. They contain no replay
-  annotation, platform branch, alternate-platform parameter, or fault setup.
-- The mechanism injects system specificity at the production boundary, not in
-  the test. The same functional assertion runs under the Linux baseline and
-  the applicable macOS and Windows policy models.
-- A replay model proves only pure policy selected at that boundary. It does not
-  prove real filesystem, process, pipe, socket, browser, keyring, permission,
-  timing, or performance behavior.
-- Explicit platform arguments remain boundary-conformance inputs and never
-  trigger automatic replay.
-- The central `precommit` suite runs a focused `tests:portability` phase
-  after its combined phase, so the installed local hook performs replay
-  automatically.
+Implementation may change only these files. The hard limit is **1,200 gross changed lines** (additions plus deletions) against the implementation baseline. This replaces the old 900-line limit because the registry design adds two real blueprint records, remote probe transport, and their tests. An unlisted required file, generated change, second boundary, or total above 1,200 stops implementation for plan revision.
 
-## Scope harness and three-digit LOC budget
+| File | Change |
+|---|---|
+| `src/officina/platforms/__init__.py` | Create public exports. |
+| `src/officina/platforms/model.py` | Create fixed models, host normalization, boundary lookup, observer, and replay context. |
+| `src/officina/platforms/blueprint.yaml` | Create module ownership and export record. |
+| `src/officina/platforms/blueprints/model.yaml` | Create source and Python-interface record. |
+| `src/officina/dispatcher/platforms/__init__.py` | Delegate existing normalization to the model module. |
+| `src/officina/repository/checks/platform_replay.py` | Create registry loader and replay-only pytest plugin. |
+| `tests/platform-semantic-replay.json` | Create committed registry. |
+| `tests/test_platform_replay.py` | Create model, loader, and plugin tests. |
+| `src/officina/repository/checks/runner.py` | Add replay task and suite scheduling. |
+| `tests/test_repository_test_checks.py` | Add runner and suite-policy tests. |
+| `src/officina/repository/checks/remote.py` | Permit targeted remote replay probes. |
+| `tests/test_repo_checks_remote.py` | Test remote replay-task acceptance. |
+| `src/officina/common/famulus_paths/__init__.py` | Route implicit platform choice through the boundary model. |
+| `src/officina/common/famulus_paths/_get_interface.py` | Stop forwarding `sys.platform`. |
+| `src/officina/common/blueprints/famulus-paths.yaml` | Record optional platform and model dependency. |
+| `tests/test_officina_famulus_paths.py` | Add boundary contracts and the seed implicit-path test. |
+| `skills/ci-debug/SKILL.md` | Add registry decision and verification route. |
+| `skills/ci-debug/instructions/repair-element.md` | Permit evidence-backed registry edits in repair scope. |
+| `skills/ci-debug/prevention.md` | Distinguish registration from speculative prevention. |
+| `skills/ci-debug/tests/test_ci_debug_instructions.py` | Test the registration instructions. |
+| `.github/workflows/python-tests.yml` | Add the replay task to manual-dispatch choices. |
+| `docs/testing.md` | Document local and targeted use. |
+| `docs/ci-handbook.md` | Document the CI learning loop. |
 
-This ledger is the harness against overscoping. It is an implementation
-contract, not an estimate that may be silently exceeded. The implementation
-may change only the 14 files below, may delete no file, and may introduce no
-second boundary, framework, validator, standard, hook command, workflow, or
-generated artifact. The plan document itself is not part of the implementation
-diff.
+Do not modify `.githooks/pre-push`: it already delegates to `repo_checks.py --suite pre-push`. Do not add a CI matrix element or change the ci-debug machine-report schema. Do not replace the existing portability tests; they remain an independent sentinel.
 
-The hard budget is **900 gross changed lines** across the implementation:
-additions plus deletions, measured by `git diff --numstat` against the refreshed
-implementation baseline. The per-file numbers below allocate 870 lines and
-leave 30 lines of contingency. Contingency may be reassigned only among these
-14 files and must be recorded in the task notes. Crossing 900 gross lines,
-changing an unlisted file, exceeding one file's allocation by more than the
-30-line total contingency, or discovering a required generated file is a stop
-condition: do not broaden the patch; revise and re-review this plan first.
-
-| File | Action | Exact planned delta | Add | Remove |
-|---|---|---|---:|---:|
-| `src/officina/platforms/__init__.py` | Create | Re-export only the public model, contract, context, and query functions from `model.py`; add no behavior. | 12 | 0 |
-| `src/officina/platforms/model.py` | Create | Add the three model identities, immutable `famulus-paths` contract, compatibility host-name normalization, separate POSIX host-policy selection, one `ContextVar`, observation, replay context, and strict lookup errors. | 110 | 0 |
-| `src/officina/platforms/blueprint.yaml` | Create | Register the module, own `__init__.py`, and relate it only to the model source blueprint. | 18 | 0 |
-| `src/officina/platforms/blueprints/model.yaml` | Create | Register `platforms.source.model@1`; own `model.py`; export `platforms.interface.model@1` with `allow_all_modules: true` and no process binding. | 40 | 0 |
-| `src/officina/dispatcher/platforms/__init__.py` | Modify | Remove the local platform mapping and delegate to the new compatibility normalizer while preserving the import path and unknown-token return behavior. | 6 | 8 |
-| `src/officina/repository/checks/platform_replay.py` | Create | Add only the serial pytest options, per-item observation/report hooks, atomic manifest publication, replay context activation, and missing-boundary teardown failure. | 155 | 0 |
-| `tests/test_platform_replay.py` | Create | Add focused model/context, dispatcher compatibility, serial discovery outcome, manifest, replay restoration, and missing-boundary diagnostic tests. | 190 | 0 |
-| `src/officina/repository/checks/runner.py` | Modify | Replace the standalone portability-suite mapping and validator-only staged-view guard; add the focused phase, retained staged-view lifetime, plugin/manifest arguments, manifest validation, and serial alternate-model subprocesses using existing runner primitives. Remove no existing gate. | 95 | 12 |
-| `tests/test_repository_test_checks.py` | Modify | Add focused runner tests for suite routing, staged/working views, commands, manifests, selectors, task results, failure propagation, and serial enforcement. | 105 | 0 |
-| `src/officina/common/famulus_paths/__init__.py` | Modify | Replace the required-platform signatures and direct local policy selection with an optional platform routed through `boundary_model`; preserve explicit-token behavior and all existing errors. | 18 | 8 |
-| `src/officina/common/famulus_paths/_get_interface.py` | Modify | Remove explicit `sys.platform` forwarding so the gateway takes the implicit boundary route; change nothing else. | 4 | 4 |
-| `src/officina/common/blueprints/famulus-paths.yaml` | Modify | Replace the required/explicit-only platform contract and empty dependency/interface-use entries; make `platform` optional, add the pinned model-source dependency and both source/facet interface-use declarations, and document implicit versus explicit behavior. | 22 | 6 |
-| `tests/test_officina_famulus_paths.py` | Modify | Add one annotation-free implicit functional pilot plus bounded macOS/Windows policy and explicit-observer compatibility cases. | 35 | 0 |
-| `docs/ci-handbook.md` | Modify | Document local automatic replay, task labels, manifest failure behavior, bounded duplicate cost, and the semantic/native evidence boundary. | 22 | 0 |
-| **Allocated implementation total** |  | **14 files; no deletions** | **832** | **38** |
-| **Contingency** |  | **30 gross lines reserved across listed files** | **—** | **—** |
-| **Hard ceiling** |  | **900 gross lines; total must remain three digits** | **—** | **—** |
-
-No source file is deleted. The 38 removal lines are confined to replacing the
-existing dispatcher mapping, runner routing/view conditions, required Famulus
-platform selection, gateway forwarding, and Famulus blueprint metadata named
-in the ledger.
-
-At the end of every task, run both scope checks before committing:
+After every task:
 
 ```bash
 git diff --name-only <implementation-baseline>
 git diff --numstat <implementation-baseline>
 ```
 
-The first output must be a subset of the ledger. The second must remain within
-the recorded per-file allocation plus any explicitly assigned contingency and
-at or below 900 gross lines. Tests or validators requesting an unlisted edit do
-not authorize it; record the failure and stop for plan revision.
+Verify that every path is listed above and the gross total is at most 1,200.
 
-## Global constraints
+## Fixed contracts
 
-- Support only canonical replay models `linux`, `macos`, and `windows`;
-  reject unknown replay model names. Preserve the existing explicit Famulus
-  contract: `darwin` selects macOS, `win32` selects Windows, and every other
-  explicit token selects POSIX-style policy without observation.
-- Keep host naming separate from policy selection: the dispatcher facade
-  preserves unsupported host tokens, while implicit Famulus selection maps
-  unsupported hosts to the `linux` model's POSIX policy.
-- Register only the immutable `famulus-paths` contract, supporting alternate
-  models `macos` and `windows`; add no dynamic registration API.
-- Use one context-local replay state and always restore it with the returned
-  `ContextVar` token in `finally`.
-- Record only exact node IDs whose setup, call, and teardown all pass; exclude
-  skips, xfail/XPASS items, and failed protocols.
-- Per-item protocol state is in-process and the child manifest is
-  schema-versioned, deterministic, and fail closed on malformed or conflicting
-  data. The child writes only that manifest.
-- Resolve contracts and replay groups inside the tested repository view. The
-  parent runner consumes the child manifest without importing working-tree
-  contracts.
-- Replays are fresh, serial, Linux-only subprocesses with discovery disabled
-  and separate cache, timing, and task labels.
-- Enable replay by resolved task `tests:portability`, independent of the outer
-  suite name. Preserve exact targeted selectors and start no replay after a red
-  baseline.
-- Keep the native CI matrix unchanged.
-- Add no faults, platform-debt inventory, native-declaration scheme,
-  canonical-standard revision, generic codec framework, or unrelated runtime
-  migration.
-- Refresh the clean implementation branch from current `master` before
-  editing; the historical `codex/ci-integration-17aba16e` pointer is not an
-  implementation baseline.
+### Production boundary
+
+`src/officina/platforms/model.py` exposes:
+
+```python
+PlatformModel = Literal["linux", "macos", "windows"]
+
+def current_platform_name(token: str | None = None) -> str: ...
+
+def boundary_model(boundary_id: str, *, explicit: str | None = None) -> PlatformModel: ...
+
+@contextmanager
+def platform_replay(
+    model_id: PlatformModel,
+    *,
+    observer: Callable[[str], None] | None = None,
+) -> Iterator[None]: ...
+```
+
+Only `famulus-paths` is valid. `current_platform_name` maps Darwin, Windows, and Linux host tokens as the dispatcher does today and returns an unsupported token unchanged. Separately, to preserve the Famulus API, explicit `darwin` maps to `macos`, explicit `win32` maps to `windows`, and every other explicit token maps to POSIX policy; explicit lookup does not notify the observer. Omitted lookup uses the scoped replay model or native host policy and notifies the observer. Context reset occurs in `finally`.
+
+The module blueprint is `platforms@1`. It registers `platforms.source.model@1` from `blueprints/model.yaml` and exports `platforms.interface.model@1` from `platforms.source.model.interface.python-api@1` with `allow_all_modules: true`, an empty caller list, and no process binding. The source blueprint owns `model.py`, declares no dependencies, and exposes only that Python interface.
+
+### Registry
+
+`tests/platform-semantic-replay.json` has this closed schema:
+
+```json
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "nodeid": "tests/test_officina_famulus_paths.py::test_implicit_paths_keep_feature_roots_derived",
+      "boundary": "famulus-paths",
+      "models": ["macos", "windows"],
+      "provenance": {
+        "kind": "seed",
+        "reference": "docs/plans/2026-09-01-platform-semantic-replay-design.md"
+      },
+      "reason": "Exercises implicit Famulus path policy through stable derived-root assertions."
+    }
+  ]
+}
+```
+
+Native discoveries instead use:
+
+```json
+{
+  "kind": "native-ci",
+  "run_id": "123456789",
+  "sha": "0123456789abcdef0123456789abcdef01234567",
+  "os": "windows-latest"
+}
+```
+
+The loader requires a nonempty `::` node suffix and a nonempty duplicate-free `models` subset of `macos` and `windows`. It rejects unknown keys, versions, boundaries, absolute/option-like/traversing/missing/non-test paths, duplicate `(nodeid, boundary)` pairs, empty reasons, and malformed provenance. Seed provenance has exactly `kind` and `reference`; native provenance has exactly `kind`, numeric `run_id`, 40-hex `sha`, and `os` equal to `macos-latest` or `windows-latest`. It also rejects entries not sorted by `(nodeid, boundary)` or models not ordered `macos`, `windows`. The runner rejects entries whose test file is in `PREPUSH_EXCLUDED_TESTS`. Grouping de-duplicates a node/model pair and unions its expected boundaries, so pytest executes that node once per model. Replay collection proves the suffix exists.
+
+### Replay task
+
+`tests:semantic-replay` accepts only exact selectors already present in the registry. On Linux it groups selected nodes by model and runs non-empty groups serially in canonical order `macos`, `windows`. Each command passes node IDs as separate arguments and sets:
+
+```text
+-p officina.repository.checks.platform_replay
+--officina-platform-replay-model=<model>
+```
+
+The plugin loads the fixed registry from the tested repository root. For each selected node it activates the model, observes implicit boundary lookup, and requires collection plus passing setup/call/teardown with no skip, xfail, or XPASS. It fails the session if the node misses any boundary declared for that node/model. Separate task labels (`tests:semantic-replay:macos` and `tests:semantic-replay:windows`), pytest caches, and timing output identify each model.
+
+On non-Linux hosts, the task prints an explicit skip and succeeds without starting model subprocesses.
+
+### Suite order
+
+- `precommit`: unchanged; no replay.
+- `pre-push` on Linux: existing combined/shared baseline; replay if that baseline passed; existing browser phase regardless of either result.
+- `full` on Linux: existing performance phase; combined; replay if combined passed; browser.
+- Other hosts: the same suite order, with replay explicitly skipped.
+- `workflow_dispatch`: permits the selectable parent task `tests:semantic-replay` for ci-debug probes.
 
 ---
 
-### Task 1: Minimal platform contract and context
+### Task 1: Add the platform model
 
 **Files:**
-- Create: `src/officina/platforms/__init__.py`
-- Create: `src/officina/platforms/model.py`
-- Create: `src/officina/platforms/blueprint.yaml`
-- Create: `src/officina/platforms/blueprints/model.yaml`
-- Modify: `src/officina/dispatcher/platforms/__init__.py`
-- Create: `tests/test_platform_replay.py`
 
-**Interfaces:**
-- Produces:
-  `PlatformModel(name: Literal["linux", "macos", "windows"])`;
-  `BoundaryContract(boundary_id: str, supported_models: tuple[str, ...])`;
-  `current_platform_name(token: str | None = None) -> str`;
-  `boundary_model(boundary_id: str, *, explicit: str | None = None) -> PlatformModel`;
-  `platform_replay(model_id: str, *, observer: Callable[[str], None] | None = None) -> ContextManager[None]`;
-  and `supported_models(boundary_id: str) -> tuple[str, ...]`.
-- Registered interface:
-  `platforms.source.model.interface.python-api@1`, exported as
-  `platforms.interface.model@1`, with `allow_all_modules: true` and no process
-  binding.
-- Contract: the only boundary ID is `famulus-paths`. Canonical replay model
-  names are strict. Explicit Famulus tokens retain current behavior:
-  `darwin -> macos`, `win32 -> windows`, and every other value selects
-  POSIX-style policy without observation.
+- Create `src/officina/platforms/__init__.py`
+- Create `src/officina/platforms/model.py`
+- Create `src/officina/platforms/blueprint.yaml`
+- Create `src/officina/platforms/blueprints/model.yaml`
+- Modify `src/officina/dispatcher/platforms/__init__.py`
+- Create `tests/test_platform_replay.py`
 
-- [ ] Write focused failures in `tests/test_platform_replay.py` for canonical
-  identities, unknown boundary/replay-model rejection, compatible explicit
-  token mapping, implicit unsupported-host POSIX selection, explicit-input
-  observer suppression, implicit observer notification, nested replay
-  restoration, and restoration after an exception.
-- [ ] Add a compatibility test proving
-  `officina.dispatcher.platforms.current_platform_name()` delegates to the new
-  normalizer while retaining its existing `linux`/`macos`/`windows`
-  results and returns an unsupported host token unchanged.
-- [ ] Run `pytest -q tests/test_platform_replay.py` and verify collection
-  fails because `officina.platforms` does not exist.
-- [ ] Add the module and behavioral-source blueprints. Own `__init__.py`
-  at the module and `model.py` at the source; export the Python interface to
-  all modules without a process binding so registered sources and the
-  dispatcher compatibility facade share one authority.
-- [ ] Implement the immutable fixed contract mapping and one `ContextVar`
-  replay state. Keep contract storage process-global and immutable; expose no
-  registration or mutation function. Keep the dispatcher-compatible host-name
-  normalizer distinct from the internal host-policy selector: the former
-  preserves unsupported tokens, while the latter maps them to the `linux`
-  model's POSIX policy.
-- [ ] Replace the dispatcher helper's normalization body with a delegating
-  compatibility facade; keep its public import path and return values.
-- [ ] Run `pytest -q tests/test_platform_replay.py` and verify the
-  model/context cases pass.
-- [ ] Run focused blueprint ownership and relationship validators for
-  `src/officina/platforms`, repairing only ownership metadata required by the
-  new package.
+- [ ] Write tests for native and explicit normalization, unknown boundary/model rejection, implicit observer notification, explicit observer suppression, nested replay, and exception restoration.
+- [ ] Run `pytest -q tests/test_platform_replay.py`; confirm failure because the model module is absent.
+- [ ] Implement the fixed mapping and one `ContextVar` holding model plus observer. Add no registration API or native system-call emulation.
+- [ ] Make the dispatcher helper delegate while preserving its existing public import and unsupported-token behavior.
+- [ ] Add ownership and interface blueprints for the new package.
+- [ ] Run `pytest -q tests/test_platform_replay.py` and focused repository blueprint validators.
 - [ ] Commit the Task 1 files.
 
-### Task 2: Exact passing-node discovery plugin
+### Task 2: Add the registry loader and replay plugin
 
 **Files:**
-- Create: `src/officina/repository/checks/platform_replay.py`
-- Modify: `tests/test_platform_replay.py`
 
-**Interfaces:**
-- Consumes: `platform_replay()`, `supported_models()`, and implicit observer
-  notifications from Task 1.
-- Produces pytest options `--officina-platform-artifact-root`,
-  `--officina-platform-run-id`, and
-  `--officina-platform-replay-model`; and `manifest.json` mapping canonical
-  model IDs to sorted exact node IDs.
-- The artifact-root option names one dedicated run-private directory. The
-  plugin derives `manifest.json` beneath it and passes that exact directory as
-  `allowed_root`; it accepts no caller-selected manifest filename.
-- Manifest schema:
-  `{"schema_version": 1, "run_id": "run-8f3c2a", "models": {"macos": ["tests/test_paths.py::test_default"], "windows": ["tests/test_paths.py::test_default"]}}`.
+- Create `src/officina/repository/checks/platform_replay.py`
+- Create `tests/platform-semantic-replay.json`
+- Modify `tests/test_platform_replay.py`
 
-- [ ] Add pytester failures proving that an unannotated implicit-boundary test
-  is recorded, an untouched test is absent, and parametrized node IDs remain
-  exact.
-- [ ] Add protocol-outcome failures proving exclusion of setup failure, call
-  failure, teardown failure, skip, xfail, and XPASS with xfail metadata.
-- [ ] Add serial-protocol failures proving one test touching the same boundary
-  repeatedly produces one node per model and observation state is restored
-  between items and after exceptions.
-- [ ] Add fail-closed failures for invalid protocol state, unknown boundaries,
-  and unsupported model data in a child manifest.
-- [ ] Implement protocol-scoped observation around each item's complete
-  protocol with cleanup in `finally`. Use a `pytest_runtest_protocol`
-  hookwrapper only to install/reset observation. Use a
-  `pytest_runtest_makereport` hookwrapper to accumulate setup/call/teardown
-  outcomes, `wasxfail`, and boundary observations in-process; retain an item
-  only when all three phases pass without skip or xfail/XPASS metadata.
-- [ ] Compute replay groups inside the child process so staged executions use
-  staged contracts. At session finish, serialize canonical UTF-8 JSON and
-  publish only
-  `manifest.json` through
-  `atomic_replace_bytes(path, data, allowed_root=artifact_root, mode=0o600)`
-  with no non-atomic fallback.
-- [ ] In replay mode, activate the requested model, disable discovery
-  publication, and on its passing teardown report convert a selected test that
-  did not reach an implicit boundary applicable to that model into a normal
-  failed report with an explicit diagnostic. Test both pytest's nonzero exit
-  status and that diagnostic; do not raise from the completed protocol wrapper.
-- [ ] Run `pytest -q tests/test_platform_replay.py` and verify the serial
-  discovery and replay cases pass.
+The module exposes:
+
+```python
+@dataclass(frozen=True)
+class ReplayEntry:
+    nodeid: str
+    boundary: str
+    models: tuple[PlatformModel, ...]
+    provenance: Mapping[str, str]
+    reason: str
+
+def load_replay_registry(repo_root: Path) -> tuple[ReplayEntry, ...]: ...
+def replay_nodes_by_model(entries: Iterable[ReplayEntry]) -> dict[PlatformModel, tuple[str, ...]]: ...
+```
+
+- [ ] Add loader tests for a valid seed/native entry and every rejection listed in the registry contract. Use temporary repositories; keep the committed registry empty until Task 4 adds its real seed.
+- [ ] Add grouping tests proving two boundary entries for one node/model produce one pytest node with the union of both expected boundaries.
+- [ ] Add pytester tests showing an exact registered node passes under a model only when it reaches all declared boundaries.
+- [ ] Add failing cases for missing collection, setup/call/teardown failure, skip, xfail, XPASS, absent boundary use, and a selected node not registered for the requested model.
+- [ ] Run `pytest -q tests/test_platform_replay.py`; confirm the new cases fail.
+- [ ] Implement strict JSON parsing and deterministic grouping. Keep the registry path fixed; accept no arbitrary registry-path option.
+- [ ] Implement the replay-only pytest option and hooks. Install/reset `platform_replay` around each selected item and aggregate its three reports before validating it. Do not implement baseline observation, manifest publication, or xdist transport.
+- [ ] Run `pytest -q tests/test_platform_replay.py`.
 - [ ] Commit the Task 2 files.
 
-### Task 3: Focused portability runner and local gate
+### Task 3: Wire targeted, pre-push, and CI replay
 
 **Files:**
-- Modify: `src/officina/repository/checks/runner.py`
-- Modify: `tests/test_repository_test_checks.py`
 
-**Interfaces:**
-- Consumes: Task 2 plugin options and `manifest.json`.
-- Produces a `tests:portability` phase after the combined phase in
-  `SUITE_PHASES["precommit"]`; changes `SUITE_PHASES["portability"]` to
-  that same focused phase; enables baseline discovery whenever the resolved
-  phase is `tests:portability`; and produces follow-up task labels
-  `tests:platform-replay:macos` and `tests:platform-replay:windows`.
+- Modify `src/officina/repository/checks/runner.py`
+- Modify `tests/test_repository_test_checks.py`
+- Modify `src/officina/repository/checks/remote.py`
+- Modify `tests/test_repo_checks_remote.py`
+- Modify `.github/workflows/python-tests.yml`
 
-- [ ] Write runner failures for the exact precommit run order
-  `("combined", "tests:portability")`, plugin loading, a run-private
-  manifest path and run ID, Linux-only follow-up, no follow-up after a red
-  portability baseline,
-  deterministic model order, exact node selectors, and discovery-disabled
-  replay commands.
-- [ ] Add hook-contract coverage proving the unchanged installed hook's
-  `--suite precommit` command reaches the new focused phase through central
-  suite policy; do not add a second shell command to the hook.
-- [ ] Add failures proving replay uses the same staged or working execution root
-  as the baseline, has a separate cache and JUnit timing path, appears as its
-  own `_PhaseResult`, and propagates any nonzero status.
-- [ ] Add a standalone
-  `--suite full --task tests:portability --repository-view staged` failure
-  proving explicit staged test-only runs prepare one staged mirror and keep it
-  open through replay.
-- [ ] Add targeted-selector coverage proving the manifest and replay command
-  cannot expand beyond the baseline's exact selected nodes.
-- [ ] Add manifest validation failures for absence after a green discovery run,
-  malformed JSON, wrong schema/run ID, unknown model keys, duplicate nodes, and
-  non-string node IDs.
-- [ ] Append `tests:portability` to the central precommit phase tuple after
-  pooled validators/shared tests and make the `portability` suite resolve to
-  that same phase. Enable discovery only when the resolved phase is
-  `tests:portability`, independent of whether the outer suite is
-  `precommit`, `full`, or `portability`.
-- [ ] Generalize staged-view preparation so an explicitly staged test-only run
-  prepares the same staged mirror currently used by validator-containing runs.
-  Do not alter auto-view selection for CI's working-tree task.
-- [ ] Allocate a dedicated platform-replay artifact directory plus manifest,
-  cache, timing, and Python-cache paths below the existing run-private artifact
-  root. Register the new plugin through the existing pytest `-p` construction
-  rather than a new launcher.
-- [ ] Keep the `tests:portability` phase serial by passing `jobs=1` to its
-  existing pytest-argument construction even when the outer precommit command
-  requests more jobs. Add command coverage proving the phase contains no
-  xdist `-n` argument.
-- [ ] After a green baseline, validate the child-produced manifest and start
-  one fresh serial pytest subprocess for each non-empty model in canonical
-  order. Pass exact node IDs, activate one model, and do not pass discovery
-  options.
-- [ ] Keep the prepared repository view open until all replay subprocesses
-  finish. Record and print each replay task using existing phase timing/status
-  machinery.
-- [ ] Run the exact new selectors in
-  `tests/test_repository_test_checks.py`, then run the whole file.
+- [ ] Add runner tests for deterministic model commands, separate node arguments/cache/timing/task labels, selector intersection, invalid selector rejection, empty groups, non-Linux skip, and failure propagation.
+- [ ] Add suite tests proving `precommit` is unchanged; `pre-push` schedules combined, replay, browser; a red combined phase suppresses replay but not browser; and `full` preserves performance before combined, replay, browser.
+- [ ] Run `pytest -q tests/test_repository_test_checks.py`; confirm the new cases fail.
+- [ ] Register the selectable parent task `tests:semantic-replay`. In `normalize_test_selectors`, special-case this task by loading the registry and accepting only exact registered node IDs; do not use the ordinary `None` task allowlist. Group only that subset when selectors are supplied.
+- [ ] Insert the parent replay phase after shared tests in `SUITE_PHASES["pre-push"]` and `SUITE_PHASES["full"]`. `_suite_runs` then yields it after the pooled `combined` run. In `run_suite`, expand that parent phase into its serial model commands; if the preceding combined result is red, print a replay skip and continue to browser. Preserve the runner's existing non-failfast browser behavior.
+- [ ] Add `tests:semantic-replay` to `remote.py`'s closed `SUPPORTED_TASKS`, its remote acceptance tests, and `workflow_dispatch` task choices. Do not alter the remote report schema or add matrix jobs: the Ubuntu `full` job reaches replay through suite policy.
+- [ ] Run `pytest -q tests/test_repository_test_checks.py tests/test_repo_checks_remote.py` and inspect the workflow diff.
+- [ ] Run `python3 repo_checks.py --suite pre-push --task tests:semantic-replay` on Linux with an empty registry; confirm a successful no-op before Task 4.
 - [ ] Commit the Task 3 files.
 
-### Task 4: Real `famulus-paths` pilot
+### Task 4: Route Famulus paths and seed replay
 
 **Files:**
-- Modify: `src/officina/common/famulus_paths/__init__.py`
-- Modify: `src/officina/common/famulus_paths/_get_interface.py`
-- Modify: `src/officina/common/blueprints/famulus-paths.yaml`
-- Modify: `src/officina/repository/checks/runner.py`
-- Modify: `tests/test_officina_famulus_paths.py`
 
-**Interfaces:**
-- Consumes: `boundary_model("famulus-paths", explicit=platform)`.
-- Produces:
-  `resolve_famulus_paths(*, platform: str | None = None, home: Path, environ: Mapping[str, str]) -> FamulusPaths`
-  and
-  `FamulusPaths.get(..., platform: str | None = None, ...) -> Path`.
+- Modify `src/officina/common/famulus_paths/__init__.py`
+- Modify `src/officina/common/famulus_paths/_get_interface.py`
+- Modify `src/officina/common/blueprints/famulus-paths.yaml`
+- Modify `tests/test_officina_famulus_paths.py`
+- Modify `tests/platform-semantic-replay.json`
 
-- [ ] Preserve every existing explicit-platform test, including the current
-  POSIX fallback for tokens other than `darwin` and `win32`. Prove explicit
-  calls never notify the observer.
-- [ ] Add one annotation-free functional test that omits `platform`, asserts
-  only stable Famulus path-policy meaning, and is discovered for both alternate
-  models.
-- [ ] Add that exact functional node ID to `PORTABILITY_TESTS`; do not widen
-  the portability gate to the complete Famulus path test file.
-- [ ] Add contract tests for macOS and Windows directory-layout selection and
-  environment-key normalization without claiming native path-object or
-  filesystem behavior.
-- [ ] Update `common.source.famulus-paths` metadata: make `platform`
-  optional, describe implicit boundary selection and the retained explicit
-  fallback, add a pinned dependency on `platforms.source.model@1` at
-  `{base: repository-root, path: src/officina/platforms/blueprints/model.yaml}`,
-  and add `{interface: platforms.interface.model, version: 1}` to both the
-  source-level `uses_interfaces` and
-  `interfaces.common.source.famulus-paths.interface.python-api.uses_interfaces`.
-  Keep
-  `common.interface.famulus-paths@1` because all existing explicit calls
-  remain valid and the new argument form is additive.
-- [ ] Make both public Python entry points accept an omitted platform and
-  resolve it through `boundary_model`; keep `home` and `environ` explicit
-  and preserve existing failure types.
-- [ ] Remove the explicit `sys.platform` argument from the
-  `famulus-paths-get` gateway so the production route reaches the implicit
-  boundary. Do not change unrelated explicit callers in this release.
-- [ ] Run
-  `pytest -q tests/test_officina_famulus_paths.py tests/test_platform_replay.py`
-  and verify the pilot is selected only when platform selection is implicit.
-- [ ] Run focused blueprint ownership/route checks for
-  `common.interface.famulus-paths-get`.
+- [ ] Add `test_implicit_paths_keep_feature_roots_derived`. Call `resolve_famulus_paths` without `platform`; assert stable invariants such as absolute roots and existing derived-field relationships, not a model-specific literal layout.
+- [ ] Add focused tests that omitted platform observes `famulus-paths` and that explicit platform remains compatible without observation.
+- [ ] Add the seed entry shown above for both models.
+- [ ] Run the new exact test under ordinary Linux pytest and under direct macOS/Windows replay; confirm replay fails before boundary routing.
+- [ ] Change `resolve_famulus_paths(*, platform: str | None = None, home, environ)` and `FamulusPaths.get(..., platform: str | None = None)` to assign `model = boundary_model("famulus-paths", explicit=platform)`, branch on `model == "macos"` and `model == "windows"`, and use the existing POSIX branch otherwise.
+- [ ] Add direct contract tests proving omitted platform under macOS/Windows replay selects the corresponding concrete path layout, while explicit inputs retain current layout and suppress observation. Keep the annotation-free seed focused on stable derived-root invariants.
+- [ ] Remove `_get_interface.py`'s explicit `sys.platform` argument so the production gateway uses implicit policy. In `famulus-paths.yaml`, add dependency `{source: platforms.source.model, version: 1, blueprint: {base: repository-root, path: src/officina/platforms/blueprints/model.yaml}}`; add `{interface: platforms.interface.model, version: 1}` to both source-level and `common.source.famulus-paths.interface.python-api` `uses_interfaces`; and make the platform argument optional. `famulus-paths-get.yaml` remains unchanged.
+- [ ] Run the native exact test, both exact replay groups, all Famulus-path tests, and focused blueprint validators.
 - [ ] Commit the Task 4 files.
 
-### Task 5: Documentation and first-release verification
+### Task 5: Make ci-debug maintain the registry
 
 **Files:**
-- Modify: `docs/ci-handbook.md`
-- No other implementation file is authorized; an attributable failure that
-  requires another file triggers the scope-harness stop condition.
 
-**Interfaces:**
-- Consumes: Tasks 1-4.
-- Produces: documented local-precommit and CI-sentinel behavior plus green
-  first-release evidence.
+- Modify `skills/ci-debug/SKILL.md`
+- Modify `skills/ci-debug/instructions/repair-element.md`
+- Modify `skills/ci-debug/prevention.md`
+- Modify `skills/ci-debug/tests/test_ci_debug_instructions.py`
 
-- [ ] Document that functional assertions remain platform-independent while
-  the runner injects alternate pure policy at observed production boundaries.
-- [ ] Document the semantic/native evidence boundary, exact replay task labels,
-  fail-closed protocol/manifest behavior, and the bounded duplicate
-  portability-baseline cost in precommit.
-- [ ] Run focused model/plugin, runner, pilot, and blueprint-ownership
-  selectors.
-- [ ] Run
-  `./repo_checks.py --suite full --task tests:portability --jobs 1 --repository-view staged`
-  to exercise the same serial route as the CI sentinel.
-- [ ] Run host-capable
-  `./repo_checks.py --suite precommit --jobs 8 --repository-view staged` and
-  require the output to contain the focused portability baseline followed by
-  every non-empty replay task.
-- [ ] From the pushed candidate branch, run the exact native probes below with
-  distinct request IDs and the candidate's exact 40-character commit SHA:
+Add this literal decision procedure to the skill:
 
-  ```bash
-  gh workflow run python-tests.yml --ref <candidate-branch> -f mode=probe -f request_id=<macos-request-id> -f expected_sha=<40-sha> -f os=macos-latest -f task=tests:shared -f selector=tests/test_officina_famulus_paths.py -f jobs=1 -f profile=serial
-  gh workflow run python-tests.yml --ref <candidate-branch> -f mode=probe -f request_id=<windows-request-id> -f expected_sha=<40-sha> -f os=windows-latest -f task=tests:shared -f selector=tests/test_officina_famulus_paths.py -f jobs=1 -f profile=serial
-  ```
+```text
+1. Isolate the exact native failing pytest node from logs or a targeted file probe.
+2. Diagnose whether its cause is policy owned by a declared semantic boundary.
+   If the cause requires physical host behavior, do not register it.
+3. Choose the contract-owning replay node. Try the native node only if it is a
+   shared functional test that invokes the affected entry point through the
+   implicit boundary; otherwise trace that entry point, augment its existing
+   test, or create one only if no test owns that contract.
+4. Existing boundary: write a provisional registry entry, then run targeted
+   Linux replay against the bad candidate. Retain it only if replay observes
+   that boundary and reproduces the failure. If the first candidate does not,
+   remove it and return once to step 3; classify native-only/unresolved only if
+   no contract-owning candidate reproduces.
+5. Missing boundary: add the smallest reusable production boundary only when the
+   native failure and a red/green boundary contract test justify it; then register.
+6. Record native-ci run_id, sha, os, and a specific reason. Add only evidenced models.
+7. Make retained replay pass, then verify the native exact node, affected matrix
+   element, and full matrix.
+```
 
-  Require both runs to report the exact expected checkout SHA and pass,
-  preserving native ownership of concrete path/filesystem evidence.
-- [ ] Review the complete branch for Critical/Important correctness findings,
-  repair only findings attributable to this plan, and rerun the affected gate
-  after every repair.
+For every macOS/Windows pytest repair assignment, the coordinator includes `tests/platform-semantic-replay.json` in the allowed path scope. The repair agent changes it only after step 2 classifies the failure as modeled semantic policy. If a new boundary or an unassigned production path is required, the agent returns a concrete scope-expansion request instead of editing outside its envelope.
 
-## Explicitly deferred follow-ups
+For an existing boundary, the red proof is a working-tree command run after adding the provisional entry and before changing production behavior:
 
-Do not add the following while executing this plan:
+```bash
+python3 repo_checks.py --suite pre-push --task tests:semantic-replay --selector <contract-owning-nodeid>
+```
 
-- automatic transparent or result-changing fault replay;
-- `active_fault()` or fault-profile metadata;
-- generic path, newline, PATH-separator, executable-suffix, or process codecs;
-- `references/platform-boundary-debt.yaml`;
-- semantic/native declaration schemas and `cross_platform.py` enforcement;
-- canonical code-testing standard changes;
-- thread/background-task attribution;
-- xdist discovery/report transport;
-- parallel replay, additional boundaries, broad native-CI reduction, or folding
-  discovery into the combined validator/shared pytest session.
+The entry's `sha` remains the original native failing SHA. Keep it only when this command fails for the diagnosed behavior after observing the boundary. After the repair, require the same local command green, commit the entry and repair, then use `ci-debug._rtx.interface.run-targeted-tests` for an Ubuntu replay probe and the exact node on the original native OS.
+
+- [ ] Add instruction tests requiring the seven decisions, exact provenance fields, the exact local provisional-entry command, post-commit Ubuntu/native probes, physical-host exclusion, and the rule that CI reports never mutate Git.
+- [ ] Run `pytest -q skills/ci-debug/tests/test_ci_debug_instructions.py`; confirm failure.
+- [ ] Update the repair instruction so a repair agent may edit the registry within its assigned branch/path scope. Registration is part of repairing a proven regression, not a post-green speculative prevention proposal.
+- [ ] Update coordinator instructions to include the registry path in macOS/Windows pytest repair scopes. Preserve approval for unrelated suite expansion. Prohibit automatic removal after green CI; rename/removal requires explicit collection and replay verification.
+- [ ] Run `pytest -q skills/ci-debug/tests/test_ci_debug_instructions.py`.
+- [ ] Commit the Task 5 files.
+
+### Task 6: Document and verify the complete path
+
+**Files:**
+
+- Modify `docs/testing.md`
+- Modify `docs/ci-handbook.md`
+
+- [ ] Document these commands:
+
+```bash
+# All known semantic regressions, Linux only
+python3 repo_checks.py --suite pre-push --task tests:semantic-replay
+
+# One registered node during diagnosis
+python3 repo_checks.py --suite pre-push --task tests:semantic-replay --selector tests/test_officina_famulus_paths.py::test_implicit_paths_keep_feature_roots_derived
+
+# Normal developer gate; replay is automatically scheduled on Linux
+python3 repo_checks.py --suite pre-push
+```
+
+- [ ] State that native CI discovers candidates, ci-debug commits evidence-backed entries, and physical behavior remains native-only. State that portability tests do not choose replay tests.
+- [ ] Run focused tests:
+
+```bash
+pytest -q tests/test_platform_replay.py tests/test_repository_test_checks.py tests/test_officina_famulus_paths.py skills/ci-debug/tests/test_ci_debug_instructions.py
+```
+
+- [ ] Run repository validation and the real local gate:
+
+```bash
+python3 repo_checks.py --suite validators
+python3 repo_checks.py --suite pre-push --jobs 8
+```
+
+- [ ] Verify the seed node runs in both replay groups, browser still runs after an earlier failure in a runner test, pre-commit contains no replay phase, the workflow has no new matrix element, and the final diff stays within the scope ledger and 1,200-line ceiling.
+- [ ] Commit the Task 6 files.
+
+## Completion conditions
+
+- Native CI plus ci-debug is the only mechanism that adds unforeseen tests.
+- Pre-push and Ubuntu full CI consume the same committed registry and plugin.
+- Every selected test is exact, reproducible under a declared boundary, and stale entries fail loudly.
+- No claim is made about unmodeled or physical OS behavior.

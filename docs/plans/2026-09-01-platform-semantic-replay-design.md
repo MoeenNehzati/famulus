@@ -1,170 +1,92 @@
 # Platform Semantic Replay Design
 
-## Functional tests and injected system semantics
+## Purpose
 
-The tests selected by this mechanism remain functional tests. They assert
-platform-independent behavior and contain no replay marker, platform branch,
-alternate-platform parameter, or injected-fault setup.
+Catch known cross-platform semantic regressions on Linux without pretending to emulate another operating system. Native CI remains authoritative for discovery. When CI proves that a test is sensitive to a modeled platform policy, `ci-debug` records that exact test in a committed replay registry. Linux CI and pre-push then replay the registered test under the relevant semantic model.
 
-Production code supplies the system-specific part. When a functional test
-implicitly reaches a registered semantic boundary, the ordinary Linux pass
-records that fact. The replay mechanism then runs the same test, with the same
-functional assertions, while injecting one alternate system model at that
-boundary. The mechanism therefore adds macOS or Windows policy specificity to
-the relevant subset of functional tests; it does not turn those tests into
-platform-specific tests.
+This is reactive regression coverage, not an oracle for predicting every platform-sensitive test.
 
-Semantic replay is not native emulation. A model may select pure policy such
-as application-directory layout or environment-key treatment. It does not
-reproduce the real kernel, filesystem, process, pipe, socket, browser, keyring,
-or performance environment. Behavior that depends on those physical surfaces
-retains native CI evidence.
+## Semantic boundary
 
-## First-release goal
+A replay boundary is a production API that chooses policy from the current platform. The first boundary is `famulus-paths`.
 
-Prove selective semantic replay with one real boundary. On Linux, the
-portability gate runs its normal functional tests once, discovers exactly which
-passing tests implicitly used the `famulus-paths` boundary, and replays only
-those tests under the applicable macOS and Windows policy models.
+`officina.platforms.model` owns:
 
-The first release establishes the observation and replay loop. It does not add
-automatic fault injection, repository-wide platform classification, or a
-general platform-codec framework.
+- canonical models: `linux`, `macos`, and `windows`;
+- `current_platform_name(token=None)`, which preserves the dispatcher's current host-name normalization and returns unsupported tokens unchanged;
+- `boundary_model(boundary_id, explicit=None)`, which returns an explicit model when supplied, otherwise the active replay model or native host model;
+- `platform_replay(model_id, observer=None)`, a scoped `ContextVar` override that always resets in `finally`;
+- observer notification when an implicit lookup crosses a modeled boundary.
 
-## First-release model
+Explicit platform arguments retain their current behavior (`darwin` selects macOS, `win32` selects Windows, and other values select POSIX policy) and do not count as replay boundary crossings. Native filesystem, process, socket, browser, keyring, timing, and performance behavior are outside semantic replay and stay covered by native CI.
 
-The registered `platforms` node owns three canonical model identities:
+## Replay registry
 
-- `linux`;
-- `macos`, selected by host token `darwin`;
-- `windows`, selected by host token `win32`.
+`tests/platform-semantic-replay.json` is the committed authority for known replay regressions:
 
-Unknown replay model names fail closed. Existing explicit Famulus platform
-inputs retain their compatibility contract: `darwin` selects macOS, `win32`
-selects Windows, and every other explicit token selects the existing
-POSIX-style policy without triggering observation. The first release has one
-immutable contract, `famulus-paths`, whose supported alternate models are
-`macos` and `windows`. Contracts are a fixed process-global mapping; the
-first release has no dynamic registration API.
+```json
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "nodeid": "tests/test_officina_famulus_paths.py::test_implicit_paths_keep_feature_roots_derived",
+      "boundary": "famulus-paths",
+      "models": ["macos", "windows"],
+      "provenance": {
+        "kind": "seed",
+        "reference": "docs/plans/2026-09-01-platform-semantic-replay-design.md"
+      },
+      "reason": "Exercises implicit Famulus path policy through stable derived-root assertions."
+    }
+  ]
+}
+```
 
-The node exports one read-only Python interface,
-`platforms.interface.model@1`, with `allow_all_modules: true` and no process
-binding. This lets both registered consumers and compatibility facades reuse
-the same pure authority without inventing blueprint nodes for dispatcher code.
-The `common.source.famulus-paths` blueprint declares the source dependency and
-interface use. The existing
-`officina.dispatcher.platforms.current_platform_name()` remains a compatibility
-facade but delegates token normalization to this single authority, preserving
-unsupported host tokens unchanged.
+For a native-CI discovery, provenance is:
 
-The same authority keeps compatibility naming separate from policy selection:
-`current_platform_name(token)` returns an unsupported dispatcher host token
-unchanged, while its internal host-policy selector maps `darwin` to `macos`,
-Windows host tokens to `windows`, and every other token to the `linux` model's
-POSIX policy. This ensures an implicit Famulus call on a FreeBSD-like host
-retains its existing POSIX fallback without adding an unsupported replay model.
+```json
+{
+  "kind": "native-ci",
+  "run_id": "123456789",
+  "sha": "0123456789abcdef0123456789abcdef01234567",
+  "os": "windows-latest"
+}
+```
 
-One context-local replay state holds the active model and optional observer.
-`boundary_model(boundary_id, explicit=...)` behaves as follows:
+The loader rejects unknown fields, unknown boundaries or models, duplicate `(nodeid, boundary)` pairs, empty reasons, malformed provenance, and node IDs that are absolute, option-like, traverse directories, name missing/non-test files, or lack a nonempty `::` suffix. `models` is a nonempty duplicate-free subset of `macos` and `windows`. Seed provenance has exactly `kind` and `reference`; native provenance has exactly `kind`, numeric `run_id`, 40-hex `sha`, and `os` equal to `macos-latest` or `windows-latest`. The loader also requires entries sorted by `(nodeid, boundary)` and models in `macos`, `windows` order. The runner rejects registry files excluded by the pre-push shared-test profile. Grouping de-duplicates each node/model while unioning all boundaries expected by that pair. Pytest collection is the final proof that the exact node suffix exists.
 
-- an explicit platform token returns its mapped model without notifying the
-  observer, preserving existing conformance calls;
-- an omitted platform returns the active replay model, or the host-policy model
-  selected by the mapping above outside replay, and notifies the observer of
-  the boundary ID;
-- context changes are reset by their `ContextVar` token in `finally`.
+## Native-CI learning loop
 
-The model identity is deliberately small. Generic newline, PATH-separator,
-executable-suffix, process-representation, and fault fields are added only when
-a second proven boundary needs them.
+There is no static boundary-discovery step. Registration uses observed evidence:
 
-## Discovery and replay
+1. Native CI fails on macOS or Windows.
+2. `ci-debug` isolates the exact failing node and diagnoses a modeled platform-policy cause. It chooses the exact contract-owning replay node: first try the native failing node only when it belongs to the shared profile and invokes the affected production entry point through the implicit boundary; otherwise follow the failure stack to that entry point, locate its existing functional test, and augment that test with the failing case. Create a new production-path test only when no existing test owns the contract.
+3. If the relevant production boundary exists, the repair writes a provisional entry in its working tree and runs targeted Linux replay before changing production behavior. It retains the entry only when replay observes the declared boundary and reproduces the failure. If the first candidate does not, remove it and return once to step 2 to select or augment the owning test; classify the case as native-only or unresolved only when no contract-owning candidate reproduces.
+4. The retained replay must pass after the repair. If no boundary exists, the repair first adds the smallest reusable production boundary; the native failure and a red/green boundary contract test must justify that scope before registration.
+5. Verification runs the exact Linux replay node, the exact native node, the affected native matrix element, and then the full matrix.
 
-The pytest plugin observes ordinary, unannotated functional items. For each
-exact pytest node ID it buffers boundary IDs reached during setup, call, and
-teardown. It records the node only when the complete protocol passes. Skips,
-expected failures, unexpected passes carrying xfail metadata, setup failures,
-call failures, and teardown failures are excluded.
+CI reports evidence; it never edits Git. The `ci-debug` repair agent makes the registry change in its assigned branch and path scope. A later green run does not remove an entry. Renames and removals are explicit changes that must leave collection and replay green. Models are added only when native evidence or a contract requires them.
 
-The focused portability task remains serial, matching the existing CI
-sentinel. Its child pytest plugin uses a `pytest_runtest_protocol` hookwrapper
-only to install and reset per-item observation. A
-`pytest_runtest_makereport` hookwrapper accumulates setup, call, teardown, and
-`wasxfail` state. On a passing teardown it either retains a fully passing
-discovery item or, during replay, converts the report to a normal failed test
-with an explicit diagnostic if the required implicit boundary was not reached.
-The plugin deduplicates repeated boundary visits and deterministically groups
-exact passing node IDs. There is no worker-report transport or worker side-file
-protocol in the first release.
+Failures caused only by physical host behavior are not registered.
 
-At session finish, the child uses the contracts imported inside the tested
-repository view to publish one run-identified manifest from model ID to sorted
-exact node IDs. It writes the manifest through
-`officina.common.atomic_files.atomic_replace_bytes()` inside the existing
-run-private artifact root. The parent runner consumes only that manifest; it
-does not resolve contracts from a potentially different working tree.
+## Replay execution
 
-After a green Linux baseline, the runner starts one fresh serial pytest
-subprocess per non-empty alternate model. Replays:
+`repo_checks.py` exposes `tests:semantic-replay` on Linux. It loads the registry, groups exact node IDs by canonical model, and invokes pytest once per non-empty group with `--officina-platform-replay-model=<model>`. On non-Linux hosts it prints an explicit skip and succeeds without launching model subprocesses.
 
-- use the same staged or working repository view as the baseline;
-- select only the exact node IDs in the manifest, preserving targeted runs;
-- activate the requested model and disable discovery, preventing recursion;
-- verify that each selected test still reaches an applicable implicit boundary;
-- receive separate cache, timing, and task labels;
-- propagate every nonzero status to the repository gate.
+The pytest plugin activates replay only for selected registry nodes and records observed boundary crossings. A selected node fails replay if it does not collect, skips, xfails, unexpectedly passes an xfail, fails in setup/call/teardown, or does not reach every boundary declared for that node and model. Registry node IDs are the only selectors accepted by the replay task.
 
-A red baseline starts no replay. Non-Linux hosts run the baseline only.
+The pre-push suite runs:
 
-## Real pilot and honest evidence
+1. its existing combined/shared baseline;
+2. registered macOS replay, then Windows replay, serially, only when the baseline is green and the host is Linux;
+3. its existing browser phase regardless of earlier results.
 
-`resolve_famulus_paths()` and `FamulusPaths.get()` accept
-`platform: str | None = None`. Existing explicit callers keep their current
-conformance behavior. The public `famulus-paths-get` gateway omits the
-platform argument so at least one real production route reaches the implicit
-boundary.
+The full Linux suite also runs replay after combined tests and before browser tests. Pre-commit is unchanged. The existing portability tests remain a separate heterogeneous sentinel; they neither select nor replace registered replay tests. The pre-push hook command and CI matrix stay unchanged, apart from making `tests:semantic-replay` selectable in manual CI dispatch.
 
-The pilot proves platform-policy selection: application-directory layout and
-normalized environment lookup. Because Linux still supplies the concrete
-`pathlib.Path` objects, the pilot does not claim native Windows path parsing,
-separator, case-folding, permissions, or filesystem behavior. Those claims
-remain owned by explicit boundary-contract tests and the native matrix.
+## Success criteria
 
-## Release gate
-
-The central `precommit` suite adds one focused `tests:portability` phase
-after its existing combined phase. The installed hook already runs that suite,
-so routine local commits receive replay without new hook orchestration. The
-focused phase duplicates only the small portability sentinel set, keeps replay
-failures isolated from validator execution, and uses the same staged repository
-view as the combined phase.
-
-Replay activates from the resolved `tests:portability` task, not from the
-outer suite name. The existing CI sentinel
-`--suite full --task tests:portability` therefore exercises the same
-discovery/replay route. On non-Linux hosts the focused task remains a baseline
-only.
-
-## Deferred scope
-
-The following are separate follow-up designs:
-
-- transparent and result-changing fault injection;
-- `active_fault()` and boundary fault profiles;
-- repository-wide platform-debt inventory and native declarations;
-- cross-platform validator enforcement for new semantic/native boundaries;
-- canonical standard revision;
-- generic platform codecs and additional production boundaries;
-- thread or background-task observation;
-- xdist discovery/report transport or folding discovery into a combined
-  pytest session;
-- parallel replay and broad native-CI reduction.
-
-## Success
-
-The first release is complete when the default local Linux precommit gate and
-the existing CI portability sentinel discover one
-annotation-free functional Famulus-path test, replays its exact node ID under
-the macOS and Windows policy models, excludes untouched and non-passing tests,
-fails closed on invalid protocol state or manifest data, propagates replay
-failures, and leaves physical platform claims in native CI.
+- Native CI is the sole discovery source for unforeseen platform-sensitive failures.
+- Every registered test names an exact node, boundary, model set, reason, and provenance record.
+- Stale or misclassified entries fail loudly instead of silently shrinking coverage.
+- One registry loader and one replay plugin serve local, pre-push, CI, and `ci-debug` use.
+- Replay stays limited to semantic policy; native CI retains physical-platform authority.
