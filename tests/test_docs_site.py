@@ -1,15 +1,44 @@
 from __future__ import annotations
 
+import copy
+import hashlib
+import json
+import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 
+from jsonschema import Draft7Validator
 import yaml
 
+from docs_tooling import site
 from docs_tooling.site import PUBLISHED_GRAPHS, assemble_site
+from officina.visualization.artifacts import GraphArtifactWriter
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+MATH_DEPENDENCY_GRAPH = REPO_ROOT / PUBLISHED_GRAPHS["math-dependency"][0]
+MATH_DEPENDENCY_SCHEMA = (
+    REPO_ROOT / "src/officina/visualization/graph_specification.schema.json"
+)
+MATH_DEPENDENCY_SEMANTIC_SHA256 = (
+    "b734dabce7977c4160466bd5aff4638fa18f3c01c5806711e88b683bfc62032b"
+)
+
+
+def _task5_math_dependency_graph() -> Path:
+    override = os.environ.get("FAMULUS_MATH_DEPENDENCY_GRAPH")
+    return Path(override) if override else MATH_DEPENDENCY_GRAPH
+
+
+def _without_task5_macro_changes(payload: dict) -> dict:
+    normalized = copy.deepcopy(payload)
+    normalized.get("metadata", {}).pop("macro_gap", None)
+    for dependency in normalized.get("renderer_dependencies", []):
+        if dependency.get("id") == "mathjax":
+            dependency.get("configuration", {}).pop("macros", None)
+    return normalized
 
 
 def _write(path: Path, content: str) -> None:
@@ -257,3 +286,72 @@ def test_assemble_site_publishes_every_declared_graph(tmp_path: Path) -> None:
         assert (REPO_ROOT / relative).is_file(), f"missing specification: {relative}"
         assert (output / "graphs" / f"{stem}.html").stat().st_size > 0
         assert f"- [{label}]({stem}.html)" in index
+
+
+def test_published_math_dependency_graph_is_scoped_self_contained_candidate() -> None:
+    candidate = _task5_math_dependency_graph()
+    payload = json.loads(candidate.read_text(encoding="utf-8"))
+    schema = json.loads(MATH_DEPENDENCY_SCHEMA.read_text(encoding="utf-8"))
+    Draft7Validator(schema).validate(payload)
+
+    mathjax = [
+        dependency
+        for dependency in payload["renderer_dependencies"]
+        if dependency.get("id") == "mathjax"
+    ]
+    assert len(mathjax) == 1
+    macros = mathjax[0]["configuration"]["macros"]
+    assert macros
+    assert len(json.dumps(macros, separators=(",", ":")).encode("utf-8")) <= 4096
+    assert candidate.stat().st_size <= 77_454 + 8192
+    assert "macro_gap" not in payload.get("metadata", {})
+
+    semantic_payload = json.dumps(
+        _without_task5_macro_changes(payload),
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    assert hashlib.sha256(semantic_payload).hexdigest() == (
+        MATH_DEPENDENCY_SEMANTIC_SHA256
+    )
+
+
+def test_docs_publisher_consumes_embedded_math_macros_unchanged(
+    tmp_path: Path, monkeypatch
+) -> None:
+    candidate = _task5_math_dependency_graph()
+    expected = json.loads(candidate.read_text(encoding="utf-8"))
+    repo = tmp_path / "repo"
+    _write(repo / "README.md", "# Repository\n")
+    _write(repo / "docs" / "README.md", "# Documentation\n")
+    graph_relative = Path("fixtures/math-dependency.json")
+    graph_path = repo / graph_relative
+    graph_path.parent.mkdir(parents=True)
+    graph_path.write_bytes(candidate.read_bytes())
+
+    monkeypatch.setattr(
+        site,
+        "PUBLISHED_GRAPHS",
+        {"math-dependency": (graph_relative, "Math dependency graph")},
+    )
+    captured = []
+    original_write = GraphArtifactWriter.write
+
+    def capture_write(self, payload, **kwargs):
+        captured.append(copy.deepcopy(payload))
+        return original_write(self, payload, **kwargs)
+
+    monkeypatch.setattr(GraphArtifactWriter, "write", capture_write)
+    output = tmp_path / "source"
+    site.assemble_site(repo, output, build_graph=False)
+
+    rendered = output / "graphs" / "math-dependency.html"
+    assert captured == [expected]
+    expected_macros = captured[0]["renderer_dependencies"][0]["configuration"]["macros"]
+    assert expected_macros
+    rendered_text = rendered.read_text(encoding="utf-8")
+    embedded_config = re.search(
+        r"window\.MathJax = (\{.*?\});\n\s*\(function", rendered_text, re.DOTALL
+    )
+    assert embedded_config is not None
+    assert json.loads(embedded_config.group(1))["tex"]["macros"] == expected_macros

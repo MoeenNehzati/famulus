@@ -187,6 +187,58 @@ def test_finalizer_writes_schema_valid_detachable_relevant_macro_closure(
     assert '"ShadeFold": [' in html
 
 
+def test_finalizer_embeds_distribution_mathjax_adapter_not_raw_internals(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = tmp_path / "adapter-project"
+    texmf = tmp_path / "texmf"
+    texmf.mkdir()
+    entrypoint = _write_tex(
+        project,
+        r"\usepackage{amber-branch}"
+        r"\newcommand{\AmberRoot}[1]{\AmberBranch{#1}}",
+    )
+    package = texmf / "amber-branch.sty"
+    package.write_text(
+        r"\newcommand{\AmberBranch}[1]{\AmberPrivate{#1}}"
+        r"\newcommand{\AmberPrivate}[1]{\mathit{#1}}",
+        encoding="utf-8",
+    )
+    adapter = texmf / "lwarp-amber-branch.sty"
+    adapter.write_text(
+        r"\CustomizeMathJax{"
+        r"\newcommand{\AmberPrivate}[1]{\mathit{#1}}"
+        r"\newcommand{\AmberBranch}[1]{\AmberPrivate{#1}}"
+        r"}",
+        encoding="utf-8",
+    )
+
+    def controlled_distribution(filename: str) -> Path | None:
+        return {
+            "amber-branch.sty": package,
+            "lwarp-amber-branch.sty": adapter,
+        }.get(filename)
+
+    monkeypatch.setattr(
+        _tex_macro_reader, "tex_distribution_path", controlled_distribution
+    )
+    draft = _write_draft(project / "draft.json", r"$\AmberRoot{x}$")
+    canonical = project / "canonical.json"
+
+    finalize_extraction(
+        draft_path=draft,
+        tex_entrypoint=entrypoint,
+        output_path=canonical,
+        label_map_path=None,
+    )
+
+    assert _mathjax_macros(json.loads(canonical.read_text(encoding="utf-8"))) == {
+        "AmberPrivate": [r"\mathit{#1}", 1],
+        "AmberBranch": [r"\AmberPrivate{#1}", 1],
+        "AmberRoot": [r"\AmberBranch{#1}", 1],
+    }
+
+
 def test_finalizer_preserves_unclassified_leaf_for_renderer_validation(
     tmp_path: Path,
 ) -> None:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from functools import lru_cache
 import json
 import os
@@ -11,7 +11,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
-from typing import Iterable
+from typing import Iterable, Iterator
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
@@ -25,6 +25,32 @@ LOCAL_INCLUDE_RE = re.compile(
     r"(?:\s*\[[^\]]*\])?"
     r"\s*\{(?P<names>[^{}]+)\}"
 )
+MATHJAX_ADAPTER_DEPENDENCY_RE = re.compile(
+    r"\\LWR@origRequirePackage(?:\s*\[[^\]]*\])?\s*\{(?P<names>[^{}]+)\}"
+)
+TEX_CONDITIONAL_COMMANDS = {
+    "if",
+    "ifcase",
+    "ifcat",
+    "ifcsname",
+    "ifdefined",
+    "ifdim",
+    "ifeof",
+    "iffalse",
+    "iffontchar",
+    "ifhbox",
+    "ifhmode",
+    "ifincsname",
+    "ifinner",
+    "ifmmode",
+    "ifnum",
+    "ifodd",
+    "iftrue",
+    "ifvbox",
+    "ifvmode",
+    "ifvoid",
+    "ifx",
+}
 COMMAND_RE = re.compile(r"\\([A-Za-z@]+|.)")
 LET_RE = re.compile(
     r"\\let\s*\\(?P<left>[A-Za-z@]+)\s*(?:=\s*)?\\(?P<right>[A-Za-z@]+)"
@@ -40,7 +66,7 @@ DECLARE_SYMBOL_FONT_RE = re.compile(
     r"\{(?P<encoding>[^{}]+)\}\s*\{(?P<family>[^{}]+)\}\s*"
     r"\{(?P<series>[^{}]+)\}\s*\{(?P<shape>[^{}]+)\}"
 )
-DEF_RE = re.compile(r"\\def\s*\\([A-Za-z@]+)")
+DEF_RE = re.compile(r"\\(?P<kind>gdef|def)\s*\\(?P<name>[A-Za-z@]+)")
 NEWCOMMAND_RE = re.compile(
     r"\\(?P<kind>(?:re)?newcommand|providecommand)\s*\*?\s*"
 )
@@ -73,7 +99,10 @@ class MacroDefinition:
     column: int
     directive: str
     project_owned: bool
+    adapter_owned: bool = False
     native_identity: bool = False
+    let_target: str | None = None
+    external_snapshot_of: str | None = None
     declaration_error: str | None = None
 
     @property
@@ -127,10 +156,282 @@ class TexChunk:
     line_offset: int
     column_offset: int
     project_owned: bool
+    adapter_owned: bool = False
+    conditional_uncertain: bool = False
+
+
+@dataclass
+class TexScanState:
+    """Carry bounded TeX scope state across source-ordered chunks.
+
+    Intent
+    ------
+    Preserve group nesting and conditional activity while includes are expanded.
+
+    Rationale
+    ---------
+    A group or conditional may begin before an included chunk and end afterward.
+
+    Pseudocode
+    ----------
+    - set group_depth = zero
+    - set conditionals = empty branch stack
+
+    Wraps
+    -----
+    - none
+    """
+
+    group_depth: int = 0
+    conditionals: list[bool | None] = field(default_factory=list)
+    named_conditionals: dict[str, bool | None] = field(default_factory=dict)
+    named_conditional_scopes: list[dict[str, bool | None]] = field(
+        default_factory=list
+    )
+    uncertain_symbol_fonts: set[str] = field(default_factory=set)
+    global_prefix: bool = False
+
+
+def _enter_scan_group(state: TexScanState) -> None:
+    """Enter one live TeX group and snapshot locally scoped boolean state.
+
+    Intent
+    ------
+    Preserve named-conditional values for restoration at the matching group end.
+
+    Rationale
+    ---------
+    Assignments made by ``newif`` switches are local unless explicitly global.
+
+    CallsFromRepo
+    -------------
+      ._active_branch:
+        why:
+          reads: "Limits grouping changes to source TeX that actually executes."
+
+    Pseudocode
+    ----------
+    - if the current branch executes:
+      - set scope_stack = scope stack plus the current named-condition mapping
+      - set group_depth = group depth plus one
+
+    Wraps
+    -----
+    - none
+    """
+    if _active_branch(state.conditionals) is True:
+        state.named_conditional_scopes.append(dict(state.named_conditionals))
+        state.group_depth += 1
+
+
+def _exit_scan_group(state: TexScanState) -> None:
+    """Exit one live TeX group and restore locally scoped boolean state.
+
+    Intent
+    ------
+    Restore the named-condition mapping saved for the matching live group.
+
+    Rationale
+    ---------
+    Local switch assignments must not leak into source following a TeX group.
+
+    CallsFromRepo
+    -------------
+      ._active_branch:
+        why:
+          reads: "Limits grouping changes to source TeX that actually executes."
+
+    Pseudocode
+    ----------
+    - if a live group is open:
+      - set named_conditions = the most recently saved condition mapping
+      - set group_depth = group depth minus one
+
+    Wraps
+    -----
+    - none
+    """
+    if _active_branch(state.conditionals) is True and state.group_depth:
+        state.named_conditionals = state.named_conditional_scopes.pop()
+        state.group_depth -= 1
+
+
+def _active_branch(conditionals: list[bool | None]) -> bool | None:
+    """Return true, false, or unknown for the current conditional branch.
+
+    Intent
+    ------
+    Collapse nested bounded-condition results into one declaration activity state.
+
+    Rationale
+    ---------
+    Known false parents suppress definitions, while unknown parents require errors.
+
+    Pseudocode
+    ----------
+    - if any enclosing branch is false:
+      - return false
+    - if any enclosing branch is unknown:
+      - return unknown
+    - return true
+
+    Wraps
+    -----
+    - none
+    """
+    if False in conditionals:
+        return False
+    if None in conditionals:
+        return None
+    return True
+
+
+def _advance_scan_control_command(
+    text: str,
+    idx: int,
+    state: TexScanState,
+    *,
+    unknown_internal_conditionals: bool = False,
+) -> int | None:
+    """Apply one bounded control-flow or scope command to scan state.
+
+    Intent
+    ------
+    Share the same conservative execution model between declarations and adapters.
+
+    Rationale
+    ---------
+    Adapter discovery and ordinary definition parsing must agree about live branches.
+
+    InstantiationsFromRepo
+    ----------------------
+      ._active_branch:
+        why:
+          constructs: "Classifies whether state changes execute in the current branch."
+      .skip_space:
+        why:
+          transforms: "Advances from newif to its declared conditional command."
+
+    CallsFromRepo
+    -------------
+      ._enter_scan_group:
+        why:
+          transforms: "Starts a scoped named-conditional frame for begingroup."
+      ._exit_scan_group:
+        why:
+          transforms: "Restores a scoped named-conditional frame for endgroup."
+
+    Pseudocode
+    ----------
+    - if command closes, flips, or opens a known conditional:
+      - set scan_state = scan state with the updated conditional stack
+      - return command ending offset
+    - if command declares or changes a newif boolean:
+      - set scan_state = scan state with the updated named condition
+      - return command ending offset
+    - if command changes group depth or prefixes a global assignment:
+      - set scan_state = scan state with the updated scope
+      - return command ending offset
+    - return missing ending offset
+
+    Wraps
+    -----
+    - none
+    """
+    command_match = COMMAND_RE.match(text, idx)
+    if command_match is None:
+        return None
+    command = command_match.group(1)
+    end = command_match.end()
+    if command == "fi":
+        if state.conditionals:
+            state.conditionals.pop()
+        state.global_prefix = False
+        return end
+    if command == "else":
+        if state.conditionals:
+            current = state.conditionals[-1]
+            state.conditionals[-1] = None if current is None else not current
+        state.global_prefix = False
+        return end
+    if command == "newif":
+        name_start = skip_space(text, end)
+        name_match = COMMAND_RE.match(text, name_start)
+        if name_match is not None and name_match.group(1).startswith("if"):
+            branch = _active_branch(state.conditionals)
+            if branch is not False:
+                state.named_conditionals[name_match.group(1)] = (
+                    False if branch is True else None
+                )
+            state.global_prefix = False
+            return name_match.end()
+        state.global_prefix = False
+        return end
+    if command in state.named_conditionals:
+        state.conditionals.append(state.named_conditionals[command])
+        state.global_prefix = False
+        return end
+    for conditional_name in tuple(state.named_conditionals):
+        stem = conditional_name[2:]
+        if command not in {f"{stem}true", f"{stem}false"}:
+            continue
+        branch = _active_branch(state.conditionals)
+        if branch is True:
+            value = command.endswith("true")
+            state.named_conditionals[conditional_name] = value
+            if state.global_prefix:
+                for outer_scope in state.named_conditional_scopes:
+                    outer_scope[conditional_name] = value
+        elif branch is None:
+            state.named_conditionals[conditional_name] = None
+        state.global_prefix = False
+        return end
+    if command in TEX_CONDITIONAL_COMMANDS or (
+        unknown_internal_conditionals and command.startswith("if@")
+    ):
+        state.conditionals.append(
+            True if command == "iftrue" else False if command == "iffalse" else None
+        )
+        state.global_prefix = False
+        return end
+    branch = _active_branch(state.conditionals)
+    if command == "begingroup":
+        _enter_scan_group(state)
+        state.global_prefix = False
+        return end
+    if command == "endgroup":
+        _exit_scan_group(state)
+        state.global_prefix = False
+        return end
+    if command == "global":
+        state.global_prefix = branch is not False
+        return end
+    if command == "long":
+        return end
+    return None
 
 
 def strip_comments(text: str) -> str:
-    """Remove TeX comments while preserving escaped percent signs and lines."""
+    """Remove TeX comments while preserving escaped percent signs and lines.
+
+    Intent
+    ------
+    Produce parseable source without changing line numbering.
+
+    Rationale
+    ---------
+    Source locations remain useful only when comment removal preserves lines.
+
+    Pseudocode
+    ----------
+    - for source_line in text:
+      - set cleaned_line = text before the first unescaped percent sign
+    - return cleaned lines joined with newlines
+
+    Wraps
+    -----
+    - none
+    """
     cleaned_lines = []
     for line in text.splitlines():
         idx = 0
@@ -182,7 +483,28 @@ def read_tex_text(path: Path) -> str:
 
 
 def read_balanced_group(text: str, start: int) -> tuple[str, int]:
-    """Read a balanced ``{...}`` group beginning at ``start``."""
+    """Read a balanced ``{...}`` group beginning at ``start``.
+
+    Intent
+    ------
+    Return one brace group's body and first offset after its closing brace.
+
+    Rationale
+    ---------
+    TeX replacements and adapter blocks may contain nested brace groups.
+
+    Pseudocode
+    ----------
+    - if start does not point to an opening brace:
+      - raise balanced group syntax error
+    - while the matching closing brace has not been found:
+      - set nesting_depth = nesting depth after the current source character
+    - return group body and ending offset
+
+    Wraps
+    -----
+    - none
+    """
     if start >= len(text) or text[start] != "{":
         raise ValueError("balanced group must start with '{'")
     depth = 0
@@ -245,12 +567,53 @@ def _read_optional_group(text: str, start: int) -> tuple[str, int]:
 
 
 def skip_space(text: str, idx: int) -> int:
+    """Return the first offset at or after ``idx`` that is not whitespace.
+
+    Intent
+    ------
+    Advance source parsers across insignificant whitespace.
+
+    Rationale
+    ---------
+    TeX declaration arguments may be separated by arbitrary whitespace.
+
+    Pseudocode
+    ----------
+    - while current character is whitespace:
+      - set current_offset = current offset plus one
+    - return current offset
+
+    Wraps
+    -----
+    - none
+    """
     while idx < len(text) and text[idx].isspace():
         idx += 1
     return idx
 
 
 def resolve_tex_path(include_name: str, current_dir: Path, suffix: str = ".tex") -> Path:
+    """Resolve one possibly unqualified local TeX dependency path.
+
+    Intent
+    ------
+    Build an absolute local candidate for an include, package, or class.
+
+    Rationale
+    ---------
+    TeX load commands commonly omit both suffixes and absolute paths.
+
+    Pseudocode
+    ----------
+    - set candidate = include name with default suffix when absent
+    - if candidate is relative:
+      - set candidate = current directory joined with candidate
+    - return resolved candidate
+
+    Wraps
+    -----
+    - none
+    """
     path = Path(include_name)
     if not path.suffix:
         path = path.with_suffix(suffix)
@@ -409,6 +772,9 @@ def local_include_paths(command: str, names: str, current_dir: Path) -> list[Pat
       .dependency_suffix:
         why:
           constructs: "Selects the suffix used for local candidates."
+      .resolve_tex_path:
+        why:
+          constructs: "Builds each project-local dependency candidate."
 
     Pseudocode
     ----------
@@ -460,36 +826,442 @@ def _path_is_within(path: Path, root: Path) -> bool:
     return True
 
 
+def _mathjax_adapter_file_chunks(
+    adapter_path: Path,
+    *,
+    seen: set[tuple[Path, bool]],
+    conditional_uncertain: bool = False,
+    source_text: str | None = None,
+    line_offset: int = 0,
+    column_offset: int = 0,
+    inherited_named_conditionals: dict[str, bool | None] | None = None,
+) -> list[TexChunk]:
+    """Read balanced customization bodies and adapter-only dependencies.
+
+    Intent
+    ------
+    Collect renderer-facing definitions from one lwarp adapter dependency tree.
+
+    Rationale
+    ---------
+    Only balanced ``CustomizeMathJax`` bodies describe browser definitions;
+    other adapter code configures TeX execution and must not enter the payload.
+
+    CallsFromRepo
+    -------------
+      ._enter_scan_group:
+        why:
+          transforms: "Starts scoped named-condition tracking for a live brace group."
+      ._exit_scan_group:
+        why:
+          transforms: "Restores named-condition state after a live brace group."
+      .parse_declared_math_symbol_at:
+        why:
+          reads: "Consumes complete symbol declarations without scanning their bodies."
+      .parse_declared_operator_at:
+        why:
+          reads: "Consumes complete operator declarations without scanning their bodies."
+      .parse_def_at:
+        why:
+          reads: "Consumes complete primitive definitions without scanning their bodies."
+      .parse_newcommand_at:
+        why:
+          reads: "Consumes complete command declarations without scanning their bodies."
+      .read_tex_text:
+        why:
+          reads: "Loads each resolved adapter source."
+
+    InstantiationsFromRepo
+    ----------------------
+      .TexScanState:
+        why:
+          constructs: "Carries conditional and scope state across the adapter source."
+      .TexChunk:
+        why:
+          constructs: "Carries each balanced customization body with provenance."
+      ._active_branch:
+        why:
+          constructs: "Derives adapter command activity from nested conditionals."
+      ._advance_scan_control_command:
+        why:
+          constructs: "Applies the shared bounded TeX execution model."
+      ._delimited_def_end:
+        why:
+          constructs: "Skips unsupported definition replacement bodies as a unit."
+      ._mathjax_adapter_file_chunks:
+        why:
+          constructs: "Traverses explicit adapter dependencies with cycle control."
+      .read_balanced_group:
+        why:
+          constructs: "Extracts one complete customization body."
+      .skip_space:
+        why:
+          transforms: "Finds the opening brace after a customization command."
+      .strip_comments:
+        why:
+          transforms: "Removes inactive comments while preserving source lines."
+      .tex_distribution_path:
+        why:
+          constructs: "Resolves explicitly named lwarp adapter dependencies."
+
+    Pseudocode
+    ----------
+    - if adapter path was already visited:
+      - return no chunks
+    - for marker in source ordered adapter markers:
+      - set adapter_chunks = adapter chunks plus dependency chunks or customization body
+    - return adapter chunks
+
+    Wraps
+    -----
+    - none
+    """
+    adapter_path = adapter_path.resolve()
+    if source_text is None:
+        seen_key = (adapter_path, conditional_uncertain)
+        if seen_key in seen:
+            return []
+        seen.add(seen_key)
+        text = strip_comments(read_tex_text(adapter_path))
+    else:
+        text = source_text
+    chunks: list[TexChunk] = []
+    state = TexScanState(
+        named_conditionals=dict(inherited_named_conditionals or {})
+    )
+    cursor = 0
+    while cursor < len(text):
+        if text[cursor] == "{":
+            _enter_scan_group(state)
+            cursor += 1
+            continue
+        if text[cursor] == "}":
+            _exit_scan_group(state)
+            cursor += 1
+            continue
+        if text[cursor] != "\\":
+            cursor += 1
+            continue
+
+        control_end = _advance_scan_control_command(
+            text,
+            cursor,
+            state,
+            unknown_internal_conditionals=True,
+        )
+        if control_end is not None:
+            cursor = control_end
+            continue
+
+        command_match = COMMAND_RE.match(text, cursor)
+        command = command_match.group(1) if command_match else ""
+        branch = _active_branch(state.conditionals)
+        active = branch is not False and (state.group_depth == 0 or state.global_prefix)
+
+        if command == "AtBeginDocument":
+            group_start = skip_space(text, command_match.end())
+            if group_start >= len(text) or text[group_start] != "{":
+                cursor = command_match.end()
+                state.global_prefix = False
+                continue
+            try:
+                body, group_end = read_balanced_group(text, group_start)
+            except ValueError as error:
+                line = line_offset + text.count("\n", 0, group_start) + 1
+                raise ValueError(
+                    f"Unclosed \\AtBeginDocument body at {adapter_path}:{line}"
+                ) from error
+            if active:
+                body_start = group_start + 1
+                body_lines = text.count("\n", 0, body_start)
+                prior_newline = text.rfind("\n", 0, body_start)
+                body_column = (
+                    body_start - prior_newline - 1
+                    if prior_newline >= 0
+                    else column_offset + body_start
+                )
+                chunks.extend(
+                    _mathjax_adapter_file_chunks(
+                        adapter_path,
+                        seen=seen,
+                        conditional_uncertain=(
+                            conditional_uncertain or branch is None
+                        ),
+                        source_text=body,
+                        line_offset=line_offset + body_lines,
+                        column_offset=body_column,
+                        inherited_named_conditionals=state.named_conditionals,
+                    )
+                )
+            cursor = group_end
+            state.global_prefix = False
+            continue
+
+        dependency = MATHJAX_ADAPTER_DEPENDENCY_RE.match(text, cursor)
+        if dependency is not None:
+            if not active:
+                cursor = dependency.end()
+                state.global_prefix = False
+                continue
+            for raw_name in dependency.group("names").split(","):
+                dependency_name = raw_name.strip()
+                if not dependency_name.startswith("lwarp-"):
+                    continue
+                filename = (
+                    dependency_name
+                    if dependency_name.endswith(".sty")
+                    else f"{dependency_name}.sty"
+                )
+                dependency_path = tex_distribution_path(filename)
+                if dependency_path is not None:
+                    chunks.extend(
+                        _mathjax_adapter_file_chunks(
+                            dependency_path,
+                            seen=seen,
+                            conditional_uncertain=(
+                                conditional_uncertain or branch is None
+                            ),
+                        )
+                    )
+            cursor = dependency.end()
+            state.global_prefix = False
+            continue
+
+        if command == "CustomizeMathJax":
+            group_start = skip_space(text, command_match.end())
+            if group_start >= len(text) or text[group_start] != "{":
+                cursor = command_match.end()
+                state.global_prefix = False
+                continue
+            try:
+                body, group_end = read_balanced_group(text, group_start)
+            except ValueError as error:
+                line = text.count("\n", 0, group_start) + 1
+                raise ValueError(
+                    f"Unclosed \\CustomizeMathJax body at {adapter_path}:{line}"
+                ) from error
+            if active:
+                body_start = group_start + 1
+                prior_newline = text.rfind("\n", 0, body_start)
+                body_lines = text.count("\n", 0, body_start)
+                chunks.append(
+                    TexChunk(
+                        source_path=adapter_path,
+                        text=body,
+                        line_offset=line_offset + body_lines,
+                        column_offset=(
+                            body_start - prior_newline - 1
+                            if prior_newline >= 0
+                            else column_offset + body_start
+                        ),
+                        project_owned=False,
+                        adapter_owned=True,
+                        conditional_uncertain=(
+                            conditional_uncertain or branch is None
+                        ),
+                    )
+                )
+            cursor = group_end
+            state.global_prefix = False
+            continue
+
+        parsed = (
+            parse_newcommand_at(text, cursor)
+            or parse_declared_operator_at(text, cursor)
+            or parse_declared_math_symbol_at(text, cursor)
+            or parse_def_at(text, cursor)
+        )
+        if parsed is not None:
+            cursor = parsed[2]
+            state.global_prefix = False
+            continue
+        def_end = _delimited_def_end(text, cursor)
+        if def_end is not None:
+            cursor = def_end
+            state.global_prefix = False
+            continue
+        alias = LET_RE.match(text, cursor)
+        if alias is not None:
+            cursor = alias.end()
+            state.global_prefix = False
+            continue
+        cursor = command_match.end() if command_match else cursor + 1
+        state.global_prefix = False
+    return chunks
+
+
+def _executed_load_commands(
+    text: str,
+    scan_state: TexScanState | None = None,
+) -> Iterator[tuple[re.Match[str], bool]]:
+    """Yield source loads as bounded TeX execution reaches each command.
+
+    Intent
+    ------
+    Discover dependency loads according to the bounded source execution model.
+
+    Rationale
+    ---------
+    Loads stored in uninvoked replacements or false branches do not execute.
+
+    CallsFromRepo
+    -------------
+      .TexScanState:
+        why:
+          reads: "Accepts caller state for source-ordered cross-file scanning."
+      ._enter_scan_group:
+        why:
+          transforms: "Starts scoped condition tracking for a live brace group."
+      ._exit_scan_group:
+        why:
+          transforms: "Restores condition state after a live brace group."
+      .parse_declared_math_symbol_at:
+        why:
+          reads: "Consumes complete symbol declarations without scanning their bodies."
+      .parse_declared_operator_at:
+        why:
+          reads: "Consumes complete operator declarations without scanning their bodies."
+      .parse_def_at:
+        why:
+          reads: "Consumes complete primitive definitions without scanning their bodies."
+      .parse_newcommand_at:
+        why:
+          reads: "Consumes complete command declarations without scanning their bodies."
+
+    InstantiationsFromRepo
+    ----------------------
+      ._active_branch:
+        why:
+          constructs: "Classifies each load as live, false, or uncertain."
+      ._advance_scan_control_command:
+        why:
+          constructs: "Applies condition and scope transitions in source order."
+      ._delimited_def_end:
+        why:
+          constructs: "Skips unsupported definition replacement bodies as a unit."
+
+    Pseudocode
+    ----------
+    - set scan_state = supplied scan state or empty grouping and conditional state
+    - for command_token in source text:
+      - if command token begins a complete macro declaration:
+        - set cursor = first offset after the declaration replacement
+      - if command token begins a complete let alias:
+        - set cursor = first offset after the alias right side
+      - if command token is a load in a live or uncertain branch:
+        - return the next command token and its branch uncertainty
+
+    Wraps
+    -----
+    - none
+    """
+    state = scan_state if scan_state is not None else TexScanState()
+    cursor = 0
+    while cursor < len(text):
+        if text[cursor] == "{":
+            _enter_scan_group(state)
+            cursor += 1
+            continue
+        if text[cursor] == "}":
+            _exit_scan_group(state)
+            cursor += 1
+            continue
+        if text[cursor] != "\\":
+            cursor += 1
+            continue
+
+        control_end = _advance_scan_control_command(
+            text,
+            cursor,
+            state,
+            unknown_internal_conditionals=True,
+        )
+        if control_end is not None:
+            cursor = control_end
+            continue
+
+        load = LOCAL_INCLUDE_RE.match(text, cursor)
+        if load is not None:
+            branch = _active_branch(state.conditionals)
+            if branch is not False:
+                yield load, branch is None
+            cursor = load.end()
+            state.global_prefix = False
+            continue
+
+        parsed = (
+            parse_newcommand_at(text, cursor)
+            or parse_declared_operator_at(text, cursor)
+            or parse_declared_math_symbol_at(text, cursor)
+            or parse_def_at(text, cursor)
+        )
+        if parsed is not None:
+            cursor = parsed[2]
+            state.global_prefix = False
+            continue
+        definition_end = _delimited_def_end(text, cursor)
+        if definition_end is not None:
+            cursor = definition_end
+            state.global_prefix = False
+            continue
+        alias = LET_RE.match(text, cursor)
+        if alias is not None:
+            cursor = alias.end()
+            state.global_prefix = False
+            continue
+        command = COMMAND_RE.match(text, cursor)
+        cursor = command.end() if command is not None else cursor + 1
+        state.global_prefix = False
+
+
 def collect_tex_chunks(
     entrypoint: Path,
     *,
     project_root: Path,
     seen: set[Path] | None = None,
+    _loaded_once: set[Path] | None = None,
+    _dependency_stack: tuple[Path, ...] = (),
+    _scan_state: TexScanState | None = None,
 ) -> list[TexChunk]:
     """Collect the dependency tree in TeX source order with file provenance.
 
     Intent
     ------
-    Expand reachable includes while retaining the exact origin of each fragment.
+    Expand executed dependencies while retaining each fragment's exact origin.
 
     Rationale
     ---------
-    Source order governs TeX redefinitions and provenance governs diagnostics.
+    Repeated inputs execute in source order, while packages and classes load once.
 
     CallsFromRepo
     -------------
+      .TexScanState:
+        why:
+          reads: "Accepts the source-order state shared across recursive loads."
+      ._executed_load_commands:
+        why:
+          reads: "Finds dependency commands that execute outside stored replacements."
       .dependency_paths:
         why:
           reads: "Finds local or installed source dependencies at each load command."
       .read_tex_text:
         why:
           reads: "Decodes the current TeX source file."
+      ._path_is_within:
+        why:
+          reads: "Classifies dependency ownership against the project root."
+      .tex_distribution_path:
+        why:
+          reads: "Finds an optional lwarp adapter for one distribution package."
 
     InstantiationsFromRepo
     ----------------------
       .TexChunk:
         why:
           constructs: "Carries each source fragment with its location metadata."
+      ._mathjax_adapter_file_chunks:
+        why:
+          constructs: "Adds only renderer-facing adapter bodies and dependencies."
       ._path_is_within:
         why:
           constructs: "Classifies whether the current source is project-owned."
@@ -502,12 +1274,15 @@ def collect_tex_chunks(
 
     Pseudocode
     ----------
-    - decoded_text = @.read_tex_text(entrypoint)
-    - source_text = strip_comments(decoded_text)
+    - if entrypoint is on the active dependency stack:
+      - raise a dependency-cycle error
+    - source_text = strip_comments(@.read_tex_text(entrypoint))
     - project_owned = _path_is_within(entrypoint, project_root)
-    - for load_command in source_text:
+    - for load_command in @._executed_load_commands(source_text and scan_state):
+      - if load command is load-once and already loaded:
+        - continue
       - dependency_sources = @.dependency_paths(load_command)
-      - child_chunks = collect_tex_chunks(dependency_sources)
+      - child_chunks = collect_tex_chunks(dependency_sources and scan_state)
       - parent_chunk = TexChunk(parent fragment and project_owned)
       - set ordered_chunks = parent_chunk, child_chunks, and remaining fragment
     - return ordered_chunks
@@ -519,37 +1294,85 @@ def collect_tex_chunks(
     source_path = entrypoint.resolve()
     active_seen = seen if seen is not None else set()
     if source_path in active_seen:
-        return []
+        cycle = _dependency_stack + (source_path,)
+        raise ValueError(
+            "Cyclic TeX dependency: " + " -> ".join(str(path) for path in cycle)
+        )
     active_seen.add(source_path)
+    loaded_once = _loaded_once if _loaded_once is not None else set()
+    scan_state = _scan_state if _scan_state is not None else TexScanState()
     text = strip_comments(read_tex_text(source_path))
     project_owned = _path_is_within(source_path, project_root)
 
     chunks: list[TexChunk] = []
-    last = 0
-    for match in LOCAL_INCLUDE_RE.finditer(text):
+    try:
+        last = 0
+        for match, conditionally_uncertain in _executed_load_commands(
+            text, scan_state
+        ):
+            chunks.append(
+                TexChunk(
+                    source_path,
+                    text[last : match.start()],
+                    text.count("\n", 0, last),
+                    last - text.rfind("\n", 0, last) - 1,
+                    project_owned,
+                )
+            )
+            command = match.group("cmd")
+            load_once = (
+                command in {"usepackage", "documentclass"}
+                or command.startswith("RequirePackage")
+                or command.startswith("LoadClass")
+            )
+            for child in dependency_paths(
+                command, match.group("names"), source_path.parent
+            ):
+                if load_once and child in loaded_once:
+                    continue
+                if load_once:
+                    loaded_once.add(child)
+                is_package = command == "usepackage" or command.startswith(
+                    "RequirePackage"
+                )
+                distribution_package = is_package and not _path_is_within(
+                    child, project_root
+                )
+                adapter_path = (
+                    tex_distribution_path(f"lwarp-{child.stem}.sty")
+                    if distribution_package
+                    else None
+                )
+                child_chunks = collect_tex_chunks(
+                    child,
+                    project_root=project_root,
+                    seen=active_seen,
+                    _loaded_once=loaded_once,
+                    _dependency_stack=_dependency_stack + (source_path,),
+                    _scan_state=scan_state,
+                )
+                if conditionally_uncertain:
+                    child_chunks = [
+                        replace(child_chunk, conditional_uncertain=True)
+                        for child_chunk in child_chunks
+                    ]
+                chunks.extend(child_chunks)
+                if adapter_path is not None:
+                    chunks.extend(
+                        _mathjax_adapter_file_chunks(adapter_path, seen=set())
+                    )
+            last = match.end()
         chunks.append(
             TexChunk(
                 source_path,
-                text[last : match.start()],
+                text[last:],
                 text.count("\n", 0, last),
                 last - text.rfind("\n", 0, last) - 1,
                 project_owned,
             )
         )
-        for child in dependency_paths(match.group("cmd"), match.group("names"), source_path.parent):
-            chunks.extend(
-                collect_tex_chunks(child, project_root=project_root, seen=active_seen)
-            )
-        last = match.end()
-    chunks.append(
-        TexChunk(
-            source_path,
-            text[last:],
-            text.count("\n", 0, last),
-            last - text.rfind("\n", 0, last) - 1,
-            project_owned,
-        )
-    )
+    finally:
+        active_seen.remove(source_path)
     return chunks
 
 
@@ -607,6 +1430,12 @@ def parse_newcommand_at(text: str, idx: int) -> tuple[str, MacroValue, int] | No
       ._read_optional_group:
         why:
           constructs: "Parses bracketed arity and optional-default groups."
+      .read_balanced_group:
+        why:
+          constructs: "Parses command names and replacement groups."
+      .skip_space:
+        why:
+          transforms: "Advances between declaration components."
 
     Pseudocode
     ----------
@@ -695,6 +1524,9 @@ def parse_def_at(text: str, idx: int) -> tuple[str, str, int] | None:
       .read_balanced_group:
         why:
           constructs: "Parses the primitive definition replacement group."
+      .skip_space:
+        why:
+          transforms: "Advances from the macro name to its replacement."
 
     Pseudocode
     ----------
@@ -710,7 +1542,7 @@ def parse_def_at(text: str, idx: int) -> tuple[str, str, int] | None:
     match = DEF_RE.match(text, idx)
     if not match:
         return None
-    name = match.group(1)
+    name = match.group("name")
     pos = skip_space(text, match.end())
     if pos >= len(text) or text[pos] != "{":
         return None
@@ -722,6 +1554,36 @@ def parse_def_at(text: str, idx: int) -> tuple[str, str, int] | None:
 
 
 def parse_declared_operator_at(text: str, idx: int) -> tuple[str, str, int] | None:
+    """Parse one ``DeclareMathOperator`` into a portable MathJax definition.
+
+    Intent
+    ------
+    Preserve an operator's literal label using MathJax's operator command.
+
+    Rationale
+    ---------
+    The source declaration syntax is not itself a macro configuration value.
+
+    InstantiationsFromRepo
+    ----------------------
+      .read_balanced_group:
+        why:
+          constructs: "Extracts the complete operator label group."
+      .skip_space:
+        why:
+          transforms: "Finds the operator label after the command name."
+
+    Pseudocode
+    ----------
+    - if source at offset is not an operator declaration:
+      - return no definition
+    - set operator_text = balanced label group
+    - return macro name, portable operator body, and ending offset
+
+    Wraps
+    -----
+    - none
+    """
     match = DECLARE_OP_RE.match(text, idx)
     if not match:
         return None
@@ -955,9 +1817,57 @@ def _line_column(chunk: TexChunk, index: int) -> tuple[int, int]:
     return line, column_offset + index - prior_newline
 
 
+def _delimited_def_end(text: str, idx: int) -> int | None:
+    """Return the full span of a brace-bodied ``def``, including parameters.
+
+    Intent
+    ------
+    Consume unsupported parameterized or delimited definitions as one declaration.
+
+    Rationale
+    ---------
+    Nested aliases in an unsupported replacement body are not file-level exports.
+
+    InstantiationsFromRepo
+    ----------------------
+      .read_balanced_group:
+        why:
+          constructs: "Finds the end of the replacement after local parameter scanning."
+
+    Pseudocode
+    ----------
+    - if source at offset is not a primitive definition:
+      - return no ending offset
+    - set replacement_start = first opening brace after local parameter tokens
+    - return the offset after the balanced replacement group
+
+    Wraps
+    -----
+    - none
+    """
+    match = DEF_RE.match(text, idx)
+    if not match:
+        return None
+    cursor = match.end()
+    while cursor < len(text):
+        if text[cursor] == "\\":
+            command = COMMAND_RE.match(text, cursor)
+            cursor = command.end() if command else cursor + 1
+            continue
+        if text[cursor] == "{":
+            try:
+                _, end = read_balanced_group(text, cursor)
+            except ValueError:
+                return len(text)
+            return end
+        cursor += 1
+    return len(text)
+
+
 def _definition_records_from_chunk(
     chunk: TexChunk,
     symbol_fonts: dict[str, tuple[str, str, str, str]],
+    scan_state: TexScanState | None = None,
 ) -> list[MacroDefinition]:
     """Parse one TeX chunk into source-located macro definition records.
 
@@ -969,17 +1879,32 @@ def _definition_records_from_chunk(
     ---------
     A single record stream lets later merge logic apply TeX redefinition semantics.
 
+    CallsFromRepo
+    -------------
+      .TexScanState:
+        why:
+          reads: "Continues bounded scope state across source chunks."
+      ._enter_scan_group:
+        why:
+          transforms: "Starts scoped named-condition tracking for a live brace group."
+      ._exit_scan_group:
+        why:
+          transforms: "Restores named-condition state after a live brace group."
+
     InstantiationsFromRepo
     ----------------------
+      ._active_branch:
+        why:
+          constructs: "Derives nested branch activity."
+      ._advance_scan_control_command:
+        why:
+          constructs: "Applies shared conditional, named-boolean, and scope transitions."
       .MacroDefinition:
         why:
           constructs: "Carries each parsed value with its directive and location."
       ._line_column:
         why:
           constructs: "Provides original coordinates for each declaration token."
-      .collect_symbol_fonts:
-        why:
-          constructs: "Builds the font declarations active in this source chunk."
       .parse_declared_math_symbol_at:
         why:
           constructs: "Translates portable literal symbol declarations."
@@ -992,19 +1917,24 @@ def _definition_records_from_chunk(
       .parse_newcommand_at:
         why:
           constructs: "Parses new, provide, and renew command definitions."
+      ._delimited_def_end:
+        why:
+          constructs: "Consumes unsupported definitions without exposing nested aliases."
 
     Pseudocode
     ----------
-    - active_fonts = collect_symbol_fonts(chunk text)
+    - set active_fonts = previously active font declarations
     - for command_token in chunk text:
-      - set parsed_definition = recognized parser result using active_fonts
-      - source_position = _line_column(chunk, command_token)
-      - if parsed_definition exists:
-        - macro_record = MacroDefinition(parsed_definition, source_position)
-        - set definition_records = definition_records with macro_record
-      - if command_token names a malformed declaration:
-        - malformed_record = MacroDefinition(command_token, source_position)
-        - set definition_records = definition_records with malformed_record
+      - set scan_state = delimiter-adjusted scope state
+      - if command_token is a live symbol-font declaration:
+        - set active_fonts = active fonts with that declaration
+      - if declaration is inactive or local:
+        - continue
+      - set parsed_definition = declaration parsed using active_fonts
+      - if conditional truth is unknown:
+        - set records = records with source-located conditional error
+      - else:
+        - set records = records with parsed source-located definition
     - return definition_records
 
     Wraps
@@ -1012,12 +1942,54 @@ def _definition_records_from_chunk(
     - none
     """
     active_fonts = dict(symbol_fonts)
-    active_fonts.update(collect_symbol_fonts(chunk.text))
+    state = scan_state if scan_state is not None else TexScanState()
     records: list[MacroDefinition] = []
     idx = 0
     while idx < len(chunk.text):
+        if chunk.text[idx] == "{":
+            _enter_scan_group(state)
+            idx += 1
+            continue
+        if chunk.text[idx] == "}":
+            _exit_scan_group(state)
+            idx += 1
+            continue
         if chunk.text[idx] != "\\":
             idx += 1
+            continue
+
+        control_end = _advance_scan_control_command(
+            chunk.text,
+            idx,
+            state,
+            unknown_internal_conditionals=True,
+        )
+        if control_end is not None:
+            idx = control_end
+            continue
+        branch = _active_branch(state.conditionals)
+        uncertain = branch is None or chunk.conditional_uncertain
+        globally_defined = state.global_prefix
+
+        symbol_font = DECLARE_SYMBOL_FONT_RE.match(chunk.text, idx)
+        if symbol_font is not None:
+            font_name = symbol_font.group("name").strip()
+            if not (
+                branch is False
+                or (branch is True and state.group_depth and not globally_defined)
+            ):
+                if uncertain:
+                    state.uncertain_symbol_fonts.add(font_name)
+                else:
+                    active_fonts[font_name] = (
+                        symbol_font.group("encoding").strip(),
+                        symbol_font.group("family").strip(),
+                        symbol_font.group("series").strip(),
+                        symbol_font.group("shape").strip(),
+                    )
+                    state.uncertain_symbol_fonts.discard(font_name)
+            idx = symbol_font.end()
+            state.global_prefix = False
             continue
 
         parsed: tuple[str, MacroValue, int] | None = None
@@ -1036,10 +2008,26 @@ def _definition_records_from_chunk(
             native_identity = bool(parsed and parsed[1].strip() == f"\\{parsed[0]}")
         if parsed is None:
             parsed = parse_def_at(chunk.text, idx)
-            directive = "def"
+            primitive_def = DEF_RE.match(chunk.text, idx)
+            directive = primitive_def.group("kind") if primitive_def else "def"
+            globally_defined = globally_defined or directive == "gdef"
         if parsed is not None:
             name, value, next_idx = parsed
+            if branch is False or (
+                branch is True and state.group_depth and not globally_defined
+            ):
+                idx = next_idx
+                state.global_prefix = False
+                continue
             line, column = _line_column(chunk, idx)
+            math_symbol = DECLARE_MATH_SYMBOL_RE.match(chunk.text, idx)
+            uncertain_font = (
+                math_symbol.group("font").strip()
+                if math_symbol is not None
+                and math_symbol.group("font").strip()
+                in state.uncertain_symbol_fonts
+                else None
+            )
             records.append(
                 MacroDefinition(
                     name=name,
@@ -1049,10 +2037,25 @@ def _definition_records_from_chunk(
                     column=column,
                     directive=directive,
                     project_owned=chunk.project_owned,
+                    adapter_owned=chunk.adapter_owned,
                     native_identity=native_identity,
+                    declaration_error=(
+                        (
+                            f"a math symbol using font {uncertain_font!r} whose "
+                            "active declaration cannot be determined statically"
+                        )
+                        if uncertain_font is not None
+                        else (
+                            "a definition in a conditional branch whose truth "
+                            "cannot be determined statically"
+                            if uncertain
+                            else None
+                        )
+                    ),
                 )
             )
             idx = next_idx
+            state.global_prefix = False
             continue
 
         if newcommand:
@@ -1061,6 +2064,12 @@ def _definition_records_from_chunk(
                 chunk.text[newcommand.end() :],
             )
             if name_match:
+                if branch is False or (
+                    branch is True and state.group_depth and not globally_defined
+                ):
+                    idx = newcommand.end() + name_match.end()
+                    state.global_prefix = False
+                    continue
                 line, column = _line_column(chunk, idx)
                 records.append(
                     MacroDefinition(
@@ -1071,20 +2080,61 @@ def _definition_records_from_chunk(
                         column=column,
                         directive=directive,
                         project_owned=chunk.project_owned,
+                        adapter_owned=chunk.adapter_owned,
                         declaration_error=(
-                            "a malformed declaration; expected an optional numeric arity "
-                            "from 0 through 9 followed by a balanced replacement body"
+                            "a definition in a conditional branch whose truth "
+                            "cannot be determined statically"
+                            if uncertain
+                            else "a malformed declaration; expected an optional numeric "
+                            "arity from 0 through 9 followed by a balanced replacement body"
                         ),
                     )
                 )
                 idx = newcommand.end() + name_match.end()
+                state.global_prefix = False
                 continue
+
+        def_end = _delimited_def_end(chunk.text, idx)
+        if def_end is not None:
+            unsupported_def = DEF_RE.match(chunk.text, idx)
+            globally_defined = globally_defined or bool(
+                unsupported_def and unsupported_def.group("kind") == "gdef"
+            )
+            if unsupported_def and not (
+                branch is False
+                or (branch is True and state.group_depth and not globally_defined)
+            ):
+                line, column = _line_column(chunk, idx)
+                records.append(
+                    MacroDefinition(
+                        name=unsupported_def.group("name"),
+                        value="",
+                        source_path=chunk.source_path,
+                        line=line,
+                        column=column,
+                        directive="def",
+                        project_owned=chunk.project_owned,
+                        adapter_owned=chunk.adapter_owned,
+                        declaration_error=(
+                            "a definition in a conditional branch whose truth "
+                            "cannot be determined statically"
+                            if uncertain
+                            else "an unsupported parameterized or delimited def declaration"
+                        ),
+                    )
+                )
+            idx = def_end
+            state.global_prefix = False
+            continue
 
         alias = LET_RE.match(chunk.text, idx)
         if alias:
             left = alias.group("left")
             right = alias.group("right")
-            if left != right:
+            if left != right and not (
+                branch is False
+                or (branch is True and state.group_depth and not globally_defined)
+            ):
                 line, column = _line_column(chunk, idx)
                 records.append(
                     MacroDefinition(
@@ -1095,10 +2145,20 @@ def _definition_records_from_chunk(
                         column=column,
                         directive="let",
                         project_owned=chunk.project_owned,
+                        adapter_owned=chunk.adapter_owned,
+                        let_target=right,
+                        declaration_error=(
+                            "a definition in a conditional branch whose truth "
+                            "cannot be determined statically"
+                            if uncertain
+                            else None
+                        ),
                     )
                 )
             idx = alias.end()
+            state.global_prefix = False
             continue
+        state.global_prefix = False
         idx += 1
     symbol_fonts.update(active_fonts)
     return records
@@ -1114,6 +2174,21 @@ def collect_macro_definitions(text: str) -> dict[str, MacroValue]:
     Rationale
     ---------
     Existing callers can retain value-only parsing while new paths keep provenance.
+
+    CallsFromRepo
+    -------------
+      .parse_declared_math_symbol_at:
+        why:
+          reads: "Recognizes portable math-symbol declarations."
+      .parse_declared_operator_at:
+        why:
+          reads: "Recognizes declared operator definitions."
+      .parse_def_at:
+        why:
+          reads: "Recognizes simple primitive definitions."
+      .parse_newcommand_at:
+        why:
+          reads: "Recognizes new-command family declarations."
 
     InstantiationsFromRepo
     ----------------------
@@ -1150,6 +2225,27 @@ def collect_macro_definitions(text: str) -> dict[str, MacroValue]:
 
 
 def macro_body_text(body: object) -> str:
+    """Project one schema macro value to text used for dependency discovery.
+
+    Intent
+    ------
+    Expose replacement and optional-default text from either tuple encoding.
+
+    Rationale
+    ---------
+    Recursive closure must inspect all text that can reference another command.
+
+    Pseudocode
+    ----------
+    - if body is a supported parameterized tuple:
+      - set text = replacement plus optional default when present
+      - return text
+    - return body converted to text
+
+    Wraps
+    -----
+    - none
+    """
     if isinstance(body, list) and len(body) in {2, 3}:
         if isinstance(body[0], str) and isinstance(body[1], int):
             replacement = body[0]
@@ -1164,6 +2260,31 @@ def macro_body_text(body: object) -> str:
 
 
 def referenced_macros(body: object) -> set[str]:
+    """Return control-sequence names referenced by one macro value.
+
+    Intent
+    ------
+    Identify direct dependency names in replacement and default text.
+
+    Rationale
+    ---------
+    Closure traversal operates on macro names rather than raw source strings.
+
+    CallsFromRepo
+    -------------
+      .macro_body_text:
+        why:
+          reads: "Projects schema tuple encodings to searchable source text."
+
+    Pseudocode
+    ----------
+    - set body_text = macro body projected to text
+    - return alphabetic and at-sign control-sequence names from body text
+
+    Wraps
+    -----
+    - none
+    """
     return {
         match.group(1)
         for match in COMMAND_RE.finditer(macro_body_text(body))
@@ -1257,7 +2378,7 @@ def _definition_catalog(
 
     Rationale
     ---------
-    Only duplicate new definitions remain conflicts; intentional overrides are valid.
+    Declaration semantics distinguish invalid duplicates from intentional overrides.
 
     CallsFromRepo
     -------------
@@ -1267,6 +2388,9 @@ def _definition_catalog(
 
     InstantiationsFromRepo
     ----------------------
+      .TexScanState:
+        why:
+          constructs: "Carries bounded scope state across expanded source chunks."
       ._normalize_macro_value:
         why:
           transforms: "Canonicalizes each record before semantic comparison."
@@ -1280,9 +2404,9 @@ def _definition_catalog(
     - for source_chunk in source_chunks:
       - definition_records = @._definition_records_from_chunk(source_chunk)
       - normalized_record = _normalize_macro_value(definition_records)
-      - if normalized_record is an intentional override:
+      - if normalized record is semantically identical or an intentional override:
         - set effective_definitions = effective_definitions with normalized_record
-      - else:
+      - if differing new declarations remain incompatible:
         - set conflicts = conflicts with differing duplicate records
     - return effective_definitions and conflicts
 
@@ -1295,20 +2419,56 @@ def _definition_catalog(
     definitions: dict[str, MacroDefinition] = {}
     conflicts: dict[str, list[MacroDefinition]] = {}
     symbol_fonts: dict[str, tuple[str, str, str, str]] = {}
+    scan_state = TexScanState()
 
     for chunk in chunks:
-        for record in _definition_records_from_chunk(chunk, symbol_fonts):
+        for record in _definition_records_from_chunk(chunk, symbol_fonts, scan_state):
+            if record.directive == "let" and record.let_target is not None:
+                target = definitions.get(record.let_target)
+                if target is None:
+                    record = replace(
+                        record,
+                        external_snapshot_of=record.let_target,
+                    )
+                elif target.external_snapshot_of is not None:
+                    record = replace(
+                        record,
+                        value=target.value,
+                        external_snapshot_of=target.external_snapshot_of,
+                        declaration_error=target.declaration_error,
+                    )
+                else:
+                    record = replace(
+                        record,
+                        value=target.value,
+                        declaration_error=target.declaration_error,
+                    )
             normalized, _ = _normalize_macro_value(record.value)
             record = replace(record, value=normalized)
             previous = definitions.get(record.name)
             if previous is None:
                 definitions[record.name] = record
                 continue
+            if previous.adapter_owned and record.adapter_owned:
+                if previous.value == record.value:
+                    continue
+                conflicts.setdefault(record.name, [previous]).append(record)
+                definitions[record.name] = record
+                continue
             if previous.value == record.value:
+                if (record.project_owned or record.adapter_owned) and not (
+                    previous.project_owned
+                ):
+                    definitions[record.name] = record
+                continue
+            if record.adapter_owned and not previous.project_owned:
+                definitions[record.name] = record
+                continue
+            if previous.adapter_owned and not record.project_owned:
                 continue
             if record.directive == "providecommand":
                 continue
-            if record.directive in {"renewcommand", "def", "let"}:
+            if record.directive in {"renewcommand", "def", "gdef", "let"}:
                 definitions[record.name] = record
                 conflicts.pop(record.name, None)
                 continue
@@ -1347,6 +2507,68 @@ def _command_names(texts: Iterable[str]) -> list[str]:
     )
 
 
+def _raw_definition_wraps_external_snapshot(
+    name: str,
+    definition: MacroDefinition,
+    definitions: dict[str, MacroDefinition],
+) -> bool:
+    """Return whether a raw definition wraps its pre-existing external binding.
+
+    Intent
+    ------
+    Recognize distribution redefinitions that save then wrap a native command.
+
+    Rationale
+    ---------
+    Serializing such TeX-engine wrappers would replace a renderer-native command
+    with implementation machinery whose saved binding does not exist in MathJax.
+
+    InstantiationsFromRepo
+    ----------------------
+      .referenced_macros:
+        why:
+          constructs: "Finds the source-known dependency path to an external snapshot."
+
+    Pseudocode
+    ----------
+    - if definition is project-owned or adapter-owned:
+      - return false
+    - set pending_names = @.referenced_macros(definition value)
+    - while pending_names is not empty:
+      - set current_definition = definition for next pending name
+      - if current_definition snapshots the external binding of name:
+        - return true
+      - if current_definition is raw and source-known:
+        - set pending_names = pending names plus its referenced macros
+    - return false
+
+    Wraps
+    -----
+    - none
+    """
+    if definition.project_owned or definition.adapter_owned:
+        return False
+    pending = list(referenced_macros(definition.value))
+    visited: set[str] = set()
+    while pending:
+        dependency = pending.pop()
+        if dependency in visited:
+            continue
+        visited.add(dependency)
+        dependency_definition = definitions.get(dependency)
+        if dependency_definition is None:
+            continue
+        if dependency_definition.external_snapshot_of == name:
+            return True
+        if (
+            not dependency_definition.project_owned
+            and not dependency_definition.adapter_owned
+            and dependency_definition.external_snapshot_of is None
+        ):
+            pending.extend(referenced_macros(dependency_definition.value))
+    return False
+
+
 def _extract_renderable_macro_definitions(
     *,
     tex_entrypoint: Path,
@@ -1370,6 +2592,9 @@ def _extract_renderable_macro_definitions(
       .referenced_macros:
         why:
           reads: "Finds direct dependencies while walking relevant definitions."
+      ._raw_definition_wraps_external_snapshot:
+        why:
+          reads: "Classifies raw native-command wrappers before serialization."
 
     InstantiationsFromRepo
     ----------------------
@@ -1384,6 +2609,8 @@ def _extract_renderable_macro_definitions(
     - set roots = graph_commands present in definition_catalog
     - set direct_dependencies = @.referenced_macros(definition_catalog replacements)
     - for root_command in graph_commands:
+      - if root command is a raw wrapper of its external snapshot:
+        - continue
       - set selected_definitions = direct_dependencies selected with cycle checks
     - return selected_definitions in source order
 
@@ -1395,14 +2622,38 @@ def _extract_renderable_macro_definitions(
     if not entrypoint.is_file():
         raise ValueError(f"TeX entrypoint not found: {entrypoint}")
     definitions, conflicts = _definition_catalog(entrypoint)
-    roots: list[str] = []
-    for name in _command_names(graph_text):
-        definition = definitions.get(name)
-        if definition is not None and not definition.native_identity:
-            roots.append(name)
+
+    roots = [
+        name
+        for name in _command_names(graph_text)
+        if name in definitions and not definitions[name].native_identity
+    ]
 
     selected: dict[str, MacroDefinition] = {}
     visiting: list[str] = []
+
+    def describe_chain(names: list[str]) -> str:
+        """Format one dependency chain with source locations.
+
+        Intent
+        ------
+        Attach exact provenance to cycle and unsupported-definition diagnostics.
+
+        Rationale
+        ---------
+        A macro name alone does not identify which reachable source caused failure.
+
+        Pseudocode
+        ----------
+        - return macro names paired with definition locations in dependency order
+
+        Wraps
+        -----
+        - none
+        """
+        return " -> ".join(
+            f"\\{item} ({definitions[item].location})" for item in names
+        )
 
     def visit(name: str) -> None:
         """Add one definition after recursively selecting its dependencies.
@@ -1417,6 +2668,9 @@ def _extract_renderable_macro_definitions(
 
         CallsFromRepo
         -------------
+          ._raw_definition_wraps_external_snapshot:
+            why:
+              reads: "Stops at a raw wrapper around its pre-existing binding."
           .referenced_macros:
             why:
               reads: "Finds direct command dependencies in the current replacement."
@@ -1428,6 +2682,8 @@ def _extract_renderable_macro_definitions(
         - if name is currently visiting or has conflicting records:
           - raise source-located macro error
         - dependencies = @.referenced_macros(current definition)
+        - if the current definition is an explicit MathJax adapter:
+          - set dependencies = project and adapter definitions only
         - for dependency_name in dependencies:
           - set selected_definitions = selected_definitions with visited dependency
         - set selected_definitions = selected_definitions with current definition
@@ -1439,18 +2695,39 @@ def _extract_renderable_macro_definitions(
         if name in selected:
             return
         if name in visiting:
-            cycle = visiting[visiting.index(name) :] + [name]
-            described = " -> ".join(
-                f"\\{item} ({definitions[item].location})" for item in cycle
+            cycle = visiting + [name]
+            raise ValueError(
+                f"Cyclic relevant macro definitions: {describe_chain(cycle)}"
             )
-            raise ValueError(f"Cyclic relevant macro definitions: {described}")
         definition = definitions.get(name)
         if definition is None or definition.native_identity:
             return
+        if _raw_definition_wraps_external_snapshot(name, definition, definitions):
+            return
+        snapshot_target = definition.external_snapshot_of
+        snapshot_target_definition = (
+            definitions.get(snapshot_target) if snapshot_target is not None else None
+        )
+        if (
+            snapshot_target_definition is not None
+            and not snapshot_target_definition.native_identity
+            and not _raw_definition_wraps_external_snapshot(
+                snapshot_target,
+                snapshot_target_definition,
+                definitions,
+            )
+        ):
+            raise ValueError(
+                f"Relevant macro \\{name} is an external \\let snapshot of "
+                f"\\{snapshot_target} at {definition.location}, but that target was "
+                "defined later and would be emitted; a self-contained MathJax macro "
+                "map cannot preserve the earlier binding as a live alias."
+            )
         if definition.declaration_error is not None:
             raise ValueError(
                 f"Relevant macro \\{name} has {definition.declaration_error} "
-                f"at {definition.location}."
+                f"at {definition.location}. Dependency chain: "
+                f"{describe_chain(visiting + [name])}"
             )
         if (
             isinstance(definition.value, list)
@@ -1472,9 +2749,10 @@ def _extract_renderable_macro_definitions(
         visiting.append(name)
         for dependency in referenced_macros(definition.value):
             if dependency == name:
-                described = f"\\{name} ({definition.location}) -> \\{name}"
+                described = describe_chain(visiting) + f" -> \\{name}"
                 raise ValueError(f"Cyclic relevant macro definitions: {described}")
-            if dependency in definitions:
+            dependency_definition = definitions.get(dependency)
+            if dependency_definition is not None:
                 visit(dependency)
         visiting.pop()
         selected[name] = definition
@@ -1526,11 +2804,68 @@ def dependency_closure(
     macros: dict[str, object],
     roots: Iterable[str] | None = None,
 ) -> dict[str, object]:
-    """Compatibility closure for in-memory macro maps."""
+    """Return the acyclic recursive closure of an in-memory macro map.
+
+    Intent
+    ------
+    Preserve the value-only closure API used by compatibility callers.
+
+    Rationale
+    ---------
+    Callers without source records still need deterministic cycle-safe selection.
+
+    CallsFromRepo
+    -------------
+      .referenced_macros:
+        why:
+          reads: "Finds direct dependencies in each value-only definition."
+
+    Pseudocode
+    ----------
+    - set requested_roots = requested roots or every macro when roots are absent
+    - for root in requested_roots:
+      - set closed_macros = closed macros plus the acyclic recursive visit result
+    - return selected definitions in input order
+
+    Wraps
+    -----
+    - none
+    """
     closed: dict[str, object] = {}
     visiting: set[str] = set()
 
     def visit(name: str) -> bool:
+        """Select one in-memory macro after its acyclic dependencies.
+
+        Intent
+        ------
+        Build the compatibility closure using depth-first traversal.
+
+        Rationale
+        ---------
+        A separate visiting set distinguishes cycles from completed definitions.
+
+        CallsFromRepo
+        -------------
+          .referenced_macros:
+            why:
+              reads: "Finds child macro names in the current definition."
+
+        Pseudocode
+        ----------
+        - if macro is selected or external:
+          - return true
+        - if macro is currently visiting:
+          - return false
+        - set valid = every in-map dependency has a valid recursive visit
+        - if valid:
+          - set closed_macros = closed macros plus current macro
+        - return whether the macro is acyclic
+
+        Wraps
+        -----
+        - none
+        """
         if name in closed:
             return True
         if name not in macros:
@@ -1596,23 +2931,142 @@ def extract_macros(entrypoint: Path) -> dict[str, MacroValue]:
 
 
 def default_output_path(entrypoint: Path) -> Path:
+    """Return the conventional build path for extracted macro JSON.
+
+    Intent
+    ------
+    Keep CLI output beside the source project under its build directory.
+
+    Rationale
+    ---------
+    Compatibility callers rely on a deterministic default location.
+
+    Pseudocode
+    ----------
+    - return entrypoint build directory joined with a stem-derived filename
+
+    Wraps
+    -----
+    - none
+    """
     return entrypoint.resolve().parent / "_build" / f"{entrypoint.stem}-mathjax-macros.json"
 
 
 def write_macros(macros: dict[str, object], out_path: Path) -> None:
+    """Write a stable indented macro mapping to one JSON path.
+
+    Intent
+    ------
+    Persist compatibility extractor output for command-line callers.
+
+    Rationale
+    ---------
+    Stable ordering makes generated macro maps reviewable and reproducible.
+
+    Pseudocode
+    ----------
+    - set output_parent = parent directory of output path
+    - set persisted_output = output path containing sorted indented macro JSON
+
+    Wraps
+    -----
+    - none
+    """
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(macros, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 class Interface(PythonArgvMachineInterface):
+    """Expose macro extraction through the registered Python argv gateway.
+
+    Intent
+    ------
+    Adapt dispatcher argv to the module's command-line entrypoint.
+
+    Rationale
+    ---------
+    Registered interfaces require a machine-readable process gateway.
+
+    Pseudocode
+    ----------
+    - set interface_contract = dispatcher argv adapted by the run method
+    - return interface contract
+
+    Wraps
+    -----
+    - none
+    """
     prog = "tex_macro_reader.py"
 
     def run(self, argv: list[str]) -> int:
+        """Run macro extraction with dispatcher-supplied arguments.
+
+        Intent
+        ------
+        Implement the machine interface's argv contract.
+
+        Rationale
+        ---------
+        The gateway reports process success after the shared entrypoint returns.
+
+        CallsFromRepo
+        -------------
+          .main:
+            why:
+              dispatches: "Executes the registered macro-extraction command before adapting its void result to zero."
+
+        Pseudocode
+        ----------
+        - set ignored_result = @.main(argv)
+        - return success
+
+        Wraps
+        -----
+        - none
+        """
         main(argv)
         return 0
 
 
 def main(argv: Iterable[str] | None = None) -> None:
+    """Parse CLI arguments, extract macros, and report the output artifact.
+
+    Intent
+    ------
+    Provide the compatibility command-line surface for macro extraction.
+
+    Rationale
+    ---------
+    The registered gateway and direct CLI share one validated execution path.
+
+    CallsFromRepo
+    -------------
+      .default_output_path:
+        why:
+          reads: "Selects the conventional destination when none is supplied."
+      .write_macros:
+        why:
+          writes: "Persists the extracted macro mapping."
+
+    InstantiationsFromRepo
+    ----------------------
+      .extract_macros:
+        why:
+          constructs: "Builds the normalized project macro closure."
+
+    Pseudocode
+    ----------
+    - set arguments = parsed entrypoint and optional output arguments
+    - if TeX entrypoint is missing:
+      - raise missing entrypoint error
+    - set macros = extracted macros from the entrypoint
+    - @.write_macros(macros, output_path)
+    - set standard_output = machine-readable output metadata
+
+    Wraps
+    -----
+    - none
+    """
     parser = argparse.ArgumentParser(
         description="Extract MathJax macro definitions from a TeX entrypoint."
     )

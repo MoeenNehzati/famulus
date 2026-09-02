@@ -1,7 +1,23 @@
 """Browser coverage for inspector navigation and advanced edge geometry."""
 
+import json
+import os
+from pathlib import Path
+
 from officina.visualization.elk_html_renderer import build_html_with_elk
 from test_support.browser import require_chrome, run_html
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+MATH_DEPENDENCY_GRAPH = (
+    REPO_ROOT
+    / "skills/math-dependency-graph/assets/inference-from-random-restarts/results/extraction-latest.json"
+)
+
+
+def _task5_math_dependency_graph() -> Path:
+    override = os.environ.get("FAMULUS_MATH_DEPENDENCY_GRAPH")
+    return Path(override) if override else MATH_DEPENDENCY_GRAPH
 
 
 def _run_browser_case(
@@ -430,6 +446,106 @@ def test_mathjax_unknown_command_oracle_accepts_supported_primitives() -> None:
         }
         """,
         virtual_time_budget=12000,
+        wait_for_load=False,
+    )
+
+
+def test_self_contained_canonical_graph_renders_all_dynamic_math_semantics() -> None:
+    payload = json.loads(_task5_math_dependency_graph().read_text(encoding="utf-8"))
+
+    _run_browser_case(
+        "self-contained-canonical-graph",
+        payload,
+        """
+        if (!window.MathJax?.startup?.promise) throw new Error("MathJax did not start");
+        await window.MathJax.startup.promise;
+
+        const expectedExpressionVariants = new Map([
+          ["notation-root-set", {expressionIndex: 0, variants: ["script", "bold-italic"]}],
+          ["notation-qtc-boundary", {expressionIndex: 1, variants: ["bold-italic"]}],
+          ["construction-banach-structure", {expressionIndex: 0, variants: ["bold-italic"]}],
+        ]);
+        const assertSvgMathOutput = owner => {
+          const containers = Array.from(details.querySelectorAll("mjx-container"));
+          const semanticMath = details.querySelectorAll("mjx-assistive-mml math");
+          if (containers.length !== semanticMath.length) {
+            throw new Error(
+              owner + " has " + semanticMath.length + " semantic math cases but " +
+              containers.length + " MathJax containers"
+            );
+          }
+          for (const container of containers) {
+            if (!container.querySelector("svg")) {
+              throw new Error(owner + " has a MathJax container without SVG output");
+            }
+          }
+        };
+        for (const entity of docData.entities) {
+          showEntityDetails(entity);
+          const diagnostics = await window.officinaMathDiagnostics();
+          if (diagnostics.mathErrorCount !== 0 || details.querySelector("mjx-merror")) {
+            const errors = Array.from(details.querySelectorAll("mjx-merror, merror"))
+              .map(node => node.textContent || "").join(" | ");
+            throw new Error(
+              "MathJax error while rendering entity " + entity.id + ": " +
+              diagnostics.unresolvedCommands.join(",") + " " + errors
+            );
+          }
+          assertSvgMathOutput("entity " + entity.id);
+          const expectation = expectedExpressionVariants.get(entity.id);
+          if (expectation) {
+            const expressions = details.querySelectorAll("mjx-assistive-mml math");
+            const affectedExpression = expressions[expectation.expressionIndex];
+            if (!affectedExpression) {
+              throw new Error("representative entity lacks semantic MathML: " + entity.id);
+            }
+            for (const variant of expectation.variants) {
+              if (!affectedExpression.querySelector(`[mathvariant="${variant}"]`)) {
+                const observed = Array.from(
+                  affectedExpression.querySelectorAll("[mathvariant]")
+                ).map(node => node.getAttribute("mathvariant"));
+                throw new Error(
+                  `affected expression in ${entity.id} lacks ${variant} MathML semantics; ` +
+                  `observed ${observed.join(",")}`
+                );
+              }
+            }
+          }
+        }
+
+        for (const entity of docData.entities) {
+          for (const relation of entity.connects_to || []) {
+            const edge = {
+              ...relation,
+              source: entity.id,
+              target: relation.to,
+            };
+            showEdgeDetails(edge);
+            const diagnostics = await window.officinaMathDiagnostics();
+            if (diagnostics.mathErrorCount !== 0 || details.querySelector("mjx-merror")) {
+              const errors = Array.from(details.querySelectorAll("mjx-merror, merror"))
+                .map(node => node.textContent || "").join(" | ");
+              throw new Error(
+                "MathJax error while rendering edge " + entity.id + " -> " + relation.to +
+                ": " + diagnostics.unresolvedCommands.join(",") + " " + errors
+              );
+            }
+            assertSvgMathOutput("edge " + entity.id + " -> " + relation.to);
+          }
+        }
+
+        const diagnostics = await window.officinaMathDiagnostics();
+        if (diagnostics.unresolvedCommands.length) {
+          throw new Error(
+            "canonical graph has unresolved commands: " +
+            diagnostics.unresolvedCommands.join(",")
+          );
+        }
+        if (document.querySelector("[data-unresolved-tex]")) {
+          throw new Error("canonical graph produced an unresolved-TeX marker");
+        }
+        """,
+        virtual_time_budget=30000,
         wait_for_load=False,
     )
 
