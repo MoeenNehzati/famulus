@@ -1,74 +1,156 @@
-authority:
-  owns_filesystem: []
-children:
-  _rtx: {}
+# Generated documentation comments.
+# Blueprint values are editable; comments are regenerated from the schema.
+# Do not store durable notes in this file's comments.
+# @schema-doc path=$
+# @summary Closed version 6 contract for path-derived module identity, explicit child
+#   registration, namespace routing, and source-owned exports.
+schema_version: 6
+node_type: module
+id: math-dependency-graph
+# @schema-doc path=version
+# @summary Human-managed interface contract version.
+version: 4
+# @schema-doc path=maturity
+# @summary The node's current readiness for use: stable or experimental.
+# @status required
+# @validator schema-shape
+maturity: stable
+description: >-
+  Extracts a direct dependency graph from mathematical LaTeX into self-contained
+  canonical JSON, optionally renders offline HTML, and serves it for inspection.
+# @schema-doc path=gateway
+# @summary A whole-file gateway plus its language and optional alternative machine
+#   requirements.
+gateway:
+  # @schema-doc path=gateway.path
+  # @summary Relative path without parent traversal. Filesystem validators additionally
+  #   require the expected file type.
+  # @status required
+  # @validator gateway-file
+  path: SKILL.md
+  # @schema-doc path=gateway.language
+  # @summary A language or machine requirement: a name, an exact version, or a comma-
+  #   separated intersection of version constraints.
+  # @status required
+  # @validator schema-shape
+  language: Markdown
+# @schema-doc path=content
+# @summary Case-sensitive Python regular expressions matched with re.fullmatch against
+#   normalized POSIX paths under the node ownership root.
 content:
-- (?:\.gitignore|SKILL\.md|instructions/extract\.md|resources/graph-base\.json)
-description: Extracts a direct dependency graph from mathematical LaTeX, renders canonical
-  graph JSON as interactive HTML, and serves the result locally for inspection.
+  - (?:\.gitignore|SKILL\.md|instructions/extract\.md|resources/graph-base\.json)
+# @schema-doc path=discovery
+# @status optional
+# @validator schema-shape
 discovery:
+  # @schema-doc path=discovery.mechanism
+  # @summary The host discovery convention used to find this module.
   mechanism: skill
   catalog:
+    # @schema-doc path=discovery.catalog.domain
+    # @summary The single configured documentation domain matching the module's primary
+    #   direct user outcome.
     domain: research
     topics:
-    - mathematical-reasoning
-    - visualization
-    - scholarly-documents
+      - mathematical-reasoning
+      - visualization
+      - scholarly-documents
+    # @schema-doc path=discovery.catalog.visibility
+    # @summary The configured generated-documentation prominence of this discoverable
+    #   module.
     visibility: featured
+  # @schema-doc path=discovery.activated_by
+  # @summary Every supported class of initiator that can directly activate this skill.
   activated_by:
-  - user-request
-  - skill-workflow
+    - user-request
+    - skill-workflow
+  # @schema-doc path=discovery.persistent_modifier
+  # @summary Whether invocation intentionally changes assistant behavior beyond the
+  #   activating invocation; true requires the reasoning-control topic.
   persistent_modifier: false
-exports:
-  math-dependency-graph.interface.default:
-    access:
-      allow_all_modules: true
-      allowed_callers: []
-    source_interface: math-dependency-graph.source.gateway.interface.default
-  math-dependency-graph.interface.extract:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - math-dependency-graph
-    source_interface: math-dependency-graph.source.instructions-extract.interface.extract
-gateway:
-  language: Markdown
-  path: SKILL.md
-id: math-dependency-graph
+# @schema-doc path=installation_tier
+# @summary The default installation tier for a discoverable module.
+# @status optional
+# @validator schema-shape
+installation_tier: core
+# @schema-doc path=personal_preference
+# @status optional
+# @validator schema-shape
+personal_preference:
+  applies: false
+authority:
+  owns_filesystem: []
+sources:
+  math-dependency-graph.source.gateway:
+    blueprint:
+      # @schema-doc path=sources.math-dependency-graph.source.gateway.blueprint.base
+      # @status required
+      # @validator gateway-file
+      base: module-root
+      # @schema-doc path=sources.math-dependency-graph.source.gateway.blueprint.path
+      # @summary Relative path without parent traversal. Filesystem validators
+      #   additionally require the expected file type.
+      # @status required
+      # @validator gateway-file
+      path: blueprints/gateway.yaml
+  math-dependency-graph.source.instructions-extract:
+    blueprint:
+      # @schema-doc path=sources.math-dependency-graph.source.instructions-extract.blueprint.base
+      # @status required
+      # @validator gateway-file
+      base: module-root
+      # @schema-doc path=sources.math-dependency-graph.source.instructions-extract.blueprint.path
+      # @summary Relative path without parent traversal. Filesystem validators
+      #   additionally require the expected file type.
+      # @status required
+      # @validator gateway-file
+      path: blueprints/instructions-extract.yaml
+children:
+  _rtx: {}
 namespace_exports:
   _rtx:
-    version: 1
+    # @schema-doc path=namespace_exports._rtx.version
+    # @summary Human-managed interface contract version.
+    version: 2
     access:
       allow_all_modules: true
       allowed_callers: []
     surface:
       only:
-        math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph: 1
-        math-dependency-graph._rtx.interface.scripts-extract-mathjax-macros: 1
+        # @schema-doc path=namespace_exports._rtx.surface.only.math-dependency-graph._rtx.interface.scripts-finalize-extraction
+        # @summary Human-managed interface contract version.
+        math-dependency-graph._rtx.interface.scripts-finalize-extraction: 1
+        # @schema-doc path=namespace_exports._rtx.surface.only.math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph
+        # @summary Human-managed interface contract version.
+        math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph: 2
+        # @schema-doc path=namespace_exports._rtx.surface.only.math-dependency-graph._rtx.interface.scripts-read-tex-labels
+        # @summary Human-managed interface contract version.
+        math-dependency-graph._rtx.interface.scripts-read-tex-labels: 1
+        # @schema-doc path=namespace_exports._rtx.surface.only.math-dependency-graph._rtx.interface.scripts-serve-graph
+        # @summary Human-managed interface contract version.
         math-dependency-graph._rtx.interface.scripts-serve-graph: 1
     interface_access:
+      math-dependency-graph._rtx.interface.scripts-finalize-extraction:
+        allow_all_modules: false
+        allowed_callers: []
       math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph:
         allow_all_modules: false
         allowed_callers: []
-      math-dependency-graph._rtx.interface.scripts-extract-mathjax-macros:
+      math-dependency-graph._rtx.interface.scripts-read-tex-labels:
         allow_all_modules: false
         allowed_callers: []
       math-dependency-graph._rtx.interface.scripts-serve-graph:
         allow_all_modules: false
         allowed_callers: []
-node_type: module
-schema_version: 6
-sources:
-  math-dependency-graph.source.gateway:
-    blueprint:
-      base: module-root
-      path: blueprints/gateway.yaml
-  math-dependency-graph.source.instructions-extract:
-    blueprint:
-      base: module-root
-      path: blueprints/instructions-extract.yaml
-version: 3
-maturity: stable
-installation_tier: core
-personal_preference:
-  applies: false
+exports:
+  math-dependency-graph.interface.default:
+    source_interface: math-dependency-graph.source.gateway.interface.default
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+  math-dependency-graph.interface.extract:
+    source_interface: math-dependency-graph.source.instructions-extract.interface.extract
+    access:
+      allow_all_modules: false
+      allowed_callers:
+        - math-dependency-graph

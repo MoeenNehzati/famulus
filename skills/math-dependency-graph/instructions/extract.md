@@ -1,6 +1,19 @@
 # Extract a Mathematical Dependency Graph
 
-Produce canonical graph JSON from the supplied mathematical source. This interface owns semantic interpretation; it does not render HTML.
+Produce a semantic graph draft from the supplied mathematical content, finalize it as self-contained canonical JSON, and render only when requested. This interface owns semantic interpretation; deterministic finalization and rendering remain delegated boundaries.
+
+## Inputs and completion sequence
+
+Identify the **included content** being graphed separately from the **root TeX entrypoint**. The included content fixes the evidentiary scope. The root entrypoint supplies the document preamble and the recursively reachable macro definitions used only during finalization. Never substitute a scoped fragment for the root. In the bundled example, the included content is under `source/appendix.tex`, but macro traversal must start at `source/main.tex`.
+
+Complete every extraction in this order:
+
+1. Interpret only the included content and write a semantic draft JSON artifact.
+2. Invoke `math-dependency-graph._rtx.interface.scripts-finalize-extraction` with the draft path, the explicit root TeX entrypoint, the optional label-map path, and the canonical output path.
+3. Read and validate the returned canonical JSON. It must be schema-version 2 and self-contained before it is reported as render-ready.
+4. If rendering was requested, invoke `math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph` with only the canonical JSON, optional HTML destination, and optional rendered-view transitive reduction.
+
+Canonical completion does not require an HTML artifact. `render-ready/self-contained` means finalization and schema validation succeeded; it does not mean a browser has verified the render. When browser validation is requested and available, inspect the optional HTML with `window.officinaMathDiagnostics()` and separately report whether it is `browser-verified render-clean` and any unresolved TeX commands.
 
 ## Objective
 
@@ -29,7 +42,7 @@ Also set `ref` to the number the document assigns the object, such as `4.3`, `A.
 
 That number is **not written in the source**: TeX assigns it while typesetting, and a `\label{...}` records only a key. Take it from a resolved label map when the job supplies one, and otherwise derive it.
 
-**Record the label rather than the number.** Whenever the object's statement carries a `\label{...}`, copy that key verbatim into `tex_label`. Reading a label off the source needs no inference, whereas a number does, and the rendering step resolves `tex_label` to the printed number deterministically. Set `tex_label` even when you also know the number.
+**Record the label rather than the number.** Whenever the object's statement carries a `\label{...}`, copy that key verbatim into `tex_label`. Reading a label off the source needs no inference, whereas a number does, and the finalization step resolves `tex_label` to the printed number deterministically when a label map is supplied. Set `tex_label` even when you also know the number.
 
 **Use a supplied label map when one is given.** It was produced by compiling the document, so its numbers are exactly what the paper prints: look the entity up by its `tex_label` and copy the number into `ref`. The map also records the kind TeX assigned, such as `lemma` or `assumption`; treat a disagreement with your own reading as a signal to re-examine the statement rather than as licence to override the map.
 
@@ -81,9 +94,9 @@ When the source is ambiguous:
 - leave unresolved references as explicit gaps
 - never manufacture an edge solely to make the graph connected
 
-## Canonical output
+## Semantic draft
 
-Write one JSON object accepted by `src/officina/visualization/graph_specification.schema.json`:
+Write one schema-compatible JSON object for deterministic finalization:
 
 - top-level `schema_version` is the integer `2`
 - top-level `entities` is always present, including when empty
@@ -95,20 +108,7 @@ Write one JSON object accepted by `src/officina/visualization/graph_specificatio
 
 Use `graph_kind: "math-dependency"` and include `document.title` and `document.source_file` when known. General audit metadata belongs in top-level `metadata`. Do not emit renderer layout, filtering, containment, degree, or tier fields unless the request explicitly requires them; those are presentation or derived concerns rather than mathematical extraction.
 
-When the graph contains TeX, request MathJax through the schema-supported dependency object:
-
-```json
-{
-  "id": "mathjax",
-  "version": "3",
-  "configuration": {
-    "input": "tex",
-    "output": "svg"
-  }
-}
-```
-
-Place it in top-level `renderer_dependencies`. Add `configuration.macros` only when macro definitions are known and each value follows the schema-supported string or macro-array form.
+Do not read TeX macro definitions, construct a macro sidecar, or add presentation defaults during semantic extraction. The finalizer scans graph-visible math, traverses the explicit root entrypoint, embeds the required recursive macro closure in the MathJax renderer dependency, applies the canonical presentation catalog, and validates the completed payload before atomically replacing the canonical output.
 
 A minimal valid extraction has this shape:
 
@@ -127,7 +127,7 @@ A minimal valid extraction has this shape:
       "connects_to": [
         {
           "to": "theorem-existence",
-          "type": "assumption-for",
+          "type": "supports",
           "description": "Continuity is used to establish existence.",
           "evidence": "Proof of Theorem 1, first paragraph.",
           "confidence": "Verified",
@@ -150,4 +150,6 @@ A minimal valid extraction has this shape:
 
 If no category catalog is supplied, entity `type` values provide the default categories. If the request supplies a category catalog or explicit entity categories, preserve them rather than replacing them with math defaults.
 
-Before returning, check the artifact structurally against the current schema and check the semantic invariants the schema cannot express: unique entity ids, valid edge endpoints, source-order positions, direct rather than transitively inferred dependencies, and evidence for every nontrivial edge. Return the path to the completed JSON artifact. Do not return a prose substitute for the artifact. Report evidence gaps alongside the path when the extraction is partial.
+Before finalization, check the draft's semantic invariants: unique entity ids, valid edge endpoints, source-order positions, direct rather than transitively inferred dependencies, and evidence for every nontrivial edge. After the registered finalizer returns, read the canonical artifact and confirm it satisfies the current schema and contains its renderer dependencies internally. Never repair, enrich, or rewrite canonical JSON in the builder.
+
+Return the canonical JSON path and any evidence gaps. Return an HTML path only when optional rendering was requested. If browser diagnostics were run, report their status separately; otherwise do not imply browser verification. Do not return a prose substitute for the artifacts.

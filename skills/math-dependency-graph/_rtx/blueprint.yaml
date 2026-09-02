@@ -6,6 +6,13 @@ authority:
       - python3
       - -m
       - officina.runtime.python_machine_interface_runner
+      - _extraction_finalizer.py
+      - Interface
+      reason: Finalize semantic extraction into validated self-contained canonical JSON.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
       - _graph_builder.py
       - Interface
       reason: Render math dependency graph HTML from canonical JSON.
@@ -33,6 +40,7 @@ authority:
     network: []
 children: {}
 content:
+- _extraction_finalizer\.py
 - _graph_builder\.py
 - _graph_server\.py
 - __init__\.py
@@ -41,6 +49,12 @@ content:
 - tests/.*
 description: Code module for the math-dependency-graph skill.
 exports:
+  math-dependency-graph._rtx.interface.scripts-finalize-extraction:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - math-dependency-graph
+    source_interface: math-dependency-graph._rtx.source.rtx-extraction-finalizer.interface.scripts-finalize-extraction
   math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph:
     access:
       allow_all_modules: false
@@ -73,6 +87,10 @@ namespace_exports: {}
 node_type: module
 schema_version: 6
 sources:
+  math-dependency-graph._rtx.source.rtx-extraction-finalizer:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-extraction-finalizer.yaml
   math-dependency-graph._rtx.source.rtx-graph-builder:
     blueprint:
       base: module-root
@@ -93,5 +111,5 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/rtx-tex-macro-reader.yaml
-version: 1
+version: 2
 maturity: stable

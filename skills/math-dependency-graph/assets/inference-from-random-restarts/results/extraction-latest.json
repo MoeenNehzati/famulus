@@ -13,7 +13,6 @@
     "position_rule": "position follows the order in which each entity's statement text first appears within the requested scope; for objects whose statement lies outside the scope (main-body assumptions and Proposition 4.7), position follows the location of their first in-scope reference.",
     "restatement_note": "Several main-body results appear in the appendix only through restatement macros (\\lemLipschitz*, \\propMeasurable*, \\propEtaBound*, \\propBasinPosteriorSize*, \\propBetaPrior*, \\propSpikeSlabRate*, \\thmKOneTightRateFixed*, \\propESubmersionFiniteAttractors*). Each such entity names the result, not the macro; the macro and the out-of-scope location of the statement text are recorded in the entity's metadata.",
     "ref_source": "All refs marked provenance 'label-map' were copied from the supplied compiled label map. Three refs (B.1 and B.3 on the remark counter, B.5 on the theorem counter) were derived from the preamble-independent evidence of neighbouring labelled objects and are marked provenance 'derived'.",
-    "macro_gap": "The document uses custom macros (\\vQ, \\QTC, \\QTCP, \\vG, \\mR, \\vx, \\vn, \\TC, \\inter, \\PP, \\EE, \\vbasin, and others). Their \\newcommand definitions live in a preamble outside the requested scope, so no configuration.macros block is declared.",
     "external_results": "External theorems are represented only where the document-local invocation is essential to a step: Nagurney et al. Theorem 2.5, the McShane extension theorem, the preimage theorem, Sard's theorem, Gautschi's inequality, and the price bounds of Skerlos et al. Elementary tools used inline (dominated convergence / Cesaro averaging, the Dirichlet moment formula, rank-nullity) are recorded in the using entity's metadata rather than as entities."
   },
   "renderer_dependencies": [
@@ -22,7 +21,31 @@
       "version": "3",
       "configuration": {
         "input": "tex",
-        "output": "svg"
+        "output": "svg",
+        "macros": {
+          "bm": [
+            "\\boldsymbol{#1}",
+            1
+          ],
+          "R": "\\mathbb{R}",
+          "inter": "\\operatorname{int}",
+          "mR": "\\mathcal{R}",
+          "TC": "\\operatorname{TC}",
+          "QTC": "\\vQ^{\\Pi_{\\TC_X}}",
+          "QTCP": "\\vQ^{\\Pi_{\\TC_X}}_{|\\partial X}",
+          "PP": "\\mathbb{P}",
+          "EE": "\\mathbb{E}",
+          "vc": "\\bm{c}",
+          "vn": "\\bm{n}",
+          "vp": "\\bm{p}",
+          "vx": "\\bm{x}",
+          "vtheta": "\\bm{\\theta}",
+          "vomega": "\\bm{\\omega}",
+          "vzeta": "\\bm{\\zeta}",
+          "vF": "\\bm{F}",
+          "vG": "\\bm{G}",
+          "vQ": "\\bm{Q}"
+        }
       }
     }
   ],

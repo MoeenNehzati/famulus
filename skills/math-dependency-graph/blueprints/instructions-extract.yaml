@@ -1,33 +1,41 @@
 content:
 - instructions/extract\.md
 dependencies: []
-description: Owns semantic extraction of direct mathematical dependencies from source
-  documents into canonical graph JSON.
+description: Owns semantic extraction of direct mathematical dependencies into a
+  draft, then delegates self-contained canonical JSON finalization and optional
+  rendering.
 gateway:
   language: Markdown
   path: instructions/extract.md
 id: math-dependency-graph.source.instructions-extract
 interfaces:
   math-dependency-graph.source.instructions-extract.interface.extract:
-    uses_interfaces: []
+    uses_interfaces:
+    - interface: math-dependency-graph._rtx.interface.scripts-finalize-extraction
+      version: 1
+    - interface: math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph
+      version: 2
     content:
     - instructions/extract\.md
     contract:
       arguments:
         request:
-          description: Source document content, requested scope, and output-path constraints
-            for dependency extraction.
+          description: Included mathematical content, requested scope, semantic-draft
+            and canonical output paths, the distinct root TeX entrypoint, optional
+            label map, and optional HTML destination.
           required: true
           sensitivity: user-private
           type:
             kind: string
             sensitivity: user-private
-      caller_warnings: []
+      caller_warnings:
+      - external-side-effect: Writes a semantic draft, atomically finalizes canonical
+          JSON, and writes HTML only when rendering is requested.
       direct_io:
         network: []
         reads:
         - access: read
-          content: mathematical source and extraction request
+          content: included mathematical source and extraction request
           formats:
           - text
           id: read-1
@@ -35,49 +43,73 @@ interfaces:
           sensitivity: user-private
         writes:
         - access: write
-          content: canonical mathematical dependency graph
+          content: semantic mathematical dependency draft
           formats:
           - json
           id: write-1
           medium: local-filesystem
           sensitivity: derived-private
+        - access: write
+          content: finalized self-contained canonical mathematical dependency graph
+          formats:
+          - json
+          id: write-2
+          medium: local-filesystem
+          sensitivity: derived-private
       execution:
         consistency:
-          snapshot: Every entity, relationship, and evidence item is derived from
-            the source snapshot supplied for this run.
+          snapshot: Semantic extraction uses the included source snapshot, while
+            finalization uses the explicitly identified root TeX tree and optional
+            label map from the same run.
         effects:
         - action: create
           confirmation_evidence:
-            kind: output
-            output_ref: graph-json
+            direct_io_ref: write-1
+            kind: direct-io
           direct_io_ref: write-1
-          id: graph-json-write
+          id: draft-write
           may_occur_in_outcomes:
           - extracted
           - extracted-with-gaps
           reversibility:
-            reversible: Delete the generated JSON artifact without changing the source
-              document.
+            reversible: Delete the draft after retaining the finalized canonical
+              JSON.
+          value_source:
+            argument_ref: request
+            kind: argument
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: write-2
+            kind: direct-io
+          direct_io_ref: write-2
+          id: canonical-write
+          may_occur_in_outcomes:
+          - extracted
+          - extracted-with-gaps
+          reversibility:
+            reversible: Regenerate the canonical graph from the draft and root TeX
+              inputs.
           value_source:
             argument_ref: request
             kind: argument
         lifecycle: finite
         mutation_safety:
           atomicity:
-            atomic: The interface completes one canonical JSON artifact before returning
-              its path.
+            per_effect_only: The draft is a separate artifact; delegated finalization
+              validates before atomically replacing canonical JSON.
           concurrent_invocations:
-            unsafe: Concurrent extraction to the same requested path can overwrite
-              an artifact.
+            unsafe: Concurrent extraction to the same requested paths is not serialized.
           idempotency:
-            idempotent: Re-extracting the same source snapshot and scope produces
-              an equivalent graph artifact.
+            idempotent: Re-extracting the same source snapshots and scope produces
+              equivalent semantic and canonical graph artifacts.
           on_uncertain_completion:
-            verify_then_decide: Validate the requested JSON path before retrying extraction.
+            verify_then_decide: Validate the requested canonical JSON path before
+              retrying extraction or rendering.
           partial_effects_on_failure:
-            possible: An incomplete artifact may remain if writing is interrupted.
+            possible: The semantic draft may remain when finalization or optional
+              rendering fails; a failed finalization preserves prior canonical JSON.
           rollback_on_failure:
-            available: Remove only the incomplete artifact created by this invocation.
+            unavailable: The separate semantic draft is not removed automatically.
         state_effect: mutating
         verification:
         - method: output-schema
@@ -86,21 +118,26 @@ interfaces:
       interaction:
         mode: unattended
       outcomes:
-      - caller_action: Pass the canonical JSON path to the deterministic graph builder.
+      - caller_action: Use the self-contained canonical JSON directly or optionally
+          render it.
         class: success
         effects:
-        - graph-json-write
+        - draft-write
+        - canonical-write
         id: extracted
         outputs:
         - graph-json
-      - caller_action: Report unresolved evidence gaps instead of inventing dependencies.
+      - caller_action: Report unresolved evidence gaps without inventing dependencies;
+          the canonical JSON remains render-ready.
         class: success
         effects:
-        - graph-json-write
+        - draft-write
+        - canonical-write
         id: extracted-with-gaps
         outputs:
         - graph-json
-      - caller_action: Correct the source or output-path request before retrying.
+      - caller_action: Correct the source, root entrypoint, or output-path request
+          before retrying.
         class: error
         effects: []
         id: invalid-request
@@ -110,10 +147,9 @@ interfaces:
         cardinality:
           maximum: 1
           minimum: 1
-        description: Filesystem path to a schema-version-2 canonical graph whose entities
-          carry valid nested connects_to edges, direct mathematical dependencies,
-          and evidence.
-        direct_io_ref: write-1
+        description: Filesystem path to a schema-version-2, self-contained canonical
+          graph plus evidence gaps and optional render or browser-diagnostics status.
+        direct_io_ref: write-2
         empty: Never empty on success.
         id: graph-json
         ordering: stable
@@ -125,11 +161,15 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Extracts a notation-faithful direct mathematical dependency graph
-      into canonical JSON.
-    version: 1
+    description: Extract a notation-faithful semantic graph draft, finalize it as
+      self-contained canonical JSON, and optionally render it.
+    version: 2
 node_type: behavioral_source
 schema_version: 6
-uses_interfaces: []
-version: 1
+uses_interfaces:
+- interface: math-dependency-graph._rtx.interface.scripts-finalize-extraction
+  version: 1
+- interface: math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph
+  version: 2
+version: 2
 maturity: stable

@@ -1,0 +1,848 @@
+from __future__ import annotations
+
+import json
+import shutil
+import sys
+from pathlib import Path
+from unittest import mock
+
+import jsonschema
+import pytest
+
+
+RTX_DIR = Path(__file__).resolve().parents[1]
+REPO_ROOT = RTX_DIR.parents[2]
+REPO_SRC = REPO_ROOT / "src"
+SCHEMA_PATH = REPO_SRC / "officina" / "visualization" / "graph_specification.schema.json"
+sys.path.insert(0, str(REPO_SRC))
+sys.path.insert(0, str(RTX_DIR))
+
+import _extraction_finalizer  # noqa: E402
+import _tex_macro_reader  # noqa: E402
+from _extraction_finalizer import finalize_extraction  # noqa: E402
+from officina.visualization.base_renderer_cli import main as render_canonical_html  # noqa: E402
+
+
+PRIMARY_EXPRESSION = (
+    r"$\RootBloom+\NestedQuill+\PairWeave{x}{y}+\ShadeFold[z]{w}$"
+)
+
+PRIMARY_MACROS = {
+    "RootBloom": r"\mathbb{B}",
+    "NestedQuill": r"\RootBloom^{\star}",
+    "PairWeave": [r"\langle #1,#2\rangle", 2],
+    "SupportSpore": r"\mathcal{S}",
+    "AmbientThread": r"\mathcal{A}",
+    "ShadeFold": [
+        r"#1+\PairWeave{#2}{\SupportSpore}+\AmbientThread",
+        2,
+        "q",
+    ],
+}
+
+
+def _write_tex(project: Path, source: str) -> Path:
+    project.mkdir(parents=True)
+    entrypoint = project / "main.tex"
+    entrypoint.write_text(source, encoding="utf-8")
+    return entrypoint
+
+
+def _write_primary_tex_project(project: Path) -> tuple[Path, Path]:
+    parts = project / "parts"
+    texmf = project.parent / "controlled-texmf"
+    parts.mkdir(parents=True)
+    texmf.mkdir()
+    entrypoint = project / "main.tex"
+    entrypoint.write_text(
+        r"""
+        \documentclass{localframe}
+        \usepackage{localtones,ambientweave}
+        \input{parts/direct}
+        \include{parts/nested}
+        """,
+        encoding="utf-8",
+    )
+    (project / "localframe.cls").write_text(
+        r"\newcommand{\RootBloom}{\mathbb{B}}",
+        encoding="utf-8",
+    )
+    (project / "localtones.sty").write_text(
+        r"""
+        \newcommand{\PairWeave}[2]{\langle #1,#2\rangle}
+        \newcommand{\SupportSpore}{\mathcal{S}}
+        """,
+        encoding="utf-8",
+    )
+    (parts / "direct.tex").write_text(
+        r"\newcommand{\NestedQuill}{\RootBloom^{\star}}",
+        encoding="utf-8",
+    )
+    (parts / "nested.tex").write_text(
+        r"""
+        \newcommand{\ShadeFold}[2][q]{#1+\PairWeave{#2}{\SupportSpore}+\AmbientThread}
+        \newcommand{\IdleComet}{\mathrm{idle}}
+        """,
+        encoding="utf-8",
+    )
+    ambient_package = texmf / "ambientweave.sty"
+    ambient_package.write_text(
+        r"\newcommand{\AmbientThread}{\mathcal{A}}",
+        encoding="utf-8",
+    )
+    return entrypoint, ambient_package
+
+
+def _write_draft(
+    path: Path,
+    expression: str,
+    *,
+    renderer_dependencies: list[dict] | None = None,
+) -> Path:
+    payload = {
+        "schema_version": 2,
+        "graph_kind": "math-dependency",
+        "document": {"title": "Synthetic macro contract"},
+        "entities": [
+            {
+                "id": "synthetic-result",
+                "type": "definition",
+                "short_title": expression,
+                "description": f"Graph-visible statement: {expression}",
+                "position": 0,
+                "connects_to": [],
+            }
+        ],
+    }
+    if renderer_dependencies is not None:
+        payload["renderer_dependencies"] = renderer_dependencies
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def _mathjax_macros(payload: dict) -> dict:
+    matches = [
+        dependency
+        for dependency in payload.get("renderer_dependencies", [])
+        if dependency.get("id") == "mathjax"
+    ]
+    assert len(matches) == 1
+    return matches[0]["configuration"]["macros"]
+
+
+def test_finalizer_writes_schema_valid_detachable_relevant_macro_closure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    project = tmp_path / "tex-project"
+    entrypoint, ambient_package = _write_primary_tex_project(project)
+    draft = _write_draft(project / "draft.json", PRIMARY_EXPRESSION)
+    canonical = project / "canonical.json"
+    original_resolver = _tex_macro_reader.resolve_tex_path
+
+    def controlled_resolver(
+        include_name: str,
+        current_dir: Path,
+        suffix: str = ".tex",
+    ) -> Path:
+        if include_name == "ambientweave":
+            return ambient_package
+        return original_resolver(include_name, current_dir, suffix)
+
+    monkeypatch.setattr(_tex_macro_reader, "resolve_tex_path", controlled_resolver)
+
+    finalize_extraction(
+        draft_path=draft,
+        tex_entrypoint=entrypoint,
+        output_path=canonical,
+        label_map_path=None,
+    )
+
+    payload = json.loads(canonical.read_text(encoding="utf-8"))
+    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    jsonschema.Draft7Validator(schema).validate(payload)
+    assert _mathjax_macros(payload) == PRIMARY_MACROS
+    assert "SupportSpore" in _mathjax_macros(payload)
+    assert "IdleComet" not in _mathjax_macros(payload)
+
+    detached = tmp_path / "detached" / "canonical.json"
+    detached.parent.mkdir()
+    shutil.copy2(canonical, detached)
+    shutil.rmtree(project)
+    shutil.rmtree(ambient_package.parent)
+
+    detached_payload = json.loads(detached.read_text(encoding="utf-8"))
+    jsonschema.Draft7Validator(schema).validate(detached_payload)
+    assert _mathjax_macros(detached_payload) == PRIMARY_MACROS
+    detached_html = detached.with_suffix(".html")
+    with mock.patch(
+        "officina.visualization.elk_html_renderer.time.time",
+        return_value=1_700_000_000.0,
+    ):
+        render_canonical_html([str(detached), "--html-out", str(detached_html)])
+    capsys.readouterr()
+    html = detached_html.read_text(encoding="utf-8")
+    assert '"AmbientThread": "\\\\mathcal{A}"' in html
+    assert '"ShadeFold": [' in html
+
+
+def test_finalizer_embeds_distribution_mathjax_adapter_not_raw_internals(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = tmp_path / "adapter-project"
+    texmf = tmp_path / "texmf"
+    texmf.mkdir()
+    entrypoint = _write_tex(
+        project,
+        r"\usepackage{amber-branch}"
+        r"\newcommand{\AmberRoot}[1]{\AmberBranch{#1}}",
+    )
+    package = texmf / "amber-branch.sty"
+    package.write_text(
+        r"\newcommand{\AmberBranch}[1]{\AmberPrivate{#1}}"
+        r"\newcommand{\AmberPrivate}[1]{\mathit{#1}}",
+        encoding="utf-8",
+    )
+    adapter = texmf / "lwarp-amber-branch.sty"
+    adapter.write_text(
+        r"\CustomizeMathJax{"
+        r"\newcommand{\AmberPrivate}[1]{\mathit{#1}}"
+        r"\newcommand{\AmberBranch}[1]{\AmberPrivate{#1}}"
+        r"}",
+        encoding="utf-8",
+    )
+
+    def controlled_distribution(filename: str) -> Path | None:
+        return {
+            "amber-branch.sty": package,
+            "lwarp-amber-branch.sty": adapter,
+        }.get(filename)
+
+    monkeypatch.setattr(
+        _tex_macro_reader, "tex_distribution_path", controlled_distribution
+    )
+    draft = _write_draft(project / "draft.json", r"$\AmberRoot{x}$")
+    canonical = project / "canonical.json"
+
+    finalize_extraction(
+        draft_path=draft,
+        tex_entrypoint=entrypoint,
+        output_path=canonical,
+        label_map_path=None,
+    )
+
+    assert _mathjax_macros(json.loads(canonical.read_text(encoding="utf-8"))) == {
+        "AmberPrivate": [r"\mathit{#1}", 1],
+        "AmberBranch": [r"\AmberPrivate{#1}", 1],
+        "AmberRoot": [r"\AmberBranch{#1}", 1],
+    }
+
+
+def test_finalizer_preserves_unclassified_leaf_for_renderer_validation(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "unresolved-project"
+    entrypoint = _write_tex(
+        project,
+        r"\newcommand{\KnownSprig}{\MissingNebula}",
+    )
+    draft = _write_draft(project / "draft.json", r"$\KnownSprig$")
+
+    canonical = project / "canonical.json"
+    finalize_extraction(
+        draft_path=draft,
+        tex_entrypoint=entrypoint,
+        output_path=canonical,
+        label_map_path=None,
+    )
+
+    assert _mathjax_macros(json.loads(canonical.read_text(encoding="utf-8"))) == {
+        "KnownSprig": r"\MissingNebula",
+    }
+
+
+def test_finalizer_ignores_commands_in_non_math_prose(tmp_path: Path) -> None:
+    project = tmp_path / "prose-project"
+    entrypoint = _write_tex(project, "Fixture without project macros.")
+    draft = _write_draft(project / "draft.json", "No rendered mathematics.")
+    payload = json.loads(draft.read_text(encoding="utf-8"))
+    payload["entities"][0]["description"] = (
+        r"The appendix restates this through \lemLipschitz*, which is provenance."
+    )
+    payload["metadata"] = {
+        "restatement": r"Source note: \propMeasurable* appears outside scope."
+    }
+    draft.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    canonical = project / "canonical.json"
+
+    finalize_extraction(
+        draft_path=draft,
+        tex_entrypoint=entrypoint,
+        output_path=canonical,
+        label_map_path=None,
+    )
+
+    assert _mathjax_macros(json.loads(canonical.read_text(encoding="utf-8"))) == {}
+
+
+def test_finalizer_extracts_from_each_renderer_math_delimiter(tmp_path: Path) -> None:
+    project = tmp_path / "delimiter-project"
+    entrypoint = _write_tex(
+        project,
+        r"\newcommand{\DollarRoot}{D}"
+        r"\newcommand{\DisplayDollarRoot}{DD}"
+        r"\newcommand{\ParenRoot}{P}"
+        r"\newcommand{\BracketRoot}{B}",
+    )
+    draft = _write_draft(
+        project / "draft.json",
+        (
+            r"prose \IgnoredProse, then $\DollarRoot$, "
+            r"$$\DisplayDollarRoot$$, \(\ParenRoot\), and \[\BracketRoot\]"
+        ),
+    )
+    canonical = project / "canonical.json"
+
+    finalize_extraction(
+        draft_path=draft,
+        tex_entrypoint=entrypoint,
+        output_path=canonical,
+        label_map_path=None,
+    )
+
+    assert _mathjax_macros(json.loads(canonical.read_text(encoding="utf-8"))) == {
+        "DollarRoot": "D",
+        "DisplayDollarRoot": "DD",
+        "ParenRoot": "P",
+        "BracketRoot": "B",
+    }
+
+
+def test_finalizer_uses_renderer_fields_but_ignores_delimited_audit_metadata(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "renderer-field-project"
+    entrypoint = _write_tex(
+        project,
+        r"\newcommand{\VisibleTitle}{T}"
+        r"\newcommand{\VisibleDetail}{D}"
+        r"\newcommand{\VisibleRole}{C}"
+        r"\newcommand{\RootAuditOnly}{R}"
+        r"\newcommand{\EntityAuditOnly}{E}",
+    )
+    draft = _write_draft(project / "draft.json", r"$\VisibleTitle$")
+    payload = json.loads(draft.read_text(encoding="utf-8"))
+    payload["metadata"] = {"audit_note": r"$\RootAuditOnly$"}
+    payload["entities"][0]["metadata"] = {"audit_note": r"$\EntityAuditOnly$"}
+    payload["entities"][0]["category"] = "visible-role"
+    payload["entities"][0]["details"] = {"summary": r"$\VisibleDetail$"}
+    payload["categories"] = [{"id": "visible-role", "label": r"$\VisibleRole$"}]
+    draft.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    canonical = project / "canonical.json"
+
+    finalize_extraction(
+        draft_path=draft,
+        tex_entrypoint=entrypoint,
+        output_path=canonical,
+        label_map_path=None,
+    )
+
+    assert _mathjax_macros(json.loads(canonical.read_text(encoding="utf-8"))) == {
+        "VisibleTitle": "T",
+        "VisibleDetail": "D",
+        "VisibleRole": "C",
+    }
+
+
+def test_finalizer_matches_renderer_paired_dollars_and_ignores_escaped_dollars(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "literal-dollar-project"
+    entrypoint = _write_tex(
+        project,
+        r"\newcommand{\EscapedDollar}{E}"
+        r"\newcommand{\CurrencyDollar}{C}"
+        r"\newcommand{\WhitespaceDollar}{W}"
+        r"\newcommand{\ActualMath}{M}",
+    )
+    draft = _write_draft(
+        project / "draft.json",
+        (
+            r"Escaped prices \$5 and \EscapedDollar at \$6; "
+            r"literal prices $5 and \CurrencyDollar at $10; "
+            r"spaced math $ \WhitespaceDollar $; "
+            r"actual math $\ActualMath$."
+        ),
+    )
+    canonical = project / "canonical.json"
+
+    finalize_extraction(
+        draft_path=draft,
+        tex_entrypoint=entrypoint,
+        output_path=canonical,
+        label_map_path=None,
+    )
+
+    assert _mathjax_macros(json.loads(canonical.read_text(encoding="utf-8"))) == {
+        "CurrencyDollar": "C",
+        "WhitespaceDollar": "W",
+        "ActualMath": "M",
+    }
+
+
+def test_finalizer_calls_public_macro_extraction_boundary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = tmp_path / "public-boundary-project"
+    entrypoint = _write_tex(project, "No declarations are needed by the fake boundary.")
+    draft = _write_draft(project / "draft.json", r"$\BoundarySprout$")
+    canonical = project / "canonical.json"
+    calls: list[tuple[Path, list[str]]] = []
+
+    def fake_extract_renderable_macros(
+        *, tex_entrypoint: Path, graph_text: list[str], include_records: bool = False
+    ) -> _tex_macro_reader.RenderableMacroExtraction:
+        calls.append((tex_entrypoint, list(graph_text)))
+        assert include_records
+        definition = _tex_macro_reader.MacroDefinition(
+            name="BoundarySprout",
+            value=r"\mathsf{B}",
+            source_path=tex_entrypoint,
+            line=1,
+            column=1,
+            directive="newcommand",
+            project_owned=True,
+        )
+        return _tex_macro_reader.RenderableMacroExtraction(
+            values={"BoundarySprout": r"\mathsf{B}"},
+            records={"BoundarySprout": definition},
+        )
+
+    monkeypatch.setattr(
+        _extraction_finalizer,
+        "extract_renderable_macros",
+        fake_extract_renderable_macros,
+        raising=False,
+    )
+
+    finalize_extraction(
+        draft_path=draft,
+        tex_entrypoint=entrypoint,
+        output_path=canonical,
+        label_map_path=None,
+    )
+
+    assert calls == [(entrypoint.resolve(), [r"\BoundarySprout", r"\BoundarySprout"])]
+    assert _mathjax_macros(json.loads(canonical.read_text(encoding="utf-8"))) == {
+        "BoundarySprout": r"\mathsf{B}",
+    }
+
+
+def test_finalizer_rejects_cyclic_relevant_definitions(tmp_path: Path) -> None:
+    project = tmp_path / "cycle-project"
+    entrypoint = _write_tex(
+        project,
+        r"""
+        \newcommand{\LoopAsh}{\LoopFern}
+        \newcommand{\LoopFern}{\LoopAsh}
+        """,
+    )
+    draft = _write_draft(project / "draft.json", r"$\LoopAsh$")
+
+    with pytest.raises(ValueError) as caught:
+        finalize_extraction(
+            draft_path=draft,
+            tex_entrypoint=entrypoint,
+            output_path=project / "canonical.json",
+            label_map_path=None,
+        )
+
+    message = str(caught.value)
+    assert "cyclic" in message.lower() or "cycle" in message.lower()
+    assert "LoopAsh" in message
+    assert "LoopFern" in message
+    assert str(entrypoint) in message
+
+
+def test_finalizer_rejects_conflicting_preexisting_macro_value(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "conflict-project"
+    entrypoint = _write_tex(
+        project,
+        r"\newcommand{\ConflictArc}[2]{#1+#2}",
+    )
+    dependencies = [
+        {
+            "id": "mathjax",
+            "version": "3",
+            "configuration": {
+                "input": "tex",
+                "output": "svg",
+                "macros": {"ConflictArc": ["#1-#2", 2]},
+            },
+        }
+    ]
+    draft = _write_draft(
+        project / "draft.json",
+        r"$\ConflictArc{x}{y}$",
+        renderer_dependencies=dependencies,
+    )
+
+    with pytest.raises(ValueError) as caught:
+        finalize_extraction(
+            draft_path=draft,
+            tex_entrypoint=entrypoint,
+            output_path=project / "canonical.json",
+            label_map_path=None,
+        )
+
+    message = str(caught.value)
+    assert "conflict" in message.lower()
+    assert "ConflictArc" in message
+    assert str(draft) in message
+    assert str(entrypoint) in message
+
+
+def test_finalizer_conflict_names_included_definition_location(
+    tmp_path: Path,
+) -> None:
+    """Catch loss of included-file provenance at the public extractor boundary."""
+    project = tmp_path / "included-conflict-project"
+    nested = project / "nested"
+    nested.mkdir(parents=True)
+    entrypoint = project / "main.tex"
+    entrypoint.write_text(r"\input{nested/definitions}", encoding="utf-8")
+    included = nested / "definitions.tex"
+    included.write_text(
+        "% fixture prelude\n"
+        r"\newcommand{\NestedConflictArc}[2]{#1+#2}",
+        encoding="utf-8",
+    )
+    draft = _write_draft(
+        project / "draft.json",
+        r"$\NestedConflictArc{x}{y}$",
+        renderer_dependencies=[
+            {
+                "id": "mathjax",
+                "version": "3",
+                "configuration": {
+                    "input": "tex",
+                    "output": "svg",
+                    "macros": {"NestedConflictArc": ["#1-#2", 2]},
+                },
+            }
+        ],
+    )
+
+    with pytest.raises(ValueError) as caught:
+        finalize_extraction(
+            draft_path=draft,
+            tex_entrypoint=entrypoint,
+            output_path=project / "canonical.json",
+            label_map_path=None,
+        )
+
+    message = str(caught.value)
+    assert "NestedConflictArc" in message
+    assert f"{included}:2:1" in message
+    assert str(draft) in message
+    assert "#1-#2" in message
+    assert "#1+#2" in message
+
+
+def test_finalizer_accepts_semantically_identical_legacy_and_native_tuples(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "tuple-project"
+    entrypoint = _write_tex(
+        project,
+        r"\newcommand{\ConcordPair}[2]{#1+#2}",
+    )
+    dependencies = [
+        {
+            "id": "mathjax",
+            "version": "3",
+            "configuration": {
+                "input": "tex",
+                "output": "svg",
+                "macros": {"ConcordPair": [2, "#1+#2"]},
+            },
+        }
+    ]
+    draft = _write_draft(
+        project / "draft.json",
+        r"$\ConcordPair{x}{y}$",
+        renderer_dependencies=dependencies,
+    )
+    canonical = project / "canonical.json"
+
+    finalize_extraction(
+        draft_path=draft,
+        tex_entrypoint=entrypoint,
+        output_path=canonical,
+        label_map_path=None,
+    )
+
+    payload = json.loads(canonical.read_text(encoding="utf-8"))
+    assert _mathjax_macros(payload)["ConcordPair"] == ["#1+#2", 2]
+
+
+def test_finalizer_normalizes_integer_compatible_float_macro_arity(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "float-arity-project"
+    entrypoint = _write_tex(project, "Fixture without custom commands.")
+    draft = _write_draft(
+        project / "draft.json",
+        r"$\FloatPair{x}{y}+\FloatLegacy{x}{y}$",
+        renderer_dependencies=[
+            {
+                "id": "mathjax",
+                "version": "3",
+                "configuration": {
+                    "macros": {
+                        "FloatPair": ["#1+#2", 2.0],
+                        "FloatLegacy": [2.0, "#1+#2"],
+                    }
+                },
+            }
+        ],
+    )
+
+    finalize_extraction(
+        draft_path=draft,
+        tex_entrypoint=entrypoint,
+        output_path=project / "canonical.json",
+        label_map_path=None,
+    )
+
+    payload = json.loads((project / "canonical.json").read_text(encoding="utf-8"))
+    assert _mathjax_macros(payload)["FloatPair"] == ["#1+#2", 2]
+    assert _mathjax_macros(payload)["FloatLegacy"] == ["#1+#2", 2]
+
+
+def test_finalizer_rejects_duplicate_mathjax_dependencies(tmp_path: Path) -> None:
+    project = tmp_path / "duplicate-project"
+    entrypoint = _write_tex(project, r"\newcommand{\SingleFlare}{\mathbb{F}}")
+    dependencies = [
+        {"id": "mathjax", "version": "3", "configuration": {"input": "tex"}},
+        {"id": "mathjax", "version": "3", "configuration": {"output": "svg"}},
+    ]
+    draft = _write_draft(
+        project / "draft.json",
+        r"$\SingleFlare$",
+        renderer_dependencies=dependencies,
+    )
+
+    with pytest.raises(ValueError) as caught:
+        finalize_extraction(
+            draft_path=draft,
+            tex_entrypoint=entrypoint,
+            output_path=project / "canonical.json",
+            label_map_path=None,
+        )
+
+    message = str(caught.value)
+    assert "duplicate" in message.lower()
+    assert "mathjax" in message.lower()
+    assert "renderer_dependencies[0]" in message
+    assert "renderer_dependencies[1]" in message
+
+
+def test_finalizer_applies_labels_presentation_and_normalizes_embedded_macros(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "presentation-project"
+    entrypoint = _write_tex(project, "Fixture without custom commands.")
+    draft = project / "draft.json"
+    draft_payload = {
+        "schema_version": 2,
+        "graph_kind": "math-dependency",
+        "renderer_dependencies": [
+            {
+                "id": "mathjax",
+                "version": "3",
+                "configuration": {
+                    "input": " delicate value replaced by schema default ",
+                    "output": "svg",
+                    "macros": {"EmbeddedPair": [1, "#1"]},
+                },
+            }
+        ],
+        "entities": [
+            {
+                "id": "premise",
+                "type": "assumption",
+                "short_title": r"See \eqref{eq:fixture}",
+                "position": 0,
+                "tex_label": "assumption:fixture",
+                "connects_to": [
+                    {"to": "result", "type": "supports"},
+                ],
+            },
+            {
+                "id": "result",
+                "type": "result",
+                "short_title": "Result",
+                "position": 1,
+                "connects_to": [],
+            },
+        ],
+    }
+    draft.write_text(json.dumps(draft_payload, indent=2) + "\n", encoding="utf-8")
+    label_map = project / "labels.json"
+    label_map.write_text(
+        json.dumps(
+            {
+                "assumption:fixture": {"ref": "A.1"},
+                "eq:fixture": {"ref": "7"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    canonical = project / "canonical.json"
+
+    finalize_extraction(
+        draft_path=draft,
+        tex_entrypoint=entrypoint,
+        output_path=canonical,
+        label_map_path=label_map,
+    )
+
+    payload = json.loads(canonical.read_text(encoding="utf-8"))
+    premise = payload["entities"][0]
+    assert premise["ref"] == "A.1"
+    assert premise["short_title"] == "See (7)"
+    assert {item["id"] for item in payload["edge_categories"]} == {
+        "supports",
+        "exemplifies",
+    }
+    assert "edge_styles" in payload["ui"]
+    assert "relation_semantics" in payload
+    dependency = payload["renderer_dependencies"][0]
+    assert dependency["version"] == "3"
+    assert dependency["configuration"]["input"] == "tex"
+    assert dependency["configuration"]["output"] == "svg"
+    assert dependency["configuration"]["macros"]["EmbeddedPair"] == ["#1", 1]
+    assert json.loads(draft.read_text(encoding="utf-8")) == draft_payload
+
+
+def test_finalizer_accepts_embedded_root_and_extracts_its_source_dependency(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "embedded-root-project"
+    entrypoint = _write_tex(
+        project,
+        r"\newcommand{\SourceLeaf}{\mathcal{L}}",
+    )
+    draft = _write_draft(
+        project / "draft.json",
+        r"$\EmbeddedRoot{x}$",
+        renderer_dependencies=[
+            {
+                "id": "mathjax",
+                "version": "3",
+                "configuration": {
+                    "input": "tex",
+                    "output": "svg",
+                    "macros": {"EmbeddedRoot": r"\SourceLeaf"},
+                },
+            }
+        ],
+    )
+    canonical = project / "canonical.json"
+
+    finalize_extraction(
+        draft_path=draft,
+        tex_entrypoint=entrypoint,
+        output_path=canonical,
+        label_map_path=None,
+    )
+
+    assert _mathjax_macros(json.loads(canonical.read_text(encoding="utf-8"))) == {
+        "EmbeddedRoot": r"\SourceLeaf",
+        "SourceLeaf": r"\mathcal{L}",
+    }
+
+
+def test_finalizer_validates_before_atomically_replacing_existing_output(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "invalid-project"
+    entrypoint = _write_tex(project, "Fixture without custom commands.")
+    draft = _write_draft(project / "draft.json", "No custom command.")
+    payload = json.loads(draft.read_text(encoding="utf-8"))
+    payload.pop("schema_version")
+    draft.write_text(json.dumps(payload), encoding="utf-8")
+    canonical = project / "canonical.json"
+    canonical.write_text("preserved canonical bytes\n", encoding="utf-8")
+
+    with pytest.raises(ValueError) as caught:
+        finalize_extraction(
+            draft_path=draft,
+            tex_entrypoint=entrypoint,
+            output_path=canonical,
+            label_map_path=None,
+        )
+
+    message = str(caught.value)
+    assert "schema" in message.lower()
+    assert "schema_version" in message
+    assert canonical.read_text(encoding="utf-8") == "preserved canonical bytes\n"
+
+
+def test_finalizer_serialization_failure_preserves_output_and_cleans_temp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "serialization-project"
+    entrypoint = _write_tex(project, "Fixture without custom commands.")
+    draft = _write_draft(project / "draft.json", "No rendered mathematics.")
+    canonical = project / "canonical.json"
+    canonical.write_text("preserved canonical bytes\n", encoding="utf-8")
+
+    def fail_serialization(payload: object, handle: object, **kwargs: object) -> None:
+        handle.write("partial")
+        raise OSError("synthetic serialization failure")
+
+    monkeypatch.setattr(_extraction_finalizer.json, "dump", fail_serialization)
+
+    with pytest.raises(OSError, match="synthetic serialization failure"):
+        finalize_extraction(
+            draft_path=draft,
+            tex_entrypoint=entrypoint,
+            output_path=canonical,
+            label_map_path=None,
+        )
+
+    assert canonical.read_text(encoding="utf-8") == "preserved canonical bytes\n"
+    assert not list(project.glob(".canonical.json.*.tmp"))
+
+
+def test_finalizer_replace_failure_preserves_output_and_cleans_temp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "replace-project"
+    entrypoint = _write_tex(project, "Fixture without custom commands.")
+    draft = _write_draft(project / "draft.json", "No rendered mathematics.")
+    canonical = project / "canonical.json"
+    canonical.write_text("preserved canonical bytes\n", encoding="utf-8")
+
+    def fail_replace(source: object, destination: object) -> None:
+        raise OSError(f"synthetic replace failure: {source} -> {destination}")
+
+    monkeypatch.setattr(_extraction_finalizer.os, "replace", fail_replace)
+
+    with pytest.raises(OSError, match="synthetic replace failure"):
+        finalize_extraction(
+            draft_path=draft,
+            tex_entrypoint=entrypoint,
+            output_path=canonical,
+            label_map_path=None,
+        )
+
+    assert canonical.read_text(encoding="utf-8") == "preserved canonical bytes\n"
+    assert not list(project.glob(".canonical.json.*.tmp"))

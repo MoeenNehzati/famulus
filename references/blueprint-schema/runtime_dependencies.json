@@ -4640,6 +4640,21 @@
         "math-dependency-graph._rtx.interface.scripts-extract-mathjax-macros": {
           "dependencies": []
         },
+        "math-dependency-graph._rtx.interface.scripts-finalize-extraction": {
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "jsonschema",
+              "version": ">=4",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Validates the finalized graph against the existing JSON Schema before replacement."
+            }
+          ]
+        },
         "math-dependency-graph._rtx.interface.scripts-read-tex-labels": {
           "dependencies": []
         },

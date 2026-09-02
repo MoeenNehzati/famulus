@@ -1,7 +1,23 @@
 """Browser coverage for inspector navigation and advanced edge geometry."""
 
+import json
+import os
+from pathlib import Path
+
 from officina.visualization.elk_html_renderer import build_html_with_elk
 from test_support.browser import require_chrome, run_html
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+MATH_DEPENDENCY_GRAPH = (
+    REPO_ROOT
+    / "skills/math-dependency-graph/assets/inference-from-random-restarts/results/extraction-latest.json"
+)
+
+
+def _task5_math_dependency_graph() -> Path:
+    override = os.environ.get("FAMULUS_MATH_DEPENDENCY_GRAPH")
+    return Path(override) if override else MATH_DEPENDENCY_GRAPH
 
 
 def _run_browser_case(
@@ -181,6 +197,407 @@ def test_mathjax_typesets_dynamic_tooltip_and_inspector_content() -> None:
         }
         """,
         virtual_time_budget=12000,
+        wait_for_load=False,
+    )
+
+
+def test_mathjax_diagnostics_waits_for_a_stable_dynamic_typeset_tail() -> None:
+    payload = _payload()
+    payload["renderer_dependencies"] = [{"id": "mathjax", "version": "3"}]
+    payload["entities"][0]["description"] = r"First dynamic value: $x$."
+    payload["entities"][0]["connects_to"][0]["description"] = (
+        r"Second dynamic value: $y$."
+    )
+
+    _run_browser_case(
+        "mathjax-stable-typeset-tail",
+        payload,
+        """
+        if (!window.MathJax?.startup?.promise) throw new Error("MathJax did not start");
+        await window.MathJax.startup.promise;
+        let alpha = null;
+        let edgePath = null;
+        for (let attempt = 0; attempt < 50 && (!alpha || !edgePath); attempt += 1) {
+          alpha = nodeElement("alpha");
+          edgePath = document.querySelector(".edge-path");
+          if (!alpha || !edgePath) await delay(20);
+        }
+        if (!alpha || !edgePath) throw new Error("graph elements did not render");
+        await window.officinaMathDiagnostics();
+
+        const originalTypesetPromise = window.MathJax.typesetPromise;
+        let controlledCallCount = 0;
+        let releaseFirst;
+        let releaseSecond;
+        let markFirstStarted;
+        let markSecondStarted;
+        const firstGate = new Promise(resolve => { releaseFirst = resolve; });
+        const secondGate = new Promise(resolve => { releaseSecond = resolve; });
+        const firstStarted = new Promise(resolve => { markFirstStarted = resolve; });
+        const secondStarted = new Promise(resolve => { markSecondStarted = resolve; });
+
+        window.MathJax.typesetPromise = elements => {
+          controlledCallCount += 1;
+          if (controlledCallCount === 1) {
+            markFirstStarted();
+            return firstGate;
+          }
+          if (controlledCallCount === 2) {
+            markSecondStarted();
+            return secondGate.then(() => {
+              window.__unresolvedTeX = window.__unresolvedTeX || {};
+              window.__unresolvedTeX.MissingTail = true;
+            });
+          }
+          return originalTypesetPromise.call(window.MathJax, elements);
+        };
+
+        try {
+          alpha.dispatchEvent(new MouseEvent("mouseenter", {
+            bubbles: true,
+            clientX: 200,
+            clientY: 200,
+          }));
+          await firstStarted;
+
+          let diagnosticsSettled = false;
+          const diagnosticsPromise = window.officinaMathDiagnostics().then(value => {
+            diagnosticsSettled = true;
+            return value;
+          });
+          await Promise.resolve();
+
+          edgePath.dispatchEvent(new MouseEvent("click", {bubbles: true}));
+          releaseFirst();
+          await secondStarted;
+          if (diagnosticsSettled) {
+            throw new Error("diagnostics returned before the appended typeset tail");
+          }
+
+          releaseSecond();
+          const diagnostics = await diagnosticsPromise;
+          if (diagnostics.unresolvedCommands.join(",") !== "MissingTail") {
+            throw new Error(
+              "diagnostics missed the appended typeset result: " +
+              diagnostics.unresolvedCommands.join(",")
+            );
+          }
+        } finally {
+          releaseFirst();
+          releaseSecond();
+          window.MathJax.typesetPromise = originalTypesetPromise;
+        }
+        """,
+        virtual_time_budget=12000,
+        wait_for_load=False,
+    )
+
+
+def test_mathjax_normalizes_both_macro_tuple_orders_to_semantic_mathml() -> None:
+    payload = _payload()
+    payload["renderer_dependencies"] = [
+        {
+            "id": "mathjax",
+            "version": "3",
+            "configuration": {
+                "macros": {
+                    "PairNative": ["#1+#2", 2],
+                    "PairLegacy": [2, "#1+#2"],
+                    "NestedPair": [r"\PairNative{#1}{#2}", 2],
+                }
+            },
+        }
+    ]
+    payload["entities"][0]["description"] = (
+        r"$\PairNative{a}{b}$ $\PairLegacy{a}{b}$ $\NestedPair{a}{b}$"
+    )
+
+    _run_browser_case(
+        "mathjax-schema-macro-tuples",
+        payload,
+        """
+        if (!window.MathJax?.startup?.promise) throw new Error("MathJax did not start");
+        await window.MathJax.startup.promise;
+
+        let alpha = null;
+        for (let attempt = 0; attempt < 50 && !alpha; attempt += 1) {
+          alpha = nodeElement("alpha");
+          if (!alpha) await delay(20);
+        }
+        if (!alpha) throw new Error("graph node did not render");
+        alpha.dispatchEvent(new MouseEvent("click", {bubbles: true}));
+        await delay(350);
+        const diagnostics = await window.officinaMathDiagnostics();
+
+        const math = Array.from(document.querySelectorAll("#details mjx-assistive-mml math"));
+        if (math.length !== 3) {
+          const containers = document.querySelectorAll("#details mjx-container").length;
+          throw new Error("expected three semantic MathML expressions; got " + math.length +
+            " from " + containers + " containers");
+        }
+        const expressions = math.map(node => (node.textContent || "").replace(/\\s+/g, ""));
+        if (expressions.some(value => value !== "a+b")) {
+          throw new Error("macro tuple semantics were not a+b: " + expressions.join(" | "));
+        }
+        if (diagnostics.mathErrorCount !== 0 || document.querySelector("mjx-merror")) {
+          throw new Error("valid macro tuples produced a MathJax error");
+        }
+        if (diagnostics.unresolvedCommands.length ||
+            document.querySelector("[data-unresolved-tex]")) {
+          throw new Error("valid macro tuples were reported as unresolved");
+        }
+        """,
+        virtual_time_budget=12000,
+        wait_for_load=False,
+    )
+
+
+def test_mathjax_pairs_single_dollars_without_whitespace_or_currency_filters() -> None:
+    payload = _payload()
+    payload["renderer_dependencies"] = [
+        {
+            "id": "mathjax",
+            "version": "3",
+            "configuration": {
+                "macros": {
+                    "SpacedCanopy": r"\mathsf{W}",
+                    "PairedSprout": r"\mathsf{C}",
+                }
+            },
+        }
+    ]
+    payload["entities"][0]["description"] = (
+        r"spaced $ \SpacedCanopy $ and currency-like $5+\PairedSprout$10"
+    )
+
+    _run_browser_case(
+        "mathjax-paired-single-dollars",
+        payload,
+        """
+        if (!window.MathJax?.startup?.promise) throw new Error("MathJax did not start");
+        await window.MathJax.startup.promise;
+
+        let alpha = null;
+        for (let attempt = 0; attempt < 50 && !alpha; attempt += 1) {
+          alpha = nodeElement("alpha");
+          if (!alpha) await delay(20);
+        }
+        if (!alpha) throw new Error("graph node did not render");
+        alpha.dispatchEvent(new MouseEvent("click", {bubbles: true}));
+        await delay(350);
+        const diagnostics = await window.officinaMathDiagnostics();
+        const expressions = Array.from(
+          document.querySelectorAll("#details mjx-assistive-mml math")
+        ).map(node => (node.textContent || "").replace(/\\s+/g, ""));
+        if (!expressions.some(value => value.includes("W"))) {
+          throw new Error("whitespace-delimited macro did not typeset");
+        }
+        if (!expressions.some(value => value.includes("5+C"))) {
+          throw new Error("currency-shaped paired dollars did not typeset");
+        }
+        if (diagnostics.mathErrorCount !== 0 || diagnostics.unresolvedCommands.length) {
+          throw new Error("paired-dollar macros produced diagnostics");
+        }
+        """,
+        virtual_time_budget=12000,
+        wait_for_load=False,
+    )
+
+
+def test_mathjax_reports_direct_and_nested_unknown_control_sequences() -> None:
+    payload = _payload()
+    payload["renderer_dependencies"] = [
+        {
+            "id": "mathjax",
+            "version": "3",
+            "configuration": {
+                "macros": {
+                    "NestedUnknown": [r"\MissingNested{#1}", 1],
+                }
+            },
+        }
+    ]
+    payload["entities"][0]["description"] = (
+        r"$\MissingDirect{x}$ $\NestedUnknown{x}$"
+    )
+
+    _run_browser_case(
+        "mathjax-unknown-control-sequences",
+        payload,
+        """
+        if (!window.MathJax?.startup?.promise) throw new Error("MathJax did not start");
+        await window.MathJax.startup.promise;
+
+        let alpha = null;
+        for (let attempt = 0; attempt < 50 && !alpha; attempt += 1) {
+          alpha = nodeElement("alpha");
+          if (!alpha) await delay(20);
+        }
+        if (!alpha) throw new Error("graph node did not render");
+        alpha.dispatchEvent(new MouseEvent("click", {bubbles: true}));
+        await delay(350);
+        const diagnostics = await window.officinaMathDiagnostics();
+        const unresolved = diagnostics.unresolvedCommands.slice().sort().join(",");
+        if (unresolved !== "MissingDirect,MissingNested") {
+          throw new Error("unknown-command oracle returned: " + unresolved);
+        }
+        if (diagnostics.mathErrorCount === 0) {
+          throw new Error("unknown commands did not produce a MathJax error node");
+        }
+        const banner = document.querySelector("[data-unresolved-tex]");
+        if (!banner) throw new Error("unknown-command banner is missing");
+        const bannerNames = banner.dataset.unresolvedTex.split(",").sort().join(",");
+        if (bannerNames !== unresolved) throw new Error("unknown-command banner is stale");
+        """,
+        virtual_time_budget=12000,
+        wait_for_load=False,
+    )
+
+
+def test_mathjax_unknown_command_oracle_accepts_supported_primitives() -> None:
+    payload = _payload()
+    payload["renderer_dependencies"] = [{"id": "mathjax", "version": "3"}]
+    payload["entities"][0]["description"] = (
+        r"$\mathfrak{g}$ $\underbrace{x}_{u}$ $\overset{v}{y}$"
+    )
+
+    _run_browser_case(
+        "mathjax-supported-primitives",
+        payload,
+        """
+        if (!window.MathJax?.startup?.promise) throw new Error("MathJax did not start");
+        await window.MathJax.startup.promise;
+
+        let alpha = null;
+        for (let attempt = 0; attempt < 50 && !alpha; attempt += 1) {
+          alpha = nodeElement("alpha");
+          if (!alpha) await delay(20);
+        }
+        if (!alpha) throw new Error("graph node did not render");
+        alpha.dispatchEvent(new MouseEvent("click", {bubbles: true}));
+        await delay(350);
+        const diagnostics = await window.officinaMathDiagnostics();
+
+        const math = Array.from(document.querySelectorAll("#details mjx-assistive-mml math"));
+        if (math.length !== 3) throw new Error("supported primitives did not produce MathML");
+        if (math[0].querySelector('[mathvariant="fraktur"]')?.textContent !== "g") {
+          throw new Error("mathfrak semantics are missing");
+        }
+        if (!math[1].querySelector("munder") || !math[1].textContent.includes("u")) {
+          throw new Error("underbrace semantics are missing");
+        }
+        if (!math[2].querySelector("mover") || !math[2].textContent.includes("v")) {
+          throw new Error("overset semantics are missing");
+        }
+        if (diagnostics.mathErrorCount !== 0 || document.querySelector("mjx-merror")) {
+          throw new Error("supported primitives produced a MathJax error");
+        }
+        if (diagnostics.unresolvedCommands.length ||
+            document.querySelector("[data-unresolved-tex]")) {
+          throw new Error("supported primitives were reported as unresolved");
+        }
+        """,
+        virtual_time_budget=12000,
+        wait_for_load=False,
+    )
+
+
+def test_self_contained_canonical_graph_renders_all_dynamic_math_semantics() -> None:
+    payload = json.loads(_task5_math_dependency_graph().read_text(encoding="utf-8"))
+
+    _run_browser_case(
+        "self-contained-canonical-graph",
+        payload,
+        """
+        if (!window.MathJax?.startup?.promise) throw new Error("MathJax did not start");
+        await window.MathJax.startup.promise;
+
+        const expectedExpressionVariants = new Map([
+          ["notation-root-set", {expressionIndex: 0, variants: ["script", "bold-italic"]}],
+          ["notation-qtc-boundary", {expressionIndex: 1, variants: ["bold-italic"]}],
+          ["construction-banach-structure", {expressionIndex: 0, variants: ["bold-italic"]}],
+        ]);
+        const assertSvgMathOutput = owner => {
+          const containers = Array.from(details.querySelectorAll("mjx-container"));
+          const semanticMath = details.querySelectorAll("mjx-assistive-mml math");
+          if (containers.length !== semanticMath.length) {
+            throw new Error(
+              owner + " has " + semanticMath.length + " semantic math cases but " +
+              containers.length + " MathJax containers"
+            );
+          }
+          for (const container of containers) {
+            if (!container.querySelector("svg")) {
+              throw new Error(owner + " has a MathJax container without SVG output");
+            }
+          }
+        };
+        for (const entity of docData.entities) {
+          showEntityDetails(entity);
+          const diagnostics = await window.officinaMathDiagnostics();
+          if (diagnostics.mathErrorCount !== 0 || details.querySelector("mjx-merror")) {
+            const errors = Array.from(details.querySelectorAll("mjx-merror, merror"))
+              .map(node => node.textContent || "").join(" | ");
+            throw new Error(
+              "MathJax error while rendering entity " + entity.id + ": " +
+              diagnostics.unresolvedCommands.join(",") + " " + errors
+            );
+          }
+          assertSvgMathOutput("entity " + entity.id);
+          const expectation = expectedExpressionVariants.get(entity.id);
+          if (expectation) {
+            const expressions = details.querySelectorAll("mjx-assistive-mml math");
+            const affectedExpression = expressions[expectation.expressionIndex];
+            if (!affectedExpression) {
+              throw new Error("representative entity lacks semantic MathML: " + entity.id);
+            }
+            for (const variant of expectation.variants) {
+              if (!affectedExpression.querySelector(`[mathvariant="${variant}"]`)) {
+                const observed = Array.from(
+                  affectedExpression.querySelectorAll("[mathvariant]")
+                ).map(node => node.getAttribute("mathvariant"));
+                throw new Error(
+                  `affected expression in ${entity.id} lacks ${variant} MathML semantics; ` +
+                  `observed ${observed.join(",")}`
+                );
+              }
+            }
+          }
+        }
+
+        for (const entity of docData.entities) {
+          for (const relation of entity.connects_to || []) {
+            const edge = {
+              ...relation,
+              source: entity.id,
+              target: relation.to,
+            };
+            showEdgeDetails(edge);
+            const diagnostics = await window.officinaMathDiagnostics();
+            if (diagnostics.mathErrorCount !== 0 || details.querySelector("mjx-merror")) {
+              const errors = Array.from(details.querySelectorAll("mjx-merror, merror"))
+                .map(node => node.textContent || "").join(" | ");
+              throw new Error(
+                "MathJax error while rendering edge " + entity.id + " -> " + relation.to +
+                ": " + diagnostics.unresolvedCommands.join(",") + " " + errors
+              );
+            }
+            assertSvgMathOutput("edge " + entity.id + " -> " + relation.to);
+          }
+        }
+
+        const diagnostics = await window.officinaMathDiagnostics();
+        if (diagnostics.unresolvedCommands.length) {
+          throw new Error(
+            "canonical graph has unresolved commands: " +
+            diagnostics.unresolvedCommands.join(",")
+          );
+        }
+        if (document.querySelector("[data-unresolved-tex]")) {
+          throw new Error("canonical graph produced an unresolved-TeX marker");
+        }
+        """,
+        virtual_time_budget=30000,
         wait_for_load=False,
     )
 

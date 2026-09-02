@@ -1,218 +1,64 @@
 #!/usr/bin/env python3
-"""Prepare skill-owned macro inputs and call the shared HTML renderer."""
+"""Render validated canonical graph JSON through the shared artifact writer."""
 
 from __future__ import annotations
 
 import argparse
 import json
-import re
-import sys
+import tempfile
 from pathlib import Path
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
-
-from officina.visualization.base_renderer_cli import main as render_html
-
-try:
-    from ._tex_macro_reader import default_output_path, extract_macros, write_macros
-except ImportError:  # pragma: no cover - fallback for alternate import paths
-    try:
-        from _tex_macro_reader import default_output_path, extract_macros, write_macros
-    except ImportError:
-        default_output_path = None
-        extract_macros = None
-        write_macros = None
-
-
-def resolve_entrypoint(entrypoint_text: str, source_path: Path) -> Path:
-    """Resolve an entrypoint from CLI/JSON relative to useful roots."""
-    entrypoint = Path(entrypoint_text)
-    candidates: list[Path] = []
-    if entrypoint.is_absolute():
-        candidates.append(entrypoint)
-    else:
-        candidates.extend(
-            [
-                Path.cwd() / entrypoint,
-                source_path.parent / entrypoint,
-                source_path.parent.parent / entrypoint,
-            ]
-        )
-
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate.resolve()
-    return candidates[0].resolve()
-
-
-def prepare_macro_file(args: argparse.Namespace, source_path: Path, doc: dict) -> Path | None:
-    """Find or create the macro file to merge for this render."""
-    if args.macro_file:
-        return Path(args.macro_file).resolve()
-
-    document = doc.get("document", {})
-    entrypoint_text = (
-        args.tex_entry
-        or document.get("source_entrypoint")
-        or document.get("source_file")
-    )
-    if not entrypoint_text:
-        return None
-
-    entrypoint = resolve_entrypoint(entrypoint_text, source_path)
-    if not entrypoint.exists():
-        if args.tex_entry:
-            raise SystemExit(f"TeX entrypoint not found: {entrypoint}")
-        return None
-
-    if default_output_path is None or extract_macros is None or write_macros is None:
-        raise SystemExit("Macro extraction helper is unavailable.")
-
-    macro_path = default_output_path(entrypoint)
-    if args.refresh_macros or args.tex_entry or not macro_path.exists():
-        macros = extract_macros(entrypoint)
-        write_macros(macros, macro_path)
-    return macro_path
-
-
-PRESENTATION_BASE = Path(__file__).resolve().parent.parent / "resources" / "graph-base.json"
-
-
-LABEL_REFERENCE_RE = re.compile(r"\\(ref|eqref|cref|Cref|autoref)\{([^{}]+)\}")
-
-
-def apply_label_numbering(doc: dict, labels: dict[str, dict]) -> int:
-    """Fill each entity's `ref` from the label the extractor recorded.
-
-    Reading a `\\label` off the source needs no inference; turning it into the
-    number the document prints does. Keeping that resolution here means the
-    printed number always matches the compiled document, and an entity whose
-    label is unknown simply keeps no number rather than a guessed one.
-    """
-    if not labels:
-        return 0
-    numbered = 0
-    for entity in doc.get("entities", []):
-        if entity.get("ref"):
-            continue
-        entry = labels.get(str(entity.get("tex_label") or ""))
-        if entry and entry.get("ref"):
-            entity["ref"] = entry["ref"]
-            numbered += 1
-    return numbered
-
-
-def resolve_label_references(doc: dict, labels: dict[str, dict]) -> int:
-    """Replace label keys in graph text with the numbers the document prints.
-
-    Extracted text quotes the source, so it carries `\\ref{lemma:containment}`
-    rather than `Lemma A.7`. A reader cannot resolve a label key, so substitute
-    the resolved number wherever one is known. Keys with no entry are left as
-    they are: an unresolved reference should stay visible rather than silently
-    become something else.
-    """
-    if not labels:
-        return 0
-    replaced = 0
-
-    def substitute(text: str) -> str:
-        nonlocal replaced
-
-        def swap(match: "re.Match[str]") -> str:
-            nonlocal replaced
-            entry = labels.get(match.group(2))
-            if not entry or not entry.get("ref"):
-                return match.group(0)
-            replaced += 1
-            number = entry["ref"]
-            return f"({number})" if match.group(1) == "eqref" else number
-
-        return LABEL_REFERENCE_RE.sub(swap, text)
-
-    def walk(node: object) -> object:
-        if isinstance(node, str):
-            return substitute(node)
-        if isinstance(node, list):
-            return [walk(item) for item in node]
-        if isinstance(node, dict):
-            return {key: walk(value) for key, value in node.items()}
-        return node
-
-    doc["entities"] = walk(doc.get("entities", []))
-    return replaced
-
-
-def apply_presentation_base(doc: dict, source_path: Path) -> Path:
-    """Merge the skill's edge catalog into the payload and enforce the closed vocabulary.
-
-    The graph vocabulary is fixed: every edge is `supports` or `exemplifies`. The
-    catalog supplies their labels and styling so the renderer can draw them, and
-    supplying it makes an invented edge type a hard error here rather than a
-    silently unstyled edge in the viewer.
-    """
-    base = json.loads(PRESENTATION_BASE.read_text(encoding="utf-8"))
-    allowed = {category["id"] for category in base["edge_categories"]}
-
-    offenders: dict[str, int] = {}
-    for entity in doc.get("entities", []):
-        for edge in entity.get("connects_to", []) or []:
-            edge_type = str(edge.get("type", ""))
-            if edge_type not in allowed:
-                offenders[edge_type] = offenders.get(edge_type, 0) + 1
-    if offenders:
-        listed = ", ".join(f"{name!r} ({count})" for name, count in sorted(offenders.items()))
-        raise SystemExit(
-            f"Edge types outside the graph vocabulary {sorted(allowed)}: {listed}. "
-            "Record the specific character of a dependency in the edge description "
-            "and metadata, not as a new type."
-        )
-
-    if "categories" in base:
-        doc.setdefault("categories", base["categories"])
-    doc.setdefault("edge_categories", base["edge_categories"])
-    ui = doc.setdefault("ui", {})
-    ui.setdefault("edge_styles", base["ui"]["edge_styles"])
-    if "edge_presentation" in base["ui"]:
-        ui.setdefault("edge_presentation", base["ui"]["edge_presentation"])
-    if "relation_semantics" in base:
-        doc.setdefault("relation_semantics", base["relation_semantics"])
-
-    merged = source_path.parent / f"{source_path.stem}.rendered.json"
-    merged.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
-    return merged
+from officina.visualization.artifacts import GraphArtifactWriter
+from officina.visualization.elk_html_renderer import ElkHtmlRenderer
 
 
 def main(argv: list[str] | None = None) -> None:
-    """CLI entry point for rendering canonical dependency JSON to HTML."""
+    """Render one self-contained canonical graph without rewriting its JSON.
+
+    Intent
+    ------
+    Render a canonical dependency graph to the exact requested HTML destination.
+
+    Rationale
+    ---------
+    The skill renderer must consume only canonical JSON and keep that source byte-for-byte
+    unchanged while the shared writer produces the standalone presentation.
+
+    Pseudocode
+    ----------
+    - set render_inputs = explicit source destination and reduction arguments
+    - set render_payload = canonical JSON object from render_inputs
+    - set rendered_view = optional transitive reduction of render_payload
+    - set temporary_presentation = standalone HTML from rendered_view
+    - set html_path = atomic replacement from temporary_presentation
+    - return render report
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .GraphArtifactWriter:
+      why:
+        writes: "Writes the standalone presentation inside the sibling temporary directory."
+
+    InstantiationsFromRepo
+    ----------------------
+    .ElkHtmlRenderer:
+      why:
+        constructs: "Creates the shared renderer used for validation, reduction, and HTML output."
+    """
     parser = argparse.ArgumentParser(
         description="Render an interactive HTML dependency graph from canonical JSON."
     )
     parser.add_argument("source", help="Path to the canonical dependency-graph JSON file")
     parser.add_argument("--html-out", dest="html_out", help="Path to write the standalone HTML viewer")
     parser.add_argument(
-        "--tex-entry",
-        dest="tex_entry",
-        help="TeX entrypoint used to extract MathJax macros. Defaults to document.source_entrypoint when present.",
-    )
-    parser.add_argument(
-        "--macro-file",
-        dest="macro_file",
-        help="MathJax macro JSON file to merge before rendering. Defaults to _build/<entry>-mathjax-macros.json.",
-    )
-    parser.add_argument(
-        "--refresh-macros",
-        action="store_true",
-        help="Regenerate the default macro file from the TeX entrypoint before rendering.",
-    )
-    parser.add_argument(
-        "--label-file",
-        dest="label_file",
-        help="Resolved TeX label JSON used to replace reference keys with printed numbers.",
-    )
-    parser.add_argument(
         "--reduce-transitive-edges",
         action="store_true",
-        help="Apply graph-theoretic transitive reduction before rendering",
+        help="Apply graph-theoretic transitive reduction to the rendered view only",
     )
     args = parser.parse_args(argv)
 
@@ -220,48 +66,105 @@ def main(argv: list[str] | None = None) -> None:
     if not source_path.exists():
         raise SystemExit(f"Source JSON not found: {source_path}")
 
-    doc = json.loads(source_path.read_text(encoding="utf-8"))
-    if not isinstance(doc, dict):
+    payload = json.loads(source_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
         raise SystemExit("Canonical dependency-graph JSON must be an object.")
-    macro_path = prepare_macro_file(args, source_path, doc)
-    labels: dict[str, dict] = {}
-    if args.label_file:
-        label_path = Path(args.label_file).resolve()
-        if not label_path.exists():
-            raise SystemExit(f"Label file not found: {label_path}")
-        labels = json.loads(label_path.read_text(encoding="utf-8"))
-    resolved_references = resolve_label_references(doc, labels)
-    numbered_entities = apply_label_numbering(doc, labels)
-    render_source = apply_presentation_base(doc, source_path)
-    render_argv = [str(render_source), "--profile", "math-dependency"]
+
     if args.html_out:
-        render_argv.extend(["--html-out", args.html_out])
-    if macro_path is not None:
-        render_argv.extend(["--macro-file", str(macro_path)])
+        html_path = Path(args.html_out).resolve()
+    else:
+        html_path = source_path.parent / "_build" / source_path.with_suffix(".html").name
+
+    renderer = ElkHtmlRenderer()
+    render_payload = payload
+    removed_edges: list[dict] = []
+    reduction_note = ""
     if args.reduce_transitive_edges:
-        render_argv.append("--reduce-transitive-edges")
-    render_html(render_argv)
-    # stdout carries the renderer's machine-readable report; these counts are
-    # diagnostics, so they must not turn stdout into two JSON documents.
+        render_payload, removed_edges = renderer.reduce_graph_json_transitive_edges(payload)
+        reduction_note = (
+            "Graph-theoretic transitive reduction enabled: removed "
+            f"{len(removed_edges)} redundant edges from the rendered view."
+        )
+
+    html_path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(
+        prefix=".officina-render-",
+        dir=html_path.parent,
+    ) as temporary_directory:
+        artifacts = GraphArtifactWriter(renderer).write(
+            render_payload,
+            output_dir=temporary_directory,
+            stem=html_path.stem or "graph",
+            write_payload=False,
+            reduction_note=reduction_note,
+        )
+        if artifacts.presentation is None:  # pragma: no cover - writer contract
+            raise RuntimeError("Graph artifact writer did not return an HTML artifact.")
+        artifacts.presentation.replace(html_path)
     print(
         json.dumps(
             {
-                "labels_supplied": len(labels),
-                "entities_numbered": numbered_entities,
-                "references_resolved": resolved_references,
+                "json": str(source_path),
+                "html": str(html_path),
+                "entities": len(payload["entities"]),
+                "reduced": args.reduce_transitive_edges,
+                "removed_edges": len(removed_edges),
             },
             indent=2,
-        ),
-        file=sys.stderr,
+        )
     )
 
 
 class Interface(PythonArgvMachineInterface):
-    """Compatibility interface for automation hooks that invoke this renderer."""
+    """Expose canonical JSON rendering to the interface runner.
+
+    Intent
+    ------
+    Bind the registered interface to the graph builder argv contract.
+
+    Rationale
+    ---------
+    A small adapter preserves one implementation for direct and dispatched use.
+
+    Pseudocode
+    ----------
+    - set prog = `graph_builder.py`
+    - return interface
+
+    Wraps
+    -----
+    - none
+    """
 
     prog = "graph_builder.py"
 
     def run(self, argv: list[str]) -> int:
+        """Delegate interface arguments to the graph builder CLI.
+
+        Intent
+        ------
+        Preserve the CLI argument interpretation and successful exit status.
+
+        Rationale
+        ---------
+        The registered boundary should not duplicate rendering logic.
+
+        Pseudocode
+        ----------
+        - @.main(argv)
+        - set exit_status = success after rendering completes
+        - return exit_status
+
+        Wraps
+        -----
+        - none
+
+        CallsFromRepo
+        -------------
+        .main:
+          why:
+            orchestrates: "Runs rendering before the adapter maps void completion to interface success."
+        """
         main(argv)
         return 0
 
