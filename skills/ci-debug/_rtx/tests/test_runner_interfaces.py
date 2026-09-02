@@ -93,6 +93,27 @@ def test_run_ci_forwards_a_persistent_context(capfd, tmp_path: Path) -> None:
     ]
 
 
+def test_run_ci_context_caps_the_adapter_process_wait(monkeypatch, tmp_path: Path) -> None:
+    """Catch the outer MCP call inheriting the persisted remote deadline."""
+
+    module = load("ci_debug_run_ci_budget", "_run_ci.py")
+    captured = {}
+
+    def invoke(_root, arguments, *, timeout_seconds):
+        captured["arguments"] = tuple(arguments)
+        captured["timeout_seconds"] = timeout_seconds
+        return 0
+
+    monkeypatch.setattr(module, "invoke_runner", invoke)
+    assert module.main([
+        "--repo-root", str(tmp_path), "--ref", "repair",
+        "--expected-sha", "a" * 40, "--context", str(tmp_path / "session"),
+        "--timeout", "7200",
+    ]) == 0
+    assert captured["timeout_seconds"] == 210
+    assert captured["arguments"][-2:] == ("--timeout", "7200")
+
+
 @pytest.mark.parametrize(
     ("selection", "expected_tail"),
     [

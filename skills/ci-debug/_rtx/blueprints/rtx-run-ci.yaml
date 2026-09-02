@@ -6,7 +6,7 @@ dependencies:
   reason: Uses the shared repository-runner invocation boundary.
   source: ci-debug._rtx.source.rtx-init
   version: 1
-description: Delegates the complete remote CI matrix to the canonical repository runner.
+description: Starts or advances one durable complete remote CI matrix request through the canonical repository runner.
 gateway: {language: Python>=3.11, path: _run_ci.py}
 id: ci-debug._rtx.source.rtx-run-ci
 interfaces:
@@ -21,7 +21,7 @@ interfaces:
         ref: {description: Pushed candidate reference., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
         expected-sha: {description: Exact candidate commit SHA., required: true, sensitivity: public, type: {kind: string, sensitivity: public}}
         context: {description: Persistent non-secret debug context for setup and immutable runner reports., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
-        timeout: {default: 7200, description: Maximum runner wait in seconds., required: false, sensitivity: public, type: {kind: integer}}
+        timeout: {default: 7200, description: Total persisted remote deadline in seconds; it is not the duration of one interface call., required: false, sensitivity: public, type: {kind: integer}}
       caller_warnings:
       - external-side-effect: The repository runner may dispatch remote CI; this interface does not mutate Git.
       direct_io:
@@ -33,33 +33,36 @@ interfaces:
         - {id: diagnostics, medium: stderr, system: agent-runtime, access: write, content: runner diagnostics, formats: [text], sensitivity: derived-private}
         - {id: reports, medium: local-filesystem, system: filesystem, access: write, path: <context>/**, path_match: glob, content: non-secret setup and runner-owned reports, formats: [json, text, xml], sensitivity: derived-private}
       execution:
-        consistency: {snapshot: One invocation is bound to the supplied exact candidate SHA.}
+        consistency: {live: Every invocation revalidates authority and advances at most one observation of the same persisted exact-SHA request.}
         effects:
         - action: update
           confirmation_evidence: {direct_io_ref: reports, kind: direct-io}
           direct_io_ref: reports
           id: write-reports
-          may_occur_in_outcomes: [reported]
+          may_occur_in_outcomes: [pending, reported, timed-out, blocked]
           reversibility: {reversible: Remove the runner-owned context after retaining any required evidence.}
           value_source: {argument_ref: context, kind: argument}
         lifecycle: finite
         state_effect: mutating
         mutation_safety:
           atomicity: {non_atomic: The delegated remote run and report writes are separate effects.}
-          concurrent_invocations: {unsafe: Callers coordinate duplicate full-CI dispatches.}
-          idempotency: {non_idempotent: Repeating may dispatch another remote run.}
-          on_uncertain_completion: {verify_then_decide: Inspect the request-scoped reports in the context before dispatching again.}
+          concurrent_invocations: {safe: Immutable create-once request and dispatch receipts converge concurrent identical calls on one remote request.}
+          idempotency: {idempotent: Repeating identical arguments and context resumes or replays the same request; a timeout mismatch fails closed.}
+          on_uncertain_completion: {verify_then_decide: Repeat the identical invocation so exact request correlation can resume without redispatch.}
           partial_effects_on_failure: {possible: A remote run may continue after local interruption.}
           rollback_on_failure: {unavailable: The interface does not cancel or delete remote runs.}
         verification: [{method: output-schema, output_ref: result}]
       helpers: []
       interaction: {mode: unattended}
       outcomes:
-      - {id: reported, class: partial, effects: [write-reports], outputs: [result], caller_action: Use the returned matrix failures or accept green only when the complete report says green.}
+      - {id: pending, class: partial, effects: [write-reports], outputs: [result], caller_action: Repeat the identical invocation; pending is explicitly non-green.}
+      - {id: reported, class: partial, effects: [write-reports], outputs: [result], caller_action: Use terminal failures or accept green only when the complete report says green.}
+      - {id: timed-out, class: error, effects: [write-reports], outputs: [result], caller_action: Preserve the stable timeout receipt and start a new deliberate context only when another run is authorized.}
+      - {id: blocked, class: error, effects: [write-reports], outputs: [result], caller_action: Preserve the stable unavailable-run receipt and resolve the remote evidence gap before authorizing another run.}
       outputs:
-      - {id: result, audience: both, cardinality: {minimum: 1, maximum: 1}, description: Canonical runner matrix report., direct_io_ref: result, empty: Never empty on a completed runner invocation., ordering: stable, pagination: {kind: none}, truncation: {kind: none}, type: {kind: string, sensitivity: derived-private}}
+      - {id: result, audience: both, cardinality: {minimum: 1, maximum: 1}, description: "Pending state, stable terminal failure receipt, or canonical terminal matrix report.", direct_io_ref: result, empty: Never empty., ordering: stable, pagination: {kind: none}, truncation: {kind: none}, type: {kind: string, sensitivity: derived-private}}
       preconditions: []
-    description: Run the complete remote CI matrix for an exact pushed candidate.
+    description: Start or poll one durable complete remote CI matrix for an exact pushed candidate.
     process_binding:
       entry: Interface
       kind: process
@@ -71,7 +74,7 @@ interfaces:
         required_flags: [--repo-root, --ref, --expected-sha, --context]
         flag_patterns: {--repo-root: '^.+$', --ref: '^.+$', --expected-sha: '^[0-9a-f]{40}$', --context: '^.+$', --timeout: '^[1-9][0-9]*$'}
     usage: --repo-root REPO --ref REF --expected-sha SHA --context DIR [--timeout SECONDS]
-    version: 1
+    version: 2
 node_type: behavioral_source
 platform_support: {linux: true, macos: true, windows: true}
 runtime_dependencies: []

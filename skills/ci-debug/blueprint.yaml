@@ -42,7 +42,7 @@ namespace_exports:
       allowed_callers: []
     surface:
       only:
-        ci-debug._rtx.interface.run-ci: 1
+        ci-debug._rtx.interface.run-ci: 2
         ci-debug._rtx.interface.run-targeted-tests: 1
     interface_access:
       ci-debug._rtx.interface.run-ci:

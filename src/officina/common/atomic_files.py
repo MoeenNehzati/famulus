@@ -165,6 +165,10 @@ class AtomicWriteError(OSError):
     pass
 
 
+class AtomicLockUnavailable(AtomicWriteError):
+    """A non-blocking confined lock is currently held elsewhere."""
+
+
 def _require_secure_operations() -> None:
     supports_dir_fd = getattr(os, "supports_dir_fd", set())
     supports_follow_symlinks = getattr(os, "supports_follow_symlinks", set())
@@ -634,7 +638,7 @@ def _posix_atomic_create_bytes(
 
 @contextmanager
 def _posix_exclusive_file_lock(
-    path: Path, *, allowed_root: Path, mode: int
+    path: Path, *, allowed_root: Path, mode: int, blocking: bool
 ) -> Iterator[None]:
     """Hold one confined regular sidecar as a cooperative process lock."""
 
@@ -668,7 +672,13 @@ def _posix_exclusive_file_lock(
             import fcntl
         except ImportError as exc:  # pragma: no cover - required POSIX stdlib
             raise AtomicWriteError(_CAPABILITY_ERROR) from exc
-        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        try:
+            fcntl.flock(
+                descriptor,
+                fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB),
+            )
+        except BlockingIOError as exc:
+            raise AtomicLockUnavailable(f"lock is already held: {path}") from exc
         linked = _secure_stat(parent_fd, name)
         if (linked.st_dev, linked.st_ino) != (metadata.st_dev, metadata.st_ino):
             raise AtomicWriteError(f"lock changed while acquiring it: {path}")
@@ -1717,18 +1727,21 @@ def _windows_atomic_create_bytes(
     return _windows_atomic_write_bytes(path, data, allowed_root=allowed_root, replace=False)
 
 
-def _windows_lock_handle(handle: int) -> _WinOverlapped:
+def _windows_lock_handle(handle: int, *, blocking: bool) -> _WinOverlapped:
     # LockFileEx serializes cooperative writers on the complete file range.
     kernel32, _advapi32, _ntdll = _windows_modules()
     overlapped = _WinOverlapped()
     if not kernel32.LockFileEx(
         handle,
-        0x2,
+        0x2 | (0 if blocking else 0x1),
         0,
         0xFFFFFFFF,
         0xFFFFFFFF,
         ctypes.byref(overlapped),
     ):
+        error = ctypes.get_last_error()
+        if not blocking and error in {33, 997}:
+            raise AtomicLockUnavailable("lock is already held")
         raise _windows_call_error("cannot lock native certificate log")
     return overlapped
 
@@ -1747,7 +1760,7 @@ def _windows_unlock_handle(handle: int, overlapped: object) -> None:
 
 @contextmanager
 def _windows_exclusive_file_lock(
-    path: Path, *, allowed_root: Path, mode: int
+    path: Path, *, allowed_root: Path, mode: int, blocking: bool
 ) -> Iterator[None]:
     """Hold one confined regular sidecar as a cooperative process lock."""
 
@@ -1768,7 +1781,7 @@ def _windows_exclusive_file_lock(
             directory=False,
             security_descriptor=descriptor,
         )
-        lock = _windows_lock_handle(handle)
+        lock = _windows_lock_handle(handle, blocking=blocking)
         _windows_verify_parent_chain(parents, parts)
         _windows_verify_named_handle(parent_handle, name, handle)
         _windows_set_user_restrictive_acl(handle, _acl)
@@ -1816,7 +1829,7 @@ def _windows_append_bytes(
                 ) from exc
             raise
         created = information == 2
-        lock = _windows_lock_handle(handle)
+        lock = _windows_lock_handle(handle, blocking=True)
         _windows_verify_parent_chain(parents, parts)
         _windows_verify_named_handle(parent_handle, name, handle)
         _windows_set_user_restrictive_acl(handle, _acl)
@@ -1996,6 +2009,7 @@ def exclusive_file_lock(
     *,
     allowed_root: Path,
     mode: int = 0o600,
+    blocking: bool = True,
 ) -> Iterator[None]:
     """Serialize cooperating processes through one confined sidecar file.
 
@@ -2006,12 +2020,12 @@ def exclusive_file_lock(
 
     if os.name == "nt":
         with _windows_exclusive_file_lock(
-            path, allowed_root=allowed_root, mode=mode
+            path, allowed_root=allowed_root, mode=mode, blocking=blocking
         ):
             yield
     else:
         with _posix_exclusive_file_lock(
-            path, allowed_root=allowed_root, mode=mode
+            path, allowed_root=allowed_root, mode=mode, blocking=blocking
         ):
             yield
 

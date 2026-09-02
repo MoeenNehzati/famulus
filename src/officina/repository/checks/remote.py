@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -11,14 +12,27 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable, Sequence
+from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Iterator
 from urllib.parse import quote
 
+from officina.common.atomic_files import (
+    AtomicLockUnavailable,
+    AtomicWriteError,
+    atomic_create_bytes,
+    ensure_private_directory,
+    exclusive_file_lock,
+    read_regular_file_bytes,
+)
 from officina.repository.checks.remote_macos_windows import EXPECTED_MATRIX, WINDOWS_RUNNER
 
 
 WORKFLOW = "python-tests.yml"
+WORKFLOW_NAME = "Python Tests"
+WORKFLOW_RUN_TITLE_PREFIX = "Python Tests / "
 SUPPORTED_OSES = {item[0] for item in EXPECTED_MATRIX}
 SUPPORTED_TASKS = {
     "combined",
@@ -79,16 +93,20 @@ class GhClient:
         subprocess.run -> preprocess: prefix gh and set the repository cwd; postprocess: return the completed process; fixed_arguments: shell false, captured strict UTF-8 text, check false
         """
 
-        return subprocess.run(
-            ("gh", *arguments),
-            cwd=self.cwd,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="strict",
-            check=False,
-            shell=False,
-        )
+        try:
+            return subprocess.run(
+                ("gh", *arguments),
+                cwd=self.cwd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="strict",
+                check=False,
+                shell=False,
+                timeout=20,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return SimpleNamespace(returncode=124, stdout="", stderr=str(exc))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -360,6 +378,570 @@ def _correlate(
     raise RemoteError("correlation_failed", "workflow run did not become visible")
 
 
+def _correlate_once(
+    gh: GhClient,
+    *,
+    repository: str,
+    ref: str,
+    expected_sha: str,
+    request_id: str,
+) -> dict[str, object] | None:
+    """Observe at most one run-list snapshot for a durable request identity."""
+
+    result = _checked(
+        gh,
+        (
+            "run", "list", "--repo", repository, "--workflow", WORKFLOW,
+            "--event", "workflow_dispatch", "--branch", ref, "--limit", "1000",
+            "--json", "databaseId,headSha,status,conclusion,displayTitle,url,createdAt",
+        ),
+        "correlation_failed",
+    )
+    try:
+        runs = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RemoteError("correlation_failed", "GitHub run list is invalid") from exc
+    if not isinstance(runs, list) or any(not isinstance(item, dict) for item in runs):
+        raise RemoteError("correlation_failed", "GitHub run list is invalid")
+    matches = [
+        item for item in runs
+        if str(item.get("headSha", "")).casefold() == expected_sha.casefold()
+        and item.get("displayTitle") == f"{WORKFLOW_RUN_TITLE_PREFIX}{request_id}"
+    ]
+    if len(matches) > 1:
+        raise RemoteError("correlation_failed", "multiple matching workflow runs found")
+    return matches[0] if matches else None
+
+
+def _json_bytes(payload: dict[str, object]) -> bytes:
+    return (json.dumps(payload, sort_keys=True, indent=2) + "\n").encode("utf-8")
+
+
+def _read_json(path: Path, *, root: Path) -> dict[str, object] | None:
+    try:
+        raw = read_regular_file_bytes(path, allowed_root=root)
+    except FileNotFoundError:
+        return None
+    except AtomicWriteError as exc:
+        raise RemoteError("invalid_context", "debug request state is unavailable") from exc
+    try:
+        value = json.loads(raw)
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise RemoteError("invalid_context", "debug request state is invalid") from exc
+    if not isinstance(value, dict):
+        raise RemoteError("invalid_context", "debug request state is invalid")
+    return value
+
+
+def _create_json(path: Path, payload: dict[str, object], *, root: Path) -> bool:
+    try:
+        return atomic_create_bytes(path, _json_bytes(payload), allowed_root=root, mode=0o600)
+    except AtomicWriteError as exc:
+        raise RemoteError("invalid_context", "debug request state is unavailable") from exc
+
+
+def _ensure_context_directory(path: Path, *, root: Path) -> None:
+    try:
+        ensure_private_directory(path, allowed_root=root)
+    except AtomicWriteError as exc:
+        raise RemoteError("invalid_context", "debug request directory is unavailable") from exc
+
+
+def _timestamp(value: object) -> datetime:
+    if not isinstance(value, str):
+        raise RemoteError("invalid_context", "debug request timestamp is invalid")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise RemoteError("invalid_context", "debug request timestamp is invalid") from exc
+    if parsed.tzinfo is None:
+        raise RemoteError("invalid_context", "debug request timestamp is invalid")
+    return parsed
+
+
+def _validate_intent(
+    intent: dict[str, object],
+    *,
+    identity: dict[str, object],
+    timeout: int,
+) -> None:
+    request_id = intent.get("request_id")
+    if (
+        intent.get("schema_version") != 1
+        or intent.get("identity") != identity
+        or intent.get("timeout_seconds") != timeout
+        or not isinstance(request_id, str)
+        or re.fullmatch(r"ci-[0-9a-f]{16}", request_id) is None
+    ):
+        raise RemoteError("invalid_context", "debug request intent is invalid")
+    created = _timestamp(intent.get("created_at"))
+    deadline = _timestamp(intent.get("deadline_at"))
+    if deadline != created + timedelta(seconds=timeout):
+        raise RemoteError("invalid_context", "debug request deadline is invalid")
+
+
+def _validate_correlation(
+    correlation: dict[str, object],
+    *,
+    intent: dict[str, object],
+) -> None:
+    run_id = correlation.get("run_id")
+    if (
+        correlation.get("schema_version") != 1
+        or correlation.get("request_id") != intent["request_id"]
+        or not isinstance(run_id, int)
+        or isinstance(run_id, bool)
+        or run_id < 1
+        or not isinstance(correlation.get("run_url"), str)
+    ):
+        raise RemoteError("invalid_context", "workflow correlation receipt is invalid")
+
+
+def _validate_terminal(
+    terminal: dict[str, object],
+    *,
+    intent: dict[str, object],
+    request_key: str,
+    correlation: dict[str, object] | None,
+) -> None:
+    state = terminal.get("state")
+    if (
+        state not in {"completed", "timed_out", "blocked"}
+        or terminal.get("request_id") != intent["request_id"]
+        or terminal.get("request_key") != request_key
+        or not isinstance(terminal.get("overall_green"), bool)
+    ):
+        raise RemoteError("invalid_context", "terminal request receipt is invalid")
+    if state == "completed":
+        identity = intent["identity"]
+        assert isinstance(identity, dict)
+        if (
+            terminal.get("schema_version") != 1
+            or terminal.get("repository") != identity["repository"]
+            or terminal.get("workflow") != identity["workflow"]
+            or terminal.get("ref") != identity["ref"]
+            or terminal.get("expected_sha") != identity["expected_sha"]
+            or terminal.get("mode") != "matrix"
+            or terminal.get("workflow_conclusion") not in {
+                "success", "failure", "cancelled", "timed_out", "action_required",
+                "neutral", "skipped", "stale", "startup_failure",
+            }
+            or terminal.get("conclusion") not in {"green", "red"}
+            or terminal.get("overall_green") != (terminal.get("conclusion") == "green")
+            or not isinstance(terminal.get("run_id"), int)
+            or isinstance(terminal.get("run_id"), bool)
+            or terminal.get("run_id", 0) < 1
+            or not isinstance(terminal.get("run_url"), str)
+            or not terminal.get("run_url")
+            or terminal.get("requested_selectors") != []
+            or correlation is None
+            or terminal.get("run_id") != correlation.get("run_id")
+            or terminal.get("run_url") != correlation.get("run_url")
+        ):
+            raise RemoteError("invalid_context", "terminal matrix report is invalid")
+        elements = terminal.get("elements")
+        if not isinstance(elements, list) or len(elements) != len(EXPECTED_MATRIX):
+            raise RemoteError("invalid_context", "terminal matrix report is invalid")
+        identities = []
+        for element in elements:
+            if not isinstance(element, dict) or element.get("conclusion") not in {
+                "success", "failure", "cancelled", "timed_out", "skipped",
+                "action_required", "neutral", "stale", "startup_failure",
+            }:
+                raise RemoteError("invalid_context", "terminal matrix report is invalid")
+            failed_by_task = element.get("failed_by_task")
+            failed_selectors = element.get("failed_selectors")
+            if (
+                not isinstance(element.get("url"), str)
+                or not element.get("url")
+                or not isinstance(failed_by_task, dict)
+                or any(
+                    not isinstance(task, str)
+                    or not isinstance(selectors, list)
+                    or any(not isinstance(selector, str) for selector in selectors)
+                    or selectors != sorted(set(selectors))
+                    for task, selectors in failed_by_task.items()
+                )
+                or not isinstance(failed_selectors, list)
+                or any(not isinstance(selector, str) for selector in failed_selectors)
+                or failed_selectors != sorted(set(failed_selectors))
+            ):
+                raise RemoteError("invalid_context", "terminal matrix report is invalid")
+            merged_selectors = sorted({
+                selector
+                for selectors in failed_by_task.values()
+                for selector in selectors
+            })
+            if merged_selectors != failed_selectors:
+                raise RemoteError("invalid_context", "terminal matrix report is invalid")
+            if element.get("conclusion") == "success" and (
+                failed_by_task or failed_selectors
+            ):
+                raise RemoteError("invalid_context", "terminal matrix report is invalid")
+            expected_scope = (
+                "none"
+                if element.get("conclusion") == "success"
+                else "selectors" if failed_selectors else "task"
+            )
+            if element.get("failure_scope") != expected_scope:
+                raise RemoteError("invalid_context", "terminal matrix report is invalid")
+            identities.append((element.get("os"), element.get("task")))
+        if identities != list(EXPECTED_MATRIX):
+            raise RemoteError("invalid_context", "terminal matrix report is invalid")
+        all_green = all(element.get("conclusion") == "success" for element in elements)
+        expected_green = all_green and terminal.get("workflow_conclusion") == "success"
+        if terminal.get("overall_green") != expected_green:
+            raise RemoteError("invalid_context", "terminal matrix report is invalid")
+    else:
+        run_id = terminal.get("run_id")
+        if (
+            terminal.get("schema_version") != 2
+            or terminal.get("overall_green") is not False
+            or terminal.get("deadline_at") != intent["deadline_at"]
+            or not (
+                run_id is None
+                or (
+                    isinstance(run_id, int)
+                    and not isinstance(run_id, bool)
+                    and run_id > 0
+                )
+            )
+        ):
+            raise RemoteError("invalid_context", "terminal request receipt is invalid")
+        expected_run_id = correlation.get("run_id") if correlation is not None else None
+        if run_id != expected_run_id:
+            raise RemoteError("invalid_context", "terminal request receipt is invalid")
+        if state == "blocked" and (
+            terminal.get("reason") != "run_unavailable_at_deadline"
+            or correlation is None
+        ):
+            raise RemoteError("invalid_context", "terminal request receipt is invalid")
+
+
+def _request_identity(args: argparse.Namespace, repository: str) -> tuple[str, dict[str, object]]:
+    identity: dict[str, object] = {
+        "repository": repository,
+        "workflow": WORKFLOW,
+        "mode": "matrix",
+        "ref": args.ref,
+        "expected_sha": args.expected_sha.lower(),
+    }
+    return hashlib.sha256(_json_bytes(identity)).hexdigest(), identity
+
+
+def _pending(
+    intent: dict[str, object],
+    request_key: str,
+    correlation: dict[str, object] | None,
+) -> dict[str, object]:
+    identity = intent["identity"]
+    assert isinstance(identity, dict)
+    return {
+        "schema_version": 2,
+        "state": "pending",
+        "overall_green": False,
+        "request_key": request_key,
+        "request_id": intent["request_id"],
+        "ref": identity["ref"],
+        "expected_sha": identity["expected_sha"],
+        "deadline_at": intent["deadline_at"],
+        "run_id": correlation.get("run_id") if correlation else None,
+        "run_url": correlation.get("run_url") if correlation else None,
+    }
+
+
+@contextmanager
+def _bounded_request_lock(path: Path, *, root: Path) -> Iterator[None]:
+    """Acquire one request lock without ever waiting behind the MCP deadline."""
+
+    deadline = time.monotonic() + 5
+    while True:
+        try:
+            with exclusive_file_lock(path, allowed_root=root, blocking=False):
+                yield
+                return
+        except AtomicLockUnavailable as exc:
+            if time.monotonic() >= deadline:
+                raise RemoteError("request_busy", "debug request is being advanced elsewhere") from exc
+            time.sleep(0.05)
+        except AtomicWriteError as exc:
+            raise RemoteError("invalid_context", "debug request lock is unavailable") from exc
+
+
+def _run_context_matrix(
+    args: argparse.Namespace,
+    *,
+    gh: GhClient,
+    repository: str,
+    context_root: Path,
+) -> dict[str, object]:
+    request_key, _identity = _request_identity(args, repository)
+    request_root = context_root / "requests" / request_key
+    _ensure_context_directory(request_root, root=context_root)
+    try:
+        with _bounded_request_lock(request_root / ".lock", root=context_root):
+            return _advance_context_matrix_locked(
+                args,
+                gh=gh,
+                repository=repository,
+                context_root=context_root,
+            )
+    except RemoteError as exc:
+        if exc.code != "request_busy":
+            raise
+        return {
+            "schema_version": 2,
+            "state": "pending",
+            "reason": "request_busy",
+            "overall_green": False,
+            "request_key": request_key,
+            "ref": args.ref,
+            "expected_sha": args.expected_sha.lower(),
+        }
+
+
+def _advance_context_matrix_locked(
+    args: argparse.Namespace,
+    *,
+    gh: GhClient,
+    repository: str,
+    context_root: Path,
+) -> dict[str, object]:
+    """Advance one durable exact-SHA matrix request by one remote observation."""
+
+    request_key, identity = _request_identity(args, repository)
+    request_root = context_root / "requests" / request_key
+    _ensure_context_directory(request_root, root=context_root)
+    intent_path = request_root / "intent.json"
+    timeout = args.timeout or 7200
+    intent = _read_json(intent_path, root=context_root)
+    if intent is None:
+        created = datetime.now(UTC)
+        proposed = {
+            "schema_version": 1,
+            "request_id": f"ci-{secrets.token_hex(8)}",
+            "identity": identity,
+            "timeout_seconds": timeout,
+            "created_at": created.isoformat().replace("+00:00", "Z"),
+            "deadline_at": (created + timedelta(seconds=timeout)).isoformat().replace("+00:00", "Z"),
+        }
+        _create_json(intent_path, proposed, root=context_root)
+        intent = _read_json(intent_path, root=context_root)
+    if intent is None or intent.get("identity") != identity:
+        raise RemoteError("context_mismatch", "debug request identity does not match")
+    if intent.get("timeout_seconds") != timeout:
+        raise RemoteError("context_timeout_mismatch", "debug request timeout is immutable")
+    _validate_intent(intent, identity=identity, timeout=timeout)
+    correlation_path = request_root / "correlation.json"
+    correlation = _read_json(correlation_path, root=context_root)
+    if correlation is not None:
+        _validate_correlation(correlation, intent=intent)
+    terminal = _read_json(request_root / "terminal.json", root=context_root)
+    if terminal is not None:
+        _validate_terminal(
+            terminal,
+            intent=intent,
+            request_key=request_key,
+            correlation=correlation,
+        )
+        return terminal
+    dispatch_path = request_root / "dispatch-attempted.json"
+    dispatch = _read_json(dispatch_path, root=context_root)
+    if dispatch is not None and dispatch != {
+        "schema_version": 1,
+        "request_id": intent["request_id"],
+    }:
+        raise RemoteError("invalid_context", "dispatch receipt is invalid")
+    won_dispatch = dispatch is None and _create_json(
+        dispatch_path,
+        {"schema_version": 1, "request_id": intent["request_id"]},
+        root=context_root,
+    )
+
+    if won_dispatch:
+        _checked(
+            gh,
+            (
+                "workflow", "run", WORKFLOW, "--repo", repository, "--ref", args.ref,
+                *_dispatch_fields(args, str(intent["request_id"]), []),
+            ),
+            "dispatch_uncertain",
+        )
+
+    if correlation is None:
+        observed = _correlate_once(
+            gh,
+            repository=repository,
+            ref=args.ref,
+            expected_sha=args.expected_sha,
+            request_id=str(intent["request_id"]),
+        )
+        if observed is None:
+            deadline = _timestamp(intent["deadline_at"])
+            if datetime.now(UTC) >= deadline:
+                timeout_report = {
+                    "schema_version": 2,
+                    "state": "timed_out",
+                    "overall_green": False,
+                    "request_key": request_key,
+                    "request_id": intent["request_id"],
+                    "run_id": None,
+                    "deadline_at": intent["deadline_at"],
+                }
+                _create_json(request_root / "terminal.json", timeout_report, root=context_root)
+                return _read_json(request_root / "terminal.json", root=context_root) or timeout_report
+            return _pending(intent, request_key, None)
+        proposed_correlation = {
+            "schema_version": 1,
+            "run_id": observed.get("databaseId"),
+            "run_url": observed.get("url"),
+            "request_id": intent["request_id"],
+        }
+        if (
+            not isinstance(proposed_correlation["run_id"], int)
+            or isinstance(proposed_correlation["run_id"], bool)
+            or proposed_correlation["run_id"] < 1
+            or not isinstance(proposed_correlation["run_url"], str)
+        ):
+            raise RemoteError("correlation_failed", "matching workflow run identity is invalid")
+        _create_json(correlation_path, proposed_correlation, root=context_root)
+        correlation = _read_json(correlation_path, root=context_root)
+        if correlation != proposed_correlation:
+            raise RemoteError("context_conflict", "workflow correlation conflicts with persisted evidence")
+        _validate_correlation(correlation, intent=intent)
+        return _pending(intent, request_key, correlation)
+
+    _validate_correlation(correlation, intent=intent)
+
+    deadline = _timestamp(intent["deadline_at"])
+    try:
+        result = _checked(
+            gh,
+            (
+                "run", "view", str(correlation["run_id"]), "--repo", repository,
+                "--json", "databaseId,status,conclusion,jobs,url,headBranch,headSha,displayTitle,event,workflowName,updatedAt",
+            ),
+            "poll_failed",
+        )
+    except RemoteError as exc:
+        if exc.code != "poll_failed" or datetime.now(UTC) < deadline:
+            raise
+        blocked = {
+            "schema_version": 2,
+            "state": "blocked",
+            "reason": "run_unavailable_at_deadline",
+            "overall_green": False,
+            "request_key": request_key,
+            "request_id": intent["request_id"],
+            "run_id": correlation["run_id"],
+            "deadline_at": intent["deadline_at"],
+        }
+        _create_json(request_root / "terminal.json", blocked, root=context_root)
+        return _read_json(request_root / "terminal.json", root=context_root) or blocked
+    try:
+        observed_run = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RemoteError("poll_failed", "GitHub run state is invalid") from exc
+    if not isinstance(observed_run, dict):
+        raise RemoteError("poll_failed", "GitHub run state is invalid")
+    observations_root = request_root / "observations"
+    _ensure_context_directory(observations_root, root=context_root)
+    _create_json(
+        observations_root / f"{secrets.token_hex(8)}.json",
+        {
+            "schema_version": 1,
+            "observed_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "run_id": observed_run.get("databaseId"),
+            "status": observed_run.get("status"),
+            "conclusion": observed_run.get("conclusion"),
+            "updated_at": observed_run.get("updatedAt"),
+        },
+        root=context_root,
+    )
+    if str(observed_run.get("headSha", "")).casefold() != args.expected_sha.casefold():
+        raise RemoteError("candidate_sha_mismatch", "workflow run tested another commit")
+    if observed_run.get("displayTitle") != f"{WORKFLOW_RUN_TITLE_PREFIX}{intent['request_id']}":
+        raise RemoteError("correlation_failed", "workflow run title does not match request identity")
+    if observed_run.get("databaseId") != correlation["run_id"]:
+        raise RemoteError("correlation_failed", "workflow run ID does not match persisted correlation")
+    if observed_run.get("event") != "workflow_dispatch":
+        raise RemoteError("correlation_failed", "workflow run event does not match dispatch")
+    if observed_run.get("workflowName") != WORKFLOW_NAME:
+        raise RemoteError("correlation_failed", "workflow run identity does not match request")
+    if observed_run.get("headBranch") != args.ref:
+        raise RemoteError("correlation_failed", "workflow run ref does not match request identity")
+    status = observed_run.get("status")
+    if status != "completed":
+        if status not in {"queued", "in_progress", "waiting", "pending", "requested"}:
+            raise RemoteError("poll_failed", "workflow run status is invalid")
+        if datetime.now(UTC) >= deadline:
+            timeout_report = {
+                "schema_version": 2,
+                "state": "timed_out",
+                "overall_green": False,
+                "request_key": request_key,
+                "request_id": intent["request_id"],
+                "run_id": correlation["run_id"],
+                "deadline_at": intent["deadline_at"],
+            }
+            _create_json(request_root / "terminal.json", timeout_report, root=context_root)
+            return _read_json(request_root / "terminal.json", root=context_root) or timeout_report
+        return _pending(intent, request_key, correlation)
+    try:
+        completed_at = datetime.fromisoformat(str(observed_run["updatedAt"]).replace("Z", "+00:00"))
+        if completed_at.tzinfo is None:
+            raise ValueError("timestamp has no timezone")
+    except (KeyError, TypeError, ValueError) as exc:
+        raise RemoteError("poll_failed", "workflow completion timestamp is invalid") from exc
+    if completed_at > deadline:
+        timeout_report = {
+            "schema_version": 2,
+            "state": "timed_out",
+            "overall_green": False,
+            "request_key": request_key,
+            "request_id": intent["request_id"],
+            "run_id": correlation["run_id"],
+            "deadline_at": intent["deadline_at"],
+        }
+        _create_json(request_root / "terminal.json", timeout_report, root=context_root)
+        return _read_json(request_root / "terminal.json", root=context_root) or timeout_report
+
+    artifact_root = request_root / "artifacts" / secrets.token_hex(8)
+    _ensure_context_directory(artifact_root, root=context_root)
+    download = gh.run((
+        "run", "download", str(correlation["run_id"]), "--repo", repository,
+        "--dir", str(artifact_root),
+    ))
+    if download.returncode != 0:
+        print("warning: repository-check artifacts were unavailable", file=sys.stderr)
+    report = _build_report(
+        args=args,
+        repository=repository,
+        request_id=str(intent["request_id"]),
+        run_id=int(correlation["run_id"]),
+        run=observed_run,
+        failures=_artifact_failures(artifact_root),
+        requested_selectors=[],
+    )
+    report["state"] = "completed"
+    report["request_key"] = request_key
+    _validate_terminal(
+        report,
+        intent=intent,
+        request_key=request_key,
+        correlation=correlation,
+    )
+    _create_json(request_root / "terminal.json", report, root=context_root)
+    terminal = _read_json(request_root / "terminal.json", root=context_root)
+    if terminal != report:
+        raise RemoteError("context_conflict", "terminal report conflicts with persisted evidence")
+    _create_json(request_root / "run-report.json", terminal, root=context_root)
+    persisted = _read_json(request_root / "run-report.json", root=context_root)
+    if persisted != terminal:
+        raise RemoteError("context_conflict", "terminal report conflicts with persisted evidence")
+    return terminal
+
+
 def _poll(
     gh: GhClient,
     *,
@@ -505,7 +1087,10 @@ def _build_report(
         )
     if args.remote_command == "matrix":
         by_identity = {(item["os"], item["task"]): item for item in elements}
-        if set(by_identity) != set(EXPECTED_MATRIX):
+        if (
+            len(elements) != len(EXPECTED_MATRIX)
+            or set(by_identity) != set(EXPECTED_MATRIX)
+        ):
             raise RemoteError("incomplete_matrix", "workflow report is missing required matrix elements")
         elements = [by_identity[identity] for identity in EXPECTED_MATRIX]
     elif len(elements) != 1 or (
@@ -516,7 +1101,11 @@ def _build_report(
             "unexpected_probe_element",
             "workflow report does not match the requested probe element",
         )
-    green = bool(elements) and all(item["conclusion"] == "success" for item in elements)
+    green = (
+        bool(elements)
+        and all(item["conclusion"] == "success" for item in elements)
+        and run.get("conclusion") == "success"
+    )
     return {
         "schema_version": 1,
         "mode": args.remote_command,
@@ -528,6 +1117,7 @@ def _build_report(
         "requested_selectors": list(requested_selectors),
         "run_id": run_id,
         "run_url": run.get("url"),
+        "workflow_conclusion": run.get("conclusion"),
         "conclusion": "green" if green else "red",
         "overall_green": green if args.remote_command == "matrix" else False,
         "elements": elements,
@@ -594,6 +1184,13 @@ def run(args: argparse.Namespace, *, gh: GhClient, sleep: Callable[[float], None
         selectors = _load_replay(args.from_report, repository, args.os, args.task)
     if args.remote_command == "probe" and args.task == "combined" and selectors:
         raise RemoteError("invalid_selector", "combined supports whole-element probes only")
+    if args.remote_command == "matrix" and args.context:
+        return _run_context_matrix(
+            args,
+            gh=gh,
+            repository=repository,
+            context_root=output_root,
+        )
     request_id = f"ci-{secrets.token_hex(8)}"
     _checked(
         gh,
@@ -678,4 +1275,10 @@ def main(
         print(str(exc), file=sys.stderr)
         return 2
     print(json.dumps(report))
+    if report.get("state") == "pending":
+        return 0
+    if report.get("state") == "timed_out":
+        return 2
+    if report.get("state") == "blocked":
+        return 2
     return 0 if report["conclusion"] == "green" else 1

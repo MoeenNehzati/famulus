@@ -23,7 +23,7 @@ def test_module_exposes_only_the_two_instruction_routes_and_two_machine_calls() 
         "ci-debug.interface.repair-element",
     }
     assert module["namespace_exports"]["_rtx"]["surface"]["only"] == {
-        "ci-debug._rtx.interface.run-ci": 1,
+        "ci-debug._rtx.interface.run-ci": 2,
         "ci-debug._rtx.interface.run-targeted-tests": 1,
     }
 
@@ -118,7 +118,7 @@ def test_instruction_sources_use_only_the_interface_they_need() -> None:
         )
     )
     assert gateway["uses_interfaces"] == [
-        {"interface": "ci-debug._rtx.interface.run-ci", "version": 1},
+        {"interface": "ci-debug._rtx.interface.run-ci", "version": 2},
         {"interface": "ci-debug._rtx.interface.run-targeted-tests", "version": 1},
         {
             "interface": "ci-debug.source.instructions-repair-element.interface.repair-element",

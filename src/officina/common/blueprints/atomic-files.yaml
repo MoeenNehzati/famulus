@@ -72,6 +72,13 @@ interfaces:
             kind: integer
             maximum: 4095
             minimum: 0
+        blocking:
+          default: true
+          description: For exclusive-lock, wait until acquired when true; fail immediately with AtomicLockUnavailable when false.
+          required: false
+          sensitivity: public
+          type:
+            kind: boolean
         operation:
           description: Atomic-files function to call.
           required: true
@@ -93,7 +100,7 @@ interfaces:
               value: compare-and-replace
             - description: Remove one file after checking predecessor bytes and POSIX mode; Windows verifies native handles and ACLs rather than coarse st_mode bits.
               value: compare-and-delete
-            - description: Hold one confined regular sidecar as a cooperative process lock.
+            - description: Hold one confined regular sidecar as a cooperative process lock, optionally with non-blocking acquisition.
               value: exclusive-lock
             - description: Create missing confined directory descendants with fixed POSIX mode 0700 or an equivalent restrictive Windows ACL.
               value: ensure-private-directory
@@ -248,6 +255,11 @@ interfaces:
         class: error
         effects: []
         id: conflict
+        outputs: []
+      - caller_action: Retry non-blocking exclusive-lock acquisition only within the caller's own bounded wait policy.
+        class: partial
+        effects: []
+        id: lock-unavailable
         outputs: []
       - caller_action: Continue after the requested private directory exists with
           restrictive permissions.

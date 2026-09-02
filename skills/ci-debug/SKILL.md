@@ -9,9 +9,9 @@ description: Use when GitHub Actions CI is red, matrix failures need isolated re
 Executable Interfaces:
 
 Call `famulus.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
-- `ci-debug._rtx.interface.run-ci` — Run the complete remote CI matrix for an exact pushed candidate.
+- `ci-debug._rtx.interface.run-ci` — Start or poll one durable complete remote CI matrix for an exact pushed candidate.
   - Caller: `ci-debug`
-  - Version: 1
+  - Version: 2
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--context": "DIR", "--expected-sha": "SHA", "--ref": "REF", "--repo-root": "REPO", "--timeout": "SECONDS"}, "positionals": [], "stdin": null}
@@ -54,6 +54,10 @@ candidate. Keep the coordinator's failure ledger, branch assignments, and agent
 state outside the machine-owned context; do not extend its schema ad hoc.
 
 Use `ci-debug._rtx.interface.run-ci` for the exact pushed candidate.
+When it returns `state=pending`, invoke it again with the identical repository,
+ref, SHA, context, and timeout until it returns a terminal report. Pending is
+non-green and never authorizes completion; do not create a new context merely
+to bypass an active request.
 
 Retire superseded runs before dispatching replacement work through the
 already-authorized CI control surface. If cancellation authority is

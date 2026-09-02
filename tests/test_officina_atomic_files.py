@@ -14,6 +14,7 @@ import yaml
 
 import officina.common.atomic_files as atomic_files
 from officina.common.atomic_files import (
+    AtomicLockUnavailable,
     AtomicWriteError,
     atomic_compare_and_delete,
     atomic_compare_and_replace_bytes,
@@ -22,7 +23,20 @@ from officina.common.atomic_files import (
     atomic_create_bytes,
     atomic_replace_bytes,
     ensure_private_directory,
+    exclusive_file_lock,
 )
+
+
+def test_exclusive_file_lock_can_fail_immediately_when_held(tmp_path: Path) -> None:
+    lock_path = tmp_path / "state.lock"
+    with exclusive_file_lock(lock_path, allowed_root=tmp_path):
+        with pytest.raises(AtomicLockUnavailable):
+            with exclusive_file_lock(
+                lock_path,
+                allowed_root=tmp_path,
+                blocking=False,
+            ):
+                pytest.fail("held non-blocking lock unexpectedly acquired")
 
 
 def test_ensure_private_directory_has_operation_specific_typed_contract() -> None:

@@ -39,7 +39,7 @@ def main(argv: list[str] | None = None) -> int:
                 *destination_args,
                 "--timeout", str(args.timeout),
             ),
-            timeout_seconds=args.timeout,
+            timeout_seconds=210 if args.context else args.timeout,
         )
     except RunnerInvocationError as exc:
         print(json.dumps({"schema_version": 1, "error": "runner_interface_unavailable"}))
