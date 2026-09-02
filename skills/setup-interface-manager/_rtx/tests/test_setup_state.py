@@ -4,6 +4,7 @@ import os
 import stat
 import subprocess
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -46,8 +47,15 @@ class CommonAtomicFiles:
         except atomic_files.AtomicWriteError as exc:
             raise state.LedgerPathError(str(exc)) from exc
 
+    @contextmanager
     def exclusive_file_lock(self, path: Path, *, allowed_root: Path, mode: int):
-        return atomic_files.exclusive_file_lock(path, allowed_root=allowed_root, mode=mode)
+        try:
+            with atomic_files.exclusive_file_lock(
+                path, allowed_root=allowed_root, mode=mode
+            ) as lock:
+                yield lock
+        except atomic_files.AtomicWriteError as exc:
+            raise state.LedgerPathError(str(exc)) from exc
 
     def read_regular_file_bytes(self, path: Path, *, allowed_root: Path) -> bytes:
         try:
@@ -116,8 +124,9 @@ def test_read_creates_missing_parent_and_ledger_with_restrictive_modes(tmp_path:
     ledger = _store(path, files).read()
 
     assert ledger == state.SetupLedger.empty()
-    assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    if os.name == "posix":
+        assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert files.compare_calls == [(None, None, state.encode_ledger(ledger))]
 
 
@@ -259,15 +268,22 @@ def test_adapter_fails_closed_when_a_validated_path_is_swapped_before_use(
             self.swapped = False
 
         def read_regular_file_bytes(self, inspected: Path, *, allowed_root: Path) -> bytes:
-            if not self.swapped:
+            if not self.swapped and swap == "target":
                 self.swapped = True
-                if swap == "parent":
-                    private.rename(tmp_path / "held-private")
-                    private.symlink_to(outside, target_is_directory=True)
-                else:
-                    path.rename(tmp_path / "held-ledger.json")
-                    path.symlink_to(outside_target)
+                path.rename(tmp_path / "held-ledger.json")
+                path.symlink_to(outside_target)
             return super().read_regular_file_bytes(inspected, allowed_root=allowed_root)
+
+        def exclusive_file_lock(
+            self, inspected: Path, *, allowed_root: Path, mode: int
+        ):
+            if not self.swapped and swap == "parent":
+                self.swapped = True
+                private.rename(tmp_path / "held-private")
+                private.symlink_to(outside, target_is_directory=True)
+            return super().exclusive_file_lock(
+                inspected, allowed_root=allowed_root, mode=mode
+            )
 
     with pytest.raises(state.LedgerPathError):
         _store(path, SwappingFiles()).compare_and_update(previous, next_)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ import officina.dispatcher.direct_authorization as direct_authorization
 import officina.dispatcher.direct_runtime as direct_runtime
 from officina.configuration.repository import RepositoryConfiguration
 from officina.dispatcher.direct_authorization import resolve_direct_invocation
+from officina.dispatcher.direct_models import ResolvedInvocationMetadata
 from officina.dispatcher.direct_runtime import (
     _dispatch_host,
     _resolve_host_dispatch_metadata,
@@ -26,6 +28,45 @@ from officina.dispatcher.errors import (
 INTERFACE_ID = "root.alpha.leaf.interface.execute"
 SOURCE_ID = "root.alpha.leaf.source.runtime"
 SOURCE_INTERFACE_ID = f"{SOURCE_ID}.interface.execute"
+
+
+@pytest.mark.parametrize("logical_stdin", [None, "", "payload"])
+def test_resolved_invocation_never_inherits_host_stdin(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    logical_stdin: str | None,
+) -> None:
+    observed: dict[str, object] = {}
+
+    def run(_command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        observed.update(kwargs)
+        return subprocess.CompletedProcess([], 0, "", "")
+
+    monkeypatch.setattr(direct_runtime.subprocess, "run", run)
+    metadata = ResolvedInvocationMetadata(
+        caller_module_id="root",
+        target_module_id="root.alpha.leaf",
+        script_interface=SOURCE_INTERFACE_ID,
+        target=INTERFACE_ID,
+        pattern="default",
+        cwd=tmp_path,
+        command=["probe"],
+        stdin=logical_stdin is not None,
+    )
+    resolved = direct_runtime.ResolvedInvocation(metadata, ["probe"], {})
+
+    direct_runtime._run_resolved_invocation(
+        resolved,
+        stdin=logical_stdin,
+        text=True,
+    )
+
+    if logical_stdin is None:
+        assert observed["stdin"] is subprocess.DEVNULL
+        assert "input" not in observed
+    else:
+        assert observed["input"] == logical_stdin
+        assert "stdin" not in observed
 
 
 def test_dispatcher_package_exports_direct_resolver() -> None:
