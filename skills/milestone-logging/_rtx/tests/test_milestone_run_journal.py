@@ -564,6 +564,7 @@ def test_missing_run_is_reported_rather_than_rendered_empty(tmp_path: Path) -> N
 def test_concurrent_writers_leave_the_journal_valid_jsonl(tmp_path: Path) -> None:
     logs = tmp_path / "logs"
     count = 8
+    phase_timeout = 30.0
     ready = tmp_path / "ready"
     ready.mkdir()
     release = tmp_path / "release"
@@ -586,7 +587,7 @@ def synchronized_append(target, line):
     if target.parent.name == "runs":
         (Path(os.environ["SYNC_READY"]) / os.environ["SYNC_ID"]).touch()
         release = Path(os.environ["SYNC_RELEASE"])
-        deadline = time.monotonic() + 10
+        deadline = float(os.environ["SYNC_DEADLINE"])
         while not release.exists():
             if time.monotonic() >= deadline:
                 raise TimeoutError("append barrier was not released")
@@ -597,6 +598,7 @@ writer._append_line = synchronized_append
 raise SystemExit(writer.main(sys.argv[1:]))
 """
     processes: list[subprocess.Popen[str]] = []
+    readiness_deadline = time.monotonic() + phase_timeout
     for index in range(count):
         env = dict(os.environ)
         env.update(
@@ -606,6 +608,7 @@ raise SystemExit(writer.main(sys.argv[1:]))
             SYNC_ID=f"writer-{index}",
             SYNC_READY=str(ready),
             SYNC_RELEASE=str(release),
+            SYNC_DEADLINE=str(readiness_deadline),
         )
         env.pop("CODEX_SESSION_ID", None)
         env.pop("CODEX_THREAD_ID", None)
@@ -632,10 +635,9 @@ raise SystemExit(writer.main(sys.argv[1:]))
 
     outputs: list[tuple[int | None, str]] = []
     try:
-        deadline = time.monotonic() + 10
         expected_ready = {f"writer-{index}" for index in range(count)}
         while {path.name for path in ready.iterdir()} != expected_ready:
-            if time.monotonic() >= deadline or any(
+            if time.monotonic() >= readiness_deadline or any(
                 process.poll() is not None for process in processes
             ):
                 break
@@ -643,8 +645,10 @@ raise SystemExit(writer.main(sys.argv[1:]))
         assert {path.name for path in ready.iterdir()} == expected_ready
         assert all(process.poll() is None for process in processes)
         release.touch()
+        completion_deadline = time.monotonic() + phase_timeout
         for process in processes:
-            _stdout, stderr = process.communicate(timeout=10)
+            remaining = max(0.1, completion_deadline - time.monotonic())
+            _stdout, stderr = process.communicate(timeout=remaining)
             outputs.append((process.returncode, stderr))
     finally:
         release.touch(exist_ok=True)
