@@ -28,6 +28,7 @@ def _setup_dispatches():
     finally:
         os.chdir(previous)
     globals_ = interface.__class__.run.__globals__
+    _setup_dispatches.runtime = globals_  # type: ignore[attr-defined]
     return globals_["PRODUCTION_BINDINGS"], globals_["PRODUCTION_DISPATCHES"]
 
 
@@ -64,3 +65,12 @@ def test_production_map_has_no_managed_setup_routes() -> None:
 
     assert set(bindings) == set()
     assert set(dispatches) == {"setup-status-path"}
+    route = "setup-interface-manager._rtx.interface.teardown-all"
+    graph = load_repository_blueprint_graph(REPO_ROOT)
+    assert "TeardownAllInterface" not in getattr(_setup_dispatches, "runtime")
+    assert route not in graph.source_interfaces and route not in graph.exports
+    assert all(route != target for uses in graph.interface_uses.values() for target, _version in uses)
+    assert route not in (REPO_ROOT / "references/blueprint-schema/runtime_dependencies.json").read_text()
+    assert "teardown-all" not in dispatches
+    assert route not in (REPO_ROOT / "skills/setup-interface-manager/SKILL.md").read_text()
+    assert route not in (REPO_ROOT / "docs/setup.md").read_text()

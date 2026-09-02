@@ -46,7 +46,9 @@ from ._setup_evaluation import (
     evaluate_target,
     invalidate as invalidate_receipts,
     record_setup_success,
+    record_teardown_all_success,
     record_teardown_success,
+    teardown_all_plan,
     teardown_plan,
 )
 from ._setup_state import (
@@ -61,6 +63,7 @@ from ._setup_state import (
     SetupReceipt,
     begin_flow,
     claim_receipts,
+    clear_flow,
 )
 
 
@@ -262,7 +265,8 @@ class SetupManager:
             raise ManagerDomainError("current managed interface has no finite dispatch binding") from exc
         managed = self.graph.managed_setups.get(setup_interface)
         if managed is None or (
-            binding.setup_version != managed.setup_version
+            binding.setup_interface != setup_interface
+            or binding.setup_version != managed.setup_version
             or binding.setup_kind != managed.kind
             or binding.setup_verifier_interface != managed.setup_verifier_interface
             or binding.setup_verifier_version != managed.setup_verifier_version
@@ -283,11 +287,23 @@ class SetupManager:
         managed = self.graph.managed_setups.get(flow.current_step)
         if managed is None:
             raise ManagerRecoveryError("active flow current step is no longer managed")
-        binding = self._binding(flow.current_step)
+        try:
+            binding = self._binding(flow.current_step)
+        except ManagerDomainError as exc:
+            if flow.operation != "teardown-all":
+                raise
+            raise ManagerRecoveryError("active teardown binding is no longer valid") from exc
         if flow.operation == "setup":
             step: SetupStep | TeardownStep = SetupStep.from_managed(managed)
         else:
-            plan = teardown_plan(self.graph, flow.root, ledger)
+            try:
+                plan = (
+                    teardown_all_plan(self.graph, ledger)
+                    if flow.operation == "teardown-all"
+                    else teardown_plan(self.graph, flow.root, ledger)
+                )
+            except BlueprintGraphError as exc:
+                raise ManagerRecoveryError("active teardown no longer matches the live graph") from exc
             if not plan or plan[0].setup_interface != flow.current_step:
                 raise ManagerRecoveryError("active teardown no longer matches the live plan")
             step = plan[0]
@@ -336,12 +352,12 @@ class SetupManager:
             raise ManagerRecoveryError("declared dispatch returned an invalid process result")
         return result
 
-    def _verify(
+    def _verifier_outcome(
         self,
         flow: ActiveFlow,
         step: SetupStep | TeardownStep,
         binding: ManagedInterfaceBinding,
-    ) -> bool:
+    ) -> bool | None:
         if isinstance(step, SetupStep):
             key = binding.setup_verifier_dispatch_key
             expected = {"set_up": True}
@@ -350,11 +366,13 @@ class SetupManager:
             expected = {"torn_down": True}
         result = self._dispatch_result(key)
         if result.returncode != 0:
-            return False
+            return None
         try:
             decoded = json.loads(result.stdout)
         except (json.JSONDecodeError, TypeError) as exc:
             raise ManagerRecoveryError("declared verifier returned malformed JSON") from exc
+        if not isinstance(decoded, dict) or any(type(value) is not bool for value in decoded.values()):
+            raise ManagerRecoveryError("declared verifier returned an unsupported payload")
         if decoded == expected:
             return True
         false_value = {next(iter(expected)): False}
@@ -362,11 +380,20 @@ class SetupManager:
             return False
         raise ManagerRecoveryError("declared verifier returned an unsupported payload")
 
+    def _verify(self, flow: ActiveFlow, step: SetupStep | TeardownStep, binding: ManagedInterfaceBinding) -> bool:
+        return self._verifier_outcome(flow, step, binding) is True
     def _settle_verified(
         self, flow: ActiveFlow, step: SetupStep | TeardownStep
     ) -> tuple[ActiveFlow | None, SetupStep | TeardownStep | None]:
         if isinstance(step, SetupStep):
             result = record_setup_success(self.store, self.graph, flow.flow_id, step)
+        elif flow.operation == "teardown-all":
+            try:
+                result = record_teardown_all_success(
+                    self.store, self.graph, flow.flow_id, step
+                )
+            except (BlueprintGraphError, FlowConflict, LedgerError) as exc:
+                raise ManagerRecoveryError("global teardown settlement needs recovery") from exc
         else:
             result = record_teardown_success(self.store, self.graph, flow.flow_id, step)
         if result.state == "ready":
@@ -402,7 +429,7 @@ class SetupManager:
     def _result_response(
         self,
         operation: str,
-        original: ContinuationIdentity,
+        original: ContinuationIdentity | None,
         flow: ActiveFlow | None,
         step: SetupStep | TeardownStep | None,
     ) -> tuple[int, dict[str, object]]:
@@ -436,6 +463,67 @@ class SetupManager:
             error=message,
         )
 
+    def _run_teardown_all(
+        self, flow: ActiveFlow, step: TeardownStep
+    ) -> tuple[int, dict[str, object]]:
+        while True:
+            if (persisted := self._flow_step(self.store.read()))[:2] != (flow, step): raise ManagerRecoveryError("global teardown changed before dispatch")
+            flow, step, binding = persisted
+            if binding.setup_kind == "markdown":
+                return 0, _response(
+                    flow_id=flow.flow_id, operation=flow.operation, state="awaiting-settlement",
+                    current_step=step, original=None,
+                    instructions=binding.teardown_instructions,
+                )
+            action = self._dispatch_result(binding.teardown_dispatch_key)
+            if action.returncode != 0:
+                return self._domain_failure(
+                    flow.operation, "declared action failed", flow=flow, step=step
+                )
+            if not self._verify(flow, step, binding):
+                return self._domain_failure(
+                    flow.operation, "declared verifier reported incomplete state",
+                    flow=flow, step=step,
+                )
+            next_flow, next_step = self._settle_verified(flow, step)
+            if next_step is None:
+                return self._result_response(flow.operation, None, None, None)
+            if next_flow is None or not isinstance(next_step, TeardownStep):
+                raise ManagerRecoveryError("global teardown advanced without persisted state")
+            flow, step = next_flow, next_step
+    def teardown_all(self) -> tuple[int, dict[str, object]]:
+        flow: ActiveFlow | None = None
+        step: TeardownStep | None = None
+        try:
+            ledger = self.store.read()
+            if ledger.active_flow is not None:
+                active, active_step, _binding = self._flow_step(ledger)
+                return self._domain_failure(
+                    "teardown-all", "another managed flow is active", state_name="busy",
+                    flow=active, step=active_step, original=active.continuation,
+                )
+            plan = teardown_all_plan(self.graph, ledger)
+            if not plan:
+                return self._result_response("teardown-all", None, None, None)
+            for candidate in plan:
+                binding = self._binding(candidate.setup_interface)
+                if binding.arguments:
+                    raise ManagerDomainError("global teardown requires zero-argument bindings")
+            step = plan[0]
+            flow = ActiveFlow(self._new_flow_id(), "teardown-all", None, step.setup_interface, (), None)
+            def start(current: SetupLedger) -> SetupLedger:
+                if current.active_flow is not None or teardown_all_plan(self.graph, current) != plan:
+                    raise FlowConflict("managed teardown changed before the flow began")
+                return begin_flow(current, flow)
+            self.store.update(start)
+            return self._run_teardown_all(flow, step)
+        except (BlueprintGraphError, FlowConflict, ManagerDomainError, LedgerError) as exc:
+            return self._domain_failure("teardown-all", str(exc))
+        except ManagerRecoveryError as exc:
+            return self._domain_failure(
+                "teardown-all", str(exc), state_name="recovery-required",
+                flow=flow, step=step,
+            )
     def status(self, target_interface: str) -> tuple[int, dict[str, object]]:
         try:
             result = evaluate_target(self.graph, target_interface, self.store.read())
@@ -692,6 +780,9 @@ class SetupManager:
                     original=flow.continuation,
                 )
             next_flow, next_step = self._settle_verified(flow, step)
+            if flow.operation == "teardown-all" and next_step is not None:
+                assert next_flow is not None and isinstance(next_step, TeardownStep)
+                return self._run_teardown_all(next_flow, next_step)
             return self._result_response(
                 flow.operation, flow.continuation, next_flow, next_step
             )
@@ -750,11 +841,24 @@ class SetupManager:
                     return self._result_response(
                         flow.operation, flow.continuation, next_flow, next_step
                     )
-                if self._verify(flow, step, binding):
+                outcome = (
+                    self._verifier_outcome(flow, step, binding)
+                    if flow.operation == "teardown-all"
+                    else self._verify(flow, step, binding)
+                )
+                if outcome is None:
+                    raise ManagerRecoveryError("declared verifier completion is uncertain")
+                if outcome:
                     next_flow, next_step = self._settle_verified(flow, step)
+                    if flow.operation == "teardown-all" and next_step is not None:
+                        assert next_flow is not None and isinstance(next_step, TeardownStep)
+                        return self._run_teardown_all(next_flow, next_step)
                     return self._result_response(
                         flow.operation, flow.continuation, next_flow, next_step
                     )
+                if flow.operation == "teardown-all":
+                    assert isinstance(step, TeardownStep)
+                    return self._run_teardown_all(flow, step)
                 extra = {}
                 if binding.setup_kind == "markdown":
                     extra["instructions"] = (
@@ -773,6 +877,26 @@ class SetupManager:
             if action != "cancel":
                 raise ManagerUsageError("recovery action must be retry or cancel")
 
+            if flow.operation == "teardown-all":
+                assert isinstance(step, TeardownStep)
+                outcome = self._verifier_outcome(flow, step, binding)
+                if outcome is None:
+                    raise ManagerRecoveryError("declared verifier completion is uncertain")
+                if outcome:
+                    try:
+                        record_teardown_all_success(
+                            self.store, self.graph, flow.flow_id, step, advance=False
+                        )
+                    except (BlueprintGraphError, FlowConflict, LedgerError) as exc:
+                        raise ManagerRecoveryError("global teardown cancellation needs recovery") from exc
+                else:
+                    def abandon(current: SetupLedger) -> SetupLedger:
+                        active, live_step, _binding = self._flow_step(current)
+                        if active != flow or live_step != step:
+                            raise ManagerRecoveryError("global teardown changed before cancellation")
+                        return clear_flow(current, flow_id)
+                    self.store.update(abandon)
+                return self._result_response(flow.operation, None, None, None)
             def cancel(current: SetupLedger) -> SetupLedger:
                 active = current.active_flow
                 if active is None or active.flow_id != flow_id:

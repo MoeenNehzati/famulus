@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import redirect_stdout
+from dataclasses import replace
 import importlib.util
 import io
 import json
@@ -315,6 +316,120 @@ def _seed_ready(store: state.LedgerStore, item: ManagedSetup, *roots: str) -> No
             active_flow=None,
         )
     )
+
+
+def _seed_all(store: state.LedgerStore, *items: ManagedSetup, schema_version: int = 2) -> None:
+    store.update(lambda _: state.SetupLedger({item.setup_interface: state.SetupReceipt(1, frozenset()) for item in items}, None, schema_version))
+
+def test_teardown_all_preflights_then_dispatches_dependents_first(tmp_path: Path) -> None:
+    leaf, notes, root = _managed("leaf"), _managed("notes", kind="markdown"), _managed("root")
+    graph = _graph(leaf, notes, root)
+    graph.setup_requirements[root.setup_interface] = ((notes.setup_interface, 1),)
+    graph.setup_requirements[notes.setup_interface] = ((leaf.setup_interface, 1),)
+    bindings = (_binding(leaf), _binding(notes), _binding(root))
+    dispatch = DispatchHarness()
+    for binding in reversed(bindings):
+        if binding.setup_kind == "python":
+            dispatch.queue(binding.teardown_dispatch_key, "")
+        dispatch.queue(binding.teardown_verifier_dispatch_key, '{"torn_down":true}\n')
+    controller = _controller(tmp_path, graph, dispatch, *bindings)
+    _seed_all(controller.store, leaf, notes, root)
+    code, payload = controller.teardown_all()
+    assert (code, payload["state"], payload["instructions"]) == (0, "awaiting-settlement", bindings[1].teardown_instructions)
+    assert controller.settle("flow-1", notes.teardown_interface)[1]["state"] == "ready"
+    assert [call[0] for call in dispatch.calls] == ["root-teardown", "root-teardown-status", "notes-teardown-status", "leaf-teardown", "leaf-teardown-status"]
+    assert controller.store.read() == state.SetupLedger.empty()
+    assert _controller(tmp_path / "empty", _graph(), DispatchHarness()).teardown_all()[0] == 0
+
+@pytest.mark.parametrize("case", ["unknown", "stale", "missing", "arguments"])
+@pytest.mark.parametrize("schema_version", [1, 2])
+def test_teardown_all_preflight_failures_preserve_exact_bytes(tmp_path: Path, case: str, schema_version: int) -> None:
+    item = _managed("canary")
+    graph, binding = _graph(item), _binding(item)
+    if case == "unknown":
+        graph = _graph()
+    elif case == "stale":
+        item = replace(item, setup_version=2)
+        graph = _graph(item)
+    elif case == "arguments":
+        binding = replace(binding, arguments=(setup_dispatches.ManagedArgument("x", position=0),))
+    bindings = () if case == "missing" else (binding,)
+    controller = _controller(tmp_path, graph, DispatchHarness(), *bindings)
+    receipt = state.SetupReceipt(1, frozenset())
+    controller.store.update(lambda _: state.SetupLedger({"canary.interface.setup": receipt}, None, schema_version))
+    path = tmp_path / "private" / "ledger.json"
+    before = path.read_bytes()
+    code, payload = controller.teardown_all()
+    assert (code, payload["state"]) == (2, "failed")
+    assert path.read_bytes() == before
+    assert controller._dispatch.calls == []
+
+@pytest.mark.parametrize(("action_code", "verifier", "expected"), [
+    (7, None, "failed"), (0, '{"torn_down":false}\n', "failed"), (0, '{"torn_down":1}\n', "recovery-required"), (0, "conflict", "recovery-required")
+])
+def test_teardown_all_failures_retain_the_current_receipt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, action_code: int, verifier: str | None, expected: str) -> None:
+    item, dispatch = _managed("canary"), DispatchHarness()
+    binding = _binding(item)
+    dispatch.queue(binding.teardown_dispatch_key, "", returncode=action_code)
+    if verifier == "conflict":
+        monkeypatch.setitem(manager.SetupManager._settle_verified.__globals__, "record_teardown_all_success", lambda *_args: (_ for _ in ()).throw(state.LedgerConflict("race")))
+    if verifier is not None:
+        dispatch.queue(binding.teardown_verifier_dispatch_key, '{"torn_down":true}\n' if verifier == "conflict" else verifier)
+    controller = _controller(tmp_path, _graph(item), dispatch, binding)
+    _seed_all(controller.store, item)
+    code, payload = controller.teardown_all()
+    assert (code, payload["state"]) == (2, expected)
+    assert set(controller.store.read().interfaces) == {item.setup_interface}
+    assert controller.store.read().active_flow is not None
+
+def test_teardown_all_retry_verifies_first_and_cancel_is_tri_state(tmp_path: Path) -> None:
+    item, binding, dispatch = _managed("canary"), _binding(_managed("canary")), DispatchHarness()
+    dispatch.queue(binding.teardown_dispatch_key, "")
+    dispatch.queue(binding.teardown_verifier_dispatch_key, "bad")
+    dispatch.queue(binding.teardown_verifier_dispatch_key, '{"torn_down":true}\n')
+    controller = _controller(tmp_path, _graph(item), dispatch, binding)
+    _seed_all(controller.store, item)
+    assert controller.teardown_all()[1]["state"] == "recovery-required"
+    assert controller.recover("flow-1", "retry")[1]["state"] == "ready"
+    assert [call[0] for call in dispatch.calls].count("canary-teardown") == 1
+    outcomes = (('{"torn_down":true}\n', True, False, "", "cancel"), ('{"torn_down":false}\n', False, False, "", "cancel"), ('{"torn_down":0}\n', False, True, "", "cancel"), ('{"torn_down":true}\n', False, True, "", "cancel"), ("unused", False, True, "graph", "retry"), ("unused", False, True, "binding", "cancel"), ("unused", False, True, "graph", "settle"))
+    for index, (verifier, removed, active, mutation, action) in enumerate(outcomes):
+        case_dispatch = DispatchHarness()
+        case_dispatch.queue(binding.teardown_verifier_dispatch_key, verifier)
+        case = _controller(tmp_path / str(index), _graph(item), case_dispatch, binding)
+        _seed_all(case.store, item)
+        flow = state.ActiveFlow("flow-1", "teardown-all", None, item.setup_interface, (), None)
+        case.store.update(lambda ledger: state.begin_flow(ledger, flow))
+        if index == 3:
+            original = case.store.update
+            def race(transform):
+                original(lambda ledger: state.SetupLedger({**ledger.interfaces, "foreign.interface.setup": state.SetupReceipt(1, frozenset())}, ledger.active_flow))
+                return original(transform)
+            case.store.update = race
+        if mutation: (case.graph.managed_setups if mutation == "graph" else case._bindings).clear()
+        code, payload = case.settle("flow-1", item.teardown_interface) if action == "settle" else case.recover("flow-1", action)
+        assert (item.setup_interface not in case.store.read().interfaces) is removed
+        assert (case.store.read().active_flow is not None) is active
+        assert payload["state"] == ("recovery-required" if active else "ready")
+def test_teardown_all_revalidates_races_and_marks_stale_recovery(tmp_path: Path) -> None:
+    item, later = _managed("canary"), _managed("later")
+    dispatch = DispatchHarness()
+    controller = _controller(tmp_path, _graph(item, later), dispatch, _binding(item))
+    _seed_all(controller.store, item)
+    original_update = controller.store.update
+    def racing_update(transform):
+        receipts = {owned.setup_interface: state.SetupReceipt(1, frozenset()) for owned in (item, later)}
+        original_update(lambda _: state.SetupLedger(receipts, None))
+        return original_update(transform)
+    controller.store.update = racing_update
+    assert controller.teardown_all()[1]["state"] == "failed"
+    assert dispatch.calls == []
+    controller.store.update = original_update
+    controller._bindings[later.setup_interface] = _binding(later)
+    original_update(lambda ledger: state.begin_flow(ledger, state.ActiveFlow("flow-1", "teardown-all", None, later.setup_interface, (), None)))
+    assert controller.teardown_all()[1]["state"] == "busy"
+    controller._dispatch = lambda *_args, **_kwargs: (original_update(lambda ledger: state.SetupLedger(ledger.interfaces, replace(ledger.active_flow, current_step=item.setup_interface))), subprocess.CompletedProcess([], 0, '{"torn_down":false}\n', ""))[1]
+    assert controller.recover("flow-1", "retry")[1]["state"] == "recovery-required"
 
 
 def test_status_and_authorize_are_read_only_then_ready_only_claiming(tmp_path: Path) -> None:
