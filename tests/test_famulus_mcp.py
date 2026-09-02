@@ -100,7 +100,7 @@ def _declared_launch(host: str, plugin_root: Path) -> tuple[str, list[str], Path
         return "python", [str(plugin_root / "mcp_server.py")], None
 
     assert manifest["mcpServers"] == "./.mcp.json"
-    servers = _json(plugin_root / manifest["mcpServers"])
+    servers = _json(plugin_root / manifest["mcpServers"])["mcpServers"]
     assert set(servers) == {"famulus"}
     declaration = servers["famulus"]
     assert declaration == {

@@ -42,7 +42,7 @@ def _checkout(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     (checkout / ".mcp.json").write_text(
-        json.dumps({"famulus": {"command": "python", "args": ["mcp_server.py"], "cwd": "."}}),
+        json.dumps({"mcpServers": {"famulus": {"command": "python", "args": ["mcp_server.py"], "cwd": "."}}}),
         encoding="utf-8",
     )
     (checkout / "mcp_server.py").write_text("# local MCP canary\n", encoding="utf-8")
@@ -244,7 +244,7 @@ def test_host_routes_select_packaged_checkout_without_root_mcp_for_claude(tmp_pa
     assert ".mcp.json" not in runtime.host_command(checkout, "claude", [])
 
 
-def test_codex_server_map_is_rejected_as_claude_project_config(tmp_path: Path) -> None:
+def test_codex_server_map_parses_as_claude_project_config(tmp_path: Path) -> None:
     runtime = _load_runtime()
     checkout = _checkout(tmp_path)
     claude = shutil.which("claude")
@@ -265,8 +265,8 @@ def test_codex_server_map_is_rejected_as_claude_project_config(tmp_path: Path) -
         capture_output=True, check=False,
     )
     diagnostics = result.stdout + result.stderr
-    assert "[Failed to parse]" in diagnostics
-    assert "mcpServers: Invalid input" in diagnostics
+    assert "[Failed to parse]" not in diagnostics
+    assert "mcpServers: Invalid input" not in diagnostics
     assert runtime.host_command(checkout, "claude", []) == [
         "claude", "--plugin-dir", str(checkout.resolve()),
     ]
@@ -276,7 +276,7 @@ def test_packaged_declarations_share_literal_python_and_one_mcp(tmp_path: Path) 
     checkout = _checkout(tmp_path)
     claude = json.loads((checkout / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["mcpServers"]
     codex_plugin = json.loads((checkout / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
-    codex = json.loads((checkout / codex_plugin["mcpServers"]).read_text(encoding="utf-8"))
+    codex = json.loads((checkout / codex_plugin["mcpServers"]).read_text(encoding="utf-8"))["mcpServers"]
     assert list(claude) == ["famulus"]
     assert list(codex) == ["famulus"]
     assert claude["famulus"] == {"command": "python", "args": ["${CLAUDE_PLUGIN_ROOT}/mcp_server.py"]}

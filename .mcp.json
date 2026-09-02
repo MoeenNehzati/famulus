@@ -1,7 +1,9 @@
 {
-  "famulus": {
-    "command": "python",
-    "args": ["mcp_server.py"],
-    "cwd": "."
+  "mcpServers": {
+    "famulus": {
+      "command": "python",
+      "args": ["mcp_server.py"],
+      "cwd": "."
+    }
   }
 }
