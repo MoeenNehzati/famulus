@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import stat
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -98,7 +100,7 @@ def _flow(flow_id: str = "flow-1") -> state.ActiveFlow:
 
 def test_ledger_store_public_constructor_accepts_only_the_getter_path(tmp_path: Path) -> None:
     """Catches reintroducing an adapter or caller-supplied capability argument."""
-    path = tmp_path / "ledger.json"
+    path = tmp_path / "private" / "state" / "ledger.json"
     files = CommonAtomicFiles()
 
     with pytest.raises(TypeError):
@@ -121,11 +123,26 @@ def test_read_creates_missing_parent_and_ledger_with_restrictive_modes(tmp_path:
 
 def test_read_rejects_existing_final_parent_without_mode_0700(tmp_path: Path) -> None:
     """Catches accepting a ledger directory other local users may traverse."""
-    parent = tmp_path / "private"
+    private = tmp_path / "private"
+    atomic_files.ensure_private_directory(private, allowed_root=tmp_path)
+    parent = private / "state"
     parent.mkdir()
-    os.chmod(parent, 0o755)
+    if sys.platform == "win32":
+        result = subprocess.run(
+            ["icacls", str(parent), "/grant", "*S-1-1-0:F"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode:
+            # famulus-skip: category=platform-contract; reason=ACL mutation is unavailable on this Windows host; alternate=the native restrictive-parent positive contract runs separately
+            pytest.skip(f"Windows ACL mutation unavailable: {result.stderr}")
+    else:
+        os.chmod(parent, 0o755)
 
-    with pytest.raises(state.LedgerPathError, match="mode"):
+    with pytest.raises(
+        state.LedgerPathError, match="mode|restrictive native ACL"
+    ):
         _store(parent / "ledger.json", CommonAtomicFiles()).read()
 
 
@@ -168,7 +185,9 @@ def test_encoding_is_deterministic_and_strictly_required() -> None:
 @pytest.mark.parametrize("target_kind", ["symlink", "directory"])
 def test_read_rejects_non_regular_ledger_target(tmp_path: Path, target_kind: str) -> None:
     """Catches following a link or treating another object as manager state."""
-    path = tmp_path / "ledger.json"
+    parent = tmp_path / "private" / "state"
+    atomic_files.ensure_private_directory(parent, allowed_root=tmp_path)
+    path = parent / "ledger.json"
     if target_kind == "symlink":
         path.symlink_to(tmp_path / "elsewhere.json")
     else:
@@ -222,7 +241,7 @@ def test_adapter_fails_closed_when_a_validated_path_is_swapped_before_use(
     tmp_path: Path, swap: str
 ) -> None:
     """Catches a path swap redirecting a later read or CAS outside the ledger tree."""
-    private = tmp_path / "private"
+    private = tmp_path / "private" / "state"
     path = private / "ledger.json"
     seed = _store(path, CommonAtomicFiles())
     previous = seed.read()
@@ -257,7 +276,7 @@ def test_adapter_fails_closed_when_a_validated_path_is_swapped_before_use(
 
 def test_compare_and_update_requires_the_exact_predecessor_bytes(tmp_path: Path) -> None:
     """Catches a stale writer replacing state after another writer won."""
-    path = tmp_path / "ledger.json"
+    path = tmp_path / "private" / "state" / "ledger.json"
     files = CommonAtomicFiles()
     store = _store(path, files)
     empty = store.read()
@@ -282,7 +301,7 @@ def test_compare_and_update_requires_the_exact_predecessor_bytes(tmp_path: Path)
 
 def test_update_recovers_after_a_late_noncooperating_clobber(tmp_path: Path) -> None:
     """Catches claiming success when a writer clobbers bytes after publication."""
-    path = tmp_path / "ledger.json"
+    path = tmp_path / "private" / "state" / "ledger.json"
     baseline = _store(path, CommonAtomicFiles())
     previous = baseline.read()
     intended = state.SetupLedger(
@@ -347,7 +366,7 @@ def test_store_runs_with_a_portable_adapter_without_posix_capabilities(tmp_path:
 
 def test_update_retries_a_compare_conflict_with_fresh_state(tmp_path: Path) -> None:
     """Catches losing an unrelated concurrent receipt while retrying a claim."""
-    path = tmp_path / "ledger.json"
+    path = tmp_path / "private" / "state" / "ledger.json"
 
     class RacingFiles(CommonAtomicFiles):
         def __init__(self) -> None:

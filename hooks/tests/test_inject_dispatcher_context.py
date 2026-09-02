@@ -72,7 +72,8 @@ def test_packaged_hook_command_runs_without_separate_args(
     hook = payload["hooks"]["SessionStart"][0]["hooks"][0]
     python_bin = tmp_path / "bin"
     python_bin.mkdir()
-    (python_bin / "python").symlink_to(sys.executable)
+    python_name = "python.exe" if os.name == "nt" else "python"
+    (python_bin / python_name).symlink_to(sys.executable)
 
     result = subprocess.run(
         hook["command"],
