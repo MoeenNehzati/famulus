@@ -435,6 +435,8 @@ def _run_resolved_invocation(
         run_kwargs["timeout"] = timeout
     if stdin is not None:
         run_kwargs["input"] = stdin
+    else:
+        run_kwargs["stdin"] = subprocess.DEVNULL
     if text is not None:
         run_kwargs["text"] = text
     elif isinstance(stdin, str):

@@ -72,8 +72,11 @@ def test_packaged_hook_command_runs_without_separate_args(
     hook = payload["hooks"]["SessionStart"][0]["hooks"][0]
     python_bin = tmp_path / "bin"
     python_bin.mkdir()
-    python_name = "python.exe" if os.name == "nt" else "python"
-    (python_bin / python_name).symlink_to(sys.executable)
+    if os.name == "nt":
+        python_path = str(Path(sys.executable).parent)
+    else:
+        (python_bin / "python").symlink_to(sys.executable)
+        python_path = str(python_bin)
 
     result = subprocess.run(
         hook["command"],
@@ -81,7 +84,7 @@ def test_packaged_hook_command_runs_without_separate_args(
         input=json.dumps({"hook_event_name": "SessionStart", "source": "startup"}),
         text=True,
         capture_output=True,
-        env={plugin_root_variable: str(_REPO_ROOT), "PATH": str(python_bin)},
+        env={plugin_root_variable: str(_REPO_ROOT), "PATH": python_path},
     )
 
     assert result.returncode == 0, result.stderr

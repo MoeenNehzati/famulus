@@ -78,8 +78,14 @@ def test_ensure_private_directory_creates_restrictive_descendants(tmp_path: Path
     ensure_private_directory(destination, allowed_root=allowed)
 
     assert destination.is_dir()
-    assert stat.S_IMODE((allowed / "private").stat().st_mode) == 0o700
-    assert stat.S_IMODE(destination.stat().st_mode) == 0o700
+    if sys.platform == "win32":
+        assert _windows_native_directory_acl_is_restrictive(
+            allowed / "private", allowed
+        )
+        assert _windows_native_directory_acl_is_restrictive(destination, allowed)
+    else:
+        assert stat.S_IMODE((allowed / "private").stat().st_mode) == 0o700
+        assert stat.S_IMODE(destination.stat().st_mode) == 0o700
 
 
 @pytest.mark.parametrize("requested_mode", [0o755, 0o777])
@@ -103,13 +109,28 @@ def test_ensure_private_directory_allows_repeated_final_component_name(
     allowed = tmp_path / "allowed"
     ancestor = allowed / "private"
     ancestor.mkdir(parents=True)
-    ancestor.chmod(0o755)
+    if sys.platform == "win32":
+        result = subprocess.run(
+            ["icacls", str(ancestor), "/grant", "*S-1-1-0:F"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode:
+            # famulus-skip: category=platform-contract; reason=ACL mutation is unavailable on this Windows host; alternate=the native ordinary-ancestor contract runs separately
+            pytest.skip(f"Windows ACL mutation unavailable: {result.stderr}")
+    else:
+        ancestor.chmod(0o755)
     destination = ancestor / "child" / "private"
 
     ensure_private_directory(destination, allowed_root=allowed)
 
-    assert stat.S_IMODE(ancestor.stat().st_mode) == 0o755
-    assert stat.S_IMODE(destination.stat().st_mode) == 0o700
+    if sys.platform == "win32":
+        assert not _windows_native_directory_acl_is_restrictive(ancestor, allowed)
+        assert _windows_native_directory_acl_is_restrictive(destination, allowed)
+    else:
+        assert stat.S_IMODE(ancestor.stat().st_mode) == 0o755
+        assert stat.S_IMODE(destination.stat().st_mode) == 0o700
 
 
 def test_ensure_private_directory_rejects_unsafe_components(tmp_path: Path) -> None:
