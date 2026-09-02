@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from collections.abc import Callable
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
@@ -68,6 +69,7 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
         "SingleFlare",
         "DetachedGlyph",
         "DetachedMap",
+        "AmbientThread",
     )
 
     def renderable_extractor(self) -> Callable[..., dict[str, object]]:
@@ -184,25 +186,70 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
     @EXTRACTOR_XFAIL
     def test_extracts_only_the_recursive_closure_used_by_graph_text(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            entrypoint = Path(tmp) / "main.tex"
+            project = Path(tmp) / "project"
+            parts = project / "parts"
+            texmf = Path(tmp) / "controlled-texmf"
+            parts.mkdir(parents=True)
+            texmf.mkdir()
+            entrypoint = project / "main.tex"
             entrypoint.write_text(
                 r"""
-                \newcommand{\RootBloom}{\mathbb{B}}
-                \newcommand{\NestedQuill}{\RootBloom^{\star}}
+                \documentclass{localframe}
+                \usepackage{localtones,ambientweave}
+                \input{parts/direct}
+                \include{parts/nested}
+                """,
+                encoding="utf-8",
+            )
+            (project / "localframe.cls").write_text(
+                r"\newcommand{\RootBloom}{\mathbb{B}}",
+                encoding="utf-8",
+            )
+            (project / "localtones.sty").write_text(
+                r"""
                 \newcommand{\PairWeave}[2]{\langle #1,#2\rangle}
                 \newcommand{\SupportSpore}{\mathcal{S}}
-                \newcommand{\ShadeFold}[2][q]{#1+\PairWeave{#2}{\SupportSpore}}
+                """,
+                encoding="utf-8",
+            )
+            (parts / "direct.tex").write_text(
+                r"\newcommand{\NestedQuill}{\RootBloom^{\star}}",
+                encoding="utf-8",
+            )
+            (parts / "nested.tex").write_text(
+                r"""
+                \newcommand{\ShadeFold}[2][q]{#1+\PairWeave{#2}{\SupportSpore}+\AmbientThread}
                 \newcommand{\IdleComet}{\mathrm{idle}}
                 """,
                 encoding="utf-8",
             )
-
-            macros = self.renderable_extractor()(
-                tex_entrypoint=entrypoint,
-                graph_text=[
-                    r"$\RootBloom+\NestedQuill+\PairWeave{x}{y}+\ShadeFold[z]{w}$"
-                ],
+            ambient_package = texmf / "ambientweave.sty"
+            ambient_package.write_text(
+                r"\newcommand{\AmbientThread}{\mathcal{A}}",
+                encoding="utf-8",
             )
+            original_resolver = _tex_macro_reader.resolve_tex_path
+
+            def controlled_resolver(
+                include_name: str,
+                current_dir: Path,
+                suffix: str = ".tex",
+            ) -> Path:
+                if include_name == "ambientweave":
+                    return ambient_package
+                return original_resolver(include_name, current_dir, suffix)
+
+            with mock.patch.object(
+                _tex_macro_reader,
+                "resolve_tex_path",
+                side_effect=controlled_resolver,
+            ):
+                macros = self.renderable_extractor()(
+                    tex_entrypoint=entrypoint,
+                    graph_text=[
+                        r"$\RootBloom+\NestedQuill+\PairWeave{x}{y}+\ShadeFold[z]{w}$"
+                    ],
+                )
 
             self.assertEqual(
                 macros,
@@ -211,19 +258,33 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                     "NestedQuill": r"\RootBloom^{\star}",
                     "PairWeave": [r"\langle #1,#2\rangle", 2],
                     "SupportSpore": r"\mathcal{S}",
-                    "ShadeFold": [r"#1+\PairWeave{#2}{\SupportSpore}", 2, "q"],
+                    "AmbientThread": r"\mathcal{A}",
+                    "ShadeFold": [
+                        r"#1+\PairWeave{#2}{\SupportSpore}+\AmbientThread",
+                        2,
+                        "q",
+                    ],
                 },
             )
 
     @EXTRACTOR_XFAIL
     def test_same_extractor_handles_a_disjoint_macro_vocabulary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            entrypoint = Path(tmp) / "second.tex"
+            project = Path(tmp)
+            entrypoint = project / "second.tex"
             entrypoint.write_text(
                 r"""
-                \newcommand{\CopperSeed}{\mathcal{C}}
-                \newcommand{\TangentNest}[1]{\CopperSeed_{#1}}
+                \usepackage{copperbase}
+                \input{tangent-defs}
                 """,
+                encoding="utf-8",
+            )
+            (project / "copperbase.sty").write_text(
+                r"\newcommand{\CopperSeed}{\mathcal{C}}",
+                encoding="utf-8",
+            )
+            (project / "tangent-defs.tex").write_text(
+                r"\newcommand{\TangentNest}[1]{\CopperSeed_{#1}}",
                 encoding="utf-8",
             )
 

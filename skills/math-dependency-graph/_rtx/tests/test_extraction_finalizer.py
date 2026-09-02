@@ -5,6 +5,7 @@ import json
 import shutil
 import sys
 from pathlib import Path
+from unittest import mock
 
 import jsonschema
 import pytest
@@ -17,19 +18,9 @@ SCHEMA_PATH = REPO_SRC / "officina" / "visualization" / "graph_specification.sch
 sys.path.insert(0, str(REPO_SRC))
 sys.path.insert(0, str(RTX_DIR))
 
+import _tex_macro_reader  # noqa: E402
+from officina.visualization.base_renderer_cli import main as render_canonical_html  # noqa: E402
 
-PRIMARY_TEX = r"""
-\documentclass{article}
-\newcommand{\RootBloom}{\mathbb{B}}
-\newcommand{\NestedQuill}{\RootBloom^{\star}}
-\newcommand{\PairWeave}[2]{\langle #1,#2\rangle}
-\newcommand{\SupportSpore}{\mathcal{S}}
-\newcommand{\ShadeFold}[2][q]{#1+\PairWeave{#2}{\SupportSpore}}
-\newcommand{\IdleComet}{\mathrm{idle}}
-\begin{document}
-Fixture.
-\end{document}
-"""
 
 PRIMARY_EXPRESSION = (
     r"$\RootBloom+\NestedQuill+\PairWeave{x}{y}+\ShadeFold[z]{w}$"
@@ -40,7 +31,12 @@ PRIMARY_MACROS = {
     "NestedQuill": r"\RootBloom^{\star}",
     "PairWeave": [r"\langle #1,#2\rangle", 2],
     "SupportSpore": r"\mathcal{S}",
-    "ShadeFold": [r"#1+\PairWeave{#2}{\SupportSpore}", 2, "q"],
+    "AmbientThread": r"\mathcal{A}",
+    "ShadeFold": [
+        r"#1+\PairWeave{#2}{\SupportSpore}+\AmbientThread",
+        2,
+        "q",
+    ],
 }
 
 
@@ -74,11 +70,56 @@ def _finalize_extraction(**kwargs: Path | None) -> None:
     finalizer(**kwargs)
 
 
-def _write_tex(project: Path, source: str = PRIMARY_TEX) -> Path:
+def _write_tex(project: Path, source: str) -> Path:
     project.mkdir(parents=True)
     entrypoint = project / "main.tex"
     entrypoint.write_text(source, encoding="utf-8")
     return entrypoint
+
+
+def _write_primary_tex_project(project: Path) -> tuple[Path, Path]:
+    parts = project / "parts"
+    texmf = project.parent / "controlled-texmf"
+    parts.mkdir(parents=True)
+    texmf.mkdir()
+    entrypoint = project / "main.tex"
+    entrypoint.write_text(
+        r"""
+        \documentclass{localframe}
+        \usepackage{localtones,ambientweave}
+        \input{parts/direct}
+        \include{parts/nested}
+        """,
+        encoding="utf-8",
+    )
+    (project / "localframe.cls").write_text(
+        r"\newcommand{\RootBloom}{\mathbb{B}}",
+        encoding="utf-8",
+    )
+    (project / "localtones.sty").write_text(
+        r"""
+        \newcommand{\PairWeave}[2]{\langle #1,#2\rangle}
+        \newcommand{\SupportSpore}{\mathcal{S}}
+        """,
+        encoding="utf-8",
+    )
+    (parts / "direct.tex").write_text(
+        r"\newcommand{\NestedQuill}{\RootBloom^{\star}}",
+        encoding="utf-8",
+    )
+    (parts / "nested.tex").write_text(
+        r"""
+        \newcommand{\ShadeFold}[2][q]{#1+\PairWeave{#2}{\SupportSpore}+\AmbientThread}
+        \newcommand{\IdleComet}{\mathrm{idle}}
+        """,
+        encoding="utf-8",
+    )
+    ambient_package = texmf / "ambientweave.sty"
+    ambient_package.write_text(
+        r"\newcommand{\AmbientThread}{\mathcal{A}}",
+        encoding="utf-8",
+    )
+    return entrypoint, ambient_package
 
 
 def _write_draft(
@@ -121,11 +162,25 @@ def _mathjax_macros(payload: dict) -> dict:
 @FINALIZER_XFAIL
 def test_finalizer_writes_schema_valid_detachable_relevant_macro_closure(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     project = tmp_path / "tex-project"
-    entrypoint = _write_tex(project)
+    entrypoint, ambient_package = _write_primary_tex_project(project)
     draft = _write_draft(project / "draft.json", PRIMARY_EXPRESSION)
     canonical = project / "canonical.json"
+    original_resolver = _tex_macro_reader.resolve_tex_path
+
+    def controlled_resolver(
+        include_name: str,
+        current_dir: Path,
+        suffix: str = ".tex",
+    ) -> Path:
+        if include_name == "ambientweave":
+            return ambient_package
+        return original_resolver(include_name, current_dir, suffix)
+
+    monkeypatch.setattr(_tex_macro_reader, "resolve_tex_path", controlled_resolver)
 
     _finalize_extraction(
         draft_path=draft,
@@ -145,10 +200,21 @@ def test_finalizer_writes_schema_valid_detachable_relevant_macro_closure(
     detached.parent.mkdir()
     shutil.copy2(canonical, detached)
     shutil.rmtree(project)
+    shutil.rmtree(ambient_package.parent)
 
     detached_payload = json.loads(detached.read_text(encoding="utf-8"))
     jsonschema.Draft7Validator(schema).validate(detached_payload)
     assert _mathjax_macros(detached_payload) == PRIMARY_MACROS
+    detached_html = detached.with_suffix(".html")
+    with mock.patch(
+        "officina.visualization.elk_html_renderer.time.time",
+        return_value=1_700_000_000.0,
+    ):
+        render_canonical_html([str(detached), "--html-out", str(detached_html)])
+    capsys.readouterr()
+    html = detached_html.read_text(encoding="utf-8")
+    assert '"AmbientThread": "\\\\mathcal{A}"' in html
+    assert '"ShadeFold": [' in html
 
 
 @FINALIZER_XFAIL
