@@ -28,8 +28,8 @@ COMPREHENSION_FIXTURE = ROOT / "tests" / "fixtures" / "famulus_comprehension_pay
 # server is still progressing, so this remains a bounded capacity allowance,
 # not a substitute for detecting a hung session.
 REAL_MCP_INTEGRATION_TIMEOUT_SECONDS = 30
-# Managed persistence performs initialization plus five serialized MCP calls.
-# A focused pair finishes well below this bound, while full-hook contention can
+# Persistent recording performs MCP initialization plus a Dispatcher call. A
+# focused pair finishes well below this bound, while full-hook contention can
 # legitimately exceed the shorter single-probe allowance above.
 REAL_MCP_PERSISTENCE_LIFECYCLE_TIMEOUT_SECONDS = 90
 
@@ -424,10 +424,10 @@ def test_plugin_persistence_rejects_unsafe_log_layout_before_publishing_logs(
 
 
 @pytest.mark.parametrize("host", ["claude", "codex"])
-def test_real_mcp_persists_status_and_milestone_below_selected_host_root(
+def test_real_mcp_persists_milestone_without_claiming_setup_ledger(
     host: str, tmp_path: Path
 ) -> None:
-    """Break caught: stdio children inherit the canary instead of plugin data."""
+    """Break caught: persistence claims setup state or inherits the canary."""
     plugin = tmp_path / "Plugin Cache" / "famulus"
     plugin_data = tmp_path / "host-data" / host
     canary = tmp_path / "inherited-canary"
@@ -448,11 +448,7 @@ def test_real_mcp_persists_status_and_milestone_below_selected_host_root(
     result = called.structuredContent["result"]
     assert called.isError is False
     assert result["exit_code"] == 0, result
-    assert _json(plugin_data / "setup" / "status.json") == {
-        "active_flow": None,
-        "interfaces": {},
-        "schema_version": 1,
-    }
+    assert not (plugin_data / "setup" / "status.json").exists()
     logs = sorted((plugin_data / "milestones").glob("*/*.jsonl"))
     assert len(logs) == 1
     records = [json.loads(line) for line in logs[0].read_text().splitlines()]
