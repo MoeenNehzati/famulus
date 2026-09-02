@@ -56,7 +56,15 @@ def test_required_browser_gate_fails_instead_of_skipping(monkeypatch) -> None:
         browser.require_chrome()
 
 
-def test_run_html_uses_temporary_paths_and_decodes_chrome_as_utf8(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    ("platform", "expected_timeout"),
+    [("linux", 30), ("win32", 60)],
+)
+def test_run_html_uses_temporary_paths_and_decodes_chrome_as_utf8(
+    monkeypatch,
+    platform: str,
+    expected_timeout: int,
+) -> None:
     observed: dict[str, object] = {}
 
     def fake_run(command, **kwargs):
@@ -67,6 +75,7 @@ def test_run_html_uses_temporary_paths_and_decodes_chrome_as_utf8(monkeypatch) -
         return subprocess.CompletedProcess(command, 0, stdout="rendered", stderr="")
 
     monkeypatch.setattr(browser.subprocess, "run", fake_run)
+    monkeypatch.setattr(browser.sys, "platform", platform)
 
     result = run_html(
         "/browser",
@@ -81,7 +90,7 @@ def test_run_html_uses_temporary_paths_and_decodes_chrome_as_utf8(monkeypatch) -
         "capture_output": True,
         "encoding": "utf-8",
         "errors": "replace",
-        "timeout": 30,
+        "timeout": expected_timeout,
     }
     command = observed["command"]
     assert "--no-first-run" in command

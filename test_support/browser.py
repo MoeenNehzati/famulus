@@ -98,5 +98,5 @@ def run_html(
             capture_output=True,
             encoding="utf-8",
             errors="replace",
-            timeout=30,
+            timeout=60 if sys.platform == "win32" else 30,
         )
