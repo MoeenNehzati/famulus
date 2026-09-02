@@ -132,7 +132,8 @@ def test_read_rejects_existing_final_parent_without_mode_0700(tmp_path: Path) ->
 @pytest.mark.parametrize(
     "raw",
     [
-        b'{"schema_version":2,"interfaces":{},"active_flow":null}\n',
+        b'{"schema_version":3,"interfaces":{},"active_flow":null}\n',
+        b'{"active_flow":null,"interfaces":{},"schema_version":true}\n',
         b'{"schema_version":1,"interfaces":{},"active_flow":null,"extra":true}\n',
         b'{"schema_version":1,"interfaces":{"leaf.interface.setup":{"version":1,"required_by":["root","root"]}},"active_flow":null}\n',
         b'{"schema_version":1,"interfaces":{},"active_flow":{"flow_id":"f","operation":"setup","root":"r","current_step":"s","verified_steps":[],"continuation":{"caller":"c","interface":"i","version":1},"arguments":{}}}\n',
@@ -158,11 +159,48 @@ def test_encoding_is_deterministic_and_strictly_required() -> None:
     assert encoded == (
         b'{"active_flow":null,"interfaces":{"leaf.interface.setup":{"required_by":[],"version":1},'
         b'"root.interface.setup":{"required_by":["a.root","z.root"],"version":2}},'
-        b'"schema_version":1}\n'
+        b'"schema_version":2}\n'
     )
     assert state.parse_ledger(encoded) == ledger
     with pytest.raises(state.LedgerFormatError, match="canonical"):
         state.parse_ledger(encoded.replace(b'"active_flow":null', b'"active_flow": null'))
+
+
+def test_canonical_v1_is_read_without_rewriting_and_migrates_on_mutation() -> None:
+    """Catches rejecting old ledgers or retaining v1 after their first mutation."""
+    raw = b'{"active_flow":{"continuation":{"caller":"mcp","interface":"root.interface.run","version":1},"current_step":"leaf.interface.setup","flow_id":"flow-1","operation":"setup","root":"root.interface.setup","verified_steps":[]},"interfaces":{"leaf.interface.setup":{"required_by":[],"version":1}},"schema_version":1}\n'
+    ledger = state.parse_ledger(raw)
+
+    assert state.encode_ledger(ledger) == raw
+    migrated = state.claim_receipts(ledger, "root.interface.setup", ("leaf.interface.setup",))
+    assert b'"schema_version":2' in state.encode_ledger(migrated) and migrated.active_flow == ledger.active_flow
+
+
+def test_v2_round_trips_ordinary_and_global_flows() -> None:
+    """Catches losing operation-dependent nullable fields in schema v2."""
+    ordinary = state.SetupLedger(interfaces={}, active_flow=_flow())
+    global_ = state.SetupLedger(
+        interfaces={"leaf.interface.setup": _receipt()},
+        active_flow=state.ActiveFlow(
+            "global", "teardown-all", None, "leaf.interface.setup", (), None
+        ),
+    )
+
+    assert state.parse_ledger(state.encode_ledger(ordinary)) == ordinary
+    assert state.parse_ledger(state.encode_ledger(global_)) == global_
+
+
+def test_flow_context_is_operation_dependent() -> None:
+    """Catches global context/history or missing ordinary context."""
+    continuation = state.ContinuationIdentity("c", "i", 1)
+    for operation, root, history, resume in (
+        ("teardown-all", "root.interface.setup", (), None),
+        ("teardown-all", None, (), continuation),
+        ("teardown-all", None, ("done.interface.setup",), None),
+        ("setup", None, (), continuation), ("teardown", "root.interface.setup", (), None),
+    ):
+        with pytest.raises(state.LedgerFormatError):
+            state.ActiveFlow("f", operation, root, "leaf.interface.setup", history, resume)
 
 
 @pytest.mark.parametrize("target_kind", ["symlink", "directory"])

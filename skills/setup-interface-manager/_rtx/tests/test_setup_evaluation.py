@@ -445,3 +445,68 @@ def test_shared_dependency_teardown_releases_first_claim_then_tears_down_last_cl
         (other_root, "run-teardown"),
         ("leaf.interface.setup", "run-teardown"),
     ]
+
+
+def test_teardown_all_plan_is_deterministic_deduplicated_and_dependents_first() -> None:
+    """Catches root order or diamond overlap changing global teardown order."""
+    graph = _graph({
+        "right.interface.setup": (("leaf.interface.setup", 1),),
+        "left.interface.setup": (("leaf.interface.setup", 1),),
+        "leaf.interface.setup": (),
+    })
+    ledger = state.SetupLedger(
+        interfaces={name: _receipt("foreign.root") for name in reversed(graph.managed_setups)},
+        active_flow=None,
+    )
+
+    assert [step.setup_interface for step in evaluation.teardown_all_plan(graph, ledger)] == [
+        "right.interface.setup", "left.interface.setup", "leaf.interface.setup"
+    ]
+    assert evaluation.teardown_all_plan(graph, state.SetupLedger.empty()) == ()
+
+
+@pytest.mark.parametrize("receipt", ["unknown.interface.setup", "root.interface.setup"])
+def test_teardown_all_plan_rejects_unknown_or_stale_receipts(receipt: str) -> None:
+    """Catches silently dropping inventory that cannot be safely dispatched."""
+    graph = _graph({"root.interface.setup": ()})
+    version = 1 if receipt.startswith("unknown") else 9
+    ledger = state.SetupLedger(interfaces={receipt: _receipt(version=version)}, active_flow=None)
+
+    with pytest.raises(evaluation.BlueprintGraphError, match="(managed setup|version)"):
+        evaluation.teardown_all_plan(graph, ledger)
+    assert ledger.interfaces == {receipt: _receipt(version=version)}
+
+
+def test_teardown_all_plan_filters_missing_prerequisite_receipts() -> None:
+    """Catches inventing teardown work for a prerequisite absent from the ledger."""
+    graph = _graph({
+        "root.interface.setup": (("leaf.interface.setup", 1),),
+        "leaf.interface.setup": (),
+    })
+    ledger = state.SetupLedger(interfaces={"root.interface.setup": _receipt()}, active_flow=None)
+
+    assert [step.setup_interface for step in evaluation.teardown_all_plan(graph, ledger)] == [
+        "root.interface.setup"
+    ]
+
+
+def test_global_settlement_advances_then_can_remove_and_cancel(tmp_path: Path) -> None:
+    """Catches global settlement retaining a receipt or adding flow history."""
+    store = _store(tmp_path)
+    graph = _graph({"root.interface.setup": (("middle.interface.setup", 1),),
+                    "middle.interface.setup": (("leaf.interface.setup", 1),), "leaf.interface.setup": ()})
+    ledger = state.SetupLedger(
+        interfaces={name: _receipt() for name in graph.managed_setups},
+        active_flow=state.ActiveFlow("all", "teardown-all", None, "root.interface.setup", (), None),
+    )
+    _seed(store, ledger)
+    first, second, _later = plan = evaluation.teardown_all_plan(graph, ledger)
+    assert [step.setup_interface for step in plan] == ["root.interface.setup", "middle.interface.setup", "leaf.interface.setup"]
+
+    result = evaluation.record_teardown_all_success(store, graph, "all", first)
+    assert result.current_step == second
+    assert store.read().active_flow.verified_steps == ()
+    result = evaluation.record_teardown_all_success(store, graph, "all", second, advance=False)
+    assert result.state == "ready"
+    assert set(store.read().interfaces) == {"leaf.interface.setup"}
+    assert store.read().active_flow is None
