@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 import json
+import math
 import re
 from collections.abc import Mapping
 from functools import lru_cache
@@ -26,6 +27,41 @@ def _mathjax_runtime() -> str:
 def _script_json(value: object) -> str:
     """Serialize configuration without permitting an embedded script terminator."""
     return json.dumps(value, indent=8).replace("</", "<\\/")
+
+
+def _json_integer(value: object) -> int | None:
+    """Normalize one Draft-07 integer-compatible JSON number.
+
+    Intent
+    ------
+    Match schema integer semantics before adapting a macro argument count.
+
+    Rationale
+    ---------
+    Draft-07 accepts finite integral JSON numbers such as `2.0`, while booleans,
+    fractions, and nonfinite values are not integers.
+
+    Pseudocode
+    ----------
+    - if value is boolean:
+      - return none
+    - if value is integer:
+      - return value
+    - if value is a finite integral float:
+      - return value converted to integer
+    - return none
+
+    Wraps
+    -----
+    - none
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and math.isfinite(value) and value.is_integer():
+        return int(value)
+    return None
 
 
 def normalize_mathjax_macros(macros: Mapping[str, object]) -> dict[str, object]:
@@ -53,6 +89,12 @@ def normalize_mathjax_macros(macros: Mapping[str, object]) -> dict[str, object]:
     Wraps
     -----
     - none
+
+    InstantiationsFromRepo
+    ----------------------
+    ._json_integer:
+      why:
+        constructs: "Builds normalized argument counts for supported tuple orders."
     """
     normalized: dict[str, object] = {}
     for name, value in macros.items():
@@ -64,10 +106,12 @@ def normalize_mathjax_macros(macros: Mapping[str, object]) -> dict[str, object]:
                 f"MathJax macro {name!r} is not a schema-supported string or tuple."
             )
         first, second = value[:2]
-        if isinstance(first, str) and type(second) is int:
-            replacement, argument_count = first, second
-        elif type(first) is int and isinstance(second, str):
-            replacement, argument_count = second, first
+        first_count = _json_integer(first)
+        second_count = _json_integer(second)
+        if isinstance(first, str) and second_count is not None:
+            replacement, argument_count = first, second_count
+        elif first_count is not None and isinstance(second, str):
+            replacement, argument_count = second, first_count
         else:
             raise ValueError(
                 f"MathJax macro {name!r} is not a schema-supported tuple."

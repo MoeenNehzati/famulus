@@ -73,7 +73,10 @@ sources, macro sidecars, package installations, or network resources. The
 generic base CLI still accepts `--macro-file` only as a deprecated outer
 compatibility preprocessor while its legacy caller is migrated: it merges the
 JSON object into one payload, validates that complete payload, and only then
-enters the renderer. The renderer API has no sidecar parameter.
+enters the renderer. Overlapping definitions are compared after tuple
+normalization: equivalent legacy/native encodings are accepted, while differing
+definitions fail with both source paths. The renderer API has no sidecar
+parameter.
 
 ## Architecture
 

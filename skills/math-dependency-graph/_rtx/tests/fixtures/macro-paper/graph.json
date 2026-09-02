@@ -11,7 +11,7 @@
         "input": "tex",
         "output": "svg",
         "macros": {
-          "ev": "\\operatorname{eval}"
+          "ev": "\\operatorname{ev}"
         }
       }
     }

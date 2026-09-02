@@ -142,7 +142,7 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
             self.assertIn('"BFn": "\\\\mathbf{n}"', html)
             self.assertIn('"QTC": "\\\\vQ^{\\\\Pi_{\\\\TC_X}}"', html)
             self.assertIn('"OuterMacro": [', html)
-            self.assertIn('"ev": "\\\\operatorname{eval}"', html)
+            self.assertIn('"ev": "\\\\operatorname{ev}"', html)
 
     def test_renderer_uses_document_source_file_for_default_macros(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

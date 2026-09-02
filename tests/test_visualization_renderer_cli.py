@@ -8,6 +8,7 @@ import pytest
 
 import officina.visualization.base_renderer_cli as base_renderer_cli
 import officina.visualization.html_renderer.dependencies as renderer_dependencies
+from officina.visualization.elk_html_renderer import build_html_with_elk
 
 
 def test_mathjax_macro_adapter_normalizes_every_schema_tuple_encoding() -> None:
@@ -31,6 +32,37 @@ def test_mathjax_macro_adapter_normalizes_every_schema_tuple_encoding() -> None:
     assert macros["Legacy"] == [2, r"#1+#2"]
 
 
+def test_schema_integral_macro_arities_reach_rendering_as_native_integers() -> None:
+    payload = {
+        "schema_version": 2,
+        "renderer_dependencies": [
+            {
+                "id": "mathjax",
+                "version": "3",
+                "configuration": {
+                    "macros": {
+                        "Native": ["#1+#2", 2.0],
+                        "Legacy": [2.0, "#1+#2"],
+                        "NativeDefault": ["#1+#2", 2.0, "x"],
+                        "LegacyDefault": [2.0, "#1+#2", "x"],
+                    }
+                },
+            }
+        ],
+        "entities": [],
+    }
+
+    rendered = build_html_with_elk(payload)
+    configuration_text = rendered.split("    window.MathJax = ", 1)[1].split(";\n", 1)[0]
+
+    assert json.loads(configuration_text)["tex"]["macros"] == {
+        "Native": ["#1+#2", 2],
+        "Legacy": ["#1+#2", 2],
+        "NativeDefault": ["#1+#2", 2, "x"],
+        "LegacyDefault": ["#1+#2", 2, "x"],
+    }
+
+
 @pytest.mark.parametrize(
     "value",
     (
@@ -38,12 +70,91 @@ def test_mathjax_macro_adapter_normalizes_every_schema_tuple_encoding() -> None:
         [r"#1"],
         [r"#1", 10],
         [True, r"#1"],
+        [r"#1", True],
+        [1.5, r"#1"],
+        [r"#1", 1.5],
+        [float("inf"), r"#1"],
+        [r"#1", float("-inf")],
+        [float("nan"), r"#1"],
         [r"#1", 1, 2],
     ),
 )
 def test_mathjax_macro_adapter_rejects_values_outside_the_schema(value: object) -> None:
     with pytest.raises(ValueError, match=r"macro 'Broken'.*schema-supported"):
         renderer_dependencies.normalize_mathjax_macros({"Broken": value})
+
+
+def test_deprecated_macro_preprocessor_accepts_equivalent_tuple_orders(
+    tmp_path: Path,
+) -> None:
+    macro_file = tmp_path / "macros.json"
+    macro_file.write_text(
+        json.dumps({"Pair": [2.0, "#1+#2"], "SidecarOnly": r"\mathcal{S}"}),
+        encoding="utf-8",
+    )
+    payload = {
+        "renderer_dependencies": [
+            {
+                "id": "mathjax",
+                "version": "3",
+                "configuration": {"macros": {"Pair": ["#1+#2", 2]}},
+            }
+        ]
+    }
+
+    count = base_renderer_cli.merge_mathjax_macros(
+        payload,
+        macro_file,
+        payload_source=tmp_path / "graph.json",
+    )
+
+    assert count == 2
+    assert payload["renderer_dependencies"][0]["configuration"]["macros"] == {
+        "Pair": ["#1+#2", 2],
+        "SidecarOnly": r"\mathcal{S}",
+    }
+
+
+def test_deprecated_macro_cli_rejects_conflicts_with_both_sources(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "graph.json"
+    source.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "renderer_dependencies": [
+                    {
+                        "id": "mathjax",
+                        "version": "3",
+                        "configuration": {"macros": {"Clash": r"\mathbb{R}"}},
+                    }
+                ],
+                "entities": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    macro_file = tmp_path / "macros.json"
+    macro_file.write_text(json.dumps({"Clash": r"\mathbb{Q}"}), encoding="utf-8")
+    html_out = tmp_path / "graph.html"
+
+    with pytest.raises(SystemExit) as caught:
+        base_renderer_cli.main(
+            [
+                str(source),
+                "--macro-file",
+                str(macro_file),
+                "--html-out",
+                str(html_out),
+            ]
+        )
+
+    message = str(caught.value)
+    assert "Clash" in message
+    assert str(source.resolve()) in message
+    assert str(macro_file.resolve()) in message
+    assert not html_out.exists()
 
 
 def test_deprecated_macro_file_is_validated_before_renderer_entry(

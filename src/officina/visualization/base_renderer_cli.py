@@ -10,6 +10,7 @@ from pathlib import Path
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 from .elk_html_renderer import ElkHtmlRenderer, build_html_with_elk
+from .html_renderer.dependencies import normalize_mathjax_macros
 
 _DEFAULT_RENDERER = ElkHtmlRenderer()
 
@@ -31,8 +32,45 @@ def validate_document(doc: dict) -> None:
     _DEFAULT_RENDERER.validate(doc)
 
 
-def merge_mathjax_macros(doc: dict, macro_file: Path | None) -> int:
-    """Preprocess a deprecated macro sidecar into one self-contained payload."""
+def merge_mathjax_macros(
+    doc: dict,
+    macro_file: Path | None,
+    *,
+    payload_source: str | Path = "<payload>",
+) -> int:
+    """Preprocess a deprecated macro sidecar into one self-contained payload.
+
+    Intent
+    ------
+    Merge a compatibility sidecar without silently overriding payload macros.
+
+    Rationale
+    ---------
+    Legacy and native tuple orders can be semantically equal, while genuinely
+    different definitions need both source identities in an actionable error.
+
+    Pseudocode
+    ----------
+    - if macro sidecar is absent:
+      - return zero
+    - set sidecar_macros = parsed sidecar macro mapping
+    - set payload_macros = embedded payload macro mapping
+    - for macro_name in shared macro names:
+      - if normalized definitions differ:
+        - raise source-labelled macro conflict
+    - set merged_macros = sidecar macros overlaid by payload macros
+    - return sidecar macro count
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    .html_renderer.dependencies.normalize_mathjax_macros:
+      why:
+        transforms: "Normalizes definitions for payload-sidecar conflict detection."
+    """
     if macro_file is None:
         return 0
     if not macro_file.exists():
@@ -47,8 +85,16 @@ def merge_mathjax_macros(doc: dict, macro_file: Path | None) -> int:
         dependencies.append(mathjax)
     configuration = mathjax.setdefault("configuration", {})
     json_macros = configuration.get("macros", {})
-    if json_macros and not isinstance(json_macros, dict):
+    if not isinstance(json_macros, dict):
         raise SystemExit("MathJax renderer dependency macros must be an object.")
+    for name in sorted(file_macros.keys() & json_macros.keys()):
+        normalized_file = normalize_mathjax_macros({name: file_macros[name]})[name]
+        normalized_json = normalize_mathjax_macros({name: json_macros[name]})[name]
+        if normalized_file != normalized_json:
+            raise SystemExit(
+                f"Conflicting MathJax macro {name!r}: payload {payload_source} and "
+                f"sidecar {macro_file} define different values."
+            )
     configuration.update({"input": "tex", "output": "svg", "macros": {**file_macros, **json_macros}})
     return len(file_macros)
 
@@ -95,7 +141,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     validate_document(doc)
     macro_path = Path(args.macro_file).resolve() if args.macro_file else None
-    macro_count = merge_mathjax_macros(doc, macro_path)
+    macro_count = merge_mathjax_macros(
+        doc,
+        macro_path,
+        payload_source=source_path,
+    )
     if macro_path is not None:
         validate_document(doc)
     reduction_note = ""
