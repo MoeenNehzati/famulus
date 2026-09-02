@@ -666,14 +666,14 @@ def test_failure_interruption_recovery_restart_and_malformed_ledger_fail_closed(
     assert "canonical" in malformed["error"]
 
 
-def test_internal_teardown_all_recovers_then_exhausts_mixed_receipts(tmp_path: Path) -> None:
+def test_public_teardown_all_recovers_then_exhausts_mixed_receipts(tmp_path: Path) -> None:
     """Catches restart retry rerunning an action or skipping ordered settlement."""
     leaf, notes, root = _managed("leaf"), _managed("notes", kind="markdown"), _managed("root")
     graph = _graph((leaf, notes, root), {leaf.setup_interface: (), notes.setup_interface: ((leaf.setup_interface, 1),), root.setup_interface: ((notes.setup_interface, 1),)}, ordinary_targets={})
     scenario = Scenario(tmp_path, graph, tuple(_binding(item) for item in (leaf, notes, root)))
     scenario.store().update(lambda _: state.SetupLedger({item.setup_interface: state.SetupReceipt(1, frozenset()) for item in (leaf, notes, root)}, None, 2))
     scenario.dispatch.verify_once("root-teardown-status", "malformed")
-    code, interrupted = scenario.controller.teardown_all()
+    code, interrupted = scenario.invoke(manager.TeardownAllInterface, [])
     assert code == 2 and interrupted["state"] == "recovery-required"
     code, suspended = scenario.restart().recover(interrupted["flow_id"], "retry")
     assert code == 0 and suspended["state"] == "awaiting-settlement"
@@ -684,20 +684,28 @@ def test_internal_teardown_all_recovers_then_exhausts_mixed_receipts(tmp_path: P
     assert not any("setup" in key.removesuffix("-status") for key, _args, _stdin in scenario.dispatch.calls)
 
 
-@pytest.mark.parametrize("case", ["stale", "malformed", "identity"])
-def test_internal_teardown_all_invalid_ledgers_fail_closed(tmp_path: Path, case: str) -> None:
+def test_public_teardown_all_retains_a_canonical_empty_ledger(tmp_path: Path) -> None:
+    scenario = Scenario(tmp_path, _graph((), {}, ordinary_targets={}), ())
+    scenario.store().update(lambda _: state.SetupLedger.empty())
+    before = scenario.path.read_bytes()
+    code, result = scenario.invoke(manager.TeardownAllInterface, [])
+    assert code == 0 and (result["original"], result["resume_original"]) == (None, False)
+    assert scenario.path.read_bytes() == before and scenario.store().read() == state.SetupLedger.empty()
+
+
+@pytest.mark.parametrize("case", ["stale", "malformed", "unsupported"])
+def test_public_teardown_all_invalid_ledgers_fail_closed(tmp_path: Path, case: str) -> None:
     """Catches stale or malformed inventory dispatching before validation."""
     item = _managed("canary")
     scenario = Scenario(tmp_path, _graph((item,), {item.setup_interface: ()}, ordinary_targets={}), (_binding(item),))
     if case == "malformed":
         scenario.store().update(lambda _: state.SetupLedger.empty())
         scenario.path.write_bytes(b"{")
-    elif case == "identity":
-        scenario.controller._bindings[item.setup_interface] = setup_dispatches.ManagedInterfaceBinding(**{**_binding(item).__dict__, "setup_interface": "alias.interface.setup"})
-        scenario.store().update(lambda _: state.SetupLedger({item.setup_interface: state.SetupReceipt(1, frozenset())}, None, 2))
+    elif case == "unsupported":
+        scenario.store().update(lambda _: state.SetupLedger({"unknown.interface.setup": state.SetupReceipt(1, frozenset())}, None, 2))
     else:
         scenario.store().update(lambda _: state.SetupLedger({item.setup_interface: state.SetupReceipt(9, frozenset())}, None, 2))
     before = scenario.path.read_bytes()
-    code, failed = scenario.controller.teardown_all()
+    code, failed = scenario.invoke(manager.TeardownAllInterface, [])
     assert code == 2 and failed["state"] == "failed"
     assert scenario.path.read_bytes() == before and scenario.dispatch.calls == []
