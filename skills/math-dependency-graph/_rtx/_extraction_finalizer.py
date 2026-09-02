@@ -19,14 +19,16 @@ try:
     from ._tex_macro_reader import (
         MacroDefinition,
         MacroValue,
-        _extract_renderable_macro_definitions,
+        RenderableMacroExtraction,
+        extract_renderable_macros,
         macro_body_text,
     )
 except ImportError:  # pragma: no cover - direct script execution
     from _tex_macro_reader import (  # type: ignore[no-redef]
         MacroDefinition,
         MacroValue,
-        _extract_renderable_macro_definitions,
+        RenderableMacroExtraction,
+        extract_renderable_macros,
         macro_body_text,
     )
 
@@ -361,8 +363,6 @@ def _math_segments(text: str) -> Iterable[str]:
       - closing_position = _find_unescaped_delimiter(text, closing, opening_position)
       - if closing_position is missing:
         - set cursor = position after opening_position
-      - if an inline-dollar pair violates text boundaries:
-        - set cursor = position after opening_position
       - set math_segments = math_segments with text between the delimiter positions
     - return math_segments
 
@@ -381,20 +381,9 @@ def _math_segments(text: str) -> Iterable[str]:
         if not candidates:
             return
         start, _, opening, closing = min(candidates)
-        if opening == "$" and (
-            start + 1 >= len(text) or text[start + 1].isspace()
-        ):
-            cursor = start + 1
-            continue
         end = _find_unescaped_delimiter(text, closing, start + len(opening))
         if end < 0:
             cursor = start + len(opening)
-            continue
-        if opening == "$" and (
-            text[end - 1].isspace()
-            or (end + 1 < len(text) and text[end + 1].isdigit())
-        ):
-            cursor = start + 1
             continue
         yield text[start + len(opening) : end]
         cursor = end + len(closing)
@@ -930,13 +919,16 @@ def finalize_extraction(
                 embedded_macros.update(candidate_macros)
     graph_text = list(_graph_visible_math_segments(payload))
     graph_text.extend(macro_body_text(value) for value in embedded_macros.values())
-    extracted = _extract_renderable_macro_definitions(
+    extracted = extract_renderable_macros(
         tex_entrypoint=tex_entrypoint,
         graph_text=graph_text,
+        include_records=True,
     )
+    if not isinstance(extracted, RenderableMacroExtraction):
+        raise TypeError("Macro extraction did not return requested source records.")
     finalized = _merge_mathjax_macros(
         payload,
-        extracted=extracted,
+        extracted=extracted.records,
         draft_path=draft_path,
     )
     finalized, _ = resolve_label_references(finalized, labels)

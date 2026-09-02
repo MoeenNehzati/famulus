@@ -70,6 +70,11 @@ DEF_RE = re.compile(r"\\(?P<kind>gdef|def)\s*\\(?P<name>[A-Za-z@]+)")
 NEWCOMMAND_RE = re.compile(
     r"\\(?P<kind>(?:re)?newcommand|providecommand)\s*\*?\s*"
 )
+UNSUPPORTED_NAMED_DECLARATION_RE = re.compile(
+    r"\\(?P<kind>DeclareRobustCommand)\s*\*?\s*"
+)
+
+
 @dataclass(frozen=True)
 class MacroDefinition:
     """Store one normalized macro definition and its source provenance.
@@ -127,6 +132,32 @@ class MacroDefinition:
         - none
         """
         return f"{self.source_path}:{self.line}:{self.column}"
+
+
+@dataclass(frozen=True)
+class RenderableMacroExtraction:
+    """Expose schema values with optional source records to trusted callers.
+
+    Intent
+    ------
+    Preserve exact definition provenance without changing the ordinary value-map API.
+
+    Rationale
+    ---------
+    Finalization needs source locations until embedded-definition conflicts are checked.
+
+    Pseudocode
+    ----------
+    - set macro_extraction = schema values paired with source definition records
+    - return macro_extraction
+
+    Wraps
+    -----
+    - none
+    """
+
+    values: dict[str, MacroValue]
+    records: dict[str, MacroDefinition]
 
 
 @dataclass(frozen=True)
@@ -1864,6 +1895,86 @@ def _delimited_def_end(text: str, idx: int) -> int | None:
     return len(text)
 
 
+def _unsupported_named_declaration_at(
+    text: str,
+    idx: int,
+) -> tuple[str, str, int] | None:
+    """Return a named unsupported declaration and the span to skip.
+
+    Intent
+    ------
+    Detect project commands declared by a narrow known declaration grammar.
+
+    Rationale
+    ---------
+    A graph-visible source declaration must fail closed instead of looking undeclared.
+
+    InstantiationsFromRepo
+    ----------------------
+      ._read_optional_group:
+        why:
+          constructs: "Consumes optional declaration arguments."
+      .read_balanced_group:
+        why:
+          constructs: "Consumes braced command names and replacement text."
+      .skip_space:
+        why:
+          constructs: "Advances between declaration grammar elements."
+
+    Pseudocode
+    ----------
+    - if the token is not a known unsupported named declaration:
+      - return no declaration
+    - set command_name = command name parsed from braced or direct syntax
+    - for optional_group in at most two declaration option groups:
+      - set ending_offset = offset after optional_group
+    - set ending_offset = offset after the balanced replacement group
+    - return directive, name, and ending offset
+
+    Wraps
+    -----
+    - none
+    """
+    match = UNSUPPORTED_NAMED_DECLARATION_RE.match(text, idx)
+    if match is None:
+        return None
+    cursor = skip_space(text, match.end())
+    name: str | None = None
+    if cursor < len(text) and text[cursor] == "{":
+        try:
+            name_group, cursor = read_balanced_group(text, cursor)
+        except ValueError:
+            return None
+        name_match = re.fullmatch(r"\\([A-Za-z@]+)", name_group.strip())
+        if name_match is not None:
+            name = name_match.group(1)
+    elif cursor < len(text) and text[cursor] == "\\":
+        name_match = COMMAND_RE.match(text, cursor)
+        if name_match is not None and (
+            name_match.group(1).isalpha() or "@" in name_match.group(1)
+        ):
+            name = name_match.group(1)
+            cursor = name_match.end()
+    if name is None:
+        return None
+
+    cursor = skip_space(text, cursor)
+    for _ in range(2):
+        if cursor >= len(text) or text[cursor] != "[":
+            break
+        try:
+            _, cursor = _read_optional_group(text, cursor)
+        except ValueError:
+            return match.group("kind"), name, len(text)
+        cursor = skip_space(text, cursor)
+    if cursor < len(text) and text[cursor] == "{":
+        try:
+            _, cursor = read_balanced_group(text, cursor)
+        except ValueError:
+            cursor = len(text)
+    return match.group("kind"), name, cursor
+
+
 def _definition_records_from_chunk(
     chunk: TexChunk,
     symbol_fonts: dict[str, tuple[str, str, str, str]],
@@ -1920,6 +2031,9 @@ def _definition_records_from_chunk(
       ._delimited_def_end:
         why:
           constructs: "Consumes unsupported definitions without exposing nested aliases."
+      ._unsupported_named_declaration_at:
+        why:
+          constructs: "Consumes named declarations that cannot be rendered safely."
 
     Pseudocode
     ----------
@@ -2054,6 +2168,41 @@ def _definition_records_from_chunk(
                     ),
                 )
             )
+            idx = next_idx
+            state.global_prefix = False
+            continue
+
+        unsupported_named = _unsupported_named_declaration_at(chunk.text, idx)
+        if unsupported_named is not None:
+            unsupported_directive, unsupported_name, next_idx = unsupported_named
+            if not (
+                branch is False
+                or (branch is True and state.group_depth and not globally_defined)
+            ):
+                line, column = _line_column(chunk, idx)
+                records.append(
+                    MacroDefinition(
+                        name=unsupported_name,
+                        value="",
+                        source_path=chunk.source_path,
+                        line=line,
+                        column=column,
+                        directive=unsupported_directive,
+                        project_owned=chunk.project_owned,
+                        adapter_owned=chunk.adapter_owned,
+                        native_identity=not chunk.project_owned,
+                        declaration_error=(
+                            "a definition in a conditional branch whose truth "
+                            "cannot be determined statically"
+                            if uncertain
+                            else f"an unsupported {unsupported_directive} declaration; "
+                            "supported renderable declarations are newcommand, "
+                            "renewcommand, source-resolved providecommand, "
+                            "zero-argument def/gdef, let, DeclareMathOperator, and "
+                            "representable DeclareMathSymbol"
+                        ),
+                    )
+                )
             idx = next_idx
             state.global_prefix = False
             continue
@@ -2446,6 +2595,25 @@ def _definition_catalog(
             normalized, _ = _normalize_macro_value(record.value)
             record = replace(record, value=normalized)
             previous = definitions.get(record.name)
+            if record.directive == "providecommand":
+                if previous is None:
+                    if record.project_owned:
+                        record = replace(
+                            record,
+                            declaration_error=(
+                                "an ambiguous providecommand with no earlier source "
+                                "binding; an existing external or renderer-native "
+                                "binding cannot be determined statically"
+                            ),
+                        )
+                    else:
+                        record = replace(
+                            record,
+                            native_identity=True,
+                            declaration_error=None,
+                        )
+                    definitions[record.name] = record
+                continue
             if previous is None:
                 definitions[record.name] = record
                 continue
@@ -2465,8 +2633,6 @@ def _definition_catalog(
                 definitions[record.name] = record
                 continue
             if previous.adapter_owned and not record.project_owned:
-                continue
-            if record.directive == "providecommand":
                 continue
             if record.directive in {"renewcommand", "def", "gdef", "let"}:
                 definitions[record.name] = record
@@ -2766,7 +2932,8 @@ def extract_renderable_macros(
     *,
     tex_entrypoint: Path,
     graph_text: Iterable[str],
-) -> dict[str, MacroValue]:
+    include_records: bool = False,
+) -> dict[str, MacroValue] | RenderableMacroExtraction:
     """Return the normalized recursive closure of macros used by graph text.
 
     Intent
@@ -2775,18 +2942,23 @@ def extract_renderable_macros(
 
     Rationale
     ---------
-    Public callers need schema values while conflict handling retains internal records.
+    Public callers get schema values by default; finalization can retain internal records.
 
     InstantiationsFromRepo
     ----------------------
       ._extract_renderable_macro_definitions:
         why:
           transforms: "Produces the validated source-aware macro closure."
+      .RenderableMacroExtraction:
+        why:
+          constructs: "Pairs projected schema values with exact source records on request."
 
     Pseudocode
     ----------
     - macro_records = _extract_renderable_macro_definitions(tex_entrypoint and graph_text)
     - set macro_values = normalized values projected from macro_records
+    - if source records were requested:
+      - return macro values paired with source records
     - return macro_values
 
     Wraps
@@ -2797,7 +2969,10 @@ def extract_renderable_macros(
         tex_entrypoint=tex_entrypoint,
         graph_text=graph_text,
     )
-    return {name: definition.value for name, definition in definitions.items()}
+    values = {name: definition.value for name, definition in definitions.items()}
+    if include_records:
+        return RenderableMacroExtraction(values=values, records=definitions)
+    return values
 
 
 def dependency_closure(

@@ -352,6 +352,58 @@ def test_mathjax_normalizes_both_macro_tuple_orders_to_semantic_mathml() -> None
     )
 
 
+def test_mathjax_pairs_single_dollars_without_whitespace_or_currency_filters() -> None:
+    payload = _payload()
+    payload["renderer_dependencies"] = [
+        {
+            "id": "mathjax",
+            "version": "3",
+            "configuration": {
+                "macros": {
+                    "SpacedCanopy": r"\mathsf{W}",
+                    "PairedSprout": r"\mathsf{C}",
+                }
+            },
+        }
+    ]
+    payload["entities"][0]["description"] = (
+        r"spaced $ \SpacedCanopy $ and currency-like $5+\PairedSprout$10"
+    )
+
+    _run_browser_case(
+        "mathjax-paired-single-dollars",
+        payload,
+        """
+        if (!window.MathJax?.startup?.promise) throw new Error("MathJax did not start");
+        await window.MathJax.startup.promise;
+
+        let alpha = null;
+        for (let attempt = 0; attempt < 50 && !alpha; attempt += 1) {
+          alpha = nodeElement("alpha");
+          if (!alpha) await delay(20);
+        }
+        if (!alpha) throw new Error("graph node did not render");
+        alpha.dispatchEvent(new MouseEvent("click", {bubbles: true}));
+        await delay(350);
+        const diagnostics = await window.officinaMathDiagnostics();
+        const expressions = Array.from(
+          document.querySelectorAll("#details mjx-assistive-mml math")
+        ).map(node => (node.textContent || "").replace(/\\s+/g, ""));
+        if (!expressions.some(value => value.includes("W"))) {
+          throw new Error("whitespace-delimited macro did not typeset");
+        }
+        if (!expressions.some(value => value.includes("5+C"))) {
+          throw new Error("currency-shaped paired dollars did not typeset");
+        }
+        if (diagnostics.mathErrorCount !== 0 || diagnostics.unresolvedCommands.length) {
+          throw new Error("paired-dollar macros produced diagnostics");
+        }
+        """,
+        virtual_time_budget=12000,
+        wait_for_load=False,
+    )
+
+
 def test_mathjax_reports_direct_and_nested_unknown_control_sequences() -> None:
     payload = _payload()
     payload["renderer_dependencies"] = [

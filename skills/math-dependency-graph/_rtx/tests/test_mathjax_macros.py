@@ -102,6 +102,11 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
         "UnknownBranchMacro",
         "ParentStateRoot",
         "ChildStateRoot",
+        "RobustCanopy",
+        "AmbiguousProvide",
+        "KnownProvide",
+        "DistributionRobustMaybe",
+        "DistributionProvideMaybe",
     )
 
     def test_extracts_recursive_and_mid_document_macros(self) -> None:
@@ -1830,6 +1835,123 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                 )
 
             self.assertEqual(macros, {"LoadOnceRoot": "middle"})
+
+    def test_graph_visible_unsupported_named_declaration_fails_closed(self) -> None:
+        """Catch a source-declared macro disappearing as an undeclared leaf."""
+        with tempfile.TemporaryDirectory() as tmp:
+            entrypoint = Path(tmp) / "main.tex"
+            entrypoint.write_text(
+                r"\DeclareRobustCommand{\RobustCanopy}[1]{\mathbf{#1}}",
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ValueError) as caught:
+                extract_renderable_macros(
+                    tex_entrypoint=entrypoint,
+                    graph_text=[r"$\RobustCanopy{x}$"],
+                )
+
+            message = str(caught.exception)
+            self.assertIn("RobustCanopy", message)
+            self.assertIn("DeclareRobustCommand", message)
+            self.assertIn("unsupported", message.lower())
+            self.assertIn(f"{entrypoint}:1:1", message)
+
+    def test_first_providecommand_binding_fails_closed(self) -> None:
+        """Catch providecommand overriding an unknown native renderer command."""
+        with tempfile.TemporaryDirectory() as tmp:
+            entrypoint = Path(tmp) / "main.tex"
+            entrypoint.write_text(
+                r"\providecommand{\AmbiguousProvide}[2]{#1-#2}",
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ValueError) as caught:
+                extract_renderable_macros(
+                    tex_entrypoint=entrypoint,
+                    graph_text=[r"$\AmbiguousProvide{x}{y}$"],
+                )
+
+            message = str(caught.exception)
+            self.assertIn("AmbiguousProvide", message)
+            self.assertIn("providecommand", message)
+            self.assertIn("external", message.lower())
+            self.assertIn(f"{entrypoint}:1:1", message)
+
+    def test_providecommand_preserves_known_earlier_source_binding(self) -> None:
+        """Catch providecommand replacing a binding already established by source."""
+        with tempfile.TemporaryDirectory() as tmp:
+            entrypoint = Path(tmp) / "main.tex"
+            entrypoint.write_text(
+                r"\newcommand{\KnownProvide}{first}"
+                r"\providecommand{\KnownProvide}{second}",
+                encoding="utf-8",
+            )
+
+            macros = extract_renderable_macros(
+                tex_entrypoint=entrypoint,
+                graph_text=[r"$\KnownProvide$"],
+            )
+
+            self.assertEqual(macros, {"KnownProvide": "first"})
+
+    def test_distribution_robust_declaration_defers_to_renderer_oracle(self) -> None:
+        """Catch raw native wrappers being serialized as project definitions."""
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "project"
+            texmf = Path(tmp) / "texmf"
+            project.mkdir()
+            texmf.mkdir()
+            entrypoint = project / "main.tex"
+            package = texmf / "robust-native-maybe.sty"
+            entrypoint.write_text(r"\usepackage{robust-native-maybe}", encoding="utf-8")
+            package.write_text(
+                r"\DeclareRobustCommand{\DistributionRobustMaybe}[1]{\mathbf{#1}}",
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(
+                _tex_macro_reader,
+                "tex_distribution_path",
+                side_effect=lambda filename: (
+                    package if filename == "robust-native-maybe.sty" else None
+                ),
+            ):
+                macros = extract_renderable_macros(
+                    tex_entrypoint=entrypoint,
+                    graph_text=[r"$\DistributionRobustMaybe{x}$"],
+                )
+
+            self.assertEqual(macros, {})
+
+    def test_distribution_first_provide_defers_to_renderer_oracle(self) -> None:
+        """Catch an optional raw package fallback overriding a native renderer command."""
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "project"
+            texmf = Path(tmp) / "texmf"
+            project.mkdir()
+            texmf.mkdir()
+            entrypoint = project / "main.tex"
+            package = texmf / "provide-native-maybe.sty"
+            entrypoint.write_text(r"\usepackage{provide-native-maybe}", encoding="utf-8")
+            package.write_text(
+                r"\providecommand{\DistributionProvideMaybe}[1]{\mathsf{#1}}",
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(
+                _tex_macro_reader,
+                "tex_distribution_path",
+                side_effect=lambda filename: (
+                    package if filename == "provide-native-maybe.sty" else None
+                ),
+            ):
+                macros = extract_renderable_macros(
+                    tex_entrypoint=entrypoint,
+                    graph_text=[r"$\DistributionProvideMaybe{x}$"],
+                )
+
+            self.assertEqual(macros, {})
 
     def test_recursive_input_cycle_fails_with_both_paths(self) -> None:
         """Catch dependency recursion being silently truncated by a global seen set."""

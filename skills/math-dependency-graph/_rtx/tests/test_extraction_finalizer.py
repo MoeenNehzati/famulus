@@ -355,12 +355,15 @@ def test_finalizer_uses_renderer_fields_but_ignores_delimited_audit_metadata(
     }
 
 
-def test_finalizer_ignores_escaped_and_currency_dollars(tmp_path: Path) -> None:
+def test_finalizer_matches_renderer_paired_dollars_and_ignores_escaped_dollars(
+    tmp_path: Path,
+) -> None:
     project = tmp_path / "literal-dollar-project"
     entrypoint = _write_tex(
         project,
         r"\newcommand{\EscapedDollar}{E}"
         r"\newcommand{\CurrencyDollar}{C}"
+        r"\newcommand{\WhitespaceDollar}{W}"
         r"\newcommand{\ActualMath}{M}",
     )
     draft = _write_draft(
@@ -368,6 +371,7 @@ def test_finalizer_ignores_escaped_and_currency_dollars(tmp_path: Path) -> None:
         (
             r"Escaped prices \$5 and \EscapedDollar at \$6; "
             r"literal prices $5 and \CurrencyDollar at $10; "
+            r"spaced math $ \WhitespaceDollar $; "
             r"actual math $\ActualMath$."
         ),
     )
@@ -381,7 +385,57 @@ def test_finalizer_ignores_escaped_and_currency_dollars(tmp_path: Path) -> None:
     )
 
     assert _mathjax_macros(json.loads(canonical.read_text(encoding="utf-8"))) == {
+        "CurrencyDollar": "C",
+        "WhitespaceDollar": "W",
         "ActualMath": "M",
+    }
+
+
+def test_finalizer_calls_public_macro_extraction_boundary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = tmp_path / "public-boundary-project"
+    entrypoint = _write_tex(project, "No declarations are needed by the fake boundary.")
+    draft = _write_draft(project / "draft.json", r"$\BoundarySprout$")
+    canonical = project / "canonical.json"
+    calls: list[tuple[Path, list[str]]] = []
+
+    def fake_extract_renderable_macros(
+        *, tex_entrypoint: Path, graph_text: list[str], include_records: bool = False
+    ) -> _tex_macro_reader.RenderableMacroExtraction:
+        calls.append((tex_entrypoint, list(graph_text)))
+        assert include_records
+        definition = _tex_macro_reader.MacroDefinition(
+            name="BoundarySprout",
+            value=r"\mathsf{B}",
+            source_path=tex_entrypoint,
+            line=1,
+            column=1,
+            directive="newcommand",
+            project_owned=True,
+        )
+        return _tex_macro_reader.RenderableMacroExtraction(
+            values={"BoundarySprout": r"\mathsf{B}"},
+            records={"BoundarySprout": definition},
+        )
+
+    monkeypatch.setattr(
+        _extraction_finalizer,
+        "extract_renderable_macros",
+        fake_extract_renderable_macros,
+        raising=False,
+    )
+
+    finalize_extraction(
+        draft_path=draft,
+        tex_entrypoint=entrypoint,
+        output_path=canonical,
+        label_map_path=None,
+    )
+
+    assert calls == [(entrypoint.resolve(), [r"\BoundarySprout", r"\BoundarySprout"])]
+    assert _mathjax_macros(json.loads(canonical.read_text(encoding="utf-8"))) == {
+        "BoundarySprout": r"\mathsf{B}",
     }
 
 
@@ -449,6 +503,53 @@ def test_finalizer_rejects_conflicting_preexisting_macro_value(
     assert "ConflictArc" in message
     assert str(draft) in message
     assert str(entrypoint) in message
+
+
+def test_finalizer_conflict_names_included_definition_location(
+    tmp_path: Path,
+) -> None:
+    """Catch loss of included-file provenance at the public extractor boundary."""
+    project = tmp_path / "included-conflict-project"
+    nested = project / "nested"
+    nested.mkdir(parents=True)
+    entrypoint = project / "main.tex"
+    entrypoint.write_text(r"\input{nested/definitions}", encoding="utf-8")
+    included = nested / "definitions.tex"
+    included.write_text(
+        "% fixture prelude\n"
+        r"\newcommand{\NestedConflictArc}[2]{#1+#2}",
+        encoding="utf-8",
+    )
+    draft = _write_draft(
+        project / "draft.json",
+        r"$\NestedConflictArc{x}{y}$",
+        renderer_dependencies=[
+            {
+                "id": "mathjax",
+                "version": "3",
+                "configuration": {
+                    "input": "tex",
+                    "output": "svg",
+                    "macros": {"NestedConflictArc": ["#1-#2", 2]},
+                },
+            }
+        ],
+    )
+
+    with pytest.raises(ValueError) as caught:
+        finalize_extraction(
+            draft_path=draft,
+            tex_entrypoint=entrypoint,
+            output_path=project / "canonical.json",
+            label_map_path=None,
+        )
+
+    message = str(caught.value)
+    assert "NestedConflictArc" in message
+    assert f"{included}:2:1" in message
+    assert str(draft) in message
+    assert "#1-#2" in message
+    assert "#1+#2" in message
 
 
 def test_finalizer_accepts_semantically_identical_legacy_and_native_tuples(
