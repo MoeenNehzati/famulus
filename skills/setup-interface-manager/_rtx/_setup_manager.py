@@ -389,9 +389,7 @@ class SetupManager:
             result = record_setup_success(self.store, self.graph, flow.flow_id, step)
         elif flow.operation == "teardown-all":
             try:
-                result = record_teardown_all_success(
-                    self.store, self.graph, flow.flow_id, step
-                )
+                result = record_teardown_all_success(self.store, self.graph, flow.flow_id, step)
             except (BlueprintGraphError, FlowConflict, LedgerError) as exc:
                 raise ManagerRecoveryError("global teardown settlement needs recovery") from exc
         else:
@@ -453,6 +451,8 @@ class SetupManager:
         step: SetupStep | TeardownStep | None = None,
         original: ContinuationIdentity | None = None,
     ) -> tuple[int, dict[str, object]]:
+        if state_name == "recovery-required" and operation == "teardown-all" and flow is not None:
+            flow, step = self._known_active_context(flow.flow_id)
         return 2, _response(
             flow_id=None if flow is None else flow.flow_id,
             operation=operation,

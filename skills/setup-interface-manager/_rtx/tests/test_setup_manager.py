@@ -383,13 +383,13 @@ def test_teardown_all_failures_retain_the_current_receipt(tmp_path: Path, monkey
     assert controller.store.read().active_flow is not None
 
 def test_teardown_all_retry_verifies_first_and_cancel_is_tri_state(tmp_path: Path) -> None:
-    item, binding, dispatch = _managed("canary"), _binding(_managed("canary")), DispatchHarness()
-    dispatch.queue(binding.teardown_dispatch_key, "")
-    dispatch.queue(binding.teardown_verifier_dispatch_key, "bad")
+    item, later, dispatch, binding, later_binding = _managed("canary"), _managed("later"), DispatchHarness(), _binding(_managed("canary")), _binding(_managed("later"))
+    for current, verifier in ((later_binding, '{"torn_down":true}\n'), (binding, "bad")):
+        dispatch.queue(current.teardown_dispatch_key, ""); dispatch.queue(current.teardown_verifier_dispatch_key, verifier)
     dispatch.queue(binding.teardown_verifier_dispatch_key, '{"torn_down":true}\n')
-    controller = _controller(tmp_path, _graph(item), dispatch, binding)
-    _seed_all(controller.store, item)
-    assert controller.teardown_all()[1]["state"] == "recovery-required"
+    controller = _controller(tmp_path, _graph(item, later), dispatch, binding, later_binding); _seed_all(controller.store, item, later)
+    code, interrupted = controller.teardown_all()
+    assert (code, interrupted["state"], interrupted["current_step"]["interface"], controller.store.read().active_flow.current_step) == (2, "recovery-required", item.teardown_interface, item.setup_interface)
     assert controller.recover("flow-1", "retry")[1]["state"] == "ready"
     assert [call[0] for call in dispatch.calls].count("canary-teardown") == 1
     outcomes = (('{"torn_down":true}\n', True, False, "", "cancel"), ('{"torn_down":false}\n', False, False, "", "cancel"), ('{"torn_down":0}\n', False, True, "", "cancel"), ('{"torn_down":true}\n', False, True, "", "cancel"), ("unused", False, True, "graph", "retry"), ("unused", False, True, "binding", "cancel"), ("unused", False, True, "graph", "settle"))
