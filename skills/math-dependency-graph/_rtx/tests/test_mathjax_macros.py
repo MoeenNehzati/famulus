@@ -8,12 +8,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from collections.abc import Callable
 from pathlib import Path
 from unittest import mock
-
-import pytest
-
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 REPO_SRC = SKILL_DIR.parents[2] / "src"
@@ -24,10 +20,18 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 if __package__ and __package__.count(".") >= 1:
     from .. import _tex_macro_reader
-    from .._tex_macro_reader import default_output_path, extract_macros
+    from .._tex_macro_reader import (
+        default_output_path,
+        extract_macros,
+        extract_renderable_macros,
+    )
 else:
     import _tex_macro_reader  # noqa: E402
-    from _tex_macro_reader import default_output_path, extract_macros  # noqa: E402
+    from _tex_macro_reader import (  # noqa: E402
+        default_output_path,
+        extract_macros,
+        extract_renderable_macros,
+    )
 
 
 def script_env() -> dict[str, str]:
@@ -36,18 +40,6 @@ def script_env() -> dict[str, str]:
         part for part in (env.get("PYTHONPATH"), str(REPO_SRC)) if part
     )
     return env
-
-
-class MissingRenderableExtractorAPI(AssertionError):
-    """Expected RED checkpoint failure for the absent relevant extractor."""
-
-
-EXTRACTOR_XFAIL = pytest.mark.xfail(
-    condition=not callable(getattr(_tex_macro_reader, "extract_renderable_macros", None)),
-    reason="Task 2 has not added extract_renderable_macros yet",
-    raises=MissingRenderableExtractorAPI,
-    strict=True,
-)
 
 
 class MathJaxMacroExtractionTest(unittest.TestCase):
@@ -70,16 +62,10 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
         "DetachedGlyph",
         "DetachedMap",
         "AmbientThread",
+        "DistroAlias",
+        "DistroWrap",
+        "DuplicatePulse",
     )
-
-    def renderable_extractor(self) -> Callable[..., dict[str, object]]:
-        extractor = getattr(_tex_macro_reader, "extract_renderable_macros", None)
-        if not callable(extractor):
-            raise MissingRenderableExtractorAPI(
-                "missing extract_renderable_macros(tex_entrypoint=..., graph_text=...) "
-                "for relevant project-macro closure"
-            )
-        return extractor
 
     def test_extracts_recursive_and_mid_document_macros(self) -> None:
         macros = extract_macros(FIXTURE_DIR / "main.tex")
@@ -92,7 +78,7 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
         self.assertEqual(macros["QTC"], "\\vQ^{\\Pi_{\\TC_X}}")
         self.assertEqual(macros["MidMacro"], "\\QTC\\circ\\ev")
         self.assertEqual(macros["InnerMacro"], "\\operatorname{inner}")
-        self.assertEqual(macros["OuterMacro"], [2, "\\InnerMacro(#1,#2)+\\QTC"])
+        self.assertEqual(macros["OuterMacro"], ["\\InnerMacro(#1,#2)+\\QTC", 2])
 
     def test_cli_writes_default_build_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -183,7 +169,6 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
             html = html_out.read_text(encoding="utf-8")
             self.assertIn('"QTC": "\\\\vQ^{\\\\Pi_{\\\\TC_X}}"', html)
 
-    @EXTRACTOR_XFAIL
     def test_extracts_only_the_recursive_closure_used_by_graph_text(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp) / "project"
@@ -244,7 +229,7 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                 "resolve_tex_path",
                 side_effect=controlled_resolver,
             ):
-                macros = self.renderable_extractor()(
+                macros = extract_renderable_macros(
                     tex_entrypoint=entrypoint,
                     graph_text=[
                         r"$\RootBloom+\NestedQuill+\PairWeave{x}{y}+\ShadeFold[z]{w}$"
@@ -267,7 +252,6 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                 },
             )
 
-    @EXTRACTOR_XFAIL
     def test_same_extractor_handles_a_disjoint_macro_vocabulary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp)
@@ -288,7 +272,7 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            macros = self.renderable_extractor()(
+            macros = extract_renderable_macros(
                 tex_entrypoint=entrypoint,
                 graph_text=[r"The second fixture uses $\TangentNest{k}$ only."],
             )
@@ -300,6 +284,109 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                     "TangentNest": [r"\CopperSeed_{#1}", 1],
                 },
             )
+
+    def test_extractor_resolves_distribution_alias_from_legacy_encoded_package(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / "project"
+            texmf = Path(tmp) / "texmf"
+            project.mkdir()
+            texmf.mkdir()
+            entrypoint = project / "main.tex"
+            entrypoint.write_text(
+                r"\usepackage{distro-alias}\newcommand{\DistroWrap}[1]{\DistroAlias{#1}}",
+                encoding="utf-8",
+            )
+            package = texmf / "distro-alias.sty"
+            package.write_bytes(
+                b"% legacy package: \xe9\n\\let\\DistroAlias\\boldsymbol\n"
+            )
+
+            def controlled_distribution(filename: str) -> Path | None:
+                return package if filename == "distro-alias.sty" else None
+
+            with mock.patch.object(
+                _tex_macro_reader,
+                "tex_distribution_path",
+                side_effect=controlled_distribution,
+            ):
+                macros = extract_renderable_macros(
+                    tex_entrypoint=entrypoint,
+                    graph_text=[r"$\DistroWrap{x}$"],
+                )
+
+            self.assertEqual(
+                macros,
+                {
+                    "DistroAlias": [r"\boldsymbol{#1}", 1],
+                    "DistroWrap": [r"\DistroAlias{#1}", 1],
+                },
+            )
+
+    def test_extractor_does_not_reverse_tex_let_assignment(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            entrypoint = project / "main.tex"
+            entrypoint.write_text(
+                r"\let\boldsymbol\RightHandGhost",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, r"\\RightHandGhost"):
+                extract_renderable_macros(
+                    tex_entrypoint=entrypoint,
+                    graph_text=[r"$\RightHandGhost{x}$"],
+                )
+
+    def test_extractor_closes_over_macros_used_by_optional_defaults(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            entrypoint = project / "main.tex"
+            entrypoint.write_text(
+                r"\newcommand{\DefaultSeed}{\mathbb{D}}"
+                r"\newcommand{\OptionalSprout}[1][\DefaultSeed]{#1}",
+                encoding="utf-8",
+            )
+
+            macros = extract_renderable_macros(
+                tex_entrypoint=entrypoint,
+                graph_text=[r"$\OptionalSprout$"],
+            )
+
+            self.assertEqual(
+                macros,
+                {
+                    "DefaultSeed": r"\mathbb{D}",
+                    "OptionalSprout": ["#1", 1, r"\DefaultSeed"],
+                },
+            )
+
+    def test_extractor_reports_both_locations_for_conflicting_definitions(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            entrypoint = project / "main.tex"
+            included = project / "defs.tex"
+            entrypoint.write_text(
+                r"\newcommand{\DuplicatePulse}{A}\input{defs}",
+                encoding="utf-8",
+            )
+            included.write_text(
+                r"\newcommand{\DuplicatePulse}{B}",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "Conflicting definitions") as caught:
+                extract_renderable_macros(
+                    tex_entrypoint=entrypoint,
+                    graph_text=[r"$\DuplicatePulse$"],
+                )
+
+            message = str(caught.exception)
+            self.assertIn(str(entrypoint), message)
+            self.assertIn(str(included), message)
 
     def test_synthetic_macro_names_are_fixture_only(self) -> None:
         production_paths = list(SCRIPT_DIR.glob("*.py"))

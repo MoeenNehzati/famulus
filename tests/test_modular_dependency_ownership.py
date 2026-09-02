@@ -118,8 +118,8 @@ def test_exhaustive_projection_has_no_orphaned_python_package() -> None:
         for package in packages
     }
 
-    assert len(pairs) == 33
-    assert len(core_pairs) == 14
+    assert len(pairs) == 34
+    assert len(core_pairs) == 15
     assert len(google_pairs) == 4
     assert len(residual_pairs) == 15
     assert pairs == core_pairs | google_pairs | residual_pairs

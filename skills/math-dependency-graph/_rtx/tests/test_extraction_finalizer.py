@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib
 import json
 import shutil
 import sys
@@ -19,6 +18,7 @@ sys.path.insert(0, str(REPO_SRC))
 sys.path.insert(0, str(RTX_DIR))
 
 import _tex_macro_reader  # noqa: E402
+from _extraction_finalizer import finalize_extraction  # noqa: E402
 from officina.visualization.base_renderer_cli import main as render_canonical_html  # noqa: E402
 
 
@@ -38,36 +38,6 @@ PRIMARY_MACROS = {
         "q",
     ],
 }
-
-
-class MissingFinalizerAPI(ModuleNotFoundError):
-    """Expected RED checkpoint failure for the absent finalizer module."""
-
-
-FINALIZER_XFAIL = pytest.mark.xfail(
-    condition=importlib.util.find_spec("_extraction_finalizer") is None,
-    reason="Task 2 has not added _extraction_finalizer yet",
-    raises=MissingFinalizerAPI,
-    strict=True,
-)
-
-
-def _finalize_extraction(**kwargs: Path | None) -> None:
-    try:
-        module = importlib.import_module("_extraction_finalizer")
-    except ModuleNotFoundError as exc:
-        if exc.name != "_extraction_finalizer":
-            raise
-        raise MissingFinalizerAPI(
-            "missing _extraction_finalizer.finalize_extraction boundary: "
-            f"{exc}"
-        ) from exc
-    finalizer = getattr(module, "finalize_extraction", None)
-    assert callable(finalizer), (
-        "missing finalize_extraction(draft_path=..., tex_entrypoint=..., "
-        "output_path=..., label_map_path=...)"
-    )
-    finalizer(**kwargs)
 
 
 def _write_tex(project: Path, source: str) -> Path:
@@ -159,7 +129,6 @@ def _mathjax_macros(payload: dict) -> dict:
     return matches[0]["configuration"]["macros"]
 
 
-@FINALIZER_XFAIL
 def test_finalizer_writes_schema_valid_detachable_relevant_macro_closure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -182,7 +151,7 @@ def test_finalizer_writes_schema_valid_detachable_relevant_macro_closure(
 
     monkeypatch.setattr(_tex_macro_reader, "resolve_tex_path", controlled_resolver)
 
-    _finalize_extraction(
+    finalize_extraction(
         draft_path=draft,
         tex_entrypoint=entrypoint,
         output_path=canonical,
@@ -217,7 +186,6 @@ def test_finalizer_writes_schema_valid_detachable_relevant_macro_closure(
     assert '"ShadeFold": [' in html
 
 
-@FINALIZER_XFAIL
 def test_finalizer_rejects_unresolved_graph_visible_project_macro(
     tmp_path: Path,
 ) -> None:
@@ -226,7 +194,7 @@ def test_finalizer_rejects_unresolved_graph_visible_project_macro(
     draft = _write_draft(project / "draft.json", r"$\MissingNebula{x}$")
 
     with pytest.raises(ValueError) as caught:
-        _finalize_extraction(
+        finalize_extraction(
             draft_path=draft,
             tex_entrypoint=entrypoint,
             output_path=project / "canonical.json",
@@ -239,7 +207,6 @@ def test_finalizer_rejects_unresolved_graph_visible_project_macro(
     assert str(entrypoint) in message
 
 
-@FINALIZER_XFAIL
 def test_finalizer_rejects_cyclic_relevant_definitions(tmp_path: Path) -> None:
     project = tmp_path / "cycle-project"
     entrypoint = _write_tex(
@@ -252,7 +219,7 @@ def test_finalizer_rejects_cyclic_relevant_definitions(tmp_path: Path) -> None:
     draft = _write_draft(project / "draft.json", r"$\LoopAsh$")
 
     with pytest.raises(ValueError) as caught:
-        _finalize_extraction(
+        finalize_extraction(
             draft_path=draft,
             tex_entrypoint=entrypoint,
             output_path=project / "canonical.json",
@@ -266,7 +233,6 @@ def test_finalizer_rejects_cyclic_relevant_definitions(tmp_path: Path) -> None:
     assert str(entrypoint) in message
 
 
-@FINALIZER_XFAIL
 def test_finalizer_rejects_conflicting_preexisting_macro_value(
     tmp_path: Path,
 ) -> None:
@@ -293,7 +259,7 @@ def test_finalizer_rejects_conflicting_preexisting_macro_value(
     )
 
     with pytest.raises(ValueError) as caught:
-        _finalize_extraction(
+        finalize_extraction(
             draft_path=draft,
             tex_entrypoint=entrypoint,
             output_path=project / "canonical.json",
@@ -307,7 +273,6 @@ def test_finalizer_rejects_conflicting_preexisting_macro_value(
     assert str(entrypoint) in message
 
 
-@FINALIZER_XFAIL
 def test_finalizer_accepts_semantically_identical_legacy_and_native_tuples(
     tmp_path: Path,
 ) -> None:
@@ -334,7 +299,7 @@ def test_finalizer_accepts_semantically_identical_legacy_and_native_tuples(
     )
     canonical = project / "canonical.json"
 
-    _finalize_extraction(
+    finalize_extraction(
         draft_path=draft,
         tex_entrypoint=entrypoint,
         output_path=canonical,
@@ -345,7 +310,6 @@ def test_finalizer_accepts_semantically_identical_legacy_and_native_tuples(
     assert _mathjax_macros(payload)["ConcordPair"] == ["#1+#2", 2]
 
 
-@FINALIZER_XFAIL
 def test_finalizer_rejects_duplicate_mathjax_dependencies(tmp_path: Path) -> None:
     project = tmp_path / "duplicate-project"
     entrypoint = _write_tex(project, r"\newcommand{\SingleFlare}{\mathbb{F}}")
@@ -360,7 +324,7 @@ def test_finalizer_rejects_duplicate_mathjax_dependencies(tmp_path: Path) -> Non
     )
 
     with pytest.raises(ValueError) as caught:
-        _finalize_extraction(
+        finalize_extraction(
             draft_path=draft,
             tex_entrypoint=entrypoint,
             output_path=project / "canonical.json",
@@ -372,3 +336,145 @@ def test_finalizer_rejects_duplicate_mathjax_dependencies(tmp_path: Path) -> Non
     assert "mathjax" in message.lower()
     assert "renderer_dependencies[0]" in message
     assert "renderer_dependencies[1]" in message
+
+
+def test_finalizer_applies_labels_presentation_and_normalizes_embedded_macros(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "presentation-project"
+    entrypoint = _write_tex(project, "Fixture without custom commands.")
+    draft = project / "draft.json"
+    draft_payload = {
+        "schema_version": 2,
+        "graph_kind": "math-dependency",
+        "renderer_dependencies": [
+            {
+                "id": "mathjax",
+                "version": "3",
+                "configuration": {
+                    "input": " delicate value replaced by schema default ",
+                    "output": "svg",
+                    "macros": {"EmbeddedPair": [1, "#1"]},
+                },
+            }
+        ],
+        "entities": [
+            {
+                "id": "premise",
+                "type": "assumption",
+                "short_title": r"See \eqref{eq:fixture}",
+                "position": 0,
+                "tex_label": "assumption:fixture",
+                "connects_to": [
+                    {"to": "result", "type": "supports"},
+                ],
+            },
+            {
+                "id": "result",
+                "type": "result",
+                "short_title": "Result",
+                "position": 1,
+                "connects_to": [],
+            },
+        ],
+    }
+    draft.write_text(json.dumps(draft_payload, indent=2) + "\n", encoding="utf-8")
+    label_map = project / "labels.json"
+    label_map.write_text(
+        json.dumps(
+            {
+                "assumption:fixture": {"ref": "A.1"},
+                "eq:fixture": {"ref": "7"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    canonical = project / "canonical.json"
+
+    finalize_extraction(
+        draft_path=draft,
+        tex_entrypoint=entrypoint,
+        output_path=canonical,
+        label_map_path=label_map,
+    )
+
+    payload = json.loads(canonical.read_text(encoding="utf-8"))
+    premise = payload["entities"][0]
+    assert premise["ref"] == "A.1"
+    assert premise["short_title"] == "See (7)"
+    assert {item["id"] for item in payload["edge_categories"]} == {
+        "supports",
+        "exemplifies",
+    }
+    assert "edge_styles" in payload["ui"]
+    assert "relation_semantics" in payload
+    dependency = payload["renderer_dependencies"][0]
+    assert dependency["version"] == "3"
+    assert dependency["configuration"]["input"] == "tex"
+    assert dependency["configuration"]["output"] == "svg"
+    assert dependency["configuration"]["macros"]["EmbeddedPair"] == ["#1", 1]
+    assert json.loads(draft.read_text(encoding="utf-8")) == draft_payload
+
+
+def test_finalizer_accepts_embedded_root_and_extracts_its_source_dependency(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "embedded-root-project"
+    entrypoint = _write_tex(
+        project,
+        r"\newcommand{\SourceLeaf}{\mathcal{L}}",
+    )
+    draft = _write_draft(
+        project / "draft.json",
+        r"$\EmbeddedRoot{x}$",
+        renderer_dependencies=[
+            {
+                "id": "mathjax",
+                "version": "3",
+                "configuration": {
+                    "input": "tex",
+                    "output": "svg",
+                    "macros": {"EmbeddedRoot": r"\SourceLeaf"},
+                },
+            }
+        ],
+    )
+    canonical = project / "canonical.json"
+
+    finalize_extraction(
+        draft_path=draft,
+        tex_entrypoint=entrypoint,
+        output_path=canonical,
+        label_map_path=None,
+    )
+
+    assert _mathjax_macros(json.loads(canonical.read_text(encoding="utf-8"))) == {
+        "EmbeddedRoot": r"\SourceLeaf",
+        "SourceLeaf": r"\mathcal{L}",
+    }
+
+
+def test_finalizer_validates_before_atomically_replacing_existing_output(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "invalid-project"
+    entrypoint = _write_tex(project, "Fixture without custom commands.")
+    draft = _write_draft(project / "draft.json", "No custom command.")
+    payload = json.loads(draft.read_text(encoding="utf-8"))
+    payload.pop("schema_version")
+    draft.write_text(json.dumps(payload), encoding="utf-8")
+    canonical = project / "canonical.json"
+    canonical.write_text("preserved canonical bytes\n", encoding="utf-8")
+
+    with pytest.raises(ValueError) as caught:
+        finalize_extraction(
+            draft_path=draft,
+            tex_entrypoint=entrypoint,
+            output_path=canonical,
+            label_map_path=None,
+        )
+
+    message = str(caught.value)
+    assert "schema" in message.lower()
+    assert "schema_version" in message
+    assert canonical.read_text(encoding="utf-8") == "preserved canonical bytes\n"
