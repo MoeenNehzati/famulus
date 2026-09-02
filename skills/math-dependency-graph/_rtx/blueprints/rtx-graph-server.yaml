@@ -52,7 +52,9 @@ interfaces:
       - external-side-effect: Binding a non-loopback host exposes every readable file
           beneath directory to reachable clients.
       - external-side-effect: The returned background process persists until feature-local
-          cleanup terminates its PID.
+          cleanup terminates its PID, except when a Windows MCP host owns the gateway
+          with a kill-on-close Job Object; there it exits asynchronously when that gateway
+          closes.
       direct_io:
         network:
         - access: configure
@@ -96,7 +98,9 @@ interfaces:
         mode: unattended
       outcomes:
       - caller_action: Open the reported URL and terminate the returned PID with
-          feature-local cleanup when inspection is complete.
+          feature-local cleanup when inspection is complete. If a Windows MCP host
+          owns the gateway with a kill-on-close Job Object, keep that gateway open
+          while inspecting; its teardown terminates the server asynchronously instead.
         class: success
         effects: []
         id: serving

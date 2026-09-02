@@ -386,6 +386,13 @@ def _terminate_pid(pid: int) -> None:
     assert not _pid_is_alive(pid)
 
 
+def _wait_for_pid_exit(pid: int, timeout: float = 3.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline and _pid_is_alive(pid):
+        time.sleep(0.05)
+    return not _pid_is_alive(pid)
+
+
 def test_plugin_persistence_is_inert_without_plugin_context(
     server, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -619,7 +626,7 @@ async def _serve_graph_through_mcp(
                         "dry_run": True,
                     },
                 )
-                completed = True
+                alive_during_session = _pid_is_alive(pid)
                 result = (
                     listed,
                     called,
@@ -627,20 +634,29 @@ async def _serve_graph_through_mcp(
                     finite,
                     body,
                     cache_control,
+                    alive_during_session,
                 )
                 mark_complete()
+        completed = True
         assert result is not None
-        return (*result, _pid_is_alive(pid))
+        return result
     finally:
-        if not completed and pid is not None and _pid_is_alive(pid):
-            _terminate_pid(pid)
+        if not completed and pid is not None:
+            if sys.platform == "win32":
+                try:
+                    if _pid_is_alive(pid) and not _wait_for_pid_exit(pid):
+                        _terminate_pid(pid)
+                except OSError:
+                    pass
+            elif _pid_is_alive(pid):
+                _terminate_pid(pid)
 
 
 @pytest.mark.parametrize("host", ["claude", "codex"])
-def test_graph_server_returns_through_real_mcp_and_survives(
+def test_graph_server_survives_invocation_and_follows_host_teardown_lifecycle(
     host: str, tmp_path: Path, free_tcp_port: int
 ) -> None:
-    """Break caught: the graph child holds MCP pipes or dies with its gateway."""
+    """Break caught: graph lifetime contradicts its platform host boundary."""
     plugin = tmp_path / "Plugin Cache" / "famulus"
     served = tmp_path / "served directory with spaces"
     served.mkdir()
@@ -682,9 +698,21 @@ def test_graph_server_returns_through_real_mcp_and_survives(
         assert finite.structuredContent["result"]["target"] == (
             "milestone-logging._rtx.interface.record"
         )
+        if sys.platform != "win32":
+            assert _pid_is_alive(pid)
     finally:
-        if pid is not None and _pid_is_alive(pid):
-            _terminate_pid(pid)
+        if pid is not None:
+            if sys.platform == "win32":
+                exited_with_gateway = _wait_for_pid_exit(pid)
+                if not exited_with_gateway:
+                    try:
+                        _terminate_pid(pid)
+                    finally:
+                        assert exited_with_gateway, (
+                            "Windows graph process survived its MCP Job Object"
+                        )
+            elif _pid_is_alive(pid):
+                _terminate_pid(pid)
 
 
 # famulus-skip: category=platform-contract; reason=requires native Windows process handles; alternate=POSIX kill-zero liveness is exercised by both graph-server cases
