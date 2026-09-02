@@ -328,6 +328,57 @@ def _pid_is_alive(pid: int) -> bool:
 
 
 def _terminate_pid(pid: int) -> None:
+    if sys.platform == "win32":
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.argtypes = [
+            wintypes.DWORD,
+            wintypes.BOOL,
+            wintypes.DWORD,
+        ]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        kernel32.WaitForSingleObject.restype = wintypes.DWORD
+        kernel32.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
+        kernel32.TerminateProcess.restype = wintypes.BOOL
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+        handle = kernel32.OpenProcess(0x00000001 | 0x00100000, False, pid)
+        if not handle:
+            error = ctypes.get_last_error()
+            if error == 87:
+                return
+            raise ctypes.WinError(error)
+        try:
+            status = int(kernel32.WaitForSingleObject(handle, 0))
+            if status == 0:
+                return
+            if status == 0xFFFFFFFF:
+                raise ctypes.WinError(ctypes.get_last_error())
+            if status != 0x102:
+                raise OSError(f"unexpected Windows process wait status: {status}")
+
+            if not kernel32.TerminateProcess(handle, 1):
+                termination_error = ctypes.get_last_error()
+                status = int(kernel32.WaitForSingleObject(handle, 0))
+                if status == 0:
+                    return
+                if status == 0xFFFFFFFF:
+                    raise ctypes.WinError(ctypes.get_last_error())
+                raise ctypes.WinError(termination_error)
+
+            status = int(kernel32.WaitForSingleObject(handle, 3000))
+            if status == 0:
+                return
+            if status == 0x102:
+                raise TimeoutError(f"Windows process {pid} did not terminate")
+            if status == 0xFFFFFFFF:
+                raise ctypes.WinError(ctypes.get_last_error())
+            raise OSError(f"unexpected Windows process wait status: {status}")
+        finally:
+            kernel32.CloseHandle(handle)
+
     os.kill(pid, signal.SIGTERM)
     deadline = time.monotonic() + 3.0
     while time.monotonic() < deadline and _pid_is_alive(pid):
@@ -651,10 +702,14 @@ def test_windows_pid_probe_is_nondestructive() -> None:
         assert _pid_is_alive(process.pid)
         with pytest.raises(subprocess.TimeoutExpired):
             process.wait(timeout=0.2)
-    finally:
-        process.terminate()
+        _terminate_pid(process.pid)
         process.wait(timeout=5)
-    assert not _pid_is_alive(process.pid)
+        assert not _pid_is_alive(process.pid)
+        _terminate_pid(process.pid)
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)
 
 
 @pytest.mark.parametrize("host", ["claude", "codex"])
