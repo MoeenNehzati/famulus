@@ -166,6 +166,7 @@
             },
             "macros": {
               "type": "object",
+              "description": "Self-contained MathJax macro definitions. Strings and replacement-first arrays `[replacement, argument_count]` or `[replacement, argument_count, optional_default]` are canonical; integer-first arrays remain accepted for legacy schema-v2 payloads.",
               "additionalProperties": {
                 "oneOf": [
                   {
@@ -213,10 +214,10 @@
               }
             }
           },
-          "description": "MathJax TeX input configuration, including `macros`."
+          "description": "MathJax TeX input configuration, including the payload's complete `macros` mapping."
         }
       },
-      "description": "Declares that the payload contains TeX requiring MathJax. The renderer merges extracted macros into `configuration.macros`; commands MathJax cannot resolve are reported to the reader rather than silently rendered as literal text."
+      "description": "Declares that the self-contained payload contains TeX requiring MathJax. The renderer normalizes every schema-supported macro tuple at its browser boundary; commands the pinned runtime cannot resolve are reported without a document-specific command catalog."
     },
     "documentMeta": {
       "type": "object",

@@ -32,7 +32,7 @@ def validate_document(doc: dict) -> None:
 
 
 def merge_mathjax_macros(doc: dict, macro_file: Path | None) -> int:
-    """Merge extracted MathJax macros from a macro JSON file."""
+    """Preprocess a deprecated macro sidecar into one self-contained payload."""
     if macro_file is None:
         return 0
     if not macro_file.exists():
@@ -68,7 +68,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--macro-file",
         dest="macro_file",
-        help="Optional MathJax macro JSON file to merge before rendering.",
+        help=(
+            "Deprecated compatibility option: merge a MathJax macro JSON file "
+            "into the self-contained payload before validation and rendering."
+        ),
     )
     parser.add_argument(
         "--profile",
@@ -93,6 +96,8 @@ def main(argv: list[str] | None = None) -> int:
     validate_document(doc)
     macro_path = Path(args.macro_file).resolve() if args.macro_file else None
     macro_count = merge_mathjax_macros(doc, macro_path)
+    if macro_path is not None:
+        validate_document(doc)
     reduction_note = ""
     removed_edges: list[dict] = []
     if args.reduce_transitive_edges:

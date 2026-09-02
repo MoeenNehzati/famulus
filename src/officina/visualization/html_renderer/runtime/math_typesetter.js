@@ -45,3 +45,14 @@
           return window.MathJax.typesetPromise([element]);
         });
     }
+
+    window.officinaMathDiagnostics = async function () {
+      if (window.MathJax?.startup?.promise) await window.MathJax.startup.promise;
+      await mathTypesetQueue;
+      return {
+        unresolvedCommands: Object.keys(window.__unresolvedTeX || {}).sort(),
+        mathErrorCount: document.querySelectorAll(
+          'mjx-merror, merror, [data-mml-node="merror"]'
+        ).length,
+      };
+    };

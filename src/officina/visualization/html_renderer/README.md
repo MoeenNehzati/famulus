@@ -60,9 +60,20 @@ fields:
   presentations for hidden-detail summaries, same-type multiplicity, and
   mixed-type edges. It cannot define arbitrary metadata predicates.
 - Additional entity and edge fields are retained for the details panel.
+- `renderer_dependencies` declares every optional runtime input inside the JSON
+  payload. A MathJax dependency carries its complete macro mapping in
+  `configuration.macros`; replacement-first parameter arrays are canonical and
+  integer-first arrays are normalized only for schema-v2 compatibility.
 
 Adapters are responsible for translating domain concepts into these fields.
 The renderer must not branch on adapter-specific names.
+
+Renderer inputs are self-contained JSON. The renderer API never reads TeX
+sources, macro sidecars, package installations, or network resources. The
+generic base CLI still accepts `--macro-file` only as a deprecated outer
+compatibility preprocessor while its legacy caller is migrated: it merges the
+JSON object into one payload, validates that complete payload, and only then
+enters the renderer. The renderer API has no sidecar parameter.
 
 ## Architecture
 
@@ -92,8 +103,8 @@ The renderer must not branch on adapter-specific names.
 - `runtime/presentation_nodes.js` parses generic presentation-node instances and
   controls, lays out overlapping memberships, and owns their independent
   selection, inspection, drag, hide, collapse, persistence, and migration state.
-- `runtime/math_typesetter.js` owns optional MathJax detection, invalidation, and
-  serialized dynamic typesetting.
+- `runtime/math_typesetter.js` owns optional MathJax detection, invalidation,
+  serialized dynamic typesetting, and the generic browser-validation seam.
 - `runtime/geometry.js` owns SVG geometry and edge rerouting from current positions.
 - `runtime/legend.js` builds category controls and legend tooltips.
 - `runtime/visibility.js` owns node visibility, hidden-node restoration, and ancestor focus.
@@ -128,6 +139,22 @@ The browser runtime follows a fixed pipeline:
    label and subtitle. Text therefore remains visually above graph lines without
    sacrificing endpoint-over-edge semantics or erasing contained relationships.
 6. Apply interaction-only updates without relaying out the graph when possible.
+
+### Math rendering validation
+
+`dependencies.py` adapts every schema-supported macro representation to
+MathJax's replacement-first configuration and loads only the pinned offline
+runtime. Its undefined-command observer disables MathJax's `noundefined`
+literal-text fallback so the runtime's own parser remains the oracle; no TeX
+command allowlist is maintained by the renderer. Direct and macro-nested unknown
+control sequences are collected in the `data-unresolved-tex` reader banner.
+
+Browser gates can call `await window.officinaMathDiagnostics()` after the
+relevant graph content or inspector surface has rendered. The call waits for
+MathJax startup and the renderer's current serialized typesetting queue, then
+returns sorted `unresolvedCommands` and a generic `mathErrorCount` covering
+MathML and SVG error nodes. A candidate is render-clean only when both are empty
+or zero and no unresolved-command banner is present.
 
 ### Edge meaning and presentation
 

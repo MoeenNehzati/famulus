@@ -185,6 +185,163 @@ def test_mathjax_typesets_dynamic_tooltip_and_inspector_content() -> None:
     )
 
 
+def test_mathjax_normalizes_both_macro_tuple_orders_to_semantic_mathml() -> None:
+    payload = _payload()
+    payload["renderer_dependencies"] = [
+        {
+            "id": "mathjax",
+            "version": "3",
+            "configuration": {
+                "macros": {
+                    "PairNative": ["#1+#2", 2],
+                    "PairLegacy": [2, "#1+#2"],
+                    "NestedPair": [r"\PairNative{#1}{#2}", 2],
+                }
+            },
+        }
+    ]
+    payload["entities"][0]["description"] = (
+        r"$\PairNative{a}{b}$ $\PairLegacy{a}{b}$ $\NestedPair{a}{b}$"
+    )
+
+    _run_browser_case(
+        "mathjax-schema-macro-tuples",
+        payload,
+        """
+        if (!window.MathJax?.startup?.promise) throw new Error("MathJax did not start");
+        await window.MathJax.startup.promise;
+
+        let alpha = null;
+        for (let attempt = 0; attempt < 50 && !alpha; attempt += 1) {
+          alpha = nodeElement("alpha");
+          if (!alpha) await delay(20);
+        }
+        if (!alpha) throw new Error("graph node did not render");
+        alpha.dispatchEvent(new MouseEvent("click", {bubbles: true}));
+        await delay(350);
+        const diagnostics = await window.officinaMathDiagnostics();
+
+        const math = Array.from(document.querySelectorAll("#details mjx-assistive-mml math"));
+        if (math.length !== 3) {
+          const containers = document.querySelectorAll("#details mjx-container").length;
+          throw new Error("expected three semantic MathML expressions; got " + math.length +
+            " from " + containers + " containers");
+        }
+        const expressions = math.map(node => (node.textContent || "").replace(/\\s+/g, ""));
+        if (expressions.some(value => value !== "a+b")) {
+          throw new Error("macro tuple semantics were not a+b: " + expressions.join(" | "));
+        }
+        if (diagnostics.mathErrorCount !== 0 || document.querySelector("mjx-merror")) {
+          throw new Error("valid macro tuples produced a MathJax error");
+        }
+        if (diagnostics.unresolvedCommands.length ||
+            document.querySelector("[data-unresolved-tex]")) {
+          throw new Error("valid macro tuples were reported as unresolved");
+        }
+        """,
+        virtual_time_budget=12000,
+        wait_for_load=False,
+    )
+
+
+def test_mathjax_reports_direct_and_nested_unknown_control_sequences() -> None:
+    payload = _payload()
+    payload["renderer_dependencies"] = [
+        {
+            "id": "mathjax",
+            "version": "3",
+            "configuration": {
+                "macros": {
+                    "NestedUnknown": [r"\MissingNested{#1}", 1],
+                }
+            },
+        }
+    ]
+    payload["entities"][0]["description"] = (
+        r"$\MissingDirect{x}$ $\NestedUnknown{x}$"
+    )
+
+    _run_browser_case(
+        "mathjax-unknown-control-sequences",
+        payload,
+        """
+        if (!window.MathJax?.startup?.promise) throw new Error("MathJax did not start");
+        await window.MathJax.startup.promise;
+
+        let alpha = null;
+        for (let attempt = 0; attempt < 50 && !alpha; attempt += 1) {
+          alpha = nodeElement("alpha");
+          if (!alpha) await delay(20);
+        }
+        if (!alpha) throw new Error("graph node did not render");
+        alpha.dispatchEvent(new MouseEvent("click", {bubbles: true}));
+        await delay(350);
+        const diagnostics = await window.officinaMathDiagnostics();
+        const unresolved = diagnostics.unresolvedCommands.slice().sort().join(",");
+        if (unresolved !== "MissingDirect,MissingNested") {
+          throw new Error("unknown-command oracle returned: " + unresolved);
+        }
+        if (diagnostics.mathErrorCount === 0) {
+          throw new Error("unknown commands did not produce a MathJax error node");
+        }
+        const banner = document.querySelector("[data-unresolved-tex]");
+        if (!banner) throw new Error("unknown-command banner is missing");
+        const bannerNames = banner.dataset.unresolvedTex.split(",").sort().join(",");
+        if (bannerNames !== unresolved) throw new Error("unknown-command banner is stale");
+        """,
+        virtual_time_budget=12000,
+        wait_for_load=False,
+    )
+
+
+def test_mathjax_unknown_command_oracle_accepts_supported_primitives() -> None:
+    payload = _payload()
+    payload["renderer_dependencies"] = [{"id": "mathjax", "version": "3"}]
+    payload["entities"][0]["description"] = (
+        r"$\mathfrak{g}$ $\underbrace{x}_{u}$ $\overset{v}{y}$"
+    )
+
+    _run_browser_case(
+        "mathjax-supported-primitives",
+        payload,
+        """
+        if (!window.MathJax?.startup?.promise) throw new Error("MathJax did not start");
+        await window.MathJax.startup.promise;
+
+        let alpha = null;
+        for (let attempt = 0; attempt < 50 && !alpha; attempt += 1) {
+          alpha = nodeElement("alpha");
+          if (!alpha) await delay(20);
+        }
+        if (!alpha) throw new Error("graph node did not render");
+        alpha.dispatchEvent(new MouseEvent("click", {bubbles: true}));
+        await delay(350);
+        const diagnostics = await window.officinaMathDiagnostics();
+
+        const math = Array.from(document.querySelectorAll("#details mjx-assistive-mml math"));
+        if (math.length !== 3) throw new Error("supported primitives did not produce MathML");
+        if (math[0].querySelector('[mathvariant="fraktur"]')?.textContent !== "g") {
+          throw new Error("mathfrak semantics are missing");
+        }
+        if (!math[1].querySelector("munder") || !math[1].textContent.includes("u")) {
+          throw new Error("underbrace semantics are missing");
+        }
+        if (!math[2].querySelector("mover") || !math[2].textContent.includes("v")) {
+          throw new Error("overset semantics are missing");
+        }
+        if (diagnostics.mathErrorCount !== 0 || document.querySelector("mjx-merror")) {
+          throw new Error("supported primitives produced a MathJax error");
+        }
+        if (diagnostics.unresolvedCommands.length ||
+            document.querySelector("[data-unresolved-tex]")) {
+          throw new Error("supported primitives were reported as unresolved");
+        }
+        """,
+        virtual_time_budget=12000,
+        wait_for_load=False,
+    )
+
+
 def test_structured_inspector_reuses_entity_description_when_summary_is_omitted() -> None:
     payload = _payload()
     payload["entities"][0]["description"] = "Canonical statement appears once."
