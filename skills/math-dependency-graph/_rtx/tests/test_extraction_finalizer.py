@@ -267,6 +267,72 @@ def test_finalizer_extracts_from_each_renderer_math_delimiter(tmp_path: Path) ->
     }
 
 
+def test_finalizer_uses_renderer_fields_but_ignores_delimited_audit_metadata(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "renderer-field-project"
+    entrypoint = _write_tex(
+        project,
+        r"\newcommand{\VisibleTitle}{T}"
+        r"\newcommand{\VisibleDetail}{D}"
+        r"\newcommand{\VisibleRole}{C}"
+        r"\newcommand{\RootAuditOnly}{R}"
+        r"\newcommand{\EntityAuditOnly}{E}",
+    )
+    draft = _write_draft(project / "draft.json", r"$\VisibleTitle$")
+    payload = json.loads(draft.read_text(encoding="utf-8"))
+    payload["metadata"] = {"audit_note": r"$\RootAuditOnly$"}
+    payload["entities"][0]["metadata"] = {"audit_note": r"$\EntityAuditOnly$"}
+    payload["entities"][0]["category"] = "visible-role"
+    payload["entities"][0]["details"] = {"summary": r"$\VisibleDetail$"}
+    payload["categories"] = [{"id": "visible-role", "label": r"$\VisibleRole$"}]
+    draft.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    canonical = project / "canonical.json"
+
+    finalize_extraction(
+        draft_path=draft,
+        tex_entrypoint=entrypoint,
+        output_path=canonical,
+        label_map_path=None,
+    )
+
+    assert _mathjax_macros(json.loads(canonical.read_text(encoding="utf-8"))) == {
+        "VisibleTitle": "T",
+        "VisibleDetail": "D",
+        "VisibleRole": "C",
+    }
+
+
+def test_finalizer_ignores_escaped_and_currency_dollars(tmp_path: Path) -> None:
+    project = tmp_path / "literal-dollar-project"
+    entrypoint = _write_tex(
+        project,
+        r"\newcommand{\EscapedDollar}{E}"
+        r"\newcommand{\CurrencyDollar}{C}"
+        r"\newcommand{\ActualMath}{M}",
+    )
+    draft = _write_draft(
+        project / "draft.json",
+        (
+            r"Escaped prices \$5 and \EscapedDollar at \$6; "
+            r"literal prices $5 and \CurrencyDollar at $10; "
+            r"actual math $\ActualMath$."
+        ),
+    )
+    canonical = project / "canonical.json"
+
+    finalize_extraction(
+        draft_path=draft,
+        tex_entrypoint=entrypoint,
+        output_path=canonical,
+        label_map_path=None,
+    )
+
+    assert _mathjax_macros(json.loads(canonical.read_text(encoding="utf-8"))) == {
+        "ActualMath": "M",
+    }
+
+
 def test_finalizer_rejects_cyclic_relevant_definitions(tmp_path: Path) -> None:
     project = tmp_path / "cycle-project"
     entrypoint = _write_tex(
@@ -557,6 +623,33 @@ def test_finalizer_serialization_failure_preserves_output_and_cleans_temp(
     monkeypatch.setattr(_extraction_finalizer.json, "dump", fail_serialization)
 
     with pytest.raises(OSError, match="synthetic serialization failure"):
+        finalize_extraction(
+            draft_path=draft,
+            tex_entrypoint=entrypoint,
+            output_path=canonical,
+            label_map_path=None,
+        )
+
+    assert canonical.read_text(encoding="utf-8") == "preserved canonical bytes\n"
+    assert not list(project.glob(".canonical.json.*.tmp"))
+
+
+def test_finalizer_replace_failure_preserves_output_and_cleans_temp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "replace-project"
+    entrypoint = _write_tex(project, "Fixture without custom commands.")
+    draft = _write_draft(project / "draft.json", "No rendered mathematics.")
+    canonical = project / "canonical.json"
+    canonical.write_text("preserved canonical bytes\n", encoding="utf-8")
+
+    def fail_replace(source: object, destination: object) -> None:
+        raise OSError(f"synthetic replace failure: {source} -> {destination}")
+
+    monkeypatch.setattr(_extraction_finalizer.os, "replace", fail_replace)
+
+    with pytest.raises(OSError, match="synthetic replace failure"):
         finalize_extraction(
             draft_path=draft,
             tex_entrypoint=entrypoint,

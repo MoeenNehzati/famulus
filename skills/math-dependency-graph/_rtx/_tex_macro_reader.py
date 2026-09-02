@@ -50,7 +50,7 @@ class MacroDefinition:
 
     Intent
     ------
-    Carry the renderable value together with directive and exact source location.
+    Carry a renderable value or declaration error with exact source provenance.
 
     Rationale
     ---------
@@ -58,7 +58,7 @@ class MacroDefinition:
 
     Pseudocode
     ----------
-    - set macro_definition = name, value, directive, ownership, and location
+    - set macro_definition = name, value or error, directive, ownership, and location
     - return macro_definition
 
     Wraps
@@ -74,6 +74,7 @@ class MacroDefinition:
     directive: str
     project_owned: bool
     native_identity: bool = False
+    declaration_error: str | None = None
 
     @property
     def location(self) -> str:
@@ -962,7 +963,7 @@ def _definition_records_from_chunk(
 
     Intent
     ------
-    Recognize representable declarations and supported aliases in source order.
+    Recognize representable declarations, malformed named declarations, and aliases.
 
     Rationale
     ---------
@@ -996,13 +997,14 @@ def _definition_records_from_chunk(
     ----------
     - active_fonts = collect_symbol_fonts(chunk text)
     - for command_token in chunk text:
-      - parsed_definition = parse_newcommand_at(command_token)
-      - parsed_definition = parse_declared_operator_at(command_token)
-      - parsed_definition = parse_declared_math_symbol_at(command_token and active_fonts)
-      - parsed_definition = parse_def_at(command_token)
+      - set parsed_definition = recognized parser result using active_fonts
       - source_position = _line_column(chunk, command_token)
-      - macro_record = MacroDefinition(parsed_definition and source_position)
-      - set definition_records = definition_records with macro_record
+      - if parsed_definition exists:
+        - macro_record = MacroDefinition(parsed_definition, source_position)
+        - set definition_records = definition_records with macro_record
+      - if command_token names a malformed declaration:
+        - malformed_record = MacroDefinition(command_token, source_position)
+        - set definition_records = definition_records with malformed_record
     - return definition_records
 
     Wraps
@@ -1052,6 +1054,31 @@ def _definition_records_from_chunk(
             )
             idx = next_idx
             continue
+
+        if newcommand:
+            name_match = re.match(
+                r"\s*(?:\{\s*)?\\([A-Za-z@]+)",
+                chunk.text[newcommand.end() :],
+            )
+            if name_match:
+                line, column = _line_column(chunk, idx)
+                records.append(
+                    MacroDefinition(
+                        name=name_match.group(1),
+                        value="",
+                        source_path=chunk.source_path,
+                        line=line,
+                        column=column,
+                        directive=directive,
+                        project_owned=chunk.project_owned,
+                        declaration_error=(
+                            "a malformed declaration; expected an optional numeric arity "
+                            "from 0 through 9 followed by a balanced replacement body"
+                        ),
+                    )
+                )
+                idx = newcommand.end() + name_match.end()
+                continue
 
         alias = LET_RE.match(chunk.text, idx)
         if alias:
@@ -1420,6 +1447,11 @@ def _extract_renderable_macro_definitions(
         definition = definitions.get(name)
         if definition is None or definition.native_identity:
             return
+        if definition.declaration_error is not None:
+            raise ValueError(
+                f"Relevant macro \\{name} has {definition.declaration_error} "
+                f"at {definition.location}."
+            )
         if (
             isinstance(definition.value, list)
             and len(definition.value) in {2, 3}

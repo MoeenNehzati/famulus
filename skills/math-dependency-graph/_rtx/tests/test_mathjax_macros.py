@@ -420,6 +420,27 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
 
             self.assertIn(f"{entrypoint}:1:1", str(caught.exception))
 
+    def test_reachable_malformed_project_arity_is_source_located(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            entrypoint = Path(tmp) / "main.tex"
+            entrypoint.write_text(
+                r"\newcommand{\RootMacro}{\MalformedLeaf}" "\n"
+                r"\newcommand{\MalformedLeaf}[x]{body}",
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ValueError) as caught:
+                extract_renderable_macros(
+                    tex_entrypoint=entrypoint,
+                    graph_text=[r"$\RootMacro$"],
+                )
+
+            message = str(caught.exception)
+            self.assertIn("MalformedLeaf", message)
+            self.assertIn("malformed", message.lower())
+            self.assertIn("arity", message.lower())
+            self.assertIn(f"{entrypoint}:2:1", message)
+
     def test_extractor_does_not_reverse_tex_let_assignment(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp)

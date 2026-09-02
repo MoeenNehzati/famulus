@@ -39,7 +39,26 @@ _GRAPH_SCHEMA = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
 _GRAPH_VALIDATOR = jsonschema.Draft7Validator(_GRAPH_SCHEMA)
 
 LABEL_REFERENCE_RE = re.compile(r"\\(ref|eqref|cref|Cref|autoref)\{([^{}]+)\}")
-_NON_RENDERED_PATH_KEYS = {"source_entrypoint", "source_file"}
+_ENTITY_RENDERED_TEXT_FIELDS = (
+    "short_title",
+    "label",
+    "type",
+    "kind",
+    "ref",
+    "title",
+    "active_in",
+    "source",
+    "defined",
+    "description",
+)
+_EDGE_RENDERED_TEXT_FIELDS = (
+    "type",
+    "label",
+    "edge_label",
+    "description",
+    "evidence",
+    "confidence",
+)
 
 
 def apply_label_numbering(
@@ -250,6 +269,72 @@ def apply_presentation_base(doc: dict) -> dict:
     return result
 
 
+def _delimiter_is_escaped(text: str, index: int) -> bool:
+    """Return whether a candidate delimiter follows an odd backslash run.
+
+    Intent
+    ------
+    Distinguish TeX delimiters from escaped literal delimiter spellings.
+
+    Rationale
+    ---------
+    MathJax does not open or close math at an escaped delimiter.
+
+    Pseudocode
+    ----------
+    - set backslash_count = consecutive backslashes preceding index
+    - return whether backslash_count is odd
+
+    Wraps
+    -----
+    - none
+    """
+    cursor = index - 1
+    while cursor >= 0 and text[cursor] == "\\":
+        cursor -= 1
+    return (index - cursor - 1) % 2 == 1
+
+
+def _find_unescaped_delimiter(text: str, delimiter: str, start: int) -> int:
+    """Return the next unescaped standalone occurrence of one delimiter.
+
+    Intent
+    ------
+    Locate delimiter tokens while keeping display dollars distinct from inline dollars.
+
+    Rationale
+    ---------
+    Escaped tokens are literal text and each half of ``$$`` is not an inline marker.
+
+    CallsFromRepo
+    -------------
+      ._delimiter_is_escaped:
+        why:
+          reads: "Classifies candidate tokens preceded by backslash runs."
+
+    Pseudocode
+    ----------
+    - while delimiter remains in text:
+      - if delimiter is unescaped and standalone:
+        - return delimiter position
+    - return missing position
+
+    Wraps
+    -----
+    - none
+    """
+    cursor = start
+    while (index := text.find(delimiter, cursor)) >= 0:
+        inline_dollar_in_display = delimiter == "$" and (
+            (index > 0 and text[index - 1] == "$")
+            or (index + 1 < len(text) and text[index + 1] == "$")
+        )
+        if not _delimiter_is_escaped(text, index) and not inline_dollar_in_display:
+            return index
+        cursor = index + len(delimiter)
+    return -1
+
+
 def _math_segments(text: str) -> Iterable[str]:
     """Yield balanced TeX segments recognized by the renderer lifecycle.
 
@@ -261,9 +346,24 @@ def _math_segments(text: str) -> Iterable[str]:
     ---------
     Macro roots must come from strings that MathJax will actually typeset.
 
+    InstantiationsFromRepo
+    ----------------------
+      ._find_unescaped_delimiter:
+        why:
+          constructs: "Locates renderer delimiters without treating escaped literals as math."
+
     Pseudocode
     ----------
-    - set math_segments = balanced renderer-delimited contents in text
+    - while a renderer delimiter may remain:
+      - opening_position = _find_unescaped_delimiter(text, opening, cursor)
+      - if opening_position is missing:
+        - return
+      - closing_position = _find_unescaped_delimiter(text, closing, opening_position)
+      - if closing_position is missing:
+        - set cursor = position after opening_position
+      - if an inline-dollar pair violates text boundaries:
+        - set cursor = position after opening_position
+      - set math_segments = math_segments with text between the delimiter positions
     - return math_segments
 
     Wraps
@@ -276,17 +376,171 @@ def _math_segments(text: str) -> Iterable[str]:
         candidates = [
             (start, -len(opening), opening, closing)
             for opening, closing in delimiters
-            if (start := text.find(opening, cursor)) >= 0
+            if (start := _find_unescaped_delimiter(text, opening, cursor)) >= 0
         ]
         if not candidates:
             return
         start, _, opening, closing = min(candidates)
-        end = text.find(closing, start + len(opening))
+        if opening == "$" and (
+            start + 1 >= len(text) or text[start + 1].isspace()
+        ):
+            cursor = start + 1
+            continue
+        end = _find_unescaped_delimiter(text, closing, start + len(opening))
         if end < 0:
             cursor = start + len(opening)
             continue
+        if opening == "$" and (
+            text[end - 1].isspace()
+            or (end + 1 < len(text) and text[end + 1].isdigit())
+        ):
+            cursor = start + 1
+            continue
         yield text[start + len(opening) : end]
         cursor = end + len(closing)
+
+
+def _detail_renderer_strings(details: object) -> Iterable[str]:
+    """Yield schema-native inspector text that the renderer places in the DOM.
+
+    Intent
+    ------
+    Select summary, section, field-label, and field-value strings from details.
+
+    Rationale
+    ---------
+    Inspector details are MathJax-processed, while arbitrary metadata is audit-only.
+
+    Pseudocode
+    ----------
+    - if details is not an object:
+      - return
+    - set renderer_strings = summary and section strings rendered by the inspector
+    - return renderer_strings
+
+    Wraps
+    -----
+    - none
+    """
+    if not isinstance(details, dict):
+        return
+    summary = details.get("summary")
+    if isinstance(summary, str):
+        yield summary
+    sections = details.get("sections", [])
+    if not isinstance(sections, list):
+        return
+    for section in sections:
+        if not isinstance(section, dict):
+            continue
+        title = section.get("title")
+        if isinstance(title, str):
+            yield title
+        fields = section.get("fields", [])
+        if not isinstance(fields, list):
+            continue
+        for field in fields:
+            if not isinstance(field, dict):
+                continue
+            label = field.get("label")
+            if isinstance(label, str):
+                yield label
+            value = field.get("value")
+            if isinstance(value, str):
+                yield value
+            elif isinstance(value, list):
+                yield from (item for item in value if isinstance(item, str))
+
+
+def _renderer_visible_strings(payload: dict) -> Iterable[str]:
+    """Yield only schema fields placed in MathJax-processed graph surfaces.
+
+    Intent
+    ------
+    Follow node cells, node/edge tooltips, and inspectors used by ElkHtmlRenderer.
+
+    Rationale
+    ---------
+    Audit metadata and serialized configuration are never MathJax macro roots.
+
+    CallsFromRepo
+    -------------
+      ._detail_renderer_strings:
+        why:
+          reads: "Selects schema-native inspector strings without traversing metadata."
+
+    Pseudocode
+    ----------
+    - for rendered_entity in entities and presentation_nodes:
+      - set renderer_strings = explicit node and inspector fields
+    - set renderer_strings = used category labels shown by nodes and inspectors
+    - for rendered_edge in entity connections:
+      - set renderer_strings = explicit tooltip and inspector fields
+    - return renderer_strings
+
+    Wraps
+    -----
+    - none
+    """
+    entities = payload.get("entities", [])
+    presentation_nodes = payload.get("presentation_nodes", [])
+    for item in [
+        *(entities if isinstance(entities, list) else []),
+        *(presentation_nodes if isinstance(presentation_nodes, list) else []),
+    ]:
+        if not isinstance(item, dict):
+            continue
+        for field in _ENTITY_RENDERED_TEXT_FIELDS:
+            value = item.get(field)
+            if isinstance(value, str):
+                yield value
+        yield from _detail_renderer_strings(item.get("details"))
+
+    categories = payload.get("categories", [])
+    if isinstance(categories, list) and isinstance(entities, list):
+        category_by_id = {
+            str(category.get("id")): category
+            for category in categories
+            if isinstance(category, dict) and category.get("id") is not None
+        }
+        rendered_category_ids = list(
+            dict.fromkeys(
+                str(entity.get("category"))
+                for entity in entities
+                if isinstance(entity, dict) and entity.get("category") is not None
+            )
+        )
+        seen_category_ids = set(rendered_category_ids)
+        cursor = 0
+        while cursor < len(rendered_category_ids):
+            category = category_by_id.get(rendered_category_ids[cursor])
+            cursor += 1
+            parent = category.get("parent") if category is not None else None
+            if parent is not None and str(parent) not in seen_category_ids:
+                seen_category_ids.add(str(parent))
+                rendered_category_ids.append(str(parent))
+        for category_id in rendered_category_ids:
+            category = category_by_id.get(category_id)
+            label = category.get("label") if category is not None else None
+            if isinstance(label, str):
+                yield label
+
+    if not isinstance(entities, list):
+        return
+    for entity in entities:
+        if not isinstance(entity, dict):
+            continue
+        connections = entity.get("connects_to", [])
+        if not isinstance(connections, list):
+            continue
+        for edge in connections:
+            if not isinstance(edge, dict):
+                continue
+            for field in _EDGE_RENDERED_TEXT_FIELDS:
+                value = edge.get(field)
+                if isinstance(value, str):
+                    yield value
+            yield from _detail_renderer_strings(edge.get("details"))
 
 
 def _graph_visible_math_segments(payload: dict) -> Iterable[str]:
@@ -294,66 +548,33 @@ def _graph_visible_math_segments(payload: dict) -> Iterable[str]:
 
     Intent
     ------
-    Expose only balanced configured math delimiters outside dependency metadata.
+    Extract balanced math only from schema fields used on MathJax-processed surfaces.
 
     Rationale
     ---------
-    Macro reachability should follow displayed content, not configuration strings.
+    Macro reachability should follow displayed graph content, not audit metadata.
 
     CallsFromRepo
     -------------
       ._math_segments:
         why:
           transforms: "Extracts balanced renderer-delimited content from eligible strings."
+      ._renderer_visible_strings:
+        why:
+          reads: "Selects the exact graph fields consumed by renderer math surfaces."
 
     Pseudocode
     ----------
-    - set visible_strings = recursively selected render-visible payload strings
-    - return visible_strings
+    - for renderer_string in graph-visible renderer strings from payload:
+      - set math_segments = balanced math from renderer_string
+    - return math_segments
 
     Wraps
     -----
     - none
     """
-
-    def walk(node: object) -> Iterable[str]:
-        """Walk one payload subtree and yield eligible strings.
-
-        Intent
-        ------
-        Preserve recursive traversal across graph lists and objects.
-
-        Rationale
-        ---------
-        Renderable strings can be nested below multiple schema containers.
-
-        CallsFromRepo
-        -------------
-          ._math_segments:
-            why:
-              transforms: "Extracts balanced renderer-delimited content from leaf strings."
-
-        Pseudocode
-        ----------
-        - set descendant_strings = eligible strings beneath node
-        - return descendant_strings
-
-        Wraps
-        -----
-        - none
-        """
-        if isinstance(node, str):
-            yield from _math_segments(node)
-        elif isinstance(node, list):
-            for item in node:
-                yield from walk(item)
-        elif isinstance(node, dict):
-            for key, value in node.items():
-                if key == "renderer_dependencies" or key in _NON_RENDERED_PATH_KEYS:
-                    continue
-                yield from walk(value)
-
-    yield from walk(payload)
+    for value in _renderer_visible_strings(payload):
+        yield from _math_segments(value)
 
 
 def _normalize_macro_value(value: object, *, context: str) -> MacroValue:
