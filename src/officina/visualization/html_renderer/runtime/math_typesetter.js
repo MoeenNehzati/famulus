@@ -48,7 +48,11 @@
 
     window.officinaMathDiagnostics = async function () {
       if (window.MathJax?.startup?.promise) await window.MathJax.startup.promise;
-      await mathTypesetQueue;
+      let observedTail;
+      do {
+        observedTail = mathTypesetQueue;
+        await observedTail;
+      } while (observedTail !== mathTypesetQueue);
       return {
         unresolvedCommands: Object.keys(window.__unresolvedTeX || {}).sort(),
         mathErrorCount: document.querySelectorAll(

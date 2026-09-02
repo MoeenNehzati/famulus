@@ -185,6 +185,98 @@ def test_mathjax_typesets_dynamic_tooltip_and_inspector_content() -> None:
     )
 
 
+def test_mathjax_diagnostics_waits_for_a_stable_dynamic_typeset_tail() -> None:
+    payload = _payload()
+    payload["renderer_dependencies"] = [{"id": "mathjax", "version": "3"}]
+    payload["entities"][0]["description"] = r"First dynamic value: $x$."
+    payload["entities"][0]["connects_to"][0]["description"] = (
+        r"Second dynamic value: $y$."
+    )
+
+    _run_browser_case(
+        "mathjax-stable-typeset-tail",
+        payload,
+        """
+        if (!window.MathJax?.startup?.promise) throw new Error("MathJax did not start");
+        await window.MathJax.startup.promise;
+        let alpha = null;
+        let edgePath = null;
+        for (let attempt = 0; attempt < 50 && (!alpha || !edgePath); attempt += 1) {
+          alpha = nodeElement("alpha");
+          edgePath = document.querySelector(".edge-path");
+          if (!alpha || !edgePath) await delay(20);
+        }
+        if (!alpha || !edgePath) throw new Error("graph elements did not render");
+        await window.officinaMathDiagnostics();
+
+        const originalTypesetPromise = window.MathJax.typesetPromise;
+        let controlledCallCount = 0;
+        let releaseFirst;
+        let releaseSecond;
+        let markFirstStarted;
+        let markSecondStarted;
+        const firstGate = new Promise(resolve => { releaseFirst = resolve; });
+        const secondGate = new Promise(resolve => { releaseSecond = resolve; });
+        const firstStarted = new Promise(resolve => { markFirstStarted = resolve; });
+        const secondStarted = new Promise(resolve => { markSecondStarted = resolve; });
+
+        window.MathJax.typesetPromise = elements => {
+          controlledCallCount += 1;
+          if (controlledCallCount === 1) {
+            markFirstStarted();
+            return firstGate;
+          }
+          if (controlledCallCount === 2) {
+            markSecondStarted();
+            return secondGate.then(() => {
+              window.__unresolvedTeX = window.__unresolvedTeX || {};
+              window.__unresolvedTeX.MissingTail = true;
+            });
+          }
+          return originalTypesetPromise.call(window.MathJax, elements);
+        };
+
+        try {
+          alpha.dispatchEvent(new MouseEvent("mouseenter", {
+            bubbles: true,
+            clientX: 200,
+            clientY: 200,
+          }));
+          await firstStarted;
+
+          let diagnosticsSettled = false;
+          const diagnosticsPromise = window.officinaMathDiagnostics().then(value => {
+            diagnosticsSettled = true;
+            return value;
+          });
+          await Promise.resolve();
+
+          edgePath.dispatchEvent(new MouseEvent("click", {bubbles: true}));
+          releaseFirst();
+          await secondStarted;
+          if (diagnosticsSettled) {
+            throw new Error("diagnostics returned before the appended typeset tail");
+          }
+
+          releaseSecond();
+          const diagnostics = await diagnosticsPromise;
+          if (diagnostics.unresolvedCommands.join(",") !== "MissingTail") {
+            throw new Error(
+              "diagnostics missed the appended typeset result: " +
+              diagnostics.unresolvedCommands.join(",")
+            );
+          }
+        } finally {
+          releaseFirst();
+          releaseSecond();
+          window.MathJax.typesetPromise = originalTypesetPromise;
+        }
+        """,
+        virtual_time_budget=12000,
+        wait_for_load=False,
+    )
+
+
 def test_mathjax_normalizes_both_macro_tuple_orders_to_semantic_mathml() -> None:
     payload = _payload()
     payload["renderer_dependencies"] = [

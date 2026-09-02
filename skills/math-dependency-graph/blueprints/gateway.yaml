@@ -2,20 +2,32 @@ content:
 - SKILL\.md
 dependencies: []
 description: Defines the LLM workflow for extracting a notation-faithful direct mathematical
-  dependency graph and producing its canonical artifacts.
+  dependency graph, finalizing self-contained canonical JSON, and optionally rendering
+  it.
 gateway:
   language: Markdown
   path: SKILL.md
 id: math-dependency-graph.source.gateway
 interfaces:
   math-dependency-graph.source.gateway.interface.default:
-    uses_interfaces: []
+    uses_interfaces:
+    - interface: math-dependency-graph.interface.extract
+      version: 2
+    - interface: math-dependency-graph._rtx.interface.scripts-finalize-extraction
+      version: 1
+    - interface: math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph
+      version: 2
+    - interface: math-dependency-graph._rtx.interface.scripts-read-tex-labels
+      version: 1
+    - interface: math-dependency-graph._rtx.interface.scripts-serve-graph
+      version: 1
     content:
     - SKILL\.md
     contract:
       arguments:
         request:
-          description: User request and source document for extracting or rendering
+          description: User request, included mathematical content, distinct root TeX
+            entrypoint, and artifact destinations for extracting or optionally rendering
             a mathematical dependency graph.
           required: true
           sensitivity: user-private
@@ -43,8 +55,9 @@ interfaces:
           sensitivity: derived-private
       execution:
         consistency:
-          snapshot: The result is derived from the source content supplied for this
-            run.
+          snapshot: Semantic results use the included source snapshot; deterministic
+            finalization uses the explicitly identified root TeX tree and optional
+            label map from the same run.
         lifecycle: finite
         state_effect: read-only
         verification:
@@ -54,14 +67,15 @@ interfaces:
       interaction:
         mode: unattended
       outcomes:
-      - caller_action: Review the graph artifacts and unresolved evidence gaps.
+      - caller_action: Review the self-contained canonical graph, optional presentation,
+          and unresolved evidence gaps.
         class: success
         effects: []
         id: completed
         outputs:
         - response
-      - caller_action: Correct the source document or canonical graph input before
-          retrying.
+      - caller_action: Correct the included content, root TeX entrypoint, or canonical
+          graph input before retrying.
         class: error
         effects: []
         id: invalid-source
@@ -71,8 +85,9 @@ interfaces:
         cardinality:
           maximum: 1
           minimum: 1
-        description: Graph-analysis result and artifact locations or requested review
-          findings.
+        description: Graph-analysis result, semantic and canonical artifact locations,
+          optional render location, and diagnostics status only when browser validation
+          occurred.
         direct_io_ref: write-1
         empty: Never empty on success.
         id: response
@@ -85,20 +100,20 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Primary LLM-facing skill instructions.
-    version: 2
+    description: Primary LLM-facing extraction, finalization, and optional-render workflow.
+    version: 3
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
 - interface: math-dependency-graph.interface.extract
+  version: 2
+- interface: math-dependency-graph._rtx.interface.scripts-finalize-extraction
   version: 1
 - interface: math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph
-  version: 1
-- interface: math-dependency-graph._rtx.interface.scripts-extract-mathjax-macros
-  version: 1
+  version: 2
 - interface: math-dependency-graph._rtx.interface.scripts-read-tex-labels
   version: 1
 - interface: math-dependency-graph._rtx.interface.scripts-serve-graph
   version: 1
-version: 2
+version: 3
 maturity: stable

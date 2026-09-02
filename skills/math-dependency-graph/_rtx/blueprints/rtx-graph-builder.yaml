@@ -7,14 +7,8 @@ dependencies:
   reason: Loads Python package support from _rtx/__init__.py.
   source: math-dependency-graph._rtx.source.rtx-init
   version: 1
-- blueprint:
-    base: module-root
-    path: blueprints/rtx-tex-macro-reader.yaml
-  reason: Imports Python source from _rtx/_tex_macro_reader.py.
-  source: math-dependency-graph._rtx.source.rtx-tex-macro-reader
-  version: 1
-description: Validates canonical graph JSON and writes an interactive HTML dependency
-  graph that loads ELK and MathJax from jsDelivr when opened.
+description: Validates self-contained canonical graph JSON and writes an offline interactive
+  HTML dependency graph without reading TeX or sidecar files.
 gateway:
   language: Python
   path: _graph_builder.py
@@ -27,7 +21,8 @@ interfaces:
     contract:
       arguments:
         html-out:
-          description: Optional standalone HTML destination.
+          description: Optional exact standalone HTML destination; any filename suffix
+            is preserved.
           direct_io_ref: write-1
           required: false
           sensitivity: user-private
@@ -40,39 +35,16 @@ interfaces:
             must_exist: false
             relative_to: caller-cwd
             syntax: literal
-        macro-file:
-          description: Optional existing MathJax macro JSON to merge.
-          direct_io_ref: read-3
-          required: false
-          sensitivity: user-private
-          type:
-            access: read
-            content_type:
-              format:
-                named: json
-              kind: string
-              sensitivity: user-private
-            kind: file
-            must_exist: true
-            relative_to: caller-cwd
-            syntax: literal
         reduce-transitive-edges:
           default: false
           description: Remove graph-theoretically redundant edges from the rendered
-            view.
-          required: false
-          sensitivity: public
-          type:
-            kind: flag
-        refresh-macros:
-          default: false
-          description: Regenerate the default macro file from the TeX entrypoint.
+            view without changing the canonical JSON.
           required: false
           sensitivity: public
           type:
             kind: flag
         source:
-          description: Canonical dependency-graph JSON file.
+          description: Self-contained canonical dependency-graph JSON file.
           direct_io_ref: read-1
           required: true
           sensitivity: user-private
@@ -87,50 +59,13 @@ interfaces:
             must_exist: true
             relative_to: caller-cwd
             syntax: literal
-        tex-entry:
-          description: Optional TeX entrypoint used to extract MathJax macros.
-          direct_io_ref: read-2
-          required: false
-          sensitivity: user-private
-          type:
-            access: read
-            content_type:
-              kind: string
-              sensitivity: user-private
-            kind: file
-            must_exist: true
-            relative_to: caller-cwd
-            syntax: literal
       caller_warnings:
-      - external-side-effect: Writes standalone HTML and may refresh a MathJax macro
-          JSON file.
-      - may-wait: Opening the generated HTML downloads ELK and MathJax from cdn.jsdelivr.net
-          before browser layout and typesetting are fully available.
+      - external-side-effect: Writes standalone HTML at the requested or default destination.
       direct_io:
-        network:
-        - access: download
-          content: ELK browser library
-          endpoint: https://cdn.jsdelivr.net/npm/elkjs/lib/elk.bundled.js
-          formats:
-          - javascript
-          id: network-1
-          medium: network-request
-          reason: The generated HTML requests this script when opened.
-          sensitivity: public
-          system: jsdelivr-cdn
-        - access: download
-          content: MathJax browser library
-          endpoint: https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js
-          formats:
-          - javascript
-          id: network-2
-          medium: network-request
-          reason: The generated HTML requests this script when opened.
-          sensitivity: public
-          system: jsdelivr-cdn
+        network: []
         reads:
         - access: read
-          content: canonical dependency graph
+          content: self-contained canonical dependency graph
           formats:
           - json
           id: read-1
@@ -139,29 +74,9 @@ interfaces:
           path_match: exact
           sensitivity: user-private
           system: filesystem
-        - access: read
-          content: reachable TeX source tree
-          formats:
-          - tex
-          id: read-2
-          medium: local-filesystem
-          path: <entrypoint.tex> and reachable input or include files
-          path_match: glob
-          sensitivity: user-private
-          system: filesystem
-        - access: read
-          content: MathJax macro definitions
-          formats:
-          - json
-          id: read-3
-          medium: local-filesystem
-          path: <macro-file>
-          path_match: exact
-          sensitivity: user-private
-          system: filesystem
         writes:
         - access: write
-          content: standalone interactive dependency graph
+          content: offline standalone interactive dependency graph
           formats:
           - html
           id: write-1
@@ -171,26 +86,16 @@ interfaces:
           sensitivity: derived-private
           system: filesystem
         - access: write
-          content: refreshed MathJax macro definitions
-          formats:
-          - json
-          id: write-2
-          medium: local-filesystem
-          path: <tex-dir>/_build/<entry>-mathjax-macros.json
-          path_match: exact
-          sensitivity: derived-private
-          system: filesystem
-        - access: write
           content: render report
           formats:
           - json
-          id: write-3
+          id: write-2
           medium: stdout
           sensitivity: derived-private
       execution:
         consistency:
-          snapshot: Rendering uses the JSON and macro and TeX content read during
-            this invocation.
+          snapshot: Rendering uses only the canonical JSON content read during this
+            invocation.
         effects:
         - action: update
           confirmation_evidence:
@@ -201,26 +106,29 @@ interfaces:
           may_occur_in_outcomes:
           - rendered
           reversibility:
-            reversible: The generated HTML can be deleted or regenerated from source.
+            reversible: The generated HTML can be deleted or regenerated from canonical
+              JSON.
           value_source:
             argument_ref: source
             kind: argument
         lifecycle: finite
         mutation_safety:
           atomicity:
-            per_effect_only: HTML and optional macro JSON are written as separate
-              files.
+            atomic: The artifact writer renders inside a sibling temporary directory,
+              then atomically replaces the exact HTML destination.
           concurrent_invocations:
-            unsafe: Concurrent renders to the same paths are not serialized.
+            unsafe: Concurrent renders to the same path are not serialized and the
+              last atomic replacement wins.
           idempotency:
-            idempotent: Unchanged inputs and options produce equivalent artifacts.
+            idempotent: Unchanged canonical JSON and options produce equivalent HTML.
           on_uncertain_completion:
-            verify_then_decide: Inspect the reported HTML and macro paths before retrying.
+            verify_then_decide: Inspect the reported HTML path before retrying.
           partial_effects_on_failure:
-            possible: A refreshed macro file may remain when later HTML rendering
-              fails.
+            impossible: A rendering or serialization failure preserves the prior HTML
+              destination.
           rollback_on_failure:
-            unavailable: Prior artifacts are not retained automatically.
+            automatic: The temporary render is removed and the prior destination remains
+              visible when publication fails.
         state_effect: mutating
         verification:
         - method: output-schema
@@ -229,19 +137,21 @@ interfaces:
       interaction:
         mode: unattended
       outcomes:
-      - caller_action: Open the reported HTML path for inspection.
+      - caller_action: Open the reported HTML path for inspection and optionally run
+          browser diagnostics.
         class: success
         effects:
         - html-file
         id: rendered
         outputs:
         - report
-      - caller_action: Correct the canonical graph or TeX and macro inputs.
+      - caller_action: Correct the self-contained canonical graph JSON.
         class: refusal
         effects: []
         id: invalid
         outputs: []
-      - caller_action: Report the file or rendering error and preserve existing artifacts.
+      - caller_action: Report the file or rendering error and inspect the destination
+          before retrying.
         class: error
         effects: []
         id: failed
@@ -251,8 +161,9 @@ interfaces:
         cardinality:
           maximum: 1
           minimum: 1
-        description: JSON report with HTML path and graph counts and macro details.
-        direct_io_ref: write-3
+        description: JSON report with canonical JSON path, HTML path, entity count,
+          and optional rendered-view reduction count.
+        direct_io_ref: write-2
         empty: Never empty.
         id: report
         ordering: stable
@@ -266,28 +177,22 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Render an interactive HTML math dependency graph from canonical JSON;
-      the saved document loads ELK and MathJax from jsDelivr when opened.
+    description: Render offline interactive HTML from self-contained canonical graph
+      JSON without reading or rewriting source material.
     process_binding:
       entry: Interface
       kind: process
       patterns:
       - allowed_flags:
         - --html-out
-        - --tex-entry
-        - --macro-file
-        - --refresh-macros
         - --reduce-transitive-edges
         flag_patterns:
           --html-out: ^.+$
-          --macro-file: ^.+$
-          --tex-entry: ^.+$
         max_positionals: 1
         min_positionals: 1
         name: owner
-    usage: <source.json> [--tex-entry <entrypoint.tex>] [--html-out <path>] [--macro-file
-      <path>] [--refresh-macros] [--reduce-transitive-edges]
-    version: 1
+    usage: <source.json> [--html-out <path>] [--reduce-transitive-edges]
+    version: 2
 node_type: behavioral_source
 platform_support:
   linux: true
@@ -296,5 +201,5 @@ platform_support:
 runtime_dependencies: []
 schema_version: 6
 uses_interfaces: []
-version: 1
+version: 2
 maturity: stable

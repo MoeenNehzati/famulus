@@ -10,16 +10,32 @@ from pathlib import Path
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 from .elk_html_renderer import ElkHtmlRenderer, build_html_with_elk
-from .html_renderer.dependencies import normalize_mathjax_macros
 
 _DEFAULT_RENDERER = ElkHtmlRenderer()
 
-def prepare_render_payload(doc: dict, *, profile: str | None = None) -> dict:
-    """Copy a payload without applying domain-specific presentation policy.
 
-    The profile argument remains accepted for CLI compatibility. Domain skills
-    now provide resolved catalogs in canonical JSON, keeping this renderer
-    generic across extractors and machines.
+def prepare_render_payload(doc: dict, *, profile: str | None = None) -> dict:
+    """Copy a payload without applying domain presentation policy.
+
+    Intent
+    ------
+    Prepare an isolated renderer payload while preserving canonical content.
+
+    Rationale
+    ---------
+    Domain skills resolve their own catalogs, so the shared renderer only needs a shallow
+    payload copy with independently copied entity mappings. The profile argument remains
+    accepted for CLI compatibility across extractors and machines.
+
+    Pseudocode
+    ----------
+    - set prepared = shallow copy of doc
+    - set entities = shallow copies of doc entities
+    - return prepared
+
+    Wraps
+    -----
+    - none
     """
     prepared = dict(doc)
     entities = [dict(entity) for entity in prepared.get("entities", [])]
@@ -28,38 +44,71 @@ def prepare_render_payload(doc: dict, *, profile: str | None = None) -> dict:
 
 
 def validate_document(doc: dict) -> None:
-    """Validate the canonical payload expected by the shared renderer."""
-    _DEFAULT_RENDERER.validate(doc)
-
-
-def merge_mathjax_macros(
-    doc: dict,
-    macro_file: Path | None,
-    *,
-    payload_source: str | Path = "<payload>",
-) -> int:
-    """Preprocess a deprecated macro sidecar into one self-contained payload.
+    """Validate the payload expected by the shared renderer.
 
     Intent
     ------
-    Merge a compatibility sidecar without silently overriding payload macros.
+    Apply the shared renderer schema checks to one canonical payload.
 
     Rationale
     ---------
-    Legacy and native tuple orders can be semantically equal, while genuinely
-    different definitions need both source identities in an actionable error.
+    A named boundary keeps CLI validation behavior reusable and independently testable.
 
     Pseudocode
     ----------
-    - if macro sidecar is absent:
-      - return zero
-    - set sidecar_macros = parsed sidecar macro mapping
-    - set payload_macros = embedded payload macro mapping
-    - for macro_name in shared macro names:
-      - if normalized definitions differ:
-        - raise source-labelled macro conflict
-    - set merged_macros = sidecar macros overlaid by payload macros
-    - return sidecar macro count
+    - set validation_result = default renderer validation of doc
+    - return validation_result
+
+    Wraps
+    -----
+    - none
+    """
+    _DEFAULT_RENDERER.validate(doc)
+
+
+def reduce_transitive_edges(doc: dict) -> tuple[dict, list[dict]]:
+    """Reduce transitive edges in the rendered view only.
+
+    Intent
+    ------
+    Return a reduced presentation copy and the redundant edges removed from it.
+
+    Rationale
+    ---------
+    Reduction is presentation policy and must never mutate the canonical graph payload.
+
+    Pseudocode
+    ----------
+    - return the default renderer transitive reduction result for doc
+
+    Wraps
+    -----
+    - none
+    """
+    return _DEFAULT_RENDERER.reduce_graph_json_transitive_edges(doc)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Render canonical dependency JSON to HTML.
+
+    Intent
+    ------
+    Validate an explicit canonical JSON source and render its standalone HTML view.
+
+    Rationale
+    ---------
+    The generic CLI provides shared rendering without access to extractor-specific source
+    files or sidecars.
+
+    Pseudocode
+    ----------
+    - set render_inputs = explicit source destination profile and reduction arguments
+    - set doc = prepared and validated canonical source JSON
+    - set rendered_view = optional transitive reduction of doc
+    - set html = standalone presentation from rendered_view
+    - set html_path = resolved presentation destination containing html
+    - set report = source and presentation paths
+    - return success
 
     Wraps
     -----
@@ -67,58 +116,27 @@ def merge_mathjax_macros(
 
     CallsFromRepo
     -------------
-    .html_renderer.dependencies.normalize_mathjax_macros:
+    .elk_html_renderer.build_html_with_elk:
       why:
-        transforms: "Normalizes definitions for payload-sidecar conflict detection."
+        serializes: "Builds the standalone presentation from the prepared canonical payload."
+    .validate_document:
+      why:
+        validates: "Checks the prepared payload before rendering it."
+
+    InstantiationsFromRepo
+    ----------------------
+    .prepare_render_payload:
+      why:
+        constructs: "Creates the isolated payload passed to validation and rendering."
+    .reduce_transitive_edges:
+      why:
+        constructs: "Creates an optional reduced presentation view and removal report."
     """
-    if macro_file is None:
-        return 0
-    if not macro_file.exists():
-        raise SystemExit(f"Macro file not found: {macro_file}")
-    file_macros = json.loads(macro_file.read_text(encoding="utf-8"))
-    if not isinstance(file_macros, dict):
-        raise SystemExit(f"Macro file must contain a JSON object: {macro_file}")
-    dependencies = doc.setdefault("renderer_dependencies", [])
-    mathjax = next((item for item in dependencies if item.get("id") == "mathjax"), None)
-    if mathjax is None:
-        mathjax = {"id": "mathjax", "version": "3", "configuration": {}}
-        dependencies.append(mathjax)
-    configuration = mathjax.setdefault("configuration", {})
-    json_macros = configuration.get("macros", {})
-    if not isinstance(json_macros, dict):
-        raise SystemExit("MathJax renderer dependency macros must be an object.")
-    for name in sorted(file_macros.keys() & json_macros.keys()):
-        normalized_file = normalize_mathjax_macros({name: file_macros[name]})[name]
-        normalized_json = normalize_mathjax_macros({name: json_macros[name]})[name]
-        if normalized_file != normalized_json:
-            raise SystemExit(
-                f"Conflicting MathJax macro {name!r}: payload {payload_source} and "
-                f"sidecar {macro_file} define different values."
-            )
-    configuration.update({"input": "tex", "output": "svg", "macros": {**file_macros, **json_macros}})
-    return len(file_macros)
-
-
-def reduce_transitive_edges(doc: dict) -> tuple[dict, list[dict]]:
-    """Apply graph-theoretic transitive reduction to the rendered view only."""
-    return _DEFAULT_RENDERER.reduce_graph_json_transitive_edges(doc)
-
-
-def main(argv: list[str] | None = None) -> int:
-    """CLI entry point for rendering canonical dependency JSON to HTML."""
     parser = argparse.ArgumentParser(
         description="Render an interactive dependency graph from canonical JSON."
     )
     parser.add_argument("source", help="Path to the canonical dependency-graph JSON file")
     parser.add_argument("--html-out", dest="html_out", help="Path to write the standalone HTML viewer")
-    parser.add_argument(
-        "--macro-file",
-        dest="macro_file",
-        help=(
-            "Deprecated compatibility option: merge a MathJax macro JSON file "
-            "into the self-contained payload before validation and rendering."
-        ),
-    )
     parser.add_argument(
         "--profile",
         choices=("math-dependency",),
@@ -140,14 +158,6 @@ def main(argv: list[str] | None = None) -> int:
         profile=args.profile,
     )
     validate_document(doc)
-    macro_path = Path(args.macro_file).resolve() if args.macro_file else None
-    macro_count = merge_mathjax_macros(
-        doc,
-        macro_path,
-        payload_source=source_path,
-    )
-    if macro_path is not None:
-        validate_document(doc)
     reduction_note = ""
     removed_edges: list[dict] = []
     if args.reduce_transitive_edges:
@@ -173,8 +183,6 @@ def main(argv: list[str] | None = None) -> int:
                 "entities": len(doc["entities"]),
                 "reduced": args.reduce_transitive_edges,
                 "removed_edges": len(removed_edges),
-                "macro_file": str(macro_path) if macro_path else None,
-                "macros_from_file": macro_count,
             },
             indent=2,
         )
@@ -183,11 +191,47 @@ def main(argv: list[str] | None = None) -> int:
 
 
 class Interface(PythonArgvMachineInterface):
-    """Runtime-compatible entrypoint object."""
+    """Expose generic canonical JSON rendering to the interface runner.
+
+    Intent
+    ------
+    Bind the machine interface to the generic renderer argv contract.
+
+    Rationale
+    ---------
+    The adapter keeps direct and registered execution on the same CLI implementation.
+
+    Pseudocode
+    ----------
+    - set prog = `graph_builder.py`
+    - return interface
+
+    Wraps
+    -----
+    - none
+    """
 
     prog = "graph_builder.py"
 
     def run(self, argv: list[str]) -> int:  # pragma: no cover - simple dispatch
+        """Delegate interface arguments to the generic renderer CLI.
+
+        Intent
+        ------
+        Preserve CLI argument interpretation and exit status.
+
+        Rationale
+        ---------
+        The registered boundary should not duplicate rendering logic.
+
+        Pseudocode
+        ----------
+        - return @.main(argv)
+
+        Wraps
+        -----
+        main -> preprocess: pass argv unchanged; postprocess: return status unchanged; fixed_arguments: none
+        """
         return main(argv)
 
 

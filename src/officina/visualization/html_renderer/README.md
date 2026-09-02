@@ -70,13 +70,9 @@ The renderer must not branch on adapter-specific names.
 
 Renderer inputs are self-contained JSON. The renderer API never reads TeX
 sources, macro sidecars, package installations, or network resources. The
-generic base CLI still accepts `--macro-file` only as a deprecated outer
-compatibility preprocessor while its legacy caller is migrated: it merges the
-JSON object into one payload, validates that complete payload, and only then
-enters the renderer. Overlapping definitions are compared after tuple
-normalization: equivalent legacy/native encodings are accepted, while differing
-definitions fail with both source paths. The renderer API has no sidecar
-parameter.
+generic base CLI also accepts only one self-contained JSON payload. MathJax
+macro arrays are normalized at the renderer dependency adapter boundary; the
+renderer API and CLI have no sidecar parameter.
 
 ## Architecture
 
