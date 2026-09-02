@@ -66,7 +66,7 @@ Use this skill to extract the direct mathematical dependency structure of a sour
 
 7. Confirm the render merged what it should. A macro count of zero on a document that uses custom commands means step 3 read the wrong entrypoint; unresolved TeX commands are reported in the viewer. Correct the input and render again.
 
-8. If interactive inspection is requested, invoke `math-dependency-graph._rtx.interface.scripts-serve-graph`.
+8. If interactive inspection is requested, invoke `math-dependency-graph._rtx.interface.scripts-serve-graph`, then terminate the returned PID when inspection is complete. If the MCP host owns the gateway with a kill-on-close process container, keep that gateway open during inspection; closing it asynchronously terminates the server instead.
 
 9. Report the JSON and HTML artifact paths, the number of macros merged, whether label numbering resolved and from which compiler, the scope represented, and unresolved extraction gaps.
 
