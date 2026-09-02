@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task by task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build and prove a dormant, platform-agnostic manager operation that can remove the complete current state represented by a valid selected-context setup ledger, then publish its exact zero-argument interface only after separately approved production activation evidence exists.
+**Goal:** Build and prove a platform-agnostic manager operation that can remove the complete current state represented by a valid selected-context setup ledger, then publish its exact zero-argument interface only after separately approved activation evidence exists.
 
 **Architecture:** The setup-interface manager owns receipt validation, deterministic dependents-before-prerequisites planning, coordination, settlement, and recovery. Each admitted setup owner remains solely responsible for its effects, exact teardown action, verifier, teardown equivalence, and repeat safety. Stage A exercises the internal manager directly with injected synthetic registered owners; structural absence of an interface class, registration, export, gateway route, and runtime dependency makes the dormant core unreachable through Dispatcher/MCP. Stage B alone publishes `setup-interface-manager._rtx.interface.teardown-all@1`.
 
@@ -16,8 +16,9 @@
 - **Stage A is executable now.** It adds only the dormant generic graph, state, planning, settlement, manager, and synthetic-fixture tests listed in the Stage A allowlist. It does not admit, select, or modify a production owner.
 - Stage A tests may use injected synthetic registered owners only. Those fixtures prove manager planning, ledger transitions, ordering, settlement, cancellation, and recovery; they do not prove any production owner's teardown equivalence, repeat safety, or need for a bulk route.
 - Stage A has one activation authority: structural unreachability. It must add no `TeardownAllInterface`, machine-interface declaration, source or namespace export, gateway use, runtime dependency, generated interface block, route documentation, or other capability flag. Coverage must positively assert those surfaces remain absent.
-- **Stage B is publication.** It activates only when an approved record identifies either (a) at least two independent production managed roots plus a release decision requiring one selected-context reset operation, or (b) a named bulk consumer whose requirements repeated ordinary root teardown cannot satisfy.
-- The activation record must inventory every current production managed owner, prove exact equality among production managed metadata, `PRODUCTION_BINDINGS`, and `PRODUCTION_ACTION_CALLS`, and supply fully expanded green commands for each owner's teardown-equivalence, repeat-safety, lifecycle-epoch, and recovery suite.
+- **Stage B is publication.** It activates only when an approved record identifies either (a) at least two independent production managed roots plus a release decision requiring one selected-context reset operation, (b) a named bulk consumer whose requirements repeated ordinary root teardown cannot satisfy, or (c) an explicit repository-owner decision that the generic selected-context `teardown-all` route must be user-accessible. Alternative (c) is independent of the current production-owner count.
+- The activation record must inventory every current production managed owner and prove exact equality among production managed metadata, `PRODUCTION_BINDINGS`, and `PRODUCTION_ACTION_CALLS`. It must supply fully expanded green teardown-equivalence, repeat-safety, lifecycle-epoch, and recovery commands for every owner that exists; an empty inventory requires exact `empty == empty == empty` equality and no owner suite. Publication with an empty inventory makes no owner-correctness claim, and every future owner remains subject to the full admission contract before admission.
+- **Approved activation record (2026-09-02):** the repository owner directed, exactly, `go ahead and complete this. teardown all should be accessible to users.` This satisfies alternative (c). At this checkpoint, production managed metadata, `PRODUCTION_BINDINGS`, and `PRODUCTION_ACTION_CALLS` are each empty; therefore their inventories are equal, there is no current owner suite to run, and this record proves authority to publish the generic route only—not teardown correctness for any present or future owner.
 - Until that record exists, Gate 0B cannot pass and Tasks 3 and 4B must not execute. Dormant-core implementation and synthetic tests do not relax this publication gate.
 - The ledger is the only manager-owned manifest: each receipt pins the setup interface/version and root claims, while live blueprint metadata remains authoritative for the exact teardown interface/version/verifier/kind. Do not add another manifest, command log, traversal, or effect registry.
 - Only already-admitted fixed whole-node managed setup is in scope. Do not persist arguments, stdin, environment, commands, credentials, paths, or arbitrary verifier payloads.
@@ -134,8 +135,8 @@ git diff --numstat BASE_SHA -- src/officina/blueprints/graph.py tests/test_offic
 
 **Checkpoint:** This is a publication precondition, not an implementation task, and creates no commit. Its evidence is recorded in the execution record before Task 3 begins.
 
-- [ ] Require the approved activation record described above. Refuse publication if it is absent, incomplete, or ordinary teardown already satisfies the named need.
-- [ ] Require exact equality among production managed metadata, bindings, and action calls, plus every fully expanded owner suite green.
+- [ ] Require the approved activation record described above. For alternatives (a) and (b), refuse publication if ordinary teardown already satisfies the named need; alternative (c) is the repository owner's direct accessibility decision and needs no owner-count or bulk-consumer substitute.
+- [ ] Require exact equality among production managed metadata, bindings, and action calls, including valid empty equality, plus every fully expanded suite for each owner that currently exists. Record explicitly when no owner exists and make no owner-correctness claim.
 - [ ] Recheck Stage A commits, all cumulative per-file caps, and remaining Stage B reserve. Stage B may not rewrite the dormant core to fit publication.
 
 ### Task 3: Publish the exact zero-argument interface
@@ -151,7 +152,10 @@ git diff --numstat BASE_SHA -- src/officina/blueprints/graph.py tests/test_offic
 
 **Files:** integration test, coverage test, and `docs/setup.md`.
 
-- [ ] Add public-route empty-ledger and qualifying activation scenarios without changing owner files. Prove exact production metadata/binding/action-call equality and rerun every owner admission suite.
+- [ ] Prove the exact public route is zero-argument with stdin forbidden and returns `original: null` plus `resume_original: false`.
+- [ ] Add a public-route valid-empty-ledger no-op case and prove it retains the canonical empty ledger. Add fail-closed public-route cases for stale, malformed, and unsupported nonempty state, with no dispatch or byte mutation.
+- [ ] Prove the thin public adapter preserves the synthetic adapter-to-core semantics already established for ordering, settlement, suspension, resumption, and recovery; do not add or change owner files.
+- [ ] Prove exact production metadata/binding/action-call equality, permitting the currently valid empty equality, and rerun every admission suite for each owner that exists. An empty inventory supplies no owner-correctness evidence and does not relax future owner admission.
 - [ ] Document exact invocation, selected-context scope, ordering, recovery, retained empty ledger, existing individual teardown route, and bounded exclusions.
 - [ ] State explicitly that owners prove effect reversal and repeat safety; manager verifier success alone does not.
 - [ ] Run all six focused test files, validators, the declared blueprint-sync check interface, every fully expanded owner suite from the activation record, and staged-view precommit with eight workers.
@@ -170,7 +174,7 @@ git diff --cached --numstat BASE_SHA -- src/officina/blueprints/graph.py tests/t
 
 - [ ] Assign fresh subagents who did not implement the relevant task to audit plan conformance, generic-manager boundaries, ordinary-flow regressions, structural publication state, tests, staged/tree scope, and LOC arithmetic.
 - [ ] For a Stage A-only completion, require explicit evidence that the dormant core is structurally unreachable and Gate 0B plus Tasks 3/4B remain gated and untouched.
-- [ ] For published completion, require exact activation evidence and all Stage B gates. Do not infer publication authorization from synthetic fixtures.
+- [ ] For published completion, require exact activation evidence and all Stage B gates. Synthetic fixtures prove adapter-to-core semantics but do not authorize publication or establish owner correctness.
 - [ ] Return every finding to the owning implementation task, add a focused regression test where applicable, commit the fix separately, and repeat the independent audit until clear.
 - [ ] Once the audit is clear, record the task checkpoint without inventing a file: use `git commit --allow-empty -m "audit: verify teardown-all dormant core"` for Stage A-only completion or `git commit --allow-empty -m "audit: verify teardown-all publication"` after Stage B. Verify that the empty commit's tree equals its parent and record the audit evidence with the commit SHA.
 
@@ -186,7 +190,9 @@ git diff --cached --numstat BASE_SHA -- src/officina/blueprints/graph.py tests/t
 
 ### Stage B publication
 
-- The exact zero-argument route is published only after the approved activation condition and every current owner's complete admission evidence pass.
-- Public execution preserves the proven dormant-core semantics and returns no continuation/original resumption.
+- The exact zero-argument, no-stdin route is published only after an approved activation condition, exact current inventory equality (including valid empty equality), and complete admission evidence for every current owner. The 2026-09-02 repository-owner directive is the approved activation condition for this publication.
+- Public execution preserves the proven dormant-core semantics and returns `original: null` and `resume_original: false`.
+- A valid empty ledger is a no-op that retains the canonical empty ledger. Stale, malformed, or unsupported nonempty state fails closed without dispatch or byte mutation.
+- Synthetic adapter-to-core tests establish generic route semantics only. The current empty owner inventory makes no owner-correctness claim, and every future owner still requires complete admission evidence.
 - The combined diff remains within all 17 paths, every cumulative per-file cap, the 165-LOC Stage B reserve, and the 787-LOC total.
 - No claim extends beyond all valid managed setup receipts in the selected context; broader uninstall/purge remains a separate design.
