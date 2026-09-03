@@ -237,6 +237,9 @@
       flex-wrap: wrap;
       margin-top: 10px;
     }
+    .quick-guide-actions button[hidden] {
+      display: none;
+    }
     .quick-guide-actions button {
       display: inline-flex;
       align-items: center;
