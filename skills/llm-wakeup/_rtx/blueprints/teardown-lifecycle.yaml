@@ -1,0 +1,110 @@
+schema_version: 6
+id: llm-wakeup._rtx.source.teardown-lifecycle
+version: 1
+maturity: stable
+node_type: behavioral_source
+description: Remove the feature-owned wakeup integration from derived selected paths.
+gateway:
+  language: Python
+  path: _wakeup_teardown.py
+content:
+- _wakeup_teardown\.py
+dependencies:
+- blueprint: {base: module-root, path: blueprints/persistence.yaml}
+  source: llm-wakeup._rtx.source.persistence
+  version: 1
+  reason: Derive the selected integration paths and reconcile the registration.
+interfaces:
+  llm-wakeup._rtx.source.teardown-lifecycle.interface.teardown:
+    content:
+    - _wakeup_teardown\.py
+    uses_interfaces: []
+    contract:
+      caller_warnings:
+      - external-side-effect: Removes the two command files and the native due-delivery registration.
+      direct_io:
+        network: []
+        reads:
+        - {id: selected-process, access: read, content: running interpreter and module location, formats: [path], medium: local-system, sensitivity: user-private}
+        writes:
+        - {id: command-write, access: configure, content: wakeup command files, formats: [python, batch], medium: local-filesystem, sensitivity: user-private, system: filesystem}
+        - {id: native-write, access: configure, content: due-delivery registration, formats: [systemd-unit, plist, batch], medium: local-system, sensitivity: user-private, system: native-scheduler}
+      execution:
+        consistency: {live: Derived paths and existing owner state are validated immediately before reconciliation.}
+        effects:
+        - id: wakeup-integration
+          action: configure
+          direct_io_ref: native-write
+          value_source: {kind: direct-io, direct_io_ref: selected-process}
+          confirmation_evidence: {kind: direct-io, direct_io_ref: native-write}
+          reversibility: {reversible: Invoke the declared managed setup.}
+          may_occur_in_outcomes: [completed]
+        lifecycle: finite
+        mutation_safety:
+          atomicity: {per_effect_only: Files are atomically replaced after validation.}
+          concurrent_invocations: {unsafe: Concurrent feature setup calls are not serialized.}
+          idempotency: {idempotent: Repeating setup converges to one fixed registration and two command files.}
+          on_uncertain_completion: {verify_then_decide: Invoke the declared setup verifier.}
+          partial_effects_on_failure: {possible: Native state can be observed briefly before rollback completes.}
+          rollback_on_failure: {available: Captured feature files are restored automatically.}
+        state_effect: mutating
+        verification: [{method: direct-io-state, direct_io_ref: native-write}]
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes:
+      - {id: completed, class: success, outputs: [], effects: [wakeup-integration], caller_action: Treat the due-delivery registration as removed.}
+      - {id: unsupported-context, class: refusal, outputs: [], effects: [], caller_action: Run from a hosted process with a resolvable home and selected plugin root.}
+      outputs: []
+      preconditions: []
+    description: Remove the wakeup integration without caller arguments.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - {allow_stdin: false, max_positionals: 0, min_positionals: 0, notes: Managed teardown actions accept no arguments.}
+    usage: ''
+    version: 1
+  llm-wakeup._rtx.source.teardown-lifecycle.interface.teardown-status:
+    content:
+    - _wakeup_teardown\.py
+    uses_interfaces: []
+    contract:
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads:
+        - {id: integration-state, access: read, content: owner marker and native registration presence, formats: [json, path], medium: local-system, sensitivity: user-private}
+        writes:
+        - {id: verdict, access: write, content: single boolean teardown verdict, formats: [text], medium: stdout, sensitivity: public}
+      execution:
+        consistency: {snapshot: Integration state is sampled once during the finite call.}
+        lifecycle: finite
+        state_effect: read-only
+        verification: [{method: output-schema, output_ref: result}]
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes:
+      - {id: completed, class: success, outputs: [result], effects: [], caller_action: Use the printed boolean verdict.}
+      outputs:
+      - audience: machine
+        cardinality: {minimum: 1, maximum: 1}
+        description: One JSON object with the single key torn_down.
+        direct_io_ref: verdict
+        empty: Never empty on success.
+        id: result
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        type: {kind: string, sensitivity: public}
+      preconditions: []
+    description: Print the exact boolean teardown verdict for the wakeup integration.
+    process_binding:
+      entry: StatusInterface
+      kind: process
+      patterns:
+      - {allow_stdin: false, max_positionals: 0, min_positionals: 0, notes: Managed verifiers accept no arguments.}
+    usage: ''
+    version: 1
+platform_support: {linux: true, macos: true, windows: true}
+runtime_dependencies: []
+uses_interfaces: []

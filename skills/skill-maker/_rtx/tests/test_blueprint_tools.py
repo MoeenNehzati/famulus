@@ -499,7 +499,9 @@ def test_public_syncer_repairs_corrupt_llm_wakeup_entry(
     skill.write_text(
         original[:start]
         + original[start:].replace(
-            "`wakeup.interface.explicit-schedule`", "`wakeup.interface.removed`", 1
+            "`llm-wakeup._rtx.interface.explicit-schedule`",
+            "`llm-wakeup._rtx.interface.removed`",
+            1,
         ),
         encoding="utf-8",
     )

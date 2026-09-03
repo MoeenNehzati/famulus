@@ -349,6 +349,21 @@ def test_python_shell_true_is_rejected(tmp_path: Path) -> None:
     assert any("shell=True is not allowed" in error for error in errors)
 
 
+def test_declared_user_shell_command_file_may_pass_shell_true(tmp_path: Path) -> None:
+    """A waived path runs a command string its own user supplied, not ours."""
+    waived = next(iter(module_under_test._USER_SHELL_COMMAND_FILES))
+    runtime = tmp_path / waived.parent
+    runtime.mkdir(parents=True)
+    (runtime / waived.name).write_text(
+        "import subprocess\nsubprocess.run(chain, shell=True)\n",
+        encoding="utf-8",
+    )
+
+    errors = validate(tmp_path)
+
+    assert not any("shell=True is not allowed" in error for error in errors)
+
+
 def test_raw_git_in_ordinary_test_requires_local_annotation(tmp_path: Path) -> None:
     test = tmp_path / "tests" / "test_bad_git.py"
     test.parent.mkdir(parents=True)

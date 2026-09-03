@@ -1,8 +1,8 @@
 content:
 - SKILL\.md
 dependencies:
-- blueprint: {base: repository-root, path: src/officina/wakeup/blueprints/cli.yaml}
-  source: wakeup.source.cli
+- blueprint: {base: repository-root, path: skills/llm-wakeup/_rtx/blueprints/cli.yaml}
+  source: llm-wakeup._rtx.source.cli
   version: 1
   reason: Renders the public executable wakeup interfaces used by this gateway.
 description: Selects automatic-policy, inferred-scheduling, or explicit-scheduling
@@ -17,13 +17,13 @@ interfaces:
     content:
     - SKILL\.md
     uses_interfaces:
-    - interface: wakeup.interface.auto-policy
+    - interface: llm-wakeup._rtx.interface.auto-policy
       version: 1
-    - interface: wakeup.interface.infer-schedule
+    - interface: llm-wakeup._rtx.interface.infer-schedule
       version: 1
-    - interface: wakeup.interface.explicit-schedule
+    - interface: llm-wakeup._rtx.interface.explicit-schedule
       version: 1
-    - interface: wakeup.interface.setup
+    - interface: llm-wakeup._rtx.interface.setup
       version: 1
     contract:
       arguments:
@@ -109,13 +109,13 @@ interfaces:
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
-- interface: wakeup.interface.auto-policy
+- interface: llm-wakeup._rtx.interface.auto-policy
   version: 1
-- interface: wakeup.interface.infer-schedule
+- interface: llm-wakeup._rtx.interface.infer-schedule
   version: 1
-- interface: wakeup.interface.explicit-schedule
+- interface: llm-wakeup._rtx.interface.explicit-schedule
   version: 1
-- interface: wakeup.interface.setup
+- interface: llm-wakeup._rtx.interface.setup
   version: 1
 version: 1
 maturity: stable

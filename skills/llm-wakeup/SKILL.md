@@ -10,28 +10,28 @@ description: >-
 Executable Interfaces:
 
 Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
-- `wakeup.interface.auto-policy` — Manage opt-in automatic near-limit wakeup scheduling for one provider session.
+- `llm-wakeup._rtx.interface.auto-policy` — Manage opt-in automatic near-limit wakeup scheduling for one provider session.
   - Caller: `llm-wakeup`
   - Version: 1
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": ["action", "provider", "session-id"], "stdin": null}
     Required options: []; positional arity: 1..3; stdin: forbidden
-- `wakeup.interface.explicit-schedule` — Persist a guarded wakeup for an explicitly identified provider session and reset time.
+- `llm-wakeup._rtx.interface.explicit-schedule` — Persist a guarded wakeup for an explicitly identified provider session and reset time.
   - Caller: `llm-wakeup`
   - Version: 1
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--delay": "duration", "--message": "message"}, "positionals": ["provider", "session-id", "reset-time"], "stdin": null}
     Required options: []; positional arity: 3..3; stdin: forbidden
-- `wakeup.interface.infer-schedule` — Infer provider, canonical session, and reset time before persisting a guarded wakeup.
+- `llm-wakeup._rtx.interface.infer-schedule` — Infer provider, canonical session, and reset time before persisting a guarded wakeup.
   - Caller: `llm-wakeup`
   - Version: 1
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--delay": "duration", "--message": "message", "--text": "timeout-or-resume-text"}, "positionals": [], "stdin": null}
     Required options: []; positional arity: 0..0; stdin: forbidden
-- `wakeup.interface.setup` — Install or refresh the wakeup integration without caller arguments.
+- `llm-wakeup._rtx.interface.setup` — Install or refresh the wakeup integration without caller arguments.
   - Caller: `llm-wakeup`
   - Version: 1
   - Alternative: `default`

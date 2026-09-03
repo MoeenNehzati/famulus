@@ -1,0 +1,18 @@
+schema_version: 6
+id: llm-wakeup._rtx.source.session-data
+version: 1
+maturity: stable
+node_type: behavioral_source
+description: Discover Claude and Codex sessions, interpret their transcript state
+  and reset deadlines, and decide whether a usage limit stopped a session.
+gateway:
+  language: Python
+  path: _claude_codex_sessions.py
+content:
+- _wakeup_providers/.*\.py
+- _claude_codex_sessions\.py
+- _claude_codex_cutoff\.py
+- _wakeup_deadlines\.py
+dependencies: []
+interfaces: {}
+uses_interfaces: []

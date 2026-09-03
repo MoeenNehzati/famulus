@@ -8,11 +8,6 @@ from pathlib import Path
 
 import pytest
 
-from officina.wakeup import policies, store
-from officina.wakeup.providers.claude import ClaudeAdapter
-from officina.wakeup.providers.codex import CodexAdapter
-
-
 ROOT = Path(__file__).resolve().parents[1]
 MILESTONE_WRITER = ROOT / "skills" / "milestone-logging" / "_rtx" / "_milestone_writer.py"
 AGENT_TIMELINE = ROOT / "skills" / "milestone-logging" / "_rtx" / "_agent_timeline.py"
@@ -26,6 +21,32 @@ def _load_source(name: str, relative: str):
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _load_package(name: str, relative: str):
+    """Load one skill-private package under a unique name.
+
+    Every skill names its runtime package `_rtx`, so importing one by that
+    name binds whichever skill is imported first for the whole process. A
+    repository-level test cannot use the relative imports the package's own
+    modules use, so it selects the package by path instead.
+    """
+    root = ROOT / relative
+    spec = importlib.util.spec_from_file_location(
+        name, root / "__init__.py", submodule_search_locations=[str(root)]
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_WAKEUP = _load_package("llm_wakeup_rtx", "skills/llm-wakeup/_rtx")
+policies = importlib.import_module("llm_wakeup_rtx._wakeup_policies")
+store = importlib.import_module("llm_wakeup_rtx._wakeup_store")
+ClaudeAdapter = importlib.import_module("llm_wakeup_rtx._wakeup_providers._provider_claude").ClaudeAdapter
+CodexAdapter = importlib.import_module("llm_wakeup_rtx._wakeup_providers._provider_codex").CodexAdapter
 
 
 DEVELOPMENT_ACTIVATION = _load_source(

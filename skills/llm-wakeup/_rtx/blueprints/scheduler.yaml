@@ -1,0 +1,28 @@
+schema_version: 6
+id: llm-wakeup._rtx.source.scheduler
+version: 1
+maturity: stable
+node_type: behavioral_source
+description: Create, inspect, cancel, and deliver persistent wakeup jobs while suppressing
+  stale wakeups.
+gateway:
+  language: Python
+  path: _claude_codex_service.py
+content:
+- _claude_codex_service\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/session-data.yaml
+  source: llm-wakeup._rtx.source.session-data
+  version: 1
+  reason: Resolve sessions, determine whether they progressed after scheduling, and
+    re-check refusal evidence before delivering a conditional job.
+- blueprint:
+    base: module-root
+    path: blueprints/persistence.yaml
+  source: llm-wakeup._rtx.source.persistence
+  version: 1
+  reason: Store jobs and coordinate concurrent scheduler processes.
+interfaces: {}
+uses_interfaces: []

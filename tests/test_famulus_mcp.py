@@ -954,7 +954,7 @@ def test_llm_wakeup_skill_renders_every_public_wakeup_invocation(server) -> None
         encoding="utf-8"
     )
     expected = {
-        "wakeup.interface.auto-policy": (
+        "llm-wakeup._rtx.interface.auto-policy": (
             "default",
             {
                     "positionals": ["action", "provider", "session-id"],
@@ -963,7 +963,7 @@ def test_llm_wakeup_skill_renders_every_public_wakeup_invocation(server) -> None
             },
             {"positionals": ["on", "claude", "session-id"], "options": {}, "stdin": None},
         ),
-        "wakeup.interface.infer-schedule": (
+        "llm-wakeup._rtx.interface.infer-schedule": (
             "default",
             {
                 "positionals": [],
@@ -976,7 +976,7 @@ def test_llm_wakeup_skill_renders_every_public_wakeup_invocation(server) -> None
             },
             {"positionals": [], "options": {}, "stdin": None},
         ),
-        "wakeup.interface.explicit-schedule": (
+        "llm-wakeup._rtx.interface.explicit-schedule": (
             "default",
             {
                     "positionals": ["provider", "session-id", "reset-time"],
@@ -988,7 +988,7 @@ def test_llm_wakeup_skill_renders_every_public_wakeup_invocation(server) -> None
         # The managed lifecycle forbids arguments on a setup interface, so the
         # gateway renders one argument-free alternative and no teardown route:
         # exact managed calls are redirected through the setup manager.
-        "wakeup.interface.setup": (
+        "llm-wakeup._rtx.interface.setup": (
             "default",
             {"positionals": [], "options": {}, "stdin": None},
             {"positionals": [], "options": {}, "stdin": None},

@@ -87,6 +87,16 @@ _CROSS_PLATFORM_ADAPTER_FILES = {
     Path("skills/recurring-tasks/_rtx/_assistant_desktop_notify.py"),
 }
 
+# Files permitted to pass `shell=True`, because the command string is supplied
+# by the user rather than authored here. A host status line is an arbitrary
+# shell expression that may contain pipes or redirection, so it cannot be
+# reduced to a portable argv without changing what the user configured.
+# Widening the platform command allowlist does not cover this: that list only
+# names permitted executables, while the shell rule is otherwise unconditional.
+_USER_SHELL_COMMAND_FILES = {
+    Path("skills/llm-wakeup/_rtx/_claude_codex_cli.py"),
+}
+
 _SKIP_PARTS = {"tests", "validators", "__pycache__", ".git", ".claude-plugin", ".codex-plugin", "logs"}
 _SUBPROCESS_ATTRS = {"run", "Popen", "call", "check_call", "check_output"}
 _RAW_GIT_CATEGORIES = {
@@ -1192,7 +1202,11 @@ def _validate_python(
             continue
 
         for kw in node.keywords:
-            if kw.arg == "shell" and _is_true_constant(kw.value):
+            if (
+                kw.arg == "shell"
+                and _is_true_constant(kw.value)
+                and rel_path not in _USER_SHELL_COMMAND_FILES
+            ):
                 errors.append(
                     f"{rel_path.as_posix()}:{node.lineno}: shell=True is not allowed"
                 )

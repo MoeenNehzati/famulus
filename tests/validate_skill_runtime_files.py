@@ -36,13 +36,6 @@ def _name_error(relative_path: str, kind: str, component: str) -> str:
     )
 
 
-def _suffix_error(relative_path: str, suffix: str) -> str:
-    return (
-        f"{relative_path}: unsupported runtime suffix `{suffix}`; "
-        "allowed suffixes: .py"
-    )
-
-
 def test_valid_and_exempt_runtime_shapes_share_one_owner(tmp_path: Path) -> None:
     for relative_path in (
         "skills/demo-skill/_rtx/_Calendar_Gateway.py",
@@ -87,10 +80,7 @@ def test_invalid_runtime_locations_names_suffixes_and_sidecars_are_exact(
         _name_error(relative_paths[3], "directory name", "_launcher"),
         _name_error(relative_paths[4], "filename stem", "_gcal"),
         _name_error(relative_paths[5], "filename stem", "_get-weather"),
-        _suffix_error(relative_paths[6], ".txt"),
-        _suffix_error(relative_paths[7], ".json"),
         _name_error(relative_paths[7], "filename stem", "_worker_file.health"),
-        _suffix_error(relative_paths[8], ".sh"),
     ]
 
 
@@ -127,10 +117,8 @@ def test_registered_and_unregistered_fixed_artifacts_are_exact(
 
     assert _mod.validate_with_graph(tmp_path, graph) == [
         _name_error(relative_paths[-2], "directory name", "assets"),
-        _suffix_error(relative_paths[-2], ".json"),
         _name_error(relative_paths[-2], "filename stem", "data"),
         _name_error(relative_paths[-1], "directory name", "assets"),
-        _suffix_error(relative_paths[-1], ".json"),
         _name_error(relative_paths[-1], "filename stem", "data"),
     ]
 
@@ -189,15 +177,11 @@ def test_gateway_ownership_requires_exact_non_python_behavioral_source(
     )
 
     assert _mod.validate_with_graph(tmp_path, graph) == [
-        _suffix_error(relative_paths[1], ".yaml"),
         _name_error(relative_paths[1], "filename stem", "python"),
         _name_error(relative_paths[2], "directory name", "bin"),
         _name_error(relative_paths[3], "directory name", "bin"),
-        _suffix_error(relative_paths[3], ""),
         _name_error(relative_paths[3], "filename stem", "assistant"),
-        _suffix_error(relative_paths[4], ".yaml"),
         _name_error(relative_paths[4], "filename stem", "module"),
-        _suffix_error(relative_paths[5], ".yaml"),
         _name_error(relative_paths[5], "filename stem", "wrong"),
     ]
 
@@ -257,8 +241,10 @@ def test_git_ignored_security_boundary_and_fail_closed_paths(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    ignored_rel = Path("skills/demo-skill/_rtx/_bad_file.sh")
-    sibling_rel = Path("skills/demo-skill/_rtx/_bad_sibling.sh")
+    # Stems without the required leading underscore, so each file still yields
+    # one error now that the suffix itself is unconstrained.
+    ignored_rel = Path("skills/demo-skill/_rtx/bad_file.sh")
+    sibling_rel = Path("skills/demo-skill/_rtx/bad_sibling.sh")
     ignored = tmp_path / ignored_rel
     sibling = tmp_path / sibling_rel
     _write(ignored)
@@ -280,9 +266,12 @@ def test_git_ignored_security_boundary_and_fail_closed_paths(
 
     monkeypatch.setattr(_mod.subprocess, "run", fake_run)
 
-    sibling_error = _suffix_error(sibling_rel.as_posix(), ".sh")
+    sibling_error = _name_error(
+        sibling_rel.as_posix(), "filename stem", "bad_sibling"
+    )
+    # The fail-closed paths cannot learn what git ignores, so they report both.
     both_errors = [
-        _suffix_error(ignored_rel.as_posix(), ".sh"),
+        _name_error(ignored_rel.as_posix(), "filename stem", "bad_file"),
         sibling_error,
     ]
     assert _mod.validate(tmp_path) == [sibling_error]

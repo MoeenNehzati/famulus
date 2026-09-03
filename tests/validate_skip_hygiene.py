@@ -37,7 +37,9 @@ def test_unannotated_pytest_skip_is_rejected(tmp_path: Path) -> None:
 
 
 def test_unannotated_module_owned_test_skip_is_rejected(tmp_path: Path) -> None:
-    path = tmp_path / "src" / "officina" / "wakeup" / "tests" / "test_demo.py"
+    path = (
+        tmp_path / "skills" / "llm-wakeup" / "_rtx" / "tests" / "test_demo.py"
+    )
     path.parent.mkdir(parents=True)
     path.write_text(
         "import pytest\n\n"

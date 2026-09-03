@@ -1,0 +1,18 @@
+schema_version: 6
+id: llm-wakeup._rtx.source.persistence
+version: 1
+maturity: stable
+node_type: behavioral_source
+description: Persist wakeup jobs, per-session policies, monitor markers, and cross-platform
+  state with locking.
+gateway:
+  language: Python
+  path: _wakeup_store.py
+content:
+- _wakeup_store\.py
+- _wakeup_locking\.py
+- _wakeup_policies\.py
+- _linux_osx_windows\.py
+dependencies: []
+interfaces: {}
+uses_interfaces: []

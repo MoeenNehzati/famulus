@@ -1,0 +1,112 @@
+authority:
+  owns_filesystem: []
+children: {}
+content:
+- _claude_codex_readme\.md
+- _claude_codex_architecture\.md
+- __init__\.py
+- _claude_codex_cli\.py
+- _claude_codex_service\.py
+- _claude_codex_sessions\.py
+- _wakeup_entry\.py
+- _claude_codex_cutoff\.py
+- _wakeup_deadlines\.py
+- _wakeup_doctor\.py
+- _linux_osx_windows\.py
+- _wakeup_setup\.py
+- _wakeup_teardown\.py
+- _wakeup_locking\.py
+- _claude_codex_monitor\.py
+- _claude_codex_usage\.py
+- _wakeup_policies\.py
+- _wakeup_providers/.*\.py
+- _wakeup_store\.py
+- tests/.*
+- _wakeup_resources/_wakeup_service_unit\.in
+- _wakeup_resources/_wakeup_timer\.timer
+- _wakeup_resources/_command_aliases\.json
+description: Dependency-free Python infrastructure for monitoring local Claude and
+  Codex quota signals and scheduling guarded continuation messages after usage limits
+  reset, with persistent JSON jobs, transcript-progress suppression, provider-log
+  inference, retry handling, and journald-oriented worker events.
+exports:
+  llm-wakeup._rtx.interface.auto-policy:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: llm-wakeup._rtx.source.cli.interface.auto-policy
+  llm-wakeup._rtx.interface.infer-schedule:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: llm-wakeup._rtx.source.cli.interface.infer-schedule
+  llm-wakeup._rtx.interface.explicit-schedule:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: llm-wakeup._rtx.source.cli.interface.explicit-schedule
+  llm-wakeup._rtx.interface.setup:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    setup_requires_setup_of: []
+    setup_management:
+      setup_verifier: {interface: llm-wakeup._rtx.interface.setup-status, version: 1}
+      teardown:
+        interface: llm-wakeup._rtx.interface.teardown
+        version: 1
+        verifier: {interface: llm-wakeup._rtx.interface.teardown-status, version: 1}
+    source_interface: llm-wakeup._rtx.source.setup-lifecycle.interface.setup
+  llm-wakeup._rtx.interface.teardown:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: llm-wakeup._rtx.source.teardown-lifecycle.interface.teardown
+  llm-wakeup._rtx.interface.setup-status:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: llm-wakeup._rtx.source.setup-lifecycle.interface.setup-status
+  llm-wakeup._rtx.interface.teardown-status:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: llm-wakeup._rtx.source.teardown-lifecycle.interface.teardown-status
+gateway:
+  language: Python>=3.11
+  path: __init__.py
+id: llm-wakeup._rtx
+namespace_exports: {}
+node_type: module
+schema_version: 6
+sources:
+  llm-wakeup._rtx.source.session-data:
+    blueprint:
+      base: module-root
+      path: blueprints/session-data.yaml
+  llm-wakeup._rtx.source.persistence:
+    blueprint:
+      base: module-root
+      path: blueprints/persistence.yaml
+  llm-wakeup._rtx.source.scheduler:
+    blueprint:
+      base: module-root
+      path: blueprints/scheduler.yaml
+  llm-wakeup._rtx.source.monitor:
+    blueprint:
+      base: module-root
+      path: blueprints/monitor.yaml
+  llm-wakeup._rtx.source.cli:
+    blueprint:
+      base: module-root
+      path: blueprints/cli.yaml
+  llm-wakeup._rtx.source.setup-lifecycle:
+    blueprint:
+      base: module-root
+      path: blueprints/setup-lifecycle.yaml
+  llm-wakeup._rtx.source.teardown-lifecycle:
+    blueprint:
+      base: module-root
+      path: blueprints/teardown-lifecycle.yaml
+version: 1
+maturity: stable

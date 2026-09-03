@@ -1,6 +1,7 @@
 authority:
   owns_filesystem: []
-children: {}
+children:
+  _rtx: {}
 content:
 - SKILL\.md
 description: Routes assistant requests to guarded supported-session wakeup scheduling
@@ -28,7 +29,27 @@ gateway:
   language: Markdown
   path: SKILL.md
 id: llm-wakeup
-namespace_exports: {}
+namespace_exports:
+  _rtx:
+    version: 1
+    access: {allow_all_modules: true, allowed_callers: []}
+    surface:
+      only:
+        llm-wakeup._rtx.interface.auto-policy: 1
+        llm-wakeup._rtx.interface.infer-schedule: 1
+        llm-wakeup._rtx.interface.explicit-schedule: 1
+        llm-wakeup._rtx.interface.setup: 1
+        llm-wakeup._rtx.interface.teardown: 1
+        llm-wakeup._rtx.interface.setup-status: 1
+        llm-wakeup._rtx.interface.teardown-status: 1
+    interface_access:
+      llm-wakeup._rtx.interface.auto-policy: {allow_all_modules: true, allowed_callers: []}
+      llm-wakeup._rtx.interface.infer-schedule: {allow_all_modules: true, allowed_callers: []}
+      llm-wakeup._rtx.interface.explicit-schedule: {allow_all_modules: true, allowed_callers: []}
+      llm-wakeup._rtx.interface.setup: {allow_all_modules: true, allowed_callers: []}
+      llm-wakeup._rtx.interface.teardown: {allow_all_modules: true, allowed_callers: []}
+      llm-wakeup._rtx.interface.setup-status: {allow_all_modules: true, allowed_callers: []}
+      llm-wakeup._rtx.interface.teardown-status: {allow_all_modules: true, allowed_callers: []}
 node_type: module
 schema_version: 6
 sources:

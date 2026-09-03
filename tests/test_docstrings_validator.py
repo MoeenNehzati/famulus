@@ -70,13 +70,13 @@ def test_validate_staged_uses_test_production_and_base_profiles(
         [
             "validators/missing.py",
             "tests/test_lightweight.py",
-            "src/officina/wakeup/tests/test_monitor.py",
+            "skills/llm-wakeup/_rtx/tests/test_monitor.py",
             "src/missing.py",
         ],
     )
 
     assert not any("tests/test_lightweight.py" in error for error in errors)
-    assert not any("src/officina/wakeup/tests/test_monitor.py" in error for error in errors)
+    assert not any("skills/llm-wakeup/_rtx/tests/test_monitor.py" in error for error in errors)
     assert any(
         "src/missing.py" in error and "docstring.missing" in error
         for error in errors

@@ -4608,7 +4608,29 @@
       "personal_preference": {
         "applies": false
       },
-      "interfaces": {}
+      "interfaces": {
+        "llm-wakeup._rtx.interface.auto-policy": {
+          "dependencies": []
+        },
+        "llm-wakeup._rtx.interface.explicit-schedule": {
+          "dependencies": []
+        },
+        "llm-wakeup._rtx.interface.infer-schedule": {
+          "dependencies": []
+        },
+        "llm-wakeup._rtx.interface.setup": {
+          "dependencies": []
+        },
+        "llm-wakeup._rtx.interface.setup-status": {
+          "dependencies": []
+        },
+        "llm-wakeup._rtx.interface.teardown": {
+          "dependencies": []
+        },
+        "llm-wakeup._rtx.interface.teardown-status": {
+          "dependencies": []
+        }
+      }
     },
     "loose-mode": {
       "maturity": "stable",

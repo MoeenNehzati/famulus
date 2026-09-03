@@ -19,7 +19,7 @@ from officina.blueprints.graph import (  # noqa: E402
 )
 
 from validators.skill_runtime_files import (
-    ALLOWED_RTX_SUFFIXES,
+    LEGACY_SCRIPT_SUFFIXES,
     EXEMPT_RTX_DIRNAMES,
     EXEMPT_RTX_FILENAMES,
     RTX_DIR_NAME,
@@ -31,7 +31,7 @@ _EXCLUDED_PARTS = {"tests", "assets", "_build", ".system", RTX_DIR_NAME}
 REQUIRES_BLUEPRINT_GRAPH = True
 BLUEPRINT_GRAPH_OPTIONAL = True
 _WORD = r"A-Za-z0-9_"
-_SUFFIX_ALT = "|".join(re.escape(s) for s in sorted(ALLOWED_RTX_SUFFIXES))
+_SUFFIX_ALT = "|".join(re.escape(s) for s in sorted(LEGACY_SCRIPT_SUFFIXES))
 _OLD_RUNTIME_PATH_RE = re.compile(
     rf"(?<!/)scripts/[\w.-]+(?:{_SUFFIX_ALT})(?![{_WORD}])",
     re.IGNORECASE,
@@ -281,7 +281,7 @@ def _runtime_stems_for_skill(
                 continue
             stems.add(path.name)
             continue
-        if not path.is_file() or path.suffix not in ALLOWED_RTX_SUFFIXES:
+        if not path.is_file():
             continue
         if path.name in EXEMPT_RTX_FILENAMES:
             continue

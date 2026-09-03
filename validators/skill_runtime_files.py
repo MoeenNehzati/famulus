@@ -8,7 +8,12 @@ from collections import defaultdict
 from pathlib import Path
 
 RTX_DIR_NAME = "_rtx"
-ALLOWED_RTX_SUFFIXES = {".py"}
+# Private runtime is identified by its distinctive stem, not by its extension.
+# A feature may own a unit template, a rendered resource, or a data file
+# alongside its modules, so the suffix is unconstrained; `LEGACY_SCRIPT_SUFFIXES`
+# still names the executables that must not sit in the retired `scripts/` root.
+ALLOWED_RTX_SUFFIXES: set[str] | None = None
+LEGACY_SCRIPT_SUFFIXES = {".py"}
 EXEMPT_RTX_FILENAMES = {"__init__.py"}
 EXEMPT_RTX_DIRNAMES = {"__pycache__"}
 RUNTIME_STEM_RE = re.compile(r"^_[A-Za-z0-9]+(?:_[A-Za-z0-9]+)+$")
@@ -129,12 +134,6 @@ def _validate_rtx_path(path: Path, rel_path: Path) -> list[str]:
     ):
         return errors
 
-    if path.suffix not in ALLOWED_RTX_SUFFIXES:
-        allowed = ", ".join(sorted(ALLOWED_RTX_SUFFIXES))
-        errors.append(
-            f"{rel_path.as_posix()}: unsupported runtime suffix `{path.suffix}`; "
-            f"allowed suffixes: {allowed}"
-        )
     errors.extend(_validate_private_component(path.stem, rel_path, "filename stem"))
     return errors
 
@@ -216,7 +215,7 @@ def _validate(repo_root: Path, graph: object | None) -> list[str]:
 
     for path, rel_path in _iter_skill_files(repo_root):
         parts = rel_path.parts
-        if len(parts) >= 4 and parts[2] == "scripts" and path.suffix in ALLOWED_RTX_SUFFIXES:
+        if len(parts) >= 4 and parts[2] == "scripts" and path.suffix in LEGACY_SCRIPT_SUFFIXES:
             errors.append(
                 f"{rel_path.as_posix()}: skill runtime files must live under "
                 f"`skills/<skill>/{RTX_DIR_NAME}/`, not `scripts/`"

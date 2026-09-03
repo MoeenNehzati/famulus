@@ -49,7 +49,7 @@ def test_release_has_no_production_managed_setups() -> None:
     assert fixture_managed == {"python-canary.interface.setup"}
     # Explicit release decision: the wakeup feature owns a native due-delivery
     # registration, so arming a policy without it silently produces no wakeup.
-    assert production_managed == {"wakeup.interface.setup"}
+    assert production_managed == {"llm-wakeup._rtx.interface.setup"}
     assert "setup-dispatcher-runtime.interface.setup" not in graph.managed_setups
 
     parameterized_setups = {
@@ -74,7 +74,7 @@ def test_production_map_has_no_managed_setup_routes() -> None:
     """Catches publication drift or an owner route escaping blueprint review."""
     bindings, action_calls, dispatches = _setup_dispatches()
 
-    assert set(bindings) == {"wakeup.interface.setup"}
+    assert set(bindings) == {"llm-wakeup._rtx.interface.setup"}
     assert set(action_calls) == {
         "wakeup-setup",
         "wakeup-setup-status",

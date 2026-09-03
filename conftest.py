@@ -1,7 +1,7 @@
 """Repository-wide pytest scaffolding.
 
 Sits at the pytest rootdir, so its fixtures apply to every test collected under
-`tests/`, `hooks/tests/`, `src/officina/wakeup/tests/`, and skill-owned test
+`tests/`, `hooks/tests/`, `skills/llm-wakeup/_rtx/tests/`, and skill-owned test
 directories -- not just the top-level `tests/` suite (which has its own,
 narrower conftest.py).
 """
