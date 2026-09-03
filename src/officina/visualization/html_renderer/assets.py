@@ -30,6 +30,7 @@ _RUNTIME_ASSETS = (
     "runtime/projection.js",
     "runtime/edge_presentation.js",
     "runtime/layout.js",
+    "runtime/quick_guide.js",
     "runtime/node_renderer.js",
     "runtime/interactions.js",
     "runtime/render_pipeline.js",

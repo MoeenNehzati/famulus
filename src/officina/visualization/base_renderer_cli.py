@@ -88,24 +88,31 @@ def reduce_transitive_edges(doc: dict) -> tuple[dict, list[dict]]:
     return _DEFAULT_RENDERER.reduce_graph_json_transitive_edges(doc)
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(
+    argv: list[str] | None = None,
+    *,
+    renderer: ElkHtmlRenderer | None = None,
+) -> int:
     """Render canonical dependency JSON to HTML.
 
     Intent
     ------
-    Validate an explicit canonical JSON source and render its standalone HTML view.
+    Validate an explicit canonical JSON source and render its standalone HTML view
+    through the caller's renderer when one is supplied.
 
     Rationale
     ---------
     The generic CLI provides shared rendering without access to extractor-specific source
-    files or sidecars.
+    files or sidecars. A caller that needs domain presentation, such as its own quick
+    guide, injects a configured renderer rather than adding domain policy here.
 
     Pseudocode
     ----------
     - set render_inputs = explicit source destination profile and reduction arguments
+    - set selected_renderer = injected renderer or the module default renderer
     - set doc = prepared and validated canonical source JSON
     - set rendered_view = optional transitive reduction of doc
-    - set html = standalone presentation from rendered_view
+    - set html = standalone presentation of rendered_view from selected_renderer
     - set html_path = resolved presentation destination containing html
     - set report = source and presentation paths
     - return success
@@ -116,7 +123,7 @@ def main(argv: list[str] | None = None) -> int:
 
     CallsFromRepo
     -------------
-    .elk_html_renderer.build_html_with_elk:
+    .elk_html_renderer.ElkHtmlRenderer.render_graph_html:
       why:
         serializes: "Builds the standalone presentation from the prepared canonical payload."
     .validate_document:
@@ -148,6 +155,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Apply graph-theoretic transitive reduction before rendering",
     )
     args = parser.parse_args(argv)
+    selected_renderer = renderer or _DEFAULT_RENDERER
 
     source_path = Path(args.source).resolve()
     if not source_path.exists():
@@ -173,7 +181,10 @@ def main(argv: list[str] | None = None) -> int:
         build_dir = source_path.parent / "_build"
         build_dir.mkdir(exist_ok=True)
         html_path = build_dir / source_path.with_suffix(".html").name
-    html_path.write_text(build_html_with_elk(doc, reduction_note=reduction_note), encoding="utf-8")
+    html_path.write_text(
+        selected_renderer.render_graph_html(doc, reduction_note=reduction_note),
+        encoding="utf-8",
+    )
 
     print(
         json.dumps(

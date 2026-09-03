@@ -74,8 +74,10 @@ def _write_self_contained_graph(path: Path) -> None:
 
 
 def _embedded_payload(html: str) -> dict:
+    # Anchor on the next bootstrap declaration rather than a named one, so an
+    # added const between docData and typeStyleCatalog does not widen the span.
     prefix = "    const docData = "
-    suffix = ";\n    const typeStyleCatalog"
+    suffix = ";\n    const "
     return json.loads(html.split(prefix, 1)[1].split(suffix, 1)[0])
 
 
@@ -198,3 +200,29 @@ def test_builder_renders_identical_html_from_copied_canonical_json(
     assert '"DetachedGlyph": "\\\\mathbb{D}"' in actual_html
     assert not list(detached.parent.glob("*mathjax-macros.json"))
     assert not list(detached.parent.glob("*.rendered.json"))
+
+
+def test_builder_renders_the_math_dependency_quick_guide(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    canonical = tmp_path / "project" / "canonical.json"
+    _write_self_contained_graph(canonical)
+    html_out = tmp_path / "project" / "graph.htm"
+
+    graph_builder.main([str(canonical), "--html-out", str(html_out)])
+    capsys.readouterr()
+
+    html = html_out.read_text(encoding="utf-8")
+
+    # The skill renderer carries its own guide, so the config must not be null.
+    assert "const QUICK_GUIDE_CONFIG = null;" not in html
+    assert '"read-graph"' in html
+    assert "Read mathematical dependencies" in html
+    assert "Follow arrows from prerequisites toward the results they support." in html
+    assert "Trace prerequisites" in html
+    assert "Select a theorem, then use this control to add its prerequisites." in html
+    # Steps the math profile does not reword still come from the default guide.
+    assert "Toolbar actions include hide/dim selection, redraw/reset, and zoom/Fit." in html
+    # Macros still arrive from the canonical JSON alone, not from TeX sources.
+    assert '"DetachedGlyph": "\\\\mathbb{D}"' in html

@@ -230,6 +230,7 @@
     }
 
     document.addEventListener("keydown", event => {
+      if (quickGuideOwnsFocus()) return;
       const tag = document.activeElement?.tagName?.toLowerCase();
       const editable = ["input", "textarea", "select"].includes(tag) || document.activeElement?.isContentEditable;
       if (editable || !(event.ctrlKey || event.metaKey)) return;

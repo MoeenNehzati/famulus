@@ -195,6 +195,62 @@
       background: #d5d8dc;
       margin: 0 2px;
     }
+    #quick-guide-highlight {
+      position: fixed;
+      pointer-events: none;
+      z-index: 40;
+      border: 2px solid #007f86;
+      border-radius: 4px;
+    }
+    #quick-guide-dialog {
+      position: fixed;
+      box-sizing: border-box;
+      z-index: 41;
+      width: min(360px, calc(100vw - 16px));
+      max-height: calc(100vh - 16px);
+      overflow: auto;
+      background: #f8f9f9;
+      color: #17202a;
+      border: 1px solid #aeb6bf;
+      border-radius: 8px;
+      padding: 10px 12px;
+      box-shadow: 0 8px 18px rgba(17,24,39,0.18);
+    }
+    #quick-guide-close {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      width: 24px;
+      height: 24px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #aeb6bf;
+      border-radius: 4px;
+      background: #f8f9f9;
+      color: #17202a;
+      cursor: pointer;
+    }
+    .quick-guide-actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+    .quick-guide-actions button {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      border: 1px solid #aeb6bf;
+      border-radius: 999px;
+      background: #f8f9f9;
+      color: #17202a;
+      cursor: pointer;
+      font-size: 0.88rem;
+      font-family: inherit;
+      white-space: nowrap;
+    }
     .canvas-wrap {
       overflow: hidden;
       position: absolute;

@@ -482,6 +482,7 @@
       refreshFilterControls();
     }
     document.addEventListener("keydown", event => {
+      if (quickGuideOwnsFocus()) return;
       const typing = ["input", "textarea", "select"].includes(document.activeElement?.tagName?.toLowerCase());
       if ((event.key === "/" || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k")) && !typing) {
         event.preventDefault();
