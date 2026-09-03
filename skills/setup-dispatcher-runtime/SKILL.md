@@ -19,15 +19,15 @@ The dispatcher is the server that runs every Famulus interface, and it launches 
 
 One end state, and nothing in this skill matters except reaching it:
 
-**An absolute path to a dedicated Python 3.11 or newer interpreter with the required packages installed, available as the variable `FAMULUS_PYTHON` in the terminal environment that launches Famulus, and still there in later sessions.**
+**A dedicated Python 3.11 or newer interpreter, at a known absolute path, with the required packages installed, and actually used by the dispatcher server every time the host launches it.**
 
 Five requirements, each separately checkable:
 
 1. **Right version, known path.** Python 3.11 or newer, at a known absolute path. A command name is not a path.
-2. **Dedicated to the dispatcher.** Not the user's system interpreter. The user's systemwide Python may be changed, upgraded, or replaced at any time for reasons that have nothing to do with Famulus, and Famulus's packages must not be installed into an environment the user owns. What form this takes depends on the system: usually a virtual environment, but a fresh interpreter installed for Famulus alone satisfies it equally. The test is consequence, not shape: installing into it must not change anything else the user runs, and nothing the user does to their own Python may change it. Where it is a virtual environment, `prefix` differing from `base_prefix` confirms that much.
+2. **Dedicated to the dispatcher.** Not the user's system interpreter. The user's systemwide Python may be changed, upgraded, or replaced at any time for reasons that have nothing to do with Famulus, and Famulus's packages must not be installed into an environment the user owns. What form this takes depends on the system: usually a virtual environment, but a fresh interpreter installed for Famulus alone satisfies it equally. The test is consequence, not shape: installing into it must not change anything else the user runs. The converse does not hold as strongly for every form, and do not claim it does: a virtual environment's interpreter is a symlink to the interpreter that built it, so removing or replacing that one breaks the environment, while a separately installed interpreter is immune. Where it is a virtual environment, `prefix` differing from `base_prefix` confirms it is the environment and not its base.
 3. **Required packages installed in it.** The declared packages importable from that interpreter, and from no other. This is why a feature's own packages are in scope: the dispatcher runs that feature's interface with this interpreter, so anything the interface imports must be installed here. The core declaration in `mcp-core.json` is what the server needs to start at all; a caller-owned declaration is what one interface needs to run.
-4. **Reachable as a variable.** Famulus's MCP declaration and its hooks invoke `${FAMULUS_PYTHON:-python}`. If the variable is unset they silently fall back to whatever `python` means on that machine, which is the failure this skill exists to end.
-5. **Surviving.** Across shells, across host restarts, and across plugin upgrades. A value that lives only in your process, or only in the shell you are in now, has not met the requirement; neither has an environment placed where a plugin upgrade will delete it.
+4. **The dispatcher actually runs on it.** When the host starts the dispatcher server, the interpreter that server executes in is this one. That is the requirement; no particular mechanism is. Read the current mechanism out of the plugin manifest and the session hook rather than assuming one: at the time of writing they start the server through the bare command `python`, which is met by making that command resolve to this interpreter *for the launched server* — not by changing what `python` means in the user's own shell. Checkable: the running server reports this absolute path as its own `sys.executable`.
+5. **It keeps happening.** On the next launch, and after a host restart, and after a plugin upgrade. Anything that holds only inside your process, or only in the shell you are in now, has not met requirement 4; neither has an interpreter placed where a plugin upgrade will delete it.
 
 ## How to work
 
@@ -38,7 +38,7 @@ Each step states a requirement and, where the method is open, how it is usually 
 **The latitude never extends to these.** Adapting the method is not permission to:
 
 - install Python, or have a package manager install it;
-- change PATH, create an alias or shim, or write any user or host configuration file;
+- change the PATH, aliases, or shims of the user's own shell, or write any user or host configuration file yourself; arranging what the launched dispatcher sees is in scope, changing what the user's own commands mean is not;
 - substitute `uv`, a pip bootstrap, an externally-managed bypass, a user or root install target, an executable fallback, or any wrapper for the declared pip flow;
 - install into any interpreter other than `${canonical_executable}`;
 - report a requirement met without the evidence named for it in the closing section.
@@ -137,9 +137,9 @@ Rerun the fingerprint against `${canonical_executable}` and require byte-for-byt
 
 *Core setup route only.*
 
-**Requirement.** Requirements 4 and 5 above: `${canonical_executable}` reachable as `FAMULUS_PYTHON` in the launching environment, and surviving later sessions. The step is complete when a newly launched host starts the server from `${canonical_executable}`, and not before.
+**Requirement.** Requirements 4 and 5 above: the dispatcher runs on `${canonical_executable}` when the host launches it, and does so again on later launches. The step is complete when a newly launched server reports `${canonical_executable}` as its own `sys.executable`, and not before.
 
-**Usually.** Report the exact line for the user to add to their shell profile or host settings, then have them restart the host. Never write that configuration yourself, and never treat your own process environment as evidence: you cannot set a variable for the host that launched you.
+**Usually.** Determine what the manifest and hook actually invoke, then arrange for that invocation to reach this interpreter, scoped to the launched server. Report the exact change and who must make it. Never edit the user's shell configuration yourself, never widen the change beyond the dispatcher, and never treat your own process environment as evidence: you cannot change the environment of the host that launched you.
 
 ## Close against the five requirements
 
@@ -152,8 +152,8 @@ Report a requirement as met only on evidence, never on the strength of an action
 1. **Right version, known path.** Evidence: the fingerprint of `${canonical_executable}`. Report the absolute path and version.
 2. **Dedicated to the dispatcher.** Evidence: the form you chose and why that form was right for this system, plus `prefix` and `base_prefix` where it is a virtual environment. Report what would and would not affect this interpreter now.
 3. **Required packages installed in it.** Evidence: the pip report's `install` records, or that the declaration was already satisfied. Report the exact declared package set.
-4. **Reachable as a variable.** You cannot confirm this from inside this session, and must not claim it. Report it as outstanding, with the exact line the user must add and where to add it.
-5. **Surviving.** Met only when a newly launched host starts the server from `${canonical_executable}`. Report it as pending that restart, and say how the user will know it worked.
+4. **The dispatcher actually runs on it.** You cannot confirm this from inside this session, and must not claim it: the server you are talking to was launched before you built anything. Report it as outstanding, with the exact change and who must make it.
+5. **It keeps happening.** Met only once a newly launched server reports `${canonical_executable}` as its `sys.executable`. Report it as pending that restart, and say how the user can check it.
 
 If any requirement is unmet, name it and stop there rather than reporting overall success.
 
@@ -167,6 +167,6 @@ Each of these means you are about to break the skill. Stop.
 |---|---|
 | "Nothing is on PATH, I will just install Python." | Installing Python is outside the latitude. Report what you tried and ask for a path. |
 | "No caller identified itself, so someone must be here to ask." | Absence of a caller is not presence of a person. If unsure, do not prompt. |
-| "I printed the export line, so it is set up." | Requirement 4 is met by the launching environment, not by your output. |
+| "I printed the change, so it is set up." | Requirement 4 is met by the dispatcher running on it, not by your output. |
 | "The venv is the requirement, so any venv will do." | Requirement 2 is dedication and survival. A venv where an upgrade deletes it fails. |
 | "`python` works here, so it is fine." | A command name is not a path, and the user may repoint it tomorrow. |

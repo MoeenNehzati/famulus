@@ -72,10 +72,12 @@ Ask the assistant to use `setup-dispatcher-runtime` when the command is missing
 entirely, when Famulus reports a missing dependency, or when its shared tool is
 unavailable, and review any requested package changes before approving them.
 
-The plugin manifest and the session hook currently start Famulus through the
-literal command `python`. Until they are migrated to the dedicated interpreter,
-a machine where `python` does not resolve still needs that command provided
-before Famulus can start, even once the dedicated environment exists.
+The plugin manifest and the session hook start Famulus through the bare command
+`python`. The dispatcher runtime satisfies that on its own, because a virtual
+environment provides a `python` of its own; what the skill has to arrange is
+that the command reaches that interpreter when the host launches the server.
+It reports the exact change and who must make it, and the change takes effect
+on the next host start.
 
 A previous successful setup does not by itself show that the shared tool is
 reachable in the current host session. The
