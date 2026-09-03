@@ -113,6 +113,23 @@ The renderer must not branch on adapter-specific names.
 modules and must not load one another; generated HTML still contains one runtime
 closure and has no dependency on local source assets.
 
+## Quick guides
+
+- `quick_guide.py` — data model and `replace_step()`.
+- `quick_guides/default.py` — complete editable default guide.
+- `quick_guides/<domain>.py` — domain guide derived from `DEFAULT_QUICK_GUIDE`.
+- `runtime/quick_guide.js` — generic passive UI controller.
+
+Quick guides are passive anchored explanations:
+
+- Back/Next are unconditional and do not depend on whether each step target was acted on.
+- The toolbar button manually opens the guide.
+- Missing, hidden, or invalid targets are skipped.
+- Edit `quick_guides/default.py` to change global guide content or ordering.
+- Create specialized guides by calling `replace_step()` on `DEFAULT_QUICK_GUIDE`; do not copy the tuple.
+- Guide data is renderer configuration only and is not persisted in graph payloads.
+- There is no guide persistence, workflow action, or guide-specific API.
+
 The browser runtime follows a fixed pipeline:
 
 1. Index entities, containment, and edges.
