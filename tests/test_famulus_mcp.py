@@ -86,7 +86,7 @@ def _declared_launch(host: str, plugin_root: Path) -> tuple[str, list[str], Path
     manifest = _json(plugin_root / f".{host}-plugin" / "plugin.json")
     if host == "claude":
         assert manifest["mcpServers"] == {
-            "famulus": {
+            "famulus_dispatcher": {
                 "command": "python",
                 "args": ["${CLAUDE_PLUGIN_ROOT}/mcp_server.py"],
                 "env": {
@@ -101,8 +101,8 @@ def _declared_launch(host: str, plugin_root: Path) -> tuple[str, list[str], Path
 
     assert manifest["mcpServers"] == "./.mcp.json"
     servers = _json(plugin_root / manifest["mcpServers"])["mcpServers"]
-    assert set(servers) == {"famulus"}
-    declaration = servers["famulus"]
+    assert set(servers) == {"famulus_dispatcher"}
+    declaration = servers["famulus_dispatcher"]
     assert declaration == {
         "command": "python",
         "args": ["mcp_server.py"],
@@ -244,11 +244,11 @@ def _persistent_launch(host: str, plugin_root: Path, plugin_data: Path):
     if host == "claude":
         declaration = _json(plugin_root / ".claude-plugin" / "plugin.json")[
             "mcpServers"
-        ]["famulus"]
+        ]["famulus_dispatcher"]
         root_token = "${CLAUDE_PLUGIN_ROOT}"
         data_token = "${CLAUDE_PLUGIN_DATA}"
     else:
-        declaration = _json(plugin_root / "mcp.json")["mcpServers"]["famulus"]
+        declaration = _json(plugin_root / "mcp.json")["mcpServers"]["famulus_dispatcher"]
         root_token = "${PLUGIN_ROOT}"
         data_token = "${PLUGIN_DATA}"
     args = [value.replace(root_token, str(plugin_root)) for value in declaration["args"]]
@@ -1116,7 +1116,7 @@ def test_comprehension_fixture_is_an_uncoached_generated_candidate() -> None:
     fixture = _json(COMPREHENSION_FIXTURE)
 
     assert "`famulus` MCP server" in fixture["session_start"]
-    assert fixture["mcp_tool"] == "famulus.invoke"
+    assert fixture["mcp_tool"] == "famulus_dispatcher.invoke"
     assert [case["case_id"] for case in fixture["cases"]] == [
         "T3C-A",
         "T3C-B",
@@ -1356,9 +1356,9 @@ def test_invoke_through_mcp_preserves_result_when_session_teardown_breaks(
 def test_host_declarations_normalize_to_common_command_contract() -> None:
     contract = _json(CORE)
     claude = _json(ROOT / ".claude-plugin" / "plugin.json")["mcpServers"][
-        "famulus"
+        "famulus_dispatcher"
     ]
-    codex = _json(ROOT / "mcp.json")["mcpServers"]["famulus"]
+    codex = _json(ROOT / "mcp.json")["mcpServers"]["famulus_dispatcher"]
 
     assert contract["command"] == "python"
     assert contract["args"] == ["mcp_server.py"]

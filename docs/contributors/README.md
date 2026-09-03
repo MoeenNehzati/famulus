@@ -53,7 +53,7 @@ Run it without `--check` only when intentionally refreshing the generated
 artifacts. Do not reach past the interface to the file behind it: the syncer is
 private `_rtx` content. Use the documented dispatcher route from the repository
 environment rather than running that private file directly. Host agents use
-the shared `famulus` MCP server's `invoke` tool for this object.
+the shared `famulus_dispatcher` MCP server's `invoke` tool for this object.
 
 Cross-skill behavior should go through the dispatcher boundary, not direct
 invocation of another skill's private scripts:

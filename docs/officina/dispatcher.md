@@ -26,7 +26,7 @@ where the contract requires it. See [Schemas](schema.md).
 
 ## Invocation
 
-The shared `famulus` MCP server resolves the current plugin package and invokes
+The shared `famulus_dispatcher` MCP server resolves the current plugin package and invokes
 Dispatcher internally. Its `invoke` tool accepts the generated projection:
 
 ```json

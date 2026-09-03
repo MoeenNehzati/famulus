@@ -156,7 +156,7 @@ state. MCP never reads or writes this ledger directly; setup-interface-manager
 remains its sole authority.
 
 The ledger does not say whether the shared Famulus MCP process is currently
-reachable. Live `famulus.invoke` availability is the MCP readiness signal, and
+reachable. Live `famulus_dispatcher.invoke` availability is the MCP readiness signal, and
 MCP startup does not overwrite the setup ledger. A malformed or unsupported
 ledger fails closed instead of being treated as ready.
 

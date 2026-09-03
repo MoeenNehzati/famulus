@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "server": "famulus",
+  "server": "famulus_dispatcher",
   "command": "python",
   "args": ["mcp_server.py"],
   "tool": {

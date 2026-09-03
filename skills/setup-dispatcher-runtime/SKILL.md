@@ -157,7 +157,7 @@ Report a requirement as met only on evidence, never on the strength of an action
 
 If any requirement is unmet, name it and stop there rather than reporting overall success.
 
-When every applicable requirement is met, allow the host to retry its packaged `famulus` MCP declaration. Never start a private server path directly.
+When every applicable requirement is met, allow the host to retry its packaged `famulus_dispatcher` MCP declaration. Never start a private server path directly.
 
 ## Red flags
 

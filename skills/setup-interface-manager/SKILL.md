@@ -8,7 +8,7 @@ description: Use only when a generated managed-setup gate, a Famulus setup-requi
 
 Executable Interfaces:
 
-Call `famulus.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
 - `setup-interface-manager._rtx.interface.authorize` — Resume only unmanaged or ready targets and atomically claim every ready managed receipt.
   - Caller: `setup-interface-manager`
   - Version: 1
