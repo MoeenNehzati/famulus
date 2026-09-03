@@ -58,7 +58,11 @@ def reduce_transitive_edges(doc: dict) -> tuple[dict, list[dict]]:
     return _DEFAULT_RENDERER.reduce_graph_json_transitive_edges(doc)
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(
+    argv: list[str] | None = None,
+    *,
+    renderer: ElkHtmlRenderer | None = None,
+) -> int:
     """CLI entry point for rendering canonical dependency JSON to HTML."""
     parser = argparse.ArgumentParser(
         description="Render an interactive dependency graph from canonical JSON."
@@ -81,6 +85,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Apply graph-theoretic transitive reduction before rendering",
     )
     args = parser.parse_args(argv)
+    selected_renderer = renderer or _DEFAULT_RENDERER
 
     source_path = Path(args.source).resolve()
     if not source_path.exists():
@@ -108,7 +113,10 @@ def main(argv: list[str] | None = None) -> int:
         build_dir = source_path.parent / "_build"
         build_dir.mkdir(exist_ok=True)
         html_path = build_dir / source_path.with_suffix(".html").name
-    html_path.write_text(build_html_with_elk(doc, reduction_note=reduction_note), encoding="utf-8")
+    html_path.write_text(
+        selected_renderer.render_graph_html(doc, reduction_note=reduction_note),
+        encoding="utf-8",
+    )
 
     print(
         json.dumps(

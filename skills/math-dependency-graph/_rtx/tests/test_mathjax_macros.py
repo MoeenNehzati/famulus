@@ -10,6 +10,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from officina.visualization.html_renderer.quick_guides.default import DEFAULT_QUICK_GUIDE
+from officina.visualization.html_renderer.quick_guides.math_dependency import (
+    MATH_DEPENDENCY_QUICK_GUIDE,
+)
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 REPO_SRC = SKILL_DIR.parents[2] / "src"
@@ -133,6 +137,54 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
             self.assertEqual(Path(payload["macro_file"]).resolve(), macro_file.resolve())
             self.assertGreater(payload["macros_from_file"], 0)
             html = html_out.read_text(encoding="utf-8")
+            self.assertIn('"QTC": "\\\\vQ^{\\\\Pi_{\\\\TC_X}}"', html)
+
+    def test_renderer_uses_math_dependency_quick_guide(self) -> None:
+        self.assertEqual(
+            DEFAULT_QUICK_GUIDE.steps[0].body,
+            "Nodes are items, and arrows and relations show how they connect.",
+        )
+        self.assertEqual(
+            DEFAULT_QUICK_GUIDE.steps[2].body,
+            "Select a result, then use the all-relations Ancestors control to add prerequisites through currently visible relation types.",
+        )
+        self.assertEqual(
+            MATH_DEPENDENCY_QUICK_GUIDE.steps[0].body,
+            "Follow arrows from prerequisites toward the results they support.",
+        )
+        self.assertEqual(
+            MATH_DEPENDENCY_QUICK_GUIDE.steps[2].body,
+            "Select a theorem, then use this control to add its prerequisites.",
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp) / "macro-paper"
+            shutil.copytree(FIXTURE_DIR, work)
+            graph = work / "graph.json"
+            html_out = work / "_build" / "graph.html"
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT_DIR / "_graph_builder.py"),
+                    str(graph),
+                    "--tex-entry",
+                    str(work / "main.tex"),
+                    "--html-out",
+                    str(html_out),
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+                env=script_env(),
+            )
+            payload = json.loads(result.stdout)
+
+            self.assertTrue(html_out.exists())
+            html = html_out.read_text(encoding="utf-8")
+            self.assertIn("Read mathematical dependencies", html)
+            self.assertIn("Trace prerequisites", html)
+            self.assertIn("Toolbar actions include hide/dim selection, redraw/reset, and zoom/Fit.", html)
             self.assertIn('"QTC": "\\\\vQ^{\\\\Pi_{\\\\TC_X}}"', html)
 
 

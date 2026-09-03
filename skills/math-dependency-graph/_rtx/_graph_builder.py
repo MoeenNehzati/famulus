@@ -10,6 +10,10 @@ import sys
 from pathlib import Path
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+from officina.visualization.elk_html_renderer import ElkHtmlRenderer
+from officina.visualization.html_renderer.quick_guides.math_dependency import (
+    MATH_DEPENDENCY_QUICK_GUIDE,
+)
 
 from officina.visualization.base_renderer_cli import main as render_html
 
@@ -240,7 +244,10 @@ def main(argv: list[str] | None = None) -> None:
         render_argv.extend(["--macro-file", str(macro_path)])
     if args.reduce_transitive_edges:
         render_argv.append("--reduce-transitive-edges")
-    render_html(render_argv)
+    render_html(
+        render_argv,
+        renderer=ElkHtmlRenderer(quick_guide=MATH_DEPENDENCY_QUICK_GUIDE),
+    )
     # stdout carries the renderer's machine-readable report; these counts are
     # diagnostics, so they must not turn stdout into two JSON documents.
     print(

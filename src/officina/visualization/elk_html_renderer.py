@@ -13,14 +13,17 @@ extension rules, and a minimal usage example.
 from __future__ import annotations
 
 import html
+from dataclasses import asdict
 import json
 import time
 from pathlib import Path
 from typing import Any
 
-from .base_renderer import BaseRenderer, Payload
+from .base_renderer import BaseRenderer, Payload, PayloadValidator
+from .graph import Graph
 from .html_renderer.assets import render_document
 from .html_renderer.dependencies import render_dependency_head
+from .html_renderer.quick_guide import QuickGuide
 
 
 # Fallback shapes assigned to categories a payload does not style itself. Each of
@@ -71,7 +74,11 @@ def _script_json(value: object) -> str:
     return json.dumps(value, indent=2).replace("</", "<\\/")
 
 
-def _build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
+def _build_html_with_elk(
+    doc: dict,
+    reduction_note: str = "",
+    quick_guide: QuickGuide | None = None,
+) -> str:
     """Build HTML from an already normalized and validated graph payload.
 
     Responsibilities of this renderer:
@@ -153,6 +160,7 @@ def _build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
             else ""
         ),
         graph_document=_script_json(doc),
+        quick_guide_config=_script_json(asdict(quick_guide) if quick_guide is not None else None),
         category_shapes=_script_json(CATEGORY_SHAPES),
         category_palette=_script_json(CATEGORY_PALETTE),
         edge_palette=_script_json(EDGE_PALETTE),
@@ -172,9 +180,23 @@ def build_html_with_elk(doc: dict, reduction_note: str = "") -> str:
 class ElkHtmlRenderer(BaseRenderer):
     """Render canonical graph payloads as standalone ELK-backed HTML documents."""
 
+    def __init__(
+        self,
+        *,
+        quick_guide: QuickGuide | None = None,
+        validator: PayloadValidator | None = None,
+        graph: Graph | None = None,
+    ) -> None:
+        super().__init__(validator=validator, graph=graph)
+        self.quick_guide = quick_guide
+
     def _render_graph(self, graph_json: Payload, reduction_note: str = "") -> str:
         """Render one normalized payload as an interactive ELK HTML document."""
-        return _build_html_with_elk(graph_json, reduction_note=reduction_note)
+        return _build_html_with_elk(
+            graph_json,
+            reduction_note=reduction_note,
+            quick_guide=self.quick_guide,
+        )
 
 
 __all__ = [

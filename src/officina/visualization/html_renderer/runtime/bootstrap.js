@@ -12,6 +12,7 @@
  * sibling `from_*` packages and must not be recognized here by name.
  */
     const docData = @@OFFICINA_GRAPH_DOCUMENT@@;
+    const QUICK_GUIDE_CONFIG = @@OFFICINA_QUICK_GUIDE_CONFIG@@;
     const typeStyleCatalog = new Map(
       (docData.categories || [])
         .filter(category => category && category.id)

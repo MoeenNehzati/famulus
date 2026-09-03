@@ -258,6 +258,7 @@
     // ── Other event listeners ────────────────────────────────────────────────
 
     document.addEventListener("keydown", event => {
+      if (quickGuideOwnsFocus()) return;
       const tag = document.activeElement?.tagName?.toLowerCase();
       if (["input", "textarea", "select"].includes(tag) || document.activeElement?.isContentEditable) return;
       if (event.key === "Escape") {
