@@ -11,10 +11,25 @@ system.
 
 ## 1. Install the core system
 
-Famulus uses the host plugin plus the exact environment reached by `python`.
-That command must resolve to Python 3.11 or newer with a functional
-`python -m pip`. Famulus does not install or alias Python, create an environment,
-bootstrap pip, use `uv`, or create a managed runtime.
+Famulus needs the host plugin plus a Python 3.11 or newer interpreter with a
+functional `pip`.
+
+Famulus keeps its dependencies in an interpreter dedicated to it, so that the
+Python you use for your own work is never modified, and so that upgrading or
+replacing that Python does not break Famulus. `setup-python-environment` is the
+skill that provides one. It runs without MCP, which is what lets it repair the
+very thing MCP needs in order to start.
+
+What it does: finds an interpreter of a usable version, asks you to confirm it
+and where the dedicated environment should live, builds that environment,
+installs only the packages declared in `mcp-core.json`, verifies the result,
+and reports what remains for you to do.
+
+What it does not do: install Python, alias or shim any command, edit your shell
+profile or host settings, bootstrap pip, use `uv`, or install anything into an
+interpreter other than the dedicated one. When it cannot finish inside those
+limits it stops and tells you exactly what it needs from you, which for a
+machine with no suitable Python means installing one and giving it the path.
 
 ### 1.1 Install the host plugin
 
@@ -44,11 +59,16 @@ skills.
 
 ### 1.2 Verify the core runtime
 
-Confirm that the selected `python` is Python 3.11 or newer and that
-`python -m pip` can install into that environment. If Famulus reports a missing
-core dependency or its shared tool is unavailable, ask the assistant to use
+Confirm that `python` is Python 3.11 or newer and that `python -m pip` works.
+If Famulus reports a missing core dependency, or its shared tool is
+unavailable, or the command is missing entirely, ask the assistant to use
 `setup-python-environment` and review any requested package changes before
 approving them.
+
+The plugin manifest and the session hook currently start Famulus through the
+literal command `python`. Until they are migrated to the dedicated interpreter,
+a machine where `python` does not resolve still needs that command provided
+before Famulus can start, even once the dedicated environment exists.
 
 A previous successful setup does not by itself show that the shared tool is
 reachable in the current host session. The

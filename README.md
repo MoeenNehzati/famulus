@@ -80,8 +80,11 @@ To install Famulus you need:
 
 - a plugin-capable Claude Code or Codex installation; there is no published
   minimum host version
-- Python 3.11 or newer, available as `python`, with pip enabled and permission
-  to install the required packages
+- Python 3.11 or newer with pip. Famulus keeps its own packages in a dedicated
+  environment rather than installing them into the Python you use for your own
+  work; `setup-python-environment` builds that environment for you. The host
+  currently launches the server through the command `python`, so that command
+  must also resolve to a working interpreter
 
 ## Quick Start
 
@@ -114,11 +117,24 @@ codex plugin add famulus@nullkit --json
 
 Restart the host afterwards so it loads the newly installed plugin.
 
-### 2. Check Python
+### 2. Set up Python
 
-Confirm that `python` is Python 3.11 or newer and that `python -m pip` works. If
-Famulus reports a missing core dependency, ask it to use
-`setup-python-environment`.
+Confirm that `python` is Python 3.11 or newer and that `python -m pip` works.
+
+If it is missing, older than 3.11, or an interpreter you would rather Famulus
+left alone, ask the assistant to use `setup-python-environment`. That skill
+never installs Python and never edits your configuration. It finds an
+interpreter, asks you to confirm it, builds a dedicated environment that
+Famulus owns, installs only the declared core packages into that environment,
+and reports what is left for you to do. Ask for it too whenever Famulus
+reports a missing core dependency.
+
+Its one limit is that it cannot conjure an interpreter: if nothing on the
+machine is Python 3.11 or newer, it will say so and ask you to install one and
+give it the path.
+
+See [Setting up Famulus](docs/setup.md) for what the skill does and does not
+change.
 
 ### 3. Set up optional features
 
