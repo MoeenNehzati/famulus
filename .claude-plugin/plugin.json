@@ -7,7 +7,7 @@
   "repository": "https://github.com/MoeenNehzati/famulus",
   "version": "0.0.0",
   "mcpServers": {
-    "famulus": {
+    "famulus_dispatcher": {
       "command": "python",
       "args": ["${CLAUDE_PLUGIN_ROOT}/mcp_server.py"],
       "env": {

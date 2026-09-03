@@ -10,7 +10,7 @@ description: >-
 
 Executable Interfaces:
 
-Call `famulus.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
 - `math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph` — Render offline interactive HTML from self-contained canonical graph JSON without reading or rewriting source material.
   - Caller: `math-dependency-graph`
   - Version: 2

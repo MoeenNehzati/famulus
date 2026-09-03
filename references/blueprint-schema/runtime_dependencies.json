@@ -7084,6 +7084,14 @@
         }
       }
     },
+    "setup-dispatcher-runtime": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {}
+    },
     "setup-interface-manager": {
       "maturity": "experimental",
       "installation_tier": "core",
@@ -7119,14 +7127,6 @@
           "dependencies": []
         }
       }
-    },
-    "setup-python-environment": {
-      "maturity": "stable",
-      "installation_tier": "core",
-      "personal_preference": {
-        "applies": false
-      },
-      "interfaces": {}
     },
     "skill-maker": {
       "maturity": "stable",

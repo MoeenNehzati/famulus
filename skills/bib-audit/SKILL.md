@@ -9,7 +9,7 @@ description: >-
 
 Executable Interfaces:
 
-Call `famulus.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
 - `bib-audit._rtx.interface.scripts-bib-similarity` — Detect duplicate and version-pair candidates in a .bib file by scoring all entry pairs.
   - Caller: `bib-audit`
   - Version: 1
@@ -28,14 +28,14 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
 Instruction Interfaces:
 
 These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `setup-python-environment.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact selected Python environment without MCP.
+- `setup-dispatcher-runtime.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact dispatcher runtime without MCP.
 <!-- END BLUEPRINT INTERFACES -->
 # Bibliography Audit
 
 Conservative bibliography auditor. Default behavior: produce a structured report. Apply transformations only on explicit user approval.
 
 Before validating or comparing bibliography entries, follow
-`setup-python-environment.interface.repair-selected-packages` for this owner's exact
+`setup-dispatcher-runtime.interface.repair-selected-packages` for this owner's exact
 declaration `["bibtexparser"]`. Complete the full Task 2 fingerprint procedure; on any
 failure, stop before invoking either bibliography interface.
 

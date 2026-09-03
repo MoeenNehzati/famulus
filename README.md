@@ -80,8 +80,12 @@ To install Famulus you need:
 
 - a plugin-capable Claude Code or Codex installation; there is no published
   minimum host version
-- Python 3.11 or newer, available as `python`, with pip enabled and permission
-  to install the required packages
+- Python 3.11 or newer with pip. Famulus runs its skills through a dispatcher
+  server, and that server needs a Python runtime of its own;
+  `setup-dispatcher-runtime` builds it, so Famulus's packages never land in the
+  Python you use for your own work. The host currently starts that server
+  through the command `python`, so that command must also resolve to a working
+  interpreter
 
 ## Quick Start
 
@@ -114,11 +118,27 @@ codex plugin add famulus@nullkit --json
 
 Restart the host afterwards so it loads the newly installed plugin.
 
-### 2. Check Python
+### 2. Set up the dispatcher runtime
 
-Confirm that `python` is Python 3.11 or newer and that `python -m pip` works. If
-Famulus reports a missing core dependency, ask it to use
-`setup-python-environment`.
+Every Famulus skill runs through the dispatcher server, and the dispatcher
+executes each skill's code with its own Python. Giving it a runtime of its own
+is the second installation step.
+
+Confirm that `python` is Python 3.11 or newer and that `python -m pip` works.
+
+Then ask the assistant to use `setup-dispatcher-runtime` whenever `python` is
+missing, older than 3.11, or an interpreter you would rather Famulus left
+alone. It finds an interpreter, asks you to confirm it and where the runtime
+should live, builds it, installs only the declared packages, and reports what
+is left for you to do. Ask for it again later whenever Famulus says a package
+it needs is unavailable: because the dispatcher runs every skill with that one
+interpreter, a skill's own dependency is installed there too.
+
+It never installs Python and never edits your configuration. If nothing on the
+machine is Python 3.11 or newer, it says so and asks you to install one and
+give it the path.
+
+See [Setting up Famulus](docs/setup.md) for the full boundary.
 
 ### 3. Set up optional features
 

@@ -11,10 +11,33 @@ system.
 
 ## 1. Install the core system
 
-Famulus uses the host plugin plus the exact environment reached by `python`.
-That command must resolve to Python 3.11 or newer with a functional
-`python -m pip`. Famulus does not install or alias Python, create an environment,
-bootstrap pip, use `uv`, or create a managed runtime.
+Famulus needs the host plugin plus a Python 3.11 or newer interpreter with a
+functional `pip`.
+
+Famulus runs every skill through the dispatcher server, and the dispatcher
+executes each skill's code with its own interpreter. That interpreter is the
+dispatcher runtime, and `setup-dispatcher-runtime` is the skill that provides
+it. Keeping it separate means the Python you use for your own work is never
+modified, and upgrading or replacing that Python cannot break Famulus.
+
+Two things follow from the dispatcher running everything with one interpreter.
+The packages in `mcp-core.json` are what the server needs to start at all. A
+skill's own dependency — `marker-pdf` for PDF conversion, say — is installed
+into the same runtime, because that is the interpreter the dispatcher will run
+that skill with. Both belong to `setup-dispatcher-runtime`.
+
+It also runs without MCP. That is what lets it repair the very thing MCP
+needs in order to start.
+
+What it does: finds an interpreter of a usable version, asks you to confirm it
+and where the runtime should live, builds it, installs only the declared
+packages, verifies the result, and reports what remains for you to do.
+
+What it does not do: install Python, alias or shim any command, edit your shell
+profile or host settings, bootstrap pip, use `uv`, or install anything into an
+interpreter other than the dispatcher's. When it cannot finish inside those
+limits it stops and tells you exactly what it needs from you, which for a
+machine with no suitable Python means installing one and giving it the path.
 
 ### 1.1 Install the host plugin
 
@@ -42,13 +65,19 @@ codex plugin add famulus@nullkit --json
 Restart the host after installing the plugin so that it discovers the new
 skills.
 
-### 1.2 Verify the core runtime
+### 1.2 Verify the dispatcher runtime
 
-Confirm that the selected `python` is Python 3.11 or newer and that
-`python -m pip` can install into that environment. If Famulus reports a missing
-core dependency or its shared tool is unavailable, ask the assistant to use
-`setup-python-environment` and review any requested package changes before
-approving them.
+Confirm that `python` is Python 3.11 or newer and that `python -m pip` works.
+Ask the assistant to use `setup-dispatcher-runtime` when the command is missing
+entirely, when Famulus reports a missing dependency, or when its shared tool is
+unavailable, and review any requested package changes before approving them.
+
+The plugin manifest and the session hook start Famulus through the bare command
+`python`. The dispatcher runtime satisfies that on its own, because a virtual
+environment provides a `python` of its own; what the skill has to arrange is
+that the command reaches that interpreter when the host launches the server.
+It reports the exact change and who must make it, and the change takes effect
+on the next host start.
 
 A previous successful setup does not by itself show that the shared tool is
 reachable in the current host session. The
@@ -127,7 +156,7 @@ state. MCP never reads or writes this ledger directly; setup-interface-manager
 remains its sole authority.
 
 The ledger does not say whether the shared Famulus MCP process is currently
-reachable. Live `famulus.invoke` availability is the MCP readiness signal, and
+reachable. Live `famulus_dispatcher.invoke` availability is the MCP readiness signal, and
 MCP startup does not overwrite the setup ledger. A malformed or unsupported
 ledger fails closed instead of being treated as ready.
 

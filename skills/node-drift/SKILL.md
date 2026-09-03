@@ -9,7 +9,7 @@ description: >-
 
 Executable Interfaces:
 
-Call `famulus.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
 - `node-drift._rtx.interface.compute-hashes` — Compute canonical certification-basis and v6 node hashes for exact or installed modules.
   - Caller: `node-drift`
   - Version: 2
@@ -28,10 +28,10 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
 Instruction Interfaces:
 
 These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `setup-python-environment.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact selected Python environment without MCP.
+- `setup-dispatcher-runtime.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact dispatcher runtime without MCP.
 <!-- END BLUEPRINT INTERFACES -->
 Before computing hashes or reading certificate state, follow
-`setup-python-environment.interface.repair-selected-packages` for this owner's exact
+`setup-dispatcher-runtime.interface.repair-selected-packages` for this owner's exact
 declaration `["cryptography", "keyring"]`. Complete the full Task 2 fingerprint
 procedure; on any failure, stop before invoking either node-drift interface.
 

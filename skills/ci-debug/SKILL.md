@@ -8,7 +8,7 @@ description: Use when GitHub Actions CI is red, matrix failures need isolated re
 
 Executable Interfaces:
 
-Call `famulus.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
 - `ci-debug._rtx.interface.run-ci` — Start or poll one durable complete remote CI matrix for an exact pushed candidate.
   - Caller: `ci-debug`
   - Version: 2

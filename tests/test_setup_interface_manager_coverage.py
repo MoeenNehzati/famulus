@@ -48,7 +48,7 @@ def test_release_has_no_production_managed_setups() -> None:
 
     assert fixture_managed == {"python-canary.interface.setup"}
     assert production_managed == set()
-    assert "setup-python-environment.interface.setup" not in graph.managed_setups
+    assert "setup-dispatcher-runtime.interface.setup" not in graph.managed_setups
 
     parameterized_setups = {
         interface_id

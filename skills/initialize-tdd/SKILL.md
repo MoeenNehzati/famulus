@@ -10,7 +10,7 @@ description: >-
 
 Executable Interfaces:
 
-Call `famulus.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
 - `initialize-tdd._rtx.interface.setup-compat-aliases` — Create every host compatibility alias symlink (e.g. a legacy filename some host looks for specifically) in a freshly scaffolded project directory.
   - Caller: `initialize-tdd`
   - Version: 1

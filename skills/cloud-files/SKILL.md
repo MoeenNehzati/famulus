@@ -9,7 +9,7 @@ description: >-
 
 Executable Interfaces:
 
-Call `famulus.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
 - `cloud-files._rtx.interface.lists-delete` — Delete a file from cloud storage under the lists/ directory.
   - Caller: `cloud-files`
   - Version: 1
@@ -64,7 +64,7 @@ Instruction Interfaces:
 
 These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `connect-google.interface.default@1` — Route Google OAuth-client preparation according to whether a valid Desktop client is already installed.
-- `setup-python-environment.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact selected Python environment without MCP.
+- `setup-dispatcher-runtime.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact dispatcher runtime without MCP.
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 
@@ -76,7 +76,7 @@ This skill owns Google Drive transport. Other skills should call this skill's
 scripts rather than speaking to the Drive API directly.
 
 Before any Drive or credential action, use the host-loaded
-`setup-python-environment.interface.repair-selected-packages` procedure for
+`setup-dispatcher-runtime.interface.repair-selected-packages` procedure for
 feature `cloud-files` and its exact declaration `["keyring"]`. Require its
 complete selected-Python preflight and byte-equal final fingerprint. On failure,
 stop before OAuth, network, configuration, or other owner activity; never repair

@@ -30,7 +30,7 @@ _spec.loader.exec_module(_mod)
 
 _DISPATCHER_CONTEXT_MARKERS = [
     "## Skill interfaces",
-    "`famulus` MCP server",
+    "`famulus_dispatcher` MCP server",
     "invocation metadata and `Arguments JSON`",
     "do not invoke private scripts directly",
     "`Instruction Interfaces` are LLM-readable instructions",

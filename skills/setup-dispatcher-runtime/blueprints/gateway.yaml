@@ -1,16 +1,16 @@
 content: [SKILL\.md]
 dependencies: []
-description: Fingerprints exact command `python`, preflights its normal pip target, repairs only the root core declaration, and verifies stable identity.
+description: Selects a Python 3.11+ interpreter, provides the dedicated dispatcher runtime, preflights its normal pip target, repairs only the selected declaration, and verifies stable identity.
 gateway: {language: Markdown, path: SKILL.md}
-id: setup-python-environment.source.gateway
+id: setup-dispatcher-runtime.source.gateway
 interfaces:
-  setup-python-environment.source.gateway.interface.default:
+  setup-dispatcher-runtime.source.gateway.interface.default:
     content: [SKILL\.md]
     uses_interfaces: []
     contract:
       arguments:
         request:
-          description: Request to diagnose or repair the bundled Famulus core Python environment.
+          description: Request to provide or repair the dispatcher's dedicated Python runtime.
           required: true
           sensitivity: public
           type: {kind: string, sensitivity: public}
@@ -23,15 +23,15 @@ interfaces:
         writes:
         - {access: write, content: report, formats: [markdown], id: write-1, medium: prompt, sensitivity: derived-private}
         - access: execute
-          content: Initial and final selected-environment fingerprint
+          content: Candidate interpreter fingerprint and dedicated-environment creation
           formats: [argv, json, text]
-          id: literal-python
+          id: candidate-python
           medium: subprocess
-          path: python
+          path: <discovered-candidate>
           path_match: exact
-          reason: Identify and recheck only the environment selected by the required literal command.
+          reason: Fingerprint only interpreters offered as candidates, and build the dedicated environment with the one the user confirmed.
           sensitivity: derived-private
-          system: selected Python environment
+          system: host Python installation
         - access: execute
           content: Pip preflight and package repair through the fingerprinted executable
           formats: [argv, json, text]
@@ -39,12 +39,19 @@ interfaces:
           medium: subprocess
           path: <selected-fingerprint.sys.executable>
           path_match: exact
-          reason: Use only the canonical absolute executable returned by the literal-command fingerprint.
+          reason: Use only the canonical absolute executable of the dedicated environment.
           sensitivity: derived-private
-          system: selected Python environment
+          system: dedicated Famulus Python environment
       execution:
         consistency: {live: The result reflects the exact python command resolution and environment fingerprint observed during this run.}
         effects:
+        - action: execute
+          confirmation_evidence: {kind: output, output_ref: response}
+          direct_io_ref: candidate-python
+          id: create-dedicated-environment
+          may_occur_in_outcomes: [repaired]
+          reversibility: {reversible: The created environment directory can be deleted without touching the interpreter that built it.}
+          value_source: {kind: argument, argument_ref: request}
         - action: execute
           confirmation_evidence: {kind: output, output_ref: response}
           direct_io_ref: selected-python
@@ -63,14 +70,14 @@ interfaces:
         state_effect: mutating
         verification: [{method: output-schema, output_ref: response}]
       helpers: []
-      interaction: {mode: unattended}
+      interaction: {mode: interactive, channel: tty, unattended_outcome: prerequisite-failed}
       outcomes:
       - caller_action: Report the stable fingerprint and packages changed, then let the host retry Famulus MCP.
         class: success
-        effects: [install-core-packages]
+        effects: [create-dedicated-environment, install-core-packages]
         id: repaired
         outputs: [response]
-      - caller_action: Report the prerequisite failure and make no package or environment mutation.
+      - caller_action: Report the prerequisite failure, or the interpreter path still needed from the user, and make no package or environment mutation.
         class: error
         effects: []
         id: prerequisite-failed
@@ -87,7 +94,7 @@ interfaces:
         truncation: {kind: none}
         type: {kind: string, sensitivity: derived-private}
       preconditions: []
-    description: Repair the core or one caller-owned package declaration in the exact selected Python environment without MCP.
+    description: Repair the core or one caller-owned package declaration in the exact dispatcher runtime without MCP.
     version: 1
 node_type: behavioral_source
 schema_version: 6

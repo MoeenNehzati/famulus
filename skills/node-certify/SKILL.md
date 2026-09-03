@@ -9,7 +9,7 @@ description: >-
 
 Executable Interfaces:
 
-Call `famulus.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
 - `node-certify._rtx.interface.certify` — Certify exact v6 module closures by skipping current nodes and appending signed certificate histories for stale nodes at an explicit reviewed repository commit.
   - Caller: `node-certify`
   - Version: 2
@@ -38,10 +38,10 @@ These are LLM-readable instruction surfaces. Read and follow them directly; do n
 - `node-certify.source.audit-behavioral-source.interface.audit@2` — Audit one behavioral source and return bounded semantic evidence and a verdict.
 - `node-certify.source.audit-interface.interface.audit@2` — Audit one source interface and return bounded semantic evidence and a verdict.
 - `node-certify.source.audit-module.interface.audit@2` — Audit one module and return bounded semantic evidence and a verdict.
-- `setup-python-environment.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact selected Python environment without MCP.
+- `setup-dispatcher-runtime.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact dispatcher runtime without MCP.
 <!-- END BLUEPRINT INTERFACES -->
 Before drift inspection, semantic audit, or certification, follow
-`setup-python-environment.interface.repair-selected-packages` for this owner's exact
+`setup-dispatcher-runtime.interface.repair-selected-packages` for this owner's exact
 declaration `["cryptography", "keyring", "pyflakes", "pytest", "pytest-xdist"]`.
 Complete the full Task 2 fingerprint procedure; on any failure, stop before invoking a
 drift, audit, or certify interface.

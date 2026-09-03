@@ -8,7 +8,7 @@ description: Use when an existing Markdown skill instruction should be transform
 
 Executable Interfaces:
 
-Call `famulus.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
 - `distill-to-rutters._rtx.interface.validate-and-route` — Validate one source or exact-fixed-basename typed artifact and authorize no more than one deterministic route.
   - Caller: `distill-to-rutters`
   - Version: 1

@@ -12,7 +12,7 @@ tools:
 
 Executable Interfaces:
 
-Call `famulus.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
 - `pdf-to-markdown._rtx.interface.scripts-check-marker-models` — Check whether required Marker/Surya models are downloaded and cached locally.
   - Caller: `pdf-to-markdown`
   - Version: 1
@@ -31,7 +31,7 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
 Instruction Interfaces:
 
 These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `setup-python-environment.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact selected Python environment without MCP.
+- `setup-dispatcher-runtime.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact dispatcher runtime without MCP.
 <!-- END BLUEPRINT INTERFACES -->
 # PDF to Markdown
 
@@ -66,7 +66,7 @@ If LaTeX source found anywhere: download, extract, done.
 If no LaTeX source found, convert the PDF directly.
 
 Only after selecting this PDF/Marker fallback, follow
-`setup-python-environment.interface.repair-selected-packages` for this owner's exact
+`setup-dispatcher-runtime.interface.repair-selected-packages` for this owner's exact
 declaration `["marker-pdf"]`. Complete the full Task 2 fingerprint procedure; on any
 failure, stop before probing Marker models or running `marker_single`. Source-only success
 must not invoke this repair.

@@ -3,9 +3,9 @@ content:
 dependencies:
 - blueprint:
     base: repository-root
-    path: skills/setup-python-environment/blueprints/gateway.yaml
+    path: skills/setup-dispatcher-runtime/blueprints/gateway.yaml
   reason: Repair only node-certify's residual declaration before certification work.
-  source: setup-python-environment.source.gateway
+  source: setup-dispatcher-runtime.source.gateway
   version: 1
 description: Owns the drift-selected, dependency-first certification algorithm and
   delegates each semantic judgment to the audit interface for that node kind.
@@ -17,7 +17,7 @@ interfaces: {}
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
-- interface: setup-python-environment.interface.repair-selected-packages
+- interface: setup-dispatcher-runtime.interface.repair-selected-packages
   version: 1
 - interface: node-drift._rtx.interface.drift-status
   version: 4

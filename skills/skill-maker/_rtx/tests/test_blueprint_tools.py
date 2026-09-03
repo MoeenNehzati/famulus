@@ -431,7 +431,7 @@ def test_generated_interface_block_limits_and_removes_the_managed_markdown_gate(
     assert "### Managed setup gate" not in syncer.generated_interface_block(
         "managed", _managed_gate_graph(opted_in=False)
     )
-    bootstrap = syncer.load_blueprints()["setup-python-environment"]
+    bootstrap = syncer.load_blueprints()["setup-dispatcher-runtime"]
     assert "### Managed setup gate" not in syncer.generated_interface_block(
         bootstrap.name, bootstrap.repository_graph
     )
