@@ -114,7 +114,7 @@ def _owner_packages(owner: str) -> tuple[str, ...]:
 def _expand(argv: list[str], canonical: str, packages: tuple[str, ...]) -> list[str]:
     result: list[str] = []
     for token in argv:
-        if token == "${canonical_executable}":
+        if token in ("${canonical_executable}", "${candidate}"):
             result.append(canonical)
         elif token == "${selected_packages}":
             result.extend(packages)
@@ -142,16 +142,19 @@ class _OwnerHarness:
     repaired_owners: set[str] = field(default_factory=set)
     fingerprint_counts: dict[str, int] = field(default_factory=dict)
     canonical: str = field(
-        default_factory=lambda: _absolute_test_python("Selected Python")
+        default_factory=lambda: _absolute_test_python("Famulus Venv")
     )
 
     def run(self, owner: str, argv: list[str]) -> tuple[int, str]:
         self.calls.append((owner, argv))
         active_failure = self.failure if self.failure_owner in {None, owner} else None
-        if argv[0] == "python":
+        if argv[1:2] == ["-c"] and "base_prefix" in argv[2]:
             self.fingerprint_counts[owner] = self.fingerprint_counts.get(owner, 0) + 1
-            if active_failure == "missing-python" and self.fingerprint_counts[owner] == 1:
-                raise FileNotFoundError("python")
+            if (
+                active_failure == "unusable-interpreter"
+                and self.fingerprint_counts[owner] == 1
+            ):
+                raise FileNotFoundError(argv[0])
             executable = self.canonical
             version = [3, 13]
             if active_failure == "old-python" and self.fingerprint_counts[owner] == 1:
@@ -163,7 +166,7 @@ class _OwnerHarness:
             fingerprint = {
                 "executable": executable,
                 "prefix": str(Path(self.canonical).parent),
-                "base_prefix": str(Path(self.canonical).parent),
+                "base_prefix": str(Path(Path.cwd().anchor) / "usr"),
                 "version": version,
             }
             return 0, json.dumps(fingerprint)
@@ -200,8 +203,11 @@ def _repair_owner(harness: _OwnerHarness, owner: str) -> bool:
     templates = _task2_templates()
     packages = _owner_packages(owner)
     harness.declarations.append((owner, packages))
+    fingerprint_argv = _expand(
+        templates["candidate-fingerprint"], harness.canonical, packages
+    )
     try:
-        code, output = harness.run(owner, templates["initial-fingerprint"])
+        code, output = harness.run(owner, fingerprint_argv)
     except FileNotFoundError:
         return False
     if code:
@@ -225,7 +231,7 @@ def _repair_owner(harness: _OwnerHarness, owner: str) -> bool:
         )
         if code:
             return False
-    code, output = harness.run(owner, templates["final-fingerprint"])
+    code, output = harness.run(owner, fingerprint_argv)
     if code:
         return False
     final = json.loads(output)
@@ -374,12 +380,9 @@ def test_selected_owner_composition_is_isolated_and_deduplicated(
         owner for owner in GOOGLE_OWNERS if owner not in expected_owners
     }.isdisjoint(owner for owner, _ in harness.calls)
     assert all(initial == final for _, initial, final in harness.fingerprints)
+    assert all(argv[0] == harness.canonical for _, argv in harness.calls)
     assert all(
-        argv[0] in {"python", harness.canonical}
-        for _, argv in harness.calls
-    )
-    assert all(
-        token not in {"python3", "py"}
+        token not in {"python", "python3", "py"}
         for _, argv in harness.calls
         for token in argv
     )
@@ -398,8 +401,10 @@ def test_satisfied_selected_declarations_recheck_without_reinstall(
     assert deny_external_calls == []
 
 
-@pytest.mark.parametrize("failure", ["missing-python", "old-python", "relative-python"])
-def test_initial_python_gate_stops_before_canonical_or_external_actions(
+@pytest.mark.parametrize(
+    "failure", ["unusable-interpreter", "old-python", "relative-python"]
+)
+def test_supplied_interpreter_gate_stops_before_canonical_or_external_actions(
     failure: str, deny_external_calls: list[str]
 ) -> None:
     harness = _OwnerHarness(failure=failure, failure_owner="connect-google")
@@ -407,7 +412,14 @@ def test_initial_python_gate_stops_before_canonical_or_external_actions(
     assert not _run_selection(harness, ("drive",))
     assert harness.declarations == [("connect-google", ("keyring",))]
     assert harness.calls == [
-        ("connect-google", _task2_templates()["initial-fingerprint"])
+        (
+            "connect-google",
+            _expand(
+                _task2_templates()["candidate-fingerprint"],
+                harness.canonical,
+                ("keyring",),
+            ),
+        )
     ]
     assert harness.installs == []
     assert harness.boundary_actions == []

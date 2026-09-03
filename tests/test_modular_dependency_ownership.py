@@ -92,7 +92,7 @@ def _task2_templates() -> dict[str, list[str]]:
 def _expand(argv: list[str], executable: str, packages: tuple[str, ...]) -> list[str]:
     expanded: list[str] = []
     for token in argv:
-        if token == "${canonical_executable}":
+        if token in ("${canonical_executable}", "${candidate}"):
             expanded.append(executable)
         elif token == "${selected_packages}":
             expanded.extend(packages)
@@ -237,19 +237,21 @@ class _RepairHarness:
     calls: list[tuple[str, list[str]]] = field(default_factory=list)
     installs: list[tuple[str, tuple[str, ...]]] = field(default_factory=list)
     boundaries: list[str] = field(default_factory=list)
-    canonical: str = "/tmp/Selected Python/python"
+    canonical: str = "/tmp/Famulus Venv/bin/python"
 
     def repair(self, owner: str, *, failure: str | None = None) -> bool:
         templates = _task2_templates()
         packages = RESIDUAL[owner]
-        initial_argv = templates["initial-fingerprint"]
-        self.calls.append((owner, initial_argv))
-        if failure == "missing-python":
+        fingerprint_argv = _expand(
+            templates["candidate-fingerprint"], self.canonical, packages
+        )
+        self.calls.append((owner, fingerprint_argv))
+        if failure == "unusable-interpreter":
             return False
         initial = {
             "executable": self.canonical,
-            "prefix": "/tmp/Selected Python",
-            "base_prefix": "/tmp/Selected Python",
+            "prefix": "/tmp/Famulus Venv",
+            "base_prefix": "/usr",
             "version": [3, 13],
         }
         for name, failure_name in (
@@ -271,7 +273,7 @@ class _RepairHarness:
             )
             self.installs.append((owner, missing))
             self.installed.update(package.casefold() for package in missing)
-        self.calls.append((owner, templates["final-fingerprint"]))
+        self.calls.append((owner, fingerprint_argv))
         final = dict(initial)
         if failure == "fingerprint-drift":
             final["executable"] = "/tmp/Other Python/python"
@@ -289,8 +291,12 @@ def test_each_owner_repairs_only_its_exact_residual_declaration(owner: str) -> N
     assert harness.installs == [(owner, RESIDUAL[owner])]
     assert {called_owner for called_owner, _ in harness.calls} == {owner}
     assert harness.boundaries == [owner]
-    assert all(argv[0] in {"python", harness.canonical} for _, argv in harness.calls)
-    assert all(token not in {"python3", "py"} for _, argv in harness.calls for token in argv)
+    assert all(argv[0] == harness.canonical for _, argv in harness.calls)
+    assert all(
+        token not in {"python", "python3", "py"}
+        for _, argv in harness.calls
+        for token in argv
+    )
 
 
 def test_shared_packages_are_reused_without_transferring_ownership() -> None:
@@ -306,7 +312,14 @@ def test_shared_packages_are_reused_without_transferring_ownership() -> None:
 
 @pytest.mark.parametrize("owner", tuple(RESIDUAL))
 @pytest.mark.parametrize(
-    "failure", ("missing-python", "missing-pip", "non-writable", "pip-refusal", "fingerprint-drift")
+    "failure",
+    (
+        "unusable-interpreter",
+        "missing-pip",
+        "non-writable",
+        "pip-refusal",
+        "fingerprint-drift",
+    ),
 )
 def test_every_owner_failure_stops_before_feature_use(owner: str, failure: str) -> None:
     harness = _RepairHarness(installed={package.casefold() for package in RESIDUAL[owner]})

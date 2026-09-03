@@ -124,7 +124,9 @@ def test_empty_packages_execute_mandatory_task2_commands_without_pip_install(
 
     def execute(name: str, canonical: str | None = None) -> str:
         argv = [
-            canonical if token == "${canonical_executable}" else token
+            canonical
+            if token in ("${canonical_executable}", "${candidate}")
+            else token
             for token in templates[name]
         ]
         assert "${selected_packages}" not in argv
@@ -138,11 +140,14 @@ def test_empty_packages_execute_mandatory_task2_commands_without_pip_install(
             encoding="utf-8",
         ).stdout.strip()
 
-    first = json.loads(execute("initial-fingerprint"))
+    venv_python = bin_dir / ("python.exe" if os.name == "nt" else "python")
+    first = json.loads(execute("candidate-fingerprint", str(venv_python)))
     canonical = first["executable"]
+    assert Path(canonical).is_absolute()
+    assert first["prefix"] != first["base_prefix"]
     assert execute("pip-check", canonical).startswith("pip ")
     assert execute("target-check", canonical) == "normal install target is writable"
-    final = json.loads(execute("final-fingerprint"))
+    final = json.loads(execute("candidate-fingerprint", canonical))
     assert final == first
 
     plugin = Path("/tmp/Selected Plugin Ω")
@@ -152,7 +157,10 @@ def test_empty_packages_execute_mandatory_task2_commands_without_pip_install(
         "agents": ["assistant"],
     }
 
-    assert [call[0] for call in calls] == ["python", canonical, canonical, "python"]
+    assert calls[0][0] == str(venv_python)
+    assert [call[0] for call in calls[1:]] == [canonical, canonical, canonical]
+    assert all(Path(call[0]).is_absolute() for call in calls)
+    assert not any(call[0] in {"python", "python3", "py"} for call in calls)
     assert not any(
         call[1:3] == ["-m", "pip"] and "install" in call for call in calls
     )

@@ -6,7 +6,7 @@ authority:
 children: {}
 content:
 - SKILL\.md
-description: Repairs only the bundled core Python packages in the exact environment exposed by command `python`, without depending on MCP.
+description: Provides a dedicated Python 3.11+ interpreter for Famulus and repairs only the bundled core packages inside it, without depending on MCP.
 discovery:
   mechanism: skill
   catalog:
