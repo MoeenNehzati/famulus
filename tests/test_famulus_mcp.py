@@ -1115,7 +1115,7 @@ def test_comprehension_fixture_is_an_uncoached_generated_candidate() -> None:
     """Break caught: frozen cases drift or expose the controller oracle."""
     fixture = _json(COMPREHENSION_FIXTURE)
 
-    assert "`famulus` MCP server" in fixture["session_start"]
+    assert "`famulus_dispatcher` MCP server" in fixture["session_start"]
     assert fixture["mcp_tool"] == "famulus_dispatcher.invoke"
     assert [case["case_id"] for case in fixture["cases"]] == [
         "T3C-A",

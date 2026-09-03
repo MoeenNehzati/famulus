@@ -1,5 +1,5 @@
 {
-  "session_start": "## Skill interfaces\nWhen a skill lists `Executable Interfaces`, invoke them through the `famulus` MCP server using the invocation metadata and `Arguments JSON` shown for that interface; do not invoke private scripts directly. `Instruction Interfaces` are LLM-readable instructions: read and follow them directly, without an MCP call.",
+  "session_start": "## Skill interfaces\nWhen a skill lists `Executable Interfaces`, invoke them through the `famulus_dispatcher` MCP server using the invocation metadata and `Arguments JSON` shown for that interface; do not invoke private scripts directly. `Instruction Interfaces` are LLM-readable instructions: read and follow them directly, without an MCP call.",
   "mcp_tool": "famulus_dispatcher.invoke",
   "record": "Persist each evaluator-selected payload verbatim, then submit that exact object to the packaged MCP ClientSession.call_tool path.",
   "cases": [
