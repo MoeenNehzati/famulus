@@ -44,14 +44,14 @@ Instruction Interfaces:
 These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `connect-google.source.instructions-connect-services.interface.connect-services@1` — Install or reuse a Google Desktop OAuth client and hand selected Google services to their owning skills.
 - `connect-google.source.instructions-create-client.interface.create-client@1` — Guide a user through creating and privately downloading a Google Desktop OAuth client for selected Famulus services.
-- `setup-python-environment.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact selected Python environment without MCP.
+- `setup-dispatcher-runtime.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact dispatcher runtime without MCP.
 <!-- END BLUEPRINT INTERFACES -->
 Skill: connect-google
 
 This is the shared router for Google OAuth-client preparation.
 
 Before client inspection, authorization, or service binding, use the host-loaded
-`setup-python-environment.interface.repair-selected-packages` procedure for
+`setup-dispatcher-runtime.interface.repair-selected-packages` procedure for
 feature `connect-google` and its exact declaration `["keyring"]`. Complete the
 initial fingerprint, pip and target checks, conditional repair, and byte-equal
 final fingerprint; stop without Google or credential activity on any failure.

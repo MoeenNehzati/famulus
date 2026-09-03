@@ -3,9 +3,9 @@ content:
 dependencies:
 - blueprint:
     base: repository-root
-    path: skills/setup-python-environment/blueprints/gateway.yaml
+    path: skills/setup-dispatcher-runtime/blueprints/gateway.yaml
   reason: Repair only the Drive-owner keyring declaration in the selected Python.
-  source: setup-python-environment.source.gateway
+  source: setup-dispatcher-runtime.source.gateway
   version: 1
 description: Owns the LLM-facing cloud-files instructions and routes storage requests
   to caller-scoped machine interfaces.
@@ -18,7 +18,7 @@ interfaces:
     content:
     - SKILL\.md
     uses_interfaces:
-    - interface: setup-python-environment.interface.repair-selected-packages
+    - interface: setup-dispatcher-runtime.interface.repair-selected-packages
       version: 1
     - interface: connect-google.interface.default
       version: 1
@@ -112,7 +112,7 @@ interfaces:
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
-- interface: setup-python-environment.interface.repair-selected-packages
+- interface: setup-dispatcher-runtime.interface.repair-selected-packages
   version: 1
 - interface: connect-google.interface.default
   version: 1

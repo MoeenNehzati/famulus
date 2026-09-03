@@ -38,10 +38,10 @@ These are LLM-readable instruction surfaces. Read and follow them directly; do n
 - `node-certify.source.audit-behavioral-source.interface.audit@2` — Audit one behavioral source and return bounded semantic evidence and a verdict.
 - `node-certify.source.audit-interface.interface.audit@2` — Audit one source interface and return bounded semantic evidence and a verdict.
 - `node-certify.source.audit-module.interface.audit@2` — Audit one module and return bounded semantic evidence and a verdict.
-- `setup-python-environment.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact selected Python environment without MCP.
+- `setup-dispatcher-runtime.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact dispatcher runtime without MCP.
 <!-- END BLUEPRINT INTERFACES -->
 Before drift inspection, semantic audit, or certification, follow
-`setup-python-environment.interface.repair-selected-packages` for this owner's exact
+`setup-dispatcher-runtime.interface.repair-selected-packages` for this owner's exact
 declaration `["cryptography", "keyring", "pyflakes", "pytest", "pytest-xdist"]`.
 Complete the full Task 2 fingerprint procedure; on any failure, stop before invoking a
 drift, audit, or certify interface.

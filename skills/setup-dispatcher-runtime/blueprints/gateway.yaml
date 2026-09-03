@@ -1,16 +1,16 @@
 content: [SKILL\.md]
 dependencies: []
-description: Selects a Python 3.11+ interpreter, provides a dedicated environment for Famulus, preflights its normal pip target, repairs only the root core declaration, and verifies stable identity.
+description: Selects a Python 3.11+ interpreter, provides the dedicated dispatcher runtime, preflights its normal pip target, repairs only the selected declaration, and verifies stable identity.
 gateway: {language: Markdown, path: SKILL.md}
-id: setup-python-environment.source.gateway
+id: setup-dispatcher-runtime.source.gateway
 interfaces:
-  setup-python-environment.source.gateway.interface.default:
+  setup-dispatcher-runtime.source.gateway.interface.default:
     content: [SKILL\.md]
     uses_interfaces: []
     contract:
       arguments:
         request:
-          description: Request to diagnose or repair the bundled Famulus core Python environment.
+          description: Request to provide or repair the dispatcher's dedicated Python runtime.
           required: true
           sensitivity: public
           type: {kind: string, sensitivity: public}
@@ -94,7 +94,7 @@ interfaces:
         truncation: {kind: none}
         type: {kind: string, sensitivity: derived-private}
       preconditions: []
-    description: Repair the core or one caller-owned package declaration in the exact selected Python environment without MCP.
+    description: Repair the core or one caller-owned package declaration in the exact dispatcher runtime without MCP.
     version: 1
 node_type: behavioral_source
 schema_version: 6

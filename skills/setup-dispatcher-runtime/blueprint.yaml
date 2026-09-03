@@ -6,7 +6,7 @@ authority:
 children: {}
 content:
 - SKILL\.md
-description: Provides a dedicated Python 3.11+ interpreter for Famulus and repairs only the bundled core packages inside it, without depending on MCP.
+description: Provides the dedicated Python 3.11+ runtime the dispatcher server executes in, and repairs only the declared packages inside it, without depending on MCP.
 discovery:
   mechanism: skill
   catalog:
@@ -16,20 +16,20 @@ discovery:
   activated_by: [user-request, skill-workflow]
   persistent_modifier: false
 exports:
-  setup-python-environment.interface.repair-selected-packages:
+  setup-dispatcher-runtime.interface.repair-selected-packages:
     access: {allow_all_modules: true, allowed_callers: []}
-    source_interface: setup-python-environment.source.gateway.interface.default
-  setup-python-environment.interface.setup:
+    source_interface: setup-dispatcher-runtime.source.gateway.interface.default
+  setup-dispatcher-runtime.interface.setup:
     access: {allow_all_modules: true, allowed_callers: []}
     setup_requires_setup_of: []
-    source_interface: setup-python-environment.source.gateway.interface.default
+    source_interface: setup-dispatcher-runtime.source.gateway.interface.default
 gateway: {language: Markdown, path: SKILL.md}
-id: setup-python-environment
+id: setup-dispatcher-runtime
 namespace_exports: {}
 node_type: module
 schema_version: 6
 sources:
-  setup-python-environment.source.gateway:
+  setup-dispatcher-runtime.source.gateway:
     blueprint: {base: module-root, path: blueprints/gateway.yaml}
 version: 1
 maturity: stable

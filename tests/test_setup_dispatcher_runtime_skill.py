@@ -14,7 +14,7 @@ from officina.blueprints.graph import load_repository_blueprint_graph
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SKILL = ROOT / "skills" / "setup-python-environment" / "SKILL.md"
+SKILL = ROOT / "skills" / "setup-dispatcher-runtime" / "SKILL.md"
 CANDIDATES = ("python", "python3", "py")
 
 
@@ -210,16 +210,16 @@ def test_setup_skill_is_host_loaded_and_uses_task_1_core_authority() -> None:
     core = json.loads((ROOT / "mcp-core.json").read_text(encoding="utf-8"))
     text = SKILL.read_text(encoding="utf-8")
 
-    export = graph.exports["setup-python-environment.interface.setup"]
+    export = graph.exports["setup-dispatcher-runtime.interface.setup"]
     assert export.source_interface_id == (
-        "setup-python-environment.source.gateway.interface.default"
+        "setup-dispatcher-runtime.source.gateway.interface.default"
     )
     assert "tools:\n  - python" in text
     assert core["core_packages"] == ["mcp>=1,<2", "PyYAML>=6", "jsonschema>=4,<5"]
     assert "installation_tier" not in text
     assert all(term not in text.casefold() for term in ("keyring", "google"))
     assert graph.exports[
-        "setup-python-environment.interface.repair-selected-packages"
+        "setup-dispatcher-runtime.interface.repair-selected-packages"
     ].source_interface_id == export.source_interface_id
 
 
@@ -229,9 +229,9 @@ def test_graph_execution_contract_covers_the_actual_ordered_command_sequence() -
         schema_root=ROOT / "references" / "blueprint-schema",
     )
     contract = graph.nodes[
-        "setup-python-environment.source.gateway"
+        "setup-dispatcher-runtime.source.gateway"
     ].declaration["interfaces"][
-        "setup-python-environment.source.gateway.interface.default"
+        "setup-dispatcher-runtime.source.gateway.interface.default"
     ]["contract"]
     subprocesses = {
         item["id"]: item
@@ -261,9 +261,9 @@ def test_the_core_route_may_prompt_while_unattended_callers_get_an_outcome() -> 
         schema_root=ROOT / "references" / "blueprint-schema",
     )
     contract = graph.nodes[
-        "setup-python-environment.source.gateway"
+        "setup-dispatcher-runtime.source.gateway"
     ].declaration["interfaces"][
-        "setup-python-environment.source.gateway.interface.default"
+        "setup-dispatcher-runtime.source.gateway.interface.default"
     ]["contract"]
 
     assert contract["interaction"]["mode"] == "interactive"
@@ -396,7 +396,7 @@ def test_simulated_normal_host_loads_skill_while_mcp_is_down_then_starts_package
     host_name: str, tmp_path: Path
 ) -> None:
     plugin = tmp_path / f"{host_name} Plugin With Spaces"
-    skill = plugin / "skills" / "setup-python-environment"
+    skill = plugin / "skills" / "setup-dispatcher-runtime"
     skill.mkdir(parents=True)
     (skill / "SKILL.md").write_text(SKILL.read_text(encoding="utf-8"), encoding="utf-8")
     (plugin / "mcp_server.py").write_text("packaged", encoding="utf-8")

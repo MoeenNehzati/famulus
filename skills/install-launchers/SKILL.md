@@ -23,7 +23,7 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
 Instruction Interfaces:
 
 These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `setup-python-environment.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact selected Python environment without MCP.
+- `setup-dispatcher-runtime.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact dispatcher runtime without MCP.
 <!-- END BLUEPRINT INTERFACES -->
 Skill: install-launchers
 
@@ -32,7 +32,7 @@ request names none, list those choices or ask; do not mutate anything and do not
 default to installing all launchers.
 
 Use the host-loaded
-`setup-python-environment.interface.repair-selected-packages` procedure for
+`setup-dispatcher-runtime.interface.repair-selected-packages` procedure for
 feature `install-launchers` and the exact empty selected package declaration
 `[]`. Run its initial literal-`python` fingerprint, pip availability check,
 target writability check, and final literal-`python` fingerprint. For this exact

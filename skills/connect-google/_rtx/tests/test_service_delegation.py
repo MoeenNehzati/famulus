@@ -203,7 +203,7 @@ def test_calendar_gateway_declares_complete_oauth_route_invariants(
     )
 
     assert {edge["interface"] for edge in gateway["uses_interfaces"]} == {
-        "setup-python-environment.interface.repair-selected-packages",
+        "setup-dispatcher-runtime.interface.repair-selected-packages",
         "connect-google.interface.default",
         "online-calendar._rtx.interface.scripts-gcal",
     }

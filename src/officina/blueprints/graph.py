@@ -3975,9 +3975,9 @@ def _managed_setup_for_export(
         raise BlueprintGraphError(
             f"{export_id}: setup_management is allowed only public setup interfaces"
         )
-    if export.module_node_id.split(".", 1)[0] == "setup-python-environment":
+    if export.module_node_id.split(".", 1)[0] == "setup-dispatcher-runtime":
         raise BlueprintGraphError(
-            "setup-python-environment cannot opt in to setup management"
+            "setup-dispatcher-runtime cannot opt in to setup management"
         )
     if not isinstance(raw, Mapping):
         raise BlueprintGraphError(f"{export_id}: setup_management must be a mapping")

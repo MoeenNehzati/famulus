@@ -78,7 +78,7 @@ Call `famulus.invoke` with required `caller` (caller skill), `interface`, `versi
 Instruction Interfaces:
 
 These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `setup-python-environment.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact selected Python environment without MCP.
+- `setup-dispatcher-runtime.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact dispatcher runtime without MCP.
 <!-- END BLUEPRINT INTERFACES -->
 
 # Recurring Tasks
@@ -90,7 +90,7 @@ create, enable, or run a job.
 ## Context and ownership
 
 Use the host-loaded
-`setup-python-environment.interface.repair-selected-packages` procedure for
+`setup-dispatcher-runtime.interface.repair-selected-packages` procedure for
 feature `recurring-tasks` and the exact deduplicated declaration `["PyYAML"]`.
 Run its complete initial literal-`python` fingerprint, pip/installability and
 target-writability checks, repair and dry-run steps, and final fingerprint.

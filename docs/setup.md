@@ -14,20 +14,28 @@ system.
 Famulus needs the host plugin plus a Python 3.11 or newer interpreter with a
 functional `pip`.
 
-Famulus keeps its dependencies in an interpreter dedicated to it, so that the
-Python you use for your own work is never modified, and so that upgrading or
-replacing that Python does not break Famulus. `setup-python-environment` is the
-skill that provides one. It runs without MCP, which is what lets it repair the
-very thing MCP needs in order to start.
+Famulus runs every skill through the dispatcher server, and the dispatcher
+executes each skill's code with its own interpreter. That interpreter is the
+dispatcher runtime, and `setup-dispatcher-runtime` is the skill that provides
+it. Keeping it separate means the Python you use for your own work is never
+modified, and upgrading or replacing that Python cannot break Famulus.
+
+Two things follow from the dispatcher running everything with one interpreter.
+The packages in `mcp-core.json` are what the server needs to start at all. A
+skill's own dependency — `marker-pdf` for PDF conversion, say — is installed
+into the same runtime, because that is the interpreter the dispatcher will run
+that skill with. Both belong to `setup-dispatcher-runtime`.
+
+It also runs without MCP. That is what lets it repair the very thing MCP
+needs in order to start.
 
 What it does: finds an interpreter of a usable version, asks you to confirm it
-and where the dedicated environment should live, builds that environment,
-installs only the packages declared in `mcp-core.json`, verifies the result,
-and reports what remains for you to do.
+and where the runtime should live, builds it, installs only the declared
+packages, verifies the result, and reports what remains for you to do.
 
 What it does not do: install Python, alias or shim any command, edit your shell
 profile or host settings, bootstrap pip, use `uv`, or install anything into an
-interpreter other than the dedicated one. When it cannot finish inside those
+interpreter other than the dispatcher's. When it cannot finish inside those
 limits it stops and tells you exactly what it needs from you, which for a
 machine with no suitable Python means installing one and giving it the path.
 
@@ -57,13 +65,12 @@ codex plugin add famulus@nullkit --json
 Restart the host after installing the plugin so that it discovers the new
 skills.
 
-### 1.2 Verify the core runtime
+### 1.2 Verify the dispatcher runtime
 
 Confirm that `python` is Python 3.11 or newer and that `python -m pip` works.
-If Famulus reports a missing core dependency, or its shared tool is
-unavailable, or the command is missing entirely, ask the assistant to use
-`setup-python-environment` and review any requested package changes before
-approving them.
+Ask the assistant to use `setup-dispatcher-runtime` when the command is missing
+entirely, when Famulus reports a missing dependency, or when its shared tool is
+unavailable, and review any requested package changes before approving them.
 
 The plugin manifest and the session hook currently start Famulus through the
 literal command `python`. Until they are migrated to the dedicated interpreter,

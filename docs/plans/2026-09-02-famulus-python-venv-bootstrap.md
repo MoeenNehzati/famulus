@@ -1,7 +1,7 @@
 # Famulus Python venv bootstrap
 
 Design for replacing the hard systemwide `python` requirement with a
-Famulus-owned virtual environment that `setup-python-environment` builds and
+Famulus-owned virtual environment that `setup-dispatcher-runtime` builds and
 that the MCP server, hooks, and launchers all run from.
 
 ## Problem
@@ -15,7 +15,7 @@ On any machine that ships only `python3` (Debian, Ubuntu, macOS), the MCP
 server never starts and the SessionStart hook never runs. Nothing recovers
 from this automatically:
 
-- `setup-python-environment` treats the missing command as terminal by design
+- `setup-dispatcher-runtime` treats the missing command as terminal by design
   ("A missing command or a version below 3.11 is a terminal prerequisite
   failure. Do not try another command, install Python, create or activate an
   environment, or bootstrap pip.").
@@ -25,7 +25,7 @@ from this automatically:
 `README.md:83,119` and `docs/setup.md:14-16,47-50` state the requirement but
 never say what to do when it is unmet, so the user is left to work it out.
 
-A second problem compounds it: `setup-python-environment` installs
+A second problem compounds it: `setup-dispatcher-runtime` installs
 `mcp-core.json`'s `core_packages` into whatever environment `python` resolves
 to. That is a shared, user-owned environment. A user who needs a different
 systemwide Python, or who does not want Famulus's dependencies in their global
@@ -62,7 +62,7 @@ across shells, host restarts, and plugin upgrades.
 
 ### The venv
 
-`setup-python-environment` gains a build step. Its core setup route:
+`setup-dispatcher-runtime` gains a build step. Its core setup route:
 
 1. **Discover** candidate interpreters >= 3.11 (`python`, `python3`,
    versioned names such as `python3.13`, `py -3` on Windows), fingerprinting
@@ -167,11 +167,11 @@ itself.
 
 ### Route split
 
-`setup-python-environment` exports two interfaces
-(`skills/setup-python-environment/blueprint.yaml`):
+`setup-dispatcher-runtime` exports two interfaces
+(`skills/setup-dispatcher-runtime/blueprint.yaml`):
 
-- `setup-python-environment.interface.setup` — the core route. May prompt.
-- `setup-python-environment.interface.repair-selected-packages` — called by
+- `setup-dispatcher-runtime.interface.setup` — the core route. May prompt.
+- `setup-dispatcher-runtime.interface.repair-selected-packages` — called by
   other features, including unattended ones. Must never prompt; on a missing
   or unusable environment it fails with a message naming the core route.
 
@@ -216,7 +216,7 @@ be solved separately, which changes the design materially.
 - **Docs.** `README.md` step 2 and `docs/setup.md` currently assert the
   `python` requirement with no remedy. Both need rewriting around "any Python
   >= 3.11, discovered or supplied" and the venv flow.
-- **Tests.** `tests/test_setup_python_environment_skill.py` encodes the current
+- **Tests.** `tests/test_setup_dispatcher_runtime_skill.py` encodes the current
   contract, and `tests/test_officina_setup_requirements.py`,
   `tests/test_install_launchers_skill.py`, and
   `tests/test_setup_interface_manager_coverage.py` touch the surrounding

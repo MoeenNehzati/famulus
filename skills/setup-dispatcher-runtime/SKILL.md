@@ -1,7 +1,7 @@
 ---
-name: setup-python-environment
+name: setup-dispatcher-runtime
 description: >-
-  Use when Famulus MCP cannot start because no usable Python is available, its selected environment is missing, or a bundled core package is unavailable. Symptoms include "python: command not found", a Python older than 3.11, and ModuleNotFoundError for mcp, yaml, or jsonschema. Do not use for optional feature dependencies.
+  Use when the Famulus dispatcher cannot start, or cannot run an interface, because its Python runtime is missing, too old, or lacks a declared package. Symptoms include "python: command not found", a Python older than 3.11, ModuleNotFoundError for mcp, yaml, or jsonschema, and a feature reporting that its own package is unavailable. Also use when that runtime must be rebuilt or a declared package added to it. Do not use for general Python installation.
 tools:
   - python
 ---
@@ -11,9 +11,11 @@ tools:
 
 Used Interfaces: none
 <!-- END BLUEPRINT INTERFACES -->
-Skill: setup-python-environment
+Skill: setup-dispatcher-runtime
 
-## What Famulus needs
+## What the dispatcher runtime is
+
+The dispatcher is the server that runs every Famulus interface, and it launches each one with its own interpreter. That interpreter is this skill's whole subject: not Famulus as a product, and not the user's Python, but the one runtime the dispatcher server executes in.
 
 One end state, and nothing in this skill matters except reaching it:
 
@@ -22,8 +24,8 @@ One end state, and nothing in this skill matters except reaching it:
 Five requirements, each separately checkable:
 
 1. **Right version, known path.** Python 3.11 or newer, at a known absolute path. A command name is not a path.
-2. **Dedicated to Famulus.** Not the user's system interpreter. The user's systemwide Python may be changed, upgraded, or replaced at any time for reasons that have nothing to do with Famulus, and Famulus's packages must not be installed into an environment the user owns. What form this takes depends on the system: usually a virtual environment, but a fresh interpreter installed for Famulus alone satisfies it equally. The test is consequence, not shape: installing into it must not change anything else the user runs, and nothing the user does to their own Python may change it. Where it is a virtual environment, `prefix` differing from `base_prefix` confirms that much.
-3. **Required packages installed in it.** The declared packages importable from that interpreter, and from no other.
+2. **Dedicated to the dispatcher.** Not the user's system interpreter. The user's systemwide Python may be changed, upgraded, or replaced at any time for reasons that have nothing to do with Famulus, and Famulus's packages must not be installed into an environment the user owns. What form this takes depends on the system: usually a virtual environment, but a fresh interpreter installed for Famulus alone satisfies it equally. The test is consequence, not shape: installing into it must not change anything else the user runs, and nothing the user does to their own Python may change it. Where it is a virtual environment, `prefix` differing from `base_prefix` confirms that much.
+3. **Required packages installed in it.** The declared packages importable from that interpreter, and from no other. This is why a feature's own packages are in scope: the dispatcher runs that feature's interface with this interpreter, so anything the interface imports must be installed here. The core declaration in `mcp-core.json` is what the server needs to start at all; a caller-owned declaration is what one interface needs to run.
 4. **Reachable as a variable.** Famulus's MCP declaration and its hooks invoke `${FAMULUS_PYTHON:-python}`. If the variable is unset they silently fall back to whatever `python` means on that machine, which is the failure this skill exists to end.
 5. **Surviving.** Across shells, across host restarts, and across plugin upgrades. A value that lives only in your process, or only in the shell you are in now, has not met the requirement; neither has an environment placed where a plugin upgrade will delete it.
 
@@ -49,7 +51,7 @@ Decide this before anything else. You are in the **repair route** only if a call
 
 If you cannot tell, treat it as the repair route and do not prompt. The two mistakes are not symmetric: guessing repair when it was core stops early and asks nothing, while guessing core when it was repair hangs an unattended job waiting for an answer nobody will give.
 
-**Core setup route.** Famulus has no usable environment. Resolve the installed skill location supplied by the host to its owning plugin root, then read that root's `mcp-core.json`. Its `core_packages` array is the only package authority; reject a caller-supplied replacement. This route may ask the user questions.
+**Core setup route.** The dispatcher has no usable runtime. Resolve the installed skill location supplied by the host to its owning plugin root, then read that root's `mcp-core.json`. Its `core_packages` array is the only package authority; reject a caller-supplied replacement. This route may ask the user questions.
 
 **Owner-selected repair route.** Repair only the supplied declaration, in only the supplied environment. Do not locate, infer, widen, or combine declarations from any other feature. Its callers include scheduled and background runs with nobody available to answer, so this route must never prompt. If the supplied environment is missing or unusable, stop and report that the core setup route is required.
 
@@ -80,9 +82,9 @@ Call the confirmed interpreter `${host_python}`.
 
 *Core setup route only.*
 
-**Requirement.** Requirement 2 above: an interpreter dedicated to Famulus, at a location that persists across plugin upgrades, writable without elevation, and confirmed by the user.
+**Requirement.** Requirement 2 above: an interpreter dedicated to the dispatcher, at a location that persists across plugin upgrades, writable without elevation, and confirmed by the user.
 
-**Usually.** A virtual environment built by `${host_python}`, placed in the Famulus state root. Offer that as the default and accept an explicit path instead. On a system where a dedicated interpreter is better obtained another way, take that route and satisfy the same requirement.
+**Usually.** A virtual environment built by `${host_python}`, placed in the Famulus state root. Offer that as the default and accept an explicit path instead. On a system where a dedicated interpreter is better obtained another way, do that instead and satisfy the same requirement.
 
 Call the confirmed location `${venv_root}`, whatever form the dedicated interpreter takes. When that form is a virtual environment, create it with:
 
@@ -148,7 +150,7 @@ The core setup route reports all five. The repair route reports requirements 1 a
 Report a requirement as met only on evidence, never on the strength of an action you took. Having run a command is not evidence that its goal holds.
 
 1. **Right version, known path.** Evidence: the fingerprint of `${canonical_executable}`. Report the absolute path and version.
-2. **Dedicated to Famulus.** Evidence: the form you chose and why that form was right for this system, plus `prefix` and `base_prefix` where it is a virtual environment. Report what would and would not affect this interpreter now.
+2. **Dedicated to the dispatcher.** Evidence: the form you chose and why that form was right for this system, plus `prefix` and `base_prefix` where it is a virtual environment. Report what would and would not affect this interpreter now.
 3. **Required packages installed in it.** Evidence: the pip report's `install` records, or that the declaration was already satisfied. Report the exact declared package set.
 4. **Reachable as a variable.** You cannot confirm this from inside this session, and must not claim it. Report it as outstanding, with the exact line the user must add and where to add it.
 5. **Surviving.** Met only when a newly launched host starts the server from `${canonical_executable}`. Report it as pending that restart, and say how the user will know it worked.

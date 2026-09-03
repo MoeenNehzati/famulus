@@ -101,7 +101,7 @@ def test_blank_selection_is_effect_free(tmp_path: Path) -> None:
 
 
 def _task2_templates() -> dict[str, list[str]]:
-    text = (ROOT / "skills" / "setup-python-environment" / "SKILL.md").read_text()
+    text = (ROOT / "skills" / "setup-dispatcher-runtime" / "SKILL.md").read_text()
     return {
         name: json.loads(payload)
         for name, payload in re.findall(
@@ -280,7 +280,7 @@ def test_skill_blueprint_has_single_instruction_owner_and_exact_edges() -> None:
     assert len(gateway["interfaces"]) == 1
     edges = {dependency["source"] for dependency in gateway["dependencies"]}
     assert edges == {
-        "setup-python-environment.source.gateway",
+        "setup-dispatcher-runtime.source.gateway",
         "install-launchers._rtx.source.agent-launchers",
     }
     assert not (ROOT / "skills" / "install-launchers" / "instructions").exists()

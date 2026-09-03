@@ -89,12 +89,12 @@ Instruction Interfaces:
 
 These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
 - `email-triage.source.instructions-triage.interface.triage@2` — Scans emails received since the last triage run and routes extracted action items to the right list.
-- `setup-python-environment.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact selected Python environment without MCP.
+- `setup-dispatcher-runtime.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact dispatcher runtime without MCP.
 <!-- END BLUEPRINT INTERFACES -->
 # Email Triage
 
 Before loading or invoking the detailed triage workflow, follow
-`setup-python-environment.interface.repair-selected-packages` for this owner's exact
+`setup-dispatcher-runtime.interface.repair-selected-packages` for this owner's exact
 declaration `["keyring"]`. Complete the full Task 2 fingerprint procedure; on any
 failure, stop before fetching email or invoking a triage interface.
 

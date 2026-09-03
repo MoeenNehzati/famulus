@@ -70,7 +70,7 @@ def test_default_interface_routes_to_triage_and_declares_generated_interfaces() 
         2,
     )
     repair_route = (
-        "setup-python-environment.interface.repair-selected-packages",
+        "setup-dispatcher-runtime.interface.repair-selected-packages",
         1,
     )
     process_routes = {
@@ -144,8 +144,8 @@ def test_triage_contract_has_no_preference_source_or_read() -> None:
     ] == [
         (
             "repository-root",
-            "skills/setup-python-environment/blueprints/gateway.yaml",
-            "setup-python-environment.source.gateway",
+            "skills/setup-dispatcher-runtime/blueprints/gateway.yaml",
+            "setup-dispatcher-runtime.source.gateway",
             1,
         )
     ]
