@@ -31,17 +31,13 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--delay": "duration", "--message": "message", "--text": "timeout-or-resume-text"}, "positionals": [], "stdin": null}
     Required options: []; positional arity: 0..0; stdin: forbidden
-- `wakeup.interface.setup` — Reconcile or remove the feature-owned wakeup integration.
+- `wakeup.interface.setup` — Install or refresh the wakeup integration without caller arguments.
   - Caller: `llm-wakeup`
   - Version: 1
-  - Alternative: `setup`
+  - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
-    {"options": {"--bin-dir": "DIR", "--canonical-python": "FILE", "--native-root": "DIR", "--plugin-root": "DIR"}, "positionals": ["setup"], "stdin": null}
-    Required options: ["--bin-dir", "--canonical-python", "--native-root", "--plugin-root"]; positional arity: 1..1; stdin: forbidden
-  - Alternative: `teardown`
-    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
-    {"options": {"--bin-dir": "DIR", "--native-root": "DIR"}, "positionals": ["teardown"], "stdin": null}
-    Required options: ["--bin-dir", "--native-root"]; positional arity: 1..1; stdin: forbidden
+    {"options": {}, "positionals": [], "stdin": null}
+    Required options: []; positional arity: 0..0; stdin: forbidden
 
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:

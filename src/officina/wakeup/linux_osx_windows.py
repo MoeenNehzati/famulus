@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Callable
 
 from officina.common.atomic_files import atomic_replace_bytes
@@ -230,3 +231,70 @@ def teardown_integration(
     commands = tuple(bin_dir / f"{name}{suffix}" for name in ("llm-wakeup", "lw"))
     for path in (*_paths(native_root, platform), owner, *commands):
         path.unlink(missing_ok=True)
+
+
+def selected_integration_paths(
+    *, platform: str | None = None, environ: Mapping[str, str] | None = None
+) -> tuple[Path, Path, Path, Path]:
+    """Derive the four integration paths setup used to receive as arguments.
+
+    The managed setup lifecycle forbids arguments on a setup interface, so the
+    values are taken from the running process rather than from a caller: the
+    interpreter executing this interface is the selected Python, and the
+    repository holding this module is the selected plugin root. Neither is
+    discovered by searching, so a mismatched host cannot silently redirect the
+    registration.
+    """
+
+    platform = sys.platform if platform is None else platform
+    environ = os.environ if environ is None else environ
+    python = Path(sys.executable).resolve()
+    plugin_root = Path(__file__).resolve().parents[3]
+    home_name = "USERPROFILE" if platform == "win32" else "HOME"
+    raw_home = environ.get(home_name, "")
+    if not raw_home:
+        raise WakeupError(f"{home_name} must be set to reconcile the integration")
+    home = Path(raw_home).expanduser().resolve()
+    if platform == "win32":
+        root = Path(environ.get("LOCALAPPDATA") or home / "AppData/Local")
+        return python, plugin_root, root / "Famulus/llm-wakeup/bin", root / "Famulus/llm-wakeup"
+    relative = "Library/LaunchAgents" if platform == "darwin" else ".config/systemd/user"
+    return python, plugin_root, home / ".local/bin", home / relative
+
+
+def integration_installed(
+    *, platform: str | None = None, environ: Mapping[str, str] | None = None
+) -> bool:
+    """Report whether this feature's owner marker and registration both exist.
+
+    Read-only: it inspects declared state and never reconciles it. The owner
+    marker alone is insufficient, because a registration removed outside the
+    feature would otherwise still read as installed.
+    """
+
+    platform = sys.platform if platform is None else platform
+    try:
+        _, _, _, native_root = selected_integration_paths(
+            platform=platform, environ=environ
+        )
+    except WakeupError:
+        return False
+    if not (native_root / _OWNER).is_file():
+        return False
+    if not all(path.is_file() for path in _paths(native_root, platform)):
+        return False
+    if not platform.startswith("linux"):
+        return True
+    executable = shutil.which("systemctl")
+    if executable is None:
+        return False
+    result = subprocess.run(
+        [executable, "--user", "is-enabled", "famulus-llm-wakeup.timer"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        timeout=10,
+    )
+    return result.stdout.strip() == "enabled"

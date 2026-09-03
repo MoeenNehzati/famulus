@@ -92,11 +92,53 @@ class ManagedInterfaceBinding:
             raise ValueError("managed positional arguments must be contiguous")
 
 
+_WAKEUP_SETUP = "wakeup.interface.setup"
+_WAKEUP = ManagedInterfaceBinding(
+    setup_interface=_WAKEUP_SETUP,
+    setup_version=1,
+    setup_kind="python",
+    setup_dispatch_key="wakeup-setup",
+    setup_instructions=(
+        "Install the feature-owned wakeup commands and the due-delivery "
+        "registration from the selected interpreter and plugin root."
+    ),
+    setup_verifier_interface="wakeup.interface.setup-status",
+    setup_verifier_version=1,
+    setup_verifier_dispatch_key="wakeup-setup-status",
+    teardown_interface="wakeup.interface.teardown",
+    teardown_version=1,
+    teardown_dispatch_key="wakeup-teardown",
+    teardown_instructions=(
+        "Remove the feature-owned wakeup commands and the due-delivery "
+        "registration owned by this feature."
+    ),
+    teardown_verifier_interface="wakeup.interface.teardown-status",
+    teardown_verifier_version=1,
+    teardown_verifier_dispatch_key="wakeup-teardown-status",
+)
+
+
+def _wakeup_call(interface: str) -> DispatchCall:
+    """Return one reviewed argument-free dispatch into the wakeup feature."""
+
+    return DispatchCall(
+        caller_module_id="setup-interface-manager._rtx",
+        target_module_id="wakeup",
+        interface=interface,
+        smoke_args=(),
+    )
+
+
 PRODUCTION_BINDINGS: Mapping[str, ManagedInterfaceBinding] = MappingProxyType(
-    {}
+    {_WAKEUP_SETUP: _WAKEUP}
 )
 PRODUCTION_ACTION_CALLS: Mapping[str, DispatchCall] = MappingProxyType(
-    {}
+    {
+        "wakeup-setup": _wakeup_call("setup"),
+        "wakeup-setup-status": _wakeup_call("setup-status"),
+        "wakeup-teardown": _wakeup_call("teardown"),
+        "wakeup-teardown-status": _wakeup_call("teardown-status"),
+    }
 )
 
 

@@ -985,49 +985,18 @@ def test_llm_wakeup_skill_renders_every_public_wakeup_invocation(server) -> None
             },
             {"positionals": ["claude", "session-id", "1 minute"], "options": {}, "stdin": None},
         ),
+        # The managed lifecycle forbids arguments on a setup interface, so the
+        # gateway renders one argument-free alternative and no teardown route:
+        # exact managed calls are redirected through the setup manager.
         "wakeup.interface.setup": (
-            "setup",
-            {
-                "positionals": ["setup"],
-                "options": {
-                    "--canonical-python": "FILE",
-                    "--plugin-root": "DIR",
-                    "--bin-dir": "DIR",
-                    "--native-root": "DIR",
-                },
-                "stdin": None,
-            },
-            {
-                "positionals": ["setup"],
-                "options": {
-                    "--canonical-python": "/opt/famulus/python",
-                    "--plugin-root": "/opt/famulus/plugin",
-                    "--bin-dir": "/opt/famulus/bin",
-                    "--native-root": "/opt/famulus/native",
-                },
-                "stdin": None,
-            },
-        ),
-        "wakeup.interface.setup teardown": (
-            "teardown",
-            {
-                "positionals": ["teardown"],
-                "options": {"--bin-dir": "DIR", "--native-root": "DIR"},
-                "stdin": None,
-            },
-            {
-                "positionals": ["teardown"],
-                "options": {
-                    "--bin-dir": "/opt/famulus/bin",
-                    "--native-root": "/opt/famulus/native",
-                },
-                "stdin": None,
-            },
+            "default",
+            {"positionals": [], "options": {}, "stdin": None},
+            {"positionals": [], "options": {}, "stdin": None},
         ),
     }
     assert "Executable Interfaces:" in generated
-    assert "Alternative: `setup`" in generated
-    assert "Alternative: `teardown`" in generated
+    assert "Alternative: `default`" in generated
+    assert "Alternative: `teardown`" not in generated
     for interface, (alternative, rendered_arguments, _invocation_arguments) in expected.items():
         interface_id = interface.removesuffix(" teardown")
         assert f"`{interface_id}`" in generated

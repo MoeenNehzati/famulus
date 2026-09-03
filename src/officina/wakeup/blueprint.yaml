@@ -13,6 +13,8 @@ content:
 - deadlines\.py
 - doctor\.py
 - linux_osx_windows\.py
+- setup_lifecycle\.py
+- teardown_lifecycle\.py
 - locking\.py
 - claude_codex_monitor\.py
 - claude_codex_usage\.py
@@ -48,7 +50,28 @@ exports:
       allow_all_modules: true
       allowed_callers: []
     setup_requires_setup_of: []
-    source_interface: wakeup.source.cli.interface.setup
+    setup_management:
+      setup_verifier: {interface: wakeup.interface.setup-status, version: 1}
+      teardown:
+        interface: wakeup.interface.teardown
+        version: 1
+        verifier: {interface: wakeup.interface.teardown-status, version: 1}
+    source_interface: wakeup.source.setup-lifecycle.interface.setup
+  wakeup.interface.teardown:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: wakeup.source.teardown-lifecycle.interface.teardown
+  wakeup.interface.setup-status:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: wakeup.source.setup-lifecycle.interface.setup-status
+  wakeup.interface.teardown-status:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: wakeup.source.teardown-lifecycle.interface.teardown-status
 gateway:
   language: Python>=3.11
   path: __init__.py
@@ -77,5 +100,13 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/cli.yaml
+  wakeup.source.setup-lifecycle:
+    blueprint:
+      base: module-root
+      path: blueprints/setup-lifecycle.yaml
+  wakeup.source.teardown-lifecycle:
+    blueprint:
+      base: module-root
+      path: blueprints/teardown-lifecycle.yaml
 version: 1
 maturity: stable
