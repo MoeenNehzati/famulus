@@ -15,6 +15,14 @@ DEFAULT_QUICK_GUIDE = QuickGuide(
             "edge for a quick info popup, or drag a node to reposition it.",
         ),
         QuickGuideStep(
+            id="zoom-and-pan",
+            target="#zoom-in-btn",
+            title="Zoom and pan",
+            body="Zoom with the +/− toolbar buttons, the + and − keys (Ctrl+= and Ctrl+− work too), "
+            "or by scrolling over the canvas. Drag empty canvas space to pan around; dragging a node "
+            "instead moves that node.",
+        ),
+        QuickGuideStep(
             id="inspect-selection",
             target="#details",
             title="Inspect selection",

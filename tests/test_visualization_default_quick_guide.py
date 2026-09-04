@@ -7,6 +7,7 @@ def test_default_quick_guide_title_and_order() -> None:
     assert DEFAULT_QUICK_GUIDE.title == "Quick guide"
     assert [step.id for step in DEFAULT_QUICK_GUIDE.steps] == [
         "read-graph",
+        "zoom-and-pan",
         "inspect-selection",
         "search-and-legend",
         "search",
@@ -22,6 +23,7 @@ def test_default_quick_guide_title_and_order() -> None:
 def test_default_quick_guide_targets() -> None:
     assert [step.target for step in DEFAULT_QUICK_GUIDE.steps] == [
         "#canvas-wrap",
+        "#zoom-in-btn",
         "#details",
         "#legend",
         "#graph-filter-search",
