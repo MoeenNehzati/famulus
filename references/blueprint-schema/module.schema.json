@@ -317,6 +317,10 @@
           "description": "Setup interfaces that must be completed before this setup interface.",
           "$comment": "Do not list the base Famulus or assistant-tools installer here. Famulus cannot start without it; that prerequisite is handled separately by a session-start hook."
         },
+        "verifier": {
+          "$ref": "common.schema.json#/definitions/interfaceUse",
+          "description": "Optional verifier that confirms setup or teardown completion."
+        },
         "setup_management": {
           "$ref": "#/definitions/setupManagement",
           "description": "Opt in a public setup export to the managed setup lifecycle."

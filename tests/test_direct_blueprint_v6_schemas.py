@@ -230,6 +230,50 @@ def test_v6_source_export_accepts_setup_requirements() -> None:
     assert _errors(document) == []
 
 
+def test_v6_source_export_accepts_verifier() -> None:
+    document = _child()
+    document["exports"]["demo-skill._rtx.interface.setup"] = {
+        "source_interface": "demo-skill._rtx.source.runtime.interface.execute",
+        "access": {"allow_all_modules": True, "allowed_callers": []},
+        "verifier": {"interface": "demo-skill.interface.setup-status", "version": 1},
+    }
+    assert _errors(document) == []
+
+def test_v6_teardown_export_accepts_verifier() -> None:
+    document = _child()
+    document["exports"]["demo-skill._rtx.interface.teardown"] = {
+        "source_interface": "demo-skill._rtx.source.runtime.interface.execute",
+        "access": {"allow_all_modules": True, "allowed_callers": []},
+        "verifier": {"interface": "demo-skill.interface.teardown-status", "version": 1},
+    }
+    assert _errors(document) == []
+
+def test_v6_verifier_must_have_interface_and_version() -> None:
+    document = _child()
+    document["exports"]["demo-skill._rtx.interface.setup"] = {
+        "source_interface": "demo-skill._rtx.source.runtime.interface.execute",
+        "access": {"allow_all_modules": True, "allowed_callers": []},
+        "verifier": {"interface": "demo-skill.interface.setup-status"},
+    }
+    assert len(_errors(document)) > 0
+
+def test_v6_setup_management_still_accepted() -> None:
+    document = _child()
+    document["exports"]["demo-skill._rtx.interface.setup"] = {
+        "source_interface": "demo-skill._rtx.source.runtime.interface.execute",
+        "access": {"allow_all_modules": True, "allowed_callers": []},
+        "setup_management": {
+            "setup_verifier": {"interface": "demo-skill.interface.setup-verifier", "version": 1},
+            "teardown": {
+                "interface": "demo-skill.interface.teardown",
+                "version": 1,
+                "verifier": {"interface": "demo-skill.interface.teardown-verifier", "version": 1},
+            },
+        },
+    }
+    assert _errors(document) == []
+
+
 def test_v6_relative_caller_references_remain_supported() -> None:
     for caller in ("._rtx", "..sibling", "...leaf"):
         document = _child()
