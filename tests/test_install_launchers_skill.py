@@ -284,3 +284,21 @@ def test_skill_blueprint_has_single_instruction_owner_and_exact_edges() -> None:
         "install-launchers._rtx.source.agent-launchers",
     }
     assert not (ROOT / "skills" / "install-launchers" / "instructions").exists()
+
+
+def test_install_launchers_interface_renamed_from_setup_to_install() -> None:
+    module = yaml.safe_load((ROOT / "skills" / "install-launchers" / "blueprint.yaml").read_text())
+    exports = module["exports"]
+
+    # Verify the install interface exists
+    assert "install-launchers.interface.install" in exports
+
+    # Verify the old setup interface does not exist
+    assert "install-launchers.interface.setup" not in exports
+
+    # Verify the install interface has no setup_requires_setup_of
+    install_export = exports["install-launchers.interface.install"]
+    assert "setup_requires_setup_of" not in install_export
+
+    # Verify the install interface uses the correct source
+    assert install_export["source_interface"] == "install-launchers.source.gateway.interface.default"
