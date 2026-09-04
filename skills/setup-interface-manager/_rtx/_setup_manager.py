@@ -413,38 +413,37 @@ class SetupManager:
         next_step = result.current_step
         if next_step is None:
             raise ManagerRecoveryError("flow advanced without a current step")
-        if next_flow.operation == "teardown":
-            return self._advance_release_claims(next_flow, next_step)
+        if isinstance(next_step, TeardownStep) and next_step.action in ("release-claim", "invalidate-receipt"):
+            return self._advance_internal_teardown(next_flow, next_step)
         return next_flow, next_step
 
     def _advance_internal_teardown(
         self, flow: ActiveFlow, step: TeardownStep
     ) -> tuple[ActiveFlow | None, SetupStep | TeardownStep | None]:
-        """Advance internal teardown actions (release-claim, invalidate-receipt) without external dispatch."""
-        result = record_teardown_success(
-            self.store, self.graph, flow.flow_id, step
-        )
-        if result.state == "ready":
-            return None, None
-        persisted = self.store.read().active_flow
-        if persisted is None or result.current_step is None:
-            raise ManagerRecoveryError("internal teardown advanced without persisted state")
-        return persisted, result.current_step
+        """Advance internal teardown actions (release-claim, invalidate-receipt) without external dispatch.
 
-    def _advance_release_claims(
-        self, flow: ActiveFlow, step: SetupStep | TeardownStep
-    ) -> tuple[ActiveFlow | None, SetupStep | TeardownStep | None]:
+        Uses the appropriate settlement function based on the flow operation type.
+        Continues advancing while the current step is an internal action.
+        """
         current_flow = flow
         current_step = step
-        while isinstance(current_step, TeardownStep) and current_step.action == "release-claim":
-            result = record_teardown_success(
-                self.store, self.graph, current_flow.flow_id, current_step
-            )
+        while (
+            isinstance(current_step, TeardownStep)
+            and current_step.action in ("release-claim", "invalidate-receipt")
+        ):
+            if flow.operation == "teardown-all":
+                result = record_teardown_all_success(
+                    self.store, self.graph, current_flow.flow_id, current_step
+                )
+            else:
+                result = record_teardown_success(
+                    self.store, self.graph, current_flow.flow_id, current_step
+                )
             if result.state == "ready":
                 return None, None
             persisted = self.store.read().active_flow
             if persisted is None or result.current_step is None:
-                raise ManagerRecoveryError("claim release advanced without persisted state")
+                raise ManagerRecoveryError("internal teardown advanced without persisted state")
             current_flow = persisted
             current_step = result.current_step
         return current_flow, current_step
@@ -703,7 +702,8 @@ class SetupManager:
 
             self.store.update(start)
             if operation == "teardown":
-                flow, step = self._advance_release_claims(flow, step)
+                if isinstance(step, TeardownStep) and step.action in ("release-claim", "invalidate-receipt"):
+                    flow, step = self._advance_internal_teardown(flow, step)
             return self._result_response(operation, original, flow, step)
         except (FlowConflict, ManagerDomainError, LedgerError) as exc:
             return self._domain_failure(operation, str(exc), original=original)

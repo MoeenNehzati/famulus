@@ -106,8 +106,8 @@ def _store(tmp_path: Path) -> state.LedgerStore:
     )
 
 
-def _managed(stem: str, *, kind: str = "python") -> ManagedSetup:
-    return ManagedSetup(
+def _managed(stem: str, *, kind: str = "python", teardown: bool = True) -> ManagedSetup:
+    base = ManagedSetup(
         setup_interface=f"{stem}.interface.setup",
         setup_version=1,
         teardown_interface=f"{stem}.interface.teardown",
@@ -118,6 +118,15 @@ def _managed(stem: str, *, kind: str = "python") -> ManagedSetup:
         teardown_verifier_version=1,
         kind=kind,  # type: ignore[arg-type]
     )
+    if not teardown:
+        return replace(
+            base,
+            teardown_interface=None,
+            teardown_version=None,
+            teardown_verifier_interface=None,
+            teardown_verifier_version=None,
+        )
+    return base
 
 
 def _graph(*managed: ManagedSetup) -> SimpleNamespace:
@@ -137,7 +146,8 @@ def _graph(*managed: ManagedSetup) -> SimpleNamespace:
             item.teardown_verifier_interface,
             f"{module}.interface.run",
         ):
-            exports[interface] = SimpleNamespace(module_node_id=module)
+            if interface is not None:
+                exports[interface] = SimpleNamespace(module_node_id=module)
     return SimpleNamespace(
         setup_requirements=requirements,
         managed_setups={item.setup_interface: item for item in managed},
@@ -156,14 +166,14 @@ def _binding(item: ManagedSetup) -> setup_dispatches.ManagedInterfaceBinding:
         setup_instructions=f"Follow the exact setup instructions for {stem}.",
         setup_verifier_interface=item.setup_verifier_interface,
         setup_verifier_version=item.setup_verifier_version,
-        setup_verifier_dispatch_key=f"{stem}-setup-status",
+        setup_verifier_dispatch_key=f"{stem}-setup-status" if item.setup_verifier_interface else None,
         teardown_interface=item.teardown_interface,
         teardown_version=item.teardown_version,
-        teardown_dispatch_key=f"{stem}-teardown" if item.kind == "python" else None,
+        teardown_dispatch_key=f"{stem}-teardown" if item.kind == "python" and item.teardown_interface else None,
         teardown_instructions=f"Follow the exact teardown instructions for {stem}." if item.teardown_interface else None,
         teardown_verifier_interface=item.teardown_verifier_interface,
         teardown_verifier_version=item.teardown_verifier_version,
-        teardown_verifier_dispatch_key=f"{stem}-teardown-status",
+        teardown_verifier_dispatch_key=f"{stem}-teardown-status" if item.teardown_verifier_interface else None,
         arguments=(),
     )
 
@@ -1729,3 +1739,78 @@ def test_registered_manager_is_hidden_and_only_workflow_activated() -> None:
     assert "setup-interface-manager._rtx" in graph.exports[
         "common.interface.atomic-files"
     ].export_declaration["access"]["allowed_callers"]
+
+
+def test_ordinary_teardown_no_teardown_interface(tmp_path: Path) -> None:
+    """Regression A: Ordinary teardown with no teardown interface advances internally."""
+    item = _managed("canary", teardown=False)
+    binding = _binding(item)
+    controller = _controller(tmp_path, _graph(item), DispatchHarness(), binding)
+    _seed_ready(controller.store, item, item.setup_interface)
+
+    code, response = controller.begin(
+        "teardown", item.setup_interface, "caller", item.setup_interface + "run", 1
+    )
+
+    assert code == 0
+    assert response["state"] == "ready"
+    assert response["current_step"] is None
+    assert item.setup_interface not in controller.store.read().interfaces
+    assert controller.store.read().active_flow is None
+
+
+def test_ordinary_teardown_external_root_then_no_teardown_prerequisite(tmp_path: Path) -> None:
+    """Regression B: Ordinary teardown handles prerequisite with no teardown interface."""
+    root = _managed("root")
+    leaf = _managed("leaf", teardown=False)
+    graph = _graph(root, leaf)
+    graph.setup_requirements[root.setup_interface] = ((leaf.setup_interface, 1),)
+
+    root_binding = _binding(root)
+    leaf_binding = _binding(leaf)
+    dispatch = DispatchHarness()
+    dispatch.queue(root_binding.teardown_dispatch_key, "")
+    dispatch.queue(root_binding.teardown_verifier_dispatch_key, '{"torn_down":true}\n')
+
+    controller = _controller(tmp_path, graph, dispatch, root_binding, leaf_binding)
+    controller.store.update(
+        lambda _: state.SetupLedger(
+            {
+                root.setup_interface: state.SetupReceipt(1, frozenset({root.setup_interface})),
+                leaf.setup_interface: state.SetupReceipt(1, frozenset({root.setup_interface})),
+            },
+            None,
+        )
+    )
+
+    code, begun = controller.begin(
+        "teardown", root.setup_interface, "caller", root.teardown_interface, 1
+    )
+    assert code == 0
+    assert begun["current_step"]["interface"] == root.teardown_interface
+
+    code, completed = controller.run_python(
+        "flow-1", root.teardown_interface, "{}"
+    )
+    assert code == 0
+    assert completed["state"] == "ready"
+    assert completed["current_step"] is None
+    assert root.setup_interface not in controller.store.read().interfaces
+    assert leaf.setup_interface not in controller.store.read().interfaces
+    assert len(dispatch.calls) == 2
+
+
+def test_teardown_all_with_no_teardown_setup(tmp_path: Path) -> None:
+    """Regression C: teardown-all with a no-teardown setup uses teardown-all settlement."""
+    item = _managed("canary", teardown=False)
+    binding = _binding(item)
+    controller = _controller(tmp_path, _graph(item), DispatchHarness(), binding)
+    _seed_all(controller.store, item)
+
+    code, response = controller.teardown_all()
+
+    assert code == 0
+    assert response["state"] == "ready"
+    assert response["current_step"] is None
+    assert item.setup_interface not in controller.store.read().interfaces
+    assert controller.store.read().active_flow is None
