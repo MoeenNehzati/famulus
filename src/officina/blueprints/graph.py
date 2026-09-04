@@ -3894,139 +3894,6 @@ def setup_order(
     return tuple(order)
 
 
-def _legacy_managed_setup_for_export(
-    export_id: str,
-    export: InterfaceExport,
-    exports: Mapping[str, InterfaceExport],
-) -> ManagedSetup | None:
-    """Validate and project legacy setup_management metadata (Task 09 will remove this)."""
-
-    declaration = export.export_declaration or {}
-    raw = declaration.get("setup_management")
-    if raw is None:
-        return None
-    if not export_id.endswith(".interface.setup"):
-        raise BlueprintGraphError(
-            f"{export_id}: setup_management is allowed only public setup interfaces"
-        )
-    if not isinstance(raw, Mapping):
-        raise BlueprintGraphError(f"{export_id}: setup_management must be a mapping")
-
-    module_id = export_id.split(".interface.", 1)[0]
-
-    def reference(
-        owner_id: str,
-        value: object,
-        *,
-        field: str,
-        owner_module_id: str,
-    ) -> tuple[str, int, InterfaceExport]:
-        if not isinstance(value, Mapping):
-            raise BlueprintGraphError(
-                f"{owner_id}: setup_management.{field} must be a mapping"
-            )
-        interface_id = value.get("interface")
-        version = value.get("version")
-        if not isinstance(interface_id, str) or type(version) is not int or version < 1:
-            raise BlueprintGraphError(
-                f"{owner_id}: setup_management.{field} must pin an interface and version"
-            )
-        target = exports.get(interface_id)
-        if target is None:
-            raise BlueprintGraphError(
-                f"{owner_id}: setup_management.{field} target {interface_id!r} must exist"
-            )
-        if target.module_node_id != owner_module_id:
-            raise BlueprintGraphError(
-                f"{owner_id}: setup_management.{field} target {interface_id!r} "
-                "must belong to the same module"
-            )
-        if target.version != version:
-            raise BlueprintGraphError(
-                f"{owner_id}: setup_management.{field} target {interface_id!r} "
-                f"pins version {version}, but target version is {target.version}"
-            )
-        return interface_id, version, target
-
-    def verifier(owner_id: str, field: str, target: InterfaceExport) -> None:
-        binding = target.declaration.get("process_binding")
-        if not isinstance(binding, Mapping) or binding.get("kind") != "process":
-            raise BlueprintGraphError(
-                f"{owner_id}: setup_management.{field} verifier must be executable"
-            )
-        contract = target.declaration.get("contract")
-        execution = contract.get("execution") if isinstance(contract, Mapping) else None
-        if (
-            not isinstance(execution, Mapping)
-            or execution.get("state_effect") != "read-only"
-        ):
-            raise BlueprintGraphError(
-                f"{owner_id}: setup_management.{field} verifier must be read-only"
-            )
-        if isinstance(contract, Mapping) and contract.get("arguments") not in (None, {}):
-            raise BlueprintGraphError(
-                f"{owner_id}: setup_management.{field} verifier must take no arguments"
-            )
-
-    def action(owner_id: str, field: str, target: InterfaceExport) -> str:
-        contract = target.declaration.get("contract")
-        if isinstance(contract, Mapping) and contract.get("arguments") not in (None, {}):
-            raise BlueprintGraphError(
-                f"{owner_id}: setup_management.{field} must take no arguments"
-            )
-        return (
-            "python"
-            if isinstance(target.declaration.get("process_binding"), Mapping)
-            else "markdown"
-        )
-
-    setup_verifier_id, setup_verifier_version, setup_verifier = reference(
-        export_id,
-        raw.get("setup_verifier"),
-        field="setup_verifier",
-        owner_module_id=module_id,
-    )
-    teardown = raw.get("teardown")
-    if not isinstance(teardown, Mapping):
-        raise BlueprintGraphError(
-            f"{export_id}: setup_management.teardown must be a mapping"
-        )
-    teardown_id, teardown_version, teardown_export = reference(
-        export_id,
-        teardown,
-        field="teardown",
-        owner_module_id=module_id,
-    )
-    teardown_verifier_id, teardown_verifier_version, teardown_verifier = reference(
-        export_id,
-        teardown.get("verifier"),
-        field="teardown.verifier",
-        owner_module_id=module_id,
-    )
-    if export.source_node_id == teardown_export.source_node_id:
-        raise BlueprintGraphError(
-            f"{export_id}: setup and teardown must use dedicated sources"
-        )
-    kind = action(export_id, "setup", export)
-    if action(export_id, "teardown", teardown_export) != kind:
-        raise BlueprintGraphError(
-            f"{export_id}: setup and teardown must use the same execution kind"
-        )
-    verifier(export_id, "setup_verifier", setup_verifier)
-    verifier(export_id, "teardown.verifier", teardown_verifier)
-    return ManagedSetup(
-        setup_interface=export_id,
-        setup_version=export.version,
-        teardown_interface=teardown_id,
-        teardown_version=teardown_version,
-        setup_verifier_interface=setup_verifier_id,
-        setup_verifier_version=setup_verifier_version,
-        teardown_verifier_interface=teardown_verifier_id,
-        teardown_verifier_version=teardown_verifier_version,
-        kind=kind,
-    )
-
-
 def _managed_setup_for_export(
     export_id: str,
     export: InterfaceExport,
@@ -4038,11 +3905,7 @@ def _managed_setup_for_export(
     if not export_id.endswith(".interface.setup"):
         return None
 
-    # If setup_management exists, skip canonical (it will be handled by legacy path)
     declaration = export.export_declaration or {}
-    if declaration.get("setup_management") is not None:
-        return None
-
     module_id = export_id.split(".interface.", 1)[0]
 
     def validate_verifier_metadata(
@@ -4203,16 +4066,12 @@ def _managed_setup_metadata(
     exports: Mapping[str, InterfaceExport],
     setup_requirements: Mapping[str, tuple[tuple[str, int], ...]] | None = None,
 ) -> dict[str, ManagedSetup]:
-    """Validate and project setup lifecycle metadata (canonical .interface.setup or legacy setup_management)."""
+    """Validate and project setup lifecycle metadata for exact public .interface.setup exports."""
 
     managed: dict[str, ManagedSetup] = {}
     managed_owners: dict[str, str] = {}
     for export_id, export in sorted(exports.items()):
-        # Try canonical first
         metadata = _managed_setup_for_export(export_id, export, exports)
-        # Fall back to legacy setup_management for backward compatibility (Task 09 removes this)
-        if metadata is None:
-            metadata = _legacy_managed_setup_for_export(export_id, export, exports)
         if metadata is None:
             continue
         previous_owner = managed_owners.get(export.module_node_id)

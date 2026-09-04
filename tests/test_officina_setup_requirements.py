@@ -476,7 +476,7 @@ def test_setup_exports_alias_existing_default_behavior(
 
 
 def test_managed_setup_order_projects_immutable_lifecycle_metadata() -> None:
-    graph = _managed_graph(_managed_exports())
+    graph = _managed_graph(_canonical_managed_exports())
 
     assert graph.managed_setups == {
         "demo.interface.setup": ManagedSetup(
@@ -497,7 +497,7 @@ def test_managed_setup_order_projects_immutable_lifecycle_metadata() -> None:
 
 
 def test_managed_setup_order_projects_markdown_source_kind() -> None:
-    graph = _managed_graph(_managed_exports(setup_executable=False))
+    graph = _managed_graph(_canonical_managed_exports(setup_executable=False))
 
     assert graph.managed_setups["demo.interface.setup"].kind == "markdown"
 
@@ -542,33 +542,10 @@ def test_managed_setup_constructor_permits_optional_teardown_fields() -> None:
     assert setup.teardown_verifier_version is None
 
 
-def test_managed_setup_projection_still_fully_populates_from_legacy_setup_management() -> None:
-    """Verify legacy setup_management projection still fully populates all fields."""
-    graph = _managed_graph(_managed_exports())
-    metadata = graph.managed_setups["demo.interface.setup"]
-
-    # All fields should be populated from legacy setup_management
-    assert metadata.setup_interface == "demo.interface.setup"
-    assert metadata.setup_version == 3
-    assert metadata.teardown_interface == "demo.interface.teardown"
-    assert metadata.teardown_version == 4
-    assert metadata.setup_verifier_interface == "demo.interface.setup-status"
-    assert metadata.setup_verifier_version == 5
-    assert metadata.teardown_verifier_interface == "demo.interface.teardown-status"
-    assert metadata.teardown_verifier_version == 6
-    assert metadata.kind == "python"
-    # Verify no field is None
-    assert metadata.teardown_interface is not None
-    assert metadata.teardown_version is not None
-    assert metadata.setup_verifier_interface is not None
-    assert metadata.setup_verifier_version is not None
-    assert metadata.teardown_verifier_interface is not None
-    assert metadata.teardown_verifier_version is not None
-
 
 def test_managed_setup_metadata_requires_matching_action_kinds() -> None:
     """Catches dispatching teardown through a different execution boundary."""
-    exports = _managed_exports()
+    exports = _canonical_managed_exports()
     teardown = exports["demo.interface.teardown"]
     exports[teardown.interface_id] = InterfaceExport(
         **{**teardown.__dict__, "declaration": {}}
@@ -585,7 +562,7 @@ def test_managed_setup_metadata_requires_matching_action_kinds() -> None:
 )
 def test_managed_setup_metadata_requires_argument_free_lifecycle(target_id: str) -> None:
     """Catches admitting a fixed lifecycle action that needs persisted inputs."""
-    exports = _managed_exports()
+    exports = _canonical_managed_exports()
     target = exports[target_id]
     exports[target_id] = InterfaceExport(
         **{
@@ -625,75 +602,6 @@ def test_managed_setup_order_preserves_setup_order_for_a_managed_closure() -> No
         "leaf.interface.setup",
         "root.interface.setup",
     )
-
-
-def test_managed_setup_metadata_rejects_management_on_non_setup_export() -> None:
-    exports = _managed_exports()
-    default = _lifecycle_export(
-        "demo.interface.default",
-        management={
-            "setup_verifier": {"interface": "demo.interface.setup-status", "version": 5},
-            "teardown": {
-                "interface": "demo.interface.teardown",
-                "version": 4,
-                "verifier": {"interface": "demo.interface.teardown-status", "version": 6},
-            },
-        },
-    )
-    exports[default.interface_id] = default
-
-    with pytest.raises(BlueprintGraphError, match="only public setup interfaces"):
-        _managed_setup_metadata(exports)
-
-
-@pytest.mark.parametrize(
-    ("field", "replacement", "message"),
-    [
-        (
-            "setup_verifier",
-            {"interface": "other.interface.setup-status", "version": 5},
-            "same module",
-        ),
-        (
-            "setup_verifier",
-            {"interface": "demo.interface.missing", "version": 5},
-            "must exist",
-        ),
-        (
-            "setup_verifier",
-            {"interface": "demo.interface.setup-status", "version": 4},
-            "pins version",
-        ),
-    ],
-)
-def test_managed_setup_metadata_requires_pinned_local_lifecycle_exports(
-    field: str,
-    replacement: dict[str, object],
-    message: str,
-) -> None:
-    exports = _managed_exports()
-    if replacement["interface"] == "other.interface.setup-status":
-        exports["other.interface.setup-status"] = _lifecycle_export(
-            "other.interface.setup-status",
-            version=5,
-            executable=True,
-            arguments={},
-        )
-    setup = exports["demo.interface.setup"]
-    management = dict((setup.export_declaration or {})["setup_management"])
-    management[field] = replacement
-    exports[setup.interface_id] = InterfaceExport(
-        **{
-            **setup.__dict__,
-            "export_declaration": {
-                **(setup.export_declaration or {}),
-                "setup_management": management,
-            },
-        }
-    )
-
-    with pytest.raises(BlueprintGraphError, match=message):
-        _managed_setup_metadata(exports)
 
 
 def _write_nested_managed_setup_repository(repo: Path) -> None:
@@ -804,83 +712,8 @@ def test_canonical_managed_setup_one_per_module() -> None:
     assert "first.interface.setup" in graph.managed_setups
 
 
-@pytest.mark.parametrize(
-    ("field", "replacement", "message"),
-    [
-        (
-            "teardown",
-            {"interface": "other.interface.teardown", "version": 4},
-            "same module",
-        ),
-        (
-            "teardown",
-            {"interface": "demo.interface.teardown", "version": 3},
-            "pins version",
-        ),
-        (
-            "teardown.verifier",
-            {"interface": "other.interface.teardown-status", "version": 6},
-            "same module",
-        ),
-        (
-            "teardown.verifier",
-            {"interface": "demo.interface.teardown-status", "version": 5},
-            "pins version",
-        ),
-    ],
-)
-def test_managed_setup_metadata_pins_local_teardown_references(
-    field: str,
-    replacement: dict[str, object],
-    message: str,
-) -> None:
-    exports = _managed_exports()
-    if replacement["interface"].startswith("other."):
-        exports[replacement["interface"]] = _lifecycle_export(
-            replacement["interface"],
-            version=replacement["version"],
-            executable=field == "teardown.verifier",
-            arguments={} if field == "teardown.verifier" else None,
-        )
-    setup = exports["demo.interface.setup"]
-    management = dict((setup.export_declaration or {})["setup_management"])
-    teardown = dict(management["teardown"])
-    if field == "teardown":
-        replacement_with_verifier = dict(replacement)
-        replacement_with_verifier["verifier"] = teardown["verifier"]
-        management["teardown"] = replacement_with_verifier
-    else:
-        teardown["verifier"] = replacement
-        management["teardown"] = teardown
-    exports[setup.interface_id] = InterfaceExport(
-        **{
-            **setup.__dict__,
-            "export_declaration": {
-                **(setup.export_declaration or {}),
-                "setup_management": management,
-            },
-        }
-    )
-
-    with pytest.raises(BlueprintGraphError, match=message):
-        _managed_setup_metadata(exports)
-
-
-def test_managed_setup_metadata_requires_the_teardown_and_verifiers() -> None:
-    for removed_id in (
-        "demo.interface.teardown",
-        "demo.interface.setup-status",
-        "demo.interface.teardown-status",
-    ):
-        exports = _managed_exports()
-        del exports[removed_id]
-
-        with pytest.raises(BlueprintGraphError, match="must exist"):
-            _managed_setup_metadata(exports)
-
-
 def test_managed_setup_metadata_requires_dedicated_setup_and_teardown_sources() -> None:
-    exports = _managed_exports(teardown_source_id="demo.source.setup")
+    exports = _canonical_managed_exports(teardown_source_id="demo.source.setup")
 
     with pytest.raises(BlueprintGraphError, match="dedicated sources"):
         _managed_setup_metadata(exports)
@@ -922,7 +755,7 @@ def test_managed_setup_metadata_requires_read_only_argument_free_verifiers(
     kwargs: dict[str, object],
     message: str,
 ) -> None:
-    exports = _managed_exports()
+    exports = _canonical_managed_exports()
     old = exports[target]
     exports[target] = _lifecycle_export(
         target,
@@ -937,8 +770,8 @@ def test_managed_setup_metadata_requires_read_only_argument_free_verifiers(
 
 def test_canonical_setup_enables_automatic_dependency_closure() -> None:
     """Verify that canonical .interface.setup can be automatically managed even without explicit setup_management."""
-    # Create a legacy managed setup (root) and a canonical setup (leaf)
-    exports = _managed_exports(setup_id="root.interface.setup")
+    # Create a canonical setup (root) and a canonical setup (leaf)
+    exports = _canonical_managed_exports(setup_id="root.interface.setup")
     # Create a canonical setup (no setup_management, but ends with .interface.setup)
     leaf = _lifecycle_export(
         "leaf.interface.setup",
@@ -968,7 +801,7 @@ def test_canonical_setup_enables_automatic_dependency_closure() -> None:
 
 def test_managed_setup_metadata_rejects_missing_prerequisite() -> None:
     """Verify that missing setup prerequisites are rejected."""
-    exports = _managed_exports(setup_id="root.interface.setup")
+    exports = _canonical_managed_exports(setup_id="root.interface.setup")
 
     # Create a root setup that requires a missing interface
     root = exports["root.interface.setup"]

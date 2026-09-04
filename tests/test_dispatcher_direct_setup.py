@@ -272,24 +272,6 @@ def test_canonical_setup_without_legacy_opt_in_is_automatically_managed(
         )
 
 
-def test_relevant_malformed_setup_management_fails_closed(tmp_path: Path) -> None:
-    """Catches treating malformed owner metadata as an unmanaged ancestry."""
-
-    configuration, repository = _managed_repository(tmp_path)
-    root_path = repository / "skills" / "root" / "blueprint.yaml"
-    root = yaml.safe_load(root_path.read_text(encoding="utf-8"))
-    root["exports"]["root.interface.setup"]["setup_management"] = "invalid"
-    _write_yaml(root_path, root)
-    authorized = _authorize(configuration)
-
-    with pytest.raises(BlueprintGraphError, match="must be a mapping"):
-        load_direct_setup_projection(
-            authorized.repository,
-            authorized.target_modules,
-            authorized.export,
-        )
-
-
 def test_scalar_ancestry_export_entry_fails_closed(tmp_path: Path) -> None:
     """Catches malformed ancestry exports disabling managed setup detection."""
 
