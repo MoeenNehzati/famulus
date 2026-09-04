@@ -955,12 +955,14 @@ class SetupManager:
                             return clear_flow(current, flow_id)
                         self.store.update(abandon)
                 else:
-                    def abandon(current: SetupLedger) -> SetupLedger:
+                    def abandon_unverified(current: SetupLedger) -> SetupLedger:
                         active, live_step, _binding = self._flow_step(current)
                         if active != flow or live_step != step:
                             raise ManagerRecoveryError("global teardown changed before cancellation")
-                        return clear_flow(current, flow_id)
-                    self.store.update(abandon)
+                        interfaces = dict(current.interfaces)
+                        interfaces.pop(step.setup_interface, None)
+                        return SetupLedger(interfaces=interfaces, active_flow=None)
+                    self.store.update(abandon_unverified)
                 return self._result_response(flow.operation, None, None, None)
 
             if isinstance(step, SetupStep):
@@ -1012,7 +1014,11 @@ class SetupManager:
                         active = current.active_flow
                         if active is None or active.flow_id != flow_id:
                             raise FlowConflict("active flow does not match")
+                        live_step = self._flow_step(current)[1]
+                        if live_step != step:
+                            raise FlowConflict("active teardown step does not match")
                         interfaces = dict(current.interfaces)
+                        interfaces.pop(step.setup_interface, None)
                         for setup_interface in active.verified_steps:
                             receipt = interfaces.get(setup_interface)
                             if receipt is not None:

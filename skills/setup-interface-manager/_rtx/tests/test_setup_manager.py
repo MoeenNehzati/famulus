@@ -1667,6 +1667,110 @@ def test_markdown_teardown_without_action_dispatch_key(tmp_path: Path) -> None:
     assert code == 0 and completed["state"] == "ready"
 
 
+def test_recover_cancel_unverifiable_teardown(tmp_path: Path) -> None:
+    """Cancel uncertain ordinary teardown without verifier removes receipt and clears flow."""
+    stem = "unverifiable-td"
+    item = ManagedSetup(
+        setup_interface=f"{stem}.interface.setup",
+        setup_version=1,
+        teardown_interface=f"{stem}.interface.teardown",
+        teardown_version=1,
+        setup_verifier_interface=f"{stem}.interface.setup-status",
+        setup_verifier_version=1,
+        teardown_verifier_interface=None,
+        teardown_verifier_version=None,
+        kind="python",
+    )
+    binding = setup_dispatches.ManagedInterfaceBinding(
+        setup_interface=f"{stem}.interface.setup",
+        setup_version=1,
+        setup_kind="python",
+        setup_dispatch_key=f"{stem}-setup",
+        setup_instructions="",
+        setup_verifier_interface=f"{stem}.interface.setup-status",
+        setup_verifier_version=1,
+        setup_verifier_dispatch_key=f"{stem}-setup-status",
+        teardown_interface=f"{stem}.interface.teardown",
+        teardown_version=1,
+        teardown_dispatch_key=f"{stem}-teardown",
+        teardown_instructions="",
+        teardown_verifier_interface=None,
+        teardown_verifier_version=None,
+        teardown_verifier_dispatch_key=None,
+    )
+    graph = _graph(item)
+    dispatch = DispatchHarness()
+    secret = "do-not-echo-teardown"
+
+    def failing_dispatch(
+        key: str, *, args: tuple[str, ...] = (), stdin: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        raise InvocationError(secret)
+
+    controller = _controller(tmp_path, graph, failing_dispatch, binding)
+    _seed_ready(controller.store, item, item.setup_interface)
+
+    code, begun = controller.begin(
+        "teardown", item.setup_interface, "caller", item.teardown_interface, 1
+    )
+    assert code == 0
+    assert begun["current_step"]["interface"] == item.teardown_interface
+    flow_id = begun["flow_id"]
+
+    code, payload = controller.run_python(flow_id, item.teardown_interface, "{}")
+    assert code == 2
+    assert payload["state"] == "recovery-required"
+    assert secret not in json.dumps(payload)
+
+    code, recovered = controller.recover(flow_id, "cancel")
+    assert code == 0
+    assert recovered["state"] == "ready"
+    assert controller.store.read().active_flow is None
+    assert item.setup_interface not in controller.store.read().interfaces
+    code, status = controller.status(f"{stem}.interface.run")
+    assert status["code"] == "setup_required"
+
+
+def test_recover_cancel_unverifiable_teardown_all(tmp_path: Path) -> None:
+    """Cancel uncertain teardown-all without verifier removes current receipt and clears flow."""
+    leaf, root = _managed("leaf"), _managed("root")
+    leaf_item = replace(leaf, teardown_verifier_interface=None, teardown_verifier_version=None)
+    root_item = replace(root, teardown_verifier_interface=None, teardown_verifier_version=None)
+    graph = _graph(leaf_item, root_item)
+    graph.setup_requirements[root_item.setup_interface] = ((leaf_item.setup_interface, 1),)
+    leaf_binding = _binding(leaf_item)
+    leaf_binding = replace(leaf_binding, teardown_verifier_dispatch_key=None)
+    root_binding = _binding(root_item)
+    root_binding = replace(root_binding, teardown_verifier_dispatch_key=None)
+
+    dispatch = DispatchHarness()
+    secret = "do-not-echo-teardown-all"
+
+    def failing_dispatch(
+        key: str, *, args: tuple[str, ...] = (), stdin: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        if key == setup_dispatches.GETTER_KEY or key.endswith("-status"):
+            raise RuntimeError("should not call verifier or getter in this test")
+        raise InvocationError(secret)
+
+    controller = _controller(tmp_path, graph, failing_dispatch, leaf_binding, root_binding)
+    _seed_all(controller.store, leaf_item, root_item)
+
+    code, payload = controller.teardown_all()
+    assert code == 2
+    assert payload["state"] == "recovery-required"
+    assert secret not in json.dumps(payload)
+    assert payload["current_step"]["interface"] == root_item.teardown_interface
+
+    flow_id = payload["flow_id"]
+    code, recovered = controller.recover(flow_id, "cancel")
+    assert code == 0
+    assert recovered["state"] == "ready"
+    assert controller.store.read().active_flow is None
+    assert root_item.setup_interface not in controller.store.read().interfaces
+    assert leaf_item.setup_interface in controller.store.read().interfaces
+
+
 def test_teardown_all_auto_advances_internal_steps(tmp_path: Path) -> None:
     """Teardown-all automatically advances through internal steps."""
     item = _managed("td-all", kind="python")
