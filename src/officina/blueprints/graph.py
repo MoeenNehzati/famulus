@@ -198,13 +198,13 @@ class ManagedSetup:
 
     setup_interface: str
     setup_version: int
-    teardown_interface: str
-    teardown_version: int
-    setup_verifier_interface: str
-    setup_verifier_version: int
-    teardown_verifier_interface: str
-    teardown_verifier_version: int
     kind: Literal["markdown", "python"]
+    setup_verifier_interface: str | None = None
+    setup_verifier_version: int | None = None
+    teardown_interface: str | None = None
+    teardown_version: int | None = None
+    teardown_verifier_interface: str | None = None
+    teardown_verifier_version: int | None = None
 
 
 @dataclass(frozen=True)

@@ -431,6 +431,70 @@ def test_managed_setup_order_projects_markdown_source_kind() -> None:
     assert graph.managed_setups["demo.interface.setup"].kind == "markdown"
 
 
+def test_managed_setup_constructor_permits_optional_verifier_fields() -> None:
+    """Verify that ManagedSetup dataclass allows optional setup verifier fields."""
+    setup = ManagedSetup(
+        setup_interface="demo.interface.setup",
+        setup_version=1,
+        kind="python",
+        setup_verifier_interface=None,
+        setup_verifier_version=None,
+    )
+    assert setup.setup_interface == "demo.interface.setup"
+    assert setup.setup_version == 1
+    assert setup.kind == "python"
+    assert setup.setup_verifier_interface is None
+    assert setup.setup_verifier_version is None
+    assert setup.teardown_interface is None
+    assert setup.teardown_version is None
+    assert setup.teardown_verifier_interface is None
+    assert setup.teardown_verifier_version is None
+
+
+def test_managed_setup_constructor_permits_optional_teardown_fields() -> None:
+    """Verify that ManagedSetup dataclass allows optional teardown fields."""
+    setup = ManagedSetup(
+        setup_interface="demo.interface.setup",
+        setup_version=1,
+        kind="markdown",
+        teardown_interface=None,
+        teardown_version=None,
+        teardown_verifier_interface=None,
+        teardown_verifier_version=None,
+    )
+    assert setup.setup_interface == "demo.interface.setup"
+    assert setup.setup_version == 1
+    assert setup.kind == "markdown"
+    assert setup.teardown_interface is None
+    assert setup.teardown_version is None
+    assert setup.teardown_verifier_interface is None
+    assert setup.teardown_verifier_version is None
+
+
+def test_managed_setup_projection_still_fully_populates_from_legacy_setup_management() -> None:
+    """Verify legacy setup_management projection still fully populates all fields."""
+    graph = _managed_graph(_managed_exports())
+    metadata = graph.managed_setups["demo.interface.setup"]
+
+    # All fields should be populated from legacy setup_management
+    assert metadata.setup_interface == "demo.interface.setup"
+    assert metadata.setup_version == 3
+    assert metadata.teardown_interface == "demo.interface.teardown"
+    assert metadata.teardown_version == 4
+    assert metadata.setup_verifier_interface == "demo.interface.setup-status"
+    assert metadata.setup_verifier_version == 5
+    assert metadata.teardown_verifier_interface == "demo.interface.teardown-status"
+    assert metadata.teardown_verifier_version == 6
+    assert metadata.kind == "python"
+    # Verify no field is None
+    assert metadata.teardown_interface is not None
+    assert metadata.teardown_version is not None
+    assert metadata.setup_verifier_interface is not None
+    assert metadata.setup_verifier_version is not None
+    assert metadata.teardown_verifier_interface is not None
+    assert metadata.teardown_verifier_version is not None
+
+
 def test_managed_setup_metadata_requires_matching_action_kinds() -> None:
     """Catches dispatching teardown through a different execution boundary."""
     exports = _managed_exports()
