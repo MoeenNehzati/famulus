@@ -202,7 +202,7 @@ def test_builder_renders_identical_html_from_copied_canonical_json(
     assert not list(detached.parent.glob("*.rendered.json"))
 
 
-def test_builder_renders_the_math_dependency_quick_guide(
+def test_builder_renders_the_default_quick_guide(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -215,14 +215,11 @@ def test_builder_renders_the_math_dependency_quick_guide(
 
     html = html_out.read_text(encoding="utf-8")
 
-    # The skill renderer carries its own guide, so the config must not be null.
+    # The skill renderer carries the default guide, so the config must not be null.
     assert "const QUICK_GUIDE_CONFIG = null;" not in html
     assert '"read-graph"' in html
-    assert "Read mathematical dependencies" in html
-    assert "Follow arrows from prerequisites toward the results they support." in html
-    assert "Trace prerequisites" in html
-    assert "Select a theorem, then use this control to add its prerequisites." in html
-    # Steps the math profile does not reword still come from the default guide.
-    assert "Toolbar actions include hide/dim selection, redraw/reset, and zoom/Fit." in html
+    assert "Nodes are items, and arrows and relations show how they connect." in html
+    assert "Trace ancestors" in html
+    assert "Trace successors" in html
     # Macros still arrive from the canonical JSON alone, not from TeX sources.
     assert '"DetachedGlyph": "\\\\mathbb{D}"' in html

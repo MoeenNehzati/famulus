@@ -167,8 +167,9 @@ def _render_published_graphs(root: Path, destination: Path) -> None:
 
     from officina.visualization.artifacts import GraphArtifactWriter
     from officina.visualization.elk_html_renderer import ElkHtmlRenderer
+    from officina.visualization.html_renderer.quick_guides.default import DEFAULT_QUICK_GUIDE
 
-    writer = GraphArtifactWriter(ElkHtmlRenderer())
+    writer = GraphArtifactWriter(ElkHtmlRenderer(quick_guide=DEFAULT_QUICK_GUIDE))
     for stem, (relative, _) in PUBLISHED_GRAPHS.items():
         source = root / relative
         # A repository without the specification simply publishes no graph;

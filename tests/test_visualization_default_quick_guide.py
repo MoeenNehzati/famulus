@@ -8,9 +8,13 @@ def test_default_quick_guide_title_and_order() -> None:
     assert [step.id for step in DEFAULT_QUICK_GUIDE.steps] == [
         "read-graph",
         "inspect-selection",
+        "search-and-legend",
+        "search",
         "trace-ancestors",
         "trace-successors",
-        "act-on-selection",
+        "hide-dim-selection",
+        "hide-dim-complement",
+        "restore-hidden",
         "more-controls",
     ]
 
@@ -19,9 +23,13 @@ def test_default_quick_guide_targets() -> None:
     assert [step.target for step in DEFAULT_QUICK_GUIDE.steps] == [
         "#canvas-wrap",
         "#details",
+        "#legend",
+        "#graph-filter-search",
         '.relation-traverse-button[data-relation-scope="all"][data-direction="ancestors"]',
         '.relation-traverse-button[data-relation-scope="all"][data-direction="successors"]',
-        "#canvas-toolbar",
+        "#hide-selected-btn",
+        "#hide-unselected-btn",
+        "#hidden-nodes",
         "#panel-toggle",
     ]
 

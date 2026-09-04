@@ -193,7 +193,7 @@ def test_renderer_html_includes_default_quick_guide_ids_text() -> None:
     assert '"read-graph"' in html
     assert "Nodes are items" in html
     assert '\"inspect-selection\"' in html
-    assert "Toolbar actions include hide/dim selection, redraw/reset, and zoom/Fit." in html
+    assert "Hide or dim every selected node at once to declutter the view." in html
 
 
 def test_renderer_html_uses_custom_quick_guide() -> None:

@@ -11,9 +11,7 @@ from pathlib import Path
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 from officina.visualization.artifacts import GraphArtifactWriter
 from officina.visualization.elk_html_renderer import ElkHtmlRenderer
-from officina.visualization.html_renderer.quick_guides.math_dependency import (
-    MATH_DEPENDENCY_QUICK_GUIDE,
-)
+from officina.visualization.html_renderer.quick_guides.default import DEFAULT_QUICK_GUIDE
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -51,7 +49,7 @@ def main(argv: list[str] | None = None) -> None:
     ----------------------
     .ElkHtmlRenderer:
       why:
-        constructs: "Creates the shared renderer, carrying the math-dependency quick guide, used for validation, reduction, and HTML output."
+        constructs: "Creates the shared renderer, carrying the default quick guide, used for validation, reduction, and HTML output."
     """
     parser = argparse.ArgumentParser(
         description="Render an interactive HTML dependency graph from canonical JSON."
@@ -78,7 +76,7 @@ def main(argv: list[str] | None = None) -> None:
     else:
         html_path = source_path.parent / "_build" / source_path.with_suffix(".html").name
 
-    renderer = ElkHtmlRenderer(quick_guide=MATH_DEPENDENCY_QUICK_GUIDE)
+    renderer = ElkHtmlRenderer(quick_guide=DEFAULT_QUICK_GUIDE)
     render_payload = payload
     removed_edges: list[dict] = []
     reduction_note = ""
