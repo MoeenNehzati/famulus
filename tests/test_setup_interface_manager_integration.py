@@ -111,15 +111,15 @@ def _binding(
         setup_interface=item.setup_interface,
         setup_version=item.setup_version,
         setup_kind=item.kind,
-        setup_dispatch_key=f"{stem}-setup",
+        setup_dispatch_key=f"{stem}-setup" if item.kind == "python" else "",
         setup_instructions=f"Establish the declared state for {stem}.",
         setup_verifier_interface=item.setup_verifier_interface,
         setup_verifier_version=item.setup_verifier_version,
         setup_verifier_dispatch_key=f"{stem}-setup-status",
         teardown_interface=item.teardown_interface,
         teardown_version=item.teardown_version,
-        teardown_dispatch_key=f"{stem}-teardown",
-        teardown_instructions=f"Remove the declared state for {stem}.",
+        teardown_dispatch_key=f"{stem}-teardown" if item.kind == "python" else None,
+        teardown_instructions=f"Remove the declared state for {stem}." if item.teardown_interface else None,
         teardown_verifier_interface=item.teardown_verifier_interface,
         teardown_verifier_version=item.teardown_verifier_version,
         teardown_verifier_dispatch_key=f"{stem}-teardown-status",
@@ -709,3 +709,41 @@ def test_public_teardown_all_invalid_ledgers_fail_closed(tmp_path: Path, case: s
     code, failed = scenario.invoke(manager.TeardownAllInterface, [])
     assert code == 2 and failed["state"] == "failed"
     assert scenario.path.read_bytes() == before and scenario.dispatch.calls == []
+
+
+def test_python_setup_without_verifier_settles_immediately(tmp_path: Path) -> None:
+    """Python setup without verifier completes after action succeeds."""
+    item = ManagedSetup(
+        setup_interface="opt.interface.setup",
+        setup_version=1,
+        teardown_interface=None,
+        teardown_version=None,
+        setup_verifier_interface=None,
+        setup_verifier_version=None,
+        teardown_verifier_interface=None,
+        teardown_verifier_version=None,
+        kind="python",
+    )
+    binding = setup_dispatches.ManagedInterfaceBinding(
+        setup_interface="opt.interface.setup",
+        setup_version=1,
+        setup_kind="python",
+        setup_dispatch_key="opt-setup",
+        setup_instructions="",
+        setup_verifier_interface=None,
+        setup_verifier_version=None,
+        setup_verifier_dispatch_key=None,
+        teardown_interface=None,
+        teardown_version=None,
+        teardown_dispatch_key=None,
+        teardown_instructions=None,
+        teardown_verifier_interface=None,
+        teardown_verifier_version=None,
+        teardown_verifier_dispatch_key=None,
+    )
+    graph = _graph((item,), {item.setup_interface: ()}, ordinary_targets={"opt.interface.run": "opt"})
+    scenario = Scenario(tmp_path, graph, (binding,))
+    code, begun = scenario.invoke(manager.BeginInterface, ["setup", "opt.interface.setup", "caller", "opt.interface.run", "1"])
+    assert code == 0
+    code, completed = scenario.invoke(manager.RunPythonInterface, [begun["flow_id"], "opt.interface.setup"], stdin="{}")
+    assert code == 0 and completed["state"] == "ready"

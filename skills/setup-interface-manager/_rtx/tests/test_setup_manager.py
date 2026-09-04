@@ -152,15 +152,15 @@ def _binding(item: ManagedSetup) -> setup_dispatches.ManagedInterfaceBinding:
         setup_interface=item.setup_interface,
         setup_version=item.setup_version,
         setup_kind=item.kind,
-        setup_dispatch_key=f"{stem}-setup",
+        setup_dispatch_key=f"{stem}-setup" if item.kind == "python" else "",
         setup_instructions=f"Follow the exact setup instructions for {stem}.",
         setup_verifier_interface=item.setup_verifier_interface,
         setup_verifier_version=item.setup_verifier_version,
         setup_verifier_dispatch_key=f"{stem}-setup-status",
         teardown_interface=item.teardown_interface,
         teardown_version=item.teardown_version,
-        teardown_dispatch_key=f"{stem}-teardown",
-        teardown_instructions=f"Follow the exact teardown instructions for {stem}.",
+        teardown_dispatch_key=f"{stem}-teardown" if item.kind == "python" else None,
+        teardown_instructions=f"Follow the exact teardown instructions for {stem}." if item.teardown_interface else None,
         teardown_verifier_interface=item.teardown_verifier_interface,
         teardown_verifier_version=item.teardown_verifier_version,
         teardown_verifier_dispatch_key=f"{stem}-teardown-status",
@@ -184,6 +184,7 @@ PYTHON_CANARY_BINDING = setup_dispatches.ManagedInterfaceBinding(
     teardown_verifier_interface="python-canary.interface.teardown-status",
     teardown_verifier_version=1,
     teardown_verifier_dispatch_key="python-canary-teardown-status",
+    arguments=(),
 )
 PYTHON_CANARY_CALLS = {
     key: DispatchCall(
@@ -1300,6 +1301,7 @@ def test_markdown_binding_dispatch_map_exposes_only_machine_run_verifiers() -> N
             (binding.teardown_dispatch_key, "teardown"),
             (binding.teardown_verifier_dispatch_key, "teardown-status"),
         )
+        if key is not None and key != ""
     }
 
     dispatches = setup_dispatches.production_dispatches(
@@ -1456,6 +1458,240 @@ def test_teardown_all_interface_is_exact_zero_argument_adapter(tmp_path: Path, c
     payload = json.loads(capsys.readouterr().out)
     assert (payload["original"], payload["resume_original"]) == (None, False)
     assert run_python_machine_interface(interface, ["unexpected"]) == 64
+
+
+def _managed_no_verifier(stem: str, *, kind: str = "python") -> ManagedSetup:
+    """Create a managed setup without verifiers."""
+    return ManagedSetup(
+        setup_interface=f"{stem}.interface.setup",
+        setup_version=1,
+        teardown_interface=None,
+        teardown_version=None,
+        setup_verifier_interface=None,
+        setup_verifier_version=None,
+        teardown_verifier_interface=None,
+        teardown_verifier_version=None,
+        kind=kind,  # type: ignore[arg-type]
+    )
+
+
+def _no_verifier_binding(stem: str, kind: str = "python") -> setup_dispatches.ManagedInterfaceBinding:
+    """Helper to create bindings without verifiers for testing."""
+    return setup_dispatches.ManagedInterfaceBinding(
+        setup_interface=f"{stem}.interface.setup",
+        setup_version=1,
+        setup_kind=kind,
+        setup_dispatch_key="" if kind == "markdown" else f"{stem}-setup",
+        setup_instructions="Setup." if kind == "markdown" else "",
+        setup_verifier_interface=None,
+        setup_verifier_version=None,
+        setup_verifier_dispatch_key=None,
+        teardown_interface=None,
+        teardown_version=None,
+        teardown_dispatch_key=None,
+        teardown_instructions=None,
+        teardown_verifier_interface=None,
+        teardown_verifier_version=None,
+        teardown_verifier_dispatch_key=None,
+    )
+
+
+def test_python_setup_without_verifier_settles_on_action_success(tmp_path: Path) -> None:
+    """Python setup without verifier succeeds when action exits 0."""
+    binding = _no_verifier_binding("no-verifier-python", kind="python")
+    item = _managed_no_verifier("no-verifier-python", kind="python")
+    graph = _graph(item)
+    dispatch = DispatchHarness()
+    dispatch.queue(setup_dispatches.GETTER_KEY, str(tmp_path / "private" / "state" / "ledger.json"))
+    dispatch.queue("no-verifier-python-setup", "")
+    controller = _controller(tmp_path, graph, dispatch, binding)
+
+    code, begun = controller.begin("setup", binding.setup_interface, "caller", "interface", 1)
+    assert code == 0
+    code, completed = controller.run_python(begun["flow_id"], binding.setup_interface, "{}")
+    assert code == 0 and completed["state"] == "ready"
+
+
+def test_markdown_setup_without_verifier_settles_on_settle(tmp_path: Path) -> None:
+    """Markdown setup without verifier succeeds when settle is called."""
+    binding = _no_verifier_binding("no-verifier-markdown", kind="markdown")
+    item = _managed_no_verifier("no-verifier-markdown", kind="markdown")
+    graph = _graph(item)
+    dispatch = DispatchHarness()
+    dispatch.queue(setup_dispatches.GETTER_KEY, str(tmp_path / "private" / "state" / "ledger.json"))
+    controller = _controller(tmp_path, graph, dispatch, binding)
+
+    code, begun = controller.begin("setup", binding.setup_interface, "caller", "interface", 1)
+    assert code == 0
+    flow_id = begun["flow_id"]
+    code, instructions = controller.run_markdown(flow_id, binding.setup_interface)
+    assert code == 0 and "Setup" in instructions["instructions"]
+    code, completed = controller.settle(flow_id, binding.setup_interface)
+    assert code == 0 and completed["state"] == "ready"
+
+
+def test_teardown_without_verifier_settles_after_action(tmp_path: Path) -> None:
+    """Teardown without verifier succeeds when action exits 0."""
+    stem = "no-verifier-td"
+    item = ManagedSetup(
+        setup_interface=f"{stem}.interface.setup",
+        setup_version=1,
+        teardown_interface=f"{stem}.interface.teardown",
+        teardown_version=1,
+        setup_verifier_interface=f"{stem}.interface.setup-status",
+        setup_verifier_version=1,
+        teardown_verifier_interface=None,
+        teardown_verifier_version=None,
+        kind="python",
+    )
+    binding = setup_dispatches.ManagedInterfaceBinding(
+        setup_interface=f"{stem}.interface.setup",
+        setup_version=1,
+        setup_kind="python",
+        setup_dispatch_key=f"{stem}-setup",
+        setup_instructions="",
+        setup_verifier_interface=f"{stem}.interface.setup-status",
+        setup_verifier_version=1,
+        setup_verifier_dispatch_key=f"{stem}-setup-status",
+        teardown_interface=f"{stem}.interface.teardown",
+        teardown_version=1,
+        teardown_dispatch_key=f"{stem}-teardown",
+        teardown_instructions="",
+        teardown_verifier_interface=None,
+        teardown_verifier_version=None,
+        teardown_verifier_dispatch_key=None,
+    )
+    graph = _graph(item)
+    dispatch = DispatchHarness()
+    dispatch.queue(setup_dispatches.GETTER_KEY, str(tmp_path / "private" / "state" / "ledger.json"))
+    dispatch.queue(f"{stem}-setup", "")
+    dispatch.queue(f"{stem}-setup-status", '{"set_up": true}')
+    dispatch.queue(f"{stem}-teardown", "")
+    controller = _controller(tmp_path, graph, dispatch, binding)
+
+    code, begun = controller.begin("setup", binding.setup_interface, "caller", "interface", 1)
+    controller.run_python(begun["flow_id"], binding.setup_interface, "{}")
+    code, begun = controller.begin("teardown", binding.setup_interface, "caller", binding.teardown_interface, 1)
+    code, completed = controller.run_python(begun["flow_id"], binding.teardown_interface, "{}")
+    assert code == 0 and completed["state"] == "ready"
+
+
+def test_retry_uncertain_no_verifier_python_action_reruns_action(tmp_path: Path) -> None:
+    """Retry on uncertain action without verifier reruns the action."""
+    binding = _no_verifier_binding("retry-no-verifier", kind="python")
+    item = _managed_no_verifier("retry-no-verifier", kind="python")
+    graph = _graph(item)
+    dispatch = DispatchHarness()
+    dispatch.queue(setup_dispatches.GETTER_KEY, str(tmp_path / "private" / "state" / "ledger.json"))
+    dispatch.queue("retry-no-verifier-setup", "", returncode=1)
+    dispatch.queue("retry-no-verifier-setup", "")
+    controller = _controller(tmp_path, graph, dispatch, binding)
+
+    code, begun = controller.begin("setup", binding.setup_interface, "caller", "interface", 1)
+    flow_id = begun["flow_id"]
+    code, _ = controller.run_python(flow_id, binding.setup_interface, "{}")
+    assert code == 2
+    code, retry = controller.recover(flow_id, "retry")
+    assert code == 0 and retry["state"] == "run-step"
+    code, completed = controller.run_python(flow_id, binding.setup_interface, "{}")
+    assert code == 0 and completed["state"] == "ready"
+
+
+def test_cancel_uncertain_no_verifier_setup_clears_flow(tmp_path: Path) -> None:
+    """Cancel uncertain setup without verifier clears the flow without recording receipt."""
+    binding = _no_verifier_binding("cancel-no-verifier", kind="python")
+    item = _managed_no_verifier("cancel-no-verifier", kind="python")
+    graph = _graph(item)
+    dispatch = DispatchHarness()
+    dispatch.queue(setup_dispatches.GETTER_KEY, str(tmp_path / "private" / "state" / "ledger.json"))
+    dispatch.queue("cancel-no-verifier-setup", "", returncode=1)
+    controller = _controller(tmp_path, graph, dispatch, binding)
+
+    code, begun = controller.begin("setup", binding.setup_interface, "caller", "interface", 1)
+    flow_id = begun["flow_id"]
+    controller.run_python(flow_id, binding.setup_interface, "{}")
+    code, recovered = controller.recover(flow_id, "cancel")
+    assert code == 0 and recovered["state"] == "ready"
+    assert controller.store.read().active_flow is None
+
+
+def test_markdown_teardown_without_action_dispatch_key(tmp_path: Path) -> None:
+    """Markdown teardown with instructions and no process dispatch key works."""
+    stem = "md-td"
+    item = ManagedSetup(
+        setup_interface=f"{stem}.interface.setup",
+        setup_version=1,
+        teardown_interface=f"{stem}.interface.teardown",
+        teardown_version=1,
+        setup_verifier_interface=None,
+        setup_verifier_version=None,
+        teardown_verifier_interface=None,
+        teardown_verifier_version=None,
+        kind="markdown",
+    )
+    binding = setup_dispatches.ManagedInterfaceBinding(
+        setup_interface=f"{stem}.interface.setup",
+        setup_version=1,
+        setup_kind="markdown",
+        setup_dispatch_key="",
+        setup_instructions="Setup.",
+        setup_verifier_interface=None,
+        setup_verifier_version=None,
+        setup_verifier_dispatch_key=None,
+        teardown_interface=f"{stem}.interface.teardown",
+        teardown_version=1,
+        teardown_dispatch_key=None,
+        teardown_instructions="Teardown.",
+        teardown_verifier_interface=None,
+        teardown_verifier_version=None,
+        teardown_verifier_dispatch_key=None,
+    )
+    graph = _graph(item)
+    dispatch = DispatchHarness()
+    dispatch.queue(setup_dispatches.GETTER_KEY, str(tmp_path / "private" / "state" / "ledger.json"))
+    controller = _controller(tmp_path, graph, dispatch, binding)
+
+    code, begun = controller.begin("setup", binding.setup_interface, "caller", "interface", 1)
+    controller.run_markdown(begun["flow_id"], binding.setup_interface)
+    code, completed = controller.settle(begun["flow_id"], binding.setup_interface)
+    assert code == 0 and completed["state"] == "ready"
+
+
+def test_teardown_all_auto_advances_internal_steps(tmp_path: Path) -> None:
+    """Teardown-all automatically advances through internal steps."""
+    item = _managed("td-all", kind="python")
+    binding = _binding(item)
+    graph = _graph(item)
+    dispatch = DispatchHarness()
+    dispatch.queue(setup_dispatches.GETTER_KEY, str(tmp_path / "private" / "state" / "ledger.json"))
+    dispatch.queue("td-all-setup", "")
+    dispatch.queue("td-all-setup-status", '{"set_up": true}')
+    dispatch.queue("td-all-teardown", "")
+    dispatch.queue("td-all-teardown-status", '{"torn_down": true}')
+    controller = _controller(tmp_path, graph, dispatch, binding)
+
+    code, begun = controller.begin("setup", binding.setup_interface, "caller", "interface", 1)
+    controller.run_python(begun["flow_id"], binding.setup_interface, "{}")
+    code, completed = controller.teardown_all()
+    assert code == 0 and completed["state"] == "ready"
+
+
+def test_production_dispatches_omits_none_keys() -> None:
+    """production_dispatches() only includes non-None keys."""
+    binding = _no_verifier_binding("sel")
+    action_calls = {
+        "sel-setup": DispatchCall(
+            caller_module_id="setup-interface-manager._rtx",
+            target_module_id="sel",
+            interface="setup",
+            smoke_args=(),
+        ),
+    }
+    dispatches = setup_dispatches.production_dispatches(
+        bindings={binding.setup_interface: binding},
+        action_calls=action_calls,
+    )
+    assert setup_dispatches.GETTER_KEY in dispatches and "sel-setup" in dispatches
 
 
 def test_registered_manager_is_hidden_and_only_workflow_activated() -> None:

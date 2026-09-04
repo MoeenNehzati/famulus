@@ -364,6 +364,8 @@ class SetupManager:
         else:
             key = binding.teardown_verifier_dispatch_key
             expected = {"torn_down": True}
+        if key is None:
+            return None
         result = self._dispatch_result(key)
         if result.returncode != 0:
             return None
@@ -379,6 +381,15 @@ class SetupManager:
         if decoded == false_value:
             return False
         raise ManagerRecoveryError("declared verifier returned an unsupported payload")
+
+    def _has_verifier(
+        self, step: SetupStep | TeardownStep, binding: ManagedInterfaceBinding
+    ) -> bool:
+        """Check if a verifier exists for the step."""
+        if isinstance(step, SetupStep):
+            return binding.setup_verifier_dispatch_key is not None
+        else:
+            return binding.teardown_verifier_dispatch_key is not None
 
     def _verify(self, flow: ActiveFlow, step: SetupStep | TeardownStep, binding: ManagedInterfaceBinding) -> bool:
         return self._verifier_outcome(flow, step, binding) is True
@@ -405,6 +416,20 @@ class SetupManager:
         if next_flow.operation == "teardown":
             return self._advance_release_claims(next_flow, next_step)
         return next_flow, next_step
+
+    def _advance_internal_teardown(
+        self, flow: ActiveFlow, step: TeardownStep
+    ) -> tuple[ActiveFlow | None, SetupStep | TeardownStep | None]:
+        """Advance internal teardown actions (release-claim, invalidate-receipt) without external dispatch."""
+        result = record_teardown_success(
+            self.store, self.graph, flow.flow_id, step
+        )
+        if result.state == "ready":
+            return None, None
+        persisted = self.store.read().active_flow
+        if persisted is None or result.current_step is None:
+            raise ManagerRecoveryError("internal teardown advanced without persisted state")
+        return persisted, result.current_step
 
     def _advance_release_claims(
         self, flow: ActiveFlow, step: SetupStep | TeardownStep
@@ -469,6 +494,14 @@ class SetupManager:
         while True:
             if (persisted := self._flow_step(self.store.read()))[:2] != (flow, step): raise ManagerRecoveryError("global teardown changed before dispatch")
             flow, step, binding = persisted
+            if isinstance(step, TeardownStep) and step.action in ("release-claim", "invalidate-receipt"):
+                next_flow, next_step = self._advance_internal_teardown(flow, step)
+                if next_step is None:
+                    return self._result_response(flow.operation, None, None, None)
+                if next_flow is None or not isinstance(next_step, TeardownStep):
+                    raise ManagerRecoveryError("global teardown advanced without persisted state")
+                flow, step = next_flow, next_step
+                continue
             if binding.setup_kind == "markdown":
                 return 0, _response(
                     flow_id=flow.flow_id, operation=flow.operation, state="awaiting-settlement",
@@ -480,11 +513,12 @@ class SetupManager:
                 return self._domain_failure(
                     flow.operation, "declared action failed", flow=flow, step=step
                 )
-            if not self._verify(flow, step, binding):
-                return self._domain_failure(
-                    flow.operation, "declared verifier reported incomplete state",
-                    flow=flow, step=step,
-                )
+            if self._has_verifier(step, binding):
+                if not self._verify(flow, step, binding):
+                    return self._domain_failure(
+                        flow.operation, "declared verifier reported incomplete state",
+                        flow=flow, step=step,
+                    )
             next_flow, next_step = self._settle_verified(flow, step)
             if next_step is None:
                 return self._result_response(flow.operation, None, None, None)
@@ -716,6 +750,8 @@ class SetupManager:
                 if isinstance(step, SetupStep)
                 else binding.teardown_dispatch_key
             )
+            if isinstance(step, TeardownStep) and step.action in ("release-claim", "invalidate-receipt"):
+                raise ManagerDomainError("internal teardown step has no external action")
             action = self._dispatch_result(action_key, args=argv)
             if action.returncode != 0:
                 return self._domain_failure(
@@ -725,14 +761,15 @@ class SetupManager:
                     step=step,
                     original=flow.continuation,
                 )
-            if not self._verify(flow, step, binding):
-                return self._domain_failure(
-                    flow.operation,
-                    "declared verifier reported incomplete state",
-                    flow=flow,
-                    step=step,
-                    original=flow.continuation,
-                )
+            if self._has_verifier(step, binding):
+                if not self._verify(flow, step, binding):
+                    return self._domain_failure(
+                        flow.operation,
+                        "declared verifier reported incomplete state",
+                        flow=flow,
+                        step=step,
+                        original=flow.continuation,
+                    )
             next_flow, next_step = self._settle_verified(flow, step)
             return self._result_response(
                 flow.operation, flow.continuation, next_flow, next_step
@@ -771,14 +808,17 @@ class SetupManager:
             flow, step, binding = self._require_current(flow_id, interface)
             if binding.setup_kind != "markdown":
                 raise ManagerDomainError("settle is only valid for Markdown steps")
-            if not self._verify(flow, step, binding):
-                return self._domain_failure(
-                    flow.operation,
-                    "declared verifier reported incomplete state",
-                    flow=flow,
-                    step=step,
-                    original=flow.continuation,
-                )
+            if isinstance(step, TeardownStep) and step.action in ("release-claim", "invalidate-receipt"):
+                raise ManagerDomainError("internal teardown step has no external action")
+            if self._has_verifier(step, binding):
+                if not self._verify(flow, step, binding):
+                    return self._domain_failure(
+                        flow.operation,
+                        "declared verifier reported incomplete state",
+                        flow=flow,
+                        step=step,
+                        original=flow.continuation,
+                    )
             next_flow, next_step = self._settle_verified(flow, step)
             if flow.operation == "teardown-all" and next_step is not None:
                 assert next_flow is not None and isinstance(next_step, TeardownStep)
@@ -835,60 +875,85 @@ class SetupManager:
             if action == "retry":
                 if (
                     isinstance(step, TeardownStep)
-                    and step.action == "release-claim"
+                    and step.action in ("release-claim", "invalidate-receipt")
                 ):
-                    next_flow, next_step = self._advance_release_claims(flow, step)
+                    next_flow, next_step = self._advance_internal_teardown(flow, step)
                     return self._result_response(
                         flow.operation, flow.continuation, next_flow, next_step
                     )
-                outcome = (
-                    self._verifier_outcome(flow, step, binding)
-                    if flow.operation == "teardown-all"
-                    else self._verify(flow, step, binding)
-                )
-                if outcome is None:
-                    raise ManagerRecoveryError("declared verifier completion is uncertain")
-                if outcome:
-                    next_flow, next_step = self._settle_verified(flow, step)
-                    if flow.operation == "teardown-all" and next_step is not None:
-                        assert next_flow is not None and isinstance(next_step, TeardownStep)
-                        return self._run_teardown_all(next_flow, next_step)
-                    return self._result_response(
-                        flow.operation, flow.continuation, next_flow, next_step
+                if self._has_verifier(step, binding):
+                    outcome = (
+                        self._verifier_outcome(flow, step, binding)
+                        if flow.operation == "teardown-all"
+                        else self._verify(flow, step, binding)
                     )
-                if flow.operation == "teardown-all":
-                    assert isinstance(step, TeardownStep)
-                    return self._run_teardown_all(flow, step)
-                extra = {}
-                if binding.setup_kind == "markdown":
-                    extra["instructions"] = (
-                        binding.setup_instructions
-                        if isinstance(step, SetupStep)
-                        else binding.teardown_instructions
+                    if outcome is None:
+                        raise ManagerRecoveryError("declared verifier completion is uncertain")
+                    if outcome:
+                        next_flow, next_step = self._settle_verified(flow, step)
+                        if flow.operation == "teardown-all" and next_step is not None:
+                            assert next_flow is not None and isinstance(next_step, TeardownStep)
+                            return self._run_teardown_all(next_flow, next_step)
+                        return self._result_response(
+                            flow.operation, flow.continuation, next_flow, next_step
+                        )
+                    if flow.operation == "teardown-all":
+                        assert isinstance(step, TeardownStep)
+                        return self._run_teardown_all(flow, step)
+                    extra = {}
+                    if binding.setup_kind == "markdown":
+                        extra["instructions"] = (
+                            binding.setup_instructions
+                            if isinstance(step, SetupStep)
+                            else binding.teardown_instructions
+                        )
+                    return 0, _response(
+                        flow_id=flow.flow_id,
+                        operation=flow.operation,
+                        state="run-step",
+                        current_step=step,
+                        original=flow.continuation,
+                        **extra,
                     )
-                return 0, _response(
-                    flow_id=flow.flow_id,
-                    operation=flow.operation,
-                    state="run-step",
-                    current_step=step,
-                    original=flow.continuation,
-                    **extra,
-                )
+                else:
+                    extra = {}
+                    if binding.setup_kind == "markdown":
+                        extra["instructions"] = (
+                            binding.setup_instructions
+                            if isinstance(step, SetupStep)
+                            else binding.teardown_instructions
+                        )
+                    return 0, _response(
+                        flow_id=flow.flow_id,
+                        operation=flow.operation,
+                        state="run-step",
+                        current_step=step,
+                        original=flow.continuation,
+                        **extra,
+                    )
             if action != "cancel":
                 raise ManagerUsageError("recovery action must be retry or cancel")
 
             if flow.operation == "teardown-all":
                 assert isinstance(step, TeardownStep)
-                outcome = self._verifier_outcome(flow, step, binding)
-                if outcome is None:
-                    raise ManagerRecoveryError("declared verifier completion is uncertain")
-                if outcome:
-                    try:
-                        record_teardown_all_success(
-                            self.store, self.graph, flow.flow_id, step, advance=False
-                        )
-                    except (BlueprintGraphError, FlowConflict, LedgerError) as exc:
-                        raise ManagerRecoveryError("global teardown cancellation needs recovery") from exc
+                if self._has_verifier(step, binding):
+                    outcome = self._verifier_outcome(flow, step, binding)
+                    if outcome is None:
+                        raise ManagerRecoveryError("declared verifier completion is uncertain")
+                    if outcome:
+                        try:
+                            record_teardown_all_success(
+                                self.store, self.graph, flow.flow_id, step, advance=False
+                            )
+                        except (BlueprintGraphError, FlowConflict, LedgerError) as exc:
+                            raise ManagerRecoveryError("global teardown cancellation needs recovery") from exc
+                    else:
+                        def abandon(current: SetupLedger) -> SetupLedger:
+                            active, live_step, _binding = self._flow_step(current)
+                            if active != flow or live_step != step:
+                                raise ManagerRecoveryError("global teardown changed before cancellation")
+                            return clear_flow(current, flow_id)
+                        self.store.update(abandon)
                 else:
                     def abandon(current: SetupLedger) -> SetupLedger:
                         active, live_step, _binding = self._flow_step(current)
@@ -897,20 +962,65 @@ class SetupManager:
                         return clear_flow(current, flow_id)
                     self.store.update(abandon)
                 return self._result_response(flow.operation, None, None, None)
-            def cancel(current: SetupLedger) -> SetupLedger:
-                active = current.active_flow
-                if active is None or active.flow_id != flow_id:
-                    raise FlowConflict("active flow does not match")
-                interfaces = dict(current.interfaces)
-                for setup_interface in active.verified_steps:
-                    receipt = interfaces.get(setup_interface)
-                    if receipt is not None:
-                        interfaces[setup_interface] = SetupReceipt(
-                            receipt.version, receipt.required_by - {active.root}
-                        )
-                return SetupLedger(interfaces=interfaces, active_flow=None)
 
-            self.store.update(cancel)
+            if isinstance(step, SetupStep):
+                if self._has_verifier(step, binding):
+                    def cancel_verified(current: SetupLedger) -> SetupLedger:
+                        active = current.active_flow
+                        if active is None or active.flow_id != flow_id:
+                            raise FlowConflict("active flow does not match")
+                        interfaces = dict(current.interfaces)
+                        for setup_interface in active.verified_steps:
+                            receipt = interfaces.get(setup_interface)
+                            if receipt is not None:
+                                interfaces[setup_interface] = SetupReceipt(
+                                    receipt.version, receipt.required_by - {active.root}
+                                )
+                        return SetupLedger(interfaces=interfaces, active_flow=None)
+                    self.store.update(cancel_verified)
+                else:
+                    def cancel_unverified(current: SetupLedger) -> SetupLedger:
+                        active = current.active_flow
+                        if active is None or active.flow_id != flow_id:
+                            raise FlowConflict("active flow does not match")
+                        interfaces = dict(current.interfaces)
+                        for setup_interface in active.verified_steps:
+                            receipt = interfaces.get(setup_interface)
+                            if receipt is not None:
+                                interfaces[setup_interface] = SetupReceipt(
+                                    receipt.version, receipt.required_by - {active.root}
+                                )
+                        return SetupLedger(interfaces=interfaces, active_flow=None)
+                    self.store.update(cancel_unverified)
+            else:
+                if self._has_verifier(step, binding):
+                    def cancel_teardown_verified(current: SetupLedger) -> SetupLedger:
+                        active = current.active_flow
+                        if active is None or active.flow_id != flow_id:
+                            raise FlowConflict("active flow does not match")
+                        interfaces = dict(current.interfaces)
+                        for setup_interface in active.verified_steps:
+                            receipt = interfaces.get(setup_interface)
+                            if receipt is not None:
+                                interfaces[setup_interface] = SetupReceipt(
+                                    receipt.version, receipt.required_by - {active.root}
+                                )
+                        return SetupLedger(interfaces=interfaces, active_flow=None)
+                    self.store.update(cancel_teardown_verified)
+                else:
+                    def cancel_teardown_unverified(current: SetupLedger) -> SetupLedger:
+                        active = current.active_flow
+                        if active is None or active.flow_id != flow_id:
+                            raise FlowConflict("active flow does not match")
+                        interfaces = dict(current.interfaces)
+                        for setup_interface in active.verified_steps:
+                            receipt = interfaces.get(setup_interface)
+                            if receipt is not None:
+                                interfaces[setup_interface] = SetupReceipt(
+                                    receipt.version, receipt.required_by - {active.root}
+                                )
+                        return SetupLedger(interfaces=interfaces, active_flow=None)
+                    self.store.update(cancel_teardown_unverified)
             return 0, _response(
                 flow_id=None,
                 operation=flow.operation,

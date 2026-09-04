@@ -49,37 +49,87 @@ class ManagedInterfaceBinding:
     setup_kind: Literal["markdown", "python"]
     setup_dispatch_key: str
     setup_instructions: str
-    setup_verifier_interface: str
-    setup_verifier_version: int
-    setup_verifier_dispatch_key: str
-    teardown_interface: str
-    teardown_version: int
-    teardown_dispatch_key: str
-    teardown_instructions: str
-    teardown_verifier_interface: str
-    teardown_verifier_version: int
-    teardown_verifier_dispatch_key: str
+    setup_verifier_interface: str | None
+    setup_verifier_version: int | None
+    setup_verifier_dispatch_key: str | None
+    teardown_interface: str | None
+    teardown_version: int | None
+    teardown_dispatch_key: str | None
+    teardown_instructions: str | None
+    teardown_verifier_interface: str | None
+    teardown_verifier_version: int | None
+    teardown_verifier_dispatch_key: str | None
     arguments: tuple[ManagedArgument, ...] = ()
 
     def __post_init__(self) -> None:
-        identifiers = (
-            self.setup_interface,
-            self.setup_dispatch_key,
+        # Required setup identifiers
+        if not self.setup_interface:
+            raise ValueError("managed setup interface must be nonempty")
+
+        # Setup verifier: all present or all absent
+        setup_verifier_fields = (
             self.setup_verifier_interface,
+            self.setup_verifier_version,
             self.setup_verifier_dispatch_key,
-            self.teardown_interface,
-            self.teardown_dispatch_key,
+        )
+        if not all(setup_verifier_fields) and any(setup_verifier_fields):
+            raise ValueError("setup verifier must have interface, version, and dispatch-key all present or all absent")
+
+        # Teardown: interface and version both present or both absent
+        if (self.teardown_interface is None) != (self.teardown_version is None):
+            raise ValueError("teardown interface and version must be both present or both absent")
+
+        # Teardown verifier: all present or all absent
+        teardown_verifier_fields = (
             self.teardown_verifier_interface,
+            self.teardown_verifier_version,
             self.teardown_verifier_dispatch_key,
         )
-        if any(not value for value in identifiers):
-            raise ValueError("managed dispatch identifiers must be nonempty")
+        if not all(teardown_verifier_fields) and any(teardown_verifier_fields):
+            raise ValueError("teardown verifier must have interface, version, and dispatch-key all present or all absent")
+
+        # If teardown is absent, verifier and action must also be absent
+        if self.teardown_interface is None:
+            if self.teardown_dispatch_key is not None or any(teardown_verifier_fields):
+                raise ValueError("when teardown is absent, dispatch key and verifier must also be absent")
+
+        # Setup kind validation
         if self.setup_kind not in {"markdown", "python"}:
             raise ValueError("managed setup kind must be markdown or python")
-        if self.setup_version < 1 or self.teardown_version < 1:
+
+        # Version validation
+        if self.setup_version < 1:
             raise ValueError("managed action versions must be positive")
-        if self.setup_verifier_version < 1 or self.teardown_verifier_version < 1:
+        if self.teardown_version is not None and self.teardown_version < 1:
+            raise ValueError("managed action versions must be positive")
+        if self.setup_verifier_version is not None and self.setup_verifier_version < 1:
             raise ValueError("managed verifier versions must be positive")
+        if self.teardown_verifier_version is not None and self.teardown_verifier_version < 1:
+            raise ValueError("managed verifier versions must be positive")
+
+        # Markdown setup: instructions must be nonempty
+        if self.setup_kind == "markdown" and not self.setup_instructions:
+            raise ValueError("markdown setup instructions must be nonempty")
+
+        # Python setup: action dispatch key must be nonempty
+        if self.setup_kind == "python" and not self.setup_dispatch_key:
+            raise ValueError("python setup action dispatch key must be nonempty")
+
+        # Teardown instructions: if teardown is markdown, instructions must be nonempty
+        if self.teardown_interface is not None and self.setup_kind == "markdown":
+            if not self.teardown_instructions:
+                raise ValueError("markdown teardown instructions must be nonempty")
+
+        # Teardown action constraints depend on kind
+        if self.teardown_interface is not None:
+            if self.setup_kind == "python":
+                if not self.teardown_dispatch_key:
+                    raise ValueError("python teardown action dispatch key must be nonempty")
+            elif self.setup_kind == "markdown":
+                if self.teardown_dispatch_key is not None:
+                    raise ValueError("markdown teardown action dispatch key must be absent")
+
+        # Argument validation
         names = [argument.name for argument in self.arguments]
         positions = [
             argument.position
@@ -158,6 +208,7 @@ def production_dispatches(
             binding.teardown_dispatch_key,
             binding.teardown_verifier_dispatch_key,
         )
+        if key is not None and key != ""
     }
     if set(action_calls) != required_action_keys:
         missing = sorted(required_action_keys - set(action_calls))
@@ -178,6 +229,7 @@ def production_dispatches(
                 else ()
             ),
         )
+        if key is not None and key != ""
     }
     dispatches.update({key: action_calls[key] for key in runtime_action_keys})
     return MappingProxyType(dispatches)
