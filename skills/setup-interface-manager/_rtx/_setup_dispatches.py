@@ -167,6 +167,90 @@ _WAKEUP = ManagedInterfaceBinding(
     teardown_verifier_dispatch_key="wakeup-teardown-status",
 )
 
+_CONNECT_GOOGLE_SETUP = "connect-google.interface.setup"
+_CONNECT_GOOGLE = ManagedInterfaceBinding(
+    setup_interface=_CONNECT_GOOGLE_SETUP,
+    setup_version=1,
+    setup_kind="markdown",
+    setup_dispatch_key="",
+    setup_instructions=(
+        "Follow the connect-google skill's setup gateway to grant access to Google services."
+    ),
+    setup_verifier_interface=None,
+    setup_verifier_version=None,
+    setup_verifier_dispatch_key=None,
+    teardown_interface=None,
+    teardown_version=None,
+    teardown_dispatch_key=None,
+    teardown_instructions=None,
+    teardown_verifier_interface=None,
+    teardown_verifier_version=None,
+    teardown_verifier_dispatch_key=None,
+)
+
+_ONLINE_CALENDAR_SETUP = "online-calendar.interface.setup"
+_ONLINE_CALENDAR = ManagedInterfaceBinding(
+    setup_interface=_ONLINE_CALENDAR_SETUP,
+    setup_version=1,
+    setup_kind="markdown",
+    setup_dispatch_key="",
+    setup_instructions=(
+        "Follow the online-calendar skill's setup gateway to connect your calendar provider."
+    ),
+    setup_verifier_interface=None,
+    setup_verifier_version=None,
+    setup_verifier_dispatch_key=None,
+    teardown_interface=None,
+    teardown_version=None,
+    teardown_dispatch_key=None,
+    teardown_instructions=None,
+    teardown_verifier_interface=None,
+    teardown_verifier_version=None,
+    teardown_verifier_dispatch_key=None,
+)
+
+_CLOUD_FILES_SETUP = "cloud-files.interface.setup"
+_CLOUD_FILES = ManagedInterfaceBinding(
+    setup_interface=_CLOUD_FILES_SETUP,
+    setup_version=1,
+    setup_kind="markdown",
+    setup_dispatch_key="",
+    setup_instructions=(
+        "Follow the cloud-files skill's setup gateway to configure cloud storage access."
+    ),
+    setup_verifier_interface=None,
+    setup_verifier_version=None,
+    setup_verifier_dispatch_key=None,
+    teardown_interface=None,
+    teardown_version=None,
+    teardown_dispatch_key=None,
+    teardown_instructions=None,
+    teardown_verifier_interface=None,
+    teardown_verifier_version=None,
+    teardown_verifier_dispatch_key=None,
+)
+
+_LIST_MANAGER_SETUP = "list-manager.interface.setup"
+_LIST_MANAGER = ManagedInterfaceBinding(
+    setup_interface=_LIST_MANAGER_SETUP,
+    setup_version=1,
+    setup_kind="markdown",
+    setup_dispatch_key="",
+    setup_instructions=(
+        "Follow the list-manager skill's setup gateway to initialize your task list."
+    ),
+    setup_verifier_interface=None,
+    setup_verifier_version=None,
+    setup_verifier_dispatch_key=None,
+    teardown_interface=None,
+    teardown_version=None,
+    teardown_dispatch_key=None,
+    teardown_instructions=None,
+    teardown_verifier_interface=None,
+    teardown_verifier_version=None,
+    teardown_verifier_dispatch_key=None,
+)
+
 
 def _wakeup_call(interface: str) -> DispatchCall:
     """Return one reviewed argument-free dispatch into the wakeup feature."""
@@ -180,7 +264,13 @@ def _wakeup_call(interface: str) -> DispatchCall:
 
 
 PRODUCTION_BINDINGS: Mapping[str, ManagedInterfaceBinding] = MappingProxyType(
-    {_WAKEUP_SETUP: _WAKEUP}
+    {
+        _CONNECT_GOOGLE_SETUP: _CONNECT_GOOGLE,
+        _ONLINE_CALENDAR_SETUP: _ONLINE_CALENDAR,
+        _CLOUD_FILES_SETUP: _CLOUD_FILES,
+        _LIST_MANAGER_SETUP: _LIST_MANAGER,
+        _WAKEUP_SETUP: _WAKEUP,
+    }
 )
 PRODUCTION_ACTION_CALLS: Mapping[str, DispatchCall] = MappingProxyType(
     {

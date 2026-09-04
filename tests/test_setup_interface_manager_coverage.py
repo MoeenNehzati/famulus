@@ -70,17 +70,87 @@ def test_release_has_no_production_managed_setups() -> None:
     assert route in (REPO_ROOT / "references/blueprint-schema/runtime_dependencies.json").read_text()
 
 
+def test_production_bindings_include_all_canonical_setups() -> None:
+    """Pre-admit all canonical production setups before activation."""
+    bindings, action_calls, dispatches = _setup_dispatches()
+
+    EXPECTED_CANONICAL = {
+        "connect-google.interface.setup",
+        "online-calendar.interface.setup",
+        "cloud-files.interface.setup",
+        "list-manager.interface.setup",
+        "llm-wakeup._rtx.interface.setup",
+    }
+    assert set(bindings) == EXPECTED_CANONICAL
+
+    # Only wakeup is currently managed in the graph
+    graph = load_repository_blueprint_graph(REPO_ROOT)
+    fixture_managed = {
+        interface_id
+        for interface_id in graph.managed_setups
+        if graph.nodes[
+            graph.exports[interface_id].module_node_id
+        ].module_root.resolve().is_relative_to(REPO_ROOT / "tests" / "fixtures" / "setup_interface_manager" / "repository")
+    }
+    production_managed = set(graph.managed_setups) - fixture_managed
+    assert production_managed == {"llm-wakeup._rtx.interface.setup"}
+
+    # Verify four Markdown bindings have no runtime dispatch keys
+    for setup_interface in {
+        "connect-google.interface.setup",
+        "online-calendar.interface.setup",
+        "cloud-files.interface.setup",
+        "list-manager.interface.setup",
+    }:
+        binding = bindings[setup_interface]
+        # Setup interface/version match
+        assert binding.setup_interface == setup_interface
+        assert binding.setup_version == 1
+        # Markdown kind
+        assert binding.setup_kind == "markdown"
+        # Setup instructions are nonempty
+        assert binding.setup_instructions and len(binding.setup_instructions) > 0
+        # No verifier/teardown
+        assert binding.setup_verifier_interface is None
+        assert binding.setup_verifier_version is None
+        assert binding.setup_verifier_dispatch_key is None
+        assert binding.teardown_interface is None
+        assert binding.teardown_version is None
+        assert binding.teardown_dispatch_key is None
+        assert binding.teardown_instructions is None
+        assert binding.teardown_verifier_interface is None
+        assert binding.teardown_verifier_version is None
+        assert binding.teardown_verifier_dispatch_key is None
+
+    # Verify wakeup binding is unchanged
+    wakeup_binding = bindings["llm-wakeup._rtx.interface.setup"]
+    assert wakeup_binding.setup_interface == "llm-wakeup._rtx.interface.setup"
+    assert wakeup_binding.setup_version == 1
+    assert wakeup_binding.setup_kind == "python"
+    assert wakeup_binding.setup_dispatch_key == "wakeup-setup"
+    assert wakeup_binding.setup_verifier_interface == "llm-wakeup._rtx.interface.setup-status"
+    assert wakeup_binding.setup_verifier_version == 1
+    assert wakeup_binding.setup_verifier_dispatch_key == "wakeup-setup-status"
+    assert wakeup_binding.teardown_interface == "llm-wakeup._rtx.interface.teardown"
+    assert wakeup_binding.teardown_version == 1
+    assert wakeup_binding.teardown_dispatch_key == "wakeup-teardown"
+    assert wakeup_binding.teardown_verifier_interface == "llm-wakeup._rtx.interface.teardown-status"
+    assert wakeup_binding.teardown_verifier_version == 1
+    assert wakeup_binding.teardown_verifier_dispatch_key == "wakeup-teardown-status"
+
+
 def test_production_map_has_no_managed_setup_routes() -> None:
     """Catches publication drift or an owner route escaping blueprint review."""
     bindings, action_calls, dispatches = _setup_dispatches()
 
-    assert set(bindings) == {"llm-wakeup._rtx.interface.setup"}
+    # Action calls only include wakeup routes
     assert set(action_calls) == {
         "wakeup-setup",
         "wakeup-setup-status",
         "wakeup-teardown",
         "wakeup-teardown-status",
     }
+    # Dispatches include getter plus only wakeup routes
     assert set(dispatches) == {
         "setup-status-path",
         "wakeup-setup",

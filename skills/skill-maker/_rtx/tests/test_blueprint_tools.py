@@ -417,6 +417,50 @@ def test_generated_interface_block_includes_the_managed_markdown_protocol(syncer
     assert "path" not in block.lower()
 
 
+def test_generated_interface_block_omits_teardown_when_not_present(syncer) -> None:
+    """Markdown setups with no teardown never render teardown lifecycle entry."""
+    setup_interface = "no-teardown.interface.setup"
+    graph = SimpleNamespace(
+        schema_version=6,
+        module_sources={"no-teardown": ("no-teardown.source.gateway",)},
+        module_ancestry={"no-teardown": ("no-teardown",)},
+        nodes={
+            "no-teardown": SimpleNamespace(gateway_path=Path("SKILL.md")),
+            "no-teardown.source.gateway": SimpleNamespace(
+                node_id="no-teardown.source.gateway",
+                gateway_path=Path("SKILL.md"),
+                declaration={"gateway": {"language": "Markdown"}},
+            ),
+        },
+        node_edges=(),
+        exports={
+            setup_interface: SimpleNamespace(
+                interface_id=setup_interface,
+                module_node_id="no-teardown",
+                version=1,
+                declaration={"description": "Set up no-teardown."},
+            )
+        },
+        source_interfaces={},
+        managed_setups={
+            setup_interface: SimpleNamespace(
+                setup_interface=setup_interface,
+                setup_version=1,
+                teardown_interface=None,
+                teardown_version=None,
+                kind="markdown",
+            )
+        },
+    )
+    block = syncer.generated_interface_block("no-teardown", graph)
+    assert "### Managed setup gate" in block
+    assert f"`{setup_interface}@1`" in block
+    assert "begin(setup," in block
+    # Lifecycle entry must not have teardown route
+    assert "`no-teardown.interface.teardown" not in block
+    assert "@None" not in block
+
+
 def test_generated_interface_block_limits_and_removes_the_managed_markdown_gate(syncer) -> None:
     """Catches gates leaking to bootstrap/plain exports or surviving opt-out."""
     managed = _managed_gate_graph()

@@ -221,14 +221,20 @@ def generated_setup_gate(
         "Managed lifecycle entries:",
     ]
     for managed in managed_entries:
-        lines.append(
+        setup_line = (
             f"- Setup `{managed.setup_interface}@{managed.setup_version}` routes to "
             f"`begin(setup, {managed.setup_interface}, ORIGINAL_CALLER, "
-            f"ORIGINAL_INTERFACE, ORIGINAL_VERSION)`; teardown "
-            f"`{managed.teardown_interface}@{managed.teardown_version}` routes to "
-            f"`begin(teardown, {managed.setup_interface}, ORIGINAL_CALLER, "
-            f"ORIGINAL_INTERFACE, ORIGINAL_VERSION)`."
+            f"ORIGINAL_INTERFACE, ORIGINAL_VERSION)`"
         )
+        if managed.teardown_interface is not None:
+            setup_line += (
+                f"; teardown "
+                f"`{managed.teardown_interface}@{managed.teardown_version}` routes to "
+                f"`begin(teardown, {managed.setup_interface}, ORIGINAL_CALLER, "
+                f"ORIGINAL_INTERFACE, ORIGINAL_VERSION)`"
+            )
+        setup_line += "."
+        lines.append(setup_line)
     lines.extend([
         "",
         "For an ordinary invocation, use this exact sequence:",
