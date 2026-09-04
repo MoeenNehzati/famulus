@@ -11,6 +11,7 @@ from officina.blueprints.graph import (
     InterfaceExport,
     ManagedSetup,
     RepositoryBlueprintGraph,
+    _legacy_managed_setup_for_export,
     _managed_setup_for_export,
     _setup_requirement,
     managed_setup_order,
@@ -67,32 +68,44 @@ def _module_exports(module: DirectModule) -> dict[str, InterfaceExport]:
     return dict(sorted(exports.items()))
 
 
-def _managed_declarations(module: DirectModule) -> tuple[str, ...]:
-    """Return public export IDs that explicitly mention setup management."""
+def _canonical_setup_export(module: DirectModule) -> str | None:
+    """Return the canonical .interface.setup export if present, or None."""
 
     declarations = module.declaration["exports"]
     assert isinstance(declarations, Mapping)
-    managed = []
+    setup_export_id = f"{module.module_id}.interface.setup"
+    if setup_export_id in declarations:
+        return setup_export_id
+    return None
+
+
+def _sole_managed_declaration(module: DirectModule) -> str | None:
+    """Return the managed setup interface for this module (or None if unmanaged)."""
+
+    # Check for canonical .interface.setup export (highest priority)
+    setup_export = _canonical_setup_export(module)
+    if setup_export is not None:
+        return setup_export
+
+    # For backward compatibility during migration, also check for legacy setup_management
+    # This will be removed in Task 09
+    declarations = module.declaration["exports"]
+    assert isinstance(declarations, Mapping)
+    legacy_managed = []
     for export_id, declaration in declarations.items():
         if not isinstance(export_id, str) or not isinstance(declaration, Mapping):
             raise BlueprintGraphError(
                 f"{module.blueprint_path}: invalid export declaration"
             )
         if declaration.get("setup_management") is not None:
-            managed.append(export_id)
-    return tuple(sorted(managed))
+            legacy_managed.append(export_id)
 
-
-def _sole_managed_declaration(module: DirectModule) -> str | None:
-    """Return one owner declaration while enforcing the module-local limit."""
-
-    declared = _managed_declarations(module)
-    if len(declared) > 1:
+    if len(legacy_managed) > 1:
         raise BlueprintGraphError(
-            f"{declared[1]}: module {module.module_id!r} may declare at most "
-            f"one managed setup (already declared by {declared[0]})"
+            f"{legacy_managed[1]}: module {module.module_id!r} may declare at most "
+            f"one managed setup (already declared by {legacy_managed[0]})"
         )
-    return declared[0] if declared else None
+    return legacy_managed[0] if legacy_managed else None
 
 
 def _record_ancestry(
@@ -159,7 +172,11 @@ def _managed_for_setup(
         raise BlueprintGraphError(
             f"setup prerequisite {setup_id!r} is not a public setup interface"
         )
-    return _managed_setup_for_export(setup_id, export, exports)
+    # Try canonical first, then fall back to legacy
+    metadata = _managed_setup_for_export(setup_id, export, exports)
+    if metadata is None:
+        metadata = _legacy_managed_setup_for_export(setup_id, export, exports)
+    return metadata
 
 
 def load_direct_setup_projection(

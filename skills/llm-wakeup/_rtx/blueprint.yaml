@@ -50,17 +50,13 @@ exports:
       allow_all_modules: true
       allowed_callers: []
     setup_requires_setup_of: []
-    setup_management:
-      setup_verifier: {interface: llm-wakeup._rtx.interface.setup-status, version: 1}
-      teardown:
-        interface: llm-wakeup._rtx.interface.teardown
-        version: 1
-        verifier: {interface: llm-wakeup._rtx.interface.teardown-status, version: 1}
+    verifier: {interface: llm-wakeup._rtx.interface.setup-status, version: 1}
     source_interface: llm-wakeup._rtx.source.setup-lifecycle.interface.setup
   llm-wakeup._rtx.interface.teardown:
     access:
       allow_all_modules: true
       allowed_callers: []
+    verifier: {interface: llm-wakeup._rtx.interface.teardown-status, version: 1}
     source_interface: llm-wakeup._rtx.source.teardown-lifecycle.interface.teardown
   llm-wakeup._rtx.interface.setup-status:
     access:

@@ -15,12 +15,7 @@ exports:
       allow_all_modules: true
       allowed_callers: []
     setup_requires_setup_of: []
-    setup_management:
-      setup_verifier: {interface: python-canary.interface.setup-status, version: 1}
-      teardown:
-        interface: python-canary.interface.teardown
-        version: 1
-        verifier: {interface: python-canary.interface.teardown-status, version: 1}
+    verifier: {interface: python-canary.interface.setup-status, version: 1}
     source_interface: python-canary.source.setup.interface.setup
   python-canary.interface.setup-status:
     access:
@@ -31,6 +26,7 @@ exports:
     access:
       allow_all_modules: true
       allowed_callers: []
+    verifier: {interface: python-canary.interface.teardown-status, version: 1}
     source_interface: python-canary.source.teardown.interface.teardown
   python-canary.interface.teardown-status:
     access:

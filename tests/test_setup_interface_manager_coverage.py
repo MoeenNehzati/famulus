@@ -47,11 +47,33 @@ def test_release_has_no_production_managed_setups() -> None:
     production_managed = set(graph.managed_setups) - fixture_managed
 
     assert fixture_managed == {"python-canary.interface.setup"}
-    # Explicit release decision: the wakeup feature owns a native due-delivery
-    # registration, so arming a policy without it silently produces no wakeup.
-    assert production_managed == {"llm-wakeup._rtx.interface.setup"}
+    # With canonical setup, all .interface.setup exports are automatically managed:
+    # Four Markdown setups (pre-admitted in Task 07) plus wakeup Python setup
+    assert production_managed == {
+        "connect-google.interface.setup",
+        "online-calendar.interface.setup",
+        "cloud-files.interface.setup",
+        "list-manager.interface.setup",
+        "llm-wakeup._rtx.interface.setup",
+    }
     assert "bootstrap-dispatcher-runtime.interface.setup" not in graph.managed_setups
 
+    # Verify all public .interface.setup exports are managed
+    all_setup_exports = {
+        export_id
+        for export_id in graph.exports
+        if export_id.endswith(".interface.setup")
+    }
+    assert all_setup_exports == set(graph.managed_setups)
+
+    # Verify bootstrap-dispatcher-runtime and install-launchers don't have .interface.setup
+    for export_id in graph.exports:
+        if export_id.endswith(".interface.setup"):
+            module_id = export_id.split(".interface.", 1)[0]
+            assert module_id not in ("bootstrap-dispatcher-runtime", "install-launchers")
+
+    # Markdown setups can have arguments (ordinary gateway contract)
+    # but Python setups must not have arguments
     parameterized_setups = {
         interface_id
         for interface_id, export in graph.exports.items()
@@ -59,7 +81,10 @@ def test_release_has_no_production_managed_setups() -> None:
         and isinstance(export.declaration.get("contract"), dict)
         and export.declaration["contract"].get("arguments")
     }
-    assert parameterized_setups.isdisjoint(production_managed)
+    # Verify all parameterized setups are Markdown (not Python)
+    for setup_interface in parameterized_setups:
+        metadata = graph.managed_setups[setup_interface]
+        assert metadata.kind == "markdown", f"{setup_interface} has arguments but is {metadata.kind} kind"
 
     route = "setup-interface-manager._rtx.interface.teardown-all"
     export = graph.exports[route]
@@ -83,7 +108,7 @@ def test_production_bindings_include_all_canonical_setups() -> None:
     }
     assert set(bindings) == EXPECTED_CANONICAL
 
-    # Only wakeup is currently managed in the graph
+    # Graph-derived managed setups must match bindings
     graph = load_repository_blueprint_graph(REPO_ROOT)
     fixture_managed = {
         interface_id
@@ -93,7 +118,34 @@ def test_production_bindings_include_all_canonical_setups() -> None:
         ].module_root.resolve().is_relative_to(REPO_ROOT / "tests" / "fixtures" / "setup_interface_manager" / "repository")
     }
     production_managed = set(graph.managed_setups) - fixture_managed
-    assert production_managed == {"llm-wakeup._rtx.interface.setup"}
+    # Replace Task-07 transitional assertion with canonical check
+    assert set(bindings) == production_managed
+
+    # Verify every production binding matches graph metadata
+    for setup_interface in production_managed:
+        binding = bindings[setup_interface]
+        graph_metadata = graph.managed_setups[setup_interface]
+
+        # Setup interface and version must match
+        assert binding.setup_interface == graph_metadata.setup_interface
+        assert binding.setup_version == graph_metadata.setup_version
+        assert binding.setup_kind == graph_metadata.kind
+
+        # Verify optional verifier fields match
+        assert (binding.setup_verifier_interface is None) == (graph_metadata.setup_verifier_interface is None)
+        if graph_metadata.setup_verifier_interface:
+            assert binding.setup_verifier_interface == graph_metadata.setup_verifier_interface
+            assert binding.setup_verifier_version == graph_metadata.setup_verifier_version
+
+        # Verify optional teardown fields match
+        assert (binding.teardown_interface is None) == (graph_metadata.teardown_interface is None)
+        if graph_metadata.teardown_interface:
+            assert binding.teardown_interface == graph_metadata.teardown_interface
+            assert binding.teardown_version == graph_metadata.teardown_version
+            assert (binding.teardown_verifier_interface is None) == (graph_metadata.teardown_verifier_interface is None)
+            if graph_metadata.teardown_verifier_interface:
+                assert binding.teardown_verifier_interface == graph_metadata.teardown_verifier_interface
+                assert binding.teardown_verifier_version == graph_metadata.teardown_verifier_version
 
     # Verify four Markdown bindings have no runtime dispatch keys
     for setup_interface in {
