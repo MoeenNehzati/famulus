@@ -1,4 +1,4 @@
-"""Release-boundary coverage for managed setup opt-ins and dispatches."""
+"""Release-boundary coverage for canonical managed setup and dispatches."""
 from __future__ import annotations
 
 import os
@@ -34,7 +34,7 @@ def _setup_dispatches():
 
 
 def test_release_has_no_production_managed_setups() -> None:
-    """Catches any managed setup opting in without an explicit release decision."""
+    """Verify all canonical setup exports are discovered and bound to production dispatches."""
     graph = load_repository_blueprint_graph(REPO_ROOT)
 
     fixture_managed = {

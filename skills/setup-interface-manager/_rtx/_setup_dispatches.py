@@ -1,8 +1,8 @@
 """Finite dispatch declarations for the setup lifecycle manager.
 
-Release Task 4 intentionally has no production managed target.  Later tasks may
-add reviewed entries to ``PRODUCTION_BINDINGS`` only after their exact setup,
-teardown, and verifier exports exist.
+All public .interface.setup exports are automatically managed. Reviewed entries
+in ``PRODUCTION_BINDINGS`` declare exact finite bindings for each canonical
+setup's optional verifiers and optional teardown.
 """
 from __future__ import annotations
 

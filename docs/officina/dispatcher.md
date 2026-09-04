@@ -95,16 +95,16 @@ does not catalogue modules, generate an index, or add another path resolver.
 For an ordinary non-dry MCP call, Dispatcher first authorizes one exact route.
 Setup classification reuses that invocation-local repository and the already
 loaded target ancestry; it does not resolve or authorize the route a second
-time. If the ancestry proves that no module owns managed setup, MCP launches the
-authorized target without calling setup-interface-manager or touching its
-ledger.
+time. A public `.interface.setup` export is managed automatically; if the
+ancestry proves no managed setup is required, MCP launches the authorized
+target without calling setup-interface-manager or touching its ledger.
 
-When a managed owner exists, the direct setup loader follows only explicit
-`setup_requires_setup_of` references and builds the sparse fields consumed by
-the existing setup evaluator. Exact managed setup and teardown interfaces are
-intercepted before process-binding compilation. An ordinary managed target
-still requires manager `status`, followed by atomic `authorize` when ready,
-before the original target is compiled and launched.
+When a managed `.interface.setup` is required, the direct setup loader follows
+only explicit `setup_requires_setup_of` references and builds the sparse fields
+consumed by the existing setup evaluator. Exact managed setup and teardown
+interfaces are intercepted before process-binding compilation. An ordinary
+managed target still requires manager `status`, followed by atomic `authorize`
+when ready, before the original target is compiled and launched.
 
 Setup-interface-manager remains the sole authority for ledger reads, locks,
 claims, recovery, and settlement. Only its `status` and `authorize` routes load

@@ -100,11 +100,12 @@ the [Personal Assistance Quickstart](quickstarts/personal-assistance.md) and
 [Automation Quickstart](quickstarts/automation.md) for normal workflow order.
 
 Everything else is opt-in and demand-driven. A Famulus skill is an Officina
-node, but merely exporting a setup interface does not make it managed. Its
-blueprint must declare `setup_management` for Boolean whole-node state, with
-fixed setup and teardown interfaces and read-only verifiers. It may declare
-prerequisites through `setup_requires_setup_of`. Generic discussion about
-setup, installation, configuration, or teardown does not activate the manager.
+node. A public export named exactly `.interface.setup` is managed automatically
+for Boolean whole-module readiness with no separate opt-in required.
+The blueprint may declare prerequisites through `setup_requires_setup_of`,
+and may declare verifiers inline in optional setup and optional teardown blocks.
+Generic discussion about setup, installation, configuration, or teardown does
+not activate the manager.
 
 When an ordinary managed interface is requested, its generated gate and the
 Famulus MCP preflight use the same lifecycle:
