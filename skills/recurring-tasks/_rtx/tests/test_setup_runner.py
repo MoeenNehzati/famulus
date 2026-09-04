@@ -24,7 +24,7 @@ def test_gateway_composes_exact_task2_owner_and_selected_values():
     text = (ROOT / "skills/recurring-tasks/SKILL.md").read_text()
 
     assert {item["source"] for item in gateway["dependencies"]} == {
-        "setup-dispatcher-runtime.source.gateway"
+        "bootstrap-dispatcher-runtime.source.gateway"
     }
     assert '["PyYAML"]' in text and "byte-equal" in text
     pattern = next(iter(setup["interfaces"].values()))["process_binding"]["patterns"][0]

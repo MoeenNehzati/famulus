@@ -40,6 +40,14 @@
         }
       }
     },
+    "bootstrap-dispatcher-runtime": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {}
+    },
     "ci-debug": {
       "maturity": "stable",
       "installation_tier": "core",
@@ -7105,14 +7113,6 @@
           "dependencies": []
         }
       }
-    },
-    "setup-dispatcher-runtime": {
-      "maturity": "stable",
-      "installation_tier": "core",
-      "personal_preference": {
-        "applies": false
-      },
-      "interfaces": {}
     },
     "setup-interface-manager": {
       "maturity": "experimental",

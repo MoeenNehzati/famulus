@@ -13,15 +13,15 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "references" / "blueprint-schema" / "runtime_dependencies.json"
 REPAIR = {
-    "interface": "setup-dispatcher-runtime.interface.repair-selected-packages",
+    "interface": "bootstrap-dispatcher-runtime.interface.repair-selected-packages",
     "version": 1,
 }
 REPAIR_SOURCE = {
     "blueprint": {
         "base": "repository-root",
-        "path": "skills/setup-dispatcher-runtime/blueprints/gateway.yaml",
+        "path": "skills/bootstrap-dispatcher-runtime/blueprints/gateway.yaml",
     },
-    "source": "setup-dispatcher-runtime.source.gateway",
+    "source": "bootstrap-dispatcher-runtime.source.gateway",
     "version": 1,
 }
 GOOGLE_OWNERS = {"connect-google", "cloud-files", "online-calendar", "email-client"}
@@ -78,7 +78,7 @@ def _authored(path: Path) -> str:
 
 
 def _task2_templates() -> dict[str, list[str]]:
-    text = (ROOT / "skills" / "setup-dispatcher-runtime" / "SKILL.md").read_text(
+    text = (ROOT / "skills" / "bootstrap-dispatcher-runtime" / "SKILL.md").read_text(
         encoding="utf-8"
     )
     return {
@@ -185,7 +185,7 @@ def test_authored_owner_order_and_exact_declarations() -> None:
         "node-certify": "## Certification algorithm",
         "node-drift": "Use `node-drift._rtx.interface.drift-status`",
     }
-    repair_marker = "`setup-dispatcher-runtime.interface.repair-selected-packages`"
+    repair_marker = "`bootstrap-dispatcher-runtime.interface.repair-selected-packages`"
 
     for owner, boundary in boundary_markers.items():
         text = _authored(ROOT / "skills" / owner / "SKILL.md")
@@ -206,7 +206,7 @@ def test_authored_owner_order_and_exact_declarations() -> None:
 
 def test_pdf_repair_is_only_in_marker_fallback() -> None:
     text = _authored(ROOT / "skills" / "pdf-to-markdown" / "SKILL.md")
-    repair = text.index("`setup-dispatcher-runtime.interface.repair-selected-packages`")
+    repair = text.index("`bootstrap-dispatcher-runtime.interface.repair-selected-packages`")
     source_done = text.index("If LaTeX source found anywhere: download, extract, done.")
     fallback = text.index("## Step 2 — PDF fallback")
     marker_probe = text.index("scripts-check-marker-models")
@@ -222,7 +222,7 @@ def test_list_setup_is_local_and_google_remains_explicit() -> None:
     assert blueprint["exports"]["list-manager.interface.setup"]["setup_requires_setup_of"] == []
 
     text = _authored(ROOT / "skills" / "list-manager" / "SKILL.md")
-    repair = text.index("`setup-dispatcher-runtime.interface.repair-selected-packages`")
+    repair = text.index("`bootstrap-dispatcher-runtime.interface.repair-selected-packages`")
     assert repair < text.index("When this skill is used")
     paragraph = next(part for part in text.split("\n\n") if "repair-selected-packages" in part)
     assert "local" in paragraph.casefold()

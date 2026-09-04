@@ -3,9 +3,9 @@ content:
 dependencies:
 - blueprint:
     base: repository-root
-    path: skills/setup-dispatcher-runtime/blueprints/gateway.yaml
+    path: skills/bootstrap-dispatcher-runtime/blueprints/gateway.yaml
   reason: Repair only the Gmail-owner keyring declaration in the selected Python.
-  source: setup-dispatcher-runtime.source.gateway
+  source: bootstrap-dispatcher-runtime.source.gateway
   version: 1
 description: LLM-facing routing and safety instructions for account configuration,
   IMAP reads, attachment handling, SMTP sends, OAuth setup, and live checks.
@@ -18,7 +18,7 @@ interfaces:
     content:
     - SKILL\.md
     uses_interfaces:
-    - interface: setup-dispatcher-runtime.interface.repair-selected-packages
+    - interface: bootstrap-dispatcher-runtime.interface.repair-selected-packages
       version: 1
     - interface: connect-google.interface.default
       version: 1
@@ -121,7 +121,7 @@ interfaces:
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
-- interface: setup-dispatcher-runtime.interface.repair-selected-packages
+- interface: bootstrap-dispatcher-runtime.interface.repair-selected-packages
   version: 1
 - interface: connect-google.interface.default
   version: 1

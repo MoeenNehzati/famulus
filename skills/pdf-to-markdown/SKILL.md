@@ -31,7 +31,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 Instruction Interfaces:
 
 These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `setup-dispatcher-runtime.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact dispatcher runtime without MCP.
+- `bootstrap-dispatcher-runtime.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact dispatcher runtime without MCP.
 <!-- END BLUEPRINT INTERFACES -->
 # PDF to Markdown
 
@@ -66,7 +66,7 @@ If LaTeX source found anywhere: download, extract, done.
 If no LaTeX source found, convert the PDF directly.
 
 Only after selecting this PDF/Marker fallback, follow
-`setup-dispatcher-runtime.interface.repair-selected-packages` for this owner's exact
+`bootstrap-dispatcher-runtime.interface.repair-selected-packages` for this owner's exact
 declaration `["marker-pdf"]`. Complete the full Task 2 fingerprint procedure; on any
 failure, stop before probing Marker models or running `marker_single`. Source-only success
 must not invoke this repair.

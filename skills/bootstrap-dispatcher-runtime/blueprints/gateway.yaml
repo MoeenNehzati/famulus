@@ -2,9 +2,9 @@ content: [SKILL\.md]
 dependencies: []
 description: Selects a Python 3.11+ interpreter, provides the dedicated dispatcher runtime, preflights its normal pip target, repairs only the selected declaration, and verifies stable identity.
 gateway: {language: Markdown, path: SKILL.md}
-id: setup-dispatcher-runtime.source.gateway
+id: bootstrap-dispatcher-runtime.source.gateway
 interfaces:
-  setup-dispatcher-runtime.source.gateway.interface.default:
+  bootstrap-dispatcher-runtime.source.gateway.interface.default:
     content: [SKILL\.md]
     uses_interfaces: []
     contract:

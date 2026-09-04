@@ -78,7 +78,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 Instruction Interfaces:
 
 These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `setup-dispatcher-runtime.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact dispatcher runtime without MCP.
+- `bootstrap-dispatcher-runtime.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact dispatcher runtime without MCP.
 <!-- END BLUEPRINT INTERFACES -->
 
 # Recurring Tasks
@@ -90,7 +90,7 @@ create, enable, or run a job.
 ## Context and ownership
 
 Use the host-loaded
-`setup-dispatcher-runtime.interface.repair-selected-packages` procedure for
+`bootstrap-dispatcher-runtime.interface.repair-selected-packages` procedure for
 feature `recurring-tasks` and the exact deduplicated declaration `["PyYAML"]`.
 Run its complete initial literal-`python` fingerprint, pip/installability and
 target-writability checks, repair and dry-run steps, and final fingerprint.

@@ -16,20 +16,19 @@ discovery:
   activated_by: [user-request, skill-workflow]
   persistent_modifier: false
 exports:
-  setup-dispatcher-runtime.interface.repair-selected-packages:
+  bootstrap-dispatcher-runtime.interface.repair-selected-packages:
     access: {allow_all_modules: true, allowed_callers: []}
-    source_interface: setup-dispatcher-runtime.source.gateway.interface.default
-  setup-dispatcher-runtime.interface.setup:
+    source_interface: bootstrap-dispatcher-runtime.source.gateway.interface.default
+  bootstrap-dispatcher-runtime.interface.default:
     access: {allow_all_modules: true, allowed_callers: []}
-    setup_requires_setup_of: []
-    source_interface: setup-dispatcher-runtime.source.gateway.interface.default
+    source_interface: bootstrap-dispatcher-runtime.source.gateway.interface.default
 gateway: {language: Markdown, path: SKILL.md}
-id: setup-dispatcher-runtime
+id: bootstrap-dispatcher-runtime
 namespace_exports: {}
 node_type: module
 schema_version: 6
 sources:
-  setup-dispatcher-runtime.source.gateway:
+  bootstrap-dispatcher-runtime.source.gateway:
     blueprint: {base: module-root, path: blueprints/gateway.yaml}
 version: 1
 maturity: stable

@@ -16,7 +16,7 @@ functional `pip`.
 
 Famulus runs every skill through the dispatcher server, and the dispatcher
 executes each skill's code with its own interpreter. That interpreter is the
-dispatcher runtime, and `setup-dispatcher-runtime` is the skill that provides
+dispatcher runtime, and `bootstrap-dispatcher-runtime` is the skill that provides
 it. Keeping it separate means the Python you use for your own work is never
 modified, and upgrading or replacing that Python cannot break Famulus.
 
@@ -24,7 +24,7 @@ Two things follow from the dispatcher running everything with one interpreter.
 The packages in `mcp-core.json` are what the server needs to start at all. A
 skill's own dependency — `marker-pdf` for PDF conversion, say — is installed
 into the same runtime, because that is the interpreter the dispatcher will run
-that skill with. Both belong to `setup-dispatcher-runtime`.
+that skill with. Both belong to `bootstrap-dispatcher-runtime`.
 
 It also runs without MCP. That is what lets it repair the very thing MCP
 needs in order to start.
@@ -68,7 +68,7 @@ skills.
 ### 1.2 Verify the dispatcher runtime
 
 Confirm that `python` is Python 3.11 or newer and that `python -m pip` works.
-Ask the assistant to use `setup-dispatcher-runtime` when the command is missing
+Ask the assistant to use `bootstrap-dispatcher-runtime` when the command is missing
 entirely, when Famulus reports a missing dependency, or when its shared tool is
 unavailable, and review any requested package changes before approving them.
 

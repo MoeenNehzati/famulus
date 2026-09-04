@@ -819,7 +819,7 @@ def test_managed_setup_metadata_rejects_an_unmanaged_closure_member() -> None:
 
 
 def test_managed_setup_metadata_excludes_bootstrap_setup() -> None:
-    exports = _managed_exports(setup_id="setup-dispatcher-runtime.interface.setup")
+    exports = _managed_exports(setup_id="bootstrap-dispatcher-runtime.interface.setup")
 
-    with pytest.raises(BlueprintGraphError, match="setup-dispatcher-runtime cannot opt in"):
+    with pytest.raises(BlueprintGraphError, match="bootstrap-dispatcher-runtime cannot opt in"):
         _managed_setup_metadata(exports)

@@ -136,7 +136,7 @@ def test_module_and_markdown_gateway_graph(
         for entry in default["uses_interfaces"]
     }
     semantic_default_uses = {
-        ("setup-dispatcher-runtime.interface.repair-selected-packages", 1),
+        ("bootstrap-dispatcher-runtime.interface.repair-selected-packages", 1),
         ("connect-google._rtx.interface.bind-credential-file", 1),
         ("connect-google._rtx.interface.client-status", 1),
         ("connect-google._rtx.interface.connect-services", 1),

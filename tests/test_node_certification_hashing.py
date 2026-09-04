@@ -317,12 +317,12 @@ def v6_repository(
 
 def _v6_certifier_repository(tmp_path: Path) -> tuple[Path, Path]:
     root, policy = _v6_repository(tmp_path)
-    _write_module(root, "setup-dispatcher-runtime", schema_version=6)
-    setup_module_path = root / "skills" / "setup-dispatcher-runtime" / "blueprint.yaml"
+    _write_module(root, "bootstrap-dispatcher-runtime", schema_version=6)
+    setup_module_path = root / "skills" / "bootstrap-dispatcher-runtime" / "blueprint.yaml"
     setup_module = yaml.safe_load(setup_module_path.read_text(encoding="utf-8"))
     setup_module["exports"][
-        "setup-dispatcher-runtime.interface.repair-selected-packages"
-    ] = setup_module["exports"].pop("setup-dispatcher-runtime.interface.run")
+        "bootstrap-dispatcher-runtime.interface.repair-selected-packages"
+    ] = setup_module["exports"].pop("bootstrap-dispatcher-runtime.interface.run")
     _write_yaml(setup_module_path, setup_module)
     certifier_root = root / "skills" / "node-certify"
     certifier_fixture_paths = (

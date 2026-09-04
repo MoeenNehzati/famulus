@@ -50,7 +50,7 @@ def test_release_has_no_production_managed_setups() -> None:
     # Explicit release decision: the wakeup feature owns a native due-delivery
     # registration, so arming a policy without it silently produces no wakeup.
     assert production_managed == {"llm-wakeup._rtx.interface.setup"}
-    assert "setup-dispatcher-runtime.interface.setup" not in graph.managed_setups
+    assert "bootstrap-dispatcher-runtime.interface.setup" not in graph.managed_setups
 
     parameterized_setups = {
         interface_id

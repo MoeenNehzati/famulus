@@ -35,13 +35,13 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 Instruction Interfaces:
 
 These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
+- `bootstrap-dispatcher-runtime.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact dispatcher runtime without MCP.
 - `node-certify.source.audit-behavioral-source.interface.audit@2` — Audit one behavioral source and return bounded semantic evidence and a verdict.
 - `node-certify.source.audit-interface.interface.audit@2` — Audit one source interface and return bounded semantic evidence and a verdict.
 - `node-certify.source.audit-module.interface.audit@2` — Audit one module and return bounded semantic evidence and a verdict.
-- `setup-dispatcher-runtime.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact dispatcher runtime without MCP.
 <!-- END BLUEPRINT INTERFACES -->
 Before drift inspection, semantic audit, or certification, follow
-`setup-dispatcher-runtime.interface.repair-selected-packages` for this owner's exact
+`bootstrap-dispatcher-runtime.interface.repair-selected-packages` for this owner's exact
 declaration `["cryptography", "keyring", "pyflakes", "pytest", "pytest-xdist"]`.
 Complete the full Task 2 fingerprint procedure; on any failure, stop before invoking a
 drift, audit, or certify interface.

@@ -5,7 +5,7 @@ Scans emails received since the last triage run. Extracts action items and route
 Use `email-client.interface.default` to read and send email. Use `list-manager.interface.default` to read and update destination lists.
 
 Before any account lookup or envelope fetch, follow
-`setup-dispatcher-runtime.interface.repair-selected-packages` for email-triage's exact
+`bootstrap-dispatcher-runtime.interface.repair-selected-packages` for email-triage's exact
 declaration `["keyring"]`. Complete the full Task 2 fingerprint procedure; on any
 failure, stop before email, network, list, or triage activity.
 

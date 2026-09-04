@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "references" / "blueprint-schema" / "runtime_dependencies.json"
 GOOGLE_OWNERS = ("connect-google", "cloud-files", "online-calendar", "email-client")
 REPAIR_INTERFACE = {
-    "interface": "setup-dispatcher-runtime.interface.repair-selected-packages",
+    "interface": "bootstrap-dispatcher-runtime.interface.repair-selected-packages",
     "version": 1,
 }
 
@@ -80,7 +80,7 @@ def _service_owners() -> dict[str, str]:
 
 
 def _task2_templates() -> dict[str, list[str]]:
-    text = (ROOT / "skills" / "setup-dispatcher-runtime" / "SKILL.md").read_text(
+    text = (ROOT / "skills" / "bootstrap-dispatcher-runtime" / "SKILL.md").read_text(
         encoding="utf-8"
     )
     return {
@@ -300,7 +300,7 @@ def test_actual_owner_instructions_put_repair_before_external_boundaries() -> No
             "For shared Google setup or Gmail reauthorization",
         ),
     }
-    repair_marker = "`setup-dispatcher-runtime.interface.repair-selected-packages`"
+    repair_marker = "`bootstrap-dispatcher-runtime.interface.repair-selected-packages`"
 
     for owner, markers in boundary_markers.items():
         authored = _authored_skill(owner)
@@ -323,7 +323,7 @@ def test_generated_google_owner_interfaces_expose_selected_python_repair() -> No
     for owner in GOOGLE_OWNERS:
         blueprint = blueprints[owner]
         block = syncer.generated_interface_block(owner, blueprint.repository_graph)
-        assert "`setup-dispatcher-runtime.interface.repair-selected-packages@1`" in block
+        assert "`bootstrap-dispatcher-runtime.interface.repair-selected-packages@1`" in block
 
 
 def test_core_does_not_own_google_packages() -> None:

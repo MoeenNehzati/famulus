@@ -3,9 +3,9 @@ content:
 dependencies:
 - blueprint:
     base: repository-root
-    path: skills/setup-dispatcher-runtime/blueprints/gateway.yaml
+    path: skills/bootstrap-dispatcher-runtime/blueprints/gateway.yaml
   reason: Repair only email-triage's residual declaration before fetching envelopes.
-  source: setup-dispatcher-runtime.source.gateway
+  source: bootstrap-dispatcher-runtime.source.gateway
   version: 1
 description: Owns the LLM-directed, watermark-safe email triage workflow and its routing
   decisions.
@@ -18,7 +18,7 @@ interfaces:
     content:
     - instructions/triage\.md
     uses_interfaces:
-    - interface: setup-dispatcher-runtime.interface.repair-selected-packages
+    - interface: bootstrap-dispatcher-runtime.interface.repair-selected-packages
       version: 1
     - interface: email-client.interface.default
       version: 3
@@ -102,7 +102,7 @@ interfaces:
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
-- interface: setup-dispatcher-runtime.interface.repair-selected-packages
+- interface: bootstrap-dispatcher-runtime.interface.repair-selected-packages
   version: 1
 - interface: email-client.interface.default
   version: 3

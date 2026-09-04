@@ -28,14 +28,14 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 Instruction Interfaces:
 
 These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `setup-dispatcher-runtime.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact dispatcher runtime without MCP.
+- `bootstrap-dispatcher-runtime.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact dispatcher runtime without MCP.
 <!-- END BLUEPRINT INTERFACES -->
 # Bibliography Audit
 
 Conservative bibliography auditor. Default behavior: produce a structured report. Apply transformations only on explicit user approval.
 
 Before validating or comparing bibliography entries, follow
-`setup-dispatcher-runtime.interface.repair-selected-packages` for this owner's exact
+`bootstrap-dispatcher-runtime.interface.repair-selected-packages` for this owner's exact
 declaration `["bibtexparser"]`. Complete the full Task 2 fingerprint procedure; on any
 failure, stop before invoking either bibliography interface.
 
