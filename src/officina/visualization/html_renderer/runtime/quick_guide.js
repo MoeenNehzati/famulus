@@ -13,6 +13,17 @@ const quickGuideClose = document.getElementById("quick-guide-close");
 let quickGuideSteps = [];
 let quickGuideIndex = -1;
 let quickGuideReturnFocus = null;
+let quickGuideTargetObserver = null;
+let quickGuideHealthCheckPending = false;
+
+function scheduleQuickGuideHealthCheck() {
+  if (quickGuideHealthCheckPending || !isQuickGuideOpen()) return;
+  quickGuideHealthCheckPending = true;
+  setTimeout(() => {
+    quickGuideHealthCheckPending = false;
+    positionQuickGuide();
+  }, 0);
+}
 
 function isQuickGuideOpen() {
   return !quickGuideDialog.hidden && quickGuideIndex >= 0;
@@ -102,26 +113,15 @@ function renderQuickGuideStep() {
 function positionQuickGuide() {
   if (!isQuickGuideOpen()) return;
 
-  let step = quickGuideSteps[quickGuideIndex];
-  let match = resolveQuickGuideTarget(step);
+  const step = quickGuideSteps[quickGuideIndex];
+  const match = resolveQuickGuideTarget(step);
   if (!match) {
-    const forwardIndex = findQuickGuideStep(quickGuideIndex + 1, +1);
-    if (forwardIndex >= 0) {
-      quickGuideIndex = forwardIndex;
-    } else {
-      const backwardIndex = findQuickGuideStep(quickGuideIndex - 1, -1);
-      if (backwardIndex >= 0) quickGuideIndex = backwardIndex;
-      else {
-        closeQuickGuide();
-        return;
-      }
-    }
-    step = quickGuideSteps[quickGuideIndex];
-    match = resolveQuickGuideTarget(step);
-    if (!match) {
-      closeQuickGuide();
-      return;
-    }
+    // The active step's target is gone; renderQuickGuideStep() carries the
+    // same forward/backward search plus the title/body/count sync this
+    // function does not, so recovery never leaves the dialog showing a step
+    // that no longer matches the highlighted target.
+    renderQuickGuideStep();
+    return;
   }
 
   const targetRect = match.rect;
@@ -163,6 +163,17 @@ function startQuickGuide() {
   quickGuideDialog.hidden = false;
   quickGuideHighlight.hidden = false;
   renderQuickGuideStep();
+
+  // A step's target can disappear (hidden, dimmed, removed) from actions
+  // taken outside the guide itself; watch for that so the dialog moves off
+  // it without waiting for a resize/scroll to trigger positionQuickGuide().
+  quickGuideTargetObserver = new MutationObserver(scheduleQuickGuideHealthCheck);
+  quickGuideTargetObserver.observe(document.body, {
+    attributes: true,
+    attributeFilter: ["style", "class", "hidden"],
+    childList: true,
+    subtree: true,
+  });
 }
 
 function closeQuickGuide() {
@@ -172,6 +183,10 @@ function closeQuickGuide() {
   quickGuideReturnFocus = null;
   quickGuideDialog.hidden = true;
   quickGuideHighlight.hidden = true;
+  if (quickGuideTargetObserver) {
+    quickGuideTargetObserver.disconnect();
+    quickGuideTargetObserver = null;
+  }
   if (returnFocus?.isConnected && returnFocus.focus) returnFocus.focus();
 }
 

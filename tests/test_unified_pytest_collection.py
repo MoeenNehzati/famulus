@@ -11,7 +11,7 @@ CANONICAL_TEST_ROOTS = (
     "hooks/tests",
     "skills",
     "src/officina/rutter/tests",
-    "skills/llm-wakeup/_rtx/tests",
+    "validators",
 )
 RUNTIME_TEST_ROOTS = (
     "skills/list-manager/_rtx/tests",
