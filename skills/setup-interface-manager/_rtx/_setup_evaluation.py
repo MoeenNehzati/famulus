@@ -23,10 +23,8 @@ class SetupStep:
 
     setup_interface: str
     setup_version: int
-    teardown_interface: str
-    teardown_version: int
-    setup_verifier_interface: str
-    setup_verifier_version: int
+    setup_verifier_interface: str | None
+    setup_verifier_version: int | None
     kind: Literal["markdown", "python"]
 
     @classmethod
@@ -34,8 +32,6 @@ class SetupStep:
         return cls(
             setup_interface=managed.setup_interface,
             setup_version=managed.setup_version,
-            teardown_interface=managed.teardown_interface,
-            teardown_version=managed.teardown_version,
             setup_verifier_interface=managed.setup_verifier_interface,
             setup_verifier_version=managed.setup_verifier_version,
             kind=managed.kind,
@@ -48,16 +44,16 @@ class TeardownStep:
 
     setup_interface: str
     setup_version: int
-    teardown_interface: str
-    teardown_version: int
-    teardown_verifier_interface: str
-    teardown_verifier_version: int
+    teardown_interface: str | None
+    teardown_version: int | None
+    teardown_verifier_interface: str | None
+    teardown_verifier_version: int | None
     kind: Literal["markdown", "python"]
-    action: Literal["run-teardown", "release-claim"]
+    action: Literal["run-teardown", "release-claim", "invalidate-receipt"]
 
     @classmethod
     def from_managed(
-        cls, managed: ManagedSetup, action: Literal["run-teardown", "release-claim"]
+        cls, managed: ManagedSetup, action: Literal["run-teardown", "release-claim", "invalidate-receipt"]
     ) -> TeardownStep:
         return cls(
             setup_interface=managed.setup_interface,
@@ -262,12 +258,13 @@ def teardown_plan(
             or root_setup_interface not in receipt.required_by
         ):
             continue
-        action: Literal["run-teardown", "release-claim"]
-        action = (
-            "release-claim"
-            if receipt.required_by - {root_setup_interface}
-            else "run-teardown"
-        )
+        action: Literal["run-teardown", "release-claim", "invalidate-receipt"]
+        if receipt.required_by - {root_setup_interface}:
+            action = "release-claim"
+        elif managed.teardown_interface is not None:
+            action = "run-teardown"
+        else:
+            action = "invalidate-receipt"
         plan.append(TeardownStep.from_managed(managed, action))
     return tuple(plan)
 
@@ -291,11 +288,13 @@ def teardown_all_plan(graph, ledger: SetupLedger) -> tuple[TeardownStep, ...]:
             if candidate.setup_interface not in seen:
                 seen.add(candidate.setup_interface)
                 ordered.append(candidate)
-    return tuple(
-        TeardownStep.from_managed(managed, "run-teardown")
-        for managed in reversed(ordered)
-        if managed.setup_interface in ledger.interfaces
-    )
+    plan: list[TeardownStep] = []
+    for managed in reversed(ordered):
+        if managed.setup_interface in ledger.interfaces:
+            action: Literal["run-teardown", "invalidate-receipt"]
+            action = "run-teardown" if managed.teardown_interface is not None else "invalidate-receipt"
+            plan.append(TeardownStep.from_managed(managed, action))
+    return tuple(plan)
 
 
 def record_teardown_success(

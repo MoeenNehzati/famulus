@@ -512,3 +512,148 @@ def test_global_settlement_advances_then_can_remove_and_cancel(tmp_path: Path) -
     assert result.state == "ready"
     assert set(store.read().interfaces) == {"leaf.interface.setup"}
     assert store.read().active_flow is None
+
+
+def test_setup_step_with_optional_verifier_absent() -> None:
+    """Catches SetupStep with no verifier when verifier becomes optional."""
+    graph = _graph({"root.interface.setup": ()})
+    managed = graph.managed_setups["root.interface.setup"]
+    managed_without_verifier = replace(
+        managed,
+        setup_verifier_interface=None,
+        setup_verifier_version=None,
+    )
+    graph.managed_setups = {"root.interface.setup": managed_without_verifier}
+
+    step = evaluation.SetupStep.from_managed(managed_without_verifier)
+
+    assert step.setup_interface == "root.interface.setup"
+    assert step.setup_version == 1
+    assert step.setup_verifier_interface is None
+    assert step.setup_verifier_version is None
+    assert step.kind == "python"
+
+
+def test_no_teardown_managed_setup_plans_invalidation() -> None:
+    """Catches planning invalidation for managed setups that have no teardown."""
+    graph = _graph({"root.interface.setup": ()})
+    managed = graph.managed_setups["root.interface.setup"]
+    managed_no_teardown = replace(
+        managed,
+        teardown_interface=None,
+        teardown_version=None,
+        teardown_verifier_interface=None,
+        teardown_verifier_version=None,
+    )
+    graph.managed_setups = {"root.interface.setup": managed_no_teardown}
+    ledger = state.SetupLedger(
+        interfaces={"root.interface.setup": _receipt("root.interface.setup")},
+        active_flow=None,
+    )
+
+    plan = evaluation.teardown_plan(graph, "root.interface.setup", ledger)
+
+    assert len(plan) == 1
+    assert plan[0].setup_interface == "root.interface.setup"
+    assert plan[0].action == "invalidate-receipt"
+    assert plan[0].teardown_interface is None
+
+
+def test_mixed_teardown_all_orders_real_teardown_and_invalidation_correctly() -> None:
+    """Catches mixing real teardown and invalidation in teardown-all planning."""
+    graph = _graph({
+        "with_teardown.interface.setup": (),
+        "without_teardown.interface.setup": (),
+    })
+    with_td = graph.managed_setups["with_teardown.interface.setup"]
+    without_td = replace(
+        graph.managed_setups["without_teardown.interface.setup"],
+        teardown_interface=None,
+        teardown_version=None,
+        teardown_verifier_interface=None,
+        teardown_verifier_version=None,
+    )
+    graph.managed_setups = {
+        "with_teardown.interface.setup": with_td,
+        "without_teardown.interface.setup": without_td,
+    }
+    ledger = state.SetupLedger(
+        interfaces={
+            "with_teardown.interface.setup": _receipt("foreign.root"),
+            "without_teardown.interface.setup": _receipt("foreign.root"),
+        },
+        active_flow=None,
+    )
+
+    plan = evaluation.teardown_all_plan(graph, ledger)
+
+    assert len(plan) == 2
+    actions = {step.setup_interface: step.action for step in plan}
+    assert actions["with_teardown.interface.setup"] == "run-teardown"
+    assert actions["without_teardown.interface.setup"] == "invalidate-receipt"
+
+
+def test_shared_no_teardown_receipt_releases_claim() -> None:
+    """Catches planning invalidation for shared no-teardown setup."""
+    graph = _graph({
+        "left.interface.setup": (("leaf.interface.setup", 1),),
+        "right.interface.setup": (("leaf.interface.setup", 1),),
+        "leaf.interface.setup": (),
+    })
+    managed = graph.managed_setups["leaf.interface.setup"]
+    managed_no_teardown = replace(
+        managed,
+        teardown_interface=None,
+        teardown_version=None,
+        teardown_verifier_interface=None,
+        teardown_verifier_version=None,
+    )
+    graph.managed_setups["leaf.interface.setup"] = managed_no_teardown
+    ledger = state.SetupLedger(
+        interfaces={
+            "leaf.interface.setup": _receipt("left.interface.setup", "right.interface.setup"),
+            "left.interface.setup": _receipt("left.interface.setup"),
+        },
+        active_flow=None,
+    )
+
+    plan = evaluation.teardown_plan(graph, "left.interface.setup", ledger)
+
+    assert len(plan) == 2
+    assert plan[0].setup_interface == "left.interface.setup"
+    assert plan[0].action == "run-teardown"
+    assert plan[1].setup_interface == "leaf.interface.setup"
+    assert plan[1].action == "release-claim"
+
+
+def test_invalidation_settlement_removes_receipt_and_advances(tmp_path: Path) -> None:
+    """Catches settlement of invalidation removing receipt without claiming teardown."""
+    store = _store(tmp_path)
+    graph = _graph({"root.interface.setup": (("leaf.interface.setup", 1),), "leaf.interface.setup": ()})
+    managed = graph.managed_setups["leaf.interface.setup"]
+    managed_no_teardown = replace(
+        managed,
+        teardown_interface=None,
+        teardown_version=None,
+        teardown_verifier_interface=None,
+        teardown_verifier_version=None,
+    )
+    graph.managed_setups["leaf.interface.setup"] = managed_no_teardown
+    _seed(store, state.begin_flow(state.SetupLedger(
+        interfaces={
+            "leaf.interface.setup": _receipt("root.interface.setup"),
+            "root.interface.setup": _receipt("root.interface.setup"),
+        },
+        active_flow=None,
+    ), _flow("flow", "teardown", "root.interface.setup", "root.interface.setup")))
+
+    plan = evaluation.teardown_plan(graph, "root.interface.setup", store.read())
+    assert plan[0].action == "run-teardown"
+    assert plan[1].action == "invalidate-receipt"
+
+    result = evaluation.record_teardown_success(store, graph, "flow", plan[0])
+    assert result.current_step == plan[1]
+    result = evaluation.record_teardown_success(store, graph, "flow", plan[1])
+    assert result.state == "ready"
+    assert "leaf.interface.setup" not in store.read().interfaces
+    assert store.read().active_flow is None
