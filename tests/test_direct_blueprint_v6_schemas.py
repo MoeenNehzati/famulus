@@ -257,7 +257,7 @@ def test_v6_verifier_must_have_interface_and_version() -> None:
     }
     assert len(_errors(document)) > 0
 
-def test_v6_setup_management_still_accepted() -> None:
+def test_v6_setup_management_is_rejected() -> None:
     document = _child()
     document["exports"]["demo-skill._rtx.interface.setup"] = {
         "source_interface": "demo-skill._rtx.source.runtime.interface.execute",
@@ -271,7 +271,7 @@ def test_v6_setup_management_still_accepted() -> None:
             },
         },
     }
-    assert _errors(document) == []
+    assert len(_errors(document)) > 0
 
 
 def test_v6_relative_caller_references_remain_supported() -> None:

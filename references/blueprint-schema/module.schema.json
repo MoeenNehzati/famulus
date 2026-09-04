@@ -320,62 +320,6 @@
         "verifier": {
           "$ref": "common.schema.json#/definitions/interfaceUse",
           "description": "Optional verifier that confirms setup or teardown completion."
-        },
-        "setup_management": {
-          "$ref": "#/definitions/setupManagement",
-          "description": "Opt in a public setup export to the managed setup lifecycle."
-        }
-      }
-    },
-    "managedInterfaceReference": {
-      "type": "object",
-      "required": [
-        "interface",
-        "version"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "interface": {
-          "$ref": "common.schema.json#/definitions/interfaceId"
-        },
-        "version": {
-          "$ref": "common.schema.json#/definitions/interfaceVersion"
-        }
-      }
-    },
-    "managedTeardown": {
-      "type": "object",
-      "required": [
-        "interface",
-        "version",
-        "verifier"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "interface": {
-          "$ref": "common.schema.json#/definitions/interfaceId"
-        },
-        "version": {
-          "$ref": "common.schema.json#/definitions/interfaceVersion"
-        },
-        "verifier": {
-          "$ref": "#/definitions/managedInterfaceReference"
-        }
-      }
-    },
-    "setupManagement": {
-      "type": "object",
-      "required": [
-        "setup_verifier",
-        "teardown"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "setup_verifier": {
-          "$ref": "#/definitions/managedInterfaceReference"
-        },
-        "teardown": {
-          "$ref": "#/definitions/managedTeardown"
         }
       }
     },
