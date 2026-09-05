@@ -124,6 +124,31 @@ interfaces:
     usage: TARGET_INTERFACE ORIGINAL_CALLER ORIGINAL_INTERFACE ORIGINAL_VERSION
     version: 1
 
+  setup-interface-manager._rtx.source.rtx-manager.interface.authorize-markdown-call:
+    content: [_setup_dispatches\.py, _setup_evaluation\.py, _setup_manager\.py, _setup_state\.py]
+    uses_interfaces: *uses
+    contract:
+      arguments:
+        flow-id: {description: Exact active flow identity., required: true, sensitivity: public, type: {kind: string}}
+        target-interface: {description: Exact target helper call interface., required: true, sensitivity: public, type: {kind: string}}
+        target-version: {description: Positive target helper call version., required: true, sensitivity: public, type: {kind: integer, minimum: 1}}
+      caller_warnings: []
+      direct_io: *read_io
+      execution: *read_execution
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes: *read_outcomes
+      outputs: *json_outputs
+      preconditions: []
+    description: Authorize an exact helper call for the current Markdown setup step only.
+    process_binding:
+      entry: AuthorizeMarkdownCallInterface
+      kind: process
+      patterns:
+      - {allow_stdin: false, min_positionals: 3, max_positionals: 3, positional_patterns: {'2': '^[1-9][0-9]*$'}}
+    usage: FLOW_ID TARGET_INTERFACE TARGET_VERSION
+    version: 1
+
   setup-interface-manager._rtx.source.rtx-manager.interface.begin:
     content: [_setup_dispatches\.py, _setup_evaluation\.py, _setup_manager\.py, _setup_state\.py]
     uses_interfaces: *uses

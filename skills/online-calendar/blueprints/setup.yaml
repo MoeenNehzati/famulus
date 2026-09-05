@@ -1,0 +1,69 @@
+schema_version: 6
+id: online-calendar.source.setup
+version: 1
+maturity: experimental
+node_type: behavioral_source
+description: Bind the selected shared Google credential to Calendar-owned state.
+gateway:
+  language: Markdown
+  path: instructions/setup.md
+content:
+- instructions/setup\.md
+dependencies:
+- blueprint:
+    base: repository-root
+    path: skills/bootstrap-dispatcher-runtime/blueprints/gateway.yaml
+  source: bootstrap-dispatcher-runtime.source.gateway
+  version: 1
+  reason: Repair this setup owner's selected-Python declaration before runtime calls.
+interfaces:
+  online-calendar.source.setup.interface.setup:
+    content:
+    - instructions/setup\.md
+    uses_interfaces:
+    - interface: bootstrap-dispatcher-runtime.interface.repair-selected-packages
+      version: 1
+    - interface: connect-google._rtx.interface.shared-credential
+      version: 1
+    - interface: online-calendar._rtx.interface.use-google-credential-file
+      version: 1
+    contract:
+      arguments: {}
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads:
+        - {id: read-1, access: read, content: setup context, formats: [text], medium: prompt, sensitivity: user-private}
+        writes:
+        - {id: write-1, access: write, content: setup guidance, formats: [markdown], medium: prompt, sensitivity: derived-private}
+      execution:
+        consistency: {live: Credential binding verifies current Calendar access before persisting it.}
+        lifecycle: finite
+        state_effect: read-only
+        verification: [{method: output-schema, output_ref: response}]
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes:
+      - {id: completed, class: success, outputs: [response], effects: [], caller_action: Treat Calendar setup as complete only after the binder reports bound and verified.}
+      - {id: failed, class: error, outputs: [response], effects: [], caller_action: Report the exact binding failure.}
+      outputs:
+      - id: response
+        audience: human
+        cardinality: {minimum: 1, maximum: 1}
+        description: Calendar setup result.
+        direct_io_ref: write-1
+        empty: Never empty.
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        type: {kind: string, sensitivity: derived-private}
+      preconditions: []
+    description: Bind the selected shared Google credential to Calendar-owned state.
+    version: 1
+uses_interfaces:
+- interface: bootstrap-dispatcher-runtime.interface.repair-selected-packages
+  version: 1
+- interface: connect-google._rtx.interface.shared-credential
+  version: 1
+- interface: online-calendar._rtx.interface.use-google-credential-file
+  version: 1

@@ -60,6 +60,7 @@ class ManagedInterfaceBinding:
     teardown_verifier_version: int | None
     teardown_verifier_dispatch_key: str | None
     arguments: tuple[ManagedArgument, ...] = ()
+    helper_allowlist: tuple[tuple[str, int], ...] = ()
 
     def __post_init__(self) -> None:
         # Required setup identifiers
@@ -141,6 +142,16 @@ class ManagedInterfaceBinding:
         if positions and sorted(positions) != list(range(max(positions) + 1)):
             raise ValueError("managed positional arguments must be contiguous")
 
+        # Helper allowlist validation
+        for interface, version in self.helper_allowlist:
+            if not interface or not isinstance(interface, str):
+                raise ValueError("helper allowlist interface names must be nonempty strings")
+            if not isinstance(version, int) or version < 1:
+                raise ValueError("helper allowlist versions must be positive integers")
+        allowlist_set = set(self.helper_allowlist)
+        if len(allowlist_set) != len(self.helper_allowlist):
+            raise ValueError("helper allowlist must not contain duplicates")
+
 
 _WAKEUP_SETUP = "llm-wakeup._rtx.interface.setup"
 _WAKEUP = ManagedInterfaceBinding(
@@ -174,7 +185,24 @@ _CONNECT_GOOGLE = ManagedInterfaceBinding(
     setup_kind="markdown",
     setup_dispatch_key="",
     setup_instructions=(
-        "Follow the connect-google skill's setup gateway to grant access to Google services."
+        "# Connect Google setup\n\n"
+        "Use the current `run-markdown` flow id as `setup_flow_id` on every executable\n"
+        "Famulus interface call below.\n\n"
+        "1. Follow `bootstrap-dispatcher-runtime.interface.repair-selected-packages` for\n"
+        "   owner `connect-google` and exact declaration `[\"keyring\"]`. Stop on failure.\n"
+        "2. Call `connect-google._rtx.interface.shared-credential`. If it succeeds and\n"
+        "   grants Drive, Calendar, and Gmail, setup is complete.\n"
+        "3. Otherwise call `connect-google._rtx.interface.client-status`.\n"
+        "4. If the Desktop OAuth client is absent, follow the existing Connect Google\n"
+        "   client-creation instructions and install the downloaded JSON with\n"
+        "   `connect-google._rtx.interface.install-client`.\n"
+        "5. Call `connect-google._rtx.interface.authorize-services` with exactly\n"
+        "   `--services drive,calendar,gmail`. Require all three grants.\n"
+        "6. Call `connect-google._rtx.interface.select-shared-credential` with the returned\n"
+        "   `credential_file`.\n"
+        "7. Re-run `shared-credential` and require the same file plus all three grants.\n\n"
+        "Settle only after step 2 or step 7 succeeds.\n"
+        "Do not call Calendar, Cloud Files, or Email Client binders.\n"
     ),
     setup_verifier_interface=None,
     setup_verifier_version=None,
@@ -186,6 +214,13 @@ _CONNECT_GOOGLE = ManagedInterfaceBinding(
     teardown_verifier_interface=None,
     teardown_verifier_version=None,
     teardown_verifier_dispatch_key=None,
+    helper_allowlist=(
+        ("connect-google._rtx.interface.shared-credential", 1),
+        ("connect-google._rtx.interface.client-status", 1),
+        ("connect-google._rtx.interface.install-client", 1),
+        ("connect-google._rtx.interface.authorize-services", 1),
+        ("connect-google._rtx.interface.select-shared-credential", 1),
+    ),
 )
 
 _ONLINE_CALENDAR_SETUP = "online-calendar.interface.setup"
@@ -195,7 +230,17 @@ _ONLINE_CALENDAR = ManagedInterfaceBinding(
     setup_kind="markdown",
     setup_dispatch_key="",
     setup_instructions=(
-        "Follow the online-calendar skill's setup gateway to connect your calendar provider."
+        "# Online Calendar setup\n\n"
+        "`connect-google.interface.setup` has already completed. Use the current\n"
+        "`run-markdown` flow id as `setup_flow_id` on every executable Famulus call below.\n\n"
+        "1. Follow `bootstrap-dispatcher-runtime.interface.repair-selected-packages` for\n"
+        "   owner `online-calendar` and exact declaration `[\"keyring\"]`. Stop on failure.\n"
+        "2. Call `connect-google._rtx.interface.shared-credential`.\n"
+        "3. Call `online-calendar._rtx.interface.use-google-credential-file\n"
+        "   --credential-file <credential_file> --home <current home>`.\n"
+        "4. Require `bound: true` and `verified: true`.\n\n"
+        "Settle only after step 4 succeeds. The binder already performs the live Calendar probe.\n"
+        "Do not run OAuth or add another Calendar probe.\n"
     ),
     setup_verifier_interface=None,
     setup_verifier_version=None,
@@ -207,6 +252,10 @@ _ONLINE_CALENDAR = ManagedInterfaceBinding(
     teardown_verifier_interface=None,
     teardown_verifier_version=None,
     teardown_verifier_dispatch_key=None,
+    helper_allowlist=(
+        ("connect-google._rtx.interface.shared-credential", 1),
+        ("online-calendar._rtx.interface.use-google-credential-file", 1),
+    ),
 )
 
 _CLOUD_FILES_SETUP = "cloud-files.interface.setup"
@@ -216,7 +265,21 @@ _CLOUD_FILES = ManagedInterfaceBinding(
     setup_kind="markdown",
     setup_dispatch_key="",
     setup_instructions=(
-        "Follow the cloud-files skill's setup gateway to configure cloud storage access."
+        "# Cloud Files setup\n\n"
+        "`connect-google.interface.setup` has already completed. Use the current\n"
+        "`run-markdown` flow id as `setup_flow_id` on every executable Famulus call below.\n\n"
+        "1. Follow `bootstrap-dispatcher-runtime.interface.repair-selected-packages` for\n"
+        "   owner `cloud-files` and exact declaration `[\"keyring\"]`. Stop on failure.\n"
+        "2. Call `connect-google._rtx.interface.shared-credential`.\n"
+        "3. Call `cloud-files._rtx.interface.use-google-credential-file\n"
+        "   --credential-file <credential_file> --home <current home>`; require\n"
+        "   `bound: true` and `verified: true`.\n"
+        "4. Call `cloud-files._rtx.interface.write-config` with\n"
+        "   `--remote-llm-root assistant` and the current home.\n"
+        "5. Call `cloud-files._rtx.interface.ensure-assistant-root`; require\n"
+        "   `{\"exists\": true, \"root\": \"assistant\"}`.\n\n"
+        "Settle only after steps 3 and 5 succeed.\n"
+        "Do not run OAuth or create List Manager lists.\n"
     ),
     setup_verifier_interface=None,
     setup_verifier_version=None,
@@ -228,6 +291,56 @@ _CLOUD_FILES = ManagedInterfaceBinding(
     teardown_verifier_interface=None,
     teardown_verifier_version=None,
     teardown_verifier_dispatch_key=None,
+    helper_allowlist=(
+        ("connect-google._rtx.interface.shared-credential", 1),
+        ("cloud-files._rtx.interface.use-google-credential-file", 1),
+        ("cloud-files._rtx.interface.write-config", 1),
+        ("cloud-files._rtx.interface.ensure-assistant-root", 1),
+    ),
+)
+
+_EMAIL_CLIENT_SETUP = "email-client.interface.setup"
+_EMAIL_CLIENT = ManagedInterfaceBinding(
+    setup_interface=_EMAIL_CLIENT_SETUP,
+    setup_version=1,
+    setup_kind="markdown",
+    setup_dispatch_key="",
+    setup_instructions=(
+        "# Email Client setup\n\n"
+        "`connect-google.interface.setup` has already completed. Use the current\n"
+        "`run-markdown` flow id as `setup_flow_id` on every executable Famulus call below.\n\n"
+        "1. Follow `bootstrap-dispatcher-runtime.interface.repair-selected-packages` for\n"
+        "   owner `email-client` and exact declaration `[\"keyring\"]`. Stop on failure.\n"
+        "2. Call `connect-google._rtx.interface.shared-credential`; retain its file and email.\n"
+        "3. Call `email-client._rtx.interface.accounts-list`.\n"
+        "4. Reuse the unique exact-email match. If none exists, ask for a nickname, then call\n"
+        "   `email-client._rtx.interface.accounts-add --email <email> --nickname <nickname> --auth gmail-oauth`.\n"
+        "   If multiple matches exist, ask which nickname to use.\n"
+        "5. Call `email-client._rtx.interface.accounts-use-google-credential-file\n"
+        "   --nickname <nickname> --credential-file <credential_file> --home <current home>`;\n"
+        "   require `bound: true` and `verified: true`.\n"
+        "6. Run `email-client._rtx.interface.live-smoke -a <nickname> --imap --smtp-auth`;\n"
+        "   require both checks to succeed.\n\n"
+        "Settle only after steps 5 and 6 succeed.\n"
+        "Do not use `--send-self` or `accounts-setup-oauth`.\n"
+    ),
+    setup_verifier_interface=None,
+    setup_verifier_version=None,
+    setup_verifier_dispatch_key=None,
+    teardown_interface=None,
+    teardown_version=None,
+    teardown_dispatch_key=None,
+    teardown_instructions=None,
+    teardown_verifier_interface=None,
+    teardown_verifier_version=None,
+    teardown_verifier_dispatch_key=None,
+    helper_allowlist=(
+        ("connect-google._rtx.interface.shared-credential", 1),
+        ("email-client._rtx.interface.accounts-list", 1),
+        ("email-client._rtx.interface.accounts-add", 1),
+        ("email-client._rtx.interface.accounts-use-google-credential-file", 1),
+        ("email-client._rtx.interface.live-smoke", 1),
+    ),
 )
 
 _LIST_MANAGER_SETUP = "list-manager.interface.setup"
@@ -237,7 +350,21 @@ _LIST_MANAGER = ManagedInterfaceBinding(
     setup_kind="markdown",
     setup_dispatch_key="",
     setup_instructions=(
-        "Follow the list-manager skill's setup gateway to initialize your task list."
+        "# List Manager setup\n\n"
+        "`cloud-files.interface.setup` has already completed. Use the current `run-markdown`\n"
+        "flow id as `setup_flow_id` on every executable Famulus call below.\n\n"
+        "1. Follow `bootstrap-dispatcher-runtime.interface.repair-selected-packages` for\n"
+        "   owner `list-manager` and exact declaration `[\"dateparser\", \"keyring\", \"rich\"]`.\n"
+        "   Stop on failure.\n"
+        "2. Call `cloud-files._rtx.interface.lists-exists lists/todo.yaml` and\n"
+        "   `cloud-files._rtx.interface.lists-exists lists/triage.yaml`.\n"
+        "3. Only for an `exists: false` result, initialize exactly that missing list:\n"
+        "   `list-manager._rtx.interface.cloud-init todo --cloud --schema todo` or\n"
+        "   `list-manager._rtx.interface.cloud-init triage --cloud --schema triage`.\n"
+        "4. Validate both with `list-manager._rtx.interface.cloud-read todo --cloud` and\n"
+        "   `list-manager._rtx.interface.cloud-read triage --cloud`.\n\n"
+        "Settle only after both lists exist and validate.\n"
+        "Never overwrite an existing list; an existence/read error is a failure, not absence.\n"
     ),
     setup_verifier_interface=None,
     setup_verifier_version=None,
@@ -249,6 +376,11 @@ _LIST_MANAGER = ManagedInterfaceBinding(
     teardown_verifier_interface=None,
     teardown_verifier_version=None,
     teardown_verifier_dispatch_key=None,
+    helper_allowlist=(
+        ("cloud-files._rtx.interface.lists-exists", 1),
+        ("list-manager._rtx.interface.cloud-init", 1),
+        ("list-manager._rtx.interface.cloud-read", 1),
+    ),
 )
 
 
@@ -268,6 +400,7 @@ PRODUCTION_BINDINGS: Mapping[str, ManagedInterfaceBinding] = MappingProxyType(
         _CONNECT_GOOGLE_SETUP: _CONNECT_GOOGLE,
         _ONLINE_CALENDAR_SETUP: _ONLINE_CALENDAR,
         _CLOUD_FILES_SETUP: _CLOUD_FILES,
+        _EMAIL_CLIENT_SETUP: _EMAIL_CLIENT,
         _LIST_MANAGER_SETUP: _LIST_MANAGER,
         _WAKEUP_SETUP: _WAKEUP,
     }

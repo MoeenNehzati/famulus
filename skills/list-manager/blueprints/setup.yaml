@@ -1,0 +1,73 @@
+schema_version: 6
+id: list-manager.source.setup
+version: 1
+maturity: stable
+node_type: behavioral_source
+description: Ensure the standard todo and triage cloud lists exist without replacing existing user data.
+gateway:
+  language: Markdown
+  path: instructions/setup.md
+content:
+- instructions/setup\.md
+dependencies:
+- blueprint:
+    base: repository-root
+    path: skills/bootstrap-dispatcher-runtime/blueprints/gateway.yaml
+  source: bootstrap-dispatcher-runtime.source.gateway
+  version: 1
+  reason: Repair this setup owner's selected-Python declaration before runtime calls.
+interfaces:
+  list-manager.source.setup.interface.setup:
+    content:
+    - instructions/setup\.md
+    uses_interfaces:
+    - interface: bootstrap-dispatcher-runtime.interface.repair-selected-packages
+      version: 1
+    - interface: cloud-files._rtx.interface.lists-exists
+      version: 1
+    - interface: list-manager._rtx.interface.cloud-read
+      version: 1
+    - interface: list-manager._rtx.interface.cloud-init
+      version: 1
+    contract:
+      arguments: {}
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads:
+        - {id: read-1, access: read, content: setup context, formats: [text], medium: prompt, sensitivity: user-private}
+        writes:
+        - {id: write-1, access: write, content: setup guidance, formats: [markdown], medium: prompt, sensitivity: derived-private}
+      execution:
+        consistency: {live: Each canonical list is checked before any missing list is created.}
+        lifecycle: finite
+        state_effect: read-only
+        verification: [{method: output-schema, output_ref: response}]
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes:
+      - {id: completed, class: success, outputs: [response], effects: [], caller_action: Treat setup as complete only after todo and triage both exist and validate.}
+      - {id: failed, class: error, outputs: [response], effects: [], caller_action: "Report the exact existence, validation, or creation failure without overwriting data."}
+      outputs:
+      - id: response
+        audience: human
+        cardinality: {minimum: 1, maximum: 1}
+        description: List Manager setup result.
+        direct_io_ref: write-1
+        empty: Never empty.
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        type: {kind: string, sensitivity: derived-private}
+      preconditions: []
+    description: Ensure the standard todo and triage cloud lists exist without replacing existing user data.
+    version: 1
+uses_interfaces:
+- interface: bootstrap-dispatcher-runtime.interface.repair-selected-packages
+  version: 1
+- interface: cloud-files._rtx.interface.lists-exists
+  version: 1
+- interface: list-manager._rtx.interface.cloud-read
+  version: 1
+- interface: list-manager._rtx.interface.cloud-init
+  version: 1

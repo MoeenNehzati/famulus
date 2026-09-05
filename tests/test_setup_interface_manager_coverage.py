@@ -48,11 +48,12 @@ def test_release_has_no_production_managed_setups() -> None:
 
     assert fixture_managed == {"python-canary.interface.setup"}
     # With canonical setup, all .interface.setup exports are automatically managed:
-    # Four Markdown setups (pre-admitted in Task 07) plus wakeup Python setup
+    # Five Markdown setups (pre-admitted in Task 07) plus wakeup Python setup
     assert production_managed == {
         "connect-google.interface.setup",
         "online-calendar.interface.setup",
         "cloud-files.interface.setup",
+        "email-client.interface.setup",
         "list-manager.interface.setup",
         "llm-wakeup._rtx.interface.setup",
     }
@@ -103,6 +104,7 @@ def test_production_bindings_include_all_canonical_setups() -> None:
         "connect-google.interface.setup",
         "online-calendar.interface.setup",
         "cloud-files.interface.setup",
+        "email-client.interface.setup",
         "list-manager.interface.setup",
         "llm-wakeup._rtx.interface.setup",
     }

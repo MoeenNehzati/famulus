@@ -712,6 +712,46 @@ class SetupManager:
                 operation, str(exc), state_name="recovery-required", original=original
             )
 
+    def authorize_markdown_call(
+        self, flow_id: str, target_interface: str, target_version: int
+    ) -> tuple[int, dict[str, object]]:
+        try:
+            ledger = self.store.read()
+            flow = ledger.active_flow
+            if flow is None:
+                raise ManagerDomainError("no active managed flow")
+            if flow.flow_id != flow_id:
+                raise ManagerDomainError("call does not match the exact current flow")
+            managed = self.graph.managed_setups.get(flow.current_step)
+            if managed is None:
+                raise ManagerRecoveryError("active flow current step is no longer managed")
+            try:
+                binding = self._binding(flow.current_step)
+            except ManagerDomainError as exc:
+                raise ManagerRecoveryError("active binding is no longer valid") from exc
+            if binding.setup_kind != "markdown":
+                raise ManagerDomainError("current step is not Markdown")
+            if flow.operation != "setup":
+                raise ManagerDomainError("only setup operations support markdown helper calls")
+            if (target_interface, target_version) not in binding.helper_allowlist:
+                raise ManagerDomainError("helper call not authorized for current step")
+            step: SetupStep | TeardownStep = SetupStep.from_managed(managed)
+            return 0, _response(
+                flow_id=flow.flow_id,
+                operation=flow.operation,
+                state="authorized-markdown-call",
+                current_step=step,
+                original=flow.continuation,
+                interface=target_interface,
+                version=target_version,
+            )
+        except (ManagerDomainError, FlowConflict, LedgerError) as exc:
+            return self._domain_failure("authorize-markdown-call", str(exc))
+        except ManagerRecoveryError as exc:
+            return self._domain_failure(
+                "authorize-markdown-call", str(exc), state_name="recovery-required"
+            )
+
     def run_markdown(self, flow_id: str, interface: str) -> tuple[int, dict[str, object]]:
         try:
             flow, step, binding = self._require_current(flow_id, interface)
@@ -1320,6 +1360,22 @@ class RecoverInterface(_ManagerInterface):
         return controller.recover(args.flow_id, args.action)
 
 
+class AuthorizeMarkdownCallInterface(_ManagerInterface):
+    operation = "authorize-markdown-call"
+
+    def build_parser(self) -> argparse.ArgumentParser:
+        parser = super().build_parser()
+        parser.add_argument("flow_id")
+        parser.add_argument("target_interface")
+        parser.add_argument("target_version", type=_positive_version)
+        return parser
+
+    def invoke(self, controller: SetupManager, args: argparse.Namespace):
+        return controller.authorize_markdown_call(
+            args.flow_id, args.target_interface, args.target_version
+        )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """A direct entrypoint is intentionally not routable without one exact class."""
     return run_python_machine_interface(
@@ -1333,6 +1389,7 @@ if __name__ == "__main__":
 
 __all__ = [
     "AuthorizeInterface",
+    "AuthorizeMarkdownCallInterface",
     "BeginInterface",
     "InvalidateInterface",
     "RecoverInterface",

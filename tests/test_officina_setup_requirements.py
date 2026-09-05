@@ -328,18 +328,10 @@ def test_repository_setup_order_is_explicit_and_dependency_first(
         "online-calendar.interface.setup",
     )
     assert setup_order(graph, "list-manager.interface.setup") == (
+        "connect-google.interface.setup",
+        "cloud-files.interface.setup",
         "list-manager.interface.setup",
     )
-    for module_id in (
-        "connect-google",
-        "cloud-files",
-        "online-calendar",
-        "list-manager",
-    ):
-        assert (
-            graph.exports[f"{module_id}.interface.setup"].source_interface_id
-            == graph.exports[f"{module_id}.interface.default"].source_interface_id
-        )
 
 
 def test_setup_order_deduplicates_a_diamond() -> None:
@@ -456,23 +448,6 @@ def test_setup_requirements_reject_invalid_targets(
 
     with pytest.raises(BlueprintGraphError, match=message):
         _setup_requirements(exports)
-
-
-def test_setup_exports_alias_existing_default_behavior(
-    ordinary_repository_graph: RepositoryBlueprintGraph,
-) -> None:
-    graph = ordinary_repository_graph
-
-    for module_id in (
-        "connect-google",
-        "cloud-files",
-        "online-calendar",
-        "list-manager",
-    ):
-        assert (
-            graph.exports[f"{module_id}.interface.setup"].source_interface_id
-            == graph.exports[f"{module_id}.interface.default"].source_interface_id
-        )
 
 
 def test_managed_setup_order_projects_immutable_lifecycle_metadata() -> None:

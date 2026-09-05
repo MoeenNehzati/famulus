@@ -3,7 +3,7 @@ authority:
 children:
   _rtx: {}
 content:
-- SKILL\.md
+- (?:SKILL\.md|instructions/setup\.md)
 description: Reads and modifies Google Calendar events and owns the service-specific
   OAuth credential setup used by its calendar client.
 discovery:
@@ -29,7 +29,7 @@ exports:
     access:
       allow_all_modules: true
       allowed_callers: []
-    source_interface: online-calendar.source.gateway.interface.default
+    source_interface: online-calendar.source.setup.interface.setup
     setup_requires_setup_of:
     - interface: connect-google.interface.setup
       version: 1
@@ -77,6 +77,10 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
+  online-calendar.source.setup:
+    blueprint:
+      base: module-root
+      path: blueprints/setup.yaml
 version: 2
 maturity: experimental
 installation_tier: optional

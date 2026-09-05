@@ -38,6 +38,7 @@ MANAGER_PREFIX = f"{MANAGER_MODULE}."
 MANAGER_INTERFACES = {
     "status": "setup-interface-manager._rtx.interface.status",
     "authorize": "setup-interface-manager._rtx.interface.authorize",
+    "authorize-markdown-call": "setup-interface-manager._rtx.interface.authorize-markdown-call",
     "begin": "setup-interface-manager._rtx.interface.begin",
     "recover": "setup-interface-manager._rtx.interface.recover",
 }
@@ -329,9 +330,17 @@ def invoke(
     version: int,
     arguments: CompactArguments | OrderedArguments,
     dry_run: bool = False,
+    setup_flow_id: str | None = None,
 ) -> dict[str, Any] | ExecutionResult:
     """Invoke one authorized Famulus interface through the existing Dispatcher."""
     try:
+        if setup_flow_id is not None and (dry_run or interface.startswith(MANAGER_PREFIX)):
+            raise RuntimeMisconfiguredError(
+                "setup_flow_id cannot be used with dry_run or manager targets",
+                caller_module_id=caller,
+                target_module_id=interface.split(".interface.", 1)[0] if ".interface." in interface else interface,
+            )
+
         if dry_run or interface.startswith(MANAGER_PREFIX):
             with resolve_dispatch(
                 caller_skill=caller,
@@ -387,10 +396,27 @@ def invoke(
         if projection.lifecycle is not None:
             root, operation = projection.lifecycle
             return _setup_managed(operation, root, caller, interface, version)
-        if projection.graph.managed_setups:
+
+        if setup_flow_id is not None:
+            authorize_result = _manager_call(
+                caller,
+                "authorize-markdown-call",
+                [setup_flow_id, interface, str(version)],
+            )
+            if authorize_result.get("state") != "authorized-markdown-call":
+                return {
+                    "code": "setup_busy",
+                    "flow_id": setup_flow_id,
+                    "manager": {
+                        "interface": MANAGER_INTERFACES["recover"],
+                        "version": 1,
+                    },
+                }
+        elif projection.graph.managed_setups:
             refusal = _ordinary_preflight(caller, interface, version)
             if refusal is not None:
                 return refusal
+
         resolved = materialize_authorized_invocation(
             authorized,
             argv=caller_argv(arguments),

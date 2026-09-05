@@ -591,3 +591,172 @@ def test_generic_setup_words_do_not_activate_lifecycle_redirection(
 
     assert result["stdout"] == "ordinary\n"
     assert events == ["authorize", "status", "compile"]
+
+
+def test_setup_flow_id_with_dry_run_is_rejected(server, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Catches setup_flow_id being used with dry_run."""
+    events: list[str] = []
+    _install_authorized_path(server, monkeypatch, events, managed=True)
+    monkeypatch.setattr(
+        server,
+        "_manager_call",
+        lambda *_args: pytest.fail("dry_run + setup_flow_id should be rejected before manager call"),
+    )
+
+    result = server.invoke(
+        "root",
+        "root.interface.run",
+        1,
+        _arguments(server),
+        dry_run=True,
+        setup_flow_id="flow-1",
+    )
+
+    assert result["exit_code"] == 2
+    assert result["dispatcher"]["code"] == "dispatcher.runtime_misconfigured"
+
+
+def test_setup_flow_id_with_manager_target_is_rejected(server, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Catches setup_flow_id being used with manager targets."""
+    events: list[str] = []
+    monkeypatch.setattr(
+        server,
+        "resolve_dispatch",
+        lambda **kwargs: pytest.fail("manager target + setup_flow_id should be rejected before resolve"),
+    )
+
+    result = server.invoke(
+        "root",
+        "setup-interface-manager._rtx.interface.authorize-markdown-call",
+        1,
+        server.CompactArguments(positionals=["flow-1", "target", "1"], options={}, stdin=None),
+        setup_flow_id="flow-1",
+    )
+
+    assert result["exit_code"] == 2
+    assert result["dispatcher"]["code"] == "dispatcher.runtime_misconfigured"
+
+
+def test_setup_flow_id_with_successful_authorization_permits_execution(
+    server, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches setup_flow_id authorization bypassing ordinary preflight when authorized."""
+    events: list[str] = []
+    _install_authorized_path(server, monkeypatch, events, managed=True)
+
+    def manager_call(_caller: str, operation: str, _arguments: list[str]):
+        events.append(operation)
+        if operation == "authorize-markdown-call":
+            return {
+                "schema_version": 1,
+                "flow_id": "flow-1",
+                "operation": "setup",
+                "state": "authorized-markdown-call",
+                "interface": "target.interface.helper",
+                "version": 1,
+                "current_step": None,
+                "original": None,
+                "resume_original": False,
+            }
+        return pytest.fail("unexpected manager operation after authorization")
+
+    monkeypatch.setattr(server, "_manager_call", manager_call)
+
+    def launch(_resolved, **_kwargs):
+        events.append("launch")
+        return SimpleNamespace(returncode=0, stdout="ran\n", stderr="")
+
+    monkeypatch.setattr(server, "_run_resolved_invocation", launch)
+
+    result = server.invoke(
+        "root",
+        "root.interface.run",
+        1,
+        _arguments(server),
+        setup_flow_id="flow-1",
+    )
+
+    assert result["exit_code"] == 0
+    assert events == ["authorize", "authorize-markdown-call", "compile", "launch"]
+
+
+def test_setup_flow_id_with_failed_authorization_returns_busy(
+    server, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches setup_flow_id authorization failure not returning setup_busy."""
+    events: list[str] = []
+    _install_authorized_path(server, monkeypatch, events, managed=True)
+
+    def manager_call(_caller: str, operation: str, _arguments: list[str]):
+        events.append(operation)
+        if operation == "authorize-markdown-call":
+            return {
+                "schema_version": 1,
+                "flow_id": "flow-1",
+                "operation": "setup",
+                "state": "failed",
+                "error": "not authorized",
+            }
+        return pytest.fail("unexpected manager operation")
+
+    monkeypatch.setattr(server, "_manager_call", manager_call)
+    monkeypatch.setattr(
+        server,
+        "_run_resolved_invocation",
+        lambda *_args, **_kwargs: pytest.fail("failed authorization should not proceed to launch"),
+    )
+
+    result = server.invoke(
+        "root",
+        "root.interface.run",
+        1,
+        _arguments(server),
+        setup_flow_id="flow-1",
+    )
+
+    assert result == {
+        "code": "setup_busy",
+        "flow_id": "flow-1",
+        "manager": {
+            "interface": "setup-interface-manager._rtx.interface.recover",
+            "version": 1,
+        },
+    }
+    assert events == ["authorize", "authorize-markdown-call"]
+
+
+def test_setup_flow_id_absent_retains_ordinary_preflight_behavior(
+    server, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches setup_flow_id absence changing ordinary preflight semantics."""
+    events: list[str] = []
+    _install_authorized_path(server, monkeypatch, events, managed=True)
+
+    def manager_call(_caller: str, operation: str, _arguments: list[str]):
+        events.append(operation)
+        return {
+            "schema_version": 1,
+            "code": "setup_busy",
+            "root_setup_interface": "root.interface.setup",
+            "pending_stack": [],
+            "flow_id": "flow-7",
+        }
+
+    monkeypatch.setattr(server, "_manager_call", manager_call)
+    monkeypatch.setattr(
+        server,
+        "materialize_authorized_invocation",
+        lambda *_args, **_kwargs: pytest.fail("busy target was compiled"),
+    )
+
+    result = server.invoke("root", "root.interface.run", 1, _arguments(server))
+
+    assert result == {
+        "code": "setup_busy",
+        "flow_id": "flow-7",
+        "manager": {
+            "interface": "setup-interface-manager._rtx.interface.recover",
+            "version": 1,
+        },
+    }
+    assert events == ["authorize", "status"]

@@ -2,6 +2,7 @@ authority:
   owns_filesystem:
   - allowed_readers:
     - cloud-files._rtx.interface.setup-oauth
+    - connect-google._rtx.interface.authorize-services
     - connect-google._rtx.interface.connect-services
     - connect-google._rtx.interface.client-status
     - email-client._rtx.interface.accounts-setup-oauth
@@ -11,16 +12,29 @@ authority:
       connect-google/client.json
     reason: This interface is the only writer of the shared OAuth client; service
       setup interfaces may read it for authorization.
+  - allowed_readers:
+    - connect-google._rtx.interface.shared-credential
+    match: exact
+    path: platform Famulus config root (see credentials.interface.google) /
+      connect-google/selected-credential.json
+    reason: This interface reads the persisted selection pointer for setup workflows.
 children: {}
 content:
 - _browser_helper\.py
 - _client_config\.py
 - _connect_services\.py
 - _loopback_oauth\.py
+- _selected_credential\.py
 - __init__\.py
 - tests/.*
 description: Code module for the connect-google skill.
 exports:
+  connect-google._rtx.interface.authorize-services:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - connect-google
+    source_interface: connect-google._rtx.source.rtx-authorize-services.interface.authorize-services
   connect-google._rtx.interface.bind-credential-file:
     access:
       allow_all_modules: false
@@ -45,6 +59,21 @@ exports:
       allowed_callers:
       - connect-google
     source_interface: connect-google._rtx.source.rtx-client-config.interface.install-client
+  connect-google._rtx.interface.select-shared-credential:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - connect-google
+    source_interface: connect-google._rtx.source.rtx-selected-credential.interface.select-shared-credential
+  connect-google._rtx.interface.shared-credential:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - connect-google
+      - online-calendar
+      - cloud-files
+      - email-client
+    source_interface: connect-google._rtx.source.rtx-selected-credential.interface.shared-credential
 gateway:
   language: Python>=3.11
   path: __init__.py
@@ -69,5 +98,9 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/rtx-init.yaml
+  connect-google._rtx.source.rtx-selected-credential:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-selected-credential.yaml
 version: 1
 maturity: experimental

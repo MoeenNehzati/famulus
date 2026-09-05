@@ -6,7 +6,7 @@
   "tool": {
     "name": "invoke",
     "required": ["caller", "interface", "version", "arguments"],
-    "optional": {"dry_run": false},
+    "optional": {"dry_run": false, "setup_flow_id": null},
     "arguments": {
       "positionals": "compact positional argv; empty when options is ordered",
       "options": {

@@ -219,7 +219,9 @@ def test_list_setup_is_local_and_google_remains_explicit() -> None:
     blueprint = yaml.safe_load(
         (ROOT / "skills" / "list-manager" / "blueprint.yaml").read_text(encoding="utf-8")
     )
-    assert blueprint["exports"]["list-manager.interface.setup"]["setup_requires_setup_of"] == []
+    assert blueprint["exports"]["list-manager.interface.setup"]["setup_requires_setup_of"] == [
+        {"interface": "cloud-files.interface.setup", "version": 1}
+    ]
 
     text = _authored(ROOT / "skills" / "list-manager" / "SKILL.md")
     repair = text.index("`bootstrap-dispatcher-runtime.interface.repair-selected-packages`")

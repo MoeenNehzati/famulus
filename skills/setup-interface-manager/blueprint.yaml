@@ -27,6 +27,7 @@ namespace_exports:
       only:
         setup-interface-manager._rtx.interface.status: 1
         setup-interface-manager._rtx.interface.authorize: 1
+        setup-interface-manager._rtx.interface.authorize-markdown-call: 1
         setup-interface-manager._rtx.interface.begin: 1
         setup-interface-manager._rtx.interface.run-markdown: 1
         setup-interface-manager._rtx.interface.run-python: 1
@@ -37,6 +38,7 @@ namespace_exports:
     interface_access:
       setup-interface-manager._rtx.interface.status: {allow_all_modules: true, allowed_callers: []}
       setup-interface-manager._rtx.interface.authorize: {allow_all_modules: true, allowed_callers: []}
+      setup-interface-manager._rtx.interface.authorize-markdown-call: {allow_all_modules: true, allowed_callers: []}
       setup-interface-manager._rtx.interface.begin: {allow_all_modules: true, allowed_callers: []}
       setup-interface-manager._rtx.interface.run-markdown: {allow_all_modules: true, allowed_callers: []}
       setup-interface-manager._rtx.interface.run-python: {allow_all_modules: true, allowed_callers: []}

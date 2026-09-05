@@ -180,10 +180,13 @@ def test_module_and_markdown_gateway_graph(
     }
     child = load_blueprint(SKILL_ROOT / "_rtx/blueprint.yaml")
     assert set(child["exports"]) == {
-        "connect-google._rtx.interface.client-status",
-        "connect-google._rtx.interface.install-client",
-        "connect-google._rtx.interface.connect-services",
+        "connect-google._rtx.interface.authorize-services",
         "connect-google._rtx.interface.bind-credential-file",
+        "connect-google._rtx.interface.client-status",
+        "connect-google._rtx.interface.connect-services",
+        "connect-google._rtx.interface.install-client",
+        "connect-google._rtx.interface.select-shared-credential",
+        "connect-google._rtx.interface.shared-credential",
     }
     assert default_interface["version"] == 1
     assert create_client_interface["version"] == 1

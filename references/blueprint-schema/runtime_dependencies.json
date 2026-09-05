@@ -70,6 +70,21 @@
         "applies": false
       },
       "interfaces": {
+        "cloud-files._rtx.interface.ensure-assistant-root": {
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
+        },
         "cloud-files._rtx.interface.ensure-oauth": {
           "dependencies": [
             {
@@ -86,6 +101,21 @@
           ]
         },
         "cloud-files._rtx.interface.lists-delete": {
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
+        },
+        "cloud-files._rtx.interface.lists-exists": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -244,6 +274,21 @@
         "applies": false
       },
       "interfaces": {
+        "connect-google._rtx.interface.authorize-services": {
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
+        },
         "connect-google._rtx.interface.bind-credential-file": {
           "dependencies": [
             {
@@ -356,6 +401,36 @@
           ]
         },
         "connect-google._rtx.interface.install-client": {
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
+        },
+        "connect-google._rtx.interface.select-shared-credential": {
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
+        },
+        "connect-google._rtx.interface.shared-credential": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -7122,6 +7197,9 @@
       },
       "interfaces": {
         "setup-interface-manager._rtx.interface.authorize": {
+          "dependencies": []
+        },
+        "setup-interface-manager._rtx.interface.authorize-markdown-call": {
           "dependencies": []
         },
         "setup-interface-manager._rtx.interface.begin": {

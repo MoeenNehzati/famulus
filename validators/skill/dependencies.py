@@ -181,7 +181,27 @@ def _validate_markdown_source(
         )
     declared = _effective_declared_interface_ids(graph, source)
     mentioned = set(_CANONICAL_INTERFACE_RE.findall(body))
-    for interface_id in sorted(mentioned - declared):
+
+    # For setup sources, permit exact declared prerequisites to be mentioned without uses_interfaces
+    permitted_prerequisites: set[str] = set()
+    # Extract module ID from source node ID (e.g., "cloud-files.source.setup" -> "cloud-files")
+    source_parts = source.node_id.split(".")
+    if len(source_parts) >= 1:
+        source_module_id = source_parts[0]
+        module_export_key = f"{source_module_id}.interface.setup"
+        # Get the module node to access setup_requires_setup_of from its blueprint
+        module_node = graph.nodes.get(source_module_id)
+        if module_node and module_export_key in graph.exports:
+            # Look for setup_requires_setup_of in module blueprint's exports definition
+            exports = module_node.declaration.get("exports", {})
+            setup_export = exports.get(module_export_key, {})
+            setup_requires = setup_export.get("setup_requires_setup_of", [])
+            if isinstance(setup_requires, list):
+                for prereq in setup_requires:
+                    if isinstance(prereq, dict) and "interface" in prereq:
+                        permitted_prerequisites.add(prereq["interface"])
+
+    for interface_id in sorted((mentioned - declared) - permitted_prerequisites):
         errors.append(
             f"{source.gateway_path}: canonical interface `{interface_id}` is not "
             f"declared in {source.node_id}.uses_interfaces"

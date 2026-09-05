@@ -1832,6 +1832,7 @@ def test_registered_manager_is_hidden_and_only_workflow_activated() -> None:
     ) == {
         "setup-interface-manager._rtx.interface.status",
         "setup-interface-manager._rtx.interface.authorize",
+        "setup-interface-manager._rtx.interface.authorize-markdown-call",
         "setup-interface-manager._rtx.interface.begin",
         "setup-interface-manager._rtx.interface.run-markdown",
         "setup-interface-manager._rtx.interface.run-python",
@@ -1917,4 +1918,206 @@ def test_teardown_all_with_no_teardown_setup(tmp_path: Path) -> None:
     assert response["state"] == "ready"
     assert response["current_step"] is None
     assert item.setup_interface not in controller.store.read().interfaces
-    assert controller.store.read().active_flow is None
+
+
+def test_authorize_markdown_call_requires_setup_operation(tmp_path: Path) -> None:
+    """Catches markdown helper authorization outside setup flows."""
+    item = _managed("canary", kind="markdown")
+    binding = replace(
+        _binding(item),
+        helper_allowlist=(("target.interface.helper", 1),),
+    )
+    controller = _controller(tmp_path, _graph(item), DispatchHarness(), binding)
+    _begin_setup(controller, item)
+
+    code, response = controller.authorize_markdown_call(
+        "flow-1", "target.interface.helper", 1
+    )
+
+    assert code == 0
+    assert response["state"] == "authorized-markdown-call"
+    assert response["interface"] == "target.interface.helper"
+    assert response["version"] == 1
+
+
+def test_authorize_markdown_call_fails_for_non_markdown_step(tmp_path: Path) -> None:
+    """Catches helper authorization on non-Markdown steps."""
+    item = _managed("canary", kind="python")
+    binding = replace(
+        _binding(item),
+        helper_allowlist=(("target.interface.helper", 1),),
+    )
+    controller = _controller(tmp_path, _graph(item), DispatchHarness(), binding)
+    _begin_setup(controller, item)
+
+    code, response = controller.authorize_markdown_call(
+        "flow-1", "target.interface.helper", 1
+    )
+
+    assert code == 2
+    assert response["state"] == "failed"
+
+
+def test_authorize_markdown_call_fails_for_unallowlisted_interface(tmp_path: Path) -> None:
+    """Catches helper authorization for non-allowlisted calls."""
+    item = _managed("canary", kind="markdown")
+    binding = replace(
+        _binding(item),
+        helper_allowlist=(("allowed.interface.helper", 1),),
+    )
+    controller = _controller(tmp_path, _graph(item), DispatchHarness(), binding)
+    _begin_setup(controller, item)
+
+    code, response = controller.authorize_markdown_call(
+        "flow-1", "disallowed.interface.helper", 1
+    )
+
+    assert code == 2
+    assert response["state"] == "failed"
+
+
+def test_authorize_markdown_call_does_not_mutate_ledger(tmp_path: Path) -> None:
+    """Catches ledger mutations during helper authorization."""
+    item = _managed("canary", kind="markdown")
+    binding = replace(
+        _binding(item),
+        helper_allowlist=(("target.interface.helper", 1),),
+    )
+    controller = _controller(tmp_path, _graph(item), DispatchHarness(), binding)
+    _begin_setup(controller, item)
+
+    ledger_before = controller.store.read()
+    code, response = controller.authorize_markdown_call(
+        "flow-1", "target.interface.helper", 1
+    )
+    ledger_after = controller.store.read()
+
+    assert code == 0
+    assert ledger_before == ledger_after
+
+
+def test_authorize_markdown_call_requires_exact_flow_id(tmp_path: Path) -> None:
+    """Catches helper authorization with wrong flow ID."""
+    item = _managed("canary", kind="markdown")
+    binding = replace(
+        _binding(item),
+        helper_allowlist=(("target.interface.helper", 1),),
+    )
+    controller = _controller(tmp_path, _graph(item), DispatchHarness(), binding)
+    begun = _begin_setup(controller, item)
+    flow_id = begun["flow_id"]
+
+    code, response = controller.authorize_markdown_call(
+        "wrong-flow", "target.interface.helper", 1
+    )
+
+    assert code == 2
+    assert response["state"] == "failed"
+    assert controller.store.read().active_flow is not None
+    assert controller.store.read().active_flow.flow_id == flow_id
+
+
+def test_production_bindings_exact_six_keys() -> None:
+    """Production bindings contain exactly six setup keys."""
+    assert set(setup_dispatches.PRODUCTION_BINDINGS.keys()) == {
+        "connect-google.interface.setup",
+        "online-calendar.interface.setup",
+        "cloud-files.interface.setup",
+        "email-client.interface.setup",
+        "list-manager.interface.setup",
+        "llm-wakeup._rtx.interface.setup",
+    }
+
+
+def test_production_markdown_instructions_match_repository_files() -> None:
+    """Five Markdown instruction payloads equal their repository files byte-for-byte."""
+    mappings = {
+        "connect-google.interface.setup": REPO_ROOT / "skills" / "connect-google" / "instructions" / "setup.md",
+        "online-calendar.interface.setup": REPO_ROOT / "skills" / "online-calendar" / "instructions" / "setup.md",
+        "cloud-files.interface.setup": REPO_ROOT / "skills" / "cloud-files" / "instructions" / "setup.md",
+        "email-client.interface.setup": REPO_ROOT / "skills" / "email-client" / "instructions" / "setup.md",
+        "list-manager.interface.setup": REPO_ROOT / "skills" / "list-manager" / "instructions" / "setup.md",
+    }
+
+    for setup_interface, repo_path in mappings.items():
+        binding = setup_dispatches.PRODUCTION_BINDINGS[setup_interface]
+        repo_text = repo_path.read_text(encoding="utf-8")
+        assert binding.setup_instructions == repo_text, (
+            f"Binding instructions for {setup_interface} do not match "
+            f"{repo_path} byte-for-byte"
+        )
+
+
+def test_production_markdown_helper_allowlists_exact() -> None:
+    """Helper-call allowlists match Task 06 specification exactly."""
+    expected = {
+        "connect-google.interface.setup": (
+            ("connect-google._rtx.interface.shared-credential", 1),
+            ("connect-google._rtx.interface.client-status", 1),
+            ("connect-google._rtx.interface.install-client", 1),
+            ("connect-google._rtx.interface.authorize-services", 1),
+            ("connect-google._rtx.interface.select-shared-credential", 1),
+        ),
+        "online-calendar.interface.setup": (
+            ("connect-google._rtx.interface.shared-credential", 1),
+            ("online-calendar._rtx.interface.use-google-credential-file", 1),
+        ),
+        "cloud-files.interface.setup": (
+            ("connect-google._rtx.interface.shared-credential", 1),
+            ("cloud-files._rtx.interface.use-google-credential-file", 1),
+            ("cloud-files._rtx.interface.write-config", 1),
+            ("cloud-files._rtx.interface.ensure-assistant-root", 1),
+        ),
+        "email-client.interface.setup": (
+            ("connect-google._rtx.interface.shared-credential", 1),
+            ("email-client._rtx.interface.accounts-list", 1),
+            ("email-client._rtx.interface.accounts-add", 1),
+            ("email-client._rtx.interface.accounts-use-google-credential-file", 1),
+            ("email-client._rtx.interface.live-smoke", 1),
+        ),
+        "list-manager.interface.setup": (
+            ("cloud-files._rtx.interface.lists-exists", 1),
+            ("list-manager._rtx.interface.cloud-init", 1),
+            ("list-manager._rtx.interface.cloud-read", 1),
+        ),
+    }
+
+    for setup_interface, expected_allowlist in expected.items():
+        binding = setup_dispatches.PRODUCTION_BINDINGS[setup_interface]
+        assert binding.helper_allowlist == expected_allowlist, (
+            f"Helper allowlist for {setup_interface} does not match Task 06"
+        )
+
+
+def test_production_markdown_have_no_verifier_or_teardown() -> None:
+    """Five Markdown bindings have no verifier or teardown."""
+    markdown_interfaces = {
+        "connect-google.interface.setup",
+        "online-calendar.interface.setup",
+        "cloud-files.interface.setup",
+        "email-client.interface.setup",
+        "list-manager.interface.setup",
+    }
+
+    for setup_interface in markdown_interfaces:
+        binding = setup_dispatches.PRODUCTION_BINDINGS[setup_interface]
+        assert binding.setup_kind == "markdown"
+        assert binding.setup_verifier_interface is None
+        assert binding.setup_verifier_version is None
+        assert binding.setup_verifier_dispatch_key is None
+        assert binding.teardown_interface is None
+        assert binding.teardown_version is None
+        assert binding.teardown_dispatch_key is None
+        assert binding.teardown_instructions is None
+        assert binding.teardown_verifier_interface is None
+        assert binding.teardown_verifier_version is None
+        assert binding.teardown_verifier_dispatch_key is None
+
+
+def test_wakeup_dispatch_keys_unchanged() -> None:
+    """Wakeup's action/verifier dispatch keys are unchanged."""
+    wakeup = setup_dispatches.PRODUCTION_BINDINGS["llm-wakeup._rtx.interface.setup"]
+    assert wakeup.setup_dispatch_key == "wakeup-setup"
+    assert wakeup.setup_verifier_dispatch_key == "wakeup-setup-status"
+    assert wakeup.teardown_dispatch_key == "wakeup-teardown"
+    assert wakeup.teardown_verifier_dispatch_key == "wakeup-teardown-status"

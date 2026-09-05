@@ -53,6 +53,7 @@ authority:
 children: {}
 content:
 - _delete_llm_file\.py
+- _drive_readiness\.py
 - _ensure_oauth\.py
 - __init__\.py
 - _cp_llm\.py
@@ -66,6 +67,12 @@ content:
 - tests/.*
 description: Code module for the cloud-files skill.
 exports:
+  cloud-files._rtx.interface.ensure-assistant-root:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - cloud-files
+    source_interface: cloud-files._rtx.source.rtx-drive-readiness.interface.ensure-assistant-root
   cloud-files._rtx.interface.ensure-oauth:
     access:
       allow_all_modules: false
@@ -79,6 +86,14 @@ exports:
       - cloud-files
       - list-manager
     source_interface: cloud-files._rtx.source.rtx-delete-llm-file.interface.lists-delete
+  cloud-files._rtx.interface.lists-exists:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - cloud-files
+      - list-manager
+      - list-manager._rtx
+    source_interface: cloud-files._rtx.source.rtx-drive-readiness.interface.lists-exists
   cloud-files._rtx.interface.lists-read:
     access:
       allow_all_modules: false
@@ -160,6 +175,10 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/rtx-delete-llm-file.yaml
+  cloud-files._rtx.source.rtx-drive-readiness:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-drive-readiness.yaml
   cloud-files._rtx.source.rtx-ensure-oauth:
     blueprint:
       base: module-root

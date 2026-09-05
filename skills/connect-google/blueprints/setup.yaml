@@ -1,0 +1,85 @@
+schema_version: 6
+id: connect-google.source.setup
+version: 1
+maturity: experimental
+node_type: behavioral_source
+description: Establish the shared Google OAuth client and selected Famulus Google credential.
+gateway:
+  language: Markdown
+  path: instructions/setup.md
+content:
+- instructions/setup\.md
+dependencies:
+- blueprint:
+    base: repository-root
+    path: skills/bootstrap-dispatcher-runtime/blueprints/gateway.yaml
+  source: bootstrap-dispatcher-runtime.source.gateway
+  version: 1
+  reason: Repair connect-google's own runtime declaration before Google setup.
+interfaces:
+  connect-google.source.setup.interface.setup:
+    content:
+    - instructions/setup\.md
+    uses_interfaces:
+    - interface: bootstrap-dispatcher-runtime.interface.repair-selected-packages
+      version: 1
+    - interface: connect-google._rtx.interface.client-status
+      version: 1
+    - interface: connect-google._rtx.interface.install-client
+      version: 1
+    - interface: connect-google._rtx.interface.authorize-services
+      version: 1
+    - interface: connect-google._rtx.interface.select-shared-credential
+      version: 1
+    - interface: connect-google._rtx.interface.shared-credential
+      version: 1
+    contract:
+      arguments: {}
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads:
+        - {id: read-1, access: read, content: setup context, formats: [text], medium: prompt, sensitivity: user-private}
+        writes:
+        - {id: write-1, access: write, content: setup guidance, formats: [markdown], medium: prompt, sensitivity: derived-private}
+      execution:
+        consistency: {live: Setup guidance follows state observed through the declared interfaces.}
+        lifecycle: finite
+        state_effect: read-only
+        verification: [{method: output-schema, output_ref: response}]
+      helpers: []
+      interaction:
+        channel: tty
+        mode: interactive
+        unattended_outcome: clarification-required
+      outcomes:
+      - {id: clarification-required, class: refusal, outputs: [response], effects: [], caller_action: Ask the user for the missing setup information before continuing.}
+      - {id: completed, class: success, outputs: [response], effects: [], caller_action: "Continue only after the selected shared credential grants Drive, Calendar, and Gmail."}
+      - {id: failed, class: error, outputs: [response], effects: [], caller_action: Report the exact blocking setup condition without inventing state.}
+      outputs:
+      - id: response
+        audience: human
+        cardinality: {minimum: 1, maximum: 1}
+        description: Setup result or exact next required action.
+        direct_io_ref: write-1
+        empty: Never empty.
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        type: {kind: string, sensitivity: derived-private}
+      preconditions: []
+    description: Establish the shared Google OAuth client and selected Famulus Google credential.
+    version: 1
+uses_interfaces:
+- interface: bootstrap-dispatcher-runtime.interface.repair-selected-packages
+  version: 1
+- interface: connect-google._rtx.interface.client-status
+  version: 1
+- interface: connect-google._rtx.interface.install-client
+  version: 1
+- interface: connect-google._rtx.interface.authorize-services
+  version: 1
+- interface: connect-google._rtx.interface.select-shared-credential
+  version: 1
+- interface: connect-google._rtx.interface.shared-credential
+  version: 1

@@ -102,48 +102,55 @@ the [Personal Assistance Quickstart](quickstarts/personal-assistance.md) and
 Everything else is opt-in and demand-driven. A Famulus skill is an Officina
 node. A public export named exactly `.interface.setup` is managed automatically
 for Boolean whole-module readiness with no separate opt-in required.
-The blueprint may declare prerequisites through `setup_requires_setup_of`,
-and may declare verifiers inline in optional setup and optional teardown blocks.
+
+A managed setup establishes only state owned by that node. Required setup of
+another managed owner is declared with `setup_requires_setup_of`; the manager
+runs that prerequisite first in the same finite flow. Production ownership is:
+
+- `connect-google.interface.setup`: shared Google Desktop OAuth client and one
+  selected Drive+Calendar+Gmail credential.
+- `online-calendar.interface.setup`: Calendar-owned binding and live Calendar
+  verification; requires Connect Google.
+- `cloud-files.interface.setup`: Drive-owned binding, `assistant` root config,
+  and root existence; requires Connect Google.
+- `email-client.interface.setup`: Gmail account binding plus IMAP and SMTP-auth
+  verification; requires Connect Google.
+- `list-manager.interface.setup`: canonical `todo` and `triage` cloud lists;
+  requires Cloud Files.
+- `llm-wakeup._rtx.interface.setup`: feature-owned wakeup integration.
+
+A Markdown setup is an active manager step while its instructions run. Ordinary
+managed calls would therefore see `setup_busy`. For only the reviewed helper
+calls named by the current Markdown production binding, the caller passes the
+current flow id as `setup_flow_id` to `famulus_dispatcher.invoke`. MCP asks the
+manager to authorize that exact `(flow, interface, version)` and then executes
+the already-authorized dispatcher target. No nested setup flow is created, and
+calls without `setup_flow_id` keep the normal preflight behavior.
+
 Generic discussion about setup, installation, configuration, or teardown does
 not activate the manager.
 
 When an ordinary managed interface is requested, its generated gate and the
 Famulus MCP preflight use the same lifecycle:
 
-1. `setup-interface-manager._rtx.interface.status@1` classifies the target as
-   `unmanaged`, `ready`, `setup_required`, or `setup_busy` without changing
-   claims.
-2. A pending target switches through
-   `setup-interface-manager._rtx.interface.begin@1` to the returned
-   prerequisite-first stack. `run-markdown@1` returns the exact declared
-   instructions and `settle@1` runs its verifier; `run-python@1` runs the fixed
-   action and verifier together. Only verifier success records a receipt.
+1. `status@1` classifies the target as `unmanaged`, `ready`, `setup_required`, or
+   `setup_busy` without changing claims.
+2. A pending target switches through `begin@1` to the prerequisite-first stack.
+   `run-markdown@1` returns the exact declared instructions; `run-python@1` runs
+   its fixed action and verifier. `settle@1` runs a verifier when one exists; a
+   verifier-free Markdown step records completion when the caller settles only
+   after its instructions succeeded.
 3. After the flow reports ready, the caller rechecks `status@1`, calls
    `authorize@1`, and resumes the original request exactly once only when
    `resume_original` is true.
 
-For its direct classification, MCP authorizes the requested route once and
-reuses that invocation's repository and loaded target ancestry. Blueprint paths
-are derived directly as `module_id -> configured root/module segments/blueprint.yaml`;
-MCP does not catalogue modules. A route whose loaded ancestry proves it
-unmanaged bypasses setup-interface-manager entirely. For a managed route,
-among manager routes only `status@1` and `authorize@1` load a fresh route-local
-sparse graph containing the target ancestry and explicit setup prerequisite
-closure. Setup, teardown, run/settle/recover, and invalidation keep the canonical
-full repository graph because their semantics are not limited to the ordinary
-preflight hot path.
-
-The caller retains the original arguments and stdin throughout this switch.
-The manager stores only caller, interface, and version as continuation identity.
-For a Python setup action it accepts one JSON object on stdin and projects only
-arguments declared by that fixed managed binding; undeclared, missing, or
-malformed input is refused. Arguments, stdin, environment, verifier output, and
-dispatcher diagnostics are never persisted in the ledger or echoed in manager
-responses.
+The caller retains original arguments and stdin during this switch. The manager
+persists only continuation identity and setup receipts; helper-call arguments,
+stdin, environment, verifier output, and dispatcher diagnostics are not stored
+in the setup ledger.
 
 You therefore do not configure the whole system in advance. Setup follows
-actual use: a capability asks for its accounts, credentials, or platform
-integration only when a requested workflow reaches it.
+actual use and asks only for state needed by the capability being reached.
 
 ### 1.4 Persisted state and live MCP readiness are different
 
@@ -187,8 +194,9 @@ refused until the active flow is recovered or cancelled.
 
 Persistent features remain independently owned: `install-launchers` configures
 interactive launchers, `recurring-tasks` configures recurring work,
-`llm-wakeup` configures due-session delivery, and `connect-google` configures
-Google services. Each installs only its own residual declared packages.
+`llm-wakeup` configures due-session delivery; Connect Google owns shared
+authorization and service skills own service configuration. Each installs only
+its own residual declared packages.
 
 ### 1.6 Tear down all managed setup state
 
@@ -229,7 +237,8 @@ Connect Famulus to Google.
 ```
 
 Famulus currently supports Google for these connections: Gmail, Google
-Calendar, and Google Drive. The `connect-google` skill coordinates their setup.
+Calendar, and Google Drive. Connect Google supplies shared authorization used by
+the service-owned setups.
 Google authorization is backed by a Google Cloud project whose OAuth
 configuration makes the requested permissions explicit. Setup uses the
 downloaded JSON file for a Desktop OAuth client.

@@ -3,7 +3,7 @@ authority:
 children:
   _rtx: {}
 content:
-- (?:SKILL\.md|instructions/connect\-services\.md|instructions/create\-client\.md|personal\-preferences/google\-service\-connection\.md|personal\-preferences/create\-client\.md|personal\-preferences/default\.md)
+- (?:SKILL\.md|instructions/(?:connect\-services|create\-client|setup)\.md|personal\-preferences/google\-service\-connection\.md|personal\-preferences/create\-client\.md|personal\-preferences/default\.md)
 description: Prepares a shared Google Desktop OAuth client and routes service-specific
   connection setup without exposing client credentials in prompts.
 discovery:
@@ -39,7 +39,7 @@ exports:
     access:
       allow_all_modules: true
       allowed_callers: []
-    source_interface: connect-google.source.gateway.interface.default
+    source_interface: connect-google.source.setup.interface.setup
     setup_requires_setup_of: []
 gateway:
   language: Markdown
@@ -53,11 +53,18 @@ namespace_exports:
       allowed_callers: []
     surface:
       only:
+        connect-google._rtx.interface.authorize-services: 1
         connect-google._rtx.interface.bind-credential-file: 1
         connect-google._rtx.interface.client-status: 1
         connect-google._rtx.interface.connect-services: 1
         connect-google._rtx.interface.install-client: 1
+        connect-google._rtx.interface.select-shared-credential: 1
+        connect-google._rtx.interface.shared-credential: 1
     interface_access:
+      connect-google._rtx.interface.authorize-services:
+        allow_all_modules: false
+        allowed_callers:
+        - connect-google
       connect-google._rtx.interface.bind-credential-file:
         allow_all_modules: false
         allowed_callers:
@@ -74,6 +81,17 @@ namespace_exports:
         allow_all_modules: false
         allowed_callers:
         - connect-google
+      connect-google._rtx.interface.select-shared-credential:
+        allow_all_modules: false
+        allowed_callers:
+        - connect-google
+      connect-google._rtx.interface.shared-credential:
+        allow_all_modules: false
+        allowed_callers:
+        - connect-google
+        - online-calendar
+        - cloud-files
+        - email-client
 node_type: module
 schema_version: 6
 sources:
@@ -101,6 +119,10 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/personal-preferences-default.yaml
+  connect-google.source.setup:
+    blueprint:
+      base: module-root
+      path: blueprints/setup.yaml
 version: 2
 maturity: experimental
 installation_tier: optional

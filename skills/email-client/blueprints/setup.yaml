@@ -1,0 +1,85 @@
+schema_version: 6
+id: email-client.source.setup
+version: 1
+maturity: stable
+node_type: behavioral_source
+description: Configure the Gmail account, bind the selected shared credential, and verify IMAP and SMTP authentication.
+gateway:
+  language: Markdown
+  path: instructions/setup.md
+content:
+- instructions/setup\.md
+dependencies:
+- blueprint:
+    base: repository-root
+    path: skills/bootstrap-dispatcher-runtime/blueprints/gateway.yaml
+  source: bootstrap-dispatcher-runtime.source.gateway
+  version: 1
+  reason: Repair this setup owner's selected-Python declaration before runtime calls.
+interfaces:
+  email-client.source.setup.interface.setup:
+    content:
+    - instructions/setup\.md
+    uses_interfaces:
+    - interface: bootstrap-dispatcher-runtime.interface.repair-selected-packages
+      version: 1
+    - interface: connect-google._rtx.interface.shared-credential
+      version: 1
+    - interface: email-client._rtx.interface.accounts-list
+      version: 1
+    - interface: email-client._rtx.interface.accounts-add
+      version: 1
+    - interface: email-client._rtx.interface.accounts-use-google-credential-file
+      version: 1
+    - interface: email-client._rtx.interface.live-smoke
+      version: 1
+    contract:
+      arguments: {}
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads:
+        - {id: read-1, access: read, content: setup context, formats: [text], medium: prompt, sensitivity: user-private}
+        writes:
+        - {id: write-1, access: write, content: setup guidance, formats: [markdown], medium: prompt, sensitivity: derived-private}
+      execution:
+        consistency: {live: "Setup verifies current Gmail, IMAP, and SMTP authentication state."}
+        lifecycle: finite
+        state_effect: read-only
+        verification: [{method: output-schema, output_ref: response}]
+      helpers: []
+      interaction:
+        channel: tty
+        mode: interactive
+        unattended_outcome: clarification-required
+      outcomes:
+      - {id: clarification-required, class: refusal, outputs: [response], effects: [], caller_action: Ask the user for the missing setup information before continuing.}
+      - {id: completed, class: success, outputs: [response], effects: [], caller_action: Treat Email Client setup as complete only after binding plus IMAP and SMTP authentication checks succeed.}
+      - {id: failed, class: error, outputs: [response], effects: [], caller_action: "Report the exact account, binding, or live-auth failure."}
+      outputs:
+      - id: response
+        audience: human
+        cardinality: {minimum: 1, maximum: 1}
+        description: Email Client setup result or missing account choice.
+        direct_io_ref: write-1
+        empty: Never empty.
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        type: {kind: string, sensitivity: derived-private}
+      preconditions: []
+    description: Configure the Gmail account, bind the selected shared credential, and verify IMAP and SMTP authentication.
+    version: 1
+uses_interfaces:
+- interface: bootstrap-dispatcher-runtime.interface.repair-selected-packages
+  version: 1
+- interface: connect-google._rtx.interface.shared-credential
+  version: 1
+- interface: email-client._rtx.interface.accounts-list
+  version: 1
+- interface: email-client._rtx.interface.accounts-add
+  version: 1
+- interface: email-client._rtx.interface.accounts-use-google-credential-file
+  version: 1
+- interface: email-client._rtx.interface.live-smoke
+  version: 1

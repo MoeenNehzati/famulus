@@ -1,0 +1,198 @@
+content:
+- _drive_readiness\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: cloud-files._rtx.source.rtx-init
+  version: 1
+description: Verifies Google Drive readiness and checks for list file existence.
+gateway:
+  language: Python
+  path: _drive_readiness.py
+id: cloud-files._rtx.source.rtx-drive-readiness
+interfaces:
+  cloud-files._rtx.source.rtx-drive-readiness.interface.ensure-assistant-root:
+    content: [_drive_readiness\.py]
+    uses_interfaces: []
+    contract:
+      arguments: {}
+      caller_warnings: []
+      direct_io:
+        network:
+        - access: request
+          auth: {kind: google-drive-oauth, mode: uses-existing}
+          content: Drive folder query and creation
+          endpoint: https://www.googleapis.com/drive/v3/files
+          formats: [json]
+          id: network-1
+          medium: network-request
+          sensitivity: user-private
+        reads:
+        - access: read
+          content: config
+          formats: [json]
+          id: read-1
+          medium: local-filesystem
+          path: $home/.config/cloud-files/config.json
+          path_match: exact
+          sensitivity: user-private
+        writes:
+        - access: write
+          content: status
+          formats: [json]
+          id: write-1
+          medium: stdout
+          sensitivity: derived-private
+      execution:
+        consistency: {live: Checks current Drive state and creates root if needed.}
+        effects:
+        - action: execute
+          confirmation_evidence: {kind: output, output_ref: status}
+          direct_io_ref: write-1
+          id: create-assistant-root
+          may_occur_in_outcomes: [ready]
+          reversibility: {reversible: The created folder can be deleted from Drive.}
+          value_source: {kind: output, output_ref: status}
+        lifecycle: finite
+        mutation_safety:
+          atomicity: {non_atomic: Drive API requests may be interrupted.}
+          concurrent_invocations: {unsafe: Concurrent checks may both create the root.}
+          idempotency: {idempotent: Checking or creating an existing folder is safe.}
+          on_uncertain_completion: {verify_then_decide: Rerun the check to determine if the root exists.}
+          partial_effects_on_failure: {possible: The folder may be created before a verification failure.}
+          rollback_on_failure: {unavailable: Created folders cannot be automatically rolled back.}
+        state_effect: mutating
+        verification: [{method: output-schema, output_ref: status}]
+      interaction: {mode: unattended}
+      outcomes:
+      - caller_action: The assistant root folder exists and is ready for use.
+        class: success
+        effects: [create-assistant-root]
+        id: ready
+        outputs: [status]
+      - caller_action: Report the failure and ask the user to check their Google Drive permissions.
+        class: error
+        effects: []
+        id: failed
+        outputs: [status]
+      outputs:
+      - audience: machine
+        cardinality: {maximum: 1, minimum: 1}
+        description: JSON reporting whether assistant root exists.
+        direct_io_ref: write-1
+        empty: Never empty.
+        id: status
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        type: {format: {named: json}, kind: string, sensitivity: derived-private}
+      preconditions: []
+    description: Ensure the configured assistant root folder exists.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns: [{allow_stdin: false, max_positionals: 0, min_positionals: 0}]
+    usage: ensure-assistant-root
+    version: 1
+  cloud-files._rtx.source.rtx-drive-readiness.interface.lists-exists:
+    content: [_drive_readiness\.py]
+    uses_interfaces: []
+    contract:
+      arguments:
+        path:
+          description: Relative list path starting with lists/.
+          required: true
+          sensitivity: user-private
+          type:
+            format:
+              regex:
+                dialect: python
+                example: lists/todo.yaml
+                matching: full
+                pattern: ^lists/.+
+            kind: string
+      caller_warnings: []
+      direct_io:
+        network:
+        - access: request
+          auth: {kind: google-drive-oauth, mode: uses-existing}
+          content: Drive folder query
+          endpoint: https://www.googleapis.com/drive/v3/files
+          formats: [json]
+          id: network-1
+          medium: network-request
+          sensitivity: user-private
+        reads:
+        - access: read
+          auth: {kind: google-drive-oauth, mode: uses-existing}
+          content: list file
+          formats: [text]
+          id: read-1
+          medium: remote-filesystem
+          path: lists/<path>
+          path_match: exact
+          sensitivity: user-private
+        - access: read
+          content: config
+          formats: [json]
+          id: read-2
+          medium: local-filesystem
+          path: $home/.config/cloud-files/config.json
+          path_match: exact
+          sensitivity: user-private
+        writes:
+        - access: write
+          content: existence result
+          formats: [json]
+          id: write-1
+          medium: stdout
+          sensitivity: derived-private
+      execution:
+        consistency: {live: Checks current Drive state without creating paths.}
+        lifecycle: finite
+        state_effect: read-only
+        verification: [{method: output-schema, output_ref: result}]
+      interaction: {mode: unattended}
+      outcomes:
+      - caller_action: The specified lists/ file existence has been checked.
+        class: success
+        effects: []
+        id: checked
+        outputs: [result]
+      - caller_action: Report the failure and ask the user to check their Google Drive permissions.
+        class: error
+        effects: []
+        id: failed
+        outputs: [result]
+      outputs:
+      - audience: machine
+        cardinality: {maximum: 1, minimum: 1}
+        description: JSON reporting whether the lists path exists.
+        direct_io_ref: write-1
+        empty: Never empty.
+        id: result
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        type: {format: {named: json}, kind: string, sensitivity: derived-private}
+      preconditions: []
+    description: Check whether a specific lists/ file exists without creating.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_stdin: false
+        max_positionals: 1
+        min_positionals: 1
+        positional_patterns: {'0': ^lists/.*}
+    usage: lists/<path>
+    version: 1
+node_type: behavioral_source
+platform_support: {linux: true, macos: true, windows: true}
+runtime_dependencies: []
+schema_version: 6
+uses_interfaces: []
+version: 1
+maturity: experimental
