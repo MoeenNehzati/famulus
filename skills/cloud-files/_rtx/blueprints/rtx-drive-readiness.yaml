@@ -91,7 +91,7 @@ interfaces:
       preconditions: []
     description: Ensure the configured assistant root folder exists.
     process_binding:
-      entry: Interface
+      entry: EnsureAssistantRootInterface
       kind: process
       patterns: [{allow_stdin: false, max_positionals: 0, min_positionals: 0}]
     usage: ensure-assistant-root
@@ -180,7 +180,7 @@ interfaces:
       preconditions: []
     description: Check whether a specific lists/ file exists without creating.
     process_binding:
-      entry: Interface
+      entry: ListsExistsInterface
       kind: process
       patterns:
       - allow_stdin: false

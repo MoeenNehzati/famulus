@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse, json, os, sys, tempfile
 from pathlib import Path
 from officina.credentials.google import GoogleCredentialError, load_credential_file
+from officina.runtime.python_machine_interface import PythonMachineInterface
 
 def _selected_credential_path(*, home: Path, platform: str) -> Path:
     from officina.common.famulus_paths import resolve_famulus_paths
@@ -69,23 +70,25 @@ def shared_credential(*, home: Path | None = None, platform: str | None = None) 
     if miss: return {"error": {"code": "missing-services", "message": f"Credential no longer grants required services; missing: {', '.join(sorted(miss))}"}}
     return {"credential_file": str(d.path), "account": d.account, "subject": d.subject, "granted_services": sorted(req), "selected": True}
 
-class SelectSharedCredentialInterface:
-    def __init__(self, args: list[str]) -> None:
-        p = argparse.ArgumentParser()
-        p.add_argument("--credential-file", required=True)
-        p.add_argument("--home")
-        self.args = p.parse_args(args)
-    def __call__(self) -> None:
-        r = select_shared_credential(credential_file=self.args.credential_file, home=Path(self.args.home) if self.args.home else None)
-        sys.exit(1 if "error" in r else 0)
-        print(json.dumps(r))
+class SelectSharedCredentialInterface(PythonMachineInterface):
+    prog = "select-shared-credential"
+    description = "Select the shared Google credential used by connected services."
 
-class SharedCredentialInterface:
-    def __init__(self, args: list[str]) -> None:
-        p = argparse.ArgumentParser()
-        p.add_argument("--home")
-        self.args = p.parse_args(args)
-    def __call__(self) -> None:
-        r = shared_credential(home=Path(self.args.home) if self.args.home else None)
-        sys.exit(1 if "error" in r else 0)
-        print(json.dumps(r))
+    def build_parser(self) -> argparse.ArgumentParser:
+        parser = super().build_parser()
+        parser.add_argument("--credential-file", required=True)
+        return parser
+
+    def run(self, args: argparse.Namespace) -> int:
+        result = select_shared_credential(credential_file=args.credential_file)
+        print(json.dumps(result))
+        return 1 if "error" in result else 0
+
+class SharedCredentialInterface(PythonMachineInterface):
+    prog = "shared-credential"
+    description = "Read the currently selected shared Google credential."
+
+    def run(self, args: argparse.Namespace) -> int:
+        result = shared_credential()
+        print(json.dumps(result))
+        return 1 if "error" in result else 0

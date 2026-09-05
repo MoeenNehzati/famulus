@@ -2,9 +2,12 @@
 """Drive readiness interfaces for cloud-files setup."""
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
+
+from officina.runtime.python_machine_interface import PythonMachineInterface
 
 if __package__ and __package__.count(".") >= 1:
     from . import _drive_gateway
@@ -52,12 +55,22 @@ def lists_exists(path: str) -> int:
         return 1
 
 
-def Interface() -> None:
-    """Entry point for Famulus interface execution."""
-    args = sys.argv[1:]
-    if not args or (args[0] == "lists-exists" and len(args) != 2) or (args[0] not in ("ensure-assistant-root", "lists-exists")):
-        sys.exit(1)
-    if args[0] == "ensure-assistant-root":
-        sys.exit(ensure_assistant_root())
-    else:
-        sys.exit(lists_exists(args[1]))
+class EnsureAssistantRootInterface(PythonMachineInterface):
+    prog = "ensure-assistant-root"
+    description = "Ensure the configured assistant root folder exists on Drive."
+
+    def run(self, args: argparse.Namespace) -> int:
+        return ensure_assistant_root()
+
+
+class ListsExistsInterface(PythonMachineInterface):
+    prog = "lists-exists"
+    description = "Check whether a lists/ path exists without creating it."
+
+    def build_parser(self) -> argparse.ArgumentParser:
+        parser = super().build_parser()
+        parser.add_argument("path")
+        return parser
+
+    def run(self, args: argparse.Namespace) -> int:
+        return lists_exists(args.path)

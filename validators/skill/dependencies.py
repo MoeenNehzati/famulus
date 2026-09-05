@@ -182,24 +182,31 @@ def _validate_markdown_source(
     declared = _effective_declared_interface_ids(graph, source)
     mentioned = set(_CANONICAL_INTERFACE_RE.findall(body))
 
-    # For setup sources, permit exact declared prerequisites to be mentioned without uses_interfaces
+    # Permit a Markdown behavioral source to mention its own module's exact
+    # `.interface.setup` prerequisites without redundantly declaring them in
+    # uses_interfaces -- but only for the one source that implements that
+    # setup export, and only for its exact direct prerequisites.
     permitted_prerequisites: set[str] = set()
-    # Extract module ID from source node ID (e.g., "cloud-files.source.setup" -> "cloud-files")
-    source_parts = source.node_id.split(".")
-    if len(source_parts) >= 1:
-        source_module_id = source_parts[0]
-        module_export_key = f"{source_module_id}.interface.setup"
-        # Get the module node to access setup_requires_setup_of from its blueprint
-        module_node = graph.nodes.get(source_module_id)
-        if module_node and module_export_key in graph.exports:
-            # Look for setup_requires_setup_of in module blueprint's exports definition
-            exports = module_node.declaration.get("exports", {})
-            setup_export = exports.get(module_export_key, {})
-            setup_requires = setup_export.get("setup_requires_setup_of", [])
-            if isinstance(setup_requires, list):
-                for prereq in setup_requires:
-                    if isinstance(prereq, dict) and "interface" in prereq:
-                        permitted_prerequisites.add(prereq["interface"])
+    source_module_id = source.node_id.split(".")[0]
+    module_export_key = f"{source_module_id}.interface.setup"
+    module_node = graph.nodes.get(source_module_id)
+    setup_export = graph.exports.get(module_export_key)
+    if (
+        module_node is not None
+        and setup_export is not None
+        and setup_export.source_interface_id is not None
+        and setup_export.source_interface_id.rsplit(".interface.", 1)[0]
+        == source.node_id
+    ):
+        exports = module_node.declaration.get("exports", {})
+        setup_export_decl = exports.get(module_export_key, {})
+        setup_requires = setup_export_decl.get("setup_requires_setup_of", [])
+        if isinstance(setup_requires, list):
+            for prereq in setup_requires:
+                if isinstance(prereq, dict) and isinstance(
+                    prereq.get("interface"), str
+                ):
+                    permitted_prerequisites.add(prereq["interface"])
 
     for interface_id in sorted((mentioned - declared) - permitted_prerequisites):
         errors.append(
