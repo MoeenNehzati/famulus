@@ -269,9 +269,28 @@
       legend.appendChild(nodeLegendDisclosure);
     }
 
-    const presentKinds = Array.from(new Set(docData.entities.flatMap(entity =>
-      kindComponents(entity.kind || entity.category || entity.type || "unknown")
-    ))).sort();
+    const categoryToKindSignature = new Map();
+    const kindSignatureToCategories = new Map();
+    docData.entities.forEach(entity => {
+      const category = String(entity.category || entity.type || "unknown");
+      const signature = kindComponents(entity.kind || entity.category || entity.type || "unknown").sort().join(" ");
+      const existingSignature = categoryToKindSignature.get(category);
+      if (existingSignature !== undefined && existingSignature !== signature) {
+        categoryToKindSignature.set(category, null);
+      } else if (existingSignature === undefined) {
+        categoryToKindSignature.set(category, signature);
+      }
+      if (!kindSignatureToCategories.has(signature)) kindSignatureToCategories.set(signature, new Set());
+      kindSignatureToCategories.get(signature).add(category);
+    });
+    const kindIsInformative = Array.from(categoryToKindSignature.values()).some(signature => signature === null)
+      || Array.from(kindSignatureToCategories.values()).some(categories => categories.size > 1);
+
+    const presentKinds = kindIsInformative
+      ? Array.from(new Set(docData.entities.flatMap(entity =>
+          kindComponents(entity.kind || entity.category || entity.type || "unknown")
+        ))).sort()
+      : [];
     if (presentKinds.length) {
       const colorLegendColumn = document.createElement("div");
       colorLegendColumn.className = "legend-column legend-color-column";

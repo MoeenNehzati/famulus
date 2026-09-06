@@ -484,9 +484,12 @@
           };
         });
 
-      edgeLayer.querySelectorAll(".edge-path").forEach((pathEl, index) => {
-        if (pathEl.style.display === "none") return;
-        const pathBounds = pathEl.getBBox();
+      const visibleEdgePaths = Array.from(edgeLayer.querySelectorAll(".edge-path"))
+        .map((pathEl, index) => ({pathEl, index}))
+        .filter(({pathEl}) => pathEl.style.display !== "none")
+        .map(({pathEl, index}) => ({pathEl, index, pathBounds: pathEl.getBBox()}));
+
+      visibleEdgePaths.forEach(({pathEl, index, pathBounds}) => {
         const maskPadding = 16;
         const maskBounds = {
           x: pathBounds.x - maskPadding,

@@ -4,7 +4,7 @@
       (docData.presentation_nodes || []).map(node => [String(node.id), node])
     );
     const presentationNodeControls = (docData.ui?.presentation_node_controls || [])
-      .filter(control => control && Array.isArray(control.facets));
+      .filter(control => control && Array.isArray(control.facets) && control.facets.length > 0);
     const presentationFacetById = new Map();
     const presentationControlByFacet = new Map();
     presentationNodeControls.forEach(control => {

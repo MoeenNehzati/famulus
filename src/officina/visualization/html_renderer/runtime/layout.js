@@ -395,8 +395,9 @@
       const length = Math.hypot(dx, dy) || 1;
       const ux = dx / length;
       const uy = dy / length;
-      const size = 8;
-      const halfWidth = 4;
+      const strokeWidth = Number(pathEl.style.strokeWidth) || 2;
+      const size = Math.max(12, strokeWidth * 3.2);
+      const halfWidth = size / 2.2;
       const baseX = points.tip.x - ux * size;
       const baseY = points.tip.y - uy * size;
       const leftX = baseX + -uy * halfWidth;
@@ -406,7 +407,6 @@
       arrowEl.setAttribute("points", `${points.tip.x},${points.tip.y} ${leftX},${leftY} ${rightX},${rightY}`);
       arrowEl.style.display = pathEl.style.display;
       arrowEl.style.opacity = pathEl.style.opacity;
-      arrowEl.style.filter = pathEl.style.filter;
       arrowEl.setAttribute("fill", pathEl.dataset.edgeArrowColor || pathEl.style.stroke || pathEl.getAttribute("stroke") || "#111111");
       if (pathEl.dataset.edgeArrowOpacity) {
         arrowEl.setAttribute("fill-opacity", pathEl.dataset.edgeArrowOpacity);
@@ -489,7 +489,7 @@
         if (!srcPos || !dstPos) return;
         const path = createSvgElement("path");
         path.setAttribute("class", "edge-path");
-        path.setAttribute("d", manualDoglegPath(srcPos, dstPos));
+        path.setAttribute("d", routedPathForEndpoints(edge.source, edge.target, srcPos, dstPos));
         const edgeStyle = edgeStyleForType(edge.type);
         applyEdgeMetadataPresentation(path, edge, edgeStyle, edgeColorForTarget(edge.target));
         path.dataset.edgeId = edge.edge_id || `projection_${edge.source}_${edge.target}`;

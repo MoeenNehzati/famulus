@@ -250,11 +250,11 @@
       <div class="filter-search-row">
         <input id="graph-filter-search" class="filter-search" type="search" aria-label="Search nodes and relations"
           placeholder="Find nodes or relations" />
+        <button id="filter-clear" class="filter-action" type="button" title="Deselect (Esc)">Clear</button>
       </div>
       <div class="filter-search-row detail-level-row" style="margin-top:6px">
         <label for="graph-detail-level">Visible detail</label>
         <select id="graph-detail-level" class="filter-mode" aria-label="Visible graph detail level"></select>
-        <button id="filter-clear" class="filter-action" type="button" style="margin-left:auto">Clear</button>
       </div>
       <div id="filter-legend-slot"></div>
       <div id="filter-chips" class="filter-chips"></div>
@@ -458,14 +458,7 @@
         ? detailLevelSelect.value
         : defaultDetailLevel;
     }));
-    filterClearButton.addEventListener("click", () => mutateFilter(() => {
-      filterState.query = "";
-      filterState.excludedTypes.clear();
-      filterState.excludedKinds.clear();
-      filterState.excludedCategories.clear();
-      filterState.excludedEdgeTypes.clear();
-      replaceNodeSelectionState([], null, "explicit");
-    }));
+    filterClearButton.addEventListener("click", () => deselect());
     function resetFilteringState() {
       filterState.query = "";
       filterState.detailLevel = detailLevelRank.has(String(initialVisibility.detail_level))

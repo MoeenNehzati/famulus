@@ -587,6 +587,10 @@
       gap: 6px;
       align-items: center;
     }
+    .filter-search-row[hidden],
+    .filter-action-row[hidden] {
+      display: none;
+    }
     .filter-search {
       min-width: 0;
       flex: 1;
