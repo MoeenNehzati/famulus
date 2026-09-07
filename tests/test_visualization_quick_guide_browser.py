@@ -101,6 +101,34 @@ def test_quick_guide_toolbar_hidden_when_disabled() -> None:
     )
 
 
+def test_quick_guide_suppresses_toolbar_tooltips_while_open() -> None:
+    _run_quick_guide_case(
+        """
+        document.getElementById("quick-guide-btn").click();
+        await delay(40);
+        const toolbarTip = document.getElementById("quick-guide-toolbar-item");
+        const pseudoStyle = getComputedStyle(toolbarTip, "::after");
+        if (pseudoStyle.display !== "none") {
+          throw new Error(`toolbar tooltip remains renderable while guide is open: ${pseudoStyle.display}`);
+        }
+        document.getElementById("quick-guide-close").click();
+        await delay(20);
+        if (getComputedStyle(toolbarTip, "::after").display === "none") {
+          throw new Error("toolbar tooltip did not become renderable after guide closed");
+        }
+        """,
+        _payload(),
+        guide=QuickGuide(
+            title="Tooltip guide",
+            steps=(
+                QuickGuideStep(
+                    id="canvas", target="#canvas-wrap", title="Canvas", body="Canvas target"
+                ),
+            ),
+        ),
+    )
+
+
 def test_quick_guide_toolbar_visibility_navigation_and_target_skips() -> None:
     guide = QuickGuide(
         title="Browser guide",

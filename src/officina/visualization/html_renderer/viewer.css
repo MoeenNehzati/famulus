@@ -143,6 +143,9 @@
     .toolbar-tip:hover::after {
       opacity: 1;
     }
+    body.quick-guide-open .toolbar-tip::after {
+      display: none;
+    }
     .node-fo-body.container-node.detail-promoted-leaf {
       align-items: center;
       justify-content: center;

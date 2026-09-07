@@ -126,18 +126,11 @@ def main(
     .elk_html_renderer.ElkHtmlRenderer.render_graph_html:
       why:
         serializes: "Builds the standalone presentation from the prepared canonical payload."
-    .validate_document:
-      why:
-        validates: "Checks the prepared payload before rendering it."
-
     InstantiationsFromRepo
     ----------------------
     .prepare_render_payload:
       why:
         constructs: "Creates the isolated payload passed to validation and rendering."
-    .reduce_transitive_edges:
-      why:
-        constructs: "Creates an optional reduced presentation view and removal report."
     """
     parser = argparse.ArgumentParser(
         description="Render an interactive dependency graph from canonical JSON."
@@ -165,11 +158,11 @@ def main(
         json.loads(source_path.read_text(encoding="utf-8")),
         profile=args.profile,
     )
-    validate_document(doc)
+    selected_renderer.validate(doc)
     reduction_note = ""
     removed_edges: list[dict] = []
     if args.reduce_transitive_edges:
-        doc, removed_edges = reduce_transitive_edges(doc)
+        doc, removed_edges = selected_renderer.reduce_graph_json_transitive_edges(doc)
         reduction_note = (
             f"Graph-theoretic transitive reduction enabled: removed {len(removed_edges)} redundant edges "
             "from the rendered view."
