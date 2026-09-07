@@ -34,6 +34,7 @@ def run_interface(
         "PYTHONPATH": str(SRC_ROOT),
         "PYTHONIOENCODING": "utf-8:strict",
         "HOME": str(home),
+        "USERPROFILE": str(home),
     }
     return subprocess.run(
         [sys.executable, "-m", RUNNER, gateway_path, process_entry, *args],

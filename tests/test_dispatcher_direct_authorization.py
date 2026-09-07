@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -97,7 +99,11 @@ def test_resolved_invocation_never_inherits_host_stdin(
         command=["probe"],
         stdin=logical_stdin is not None,
     )
-    resolved = direct_runtime.ResolvedInvocation(metadata, ["probe"], {})
+    resolved = direct_runtime.ResolvedInvocation(
+        metadata,
+        [sys.executable, "-P", "-m", "runner", "gateway.py", "Entry"],
+        {},
+    )
 
     direct_runtime._run_resolved_invocation(
         resolved,
@@ -796,7 +802,7 @@ def test_host_executes_direct_route_with_explicit_config(
     )
 
     assert completed.returncode == 0
-    assert completed.stdout == "direct-ok\n"
+    assert completed.stdout == f"direct-ok{os.linesep}"
     assert completed.stderr == ""
 
 
@@ -813,7 +819,9 @@ def test_host_execution_cannot_import_sibling_from_ambient_pythonpath(
         gateway.read_text().replace("from .helper import message", "from secret import message")
     )
     source_root = Path(__file__).resolve().parents[1] / "src"
-    monkeypatch.setenv("PYTHONPATH", f"{sibling}:{source_root}")
+    monkeypatch.setenv(
+        "PYTHONPATH", os.pathsep.join((str(sibling), str(source_root)))
+    )
 
     with pytest.raises(DispatcherError) as caught:
         _dispatch_host(

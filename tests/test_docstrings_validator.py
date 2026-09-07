@@ -43,7 +43,8 @@ def test_validate_staged_uses_test_production_and_base_profiles(
     adapter = _load_adapter()
     repo = tmp_path / "repo"
     (repo / "tests").mkdir(parents=True)
-    (repo / "src" / "officina" / "wakeup" / "tests").mkdir(parents=True)
+    (repo / "skills" / "llm-wakeup" / "_rtx" / "tests").mkdir(parents=True)
+    (repo / "src").mkdir()
     (repo / "validators").mkdir()
     (repo / "tests" / "test_lightweight.py").write_text(
         '"""Lightweight test fixture."""\n\n'
@@ -51,7 +52,9 @@ def test_validate_staged_uses_test_production_and_base_profiles(
         "    return 1\n",
         encoding="utf-8",
     )
-    (repo / "src" / "officina" / "wakeup" / "tests" / "test_monitor.py").write_text(
+    (
+        repo / "skills" / "llm-wakeup" / "_rtx" / "tests" / "test_monitor.py"
+    ).write_text(
         '"""Module-owned lightweight test fixture."""\n\n'
         "def helper():\n"
         "    return 1\n",

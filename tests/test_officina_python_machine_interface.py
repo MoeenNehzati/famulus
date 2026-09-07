@@ -2211,6 +2211,59 @@ def _transport_resolved(tmp_path: Path) -> dispatcher_core.ResolvedInvocation:
     )
 
 
+def _write_private_diagnosis(
+    command: list[str], kwargs: dict[str, object], payload: bytes
+) -> int:
+    writer = int(command[5])
+    if os.name == "nt":
+        import _winapi
+
+        startupinfo = kwargs["startupinfo"]
+        assert startupinfo.lpAttributeList["handle_list"] == [writer]
+        _winapi.WriteFile(writer, payload)
+    else:
+        assert kwargs["pass_fds"] == (writer,)
+        os.write(writer, payload)
+    return writer
+
+
+def _assert_private_diagnosis_writer_closed(writer: int) -> None:
+    if os.name == "nt":
+        try:
+            os.get_handle_inheritable(writer)
+        except OSError as exc:
+            assert getattr(exc, "winerror", None) == 6, (
+                "expected invalid Windows handle (winerror 6), "
+                f"got {getattr(exc, 'winerror', None)}"
+            )
+        else:
+            pytest.fail("private diagnosis writer remained an open Windows handle")
+    else:
+        with pytest.raises(OSError):
+            os.fstat(writer)
+
+
+def test_windows_writer_closure_check_rejects_broken_pipe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    broken_pipe = OSError("broken pipe")
+    broken_pipe.winerror = 109
+
+    def report_broken_pipe(_writer: int) -> bool:
+        raise broken_pipe
+
+    with monkeypatch.context() as windows:
+        windows.setattr(os, "name", "nt")
+        windows.setattr(
+            os,
+            "get_handle_inheritable",
+            report_broken_pipe,
+            raising=False,
+        )
+        with pytest.raises(AssertionError, match="invalid Windows handle"):
+            _assert_private_diagnosis_writer_closed(42)
+
+
 class _SuccessfulTransportProcess:
     returncode = 0
 
@@ -2476,10 +2529,11 @@ def test_private_diagnosis_wins_before_output_decoding(
         def communicate(self, **_kwargs: object) -> tuple[bytes, bytes]:
             return b"\xff", b"\xff"
 
-    def popen(command: list[str], **_kwargs: object) -> Process:
-        writer = int(command[5])
+    def popen(command: list[str], **kwargs: object) -> Process:
         payload = DispatcherError.from_spec("R01").as_payload()
-        os.write(writer, json.dumps(payload).encode("utf-8"))
+        _write_private_diagnosis(
+            command, kwargs, json.dumps(payload).encode("utf-8")
+        )
         return Process()
 
     monkeypatch.setattr(direct_runtime.subprocess, "Popen", popen)
@@ -2502,8 +2556,10 @@ def test_invalid_private_payload_does_not_reclassify_exit_70(
         def communicate(self, **_kwargs: object) -> tuple[bytes, bytes]:
             return b"ordinary", b"failure"
 
-    def popen(command: list[str], **_kwargs: object) -> Process:
-        os.write(int(command[5]), b'{"code":"unknown"} trailing')
+    def popen(command: list[str], **kwargs: object) -> Process:
+        _write_private_diagnosis(
+            command, kwargs, b'{"code":"unknown"} trailing'
+        )
         return Process()
 
     monkeypatch.setattr(direct_runtime.subprocess, "Popen", popen)
@@ -2528,9 +2584,9 @@ def test_whitespace_around_private_payload_does_not_reclassify_exit_70(
         def communicate(self, **_kwargs: object) -> tuple[bytes, bytes]:
             return b"ordinary", b"failure"
 
-    def popen(command: list[str], **_kwargs: object) -> Process:
+    def popen(command: list[str], **kwargs: object) -> Process:
         payload = json.dumps(DispatcherError.from_spec("R01").as_payload()).encode()
-        os.write(int(command[5]), padding + payload)
+        _write_private_diagnosis(command, kwargs, padding + payload)
         return Process()
 
     monkeypatch.setattr(direct_runtime.subprocess, "Popen", popen)
@@ -2566,10 +2622,8 @@ def test_invalid_private_diagnosis_records_remain_ordinary_exit_70(
             return b"ordinary", b"failure"
 
     def popen(command: list[str], **kwargs: object) -> Process:
-        writer = int(command[5])
+        writer = _write_private_diagnosis(command, kwargs, diagnosis)
         inherited_writer.append(writer)
-        assert kwargs["pass_fds"] == (writer,)
-        os.write(writer, diagnosis)
         return Process()
 
     monkeypatch.setattr(direct_runtime.subprocess, "Popen", popen)
@@ -2579,8 +2633,7 @@ def test_invalid_private_diagnosis_records_remain_ordinary_exit_70(
 
     assert result.returncode == 70
     assert result.stderr == "failure"
-    with pytest.raises(OSError):
-        os.fstat(inherited_writer[0])
+    _assert_private_diagnosis_writer_closed(inherited_writer[0])
 
 
 def test_output_decode_failure_precedes_checked_nonzero(
