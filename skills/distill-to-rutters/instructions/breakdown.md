@@ -24,7 +24,9 @@ provenance is `source` or `generated projection`. Give each normative item a
 stable obligation ID derived from its behavioral identity rather than from
 traversal order. A generated projection may expose normative behavior, but it
 must name its governing source, and that governing source must itself appear as
-a present, resolved, normative closure row. Every present closure path is an
+a normative source closure row. If that source is missing or unreadable,
+record it as unavailable and unresolved and use `breakdown-gap`; do not
+fabricate its digest. Every present closure path is an
 implicit governed dependency: it must remain repository-contained and its
 recorded digest must equal the SHA-256 of its exact raw bytes whenever this
 artifact or any descendant is accepted. Do not follow absolute paths,

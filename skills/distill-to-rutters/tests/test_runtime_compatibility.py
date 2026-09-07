@@ -663,57 +663,13 @@ def _probe_runtime(tmp_path: Path) -> dict[str, Any]:
     }
 
 
-def test_checked_out_runtime_probe_is_honestly_design_blocked(tmp_path: Path) -> None:
-    """The current checkout must not turn direct-Rutter support into Voyage support."""
+def test_checked_out_runtime_probe_is_first_release_ready(tmp_path: Path) -> None:
+    """The first release accepts the exercised public Python and process contracts."""
     runtime = _load_production_runtime()
     result = runtime.probe_runtime_compatibility(REPOSITORY_ROOT, tmp_path)
 
-    assert result["outcome"] == "design-blocked"
-    assert result["missing_evidence"] == {
-        (
-            "rutter-root-export:rutter-construction:"
-            "contract.semantic_capabilities"
-        ): (
-            "no exported source interface declares an operation-specific "
-            "rutter-binding-construction capability with a structured nominal "
-            "Python type for officina.rutter.Rutter",
-        ),
-        (
-            "rutter-root-export:voyage-construction:"
-            "contract.semantic_capabilities"
-        ): (
-            "no exported source interface declares an operation-specific "
-            "rutter-binding-construction capability with a structured nominal "
-            "Python type for officina.rutter.Voyage",
-        ),
-        "rutter-root-export:voyage-execution:contract.semantic_capabilities": (
-            "no exported source interface declares an advance semantic capability "
-            "bound to structured nominal Python type officina.rutter.Voyage",
-        ),
-        (
-            "rutter-root-export:voyage-dispenser-construction:"
-            "contract.semantic_capabilities"
-        ): (
-            "no exported source interface declares an operation-specific "
-            "rutter-binding-construction capability with a structured nominal "
-            "Python type for officina.rutter.VoyageDispenser",
-        ),
-        (
-            "rutter-root-export:voyage-dispenser-execution:"
-            "contract.semantic_capabilities"
-        ): (
-            "no exported source interface declares an advance semantic capability "
-            "bound to structured nominal Python type "
-            "officina.rutter.VoyageDispenser",
-        ),
-        (
-            "using-compass.source.gateway.interface.default.contract.arguments."
-            "binding.accepts"
-        ): (
-            "binding.accepts is missing exact interface/version/operation/output/"
-            "capability/nominal_type fields",
-        ),
-    }
+    assert result["outcome"] == "design-ready"
+    assert result["missing_evidence"] == {}
     assert result["concrete_rutter_construction"] == {
         "interface": "rutter.interface.binding",
         "version": 3,
@@ -737,7 +693,7 @@ def test_checked_out_runtime_probe_is_honestly_design_blocked(tmp_path: Path) ->
             "Process interface and fixed dispenser arguments supplied by the "
             "authorized invoker."
         ),
-        "exact_construction_handoff": False,
+        "exact_construction_handoff": True,
     }
     assert result["real_transition"] == {
         "successor_type": "EvolutionView",
@@ -752,6 +708,15 @@ def test_checked_out_runtime_probe_is_honestly_design_blocked(tmp_path: Path) ->
         "status_type": "VoyageStatus",
         "evolution": "complete",
         "condition": "terminal",
+    }
+    assert result["real_dispenser_transition"] == {
+        "voyage_count": 1,
+        "status_type": "VoyageStatus",
+        "initial_evolution": "inspect",
+        "validation_valid": True,
+        "successor_type": "EvolutionView",
+        "successor_evolution": "complete",
+        "successor_condition": "terminal",
     }
 
 
@@ -867,33 +832,17 @@ def test_design_stage_declares_the_same_live_probe_boundary() -> None:
 
     for requirement in (
         "every production compatibility probe passes",
-        "one real bound instance",
-        "dispatcher dry-run is insufficient",
+        "public exports for the Rutter authoring",
+        "one real public Rutter constructed",
+        "one real public VoyageDispenser constructed",
+        "expected terminal successor",
+        "required public Compass string binding",
+        "exact-version dependency",
+        "executable `process-interface`",
+        "Typed semantic-capability profiles remain diagnostic hardening",
+        "single-Voyage first release",
         "Do not add core exports, adapters, or shims",
-        "hardening-complete; runtime-blocked",
-        "discover each public interface version from the checked-out root export",
-        "rutter-binding-construction",
-        "required_arguments",
-        "optional_arguments",
-        "semantic capability outcomes",
-        "structured nominal Python type",
-        "qualified_class",
-        "complete nominal type and schema",
-        "actual `required` flag",
-        "complete interface outcome set",
-        "successful construction outcome",
-        "preserve every valid constructor candidate",
-        "exact accepted tuple",
-        "reject unresolved ambiguity",
-        "interface`, `version`, `operation`, `output`, `capability`, and `nominal_type",
-        "No interface version is predicted",
-        "rutter-root-export:rutter-construction:contract.semantic_capabilities",
-        "rutter-root-export:voyage-construction:contract.semantic_capabilities",
-        "rutter-root-export:voyage-execution:contract.semantic_capabilities",
-        "rutter-root-export:voyage-dispenser-construction:contract.semantic_capabilities",
-        "rutter-root-export:voyage-dispenser-execution:contract.semantic_capabilities",
-        "The public Python exports `officina.rutter.Rutter`, "
-        "`officina.rutter.Voyage`, and `officina.rutter.VoyageDispenser` are present",
+        "checked-out first-release baseline is `design-ready`",
     ):
         assert requirement in normalized_instruction
     runtime_read = next(
@@ -902,13 +851,13 @@ def test_design_stage_declares_the_same_live_probe_boundary() -> None:
         if item["id"] == "runtime-contracts"
     )
     for requirement in (
-        "rutter-binding-construction",
-        "structured nominal Python type",
+        "Rutter authoring",
+        "single-Voyage dispenser initialization",
+        "exact-version dependency",
+        "executable process-interface",
         "officina.rutter.Rutter",
         "officina.rutter.Voyage",
         "officina.rutter.VoyageDispenser",
-        "binding.accepts",
-        "Python exports are present",
     ):
         assert requirement in runtime_read["content"]
     for guessed in (
@@ -1356,19 +1305,75 @@ def test_root_export_resolution_discovers_source_declared_version(
     )
 
 
-def test_current_missing_evidence_contains_no_guessed_interface_versions(
+def test_current_first_release_probe_has_no_missing_evidence(
     tmp_path: Path,
 ) -> None:
     runtime = _load_production_runtime()
     result = runtime.probe_runtime_compatibility(REPOSITORY_ROOT, tmp_path)
-    evidence = repr(result["missing_evidence"])
+    assert result["outcome"] == "design-ready"
+    assert result["missing_evidence"] == {}
+
+
+def test_first_release_compass_handoff_requires_the_exported_dispenser_dependency() -> None:
+    runtime = _load_production_runtime()
+    rutter_exports = runtime.exported_interfaces(
+        REPOSITORY_ROOT / "src/officina/rutter",
+        REPOSITORY_ROOT,
+    )
+    compass_exports = runtime.exported_interfaces(
+        REPOSITORY_ROOT / "skills/using-compass",
+        REPOSITORY_ROOT,
+    )
+    compass = deepcopy(compass_exports["using-compass.interface.default"]["definition"])
+    compass["uses_interfaces"] = []
+
+    errors = runtime.first_release_compass_handoff_errors(compass, rutter_exports)
+
+    assert errors == ("Compass does not use one exported Rutter dispenser interface",)
+
+
+def test_first_release_compass_handoff_requires_an_executable_process_binding() -> None:
+    runtime = _load_production_runtime()
+    rutter_exports = runtime.exported_interfaces(
+        REPOSITORY_ROOT / "src/officina/rutter",
+        REPOSITORY_ROOT,
+    )
+    compass_exports = runtime.exported_interfaces(
+        REPOSITORY_ROOT / "skills/using-compass",
+        REPOSITORY_ROOT,
+    )
+    compass = deepcopy(compass_exports["using-compass.interface.default"]["definition"])
+    direct_io = compass["contract"]["direct_io"]
+    binding_io = next(
+        row for row in direct_io["writes"] if row["id"] == "voyage-dispenser"
+    )
+    binding_io["access"] = "read"
+
+    errors = runtime.first_release_compass_handoff_errors(compass, rutter_exports)
+
+    assert errors == ("Compass dispenser binding is not an executable process interface",)
+
+
+def test_first_release_runtime_incompatibility_returns_design_blocked(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = _load_production_runtime()
+
+    class IncompatibleRegistry:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            raise TypeError("changed public constructor")
+
+    monkeypatch.setattr(runtime, "RutterRegistry", IncompatibleRegistry)
+
+    result = runtime.probe_runtime_compatibility(REPOSITORY_ROOT, tmp_path)
 
     assert result["outcome"] == "design-blocked"
-    assert "@3" not in evidence
-    assert "@5" not in evidence
-    assert "@6" not in evidence
-    assert "rutter-binding-construction" in evidence
-    assert "structured nominal Python type" in evidence
+    assert result["missing_evidence"] == {
+        "python-runtime:first-release-probe": (
+            "TypeError: changed public constructor",
+        )
+    }
 
 
 @pytest.mark.parametrize("mutation", ("absolute", "parent", "symlink"))

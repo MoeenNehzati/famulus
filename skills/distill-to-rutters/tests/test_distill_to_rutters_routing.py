@@ -341,13 +341,12 @@ def test_assignment_contract_keeps_decomposition_and_orchestration_with_rutters(
         assert requirement in breakdown
 
     for requirement in (
-        "state and transition semantics are identical",
-        "starts, dependencies, joins, aggregate results, partial failure, retries, cancellation, failure propagation, authorization, and release",
+        "exactly one concrete Rutter and one Voyage",
+        "mode: single",
+        "unsupported first-release capability",
         "may mechanically execute an authorized action",
-        "may not choose ordering, branching, retry, cancellation, join, or release policy",
+        "may not choose ordering, branching, or retry policy outside the sole Rutter",
         "Final-result validation does not substitute for transition authorization",
-        "every cross-part obligation",
-        "before advancement",
     ):
         assert requirement in assignment
 

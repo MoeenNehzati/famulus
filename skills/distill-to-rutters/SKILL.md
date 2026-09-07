@@ -31,6 +31,16 @@ These are LLM-readable instruction surfaces. Read and follow them directly; do n
 <!-- END BLUEPRINT INTERFACES -->
 # Distill to Rutters
 
+## First-release scope
+
+This release supports exactly one Rutter and one Voyage. If the approved
+breakdown requires independent Voyages or coordinator policy, route to
+`assignment-gap` and stop. Successful implementation and verification must
+cover every approved logic obligation exactly once. Runtime readiness is based
+on exercised public Rutter, Voyage, VoyageDispenser, and persistence behavior,
+plus the declared executable Compass process-binding dependency; typed
+semantic-capability declarations remain later hardening work.
+
 Turn one Markdown instruction into a review-gated Rutter implementation. The
 gateway routes one stage at a time; stage interfaces own the actual analysis,
 authoring, and verification.

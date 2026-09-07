@@ -243,8 +243,8 @@ def test_layer_2_exercises_parser_digest_chain_outcome_registry_and_route(
 ) -> None:
     """A real scenario must bridge to accepted breakdown/assignment artifacts."""
     contract = _load_contract()
-    source_fixture = _require_scenario_file("multipart", "source.md")
-    scenario_fixture = _require_scenario_file("multipart", "good-contract.md")
+    source_fixture = _require_scenario_file("inseparable", "source.md")
+    scenario_fixture = _require_scenario_file("inseparable", "good-contract.md")
     scenario = load_scenario_contract(scenario_fixture)
 
     repository = tmp_path / "repo"
