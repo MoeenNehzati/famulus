@@ -73,7 +73,7 @@ This page is the complete skill inventory. For workflows and examples, start fro
 
 ### Listed
 
-- `bootstrap-dispatcher-runtime` — The Famulus dispatcher cannot start, or cannot run an interface, because its Python runtime is missing, too old, or lacks a declared package _(topics: assistant-installation, system-maintenance; activated by: user request, skill workflow)_
+- `bootstrap-dispatcher-runtime` — Only when evidence shows that the Famulus dispatcher Python is missing or older than 3.11 (`dispatcher.mcp_python_unsupported`), or that a declared dispatcher package is unavailable (`dispatcher.mcp_package_unavailable`) _(topics: assistant-installation, system-maintenance; activated by: user request, skill workflow)_
 - `cloud-files` — Bounded read/write of plain files under a configured Google Drive root _(topics: external-integrations, storage-and-sync; activated by: user request, skill workflow)_
 - `connect-google` — The user needs to set up or restore Google authentication for Famulus _(topics: external-integrations; activated by: user request, skill workflow)_
 - `install-launchers` — Install or repair an explicit subset of the optional assistant, collab, coauthor, and tw launchers _(topics: assistant-installation; activated by: user request, skill workflow)_

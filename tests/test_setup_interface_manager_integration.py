@@ -213,6 +213,7 @@ class Scenario:
             dispatch=self.dispatch,
             bindings=self.bindings,
             new_flow_id=lambda: f"flow-{self._next_flow}",
+            runtime_caller="acceptance-caller",
         )
         self.controller = controller
         return controller
@@ -642,7 +643,7 @@ def test_failure_interruption_recovery_restart_and_malformed_ledger_fail_closed(
     flow_id = begun["flow_id"]
     assert isinstance(flow_id, str)
     code, failed = scenario.run_current(begun)
-    assert code == 2 and failed["state"] == "failed"
+    assert code == 2 and failed["state"] == "recovery-required"
     assert scenario.store().read().interfaces == {}
     assert scenario.store().read().active_flow is not None
 
@@ -662,26 +663,31 @@ def test_failure_interruption_recovery_restart_and_malformed_ledger_fail_closed(
     scenario.restart()
     code, malformed = scenario.status("canary.interface.run")
     assert code == 2
-    assert malformed["code"] == "setup_busy"
+    assert malformed["state"] == "failed"
+    assert malformed["error_code"] == "setup.ledger_invalid"
     assert "canonical" in malformed["error"]
 
 
-def test_public_teardown_all_recovers_then_exhausts_mixed_receipts(tmp_path: Path) -> None:
-    """Catches restart retry rerunning an action or skipping ordered settlement."""
+def test_public_teardown_all_uncertainty_without_an_owner_is_operator_only(tmp_path: Path) -> None:
+    """A continuation-less global teardown never exposes ordinary recovery."""
     leaf, notes, root = _managed("leaf"), _managed("notes", kind="markdown"), _managed("root")
     graph = _graph((leaf, notes, root), {leaf.setup_interface: (), notes.setup_interface: ((leaf.setup_interface, 1),), root.setup_interface: ((notes.setup_interface, 1),)}, ordinary_targets={})
     scenario = Scenario(tmp_path, graph, tuple(_binding(item) for item in (leaf, notes, root)))
     scenario.store().update(lambda _: state.SetupLedger({item.setup_interface: state.SetupReceipt(1, frozenset()) for item in (leaf, notes, root)}, None, 2))
     scenario.dispatch.verify_once("root-teardown-status", "malformed")
     code, interrupted = scenario.invoke(manager.TeardownAllInterface, [])
-    assert code == 2 and interrupted["state"] == "recovery-required"
-    code, suspended = scenario.restart().recover(interrupted["flow_id"], "retry")
-    assert code == 0 and suspended["state"] == "awaiting-settlement"
-    assert set(scenario.store().read().interfaces) == {leaf.setup_interface, notes.setup_interface}
-    code, done = scenario.controller.settle(suspended["flow_id"], notes.teardown_interface)
-    assert code == 0 and done["state"] == "ready" and scenario.store().read() == state.SetupLedger.empty()
-    assert [call[0] for call in scenario.dispatch.calls] == ["root-teardown", "root-teardown-status", "root-teardown-status", "notes-teardown-status", "leaf-teardown", "leaf-teardown-status"]
-    assert not any("setup" in key.removesuffix("-status") for key, _args, _stdin in scenario.dispatch.calls)
+    assert code == 2 and interrupted["state"] == "failed"
+    assert interrupted["flow_id"] is None and "recovery" not in interrupted
+    persisted = scenario.store().read()
+    assert persisted.active_flow is not None
+    assert persisted.active_flow.continuation is None
+    assert persisted.active_flow.owner_verified is False
+    assert set(persisted.interfaces) == {
+        leaf.setup_interface, notes.setup_interface, root.setup_interface,
+    }
+    assert [call[0] for call in scenario.dispatch.calls] == [
+        "root-teardown", "root-teardown-status",
+    ]
 
 
 def test_public_teardown_all_retains_a_canonical_empty_ledger(tmp_path: Path) -> None:
@@ -743,7 +749,7 @@ def test_python_setup_without_verifier_settles_immediately(tmp_path: Path) -> No
     )
     graph = _graph((item,), {item.setup_interface: ()}, ordinary_targets={"opt.interface.run": "opt"})
     scenario = Scenario(tmp_path, graph, (binding,))
-    code, begun = scenario.invoke(manager.BeginInterface, ["setup", "opt.interface.setup", "caller", "opt.interface.run", "1"])
+    code, begun = scenario.invoke(manager.BeginInterface, ["setup", "opt.interface.setup", "acceptance-caller", "opt.interface.run", "1"])
     assert code == 0
     code, completed = scenario.invoke(manager.RunPythonInterface, [begun["flow_id"], "opt.interface.setup"], stdin="{}")
     assert code == 0 and completed["state"] == "ready"

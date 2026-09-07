@@ -76,18 +76,18 @@ def _resolve_relative_module_id(owner_module_id: str, reference: str) -> str:
     level = len(reference) - len(reference.lstrip("."))
     suffix = reference[level:]
     if not suffix:
-        raise DirectBlueprintError(
-            f"relative caller has no local suffix: {reference}",
-            code="dispatcher.invalid_caller_reference",
+        raise DirectBlueprintError.from_spec(
+            "D27",
             target_module_id=owner_module_id,
+            reason="has no local suffix",
         )
     owner_parts = owner_module_id.split(".")
     ascents = level - 1
     if ascents >= len(owner_parts):
-        raise DirectBlueprintError(
-            f"relative caller escapes its registration root: {reference}",
-            code="dispatcher.invalid_caller_reference",
+        raise DirectBlueprintError.from_spec(
+            "D27",
             target_module_id=owner_module_id,
+            reason="escapes its registration root",
         )
     return ".".join([*owner_parts[: len(owner_parts) - ascents], *suffix.split(".")])
 
@@ -110,20 +110,22 @@ def _evaluate_access(
     """
 
     if not isinstance(access, Mapping):
-        raise DirectBlueprintError(
-            f"missing access declaration for {kind} {interface_id}",
-            code="dispatcher.access_invalid",
+        raise DirectBlueprintError.from_spec(
+            "D28",
             target_module_id=owner_module_id,
+            access_kind=kind,
+            interface_id=interface_id,
         )
     allow_all = access.get("allow_all_modules") is True
     raw_callers = access.get("allowed_callers")
     if not isinstance(raw_callers, list) or any(
         not isinstance(reference, str) for reference in raw_callers
     ):
-        raise DirectBlueprintError(
-            f"invalid allowed_callers for {kind} {interface_id}",
-            code="dispatcher.access_invalid",
+        raise DirectBlueprintError.from_spec(
+            "D28",
             target_module_id=owner_module_id,
+            access_kind=kind,
+            interface_id=interface_id,
         )
     resolved = []
     for reference in raw_callers:
@@ -152,14 +154,24 @@ def _evaluate_access(
     )
 
 
-def _safe_relative_path(raw_path: object, *, context: str) -> PurePosixPath:
+def _safe_relative_path(
+    raw_path: object, *, field_name: str, module_id: str
+) -> PurePosixPath:
     """Validate an authored module-relative path without touching the filesystem."""
 
     if not isinstance(raw_path, str) or not raw_path or "\\" in raw_path:
-        raise DirectBlueprintError(context, code="dispatcher.unsafe_blueprint_path")
+        raise DirectBlueprintError.from_spec(
+            "D29",
+            field_name=field_name,
+            target_module_id=module_id,
+        )
     path = PurePosixPath(raw_path)
     if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
-        raise DirectBlueprintError(context, code="dispatcher.unsafe_blueprint_path")
+        raise DirectBlueprintError.from_spec(
+            "D29",
+            field_name=field_name,
+            target_module_id=module_id,
+        )
     return path
 
 
@@ -172,21 +184,31 @@ def _require_regular_without_symlinks(path: Path, *, module_id: str) -> None:
         try:
             metadata = current.lstat()
         except OSError as exc:
-            raise DirectBlueprintError(
-                f"relevant source path is unavailable: {current}",
-                code="dispatcher.source_not_found",
+            raise DirectBlueprintError.from_spec(
+                "D30",
+                module_id=module_id,
                 target_module_id=module_id,
             ) from exc
         if stat.S_ISLNK(metadata.st_mode):
-            raise DirectBlueprintError(
-                f"relevant source path contains a symlink: {current}",
-                code="dispatcher.unsafe_blueprint_path",
+            raise DirectBlueprintError.from_spec(
+                "D31",
+                module_id=module_id,
+                reason="has a path containing a symbolic link",
                 target_module_id=module_id,
             )
-    if not stat.S_ISREG(path.stat().st_mode):
-        raise DirectBlueprintError(
-            f"relevant source is not a regular file: {path}",
-            code="dispatcher.unsafe_blueprint_path",
+    try:
+        is_regular = stat.S_ISREG(path.stat().st_mode)
+    except OSError as exc:
+        raise DirectBlueprintError.from_spec(
+            "D30",
+            module_id=module_id,
+            target_module_id=module_id,
+        ) from exc
+    if not is_regular:
+        raise DirectBlueprintError.from_spec(
+            "D31",
+            module_id=module_id,
+            reason="is not a regular file",
             target_module_id=module_id,
         )
 
@@ -199,20 +221,22 @@ def _load_source(
     """Load and minimally validate the one behavioral source selected by an export."""
 
     if not isinstance(locator, Mapping) or not isinstance(locator.get("blueprint"), Mapping):
-        raise DirectBlueprintError(
-            f"invalid source locator: {source_id}",
-            code="dispatcher.source_locator_invalid",
+        raise DirectBlueprintError.from_spec(
+            "D32",
             target_module_id=terminal.module_id,
+            reason="an invalid shape",
         )
     blueprint = locator["blueprint"]
     if blueprint.get("base") != "module-root":
-        raise DirectBlueprintError(
-            f"unsupported source locator base: {source_id}",
-            code="dispatcher.source_locator_invalid",
+        raise DirectBlueprintError.from_spec(
+            "D32",
             target_module_id=terminal.module_id,
+            reason="an unsupported base",
         )
     relative = _safe_relative_path(
-        blueprint.get("path"), context=f"unsafe source blueprint path: {source_id}"
+        blueprint.get("path"),
+        field_name="blueprint.path",
+        module_id=terminal.module_id,
     )
     module_root = terminal.blueprint_path.parent
     path = module_root.joinpath(*relative.parts)
@@ -223,9 +247,8 @@ def _load_source(
                 raise OSError("source blueprint changed type")
             declaration = yaml.load(stream, Loader=yaml.CSafeLoader)
     except (OSError, yaml.YAMLError) as exc:
-        raise DirectBlueprintError(
-            f"malformed source blueprint: {source_id}",
-            code="dispatcher.blueprint_malformed",
+        raise DirectBlueprintError.from_spec(
+            "D33",
             target_module_id=terminal.module_id,
         ) from exc
     if (
@@ -233,35 +256,35 @@ def _load_source(
         or declaration.get("schema_version") != 6
         or declaration.get("node_type") != "behavioral_source"
     ):
-        raise DirectBlueprintError(
-            f"direct dispatch requires a v6 behavioral source: {source_id}",
-            code="dispatcher.blueprint_schema_mismatch",
+        raise DirectBlueprintError.from_spec(
+            "D34",
             target_module_id=terminal.module_id,
         )
     if declaration.get("id") != source_id:
-        raise DirectBlueprintError(
-            f"source blueprint identity mismatch: {source_id}",
-            code="dispatcher.blueprint_identity_mismatch",
+        raise DirectBlueprintError.from_spec(
+            "D35",
             target_module_id=terminal.module_id,
         )
     gateway = declaration.get("gateway")
     if not isinstance(gateway, Mapping):
-        raise DirectBlueprintError(
-            f"source gateway is missing: {source_id}",
-            code="dispatcher.blueprint_malformed",
+        raise DirectBlueprintError.from_spec(
+            "D36",
             target_module_id=terminal.module_id,
+            reason="no gateway declaration",
         )
     gateway_relative = _safe_relative_path(
-        gateway.get("path"), context=f"unsafe source gateway path: {source_id}"
+        gateway.get("path"),
+        field_name="gateway.path",
+        module_id=terminal.module_id,
     )
     gateway_path = module_root.joinpath(*gateway_relative.parts)
     _require_regular_without_symlinks(gateway_path, module_id=terminal.module_id)
     version = declaration.get("version")
     if type(version) is not int or version < 1:
-        raise DirectBlueprintError(
-            f"source version is invalid: {source_id}",
-            code="dispatcher.blueprint_malformed",
+        raise DirectBlueprintError.from_spec(
+            "D36",
             target_module_id=terminal.module_id,
+            reason="an invalid version",
         )
     return (
         DirectBlueprintNode(
@@ -319,9 +342,9 @@ def _require_discoverable_host_caller(
         or not isinstance(discovery, Mapping)
         or discovery.get("mechanism") != "skill"
     ):
-        raise DirectBlueprintError(
-            f"host caller must be a discoverable top-level skill: {caller_module_id}",
-            code="dispatcher.host_caller_invalid",
+        raise DirectBlueprintError.from_spec(
+            "D37",
+            caller_module_id=caller_module_id,
             target_module_id=caller_module_id,
         )
 
@@ -359,31 +382,35 @@ def resolve_direct_export_from_module(
     target_module_id = module.module_id
     interface_module_id, _local_name = parse_interface_id(interface_id)
     if interface_module_id != target_module_id:
-        raise DirectBlueprintError(
-            f"interface {interface_id!r} is not owned by {target_module_id!r}",
-            code="dispatcher.interface_not_found",
+        raise DirectBlueprintError.from_spec(
+            "D38",
             target_module_id=target_module_id,
+            interface_id=interface_id,
+            reason=f"is not owned by {target_module_id}",
         )
     raw_export = module.declaration["exports"].get(interface_id)
     if not isinstance(raw_export, Mapping):
-        raise DirectBlueprintError(
-            f"interface not found: {interface_id}",
-            code="dispatcher.interface_not_found",
+        raise DirectBlueprintError.from_spec(
+            "D38",
             target_module_id=target_module_id,
+            interface_id=interface_id,
+            reason="was not found",
         )
     source_interface_id = raw_export.get("source_interface")
     if not isinstance(source_interface_id, str) or ".source." not in source_interface_id:
-        raise DirectBlueprintError(
-            f"invalid source interface for {interface_id}",
-            code="dispatcher.source_interface_invalid",
+        raise DirectBlueprintError.from_spec(
+            "D39",
             target_module_id=target_module_id,
+            interface_id=interface_id,
+            reason="is invalid",
         )
     source_id, marker, source_local_name = source_interface_id.rpartition(".interface.")
     if marker != ".interface." or not source_id.startswith(f"{target_module_id}.source."):
-        raise DirectBlueprintError(
-            f"source interface is not owned by {target_module_id}: {source_interface_id}",
-            code="dispatcher.source_interface_invalid",
+        raise DirectBlueprintError.from_spec(
+            "D39",
             target_module_id=target_module_id,
+            interface_id=interface_id,
+            reason="has the wrong owner",
         )
     locator = module.declaration["sources"].get(source_id)
     source, source_declaration = _load_source(module, source_id, locator)
@@ -392,17 +419,19 @@ def resolve_direct_export_from_module(
         interfaces.get(source_interface_id) if isinstance(interfaces, Mapping) else None
     )
     if not isinstance(raw_source_interface, Mapping):
-        raise DirectBlueprintError(
-            f"source interface not found: {source_interface_id}",
-            code="dispatcher.source_interface_invalid",
+        raise DirectBlueprintError.from_spec(
+            "D39",
             target_module_id=target_module_id,
+            interface_id=interface_id,
+            reason="is absent",
         )
     available_version = raw_source_interface.get("version")
     if type(available_version) is not int or available_version < 1:
-        raise DirectBlueprintError(
-            f"source interface version is invalid: {source_interface_id}",
-            code="dispatcher.source_interface_invalid",
+        raise DirectBlueprintError.from_spec(
+            "D39",
             target_module_id=target_module_id,
+            interface_id=interface_id,
+            reason="has an invalid version",
         )
     if interface_version is None:
         interface_version = available_version
@@ -411,10 +440,14 @@ def resolve_direct_export_from_module(
         or interface_version < 1
         or available_version != interface_version
     ):
-        raise DirectBlueprintError(
-            f"version mismatch for {interface_id}: requested {interface_version}, available {available_version}",
-            code="dispatcher.interface_version_mismatch",
+        raise DirectBlueprintError.from_spec(
+            "D40",
             target_module_id=target_module_id,
+            interface_id=interface_id,
+            requested_version=(
+                interface_version if type(interface_version) is int else "invalid"
+            ),
+            available_version=available_version,
         )
     return source, DirectInterfaceExport(
         interface_id=interface_id,
@@ -473,10 +506,11 @@ def authorize_direct_invocation(
         local_segment = child.module_id.rsplit(".", 1)[-1]
         route = route_owner.declaration["namespace_exports"].get(local_segment)
         if not isinstance(route, Mapping):
-            raise DirectBlueprintError(
-                f"missing namespace export {route_owner.module_id}->{local_segment}",
-                code="dispatcher.namespace_route_missing",
+            raise DirectBlueprintError.from_spec(
+                "D41",
                 target_module_id=target_module_id,
+                route_owner_module_id=route_owner.module_id,
+                child_segment=local_segment,
             )
         route_version = route.get("version")
         child_version = child.declaration.get("version")
@@ -487,10 +521,10 @@ def authorize_direct_invocation(
             or child_version < 1
             or route_version != child_version
         ):
-            raise DirectBlueprintError(
-                f"namespace version does not match child {child.module_id}",
-                code="dispatcher.namespace_version_mismatch",
+            raise DirectBlueprintError.from_spec(
+                "D42",
                 target_module_id=target_module_id,
+                child_module_id=child.module_id,
             )
         surface = route.get("surface")
         only = surface.get("only") if isinstance(surface, Mapping) else None
@@ -500,10 +534,11 @@ def authorize_direct_invocation(
             or surface_version < 1
             or surface_version != interface_version
         ):
-            raise DirectBlueprintError(
-                f"namespace surface excludes {interface_id}@{interface_version}",
-                code="dispatcher.namespace_surface_excludes_interface",
+            raise DirectBlueprintError.from_spec(
+                "D43",
                 target_module_id=target_module_id,
+                interface_id=interface_id,
+                interface_version=interface_version,
             )
         route_filter, route_callers = _evaluate_access(
             repository,
@@ -516,18 +551,19 @@ def authorize_direct_invocation(
         filters.append(route_filter)
         resolved_callers.extend(route_callers)
         if not route_filter.admits_caller:
-            raise UnauthorizedCallerError(
+            raise UnauthorizedCallerError.from_spec(
+                "D04",
                 caller_module_id=caller_module_id,
                 target_module_id=target_module_id,
                 interface_id=interface_id,
-                diagnostic=f"caller-filtered:namespace-route:{route_owner.module_id}",
+                gate="namespace-route",
             )
         interface_access = route.get("interface_access")
         if interface_access is not None and not isinstance(interface_access, Mapping):
-            raise DirectBlueprintError(
-                f"invalid interface_access for namespace route {route_owner.module_id}",
-                code="dispatcher.access_invalid",
+            raise DirectBlueprintError.from_spec(
+                "D44",
                 target_module_id=target_module_id,
+                route_owner_module_id=route_owner.module_id,
             )
         if isinstance(interface_access, Mapping) and interface_id in interface_access:
             narrow_filter, narrow_callers = _evaluate_access(
@@ -541,11 +577,12 @@ def authorize_direct_invocation(
             filters.append(narrow_filter)
             resolved_callers.extend(narrow_callers)
             if not narrow_filter.admits_caller:
-                raise UnauthorizedCallerError(
+                raise UnauthorizedCallerError.from_spec(
+                    "D04",
                     caller_module_id=caller_module_id,
                     target_module_id=target_module_id,
                     interface_id=interface_id,
-                    diagnostic=f"caller-filtered:namespace-interface:{route_owner.module_id}",
+                    gate="namespace-interface",
                 )
         crossed.append(
             CrossedNamespaceGate(
@@ -569,11 +606,12 @@ def authorize_direct_invocation(
     filters.append(terminal_filter)
     resolved_callers.extend(terminal_callers)
     if not terminal_filter.admits_caller:
-        raise UnauthorizedCallerError(
+        raise UnauthorizedCallerError.from_spec(
+            "D04",
             caller_module_id=caller_module_id,
             target_module_id=target_module_id,
             interface_id=interface_id,
-            diagnostic=f"caller-filtered:terminal-export:{interface_id}",
+            gate="terminal-export",
         )
 
     relations = tuple(
@@ -659,10 +697,11 @@ def compile_direct_invocation(
             )
             plan = compile_gateway_invocation(source, export, parsed)
     except ProcessBindingError as exc:
-        raise ResolutionFailedError(
-            f"cannot compile {export.interface_id}: {exc}",
+        raise ResolutionFailedError.from_spec(
+            "D45",
             caller_module_id=authorization.caller_module_id,
             target_module_id=authorization.requested_owner_module_id,
+            interface_id=export.interface_id,
         ) from exc
 
     gateway_relative = source.gateway_path.relative_to(source.module_root)
@@ -682,10 +721,11 @@ def compile_direct_invocation(
             logical_entrypoint=logical_entrypoint,
         )
     except PythonProcessTargetError as exc:
-        raise ResolutionFailedError(
-            f"cannot build Python target for {export.interface_id}: {exc}",
+        raise ResolutionFailedError.from_spec(
+            "D46",
             caller_module_id=authorization.caller_module_id,
             target_module_id=authorization.requested_owner_module_id,
+            interface_id=export.interface_id,
         ) from exc
     return ResolvedInvocationMetadata(
         caller_module_id=authorization.caller_module_id,

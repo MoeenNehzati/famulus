@@ -165,7 +165,7 @@ def test_dispatcher_cli_formats_configuration_failures(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == (
-        "error: dispatcher requires the exact repository configuration path\n"
+        "error: The dispatcher invocation did not supply the required repository configuration path.\n"
     )
 
     config = tmp_path / "officina.toml"
@@ -205,9 +205,12 @@ def test_dispatcher_cli_formats_configuration_failures(
     assert captured.out == ""
     payload = json.loads(captured.err)
     assert payload["schema_version"] == 1
-    assert payload["code"] == "dispatcher.runtime_misconfigured"
-    assert payload["caller_module_id"] == "demo-caller"
-    assert payload["target_module_id"] == "nonexistent-module"
+    assert payload["code"] == "dispatcher.repository_config_missing"
+    assert payload["message"] == (
+        "The dispatcher invocation did not supply the required repository configuration path."
+    )
+    assert "caller_module_id" not in payload
+    assert "target_module_id" not in payload
     assert "token" not in captured.err.lower()
     assert "secret" not in captured.err.lower()
 

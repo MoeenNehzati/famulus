@@ -2,12 +2,16 @@
 from __future__ import annotations
 
 import ast
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import importlib
 import json
 import os
 import shutil
+import subprocess
 import sys
+import threading
+import types
 from pathlib import Path
 
 import pytest
@@ -21,7 +25,9 @@ from officina.blueprints.graph import (  # noqa: E402
     load_repository_blueprint_graph,
 )
 from officina.dispatcher.core import ResolvedInvocationMetadata  # noqa: E402
+from officina.dispatcher.errors import DispatcherError  # noqa: E402
 import officina.dispatcher.core as dispatcher_core  # noqa: E402
+import officina.dispatcher.direct_runtime as direct_runtime  # noqa: E402
 import officina.runtime.python_machine_interface as python_interface  # noqa: E402
 import officina.runtime.python_machine_interface_runner as python_runner  # noqa: E402
 from officina.runtime.python_machine_interface import (  # noqa: E402
@@ -1634,7 +1640,13 @@ def test_trace_rejects_supplied_non_v6_graph_before_route_selection(
             lambda **_kwargs: pytest.fail("configured dispatch reached"),
         )
 
-    with pytest.raises(dispatcher_core.InvocationError, match="unsupported graph version 5"):
+    with pytest.raises(
+        dispatcher_core.InvocationError,
+        match=(
+            "Dispatcher metadata trace requires blueprint graph schema 6; "
+            "received schema 5"
+        ),
+    ):
         dispatcher_core._resolve_dispatch_metadata_for_trace(
             caller_module_id="demo", target="provider.interface.run",
             repo_root=tmp_path, graph=type("Graph", (), {"schema_version": 5})(),
@@ -1784,3 +1796,876 @@ def test_main_reports_incomplete_python_target(
 ) -> None:
     assert main(["not-a-spec"]) == 2
     assert "missing Python gateway path or process entry" in capsys.readouterr().err
+
+
+# famulus-skip: category=platform-contract; reason=this case passes a POSIX descriptor directly; alternate=the native-handle roundtrip below covers registered private diagnosis transport
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor half of transport")
+def test_main_reports_registered_failure_through_private_writer() -> None:
+    reader, writer = os.pipe()
+    try:
+        assert main(["--diagnostic-writer", str(writer)]) == 70
+        payload = json.loads(os.read(reader, 16 * 1024))
+    finally:
+        os.close(reader)
+
+    assert payload == {
+        "schema_version": 1,
+        "code": "dispatcher.runner_request_invalid",
+        "message": "Python interface runner requires a gateway path and process entry.",
+    }
+
+
+# famulus-skip: category=platform-contract; reason=this case inspects POSIX descriptor closure directly; alternate=the native-handle conversion and launch-failure cases cover early ownership cleanup
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor half of transport")
+def test_private_writer_transports_template_context_and_closes_on_early_rejection() -> None:
+    reader, writer = os.pipe()
+    try:
+        result = main(
+            [
+                "--diagnostic-writer",
+                str(writer),
+                "--source-fd",
+            ]
+        )
+        payload = json.loads(os.read(reader, 16 * 1024))
+        with pytest.raises(OSError):
+            os.fstat(writer)
+    finally:
+        os.close(reader)
+
+    assert result == 70
+    assert payload == {
+        "schema_version": 1,
+        "code": "dispatcher.runner_request_invalid",
+        "message": "Python interface runner option `--source-fd` is missing required arguments.",
+        "option": "--source-fd",
+    }
+
+
+# famulus-skip: category=platform-contract; reason=this case inspects POSIX descriptor closure after payload construction fails; alternate=the native-handle conversion-failure case covers the corresponding ownership cleanup
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor half of transport")
+def test_private_diagnosis_closes_writer_when_payload_construction_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reader, writer = os.pipe()
+    monkeypatch.setattr(
+        DispatcherError,
+        "from_spec",
+        classmethod(lambda _cls, *_args, **_kwargs: (_ for _ in ()).throw(ValueError("bad spec"))),
+    )
+    try:
+        with pytest.raises(ValueError, match="bad spec"):
+            python_runner._emit_private_diagnosis(writer, "R01")
+        with pytest.raises(OSError):
+            os.fstat(writer)
+    finally:
+        os.close(reader)
+
+
+# famulus-skip: category=platform-contract; reason=this case asserts POSIX descriptor ownership during option parsing; alternate=the native-handle conversion-failure and grandchild-noninheritance cases cover native ownership
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor ownership")
+def test_private_writer_closes_when_later_option_parsing_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reader, writer = os.pipe()
+    original_resolve = Path.resolve
+
+    def fail_selected_resolve(path: Path, *args, **kwargs):
+        if str(path) == "unresolvable-root":
+            raise OSError("private parse failure")
+        return original_resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", fail_selected_resolve)
+    try:
+        with pytest.raises(OSError, match="private parse failure"):
+            main(
+                [
+                    "--diagnostic-writer",
+                    str(writer),
+                    "--runtime-repo-root",
+                    "unresolvable-root",
+                    "gateway.py",
+                    "Entry",
+                ]
+            )
+        with pytest.raises(OSError):
+            os.fstat(writer)
+    finally:
+        os.close(reader)
+
+
+def test_windows_writer_conversion_failure_closes_raw_handle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[tuple[str, object]] = []
+    monkeypatch.setattr(python_runner.os, "name", "nt")
+    monkeypatch.setattr(
+        python_runner.os,
+        "set_handle_inheritable",
+        lambda handle, value: events.append(("inherit", (handle, value))),
+        raising=False,
+    )
+    monkeypatch.setattr(python_runner.os, "O_BINARY", 0, raising=False)
+    monkeypatch.setitem(
+        sys.modules,
+        "msvcrt",
+        types.SimpleNamespace(
+            open_osfhandle=lambda *_args: (_ for _ in ()).throw(
+                OSError("conversion failed")
+            )
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "_winapi",
+        types.SimpleNamespace(
+            CloseHandle=lambda handle: events.append(("close", handle))
+        ),
+    )
+
+    with pytest.raises(OSError, match="conversion failed"):
+        main(["--diagnostic-writer", "123", "gateway.py", "Entry"])
+
+    assert events == [("inherit", (123, False)), ("close", 123)]
+
+
+def _main_private_payload(
+    monkeypatch: pytest.MonkeyPatch,
+    interface: PythonMachineInterface,
+    interface_argv: list[str],
+) -> dict[str, object]:
+    reader, writer = os.pipe()
+    monkeypatch.setattr(python_runner, "load_interface", lambda *_args, **_kwargs: interface)
+    try:
+        result = main(
+            [
+                "--diagnostic-writer",
+                str(writer),
+                "_rtx/_demo.py",
+                "Interface",
+                *interface_argv,
+            ]
+        )
+        payload = json.loads(os.read(reader, 16 * 1024))
+    finally:
+        os.close(reader)
+    assert result == 70
+    return payload
+
+
+# famulus-skip: category=platform-contract; reason=this lifecycle case writes through a POSIX descriptor; alternate=direct lifecycle classification tests and the native-handle roundtrip cover the same boundary
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor half of transport")
+@pytest.mark.parametrize(
+    ("failure", "interface_argv", "entry_code"),
+    [
+        ("parser", [], "dispatcher.runner_interface_initialization_failed"),
+        ("route-smoke", ["--route-smoke"], "dispatcher.runner_route_smoke_failed"),
+        ("parse", [], "dispatcher.runner_request_validation_failed"),
+        ("run", [], "dispatcher.runner_execution_failed"),
+        ("result", [], "dispatcher.runner_interface_invalid"),
+    ],
+)
+def test_private_writer_contains_machine_interface_lifecycle_failures(
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+    interface_argv: list[str],
+    entry_code: str,
+) -> None:
+    class FailingInterface(PythonMachineInterface):
+        def build_parser(self) -> argparse.ArgumentParser:
+            if failure == "parser":
+                raise RuntimeError("private parser failure")
+            return super().build_parser()
+
+        def route_smoke(self) -> None:
+            if failure == "route-smoke":
+                raise RuntimeError("private route failure")
+
+        def parse_args(self, parser: argparse.ArgumentParser, argv: list[str]):
+            if failure == "parse":
+                raise RuntimeError("private validation failure")
+            return super().parse_args(parser, argv)
+
+        def run(self, args):
+            if failure == "run":
+                raise RuntimeError("private execution failure")
+            if failure == "result":
+                return object()
+            return 0
+
+    payload = _main_private_payload(
+        monkeypatch,
+        FailingInterface(),
+        interface_argv,
+    )
+
+    assert payload["code"] == entry_code
+    assert "private" not in json.dumps(payload)
+
+
+# famulus-skip: category=platform-contract; reason=this argparse case writes through a POSIX descriptor; alternate=argument-rejection classification and the native-handle roundtrip cover the same result
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor half of transport")
+def test_private_writer_contains_normal_argparse_rejection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class RequiredArgumentInterface(PythonMachineInterface):
+        def build_parser(self) -> argparse.ArgumentParser:
+            parser = super().build_parser()
+            parser.add_argument("--required", required=True)
+            return parser
+
+        def run(self, args):
+            return 0
+
+    payload = _main_private_payload(monkeypatch, RequiredArgumentInterface(), [])
+
+    assert payload["code"] == "dispatcher.invalid_request"
+    assert payload["message"] == (
+        "The Python interface request does not match the declared interface signature."
+    )
+
+
+@pytest.mark.parametrize(
+    ("failure", "entry_id"),
+    [
+        (lambda root: load_interface("bad.py", "Entry"), "R10"),
+        (lambda root: python_runner._bound_module_name("../bad.py"), "R11"),
+        (
+            lambda root: python_runner._load_package_snapshot_sources(
+                root / "snapshot.json",
+                "bad-digest",
+            ),
+            "R12",
+        ),
+        (
+            lambda root: python_runner._read_bound_source(
+                root / "missing.py",
+                None,
+                allowed_root=root,
+            ),
+            "R13",
+        ),
+        (
+            lambda root: python_runner._load_confined_package_sources(
+                root.parent / "outside.py"
+            ),
+            "R21",
+        ),
+        (
+            lambda root: load_interface(
+                "_rtx/_demo.py",
+                "Entry",
+                _lazy_confined=True,
+            ),
+            "R22",
+        ),
+    ],
+)
+def test_runner_load_failures_select_their_catalogue_predicate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure,
+    entry_id: str,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(InterfaceLoadError) as caught:
+        failure(tmp_path)
+
+    assert caught.value.entry_id == entry_id
+
+
+# famulus-skip: category=platform-contract; reason=this gateway-stage case writes through a POSIX descriptor; alternate=direct runner-stage predicates and the native-handle roundtrip cover classification and transport
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor half of transport")
+@pytest.mark.parametrize(
+    ("source", "entry_id"),
+    [
+        ("not valid Python :", "R15"),
+        ("VALUE = 1\n", "R16"),
+        (
+            "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
+            "class Interface(PythonMachineInterface):\n"
+            "    def __init__(self):\n"
+            "        raise RuntimeError('private constructor detail')\n",
+            "R23",
+        ),
+    ],
+)
+def test_private_writer_contains_gateway_load_stages(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source: str,
+    entry_id: str,
+) -> None:
+    runtime = tmp_path / "_rtx"
+    runtime.mkdir()
+    (runtime / "_demo.py").write_text(source, encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    reader, writer = os.pipe()
+    try:
+        result = main(
+            [
+                "--diagnostic-writer",
+                str(writer),
+                "_rtx/_demo.py",
+                "Interface",
+            ]
+        )
+        payload = json.loads(os.read(reader, 16 * 1024))
+    finally:
+        os.close(reader)
+
+    assert result == 70
+    assert payload == DispatcherError.from_spec(
+        entry_id,
+        **({"reason": "the entry is absent"} if entry_id == "R16" else {}),
+    ).as_payload()
+
+
+# famulus-skip: category=platform-contract; reason=this confined-import case writes through a POSIX descriptor; alternate=confined-import predicate tests and the native-handle roundtrip cover rejection and transport
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor half of transport")
+def test_private_writer_contains_confined_import_rejection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "runtime.py").write_text("import pkg.missing\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    reader, writer = os.pipe()
+    try:
+        result = main(
+            [
+                "--diagnostic-writer",
+                str(writer),
+                "--logical-package",
+                "pkg",
+                "--logical-entrypoint",
+                "pkg.runtime",
+                "--confined-module-root",
+                str(tmp_path),
+                "runtime.py",
+                "Interface",
+            ]
+        )
+        payload = json.loads(os.read(reader, 16 * 1024))
+    finally:
+        os.close(reader)
+
+    assert result == 70
+    assert payload == DispatcherError.from_spec(
+        "R14",
+        reason="the module is outside the validated package",
+    ).as_payload()
+
+
+# famulus-skip: category=platform-contract; reason=this integration case launches with POSIX descriptor inheritance; alternate=the native-handle roundtrip exercises the corresponding registered diagnosis path
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor half of transport")
+def test_dispatcher_accepts_registered_private_runner_diagnosis() -> None:
+    root = Path(__file__).resolve().parents[1]
+    metadata = ResolvedInvocationMetadata(
+        caller_module_id="caller",
+        target_module_id="target",
+        script_interface="target.source.runtime.interface.run",
+        target="target.interface.run",
+        pattern="default",
+        cwd=root,
+        command=[],
+        stdin=False,
+    )
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = str(root / "src")
+    resolved = dispatcher_core.ResolvedInvocation(
+        metadata,
+        [
+            sys.executable,
+            "-P",
+            "-m",
+            "officina.runtime.python_machine_interface_runner",
+        ],
+        environment,
+    )
+
+    with pytest.raises(DispatcherError) as caught:
+        dispatcher_core._run_resolved_invocation(resolved, text=True)
+
+    assert caught.value.code == "dispatcher.runner_request_invalid"
+    assert str(caught.value) == (
+        "Python interface runner requires a gateway path and process entry."
+    )
+
+
+def _transport_resolved(tmp_path: Path) -> dispatcher_core.ResolvedInvocation:
+    metadata = ResolvedInvocationMetadata(
+        caller_module_id="caller",
+        target_module_id="target",
+        script_interface="target.source.runtime.interface.run",
+        target="target.interface.run",
+        pattern="default",
+        cwd=tmp_path,
+        command=[],
+        stdin=False,
+    )
+    return dispatcher_core.ResolvedInvocation(
+        metadata,
+        [sys.executable, "-P", "-m", "runner", "gateway.py", "Entry"],
+        {},
+    )
+
+
+class _SuccessfulTransportProcess:
+    returncode = 0
+
+    def communicate(self, **_kwargs: object) -> tuple[bytes, bytes]:
+        return b"", b""
+
+
+def _fake_windows_platform(
+    monkeypatch: pytest.MonkeyPatch,
+    popen,
+) -> tuple[list[tuple[int, bool]], type]:
+    inheritance: list[tuple[int, bool]] = []
+
+    class StartupInfo:
+        lpAttributeList: dict[str, list[int]]
+
+    monkeypatch.setattr(direct_runtime.os, "name", "nt")
+    monkeypatch.setattr(
+        direct_runtime.os,
+        "set_handle_inheritable",
+        lambda handle, value: inheritance.append((handle, value)),
+        raising=False,
+    )
+    monkeypatch.setattr(direct_runtime.subprocess, "STARTUPINFO", StartupInfo, raising=False)
+    monkeypatch.setattr(direct_runtime.subprocess, "Popen", popen)
+    monkeypatch.setitem(
+        sys.modules,
+        "msvcrt",
+        types.SimpleNamespace(get_osfhandle=lambda descriptor: descriptor),
+    )
+    return inheritance, StartupInfo
+
+
+def test_windows_launch_uses_only_the_private_diagnostic_handle(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: list[dict[str, object]] = []
+
+    def popen(_command: list[str], **kwargs: object) -> _SuccessfulTransportProcess:
+        observed.append(kwargs)
+        return _SuccessfulTransportProcess()
+
+    resolved = _transport_resolved(tmp_path)
+    with monkeypatch.context() as platform:
+        _fake_windows_platform(platform, popen)
+        dispatcher_core._run_resolved_invocation(resolved)
+
+    assert observed[0]["close_fds"] is True
+    assert len(observed[0]["startupinfo"].lpAttributeList["handle_list"]) == 1
+    assert "pass_fds" not in observed[0]
+
+
+def test_windows_launch_restores_and_closes_duplicated_writer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inherited: list[int] = []
+
+    def popen(_command: list[str], **kwargs: object) -> _SuccessfulTransportProcess:
+        inherited.extend(kwargs["startupinfo"].lpAttributeList["handle_list"])
+        return _SuccessfulTransportProcess()
+
+    resolved = _transport_resolved(tmp_path)
+    with monkeypatch.context() as platform:
+        inheritance, _ = _fake_windows_platform(platform, popen)
+        dispatcher_core._run_resolved_invocation(resolved)
+
+    assert inheritance == [(inherited[0], True), (inherited[0], False)]
+    with pytest.raises(OSError):
+        os.fstat(inherited[0])
+
+
+def test_windows_popen_failure_restores_and_closes_duplicated_writer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inherited: list[int] = []
+
+    def popen(_command: list[str], **kwargs: object):
+        inherited.extend(kwargs["startupinfo"].lpAttributeList["handle_list"])
+        raise OSError("launch failed")
+
+    resolved = _transport_resolved(tmp_path)
+    with monkeypatch.context() as platform:
+        inheritance, _ = _fake_windows_platform(platform, popen)
+        with pytest.raises(DispatcherError) as caught:
+            dispatcher_core._run_resolved_invocation(resolved)
+
+    assert caught.value.code == "dispatcher.launch_failed"
+    assert inheritance == [(inherited[0], True), (inherited[0], False)]
+    with pytest.raises(OSError):
+        os.fstat(inherited[0])
+
+
+def test_windows_restore_failure_after_launch_closes_writer_and_reaps_process(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inherited: list[int] = []
+    communicated: list[bool] = []
+
+    class Process(_SuccessfulTransportProcess):
+        def communicate(self, **kwargs: object) -> tuple[bytes, bytes]:
+            communicated.append(True)
+            return super().communicate(**kwargs)
+
+    def popen(_command: list[str], **kwargs: object) -> Process:
+        inherited.extend(kwargs["startupinfo"].lpAttributeList["handle_list"])
+        return Process()
+
+    def set_inheritable(_handle: int, value: bool) -> None:
+        if not value:
+            raise OSError("restore failed")
+
+    resolved = _transport_resolved(tmp_path)
+    with monkeypatch.context() as platform:
+        _fake_windows_platform(platform, popen)
+        platform.setattr(direct_runtime.os, "set_handle_inheritable", set_inheritable)
+        result = dispatcher_core._run_resolved_invocation(resolved)
+
+    assert result.returncode == 0
+    assert communicated == [True]
+    with pytest.raises(OSError):
+        os.fstat(inherited[0])
+
+
+def test_windows_restore_failure_preserves_popen_failure_and_closes_writer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inherited: list[int] = []
+    launch_failure = OSError("launch failed")
+
+    def popen(_command: list[str], **kwargs: object):
+        inherited.extend(kwargs["startupinfo"].lpAttributeList["handle_list"])
+        raise launch_failure
+
+    def set_inheritable(_handle: int, value: bool) -> None:
+        if not value:
+            raise OSError("restore failed")
+
+    resolved = _transport_resolved(tmp_path)
+    with monkeypatch.context() as platform:
+        _fake_windows_platform(platform, popen)
+        platform.setattr(direct_runtime.os, "set_handle_inheritable", set_inheritable)
+        with pytest.raises(DispatcherError) as caught:
+            dispatcher_core._run_resolved_invocation(resolved)
+
+    assert caught.value.code == "dispatcher.launch_failed"
+    assert caught.value.__cause__ is launch_failure
+    with pytest.raises(OSError):
+        os.fstat(inherited[0])
+
+
+def test_windows_runner_clears_writer_before_target_can_spawn_grandchild(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reader, writer = os.pipe()
+    events: list[tuple[str, object]] = []
+    with monkeypatch.context() as platform:
+        platform.setattr(python_runner.os, "name", "nt")
+        platform.setattr(python_runner.os, "O_BINARY", 0, raising=False)
+        platform.setattr(
+            python_runner.os,
+            "set_handle_inheritable",
+            lambda handle, value: events.append(("inherit", (handle, value))),
+            raising=False,
+        )
+        platform.setitem(
+            sys.modules,
+            "msvcrt",
+            types.SimpleNamespace(
+                open_osfhandle=lambda handle, _flags: (
+                    events.append(("open", handle)) or writer
+                )
+            ),
+        )
+        platform.setitem(
+            sys.modules,
+            "_winapi",
+            types.SimpleNamespace(CloseHandle=lambda _handle: None),
+        )
+        try:
+            assert main(["--diagnostic-writer", "123"]) == 70
+            json.loads(os.read(reader, 16 * 1024))
+        finally:
+            os.close(reader)
+
+    assert events == [("inherit", (123, False)), ("open", 123)]
+
+
+def test_windows_launch_lock_isolates_concurrent_diagnostic_handles(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    active: set[int] = set()
+    maximum_active = 0
+    state_lock = threading.Lock()
+
+    def set_inheritable(handle: int, value: bool) -> None:
+        nonlocal maximum_active
+        with state_lock:
+            (active.add if value else active.discard)(handle)
+            maximum_active = max(maximum_active, len(active))
+
+    def popen(_command: list[str], **_kwargs: object) -> _SuccessfulTransportProcess:
+        threading.Event().wait(0.01)
+        return _SuccessfulTransportProcess()
+
+    resolved = [_transport_resolved(tmp_path) for _ in range(4)]
+    with monkeypatch.context() as platform:
+        _fake_windows_platform(platform, popen)
+        platform.setattr(
+            direct_runtime.os,
+            "set_handle_inheritable",
+            set_inheritable,
+            raising=False,
+        )
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            results = list(executor.map(dispatcher_core._run_resolved_invocation, resolved))
+
+    assert [result.returncode for result in results] == [0, 0, 0, 0]
+    assert maximum_active == 1
+    assert active == set()
+
+
+# famulus-skip: category=platform-contract; reason=this case requires native process handles; alternate=simulated native-handle tests cover allowlisting, restoration, cleanup, noninheritance, and concurrency on every host
+@pytest.mark.skipif(os.name != "nt", reason="native Windows transport")
+def test_native_windows_private_diagnosis_round_trip() -> None:
+    root = Path(__file__).resolve().parents[1]
+    metadata = ResolvedInvocationMetadata(
+        caller_module_id="caller",
+        target_module_id="target",
+        script_interface="target.source.runtime.interface.run",
+        target="target.interface.run",
+        pattern="default",
+        cwd=root,
+        command=[],
+        stdin=False,
+    )
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = str(root / "src")
+    resolved = dispatcher_core.ResolvedInvocation(
+        metadata,
+        [sys.executable, "-P", "-m", "officina.runtime.python_machine_interface_runner"],
+        environment,
+    )
+
+    with pytest.raises(DispatcherError) as caught:
+        dispatcher_core._run_resolved_invocation(resolved, text=True)
+
+    assert caught.value.code == "dispatcher.runner_request_invalid"
+
+
+def test_private_diagnosis_wins_before_output_decoding(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Process:
+        returncode = 70
+
+        def communicate(self, **_kwargs: object) -> tuple[bytes, bytes]:
+            return b"\xff", b"\xff"
+
+    def popen(command: list[str], **_kwargs: object) -> Process:
+        writer = int(command[5])
+        payload = DispatcherError.from_spec("R01").as_payload()
+        os.write(writer, json.dumps(payload).encode("utf-8"))
+        return Process()
+
+    monkeypatch.setattr(direct_runtime.subprocess, "Popen", popen)
+
+    with pytest.raises(DispatcherError) as caught:
+        dispatcher_core._run_resolved_invocation(
+            _transport_resolved(tmp_path), text=True
+        )
+
+    assert caught.value.code == "dispatcher.runner_request_invalid"
+
+
+def test_invalid_private_payload_does_not_reclassify_exit_70(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Process:
+        returncode = 70
+
+        def communicate(self, **_kwargs: object) -> tuple[bytes, bytes]:
+            return b"ordinary", b"failure"
+
+    def popen(command: list[str], **_kwargs: object) -> Process:
+        os.write(int(command[5]), b'{"code":"unknown"} trailing')
+        return Process()
+
+    monkeypatch.setattr(direct_runtime.subprocess, "Popen", popen)
+    result = dispatcher_core._run_resolved_invocation(
+        _transport_resolved(tmp_path), text=True
+    )
+
+    assert result.returncode == 70
+    assert result.stdout == "ordinary"
+    assert result.stderr == "failure"
+
+
+@pytest.mark.parametrize("padding", [b" ", b"\n", b"\t"])
+def test_whitespace_around_private_payload_does_not_reclassify_exit_70(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    padding: bytes,
+) -> None:
+    class Process:
+        returncode = 70
+
+        def communicate(self, **_kwargs: object) -> tuple[bytes, bytes]:
+            return b"ordinary", b"failure"
+
+    def popen(command: list[str], **_kwargs: object) -> Process:
+        payload = json.dumps(DispatcherError.from_spec("R01").as_payload()).encode()
+        os.write(int(command[5]), padding + payload)
+        return Process()
+
+    monkeypatch.setattr(direct_runtime.subprocess, "Popen", popen)
+    result = dispatcher_core._run_resolved_invocation(
+        _transport_resolved(tmp_path), text=True
+    )
+
+    assert result.returncode == 70
+    assert result.stdout == "ordinary"
+    assert result.stderr == "failure"
+
+
+@pytest.mark.parametrize(
+    "diagnosis",
+    [
+        json.dumps(DispatcherError.from_spec("R01").as_payload()).encode() * 2,
+        json.dumps(DispatcherError.from_spec("R01").as_payload()).encode()
+        + b" " * (16 * 1024),
+    ],
+    ids=["multiple", "oversized"],
+)
+def test_invalid_private_diagnosis_records_remain_ordinary_exit_70(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    diagnosis: bytes,
+) -> None:
+    inherited_writer: list[int] = []
+
+    class Process:
+        returncode = 70
+
+        def communicate(self, **_kwargs: object) -> tuple[bytes, bytes]:
+            return b"ordinary", b"failure"
+
+    def popen(command: list[str], **kwargs: object) -> Process:
+        writer = int(command[5])
+        inherited_writer.append(writer)
+        assert kwargs["pass_fds"] == (writer,)
+        os.write(writer, diagnosis)
+        return Process()
+
+    monkeypatch.setattr(direct_runtime.subprocess, "Popen", popen)
+    result = dispatcher_core._run_resolved_invocation(
+        _transport_resolved(tmp_path), text=True
+    )
+
+    assert result.returncode == 70
+    assert result.stderr == "failure"
+    with pytest.raises(OSError):
+        os.fstat(inherited_writer[0])
+
+
+def test_output_decode_failure_precedes_checked_nonzero(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Process:
+        returncode = 4
+
+        def communicate(self, **_kwargs: object) -> tuple[bytes, bytes]:
+            return b"\xff", b""
+
+    monkeypatch.setattr(
+        direct_runtime.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: Process(),
+    )
+
+    with pytest.raises(DispatcherError) as caught:
+        dispatcher_core._run_resolved_invocation(
+            _transport_resolved(tmp_path), text=True, check=True
+        )
+
+    assert caught.value.code == "dispatcher.output_decode_failed"
+
+
+def test_checked_nonzero_uses_registered_dispatcher_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Process:
+        returncode = 4
+
+        def communicate(self, **_kwargs: object) -> tuple[bytes, bytes]:
+            return b"", b""
+
+    monkeypatch.setattr(
+        direct_runtime.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: Process(),
+    )
+
+    with pytest.raises(DispatcherError) as caught:
+        dispatcher_core._run_resolved_invocation(
+            _transport_resolved(tmp_path), text=True, check=True
+        )
+
+    assert caught.value.code == "dispatcher.checked_process_failed"
+    assert caught.value.as_payload()["returncode"] == 4
+
+
+def test_timeout_terminates_then_kills_and_wins(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+
+    class Process:
+        returncode = None
+        calls = 0
+
+        def communicate(self, **_kwargs: object) -> tuple[bytes, bytes]:
+            self.calls += 1
+            events.append(f"communicate:{_kwargs.get('timeout')}")
+            if self.calls < 3:
+                raise subprocess.TimeoutExpired(["runner"], 0.01)
+            self.returncode = -9
+            return b"", b""
+
+        def terminate(self) -> None:
+            events.append("terminate")
+
+        def kill(self) -> None:
+            events.append("kill")
+
+    monkeypatch.setattr(
+        direct_runtime.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: Process(),
+    )
+
+    with pytest.raises(DispatcherError) as caught:
+        dispatcher_core._run_resolved_invocation(
+            _transport_resolved(tmp_path), timeout=0.01, text=True, check=True
+        )
+
+    assert caught.value.code == "dispatcher.execution_timeout"
+    assert events == ["communicate:0.01", "terminate", "communicate:1", "kill", "communicate:None"]

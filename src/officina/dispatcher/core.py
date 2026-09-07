@@ -109,7 +109,7 @@ def _resolve_dispatch_metadata_for_trace(
 
     repository_root = get_repo_root(repo_root)
     if graph is not None and graph.schema_version != 6:
-        raise InvocationError(f"unsupported graph version {graph.schema_version}")
+        raise DispatcherError.from_spec("D01", schema_version=graph.schema_version)
     repository_config = repository_root / toml_io.repository_config_filename()
     if not repository_config.is_file():
         return _resolve_unconfigured_trace_metadata(
@@ -159,8 +159,8 @@ def _resolve_unconfigured_trace_metadata(
 
     selected_graph = graph or load_repository_blueprint_graph(repo_root)
     if selected_graph.schema_version != 6:
-        raise InvocationError(
-            f"unsupported graph version {selected_graph.schema_version}"
+        raise DispatcherError.from_spec(
+            "D01", schema_version=selected_graph.schema_version
         )
     module, source, export = resolve_export(
         selected_graph,
@@ -172,7 +172,10 @@ def _resolve_unconfigured_trace_metadata(
     implementing_source_id = source.node_id
     caller = selected_graph.nodes.get(caller_module_id)
     if caller is None or caller.node_type != "module":
-        raise CallerNotFoundError(f"caller module `{caller_module_id}` does not exist")
+        raise CallerNotFoundError.from_spec(
+            "D02",
+            caller_module_id=caller_module_id,
+        )
     if caller_module_id != module.node_id:
         declared = any(
             isinstance(use, dict)
@@ -182,18 +185,22 @@ def _resolve_unconfigured_trace_metadata(
             for use in selected_graph.nodes[source_id].declaration.get("uses_interfaces", [])
         )
         if not declared:
-            raise InterfaceUseUndeclaredError(
-                f"caller module `{caller_module_id}` does not declare use of `{target}`"
+            raise InterfaceUseUndeclaredError.from_spec(
+                "D03",
+                caller_module_id=caller_module_id,
+                interface_id=target,
             )
         access = export.export_declaration.get("access", {})
         if (
             access.get("allow_all_modules") is not True
             and caller_module_id not in access.get("allowed_callers", [])
         ):
-            raise UnauthorizedCallerError(
+            raise UnauthorizedCallerError.from_spec(
+                "D04",
                 caller_module_id=caller_module_id,
                 target_module_id=module.node_id,
                 interface_id=target,
+                gate="terminal-export",
             )
     compiled = (
         compile_route_smoke_invocation(source, export)

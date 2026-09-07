@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
-from dataclasses import replace
+from dataclasses import dataclass, replace
 import json
 from pathlib import Path
 import subprocess
 import sys
+from types import MappingProxyType
 from typing import Callable, Mapping, Sequence
 from uuid import uuid4
 
@@ -37,6 +38,7 @@ from ._setup_dispatches import (
     ManagedArgument,
     ManagedInterfaceBinding,
     PRODUCTION_BINDINGS,
+    PRODUCTION_DECLARATION_INVALID,
     PRODUCTION_DISPATCHES,
 )
 from ._setup_evaluation import (
@@ -56,8 +58,11 @@ from ._setup_state import (
     ContinuationIdentity,
     FlowConflict,
     LedgerConflict,
+    LedgerCapabilityError,
     LedgerError,
+    LedgerFormatError,
     LedgerPathError,
+    LedgerWriteUncertain,
     LedgerStore,
     SetupLedger,
     SetupReceipt,
@@ -85,6 +90,160 @@ class ManagerRecoveryError(RuntimeError):
 
 class ManagerBootstrapError(RuntimeError):
     """A stable external bootstrap boundary could not construct the manager."""
+
+    def __init__(
+        self, entry_id: str, *, cause: object | None = None, **context: object
+    ) -> None:
+        super().__init__(entry_id)
+        self.entry_id = entry_id
+        self.context = context
+        self.cause = cause
+
+
+@dataclass(frozen=True)
+class SetupErrorSpec:
+    """One closed, safe public setup-manager diagnosis."""
+
+    code: str
+    message: str
+    context_fields: frozenset[str] = frozenset()
+    allowed_setup_causes: frozenset[str] = frozenset()
+    allow_dispatcher_cause: bool = False
+    clue: str | None = None
+
+
+_SETTLEMENT_CAUSES = frozenset(
+    {"E10", "E20", "E20p", "E21", "E22", "E23", "E25", "E32", "E33", "E34"}
+)
+_CANCELLATION_CAUSES = _SETTLEMENT_CAUSES - {"E10"} | {"E36"}
+
+
+def _reduced_dispatcher_cause(
+    cause: object, *, require_direct: bool = False
+) -> dict[str, object] | None:
+    """Return only the safe first-level payload of one registered D/R error."""
+    if not isinstance(cause, BaseException) or not is_dispatch_invocation_error(cause) or (
+        require_direct and not isinstance(cause, DirectBlueprintError)
+    ):
+        return None
+    entry_id = getattr(cause, "_entry_id", None)
+    if (
+        not isinstance(entry_id, str)
+        or not entry_id.startswith(("D", "R"))
+        or require_direct and not entry_id.startswith("D")
+    ):
+        return None
+    context = getattr(cause, "_spec_context", None)
+    clues = getattr(cause, "clues", None)
+    caller_id = getattr(cause, "caller_module_id", None)
+    target_id = getattr(cause, "target_module_id", None)
+    factory = getattr(type(cause), "from_spec", None)
+    render = getattr(cause, "as_payload", None)
+    if (
+        not isinstance(context, Mapping)
+        or not isinstance(clues, tuple)
+        or not isinstance(caller_id, str)
+        or not isinstance(target_id, str)
+        or not callable(factory)
+        or not callable(render)
+    ):
+        return None
+    try:
+        candidate = factory(
+            entry_id,
+            caller_module_id=caller_id,
+            target_module_id=target_id,
+            clues=clues,
+            **{
+                key: value
+                for key, value in context.items()
+                if key not in {"caller_module_id", "target_module_id"}
+            },
+        )
+        payload = render()
+        candidate_payload = candidate.as_payload()
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return None
+    if not isinstance(payload, dict) or not isinstance(candidate_payload, dict):
+        return None
+    for field in ("schema_version", "cause", "recovery"):
+        payload.pop(field, None)
+        candidate_payload.pop(field, None)
+    if payload != candidate_payload:
+        return None
+    return payload
+
+
+SETUP_ERROR_SPECS: Mapping[str, SetupErrorSpec] = MappingProxyType({
+    "E00": SetupErrorSpec("setup.flow_busy", "Another managed setup flow is active."),
+    "E01": SetupErrorSpec("setup.request_invalid", "The setup-manager request does not match the declared interface signature."),
+    "E02": SetupErrorSpec("setup.arguments_not_object", "Setup action input must be one JSON object."),
+    "E03": SetupErrorSpec("setup.arguments_shape_invalid", "Setup action input has missing required fields or undeclared fields."),
+    "E04": SetupErrorSpec("setup.argument_type_invalid", "Declared setup arguments must be string, integer, or Boolean JSON values."),
+    "E05": SetupErrorSpec("setup.positional_argument_invalid", "Positional setup arguments cannot be Boolean."),
+    "E06": SetupErrorSpec("setup.positional_arguments_noncontiguous", "Optional positional setup arguments cannot leave gaps."),
+    "E08": SetupErrorSpec("setup.repository_configuration_missing", "The setup manager received no repository configuration."),
+    "E09": SetupErrorSpec("setup.repository_configuration_invalid", "The repository configuration is invalid."),
+    "E10": SetupErrorSpec("setup.graph_invalid", "Managed-setup metadata is invalid.", allow_dispatcher_cause=True),
+    "E11": SetupErrorSpec("setup.graph_read_failed", "Managed-setup metadata could not be read."),
+    "E11p": SetupErrorSpec("setup.permission_denied", "The setup manager was denied permission to access managed-setup metadata."),
+    "E12": SetupErrorSpec("setup.binding_missing", "A required managed setup interface has no declared runtime binding."),
+    "E13": SetupErrorSpec("setup.binding_mismatch", "The declared setup runtime binding does not match the live managed metadata."),
+    "E14": SetupErrorSpec("setup.initialization_invalid", "Managed-setup runtime declarations are inconsistent."),
+    "E15": SetupErrorSpec("setup.storage_capability_missing", "The setup manager has no configured atomic-ledger capability."),
+    "E16": SetupErrorSpec("setup.status_path_dispatch_failed", "The setup-status path lookup dispatch failed; no ledger path was obtained.", allow_dispatcher_cause=True),
+    "E17": SetupErrorSpec("setup.status_path_process_failed", "The setup-status path lookup returned nonzero process status {returncode}.", frozenset({"returncode"})),
+    "E18": SetupErrorSpec("setup.status_path_result_invalid", "The setup-status path lookup returned an invalid process result."),
+    "E19": SetupErrorSpec("setup.status_path_response_invalid", "The setup-status path lookup did not return {expected}.", frozenset({"expected"})),
+    "E20": SetupErrorSpec("setup.ledger_access_failed", "Managed-setup state could not be accessed safely."),
+    "E20p": SetupErrorSpec("setup.permission_denied", "The setup manager was denied permission to access its state ledger."),
+    "E21": SetupErrorSpec("setup.ledger_invalid", "Managed-setup state is not valid canonical ledger data."),
+    "E22": SetupErrorSpec("setup.ledger_conflict", "Managed-setup state changed while this operation was updating it.", clue="Another setup-manager process may have updated the ledger concurrently."),
+    "E23": SetupErrorSpec("setup.ledger_write_uncertain", "The final managed-setup ledger state could not be confirmed after writing."),
+    "E24": SetupErrorSpec("setup.flow_not_found", "No active managed setup flow matches this request."),
+    "E25": SetupErrorSpec("setup.flow_mismatch", "The request does not match the active managed setup flow."),
+    "E26": SetupErrorSpec("setup.operation_not_allowed", "This operation is not allowed for the active managed setup step."),
+    "E27": SetupErrorSpec("setup.root_not_managed", "The requested root is not a managed setup interface."),
+    "E28": SetupErrorSpec("setup.begin_state_invalid", "Managed setup cannot begin from the current evaluated state."),
+    "E29": SetupErrorSpec("setup.target_not_ready", "The target requires setup before it can be authorized."),
+    "E30": SetupErrorSpec("setup.flow_busy", "Another managed setup flow became active before authorization completed."),
+    "E31": SetupErrorSpec("setup.begin_conflict", "Managed setup state changed before the new flow could begin.", clue="Another setup-manager operation may have changed the managed state concurrently."),
+    "E32": SetupErrorSpec("setup.active_flow_stale", "The active setup flow no longer matches live state: {mismatch_subject}.", frozenset({"mismatch_subject"})),
+    "E33": SetupErrorSpec("setup.active_flow_stale", "The active teardown flow no longer matches live state: {mismatch_subject}.", frozenset({"mismatch_subject"})),
+    "E34": SetupErrorSpec("setup.ledger_graph_mismatch", "Stored setup receipts do not match the live managed-setup metadata."),
+    "E35": SetupErrorSpec("setup.transition_state_invalid", "The managed setup transition did not produce the required persisted next state."),
+    "E35a": SetupErrorSpec("setup.authorization_state_invalid", "Managed setup authorization did not produce an evaluated result."),
+    "E36": SetupErrorSpec("setup.active_flow_changed", "The active managed setup flow changed before the requested operation could be applied."),
+    "E37": SetupErrorSpec("setup.action_dispatch_failed", "The managed setup action dispatch failed; action completion is unknown.", allow_dispatcher_cause=True),
+    "E38": SetupErrorSpec("setup.action_result_invalid", "The managed setup action dispatch returned an invalid process result; action completion is unknown."),
+    "E39": SetupErrorSpec("setup.action_failed", "The managed {operation} action for `{interface}@{version}` returned nonzero process status {returncode}.", frozenset({"operation", "interface", "version", "returncode"})),
+    "E40": SetupErrorSpec("setup.verifier_failed", "The verifier for `{interface}@{version}` returned nonzero process status {returncode}; the managed step's completion is unknown.", frozenset({"interface", "version", "returncode"})),
+    "E41": SetupErrorSpec("setup.verification_incomplete", "The verifier reported that `{interface}@{version}` is incomplete.", frozenset({"interface", "version"})),
+    "E42": SetupErrorSpec("setup.verifier_response_invalid", "The verifier returned {reason}; the managed step's completion is unknown.", frozenset({"reason"})),
+    "E44": SetupErrorSpec("setup.settlement_failed", "The verifier confirmed external completion, but the setup manager could not record settlement.", allowed_setup_causes=_SETTLEMENT_CAUSES),
+    "E45": SetupErrorSpec("setup.cancellation_failed", "The verifier reported the current step incomplete, but the setup manager could not cancel the flow.", allowed_setup_causes=_CANCELLATION_CAUSES),
+    "E46": SetupErrorSpec("setup.cancellation_failed", "The setup manager could not cancel the flow; external completion remains unknown.", allowed_setup_causes=_CANCELLATION_CAUSES),
+    "E47": SetupErrorSpec("setup.dispatch_declaration_invalid", "The managed setup runtime dispatch declaration is inconsistent."),
+    "E48": SetupErrorSpec("setup.continuation_caller_mismatch", "The runtime caller does not match the continuation caller supplied to `begin`."),
+    "E49": SetupErrorSpec("setup.recovery_owner_unverified", "The active flow has no verified owner for ordinary recovery."),
+    "E50": SetupErrorSpec("setup.teardown_all_binding_invalid", "Global teardown cannot process a managed binding that declares arguments."),
+    "E51": SetupErrorSpec("setup.settlement_failed", "The managed action exited successfully, but the setup manager could not record settlement.", allowed_setup_causes=_SETTLEMENT_CAUSES),
+    "E52": SetupErrorSpec("setup.settlement_failed", "The setup manager could not record settlement after the current step was submitted as complete.", allowed_setup_causes=_SETTLEMENT_CAUSES),
+    "E53": SetupErrorSpec("setup.verifier_dispatch_failed", "The verifier dispatch failed; the managed step's completion is unknown.", allow_dispatcher_cause=True),
+    "E54": SetupErrorSpec("setup.verifier_result_invalid", "The verifier dispatch returned an invalid process result; the managed step's completion is unknown."),
+})
+
+
+class SetupFailure(RuntimeError):
+    """Internal carrier for one registered setup diagnosis."""
+
+    def __init__(
+        self, entry_id: str, *, cause: object | None = None, **context: object
+    ) -> None:
+        super().__init__(entry_id)
+        self.entry_id = entry_id
+        self.context = context
+        self.cause = cause
 
 
 class _AtomicFilesAdapter:
@@ -204,9 +363,9 @@ def _encode_arguments(
     try:
         request = json.loads(raw)
     except (json.JSONDecodeError, TypeError) as exc:
-        raise ManagerUsageError("stdin must be one JSON object") from exc
+        raise SetupFailure("E02") from exc
     if not isinstance(request, dict) or any(not isinstance(key, str) for key in request):
-        raise ManagerUsageError("stdin must be one JSON object")
+        raise SetupFailure("E02")
     declarations = {argument.name: argument for argument in arguments}
     unknown = set(request) - set(declarations)
     missing = {
@@ -215,7 +374,7 @@ def _encode_arguments(
         if argument.required and argument.name not in request
     }
     if unknown or missing:
-        raise ManagerUsageError("stdin contains undeclared or missing arguments")
+        raise SetupFailure("E03")
     positional: dict[int, str] = {}
     options: list[str] = []
     for argument in arguments:
@@ -223,10 +382,10 @@ def _encode_arguments(
             continue
         value = request[argument.name]
         if not isinstance(value, (str, int, bool)) or isinstance(value, float):
-            raise ManagerUsageError("declared arguments must be scalar JSON values")
+            raise SetupFailure("E04")
         if argument.position is not None:
             if isinstance(value, bool):
-                raise ManagerUsageError("positional arguments cannot be Boolean")
+                raise SetupFailure("E05")
             positional[argument.position] = str(value)
         else:
             assert argument.option is not None
@@ -236,7 +395,7 @@ def _encode_arguments(
             else:
                 options.extend((argument.option, str(value)))
     if positional and sorted(positional) != list(range(len(positional))):
-        raise ManagerUsageError("optional positional arguments cannot leave gaps")
+        raise SetupFailure("E06")
     return tuple(positional[index] for index in sorted(positional)) + tuple(options)
 
 
@@ -251,18 +410,20 @@ class SetupManager:
         dispatch: Callable[..., subprocess.CompletedProcess[str]],
         bindings: Mapping[str, ManagedInterfaceBinding],
         new_flow_id: Callable[[], str] | None = None,
+        runtime_caller: str | None = None,
     ) -> None:
         self.graph = graph
         self.store = store
         self._dispatch = dispatch
         self._bindings = dict(bindings)
         self._new_flow_id = new_flow_id or (lambda: str(uuid4()))
+        self._runtime_caller = runtime_caller
 
     def _binding(self, setup_interface: str) -> ManagedInterfaceBinding:
         try:
             binding = self._bindings[setup_interface]
         except KeyError as exc:
-            raise ManagerDomainError("current managed interface has no finite dispatch binding") from exc
+            raise SetupFailure("E12") from exc
         managed = self.graph.managed_setups.get(setup_interface)
         if managed is None or (
             binding.setup_interface != setup_interface
@@ -275,7 +436,7 @@ class SetupManager:
             or binding.teardown_verifier_interface != managed.teardown_verifier_interface
             or binding.teardown_verifier_version != managed.teardown_verifier_version
         ):
-            raise ManagerDomainError("finite dispatch binding does not match managed metadata")
+            raise SetupFailure("E13")
         return binding
 
     def _flow_step(
@@ -283,16 +444,17 @@ class SetupManager:
     ) -> tuple[ActiveFlow, SetupStep | TeardownStep, ManagedInterfaceBinding]:
         flow = ledger.active_flow
         if flow is None:
-            raise ManagerDomainError("no active managed flow")
+            raise SetupFailure("E24")
         managed = self.graph.managed_setups.get(flow.current_step)
         if managed is None:
-            raise ManagerRecoveryError("active flow current step is no longer managed")
+            raise SetupFailure("E32", mismatch_subject="current step")
         try:
             binding = self._binding(flow.current_step)
-        except ManagerDomainError as exc:
-            if flow.operation != "teardown-all":
-                raise
-            raise ManagerRecoveryError("active teardown binding is no longer valid") from exc
+        except SetupFailure as exc:
+            raise SetupFailure(
+                "E32" if flow.operation == "setup" else "E33",
+                mismatch_subject="binding",
+            ) from exc
         if flow.operation == "setup":
             step: SetupStep | TeardownStep = SetupStep.from_managed(managed)
         else:
@@ -303,9 +465,9 @@ class SetupManager:
                     else teardown_plan(self.graph, flow.root, ledger)
                 )
             except BlueprintGraphError as exc:
-                raise ManagerRecoveryError("active teardown no longer matches the live graph") from exc
+                raise SetupFailure("E33", mismatch_subject="metadata") from exc
             if not plan or plan[0].setup_interface != flow.current_step:
-                raise ManagerRecoveryError("active teardown no longer matches the live plan")
+                raise SetupFailure("E33", mismatch_subject="plan")
             step = plan[0]
         return flow, step, binding
 
@@ -322,34 +484,47 @@ class SetupManager:
     ) -> tuple[ActiveFlow, SetupStep | TeardownStep, ManagedInterfaceBinding]:
         flow, step, binding = self._flow_step(self.store.read())
         if flow.flow_id != flow_id or self._expected_interface(step) != interface:
-            raise ManagerDomainError("call does not match the exact current step")
+            raise SetupFailure("E25")
         if isinstance(step, TeardownStep) and step.action == "release-claim":
-            raise ManagerDomainError("claim-only teardown step has no external action")
+            raise SetupFailure("E26")
         return flow, step, binding
 
     def _known_active_context(
-        self, flow_id: str
+        self, expected_flow: ActiveFlow, expected_step: SetupStep | TeardownStep
     ) -> tuple[ActiveFlow | None, SetupStep | TeardownStep | None]:
-        """Recover only a still-readable matching flow for a redacted failure response."""
+        """Recover only a freshly reconstructed flow owned by this caller."""
         try:
-            flow, step, _binding = self._flow_step(self.store.read())
-        except (LedgerError, FlowConflict, ManagerDomainError, ManagerRecoveryError):
+            ledger = self.store.read()
+            flow, step, _binding = self._flow_step(ledger)
+        except (LedgerError, FlowConflict, ManagerDomainError, ManagerRecoveryError, SetupFailure):
             return None, None
-        if flow.flow_id != flow_id:
+        if (
+            flow != expected_flow
+            or step != expected_step
+            or ledger.schema_version != 2
+            or not flow.owner_verified
+            or flow.continuation is None
+            or not self._runtime_caller
+            or self._runtime_caller != flow.continuation.caller
+        ):
             return None, None
         return flow, step
 
     def _dispatch_result(
-        self, key: str, *, args: tuple[str, ...] = (), stdin: str | None = None
+        self, key: str, *, role: str, args: tuple[str, ...] = (), stdin: str | None = None
     ) -> subprocess.CompletedProcess[str]:
+        if not isinstance(key, str) or not key:
+            raise SetupFailure("E47")
         try:
             result = self._dispatch(key, args=args, stdin=stdin)
         except Exception as exc:
             if not is_dispatch_invocation_error(exc):
                 raise
-            raise ManagerRecoveryError("declared dispatch completion is uncertain") from exc
+            raise SetupFailure(
+                "E37" if role == "action" else "E53", cause=exc
+            ) from exc
         if not isinstance(result, subprocess.CompletedProcess):
-            raise ManagerRecoveryError("declared dispatch returned an invalid process result")
+            raise SetupFailure("E38" if role == "action" else "E54")
         return result
 
     def _verifier_outcome(
@@ -366,21 +541,25 @@ class SetupManager:
             expected = {"torn_down": True}
         if key is None:
             return None
-        result = self._dispatch_result(key)
+        result = self._dispatch_result(key, role="verifier")
         if result.returncode != 0:
-            return None
+            raise SetupFailure(
+                "E40", interface=self._expected_interface(step),
+                version=step.setup_version if isinstance(step, SetupStep) else step.teardown_version,
+                returncode=result.returncode,
+            )
         try:
             decoded = json.loads(result.stdout)
         except (json.JSONDecodeError, TypeError) as exc:
-            raise ManagerRecoveryError("declared verifier returned malformed JSON") from exc
+            raise SetupFailure("E42", reason="malformed JSON") from exc
         if not isinstance(decoded, dict) or any(type(value) is not bool for value in decoded.values()):
-            raise ManagerRecoveryError("declared verifier returned an unsupported payload")
+            raise SetupFailure("E42", reason="an unsupported response")
         if decoded == expected:
             return True
         false_value = {next(iter(expected)): False}
         if decoded == false_value:
             return False
-        raise ManagerRecoveryError("declared verifier returned an unsupported payload")
+        raise SetupFailure("E42", reason="an unsupported response")
 
     def _has_verifier(
         self, step: SetupStep | TeardownStep, binding: ManagedInterfaceBinding
@@ -394,17 +573,29 @@ class SetupManager:
     def _verify(self, flow: ActiveFlow, step: SetupStep | TeardownStep, binding: ManagedInterfaceBinding) -> bool:
         return self._verifier_outcome(flow, step, binding) is True
     def _settle_verified(
-        self, flow: ActiveFlow, step: SetupStep | TeardownStep
+        self, flow: ActiveFlow, step: SetupStep | TeardownStep, entry_id: str
     ) -> tuple[ActiveFlow | None, SetupStep | TeardownStep | None]:
-        if isinstance(step, SetupStep):
-            result = record_setup_success(self.store, self.graph, flow.flow_id, step)
-        elif flow.operation == "teardown-all":
-            try:
+        try:
+            if isinstance(step, SetupStep):
+                result = record_setup_success(self.store, self.graph, flow.flow_id, step)
+            elif flow.operation == "teardown-all":
                 result = record_teardown_all_success(self.store, self.graph, flow.flow_id, step)
-            except (BlueprintGraphError, FlowConflict, LedgerError) as exc:
-                raise ManagerRecoveryError("global teardown settlement needs recovery") from exc
-        else:
-            result = record_teardown_success(self.store, self.graph, flow.flow_id, step)
+            else:
+                result = record_teardown_success(self.store, self.graph, flow.flow_id, step)
+        except BlueprintGraphError as exc:
+            cause_id = "E10" if isinstance(step, SetupStep) else "E34"
+            raise SetupFailure(entry_id, cause=SetupFailure(cause_id)) from exc
+        except FlowConflict as exc:
+            cause = (
+                SetupFailure(exc.entry_id, **exc.context)
+                if exc.entry_id is not None
+                else None
+            )
+            raise SetupFailure(entry_id, cause=cause) from exc
+        except LedgerError as exc:
+            raise SetupFailure(entry_id, cause=exc) from exc
+        except SetupFailure as exc:
+            raise SetupFailure(entry_id, cause=exc) from exc
         if result.state == "ready":
             return None, None
         next_flow = self.store.read().active_flow
@@ -467,24 +658,137 @@ class SetupManager:
 
     def _domain_failure(
         self,
-        operation: str,
-        message: str,
+        response_operation: str,
+        entry_id: str | SetupFailure | LedgerError,
         *,
         state_name: str = "failed",
         flow: ActiveFlow | None = None,
         step: SetupStep | TeardownStep | None = None,
         original: ContinuationIdentity | None = None,
+        cause: object | None = None,
+        clue_evidence: bool = False,
+        **context: object,
     ) -> tuple[int, dict[str, object]]:
-        if state_name == "recovery-required" and operation == "teardown-all" and flow is not None:
-            flow, step = self._known_active_context(flow.flow_id)
+        if isinstance(entry_id, SetupFailure):
+            cause = entry_id.cause if cause is None else cause
+            context = entry_id.context
+            entry_id = entry_id.entry_id
+        elif isinstance(entry_id, LedgerError):
+            caught: BaseException | None = entry_id
+            permission = False
+            for _ in range(3):
+                if isinstance(caught, PermissionError):
+                    permission = True
+                    break
+                caught = caught.__cause__ if caught is not None else None
+            if isinstance(entry_id, LedgerCapabilityError):
+                entry_id = "E15"
+            elif permission:
+                entry_id = "E20p"
+            elif isinstance(entry_id, FlowConflict):
+                if entry_id.entry_id is None:
+                    raise ValueError("unclassified managed flow conflict")
+                context = entry_id.context
+                entry_id = entry_id.entry_id
+            elif isinstance(entry_id, LedgerFormatError):
+                entry_id = "E21"
+            elif isinstance(entry_id, LedgerWriteUncertain):
+                entry_id = "E23"
+            elif isinstance(entry_id, LedgerConflict):
+                entry_id = "E22"
+                clue_evidence = True
+            else:
+                entry_id = "E20"
+        spec = SETUP_ERROR_SPECS[entry_id]
+        if set(context) != set(spec.context_fields):
+            raise ValueError(f"invalid context for setup diagnosis {entry_id}")
+        if state_name == "recovery-required":
+            if flow is None:
+                state_name = "failed"
+            else:
+                if step is None:
+                    flow = None
+                else:
+                    flow, step = self._known_active_context(flow, step)
+                if flow is None:
+                    state_name = "failed"
+                    original = None
+        diagnosis: dict[str, object] = {
+            "error": spec.message.format(**context),
+            "error_code": spec.code,
+        }
+        if clue_evidence and spec.clue is not None:
+            diagnosis["clues"] = [spec.clue]
+        if cause is not None:
+            dispatcher_cause = _reduced_dispatcher_cause(
+                cause, require_direct=entry_id == "E10"
+            )
+            if spec.allow_dispatcher_cause and dispatcher_cause is not None:
+                diagnosis["cause"] = dispatcher_cause
+            elif isinstance(cause, SetupFailure):
+                if cause.entry_id in spec.allowed_setup_causes:
+                    cause_spec = SETUP_ERROR_SPECS[cause.entry_id]
+                    if set(cause.context) != set(cause_spec.context_fields):
+                        raise ValueError(
+                            f"invalid context for setup diagnosis {cause.entry_id}"
+                        )
+                    diagnosis["cause"] = {
+                        "schema_version": SCHEMA_VERSION,
+                        "code": cause_spec.code,
+                        "message": cause_spec.message.format(**cause.context),
+                    }
+            elif isinstance(cause, LedgerError):
+                caught: BaseException | None = cause
+                denied = False
+                for _ in range(3):
+                    if isinstance(caught, PermissionError):
+                        denied = True
+                        break
+                    caught = caught.__cause__ if caught is not None else None
+                if isinstance(cause, FlowConflict):
+                    cause_id = cause.entry_id
+                    cause_context = cause.context
+                elif denied:
+                    cause_id = "E20p"
+                    cause_context = {}
+                elif isinstance(cause, LedgerFormatError):
+                    cause_id = "E21"
+                    cause_context = {}
+                elif isinstance(cause, LedgerWriteUncertain):
+                    cause_id = "E23"
+                    cause_context = {}
+                elif isinstance(cause, LedgerConflict):
+                    cause_id = "E22"
+                    cause_context = {}
+                else:
+                    cause_id = "E20"
+                    cause_context = {}
+                if cause_id in spec.allowed_setup_causes:
+                    cause_spec = SETUP_ERROR_SPECS[cause_id]
+                    if set(cause_context) != set(cause_spec.context_fields):
+                        raise ValueError(
+                            f"invalid context for setup diagnosis {cause_id}"
+                        )
+                    diagnosis["cause"] = {
+                        "schema_version": SCHEMA_VERSION,
+                        "code": cause_spec.code,
+                        "message": cause_spec.message.format(**cause_context),
+                    }
+        if state_name == "recovery-required" and flow is not None:
+            diagnosis["recovery"] = {
+                "interface": "setup-interface-manager.interface.recover",
+                "version": 1,
+                "flow_id": flow.flow_id,
+                "actions": ["retry", "cancel"],
+            }
         return 2, _response(
             flow_id=None if flow is None else flow.flow_id,
-            operation=operation,
+            operation=response_operation,
             state=state_name,
             current_step=step,
             original=original,
             resume_original=False,
-            error=message,
+            **diagnosis,
         )
 
     def _run_teardown_all(
@@ -507,18 +811,23 @@ class SetupManager:
                     current_step=step, original=None,
                     instructions=binding.teardown_instructions,
                 )
-            action = self._dispatch_result(binding.teardown_dispatch_key)
+            action = self._dispatch_result(binding.teardown_dispatch_key, role="action")
             if action.returncode != 0:
                 return self._domain_failure(
-                    flow.operation, "declared action failed", flow=flow, step=step
+                    flow.operation, "E39", state_name="recovery-required", flow=flow, step=step,
+                    operation="teardown", interface=step.teardown_interface,
+                    version=step.teardown_version, returncode=action.returncode,
                 )
             if self._has_verifier(step, binding):
                 if not self._verify(flow, step, binding):
                     return self._domain_failure(
-                        flow.operation, "declared verifier reported incomplete state",
-                        flow=flow, step=step,
+                        flow.operation, "E41", state_name="recovery-required",
+                        flow=flow, step=step, interface=step.teardown_interface,
+                        version=step.teardown_version,
                     )
-            next_flow, next_step = self._settle_verified(flow, step)
+            next_flow, next_step = self._settle_verified(
+                flow, step, "E44" if self._has_verifier(step, binding) else "E51"
+            )
             if next_step is None:
                 return self._result_response(flow.operation, None, None, None)
             if next_flow is None or not isinstance(next_step, TeardownStep):
@@ -532,7 +841,7 @@ class SetupManager:
             if ledger.active_flow is not None:
                 active, active_step, _binding = self._flow_step(ledger)
                 return self._domain_failure(
-                    "teardown-all", "another managed flow is active", state_name="busy",
+                    "teardown-all", "E00", state_name="busy",
                     flow=active, step=active_step, original=None,
                 )
             plan = teardown_all_plan(self.graph, ledger)
@@ -541,7 +850,7 @@ class SetupManager:
             for candidate in plan:
                 binding = self._binding(candidate.setup_interface)
                 if binding.arguments:
-                    raise ManagerDomainError("global teardown requires zero-argument bindings")
+                    raise SetupFailure("E50")
             step = plan[0]
             flow = ActiveFlow(self._new_flow_id(), "teardown-all", None, step.setup_interface, (), None)
             def start(current: SetupLedger) -> SetupLedger:
@@ -550,11 +859,25 @@ class SetupManager:
                 return begin_flow(current, flow)
             self.store.update(start)
             return self._run_teardown_all(flow, step)
-        except (BlueprintGraphError, FlowConflict, ManagerDomainError, LedgerError) as exc:
-            return self._domain_failure("teardown-all", str(exc))
+        except SetupFailure as exc:
+            return self._domain_failure("teardown-all", exc)
+        except LedgerConflict as exc:
+            if isinstance(exc, LedgerWriteUncertain):
+                return self._domain_failure("teardown-all", exc)
+            return self._domain_failure(
+                "teardown-all", "E31", clue_evidence=True
+            )
+        except FlowConflict:
+            return self._domain_failure(
+                "teardown-all", "E31", clue_evidence=True
+            )
+        except LedgerError as exc:
+            return self._domain_failure("teardown-all", exc)
+        except (BlueprintGraphError, ManagerDomainError):
+            return self._domain_failure("teardown-all", "E34")
         except ManagerRecoveryError as exc:
             return self._domain_failure(
-                "teardown-all", str(exc), state_name="recovery-required",
+                "teardown-all", "E36", state_name="recovery-required",
                 flow=flow, step=step,
             )
     def status(self, target_interface: str) -> tuple[int, dict[str, object]]:
@@ -569,15 +892,10 @@ class SetupManager:
                 ],
                 "flow_id": result.flow_id,
             }
+        except FlowConflict:
+            return self._domain_failure("status", "E10")
         except LedgerError as exc:
-            return 2, {
-                "schema_version": SCHEMA_VERSION,
-                "code": "setup_busy",
-                "root_setup_interface": None,
-                "pending_stack": [],
-                "flow_id": None,
-                "error": str(exc),
-            }
+            return self._domain_failure("status", exc)
 
     def authorize(
         self,
@@ -591,8 +909,12 @@ class SetupManager:
         )
         try:
             result = authorize_ready_root(self.store, self.graph, target_interface)
+        except FlowConflict as exc:
+            return self._domain_failure("authorize", exc, original=original)
         except LedgerError as exc:
-            return self._domain_failure("authorize", str(exc), original=original)
+            return self._domain_failure("authorize", exc, original=original)
+        if result is None:
+            return self._domain_failure("authorize", "E35a", original=original)
         if result.code in {"unmanaged", "ready"}:
             return 0, _response(
                 flow_id=None,
@@ -604,12 +926,19 @@ class SetupManager:
             )
         state_name = "busy" if result.code == "setup_busy" else "failed"
         step = result.pending_stack[-1] if result.pending_stack else None
+        flow = None
+        if result.code == "setup_busy":
+            try:
+                flow, step, _binding = self._flow_step(self.store.read())
+            except (LedgerError, SetupFailure):
+                flow, step = None, None
         return self._domain_failure(
             "authorize",
-            f"target is not ready: {result.code}",
+            "E30" if result.code == "setup_busy" else "E29",
             state_name=state_name,
+            flow=flow,
             step=step,
-            original=original,
+            original=None if result.code == "setup_busy" else original,
         )
 
     def begin(
@@ -624,21 +953,23 @@ class SetupManager:
             original_caller, original_interface, original_version
         )
         if operation not in {"setup", "teardown"}:
-            return self._domain_failure("begin", "operation must be setup or teardown", original=original)
+            return self._domain_failure("begin", "E01", original=original)
+        if not self._runtime_caller or self._runtime_caller != original_caller:
+            return self._domain_failure("begin", "E48")
         try:
             ledger = self.store.read()
             if ledger.active_flow is not None:
                 flow, step, _binding = self._flow_step(ledger)
                 return self._domain_failure(
                     operation,
-                    "another managed flow is active",
+                    "E00",
                     state_name="busy",
                     flow=flow,
                     step=step,
-                    original=flow.continuation,
+                    original=None,
                 )
             if root_setup_interface not in self.graph.managed_setups:
-                raise ManagerDomainError("root setup interface is not managed")
+                raise SetupFailure("E27")
             if operation == "setup":
                 evaluation = evaluate_target(self.graph, root_setup_interface, ledger)
                 if evaluation.code == "ready":
@@ -650,7 +981,7 @@ class SetupManager:
                         original=original,
                     )
                 if evaluation.code != "setup_required" or not evaluation.pending_stack:
-                    raise ManagerDomainError("managed setup cannot begin in the current state")
+                    raise SetupFailure("E28")
                 step: SetupStep | TeardownStep = evaluation.pending_stack[-1]
                 setup_order = tuple(
                     managed.setup_interface
@@ -680,6 +1011,10 @@ class SetupManager:
                 current_step=step.setup_interface,
                 verified_steps=verified_steps,
                 continuation=original,
+                owner_verified=bool(
+                    self._runtime_caller
+                    and self._runtime_caller == original_caller
+                ),
             )
 
             def start(current: SetupLedger) -> SetupLedger:
@@ -705,11 +1040,25 @@ class SetupManager:
                 if isinstance(step, TeardownStep) and step.action in ("release-claim", "invalidate-receipt"):
                     flow, step = self._advance_internal_teardown(flow, step)
             return self._result_response(operation, original, flow, step)
-        except (FlowConflict, ManagerDomainError, LedgerError) as exc:
-            return self._domain_failure(operation, str(exc), original=original)
+        except SetupFailure as exc:
+            return self._domain_failure(operation, exc, original=original)
+        except LedgerConflict as exc:
+            if isinstance(exc, LedgerWriteUncertain):
+                return self._domain_failure(operation, exc, original=original)
+            return self._domain_failure(
+                operation, "E31", original=original, clue_evidence=True
+            )
+        except FlowConflict as exc:
+            if exc.entry_id == "E10":
+                return self._domain_failure(operation, exc, original=original)
+            return self._domain_failure(operation, "E31", original=original, clue_evidence=True)
+        except LedgerError as exc:
+            return self._domain_failure(operation, exc, original=original)
+        except ManagerDomainError:
+            return self._domain_failure(operation, "E31", original=original, clue_evidence=True)
         except ManagerRecoveryError as exc:
             return self._domain_failure(
-                operation, str(exc), state_name="recovery-required", original=original
+                operation, "E35", state_name="recovery-required", original=original
             )
 
     def authorize_markdown_call(
@@ -719,22 +1068,22 @@ class SetupManager:
             ledger = self.store.read()
             flow = ledger.active_flow
             if flow is None:
-                raise ManagerDomainError("no active managed flow")
+                raise SetupFailure("E24")
             if flow.flow_id != flow_id:
-                raise ManagerDomainError("call does not match the exact current flow")
+                raise SetupFailure("E25")
             managed = self.graph.managed_setups.get(flow.current_step)
             if managed is None:
-                raise ManagerRecoveryError("active flow current step is no longer managed")
+                raise SetupFailure("E32", mismatch_subject="current step")
             try:
                 binding = self._binding(flow.current_step)
-            except ManagerDomainError as exc:
-                raise ManagerRecoveryError("active binding is no longer valid") from exc
+            except SetupFailure as exc:
+                raise SetupFailure("E32", mismatch_subject="binding") from exc
             if binding.setup_kind != "markdown":
-                raise ManagerDomainError("current step is not Markdown")
+                raise SetupFailure("E26")
             if flow.operation != "setup":
-                raise ManagerDomainError("only setup operations support markdown helper calls")
+                raise SetupFailure("E26")
             if (target_interface, target_version) not in binding.helper_allowlist:
-                raise ManagerDomainError("helper call not authorized for current step")
+                raise SetupFailure("E26")
             step: SetupStep | TeardownStep = SetupStep.from_managed(managed)
             return 0, _response(
                 flow_id=flow.flow_id,
@@ -745,18 +1094,20 @@ class SetupManager:
                 interface=target_interface,
                 version=target_version,
             )
-        except (ManagerDomainError, FlowConflict, LedgerError) as exc:
-            return self._domain_failure("authorize-markdown-call", str(exc))
+        except SetupFailure as exc:
+            return self._domain_failure("authorize-markdown-call", exc)
+        except LedgerError as exc:
+            return self._domain_failure("authorize-markdown-call", exc)
         except ManagerRecoveryError as exc:
             return self._domain_failure(
-                "authorize-markdown-call", str(exc), state_name="recovery-required"
+                "authorize-markdown-call", "E35"
             )
 
     def run_markdown(self, flow_id: str, interface: str) -> tuple[int, dict[str, object]]:
         try:
             flow, step, binding = self._require_current(flow_id, interface)
             if binding.setup_kind != "markdown":
-                raise ManagerDomainError("current step is not Markdown")
+                raise SetupFailure("E26")
             instructions = (
                 binding.setup_instructions
                 if isinstance(step, SetupStep)
@@ -770,11 +1121,13 @@ class SetupManager:
                 original=flow.continuation,
                 instructions=instructions,
             )
-        except (ManagerDomainError, FlowConflict, LedgerError) as exc:
-            return self._domain_failure("run-markdown", str(exc))
+        except SetupFailure as exc:
+            return self._domain_failure("run-markdown", exc)
+        except LedgerError as exc:
+            return self._domain_failure("run-markdown", exc)
         except ManagerRecoveryError as exc:
             return self._domain_failure(
-                "run-markdown", str(exc), state_name="recovery-required"
+                "run-markdown", "E35"
             )
 
     def run_python(
@@ -783,7 +1136,7 @@ class SetupManager:
         try:
             flow, step, binding = self._require_current(flow_id, interface)
             if binding.setup_kind != "python":
-                raise ManagerDomainError("current step is not Python")
+                raise SetupFailure("E26")
             argv = _encode_arguments(stdin_request, binding.arguments)
             action_key = (
                 binding.setup_dispatch_key
@@ -791,40 +1144,56 @@ class SetupManager:
                 else binding.teardown_dispatch_key
             )
             if isinstance(step, TeardownStep) and step.action in ("release-claim", "invalidate-receipt"):
-                raise ManagerDomainError("internal teardown step has no external action")
-            action = self._dispatch_result(action_key, args=argv)
+                raise SetupFailure("E26")
+            action = self._dispatch_result(action_key, role="action", args=argv)
             if action.returncode != 0:
                 return self._domain_failure(
                     flow.operation,
-                    "declared action failed",
+                    "E39",
+                    state_name="recovery-required",
                     flow=flow,
                     step=step,
                     original=flow.continuation,
+                    operation="setup" if isinstance(step, SetupStep) else "teardown",
+                    interface=self._expected_interface(step),
+                    version=step.setup_version if isinstance(step, SetupStep) else step.teardown_version,
+                    returncode=action.returncode,
                 )
             if self._has_verifier(step, binding):
                 if not self._verify(flow, step, binding):
                     return self._domain_failure(
                         flow.operation,
-                        "declared verifier reported incomplete state",
+                        "E41",
+                        state_name="recovery-required",
                         flow=flow,
                         step=step,
                         original=flow.continuation,
+                        interface=self._expected_interface(step),
+                        version=step.setup_version if isinstance(step, SetupStep) else step.teardown_version,
                     )
-            next_flow, next_step = self._settle_verified(flow, step)
+            next_flow, next_step = self._settle_verified(
+                flow, step, "E44" if self._has_verifier(step, binding) else "E51"
+            )
             return self._result_response(
                 flow.operation, flow.continuation, next_flow, next_step
             )
-        except ManagerUsageError as exc:
-            return 64, _response(
-                flow_id=None,
-                operation="run-python",
-                state="failed",
-                current_step=None,
-                original=None,
-                error=str(exc),
+        except SetupFailure as exc:
+            if exc.entry_id in {"E02", "E03", "E04", "E05", "E06"}:
+                spec = SETUP_ERROR_SPECS[exc.entry_id]
+                return 64, _response(
+                    flow_id=None, operation="run-python", state="failed",
+                    current_step=None, original=None, error=spec.message,
+                    error_code=spec.code,
+                )
+            recovery = exc.entry_id in {"E37", "E38", "E40", "E41", "E42", "E44", "E51", "E52", "E53", "E54"}
+            return self._domain_failure(
+                locals().get("flow").operation if locals().get("flow") else "run-python",
+                exc, state_name="recovery-required" if recovery else "failed",
+                flow=locals().get("flow"), step=locals().get("step"),
+                original=locals().get("flow").continuation if locals().get("flow") else None,
             )
-        except (ManagerDomainError, FlowConflict, LedgerError) as exc:
-            return self._domain_failure("run-python", str(exc))
+        except LedgerError as exc:
+            return self._domain_failure("run-python", exc)
         except ManagerRecoveryError as exc:
             try:
                 ledger = self.store.read()
@@ -834,7 +1203,7 @@ class SetupManager:
                 flow, step = None, None
             return self._domain_failure(
                 "run-python",
-                str(exc),
+                "E35",
                 state_name="recovery-required",
                 flow=flow,
                 step=step,
@@ -847,33 +1216,44 @@ class SetupManager:
         try:
             flow, step, binding = self._require_current(flow_id, interface)
             if binding.setup_kind != "markdown":
-                raise ManagerDomainError("settle is only valid for Markdown steps")
+                raise SetupFailure("E26")
             if isinstance(step, TeardownStep) and step.action in ("release-claim", "invalidate-receipt"):
-                raise ManagerDomainError("internal teardown step has no external action")
+                raise SetupFailure("E26")
             if self._has_verifier(step, binding):
                 if not self._verify(flow, step, binding):
                     return self._domain_failure(
                         flow.operation,
-                        "declared verifier reported incomplete state",
+                        "E41",
+                        state_name="recovery-required",
                         flow=flow,
                         step=step,
                         original=flow.continuation,
+                        interface=self._expected_interface(step),
+                        version=step.setup_version if isinstance(step, SetupStep) else step.teardown_version,
                     )
-            next_flow, next_step = self._settle_verified(flow, step)
+            next_flow, next_step = self._settle_verified(
+                flow, step, "E44" if self._has_verifier(step, binding) else "E52"
+            )
             if flow.operation == "teardown-all" and next_step is not None:
                 assert next_flow is not None and isinstance(next_step, TeardownStep)
                 return self._run_teardown_all(next_flow, next_step)
             return self._result_response(
                 flow.operation, flow.continuation, next_flow, next_step
             )
-        except (ManagerDomainError, FlowConflict, LedgerError) as exc:
-            return self._domain_failure("settle", str(exc))
+        except SetupFailure as exc:
+            recovery = exc.entry_id in {"E40", "E41", "E42", "E44", "E51", "E52", "E53", "E54"}
+            return self._domain_failure(
+                flow.operation if flow is not None else "settle",
+                exc, state_name="recovery-required" if recovery else "failed",
+                flow=flow, step=step,
+                original=None if flow is None else flow.continuation,
+            )
+        except LedgerError as exc:
+            return self._domain_failure("settle", exc)
         except ManagerRecoveryError as exc:
-            if flow is None or step is None:
-                flow, step = self._known_active_context(flow_id)
             return self._domain_failure(
                 "settle" if flow is None else flow.operation,
-                str(exc),
+                "E35",
                 state_name="recovery-required",
                 flow=flow,
                 step=step,
@@ -886,11 +1266,11 @@ class SetupManager:
                 flow, step, _binding = self._flow_step(self.store.read())
                 return self._domain_failure(
                     "invalidate",
-                    "recover or cancel the active flow before invalidating",
+                    "E00",
                     state_name="busy",
                     flow=flow,
                     step=step,
-                    original=flow.continuation,
+                    original=None,
                 )
             removed = invalidate_receipts(self.store, self.graph, setup_interface)
             return 0, _response(
@@ -901,17 +1281,28 @@ class SetupManager:
                 original=None,
                 removed=list(removed),
             )
-        except (FlowConflict, LedgerError) as exc:
-            return self._domain_failure("invalidate", str(exc))
+        except FlowConflict as exc:
+            return self._domain_failure("invalidate", exc)
+        except LedgerError as exc:
+            return self._domain_failure("invalidate", exc)
 
     def recover(self, flow_id: str, action: str) -> tuple[int, dict[str, object]]:
         flow: ActiveFlow | None = None
         step: SetupStep | TeardownStep | None = None
+        cancellation_failure: str | None = None
         try:
             ledger = self.store.read()
             flow, step, binding = self._flow_step(ledger)
             if flow.flow_id != flow_id:
-                raise ManagerDomainError("active flow does not match")
+                raise SetupFailure("E25")
+            if (
+                ledger.schema_version != 2
+                or not flow.owner_verified
+                or flow.continuation is None
+                or not self._runtime_caller
+                or self._runtime_caller != flow.continuation.caller
+            ):
+                raise SetupFailure("E49")
             if action == "retry":
                 if (
                     isinstance(step, TeardownStep)
@@ -930,7 +1321,7 @@ class SetupManager:
                     if outcome is None:
                         raise ManagerRecoveryError("declared verifier completion is uncertain")
                     if outcome:
-                        next_flow, next_step = self._settle_verified(flow, step)
+                        next_flow, next_step = self._settle_verified(flow, step, "E44")
                         if flow.operation == "teardown-all" and next_step is not None:
                             assert next_flow is not None and isinstance(next_step, TeardownStep)
                             return self._run_teardown_all(next_flow, next_step)
@@ -974,99 +1365,57 @@ class SetupManager:
             if action != "cancel":
                 raise ManagerUsageError("recovery action must be retry or cancel")
 
-            if flow.operation == "teardown-all":
-                assert isinstance(step, TeardownStep)
-                if self._has_verifier(step, binding):
-                    outcome = self._verifier_outcome(flow, step, binding)
-                    if outcome is None:
-                        raise ManagerRecoveryError("declared verifier completion is uncertain")
-                    if outcome:
-                        try:
-                            record_teardown_all_success(
-                                self.store, self.graph, flow.flow_id, step, advance=False
-                            )
-                        except (BlueprintGraphError, FlowConflict, LedgerError) as exc:
-                            raise ManagerRecoveryError("global teardown cancellation needs recovery") from exc
-                    else:
-                        def abandon(current: SetupLedger) -> SetupLedger:
-                            active, live_step, _binding = self._flow_step(current)
-                            if active != flow or live_step != step:
-                                raise ManagerRecoveryError("global teardown changed before cancellation")
-                            return clear_flow(current, flow_id)
-                        self.store.update(abandon)
-                else:
-                    def abandon_unverified(current: SetupLedger) -> SetupLedger:
-                        active, live_step, _binding = self._flow_step(current)
-                        if active != flow or live_step != step:
-                            raise ManagerRecoveryError("global teardown changed before cancellation")
-                        interfaces = dict(current.interfaces)
-                        interfaces.pop(step.setup_interface, None)
-                        return SetupLedger(interfaces=interfaces, active_flow=None)
-                    self.store.update(abandon_unverified)
-                return self._result_response(flow.operation, None, None, None)
+            has_verifier = self._has_verifier(step, binding)
+            outcome = self._verifier_outcome(flow, step, binding) if has_verifier else None
+            if has_verifier and outcome is None:
+                raise ManagerRecoveryError("declared verifier completion is uncertain")
+            if flow.operation != "teardown-all" and outcome:
+                next_flow, next_step = self._settle_verified(flow, step, "E44")
+                return self._result_response(
+                    flow.operation, flow.continuation, next_flow, next_step
+                )
+            cancellation_failure = "E45" if has_verifier and outcome is False else "E46"
 
-            if isinstance(step, SetupStep):
-                if self._has_verifier(step, binding):
-                    def cancel_verified(current: SetupLedger) -> SetupLedger:
-                        active = current.active_flow
-                        if active is None or active.flow_id != flow_id:
-                            raise FlowConflict("active flow does not match")
-                        interfaces = dict(current.interfaces)
-                        for setup_interface in active.verified_steps:
-                            receipt = interfaces.get(setup_interface)
-                            if receipt is not None:
-                                interfaces[setup_interface] = SetupReceipt(
-                                    receipt.version, receipt.required_by - {active.root}
-                                )
-                        return SetupLedger(interfaces=interfaces, active_flow=None)
-                    self.store.update(cancel_verified)
-                else:
-                    def cancel_unverified(current: SetupLedger) -> SetupLedger:
-                        active = current.active_flow
-                        if active is None or active.flow_id != flow_id:
-                            raise FlowConflict("active flow does not match")
-                        interfaces = dict(current.interfaces)
-                        for setup_interface in active.verified_steps:
-                            receipt = interfaces.get(setup_interface)
-                            if receipt is not None:
-                                interfaces[setup_interface] = SetupReceipt(
-                                    receipt.version, receipt.required_by - {active.root}
-                                )
-                        return SetupLedger(interfaces=interfaces, active_flow=None)
-                    self.store.update(cancel_unverified)
-            else:
-                if self._has_verifier(step, binding):
-                    def cancel_teardown_verified(current: SetupLedger) -> SetupLedger:
-                        active = current.active_flow
-                        if active is None or active.flow_id != flow_id:
-                            raise FlowConflict("active flow does not match")
-                        interfaces = dict(current.interfaces)
-                        for setup_interface in active.verified_steps:
-                            receipt = interfaces.get(setup_interface)
-                            if receipt is not None:
-                                interfaces[setup_interface] = SetupReceipt(
-                                    receipt.version, receipt.required_by - {active.root}
-                                )
-                        return SetupLedger(interfaces=interfaces, active_flow=None)
-                    self.store.update(cancel_teardown_verified)
-                else:
-                    def cancel_teardown_unverified(current: SetupLedger) -> SetupLedger:
-                        active = current.active_flow
-                        if active is None or active.flow_id != flow_id:
-                            raise FlowConflict("active flow does not match")
-                        live_step = self._flow_step(current)[1]
-                        if live_step != step:
-                            raise FlowConflict("active teardown step does not match")
-                        interfaces = dict(current.interfaces)
-                        interfaces.pop(step.setup_interface, None)
-                        for setup_interface in active.verified_steps:
-                            receipt = interfaces.get(setup_interface)
-                            if receipt is not None:
-                                interfaces[setup_interface] = SetupReceipt(
-                                    receipt.version, receipt.required_by - {active.root}
-                                )
-                        return SetupLedger(interfaces=interfaces, active_flow=None)
-                    self.store.update(cancel_teardown_unverified)
+            def cancel(current: SetupLedger) -> SetupLedger:
+                try:
+                    active, live_step, _binding = self._flow_step(current)
+                except SetupFailure as exc:
+                    raise FlowConflict(
+                        "active flow changed before cancellation", entry_id="E36"
+                    ) from exc
+                if (
+                    current.schema_version != 2
+                    or active != flow
+                    or live_step != step
+                    or not active.owner_verified
+                    or active.continuation is None
+                    or not self._runtime_caller
+                    or self._runtime_caller != active.continuation.caller
+                ):
+                    raise FlowConflict(
+                        "active flow changed before cancellation", entry_id="E36"
+                    )
+                interfaces = dict(current.interfaces)
+                if (
+                    flow.operation == "teardown-all"
+                    and outcome is not False
+                ) or (
+                    isinstance(step, TeardownStep) and not has_verifier
+                ):
+                    interfaces.pop(step.setup_interface, None)
+                for setup_interface in active.verified_steps:
+                    receipt = interfaces.get(setup_interface)
+                    if receipt is not None:
+                        interfaces[setup_interface] = SetupReceipt(
+                            receipt.version, receipt.required_by - {active.root}
+                        )
+                return SetupLedger(
+                    interfaces=interfaces,
+                    active_flow=None,
+                    schema_version=current.schema_version,
+                )
+
+            self.store.update(cancel)
             return 0, _response(
                 flow_id=None,
                 operation=flow.operation,
@@ -1075,23 +1424,48 @@ class SetupManager:
                 original=flow.continuation,
                 resume_original=False,
             )
-        except ManagerUsageError as exc:
+        except ManagerUsageError:
             return 64, _response(
                 flow_id=None,
                 operation="recover",
                 state="failed",
                 current_step=None,
                 original=None,
-                error=str(exc),
+                error=SETUP_ERROR_SPECS["E01"].message,
+                error_code=SETUP_ERROR_SPECS["E01"].code,
             )
-        except (ManagerDomainError, FlowConflict, LedgerError) as exc:
-            return self._domain_failure("recover", str(exc))
+        except SetupFailure as exc:
+            if exc.entry_id == "E49":
+                return self._domain_failure("recover", exc)
+            recovery = exc.entry_id in {"E40", "E41", "E42", "E44", "E45", "E46", "E51", "E52", "E53", "E54"}
+            return self._domain_failure(
+                flow.operation if flow is not None else "recover",
+                exc, state_name="recovery-required" if recovery else "failed",
+                flow=flow, step=step,
+                original=None if flow is None else flow.continuation,
+            )
+        except LedgerError as exc:
+            if cancellation_failure is not None and flow is not None:
+                failure = SetupFailure(cancellation_failure, cause=exc)
+                return self._domain_failure(
+                    flow.operation, failure, state_name="recovery-required",
+                    flow=flow, step=step, original=flow.continuation,
+                )
+            return self._domain_failure("recover", exc)
+        except (ManagerDomainError, FlowConflict):
+            if cancellation_failure is not None and flow is not None:
+                failure = SetupFailure(
+                    cancellation_failure, cause=SetupFailure("E36")
+                )
+                return self._domain_failure(
+                    flow.operation, failure, state_name="recovery-required",
+                    flow=flow, step=step, original=flow.continuation,
+                )
+            return self._domain_failure("recover", "E36")
         except ManagerRecoveryError as exc:
-            if flow is None or step is None:
-                flow, step = self._known_active_context(flow_id)
             return self._domain_failure(
                 "recover" if flow is None else flow.operation,
-                str(exc),
+                "E46",
                 state_name="recovery-required",
                 flow=flow,
                 step=step,
@@ -1132,30 +1506,46 @@ class _ManagerInterface(PythonMachineInterface):
         repo_root = Path(context.repo_root or REPO_ROOT)
         try:
             return self._graph_loader(repo_root)
-        except (BlueprintGraphError, OSError) as exc:
-            raise ManagerBootstrapError(
-                "repository blueprint graph is unavailable"
-            ) from exc
+        except BlueprintGraphError as exc:
+            cause = exc if hasattr(exc, "as_payload") else None
+            raise ManagerBootstrapError("E10", cause=cause) from exc
+        except OSError as exc:
+            caught: BaseException | None = exc
+            denied = False
+            for _ in range(3):
+                if isinstance(caught, PermissionError):
+                    denied = True
+                    break
+                caught = caught.__cause__ if caught is not None else None
+            raise ManagerBootstrapError("E11p" if denied else "E11") from exc
 
     def build_manager(self, args: argparse.Namespace) -> SetupManager:
         if self._manager_factory is not None:
             return self._manager_factory()
+        if PRODUCTION_DECLARATION_INVALID or any(
+            key != binding.setup_interface
+            for key, binding in self._bindings.items()
+        ):
+            raise ManagerBootstrapError("E14")
         try:
             getter = self.dispatch(GETTER_KEY, args=("setup-status",), text=True)
         except Exception as exc:
             if not is_dispatch_invocation_error(exc):
                 raise
-            raise ManagerBootstrapError("setup-status getter dispatch failed") from exc
-        if not isinstance(getter, subprocess.CompletedProcess) or getter.returncode != 0:
-            raise ManagerBootstrapError("setup-status getter dispatch failed")
+            cause = exc if hasattr(exc, "as_payload") else None
+            raise ManagerBootstrapError("E16", cause=cause) from exc
+        if not isinstance(getter, subprocess.CompletedProcess):
+            raise ManagerBootstrapError("E18")
+        if getter.returncode != 0:
+            raise ManagerBootstrapError("E17", returncode=getter.returncode)
         if not isinstance(getter.stdout, str):
-            raise LedgerPathError("setup-status getter did not return text")
+            raise ManagerBootstrapError("E19", expected="text")
         lines = getter.stdout.splitlines()
         if len(lines) != 1 or not lines[0] or lines[0] != lines[0].strip():
-            raise LedgerPathError("setup-status getter must return one absolute path")
+            raise ManagerBootstrapError("E19", expected="one absolute path")
         path = Path(lines[0])
         if not path.is_absolute():
-            raise LedgerPathError("setup-status getter must return one absolute path")
+            raise ManagerBootstrapError("E19", expected="one absolute path")
         store = LedgerStore._from_atomic_files(path, _AtomicFilesAdapter())
         graph = self.build_graph(args)
 
@@ -1169,6 +1559,7 @@ class _ManagerInterface(PythonMachineInterface):
             store=store,
             dispatch=dispatch,
             bindings=self._bindings,
+            runtime_caller=runtime_dispatch_context(self).caller_module_id,
         )
 
     def _malformed(self, message: str) -> int:
@@ -1178,7 +1569,8 @@ class _ManagerInterface(PythonMachineInterface):
             state="failed",
             current_step=None,
             original=None,
-            error=message,
+            error=SETUP_ERROR_SPECS["E01"].message,
+            error_code=SETUP_ERROR_SPECS["E01"].code,
         )
         print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
         return 64
@@ -1197,14 +1589,27 @@ class _ManagerInterface(PythonMachineInterface):
         except ManagerUsageError as exc:
             return self._malformed(str(exc))
         except (LedgerError, ManagerBootstrapError) as exc:
+            entry_id = getattr(exc, "entry_id", None)
+            if entry_id is None:
+                entry_id = "E20" if isinstance(exc, LedgerError) else "E10"
+            spec = SETUP_ERROR_SPECS[entry_id]
+            extra: dict[str, object] = {}
+            nested = getattr(exc, "cause", None)
+            reduced = _reduced_dispatcher_cause(
+                nested, require_direct=entry_id == "E10"
+            )
+            if spec.allow_dispatcher_cause and reduced is not None:
+                extra["cause"] = reduced
             return self._emit(
                 (2, _response(
                     flow_id=None,
                     operation=self.operation,
-                    state="recovery-required",
+                    state="failed",
                     current_step=None,
                     original=None,
-                    error=str(exc),
+                    error=spec.message.format(**getattr(exc, "context", {})),
+                    error_code=spec.code,
+                    **extra,
                 ))
             )
 
@@ -1218,21 +1623,27 @@ class _DirectPreflightInterface(_ManagerInterface):
     def build_graph(self, args: argparse.Namespace):
         context = runtime_dispatch_context(self)
         if context.repository_config is None:
-            raise ManagerBootstrapError("repository configuration is unavailable")
+            raise ManagerBootstrapError("E08")
         try:
             configuration = load_repository_configuration(
                 Path(context.repository_config)
             )
             return load_direct_setup_graph(configuration, args.target_interface)
-        except (
-            RepositoryConfigurationError,
-            DirectBlueprintError,
-            BlueprintGraphError,
-            OSError,
-        ) as exc:
-            raise ManagerBootstrapError(
-                "repository blueprint graph is unavailable"
-            ) from exc
+        except RepositoryConfigurationError as exc:
+            raise ManagerBootstrapError("E09") from exc
+        except DirectBlueprintError as exc:
+            raise ManagerBootstrapError("E10", cause=exc) from exc
+        except BlueprintGraphError as exc:
+            raise ManagerBootstrapError("E10") from exc
+        except OSError as exc:
+            caught: BaseException | None = exc
+            denied = False
+            for _ in range(3):
+                if isinstance(caught, PermissionError):
+                    denied = True
+                    break
+                caught = caught.__cause__ if caught is not None else None
+            raise ManagerBootstrapError("E11p" if denied else "E11") from exc
 
 
 class StatusInterface(_DirectPreflightInterface):

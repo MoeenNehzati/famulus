@@ -14,9 +14,27 @@ from .direct_runtime import (
     _dispatch_host,
     _resolve_host_dispatch_metadata,
 )
+from .errors import InvalidRequestError, render_dispatcher_error
 
 
 _VERSION_MISMATCH_CODE = "dispatcher.interface_version_mismatch"
+
+
+class _DispatcherArgumentParser(argparse.ArgumentParser):
+    """Contain argparse diagnostics in the registered public contract."""
+
+    def error(self, _message: str) -> None:
+        error = InvalidRequestError.from_spec("D48")
+        json_requested = "--error-format=json" in sys.argv or any(
+            left == "--error-format" and right == "json"
+            for left, right in zip(sys.argv, sys.argv[1:], strict=False)
+        )
+        if json_requested:
+            print(json.dumps(error.as_payload()), file=sys.stderr)
+        else:
+            for line in render_dispatcher_error(error):
+                print(line, file=sys.stderr)
+        raise SystemExit(2)
 
 
 def _print_warning(diagnostic: InvocationDiagnostic) -> None:
@@ -46,7 +64,7 @@ def _split_target_version(raw: str) -> tuple[str, int | None]:
 
 
 def parse_cli() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
+    parser = _DispatcherArgumentParser(
         prog="dispatcher",
         description="Invoke a skill machine interface declared in blueprint.yaml.",
         epilog=(
@@ -107,10 +125,12 @@ def main() -> int:
     script_args = list(args.rest)
     target, requested_version = _split_target_version(args.target_or_skill)
     if ".interface." not in target:
-        print(
-            "error: target must be a fully qualified `<module>.interface.<name>` export",
-            file=sys.stderr,
-        )
+        error = InvalidRequestError.from_spec("D47")
+        if args.error_format == "json":
+            print(json.dumps(error.as_payload()), file=sys.stderr)
+        else:
+            for line in render_dispatcher_error(error):
+                print(line, file=sys.stderr)
         return 2
 
     # Read stdin once: a stale pin retries resolution, and the buffer is empty
@@ -163,7 +183,8 @@ def main() -> int:
         if args.error_format == "json" and hasattr(exc, "as_payload"):
             print(json.dumps(exc.as_payload()), file=sys.stderr)
         else:
-            print(f"error: {exc}", file=sys.stderr)
+            for line in render_dispatcher_error(exc):
+                print(line, file=sys.stderr)
         return 2
 
     if completed is None:

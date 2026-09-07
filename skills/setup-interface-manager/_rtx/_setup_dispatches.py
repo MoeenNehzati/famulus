@@ -447,7 +447,14 @@ def production_dispatches(
     return MappingProxyType(dispatches)
 
 
-PRODUCTION_DISPATCHES = production_dispatches()
+try:
+    PRODUCTION_DISPATCHES = production_dispatches()
+except ValueError:
+    # Keep the public manager loadable so it can carry the closed E14 diagnosis.
+    PRODUCTION_DISPATCHES = MappingProxyType({GETTER_KEY: GETTER_CALL})
+    PRODUCTION_DECLARATION_INVALID = True
+else:
+    PRODUCTION_DECLARATION_INVALID = False
 
 
 __all__ = [
@@ -457,6 +464,7 @@ __all__ = [
     "ManagedInterfaceBinding",
     "PRODUCTION_ACTION_CALLS",
     "PRODUCTION_BINDINGS",
+    "PRODUCTION_DECLARATION_INVALID",
     "PRODUCTION_DISPATCHES",
     "production_dispatches",
 ]

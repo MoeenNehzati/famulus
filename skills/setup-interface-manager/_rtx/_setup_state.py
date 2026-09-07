@@ -30,12 +30,27 @@ class LedgerPathError(LedgerError):
     """The getter-selected path cannot be safely traversed."""
 
 
+class LedgerCapabilityError(LedgerError):
+    """The manager did not configure its required atomic-file capability."""
+
+
 class LedgerConflict(LedgerError):
     """Another writer changed the exact predecessor before publication."""
 
 
+class LedgerWriteUncertain(LedgerConflict):
+    """The bytes observed after publication did not match the intended state."""
+
+
 class FlowConflict(LedgerError):
-    """A caller attempted to begin a second managed flow."""
+    """A flow transition failed with an explicitly classified setup predicate."""
+
+    def __init__(
+        self, message: str, *, entry_id: str | None = None, **context: object
+    ) -> None:
+        super().__init__(message)
+        self.entry_id = entry_id
+        self.context = context
 
 
 class AtomicFileAdapter(Protocol):
@@ -127,6 +142,7 @@ class ActiveFlow:
     current_step: str
     verified_steps: tuple[str, ...]
     continuation: ContinuationIdentity | None
+    owner_verified: bool = False
 
     def __post_init__(self) -> None:
         _require_identifier(self.flow_id, "active_flow.flow_id")
@@ -140,7 +156,7 @@ class ActiveFlow:
         for step in self.verified_steps:
             _require_identifier(step, "active_flow.verified_steps entry")
         if self.operation == "teardown-all":
-            if self.root is not None or self.continuation is not None or self.verified_steps:
+            if self.root is not None or self.continuation is not None or self.verified_steps or self.owner_verified:
                 raise LedgerFormatError("teardown-all flow must not carry ordinary context")
         elif (
             not isinstance(self.root, str)
@@ -149,6 +165,8 @@ class ActiveFlow:
             raise LedgerFormatError("ordinary flow requires root and continuation")
         else:
             _require_identifier(self.root, "active_flow.root")
+        if type(self.owner_verified) is not bool:
+            raise LedgerFormatError("active_flow.owner_verified must be Boolean")
 
 
 @dataclass(frozen=True)
@@ -173,6 +191,8 @@ class SetupLedger:
         if self.schema_version == 1 and self.active_flow is not None:
             if self.active_flow.operation == "teardown-all":
                 raise LedgerFormatError("schema-v1 cannot store teardown-all")
+            if self.active_flow.owner_verified:
+                raise LedgerFormatError("schema-v1 cannot verify a recovery owner")
 
     @classmethod
     def empty(cls) -> SetupLedger:
@@ -207,9 +227,12 @@ def _decode_receipt(value: object) -> SetupReceipt:
 
 
 def _decode_flow(value: object, schema_version: int) -> ActiveFlow:
+    keys = {"flow_id", "operation", "root", "current_step", "verified_steps", "continuation"}
+    if schema_version == 2:
+        keys.add("owner_verified")
     raw = _require_exact_keys(
         value,
-        {"flow_id", "operation", "root", "current_step", "verified_steps", "continuation"},
+        keys,
         "active_flow",
     )
     continuation_value = raw["continuation"]
@@ -235,6 +258,7 @@ def _decode_flow(value: object, schema_version: int) -> ActiveFlow:
             ),
             version=_require_version(continuation_raw["version"], "continuation.version"),
         ),
+        owner_verified=False if schema_version == 1 else raw["owner_verified"],
     )
 
 
@@ -294,6 +318,8 @@ def encode_ledger(ledger: SetupLedger) -> bytes:
                 "version": flow.continuation.version,
             },
         }
+        if ledger.schema_version == 2:
+            active_flow["owner_verified"] = flow.owner_verified
     value = {
         "schema_version": ledger.schema_version,
         "interfaces": {
@@ -353,7 +379,9 @@ class LedgerStore:
             raise LedgerPathError("ledger path must be an absolute file path")
         files = _CONFIGURED_ATOMIC_FILES.get()
         if files is None:
-            raise LedgerError("ledger store requires the manager atomic-file capability")
+            raise LedgerCapabilityError(
+                "ledger store requires the manager atomic-file capability"
+            )
         self._path = path
         self._files = files
 
@@ -399,7 +427,7 @@ class LedgerStore:
         )
         observed = self._read_existing_bytes()
         if observed != expected:
-            raise LedgerConflict("ledger post-write state is uncertain")
+            raise LedgerWriteUncertain("ledger post-write state is uncertain")
 
     def read(self) -> SetupLedger:
         """Read strict state, creating the canonical empty ledger through CAS."""

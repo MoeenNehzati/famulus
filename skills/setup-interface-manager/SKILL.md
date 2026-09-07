@@ -86,3 +86,12 @@ the manager. Pass only the non-sensitive continuation identity accepted by the
 exact manager route. Follow `current_step` exactly, never substitute an
 interface or ledger path, and resume the original request only when
 `resume_original` is true.
+
+Follow only the exact evaluated requirements in `root_setup_interface`,
+`pending_stack`, and `current_step`. Treat `clues` as tentative possibilities,
+not confirmed causes or instructions. Treat `setup_busy` as passive status: do
+not infer ownership or an available action.
+
+Offer recovery only for the owned live flow when a `recovery-required` result
+supplies its authorized recovery object, and use only the actions it contains.
+Never guess a requirement or retry automatically.

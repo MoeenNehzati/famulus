@@ -514,8 +514,13 @@ def test_plugin_persistence_rejects_unsafe_log_layout_before_publishing_logs(
     monkeypatch.setenv("FAMULUS_PLUGIN_DATA", str(plugin_data))
     monkeypatch.setenv("ASSISTANT_LOGS", str(canary))
 
-    with pytest.raises((OSError, RuntimeError)):
+    with pytest.raises(server.DispatcherError) as caught:
         server.configure_plugin_persistence()
+
+    assert caught.value.code == "dispatcher.mcp_persistence_invalid"
+    assert str(caught.value) == (
+        "Famulus MCP startup rejected an unsafe plugin-data child directory."
+    )
 
     assert os.environ["ASSISTANT_LOGS"] == str(canary)
     assert marker.read_text(encoding="utf-8") == "untouched"
@@ -1177,8 +1182,16 @@ def test_json_envelope_matches_direct_dispatcher(
 
 
 def test_python_prerequisite_has_no_platform_fallback(server) -> None:
-    with pytest.raises(RuntimeError, match="python >=3.11"):
+    with pytest.raises(server.DispatcherError) as caught:
         server.require_python((3, 10))
+
+    assert caught.value.as_payload() == {
+        "schema_version": 1,
+        "code": "dispatcher.mcp_python_unsupported",
+        "message": "Famulus MCP startup requires Python 3.11 or newer; running 3.10.",
+        "major": 3,
+        "minor": 10,
+    }
 
 
 def test_missing_exact_python_path_has_no_declared_fallback(
@@ -1402,7 +1415,7 @@ def test_ordered_options_are_lossless_for_repeated_flags(server) -> None:
 
 
 def test_compact_options_reject_ambiguous_list_values(server) -> None:
-    with pytest.raises(ValueError, match="use ordered options"):
+    with pytest.raises(server.DispatcherError) as caught:
         server.caller_argv(
             server.CompactArguments(
                 positionals=[],
@@ -1410,3 +1423,8 @@ def test_compact_options_reject_ambiguous_list_values(server) -> None:
                 stdin=None,
             )
         )
+
+    assert caught.value.code == "dispatcher.invalid_request"
+    assert str(caught.value) == (
+        "MCP compact option values must be strings or `true`, not lists."
+    )

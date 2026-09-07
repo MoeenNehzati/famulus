@@ -21,6 +21,7 @@ from officina.dispatcher.direct_authorization import authorize_direct_invocation
 from officina.blueprints.direct_setup import (
     load_direct_setup_graph,
     load_direct_setup_projection,
+    resolve_direct_export,
 )
 from officina.dispatcher.errors import DirectBlueprintError
 
@@ -32,6 +33,35 @@ FIXTURE = (
     / "repository"
     / "python-canary"
 )
+
+
+def test_projection_rejects_empty_target_ancestry_with_exact_d38(tmp_path: Path) -> None:
+    configuration, _repository = _managed_repository(tmp_path)
+    authorized = _authorize(configuration)
+
+    with pytest.raises(DirectBlueprintError) as caught:
+        load_direct_setup_projection(
+            authorized.repository, (), authorized.export
+        )
+
+    assert caught.value.as_payload()["reason"] == "was not found"
+
+
+def test_direct_setup_export_rejects_wrong_ancestry_owner_with_exact_d38(
+    tmp_path: Path,
+) -> None:
+    configuration, _repository = _managed_repository(tmp_path)
+    authorized = _authorize(configuration)
+    wrong_owner = type("Module", (), {"module_id": "other"})()
+
+    with pytest.raises(DirectBlueprintError) as caught:
+        resolve_direct_export(
+            authorized.repository,
+            (wrong_owner,),
+            authorized.export.interface_id,
+        )
+
+    assert caught.value.as_payload()["reason"] == "is not owned by other"
 
 
 def _access() -> dict[str, object]:
@@ -264,7 +294,7 @@ def test_canonical_setup_without_legacy_opt_in_is_automatically_managed(
 
     # With canonical setup, root.interface.setup is automatically managed
     # even without setup_management, so it should try to load its dependencies
-    with pytest.raises(DirectBlueprintError, match="module not found"):
+    with pytest.raises(DirectBlueprintError, match="Module not found"):
         load_direct_setup_projection(
             authorized.repository,
             authorized.target_modules,
@@ -394,7 +424,7 @@ def test_non_string_prerequisite_export_id_fails_as_invalid_interface(
     _write_yaml(dependency_path, dependency)
     authorized = _authorize(configuration)
 
-    with pytest.raises(DirectBlueprintError, match="invalid interface id"):
+    with pytest.raises(DirectBlueprintError, match="invalid interface ID"):
         load_direct_setup_projection(
             authorized.repository,
             authorized.target_modules,
@@ -418,7 +448,7 @@ def test_empty_managed_owner_id_is_not_treated_as_no_owner(tmp_path: Path) -> No
     authorized = _authorize(configuration)
 
     # The malformed empty export ID should be caught when loading module exports
-    with pytest.raises(DirectBlueprintError, match="invalid interface id"):
+    with pytest.raises(DirectBlueprintError, match="invalid interface ID"):
         load_direct_setup_projection(
             authorized.repository,
             authorized.target_modules,
@@ -435,7 +465,7 @@ def test_missing_setup_prerequisite_fails_closed(tmp_path: Path) -> None:
     )
     authorized = _authorize(configuration)
 
-    with pytest.raises(DirectBlueprintError, match="module not found"):
+    with pytest.raises(DirectBlueprintError, match="Module not found"):
         load_direct_setup_projection(
             authorized.repository,
             authorized.target_modules,
@@ -487,7 +517,10 @@ def test_symlinked_setup_prerequisite_fails_closed(tmp_path: Path) -> None:
     dependency.symlink_to(real_dependency, target_is_directory=True)
     authorized = _authorize(configuration)
 
-    with pytest.raises(DirectBlueprintError, match="symlink"):
+    with pytest.raises(
+        DirectBlueprintError,
+        match="contains a symbolic link",
+    ):
         load_direct_setup_projection(
             authorized.repository,
             authorized.target_modules,

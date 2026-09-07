@@ -20,6 +20,7 @@ from officina.dispatcher.direct_runtime import (
     resolve_dispatch_metadata,
 )
 from officina.dispatcher.errors import (
+    DispatcherError,
     DirectBlueprintError,
     UnauthorizedCallerError,
 )
@@ -30,6 +31,37 @@ SOURCE_ID = "root.alpha.leaf.source.runtime"
 SOURCE_INTERFACE_ID = f"{SOURCE_ID}.interface.execute"
 
 
+def test_source_path_failures_are_factual_and_redacted(tmp_path: Path) -> None:
+    with pytest.raises(DirectBlueprintError) as unsafe:
+        direct_authorization._safe_relative_path(
+            "../secret", field_name="blueprint.path", module_id="root"
+        )
+    assert str(unsafe.value) == (
+        "The source `blueprint.path` is not a safe module-relative path."
+    )
+
+    with pytest.raises(DirectBlueprintError) as absent:
+        direct_authorization._require_regular_without_symlinks(
+            tmp_path / "missing", module_id="root"
+        )
+    assert str(absent.value) == (
+        "The dispatcher could not inspect the source path for module `root`."
+    )
+    assert str(tmp_path) not in str(absent.value.as_payload())
+
+    target = tmp_path / "target"
+    target.write_text("safe", encoding="utf-8")
+    linked = tmp_path / "linked"
+    linked.symlink_to(target)
+    with pytest.raises(DirectBlueprintError) as linked_error:
+        direct_authorization._require_regular_without_symlinks(
+            linked, module_id="root"
+        )
+    assert str(linked_error.value) == (
+        "The source for module `root` has a path containing a symbolic link."
+    )
+
+
 @pytest.mark.parametrize("logical_stdin", [None, "", "payload"])
 def test_resolved_invocation_never_inherits_host_stdin(
     tmp_path: Path,
@@ -38,11 +70,23 @@ def test_resolved_invocation_never_inherits_host_stdin(
 ) -> None:
     observed: dict[str, object] = {}
 
-    def run(_command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        observed.update(kwargs)
-        return subprocess.CompletedProcess([], 0, "", "")
+    class Process:
+        returncode = 0
 
-    monkeypatch.setattr(direct_runtime.subprocess, "run", run)
+        def communicate(
+            self,
+            input: bytes | None = None,
+            timeout: float | None = None,
+        ) -> tuple[bytes, bytes]:
+            observed["input"] = input
+            observed["timeout"] = timeout
+            return b"", b""
+
+    def popen(_command: list[str], **kwargs: object) -> Process:
+        observed.update(kwargs)
+        return Process()
+
+    monkeypatch.setattr(direct_runtime.subprocess, "Popen", popen)
     metadata = ResolvedInvocationMetadata(
         caller_module_id="root",
         target_module_id="root.alpha.leaf",
@@ -63,10 +107,10 @@ def test_resolved_invocation_never_inherits_host_stdin(
 
     if logical_stdin is None:
         assert observed["stdin"] is subprocess.DEVNULL
-        assert "input" not in observed
+        assert observed["input"] is None
     else:
-        assert observed["input"] == logical_stdin
-        assert "stdin" not in observed
+        assert observed["input"] == logical_stdin.encode("utf-8")
+        assert observed["stdin"] is subprocess.PIPE
 
 
 def test_dispatcher_package_exports_direct_resolver() -> None:
@@ -375,6 +419,59 @@ def test_hop_local_namespace_owner_replaces_caller(tmp_path: Path) -> None:
     assert [item.owner_module_id for item in invocation.authorization.effective_filters] == ["root", "root.alpha", "root.alpha.leaf"]
 
 
+@pytest.mark.parametrize(
+    ("case", "code", "message"),
+    [
+        (
+            "missing-interface",
+            "dispatcher.interface_not_found",
+            "Interface `root.alpha.leaf.interface.execute` was not found.",
+        ),
+        (
+            "invalid-source-interface",
+            "dispatcher.source_interface_invalid",
+            "Source-interface declaration for `root.alpha.leaf.interface.execute` is invalid.",
+        ),
+        (
+            "missing-namespace-route",
+            "dispatcher.namespace_route_missing",
+            "Namespace export `root->alpha` is missing.",
+        ),
+    ],
+)
+def test_remaining_direct_resolution_producers_are_exact_and_redacted(
+    tmp_path: Path, case: str, code: str, message: str
+) -> None:
+    configuration = _repository(tmp_path, terminal_access=_access(public=True))
+    modules = configuration.module_roots[0]
+    if case == "missing-namespace-route":
+        path = modules / "root" / "blueprint.yaml"
+        declaration = yaml.safe_load(path.read_text())
+        declaration["namespace_exports"].pop("alpha")
+    else:
+        path = modules / "root" / "alpha" / "leaf" / "blueprint.yaml"
+        declaration = yaml.safe_load(path.read_text())
+        if case == "missing-interface":
+            declaration["exports"].pop(INTERFACE_ID)
+        else:
+            declaration["exports"][INTERFACE_ID]["source_interface"] = 17
+    _write_yaml(path, declaration)
+
+    with pytest.raises(DirectBlueprintError) as caught:
+        resolve_direct_invocation(
+            configuration=configuration,
+            caller_module_id="outsider",
+            interface_id=INTERFACE_ID,
+            interface_version=3,
+            argv=[],
+            stdin_requested=False,
+        )
+
+    assert caught.value.code == code
+    assert str(caught.value) == message
+    assert "runtime.yaml" not in str(caught.value.as_payload())
+
+
 def test_relative_callers_resolve_from_declaring_owner(tmp_path: Path) -> None:
     configuration = _repository(
         tmp_path,
@@ -415,6 +512,9 @@ def test_namespace_surface_and_version_are_enforced(tmp_path: Path) -> None:
             stdin_requested=False,
         )
     assert caught.value.code == "dispatcher.namespace_surface_excludes_interface"
+    assert str(caught.value) == (
+        "Namespace surface excludes `root.alpha.leaf.interface.execute@3`."
+    )
 
 
 def test_namespace_version_must_match_registered_child(tmp_path: Path) -> None:
@@ -434,6 +534,7 @@ def test_namespace_version_must_match_registered_child(tmp_path: Path) -> None:
             stdin_requested=False,
         )
     assert caught.value.code == "dispatcher.namespace_version_mismatch"
+    assert str(caught.value) == "Namespace version does not match child `root.alpha`."
 
 
 def test_namespace_version_rejects_boolean_integer_alias(tmp_path: Path) -> None:
@@ -524,6 +625,9 @@ def test_malformed_namespace_interface_access_fails_closed(tmp_path: Path) -> No
             stdin_requested=False,
         )
     assert caught.value.code == "dispatcher.access_invalid"
+    assert str(caught.value) == (
+        "Namespace route `root` has invalid `interface_access`."
+    )
 
 
 def test_source_interface_version_mismatch_is_rejected(tmp_path: Path) -> None:
@@ -538,6 +642,10 @@ def test_source_interface_version_mismatch_is_rejected(tmp_path: Path) -> None:
             stdin_requested=False,
         )
     assert caught.value.code == "dispatcher.interface_version_mismatch"
+    assert str(caught.value) == (
+        "Version mismatch for `root.alpha.leaf.interface.execute`: "
+        "requested 4, available 3."
+    )
 
 
 @pytest.mark.parametrize("invalid_version", [0, -1])
@@ -707,17 +815,18 @@ def test_host_execution_cannot_import_sibling_from_ambient_pythonpath(
     source_root = Path(__file__).resolve().parents[1] / "src"
     monkeypatch.setenv("PYTHONPATH", f"{sibling}:{source_root}")
 
-    completed = _dispatch_host(
-        caller_skill="root",
-        target=INTERFACE_ID,
-        args=[],
-        repository_config=configuration.config_path,
-        capture_output=True,
-        text=True,
-    )
+    with pytest.raises(DispatcherError) as caught:
+        _dispatch_host(
+            caller_skill="root",
+            target=INTERFACE_ID,
+            args=[],
+            repository_config=configuration.config_path,
+            capture_output=True,
+            text=True,
+        )
 
-    assert completed.returncode != 0
-    assert "leaked-sibling" not in completed.stdout
+    assert caught.value.code == "dispatcher.runner_import_failed"
+    assert "leaked-sibling" not in str(caught.value.as_payload())
 
 
 def test_host_rejects_private_child_caller_identity(tmp_path: Path) -> None:
@@ -732,6 +841,66 @@ def test_host_rejects_private_child_caller_identity(tmp_path: Path) -> None:
         )
 
     assert caught.value.code == "dispatcher.host_caller_invalid"
+    assert str(caught.value) == (
+        "Host caller `root.alpha.leaf` is not a discoverable top-level skill."
+    )
+
+
+def test_argument_compilation_failure_is_exact_and_redacted(tmp_path: Path) -> None:
+    configuration = _repository(
+        tmp_path, terminal_access=_access(public=True), with_value_argument=True
+    )
+    authorized = direct_authorization.authorize_direct_invocation(
+        configuration=configuration,
+        caller_module_id="outsider",
+        interface_id=INTERFACE_ID,
+        interface_version=3,
+    )
+
+    with pytest.raises(direct_authorization.ResolutionFailedError) as caught:
+        direct_authorization.compile_direct_invocation(
+            authorized, argv=[], stdin_requested=False
+        )
+
+    assert caught.value.as_payload() == {
+        "schema_version": 1,
+        "code": "dispatcher.resolution_failed",
+        "message": (
+            "The dispatcher could not compile arguments for "
+            "`root.alpha.leaf.interface.execute`."
+        ),
+        "caller_module_id": "outsider",
+        "target_module_id": "root.alpha.leaf",
+        "interface_id": INTERFACE_ID,
+    }
+
+
+def test_python_target_construction_failure_is_exact_and_redacted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    configuration = _repository(tmp_path, terminal_access=_access(public=True))
+    authorized = direct_authorization.authorize_direct_invocation(
+        configuration=configuration,
+        caller_module_id="outsider",
+        interface_id=INTERFACE_ID,
+        interface_version=3,
+    )
+    secret = "do-not-echo-python-target-secret"
+
+    def fail_target(*_args: object, **_kwargs: object):
+        raise direct_authorization.PythonProcessTargetError(secret)
+
+    monkeypatch.setattr(direct_authorization, "PythonProcessTarget", fail_target)
+    with pytest.raises(direct_authorization.ResolutionFailedError) as caught:
+        direct_authorization.compile_direct_invocation(
+            authorized, argv=[], stdin_requested=False
+        )
+
+    assert str(caught.value) == (
+        "The dispatcher could not construct the Python target for "
+        "`root.alpha.leaf.interface.execute`."
+    )
+    assert secret not in str(caught.value.as_payload())
 
 
 def test_prebinding_host_authorization_accepts_only_discoverable_top_level_skill(

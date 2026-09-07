@@ -109,7 +109,7 @@ def _owner_setup_interface(graph, target_interface: str) -> str | None:
         if parent is None:
             return None
         module_id = parent
-    raise FlowConflict("module parent graph contains a cycle")
+    raise FlowConflict("module parent graph contains a cycle", entry_id="E10")
 
 
 def _setup_steps(graph, root_setup_interface: str) -> tuple[SetupStep, ...]:
@@ -160,7 +160,7 @@ def authorize_ready_root(store: LedgerStore, graph, target_interface: str) -> Se
             return ledger
         root = current.root_setup_interface
         if root is None:
-            raise FlowConflict("ready managed target lacks an owner")
+            raise FlowConflict("ready managed target lacks an owner", entry_id="E10")
         claimed = claim_receipts(
             ledger, root, tuple(step.setup_interface for step in _setup_steps(graph, root))
         )
@@ -169,16 +169,16 @@ def authorize_ready_root(store: LedgerStore, graph, target_interface: str) -> Se
 
     store.update(claim)
     if result is None:
-        raise FlowConflict("authorization did not evaluate the ledger")
+        raise FlowConflict("authorization did not evaluate the ledger", entry_id="E35a")
     return result
 
 
 def _active_flow(ledger: SetupLedger, flow_id: str, operation: str) -> ActiveFlow:
     flow = ledger.active_flow
     if flow is None or flow.flow_id != flow_id:
-        raise FlowConflict("active flow does not match")
+        raise FlowConflict("active flow does not match", entry_id="E25")
     if flow.operation != operation:
-        raise FlowConflict("active flow operation does not match")
+        raise FlowConflict("active flow operation does not match", entry_id="E25")
     return flow
 
 
@@ -193,7 +193,10 @@ def _validated_setup_position(
                 expected.setup_interface for expected in steps[:index]
             )
             if flow.verified_steps != expected_prefix:
-                raise FlowConflict("setup flow no longer matches the live graph prefix")
+                raise FlowConflict(
+                    "setup flow no longer matches the live graph prefix",
+                    entry_id="E32", mismatch_subject="metadata",
+                )
             for expected in steps[:index]:
                 receipt = ledger.interfaces.get(expected.setup_interface)
                 if (
@@ -202,10 +205,14 @@ def _validated_setup_position(
                     or flow.root not in receipt.required_by
                 ):
                     raise FlowConflict(
-                        "setup flow no longer matches verified live graph receipts"
+                        "setup flow no longer matches verified live graph receipts",
+                        entry_id="E32", mismatch_subject="receipts",
                     )
             return steps, index
-    raise FlowConflict("setup flow current step is outside the live graph closure")
+    raise FlowConflict(
+        "setup flow current step is outside the live graph closure",
+        entry_id="E32", mismatch_subject="current step",
+    )
 
 
 def record_setup_success(
@@ -219,10 +226,16 @@ def record_setup_success(
         flow = _active_flow(ledger, flow_id, "setup")
         steps, index = _validated_setup_position(graph, ledger, flow)
         if flow.current_step != step.setup_interface:
-            raise FlowConflict("setup settlement does not match the current step")
+            raise FlowConflict(
+                "setup settlement does not match the current step",
+                entry_id="E32", mismatch_subject="current step",
+            )
         managed = graph.managed_setups.get(step.setup_interface)
         if managed is None or SetupStep.from_managed(managed) != step:
-            raise FlowConflict("setup settlement does not match declared metadata")
+            raise FlowConflict(
+                "setup settlement does not match declared metadata",
+                entry_id="E32", mismatch_subject="metadata",
+            )
         receipt = ledger.interfaces.get(step.setup_interface)
         roots = {flow.root} if receipt is None or receipt.version != step.setup_version else receipt.required_by | {flow.root}
         interfaces = dict(ledger.interfaces)
@@ -241,7 +254,7 @@ def record_setup_success(
 
     store.update(settle)
     if result is None:
-        raise FlowConflict("setup settlement did not produce a result")
+        raise FlowConflict("setup settlement did not produce a result", entry_id="E35")
     return result
 
 
@@ -325,12 +338,18 @@ def _record_teardown_success(
         flow = _active_flow(ledger, flow_id, operation)
         if operation == "teardown":
             if flow.root is None:
-                raise FlowConflict("ordinary teardown flow lacks a root")
+                raise FlowConflict(
+                    "ordinary teardown flow lacks a root",
+                    entry_id="E33", mismatch_subject="metadata",
+                )
             plan = teardown_plan(graph, flow.root, ledger)
         else:
             plan = teardown_all_plan(graph, ledger)
         if not plan or flow.current_step != step.setup_interface or plan[0] != step:
-            raise FlowConflict("teardown settlement does not match the current step")
+            raise FlowConflict(
+                "teardown settlement does not match the current step",
+                entry_id="E33", mismatch_subject="current step",
+            )
         interfaces = dict(ledger.interfaces)
         receipt = interfaces[step.setup_interface]
         if operation == "teardown" and step.action == "release-claim":
@@ -368,7 +387,7 @@ def _record_teardown_success(
 
     store.update(settle)
     if result is None:
-        raise FlowConflict("teardown settlement did not produce a result")
+        raise FlowConflict("teardown settlement did not produce a result", entry_id="E35")
     return result
 
 
@@ -379,7 +398,9 @@ def invalidate(store: LedgerStore, graph, setup_interface: str) -> tuple[str, ..
     def remove(ledger: SetupLedger) -> SetupLedger:
         nonlocal removed
         if ledger.active_flow is not None:
-            raise FlowConflict("recover or cancel the active flow before invalidating")
+            raise FlowConflict(
+                "recover or cancel the active flow before invalidating", entry_id="E36"
+            )
         dependent_interfaces = {setup_interface}
         for root_setup_interface in graph.managed_setups:
             if any(

@@ -164,10 +164,14 @@ def load_direct_setup_projection(
     """Load only the managed setup closure relevant to one authorized target."""
 
     if not target_modules or target_modules[-1].module_id != target_export.module_node_id:
-        raise DirectBlueprintError(
-            f"target ancestry does not own {target_export.interface_id}",
-            code="dispatcher.interface_not_found",
-            target_module_id=target_export.module_node_id,
+        owner = target_modules[-1].module_id if target_modules else None
+        raise DirectBlueprintError.from_spec(
+            "D38",
+            target_module_id=owner or target_export.module_node_id,
+            interface_id=target_export.interface_id,
+            reason=(
+                f"is not owned by {owner}" if owner is not None else "was not found"
+            ),
         )
 
     module_parents: dict[str, str | None] = {}
@@ -282,10 +286,14 @@ def resolve_direct_export(
     target_module_id, _local_name = parse_interface_id(target_interface)
     terminal = repository.load_module(target_module_id)
     if not target_modules or terminal != target_modules[-1]:
-        raise DirectBlueprintError(
-            f"target ancestry does not match {target_interface}",
-            code="dispatcher.interface_not_found",
-            target_module_id=target_module_id,
+        owner = target_modules[-1].module_id if target_modules else None
+        raise DirectBlueprintError.from_spec(
+            "D38",
+            target_module_id=owner or target_module_id,
+            interface_id=target_interface,
+            reason=(
+                f"is not owned by {owner}" if owner is not None else "was not found"
+            ),
         )
     _source, export = resolve_direct_export_from_module(
         terminal,
