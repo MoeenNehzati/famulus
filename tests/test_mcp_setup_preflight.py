@@ -12,6 +12,10 @@ import sys
 import pytest
 
 from officina.blueprints.graph import ManagedSetup
+from officina.common.atomic_files import (
+    atomic_replace_bytes,
+    ensure_private_directory,
+)
 from officina.dispatcher.errors import (
     DirectBlueprintError,
     DispatcherError,
@@ -404,10 +408,14 @@ def test_real_manager_nonzero_status_is_a_redacted_refusal(
     secret = "manager-ledger-secret"
     plugin_data = tmp_path / "plugin-data"
     setup = plugin_data / "setup"
-    setup.mkdir(parents=True, mode=0o700)
+    ensure_private_directory(setup, allowed_root=tmp_path)
     ledger = setup / "status.json"
-    ledger.write_text(f'{{"private":"{secret}"}}\n', encoding="utf-8")
-    ledger.chmod(0o600)
+    atomic_replace_bytes(
+        ledger,
+        f'{{"private":"{secret}"}}\n'.encode(),
+        allowed_root=plugin_data,
+        mode=0o600,
+    )
     monkeypatch.setenv("FAMULUS_HOST", "codex")
     monkeypatch.setenv("FAMULUS_PLUGIN_DATA", str(plugin_data))
 

@@ -125,7 +125,7 @@ class _SimulatedHost:
                 0,
                 json.dumps(
                     {
-                        "executable": f"/usr/bin/{argv[0]}",
+                        "executable": str(Path(sys.executable).resolve()),
                         "prefix": "/usr",
                         "base_prefix": "/usr",
                         "version": version,
