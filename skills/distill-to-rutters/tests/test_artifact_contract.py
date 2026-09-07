@@ -104,6 +104,12 @@ def runtime_repository_template(
         REPOSITORY_ROOT / "src/officina/rutter/blueprints",
         public_runtime / "blueprints",
     )
+    shutil.copytree(
+        REPOSITORY_ROOT / "skills/using-compass",
+        root / "skills/using-compass",
+        copy_function=shutil.copy2,
+        symlinks=True,
+    )
     engine_path = public_runtime / "blueprints/engine.yaml"
     engine = yaml.safe_load(engine_path.read_text(encoding="utf-8"))
     engine["interfaces"][
@@ -554,21 +560,15 @@ def test_validate_artifact_accepts_crlf_fenced_contract(repository: Path) -> Non
     assert result.errors == ()
 
 
-@pytest.mark.parametrize(
-    "stage",
-    ("design-implementation", "implement", "finalize", "verify"),
-)
-def test_phase_b_success_claims_do_not_validate_on_current_blocked_runtime(
+def test_first_release_accepts_a_complete_single_voyage_chain(
     runtime_repository: Path,
-    stage: str,
 ) -> None:
-    """Current public compatibility cannot support any downstream success claim."""
     contract = _load_module("artifact_contract")
-    artifact = _write_artifact_chain(runtime_repository, stage)[stage]
+    artifact = _write_artifact_chain(runtime_repository, "verify")["verify"]
 
-    result = contract.validate_artifact(artifact, stage)
+    result = contract.validate_artifact(artifact, "verify")
 
-    assert result.valid is False
+    assert result.valid is True, result.errors
 
 
 @pytest.mark.parametrize("stage", tuple(STAGE_CASES)[1:])
@@ -982,6 +982,48 @@ def test_breakdown_gap_can_record_an_unreadable_context_gap(
     assert contract.validate_artifact(artifact, "breakdown").valid is True
 
 
+def test_breakdown_gap_can_record_an_unavailable_generated_governing_source(
+    repository: Path,
+) -> None:
+    contract = _load_module("artifact_contract")
+    body = _valid_body("breakdown", repository)
+    body["context_closure"].extend(
+        [
+            {
+                "obligation_id": "obl-generated",
+                "path": "generated.md",
+                "availability": "present",
+                "digest": _sha256(repository / "source.md"),
+                "authority": "normative",
+                "provenance": "generated projection",
+                "why_behavior_defining": "Projects the unavailable source.",
+                "resolution": "unresolved",
+                "governing_source": "missing-governing.md",
+            },
+            {
+                "obligation_id": "obl-governing",
+                "path": "missing-governing.md",
+                "availability": "missing",
+                "digest": None,
+                "authority": "normative",
+                "provenance": "source",
+                "why_behavior_defining": "Would govern the projection.",
+                "resolution": "unresolved",
+            },
+        ]
+    )
+    (repository / "generated.md").write_bytes((repository / "source.md").read_bytes())
+    artifact = _write_artifact(
+        repository,
+        name=STAGE_ARTIFACTS["breakdown"],
+        stage="breakdown",
+        outcome="breakdown-gap",
+        body=body,
+    )
+
+    assert contract.validate_artifact(artifact, "breakdown").valid is True
+
+
 def test_coordinated_assignment_requires_a_coordinator_rutter() -> None:
     contract = _load_module("artifact_contract")
     body = _valid_body("assign-rutters")
@@ -990,6 +1032,46 @@ def test_coordinated_assignment_requires_a_coordinator_rutter() -> None:
     errors = contract._schema_errors(body, "assignment-body.schema.json")
 
     assert any("coordinator_rutter_id" in error for error in errors)
+
+
+def test_first_release_rejects_coordinated_assignment(repository: Path) -> None:
+    contract = _load_module("artifact_contract")
+    body = _valid_body("assign-rutters", repository)
+    body["orchestration"].update(
+        mode="coordinated",
+        coordinator_rutter_id="rutter-main",
+    )
+    artifact = _write_artifact_chain(
+        repository,
+        "assign-rutters",
+        body=body,
+    )["assign-rutters"]
+
+    result = contract.validate_artifact(artifact, "assign-rutters")
+
+    assert result.valid is False
+    assert any("first release" in error and "single Voyage" in error for error in result.errors)
+
+
+def test_first_release_rejects_independent_workflow_rows(repository: Path) -> None:
+    contract = _load_module("artifact_contract")
+    body = _valid_body("assign-rutters", repository)
+    body["assignments"][0]["independent_workflows"] = [
+        {
+            "voyage_id": "voyage-main",
+            "join_transition": "rutter-main/inspect",
+        }
+    ]
+    artifact = _write_artifact_chain(
+        repository,
+        "assign-rutters",
+        body=body,
+    )["assign-rutters"]
+
+    result = contract.validate_artifact(artifact, "assign-rutters")
+
+    assert result.valid is False
+    assert any("independent workflows" in error for error in result.errors)
 
 
 def test_assignment_requires_rutter_owned_decomposition_and_failure_policy() -> None:
@@ -1187,6 +1269,22 @@ def test_implemented_rejects_every_nonimplemented_trace_row(
     assert any("implemented" in error and "trace" in error for error in result.errors)
 
 
+def test_implemented_requires_exact_logic_obligation_coverage(
+    runtime_repository: Path,
+) -> None:
+    contract = _load_module("artifact_contract")
+    body = _valid_body("implement", runtime_repository)
+    body["implementation_trace_map"][0]["obligation_id"] = "obl-unapproved"
+    artifact = _write_artifact_chain(runtime_repository, "implement", body=body)[
+        "implement"
+    ]
+
+    result = contract.validate_artifact(artifact, "implement")
+
+    assert result.valid is False
+    assert any("logic obligations exactly once" in error for error in result.errors), result.errors
+
+
 @pytest.mark.parametrize("mutation", ("path", "digest", "extra-leaf"))
 def test_entrypoint_ready_equals_its_one_contained_deliverable_leaf(
     runtime_repository: Path,
@@ -1249,6 +1347,20 @@ def test_verified_rejects_failed_or_blocked_verification_checks(
 
     assert result.valid is False
     assert any("verified" in error and "checks" in error for error in result.errors)
+
+
+def test_verified_requires_exact_logic_obligation_trace_coverage(
+    runtime_repository: Path,
+) -> None:
+    contract = _load_module("artifact_contract")
+    body = _valid_body("verify", runtime_repository)
+    body["semantic_traces"][0]["obligation_id"] = "obl-unapproved"
+    artifact = _write_artifact_chain(runtime_repository, "verify", body=body)["verify"]
+
+    result = contract.validate_artifact(artifact, "verify")
+
+    assert result.valid is False
+    assert any("logic obligations exactly once" in error for error in result.errors), result.errors
 
 
 @pytest.mark.parametrize("mutation", ("path", "digest", "missing-leaf"))

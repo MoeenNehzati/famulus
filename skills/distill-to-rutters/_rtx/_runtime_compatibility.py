@@ -14,6 +14,7 @@ from officina.rutter import (
     Rutter,
     RutterRegistry,
     Terminal,
+    VoyageDispenser,
     VoyageResult,
     VoyageStatus,
 )
@@ -469,6 +470,63 @@ def resolved_compass_handoff_errors(
     return tuple(dict.fromkeys(errors))
 
 
+def first_release_compass_handoff_errors(
+    compass_interface: Mapping[str, Any] | None,
+    rutter_exports: Mapping[str, Mapping[str, Any]],
+) -> tuple[str, ...]:
+    """Validate the public process binding used by the single-Voyage release."""
+    if not isinstance(compass_interface, Mapping):
+        return ("using-compass public interface is missing",)
+    contract = compass_interface.get("contract")
+    binding = (
+        contract.get("arguments", {}).get("binding")
+        if isinstance(contract, Mapping)
+        else None
+    )
+    if (
+        not isinstance(binding, Mapping)
+        or binding.get("required") is not True
+        or not isinstance(binding.get("type"), Mapping)
+        or binding["type"].get("kind") != "string"
+    ):
+        return ("required Compass process binding argument is missing",)
+
+    dependencies = compass_interface.get("uses_interfaces")
+    dispenser_dependencies = [
+        row
+        for row in dependencies
+        if isinstance(row, Mapping)
+        and row.get("interface") == "rutter.interface.dispenser"
+    ] if isinstance(dependencies, list) else []
+    exported_dispenser = rutter_exports.get("rutter.interface.dispenser")
+    if (
+        len(dispenser_dependencies) != 1
+        or not isinstance(exported_dispenser, Mapping)
+        or dispenser_dependencies[0].get("version") != exported_dispenser.get("version")
+    ):
+        return ("Compass does not use one exported Rutter dispenser interface",)
+
+    direct_io = contract.get("direct_io")
+    writes = direct_io.get("writes") if isinstance(direct_io, Mapping) else None
+    bindings = [
+        row
+        for row in writes
+        if isinstance(row, Mapping) and row.get("id") == "voyage-dispenser"
+    ] if isinstance(writes, list) else []
+    if len(bindings) != 1:
+        return ("Compass dispenser binding is not an executable process interface",)
+    process_binding = bindings[0]
+    formats = process_binding.get("formats")
+    if (
+        process_binding.get("access") != "execute"
+        or process_binding.get("system") != "rutter.interface.dispenser"
+        or not isinstance(formats, list)
+        or "process-interface" not in formats
+    ):
+        return ("Compass dispenser binding is not an executable process interface",)
+    return ()
+
+
 def _public_transition_probe() -> Rutter:
     """Return one direct definition using only the live public Rutter API."""
 
@@ -492,7 +550,7 @@ def _public_transition_probe() -> Rutter:
     )
 
 
-def probe_runtime_compatibility(
+def _probe_runtime_compatibility(
     repository_root: Path,
     scratch_root: Path,
     read_bytes: ReadBytes | None = None,
@@ -554,7 +612,6 @@ def probe_runtime_compatibility(
     public_bound_operations = _operation_values(bound_operations)
 
     runtime_profiles: dict[str, dict[str, Any]] = {}
-    ready_constructions: list[Mapping[str, Any]] = []
     for profile_id, qualified_class, role in (
         ("rutter-construction", "officina.rutter.Rutter", "construction"),
         ("voyage-construction", "officina.rutter.Voyage", "construction"),
@@ -578,18 +635,13 @@ def probe_runtime_compatibility(
             "discovered": profiles,
             "errors": errors,
         }
-        if errors:
-            missing_evidence[
-                f"rutter-root-export:{profile_id}:contract.semantic_capabilities"
-            ] = errors
-        elif role == "construction":
-            ready_constructions.extend(profiles)
+        # Typed semantic profiles are retained as hardening diagnostics. The
+        # first release gates on the exercised public Python surface below.
 
     binding = compass.get("arguments", {}).get("binding", {}) if compass else {}
-    handoff_errors = resolved_compass_handoff_errors(
+    handoff_errors = first_release_compass_handoff_errors(
         compass_interface,
         exported,
-        ready_constructions,
     )
     if handoff_errors:
         missing_evidence[
@@ -637,6 +689,68 @@ def probe_runtime_compatibility(
     reopened = reopened_registry.open(reckoning_path)
     reopened_status = reopened.get_status()
 
+    expected_transition = ("complete", "terminal")
+    observed_transitions = (
+        (successor.evolution_id, successor.condition),
+        (status.current_evolution.evolution_id, status.current_evolution.condition),
+        (
+            reopened_status.current_evolution.evolution_id,
+            reopened_status.current_evolution.condition,
+        ),
+    )
+    if any(observed != expected_transition for observed in observed_transitions):
+        missing_evidence["python-runtime:authorized-transition"] = (
+            "public Voyage did not persist the expected complete terminal successor",
+        )
+
+    dispenser_registry = RutterRegistry(
+        {"probe": _public_transition_probe()},
+        scratch_root / "dispenser",
+    )
+    voyage_paths: dict[str, Path] = {}
+
+    def initiate_voyages(_mode: str, *, run_id: str) -> None:
+        voyage_id = f"{run_id}/1"
+        path = Path(f"{run_id.replace('/', '-')}.reckoning.json")
+        dispenser_registry.create("probe", path, {})
+        voyage_paths[voyage_id] = path
+
+    def get_voyage_ids(run_prefix: str | None) -> tuple[str, ...]:
+        values = tuple(voyage_paths)
+        if run_prefix is None:
+            return values
+        return tuple(value for value in values if value.startswith(f"{run_prefix}/"))
+
+    dispenser = VoyageDispenser(
+        modes={"default": {"description": "First-release probe.", "arguments": {}}},
+        initiate_voyages=initiate_voyages,
+        get_voyage_ids=get_voyage_ids,
+        open_voyage=lambda voyage_id: dispenser_registry.open(voyage_paths[voyage_id]),
+        release_voyage=lambda voyage_id: voyage_paths.pop(voyage_id, None),
+    )
+    voyage_ids = dispenser.initiate_voyages()
+    dispenser_status = dispenser.get_status(voyage_ids[0])
+    dispenser_message = dispenser_status.instruction
+    assert isinstance(dispenser_message, Message)
+    dispenser_validation = dispenser.validate(
+        voyage_ids[0],
+        response,
+        responding_to=dispenser_message.evolution_entry_id,
+    )
+    dispenser_successor = dispenser.advance(
+        voyage_ids[0],
+        response,
+        responding_to=dispenser_message.evolution_entry_id,
+    )
+    if (
+        not dispenser_validation.valid
+        or dispenser_successor.evolution_id != "complete"
+        or dispenser_successor.condition != "terminal"
+    ):
+        missing_evidence["python-runtime:voyage-dispenser"] = (
+            "public VoyageDispenser did not validate and advance its one Voyage",
+        )
+
     return {
         "outcome": "design-ready" if not missing_evidence else "design-blocked",
         "missing_evidence": missing_evidence,
@@ -678,4 +792,36 @@ def probe_runtime_compatibility(
             "evolution": reopened_status.current_evolution.evolution_id,
             "condition": reopened_status.current_evolution.condition,
         },
+        "real_dispenser_transition": {
+            "voyage_count": len(voyage_ids),
+            "status_type": type(dispenser_status).__name__,
+            "initial_evolution": dispenser_status.current_evolution.evolution_id,
+            "validation_valid": dispenser_validation.valid,
+            "successor_type": type(dispenser_successor).__name__,
+            "successor_evolution": dispenser_successor.evolution_id,
+            "successor_condition": dispenser_successor.condition,
+        },
     }
+
+
+def probe_runtime_compatibility(
+    repository_root: Path,
+    scratch_root: Path,
+    read_bytes: ReadBytes | None = None,
+) -> dict[str, Any]:
+    """Return a typed design block when the exercised public runtime is incompatible."""
+    try:
+        return _probe_runtime_compatibility(
+            repository_root,
+            scratch_root,
+            read_bytes,
+        )
+    except Exception as exc:
+        return {
+            "outcome": "design-blocked",
+            "missing_evidence": {
+                "python-runtime:first-release-probe": (
+                    f"{type(exc).__name__}: {exc}",
+                )
+            },
+        }

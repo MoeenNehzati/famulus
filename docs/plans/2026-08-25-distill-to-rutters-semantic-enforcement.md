@@ -1,5 +1,43 @@
 # Distill-to-Rutters Semantic Enforcement Plan
 
+> **First-release scope (2026-09-07):** The initial working release supports
+> exactly one Rutter and one Voyage. A source that genuinely requires
+> independent Voyages or coordinator policy returns `assignment-gap` instead
+> of constructing a partial coordinator. Success requires exact logic-obligation
+> coverage in implementation and verification, and unavailable governing
+> sources are represented truthfully by `breakdown-gap`. Runtime readiness is
+> established by exercised public Rutter, Voyage, persistence, VoyageDispenser,
+> and the declared executable Compass process-binding dependency. Typed
+> semantic-capability declarations, multi-Voyage coordination, and final
+> rehashes on non-advancing routes remain post-first-release hardening. This
+> note narrows conflicting requirements below for the first release; it does
+> not mark unchecked work complete.
+
+## First-release implementation status (2026-09-07)
+
+- [x] Enforce the single-Rutter, single-Voyage boundary and return an assignment
+  gap when independent Voyages or coordinator policy are required.
+- [x] Require implemented and verified traces to cover every approved logic
+  obligation exactly once.
+- [x] Permit unavailable governing sources to be represented truthfully by a
+  `breakdown-gap` artifact.
+- [x] Exercise the public Rutter, Voyage, persistence, and VoyageDispenser
+  surfaces and validate the declared executable Compass process binding. A
+  runtime exception produces typed `design-blocked` evidence.
+- [x] Pass the five focused distillation test files through `repo_checks.py`
+  (`176 passed`), the worktree blueprint validator (`1 passed`), and
+  `git diff --check`.
+- [ ] Complete one live single-Rutter distillation through all eight approval
+  gates. The worktree-local dispatcher produced `01_breakdown.md` for the
+  `inseparable` fixture with outcome `breakdown-ready`; that artifact remains
+  unapproved and intentionally outside this implementation commit.
+
+The dispatcher-wide blueprint-sync check is not evidence for this worktree: it
+inspected the installed plugin cache and reported 13 unrelated out-of-sync
+skills. No files outside `distill-to-rutters` and this plan are in release
+scope. The first release remains a candidate until the live approval chain and
+exact-entrypoint verification complete.
+
 > **For agentic workers:** implement Phase A in the current checkout. Do not begin Phase B until its public-runtime prerequisite is verified. Use `superpowers:test-driven-development` for implementation and request separate authorization before staging or committing.
 
 **Goal:** Preserve the observable job of a source Markdown instruction while making the generated Rutter own every enforceable algorithmic decision. Human or external judgment may remain outside automation, but the Rutter must own when that judgment is requested, what evidence is accepted, and which transition the result authorizes.

@@ -26,10 +26,12 @@ The only allowed outcomes are `implemented`, `implementation-gap`,
 and `limitations`. Every trace row maps an obligation and design item to an
 implemented symbol, repository path, evidence, and status.
 
-Use `implemented` only when the approved predecessor is `design-ready` and
-every implementation trace row has status `implemented`. A `gap`, `blocked`,
-`partial`, or `failed` trace row requires the corresponding non-success report
-outcome and cannot authorize finalization.
+Use `implemented` only when the approved predecessor is `design-ready`, the
+trace-map obligation IDs equal the approved logic enforcement-matrix obligation
+IDs exactly once, and every trace row has status `implemented`. An omitted,
+duplicate, or foreign obligation, or a `gap`, `blocked`, `partial`, or `failed`
+trace row, requires the corresponding non-success report outcome and cannot
+authorize finalization.
 
 Keep the concrete graph transparent in the primary implementation unit and
 complex mechanics in support. Support may not choose an unauthorized route.

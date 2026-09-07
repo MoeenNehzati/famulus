@@ -1300,11 +1300,9 @@ def _validate_breakdown(
             isinstance(governing, Mapping)
             and governing.get("provenance") == "source"
             and governing.get("authority") == "normative"
-            and governing.get("availability") == "present"
-            and governing.get("resolution") == "resolved"
         ):
             raise ArtifactContractError(
-                "generated normative governing source must be included as a resolved source context row"
+                "generated normative governing source must be included as a source context row"
             )
     if envelope.outcome == "breakdown-ready":
         incomplete = [
@@ -1379,8 +1377,17 @@ def _validate_assignment(
         raise ArtifactContractError(
             "assignment-ready assignments must equal breakdown parts exactly once"
         )
+    assignments = [
+        row for row in body["assignments"] if isinstance(row, Mapping)
+    ]
+    orchestration = body["orchestration"]
+    assert isinstance(orchestration, Mapping)
+    if len(assignments) != 1 or orchestration.get("mode") != "single":
+        raise ArtifactContractError(
+            "the first release supports exactly one single Voyage"
+        )
     voyage_ids: list[str] = []
-    for row in body["assignments"]:
+    for row in assignments:
         assert isinstance(row, Mapping)
         voyage_ids.append(str(row["voyage_id"]))
         part = part_rows[str(row["part_id"])]
@@ -1390,6 +1397,18 @@ def _validate_assignment(
             )
     if len(voyage_ids) != len(set(voyage_ids)):
         raise ArtifactContractError("assignment-ready Voyage IDs must be unique")
+
+    only_rutter = str(assignments[0]["rutter_definition_id"])
+    if assignments[0]["independent_workflows"]:
+        raise ArtifactContractError(
+            "the first release single Voyage forbids independent workflows"
+        )
+    if orchestration.get("retry_owner") != only_rutter or any(
+        orchestration.get(group) for group in _COORDINATOR_RULE_GROUPS
+    ):
+        raise ArtifactContractError(
+            "the first release single Voyage must own retries and contain no coordinator rules"
+        )
 
 
 def _graph_index(
@@ -1592,13 +1611,64 @@ def _validate_design(
         )
 
 
-def _validate_implemented(envelope: ArtifactEnvelope, body: Mapping[str, Any]) -> None:
-    if envelope.outcome == "implemented" and any(
-        row.get("status") != "implemented" for row in body["implementation_trace_map"]
-    ):
+def _logic_body_for_stage(
+    root: Path,
+    envelope: ArtifactEnvelope,
+    stage: str,
+    session: _SnapshotSession,
+) -> Mapping[str, Any]:
+    current_envelope = envelope
+    current_stage = stage
+    while current_stage != "validate-logic":
+        predecessor_stage = STAGE_ORDER[_stage_rank(current_stage) - 1]
+        _, current_envelope, body = _predecessor_body(
+            root,
+            current_envelope,
+            predecessor_stage,
+            session,
+        )
+        current_stage = predecessor_stage
+    return body
+
+
+def _require_exact_logic_obligations(
+    rows: list[Any],
+    logic: Mapping[str, Any],
+    *,
+    context: str,
+) -> None:
+    expected = {
+        str(row["obligation_id"])
+        for row in logic["enforcement_matrix"]
+        if isinstance(row, Mapping)
+    }
+    actual = [
+        str(row["obligation_id"])
+        for row in rows
+        if isinstance(row, Mapping)
+    ]
+    if len(actual) != len(set(actual)) or set(actual) != expected:
+        raise ArtifactContractError(
+            f"{context} must cover approved logic obligations exactly once"
+        )
+
+
+def _validate_implemented(
+    root: Path,
+    envelope: ArtifactEnvelope,
+    body: Mapping[str, Any],
+    session: _SnapshotSession,
+) -> None:
+    if envelope.outcome != "implemented":
+        return
+    rows = body["implementation_trace_map"]
+    assert isinstance(rows, list)
+    if any(row.get("status") != "implemented" for row in rows):
         raise ArtifactContractError(
             "implemented requires every implementation trace row to be implemented"
         )
+    logic = _logic_body_for_stage(root, envelope, "implement", session)
+    _require_exact_logic_obligations(rows, logic, context="implemented trace map")
 
 
 def _deliverable_leaf(envelope: ArtifactEnvelope) -> Prerequisite:
@@ -1680,6 +1750,14 @@ def _validate_verify(
         raise ArtifactContractError(
             "verified requires all verification checks to have passed"
         )
+    traces = body["semantic_traces"]
+    assert isinstance(traces, list)
+    logic = _logic_body_for_stage(root, envelope, "verify", session)
+    _require_exact_logic_obligations(
+        traces,
+        logic,
+        context="verified semantic traces",
+    )
 
 
 def _validate_artifact_internal(
@@ -1707,7 +1785,7 @@ def _validate_artifact_internal(
         elif expected_stage == "design-implementation":
             _validate_design(root, envelope, body, session)
         elif expected_stage == "implement":
-            _validate_implemented(envelope, body)
+            _validate_implemented(root, envelope, body, session)
         elif expected_stage == "finalize":
             _validate_finalize(root, envelope, body, session)
         elif expected_stage == "verify":
