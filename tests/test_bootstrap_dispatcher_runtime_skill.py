@@ -228,9 +228,13 @@ def test_setup_skill_is_host_loaded_and_uses_task_1_core_authority() -> None:
     assert core["core_packages"] == ["mcp>=1,<2", "PyYAML>=6", "jsonschema>=4,<5"]
     assert "installation_tier" not in text
     assert all(term not in text.casefold() for term in ("keyring", "google"))
-    assert graph.exports[
+    repair_export = graph.exports[
         "bootstrap-dispatcher-runtime.interface.repair-selected-packages"
-    ].source_interface_id == export.source_interface_id
+    ]
+    assert repair_export.source_interface_id == (
+        "bootstrap-dispatcher-runtime.source.gateway.interface.repair-selected-packages"
+    )
+    assert repair_export.source_interface_id != export.source_interface_id
 
 
 def test_graph_execution_contract_covers_the_actual_ordered_command_sequence() -> None:

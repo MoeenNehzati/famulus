@@ -18,7 +18,7 @@ discovery:
 exports:
   bootstrap-dispatcher-runtime.interface.repair-selected-packages:
     access: {allow_all_modules: true, allowed_callers: []}
-    source_interface: bootstrap-dispatcher-runtime.source.gateway.interface.default
+    source_interface: bootstrap-dispatcher-runtime.source.gateway.interface.repair-selected-packages
   bootstrap-dispatcher-runtime.interface.default:
     access: {allow_all_modules: true, allowed_callers: []}
     source_interface: bootstrap-dispatcher-runtime.source.gateway.interface.default

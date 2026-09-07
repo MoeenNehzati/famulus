@@ -94,7 +94,91 @@ interfaces:
         truncation: {kind: none}
         type: {kind: string, sensitivity: derived-private}
       preconditions: []
-    description: Repair the core or one caller-owned package declaration in the exact dispatcher runtime without MCP.
+    description: Install route. When no runtime exists yet, discover, confirm, and build the dedicated dispatcher runtime, then publish it, prompting the user as needed.
+    version: 1
+  bootstrap-dispatcher-runtime.source.gateway.interface.repair-selected-packages:
+    content: [SKILL\.md]
+    uses_interfaces: []
+    contract:
+      arguments:
+        caller:
+          description: Identity of the calling feature requesting repair of its own declared packages.
+          required: true
+          sensitivity: public
+          type: {kind: string, sensitivity: public}
+        package-declaration:
+          description: The caller's exact ordered package declaration to install into the supplied interpreter.
+          required: true
+          sensitivity: public
+          type: {kind: list, sensitivity: public, element_type: {kind: string, sensitivity: public}}
+        interpreter-path:
+          description: Absolute path of the caller-supplied dedicated interpreter to repair. Must already exist and be usable; this route never selects, builds, or publishes an interpreter.
+          required: true
+          sensitivity: public
+          type: {kind: string, sensitivity: public}
+      caller_warnings:
+      - external-side-effect: A successful repair installs missing declared packages into the supplied Python environment.
+      direct_io:
+        network: []
+        reads: []
+        writes:
+        - {access: write, content: report, formats: [markdown], id: write-1, medium: prompt, sensitivity: derived-private}
+        - access: execute
+          content: Pip preflight and package repair through the caller-supplied interpreter
+          formats: [argv, json, text]
+          id: selected-python
+          medium: subprocess
+          path: <interpreter-path>
+          path_match: exact
+          reason: Use only the caller-supplied absolute executable; never select or build a new environment.
+          sensitivity: derived-private
+          system: caller-supplied Python environment
+      execution:
+        consistency: {live: The result reflects the exact fingerprint and pip report observed during this run.}
+        effects:
+        - action: execute
+          confirmation_evidence: {kind: output, output_ref: response}
+          direct_io_ref: selected-python
+          id: install-declared-packages
+          may_occur_in_outcomes: [repaired]
+          reversibility: {irreversible: The skill has no safe generic rollback for packages installed into a caller-supplied environment.}
+          value_source: {kind: argument, argument_ref: package-declaration}
+        lifecycle: finite
+        mutation_safety:
+          atomicity: {non_atomic: Pip may install several distributions before a late failure.}
+          concurrent_invocations: {unsafe: Concurrent package installers can conflict in the supplied environment.}
+          idempotency: {idempotent: Satisfied declared requirements are not reinstalled by default.}
+          on_uncertain_completion: {verify_then_decide: Rerun the fingerprint and dry-run report before deciding whether to retry.}
+          partial_effects_on_failure: {possible: Pip can install a subset before returning failure.}
+          rollback_on_failure: {unavailable: Preserve the observed environment and report the pip failure.}
+        state_effect: mutating
+        verification: [{method: output-schema, output_ref: response}]
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes:
+      - caller_action: Report the exact package changes, or that the declaration was already satisfied.
+        class: success
+        effects: [install-declared-packages]
+        id: repaired
+        outputs: [response]
+      - caller_action: Report that the supplied interpreter is missing or unusable and that the core setup route is required; make no package mutation. Never prompt.
+        class: error
+        effects: []
+        id: prerequisite-failed
+        outputs: [response]
+      outputs:
+      - audience: human
+        cardinality: {minimum: 1, maximum: 1}
+        description: Exact package changes in the supplied interpreter, or a diagnostic naming the core setup route as required.
+        direct_io_ref: write-1
+        empty: Never empty.
+        id: response
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        type: {kind: string, sensitivity: derived-private}
+      preconditions: []
+    description: Repair route. Repair only the caller-supplied package declaration inside the caller-supplied interpreter, without MCP and without ever prompting.
     version: 1
 node_type: behavioral_source
 schema_version: 6
