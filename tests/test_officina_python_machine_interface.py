@@ -2229,13 +2229,39 @@ def _write_private_diagnosis(
 
 def _assert_private_diagnosis_writer_closed(writer: int) -> None:
     if os.name == "nt":
-        import _winapi
-
-        with pytest.raises(OSError):
-            _winapi.WriteFile(writer, b"")
+        try:
+            os.get_handle_inheritable(writer)
+        except OSError as exc:
+            assert getattr(exc, "winerror", None) == 6, (
+                "expected invalid Windows handle (winerror 6), "
+                f"got {getattr(exc, 'winerror', None)}"
+            )
+        else:
+            pytest.fail("private diagnosis writer remained an open Windows handle")
     else:
         with pytest.raises(OSError):
             os.fstat(writer)
+
+
+def test_windows_writer_closure_check_rejects_broken_pipe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    broken_pipe = OSError("broken pipe")
+    broken_pipe.winerror = 109
+
+    def report_broken_pipe(_writer: int) -> bool:
+        raise broken_pipe
+
+    with monkeypatch.context() as windows:
+        windows.setattr(os, "name", "nt")
+        windows.setattr(
+            os,
+            "get_handle_inheritable",
+            report_broken_pipe,
+            raising=False,
+        )
+        with pytest.raises(AssertionError, match="invalid Windows handle"):
+            _assert_private_diagnosis_writer_closed(42)
 
 
 class _SuccessfulTransportProcess:
