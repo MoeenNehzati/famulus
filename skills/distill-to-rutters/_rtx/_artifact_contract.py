@@ -1606,8 +1606,10 @@ def _validate_design(
             f"design-ready requires the live production runtime compatibility probe: {exc}"
         ) from exc
     if result["outcome"] != "design-ready":
+        missing_evidence = result.get("missing_evidence", {})
         raise ArtifactContractError(
-            "design-ready requires the live production runtime compatibility probe to return design-ready"
+            "design-ready requires the live production runtime compatibility probe "
+            f"to return design-ready: {missing_evidence!r}"
         )
 
 
