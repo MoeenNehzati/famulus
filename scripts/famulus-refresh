@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+
+set -u
+
+usage() {
+    cat <<'EOF'
+Usage: famulus-refresh [OPTIONS]
+
+Reinstall the Famulus plugin and nullkit marketplace for Codex, Claude, or both.
+System-level Famulus data and configuration are always preserved.
+
+Options:
+  --codex                 Refresh Codex only (default: both hosts)
+  --claude                Refresh Claude only (default: both hosts)
+  --local                 Add the marketplace from $AI (default)
+  --github                Add the marketplace from MoeenNehzati/famulus
+  --reset-plugin-data     Remove host-specific setup receipts and milestone logs
+  --dry-run               Print commands without executing them
+  -h, --help              Show this help
+
+Examples:
+  famulus-refresh
+  famulus-refresh --codex
+  famulus-refresh --claude --github
+  famulus-refresh --reset-plugin-data
+  famulus-refresh --codex --local --dry-run
+
+Close all Codex and Claude processes before refreshing, then start new sessions.
+EOF
+}
+
+die() {
+    printf 'famulus-refresh: %s\n' "$*" >&2
+    exit 2
+}
+
+dry_run=false
+host=both
+host_was_selected=false
+source_kind=local
+source_was_selected=false
+reset_plugin_data=false
+
+while (($#)); do
+    case "$1" in
+        --codex|--claude)
+            requested_host=${1#--}
+            if $host_was_selected && [[ $host != "$requested_host" ]]; then
+                die "choose only one of --codex and --claude"
+            fi
+            host=$requested_host
+            host_was_selected=true
+            ;;
+        --local|--github)
+            requested_source=${1#--}
+            if $source_was_selected && [[ $source_kind != "$requested_source" ]]; then
+                die "choose only one of --local and --github"
+            fi
+            source_kind=$requested_source
+            source_was_selected=true
+            ;;
+        --reset-plugin-data)
+            reset_plugin_data=true
+            ;;
+        --dry-run)
+            dry_run=true
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            die "unknown option: $1"
+            ;;
+    esac
+    shift
+done
+
+if [[ $source_kind == local ]]; then
+    [[ -n ${AI:-} ]] || die '\$AI must name the local Famulus checkout'
+    [[ -d $AI ]] || die "local Famulus checkout does not exist: $AI"
+    marketplace_source=$AI
+else
+    marketplace_source=MoeenNehzati/famulus
+fi
+
+codex_home=${CODEX_HOME:-${HOME}/.codex}
+codex_plugin_data=${FAMULUS_CODEX_PLUGIN_DATA:-}
+
+if $reset_plugin_data && [[ $host != claude ]]; then
+    [[ -n $codex_plugin_data ]] || die \
+        'FAMULUS_CODEX_PLUGIN_DATA must name the exact Codex Famulus data directory'
+    codex_data_root=$codex_home/plugins/data/agent-plugins
+    case $codex_plugin_data in
+        "$codex_data_root"/*) ;;
+        *) die "refusing unsafe Codex plugin-data path: $codex_plugin_data" ;;
+    esac
+    codex_data_name=${codex_plugin_data#"$codex_data_root"/}
+    [[ -n $codex_data_name && $codex_data_name != */* ]] || \
+        die "refusing unsafe Codex plugin-data path: $codex_plugin_data"
+    [[ ! -L $codex_plugin_data ]] || \
+        die "refusing symlinked Codex plugin-data path: $codex_plugin_data"
+fi
+
+run() {
+    if $dry_run; then
+        printf '+'
+        printf ' %q' "$@"
+        printf '\n'
+    else
+        "$@"
+    fi
+}
+
+refresh_codex() {
+    printf '%s\n' 'Refreshing Famulus for Codex...'
+    run codex plugin remove famulus@nullkit --json || return
+    run codex plugin marketplace remove nullkit --json || return
+    if $reset_plugin_data && [[ -e $codex_plugin_data ]]; then
+        run rm -rf -- "$codex_plugin_data" || return
+    fi
+    run codex plugin marketplace add "$marketplace_source" --json || return
+    run codex plugin add famulus@nullkit --json || return
+    run codex plugin list --json || return
+}
+
+refresh_claude() {
+    printf '%s\n' 'Refreshing Famulus for Claude...'
+    if $reset_plugin_data; then
+        run claude plugin uninstall famulus@nullkit || return
+    else
+        run claude plugin uninstall famulus@nullkit --keep-data || return
+    fi
+    run claude plugin marketplace remove nullkit --scope user || return
+    run claude plugin marketplace add "$marketplace_source" --scope user || return
+    run claude plugin install famulus@nullkit --scope user -y || return
+    run claude plugin list --json || return
+}
+
+case $host in
+    codex) refresh_codex || exit $? ;;
+    claude) refresh_claude || exit $? ;;
+    both)
+        refresh_codex || exit $?
+        refresh_claude || exit $?
+        ;;
+esac
+
+printf '%s\n' 'Famulus refresh finished. Fully restart the refreshed host(s).'
