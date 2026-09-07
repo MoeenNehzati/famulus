@@ -29,8 +29,8 @@ that skill with. Both belong to `bootstrap-dispatcher-runtime`.
 It also runs without MCP. That is what lets it repair the very thing MCP
 needs in order to start.
 
-What it does: finds an interpreter of a usable version, asks you to confirm it
-and where the runtime should live, builds it, installs only the declared
+What it does: verifies the host's bare `python`, resolves the platform-native
+Famulus runtime location, builds it, installs only the declared
 packages, verifies the result, and reports what remains for you to do.
 
 What it does not do: install Python, alias or shim any command, edit your shell
@@ -72,12 +72,11 @@ Ask the assistant to use `bootstrap-dispatcher-runtime` when the command is miss
 entirely, when Famulus reports a missing dependency, or when its shared tool is
 unavailable, and review any requested package changes before approving them.
 
-The plugin manifest and the session hook start Famulus through the bare command
-`python`. The dispatcher runtime satisfies that on its own, because a virtual
-environment provides a `python` of its own; what the skill has to arrange is
-that the command reaches that interpreter when the host launches the server.
-It reports the exact change and who must make it, and the change takes effect
-on the next host start.
+The plugin manifest starts the stdlib-only launcher through bare `python`.
+Bootstrap creates and verifies the interpreter at the platform-native
+`FamulusPaths.venv_python_path`; the launcher resolves that same path and starts
+`mcp_server.py` with it. No PATH, alias, shim, shell-profile, state-file, or
+host-setting change is required. A fresh host launch uses the dedicated venv.
 
 A previous successful setup does not by itself show that the shared tool is
 reachable in the current host session. The

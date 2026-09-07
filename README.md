@@ -83,9 +83,8 @@ To install Famulus you need:
 - Python 3.11 or newer with pip. Famulus runs its skills through a dispatcher
   server, and that server needs a Python runtime of its own;
   `bootstrap-dispatcher-runtime` builds it, so Famulus's packages never land in the
-  Python you use for your own work. The host currently starts that server
-  through the command `python`, so that command must also resolve to a working
-  interpreter
+  Python you use for your own work. Bare `python` starts only a stdlib launcher;
+  the dispatcher runs under the dedicated venv created by bootstrap
 
 ## Quick Start
 
@@ -128,9 +127,9 @@ Confirm that `python` is Python 3.11 or newer and that `python -m pip` works.
 
 Then ask the assistant to use `bootstrap-dispatcher-runtime` whenever `python` is
 missing, older than 3.11, or an interpreter you would rather Famulus left
-alone. It finds an interpreter, asks you to confirm it and where the runtime
-should live, builds it, installs only the declared packages, and reports what
-is left for you to do. Ask for it again later whenever Famulus says a package
+alone. It verifies that command, resolves Famulus's platform-native runtime
+location, builds it, installs only the declared packages, and reports what is
+left for you to do. Ask for it again later whenever Famulus says a package
 it needs is unavailable: because the dispatcher runs every skill with that one
 interpreter, a skill's own dependency is installed there too.
 

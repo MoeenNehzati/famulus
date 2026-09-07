@@ -60,7 +60,7 @@ def _roots(environ: Mapping[str, str], platform: str):
     home_name = "USERPROFILE" if platform == "win32" else "HOME"
     home = _absolute(Path(environ.get(home_name, "")), home_name).resolve(strict=False)
     paths = resolve_famulus_paths(platform=platform, home=home, environ=environ)
-    native = paths.data_root / "recurring-tasks" / "native"
+    native = paths.app_data_root / "recurring-tasks" / "native"
     if platform != "win32":
         relative = "Library/LaunchAgents" if platform == "darwin" else ".config/systemd/user"
         native = home / relative
@@ -123,7 +123,7 @@ def build_managed_schedule(*, python: Path, plugin_root: Path, environ: Mapping[
     if platform == "win32":
         environment.update({
             "USERPROFILE": str(home),
-            "LOCALAPPDATA": str(paths.data_root.parent),
+            "LOCALAPPDATA": str(paths.app_data_root.parent),
             "APPDATA": str(paths.config_root.parent),
         })
     return ManagedSchedule(

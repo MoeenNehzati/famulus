@@ -82,12 +82,14 @@ class FamulusPluginContextRequiredError(FamulusPathsError, RuntimeError):
 @dataclass(frozen=True)
 class FamulusPaths:
     # Core roots.
-    data_root: Path
+    app_data_root: Path
     config_root: Path
     state_root: Path
     user_bin: Path
 
-    # Shared feature layout, derived from data_root/state_root.
+    # Shared feature layout, derived from app_data_root/state_root.
+    venv_path: Path
+    venv_python_path: Path
     worker_root: Path
 
     # Feature-specific config/state subdirectories.
@@ -197,7 +199,7 @@ def resolve_famulus_paths(
 
     if platform == "darwin":
         base = home / "Library" / "Application Support" / "Famulus"
-        data_root = base
+        app_data_root = base
         config_root = base / "config"
         state_root = base / "state"
         user_bin = home / ".local" / "bin"
@@ -209,24 +211,27 @@ def resolve_famulus_paths(
             _environment_root(environ, "APPDATA") or home / "AppData" / "Roaming"
         )
         base = local_app_data / "Famulus"
-        data_root = base
+        app_data_root = base
         config_root = app_data / "Famulus"
         state_root = base / "state"
         user_bin = base / "bin"
     else:
         xdg_data = _environment_root(environ, "XDG_DATA_HOME")
-        data_root = xdg_data / "famulus" if xdg_data else home / ".local" / "share" / "famulus"
+        app_data_root = xdg_data / "famulus" if xdg_data else home / ".local" / "share" / "famulus"
         xdg_config = _environment_root(environ, "XDG_CONFIG_HOME")
         config_root = xdg_config / "famulus" if xdg_config else home / ".config" / "famulus"
         xdg_state = _environment_root(environ, "XDG_STATE_HOME")
         state_root = xdg_state / "famulus" if xdg_state else home / ".local" / "state" / "famulus"
         user_bin = home / ".local" / "bin"
 
+    venv_path = app_data_root / "dispatcher-runtime" / "venv"
     return FamulusPaths(
-        data_root=data_root,
+        app_data_root=app_data_root,
         config_root=config_root,
         state_root=state_root,
         user_bin=user_bin,
+        venv_path=venv_path,
+        venv_python_path=venv_path / ("Scripts/python.exe" if platform == "win32" else "bin/python"),
         worker_root=state_root / "workers",
         recurring_config_root=config_root / "recurring-tasks",
         recurring_state_root=state_root / "recurring-tasks",

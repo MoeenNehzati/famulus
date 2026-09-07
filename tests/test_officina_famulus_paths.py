@@ -8,18 +8,29 @@ from officina.common.famulus_paths import resolve_famulus_paths
 
 
 def _assert_derived_fields(paths):
+    assert paths.venv_path == paths.app_data_root / "dispatcher-runtime" / "venv"
     assert paths.worker_root == paths.state_root / "workers"
     assert paths.recurring_config_root == paths.config_root / "recurring-tasks"
     assert paths.recurring_state_root == paths.state_root / "recurring-tasks"
     assert paths.email_triage_state_root == paths.state_root / "email-triage"
 
 
+@pytest.mark.parametrize(
+    ("platform", "parts"),
+    [("linux", ("bin", "python")), ("darwin", ("bin", "python")), ("win32", ("Scripts", "python.exe"))],
+)
+def test_venv_python_path_uses_the_platform_venv_layout(tmp_path, platform, parts):
+    paths = resolve_famulus_paths(platform=platform, home=tmp_path, environ={})
+
+    assert paths.venv_python_path == paths.venv_path.joinpath(*parts)
+
+
 def test_macos_paths_avoid_documents(monkeypatch, tmp_path):
     paths = resolve_famulus_paths(platform="darwin", home=tmp_path, environ={})
     assert "Documents" not in str(paths.user_bin)
-    assert "Documents" not in str(paths.data_root)
+    assert "Documents" not in str(paths.app_data_root)
     expected_base = tmp_path / "Library" / "Application Support" / "Famulus"
-    assert paths.data_root == expected_base
+    assert paths.app_data_root == expected_base
     assert paths.config_root == expected_base / "config"
     assert paths.state_root == expected_base / "state"
     assert paths.user_bin == tmp_path / ".local" / "bin"
@@ -29,7 +40,7 @@ def test_macos_paths_avoid_documents(monkeypatch, tmp_path):
 def test_linux_paths_avoid_documents(monkeypatch, tmp_path):
     paths = resolve_famulus_paths(platform="linux", home=tmp_path, environ={})
     assert "Documents" not in str(paths.user_bin)
-    assert paths.data_root == tmp_path / ".local" / "share" / "famulus"
+    assert paths.app_data_root == tmp_path / ".local" / "share" / "famulus"
     assert paths.config_root == tmp_path / ".config" / "famulus"
     assert paths.state_root == tmp_path / ".local" / "state" / "famulus"
     assert paths.user_bin == tmp_path / ".local" / "bin"
@@ -39,9 +50,9 @@ def test_linux_paths_avoid_documents(monkeypatch, tmp_path):
 def test_windows_missing_overrides_use_home_appdata_conventions(tmp_path):
     paths = resolve_famulus_paths(platform="win32", home=tmp_path, environ={})
 
-    assert paths.data_root == tmp_path / "AppData" / "Local" / "Famulus"
+    assert paths.app_data_root == tmp_path / "AppData" / "Local" / "Famulus"
     assert paths.config_root == tmp_path / "AppData" / "Roaming" / "Famulus"
-    assert paths.state_root == paths.data_root / "state"
+    assert paths.state_root == paths.app_data_root / "state"
 
 
 def test_windows_paths_resolve_under_localappdata(monkeypatch, tmp_path):
@@ -54,7 +65,7 @@ def test_windows_paths_resolve_under_localappdata(monkeypatch, tmp_path):
     )
     expected_base = local_app_data / "Famulus"
     assert "Documents" not in str(paths.user_bin)
-    assert paths.data_root == expected_base
+    assert paths.app_data_root == expected_base
     assert paths.config_root == app_data / "Famulus"
     assert paths.state_root == expected_base / "state"
     assert paths.user_bin == expected_base / "bin"
@@ -72,7 +83,7 @@ def test_xdg_overrides_redirect_every_durable_mutable_path(tmp_path):
             "XDG_STATE_HOME": str(override / "state"),
         },
     )
-    assert paths.data_root == override / "data" / "famulus"
+    assert paths.app_data_root == override / "data" / "famulus"
     assert paths.config_root == override / "config" / "famulus"
     assert paths.state_root == override / "state" / "famulus"
     assert paths.worker_root == override / "state" / "famulus" / "workers"
@@ -125,7 +136,7 @@ def test_invalid_known_override_is_rejected_even_when_platform_would_not_use_it(
 def test_explicit_environment_does_not_fall_through_to_process_environment(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "ambient-must-not-be-used"))
     paths = resolve_famulus_paths(platform="linux", home=tmp_path, environ={})
-    assert paths.data_root == tmp_path / ".local" / "share" / "famulus"
+    assert paths.app_data_root == tmp_path / ".local" / "share" / "famulus"
 
 
 def test_paths_with_spaces_separators_and_unicode_are_absolute(tmp_path):
@@ -139,7 +150,7 @@ def test_paths_with_spaces_separators_and_unicode_are_absolute(tmp_path):
             "XDG_STATE_HOME": str(root / "state"),
         },
     )
-    assert paths.data_root == root / "data" / "famulus"
+    assert paths.app_data_root == root / "data" / "famulus"
     assert all(
         value.is_absolute()
         for value in vars(paths).values()
@@ -154,7 +165,7 @@ def test_plugin_context_is_absent_without_normalized_host_variables(tmp_path):
     assert paths.plugin_data is None
     assert paths.logging_path is None
     assert paths.setup_status is None
-    assert paths.data_root == tmp_path / ".local" / "share" / "famulus"
+    assert paths.app_data_root == tmp_path / ".local" / "share" / "famulus"
     assert paths.state_root == tmp_path / ".local" / "state" / "famulus"
 
 
@@ -213,7 +224,7 @@ def test_invalid_plugin_context_is_rejected(tmp_path, host, plugin_data):
 def test_get_rejects_unknown_names_before_context_lookup(tmp_path):
     with pytest.raises(famulus_paths.UnknownFamulusPathError):
         famulus_paths.FamulusPaths.get(
-            "data_root", platform="linux", home=tmp_path, environ={}
+            "app_data_root", platform="linux", home=tmp_path, environ={}
         )
 
 
@@ -270,6 +281,6 @@ def test_get_interface_rejects_names_outside_finite_choices():
     module = importlib.import_module("officina.common.famulus_paths._get_interface")
 
     with pytest.raises(SystemExit) as error:
-        module.Interface().run(["data_root"])
+        module.Interface().run(["app_data_root"])
 
     assert error.value.code == 2

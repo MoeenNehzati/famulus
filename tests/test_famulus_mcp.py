@@ -14,14 +14,18 @@ import signal
 import subprocess
 import sys
 import time
+import venv
 from urllib.parse import quote
 from urllib.request import urlopen
 
 import pytest
 
+from officina.common.famulus_paths import resolve_famulus_paths
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SERVER = ROOT / "mcp_server.py"
+LAUNCHER = ROOT / "mcp_launcher.py"
 CORE = ROOT / "mcp-core.json"
 COMPREHENSION_FIXTURE = ROOT / "tests" / "fixtures" / "famulus_comprehension_payloads.json"
 # Real stdio cases finish in about 6s sequentially and at most 10.71s in an
@@ -48,6 +52,46 @@ def _load_server(path: Path = SERVER):
     return module
 
 
+def _launcher_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    if sys.platform == "win32":
+        monkeypatch.setenv("USERPROFILE", str(home))
+        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "data"))
+    elif sys.platform != "darwin":
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    paths = resolve_famulus_paths(platform=sys.platform, home=home, environ=os.environ)
+    return paths
+
+
+def test_launcher_uses_exact_executable_inherits_stdio_and_propagates_exit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    launcher = _load_server(LAUNCHER)
+    paths = _launcher_paths(monkeypatch, tmp_path)
+    called: list[list[str]] = []
+    monkeypatch.setattr(
+        launcher.subprocess,
+        "run",
+        lambda argv: called.append(argv) or subprocess.CompletedProcess(argv, 17),
+    )
+
+    assert launcher.main() == 17
+    assert called == [[str(paths.venv_python_path), str(ROOT / "mcp_server.py")]]
+
+
+def test_launcher_fails_closed_when_venv_python_is_unlaunchable(
+    monkeypatch: pytest.MonkeyPatch, capsys, tmp_path: Path
+) -> None:
+    launcher = _load_server(LAUNCHER)
+    _launcher_paths(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        launcher.subprocess, "run", lambda _argv: (_ for _ in ()).throw(OSError())
+    )
+    assert launcher.main() == 1
+    assert capsys.readouterr().err == "famulus MCP launcher: dispatcher runtime unavailable\n"
+
+
 @pytest.fixture(scope="module")
 def server():
     """Load the immutable in-process MCP module once per isolation domain."""
@@ -66,6 +110,7 @@ def _arguments(server, payload: dict[str, object]):
 def _copy_plugin(plugin_root: Path, *, include_graph: bool = False) -> None:
     plugin_root.mkdir(parents=True)
     shutil.copy2(SERVER, plugin_root / SERVER.name)
+    shutil.copy2(LAUNCHER, plugin_root / LAUNCHER.name)
     shutil.copy2(CORE, plugin_root / CORE.name)
     shutil.copy2(ROOT / "officina.toml", plugin_root / "officina.toml")
     shutil.copy2(ROOT / ".mcp.json", plugin_root / ".mcp.json")
@@ -88,7 +133,7 @@ def _declared_launch(host: str, plugin_root: Path) -> tuple[str, list[str], Path
         assert manifest["mcpServers"] == {
             "famulus_dispatcher": {
                 "command": "python",
-                "args": ["${CLAUDE_PLUGIN_ROOT}/mcp_server.py"],
+                "args": ["${CLAUDE_PLUGIN_ROOT}/mcp_launcher.py"],
                 "env": {
                     "FAMULUS_HOST": "claude",
                     "FAMULUS_PLUGIN_DATA": "${CLAUDE_PLUGIN_DATA}",
@@ -97,7 +142,7 @@ def _declared_launch(host: str, plugin_root: Path) -> tuple[str, list[str], Path
         }
         # This is the documented result, not a replacement implementation of
         # Claude's loader.
-        return "python", [str(plugin_root / "mcp_server.py")], None
+        return "python", [str(plugin_root / "mcp_launcher.py")], None
 
     assert manifest["mcpServers"] == "./.mcp.json"
     servers = _json(plugin_root / manifest["mcpServers"])["mcpServers"]
@@ -105,7 +150,7 @@ def _declared_launch(host: str, plugin_root: Path) -> tuple[str, list[str], Path
     declaration = servers["famulus_dispatcher"]
     assert declaration == {
         "command": "python",
-        "args": ["mcp_server.py"],
+        "args": ["mcp_launcher.py"],
         "cwd": ".",
     }
     return declaration["command"], declaration["args"], plugin_root
@@ -120,6 +165,12 @@ def _selected_environment(home: Path) -> dict[str, str]:
         (str(Path(sys.executable).parent), environment.get("PATH", ""))
     )
     environment["HOME"] = str(home)
+    if sys.platform == "win32":
+        environment.update(
+            {"USERPROFILE": str(home), "LOCALAPPDATA": str(home / "AppData" / "Local")}
+        )
+    paths = resolve_famulus_paths(platform=sys.platform, home=home, environ=environment)
+    venv.EnvBuilder(with_pip=False, system_site_packages=True).create(paths.venv_path)
     return environment
 
 
@@ -1330,7 +1381,7 @@ def test_host_declarations_normalize_to_common_command_contract() -> None:
     codex = _json(ROOT / "mcp.json")["mcpServers"]["famulus_dispatcher"]
 
     assert contract["command"] == "python"
-    assert contract["args"] == ["mcp_server.py"]
+    assert contract["args"] == ["mcp_launcher.py"]
     assert claude["command"] == codex["command"] == contract["command"]
     assert claude["args"] == ["${CLAUDE_PLUGIN_ROOT}/" + contract["args"][0]]
     assert claude["env"] == {

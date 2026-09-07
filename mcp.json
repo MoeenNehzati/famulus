@@ -4,7 +4,7 @@
     "famulus_dispatcher": {
       "type": "stdio",
       "command": "python",
-      "args": ["${PLUGIN_ROOT}/mcp_server.py"],
+      "args": ["${PLUGIN_ROOT}/mcp_launcher.py"],
       "env": {
         "FAMULUS_HOST": "codex",
         "FAMULUS_PLUGIN_DATA": "${PLUGIN_DATA}"

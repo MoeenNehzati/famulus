@@ -83,7 +83,7 @@ interfaces:
       outputs:
       - id: result
         audience: machine
-        description: FamulusPaths with legacy roots plus all-or-none plugin fields,
+        description: FamulusPaths with platform-native roots plus all-or-none plugin fields,
           or one selected absolute plugin path from FamulusPaths.get.
         direct_io_ref: return-value
         cardinality:

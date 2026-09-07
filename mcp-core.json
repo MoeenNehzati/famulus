@@ -2,7 +2,7 @@
   "schema_version": 1,
   "server": "famulus_dispatcher",
   "command": "python",
-  "args": ["mcp_server.py"],
+  "args": ["mcp_launcher.py"],
   "tool": {
     "name": "invoke",
     "required": ["caller", "interface", "version", "arguments"],

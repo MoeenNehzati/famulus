@@ -1,6 +1,6 @@
 content: [SKILL\.md]
 dependencies: []
-description: Selects a Python 3.11+ interpreter, provides the dedicated dispatcher runtime, preflights its normal pip target, repairs only the selected declaration, and verifies stable identity.
+description: Selects a Python 3.11+ interpreter, resolves the platform-native Famulus venv path, provides the dedicated dispatcher runtime, preflights its normal pip target, repairs only the selected declaration, and verifies stable identity.
 gateway: {language: Markdown, path: SKILL.md}
 id: bootstrap-dispatcher-runtime.source.gateway
 interfaces:
@@ -23,13 +23,13 @@ interfaces:
         writes:
         - {access: write, content: report, formats: [markdown], id: write-1, medium: prompt, sensitivity: derived-private}
         - access: execute
-          content: Candidate interpreter fingerprint and dedicated-environment creation
+          content: Bare-python fingerprint, stdlib-only Famulus path resolution, and dedicated-environment creation
           formats: [argv, json, text]
           id: candidate-python
           medium: subprocess
           path: <discovered-candidate>
           path_match: exact
-          reason: Fingerprint only interpreters offered as candidates, and build the dedicated environment with the one the user confirmed.
+          reason: Verify the host's bare Python, then use its canonical executable to resolve the Famulus venv path and build that environment.
           sensitivity: derived-private
           system: host Python installation
         - access: execute
@@ -94,7 +94,7 @@ interfaces:
         truncation: {kind: none}
         type: {kind: string, sensitivity: derived-private}
       preconditions: []
-    description: Install route. When no runtime exists yet, discover, confirm, and build the dedicated dispatcher runtime, then publish it, prompting the user as needed.
+    description: Install route. When no runtime exists yet, discover, confirm, and build the dedicated dispatcher runtime, prompting the user as needed.
     version: 1
   bootstrap-dispatcher-runtime.source.gateway.interface.repair-selected-packages:
     content: [SKILL\.md]

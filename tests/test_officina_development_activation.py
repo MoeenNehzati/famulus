@@ -34,7 +34,7 @@ def _checkout(tmp_path: Path) -> Path:
     (checkout / ".claude-plugin").mkdir()
     (checkout / ".codex-plugin").mkdir()
     (checkout / ".claude-plugin" / "plugin.json").write_text(
-        json.dumps({"name": "famulus", "mcpServers": {"famulus_dispatcher": {"command": "python", "args": ["${CLAUDE_PLUGIN_ROOT}/mcp_server.py"]}}}),
+        json.dumps({"name": "famulus", "mcpServers": {"famulus_dispatcher": {"command": "python", "args": ["${CLAUDE_PLUGIN_ROOT}/mcp_launcher.py"]}}}),
         encoding="utf-8",
     )
     (checkout / ".codex-plugin" / "plugin.json").write_text(
@@ -42,7 +42,7 @@ def _checkout(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     (checkout / ".mcp.json").write_text(
-        json.dumps({"mcpServers": {"famulus_dispatcher": {"command": "python", "args": ["mcp_server.py"], "cwd": "."}}}),
+        json.dumps({"mcpServers": {"famulus_dispatcher": {"command": "python", "args": ["mcp_launcher.py"], "cwd": "."}}}),
         encoding="utf-8",
     )
     (checkout / "mcp_server.py").write_text("# local MCP canary\n", encoding="utf-8")
@@ -151,7 +151,7 @@ def test_macos_activation_and_durable_paths_stay_below_isolated_home(tmp_path: P
         if name in {"assistant_host", "plugin_data", "logging_path", "setup_status"}:
             continue
         assert Path(value).is_relative_to(isolated)
-    assert "Library/Application Support" in paths.data_root.as_posix()
+    assert "Library/Application Support" in paths.app_data_root.as_posix()
 
 
 @pytest.mark.parametrize("platform", ["linux", "darwin", "win32"])
@@ -279,8 +279,8 @@ def test_packaged_declarations_share_literal_python_and_one_mcp(tmp_path: Path) 
     codex = json.loads((checkout / codex_plugin["mcpServers"]).read_text(encoding="utf-8"))["mcpServers"]
     assert list(claude) == ["famulus_dispatcher"]
     assert list(codex) == ["famulus_dispatcher"]
-    assert claude["famulus_dispatcher"] == {"command": "python", "args": ["${CLAUDE_PLUGIN_ROOT}/mcp_server.py"]}
-    assert codex["famulus_dispatcher"] == {"command": "python", "args": ["mcp_server.py"], "cwd": "."}
+    assert claude["famulus_dispatcher"] == {"command": "python", "args": ["${CLAUDE_PLUGIN_ROOT}/mcp_launcher.py"]}
+    assert codex["famulus_dispatcher"] == {"command": "python", "args": ["mcp_launcher.py"], "cwd": "."}
 
 
 def test_durable_linux_and_windows_state_is_below_isolated_home(tmp_path: Path) -> None:

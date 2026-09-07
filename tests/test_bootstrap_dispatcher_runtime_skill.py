@@ -15,7 +15,7 @@ from officina.blueprints.graph import load_repository_blueprint_graph
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL = ROOT / "skills" / "bootstrap-dispatcher-runtime" / "SKILL.md"
-CANDIDATES = ("python", "python3", "py")
+CANDIDATES = ("python",)
 
 
 def _templates() -> dict[str, list[str]]:
@@ -59,7 +59,8 @@ class _SimulatedHost:
 
     @property
     def canonical(self) -> str:
-        return f"{self.venv_root}/bin/python"
+        suffix = "Scripts/python.exe" if self.platform == "windows" else "bin/python"
+        return f"{self.venv_root}/{suffix}"
 
     def available(self, command: str) -> list[int] | None:
         """Version of a candidate command, or None when it does not exist."""
@@ -75,6 +76,15 @@ class _SimulatedHost:
 
     def run(self, argv: list[str]) -> subprocess.CompletedProcess[str]:
         self.calls.append(argv)
+        if argv[1:4] == ["-I", "-S", "-c"] and "resolve_famulus_paths" in argv[4]:
+            return subprocess.CompletedProcess(
+                argv,
+                0,
+                json.dumps(
+                    {"venv_path": self.venv_root, "venv_python_path": self.canonical}
+                ),
+                "",
+            )
         if argv[1:3] == ["-m", "venv"]:
             self.environments_created += 1
             return subprocess.CompletedProcess(argv, 0, "", "")
@@ -161,6 +171,17 @@ def _consume_setup(host: _SimulatedHost, plugin: Path) -> str:
         return "ask-user-for-interpreter"
     host_python = max(discovered)[1]
 
+    resolved = host.run(
+        _expand(
+            templates["resolve-venv-path"],
+            {"${host_python}": host_python, "${plugin_src}": str(plugin / "src")},
+            packages,
+        )
+    )
+    resolved_paths = json.loads(resolved.stdout)
+    host.venv_root = resolved_paths["venv_path"]
+    canonical = resolved_paths["venv_python_path"]
+
     created = host.run(
         _expand(
             templates["create-venv"],
@@ -177,7 +198,8 @@ def _consume_setup(host: _SimulatedHost, plugin: Path) -> str:
     selected = json.loads(selected_probe.stdout)
     if selected["prefix"] == selected["base_prefix"]:
         return "not-dedicated"
-    canonical = selected["executable"]
+    if selected["executable"] != canonical:
+        return "unexpected-venv-python"
 
     bindings = {"${canonical_executable}": canonical}
     for name in ("pip-check", "target-check"):
@@ -198,8 +220,7 @@ def _consume_setup(host: _SimulatedHost, plugin: Path) -> str:
     if final["version"] < [3, 11] or final != selected:
         return "fingerprint-changed"
 
-    server = host.run([canonical, str(plugin / "mcp_server.py")])
-    return "ready" if server.returncode == 0 else "mcp-start-failed"
+    return "ready"
 
 
 def test_setup_skill_is_host_loaded_and_uses_task_1_core_authority() -> None:
@@ -259,8 +280,12 @@ def test_graph_execution_contract_covers_the_actual_ordered_command_sequence() -
         "<selected-fingerprint.sys.executable>"
     )
     assert subprocesses["selected-python"]["path_match"] == "exact"
+    assert "runtime-state" not in {
+        item["id"] for item in contract["direct_io"]["writes"]
+    }
     assert [argv[0] for argv in _templates().values()] == [
         "${candidate}",
+        "${host_python}",
         "${host_python}",
         "${canonical_executable}",
         "${canonical_executable}",
@@ -293,6 +318,7 @@ def test_fingerprint_template_binds_a_candidate_and_reports_the_four_fields() ->
     fingerprint = templates["candidate-fingerprint"]
 
     assert fingerprint[:2] == ["${candidate}", "-c"]
+    assert templates["resolve-venv-path"][:3] == ["${host_python}", "-I", "-S"]
     assert templates["create-venv"] == ["${host_python}", "-m", "venv", "${venv_root}"]
     assert all(
         token not in {"python", "python3", "py"}
@@ -302,7 +328,6 @@ def test_fingerprint_template_binds_a_candidate_and_reports_the_four_fields() ->
     assert templates["pip-check"][:3] == ["${canonical_executable}", "-m", "pip"]
     assert templates["pip-preflight"][:3] == ["${canonical_executable}", "-m", "pip"]
     assert templates["pip-install"][:3] == ["${canonical_executable}", "-m", "pip"]
-
     result = subprocess.run(
         [sys.executable, *fingerprint[1:]], capture_output=True, text=True, check=False
     )
@@ -333,14 +358,15 @@ def test_templates_preserve_space_paths_and_install_only_declared_core_packages(
 
 
 @pytest.mark.parametrize("scenario", ["python3-only", "py-only"])
-def test_a_machine_without_literal_python_is_now_set_up_rather_than_refused(
+def test_a_machine_without_literal_python_requests_the_launcher_prerequisite(
     scenario: str, tmp_path: Path
 ) -> None:
     host = _SimulatedHost(scenario)
 
-    assert _consume_setup(host, tmp_path / "Plugin With Spaces") == "ready"
-    assert host.environments_created == 1
-    assert host.calls[-1][0] == host.canonical
+    assert _consume_setup(host, tmp_path / "Plugin With Spaces") == (
+        "ask-user-for-interpreter"
+    )
+    assert host.environments_created == 0
 
 
 @pytest.mark.parametrize("scenario", ["no-interpreter", "all-old"])
@@ -402,7 +428,6 @@ def test_fingerprint_drift_or_version_regression_rejects_mcp_launch(
     host = _SimulatedHost(scenario)
 
     assert _consume_setup(host, tmp_path / "Plugin With Spaces") == "fingerprint-changed"
-    assert not any(call[-1].endswith("mcp_server.py") for call in host.calls)
 
 
 @pytest.mark.parametrize("host_name", ["claude", "codex"])
@@ -413,16 +438,11 @@ def test_simulated_normal_host_loads_skill_while_mcp_is_down_then_starts_package
     skill = plugin / "skills" / "bootstrap-dispatcher-runtime"
     skill.mkdir(parents=True)
     (skill / "SKILL.md").write_text(SKILL.read_text(encoding="utf-8"), encoding="utf-8")
-    (plugin / "mcp_server.py").write_text("packaged", encoding="utf-8")
     selected = _SimulatedHost("missing-package")
 
     assert (skill / "SKILL.md").read_text(encoding="utf-8").startswith("---\nname:")
     assert _consume_setup(selected, plugin) == "ready"
-    launch = selected.calls[-1]
-    assert launch == [selected.canonical, str(plugin / "mcp_server.py")]
-    assert len(launch) == 2
-    assert launch[0] != "python"
-    assert " " in launch[1]
+    assert selected.calls[-1][0] == selected.canonical
 
 
 def test_true_native_dedicated_environment_fingerprints_as_its_own_environment(

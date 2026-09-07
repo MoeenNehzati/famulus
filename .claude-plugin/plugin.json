@@ -9,7 +9,7 @@
   "mcpServers": {
     "famulus_dispatcher": {
       "command": "python",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp_server.py"],
+      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp_launcher.py"],
       "env": {
         "FAMULUS_HOST": "claude",
         "FAMULUS_PLUGIN_DATA": "${CLAUDE_PLUGIN_DATA}"
