@@ -1598,7 +1598,7 @@ def _validate_design(
         with tempfile.TemporaryDirectory(prefix="distill-runtime-probe-") as scratch:
             result = probe_runtime_compatibility(
                 root,
-                Path(scratch),
+                Path(scratch).resolve(strict=True),
                 runtime_reader,
             )
     except (RuntimeCompatibilityError, OSError) as exc:

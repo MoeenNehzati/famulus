@@ -577,6 +577,38 @@ def test_first_release_accepts_a_complete_single_voyage_chain(
     assert result.valid is True, result
 
 
+def test_first_release_resolves_a_symlinked_runtime_probe_root(
+    runtime_repository: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    contract = _load_module("artifact_contract")
+    real_parent = tmp_path / "private"
+    real_parent.mkdir()
+    linked_parent = tmp_path / "var"
+    linked_parent.symlink_to(real_parent, target_is_directory=True)
+    scratch = linked_parent / "runtime-probe"
+    scratch.mkdir()
+
+    class ScratchDirectory:
+        def __enter__(self) -> str:
+            return str(scratch)
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    monkeypatch.setattr(
+        contract.tempfile,
+        "TemporaryDirectory",
+        lambda **_kwargs: ScratchDirectory(),
+    )
+    artifact = _write_artifact_chain(runtime_repository, "verify")["verify"]
+
+    result = contract.validate_artifact(artifact, "verify")
+
+    assert result.valid is True, result
+
+
 @pytest.mark.parametrize("stage", tuple(STAGE_CASES)[1:])
 def test_validate_artifact_rejects_stage_skipping_without_immediate_predecessor(
     repository: Path, stage: str
