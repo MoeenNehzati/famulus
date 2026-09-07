@@ -13,7 +13,7 @@ def run_refresh(*args: str, env: dict[str, str] | None = None) -> subprocess.Com
     process_env = os.environ.copy()
     process_env.update(env or {})
     return subprocess.run(
-        [str(SCRIPT), *args],
+        ["bash", str(SCRIPT), *args],
         cwd=ROOT,
         env=process_env,
         text=True,

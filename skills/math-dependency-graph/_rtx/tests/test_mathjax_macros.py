@@ -452,8 +452,8 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                     )
 
             message = str(caught.exception)
-            self.assertIn(str(first_adapter), message)
-            self.assertIn(str(second_adapter), message)
+            self.assertIn(str(first_adapter.resolve()), message)
+            self.assertIn(str(second_adapter.resolve()), message)
 
     def test_raw_distribution_definition_is_a_graph_visible_root_when_representable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -548,8 +548,8 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                         graph_text=[r"$\RawCycleRoot$"],
                     )
 
-            self.assertIn(f"{package}:1:1", str(caught.exception))
-            self.assertIn(f"{package}:2:1", str(caught.exception))
+            self.assertIn(f"{package.resolve()}:1:1", str(caught.exception))
+            self.assertIn(f"{package.resolve()}:2:1", str(caught.exception))
 
     def test_adapter_coverage_does_not_suppress_transitive_raw_package(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -621,7 +621,7 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                     )
 
             self.assertEqual(macros, {})
-            self.assertIn(str(package), str(caught.exception))
+            self.assertIn(str(package.resolve()), str(caught.exception))
 
     def test_true_and_false_conditional_branches_select_live_definitions(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -707,7 +707,7 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                     graph_text=[r"$\UncertainRoot$"],
                 )
 
-            self.assertIn(f"{entrypoint}:1:", str(caught.exception))
+            self.assertIn(f"{entrypoint.resolve()}:1:", str(caught.exception))
 
     def test_newif_state_selects_only_the_live_definition(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1078,7 +1078,7 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                         graph_text=[r"$\DeferredProbe$"],
                     )
 
-            self.assertIn(str(adapter), str(caught.exception))
+            self.assertIn(str(adapter.resolve()), str(caught.exception))
 
     def test_uninvoked_adapter_customization_body_is_not_exported(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1155,7 +1155,7 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                         graph_text=[r"$\UncertainAdapterRoot$"],
                     )
 
-            self.assertIn(str(adapter), str(caught.exception))
+            self.assertIn(str(adapter.resolve()), str(caught.exception))
 
     def test_adapter_raw_back_reference_cycle_fails_with_dependency_chain(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1197,8 +1197,8 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                     )
 
             message = str(caught.exception)
-            self.assertIn(str(adapter), message)
-            self.assertIn(str(package), message)
+            self.assertIn(str(adapter.resolve()), message)
+            self.assertIn(str(package.resolve()), message)
 
     def test_adapter_recursively_includes_known_raw_dependency(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1282,8 +1282,8 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                         graph_text=[r"$\AdapterUnsupportedRoot$"],
                     )
 
-            self.assertIn(str(adapter), str(caught.exception))
-            self.assertIn(str(package), str(caught.exception))
+            self.assertIn(str(adapter.resolve()), str(caught.exception))
+            self.assertIn(str(package.resolve()), str(caught.exception))
 
     def test_source_definition_shadows_a_common_mathjax_command(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1371,7 +1371,7 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                     graph_text=[r"$\WideProjectMacro{x}$"],
                 )
 
-            self.assertIn(f"{entrypoint}:1:1", str(caught.exception))
+            self.assertIn(f"{entrypoint.resolve()}:1:1", str(caught.exception))
 
     def test_reachable_malformed_project_arity_is_source_located(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1392,7 +1392,7 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
             self.assertIn("MalformedLeaf", message)
             self.assertIn("malformed", message.lower())
             self.assertIn("arity", message.lower())
-            self.assertIn(f"{entrypoint}:2:1", message)
+            self.assertIn(f"{entrypoint.resolve()}:2:1", message)
 
     def test_extractor_does_not_reverse_tex_let_assignment(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1477,7 +1477,7 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                     graph_text=[r"$\AfterInclude$"],
                 )
 
-            self.assertIn(f"{entrypoint}:1:13", str(caught.exception))
+            self.assertIn(f"{entrypoint.resolve()}:1:13", str(caught.exception))
 
     def test_include_discovery_skips_uninvoked_macro_replacement_bodies(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1596,7 +1596,7 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
             self.assertIn("SavedOrbit", message)
             self.assertIn("snapshot", message.lower())
             self.assertIn(r"\sin", message)
-            self.assertIn(f"{entrypoint}:1:1", message)
+            self.assertIn(f"{entrypoint.resolve()}:1:1", message)
 
     def test_relevant_definition_under_unknown_internal_conditional_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1617,7 +1617,7 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
             message = str(caught.exception)
             self.assertIn("UnknownBranchMacro", message)
             self.assertIn("cannot be determined statically", message)
-            self.assertIn(f"{entrypoint}:1:17", message)
+            self.assertIn(f"{entrypoint.resolve()}:1:17", message)
 
     def test_extractor_closes_over_macros_used_by_optional_defaults(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1665,8 +1665,8 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                 )
 
             message = str(caught.exception)
-            self.assertIn(str(entrypoint), message)
-            self.assertIn(str(included), message)
+            self.assertIn(str(entrypoint.resolve()), message)
+            self.assertIn(str(included.resolve()), message)
 
     def test_project_newcommand_conflicts_with_distribution_newcommand(self) -> None:
         """Catch ownership precedence hiding an invalid duplicate declaration."""
@@ -1703,8 +1703,8 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                     )
 
             message = str(caught.exception)
-            self.assertIn(str(entrypoint), message)
-            self.assertIn(str(package), message)
+            self.assertIn(str(entrypoint.resolve()), message)
+            self.assertIn(str(package.resolve()), message)
 
     def test_load_discovery_consumes_let_rhs_before_following_input(self) -> None:
         """Catch a let RHS being mistaken for an executed conditional token."""
@@ -1855,7 +1855,7 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
             self.assertIn("RobustCanopy", message)
             self.assertIn("DeclareRobustCommand", message)
             self.assertIn("unsupported", message.lower())
-            self.assertIn(f"{entrypoint}:1:1", message)
+            self.assertIn(f"{entrypoint.resolve()}:1:1", message)
 
     def test_first_providecommand_binding_fails_closed(self) -> None:
         """Catch providecommand overriding an unknown native renderer command."""
@@ -1876,7 +1876,7 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
             self.assertIn("AmbiguousProvide", message)
             self.assertIn("providecommand", message)
             self.assertIn("external", message.lower())
-            self.assertIn(f"{entrypoint}:1:1", message)
+            self.assertIn(f"{entrypoint.resolve()}:1:1", message)
 
     def test_providecommand_preserves_known_earlier_source_binding(self) -> None:
         """Catch providecommand replacing a binding already established by source."""
@@ -1969,8 +1969,8 @@ class MathJaxMacroExtractionTest(unittest.TestCase):
                 )
 
             message = str(caught.exception)
-            self.assertIn(str(entrypoint), message)
-            self.assertIn(str(included), message)
+            self.assertIn(str(entrypoint.resolve()), message)
+            self.assertIn(str(included.resolve()), message)
 
     def test_synthetic_macro_names_are_fixture_only(self) -> None:
         production_paths = list(SCRIPT_DIR.glob("*.py"))
