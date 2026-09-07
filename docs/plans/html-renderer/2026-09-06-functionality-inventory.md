@@ -1,9 +1,10 @@
 # html_renderer behavior inventory and disposition ledger
 
-This inventory is the compatibility checklist for an internal refactor. The
-replacement in `2026-09-06-occlusion-simplification-design.md` preserves
-current user-facing behavior while replacing the machinery that implements it.
-Exact DOM structure and internal algorithms are not compatibility requirements.
+This inventory is evidence for the bounded refactor in
+`2026-09-06-occlusion-simplification-design.md`. The goal is a simple,
+responsive renderer that preserves as much current functionality as possible.
+It is not a requirement to reproduce every private browser fallback or exact
+overlap pixel.
 
 The detailed sections are evidence about the implementation as inspected on
 2026-09-06. Their `file:line` anchors are historical navigation aids and may
@@ -14,58 +15,63 @@ move as the runtime changes. For example, `updateVisibilityFast` now lives in
 
 | Status | Meaning |
 |---|---|
-| Contractual | Observable behavior that the replacement must preserve. |
-| Simplify internally | Preserve observable behavior through a smaller mechanism. |
-| Remove mechanism | Remove this implementation technique while retaining its user-facing purpose where applicable. |
+| Must preserve | Public behavior, semantic output, safety, or accessibility required after the refactor. |
+| Preserve if practical | Keep the visible result, but minor paint differences are allowed when required to remove expensive machinery. |
+| Target change | Intended behavior change required for responsiveness or simplicity. |
+| Remove mechanism | Delete the implementation technique while retaining its user-facing purpose. |
+| Dead or unreachable | Not a parity requirement unless a public entry path is demonstrated. |
 
-Each item is also classified by evidence: **verified current behavior**,
-**dead mechanism**, or **approved product change**. Unless explicitly labelled
-otherwise, detailed items are verified current behavior. Dead mechanisms are
-not parity requirements. This refactor contains no implicit product additions;
-fixing an existing defect or adding behavior requires separate approval.
+Detailed items record source-inspection evidence, not automatic contracts.
+Acceptance tests are selected from the summary rulings and public entry paths.
+An implementation detail found only behind input rejected by `Graph.validate_graph`
+is not preserved by default.
 
 ## Summary rulings
 
 | Section | Status | Replacement ruling |
 |---:|---|---|
-| 1. Layout | Simplify internally | Preserve current controls, containment-aware ELK results, timeout, latest-result protection, and manual positions through one layout owner. |
-| 2. Render paths | Simplify internally | Replace full/fast/presentation paths with one structural transaction plus bounded presentation-only updates. |
-| 3. Edge geometry | Simplify internally | Preserve routing controls, attached edges during drag, containment-safe routes, and parallel-edge readability; algorithms and caches may change. |
-| 4. Occlusion | Remove mechanism | Remove per-edge masks and preserve basic readability through paint order, fills, and simple styling. Exact attenuation pixels are not a contract. |
-| 5. Arrowheads | Simplify internally | Preserve visible arrow direction and style with shared markers where possible. |
-| 6. Containment | Contractual | Keep one canonical parent index and derive containment once during scene projection. |
-| 7. Node shapes/style | Contractual | Preserve current category, kind, shape, selection, container, and declared decoration behavior; consolidate style resolution. |
-| 8. Detail-promotion visuals | Contractual | Preserve the current visible distinction for containers representing hidden detail. |
-| 9. Decorations | Contractual | Preserve payload-declared visible decorations without requiring the current DOM construction. |
-| 10. Edge presentation | Contractual | Preserve semantic color/dash/width, declared facets, aggregate/bundle presentation, gradients, filters, halos, and legend explanations through one resolver. |
-| 11. Derived/projected edges | Contractual | Preserve omission rules, redirects, aggregation, bundling, dominance/subsumption, witnesses, represented edges, filtering, and deterministic fidelity behavior in one pure projector. |
-| 12. Legend | Contractual | Preserve category/relation filtering, selection, traversal, hierarchy, tooltips, and edge-presentation explanations. |
-| 13. Navigation | Contractual | Preserve mouse and touch pan, wheel/pinch/button/keyboard/tap zoom, fit, zoom-to-selection, and gesture persistence. |
-| 14. Node dragging | Contractual | Preserve node/descendant dragging, manual positions, live incident-edge regeneration, and persistence. Drag undo is not current behavior and is not added here. |
-| 15. Hover/tooltips | Simplify internally | Preserve current node/edge hover emphasis, viewport clamping, drag suppression, and math-aware tooltip behavior. |
-| 16. Selection/shortcuts | Contractual | Preserve multi-selection, primary selection, keyboard activation, traversal selection, and current shortcuts. |
-| 17. Routing controls | Contractual | Preserve the controls and visible route choices; consolidate their implementation. |
-| 18. Sidebar layout | Contractual | Preserve responsive panels, resizing, collapse, reordering, and persisted state. |
-| 19. Inspector | Contractual | Preserve the current structured details and multi-selection views. Normalize legacy detail forms before paint. |
-| 20. Search/filter | Contractual | Keep text search and basic category/relation filters under one visibility predicate and one state owner. No separate filter history. |
-| 21. Detail level | Contractual | Keep one detail-level state field because large hierarchical payloads depend on it for their initial scene. |
-| 22. Presentation nodes | Contractual | Preserve grouping facets, compartments, selection, inspection, drag, collapse, reset, persistence, and scope behavior through the common state/action path. |
-| 23. Hide/show/dim | Contractual | Preserve single and bulk hide/dim, complement actions, restore, reset, inherited container behavior, and unmounted hidden scene objects. |
-| 24. Bulk actions/history | Contractual | Preserve bulk actions and operable global undo/redo. Populated but unconsumed filter history is dead machinery, not a second required timeline. |
-| 25. Quick guide | Contractual | Keep the public option and current guide topics as an isolated UI extension that does not own graph state. |
-| 26. Persisted state | Contractual | Preserve current state coverage and supported migrations through the single state owner. |
-| 27. Math typesetting | Contractual when declared | Keep the narrow dependency interface and current completion behavior. |
-| 28. Cross-cutting | Simplify internally | Normalize styles and actions before paint; verify build polling separately before changing it. |
+| 1. Layout | Must preserve | Keep current controls, containment-aware ELK results, timeout, latest-result protection, fallback placement, and manual positions. |
+| 2. Render paths | Target change | Share one keyed visible-scene reconciler between full layout and position-reusing updates; large updates yield to browser input. |
+| 3. Edge geometry | Must preserve | Keep routing controls, attached edges during drag, containment-safe routes, and parallel-edge readability. |
+| 4. Occlusion | Remove mechanism | Remove masks. Preserve practical readability through layering and fills; exact partial attenuation is intentionally not preserved. |
+| 5. Arrowheads | Must preserve | Preserve visible direction, size class, semantic color, and visibility. |
+| 6. Containment | Must preserve | Preserve validated containment, descendant operations, auto-fit, and cycle rejection at the public validation boundary. |
+| 7. Node shapes/style | Must preserve | Preserve category, kind, shape, selection, container, decoration, dimensions, and label readability. |
+| 8. Detail-promotion visuals | Must preserve | Preserve the visible distinction for containers representing hidden detail. |
+| 9. Decorations | Must preserve | Preserve payload-declared visible decorations. |
+| 10. Edge presentation | Must preserve | Preserve semantic styles, declared facets, aggregates, bundles, gradients, filters, halos, and legend explanations. |
+| 11. Derived/projected edges | Must preserve | Preserve omission, redirects, aggregation, bundling, dominance/subsumption, witnesses, provenance, filtering, and fidelity. |
+| 12. Legend | Must preserve | Preserve filtering, selection, traversal, hierarchy, tooltips, and edge-presentation explanations. |
+| 13. Navigation | Must preserve | Preserve mouse and touch pan, wheel/pinch/button/keyboard/tap zoom, fit, zoom-to-selection, and persistence. |
+| 14. Node dragging | Must preserve | Preserve node/descendant dragging, manual positions, live incident-edge regeneration, and persistence. |
+| 15. Hover/tooltips | Must preserve | Preserve emphasis, viewport clamping, drag suppression, and math-aware tooltip behavior without structural repaint. |
+| 16. Selection/shortcuts | Must preserve | Preserve multi-selection, primary selection, keyboard activation, traversal selection, and current shortcuts. |
+| 17. Routing controls | Must preserve | Preserve controls and visible route choices. |
+| 18. Sidebar layout | Must preserve | Preserve responsive panels, resizing, collapse, reordering, and persisted state, excluding recorded pre-existing bugs. |
+| 19. Inspector | Must preserve | Preserve structured details, legacy validated details, multi-selection, raw JSON, and cross-reference navigation. |
+| 20. Search/filter | Must preserve | Preserve text search, category/relation filters, chips, summaries, retained ownership context, and graph-history participation. |
+| 21. Detail level | Must preserve | Preserve configured detail levels, selection cleanup, and layout-affecting changes. |
+| 22. Presentation nodes | Must preserve | Preserve grouping, compartments, selection, inspection, drag, collapse, reset, persistence, and scope behavior. |
+| 23. Hide/show/dim | Must preserve | Preserve single and bulk actions, complements, restore, reset, inherited hiding, selection cleanup, and semantic edge regeneration. |
+| 23a. Hidden DOM | Target change | Unmount nodes and edges absent from the visible scene while retaining enough position state for cheap restoration. |
+| 24. Bulk actions/history | Must preserve | Preserve bulk actions and operable global undo/redo. The unconsumed filter-history stacks are not parity requirements; deletion is deferred outside this refactor. |
+| 25. Quick guide | Must preserve | Keep the public option and current usable-step, focus, placement, and target behavior. |
+| 26. Persisted state | Must preserve | Preserve current state coverage and supported migrations. |
+| 27. Math typesetting | Must preserve when declared | Preserve dependency behavior and completion diagnostics; avoid re-typesetting unchanged elements. |
+| 28. Live build refresh | Must preserve | Keep HTTP(S) build-id polling and cache-busted reload behavior. |
+| 29. Embedding safety | Must preserve | Keep HTML escaping and inline-JSON protection against script termination. |
+| 30. Responsiveness | Target change | No renderer task may block input for more than the acceptance limits in the design; large operations must yield and be cancellable. |
 
 ## Hard compatibility boundary
 
-The replacement preserves `ElkHtmlRenderer`, `build_html_with_elk`, the current
+The refactor preserves `ElkHtmlRenderer`, `build_html_with_elk`, the current
 version-2 payload contract, entity and edge identifiers, containment,
 standalone HTML output, current controls, and the observable behaviors in this
 ledger. Exact DOM structure, private function boundaries, cache shapes, mask
 construction, and pixel-identical geometry are not contracts. Existing
-browser tests are compatibility evidence; changing their asserted behavior
-requires an explicit product decision, not a refactor convenience. When guide
+browser tests are compatibility evidence. Tests of the removed mask mechanism
+are replaced by outcome-based readability assertions; other asserted behavior
+requires an explicit product decision to change. When guide
 prose conflicts with verified runtime behavior, preserve the runtime behavior
 and correct the guide as documentation maintenance.
 
@@ -192,8 +198,10 @@ Dead code, not live behavior — no need to preserve: `enforceVerticalNodeSpacin
 
 ## 6. Containment / nesting
 
-- Container index built from both `entity.children` and reverse
-  `entity.container` pointers, filtered to currently visible entities.
+- Runtime container indexes can read both `entity.children` and reverse
+  `entity.container` pointers, but the public validator rejects nonempty
+  `entity.children`. Compatibility is required for the canonical reverse
+  `entity.container` path, not the unreachable fallback. `graph.py:124-128`,
   `geometry.js:11-40`
 - "Is a container" is derived dynamically from having ≥1 visible child in the
   current index, not a static entity flag — container-ness can change with
@@ -524,13 +532,14 @@ evidence, not preservation requirements for the simplified replacement:
   search focus/blur session, but the runtime contains no operation that pops
   and restores either stack. `filtering.js:27-28,166-202`
 - Filter-facet changes participate in operable global graph undo through
-  `recordGraphHistory`; free-text search edits do not. The replacement removes
-  the unused filter stacks without claiming filter-scoped undo parity.
+  `recordGraphHistory`; free-text search edits do not. The unused filter stacks
+  are not a parity requirement, but their deletion is deferred because
+  `filtering.js` is outside the renderer refactor's base scope.
   `filtering.js:175-202`, `graph_actions.js:218-249`
 
 Dead code, not live behavior: "retained endpoints" (`retainedEndpointIds`,
 `filtering.js:29-30,210-217`) is declared and cleared but never populated
-anywhere in the codebase.
+anywhere in the codebase. Its deletion is likewise deferred.
 
 ## 21. Detail-level control
 
@@ -617,7 +626,8 @@ anywhere in the codebase.
 - Known documentation correction: the default Search step says search leaves
   selection unchanged, but current browser behavior creates and replaces a
   search-sourced selection and clears it with the query. Preserve the runtime
-  behavior and correct the guide text during the refactor.
+  behavior. Correcting the prose is separate documentation maintenance because
+  no Quick Guide source is in this refactor's base scope.
   `quick_guides/default.py:40-45`, `selection.js:128-151`
 
 - Step-anchored tour, each step gated on its CSS target actually being
@@ -649,10 +659,11 @@ anywhere in the codebase.
 - Backward-compatible restore across versions 3-7 with per-field fallbacks;
   any other version or malformed payload triggers a full wipe+discard rather
   than a partial/corrupt apply. `viewer_state.js:34-89`
-- Every restored id collection is filtered against current live catalogs
-  (types, edge types, entities, containers) before acceptance — schema/
-  document drift silently drops stale ids instead of erroring.
-  `viewer_state.js:39-57,78-80`
+- Restored hidden/dimmed/selection/container collections are filtered against
+  current entities and catalogs before acceptance. Restored filter category
+  sets are accepted by `restoreFilterState` without the same catalog filter;
+  preserve the public result rather than the broader claim.
+  `viewer_state.js:39-57,78-80`, `filtering.js:138-162`
 - Restored selection drops hidden members; falls back to the last valid
   selected id if the saved primary is gone. `viewer_state.js:57-60`
 - Pan/zoom restore is guarded by a type check and marks `hasFittedOnce` so
@@ -687,3 +698,27 @@ anywhere in the codebase.
 - Node dimension measurement (label/subtitle text) via a hidden DOM host,
   memoized by content+class key, with distinct min/max sizing for containers
   vs. leaves (including a "compact container" case). `bootstrap.js:232-291`
+
+## 29. Embedding safety
+
+- Page titles and reduction notes are HTML-escaped before template insertion.
+  Inline JSON replaces `</` with `<\/` so untrusted payload text cannot close
+  the script element. `elk_html_renderer.py:72-74,152-163`
+- The public regression test injects a closing-script payload and verifies that
+  it remains data rather than executable markup.
+  `tests/test_visualization_filtering.py:85-94`
+
+## 30. Responsiveness and readability
+
+- Current hover paths avoid global visibility passes, and drag movement
+  reroutes only incident edges. Preserve those bounded paths.
+  `interactions.js:79-129`, `controls.js:44-48`
+- Existing browser coverage establishes minimum node dimensions and condensed,
+  heavy labels as readability behavior. Preserve those outcomes while changing
+  overlap treatment. `tests/test_visualization_node_readability_browser.py:6-50`,
+  `viewer.css:785-800`
+- Current mask refresh is a synchronous edge-by-node pass. It is deliberately
+  removed; its readability purpose is replaced by outcome tests rather than
+  mask-specific DOM assertions. `geometry.js:382-539`
+- New responsiveness requirements and timing limits are defined in the sibling
+  design. They are approved target behavior, not claims about the baseline.

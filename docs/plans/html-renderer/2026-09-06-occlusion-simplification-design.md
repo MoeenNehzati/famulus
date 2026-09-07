@@ -1,482 +1,367 @@
-# Simplicity-first HTML renderer replacement
+# Responsive, simplicity-first HTML renderer refactor
 
-This supersedes the earlier occlusion-only proposal. The primary goal is an
-HTML renderer that a maintainer can understand and change safely. Performance
-improvements qualify only when they remove work or reduce machinery. An
-optimization that introduces a culling lifecycle, spatial index, dirty-set
-protocol, or comparable subsystem is outside this replacement unless later
-measurement proves it necessary.
+## Implementation contract
 
-## Decision
+Refactor the existing SVG runtime in place so every renderer interaction stays
+responsive. Preserve current public behavior and data contracts while removing
+the two measured sources of avoidable work: computed edge masks and graph
+objects mounted while hidden.
 
-Replace the browser runtime behind the existing `ElkHtmlRenderer` boundary as
-an internal refactor. Preserve the current user interface and observable
-behavior with minimal change. Simplicity comes from replacing internal
-machinery, not from deleting established workflows.
+This is a bounded refactor, not a replacement renderer:
 
-The first replacement uses ordinary SVG, mounts only the state-visible scene,
-and follows one structural render path:
+- keep the current model, state, projection, layout, interaction, persistence,
+  and caller boundaries;
+- use one keyed, visible-scene reconciler for full layout and position-reusing
+  updates;
+- yield during large paints so input and browser frames continue;
+- keep shipped first-party renderer code net-zero or smaller;
+- expect **755 changed lines** and never exceed **900 changed lines** without
+  revising this plan.
 
-`action -> prepare state -> derive scene -> layout if needed -> paint -> commit`
+“Changed lines” means additions plus deletions. The ceiling is contingency, not
+a target.
 
-Pan and zoom change only the view transform. Hover changes only CSS state.
-Selection is paint-only when scene membership is unchanged; because selection
-can retain otherwise-filtered nodes and their owners, other selection changes
-use the structural path above.
+## Why this work is necessary
 
-## Verified problem
-
-The current repository payload contains 758 entities. A host-capable Chrome
-audit measured 842 rendered edges at full detail.
+The repository trial inspected on 2026-09-06 contained 758 entities and 842
+rendered edges:
 
 | Case | Current observation |
 |---|---:|
-| Full graph DOM | 34,787 elements in one run |
+| Full graph DOM | 34,787 elements |
 | Occlusion-mask children | 25,157 |
 | Full mask refresh | 152-154 ms |
 | Show all with mask refresh | 486-575 ms |
-| Show all with mask refresh disabled | 273-342 ms; existing mask DOM remained mounted |
-| Mostly hidden state | 40 visible nodes, but 758 nodes and 842 edges remain mounted |
+| Show all with mask refresh disabled | 273-342 ms |
+| Mostly hidden state | 40 visible nodes, but 758 nodes and 842 edges mounted |
 | Mostly hidden presentation pass | 47-50 ms |
-| Hidden-list rebuild | about 3 ms |
 
-`refreshEdgeOcclusionMasks` performs an edge-by-node geometric pass and builds
-one SVG mask per visible edge. Fast visibility changes use `display:none`, so
-objects hidden by state remain in the SVG and whole-graph presentation passes
-continue to visit them.
+Mask removal eliminates a measured 152-154 ms synchronous pass, but the
+273-342 ms mask-disabled show-all result proves that removal alone cannot keep
+the UI responsive. Large scene updates must also unmount hidden objects and
+yield between bounded paint chunks.
 
-The disabled-refresh measurement isolates refresh CPU; it is not a measurement
-of the proposed mask-free renderer because previously built mask DOM remained
-mounted. The evidence supports two removals: computed masking and retained
-hidden scene objects. It does not support optimizing the hidden-node list or
-adding viewport culling.
+## Compatibility boundary
 
-## Governing constraints
+Preserve:
 
-1. Current user-facing behavior has priority over internal simplification. A
-   feature may be reimplemented, but not removed or materially changed without
-   a separate explicit product decision.
-2. The replacement must delete substantially more executable browser logic
-   than it adds.
-3. There is one authoritative state API, one visibility derivation, and one
-   structural render transaction. This does not collapse committed state,
-   ephemeral interaction state, derived data, and position sources into one
-   undifferentiated object.
-4. SVG graph-layer DOM size is proportional to the visible scene, not the
-   payload. This does not authorize hidden-list virtualization.
-5. No operation outside ELK layout may have an edge-by-node cross-product.
-6. Existing documented behavior, active producer output, or a focused browser
-   test establishes a compatibility requirement unless explicitly retired.
-7. A performance technique that adds a subsystem needs fresh evidence from the
-   simplified renderer; evidence from the current renderer is insufficient.
+- `ElkHtmlRenderer`, `build_html_with_elk`, schema version 2, canonical ids,
+  standalone HTML output, dependency embedding, and inline-script escaping;
+- graph projection, omission, redirects, aggregation, bundling, dominance,
+  provenance, containment, semantic edge styling, node styling, and
+  presentation nodes;
+- pan, wheel and touch zoom, fit, search, filters, legends, detail level,
+  selection, traversal, hide/restore, dim/undim, collapse, undo/redo, dragging,
+  inspector behavior, shortcuts, responsive sidebars, Quick Guide, MathJax,
+  viewer-state persistence and migrations, and live build refresh;
+- node dimensions, label readability, keyboard activation, focus behavior,
+  and untrusted-text safety.
 
-## Preserved product boundary
+The only approved visible change is edge overlap treatment. Remove partial
+luminance masks beneath nodes, containers, and labels. Instead, preserve
+readability through paint order, opaque ordinary-node fills, and containment
+layering. Routes, endpoints, direction, semantic styling, and practical
+readability remain required; exact overlap pixels do not.
 
-- `ElkHtmlRenderer` and `build_html_with_elk` call signatures.
-- Canonical graph-payload validation and identifiers.
-- Standalone, self-contained HTML output.
-- Containment, typed nodes and edges, node/category styling, edge styling, and
-  current metadata-driven presentation.
-- ELK layout with a timeout, latest-result protection, and a clear failure
-  state.
-- Pan, wheel zoom, fit, text search, current filters and legends, detail level,
-  multi-selection, relation traversal, keyboard activation, single and bulk
-  hide/restore, dim/undim, container collapse, undo/redo, node dragging,
-  inspector behavior, and persisted viewer state.
-- Current document-configurable layout and routing controls.
-- Edge regeneration after hide, restore, filtering, detail changes, collapse,
-  drag, and undo/redo, including current projection, aggregation, bundling,
-  dominance, provenance, and presentation styling semantics.
-- Blueprint presentation nodes and their grouping controls.
-- The `quick_guide` keyword; when supplied it activates an isolated UI
-  extension that cannot own graph state or introduce another render path.
+Remove in this refactor:
 
-The refactor keeps the current version-2 payload contract. It may normalize
-that payload once into a smaller immutable browser model, but it does not
-require producers, stored artifacts, or callers to migrate as part of this
-work. A future schema revision is a separate product change.
+- mask elements, mask refreshes, and shape-cloned mask blockers;
+- mounted graph objects absent from the visible scene.
 
-| Version-2 payload field | Disposition |
-|---|---|
-| `schema_version`, `entities` | Required and validated. |
-| `graph_id`, `graph_kind`, `document`, `metadata` | Preserve as passive identity and inspector metadata. |
-| `categories`, `edge_categories` | Preserve basic labels, colors, shapes, and filter catalogs. |
-| `detail_levels`, `ui.visibility.detail_level` | Preserve in core. |
-| `ui.visibility.hidden_types`, `hidden_nodes`, `hidden_edge_types`, `collapsed_containers` | Preserve as initial values consumed by the one visibility predicate. |
-| `ui.layout` | Preserve current controls and defaults; normalize once for the layout module. |
-| `ui.type_styles`, `ui.edge_styles` | Preserve current node and semantic edge styling. |
-| `ui.filtering.search_placeholder` | Preserve as passive text. |
-| `ui.focus` | Preserve current initial focus and selection behavior. |
-| `renderer_dependencies` | Preserve for registered optional dependencies such as MathJax. |
-| `relation_semantics` | Preserve omission rules, redirects, subsumptions, fidelity, and inspectable provenance. |
-| `presentation_nodes`, `ui.presentation_node_controls` | Preserve grouping, selection, inspection, drag, collapse, and persistence behavior. |
-| `render_modes`, `default_mode` | Preserve accepted input and current behavior. |
-| `ui.edge_presentation`, `edge_metadata_styles`, `interaction`, `panel` | Preserve current observable behavior and styling. |
+The following are not compatibility requirements, but deleting them is not
+part of the eleven-file base scope: dead filter-history stacks, dead
+retained-endpoint state, defensive behavior rejected by public validation, and
+private function names unrelated to this refactor. Do not add work merely to
+preserve them.
 
-Domain-specific scene construction remains upstream where it already lives.
-The browser normalizer must not silently discard a currently supported field.
+The sibling
+[`2026-09-06-functionality-inventory.md`](2026-09-06-functionality-inventory.md)
+is the detailed behavior ledger.
 
-## Minimal architecture
+## Target mechanism
 
-The exact file split is secondary to the boundaries below. Do not split small
-functions merely to meet a module count.
+### 1. Mask-free layer order
 
-### Model
+Delete computed edge occlusion. Order SVG layers as the
+`presentation-node-layer`, `container-layer`, `edge-layer`, then `node-layer`.
+Edges therefore remain visible above containers while ordinary-node fills
+cover crossings.
 
-Index the immutable payload once: entities, declared edges, categories, and one
-canonical containment parent map. It has no DOM access.
+### 2. Keyed visible-scene reconciliation
 
-### State
+Factor the existing full-render paint body into one reconciler shared by ELK
+layout and position-reusing updates. Reconcile stable node and edge ids:
 
-One state owner exposes explicit partitions behind one API:
+- remove objects absent from the visible scene;
+- retain unchanged objects;
+- create or update changed objects;
+- reuse `lastNodePositions` when restoring known nodes;
+- invoke ELK only when a newly visible node lacks a valid position or the
+  action already requires layout.
 
-- immutable normalized document data;
-- committed viewer state, including visibility, dimming, selection, filters,
-  collapse, presentation-node state, routing choices, and persisted view data;
-- ephemeral interaction state for hover, pointer gestures, drag previews, and
-  in-flight transactions;
-- derived visibility, semantic edges, layout input, and painted scene; and
-- position state composed by the layout owner from ELK results, ordinary manual
-  positions, presentation-member offsets, presentation-shell offsets, and
-  transient drag offsets.
+### 3. Bounded, cancellable paint
 
-Actions prepare the next committed state without mutating the current snapshot.
-The current operable global graph undo/redo remains. Filter mutations continue
-to participate in that history where they do today. The currently populated but
-unconsumed filter undo/redo stacks are dead machinery and are not reproduced.
-Ordinary drag continues to persist manual positions but is not made undoable by
-this refactor. Adding filter-specific undo or drag undo requires a separate
-product decision. No-op actions create neither history nor render work.
+Build a deterministic sequence of stable-id remove, create, geometry, and
+presentation operations. Process it until a 6 ms frame deadline expires, yield
+with `requestAnimationFrame`, and resume only if the captured `renderVersion`
+is still current. Route whole-graph routing-control updates through the same
+bounded edge loop.
 
-### Scene projection
+Maintain one renderer-owned latest-paint promise. Expose it as
+`window.officinaRendererDiagnostics.whenIdle(): Promise<void>`. It resolves
+after the newest paint and its queued graph-scene MathJax work have settled.
+Existing callers remain unchanged and may ignore return values.
 
-Visibility derivation is pure and returns more than one Boolean:
+Cancellation applies only to paint generations: superseded DOM work stops and
+the newest generation settles to current state. It does not roll back graph
+state, history, or persistence.
 
-- the painted universe contains nodes and edges that should exist in the SVG;
-- retained selection and ownership context can enter that universe even when a
-  filter would otherwise exclude it;
-- the layout universe contains the nodes and projected layout edges supplied to
-  ELK for the current layout transaction; and
-- omission causes distinguish user hide, filters, detail, and collapse because
-  they drive different edge semantics.
+### 4. Incremental MathJax and bounded interactions
 
-`projectScene(document, state)` consumes that derivation and returns the painted
-scene. Hidden, filtered, detail-omitted, and collapsed objects that are not
-retained context do not enter it.
+Clear removed math before detaching elements. Typeset only created graph
+elements and graph labels whose text changed; include that queue tail in
+`whenIdle()`.
 
-The existing single-node, selection-wide, and complement-wide hide and dim
-actions remain. Restore-one, reset, inherited container hiding, and their
-selection cleanup semantics remain. Hidden nodes are absent from the SVG scene;
-dimmed nodes remain mounted and use lightweight presentation state.
+Keep cheap interactions cheap:
 
-One edge-projection module owns a readable sequence of pure stages. Given the
-normalized document and viewer state, it preserves the current behavior for:
+- pan and zoom change only the transform;
+- hover changes only CSS;
+- selection and dimming change only attributes when membership is unchanged;
+- drag preview updates only moved nodes and incident edges;
+- inspector, tooltip, and other local UI typesetting may retain focused calls,
+  but no action may typeset the entire graph scene.
 
-1. schema-declared omission traversal and projection-target redirects;
-2. exact/degraded fidelity, cycle termination, and deterministic witnesses;
-3. dominance/subsumption and direct-edge precedence;
-4. aggregation through detail-hidden and collapsed containment;
-5. lossless parallel-relation bundling and represented-edge provenance; and
-6. category, relation, and presentation-facet filtering.
+## Exact files and three-dimensional budget
 
-The stages are:
+“3D” records added, deleted, and net lines. Hard churn is additions plus
+deletions. Moving slack between files requires an explicit plan edit.
 
-`canonical relations -> omission and containment aggregation -> dominance,
-deduplication, bundling, and provenance -> layout-edge projection -> style
-resolution -> paint records`
+### Production
 
-The module has no DOM access. The layout-edge stage returns only the edges that
-constrain the current ELK universe. Edge style resolution remains distinct from
-node/category style normalization and from paint-owned SVG resource creation;
-there is no global style god object. Paint code does not infer graph semantics.
+| File | Add | Delete | Net | Hard churn | Change |
+|---|---:|---:|---:|---:|---|
+| `src/officina/visualization/html_renderer/runtime/geometry.js` | 0 | 158 | -158 | 165 | Delete bounds scanning, mask blockers, occlusion constants, intersections, and `refreshEdgeOcclusionMasks`; support bounded all-edge routing. |
+| `src/officina/visualization/html_renderer/page.html` | 2 | 2 | 0 | 10 | Put `edge-layer` after `container-layer` and before `node-layer`; keep `presentation-node-layer` behind them. |
+| `src/officina/visualization/html_renderer/runtime/render_pipeline.js` | 90 | 70 | +20 | 180 | Add keyed visible-scene reconciliation, 6 ms yielding, position reuse, latest-paint completion, and paint-generation cancellation. |
+| `src/officina/visualization/html_renderer/runtime/layout.js` | 25 | 65 | -40 | 100 | Replace `updateVisibilityFast` with position-reusing reconciliation; retain ELK fallback for missing positions. |
+| `src/officina/visualization/html_renderer/runtime/controls.js` | 15 | 5 | +10 | 35 | Remove mask refreshes and bound whole-graph routing changes. |
+| `src/officina/visualization/html_renderer/runtime/math_typesetter.js` | 35 | 15 | +20 | 75 | Return the queue tail, clear removed math, and typeset only created or text-changed graph elements. |
 
-### Layout
+Production subtotal: **+167 / -315 / net -148**, **482 expected churn**, and
+**565 hard churn**. Shipped first-party renderer code must remain net-zero or
+smaller.
 
-One layout owner composes ELK positions, ordinary manual positions,
-presentation-member offsets, presentation-shell offsets, and transient drag
-offsets behind one coordinate API. Keep the current layout and routing controls,
-but normalize them once and use this explicit action matrix:
+### Tests, benchmark, and documentation
 
-| Action | History | Persist | Projection | ELK | Paint / preview |
-|---|---|---|---|---|---|
-| Initial load or persisted-state restore | None | No new entry | Full | Run on the currently visible/retained universe, matching baseline membership | Full paint |
-| Detail change, container collapse/expand, spacing/algorithm change, layout-affecting presentation grouping | Preserve current graph or presentation history semantics | On successful commit | Full semantic and layout projection | Run | Full paint |
-| Hide/restore, bulk hide, reset, category/relation facet | Global history where currently recorded | On successful commit | Recompute painted edges | Reuse positions when all newly visible nodes have valid positions; otherwise relayout or use the current non-influencing fallback behavior | Replace visible scene |
-| Dim/undim | Global history | Yes | No topology change | No | Presentation-only update |
-| Selection or search | Preserve current behavior | Preserve current behavior | Reproject only if retained scene membership changes | No unless a newly retained node has no usable position | Presentation-only or structural transaction as required |
-| Ordinary node drag | No history | Once at drag end | Incident edges only | No | Transient coordinate/incident-edge preview; commit manual positions at drag end |
-| Presentation-member or shell drag | Preserve its current committed-state rollback behavior | At successful end | Affected grouping/edges | Only when current behavior requires it | Transient preview followed by one commit |
-| Routing/geometry control | Preserve current history behavior | Yes | Regenerate routes and presentation | Only when the selected ELK option requires layout | Edge repaint |
-| Undo/redo | Consume current global history | After successful restore | According to restored-state delta | Only for layout-affecting delta | Cheapest correct structural or presentation update |
-| Hover, pan, zoom, inspector | None | Gesture endpoints persist as today | None | No | CSS or view-transform update |
+| File | Add | Delete | Net | Hard churn | Change |
+|---|---:|---:|---:|---:|---|
+| `tests/test_visualization_browser.py` | 45 | 10 | +35 | 70 | Test unmount/restore, position reuse, cancellation, completion, input latency, rAF heartbeat, and incremental MathJax. |
+| `tests/test_visualization_containment_edges_browser.py` | 20 | 45 | -25 | 70 | Replace mask tests with layer-order, containment-route, and overlap-readability tests. |
+| `tests/test_visualization_inspector_and_bezier_browser.py` | 20 | 45 | -25 | 70 | Replace shape-mask cloning tests with outcome-based nonrectangular-node readability tests. |
+| `scripts/benchmark-html-renderer.py` | 75 | 0 | +75 | 105 | Add the reproducible responsiveness benchmark and deterministic result manifest. |
+| `src/officina/visualization/html_renderer/README.md` | 8 | 5 | +3 | 20 | Document visible-only reconciliation, cancellation, overlap behavior, completion diagnostics, and benchmarking. |
 
-At initial load, persisted filters and initial visibility affect ELK membership
-as they do in the baseline renderer; the refactor must not silently change the
-default geometry by laying out hidden objects. Data may retain positions for
-unmounted objects. When a restored or retained node lacks a valid position, the
-transaction succeeds through a bounded relayout or the existing non-influencing
-fallback-placement behavior rather than reporting an invariant error.
+Supporting subtotal: **+168 / -105 / net +63**, **273 expected churn**, and
+**335 hard churn**.
 
-The implementation may replace the current geometry algorithms, but every
-existing control must remain operable and produce the same class of visible
-result. Dragged nodes retain current persistence behavior, and incident edges
-remain attached throughout the interaction. A drag preview is explicitly
-ephemeral and is the sole permitted rendering path outside committed structural
-transactions.
+| Budget | Add | Delete | Net | Churn |
+|---|---:|---:|---:|---:|
+| Lean | 250 | 420 | -170 | 670 |
+| Expected | 335 | 420 | -85 | 755 |
+| Hard ceiling | — | — | — | **900** |
 
-### Paint and interaction
-
-Repaint the visible SVG scene straightforwardly before introducing keyed
-reconciliation. Preserve the containment layering invariant with presentation
-and container shells behind relationship edges and ordinary nodes/labels above
-edges, or an equivalent endpoint-aware layer split. Edges attached to contained
-nodes must remain visible above their container background and below ordinary
-nodes. Ordinary fills and label styling provide occlusion; there are no
-computed masks, including for containers.
-
-Use shared SVG arrow markers where they preserve current appearance and apply
-the resolved node and edge styles through ordinary CSS/SVG attributes. Prefer
-delegated node/edge events only when that also makes interaction code smaller;
-event delegation is not itself a performance requirement.
-
-### Transaction and failure semantics
-
-A structural action prepares a candidate state without exposing it as current,
-then derives visibility and edges, runs ELK when required, paints the candidate,
-and only then commits state, history, and persistence. A failed transaction
-restores the previous painted scene and reports the current clear error state.
-A superseded transaction exits without committing state, history, positions,
-presentation offsets, or persistence. MathJax completion and the documented
-post-paint frames are part of the action's completion promise.
-
-Synchronous presentation-only actions use the same commit rules without ELK.
-Transient drag previews may update coordinates and incident routes before
-commit, but cancellation restores their pre-drag coordinates and creates no
-history or persistence entry.
-
-### Shipped extensions
-
-| Extension | Cutover status | Consumer | Supported behavior | In complexity budget |
-|---|---|---|---|---|
-| Edge projection and presentation | Required | Blueprint, docstring, Rutter, and math graphs | Current omission, aggregation, bundling, provenance, filtering, and styling behavior | Yes |
-| Quick guide | Required when `quick_guide` is supplied | Blueprint and math visualizers | Current usable-step, focus, and target behavior | Yes |
-| Math typesetting | Required when declared in `renderer_dependencies` | Math graph | Serialize typesetting and expose completion | Yes |
-| Legend and traversal | Required | All graph viewers | Current filtering, selection, ancestor/successor traversal, and presentation explanations | Yes |
-| Persistence | Required | All graph viewers | Current supported state and migrations, implemented through the single state owner | Yes |
-| Presentation nodes | Required when supplied | Blueprint presentation views | Current grouping and bounded interactions | Yes |
-
-An extension cannot create a competing viewer-state owner or structural render
-entry point. It requests ordinary actions and consumes normalized scene data.
-
-The default Quick Guide retains its current topics. Existing inaccurate prose
-is corrected to match baseline behavior—for example, search creates and
-replaces a search-sourced selection rather than leaving selection unchanged.
-Browser tests must prove that every guide target exists and that dragging,
-multi-selection, legend traversal, bulk hide/dim, restore, search, pan/zoom,
-and the controls panel still work as described.
-
-## Internal machinery deliberately removed or consolidated
-
-- Computed edge occlusion and all per-edge masks/resources.
-- Viewport culling, spatial indexes, dirty sets, invalidation taxonomies,
-  semantic zoom, Canvas, and WebGL.
-- Competing full, fast, presentation-only, and edge-only render pipelines;
-  replace them with one action-to-scene transaction and bounded paint-only
-  updates.
-- Duplicate snapshot and rollback helpers; consolidate them behind the state
-  API while preserving operable global history and presentation mutations'
-  transactional rollback. Do not reproduce the dead filter-history stacks.
-- DOM-based semantic inference and style resolution; projection and styling
-  become pure data stages before paint.
-- Redundant geometry caches and fallback cascades when the same visible result
-  can be produced by one route representation.
-
-No user-visible control or documented workflow is removed by this plan. Build
-polling and any other non-viewer behavior may be removed only after confirming
-that it is not a supported user workflow.
-
-Canvas or viewport culling may be reconsidered only if a mask-free,
-visible-state-only SVG renderer still fails a benchmark with many objects
-simultaneously visible. They are not fallback work already authorized by this
-plan.
-
-## Complexity accounting
-
-The budget covers the union of all unique first-party browser JavaScript
-shipped for every supported cutover profile, including core, omission
-projection, Quick Guide, MathJax coordination, inline template scripts, and
-generated first-party runtime source. Optional naming does not exempt shipped
-code.
-
-The checked-in complexity check must:
-
-- count the unminified source of every shipped first-party browser asset once;
-- reject minification, compressed formatting, generated duplication, or moving
-  JavaScript into HTML/configuration to reduce the count;
-- report modules, state owners, structural render entry points, and each
-  extension's contribution;
-- derive the baseline from the exact shipped-asset manifest using one declared
-  physical or executable-line metric, then report the result by subsystem;
-- treat a 25% reduction as an evidence-dependent target until a parity-complete
-  candidate demonstrates it; structural simplification and a net reduction are
-  required, but a percentage never authorizes a compatibility regression;
-- include all renderer-motivated Python/schema/adapter additions in a separate
-  whole-change before/after report.
-
-Its planned invocation is:
-
-```bash
-scripts/check-html-renderer-complexity.py --root . --baseline-ref BASELINE_SHA --target-reduction-percent 25
-```
-
-The whole change must be net-negative in first-party executable and schema
-logic. Moving browser behavior into Python, schemas, templates, generated
-payloads, or adapters solely to improve the count does not qualify as
-simplification. Directly changed upstream code is part of both the audit and
-deletion accounting.
-
-The architecture check also asserts one state API, one coordinate-composition
-owner, one edge-projection module with explicit stages, and one committed
-structural render entry point. Ephemeral drag preview is allowed only through
-the bounded path defined above. These checks support, but do not replace, the
-reviewer trace from action through candidate state, scene, optional layout,
-paint, and commit.
+Tests and documentation do not count as shipped renderer complexity. The
+expected diff leaves 145 lines of contingency below the hard ceiling.
 
 ## Implementation sequence
 
-1. Turn the functionality inventory into a compatibility ledger in the sibling
-   plan. Every current user-facing behavior is preserved unless a separate,
-   explicit product decision retires it.
-2. Keep the version-2 schema and maintained adapters stable. Add one internal
-   normalization boundary and parity fixtures covering blueprint, docstring,
-   Rutter, and math payloads.
-3. Add the checked-in complexity checker, benchmark harness/state fixture, and
-   contract behavior matrix before building the replacement.
-4. Build the simple runtime alongside the current runtime without changing the
-   default. Keep the default Quick Guide accurate against the preserved UI.
-5. Verify visible-only mounting, mask-free painting, the single state path,
-   version-2 normalization compatibility, guide accuracy, and the benchmarks
-   below.
-6. Require independent subagent audits for simplicity, UI/behavior parity, and
-   measured performance. Audit findings are rulings to resolve, not prose to
-   append and ignore.
-7. Switch the default only after those audits pass, then delete the replaced
-   runtime. Do not retain two permanent implementations.
+### Task 1: Remove masks and correct layer order
+
+Files: `geometry.js`, `page.html`, `render_pipeline.js`, `layout.js`,
+`controls.js`, and the two mask-specific browser-test files.
+
+Delete mask construction and every production call. Reorder the layers and
+replace private mask assertions with observable checks:
+
+- every visible relationship retains a route and arrow direction;
+- ordinary nodes cover crossing edges;
+- edges attached to contained nodes remain above container backgrounds;
+- nonrectangular nodes remain legible at unrelated crossings;
+- layer order is `presentation-node-layer`, `container-layer`, `edge-layer`,
+  `node-layer`;
+- no `[data-edge-occlusion-mask]` element or edge `mask` reference remains.
+
+Checkpoint: focused containment and geometry browser tests pass, and the full
+graph contains zero mask resources.
+
+### Task 2: Reconcile the visible scene responsively
+
+Files: `render_pipeline.js`, `layout.js`, `controls.js`, and
+`test_visualization_browser.py`.
+
+Implement the keyed reconciler, known-position restoration, bounded operation
+loop, routing-control path, paint-generation cancellation, and
+`window.officinaRendererDiagnostics.whenIdle()` completion described above.
+
+Checkpoint: mounted node and edge ids exactly equal the visible scene after
+hide, restore, filtering, detail changes, collapse, undo, and redo. In a
+deliberately slowed reconciliation, a scheduled pointer probe and browser frame
+run between chunks. If a newer generation supersedes the work, the old paint
+stops and `window.officinaRendererDiagnostics.whenIdle()` resolves only after
+mounted ids match the newest state.
+
+### Task 3: Make graph-scene MathJax incremental
+
+Files: `math_typesetter.js`, `render_pipeline.js`, and
+`test_visualization_browser.py`.
+
+Clear removed math before detachment. Queue typesetting only for created or
+text-changed graph elements. Return the queue tail and include it in
+`window.officinaRendererDiagnostics.whenIdle()`.
+
+Checkpoint: hide/restore and label-change fixtures render the same math,
+removal leaves no stale MathJax state, unchanged labels are not retypeset, and
+completion waits for the relevant queue tail.
+
+### Task 4: Benchmark and document
+
+Files: `scripts/benchmark-html-renderer.py` and the renderer `README.md`.
+
+Implement the protocol below and document how to run it. If an acceptance gate
+fails, profile that action and amend this plan before changing another runtime
+file.
+
+## Benchmark protocol
+
+The benchmark CLI is:
+
+```text
+scripts/benchmark-html-renderer.py \
+  --baseline-html BASELINE.html \
+  --candidate-html CANDIDATE.html \
+  --output RESULT.json
+```
+
+`BASELINE.html` and `CANDIDATE.html` are standalone pages produced by the
+pre-refactor and candidate renderers from the same canonical JSON bytes. Build
+that JSON once with `build_blueprint_payload(repo_root)`. The benchmark loads
+each supplied page directly, extracts its embedded payload, and aborts unless
+the canonical payload bytes and trial parameters match. The result manifest
+must contain:
+
+- payload SHA-256, `len(payload["entities"])`, and canonical relationship
+  count `sum(len(entity.get("connects_to", [])) for entity in
+  payload["entities"])`;
+- viewport, Chromium version, and action parameters;
+- the reduce-to-40 ids, selected as the first 40 entity ids in lexicographic
+  order.
+
+Measure full graph, reduce-to-40, show-all, detail change, collapse/expand,
+routing change, and drag completion. Each trial starts from a fresh page load
+after clearing viewer storage; action cases are isolated and run in the order
+listed. Define their inputs as follows:
+
+- full graph measures initial navigation from immediately before page load to
+  the applicable completion route below;
+- reduce-to-40 uses the existing hide action to hide every entity except the
+  recorded 40 ids; show-all restores that state;
+- detail change selects the next option after the initial value in the detail
+  control; abort if no such option exists;
+- collapse/expand targets the lexicographically first visible collapsible
+  container id and performs both transitions;
+- routing change selects the next geometry option after the initial value;
+- drag targets the lexicographically first visible, non-container ordinary
+  node and moves it by +40 px horizontally and +20 px vertically.
+
+Use the repository browser-test launcher at a 1440x1000 viewport. Run three
+unrecorded warmups and 20 recorded trials per action. Compute p95 as
+`sorted_samples[ceil(0.95 * n) - 1]`.
+
+For action cases, schedule an input probe and an independent
+`requestAnimationFrame` heartbeat before dispatch. For full graph, install both
+probes before navigation. Reset the Long Tasks observer before the measured
+boundary and drain it after completion. Candidate completion is
+`window.officinaRendererDiagnostics.whenIdle()`. Because the baseline predates
+that seam, observe `#graph-svg` from its creation for full graph and before
+dispatch for other cases, require the first relevant subtree mutation, then
+require two consecutive mutation-free animation frames and await
+`window.officinaMathDiagnostics()` when present. Apply a fixed 10-second
+timeout to either completion route. Record:
+
+- end-to-end duration and longest observed main-thread task;
+- input-probe latency and longest heartbeat gap;
+- mounted node/edge counts and total SVG descendants.
 
 ## Acceptance gates
 
-Add an executable checked-in harness at
-`scripts/benchmark-html-renderer.py` and a deterministic state fixture at
-`tests/fixtures/visualization/html-renderer-benchmark-state.json`. Generate one
-repository artifact, record its SHA-256 and the exact filter state producing a
-40-node visible-id set in the trial manifest, and use the identical artifact and manifest for baseline and
-candidate. Check in raw JSON samples under
-`docs/plans/html-renderer/evidence/` with renderer commit, payload SHA, node and
-edge counts, Chrome version and flags, viewport, host/OS, headless status, and
-every sample.
+Run these gates in host-capable Chromium against the fixed repository payload.
 
-Its planned invocation is:
+### Responsiveness
 
-```bash
-scripts/benchmark-html-renderer.py --repo-root . --runs 40 --baseline-runtime BASELINE_RUNTIME --candidate-runtime CANDIDATE_RUNTIME --output docs/plans/html-renderer/evidence/RESULT.json
-```
+- Pan, zoom, hover, inspector, and sidebar interactions perform no graph
+  projection, ELK layout, graph-scene MathJax pass, or whole-scene repaint.
+  Focused inspector or tooltip typesetting remains allowed.
+- Drag-move frames reroute only incident edges; p95 duration is at most 32 ms.
+- Hide, filter, selection, dim, routing, and drag completion produce no
+  main-thread task above 50 ms.
+- Show-all, detail changes, collapse/expand, and cold layout may exceed 100 ms
+  end to end, but produce no main-thread task above 50 ms and have input-probe
+  latency at most 50 ms.
+- No isolated benchmark action observes a long task or rAF heartbeat gap above
+  100 ms.
+- A newer structural action stops superseded paint. After
+  `window.officinaRendererDiagnostics.whenIdle()`, mounted ids and presentation
+  match the newest state; state and history are not rolled back.
 
-Run at least 40 samples per case, alternating baseline and candidate trials.
-Each sample uses a fresh browser profile or clears all viewer storage before
-navigation. Define p95 as nearest rank
-`sorted_samples[ceil(0.95 * count) - 1]`; report paired candidate/baseline
-deltas and their bootstrap 95% confidence interval.
+### Performance and size
 
-Every structural action returns a completion promise. Measure from before
-dispatch until projection, automatic ELK, scene paint, the MathJax queue when
-active, two `requestAnimationFrame` callbacks, and
-`PerformanceObserver.takeRecords()` have completed. Reset the `longtask`
-observer before each sample. Report projection, layout, paint/typesetting, and
-end-to-end components.
+- Mask-refresh cost is eliminated rather than relocated.
+- Reduce-to-40 p95 end-to-end duration is at most 75 ms. Actual category and
+  relation filtering remains covered by the 50 ms responsiveness gate above.
+- Known-position show-all p95 end-to-end duration is at most 350 ms while also
+  meeting the responsiveness gates.
+- Mounted `.graph-node` and `.edge-path` ids equal independently computed
+  expected ids in small fixtures. For the repository benchmark, compare
+  captured baseline and candidate id sets instead of duplicating projection
+  semantics in a test projector.
+- The mostly hidden state mounts only nodes in the independently computed
+  visible scene, including retained ownership containers, plus its rendered
+  edges.
+- Shipped production JavaScript is net-zero or smaller.
 
-- Zero `[data-edge-occlusion-mask]` elements and zero mask references.
-- Mounted `.graph-node` and `.edge-path` counts equal expectations computed by
-  a test-side reference projector, not counts reported by the runtime itself.
-- Report total `#graph-svg` descendants and per-layer descendants so deleted
-  mask/resource complexity cannot move elsewhere in the SVG.
-- Filtering to the 40-node audit case: end-to-end median at most 50 ms, p95 at
-  most 100 ms, and no long task above 100 ms during the full transaction.
-- Showing the full repository graph with already-known positions: end-to-end
-  median at most 350 ms and p95 at most 500 ms.
-- For both filter-to-40 and known-position show-all, candidate median and p95 must
-  be at most 75% of their paired current-runtime baseline.
-- Cold detail expansion and container collapse/expand include automatic ELK
-  end-to-end. Their paired median and p95 ratios must have an upper 95%
-  confidence bound no greater than 1.05; report layout and paint separately.
-- Measure omission projection on the repository trial plus a bounded
-  branching/cycle fixture. Assert deterministic derived-edge contents and
-  report projection time; do not add memoization or indexing without a new
-  measured bottleneck and plan review.
-- Pan and zoom do not project, lay out, or repaint the scene.
-- Single-finger pan, pinch zoom, two-finger-tap zoom-out, double-tap zoom-in,
-  keyboard and toolbar zoom, fit, zoom-to-selection, and gesture-end
-  persistence retain baseline behavior.
-- The checked-in complexity checker passes the asset-manifest, metric, and
-  net-reduction contract and reports the 25% target separately. Missing that
-  target does not authorize functionality removal. The change adds no new
-  culling, index, worker-coordination, or invalidation subsystem.
-- A reviewer can trace a structural action through state, scene projection,
-  optional layout, and paint without crossing competing state owners or render
-  paths.
-- A checked-in UI parity manifest records every toolbar control, sidebar
-  section, legend action, shortcut, and guide target. Baseline and candidate
-  must expose the same labels, order, enabled states, and actions unless an
-  individually documented change has explicit approval.
-- Baseline/candidate screenshots at the same desktop and narrow-screen
-  viewports cover the default graph, an active selection, grouping, dimming,
-  hidden-node restoration, and expanded controls. Review tolerates geometry
-  and minor paint differences caused by mask removal, but not missing or
-  substantially rearranged UI.
+### Compatibility
 
-Every `Contractual` and `Simplify internally` row, plus the retained user-facing
-purpose of each `Remove mechanism` row, must have a baseline/candidate
-assertion. The behavior matrix includes initial visibility; single-node,
-selection, and complement hide/dim actions; individual restore and reset;
-multi-selection; current global undo/redo; dragging and manual-position
-persistence; category/relation filters and legends; relation traversal; detail
-change; presentation-node grouping; collapse/expand; edge regeneration,
-projection, aggregation, bundling, provenance, dominance, and styling; layout
-and routing controls; persistence/migration; inspector and keyboard behavior;
-touch gestures; node shapes/decorations and detail-promotion visuals; tooltip
-and responsive-sidebar behavior; and every current Quick Guide behavior.
-Representative blueprint, docstring, Rutter, and math payloads must pass the
-same observable assertions in baseline
-and candidate runtimes. Performance and LOC results cannot substitute for
-these contracts.
+- Existing public Python, schema, projection-policy, CLI, persistence,
+  interaction, accessibility, Quick Guide, and MathJax tests pass.
+- Replace private mask tests; do not weaken unrelated behavior assertions.
+- Inline graph JSON cannot terminate its script, label readability remains,
+  and live build polling works.
+- For fixed action sequences, baseline and candidate visible node ids, semantic
+  edge records, inspector contents, control availability, selection state,
+  manual positions, and saved viewer state match.
 
-Timing thresholds are initial targets derived from the current audit, not
-guarantees. If the simple implementation misses one, profile it before adding
-machinery; a miss does not authorize a new subsystem.
+## Measurement-triggered contingency
 
-## Audit record
+The eleven files budgeted above are the complete base scope. Add a second-pass
+file only when a failed gate identifies its measured cause, and assign that file
+a new three-dimensional budget before implementation.
 
-Three independent read-only subagent audits were required before this revision:
+| Measured cause | Candidate files |
+|---|---|
+| Scheduling is needed outside the reconciler | new `runtime/render_scheduler.js`, `html_renderer/assets.py` |
+| Caller completion ordering fails | `runtime/graph_actions.js`, `runtime/filtering.js`, `runtime/presentation_nodes.js` |
+| Hidden presentation work remains mounted | `runtime/visibility.js` |
+| Overlap readability fails | `viewer.css` |
+| Pure projection exceeds 50 ms | `runtime/projection.js`; using a worker requires a separate reviewed design |
 
-- Architecture audit: replace the runtime, use one render path, and do not add
-  culling or invalidation machinery before measuring the simple version.
-- Performance audit: mask deletion and visible-state mounting address the
-  measured costs; hidden-list, listener, and viewport optimizations lack
-  evidence as first-step work.
-- Maintainability audit: separate user-facing compatibility from internal
-  implementation parity and make the inventory an explicit contract ledger.
+## Out of scope
 
-A later fresh three-agent audit agreed with the core performance direction but
-did not establish permission to retire current functionality. The subsequent
-product ruling is that this is an internal refactor with minimal UI change:
-all shipped extensions count toward complexity, current graph and interaction
-semantics remain compatibility requirements, layout decisions are finite, and
-performance uses a checked-in matched-trial harness rather than plan-only
-timings.
-
-A final fresh simplicity, functionality, and adversarial-architecture audit
-endorsed the same core direction but required the precise contracts now above:
-state partitions behind one API; distinct painted and layout universes; staged
-edge projection; coordinate composition; atomic async commit/rollback;
-containment-safe layering; bounded drag preview; fallback placement; touch
-parity; correction of nonexistent drag/filter undo claims; and an asset-derived
-rather than assumed complexity baseline.
+- A second renderer or permanent dual-runtime cutover.
+- A new normalized payload, state architecture, global transaction framework,
+  duplicate semantic projector, or atomic state/history rollback.
+- Schema or producer migration.
+- New undo behavior, unrelated sidebar fixes, or unrelated Quick Guide changes.
+- A percentage LOC target, exhaustive UI manifest, screenshot archive,
+  confidence-interval framework, or mandatory repeated audit ceremony.
+- Viewport culling, Canvas, WebGL, spatial indexes, or semantic zoom unless
+  separately proposed after this plan passes its responsiveness gates.
