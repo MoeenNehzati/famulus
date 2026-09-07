@@ -1,9 +1,73 @@
-# html_renderer functionality inventory
+# html_renderer behavior inventory and disposition ledger
 
-Checklist against regressions during the occlusion/rendering redesign (see
-`2026-09-06-occlusion-simplification-design.md`). Verified
-against source by two independent read-throughs. `file:line` anchors point at
-the current implementation.
+This inventory is the compatibility checklist for an internal refactor. The
+replacement in `2026-09-06-occlusion-simplification-design.md` preserves
+current user-facing behavior while replacing the machinery that implements it.
+Exact DOM structure and internal algorithms are not compatibility requirements.
+
+The detailed sections are evidence about the implementation as inspected on
+2026-09-06. Their `file:line` anchors are historical navigation aids and may
+move as the runtime changes. For example, `updateVisibilityFast` now lives in
+`layout.js`, not `render_pipeline.js`.
+
+## Disposition policy
+
+| Status | Meaning |
+|---|---|
+| Contractual | Observable behavior that the replacement must preserve. |
+| Simplify internally | Preserve observable behavior through a smaller mechanism. |
+| Remove mechanism | Remove this implementation technique while retaining its user-facing purpose where applicable. |
+
+Each item is also classified by evidence: **verified current behavior**,
+**dead mechanism**, or **approved product change**. Unless explicitly labelled
+otherwise, detailed items are verified current behavior. Dead mechanisms are
+not parity requirements. This refactor contains no implicit product additions;
+fixing an existing defect or adding behavior requires separate approval.
+
+## Summary rulings
+
+| Section | Status | Replacement ruling |
+|---:|---|---|
+| 1. Layout | Simplify internally | Preserve current controls, containment-aware ELK results, timeout, latest-result protection, and manual positions through one layout owner. |
+| 2. Render paths | Simplify internally | Replace full/fast/presentation paths with one structural transaction plus bounded presentation-only updates. |
+| 3. Edge geometry | Simplify internally | Preserve routing controls, attached edges during drag, containment-safe routes, and parallel-edge readability; algorithms and caches may change. |
+| 4. Occlusion | Remove mechanism | Remove per-edge masks and preserve basic readability through paint order, fills, and simple styling. Exact attenuation pixels are not a contract. |
+| 5. Arrowheads | Simplify internally | Preserve visible arrow direction and style with shared markers where possible. |
+| 6. Containment | Contractual | Keep one canonical parent index and derive containment once during scene projection. |
+| 7. Node shapes/style | Contractual | Preserve current category, kind, shape, selection, container, and declared decoration behavior; consolidate style resolution. |
+| 8. Detail-promotion visuals | Contractual | Preserve the current visible distinction for containers representing hidden detail. |
+| 9. Decorations | Contractual | Preserve payload-declared visible decorations without requiring the current DOM construction. |
+| 10. Edge presentation | Contractual | Preserve semantic color/dash/width, declared facets, aggregate/bundle presentation, gradients, filters, halos, and legend explanations through one resolver. |
+| 11. Derived/projected edges | Contractual | Preserve omission rules, redirects, aggregation, bundling, dominance/subsumption, witnesses, represented edges, filtering, and deterministic fidelity behavior in one pure projector. |
+| 12. Legend | Contractual | Preserve category/relation filtering, selection, traversal, hierarchy, tooltips, and edge-presentation explanations. |
+| 13. Navigation | Contractual | Preserve mouse and touch pan, wheel/pinch/button/keyboard/tap zoom, fit, zoom-to-selection, and gesture persistence. |
+| 14. Node dragging | Contractual | Preserve node/descendant dragging, manual positions, live incident-edge regeneration, and persistence. Drag undo is not current behavior and is not added here. |
+| 15. Hover/tooltips | Simplify internally | Preserve current node/edge hover emphasis, viewport clamping, drag suppression, and math-aware tooltip behavior. |
+| 16. Selection/shortcuts | Contractual | Preserve multi-selection, primary selection, keyboard activation, traversal selection, and current shortcuts. |
+| 17. Routing controls | Contractual | Preserve the controls and visible route choices; consolidate their implementation. |
+| 18. Sidebar layout | Contractual | Preserve responsive panels, resizing, collapse, reordering, and persisted state. |
+| 19. Inspector | Contractual | Preserve the current structured details and multi-selection views. Normalize legacy detail forms before paint. |
+| 20. Search/filter | Contractual | Keep text search and basic category/relation filters under one visibility predicate and one state owner. No separate filter history. |
+| 21. Detail level | Contractual | Keep one detail-level state field because large hierarchical payloads depend on it for their initial scene. |
+| 22. Presentation nodes | Contractual | Preserve grouping facets, compartments, selection, inspection, drag, collapse, reset, persistence, and scope behavior through the common state/action path. |
+| 23. Hide/show/dim | Contractual | Preserve single and bulk hide/dim, complement actions, restore, reset, inherited container behavior, and unmounted hidden scene objects. |
+| 24. Bulk actions/history | Contractual | Preserve bulk actions and operable global undo/redo. Populated but unconsumed filter history is dead machinery, not a second required timeline. |
+| 25. Quick guide | Contractual | Keep the public option and current guide topics as an isolated UI extension that does not own graph state. |
+| 26. Persisted state | Contractual | Preserve current state coverage and supported migrations through the single state owner. |
+| 27. Math typesetting | Contractual when declared | Keep the narrow dependency interface and current completion behavior. |
+| 28. Cross-cutting | Simplify internally | Normalize styles and actions before paint; verify build polling separately before changing it. |
+
+## Hard compatibility boundary
+
+The replacement preserves `ElkHtmlRenderer`, `build_html_with_elk`, the current
+version-2 payload contract, entity and edge identifiers, containment,
+standalone HTML output, current controls, and the observable behaviors in this
+ledger. Exact DOM structure, private function boundaries, cache shapes, mask
+construction, and pixel-identical geometry are not contracts. Existing
+browser tests are compatibility evidence; changing their asserted behavior
+requires an explicit product decision, not a refactor convenience. When guide
+prose conflicts with verified runtime behavior, preserve the runtime behavior
+and correct the guide as documentation maintenance.
 
 ## 1. Layout (ELK integration)
 
@@ -53,7 +117,7 @@ Dead code, not live behavior — no need to preserve: `enforceVerticalNodeSpacin
   recomputing geometry (positions stay frozen); only derived/projected edges
   are rebuilt, since they depend on the current omission set. Falls back to a
   full relayout if any expected-visible node has no DOM element yet.
-  `render_pipeline.js:448-511`
+  `layout.js:448-511`
 - `updateVisibilityFull`: full ELK rerun + full DOM rebuild — used only for
   spacing/algorithm changes and structural changes (container collapse,
   detail-level change). `render_pipeline.js:1-228`
@@ -94,7 +158,7 @@ Dead code, not live behavior — no need to preserve: `enforceVerticalNodeSpacin
   see §1) via `getEffectivePos` preferring manual over ELK position.
   `geometry.js:7-9`
 
-## 4. Edge occlusion masking (target of the redesign — preserve the *effect*, not necessarily this mechanism)
+## 4. Edge occlusion masking (mechanism removed; readability intent retained)
 
 - Per-edge SVG luminance mask dimming (not fully hiding) the portion of an
   edge passing under a non-endpoint node/container, at fixed strengths:
@@ -320,6 +384,9 @@ Dead code, not live behavior — no need to preserve: `enforceVerticalNodeSpacin
   reroute pass). `controls.js:44-48`
 - On drag end: full incident-edge reroute, occlusion-mask refresh, and state
   persistence — but only if an actual drag occurred. `controls.js:58-76`
+- Ordinary manual positions are absent from `graphStateSnapshot`; drag end does
+  not record a graph-history entry. Drag undo is therefore not current behavior.
+  `graph_actions.js:12-27`, `controls.js:58-76`
 - Post-drag click suppression via a one-tick-delayed flag reset, specifically
   to swallow the synthetic click mouseup can trigger. `controls.js:74-76`, `interactions.js:130-131`
 
@@ -401,8 +468,8 @@ Dead code, not live behavior — no need to preserve: `enforceVerticalNodeSpacin
 - Advanced-controls (`routing-controls`, `raw-json`) relocated into a
   dedicated slot once at startup. `sidebar_layout.js:111-117`
 
-Known pre-existing bugs (not caused by the planned redesign — preserve or
-deliberately fix, don't lose track of as an unnoticed side effect):
+Known pre-existing bugs recorded during the inventory. They are historical
+evidence, not preservation requirements for the simplified replacement:
 1. Viewport narrow-transition drawer resets don't call `saveViewerState()`.
    `sidebar_layout.js:119-128`
 2. Sidebar-collapse state doesn't survive a reload: `saveViewerState` writes
@@ -452,15 +519,14 @@ deliberately fix, don't lose track of as an unnoticed side effect):
 - Removable filter chips per active exclusion; live filter summary line
   ("Showing N of M nodes...", derived-path/match/retained-container counts).
   `filtering.js:384-438`
-- Filter-scoped undo/redo stack, separate from the general graph undo/redo;
-  search-box edits commit as one undo step per focus/blur session, not per
-  keystroke. `filtering.js:166-202,440-455`
-- Filter-facet changes (category/edge-type checkboxes, detail-level select)
-  are tracked by **both** undo mechanisms at once — the general graph undo
-  (`recordGraphHistory` inside `mutateFilter`) and the filter-scoped stack —
-  while free-text search-query edits are tracked **only** by the
-  filter-scoped stack. Crossing a graph-level undo/redo boundary wipes the
-  filter-level stack entirely. `filtering.js:201`, `graph_actions.js:12-27,202-204`
+- Dead mechanism, not live undo behavior: `filterUndoStack` and
+  `filterRedoStack` receive snapshots, including one coalesced snapshot per
+  search focus/blur session, but the runtime contains no operation that pops
+  and restores either stack. `filtering.js:27-28,166-202`
+- Filter-facet changes participate in operable global graph undo through
+  `recordGraphHistory`; free-text search edits do not. The replacement removes
+  the unused filter stacks without claiming filter-scoped undo parity.
+  `filtering.js:175-202`, `graph_actions.js:218-249`
 
 Dead code, not live behavior: "retained endpoints" (`retainedEndpointIds`,
 `filtering.js:29-30,210-217`) is declared and cleared but never populated
@@ -547,6 +613,12 @@ anywhere in the codebase.
   `graph_actions.js:168-216`
 
 ## 25. Quick guide / onboarding
+
+- Known documentation correction: the default Search step says search leaves
+  selection unchanged, but current browser behavior creates and replaces a
+  search-sourced selection and clears it with the query. Preserve the runtime
+  behavior and correct the guide text during the refactor.
+  `quick_guides/default.py:40-45`, `selection.js:128-151`
 
 - Step-anchored tour, each step gated on its CSS target actually being
   visible; auto-skips unusable steps in either direction, auto-closes if none
