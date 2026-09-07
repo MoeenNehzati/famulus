@@ -632,9 +632,32 @@ def test_structured_inspector_reuses_entity_description_when_summary_is_omitted(
 
 
 def test_node_and_color_legend_headings_toggle_independently() -> None:
+    payload = _payload()
+    payload["categories"].append({"id": "other", "label": "Other"})
+    payload["entities"].extend([
+        {
+            "id": "gamma",
+            "type": "widget",
+            "category": "other",
+            "short_title": "Gamma",
+            "description": "Gamma description",
+            "position": 2,
+            "connects_to": [],
+        },
+        {
+            "id": "delta",
+            "type": "widget",
+            "category": "other",
+            "kind": "different-kind",
+            "short_title": "Delta",
+            "description": "Delta description",
+            "position": 3,
+            "connects_to": [],
+        },
+    ])
     _run_browser_case(
         "collapsible-node-color-legends",
-        _payload(),
+        payload,
         """
         const nodes = document.querySelector('details[data-legend-section="nodes"]');
         const colors = document.querySelector('details[data-legend-section="colors"]');
@@ -812,6 +835,7 @@ def test_relation_direction_controls_select_union_and_color_legend_selects_kind(
             {"id": "b", "type": "source", "kind": "markdown", "category": "source:markdown", "short_title": "B", "position": 2, "connects_to": [{"to": "d", "type": "link"}]},
             {"id": "d", "type": "source", "kind": "markdown", "category": "source:markdown", "short_title": "D", "position": 3, "connects_to": []},
             {"id": "mixed", "type": "source", "kind": "python+markdown", "category": "source:python+markdown", "short_title": "Mixed", "position": 4, "connects_to": []},
+            {"id": "mixed2", "type": "source", "kind": "markdown", "category": "source:python+markdown", "short_title": "Mixed2", "position": 5, "connects_to": []},
         ],
     }
     _run_browser_case(
