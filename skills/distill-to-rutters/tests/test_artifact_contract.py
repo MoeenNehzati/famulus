@@ -568,7 +568,7 @@ def test_first_release_accepts_a_complete_single_voyage_chain(
 
     result = contract.validate_artifact(artifact, "verify")
 
-    assert result.valid is True, result.errors
+    assert result.valid is True, result
 
 
 @pytest.mark.parametrize("stage", tuple(STAGE_CASES)[1:])
