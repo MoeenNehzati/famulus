@@ -10,9 +10,11 @@ repair, synchronization, or routing-state writes.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -34,11 +36,68 @@ from officina.dispatcher.direct_models import (
     ResolvedInvocationMetadata,
 )
 from officina.dispatcher.errors import (
+    DISPATCHER_ERROR_SPECS,
+    DispatcherError,
     InvocationError,
     InvalidRequestError,
     LaunchFailedError,
     RuntimeMisconfiguredError,
 )
+
+
+# Every repo-owned launch that temporarily enables broad native-handle
+# inheritance must share this lock so unrelated handles cannot leak.
+_WINDOWS_DIAGNOSTIC_LAUNCH_LOCK = threading.Lock()
+_DIAGNOSTIC_LIMIT = 16 * 1024
+
+
+def _collect_diagnostic(
+    reader: int,
+    collected: bytearray,
+    overflow: list[bool],
+) -> None:
+    """Continuously drain the private pipe; callers only join for a bound."""
+
+    while True:
+        try:
+            chunk = os.read(reader, 4096)
+        except OSError:
+            break
+        if not chunk:
+            break
+        remaining = _DIAGNOSTIC_LIMIT + 1 - len(collected)
+        if remaining > 0:
+            collected.extend(chunk[:remaining])
+        if len(collected) > _DIAGNOSTIC_LIMIT or len(chunk) > remaining:
+            overflow[0] = True
+def _registered_diagnosis(payload: bytes) -> DispatcherError | None:
+    """Accept exactly one complete registered dispatcher payload."""
+
+    if not payload or payload.strip() != payload:
+        return None
+    try:
+        value = json.loads(payload)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(value, dict) or value.get("schema_version") != 1:
+        return None
+    context = {
+        key: item
+        for key, item in value.items()
+        if key not in {"schema_version", "code", "message"}
+    }
+    for entry_id, spec in DISPATCHER_ERROR_SPECS.items():
+        if not entry_id.startswith("R") or value.get("code") != spec.code:
+            continue
+        if set(context) - spec.context_fields:
+            continue
+        try:
+            error = DispatcherError.from_spec(entry_id, **context)
+        except (KeyError, ValueError):
+            continue
+        if str(error) == value.get("message"):
+            return error
+    return None
 
 
 def _target_module_id(target: str) -> str:
@@ -155,18 +214,20 @@ def _materialize_metadata(
 
     python_target = metadata.python_target
     if python_target is None:
-        raise RuntimeMisconfiguredError(
-            f"{metadata.target}: direct route has no Python target",
+        raise RuntimeMisconfiguredError.from_spec(
+            "D08",
             caller_module_id=metadata.caller_module_id,
             target_module_id=metadata.target_module_id,
+            interface_id=metadata.target,
         )
     logical_package = python_target.logical_package
     logical_entrypoint = python_target.logical_entrypoint
     if logical_package is None or logical_entrypoint is None:
-        raise RuntimeMisconfiguredError(
-            f"{metadata.target}: direct route has no logical Python package",
+        raise RuntimeMisconfiguredError.from_spec(
+            "D09",
             caller_module_id=metadata.caller_module_id,
             target_module_id=metadata.target_module_id,
+            interface_id=metadata.target,
         )
     command = [
         sys.executable,
@@ -258,8 +319,8 @@ def _config_path(
 
     if repository_config is not None:
         return Path(repository_config)
-    raise RuntimeMisconfiguredError(
-        "dispatcher requires the exact repository configuration path",
+    raise RuntimeMisconfiguredError.from_spec(
+        "D06",
         caller_module_id=caller_module_id,
         target_module_id=_target_module_id(target),
     )
@@ -276,8 +337,8 @@ def _load_configuration(
     try:
         return load_repository_configuration(path)
     except RepositoryConfigurationError as exc:
-        raise RuntimeMisconfiguredError(
-            str(exc),
+        raise RuntimeMisconfiguredError.from_spec(
+            "D07",
             caller_module_id=caller_module_id,
             target_module_id=_target_module_id(target),
         ) from exc
@@ -304,7 +365,7 @@ def _resolve_dispatch(
 
     caller = caller_skill.strip()
     if not caller:
-        raise InvalidRequestError("caller_skill must be a non-empty string")
+        raise InvalidRequestError.from_spec("D05")
     return _materialize(
         repository_config=_config_path(
             repository_config,
@@ -362,7 +423,7 @@ def authorize_host_caller(
 
     caller = caller_skill.strip()
     if not caller:
-        raise InvalidRequestError("caller_skill must be a non-empty string")
+        raise InvalidRequestError.from_spec("D05")
     configuration = _load_configuration(
         _config_path(
             repository_config,
@@ -425,35 +486,153 @@ def _run_resolved_invocation(
     returned or raised according to ``check`` exactly as in ``subprocess.run``.
     """
 
-    run_kwargs: dict[str, Any] = {
+    text_mode = text if text is not None else isinstance(stdin, str)
+    input_bytes = stdin.encode("utf-8") if isinstance(stdin, str) else stdin
+    try:
+        reader, writer = os.pipe()
+    except OSError as exc:
+        resolved.close()
+        raise LaunchFailedError.from_spec(
+            "D10",
+            caller_module_id=resolved.caller_module_id,
+            target_module_id=resolved.target_module_id,
+            interface_id=resolved.target,
+        ) from exc
+    collected = bytearray()
+    overflow = [False]
+    collector = threading.Thread(
+        target=_collect_diagnostic,
+        args=(reader, collected, overflow),
+        daemon=True,
+    )
+    try:
+        collector.start()
+    except BaseException:
+        os.close(writer)
+        os.close(reader)
+        resolved.close()
+        raise
+
+    command = list(resolved.command)
+    command[4:4] = ["--diagnostic-writer", str(writer)]
+    popen_kwargs: dict[str, Any] = {
         "cwd": resolved.cwd,
         "env": resolved.env,
-        "capture_output": capture_output,
-        "check": check,
+        "stdin": subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
+        "stdout": subprocess.PIPE if capture_output else None,
+        "stderr": subprocess.PIPE if capture_output else None,
     }
-    if timeout is not None:
-        run_kwargs["timeout"] = timeout
-    if stdin is not None:
-        run_kwargs["input"] = stdin
-    else:
-        run_kwargs["stdin"] = subprocess.DEVNULL
-    if text is not None:
-        run_kwargs["text"] = text
-    elif isinstance(stdin, str):
-        run_kwargs["text"] = True
-    if run_kwargs.get("text"):
-        run_kwargs["encoding"] = "utf-8"
-        run_kwargs["errors"] = "strict"
+    windows_writer: int | None = None
     try:
+        if text_mode and isinstance(stdin, bytes):
+            raise TypeError("text mode requires string stdin")
+        if not text_mode and isinstance(stdin, str):
+            raise TypeError("binary mode requires bytes stdin")
         try:
-            return subprocess.run(resolved.command, **run_kwargs)
+            if os.name == "nt":
+                import msvcrt
+
+                windows_writer = os.dup(writer)
+                os.close(writer)
+                writer = -1
+                handle = msvcrt.get_osfhandle(windows_writer)
+                command[5] = str(handle)
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.lpAttributeList = {"handle_list": [handle]}
+                popen_kwargs.update(startupinfo=startupinfo, close_fds=True)
+                with _WINDOWS_DIAGNOSTIC_LAUNCH_LOCK:
+                    os.set_handle_inheritable(handle, True)
+                    try:
+                        process = subprocess.Popen(command, **popen_kwargs)
+                    finally:
+                        try:
+                            os.set_handle_inheritable(handle, False)
+                        except OSError:
+                            # Closing the duplicated parent descriptor is the
+                            # safe fallback when inheritance cannot be reset.
+                            try:
+                                os.close(windows_writer)
+                            except OSError:
+                                pass
+                            windows_writer = None
+            else:
+                popen_kwargs["pass_fds"] = (writer,)
+                process = subprocess.Popen(command, **popen_kwargs)
         except OSError as exc:
-            raise LaunchFailedError(
-                f"{resolved.target}: launch failed: {exc}",
+            raise LaunchFailedError.from_spec(
+                "D10",
                 caller_module_id=resolved.caller_module_id,
                 target_module_id=resolved.target_module_id,
+                interface_id=resolved.target,
             ) from exc
+
+        if writer >= 0:
+            os.close(writer)
+            writer = -1
+        if windows_writer is not None:
+            os.close(windows_writer)
+            windows_writer = None
+        try:
+            stdout, stderr = process.communicate(input=input_bytes, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            process.terminate()
+            try:
+                process.communicate(timeout=1)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.communicate()
+            raise DispatcherError.from_spec(
+                "D69",
+                caller_module_id=resolved.caller_module_id,
+                target_module_id=resolved.target_module_id,
+                interface_id=resolved.target,
+                timeout=timeout,
+            )
+
+        collector.join(timeout=0.25)
+        if process.returncode == 70 and not collector.is_alive() and not overflow[0]:
+            diagnosis = _registered_diagnosis(bytes(collected))
+            if diagnosis is not None:
+                diagnosis.caller_module_id = resolved.caller_module_id
+                diagnosis.target_module_id = resolved.target_module_id
+                raise diagnosis
+
+        if text_mode:
+            try:
+                stdout = None if stdout is None else stdout.decode("utf-8")
+                stderr = None if stderr is None else stderr.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise DispatcherError.from_spec(
+                    "D71",
+                    caller_module_id=resolved.caller_module_id,
+                    target_module_id=resolved.target_module_id,
+                    interface_id=resolved.target,
+                ) from exc
+        completed = subprocess.CompletedProcess(
+            resolved.command,
+            process.returncode,
+            stdout,
+            stderr,
+        )
+        if check and process.returncode:
+            raise DispatcherError.from_spec(
+                "D70",
+                caller_module_id=resolved.caller_module_id,
+                target_module_id=resolved.target_module_id,
+                interface_id=resolved.target,
+                returncode=process.returncode,
+            )
+        return completed
     finally:
+        if writer >= 0:
+            os.close(writer)
+        if windows_writer is not None:
+            os.close(windows_writer)
+        collector.join(timeout=0.25)
+        try:
+            os.close(reader)
+        except OSError:
+            pass
         resolved.close()
 
 

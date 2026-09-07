@@ -5,6 +5,7 @@ import stat
 import subprocess
 import sys
 from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -200,6 +201,16 @@ def test_canonical_v1_is_read_without_rewriting_and_migrates_on_mutation() -> No
     assert state.encode_ledger(ledger) == raw
     migrated = state.claim_receipts(ledger, "root.interface.setup", ("leaf.interface.setup",))
     assert b'"schema_version":2' in state.encode_ledger(migrated) and migrated.active_flow == ledger.active_flow
+    assert migrated.active_flow is not None and migrated.active_flow.owner_verified is False
+
+
+def test_schema_v2_round_trips_explicit_verified_owner_invariant() -> None:
+    flow = replace(_flow(), owner_verified=True)
+    ledger = state.SetupLedger(interfaces={}, active_flow=flow)
+    encoded = state.encode_ledger(ledger)
+
+    assert b'"owner_verified":true' in encoded
+    assert state.parse_ledger(encoded).active_flow == flow
 
 
 def test_v2_round_trips_ordinary_and_global_flows() -> None:

@@ -34,6 +34,10 @@ def _core_packages() -> list[str]:
     ]
 
 
+def _frontmatter_description() -> str:
+    return SKILL.read_text(encoding="utf-8").split("---", 2)[1]
+
+
 def _expand(argv: list[str], bindings: dict[str, str], packages: list[str]) -> list[str]:
     expanded: list[str] = []
     for token in argv:
@@ -256,6 +260,24 @@ def test_setup_skill_is_host_loaded_and_uses_task_1_core_authority() -> None:
         "bootstrap-dispatcher-runtime.source.gateway.interface.repair-selected-packages"
     )
     assert repair_export.source_interface_id != export.source_interface_id
+
+
+def test_description_routes_only_evidence_backed_dispatcher_runtime_failures() -> None:
+    description = _frontmatter_description()
+
+    assert set(re.findall(r"dispatcher\.[a-z_]+", description)) == {
+        "dispatcher.mcp_package_unavailable",
+        "dispatcher.mcp_python_unsupported",
+    }
+    assert all(
+        exclusion in description
+        for exclusion in (
+            "routing",
+            "authorization",
+            "setup state",
+            "manager-response failures",
+        )
+    )
 
 
 def test_graph_execution_contract_covers_the_actual_ordered_command_sequence() -> None:

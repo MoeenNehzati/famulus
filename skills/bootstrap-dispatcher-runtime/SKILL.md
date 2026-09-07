@@ -1,7 +1,11 @@
 ---
 name: bootstrap-dispatcher-runtime
 description: >-
-  Use when the Famulus dispatcher cannot start, or cannot run an interface, because its Python runtime is missing, too old, or lacks a declared package. Symptoms include "python: command not found", a Python older than 3.11, ModuleNotFoundError for mcp, yaml, or jsonschema, and a feature reporting that its own package is unavailable. Also use when that runtime must be rebuilt or a declared package added to it. Do not use for general Python installation.
+  Use only when evidence shows that the Famulus dispatcher Python is missing or
+  older than 3.11 (`dispatcher.mcp_python_unsupported`), or that a declared
+  dispatcher package is unavailable (`dispatcher.mcp_package_unavailable`). Do
+  not use for routing, authorization, setup state, manager-response failures,
+  or general Python installation.
 tools:
   - python
 ---

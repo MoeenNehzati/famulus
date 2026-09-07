@@ -21,7 +21,7 @@ from officina.blueprints.graph import (
     load_repository_blueprint_graph,
 )
 from officina.common import atomic_files
-from officina.dispatcher.errors import InvocationError
+from officina.dispatcher.errors import DispatcherError, InvocationError
 from officina.runtime.python_machine_interface import (
     DispatchCall,
     logical_python_package_name,
@@ -271,6 +271,7 @@ def _fixture_controller(tmp_path: Path) -> tuple[manager.SetupManager, FixtureRu
     python_canary.reset_state()
     python_canary_teardown.reset_state()
     runtime = FixtureRuntime(tmp_path / "private" / "state" / "ledger.json")
+    set_runtime_dispatch_context(runtime, caller_module_id="original-caller")
     return runtime.build_manager(argparse.Namespace(target_interface="unused")), runtime
 
 
@@ -298,6 +299,7 @@ def _controller(
     graph: SimpleNamespace,
     dispatch: DispatchHarness,
     *bindings: setup_dispatches.ManagedInterfaceBinding,
+    runtime_caller: str = "original-caller",
 ) -> manager.SetupManager:
     return manager.SetupManager(
         graph=graph,
@@ -305,7 +307,99 @@ def _controller(
         dispatch=dispatch,
         bindings={binding.setup_interface: binding for binding in bindings},
         new_flow_id=lambda: "flow-1",
+        runtime_caller=runtime_caller,
     )
+
+
+def test_setup_error_registry_is_closed_and_catalogue_exact() -> None:
+    expected = {
+        "E00", "E01", "E02", "E03", "E04", "E05", "E06", "E08", "E09",
+        "E10", "E11", "E11p", "E12", "E13", "E14", "E15", "E16", "E17",
+        "E18", "E19", "E20", "E20p", "E21", "E22", "E23", "E24", "E25",
+        "E26", "E27", "E28", "E29", "E30", "E31", "E32", "E33", "E34",
+        "E35", "E35a", "E36", "E37", "E38", "E39", "E40", "E41", "E42",
+        "E44", "E45", "E46", "E47", "E48", "E49", "E50", "E51", "E52",
+        "E53", "E54",
+    }
+    assert set(manager.SETUP_ERROR_SPECS) == expected
+    assert manager.SETUP_ERROR_SPECS["E37"].message == (
+        "The managed setup action dispatch failed; action completion is unknown."
+    )
+    assert manager.SETUP_ERROR_SPECS["E44"].message == (
+        "The verifier confirmed external completion, but the setup manager could not record settlement."
+    )
+    assert manager.SETUP_ERROR_SPECS["E44"].allowed_setup_causes == frozenset(
+        {"E10", "E20", "E20p", "E21", "E22", "E23", "E25", "E32", "E33", "E34"}
+    )
+    assert manager.SETUP_ERROR_SPECS["E45"].allowed_setup_causes == frozenset(
+        {"E20", "E20p", "E21", "E22", "E23", "E25", "E32", "E33", "E34", "E36"}
+    )
+    assert manager.SETUP_ERROR_SPECS["E51"].allowed_setup_causes == manager.SETUP_ERROR_SPECS["E44"].allowed_setup_causes
+
+
+def test_begin_rejects_spoofed_continuation_owner(tmp_path: Path) -> None:
+    item = _managed("canary")
+    controller = manager.SetupManager(
+        graph=_graph(item), store=_store(tmp_path), dispatch=DispatchHarness(),
+        bindings={item.setup_interface: _binding(item)}, runtime_caller="live-caller",
+    )
+    code, payload = controller.begin(
+        "setup", item.setup_interface, "spoofed-caller", item.setup_interface, 1
+    )
+    assert code == 2
+    assert payload["error_code"] == "setup.continuation_caller_mismatch"
+    assert payload["flow_id"] is None and "recovery" not in payload
+
+
+@pytest.mark.parametrize("runtime_caller", [None, ""])
+def test_begin_requires_a_nonempty_exact_runtime_owner(
+    tmp_path: Path, runtime_caller: str | None
+) -> None:
+    item = _managed("canary")
+    controller = manager.SetupManager(
+        graph=_graph(item), store=_store(tmp_path), dispatch=DispatchHarness(),
+        bindings={item.setup_interface: _binding(item)}, runtime_caller=runtime_caller,
+    )
+
+    code, payload = controller.begin(
+        "setup", item.setup_interface, "owner", item.setup_interface, 1
+    )
+
+    assert code == 2
+    assert payload["error_code"] == "setup.continuation_caller_mismatch"
+    assert controller.store.read().active_flow is None
+
+
+def test_recover_rejects_cross_caller_even_for_verified_flow(tmp_path: Path) -> None:
+    item = _managed("canary")
+    controller = manager.SetupManager(
+        graph=_graph(item), store=_store(tmp_path), dispatch=DispatchHarness(),
+        bindings={item.setup_interface: _binding(item)}, runtime_caller="owner",
+        new_flow_id=lambda: "flow-1",
+    )
+    assert controller.begin("setup", item.setup_interface, "owner", item.setup_interface, 1)[0] == 0
+    controller._runtime_caller = "other"
+    code, payload = controller.recover("flow-1", "retry")
+    assert code == 2
+    assert payload["error_code"] == "setup.recovery_owner_unverified"
+    assert payload["flow_id"] is None and "recovery" not in payload
+
+
+def test_recover_rejects_an_absent_runtime_caller(tmp_path: Path) -> None:
+    item = _managed("canary")
+    controller = _controller(
+        tmp_path, _graph(item), DispatchHarness(), _binding(item), runtime_caller="owner"
+    )
+    assert controller.begin(
+        "setup", item.setup_interface, "owner", item.setup_interface, 1
+    )[0] == 0
+    controller._runtime_caller = None
+
+    code, payload = controller.recover("flow-1", "retry")
+
+    assert code == 2
+    assert payload["error_code"] == "setup.recovery_owner_unverified"
+    assert payload["flow_id"] is None and "recovery" not in payload
 
 
 def _begin_setup(controller: manager.SetupManager, item: ManagedSetup) -> dict[str, object]:
@@ -378,7 +472,7 @@ def test_teardown_all_preflight_failures_preserve_exact_bytes(tmp_path: Path, ca
     assert controller._dispatch.calls == []
 
 @pytest.mark.parametrize(("action_code", "verifier", "expected"), [
-    (7, None, "failed"), (0, '{"torn_down":false}\n', "failed"), (0, '{"torn_down":1}\n', "recovery-required"), (0, "conflict", "recovery-required")
+    (7, None, "failed"), (0, '{"torn_down":false}\n', "failed"), (0, '{"torn_down":1}\n', "failed"), (0, "conflict", "failed")
 ])
 def test_teardown_all_failures_retain_the_current_receipt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, action_code: int, verifier: str | None, expected: str) -> None:
     item, dispatch = _managed("canary"), DispatchHarness()
@@ -402,28 +496,10 @@ def test_teardown_all_retry_verifies_first_and_cancel_is_tri_state(tmp_path: Pat
     dispatch.queue(binding.teardown_verifier_dispatch_key, '{"torn_down":true}\n')
     controller = _controller(tmp_path, _graph(item, later), dispatch, binding, later_binding); _seed_all(controller.store, item, later)
     code, interrupted = controller.teardown_all()
-    assert (code, interrupted["state"], interrupted["current_step"]["interface"], controller.store.read().active_flow.current_step) == (2, "recovery-required", item.teardown_interface, item.setup_interface)
-    assert controller.recover("flow-1", "retry")[1]["state"] == "ready"
+    assert (code, interrupted["state"], interrupted["current_step"], controller.store.read().active_flow.current_step) == (2, "failed", None, item.setup_interface)
+    assert interrupted["error_code"] == "setup.verifier_response_invalid"
+    assert controller.recover("flow-1", "retry")[1]["error_code"] == "setup.recovery_owner_unverified"
     assert [call[0] for call in dispatch.calls].count("canary-teardown") == 1
-    outcomes = (('{"torn_down":true}\n', True, False, "", "cancel"), ('{"torn_down":false}\n', False, False, "", "cancel"), ('{"torn_down":0}\n', False, True, "", "cancel"), ('{"torn_down":true}\n', False, True, "", "cancel"), ("unused", False, True, "graph", "retry"), ("unused", False, True, "binding", "cancel"), ("unused", False, True, "graph", "settle"))
-    for index, (verifier, removed, active, mutation, action) in enumerate(outcomes):
-        case_dispatch = DispatchHarness()
-        case_dispatch.queue(binding.teardown_verifier_dispatch_key, verifier)
-        case = _controller(tmp_path / str(index), _graph(item), case_dispatch, binding)
-        _seed_all(case.store, item)
-        flow = state.ActiveFlow("flow-1", "teardown-all", None, item.setup_interface, (), None)
-        case.store.update(lambda ledger: state.begin_flow(ledger, flow))
-        if index == 3:
-            original = case.store.update
-            def race(transform):
-                original(lambda ledger: state.SetupLedger({**ledger.interfaces, "foreign.interface.setup": state.SetupReceipt(1, frozenset())}, ledger.active_flow))
-                return original(transform)
-            case.store.update = race
-        if mutation: (case.graph.managed_setups if mutation == "graph" else case._bindings).clear()
-        code, payload = case.settle("flow-1", item.teardown_interface) if action == "settle" else case.recover("flow-1", action)
-        assert (item.setup_interface not in case.store.read().interfaces) is removed
-        assert (case.store.read().active_flow is not None) is active
-        assert payload["state"] == ("recovery-required" if active else "ready")
 def test_teardown_all_revalidates_races_and_marks_stale_recovery(tmp_path: Path) -> None:
     item, later = _managed("canary"), _managed("later")
     dispatch = DispatchHarness()
@@ -442,7 +518,7 @@ def test_teardown_all_revalidates_races_and_marks_stale_recovery(tmp_path: Path)
     original_update(lambda ledger: state.begin_flow(ledger, state.ActiveFlow("ordinary", "setup", item.setup_interface, later.setup_interface, (), state.ContinuationIdentity("caller", "target", 1))))
     busy = controller.teardown_all()[1]; assert (busy["state"], busy["original"], busy["resume_original"]) == ("busy", None, False); original_update(lambda ledger: state.SetupLedger(ledger.interfaces, replace(ledger.active_flow, flow_id="flow-1", operation="teardown-all", root=None, continuation=None)))
     controller._dispatch = lambda *_args, **_kwargs: (original_update(lambda ledger: state.SetupLedger(ledger.interfaces, replace(ledger.active_flow, current_step=item.setup_interface))), subprocess.CompletedProcess([], 0, '{"torn_down":false}\n', ""))[1]
-    assert controller.recover("flow-1", "retry")[1]["state"] == "recovery-required"
+    assert controller.recover("flow-1", "retry")[1]["state"] == "failed"
 
 
 def test_status_and_authorize_are_read_only_then_ready_only_claiming(tmp_path: Path) -> None:
@@ -510,7 +586,7 @@ def test_begin_enforces_one_active_flow_and_redacts_request_data(tmp_path: Path)
 
     first = _begin_setup(controller, item)
     code, busy = controller.begin(
-        "setup", item.setup_interface, "other", "other.interface.run", 1
+        "setup", item.setup_interface, "original-caller", "other.interface.run", 1
     )
 
     assert first["state"] == "run-step"
@@ -592,8 +668,8 @@ def test_python_run_requires_exact_step_runs_verifier_then_records(tmp_path: Pat
 @pytest.mark.parametrize(
     ("runner_code", "verifier_stdout", "expected_state"),
     [
-        (7, '{"set_up":true}\n', "failed"),
-        (0, '{"set_up":false}\n', "failed"),
+        (7, '{"set_up":true}\n', "recovery-required"),
+        (0, '{"set_up":false}\n', "recovery-required"),
         (0, '{"set_up":true,"extra":1}\n', "recovery-required"),
     ],
 )
@@ -705,7 +781,7 @@ def test_registered_python_fixture_runs_and_verifies_before_receipt_mutation(
     code, begun = controller.begin(
         "teardown",
         item.setup_interface,
-        "fixture-caller",
+        "original-caller",
         item.teardown_interface,
         1,
     )
@@ -755,13 +831,13 @@ def test_registered_python_fixture_runs_and_verifies_before_receipt_mutation(
         (
             "python-canary-setup",
             subprocess.CompletedProcess([], 9, "", "bounded failure"),
-            "failed",
+            "recovery-required",
             ["python-canary-setup"],
         ),
         (
             "python-canary-setup-status",
             subprocess.CompletedProcess([], 0, '{"set_up":false}\n', ""),
-            "failed",
+            "recovery-required",
             ["python-canary-setup", "python-canary-setup-status"],
         ),
         (
@@ -871,7 +947,7 @@ def test_teardown_verifies_before_removal_and_finishes_without_resume(tmp_path: 
     _seed_ready(controller.store, item, item.setup_interface)
 
     code, begun = controller.begin(
-        "teardown", item.setup_interface, "caller", item.teardown_interface, 1
+        "teardown", item.setup_interface, "original-caller", item.teardown_interface, 1
     )
     assert code == 0
     assert begun["current_step"]["interface"] == item.teardown_interface
@@ -891,7 +967,7 @@ def test_shared_teardown_releases_claim_without_running_external_action(tmp_path
     _seed_ready(controller.store, item, item.setup_interface, "other.interface.setup")
 
     code, payload = controller.begin(
-        "teardown", item.setup_interface, "caller", item.teardown_interface, 1
+        "teardown", item.setup_interface, "original-caller", item.teardown_interface, 1
     )
 
     assert code == 0
@@ -922,6 +998,7 @@ def test_recover_retry_verifies_first_and_cancel_drops_ghost_claim(tmp_path: Pat
         root.setup_interface
     }
 
+    dispatch.queue(root_binding.setup_verifier_dispatch_key, '{"set_up":false}\n')
     code, cancelled = controller.recover("flow-1", "cancel")
     assert code == 0
     assert cancelled["state"] == "ready"
@@ -952,12 +1029,13 @@ def test_recover_retry_finishes_an_interrupted_claim_only_teardown_without_verif
 
     code, payload = controller.recover("flow-1", "retry")
 
-    assert code == 0
-    assert payload["state"] == "ready"
+    assert code == 2
+    assert payload["state"] == "failed"
+    assert payload["error_code"] == "setup.recovery_owner_unverified"
     assert controller.store.read().interfaces[item.setup_interface].required_by == {
-        "other.interface.setup"
+        item.setup_interface, "other.interface.setup"
     }
-    assert controller.store.read().active_flow is None
+    assert controller.store.read().active_flow is not None
 
 
 def test_invalidate_reports_removed_receipts_and_refuses_while_busy(tmp_path: Path) -> None:
@@ -1042,7 +1120,7 @@ def test_runtime_getter_is_canonical_and_captures_one_absolute_path(tmp_path: Pa
         (setup_dispatches.GETTER_KEY, {"args": ("setup-status",), "text": True})
     ]
 
-    with pytest.raises(state.LedgerPathError):
+    with pytest.raises(manager.ManagerBootstrapError):
         Runtime(f"{ledger_path}\n{tmp_path / 'other'}\n").build_manager(
             argparse.Namespace(target_interface="unused")
         )
@@ -1173,6 +1251,7 @@ def test_lifecycle_routes_retain_the_canonical_full_graph_loader(
     runtime = Runtime()
     set_runtime_dispatch_context(
         runtime,
+        caller_module_id="caller",
         repo_root=repo_root,
         repository_config=tmp_path / "must-not-be-used.toml",
     )
@@ -1247,11 +1326,11 @@ def test_direct_hot_path_fails_closed_on_unavailable_repository_configuration(
     payload = json.loads(output)
 
     assert code == 2
-    assert payload["state"] == "recovery-required"
+    assert payload["state"] == "failed"
     assert payload["error"] == (
-        "repository configuration is unavailable"
+        "The setup manager received no repository configuration."
         if failure == "missing"
-        else "repository blueprint graph is unavailable"
+        else "The repository configuration is invalid."
     )
     assert secret not in output
 
@@ -1365,7 +1444,7 @@ def test_bootstrap_domain_failures_return_one_redacted_exit_2_object(
     assert output.count("\n") == 1
     assert secret not in output
     assert payload["operation"] == "begin"
-    assert payload["state"] == "recovery-required"
+    assert payload["state"] == "failed"
     assert payload["flow_id"] is None
     assert payload["current_step"] is None
     assert payload["original"] is None
@@ -1402,6 +1481,254 @@ def test_bootstrap_does_not_hide_an_arbitrary_dispatch_programmer_error() -> Non
         run_python_machine_interface(Runtime(), ["plain.interface.run"])
 
 
+@pytest.mark.parametrize(
+    ("permission_depth", "via_context", "expected_code"),
+    [
+        (0, False, "setup.permission_denied"),
+        (1, False, "setup.permission_denied"),
+        (2, False, "setup.permission_denied"),
+        (3, False, "setup.graph_read_failed"),
+        (0, True, "setup.graph_read_failed"),
+    ],
+)
+def test_graph_permission_diagnosis_uses_only_two_explicit_cause_links(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    permission_depth: int,
+    via_context: bool,
+    expected_code: str,
+) -> None:
+    error: OSError = PermissionError("private path")
+    if via_context:
+        wrapper = OSError("wrapper")
+        wrapper.__context__ = error
+        error = wrapper
+    else:
+        for _ in range(permission_depth):
+            wrapper = OSError("wrapper")
+            wrapper.__cause__ = error
+            error = wrapper
+
+    class Runtime(manager.BeginInterface):
+        def __init__(self) -> None:
+            super().__init__(graph_loader=lambda _root: (_ for _ in ()).throw(error))
+
+        def dispatch(self, key: str, **kwargs: object):
+            return subprocess.CompletedProcess(
+                [], 0, str(tmp_path / "ledger.json") + "\n", ""
+            )
+
+    code = run_python_machine_interface(
+        Runtime(), ["setup", "canary.interface.setup", "caller", "target", "1"]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert code == 2
+    assert payload["error_code"] == expected_code
+    assert "cause" not in payload and "recovery" not in payload
+
+
+@pytest.mark.parametrize(
+    ("permission_depth", "via_context", "expected_code"),
+    [
+        (0, False, "setup.permission_denied"),
+        (1, False, "setup.permission_denied"),
+        (2, False, "setup.ledger_access_failed"),
+        (0, True, "setup.ledger_access_failed"),
+    ],
+)
+def test_ledger_permission_diagnosis_uses_only_two_explicit_cause_links(
+    tmp_path: Path,
+    permission_depth: int,
+    via_context: bool,
+    expected_code: str,
+) -> None:
+    permission = PermissionError("private ledger")
+    caught: BaseException = state.LedgerPathError("ledger boundary")
+    if via_context:
+        caught.__context__ = permission
+    else:
+        caught.__cause__ = permission
+        for _ in range(permission_depth):
+            wrapper = state.LedgerPathError("wrapper")
+            wrapper.__cause__ = caught
+            caught = wrapper
+    controller = _controller(tmp_path, _graph(), DispatchHarness())
+
+    code, payload = controller._domain_failure("status", caught)
+
+    assert code == 2
+    assert payload["error_code"] == expected_code
+    assert "cause" not in payload and "recovery" not in payload
+
+
+@pytest.mark.parametrize("conflict", ["binding-key", "production-construction"])
+def test_inconsistent_runtime_declarations_emit_e14_at_the_public_boundary(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    conflict: str,
+) -> None:
+    item = _managed("canary")
+    binding = _binding(item)
+
+    class Runtime(manager.StatusInterface):
+        dispatches = {
+            setup_dispatches.GETTER_KEY: setup_dispatches.GETTER_CALL,
+            binding.setup_dispatch_key: PYTHON_CANARY_CALLS["python-canary-setup"],
+        }
+
+        def __init__(self) -> None:
+            key = (
+                "wrong.interface.setup"
+                if conflict == "binding-key"
+                else binding.setup_interface
+            )
+            super().__init__(bindings={key: binding})
+
+        def dispatch(self, key: str, **kwargs: object):
+            raise AssertionError("an inconsistent declaration must fail before dispatch")
+
+    if conflict == "production-construction":
+        monkeypatch.setitem(
+            manager._ManagerInterface.build_manager.__globals__,
+            "PRODUCTION_DECLARATION_INVALID",
+            True,
+        )
+
+    code = run_python_machine_interface(Runtime(), ["canary.interface.run"])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert code == 2
+    assert payload["error_code"] == "setup.initialization_invalid"
+    assert payload["error"] == "Managed-setup runtime declarations are inconsistent."
+    assert payload["state"] == "failed"
+    assert "cause" not in payload and "recovery" not in payload
+
+
+def test_direct_graph_failure_preserves_only_its_registered_dispatcher_cause(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    direct_error = manager.DirectBlueprintError.from_spec(
+        "D30", target_module_id="canary", module_id="canary"
+    )
+    graph_globals = manager._DirectPreflightInterface.build_graph.__globals__
+    monkeypatch.setitem(
+        graph_globals, "load_repository_configuration", lambda _path: object()
+    )
+    monkeypatch.setitem(
+        graph_globals,
+        "load_direct_setup_graph",
+        lambda *_args: (_ for _ in ()).throw(direct_error),
+    )
+
+    class Runtime(manager.StatusInterface):
+        def dispatch(self, key: str, **kwargs: object):
+            return subprocess.CompletedProcess(
+                [], 0, str(tmp_path / "ledger.json") + "\n", ""
+            )
+
+    runtime = Runtime()
+    set_runtime_dispatch_context(
+        runtime, repository_config=tmp_path / "officina.toml"
+    )
+
+    code = run_python_machine_interface(runtime, ["canary.interface.run"])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert code == 2
+    assert payload["error_code"] == "setup.graph_invalid"
+    assert payload["cause"] == {
+        "code": "dispatcher.source_not_found",
+        "message": "The dispatcher could not inspect the source path for module `canary`.",
+        "module_id": "canary",
+    }
+
+
+def _unregistered_dispatcher_error() -> DispatcherError:
+    error = DispatcherError.from_spec("D10", interface_id="private.interface.run")
+    error._entry_id = None
+    return error
+
+
+@pytest.mark.parametrize(
+    "untrusted_cause",
+    [
+        _unregistered_dispatcher_error(),
+        SimpleNamespace(
+            as_payload=lambda: {
+                "schema_version": 1,
+                "code": "dispatcher.launch_failed",
+                "message": "spoofed private failure",
+            }
+        ),
+    ],
+)
+def test_setup_diagnosis_rejects_unregistered_or_spoofed_dispatcher_causes(
+    tmp_path: Path, untrusted_cause: object
+) -> None:
+    controller = _controller(tmp_path, _graph(), DispatchHarness())
+
+    code, payload = controller._domain_failure(
+        "setup", manager.SetupFailure("E37", cause=untrusted_cause)
+    )
+
+    assert code == 2
+    assert payload["error_code"] == "setup.action_dispatch_failed"
+    assert "cause" not in payload
+    assert "private failure" not in json.dumps(payload)
+
+
+@pytest.mark.parametrize(
+    "cause",
+    [
+        DispatcherError.from_spec("R01"),
+        DispatcherError.from_spec("D10", interface_id="private.interface.run"),
+        manager.DirectBlueprintError.from_spec("R01"),
+    ],
+)
+def test_e10_rejects_non_direct_dispatcher_causes(
+    tmp_path: Path, cause: DispatcherError
+) -> None:
+    controller = _controller(tmp_path, _graph(), DispatchHarness())
+
+    code, payload = controller._domain_failure(
+        "status", manager.SetupFailure("E10", cause=cause)
+    )
+
+    assert code == 2
+    assert payload["error_code"] == "setup.graph_invalid"
+    assert "cause" not in payload
+
+
+def test_setup_diagnosis_reduces_a_registered_nested_dispatcher_cause(
+    tmp_path: Path,
+) -> None:
+    inner = DispatcherError.from_spec(
+        "D10", interface_id="private.interface.run"
+    )
+    outer = DispatcherError.from_spec("D56", operation="setup", cause=inner)
+    controller = _controller(tmp_path, _graph(), DispatchHarness())
+
+    code, payload = controller._domain_failure(
+        "setup", manager.SetupFailure("E37", cause=outer)
+    )
+
+    assert code == 2
+    assert payload["cause"] == {
+        "code": "dispatcher.manager_invocation_failed",
+        "message": (
+            "The dispatcher could not obtain a valid `setup` result from the "
+            "setup manager."
+        ),
+    }
+    assert "schema_version" not in payload["cause"]
+    assert "cause" not in payload["cause"]
+    assert "recovery" not in payload["cause"]
+
+
 @pytest.mark.parametrize("route", ["settle", "recover"])
 def test_verifier_recovery_preserves_the_known_active_flow_context(
     tmp_path: Path, route: str
@@ -1435,6 +1762,71 @@ def test_verifier_recovery_preserves_the_known_active_flow_context(
         "version": 1,
     }
     assert controller.store.read().active_flow is not None
+
+
+def test_recovery_emission_requires_the_full_expected_flow_on_fresh_reread(
+    tmp_path: Path,
+) -> None:
+    item = _managed("canary")
+    binding = _binding(item)
+    controller: manager.SetupManager
+
+    def fail_after_mutating_flow(
+        key: str, *, args: tuple[str, ...] = (), stdin: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        controller.store.update(
+            lambda ledger: state.SetupLedger(
+                interfaces=ledger.interfaces,
+                active_flow=replace(
+                    ledger.active_flow, verified_steps=("unrelated.interface.setup",)
+                ),
+            )
+        )
+        raise InvocationError("redacted")
+
+    controller = manager.SetupManager(
+        graph=_graph(item), store=_store(tmp_path), dispatch=fail_after_mutating_flow,
+        bindings={item.setup_interface: binding}, new_flow_id=lambda: "flow-1",
+        runtime_caller="original-caller",
+    )
+    _begin_setup(controller, item)
+
+    code, payload = controller.run_python("flow-1", item.setup_interface, "{}")
+
+    assert code == 2
+    assert payload["error_code"] == "setup.action_dispatch_failed"
+    assert payload["state"] == "failed"
+    assert payload["flow_id"] is None
+    assert "recovery" not in payload
+
+
+@pytest.mark.parametrize(
+    ("outer_id", "cause_id", "expected_cause"),
+    [
+        ("E44", "E32", "setup.active_flow_stale"),
+        ("E51", "E32", "setup.active_flow_stale"),
+        ("E44", "E36", None),
+        ("E45", "E36", "setup.active_flow_changed"),
+    ],
+)
+def test_nested_setup_causes_are_gated_by_explicit_entry_ids(
+    tmp_path: Path, outer_id: str, cause_id: str, expected_cause: str | None
+) -> None:
+    controller = _controller(tmp_path, _graph(), DispatchHarness())
+    context = {"mismatch_subject": "current step"} if cause_id == "E32" else {}
+    failure = manager.SetupFailure(
+        outer_id, cause=manager.SetupFailure(cause_id, **context)
+    )
+
+    code, payload = controller._domain_failure("settle", failure)
+
+    assert code == 2
+    if expected_cause is None:
+        assert "cause" not in payload
+    else:
+        assert payload["cause"]["code"] == expected_cause
+        if cause_id == "E32":
+            assert payload["cause"]["message"].endswith("current step.")
 
 
 def test_public_interface_output_is_one_json_object_and_stdin_is_private(
@@ -1506,6 +1898,57 @@ def _no_verifier_binding(stem: str, kind: str = "python") -> setup_dispatches.Ma
     )
 
 
+@pytest.mark.parametrize(
+    ("has_verifier", "expected_outer"),
+    [(True, "E44"), (False, "E51")],
+)
+def test_settlement_current_step_conflict_has_explicit_e32_cause(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    has_verifier: bool,
+    expected_outer: str,
+) -> None:
+    item = (
+        _managed("settlement")
+        if has_verifier
+        else _managed_no_verifier("settlement")
+    )
+    binding = (
+        _binding(item)
+        if has_verifier
+        else _no_verifier_binding("settlement")
+    )
+    dispatch = DispatchHarness()
+    dispatch.queue(binding.setup_dispatch_key, "")
+    if has_verifier:
+        dispatch.queue(binding.setup_verifier_dispatch_key, '{"set_up":true}\n')
+    controller = _controller(tmp_path, _graph(item), dispatch, binding)
+    _begin_setup(controller, item)
+
+    def reject_current_step(*_args: object, **_kwargs: object):
+        raise state.FlowConflict(
+            "settlement mismatch",
+            entry_id="E32",
+            mismatch_subject="current step",
+        )
+
+    monkeypatch.setitem(
+        manager.SetupManager._settle_verified.__globals__,
+        "record_setup_success",
+        reject_current_step,
+    )
+
+    code, payload = controller.run_python("flow-1", item.setup_interface, "{}")
+
+    assert code == 2
+    assert payload["error"] == manager.SETUP_ERROR_SPECS[expected_outer].message
+    assert payload["cause"] == {
+        "schema_version": 1,
+        "code": "setup.active_flow_stale",
+        "message": "The active setup flow no longer matches live state: current step.",
+    }
+
+
 def test_python_setup_without_verifier_settles_on_action_success(tmp_path: Path) -> None:
     """Python setup without verifier succeeds when action exits 0."""
     binding = _no_verifier_binding("no-verifier-python", kind="python")
@@ -1516,7 +1959,7 @@ def test_python_setup_without_verifier_settles_on_action_success(tmp_path: Path)
     dispatch.queue("no-verifier-python-setup", "")
     controller = _controller(tmp_path, graph, dispatch, binding)
 
-    code, begun = controller.begin("setup", binding.setup_interface, "caller", "interface", 1)
+    code, begun = controller.begin("setup", binding.setup_interface, "original-caller", "interface", 1)
     assert code == 0
     code, completed = controller.run_python(begun["flow_id"], binding.setup_interface, "{}")
     assert code == 0 and completed["state"] == "ready"
@@ -1531,7 +1974,7 @@ def test_markdown_setup_without_verifier_settles_on_settle(tmp_path: Path) -> No
     dispatch.queue(setup_dispatches.GETTER_KEY, str(tmp_path / "private" / "state" / "ledger.json"))
     controller = _controller(tmp_path, graph, dispatch, binding)
 
-    code, begun = controller.begin("setup", binding.setup_interface, "caller", "interface", 1)
+    code, begun = controller.begin("setup", binding.setup_interface, "original-caller", "interface", 1)
     assert code == 0
     flow_id = begun["flow_id"]
     code, instructions = controller.run_markdown(flow_id, binding.setup_interface)
@@ -1579,9 +2022,9 @@ def test_teardown_without_verifier_settles_after_action(tmp_path: Path) -> None:
     dispatch.queue(f"{stem}-teardown", "")
     controller = _controller(tmp_path, graph, dispatch, binding)
 
-    code, begun = controller.begin("setup", binding.setup_interface, "caller", "interface", 1)
+    code, begun = controller.begin("setup", binding.setup_interface, "original-caller", "interface", 1)
     controller.run_python(begun["flow_id"], binding.setup_interface, "{}")
-    code, begun = controller.begin("teardown", binding.setup_interface, "caller", binding.teardown_interface, 1)
+    code, begun = controller.begin("teardown", binding.setup_interface, "original-caller", binding.teardown_interface, 1)
     code, completed = controller.run_python(begun["flow_id"], binding.teardown_interface, "{}")
     assert code == 0 and completed["state"] == "ready"
 
@@ -1597,7 +2040,7 @@ def test_retry_uncertain_no_verifier_python_action_reruns_action(tmp_path: Path)
     dispatch.queue("retry-no-verifier-setup", "")
     controller = _controller(tmp_path, graph, dispatch, binding)
 
-    code, begun = controller.begin("setup", binding.setup_interface, "caller", "interface", 1)
+    code, begun = controller.begin("setup", binding.setup_interface, "original-caller", "interface", 1)
     flow_id = begun["flow_id"]
     code, _ = controller.run_python(flow_id, binding.setup_interface, "{}")
     assert code == 2
@@ -1617,12 +2060,64 @@ def test_cancel_uncertain_no_verifier_setup_clears_flow(tmp_path: Path) -> None:
     dispatch.queue("cancel-no-verifier-setup", "", returncode=1)
     controller = _controller(tmp_path, graph, dispatch, binding)
 
-    code, begun = controller.begin("setup", binding.setup_interface, "caller", "interface", 1)
+    code, begun = controller.begin("setup", binding.setup_interface, "original-caller", "interface", 1)
     flow_id = begun["flow_id"]
     controller.run_python(flow_id, binding.setup_interface, "{}")
     code, recovered = controller.recover(flow_id, "cancel")
     assert code == 0 and recovered["state"] == "ready"
     assert controller.store.read().active_flow is None
+
+
+@pytest.mark.parametrize("race", ["flow", "step", "owner"])
+def test_recover_cancel_rejects_same_id_state_changed_before_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, race: str
+) -> None:
+    """Cancellation must validate the complete owned step in its atomic update."""
+    item = _managed_no_verifier("cancel-race", kind="python")
+    other = _managed_no_verifier("cancel-race-other", kind="python")
+    binding = _no_verifier_binding("cancel-race", kind="python")
+    other_binding = _no_verifier_binding("cancel-race-other", kind="python")
+    controller = _controller(
+        tmp_path, _graph(item, other), DispatchHarness(), binding, other_binding
+    )
+    code, begun = controller.begin(
+        "setup", item.setup_interface, "original-caller", "interface", 1
+    )
+    assert code == 0
+
+    original_update = controller.store.update
+
+    def raced_update(transform):
+        def introduce_race(ledger: state.SetupLedger) -> state.SetupLedger:
+            active = ledger.active_flow
+            assert active is not None
+            if race == "flow":
+                changed = replace(active, verified_steps=(other.setup_interface,))
+            elif race == "step":
+                changed = replace(active, current_step=other.setup_interface)
+            else:
+                changed = replace(
+                    active,
+                    continuation=state.ContinuationIdentity(
+                        "different-caller", "interface", 1
+                    ),
+                )
+            return replace(ledger, active_flow=changed)
+
+        original_update(introduce_race)
+        return original_update(transform)
+
+    monkeypatch.setattr(controller.store, "update", raced_update)
+
+    code, payload = controller.recover(begun["flow_id"], "cancel")
+
+    assert code == 2
+    assert payload["error_code"] == "setup.cancellation_failed"
+    assert payload["state"] == "failed"
+    assert payload["flow_id"] is None
+    assert payload["cause"]["code"] == "setup.active_flow_changed"
+    assert "recovery" not in payload
+    assert controller.store.read().active_flow is not None
 
 
 def test_markdown_teardown_without_action_dispatch_key(tmp_path: Path) -> None:
@@ -1661,7 +2156,7 @@ def test_markdown_teardown_without_action_dispatch_key(tmp_path: Path) -> None:
     dispatch.queue(setup_dispatches.GETTER_KEY, str(tmp_path / "private" / "state" / "ledger.json"))
     controller = _controller(tmp_path, graph, dispatch, binding)
 
-    code, begun = controller.begin("setup", binding.setup_interface, "caller", "interface", 1)
+    code, begun = controller.begin("setup", binding.setup_interface, "original-caller", "interface", 1)
     controller.run_markdown(begun["flow_id"], binding.setup_interface)
     code, completed = controller.settle(begun["flow_id"], binding.setup_interface)
     assert code == 0 and completed["state"] == "ready"
@@ -1711,7 +2206,7 @@ def test_recover_cancel_unverifiable_teardown(tmp_path: Path) -> None:
     _seed_ready(controller.store, item, item.setup_interface)
 
     code, begun = controller.begin(
-        "teardown", item.setup_interface, "caller", item.teardown_interface, 1
+        "teardown", item.setup_interface, "original-caller", item.teardown_interface, 1
     )
     assert code == 0
     assert begun["current_step"]["interface"] == item.teardown_interface
@@ -1758,16 +2253,15 @@ def test_recover_cancel_unverifiable_teardown_all(tmp_path: Path) -> None:
 
     code, payload = controller.teardown_all()
     assert code == 2
-    assert payload["state"] == "recovery-required"
+    assert payload["state"] == "failed"
     assert secret not in json.dumps(payload)
-    assert payload["current_step"]["interface"] == root_item.teardown_interface
+    assert payload["current_step"] is None
 
-    flow_id = payload["flow_id"]
-    code, recovered = controller.recover(flow_id, "cancel")
-    assert code == 0
-    assert recovered["state"] == "ready"
-    assert controller.store.read().active_flow is None
-    assert root_item.setup_interface not in controller.store.read().interfaces
+    assert payload["flow_id"] is None
+    code, recovered = controller.recover("flow-1", "cancel")
+    assert code == 2
+    assert recovered["error_code"] == "setup.recovery_owner_unverified"
+    assert controller.store.read().active_flow is not None
     assert leaf_item.setup_interface in controller.store.read().interfaces
 
 
@@ -1784,7 +2278,7 @@ def test_teardown_all_auto_advances_internal_steps(tmp_path: Path) -> None:
     dispatch.queue("td-all-teardown-status", '{"torn_down": true}')
     controller = _controller(tmp_path, graph, dispatch, binding)
 
-    code, begun = controller.begin("setup", binding.setup_interface, "caller", "interface", 1)
+    code, begun = controller.begin("setup", binding.setup_interface, "original-caller", "interface", 1)
     controller.run_python(begun["flow_id"], binding.setup_interface, "{}")
     code, completed = controller.teardown_all()
     assert code == 0 and completed["state"] == "ready"
@@ -1854,7 +2348,7 @@ def test_ordinary_teardown_no_teardown_interface(tmp_path: Path) -> None:
     _seed_ready(controller.store, item, item.setup_interface)
 
     code, response = controller.begin(
-        "teardown", item.setup_interface, "caller", item.setup_interface + "run", 1
+        "teardown", item.setup_interface, "original-caller", item.setup_interface + "run", 1
     )
 
     assert code == 0
@@ -1889,7 +2383,7 @@ def test_ordinary_teardown_external_root_then_no_teardown_prerequisite(tmp_path:
     )
 
     code, begun = controller.begin(
-        "teardown", root.setup_interface, "caller", root.teardown_interface, 1
+        "teardown", root.setup_interface, "original-caller", root.teardown_interface, 1
     )
     assert code == 0
     assert begun["current_step"]["interface"] == root.teardown_interface

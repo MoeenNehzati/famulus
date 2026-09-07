@@ -8,7 +8,7 @@ selected-Python prerequisite and core-package repair, use
 <!-- BEGIN AUTO-GENERATED DOCS: assistant-operations -->
 > Generated from live blueprints. Do not edit this block by hand.
 
-- `bootstrap-dispatcher-runtime` — The Famulus dispatcher cannot start, or cannot run an interface, because its Python runtime is missing, too old, or lacks a declared package
+- `bootstrap-dispatcher-runtime` — Only when evidence shows that the Famulus dispatcher Python is missing or older than 3.11 (`dispatcher.mcp_python_unsupported`), or that a declared dispatcher package is unavailable (`dispatcher.mcp_package_unavailable`)
 - `cloud-files` — Bounded read/write of plain files under a configured Google Drive root
 - `connect-google` — The user needs to set up or restore Google authentication for Famulus
 - `install-launchers` — Install or repair an explicit subset of the optional assistant, collab, coauthor, and tw launchers

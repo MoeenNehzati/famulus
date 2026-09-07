@@ -120,7 +120,7 @@ and receive no invented message: `BlueprintInvalidError`,
 | D50 | Split: plugin-data root/child fails safety checks | `dispatcher.mcp_persistence_invalid` — “Famulus MCP startup rejected an unsafe plugin-data {kind}.” | `kind`: root or child directory. No path. Must not imply setup failure. | `mcp_server.py:74-132` |
 | D51 | Replace: persistence cannot initialize | `dispatcher.mcp_persistence_invalid` — “Famulus MCP startup could not initialize plugin persistence.” | No cause; must not imply missing setup. | `mcp_server.py:100-132` |
 | D52 | Contain: declared MCP server package cannot import | `dispatcher.mcp_package_unavailable` — “Famulus MCP startup could not import its declared server package `{module_name}`.” | Validated declared module name only; no clue because the message is conclusive. | `mcp_server.py:443-449` |
-| D53 | Contain: server construction/start fails | `dispatcher.mcp_startup_failed` — “Famulus MCP failed before request handling became available.” | No cause; must not infer package/Python failure. | `mcp_server.py:443-449` |
+| D53 | Contain: server initialization or execution raises | `dispatcher.mcp_server_failed` — “Famulus MCP server initialization or execution failed.” | No chronology or cause; must not infer package/Python failure. | `mcp_server.py:799-815` |
 | D54 | Replace: ordered form also supplies positionals | `dispatcher.invalid_request` — “MCP ordered arguments require `positionals=[]`.” | Default. | `mcp_server.py:139` |
 | D55 | Replace: compact option contains a list | `dispatcher.invalid_request` — “MCP compact option values must be strings or `true`, not lists.” | No clue or usage hint. | `mcp_server.py:145` |
 | D56 | Replace: manager cannot resolve/start, invocation raises a typed dispatcher error before yielding a manager payload, or manager returns nonzero process status without a syntactically valid JSON object | `dispatcher.manager_invocation_failed` — “The dispatcher could not obtain a valid `{operation}` result from the setup manager.” | Cause: any caught typed dispatcher failure that maps to a dispatcher row (D or R) and passes that row's context policy; none for untyped crash/exit. Must not imply setup required, missing package, or bootstrap. | `mcp_server.py:155-190` |
@@ -146,8 +146,13 @@ private runner diagnosis. A normal target nonzero exit remains the target's
 result and is not reclassified as a dispatcher error.
 
 The dispatcher creates a private diagnostic pipe and passes its writer as
-`--diagnostic-fd FD` before the gateway operands using `pass_fds`. Launch uses
-`Popen`; the parent closes its writer immediately, retains at most 16 KiB while
+`--diagnostic-writer TOKEN` before the gateway operands. On POSIX the token is
+an fd inherited with `pass_fds`. On Windows it is a handle passed as the only
+`STARTUPINFO` `handle_list` entry with `close_fds=true`; the child immediately
+clears handle inheritance and converts it to an owned CRT fd. A module-global
+lock covers the parent's make-inheritable, `Popen`, restore, and close window;
+future repository-owned broad-inheritance Windows launches must share it.
+Launch uses `Popen`; the parent closes its writer immediately, retains at most 16 KiB while
 continuing to drain/discard to EOF, and marks overflow invalid. The runner
 parses and removes the private option before interface argv exists, writes at
 most one compact registry payload, closes the descriptor, and exits 70. On
@@ -164,7 +169,7 @@ semantics: requested text decoding runs before `check`, so D71 precedes D70
 when both predicates would otherwise apply. Multiple records or trailing bytes
 invalidate the diagnosis. This is the sole transport for R01-R25. Because the
 dispatcher constructs the option, malformed
-`--diagnostic-fd` is an internal invariant failure and is not diagnosed through
+`--diagnostic-writer` is an internal invariant failure and is not diagnosed through
 that same descriptor.
 
 All R rows have disposition `Contain`: they add the private structured runner

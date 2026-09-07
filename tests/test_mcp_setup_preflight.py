@@ -5,13 +5,18 @@ from contextlib import nullcontext
 import importlib.util
 import json
 from pathlib import Path
-from types import SimpleNamespace
+import subprocess
+from types import ModuleType, SimpleNamespace
 import sys
 
 import pytest
 
 from officina.blueprints.graph import ManagedSetup
-from officina.dispatcher.errors import DirectBlueprintError
+from officina.dispatcher.errors import (
+    DirectBlueprintError,
+    DispatcherError,
+    InvocationError,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -66,6 +71,51 @@ def _legacy_resolved(events: list[str], *, target: str = "root.interface.run"):
 
     events.append("resolve")
     return nullcontext(Resolved())
+
+
+def _install_manager_process(
+    server,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    returncode: int,
+    stdout: str,
+) -> None:
+    monkeypatch.setattr(server, "resolve_dispatch", lambda **_kwargs: nullcontext(object()))
+    monkeypatch.setattr(
+        server,
+        "_run_resolved_invocation",
+        lambda _resolved, **_kwargs: SimpleNamespace(
+            returncode=returncode,
+            stdout=stdout,
+            stderr="private-manager-stderr",
+        ),
+    )
+
+
+def _recovery_diagnosis(recovery: dict[str, object]) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "flow_id": "flow-1",
+        "operation": "setup",
+        "state": "recovery-required",
+        "current_step": {
+            "interface": "root.interface.setup",
+            "version": 1,
+            "kind": "python",
+            "action": "run-setup",
+        },
+        "original": {
+            "caller": "root",
+            "interface": "root.interface.run",
+            "version": 1,
+        },
+        "resume_original": False,
+        "error_code": "setup.action_dispatch_failed",
+        "error": (
+            "The managed setup action dispatch failed; action completion is unknown."
+        ),
+        "recovery": recovery,
+    }
 
 
 def _install_authorized_path(
@@ -318,26 +368,21 @@ def test_busy_refusal_returns_only_flow_and_argument_free_recovery_route(
     assert "original-secret" not in json.dumps(result, sort_keys=True)
 
 
-@pytest.mark.parametrize("flow_id", [None, ""])
-def test_busy_refusal_requires_nonempty_flow_id(
-    server, monkeypatch: pytest.MonkeyPatch, flow_id: object
+def test_busy_validation_error_is_returned_by_mcp(
+    server, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Catches malformed busy state being returned as a recoverable setup flow."""
+    """The validated manager-boundary error reaches the MCP carrier unchanged."""
     events: list[str] = []
     _install_authorized_path(server, monkeypatch, events, managed=True)
+
+    def invalid_busy(_caller: str, operation: str, _arguments: list[str]):
+        events.append(operation)
+        raise DispatcherError.from_spec("D62")
+
     monkeypatch.setattr(
         server,
         "_manager_call",
-        lambda _caller, operation, _arguments: (
-            events.append(operation)
-            or {
-                "schema_version": 1,
-                "code": "setup_busy",
-                "root_setup_interface": "root.interface.setup",
-                "pending_stack": [],
-                "flow_id": flow_id,
-            }
-        ),
+        invalid_busy,
     )
     monkeypatch.setattr(
         server,
@@ -348,7 +393,7 @@ def test_busy_refusal_requires_nonempty_flow_id(
     result = server.invoke("root", "root.interface.run", 1, _arguments(server))
 
     assert result["exit_code"] == 2
-    assert result["dispatcher"]["code"] == "dispatcher.runtime_misconfigured"
+    assert result["dispatcher"] == DispatcherError.from_spec("D62").as_payload()
     assert events == ["authorize", "status"]
 
 
@@ -366,12 +411,557 @@ def test_real_manager_nonzero_status_is_a_redacted_refusal(
     monkeypatch.setenv("FAMULUS_HOST", "codex")
     monkeypatch.setenv("FAMULUS_PLUGIN_DATA", str(plugin_data))
 
-    with pytest.raises(server.RuntimeMisconfiguredError) as caught:
+    with pytest.raises(DispatcherError) as caught:
         server._manager_call(
             "cloud-files", "status", ["cloud-files.interface.default"]
         )
 
+    assert caught.value.as_payload()["code"] == "dispatcher.manager_operation_failed"
+    assert caught.value.as_payload()["setup_error_code"] == "setup.ledger_invalid"
     assert secret not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    ("returncode", "stdout", "entry_id"),
+    [
+        (2, "not-json manager-secret", "D56"),
+        (0, "not-json manager-secret", "D57"),
+        (0, '"manager-secret"', "D57"),
+        (0, '{"schema_version":1,"private":"manager-secret"}', "D58"),
+        (
+            2,
+            '{"schema_version":1,"code":"ready","root_setup_interface":null,'
+            '"pending_stack":[],"flow_id":null}',
+            "D58",
+        ),
+        (
+            2,
+            '{"schema_version":1,"flow_id":null,"operation":"status",'
+            '"state":"failed","current_step":null,"original":null,'
+            '"resume_original":false,"error":"manager-secret",'
+            '"error_code":["setup.ledger_invalid"]}',
+            "D58",
+        ),
+        (
+            2,
+            '{"schema_version":1,"flow_id":null,"operation":"status",'
+            '"state":"failed","current_step":null,"original":null,'
+            '"resume_original":false,"error":"manager-secret",'
+            '"error_code":"setup.settlement_failed","cause":'
+            '{"schema_version":1,"code":["setup.ledger_invalid"],'
+            '"message":"manager-secret"}}',
+            "D58",
+        ),
+    ],
+)
+def test_manager_adapter_classifies_json_before_process_status_and_redacts(
+    server,
+    monkeypatch: pytest.MonkeyPatch,
+    returncode: int,
+    stdout: str,
+    entry_id: str,
+) -> None:
+    """Break caught: exit-first classification or raw manager output exposure."""
+    _install_manager_process(
+        server, monkeypatch, returncode=returncode, stdout=stdout
+    )
+
+    with pytest.raises(DispatcherError) as caught:
+        server._manager_call("root", "status", ["root.interface.run"])
+
+    expected = DispatcherError.from_spec(entry_id, operation="status")
+    assert caught.value.as_payload() == expected.as_payload()
+    assert "manager-secret" not in json.dumps(caught.value.as_payload())
+    assert "private-manager-stderr" not in json.dumps(caught.value.as_payload())
+    assert "setup" not in str(caught.value).lower().replace("setup manager", "")
+    assert "bootstrap" not in str(caught.value).lower()
+
+
+def test_manager_adapter_preserves_allowlisted_setup_diagnosis_semantics(
+    server, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Break caught: a valid manager diagnosis is flattened, embellished, or leaked."""
+    diagnosis = {
+        "schema_version": 1,
+        "flow_id": None,
+        "operation": "status",
+        "state": "failed",
+        "current_step": None,
+        "original": None,
+        "resume_original": False,
+        "error_code": "setup.ledger_conflict",
+        "error": "Managed-setup state changed while this operation was updating it.",
+        "clues": [
+            "Another setup-manager process may have updated the ledger concurrently."
+        ],
+    }
+    _install_manager_process(
+        server,
+        monkeypatch,
+        returncode=2,
+        stdout=json.dumps(diagnosis),
+    )
+
+    with pytest.raises(DispatcherError) as caught:
+        server._manager_call("root", "status", ["root.interface.run"])
+
+    assert caught.value.as_payload() == {
+        "schema_version": 1,
+        "code": "dispatcher.manager_operation_failed",
+        "message": (
+            "The setup manager `status` failed: Managed-setup state changed "
+            "while this operation was updating it."
+        ),
+        "setup_error_code": "setup.ledger_conflict",
+        "clues": [
+            "Another setup-manager process may have updated the ledger concurrently."
+        ],
+    }
+
+
+def test_manager_adapter_preserves_registered_typed_invocation_cause(
+    server, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Break caught: a confirmed dispatcher cause is dropped or exposed recursively."""
+    cause = DispatcherError.from_spec(
+        "D10", interface_id="setup-interface-manager._rtx.interface.status"
+    )
+
+    def fail_resolve(**_kwargs):
+        raise cause
+
+    monkeypatch.setattr(server, "resolve_dispatch", fail_resolve)
+
+    with pytest.raises(DispatcherError) as caught:
+        server._manager_call("root", "status", ["root.interface.run"])
+
+    reduced_cause = cause.as_payload()
+    reduced_cause.pop("schema_version")
+    assert caught.value.as_payload() == {
+        "schema_version": 1,
+        "code": "dispatcher.manager_invocation_failed",
+        "message": (
+            "The dispatcher could not obtain a valid `status` result from the "
+            "setup manager."
+        ),
+        "cause": reduced_cause,
+    }
+
+
+def test_manager_adapter_rejects_mutated_unregistered_invocation_cause(
+    server, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cause = DispatcherError.from_spec("D10", interface_id="private.interface.run")
+    cause._entry_id = "D999"
+    monkeypatch.setattr(
+        server,
+        "resolve_dispatch",
+        lambda **_kwargs: (_ for _ in ()).throw(cause),
+    )
+
+    with pytest.raises(DispatcherError) as caught:
+        server._manager_call("root", "status", ["root.interface.run"])
+
+    assert caught.value.as_payload() == DispatcherError.from_spec(
+        "D56", operation="status"
+    ).as_payload()
+
+
+def test_manager_validator_accepts_only_registered_dispatcher_cause_clues(
+    server,
+) -> None:
+    cause = DispatcherError.from_spec(
+        "D64",
+        operation="status",
+        setup_error="Managed-setup state changed while this operation was updating it.",
+        setup_error_code="setup.ledger_conflict",
+        clues=(
+            "Another setup-manager process may have updated the ledger concurrently.",
+        ),
+    ).as_payload()
+    cause.pop("schema_version")
+    base = {
+        "schema_version": 1, "flow_id": None, "operation": "status",
+        "state": "failed", "current_step": None, "original": None,
+        "resume_original": False, "error_code": "setup.graph_invalid",
+        "error": "Managed-setup metadata is invalid.",
+    }
+
+    with pytest.raises(DispatcherError) as accepted:
+        server._validate_manager_response({**base, "cause": cause}, "status", 2)
+    assert accepted.value.as_payload()["cause"]["clues"] == cause["clues"]
+
+    cause["clues"] = ["Try reinstalling Python."]
+    with pytest.raises(DispatcherError) as rejected:
+        server._validate_manager_response({**base, "cause": cause}, "status", 2)
+    assert rejected.value.as_payload() == DispatcherError.from_spec(
+        "D58", operation="status"
+    ).as_payload()
+
+    runner_cause = DirectBlueprintError.from_spec("R01").as_payload()
+    runner_cause.pop("schema_version")
+    with pytest.raises(DispatcherError) as wrong_family:
+        server._validate_manager_response(
+            {**base, "cause": runner_cause}, "status", 2
+        )
+    assert wrong_family.value.as_payload() == DispatcherError.from_spec(
+        "D58", operation="status"
+    ).as_payload()
+
+
+def test_manager_adapter_rejects_flow_state_for_wrong_operation(
+    server, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Break caught: structural flow validation ignores operation semantics."""
+    payload = {
+        "schema_version": 1,
+        "flow_id": "flow-1",
+        "operation": "authorize",
+        "state": "run-step",
+        "current_step": {
+            "interface": "root.interface.setup",
+            "version": 1,
+            "kind": "markdown",
+            "action": "run-setup",
+        },
+        "original": None,
+        "resume_original": False,
+    }
+    _install_manager_process(
+        server, monkeypatch, returncode=0, stdout=json.dumps(payload)
+    )
+
+    with pytest.raises(DispatcherError) as caught:
+        server._manager_call("root", "authorize", ["root.interface.run"])
+
+    assert caught.value.as_payload() == DispatcherError.from_spec(
+        "D58", operation="authorize"
+    ).as_payload()
+
+
+def test_manager_adapter_preserves_allowlisted_setup_cause(
+    server, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Break caught: an E-row's confirmed setup cause is dropped or nested."""
+    payload = {
+        "schema_version": 1,
+        "flow_id": None,
+        "operation": "status",
+        "state": "failed",
+        "current_step": None,
+        "original": None,
+        "resume_original": False,
+        "error_code": "setup.settlement_failed",
+        "error": (
+            "The verifier confirmed external completion, but the setup manager "
+            "could not record settlement."
+        ),
+        "cause": {
+            "schema_version": 1,
+            "code": "setup.ledger_invalid",
+            "message": "Managed-setup state is not valid canonical ledger data.",
+        },
+    }
+    _install_manager_process(
+        server, monkeypatch, returncode=2, stdout=json.dumps(payload)
+    )
+
+    with pytest.raises(DispatcherError) as caught:
+        server._manager_call("root", "status", ["root.interface.run"])
+
+    assert caught.value.as_payload()["cause"] == {
+        "code": "setup.ledger_invalid",
+        "message": "Managed-setup state is not valid canonical ledger data.",
+    }
+
+
+def test_manager_validator_accepts_exact_teardown_begin_flow(server) -> None:
+    payload = {
+        "schema_version": 1,
+        "flow_id": "flow-1",
+        "operation": "teardown",
+        "state": "run-step",
+        "current_step": {
+            "interface": "root.interface.teardown",
+            "version": 1,
+            "kind": "python",
+            "action": "run-teardown",
+        },
+        "original": {"caller": "root", "interface": "root.interface.run", "version": 1},
+        "resume_original": False,
+    }
+
+    assert server._validate_manager_response(payload, "begin", 0) == payload
+
+
+def test_manager_validator_rejects_mismatched_setup_message(server) -> None:
+    payload = {
+        "schema_version": 1, "flow_id": None, "operation": "status",
+        "state": "failed", "current_step": None, "original": None,
+        "resume_original": False, "error_code": "setup.ledger_invalid",
+        "error": "Install Python to repair setup.",
+    }
+
+    with pytest.raises(DispatcherError) as caught:
+        server._validate_manager_response(payload, "status", 2)
+    assert caught.value.as_payload() == DispatcherError.from_spec(
+        "D58", operation="status"
+    ).as_payload()
+
+
+def test_manager_validator_enforces_cause_and_recovery_owners(server) -> None:
+    base = {
+        "schema_version": 1, "flow_id": None, "operation": "status",
+        "state": "failed", "current_step": None, "original": None,
+        "resume_original": False,
+    }
+    invalid = [
+        {
+            **base, "error_code": "setup.graph_invalid",
+            "error": "Managed-setup metadata is invalid.",
+            "cause": {
+                "schema_version": 1, "code": "setup.ledger_invalid",
+                "message": "Managed-setup state is not valid canonical ledger data.",
+            },
+        },
+        {
+            **base, "flow_id": "flow-1", "state": "recovery-required",
+            "error_code": "setup.ledger_invalid",
+            "error": "Managed-setup state is not valid canonical ledger data.",
+            "recovery": {
+                "interface": "setup-interface-manager.interface.recover",
+                "version": 1, "flow_id": "flow-1", "actions": ["retry", "cancel"],
+            },
+        },
+    ]
+
+    for payload in invalid:
+        with pytest.raises(DispatcherError):
+            server._validate_manager_response(payload, "status", 2)
+
+
+def test_manager_process_accepts_only_the_exact_recovery_authority(
+    server, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    recovery = {
+        "interface": "setup-interface-manager.interface.recover",
+        "version": 1,
+        "flow_id": "flow-1",
+        "actions": ["retry", "cancel"],
+    }
+    _install_manager_process(
+        server,
+        monkeypatch,
+        returncode=2,
+        stdout=json.dumps(_recovery_diagnosis(recovery)),
+    )
+
+    with pytest.raises(DispatcherError) as caught:
+        server._manager_call("root", "recover", ["flow-1", "retry"])
+
+    assert caught.value.as_payload() == DispatcherError.from_spec(
+        "D64",
+        operation="recover",
+        setup_error=(
+            "The managed setup action dispatch failed; action completion is unknown."
+        ),
+        setup_error_code="setup.action_dispatch_failed",
+    ).as_payload()
+    assert "recovery" not in caught.value.as_payload()
+
+
+def test_manager_process_rejects_altered_recovery_authority(
+    server, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    altered = {
+        "interface": "other.interface.recover",
+        "version": 1,
+        "flow_id": "other-flow",
+        "actions": ["cancel", "retry"],
+    }
+    _install_manager_process(
+        server,
+        monkeypatch,
+        returncode=2,
+        stdout=json.dumps(_recovery_diagnosis(altered)),
+    )
+
+    with pytest.raises(DispatcherError) as caught:
+        server._manager_call("root", "recover", ["flow-1", "retry"])
+
+    assert caught.value.as_payload() == DispatcherError.from_spec(
+        "D58", operation="recover"
+    ).as_payload()
+    assert "other-flow" not in json.dumps(caught.value.as_payload())
+
+
+def test_manager_validator_contains_unhashable_discriminators(server) -> None:
+    status = {
+        "schema_version": 1, "code": [], "root_setup_interface": None,
+        "pending_stack": [], "flow_id": None,
+    }
+    flow = {
+        "schema_version": 1, "flow_id": None, "operation": "status",
+        "state": [], "current_step": None, "original": None,
+        "resume_original": False,
+    }
+    pending = {
+        "schema_version": 1, "code": "setup_required",
+        "root_setup_interface": "root.interface.setup",
+        "pending_stack": [{
+            "interface": "root.interface.setup", "version": 1,
+            "kind": [], "action": "run-setup",
+        }], "flow_id": None,
+    }
+
+    for payload in (status, flow, pending):
+        with pytest.raises(DispatcherError):
+            server._validate_manager_response(payload, "status", 0)
+
+
+def test_manager_validator_rejects_success_fields_from_another_state(server) -> None:
+    payload = {
+        "schema_version": 1, "flow_id": None, "operation": "authorize",
+        "state": "ready", "current_step": None,
+        "original": {"caller": "root", "interface": "root.interface.run", "version": 1},
+        "resume_original": True, "instructions": "not valid for ready",
+    }
+
+    with pytest.raises(DispatcherError):
+        server._validate_manager_response(payload, "authorize", 0)
+
+
+@pytest.mark.parametrize(
+    ("status", "entry_id"),
+    [
+        (
+            {
+                "schema_version": 1,
+                "code": "setup_required",
+                "root_setup_interface": "root.interface.setup",
+                "pending_stack": [
+                    {
+                        "interface": "root.interface.setup",
+                        "version": 1,
+                        "kind": "markdown",
+                        "action": "run-setup",
+                    },
+                    {
+                        "interface": "root.interface.setup",
+                        "version": 1,
+                        "kind": "markdown",
+                        "action": "run-setup",
+                    },
+                ],
+                "flow_id": None,
+            },
+            "D59",
+        ),
+        (
+            {
+                "schema_version": 1,
+                "code": "setup_required",
+                "root_setup_interface": "",
+                "pending_stack": [{
+                    "interface": "root.interface.setup", "version": 1,
+                    "kind": "markdown", "action": "run-setup",
+                }],
+                "flow_id": None,
+            },
+            "D61",
+        ),
+        (
+            {
+                "schema_version": 1, "code": "unmanaged",
+                "root_setup_interface": "root.interface.setup",
+                "pending_stack": [], "flow_id": None,
+            },
+            "D58",
+        ),
+        (
+            {
+                "schema_version": 1, "code": "ready",
+                "root_setup_interface": None,
+                "pending_stack": [], "flow_id": None,
+            },
+            "D58",
+        ),
+        (
+            {
+                "schema_version": 1, "code": "setup_busy",
+                "root_setup_interface": None,
+                "pending_stack": [], "flow_id": "flow-1",
+            },
+            "D58",
+        ),
+        (
+            {
+                "schema_version": 1,
+                "code": "setup_busy",
+                "root_setup_interface": None,
+                "pending_stack": [],
+                "flow_id": "",
+            },
+            "D62",
+        ),
+        (
+            {
+                "schema_version": 1,
+                "code": "manager-secret",
+                "root_setup_interface": None,
+                "pending_stack": [],
+                "flow_id": None,
+            },
+            "D63",
+        ),
+    ],
+)
+def test_status_validator_assigns_exact_error(
+    server,
+    status: dict[str, object],
+    entry_id: str,
+) -> None:
+    """Break caught: distinct invalid status predicates collapse to one error."""
+    with pytest.raises(DispatcherError) as caught:
+        server._validate_manager_response(status, "status", 0)
+
+    expected_context = {"operation": "status"} if entry_id == "D58" else {}
+    assert caught.value.as_payload() == DispatcherError.from_spec(
+        entry_id, **expected_context
+    ).as_payload()
+    assert "manager-secret" not in json.dumps(caught.value.as_payload())
+
+
+def test_ready_authorization_requires_exact_confirmation(
+    server, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Break caught: a success-shaped authorization is accepted without confirmation."""
+    responses = iter(
+        (
+            {
+                "schema_version": 1,
+                "code": "ready",
+                "root_setup_interface": "root.interface.setup",
+                "pending_stack": [],
+                "flow_id": None,
+            },
+            {
+                "schema_version": 1,
+                "flow_id": None,
+                "operation": "authorize",
+                "state": "ready",
+                "current_step": None,
+                "original": None,
+                "resume_original": False,
+            },
+        )
+    )
+    monkeypatch.setattr(server, "_manager_call", lambda *_args: next(responses))
+
+    with pytest.raises(DispatcherError) as caught:
+        server._ordinary_preflight("root", "root.interface.run", 1)
+
+    assert caught.value.as_payload() == DispatcherError.from_spec("D60").as_payload()
 
 
 def test_unmanaged_ordinary_call_uses_sparse_context_without_manager_or_full_graph(
@@ -420,11 +1010,12 @@ def test_projection_direct_blueprint_failure_is_generic_and_redacted(
     _install_authorized_path(server, monkeypatch, events, managed=False)
 
     def fail_projection(*_args):
-        raise DirectBlueprintError(
-            f"foreign lifecycle export near {private_path}; token={secret}",
-            code="dispatcher.source_not_found",
+        error = DirectBlueprintError.from_spec(
+            "D30",
             target_module_id="root",
+            module_id="root",
         )
+        raise error from RuntimeError(f"{private_path}; token={secret}")
 
     monkeypatch.setattr(server, "load_direct_setup_projection", fail_projection)
     monkeypatch.setattr(
@@ -441,16 +1032,248 @@ def test_projection_direct_blueprint_failure_is_generic_and_redacted(
         "stderr": "",
         "dispatcher": {
             "schema_version": 1,
-            "code": "dispatcher.runtime_misconfigured",
-            "caller_module_id": "root",
-            "target_module_id": "root",
-            "message": "managed setup graph is unavailable",
+            "code": "dispatcher.setup_projection_unavailable",
+            "message": (
+                "MCP preflight could not evaluate the managed-setup projection "
+                "for `root.interface.run`."
+            ),
+            "interface_id": "root.interface.run",
+            "cause": {
+                "code": "dispatcher.source_not_found",
+                "message": (
+                    "The dispatcher could not inspect the source path for module `root`."
+                ),
+                "module_id": "root",
+            },
         },
     }
     assert events == ["authorize"]
     encoded = json.dumps(result, sort_keys=True)
     assert private_path not in encoded
     assert secret not in encoded
+
+
+def test_projection_rejects_direct_blueprint_error_with_runner_row(
+    server, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    events: list[str] = []
+    _install_authorized_path(server, monkeypatch, events, managed=False)
+
+    def fail_projection(*_args):
+        raise DirectBlueprintError.from_spec("R01")
+
+    monkeypatch.setattr(server, "load_direct_setup_projection", fail_projection)
+    result = server.invoke("root", "root.interface.run", 1, _arguments(server))
+
+    assert result["dispatcher"]["code"] == "dispatcher.setup_projection_unavailable"
+    assert "cause" not in result["dispatcher"]
+
+
+def test_projection_rejects_mutated_unregistered_direct_blueprint_error(
+    server, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    events: list[str] = []
+    _install_authorized_path(server, monkeypatch, events, managed=False)
+    error = DirectBlueprintError.from_spec("D30", module_id="root")
+    error._entry_id = "D999"
+    monkeypatch.setattr(
+        server,
+        "load_direct_setup_projection",
+        lambda *_args: (_ for _ in ()).throw(error),
+    )
+
+    result = server.invoke("root", "root.interface.run", 1, _arguments(server))
+
+    assert result["dispatcher"]["code"] == "dispatcher.setup_projection_unavailable"
+    assert "cause" not in result["dispatcher"]
+
+
+def test_mcp_contains_plain_invocation_error_as_registered_d68(
+    server, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    events: list[str] = []
+    secret = "plain-invocation-private-detail"
+    _install_authorized_path(server, monkeypatch, events, managed=False)
+    unregistered = DispatcherError.from_spec(
+        "D10", interface_id="private.interface.run"
+    )
+    unregistered._entry_id = "D999"
+    unregistered.args = (secret,)
+
+    for error in (InvocationError(secret), unregistered):
+        monkeypatch.setattr(
+            server,
+            "authorize_direct_invocation",
+            lambda **_kwargs: (_ for _ in ()).throw(error),
+        )
+        result = server.invoke("root", "root.interface.run", 1, _arguments(server))
+
+        assert result == {
+            "exit_code": 2,
+            "stdout": "",
+            "stderr": "",
+            "dispatcher": DispatcherError.from_spec("D68").as_payload(),
+        }
+        assert secret not in json.dumps(result)
+
+
+def test_mcp_persistence_rejects_unsafe_plugin_data_root(
+    server, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    plugin_data = tmp_path / "plugin-data"
+    try:
+        plugin_data.symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        # famulus-skip: category=platform-contract; reason=directory symlinks may be unavailable; alternate=child-directory persistence safety is covered without symlinks
+        pytest.skip(f"directory symlinks unavailable: {exc}")
+    monkeypatch.setenv("FAMULUS_HOST", "codex")
+    monkeypatch.setenv("FAMULUS_PLUGIN_DATA", str(plugin_data))
+    monkeypatch.setattr(
+        server,
+        "resolve_famulus_paths",
+        lambda **_kwargs: SimpleNamespace(
+            plugin_data=plugin_data,
+            assistant_host="codex",
+            logging_path=plugin_data / "milestones",
+        ),
+    )
+
+    with pytest.raises(DispatcherError) as caught:
+        server.configure_plugin_persistence()
+
+    assert caught.value.as_payload() == DispatcherError.from_spec(
+        "D50", kind="root"
+    ).as_payload()
+
+
+def test_mcp_persistence_creation_failure_is_registered_and_redacted(
+    server, tmp_path: Path
+) -> None:
+    child = tmp_path / "private-parent-name" / "milestones"
+
+    with pytest.raises(DispatcherError) as caught:
+        server._confined_directory(tmp_path, child)
+
+    assert caught.value.as_payload() == DispatcherError.from_spec("D51").as_payload()
+    assert str(child) not in json.dumps(caught.value.as_payload())
+
+
+def test_ordered_arguments_with_positionals_emit_d54(server) -> None:
+    arguments = server.OrderedArguments(
+        positionals=("unexpected",), options=[], stdin=None
+    )
+
+    with pytest.raises(DispatcherError) as caught:
+        server.caller_argv(arguments)
+
+    assert caught.value.as_payload() == DispatcherError.from_spec("D54").as_payload()
+
+
+def test_main_classifies_missing_declared_mcp_package(
+    server, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(server, "require_python", lambda: None)
+    monkeypatch.setattr(server, "configure_plugin_persistence", lambda: None)
+    monkeypatch.setitem(sys.modules, "mcp.server.fastmcp", None)
+
+    with pytest.raises(DispatcherError) as caught:
+        server.main()
+
+    assert caught.value.as_payload() == DispatcherError.from_spec(
+        "D52", module_name="mcp"
+    ).as_payload()
+
+
+def test_main_classifies_transitive_server_import_failure_as_d53(
+    server, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class BrokenFastMCP(ModuleType):
+        def __getattr__(self, _name: str):
+            raise ModuleNotFoundError("private transitive import", name="private_dependency")
+
+    monkeypatch.setattr(server, "require_python", lambda: None)
+    monkeypatch.setattr(server, "configure_plugin_persistence", lambda: None)
+    monkeypatch.setitem(
+        sys.modules, "mcp.server.fastmcp", BrokenFastMCP("mcp.server.fastmcp")
+    )
+
+    with pytest.raises(DispatcherError) as caught:
+        server.main()
+
+    assert caught.value.as_payload() == DispatcherError.from_spec("D53").as_payload()
+    assert "private_dependency" not in json.dumps(caught.value.as_payload())
+
+
+@pytest.mark.parametrize("stage", ["construct", "run"])
+def test_main_classifies_server_startup_failures_as_d53(
+    server, monkeypatch: pytest.MonkeyPatch, stage: str
+) -> None:
+    class FailingFastMCP:
+        def __init__(self, _name: str) -> None:
+            if stage == "construct":
+                raise RuntimeError("private constructor failure")
+
+        def tool(self):
+            return lambda function: function
+
+        def run(self, *, transport: str) -> None:
+            assert transport == "stdio"
+            raise RuntimeError("private run failure")
+
+    module = ModuleType("mcp.server.fastmcp")
+    module.FastMCP = FailingFastMCP
+    monkeypatch.setattr(server, "require_python", lambda: None)
+    monkeypatch.setattr(server, "configure_plugin_persistence", lambda: None)
+    monkeypatch.setitem(sys.modules, "mcp.server.fastmcp", module)
+
+    with pytest.raises(DispatcherError) as caught:
+        server.main()
+
+    assert caught.value.as_payload() == DispatcherError.from_spec("D53").as_payload()
+    assert "private" not in json.dumps(caught.value.as_payload())
+
+
+@pytest.mark.parametrize(
+    ("entry_id", "context"),
+    [
+        ("D49", {"major": 3, "minor": 10}),
+        ("D50", {"kind": "root"}),
+        ("D51", {}),
+        ("D52", {"module_name": "mcp"}),
+        ("D53", {}),
+    ],
+)
+def test_mcp_executable_boundary_redacts_registered_startup_causes(
+    entry_id: str, context: dict[str, object]
+) -> None:
+    script = """
+import json
+import sys
+import mcp_server
+from officina.dispatcher.errors import DispatcherError
+
+entry_id, context = json.loads(sys.argv[1])
+def fail():
+    raise DispatcherError.from_spec(entry_id, **context) from RuntimeError("private-secret")
+mcp_server.main = fail
+raise SystemExit(mcp_server._main_entrypoint())
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script, json.dumps([entry_id, context])],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    expected = DispatcherError.from_spec(entry_id, **context)
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert result.stderr == f"error: {expected}\n"
+    assert "private-secret" not in result.stderr
+    assert "Traceback" not in result.stderr
 
 
 def test_managed_ready_authorizes_atomically_before_compile_and_launch(
@@ -613,7 +1436,7 @@ def test_setup_flow_id_with_dry_run_is_rejected(server, monkeypatch: pytest.Monk
     )
 
     assert result["exit_code"] == 2
-    assert result["dispatcher"]["code"] == "dispatcher.runtime_misconfigured"
+    assert result["dispatcher"]["code"] == "dispatcher.invalid_request"
 
 
 def test_setup_flow_id_with_manager_target_is_rejected(server, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -634,7 +1457,7 @@ def test_setup_flow_id_with_manager_target_is_rejected(server, monkeypatch: pyte
     )
 
     assert result["exit_code"] == 2
-    assert result["dispatcher"]["code"] == "dispatcher.runtime_misconfigured"
+    assert result["dispatcher"]["code"] == "dispatcher.invalid_request"
 
 
 def test_setup_flow_id_with_successful_authorization_permits_execution(
@@ -680,10 +1503,10 @@ def test_setup_flow_id_with_successful_authorization_permits_execution(
     assert events == ["authorize", "authorize-markdown-call", "compile", "launch"]
 
 
-def test_setup_flow_id_with_failed_authorization_returns_busy(
+def test_setup_flow_id_with_unvalidated_authorization_result_is_invalid(
     server, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Catches setup_flow_id authorization failure not returning setup_busy."""
+    """Catches coercing an authorization-flow failure into a status result."""
     events: list[str] = []
     _install_authorized_path(server, monkeypatch, events, managed=True)
 
@@ -715,12 +1538,12 @@ def test_setup_flow_id_with_failed_authorization_returns_busy(
     )
 
     assert result == {
-        "code": "setup_busy",
-        "flow_id": "flow-1",
-        "manager": {
-            "interface": "setup-interface-manager._rtx.interface.recover",
-            "version": 1,
-        },
+        "exit_code": 2,
+        "stdout": "",
+        "stderr": "",
+        "dispatcher": DispatcherError.from_spec(
+            "D58", operation="authorize-markdown-call"
+        ).as_payload(),
     }
     assert events == ["authorize", "authorize-markdown-call"]
 

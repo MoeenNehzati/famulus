@@ -185,14 +185,20 @@ Public carriers are explicit:
 | MCP pre-server startup | Sanitized stderr/host diagnostic and nonzero process exit, not a tool response |
 
 Runner diagnoses use one dispatcher-created private pipe, never target output.
-The dispatcher passes its writer as private `--diagnostic-fd FD` before the
-gateway operands and inherits it with `pass_fds`; the runner removes that
-option before interface parsing. Launch uses `Popen`: the parent closes its
-writer immediately, drains the diagnostic reader concurrently with ordinary
-process I/O, retains at most 16 KiB, and continues discarding to EOF while
-marking overflow invalid. The runner writes at most one compact registered
-payload, closes the descriptor, and exits with reserved code 70. On launch
-failure the parent closes both pipe ends. Diagnostic reads are interruptible or
+The dispatcher passes its writer as private `--diagnostic-writer TOKEN` before
+the gateway operands; the token is a POSIX fd inherited with `pass_fds` or a
+Windows handle inherited through the sole `STARTUPINFO` `handle_list` entry
+with `close_fds=true`. The runner removes the option before interface parsing.
+On Windows the child clears handle inheritance before converting the handle to
+an owned CRT fd. The parent makes only a duplicated writer inheritable inside a
+module-global launch lock and restores and closes it on every launch path; any
+future repository-owned Windows launch using broad handle inheritance must use
+that lock. Launch uses `Popen`: the parent closes its writer immediately,
+drains the diagnostic reader concurrently with ordinary process I/O, retains
+at most 16 KiB, and continues discarding to EOF while marking overflow invalid.
+The runner writes at most one compact registered payload, closes the writer,
+and exits with reserved code 70. On launch failure the parent closes both pipe
+ends. Diagnostic reads are interruptible or
 nonblocking; no reader join is unbounded. On timeout the parent terminates the
 process, waits for a bounded grace period, then kills and finally waits if
 necessary; it closes the reader and performs only a bounded final join. Once

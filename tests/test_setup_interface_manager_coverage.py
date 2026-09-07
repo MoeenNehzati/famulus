@@ -4,6 +4,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import pytest
+
 from officina.blueprints.graph import load_repository_blueprint_graph
 from officina.runtime.python_machine_interface_runner import load_interface
 
@@ -217,3 +219,21 @@ def test_production_map_has_no_managed_setup_routes() -> None:
     assert "teardown-all" not in dispatches
     assert route in (REPO_ROOT / "skills/setup-interface-manager/SKILL.md").read_text()
     assert route in (REPO_ROOT / "docs/setup.md").read_text()
+
+
+@pytest.mark.parametrize(
+    "required_instruction",
+    [
+        "Follow only the exact evaluated requirements",
+        "Treat `clues` as tentative",
+        "Treat `setup_busy` as passive",
+        "Offer recovery only for the owned live flow",
+        "Never guess a requirement or retry automatically",
+    ],
+)
+def test_skill_instructions_preserve_setup_result_authority(
+    required_instruction: str,
+) -> None:
+    text = (REPO_ROOT / "skills/setup-interface-manager/SKILL.md").read_text()
+
+    assert required_instruction in text

@@ -7,13 +7,14 @@ import hmac
 import importlib
 import importlib.abc
 import importlib.util
+import json
 import os
 import stat
 import sys
 from contextlib import contextmanager
 from pathlib import Path
 from types import ModuleType
-from typing import Iterator, Sequence
+from typing import Callable, Iterator, Sequence
 
 from officina.common.atomic_files import read_regular_file_bytes
 from officina.blueprints.graph import (
@@ -40,6 +41,70 @@ from .python_machine_interface import (
 
 class InterfaceLoadError(RuntimeError):
     """Raised when a Python machine-interface binding cannot be loaded."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        entry_id: str,
+        context: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.entry_id = entry_id
+        self.context = {} if context is None else dict(context)
+
+
+class _ConfinedImportError(InterfaceLoadError, ImportError):
+    """A safe, classified import rejection from a confined finder."""
+
+    def __init__(self, message: str, *, reason: str) -> None:
+        super().__init__(message, entry_id="R14", context={"reason": reason})
+
+
+def _emit_private_diagnosis(
+    writer_token: int | None,
+    entry_id: str,
+    **context: object,
+) -> int:
+    """Write one bounded registered diagnosis to an already-owned descriptor."""
+
+    if writer_token is None:
+        return 2
+    writer = writer_token
+    from officina.dispatcher.errors import DispatcherError
+
+    try:
+        payload = json.dumps(
+            DispatcherError.from_spec(entry_id, **context).as_payload(),
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        os.write(writer, payload)
+    finally:
+        os.close(writer)
+    return 70
+
+
+def _claim_diagnostic_writer(token: int) -> int:
+    """Take ownership of one private inherited writer token."""
+
+    if os.name != "nt":
+        try:
+            os.set_inheritable(token, False)
+        except BaseException:
+            os.close(token)
+            raise
+        return token
+
+    import _winapi
+    import msvcrt
+
+    try:
+        os.set_handle_inheritable(token, False)
+        return msvcrt.open_osfhandle(token, os.O_WRONLY | os.O_BINARY)
+    except BaseException:
+        _winapi.CloseHandle(token)
+        raise
 
 
 class _BoundPackageSources(dict[str, tuple[bytes, str, bool]]):
@@ -72,8 +137,9 @@ class _BoundPackageFinder(importlib.abc.MetaPathFinder, importlib.abc.Loader):
                 is_package=source[2],
             )
         if any(fullname == root or fullname.startswith(f"{root}.") for root in self.roots):
-            raise ImportError(
-                f"{fullname}: module is outside the validated Python package snapshot"
+            raise _ConfinedImportError(
+                f"{fullname}: module is outside the validated Python package snapshot",
+                reason="the module is outside the validated package",
             )
         return None
 
@@ -101,7 +167,10 @@ class _LazyConfinedPackageFinder(importlib.abc.MetaPathFinder, importlib.abc.Loa
         try:
             relative = path.relative_to(self.module_root)
         except ValueError as exc:
-            raise ImportError(f"{path}: import escaped the confined module root") from exc
+            raise _ConfinedImportError(
+                f"{path}: import escaped the confined module root",
+                reason="the import escaped the confined module root",
+            ) from exc
         current = self.module_root
         for part in relative.parts:
             current /= part
@@ -110,10 +179,22 @@ class _LazyConfinedPackageFinder(importlib.abc.MetaPathFinder, importlib.abc.Loa
             except FileNotFoundError:
                 return False
             except OSError as exc:
-                raise ImportError(f"cannot inspect confined import {current}") from exc
+                raise _ConfinedImportError(
+                    f"cannot inspect confined import {current}",
+                    reason="the import path could not be inspected",
+                ) from exc
             if stat.S_ISLNK(metadata.st_mode):
-                raise ImportError(f"confined import contains a symlink: {current}")
-        return stat.S_ISREG(path.stat().st_mode)
+                raise _ConfinedImportError(
+                    f"confined import contains a symlink: {current}",
+                    reason="the import path contains a symbolic link",
+                )
+        try:
+            return stat.S_ISREG(path.stat().st_mode)
+        except OSError as exc:
+            raise _ConfinedImportError(
+                f"cannot inspect confined import {path}",
+                reason="the import path could not be inspected",
+            ) from exc
 
     def find_spec(self, fullname: str, path=None, target=None):
         if fullname == self.logical_package:
@@ -122,19 +203,28 @@ class _LazyConfinedPackageFinder(importlib.abc.MetaPathFinder, importlib.abc.Loa
         elif fullname.startswith(f"{self.logical_package}."):
             suffix = fullname[len(self.logical_package) + 1 :].split(".")
             if not all(part.isidentifier() for part in suffix):
-                raise ImportError(f"invalid confined module name: {fullname}")
+                raise _ConfinedImportError(
+                    f"invalid confined module name: {fullname}",
+                    reason="the module name is invalid",
+                )
             package_path = self.module_root.joinpath(*suffix, "__init__.py")
             module_path = self.module_root.joinpath(*suffix).with_suffix(".py")
             package_exists = self._regular(package_path)
             module_exists = self._regular(module_path)
             if package_exists and module_exists:
-                raise ImportError(f"ambiguous confined module: {fullname}")
+                raise _ConfinedImportError(
+                    f"ambiguous confined module: {fullname}",
+                    reason="the module is ambiguous",
+                )
             if package_exists:
                 resolved = (package_path, True)
             elif module_exists:
                 resolved = (module_path, False)
             else:
-                raise ImportError(f"{fullname}: module is outside the confined package")
+                raise _ConfinedImportError(
+                    f"{fullname}: module is outside the confined package",
+                    reason="the module is outside the validated package",
+                )
         else:
             return None
         self._resolved[fullname] = resolved
@@ -150,16 +240,25 @@ class _LazyConfinedPackageFinder(importlib.abc.MetaPathFinder, importlib.abc.Loa
             module.__path__ = []
         if path is None:
             return
-        source = read_regular_file_bytes(
-            path,
-            allowed_root=self.module_root,
-            allow_non_atomic=False,
-        )
+        try:
+            source = read_regular_file_bytes(
+                path,
+                allowed_root=self.module_root,
+                allow_non_atomic=False,
+            )
+        except OSError as exc:
+            raise _ConfinedImportError(
+                f"cannot read confined import {path}",
+                reason="the import source could not be read safely",
+            ) from exc
         saved_sys_path = list(sys.path)
         try:
             exec(compile(source, str(path), "exec"), module.__dict__)
             if sys.path != saved_sys_path:
-                raise ImportError(f"{module.__name__}: gateway mutated sys.path")
+                raise _ConfinedImportError(
+                    f"{module.__name__}: gateway mutated sys.path",
+                    reason="the gateway mutated the import search path",
+                )
         finally:
             sys.path[:] = saved_sys_path
 
@@ -202,7 +301,11 @@ def _bound_module_name(
 ) -> tuple[str, bool]:
     path = Path(physical_path)
     if path.suffix != ".py" or path.is_absolute() or ".." in path.parts:
-        raise InterfaceLoadError(f"invalid bound package source path: {physical_path}")
+        raise InterfaceLoadError(
+            f"invalid bound package source path: {physical_path}",
+            entry_id="R11",
+            context={"reason": "path-invalid"},
+        )
     if path.name == "__init__.py":
         parts = path.parent.parts
         is_package = True
@@ -212,7 +315,9 @@ def _bound_module_name(
     if not parts:
         if logical_package is None:
             raise InterfaceLoadError(
-                f"invalid bound package source path: {physical_path}"
+                f"invalid bound package source path: {physical_path}",
+                entry_id="R11",
+                context={"reason": "path-invalid"},
             )
         return logical_package, is_package
     physical_name = ".".join(parts)
@@ -229,10 +334,17 @@ def _load_bound_package_sources(
     logical_package: str | None = None,
     physical_package_prefix: str | None = None,
 ) -> dict[str, tuple[bytes, str, bool]]:
-    entries = [
-        (_read_bound_source(Path(logical_path), source_fd), logical_path)
-        for source_fd, logical_path in package_files
-    ]
+    entries = []
+    for source_fd, logical_path in package_files:
+        try:
+            source = _read_bound_source(Path(logical_path), source_fd)
+        except InterfaceLoadError as exc:
+            raise InterfaceLoadError(
+                str(exc),
+                entry_id="R11",
+                context={"reason": "source-unreadable"},
+            ) from exc
+        entries.append((source, logical_path))
     return _index_bound_package_sources(
         entries,
         logical_package=logical_package,
@@ -257,7 +369,9 @@ def _index_bound_package_sources(
             except ValueError as exc:
                 raise InterfaceLoadError(
                     "bound package source is outside its physical module root: "
-                    f"{logical_path}"
+                    f"{logical_path}",
+                    entry_id="R11",
+                    context={"reason": "outside-physical-root"},
                 ) from exc
         physical_text = physical_path.as_posix()
         module_name, is_package = _bound_module_name(
@@ -265,7 +379,11 @@ def _index_bound_package_sources(
             logical_package,
         )
         if module_name in sources:
-            raise InterfaceLoadError(f"duplicate bound package module: {module_name}")
+            raise InterfaceLoadError(
+                f"duplicate bound package module: {module_name}",
+                entry_id="R11",
+                context={"reason": "duplicate-module"},
+            )
         sources[module_name] = (
             source,
             str(Path(os.path.abspath(physical_text))),
@@ -294,7 +412,9 @@ def _load_package_snapshot_sources(
         or any(character not in "0123456789abcdef" for character in expected_sha256)
     ):
         raise InterfaceLoadError(
-            "package snapshot SHA-256 must be 64 lowercase hexadecimal characters"
+            "package snapshot SHA-256 must be 64 lowercase hexadecimal characters",
+            entry_id="R12",
+            context={"reason": "the expected digest is invalid"},
         )
     absolute = Path(os.path.abspath(snapshot_path))
     try:
@@ -305,15 +425,25 @@ def _load_package_snapshot_sources(
         )
     except OSError as exc:
         raise InterfaceLoadError(
-            f"could not safely read package snapshot {snapshot_path}: {exc}"
+            f"could not safely read package snapshot {snapshot_path}: {exc}",
+            entry_id="R12",
+            context={"reason": "the snapshot file could not be read safely"},
         ) from exc
     actual_sha256 = hashlib.sha256(payload).hexdigest()
     if not hmac.compare_digest(actual_sha256, expected_sha256):
-        raise InterfaceLoadError("package snapshot digest mismatch")
+        raise InterfaceLoadError(
+            "package snapshot digest mismatch",
+            entry_id="R12",
+            context={"reason": "the snapshot digest does not match"},
+        )
     try:
         entries = decode_runtime_python_package_snapshot(payload)
     except BlueprintGraphError as exc:
-        raise InterfaceLoadError(str(exc)) from exc
+        raise InterfaceLoadError(
+            str(exc),
+            entry_id="R12",
+            context={"reason": "the snapshot payload is invalid"},
+        ) from exc
     return _index_bound_package_sources(
         [(source, logical_path) for logical_path, source in entries],
         logical_package=logical_package,
@@ -446,7 +576,10 @@ def _read_bound_source(
             )
         metadata = os.fstat(source_fd)
         if not stat.S_ISREG(metadata.st_mode):
-            raise InterfaceLoadError(f"interface module is not a regular file: {path}")
+            raise InterfaceLoadError(
+                f"interface module is not a regular file: {path}",
+                entry_id="R13",
+            )
         os.lseek(source_fd, 0, os.SEEK_SET)
         chunks: list[bytes] = []
         while chunk := os.read(source_fd, 1024 * 1024):
@@ -455,7 +588,10 @@ def _read_bound_source(
     except InterfaceLoadError:
         raise
     except OSError as exc:
-        raise InterfaceLoadError(f"could not safely read interface module {path}: {exc}") from exc
+        raise InterfaceLoadError(
+            f"could not safely read interface module {path}: {exc}",
+            entry_id="R13",
+        ) from exc
 
 
 def _load_confined_package_sources(
@@ -471,7 +607,8 @@ def _load_confined_package_sources(
         relative = repository_relative_path(absolute, root)
     except RepositoryPathError as exc:
         raise InterfaceLoadError(
-            f"interface module is outside allowed root {root}: {path}"
+            f"interface module is outside allowed root {root}: {path}",
+            entry_id="R21",
         ) from exc
     if logical_package is None and len(relative.parts) < 2:
         return None
@@ -489,7 +626,7 @@ def _load_confined_package_sources(
             allow_non_atomic=False,
         )
     except BlueprintGraphError as exc:
-        raise InterfaceLoadError(str(exc)) from exc
+        raise InterfaceLoadError(str(exc), entry_id="R21") from exc
 
     sources: _BoundPackageSources = _BoundPackageSources()
     for source_path, source in snapshots:
@@ -497,14 +634,18 @@ def _load_confined_package_sources(
             logical_path = repository_relative_posix(source_path, root)
         except RepositoryPathError as exc:
             raise InterfaceLoadError(
-                f"package source is outside allowed root {root}: {source_path}"
+                f"package source is outside allowed root {root}: {source_path}",
+                entry_id="R21",
             ) from exc
         module_name, is_package = _bound_module_name(
             logical_path,
             logical_package,
         )
         if module_name in sources:
-            raise InterfaceLoadError(f"duplicate bound package module: {module_name}")
+            raise InterfaceLoadError(
+                f"duplicate bound package module: {module_name}",
+                entry_id="R21",
+            )
         sources[module_name] = (source, str(source_path), is_package)
     for module_name in tuple(sources):
         parts = module_name.split(".")
@@ -521,7 +662,8 @@ def _load_confined_package_sources(
     )
     if entry_name not in sources:
         raise InterfaceLoadError(
-            f"interface module is not a regular package source: {path}"
+            f"interface module is not a regular package source: {path}",
+            entry_id="R21",
         )
     return sources
 
@@ -542,14 +684,16 @@ def _load_module_from_path(
             logical_path = repository_relative_posix(path, Path.cwd())
         except RepositoryPathError as exc:
             raise InterfaceLoadError(
-                f"interface module is outside the validated package root: {path}"
+                f"interface module is outside the validated package root: {path}",
+                entry_id="R13",
             ) from exc
         module_name = logical_entrypoint
         if module_name is None:
             module_name, _is_package = _bound_module_name(logical_path)
         if module_name not in package_sources:
             raise InterfaceLoadError(
-                f"interface module is outside the validated package snapshot: {path}"
+                f"interface module is outside the validated package snapshot: {path}",
+                entry_id="R13",
             )
         return importlib.import_module(module_name)
 
@@ -652,7 +796,7 @@ def load_interface(
             logical_entrypoint=logical_entrypoint,
         )
     except PythonProcessTargetError as exc:
-        raise InterfaceLoadError(str(exc)) from exc
+        raise InterfaceLoadError(str(exc), entry_id="R10") from exc
     module_path = target.gateway_path
     if not module_path.is_absolute():
         module_path = Path.cwd() / module_path
@@ -663,16 +807,22 @@ def load_interface(
         and _package_sources is None
         and not _lazy_confined
     ):
-        confined_sources = _load_confined_package_sources(
-            module_path,
-            logical_package=target.logical_package,
-        )
+        try:
+            confined_sources = _load_confined_package_sources(
+                module_path,
+                logical_package=target.logical_package,
+            )
+        except InterfaceLoadError as exc:
+            raise InterfaceLoadError(str(exc), entry_id="R21") from exc
     active_sources = _package_sources or confined_sources
 
     def instantiate() -> PythonMachineInterface:
         if _lazy_confined:
             if target.logical_entrypoint is None:
-                raise InterfaceLoadError("lazy confined loading requires logical identity")
+                raise InterfaceLoadError(
+                    "lazy confined loading requires logical identity",
+                    entry_id="R22",
+                )
             module = importlib.import_module(target.logical_entrypoint)
         else:
             module = _load_module_from_path(
@@ -688,17 +838,25 @@ def load_interface(
         if interface_entry is None:
             raise InterfaceLoadError(
                 f"{target.gateway_path}: interface entry "
-                f"`{target.process_entry}` not found"
+                f"`{target.process_entry}` not found",
+                entry_id="R16",
+                context={"reason": "the entry is absent"},
             )
-        interface = (
-            interface_entry
-            if isinstance(interface_entry, PythonMachineInterface)
-            else interface_entry()
-        )
+        if isinstance(interface_entry, PythonMachineInterface):
+            interface = interface_entry
+        else:
+            try:
+                interface = interface_entry()
+            except InterfaceLoadError:
+                raise
+            except Exception as exc:
+                raise InterfaceLoadError(str(exc), entry_id="R23") from exc
         if not isinstance(interface, PythonMachineInterface):
             raise InterfaceLoadError(
                 f"{target.gateway_path}: interface entry must be an instance "
-                "or constructor of PythonMachineInterface"
+                "or constructor of PythonMachineInterface",
+                entry_id="R16",
+                context={"reason": "the entry has the wrong type"},
             )
         if active_sources:
             setattr(interface, _BOUND_PACKAGE_SOURCES_ATTRIBUTE, active_sources)
@@ -726,7 +884,12 @@ def load_interface(
         return instantiate()
 
 
-def run_python_machine_interface(interface: PythonMachineInterface, argv: Sequence[str]) -> int:
+def run_python_machine_interface(
+    interface: PythonMachineInterface,
+    argv: Sequence[str],
+    *,
+    diagnostic_handler: Callable[[str], int] | None = None,
+) -> int:
     """Run one loaded Python machine interface through the standard lifecycle.
 
     Lifecycle:
@@ -737,15 +900,57 @@ def run_python_machine_interface(interface: PythonMachineInterface, argv: Sequen
     """
 
     def run() -> int:
-        parser = interface.build_parser()
-        if not isinstance(parser, argparse.ArgumentParser):
-            raise TypeError("build_parser() must return argparse.ArgumentParser")
+        try:
+            parser = interface.build_parser()
+            if not isinstance(parser, argparse.ArgumentParser):
+                raise TypeError("build_parser() must return argparse.ArgumentParser")
+        except InterfaceLoadError:
+            raise
+        except Exception:
+            if diagnostic_handler is None:
+                raise
+            return diagnostic_handler("R24")
         if route_smoke_requested(argv):
-            interface.route_smoke()
+            try:
+                interface.route_smoke()
+            except InterfaceLoadError:
+                raise
+            except Exception:
+                if diagnostic_handler is None:
+                    raise
+                return diagnostic_handler("R18")
             print("route-smoke ok")
             return 0
-        args = interface.parse_args(parser, list(argv))
-        return coerce_exit_code(interface.run(args))
+        try:
+            args = interface.parse_args(parser, list(argv))
+        except SystemExit as exc:
+            if diagnostic_handler is None or exc.code in {None, 0}:
+                raise
+            return diagnostic_handler("R17")
+        except argparse.ArgumentError:
+            if diagnostic_handler is None:
+                raise
+            return diagnostic_handler("R17")
+        except InterfaceLoadError:
+            raise
+        except Exception:
+            if diagnostic_handler is None:
+                raise
+            return diagnostic_handler("R25")
+        try:
+            result = interface.run(args)
+        except InterfaceLoadError:
+            raise
+        except Exception:
+            if diagnostic_handler is None:
+                raise
+            return diagnostic_handler("R19")
+        try:
+            return coerce_exit_code(result)
+        except TypeError:
+            if diagnostic_handler is None:
+                raise
+            return diagnostic_handler("R20")
 
     sources = getattr(interface, _BOUND_PACKAGE_SOURCES_ATTRIBUTE, None)
     if not isinstance(sources, dict) or not sources:
@@ -786,6 +991,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 2
     source_fd: int | None = None
+    diagnostic_writer: int | None = None
     package_files: list[tuple[int, str]] = []
     package_snapshot: Path | None = None
     package_snapshot_sha256: str | None = None
@@ -799,6 +1005,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     confined_module_root: Path | None = None
     private_options = {
         "--source-fd",
+        "--diagnostic-writer",
         "--package-file",
         "--package-snapshot",
         "--package-snapshot-sha256",
@@ -811,115 +1018,139 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--runtime-repository-config",
         "--confined-module-root",
     }
+
+    def reject(entry_id: str, fallback: str, **context: object) -> int:
+        nonlocal diagnostic_writer
+        if diagnostic_writer is not None:
+            writer = diagnostic_writer
+            diagnostic_writer = None
+            return _emit_private_diagnosis(writer, entry_id, **context)
+        print(f"error: {fallback}", file=sys.stderr)
+        return 2
+
+    def close_diagnostic_writer() -> None:
+        nonlocal diagnostic_writer
+        if diagnostic_writer is None:
+            return
+        writer = diagnostic_writer
+        diagnostic_writer = None
+        try:
+            os.close(writer)
+        except OSError:
+            pass
+
     while argv and argv[0] in private_options:
         option = argv.pop(0)
         required = 2 if option == "--package-file" else 1
         if len(argv) < required:
-            print(f"error: {option} is missing required arguments", file=sys.stderr)
-            return 2
+            return reject(
+                "R02",
+                f"{option} is missing required arguments",
+                option=option,
+            )
         if option == "--package-snapshot":
             if package_snapshot is not None:
-                print(f"error: duplicate {option}", file=sys.stderr)
-                return 2
+                return reject("R03", f"duplicate {option}", option=option)
             package_snapshot = Path(argv.pop(0))
             continue
         if option == "--package-snapshot-sha256":
             if package_snapshot_sha256 is not None:
-                print(f"error: duplicate {option}", file=sys.stderr)
-                return 2
+                return reject("R03", f"duplicate {option}", option=option)
             package_snapshot_sha256 = argv.pop(0)
             continue
         if option == "--logical-package":
             if logical_package is not None:
-                print(f"error: duplicate {option}", file=sys.stderr)
-                return 2
+                return reject("R03", f"duplicate {option}", option=option)
             logical_package = argv.pop(0)
             continue
         if option == "--logical-entrypoint":
             if logical_entrypoint is not None:
-                print(f"error: duplicate {option}", file=sys.stderr)
-                return 2
+                return reject("R03", f"duplicate {option}", option=option)
             logical_entrypoint = argv.pop(0)
             continue
         if option == "--physical-package-prefix":
             if physical_package_prefix is not None:
-                print(f"error: duplicate {option}", file=sys.stderr)
-                return 2
+                return reject("R03", f"duplicate {option}", option=option)
             physical_package_prefix = argv.pop(0)
             continue
         if option == "--runtime-caller-module-id":
             if runtime_caller_module_id is not None:
-                print(f"error: duplicate {option}", file=sys.stderr)
-                return 2
+                return reject("R03", f"duplicate {option}", option=option)
             runtime_caller_module_id = argv.pop(0)
             continue
         if option == "--runtime-caller-source-id":
             if runtime_caller_source_id is not None:
-                print(f"error: duplicate {option}", file=sys.stderr)
-                return 2
+                return reject("R03", f"duplicate {option}", option=option)
             runtime_caller_source_id = argv.pop(0)
             continue
         if option == "--runtime-repo-root":
             if runtime_repo_root is not None:
-                print(f"error: duplicate {option}", file=sys.stderr)
-                return 2
-            runtime_repo_root = Path(argv.pop(0)).resolve()
+                return reject("R03", f"duplicate {option}", option=option)
+            try:
+                runtime_repo_root = Path(argv.pop(0)).resolve()
+            except BaseException:
+                close_diagnostic_writer()
+                raise
             continue
         if option == "--runtime-repository-config":
             if runtime_repository_config is not None:
-                print("error: duplicate runtime repository config", file=sys.stderr)
-                return 2
+                return reject("R03", "duplicate runtime repository config", option=option)
             runtime_repository_config = Path(argv.pop(0))
             continue
         if option == "--confined-module-root":
             if confined_module_root is not None:
-                print("error: duplicate confined module root", file=sys.stderr)
-                return 2
+                return reject("R03", "duplicate confined module root", option=option)
             confined_module_root = Path(argv.pop(0))
             continue
+        if option == "--source-fd" and source_fd is not None:
+            return reject("R03", f"duplicate {option}", option=option)
+        if option == "--diagnostic-writer" and diagnostic_writer is not None:
+            return reject("R03", f"duplicate {option}", option=option)
         try:
             descriptor = int(argv.pop(0))
         except ValueError:
-            print(f"error: {option} descriptor must be an integer", file=sys.stderr)
-            return 2
+            return reject(
+                "R04",
+                f"{option} descriptor must be an integer",
+                option=option,
+            )
         if option == "--source-fd":
             source_fd = descriptor
+        elif option == "--diagnostic-writer":
+            diagnostic_writer = _claim_diagnostic_writer(descriptor)
         else:
             package_files.append((descriptor, argv.pop(0)))
     if (package_snapshot is None) != (package_snapshot_sha256 is None):
-        print(
-            "error: package snapshot path and SHA-256 must be provided together",
-            file=sys.stderr,
+        return reject(
+            "R05",
+            "package snapshot path and SHA-256 must be provided together",
         )
-        return 2
     if (logical_package is None) != (logical_entrypoint is None):
-        print(
-            "error: logical package and entrypoint must be provided together",
-            file=sys.stderr,
+        return reject(
+            "R06",
+            "logical package and entrypoint must be provided together",
         )
-        return 2
     if physical_package_prefix is not None and logical_package is None:
-        print(
-            "error: physical package prefix requires a logical package",
-            file=sys.stderr,
+        return reject(
+            "R07",
+            "physical package prefix requires a logical package",
         )
-        return 2
     if physical_package_prefix is not None and (
         not physical_package_prefix
         or Path(physical_package_prefix).name != physical_package_prefix
         or physical_package_prefix in {".", ".."}
     ):
-        print("error: invalid physical package prefix", file=sys.stderr)
-        return 2
+        return reject("R07", "invalid physical package prefix")
     if package_snapshot is not None and (source_fd is not None or package_files):
-        print(
-            "error: package snapshot transport cannot be combined with descriptors",
-            file=sys.stderr,
+        return reject(
+            "R08",
+            "package snapshot transport cannot be combined with descriptors",
         )
-        return 2
     if len(argv) < 2:
-        print("error: missing Python gateway path or process entry", file=sys.stderr)
-        return 2
+        if diagnostic_writer is None:
+            print("error: missing Python gateway path or process entry", file=sys.stderr)
+            return 2
+        return reject("R01", "missing Python gateway path or process entry")
     gateway_path, process_entry, *interface_argv = argv
 
     def run_loaded_interface(interface: PythonMachineInterface) -> int:
@@ -938,7 +1169,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         # itself to the next unrelated interface.
         set_process_dispatch_context(runtime_dispatch_context(interface))
         try:
-            return run_python_machine_interface(interface, interface_argv)
+            return run_python_machine_interface(
+                interface,
+                interface_argv,
+                diagnostic_handler=(
+                    (lambda entry_id: reject(entry_id, "runner failure"))
+                    if diagnostic_writer is not None
+                    else None
+                ),
+            )
         finally:
             set_process_dispatch_context(None)
 
@@ -984,11 +1223,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return run_loaded_interface(interface)
         if confined_module_root is not None:
             if logical_package is None:
-                print("error: confined module root requires logical package", file=sys.stderr)
-                return 2
+                return reject(
+                    "R09",
+                    "confined module root requires logical package",
+                )
             if confined_module_root.resolve() != Path.cwd().resolve():
-                print("error: confined module root must equal cwd", file=sys.stderr)
-                return 2
+                return reject("R09", "confined module root must equal cwd")
             with _lazy_confined_package_imports(
                 confined_module_root,
                 logical_package,
@@ -1011,8 +1251,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return run_loaded_interface(interface)
     except InterfaceLoadError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 2
+        return reject(exc.entry_id, str(exc), **exc.context)
+    except Exception as exc:
+        return reject("R15", str(exc))
+    finally:
+        close_diagnostic_writer()
 
 
 if __name__ == "__main__":
