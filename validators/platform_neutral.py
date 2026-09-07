@@ -70,7 +70,6 @@ _PLATFORM_METADATA_TOOLING_PATHS = {
 }
 _BINDING_CROSS_HOST_ORCHESTRATION_PATHS = {
     Path("skills/relocate-nodes/_rtx/_relocation_engine.py"),
-    Path("skills/dev-activation/_rtx/_development_activation.py"),
     Path("src/officina/launchers/agent.py"),
     Path("src/officina/recurring/runtime.py"),
     Path("src/officina/recurring/healthcheck.py"),

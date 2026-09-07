@@ -678,13 +678,21 @@ Expected: PASS with version 12 covering both `help-compass` and the public worke
 - Consumes: completed Tasks 1–5 installed in the development Codex context
 - Produces: one live behavioral acceptance record using `gpt-5.4-mini`
 
-- [ ] **Step 1: Start a fresh development Codex VS Code session**
+- [ ] **Step 1: Install the target checkout and start a fresh Codex VS Code session**
 
-First load `famulus:dev-activation` for the exact target checkout and follow its
-development activation instructions. Stop as `HARNESS_INVALID` unless the
-selected Python, plugin root, command origin, and repository configuration all
-resolve to the target checkout. Then use the same worktree and model recorded
-by the original session metadata:
+Close every Codex process, then refresh the local plugin installation from the
+exact target checkout without resetting plugin data:
+
+```bash
+AI="/absolute/path/to/target/worktree" \
+  "/absolute/path/to/target/worktree/scripts/famulus-refresh" --codex --local
+```
+
+Start a new Codex VS Code session. Stop as `HARNESS_INVALID` unless the
+installed plugin cache, selected Python, plugin root, command origin, and
+repository configuration all resolve to that checkout's refreshed
+installation. Then use the same worktree and model recorded by the original
+session metadata:
 
 ```text
 cwd: repository root of the target worktree

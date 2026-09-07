@@ -195,7 +195,6 @@ def test_exact_cross_host_allowlists_and_nearby_rejections_share_one_scan(
 ) -> None:
     binding_paths = {
         Path("skills/relocate-nodes/_rtx/_relocation_engine.py"),
-        Path("skills/dev-activation/_rtx/_development_activation.py"),
         Path("src/officina/launchers/agent.py"),
         Path("src/officina/recurring/runtime.py"),
         Path("src/officina/recurring/healthcheck.py"),

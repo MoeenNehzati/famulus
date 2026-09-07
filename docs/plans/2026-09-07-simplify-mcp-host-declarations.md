@@ -16,23 +16,31 @@
 
 **Files:** `.mcp.json`, `.codex-plugin/plugin.json`, `.claude-plugin/plugin.json`, `mcp.json`, `tests/test_famulus_mcp.py`
 
-- [ ] Install a disposable Codex plugin and prove `${PLUGIN_ROOT}` and `${PLUGIN_DATA}` expand inside `.mcp.json`; stop if they do not.
-- [ ] Add failing tests that treat `mcp-core.json` as the shared authority and require exactly two host adapters with the correct launcher and normalized context.
-- [ ] Move Codex's host-specific fields into `.mcp.json`, retain Claude's inline fields, and delete `mcp.json`.
-- [ ] Run `./repo_checks.py --task tests:shared --selector tests/test_famulus_mcp.py --jobs 8`; require success.
+- [x] Confirm from the Agent Plugins contract that Codex supplies `PLUGIN_DATA`; discard the earlier disposable result because the changed declaration was not reloaded reliably.
+- [x] Add failing tests that treat `mcp-core.json` as the shared authority and require exactly two host adapters with the correct launcher and normalized context.
+- [x] Delete the unreferenced `mcp.json` declaration while retaining Codex's manifest-referenced `.mcp.json` and Claude's inline adapter.
+- [x] Normalize Codex's `PLUGIN_DATA` to `FAMULUS_PLUGIN_DATA` in `.mcp.json`, matching Claude's JSON-owned normalization.
+- [x] Run `./repo_checks.py --task tests:shared --selector tests/test_famulus_mcp.py --jobs 8`; require success.
 
 ### Task 2: Remove development activation
 
 **Delete:** `.envrc`, `tools/dev-code`, `tools/dev-code.cmd`, `skills/dev-activation/`, `tests/test_officina_development_activation.py`
 
-- [ ] Remove the activation skill, wrappers, tests, validator allowlists, install-context registrations, and generated dependency metadata.
-- [ ] Remove dev-activation entries from `docs/skills.md` and `docs/contributors/README.md`; update any other active setup or contributor guidance found by the final search.
-- [ ] Run `./repo_checks.py --task tests:shared --selector tests/test_install_context_consumers.py --selector tests/test_platform_neutral_validator.py --jobs 8`; require success.
+- [x] Remove the activation skill, wrappers, tests, validator allowlists, install-context registrations, and generated dependency metadata.
+- [x] Remove dev-activation entries from `docs/skills.md` and `docs/contributors/README.md`; update any other active setup or contributor guidance found by the final search.
+- [x] Run `./repo_checks.py --task tests:shared --selector tests/test_install_context_consumers.py --selector tests/test_platform_neutral_validator.py --jobs 8`; require success.
 
 ### Task 3: Verify the simplified system
 
-- [ ] Search with `rg -n --hidden --glob '!.git/**' 'mcp-core\.json|mcp\.json|dev-activation|development activation|dev mode' .`; classify historical matches and require no active references to deleted surfaces.
-- [ ] Install fresh plugin copies for both hosts and verify each child receives its host and plugin-data values.
-- [ ] In a fresh Codex session, require `codex mcp get famulus_dispatcher` to show the launcher plus both environment variables, then invoke `common.interface.famulus-paths-get` version `1` with positional `setup-status` and require an absolute plugin-data path.
+- [x] Search with `rg -n --hidden --glob '!.git/**' 'mcp-core\.json|mcp\.json|dev-activation|development activation|dev mode' .`; migrate the active weak-agent replay plan to local plugin refresh, with remaining deleted-surface references confined to historical plans and lessons.
+- [x] Install fresh isolated plugin copies for both hosts, inspect their projected declarations, and exercise each normalized child through the real MCP integration test.
+- [x] In a fresh isolated Codex installation, require `codex mcp get famulus_dispatcher` to show the launcher plus both normalized environment variables; exercise `common.interface.famulus-paths-get` version `1` through the focused real-MCP suite and require the selected plugin-data path.
 
 Commit only named paths after reviewing the cached diff; do not absorb unrelated worktree changes.
+
+## Verification evidence
+
+- Focused MCP suite: 40 passed, 1 skipped.
+- Removal and documentation suite: 20 passed.
+- Validators: 29 passed.
+- Full test suite: 3,546 passed, 22 skipped, with one unrelated baseline failure in `tests/test_docstrings_validator.py::test_validate_staged_uses_test_production_and_base_profiles`; the same failure reproduces on `master` at the shared base commit.

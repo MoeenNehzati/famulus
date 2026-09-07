@@ -114,7 +114,6 @@ def _copy_plugin(plugin_root: Path, *, include_graph: bool = False) -> None:
     shutil.copy2(CORE, plugin_root / CORE.name)
     shutil.copy2(ROOT / "officina.toml", plugin_root / "officina.toml")
     shutil.copy2(ROOT / ".mcp.json", plugin_root / ".mcp.json")
-    shutil.copy2(ROOT / "mcp.json", plugin_root / "mcp.json")
     shutil.copytree(ROOT / "src", plugin_root / "src")
     shutil.copytree(
         ROOT / "skills",
@@ -152,6 +151,10 @@ def _declared_launch(host: str, plugin_root: Path) -> tuple[str, list[str], Path
         "command": "python",
         "args": ["mcp_launcher.py"],
         "cwd": ".",
+        "env": {
+            "FAMULUS_HOST": "codex",
+            "FAMULUS_PLUGIN_DATA": "${PLUGIN_DATA}",
+        },
     }
     return declaration["command"], declaration["args"], plugin_root
 
@@ -296,29 +299,37 @@ def _persistent_launch(host: str, plugin_root: Path, plugin_data: Path):
         declaration = _json(plugin_root / ".claude-plugin" / "plugin.json")[
             "mcpServers"
         ]["famulus_dispatcher"]
-        root_token = "${CLAUDE_PLUGIN_ROOT}"
+        args = [
+            value.replace("${CLAUDE_PLUGIN_ROOT}", str(plugin_root))
+            for value in declaration["args"]
+        ]
         data_token = "${CLAUDE_PLUGIN_DATA}"
+        cwd = None
     else:
-        declaration = _json(plugin_root / "mcp.json")["mcpServers"]["famulus_dispatcher"]
-        root_token = "${PLUGIN_ROOT}"
+        declaration = _json(plugin_root / ".mcp.json")["mcpServers"][
+            "famulus_dispatcher"
+        ]
+        args = declaration["args"]
         data_token = "${PLUGIN_DATA}"
-    args = [value.replace(root_token, str(plugin_root)) for value in declaration["args"]]
+        cwd = plugin_root
     environment = {
         name: value.replace(data_token, str(plugin_data))
         for name, value in declaration["env"].items()
     }
-    return declaration["command"], args, environment
+    return declaration["command"], args, environment, cwd
 
 
 async def _record_through_persistent_mcp(
     host: str, plugin_root: Path, home: Path, plugin_data: Path, canary: Path
 ):
     from mcp import ClientSession, StdioServerParameters
-    command, args, declared = _persistent_launch(host, plugin_root, plugin_data)
+    command, args, declared, cwd = _persistent_launch(host, plugin_root, plugin_data)
     environment = _selected_environment(home)
     environment.update(declared)
     environment["ASSISTANT_LOGS"] = str(canary)
-    parameters = StdioServerParameters(command=command, args=args, env=environment)
+    parameters = StdioServerParameters(
+        command=command, args=args, env=environment, cwd=cwd
+    )
     result = None
     async with _stdio_transport(parameters) as (read, write, mark_complete):
         async with ClientSession(read, write) as session:
@@ -1391,8 +1402,9 @@ def test_host_declarations_normalize_to_common_command_contract() -> None:
     claude = _json(ROOT / ".claude-plugin" / "plugin.json")["mcpServers"][
         "famulus_dispatcher"
     ]
-    codex = _json(ROOT / "mcp.json")["mcpServers"]["famulus_dispatcher"]
+    codex = _json(ROOT / ".mcp.json")["mcpServers"]["famulus_dispatcher"]
 
+    assert not (ROOT / ("mcp" + ".json")).exists()
     assert contract["command"] == "python"
     assert contract["args"] == ["mcp_launcher.py"]
     assert claude["command"] == codex["command"] == contract["command"]
@@ -1401,8 +1413,8 @@ def test_host_declarations_normalize_to_common_command_contract() -> None:
         "FAMULUS_HOST": "claude",
         "FAMULUS_PLUGIN_DATA": "${CLAUDE_PLUGIN_DATA}",
     }
-    assert codex["args"] == ["${PLUGIN_ROOT}/" + contract["args"][0]]
-    assert codex["type"] == "stdio"
+    assert codex["args"] == contract["args"]
+    assert codex["cwd"] == "."
     assert codex["env"] == {
         "FAMULUS_HOST": "codex",
         "FAMULUS_PLUGIN_DATA": "${PLUGIN_DATA}",

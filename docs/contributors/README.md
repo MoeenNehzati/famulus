@@ -74,6 +74,22 @@ For hook purpose, activation, order, and side effects, see
 [Repository Git Hooks](git-hooks.md). For CI behavior and Python test-suite
 boundaries, see [Repository Testing](../testing.md).
 
+## Test a checkout through an installed host
+
+Host plugins run from an installed cache, not directly from a working tree.
+Before testing checkout changes, close every process for the selected host and
+refresh its local marketplace installation from that checkout:
+
+```bash
+AI="/absolute/path/to/checkout" \
+  "/absolute/path/to/checkout/scripts/famulus-refresh" --codex --local
+```
+
+Use `--claude` instead of `--codex` for Claude, or omit the host option to
+refresh both. Then start a new host session. The refresh preserves plugin data
+unless `--reset-plugin-data` is explicitly requested; ordinary code and
+declaration testing should not reset it.
+
 ## Development-Facing Skill Areas
 
 ### Assistant Development
@@ -104,7 +120,6 @@ For task-oriented routing, see the
 > Generated from live blueprints. Do not edit this block by hand.
 
 - `ci-debug` — GitHub Actions CI is red, matrix failures need isolated repair, or repeated full reruns make remote diagnosis inefficient
-- `dev-activation` — A developer needs an assistant or editor to run against one Famulus checkout without discovering globally installed skills or plugins
 - `git-workflow` — Branch-safety checks and commit hygiene for any repo
 - `initialize-tdd` — Scaffold a staged, approval-gated TDD project
 - `semantic-integration` — Integrating substantially diverged Git branches and merge or rebase is inadequate because it produces broad structural conflicts, or because mechanical application would place source changes into structures the target architecture has replaced and thereby lose their intent

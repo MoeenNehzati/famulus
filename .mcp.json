@@ -3,7 +3,11 @@
     "famulus_dispatcher": {
       "command": "python",
       "args": ["mcp_launcher.py"],
-      "cwd": "."
+      "cwd": ".",
+      "env": {
+        "FAMULUS_HOST": "codex",
+        "FAMULUS_PLUGIN_DATA": "${PLUGIN_DATA}"
+      }
     }
   }
 }
