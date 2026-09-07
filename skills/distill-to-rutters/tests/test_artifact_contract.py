@@ -562,8 +562,14 @@ def test_validate_artifact_accepts_crlf_fenced_contract(repository: Path) -> Non
 
 def test_first_release_accepts_a_complete_single_voyage_chain(
     runtime_repository: Path,
+    tmp_path: Path,
 ) -> None:
     contract = _load_module("artifact_contract")
+    probe = contract.probe_runtime_compatibility(
+        runtime_repository,
+        tmp_path / "direct-runtime-probe",
+    )
+    assert probe["outcome"] == "design-ready", probe
     artifact = _write_artifact_chain(runtime_repository, "verify")["verify"]
 
     result = contract.validate_artifact(artifact, "verify")
