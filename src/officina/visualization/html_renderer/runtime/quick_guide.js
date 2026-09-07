@@ -162,6 +162,7 @@ function startQuickGuide() {
 
   quickGuideDialog.hidden = false;
   quickGuideHighlight.hidden = false;
+  document.body.classList.add("quick-guide-open");
   renderQuickGuideStep();
 
   // A step's target can disappear (hidden, dimmed, removed) from actions
@@ -183,6 +184,7 @@ function closeQuickGuide() {
   quickGuideReturnFocus = null;
   quickGuideDialog.hidden = true;
   quickGuideHighlight.hidden = true;
+  document.body.classList.remove("quick-guide-open");
   if (quickGuideTargetObserver) {
     quickGuideTargetObserver.disconnect();
     quickGuideTargetObserver = null;

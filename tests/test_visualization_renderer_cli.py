@@ -181,6 +181,7 @@ def test_renderer_html_includes_disabled_quick_guide_config() -> None:
     assert html.count('id="quick-guide-dialog"') == 1
     assert html.count('id="quick-guide-highlight"') == 1
     assert html.count('id="quick-guide-close"') == 1
+    assert 'aria-label="Close Quick guide"' in html
     assert html.count('id="quick-guide-btn"') == 1
 
 
@@ -271,3 +272,43 @@ def test_main_supports_quick_guide_renderer_injection(tmp_path, capsys) -> None:
     assert '"custom"' in html
     assert "Injected custom guide body" in html
     assert '"R": "\\\\\\\\mathbb{R}"' in html
+
+
+def test_main_uses_injected_renderer_for_the_complete_render_pipeline(
+    tmp_path, capsys
+) -> None:
+    class TrackingRenderer(ElkHtmlRenderer):
+        def __init__(self) -> None:
+            super().__init__()
+            self.calls: list[str] = []
+
+        def validate(self, graph_json) -> None:
+            self.calls.append("validate")
+            super().validate(graph_json)
+
+        def reduce_graph_json_transitive_edges(self, graph_json):
+            self.calls.append("reduce")
+            return super().reduce_graph_json_transitive_edges(graph_json)
+
+        def render_graph_html(self, graph_json, **kwargs) -> str:
+            self.calls.append("render")
+            return super().render_graph_html(graph_json, **kwargs)
+
+    source = tmp_path / "graph.json"
+    source.write_text(json.dumps(_minimal_graph_payload()), encoding="utf-8")
+    html_out = tmp_path / "graph.html"
+    renderer = TrackingRenderer()
+
+    result = base_renderer_cli.main(
+        [
+            str(source),
+            "--html-out",
+            str(html_out),
+            "--reduce-transitive-edges",
+        ],
+        renderer=renderer,
+    )
+
+    assert result == 0
+    capsys.readouterr()
+    assert renderer.calls == ["validate", "reduce", "render"]

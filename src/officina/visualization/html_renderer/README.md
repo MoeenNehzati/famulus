@@ -9,9 +9,9 @@ module, call, or blueprint is.
 Most callers should use the public renderer rather than importing this package:
 
 ```python
-from officina.visualization import ElkHtmlRenderer
+from officina.visualization.elk_html_renderer import ElkHtmlRenderer
 
-ElkHtmlRenderer().render(graph_payload, "graph.html")
+ElkHtmlRenderer().write_graph_html(graph_payload, "graph.html")
 ```
 
 The result is one standalone HTML file. CSS and JavaScript are maintained as
@@ -138,7 +138,23 @@ Quick guides are passive anchored explanations:
 - Edit `quick_guides/default.py` to change global guide content or ordering.
 - Create specialized guides by calling `replace_step()` on `DEFAULT_QUICK_GUIDE`; do not copy the tuple.
 - Guide data is renderer configuration only and is not persisted in graph payloads.
-- There is no guide persistence, workflow action, or guide-specific API.
+- There is no guide persistence, workflow action, or guide-specific browser API.
+
+Pass an explicit guide to opt in; omitting `quick_guide` preserves the guide-free
+viewer. Domain guides should replace stable steps in the default instead of
+copying its tuple:
+
+```python
+from officina.visualization.elk_html_renderer import ElkHtmlRenderer
+from officina.visualization.html_renderer.quick_guides.default import DEFAULT_QUICK_GUIDE
+
+domain_guide = DEFAULT_QUICK_GUIDE.replace_step(
+    "read-graph",
+    title="Read domain dependencies",
+    body="Follow arrows from prerequisites toward the results they support.",
+)
+renderer = ElkHtmlRenderer(quick_guide=domain_guide)
+```
 
 The browser runtime follows a fixed pipeline:
 
