@@ -80,16 +80,22 @@ def test_launcher_uses_exact_executable_inherits_stdio_and_propagates_exit(
     assert called == [[str(paths.venv_python_path), str(ROOT / "mcp_server.py")]]
 
 
-def test_launcher_fails_closed_when_venv_python_is_unlaunchable(
+def test_launcher_preserves_error_when_venv_python_is_unlaunchable(
     monkeypatch: pytest.MonkeyPatch, capsys, tmp_path: Path
 ) -> None:
     launcher = _load_server(LAUNCHER)
     _launcher_paths(monkeypatch, tmp_path)
+    error = FileNotFoundError("missing interpreter at /dedicated/python")
     monkeypatch.setattr(
-        launcher.subprocess, "run", lambda _argv: (_ for _ in ()).throw(OSError())
+        launcher.subprocess,
+        "run",
+        lambda _argv: (_ for _ in ()).throw(error),
     )
     assert launcher.main() == 1
-    assert capsys.readouterr().err == "famulus MCP launcher: dispatcher runtime unavailable\n"
+    assert capsys.readouterr().err == (
+        "famulus MCP launcher: FileNotFoundError: "
+        "missing interpreter at /dedicated/python\n"
+    )
 
 
 @pytest.fixture(scope="module")

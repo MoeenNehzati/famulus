@@ -9,7 +9,6 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parent
-ERROR = "famulus MCP launcher: dispatcher runtime unavailable"
 
 
 def main() -> int:
@@ -23,8 +22,8 @@ def main() -> int:
         return subprocess.run(
             [str(paths.venv_python_path), str(ROOT / "mcp_server.py")]
         ).returncode
-    except Exception:
-        print(ERROR, file=sys.stderr)
+    except Exception as exc:
+        print(f"famulus MCP launcher: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
 
 
