@@ -69,10 +69,6 @@ def test_default_interface_routes_to_triage_and_declares_generated_interfaces() 
         "email-triage.source.instructions-triage.interface.triage",
         2,
     )
-    repair_route = (
-        "bootstrap-dispatcher-runtime.interface.repair-selected-packages",
-        1,
-    )
     process_routes = {
         ("email-triage._rtx.interface.fetch-filtered-envelopes", 1),
         ("email-triage._rtx.interface.scripts-clear-failure", 1),
@@ -90,9 +86,8 @@ def test_default_interface_routes_to_triage_and_declares_generated_interfaces() 
         interface_id for interface_id, _version in process_routes
     }
     assert generated_executable_interfaces == process_routes
-    assert declared == process_routes | {triage_route, repair_route}
+    assert declared == process_routes | {triage_route}
     assert f"`{triage_route[0]}@{triage_route[1]}`" in generated_block
-    assert f"`{repair_route[0]}@{repair_route[1]}`" in generated_block
 
     authored = body.split("<!-- END BLUEPRINT INTERFACES -->", 1)[1]
     assert "email-triage.interface.triage" in authored
@@ -133,22 +128,7 @@ def test_triage_contract_has_no_preference_source_or_read() -> None:
     )
 
     assert triage["version"] == 2
-    assert [
-        (
-            dependency["blueprint"]["base"],
-            dependency["blueprint"]["path"],
-            dependency["source"],
-            dependency["version"],
-        )
-        for dependency in triage_source["dependencies"]
-    ] == [
-        (
-            "repository-root",
-            "skills/bootstrap-dispatcher-runtime/blueprints/gateway.yaml",
-            "bootstrap-dispatcher-runtime.source.gateway",
-            1,
-        )
-    ]
+    assert triage_source.get("dependencies", []) == []
     assert all(
         entry.get("path") != "references/personal-preferences.md"
         for entry in triage["contract"]["direct_io"]["reads"]

@@ -157,17 +157,9 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
     {"options": {"--expected-revision": "N"}, "positionals": ["file"], "stdin": null}
     Required options: []; positional arity: 1..1; stdin: permitted
 
-Instruction Interfaces:
-
-These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `bootstrap-dispatcher-runtime.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact dispatcher runtime without MCP.
 <!-- END BLUEPRINT INTERFACES -->
-Before any local or cloud list machine interface, follow
-`bootstrap-dispatcher-runtime.interface.repair-selected-packages` for list-manager's exact
-declaration `["dateparser", "keyring", "rich"]`. Complete the full Task 2 fingerprint
-procedure; on any failure, stop before list activity. Local/default selection repairs only
-this declaration. Google connection setup remains a separate user-selected step only for
-cloud routes; local/default setup never selects it.
+Local/default selection repairs only this declaration. Google connection setup remains a
+separate user-selected step only for cloud routes; local/default setup never selects it.
 
 When this skill is used, begin with:
 

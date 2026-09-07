@@ -22,7 +22,7 @@ interfaces:
     contract:
       arguments:
         canonical-python:
-          description: Canonical absolute executable returned by the complete Task 2 fingerprint procedure.
+          description: Canonical absolute executable for the selected Python interpreter.
           required: true
           sensitivity: user-private
           type: {kind: string, sensitivity: user-private}

@@ -1,14 +1,8 @@
 content:
 - SKILL\.md
-dependencies:
-- blueprint:
-    base: repository-root
-    path: skills/bootstrap-dispatcher-runtime/blueprints/gateway.yaml
-  reason: Repair only the Calendar-owner keyring declaration in the selected Python.
-  source: bootstrap-dispatcher-runtime.source.gateway
-  version: 1
+dependencies: []
 description: Interprets calendar requests, invokes the calendar client, and routes
-  missing OAuth setup through connect-google and the local bootstrap interface.
+  missing OAuth setup through connect-google.
 gateway:
   language: Markdown
   path: SKILL.md
@@ -18,8 +12,6 @@ interfaces:
     content:
     - SKILL\.md
     uses_interfaces:
-    - interface: bootstrap-dispatcher-runtime.interface.repair-selected-packages
-      version: 1
     - interface: connect-google.interface.default
       version: 1
     - interface: online-calendar._rtx.interface.scripts-gcal
@@ -113,8 +105,6 @@ interfaces:
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
-- interface: bootstrap-dispatcher-runtime.interface.repair-selected-packages
-  version: 1
 - interface: connect-google.interface.default
   version: 1
 - interface: online-calendar._rtx.interface.scripts-gcal

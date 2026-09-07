@@ -25,15 +25,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
     {"options": {"--all": true, "--dag-file": "PATH", "--json": true, "--repo-root": "ROOT", "--skill-root": "ROOT"}, "positionals": ["target..."], "stdin": null}
     Required options: []; positional arity: 0..unbounded; stdin: forbidden
 
-Instruction Interfaces:
-
-These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `bootstrap-dispatcher-runtime.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact dispatcher runtime without MCP.
 <!-- END BLUEPRINT INTERFACES -->
-Before computing hashes or reading certificate state, follow
-`bootstrap-dispatcher-runtime.interface.repair-selected-packages` for this owner's exact
-declaration `["cryptography", "keyring"]`. Complete the full Task 2 fingerprint
-procedure; on any failure, stop before invoking either node-drift interface.
 
 Use `node-drift._rtx.interface.drift-status` to read signed certificate
 currentness and `node-drift._rtx.interface.compute-hashes` to read the canonical

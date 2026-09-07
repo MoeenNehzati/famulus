@@ -1,10 +1,6 @@
 content:
 - SKILL\.md
-dependencies:
-- blueprint: {base: repository-root, path: skills/bootstrap-dispatcher-runtime/blueprints/gateway.yaml}
-  reason: Follows the exact selected-Python fingerprint and repairs recurring-owned PyYAML.
-  source: bootstrap-dispatcher-runtime.source.gateway
-  version: 1
+dependencies: []
 description: Owns the LLM-facing instructions for managing and diagnosing recurring
   assistant jobs.
 gateway:
@@ -16,8 +12,6 @@ interfaces:
     content:
     - SKILL\.md
     uses_interfaces:
-    - interface: bootstrap-dispatcher-runtime.interface.repair-selected-packages
-      version: 1
     - interface: recurring-tasks._rtx.interface.scripts-disable
       version: 1
     - interface: recurring-tasks._rtx.interface.scripts-enable
@@ -112,8 +106,6 @@ interfaces:
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
-- interface: bootstrap-dispatcher-runtime.interface.repair-selected-packages
-  version: 1
 - interface: recurring-tasks._rtx.interface.scripts-disable
   version: 1
 - interface: recurring-tasks._rtx.interface.scripts-enable

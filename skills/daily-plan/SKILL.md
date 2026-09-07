@@ -40,16 +40,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
     {"options": {}, "positionals": ["extract|reassemble", "plan-file", "dir"], "stdin": null}
     Required options: []; positional arity: 3..3; stdin: forbidden
 
-Instruction Interfaces:
-
-These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `bootstrap-dispatcher-runtime.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact dispatcher runtime without MCP.
 <!-- END BLUEPRINT INTERFACES -->
-Before invoking any daily-plan interface, follow
-`bootstrap-dispatcher-runtime.interface.repair-selected-packages` for this owner's exact
-declaration `["keyring", "rich"]`. Complete the full Task 2 fingerprint procedure; on
-any failure, stop before `orchestrate` or another daily-plan interface.
-
 When this skill is used, invoke `orchestrate`. To force regeneration of an existing plan, pass `--forced`.
 
 Data sources: `online-calendar` (schedule), `get-weather` (forecast), `list-manager` (todo/triage), `cloud-files` (plan persistence).

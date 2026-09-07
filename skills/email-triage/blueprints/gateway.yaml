@@ -1,13 +1,7 @@
 content:
 - SKILL\.md
 - tests/test_llm_routing\.py
-dependencies:
-- blueprint:
-    base: repository-root
-    path: skills/bootstrap-dispatcher-runtime/blueprints/gateway.yaml
-  reason: Repair only email-triage's residual declaration before triage routing.
-  source: bootstrap-dispatcher-runtime.source.gateway
-  version: 1
+dependencies: []
 description: Owns the primary email-triage instructions and routes a matching user
   request to the detailed triage workflow.
 gateway:
@@ -20,8 +14,6 @@ interfaces:
     - SKILL\.md
     - tests/test_llm_routing\.py
     uses_interfaces:
-    - interface: bootstrap-dispatcher-runtime.interface.repair-selected-packages
-      version: 1
     - interface: email-triage.source.instructions-triage.interface.triage
       version: 2
     - interface: email-triage._rtx.interface.fetch-filtered-envelopes
@@ -116,8 +108,6 @@ interfaces:
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
-- interface: bootstrap-dispatcher-runtime.interface.repair-selected-packages
-  version: 1
 - interface: email-triage.source.instructions-triage.interface.triage
   version: 2
 - interface: email-triage._rtx.interface.fetch-filtered-envelopes

@@ -9,20 +9,12 @@ gateway:
   path: instructions/setup.md
 content:
 - instructions/setup\.md
-dependencies:
-- blueprint:
-    base: repository-root
-    path: skills/bootstrap-dispatcher-runtime/blueprints/gateway.yaml
-  source: bootstrap-dispatcher-runtime.source.gateway
-  version: 1
-  reason: Repair this setup owner's selected-Python declaration before runtime calls.
+dependencies: []
 interfaces:
   email-client.source.setup.interface.setup:
     content:
     - instructions/setup\.md
     uses_interfaces:
-    - interface: bootstrap-dispatcher-runtime.interface.repair-selected-packages
-      version: 1
     - interface: connect-google._rtx.interface.shared-credential
       version: 1
     - interface: email-client._rtx.interface.accounts-list
@@ -71,8 +63,6 @@ interfaces:
     description: Configure the Gmail account, bind the selected shared credential, and verify IMAP and SMTP authentication.
     version: 1
 uses_interfaces:
-- interface: bootstrap-dispatcher-runtime.interface.repair-selected-packages
-  version: 1
 - interface: connect-google._rtx.interface.shared-credential
   version: 1
 - interface: email-client._rtx.interface.accounts-list

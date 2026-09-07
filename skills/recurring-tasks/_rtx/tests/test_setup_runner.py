@@ -18,14 +18,13 @@ def test_setup_entrypoint_delegates_to_managed_control(monkeypatch):
     delegated.assert_called_once_with("setup", python=Path("/opt/python"), plugin_root=Path("/opt/plugin"))
 
 
-def test_gateway_composes_exact_task2_owner_and_selected_values():
+def test_gateway_declares_no_bootstrap_dependency():
     gateway = yaml.safe_load((ROOT / "skills/recurring-tasks/blueprints/gateway.yaml").read_text())
     setup = yaml.safe_load((ROOT / "skills/recurring-tasks/_rtx/blueprints/rtx-setup-runner.yaml").read_text())
     text = (ROOT / "skills/recurring-tasks/SKILL.md").read_text()
 
-    assert {item["source"] for item in gateway["dependencies"]} == {
-        "bootstrap-dispatcher-runtime.source.gateway"
-    }
-    assert '["PyYAML"]' in text and "byte-equal" in text
+    assert gateway["dependencies"] == []
+    authored = text.split("<!-- END BLUEPRINT INTERFACES -->", 1)[1]
+    assert "bootstrap-dispatcher-runtime" not in authored
     pattern = next(iter(setup["interfaces"].values()))["process_binding"]["patterns"][0]
     assert pattern["required_flags"] == ["--canonical-python", "--plugin-root"]

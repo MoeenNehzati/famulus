@@ -22,10 +22,6 @@ from officina.runtime.python_machine_interface import PythonMachineInterface
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "references" / "blueprint-schema" / "runtime_dependencies.json"
 GOOGLE_OWNERS = ("connect-google", "cloud-files", "online-calendar", "email-client")
-REPAIR_INTERFACE = {
-    "interface": "bootstrap-dispatcher-runtime.interface.repair-selected-packages",
-    "version": 1,
-}
 
 
 def _load_syncer():
@@ -89,11 +85,6 @@ def _task2_templates() -> dict[str, list[str]]:
             r"<!-- command:([a-z-]+) -->\n```json\n([^`]+)```", text
         )
     }
-
-
-def _authored_skill(owner: str) -> str:
-    text = (ROOT / "skills" / owner / "SKILL.md").read_text(encoding="utf-8")
-    return text.split("<!-- END BLUEPRINT INTERFACES -->", 1)[1]
 
 
 def _owner_packages(owner: str) -> tuple[str, ...]:
@@ -271,59 +262,6 @@ def test_google_owners_are_optional_and_declare_only_keyring() -> None:
         }
         assert module["installation_tier"] == "optional"
         assert packages == {"keyring"}
-
-
-def test_google_owner_gateways_require_selected_python_repair() -> None:
-    for owner in GOOGLE_OWNERS:
-        gateway = yaml.safe_load(
-            (ROOT / "skills" / owner / "blueprints" / "gateway.yaml").read_text(
-                encoding="utf-8"
-            )
-        )
-        assert REPAIR_INTERFACE in gateway["uses_interfaces"]
-        assert REPAIR_INTERFACE in next(iter(gateway["interfaces"].values()))["uses_interfaces"]
-
-
-def test_actual_owner_instructions_put_repair_before_external_boundaries() -> None:
-    boundary_markers = {
-        "connect-google": (
-            "1. Use `connect-google._rtx.interface.client-status`",
-            "`connect-google.interface.connect-services`",
-        ),
-        "cloud-files": (
-            "For shared Google setup or Drive reauthorization",
-            "Use `lists-read`, `lists-write`, `lists-delete`",
-        ),
-        "online-calendar": ("Use `online-calendar._rtx.interface.scripts-gcal`",),
-        "email-client": (
-            "Use `email-client._rtx.interface.mail-list`",
-            "For shared Google setup or Gmail reauthorization",
-        ),
-    }
-    repair_marker = "`bootstrap-dispatcher-runtime.interface.repair-selected-packages`"
-
-    for owner, markers in boundary_markers.items():
-        authored = _authored_skill(owner)
-        repair_index = authored.index(repair_marker)
-        assert all(repair_index < authored.index(marker) for marker in markers)
-        repair_paragraph = next(
-            paragraph
-            for paragraph in authored.split("\n\n")
-            if repair_marker in paragraph
-        )
-        assert repair_paragraph.startswith(("Before ", "\nBefore "))
-        assert "[\"keyring\"]" in repair_paragraph
-        assert "failure" in repair_paragraph.casefold()
-
-
-def test_generated_google_owner_interfaces_expose_selected_python_repair() -> None:
-    syncer = _load_syncer()
-    blueprints = syncer.load_blueprints()
-
-    for owner in GOOGLE_OWNERS:
-        blueprint = blueprints[owner]
-        block = syncer.generated_interface_block(owner, blueprint.repository_graph)
-        assert "`bootstrap-dispatcher-runtime.interface.repair-selected-packages@1`" in block
 
 
 def test_core_does_not_own_google_packages() -> None:

@@ -28,10 +28,6 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
     {"options": {}, "positionals": ["arxiv-id", "output-dir"], "stdin": null}
     Required options: []; positional arity: 1..2; stdin: forbidden
 
-Instruction Interfaces:
-
-These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `bootstrap-dispatcher-runtime.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact dispatcher runtime without MCP.
 <!-- END BLUEPRINT INTERFACES -->
 # PDF to Markdown
 
@@ -64,12 +60,6 @@ If LaTeX source found anywhere: download, extract, done.
 ## Step 2 — PDF fallback via `marker_single`
 
 If no LaTeX source found, convert the PDF directly.
-
-Only after selecting this PDF/Marker fallback, follow
-`bootstrap-dispatcher-runtime.interface.repair-selected-packages` for this owner's exact
-declaration `["marker-pdf"]`. Complete the full Task 2 fingerprint procedure; on any
-failure, stop before probing Marker models or running `marker_single`. Source-only success
-must not invoke this repair.
 
 **Before running:** check whether models are cached using the `scripts-check-marker-models` interface.
 If any models are missing, warn the user: "Running marker will download missing models (~3GB total to `~/.cache/datalab/models/`). Proceed?" Do not run `marker_single` until confirmed.

@@ -93,7 +93,6 @@ def test_certifier_gateway_orchestrates_audits_without_default_interface(
         drift_interface,
         "node-certify._rtx.interface.certify",
         "node-certify._rtx.interface.semantic-audit-scheduler",
-        "bootstrap-dispatcher-runtime.interface.repair-selected-packages",
     }
 
     assert gateway["interfaces"] == {}

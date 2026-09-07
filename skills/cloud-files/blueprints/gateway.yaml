@@ -1,12 +1,6 @@
 content:
 - SKILL\.md
-dependencies:
-- blueprint:
-    base: repository-root
-    path: skills/bootstrap-dispatcher-runtime/blueprints/gateway.yaml
-  reason: Repair only the Drive-owner keyring declaration in the selected Python.
-  source: bootstrap-dispatcher-runtime.source.gateway
-  version: 1
+dependencies: []
 description: Owns the LLM-facing cloud-files instructions and routes storage requests
   to caller-scoped machine interfaces.
 gateway:
@@ -18,8 +12,6 @@ interfaces:
     content:
     - SKILL\.md
     uses_interfaces:
-    - interface: bootstrap-dispatcher-runtime.interface.repair-selected-packages
-      version: 1
     - interface: connect-google.interface.default
       version: 1
     - interface: cloud-files._rtx.interface.lists-delete
@@ -112,8 +104,6 @@ interfaces:
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
-- interface: bootstrap-dispatcher-runtime.interface.repair-selected-packages
-  version: 1
 - interface: connect-google.interface.default
   version: 1
 - interface: cloud-files._rtx.interface.lists-delete

@@ -1,21 +1,16 @@
 content: [SKILL\.md]
 dependencies:
-- blueprint: {base: repository-root, path: skills/bootstrap-dispatcher-runtime/blueprints/gateway.yaml}
-  reason: Follows the selected-owner exact-Python checks with empty package actions as no-ops.
-  source: bootstrap-dispatcher-runtime.source.gateway
-  version: 1
 - blueprint: {base: module-root, path: _rtx/blueprints/agent-launchers.yaml}
   reason: Applies the explicit subset using the already-selected executable and plugin root.
   source: install-launchers._rtx.source.agent-launchers
   version: 1
-description: Composes selected-environment checks and the empty-package no-op with explicit optional launcher setup.
+description: Applies the explicit subset of optional launcher setup using the already-selected executable and plugin root.
 gateway: {language: Markdown, path: SKILL.md}
 id: install-launchers.source.gateway
 interfaces:
   install-launchers.source.gateway.interface.default:
     content: [SKILL\.md]
     uses_interfaces:
-    - {interface: bootstrap-dispatcher-runtime.interface.repair-selected-packages, version: 1}
     - {interface: install-launchers._rtx.interface.agent-launchers, version: 1}
     contract:
       arguments:
@@ -82,7 +77,6 @@ interfaces:
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
-- {interface: bootstrap-dispatcher-runtime.interface.repair-selected-packages, version: 1}
 - {interface: install-launchers._rtx.interface.agent-launchers, version: 1}
 version: 1
 maturity: stable

@@ -735,7 +735,7 @@ interfaces:
     contract:
       arguments:
         operation: {description: Install or remove the wakeup-owned integration., required: true, sensitivity: public, type: {kind: string}}
-        canonical-python: {description: Canonical Task 2 Python executable for setup., required: false, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+        canonical-python: {description: Canonical selected Python executable for setup., required: false, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
         plugin-root: {description: Current selected Famulus plugin root for setup., required: false, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
         bin-dir: {description: Platform command directory., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
         native-root: {description: Platform user-registration directory., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}

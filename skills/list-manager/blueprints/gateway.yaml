@@ -1,12 +1,6 @@
 content:
 - SKILL\.md
-dependencies:
-- blueprint:
-    base: repository-root
-    path: skills/bootstrap-dispatcher-runtime/blueprints/gateway.yaml
-  reason: Repair only list-manager's residual declaration before local or cloud list work.
-  source: bootstrap-dispatcher-runtime.source.gateway
-  version: 1
+dependencies: []
 description: LLM-facing routing and safety instructions for reading and mutating personal
   lists through the module's machine interfaces.
 gateway:
@@ -18,8 +12,6 @@ interfaces:
     content:
     - SKILL\.md
     uses_interfaces:
-    - interface: bootstrap-dispatcher-runtime.interface.repair-selected-packages
-      version: 1
     - interface: list-manager._rtx.interface.beautify-list
       version: 1
     - interface: list-manager._rtx.interface.cloud-create-entry
@@ -124,8 +116,6 @@ interfaces:
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
-- interface: bootstrap-dispatcher-runtime.interface.repair-selected-packages
-  version: 1
 - interface: list-manager._rtx.interface.beautify-list
   version: 1
 - interface: list-manager._rtx.interface.cloud-create-entry

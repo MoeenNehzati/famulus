@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import importlib.util
-import json
 import os
 import re
 import subprocess
@@ -98,81 +97,6 @@ def test_blank_selection_is_effect_free(tmp_path: Path) -> None:
         home=home,
     ) is None
     assert not home.exists()
-
-
-def _task2_templates() -> dict[str, list[str]]:
-    text = (ROOT / "skills" / "bootstrap-dispatcher-runtime" / "SKILL.md").read_text()
-    return {
-        name: json.loads(payload)
-        for name, payload in re.findall(
-            r"<!-- command:([a-z-]+) -->\n```json\n([^`]+)```", text
-        )
-    }
-
-
-def test_empty_packages_execute_mandatory_task2_commands_without_pip_install(
-    tmp_path: Path,
-) -> None:
-    templates = _task2_templates()
-    selected_environment = tmp_path / "Selected Python Environment"
-    subprocess.run(
-        [sys.executable, "-m", "venv", str(selected_environment)], check=True
-    )
-    bin_dir = selected_environment / ("Scripts" if os.name == "nt" else "bin")
-    environment = {**os.environ, "PATH": str(bin_dir)}
-    calls: list[list[str]] = []
-
-    def execute(name: str, canonical: str | None = None) -> str:
-        argv = [
-            canonical
-            if token in ("${canonical_executable}", "${candidate}")
-            else token
-            for token in templates[name]
-        ]
-        assert "${selected_packages}" not in argv
-        calls.append(argv)
-        return subprocess.run(
-            argv,
-            env=environment,
-            check=True,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-        ).stdout.strip()
-
-    venv_python = bin_dir / ("python.exe" if os.name == "nt" else "python")
-    first = json.loads(execute("candidate-fingerprint", str(venv_python)))
-    canonical = first["executable"]
-    assert Path(canonical).is_absolute()
-    assert first["prefix"] != first["base_prefix"]
-    assert execute("pip-check", canonical).startswith("pip ")
-    assert execute("target-check", canonical) == "normal install target is writable"
-    final = json.loads(execute("candidate-fingerprint", canonical))
-    assert final == first
-
-    plugin = Path("/tmp/Selected Plugin Ω")
-    forwarded = {
-        "canonical_python": Path(first["executable"]),
-        "plugin_root": plugin,
-        "agents": ["assistant"],
-    }
-
-    assert calls[0][0] == str(venv_python)
-    assert [call[0] for call in calls[1:]] == [canonical, canonical, canonical]
-    assert all(Path(call[0]).is_absolute() for call in calls)
-    assert not any(call[0] in {"python", "python3", "py"} for call in calls)
-    assert not any(
-        call[1:3] == ["-m", "pip"] and "install" in call for call in calls
-    )
-    assert forwarded == {
-        "canonical_python": Path(canonical),
-        "plugin_root": plugin,
-        "agents": ["assistant"],
-    }
-    text = SKILL.read_text()
-    assert "successful\nno-ops" in text
-    assert "do not invoke either `pip install` command" in text
-    assert "empty" in text and "canonical" in text and "selected plugin root" in text
 
 
 # famulus-skip: category=platform-contract; reason=POSIX launchers cannot execute on Windows; alternate=controlled Windows adapter test covers argv quoting
@@ -280,7 +204,6 @@ def test_skill_blueprint_has_single_instruction_owner_and_exact_edges() -> None:
     assert len(gateway["interfaces"]) == 1
     edges = {dependency["source"] for dependency in gateway["dependencies"]}
     assert edges == {
-        "bootstrap-dispatcher-runtime.source.gateway",
         "install-launchers._rtx.source.agent-launchers",
     }
     assert not (ROOT / "skills" / "install-launchers" / "instructions").exists()

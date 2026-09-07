@@ -9,20 +9,12 @@ gateway:
   path: instructions/setup.md
 content:
 - instructions/setup\.md
-dependencies:
-- blueprint:
-    base: repository-root
-    path: skills/bootstrap-dispatcher-runtime/blueprints/gateway.yaml
-  source: bootstrap-dispatcher-runtime.source.gateway
-  version: 1
-  reason: Repair connect-google's own runtime declaration before Google setup.
+dependencies: []
 interfaces:
   connect-google.source.setup.interface.setup:
     content:
     - instructions/setup\.md
     uses_interfaces:
-    - interface: bootstrap-dispatcher-runtime.interface.repair-selected-packages
-      version: 1
     - interface: connect-google._rtx.interface.client-status
       version: 1
     - interface: connect-google._rtx.interface.install-client
@@ -71,8 +63,6 @@ interfaces:
     description: Establish the shared Google OAuth client and selected Famulus Google credential.
     version: 1
 uses_interfaces:
-- interface: bootstrap-dispatcher-runtime.interface.repair-selected-packages
-  version: 1
 - interface: connect-google._rtx.interface.client-status
   version: 1
 - interface: connect-google._rtx.interface.install-client

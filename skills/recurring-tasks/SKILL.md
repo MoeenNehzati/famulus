@@ -75,10 +75,6 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
     {"options": {"--lines": "N"}, "positionals": ["job-name"], "stdin": null}
     Required options: []; positional arity: 1..1; stdin: forbidden
 
-Instruction Interfaces:
-
-These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
-- `bootstrap-dispatcher-runtime.interface.repair-selected-packages@1` — Repair the core or one caller-owned package declaration in the exact dispatcher runtime without MCP.
 <!-- END BLUEPRINT INTERFACES -->
 
 # Recurring Tasks
@@ -88,15 +84,6 @@ state and the native per-user scheduler. Making this skill available does not
 create, enable, or run a job.
 
 ## Context and ownership
-
-Use the host-loaded
-`bootstrap-dispatcher-runtime.interface.repair-selected-packages` procedure for
-feature `recurring-tasks` and the exact deduplicated declaration `["PyYAML"]`.
-Run its complete initial literal-`python` fingerprint, pip/installability and
-target-writability checks, repair and dry-run steps, and final fingerprint.
-Require the final fingerprint to be byte-equal to the initial fingerprint.
-Retain its canonical absolute executable; do not select or repair another
-Python.
 
 Resolve the current selected plugin root from the host-loaded location of this
 skill. Invoke `scripts-setup` with that root and the retained canonical Python.
