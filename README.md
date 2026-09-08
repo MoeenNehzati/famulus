@@ -115,27 +115,18 @@ codex plugin marketplace add MoeenNehzati/famulus --json
 codex plugin add famulus@nullkit --json
 ```
 
-Restart the host afterwards so it loads the newly installed plugin.
+After installation finishes, start Codex or open a new Claude Code session so
+the host loads the plugin.
 
 ### 2. Set up the dispatcher runtime
 
-Every Famulus skill runs through the dispatcher server, and the dispatcher
-executes each skill's code with its own Python. Giving it a runtime of its own
-is the second installation step.
+In that first session, ask the assistant to use
+`bootstrap-dispatcher-runtime`, then restart the host.
 
-Confirm that `python` is Python 3.11 or newer and that `python -m pip` works.
-
-Then ask the assistant to use `bootstrap-dispatcher-runtime` whenever `python` is
-missing, older than 3.11, or an interpreter you would rather Famulus left
-alone. It verifies that command, resolves Famulus's platform-native runtime
-location, builds it, installs only the declared packages, and reports what is
-left for you to do. Ask for it again later whenever Famulus says a package
-it needs is unavailable: because the dispatcher runs every skill with that one
-interpreter, a skill's own dependency is installed there too.
-
-It never installs Python and never edits your configuration. If nothing on the
-machine is Python 3.11 or newer, it says so and asks you to install one and
-give it the path.
+Bootstrap is specifically for the case where the `famulus_dispatcher` MCP
+server cannot start because its dedicated Python runtime is missing. It
+prepares that environment, which runs the Python code used by Famulus skills.
+After the restart, `famulus_dispatcher` can start with it.
 
 See [Setting up Famulus](docs/setup.md) for the full boundary.
 
