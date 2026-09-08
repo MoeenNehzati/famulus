@@ -36,12 +36,14 @@ def test_missing_runtime_reuses_launcher_diagnosis(tmp_path: Path) -> None:
         environment={"XDG_DATA_HOME": str(data_home)}, home=tmp_path
     )
 
-    expected_python = (
-        data_home
-        / "famulus"
-        / "dispatcher-runtime"
-        / "venv"
-        / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+    if sys.platform == "darwin":
+        expected_root = tmp_path / "Library" / "Application Support" / "Famulus"
+    elif sys.platform == "win32":
+        expected_root = tmp_path / "AppData" / "Local" / "Famulus"
+    else:
+        expected_root = data_home / "famulus"
+    expected_python = expected_root / "dispatcher-runtime" / "venv" / (
+        "Scripts/python.exe" if sys.platform == "win32" else "bin/python"
     )
     assert diagnosis == (
         "error: Famulus MCP startup's dedicated dispatcher runtime is missing at "
