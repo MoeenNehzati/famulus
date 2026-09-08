@@ -229,6 +229,7 @@
         path.classList.remove("filter-dimmed");
         path.classList.toggle("filter-match", queryActive && edgeMatchesSearch(edge));
         if (fails) path.style.display = "none";
+        syncEdgePointerProxy(path);
         syncEdgePresentationVisibilityForPath(path);
         const arrow = arrowForPath(path);
         if (arrow) {

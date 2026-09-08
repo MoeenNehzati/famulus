@@ -307,6 +307,81 @@ def test_blueprint_payload_emits_first_class_presentation_nodes() -> None:
     }
 
 
+def test_blueprint_payload_uses_presentation_for_derived_edges() -> None:
+    payload = build_payload_from_repository_graph(
+        _presentation_node_graph(), repo_root=REPO_ROOT
+    )
+
+    assert payload["ui"]["edge_presentation"] == {
+        "facets": [
+            {
+                "id": "derivation",
+                "label": "Derivation",
+                "field": "derived",
+                "variants": [
+                    {
+                        "id": "derived",
+                        "equals": True,
+                        "label": "Derived",
+                        "description": "Composed through one or more omitted nodes.",
+                        "style": {"line_pattern": "dashed"},
+                    }
+                ],
+            }
+        ]
+    }
+    assert "dependency" in payload["ui"]["edge_styles"]
+    assert not any(
+        edge_type.startswith("indirectly-")
+        for edge_type in payload["ui"]["edge_styles"]
+    )
+
+
+def test_blueprint_payload_consolidates_module_routes_and_preserves_provenance() -> None:
+    root = BlueprintNode("root", "module", 1, REPO_ROOT, REPO_ROOT / "root.yaml", None, {})
+    child = BlueprintNode("root.child", "module", 1, REPO_ROOT, REPO_ROOT / "child.yaml", None, {})
+    leaf = BlueprintNode("root.child.leaf", "module", 1, REPO_ROOT, REPO_ROOT / "leaf.yaml", None, {})
+    graph = RepositoryBlueprintGraph(
+        nodes={node.node_id: node for node in (root, child, leaf)},
+        node_edges=(
+            BlueprintEdge("routes-child-namespace", root.node_id, child.node_id, 1),
+            BlueprintEdge("routes-terminal-module", root.node_id, leaf.node_id, 1),
+        ),
+        exports={},
+        export_edges=(),
+        helper_edges=(),
+        certification_edges=(),
+        module_sources={node.node_id: () for node in (root, child, leaf)},
+        module_parents={root.node_id: None, child.node_id: root.node_id, leaf.node_id: child.node_id},
+        module_children={root.node_id: (child.node_id,), child.node_id: (leaf.node_id,), leaf.node_id: ()},
+        module_local_segments={child.node_id: "child", leaf.node_id: "leaf"},
+        schema_version=6,
+    )
+
+    payload = build_payload_from_repository_graph(graph, repo_root=REPO_ROOT)
+    root_edges = next(
+        entity["connects_to"] for entity in payload["entities"] if entity["id"] == root.node_id
+    )
+
+    assert [edge["type"] for edge in root_edges] == ["routes-module", "routes-module"]
+    assert {edge["metadata"]["relation"] for edge in root_edges} == {
+        "routes-child-namespace",
+        "routes-terminal-module",
+    }
+    assert {category["id"] for category in payload["edge_categories"]} == {
+        "routes-module"
+    }
+    route_category = next(
+        category
+        for category in payload["edge_categories"]
+        if category["id"] == "routes-module"
+    )
+    assert route_category["label"] == "Routes module"
+    assert route_category["description"] == (
+        "Routes a namespace through a child or terminal module."
+    )
+
+
 def test_blueprint_presentation_nodes_respect_selected_skill_scope() -> None:
     payload = build_payload_from_repository_graph(
         _presentation_node_graph(), repo_root=REPO_ROOT, skills=("alpha",)

@@ -106,9 +106,15 @@ def test_containment_edges_reach_both_endpoint_boundaries() -> None:
             const layerIds = Array.from(document.getElementById("graph-svg").children)
               .filter(element => element.tagName.toLowerCase() === "g")
               .map(element => element.id);
-            const expectedLayers = ["presentation-node-layer", "container-layer", "edge-layer", "node-layer"];
+            const expectedLayers = ["edge-layer", "presentation-node-layer", "container-layer", "edge-interaction-layer", "node-layer"];
             if (JSON.stringify(layerIds) !== JSON.stringify(expectedLayers)) {
               throw new Error(`unexpected graph layer order: ${layerIds.join(",")}`);
+            }
+            const containerCover = document.querySelector(
+              '[data-node-id="parent-out"] .node-edge-cover'
+            );
+            if (containerCover?.getAttribute("fill-opacity") !== "0.78") {
+              throw new Error("container does not attenuate crossing edges");
             }
             if (document.querySelector("[data-edge-occlusion-mask], .edge-path[mask], .edge-arrow[mask]")) {
               throw new Error("edge occlusion resources remain");
@@ -117,6 +123,19 @@ def test_containment_edges_reach_both_endpoint_boundaries() -> None:
             const edge = document.querySelector(
               '.edge-path[data-source-node-id="parent-out"][data-target-node-id="parent-out.child"]'
             );
+            document.querySelectorAll(".toolbar-btn").forEach(button => { button.style.display = "none"; });
+            const screenMatrix = edge.getScreenCTM();
+            const pointerTargets = [0.1, 0.25, 0.4, 0.6, 0.75, 0.9].map(fraction => {
+              const point = edge.getPointAtLength(edge.getTotalLength() * fraction);
+              const screenPoint = new DOMPoint(point.x, point.y).matrixTransform(screenMatrix);
+              return document.elementFromPoint(screenPoint.x, screenPoint.y);
+            });
+            if (!pointerTargets.some(target => target?.dataset.edgeId === edge.dataset.edgeId)) {
+              const proxy = document.querySelector(`.edge-pointer-proxy[data-edge-id="${edge.dataset.edgeId}"]`);
+              const hits = pointerTargets.map(target => `${target?.tagName}.${target?.className?.baseVal || target?.className || ""}`).join(",");
+              throw new Error(`contained edge has no pointer-accessible segment; hits=${hits}; proxy=${proxy ? `${getComputedStyle(proxy).stroke}/${getComputedStyle(proxy).pointerEvents}` : "missing"}`);
+            }
+            const pointerTarget = pointerTargets.find(target => target?.dataset.edgeId === edge.dataset.edgeId);
             child.dispatchEvent(new MouseEvent("mouseenter", {bubbles: true}));
             for (let index = 0; index < 20; index += 1) {
               child.dispatchEvent(new MouseEvent("mousemove", {
@@ -132,8 +151,11 @@ def test_containment_edges_reach_both_endpoint_boundaries() -> None:
             }
             child.classList.remove("selected", "filter-match");
             child.dispatchEvent(new MouseEvent("mouseleave", {bubbles: true}));
-            edge.dispatchEvent(new MouseEvent("mouseenter", {bubbles: true}));
-            edge.dispatchEvent(new MouseEvent("mouseleave", {bubbles: true}));
+            pointerTarget.dispatchEvent(new MouseEvent("mouseenter", {bubbles: true}));
+            if (hoveredEdgePath !== edge || tooltip.style.display === "none") {
+              throw new Error("pointer proxy did not activate the semantic edge");
+            }
+            pointerTarget.dispatchEvent(new MouseEvent("mouseleave", {bubbles: true}));
             if (visibilityApplicationCount !== 0) {
               throw new Error(`ordinary hover triggered ${visibilityApplicationCount} global visibility passes`);
             }
@@ -155,7 +177,10 @@ def test_containment_edges_reach_both_endpoint_boundaries() -> None:
         html,
         virtual_time_budget=12000,
     )
-    assert 'data-test-status="PASS"' in result.stdout, result.stdout[-1000:]
+    marker = 'data-test-status="'
+    start = result.stdout.find(marker)
+    status = result.stdout[start + len(marker) :].split('"', 1)[0] if start >= 0 else "missing"
+    assert status == "PASS", status
 
 
 def test_full_graph_has_no_edge_occlusion_resources() -> None:

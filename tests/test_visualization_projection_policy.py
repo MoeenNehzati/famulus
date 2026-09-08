@@ -80,7 +80,16 @@ def test_blueprint_semantics_specialize_rules_to_scoped_edge_types() -> None:
     }
     assert "helper-dependency" not in referenced
     assert any(
-        outcome["type"] == "indirectly-depends-on"
+        outcome == {"type": "dependency", "fidelity": "degraded"}
         for rule in rules
         for outcome in rule["outcomes"]
     )
+    assert not any(
+        outcome["type"].startswith("indirectly-")
+        for rule in rules
+        for outcome in rule["outcomes"]
+    )
+    assert {
+        (item["stronger_type"], tuple(item["weaker_types"]))
+        for item in semantics["subsumptions"]
+    } == {("depends-on-source", ("dependency",))}

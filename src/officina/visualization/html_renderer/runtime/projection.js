@@ -276,23 +276,20 @@
       const projected = Array.from(rendered.values()).filter(edge => !isHiddenEdgeType(edge));
       const byEndpoints = new Map();
       projected.forEach(edge => {
-        const key = JSON.stringify([edge.source, edge.target, edgePresentationSignature(edge)]);
+        const key = JSON.stringify([edge.source, edge.target]);
         if (!byEndpoints.has(key)) byEndpoints.set(key, []);
         byEndpoints.get(key).push(edge);
       });
       const retained = projected.filter(edge => {
-        const peers = byEndpoints.get(JSON.stringify([
-          edge.source,
-          edge.target,
-          edgePresentationSignature(edge),
-        ])) || [];
+        const peers = byEndpoints.get(JSON.stringify([edge.source, edge.target])) || [];
         const fidelityRank = candidate => candidate.derived && candidate.metadata?.projection?.fidelity === "degraded" ? 0 : 1;
         const dominator = peers.find(peer => {
           if (peer === edge) return false;
           const sameType = String(peer.type) === String(edge.type);
           const strongerType = (subsumedTypesByType.get(String(peer.type)) || new Set()).has(String(edge.type));
           const noWorseFidelity = fidelityRank(peer) >= fidelityRank(edge);
-          const strict = strongerType || fidelityRank(peer) > fidelityRank(edge);
+          const strict = strongerType || (sameType && !peer.derived && edge.derived)
+            || fidelityRank(peer) > fidelityRank(edge);
           return (sameType || strongerType) && noWorseFidelity && strict;
         });
         if (!dominator) return true;

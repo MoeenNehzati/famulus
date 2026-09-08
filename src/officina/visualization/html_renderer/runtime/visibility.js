@@ -129,6 +129,7 @@
           pathEl.style.opacity = "0.96";
           pathEl.style.display = "";
         }
+        syncEdgePointerProxy(pathEl);
         syncEdgePresentationVisibilityForPath(pathEl);
         syncArrowheadVisibilityForPath(pathEl);
         });

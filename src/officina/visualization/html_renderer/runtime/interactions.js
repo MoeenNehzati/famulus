@@ -67,7 +67,7 @@
       tooltip.style.display = "none";
     }
 
-    function bindEdgeHover(pathEl, edge) {
+    function bindEdgeHover(pathEl, edge, pointerProxy = null) {
       pathEl.setAttribute("tabindex", "0");
       pathEl.setAttribute("role", "button");
       pathEl.setAttribute("aria-label", edgeTooltipText(edge));
@@ -77,28 +77,37 @@
         pathEl.dispatchEvent(new MouseEvent("click", {bubbles: true}));
       });
       const baseColor = pathEl.getAttribute("stroke") || edgeColorForTarget(edge.target);
-      pathEl.addEventListener("mouseenter", event => {
-        if (hoveredEdgePath && hoveredEdgePath !== pathEl) {
-          clearEdgeEmphasis(hoveredEdgePath);
-        }
-        hoveredEdgePath = pathEl;
-        showTooltip(event, edgeTooltipText(edge));
-        emphasizeEdge(pathEl, "#1f2933");
+      [pathEl, pointerProxy].filter(Boolean).forEach(pointerEl => {
+        pointerEl.addEventListener("mouseenter", event => {
+          if (hoveredEdgePath && hoveredEdgePath !== pathEl) {
+            clearEdgeEmphasis(hoveredEdgePath);
+          }
+          hoveredEdgePath = pathEl;
+          showTooltip(event, edgeTooltipText(edge));
+          emphasizeEdge(pathEl, "#1f2933");
+        });
+        pointerEl.addEventListener("mousemove", event => {
+          positionTooltip(event);
+        });
+        pointerEl.addEventListener("mouseleave", () => {
+          if (hoveredEdgePath !== pathEl) return;
+          hoveredEdgePath = null;
+          hideTooltip();
+          clearEdgeEmphasis(pathEl);
+          pathEl.style.stroke = baseColor;
+        });
+        pointerEl.addEventListener("click", event => {
+          event.stopPropagation();
+          showEdgeDetails(edge);
+        });
       });
-      pathEl.addEventListener("mousemove", event => {
-        positionTooltip(event);
-      });
-      pathEl.addEventListener("mouseleave", () => {
-        if (hoveredEdgePath !== pathEl) return;
-        hoveredEdgePath = null;
-        hideTooltip();
-        clearEdgeEmphasis(pathEl);
-        pathEl.style.stroke = baseColor;
-      });
-      pathEl.addEventListener("click", event => {
-        event.stopPropagation();
-        showEdgeDetails(edge);
-      });
+    }
+
+    function syncEdgePointerProxy(pathEl) {
+      const proxy = pathEl?.__edgePointerProxy;
+      if (!proxy) return;
+      proxy.style.display = pathEl.style.display;
+      proxy.style.pointerEvents = pathEl.style.display === "none" ? "none" : "stroke";
     }
 
     function bindNodeInteractions(nodeEl, entity) {

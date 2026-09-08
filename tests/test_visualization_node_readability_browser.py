@@ -100,6 +100,11 @@ def test_default_nodes_use_readable_literal_producer_text() -> None:
                 "title": "Ignored legacy title two, deliberately different", "short_title": single_line_title,
                 "position": 2, "connects_to": [],
             },
+            {
+                "id": "short-title",
+                "type": "source", "category": "lemma", "short_title": "Short title",
+                "subtitle": "", "position": 3, "connects_to": [],
+            },
         ],
     }
     html = build_html_with_elk(doc).replace(
@@ -109,15 +114,19 @@ def test_default_nodes_use_readable_literal_producer_text() -> None:
         window.addEventListener("load", () => setTimeout(async () => {
           try {
             for (let attempt = 0; attempt < 200; attempt += 1) {
-              if (document.querySelectorAll("[data-node-id]").length === 3) break;
+              if (document.querySelectorAll("[data-node-id]").length === 4) break;
               await delay(20);
             }
             const node = document.querySelector('[data-node-id="alpha"]');
             const position = lastNodePositions.get("alpha");
             const label = node?.querySelector(".node-label");
             if (!node || !position || !label) throw new Error("rendered node is missing");
-            if (position.width < 291 || position.height < 99) {
+            if (position.width < 210 || position.height < 72) {
               throw new Error(`node dimensions are ${position.width}x${position.height}`);
+            }
+            const shortPosition = lastNodePositions.get("short-title");
+            if (shortPosition?.width !== 210 || shortPosition?.height !== 72) {
+              throw new Error(`short node dimensions are ${shortPosition?.width}x${shortPosition?.height}`);
             }
             const style = getComputedStyle(label);
             if (!style.fontFamily.includes("DejaVu Sans Condensed")) {
@@ -143,14 +152,14 @@ def test_default_nodes_use_readable_literal_producer_text() -> None:
             }
             const expectedBody = document.createElement("div");
             expectedBody.className = "node-fo-body";
-            Object.assign(expectedBody.style, {width: "max-content", height: "auto", minWidth: "291px", maxWidth: "416px", position: "absolute", visibility: "hidden"});
+            Object.assign(expectedBody.style, {width: "max-content", height: "auto", minWidth: "210px", maxWidth: "416px", position: "absolute", visibility: "hidden"});
             const expectedLabel = document.createElement("div");
             expectedLabel.className = "node-label";
             expectedLabel.textContent = "A producer-owned title deliberately long enough to wrap across several lines while remaining the only visible text in this graph cell for measurement";
             expectedBody.appendChild(expectedLabel);
             document.body.appendChild(expectedBody);
-            const singleLineWidth = Math.max(291, Math.ceil(expectedBody.getBoundingClientRect().width));
-            const singleLineHeight = Math.max(99, Math.ceil(expectedBody.scrollHeight));
+            const singleLineWidth = Math.max(210, Math.ceil(expectedBody.getBoundingClientRect().width));
+            const singleLineHeight = Math.max(72, Math.ceil(expectedBody.scrollHeight));
             expectedBody.remove();
             const emptyWidth = lastNodePositions.get("empty-subtitle")?.width;
             const missingWidth = lastNodePositions.get("missing-subtitle")?.width;

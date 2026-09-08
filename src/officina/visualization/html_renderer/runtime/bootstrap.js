@@ -212,8 +212,8 @@
     const leftPanelResize = document.getElementById("left-panel-resize");
     const rightPanelResize = document.getElementById("right-panel-resize");
     const svgEl = document.getElementById("graph-svg");
-    const DEFAULT_NODE_WIDTH = 291;
-    const DEFAULT_NODE_HEIGHT = 99;
+    const DEFAULT_NODE_WIDTH = 210;
+    const DEFAULT_NODE_HEIGHT = 72;
     const DEFAULT_CONTAINER_WIDTH = 252;
     const DEFAULT_CONTAINER_HEIGHT = 128;
     const MAX_CONTENT_NODE_WIDTH = 416;
@@ -272,7 +272,7 @@
         ? DEFAULT_CONTAINER_WIDTH
         : DEFAULT_NODE_WIDTH;
       const minimumHeight = presentationState.isContainer
-        ? (compactContainer ? 88 : DEFAULT_CONTAINER_HEIGHT)
+        ? (compactContainer ? DEFAULT_NODE_HEIGHT : DEFAULT_CONTAINER_HEIGHT)
         : DEFAULT_NODE_HEIGHT;
       body.style.width = "max-content";
       body.style.height = "auto";
@@ -295,6 +295,7 @@
     const presentationNodeLayer = document.getElementById("presentation-node-layer");
     const containerLayer = document.getElementById("container-layer");
     const edgeLayer = document.getElementById("edge-layer");
+    const edgeInteractionLayer = document.getElementById("edge-interaction-layer");
     const nodeLayer = document.getElementById("node-layer");
     const tooltip = document.getElementById("tooltip");
     const details = document.getElementById("details");

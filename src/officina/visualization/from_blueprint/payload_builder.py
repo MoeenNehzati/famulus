@@ -10,6 +10,7 @@ from typing import Any, Iterable, Mapping
 from officina.blueprints.graph import RepositoryBlueprintGraph
 from .catalog import (
     DETAIL_LEVELS,
+    EDGE_PRESENTATION,
     EDGE_STYLES,
     build_edge_categories,
     build_node_categories,
@@ -658,14 +659,23 @@ def build_payload_from_repository_graph(
         if mapped_source not in entities or mapped_target not in entities:
             continue
 
-        edge_metadata = {"provenance": provenance, "relation": relation, **metadata}
+        canonical_relation = relation
+        relation = {
+            "routes-child-namespace": "routes-module",
+            "routes-terminal-module": "routes-module",
+        }.get(relation, relation)
+        edge_metadata = {
+            "provenance": provenance,
+            "relation": canonical_relation,
+            **metadata,
+        }
         if outside_id is not None:
             edge_metadata = {
                 "boundary": True,
                 "outside_id": outside_id,
                 "outside_root": (mapped_source if mapped_source.startswith("boundary:") else mapped_target).removeprefix("boundary:"),
                 "provenance": provenance,
-                "relation": relation,
+                "relation": canonical_relation,
                 **metadata,
             }
         annotation = build_blueprint_edge_annotation(
@@ -673,7 +683,7 @@ def build_payload_from_repository_graph(
             root,
             source_id=source,
             target_id=target,
-            relation=relation,
+            relation=canonical_relation,
             provenance=provenance,
             metadata=metadata,
             scope_crossing=outside_id is not None,
@@ -733,7 +743,6 @@ def build_payload_from_repository_graph(
     )
 
     categories = build_node_categories(str(entity["category"]) for entity in ordered)
-    edge_categories = build_edge_categories(ordered)
     canonical_edge_types = {
         str(edge["type"])
         for entity in ordered
@@ -741,6 +750,15 @@ def build_payload_from_repository_graph(
         if isinstance(edge, Mapping) and "type" in edge
     }
     relation_semantics = build_relation_semantics(canonical_edge_types)
+    derived_edge_types = {
+        str(outcome["type"])
+        for rule in relation_semantics["transformations"]["node_omission"]["rules"]
+        for outcome in rule["outcomes"]
+    }
+    edge_categories = build_edge_categories(
+        ordered,
+        derived_types=derived_edge_types,
+    )
     presentation_nodes, presentation_node_controls = build_presentation_nodes(
         graph,
         repo_root=root,
@@ -765,6 +783,7 @@ def build_payload_from_repository_graph(
         "render_modes": ["architecture"],
         "default_mode": "architecture",
         "ui": {
+            "edge_presentation": EDGE_PRESENTATION,
             "edge_styles": EDGE_STYLES,
             "layout": {"rankdir": "LR"},
             "presentation_node_controls": presentation_node_controls,

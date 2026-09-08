@@ -1,6 +1,7 @@
     // ── Full ELK-based layout/render ─────────────────────────────────────────
 
     let paintVersion = 0;
+    let edgeVisualSerial = 0;
     let latestPaintPromise = Promise.resolve(), latestStructuralPromise = Promise.resolve();
     const lastEdgePaths = new Map();
 
@@ -49,6 +50,7 @@
       const path = createSvgElement("path");
       path.setAttribute("class", "edge-path");
       path.setAttribute("d", pathData);
+      path.id = `edge-visual-${++edgeVisualSerial}`;
       const edgeStyle = edgeStyleForType(edge.type);
       applyEdgeMetadataPresentation(path, edge, edgeStyle, edgeColorForTarget(edge.target));
       path.dataset.edgeId = edgePaintKey(edge);
@@ -65,10 +67,20 @@
         edgeLayer.appendChild(underlay);
       });
       edgeLayer.appendChild(path);
+      const pointerProxy = createSvgElement("use");
+      pointerProxy.setAttribute("class", "edge-pointer-proxy");
+      pointerProxy.setAttribute("href", `#${path.id}`);
+      pointerProxy.setAttribute("aria-hidden", "true");
+      pointerProxy.setAttribute("focusable", "false");
+      pointerProxy.setAttribute("opacity", "0");
+      pointerProxy.setAttribute("pointer-events", "stroke");
+      pointerProxy.dataset.edgeId = path.dataset.edgeId;
+      edgeInteractionLayer.appendChild(pointerProxy);
+      path.__edgePointerProxy = pointerProxy;
       const routeSample = pathPointsForArrow(path);
       syncEdgeMetadataPresentationGeometry(path, routeSample);
       attachArrowhead(path, routeSample);
-      bindEdgeHover(path, edge);
+      bindEdgeHover(path, edge, pointerProxy);
       return path;
     }
 
@@ -102,6 +114,7 @@
           });
           removeEdgePresentationResources(path);
           arrowForPath(path)?.remove();
+          path.__edgePointerProxy?.remove();
           path.remove();
         });
       });
@@ -172,7 +185,12 @@
           const edgeMetaKey = JSON.stringify(edge);
           let geometryCurrent = false;
           if (!path || path.dataset.edgeMetaKey !== edgeMetaKey) {
-            if (path) { removeEdgePresentationResources(path); arrowForPath(path)?.remove(); path.remove(); }
+            if (path) {
+              removeEdgePresentationResources(path);
+              arrowForPath(path)?.remove();
+              path.__edgePointerProxy?.remove();
+              path.remove();
+            }
             path = createRenderedEdge(edge, resolvedPathData);
             geometryCurrent = true;
           }
