@@ -253,7 +253,8 @@ def _copy_plugin(plugin_root: Path, *, include_graph: bool = False) -> None:
     shutil.copy2(CORE, plugin_root / CORE.name)
     shutil.copy2(REQUIREMENTS, plugin_root / REQUIREMENTS.name)
     shutil.copy2(ROOT / "officina.toml", plugin_root / "officina.toml")
-    shutil.copy2(ROOT / ".mcp.json", plugin_root / ".mcp.json")
+    shutil.copy2(ROOT / "plugin.json", plugin_root / "plugin.json")
+    shutil.copy2(ROOT / "mcp.json", plugin_root / "mcp.json")
     shutil.copytree(ROOT / "src", plugin_root / "src")
     shutil.copytree(
         ROOT / "skills",
@@ -261,14 +262,13 @@ def _copy_plugin(plugin_root: Path, *, include_graph: bool = False) -> None:
     )
     shutil.copytree(ROOT / "references", plugin_root / "references")
     shutil.copytree(ROOT / ".claude-plugin", plugin_root / ".claude-plugin")
-    shutil.copytree(ROOT / ".codex-plugin", plugin_root / ".codex-plugin")
     if include_graph:
         assert (plugin_root / "skills" / "math-dependency-graph").is_dir()
 
 
 def _declared_launch(host: str, plugin_root: Path) -> tuple[str, list[str], Path | None]:
-    manifest = _json(plugin_root / f".{host}-plugin" / "plugin.json")
     if host == "claude":
+        manifest = _json(plugin_root / ".claude-plugin" / "plugin.json")
         assert manifest["mcpServers"] == {
             "famulus_dispatcher": {
                 "command": "python",
@@ -283,20 +283,22 @@ def _declared_launch(host: str, plugin_root: Path) -> tuple[str, list[str], Path
         # Claude's loader.
         return "python", [str(plugin_root / "mcp_launcher.py")], None
 
-    assert manifest["mcpServers"] == "./.mcp.json"
-    servers = _json(plugin_root / manifest["mcpServers"])["mcpServers"]
+    manifest = _json(plugin_root / "plugin.json")
+    assert manifest["$schema"] == "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
+    servers = _json(plugin_root / "mcp.json")["mcpServers"]
     assert set(servers) == {"famulus_dispatcher"}
     declaration = servers["famulus_dispatcher"]
     assert declaration == {
+        "type": "stdio",
         "command": "python",
-        "args": ["mcp_launcher.py"],
-        "cwd": ".",
+        "args": ["${PLUGIN_ROOT}/mcp_launcher.py"],
+        "cwd": "${PLUGIN_ROOT}",
         "env": {
             "FAMULUS_HOST": "codex",
             "FAMULUS_PLUGIN_DATA": "${PLUGIN_DATA}",
         },
     }
-    return declaration["command"], declaration["args"], plugin_root
+    return declaration["command"], [str(plugin_root / "mcp_launcher.py")], plugin_root
 
 
 def _selected_environment(home: Path) -> dict[str, str]:
@@ -352,10 +354,7 @@ async def _invoke_through_mcp(host: str, plugin_root: Path, home: Path):
     command, args, cwd = _declared_launch(host, plugin_root)
     environment = _selected_environment(home)
     environment.update(
-        {
-            "FAMULUS_HOST": host,
-            "FAMULUS_PLUGIN_DATA": str(home / "plugin-data"),
-        }
+        {"FAMULUS_HOST": host, "FAMULUS_PLUGIN_DATA": str(home / "plugin-data")}
     )
     parameters = StdioServerParameters(
         command=command,
@@ -443,20 +442,25 @@ def _persistent_launch(host: str, plugin_root: Path, plugin_data: Path):
             value.replace("${CLAUDE_PLUGIN_ROOT}", str(plugin_root))
             for value in declaration["args"]
         ]
-        data_token = "${CLAUDE_PLUGIN_DATA}"
+        declared = {
+            key: value.replace("${CLAUDE_PLUGIN_DATA}", str(plugin_data))
+            for key, value in declaration["env"].items()
+        }
         cwd = None
     else:
-        declaration = _json(plugin_root / ".mcp.json")["mcpServers"][
+        declaration = _json(plugin_root / "mcp.json")["mcpServers"][
             "famulus_dispatcher"
         ]
-        args = declaration["args"]
-        data_token = "${PLUGIN_DATA}"
+        args = [
+            value.replace("${PLUGIN_ROOT}", str(plugin_root))
+            for value in declaration["args"]
+        ]
+        declared = {
+            key: value.replace("${PLUGIN_DATA}", str(plugin_data))
+            for key, value in declaration["env"].items()
+        }
         cwd = plugin_root
-    environment = {
-        name: value.replace(data_token, str(plugin_data))
-        for name, value in declaration["env"].items()
-    }
-    return declaration["command"], args, environment, cwd
+    return declaration["command"], args, declared, cwd
 
 
 async def _record_through_persistent_mcp(
@@ -772,10 +776,7 @@ async def _serve_graph_through_mcp(
     command, args, cwd = _declared_launch(host, plugin_root)
     environment = _selected_environment(home)
     environment.update(
-        {
-            "FAMULUS_HOST": host,
-            "FAMULUS_PLUGIN_DATA": str(home / "plugin-data"),
-        }
+        {"FAMULUS_HOST": host, "FAMULUS_PLUGIN_DATA": str(home / "plugin-data")}
     )
     parameters = StdioServerParameters(
         command=command,
@@ -1536,14 +1537,14 @@ def test_invoke_through_mcp_preserves_result_when_session_teardown_breaks(
     )
 
 
-def test_host_declarations_normalize_to_common_command_contract() -> None:
+def test_host_declarations_normalize_plugin_data_before_launcher() -> None:
     contract = _json(CORE)
     claude = _json(ROOT / ".claude-plugin" / "plugin.json")["mcpServers"][
         "famulus_dispatcher"
     ]
-    codex = _json(ROOT / ".mcp.json")["mcpServers"]["famulus_dispatcher"]
+    codex = _json(ROOT / "mcp.json")["mcpServers"]["famulus_dispatcher"]
 
-    assert not (ROOT / ("mcp" + ".json")).exists()
+    assert not (ROOT / (".mcp" + ".json")).exists()
     assert contract["command"] == "python"
     assert contract["args"] == ["mcp_launcher.py"]
     assert claude["command"] == codex["command"] == contract["command"]
@@ -1552,8 +1553,9 @@ def test_host_declarations_normalize_to_common_command_contract() -> None:
         "FAMULUS_HOST": "claude",
         "FAMULUS_PLUGIN_DATA": "${CLAUDE_PLUGIN_DATA}",
     }
-    assert codex["args"] == contract["args"]
-    assert codex["cwd"] == "."
+    assert codex["type"] == "stdio"
+    assert codex["args"] == ["${PLUGIN_ROOT}/" + contract["args"][0]]
+    assert codex["cwd"] == "${PLUGIN_ROOT}"
     assert codex["env"] == {
         "FAMULUS_HOST": "codex",
         "FAMULUS_PLUGIN_DATA": "${PLUGIN_DATA}",

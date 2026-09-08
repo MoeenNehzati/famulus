@@ -17,7 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "sync-release-version.py"
 MANIFESTS = (
     Path(".claude-plugin/plugin.json"),
-    Path(".codex-plugin/plugin.json"),
+    Path("plugin.json"),
 )
 
 
@@ -259,7 +259,7 @@ def test_synchronize_prepares_every_input_before_mutation(
         module.synchronize()
 
     assert str(malformed.value) == (
-        ".codex-plugin/plugin.json: malformed UTF-8 JSON: "
+        "plugin.json: malformed UTF-8 JSON: "
         "Expecting value: line 1 column 13 (char 12)"
     )
     assert reads == [Path("pyproject.toml"), MANIFESTS[0], MANIFESTS[1]]

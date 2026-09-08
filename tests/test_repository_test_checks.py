@@ -1363,9 +1363,10 @@ def test_precommit_hook_commits_synchronized_plugin_versions(
         '[project]\nname = "famulus-officina"\nversion = "0.1.0"\n',
         encoding="utf-8",
     )
-    for directory in (".claude-plugin", ".codex-plugin"):
-        target = repository.root / directory / "plugin.json"
-        target.parent.mkdir(parents=True)
+    manifests = (Path(".claude-plugin/plugin.json"), Path("plugin.json"))
+    for manifest in manifests:
+        target = repository.root / manifest
+        target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(
             '{\n  "name": "famulus",\n  "version": "0.1.0"\n}\n',
             encoding="utf-8",
@@ -1436,15 +1437,15 @@ def test_precommit_hook_commits_synchronized_plugin_versions(
     assert 'version = "1.2.3"' in (
         repository.root / "pyproject.toml"
     ).read_text(encoding="utf-8")
-    for directory in (".claude-plugin", ".codex-plugin"):
+    for manifest in manifests:
         assert json.loads(
-            repository.git("show", f"HEAD:{directory}/plugin.json").stdout
+            repository.git("show", f"HEAD:{manifest.as_posix()}").stdout
         )["version"] == "0.1.0"
         assert json.loads(
-            repository.git("show", f":{directory}/plugin.json").stdout
+            repository.git("show", f":{manifest.as_posix()}").stdout
         )["version"] == "0.1.0"
         assert json.loads(
-            (repository.root / directory / "plugin.json").read_text(encoding="utf-8")
+            (repository.root / manifest).read_text(encoding="utf-8")
         )["version"] == "0.1.0"
     assert os.environ["GIT_INDEX_FILE"] == str(ambient_index)
     assert not ambient_index.exists()
@@ -1463,16 +1464,16 @@ def test_precommit_hook_commits_synchronized_plugin_versions(
     assert 'version = "1.2.3"' in (
         repository.root / "pyproject.toml"
     ).read_text(encoding="utf-8")
-    for directory in (".claude-plugin", ".codex-plugin"):
+    for manifest in manifests:
         for reference in (
-            f"HEAD:{directory}/plugin.json",
-            f":{directory}/plugin.json",
+            f"HEAD:{manifest.as_posix()}",
+            f":{manifest.as_posix()}",
         ):
             assert json.loads(repository.git("show", reference).stdout)[
                 "version"
             ] == "1.2.3"
         assert json.loads(
-            (repository.root / directory / "plugin.json").read_text(encoding="utf-8")
+            (repository.root / manifest).read_text(encoding="utf-8")
         )["version"] == "1.2.3"
     assert os.environ["GIT_INDEX_FILE"] == str(ambient_index)
     assert not ambient_index.exists()

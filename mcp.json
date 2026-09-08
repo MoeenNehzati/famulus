@@ -1,9 +1,11 @@
 {
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
   "mcpServers": {
     "famulus_dispatcher": {
+      "type": "stdio",
       "command": "python",
-      "args": ["mcp_launcher.py"],
-      "cwd": ".",
+      "args": ["${PLUGIN_ROOT}/mcp_launcher.py"],
+      "cwd": "${PLUGIN_ROOT}",
       "env": {
         "FAMULUS_HOST": "codex",
         "FAMULUS_PLUGIN_DATA": "${PLUGIN_DATA}"

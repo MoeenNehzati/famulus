@@ -53,23 +53,16 @@ def test_dispatcher_context_defers_availability_check_until_first_use() -> None:
     assert "only when an executable interface is needed" in text
 
 
-def test_plugin_manifests_register_the_shared_hook_file_per_host() -> None:
-    """Break caught: one packaged host silently stops loading shared hooks.
-
-    Codex discovers nothing by convention, so its manifest must name the hook
-    file explicitly. Claude Code loads hooks/hooks.json automatically and
-    rejects the whole plugin when the manifest names it again ("Duplicate
-    hooks file detected"), so its manifest must leave the key out.
-    """
-    codex = json.loads(
-        (_REPO_ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8")
-    )
-    assert codex["hooks"] == "./hooks/hooks.json"
+def test_plugin_manifests_do_not_claim_unsupported_hook_registration() -> None:
+    """The shared hook is conventional for Claude but unsupported by Codex Agent Plugins."""
+    universal = json.loads((_REPO_ROOT / "plugin.json").read_text(encoding="utf-8"))
+    assert "extensions" not in universal
 
     claude = json.loads(
         (_REPO_ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
     )
     assert "hooks" not in claude
+    assert (_REPO_ROOT / "hooks" / "hooks.json").is_file()
 
 
 @pytest.mark.parametrize("plugin_root_variable", ["CLAUDE_PLUGIN_ROOT", "PLUGIN_ROOT"])

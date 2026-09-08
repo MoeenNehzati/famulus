@@ -63,7 +63,23 @@ codex plugin add famulus@nullkit --json
 ```
 
 Restart the host after installing the plugin so that it discovers the new
-skills.
+skills and MCP declaration.
+
+The two hosts use different native plugin manifests. Claude reads the inline
+`famulus_dispatcher` declaration from `.claude-plugin/plugin.json` and maps
+`${CLAUDE_PLUGIN_DATA}` to `FAMULUS_PLUGIN_DATA`. Codex reads the root Agent
+Plugins `plugin.json` and the conventional root `mcp.json`, which maps
+`${PLUGIN_DATA}` to the same normalized variable. Both declarations also pass
+an explicit `FAMULUS_HOST` and start `mcp_launcher.py`. The launcher consumes
+only this normalized host and plugin-data context; it does not translate
+host-native variables itself.
+
+This MCP registration is separate from lifecycle-hook registration. Claude
+currently discovers the packaged `hooks/hooks.json`. The tested Codex release
+accepts the root Agent Plugins MCP declaration but does not execute that
+packaged hook file, so Codex does not currently receive Famulus's automatic
+SessionStart diagnosis. See [LLM Lifecycle Hooks](lifecycle-hooks.md) for the
+current host boundary.
 
 ### 1.2 Verify the dispatcher runtime
 
