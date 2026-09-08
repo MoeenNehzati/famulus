@@ -222,9 +222,11 @@ def client_status(home: Path, *, secret_backend=None) -> dict[str, object]:
                 return {
                     **_result("needs-migration", "desktop", path),
                     "remediation": (
-                        "dispatcher --caller-skill connect-google "
-                        "connect-google._rtx.interface.install-client --from-json "
-                        "PRIVATE_DOWNLOADED_CLIENT.json --replace"
+                        "Call famulus_dispatcher.invoke with caller='connect-google', "
+                        "interface='connect-google._rtx.interface.install-client', "
+                        "version=1, and arguments={\"options\": "
+                        "{\"--from-json\": \"PRIVATE_DOWNLOADED_CLIENT.json\", "
+                        "\"--replace\": true}, \"positionals\": [], \"stdin\": null}."
                     ),
                 }
             load_authorization_client(home, secret_backend=secret_backend)

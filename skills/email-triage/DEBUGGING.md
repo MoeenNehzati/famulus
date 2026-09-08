@@ -71,16 +71,15 @@ Then invoke email-triage again to process emails from the past week.
 
 ### Check if the recurring job is running
 
-```bash
-# See active timers
-dispatcher --caller-skill recurring-tasks recurring-tasks._rtx.interface.scripts-status
+Use `famulus_dispatcher.invoke` with `caller: recurring-tasks`, `version: 1`,
+and one of these interface/argument pairs:
 
-# View email-triage job logs
-dispatcher --caller-skill recurring-tasks recurring-tasks._rtx.interface.scripts-view-logs email-triage --lines 50
-
-# Test the job immediately
-dispatcher --caller-skill recurring-tasks recurring-tasks._rtx.interface.scripts-test email-triage
-```
+- Active timers: `recurring-tasks._rtx.interface.scripts-status` with
+  `{"options": {}, "positionals": [], "stdin": null}`.
+- Email-triage logs: `recurring-tasks._rtx.interface.scripts-view-logs` with
+  `{"options": {"--lines": "50"}, "positionals": ["email-triage"], "stdin": null}`.
+- Immediate test: `recurring-tasks._rtx.interface.scripts-test` with
+  `{"options": {}, "positionals": ["email-triage"], "stdin": null}`.
 
 ### See detailed email decisions
 

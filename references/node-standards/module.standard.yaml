@@ -1,6 +1,6 @@
 schema_version: 6
 standard_version: 2.0.0
-revision: 16
+revision: 17
 id: node-standards.module
 canonical_path: references/node-standards/module.standard.yaml
 title: Module Standard
@@ -70,8 +70,8 @@ standards:
     - id: module-identities
       modality: required
       statement: Dispatch and runtime metadata use internal `caller_module_id` and `target_module_id`
-        identities. The host-facing `--caller-skill` compatibility is limited to discoverable parent callers
-        only; non-discoverable children and all internal routes assert exact module identities.
+        identities. Host agents call `famulus_dispatcher.invoke` with a discoverable parent module as
+        `caller`; non-discoverable children and all internal routes assert exact module identities.
       atomicity: pending
 - kind: family
   id: skill-guidelines.suggested-permissions

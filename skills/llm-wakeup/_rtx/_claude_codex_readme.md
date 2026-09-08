@@ -435,14 +435,16 @@ uses_interfaces:
   version: 1
 ```
 
-The caller then supplies only caller-visible arguments. The binding injects the
-corresponding `auto`, `infer`, or `schedule` subcommand:
+The caller then invokes `famulus_dispatcher.invoke` with `caller: CALLER`,
+`version: 1`, and one of these interface/argument pairs. The binding injects
+the corresponding `auto`, `infer`, or `schedule` subcommand:
 
-```bash
-dispatcher --caller-skill CALLER llm-wakeup._rtx.interface.auto-policy on claude SESSION
-dispatcher --caller-skill CALLER llm-wakeup._rtx.interface.infer-schedule --delay 2minutes
-dispatcher --caller-skill CALLER llm-wakeup._rtx.interface.explicit-schedule claude SESSION 1:40pm
-```
+- `llm-wakeup._rtx.interface.auto-policy` with
+  `{"options": {}, "positionals": ["on", "claude", "SESSION"], "stdin": null}`.
+- `llm-wakeup._rtx.interface.infer-schedule` with
+  `{"options": {"--delay": "2minutes"}, "positionals": [], "stdin": null}`.
+- `llm-wakeup._rtx.interface.explicit-schedule` with
+  `{"options": {}, "positionals": ["claude", "SESSION", "1:40pm"], "stdin": null}`.
 
 `allow_all_modules` permits any declared module caller; it does not bypass the
 required `uses_interfaces` edge.

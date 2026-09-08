@@ -1,6 +1,6 @@
 schema_version: 6
 standard_version: 1.0.0
-revision: 16
+revision: 17
 id: node-standards.behavioral-source
 canonical_path: references/node-standards/behavioral-source.standard.yaml
 title: Behavioral Source Standard
@@ -35,16 +35,13 @@ standards:
         dash-separated and contain no `.`.
   - kind: guidance
     id: skill-guidelines.canonical-interface-names.guidance-005
-    statement: 'The host-facing compatibility invocation form for a process-bound
-
-      export is permitted only for a discoverable parent caller:'
+    statement: 'A host agent invokes a process-bound export through
+      `famulus_dispatcher.invoke`; the declared caller must be a discoverable parent module:'
   - kind: guidance
     id: skill-guidelines.canonical-interface-names.example-001
-    statement: '```bash
-
-      dispatcher --caller-skill daily-plan list-manager._rtx.interface.read-list /tmp/todo.yaml
-
-      ```'
+    statement: 'Call `famulus_dispatcher.invoke` with `caller: daily-plan`,
+      `interface: list-manager._rtx.interface.read-list`, `version: 1`, and
+      `arguments: {"options": {}, "positionals": ["/tmp/todo.yaml"], "stdin": null}`.'
 - kind: family
   id: node-standards.behavioral-source-blueprint-authoring
   title: Behavioral-source blueprint authoring

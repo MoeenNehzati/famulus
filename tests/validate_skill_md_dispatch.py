@@ -178,7 +178,43 @@ def test_skill_text_diagnostics_are_exact_and_side_effect_free() -> None:
         ) == expected, label
 
 
-def test_two_process_exports_report_missing_commands_in_stable_order(
+def test_auxiliary_skill_markdown_dispatcher_command_is_rejected(
+    tmp_path: Path,
+) -> None:
+    skill = _copy_weather_module(tmp_path)
+    debugging = skill / "DEBUGGING.md"
+    debugging.write_text(
+        "Run `dispatcher --caller-skill get-weather target.interface.run`.\n",
+        encoding="utf-8",
+    )
+
+    errors = MOD.validate(tmp_path)
+
+    assert errors == [
+        f"{debugging}: skill documentation must not invoke dispatcher directly; "
+        "use famulus_dispatcher.invoke"
+    ]
+
+
+def test_auxiliary_skill_markdown_dispatcher_dry_run_command_is_rejected(
+    tmp_path: Path,
+) -> None:
+    skill = _copy_weather_module(tmp_path)
+    debugging = skill / "DEBUGGING.md"
+    debugging.write_text(
+        "Run `dispatcher --dry-run --caller-skill get-weather target.interface.run`.\n",
+        encoding="utf-8",
+    )
+
+    errors = MOD.validate(tmp_path)
+
+    assert errors == [
+        f"{debugging}: skill documentation must not invoke dispatcher directly; "
+        "use famulus_dispatcher.invoke"
+    ]
+
+
+def test_two_process_exports_report_missing_mcp_metadata_in_stable_order(
     tmp_path: Path,
 ) -> None:
     skill_root = tmp_path / "skills" / "demo"
@@ -224,8 +260,8 @@ def test_two_process_exports_report_missing_commands_in_stable_order(
     )
 
     assert MOD.validate_with_graph(tmp_path, graph) == [
-        f"{skill_md}: generated interface block is missing dispatcher command "
+        f"{skill_md}: generated interface block is missing MCP invocation metadata "
         "for `demo.interface.alpha`",
-        f"{skill_md}: generated interface block is missing dispatcher command "
+        f"{skill_md}: generated interface block is missing MCP invocation metadata "
         "for `demo.interface.zeta`",
     ]

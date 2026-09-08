@@ -1,6 +1,6 @@
 schema_version: 6
 standard_version: 1.0.0
-revision: 20
+revision: 21
 id: node-standards.instruction-module
 canonical_path: references/node-standards/instruction-module.standard.yaml
 title: Instruction Module Standard
@@ -17,8 +17,8 @@ imports:
   module:
     standard_id: node-standards.module
     standard_version: 2.0.0
-    revision: 16
-    digest: sha256:f86316798aa05d29153318ecaa6410a8957104d00a2e21c92335e3a8522cca44
+    revision: 17
+    digest: sha256:5d66850480f791a304c3ef31ddce68717e2e531852b796b9de4bdbf95cdda04d
     artifact:
       kind: artifact
       ref: artifact.module-standard

@@ -1,8 +1,12 @@
 """Enforce canonical Python-side use of the shared dispatcher package."""
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
+
+
+_DISPATCHER_CLI_RE = re.compile(r"\bdispatcher\b[^\n]*\s--caller-skill\b")
 
 
 def _python_files(skill_dir: Path) -> list[Path]:
@@ -41,7 +45,13 @@ def validate(repo_root: Path) -> list[str]:
 
                 rel = path.relative_to(repo_root)
 
-                if "invoke_skill_export.py" in line or "scripts/dispatcher.py" in line or '"dispatcher"' in line or "'dispatcher'" in line:
+                if (
+                    "invoke_skill_export.py" in line
+                    or "scripts/dispatcher.py" in line
+                    or _DISPATCHER_CLI_RE.search(line)
+                    or '"dispatcher"' in line
+                    or "'dispatcher'" in line
+                ):
                     errors.append(
                         f"{rel}:{lineno}: Python skill code must use declared DispatchCall entries "
                         "and PythonMachineInterface.dispatch(), not the dispatcher CLI"

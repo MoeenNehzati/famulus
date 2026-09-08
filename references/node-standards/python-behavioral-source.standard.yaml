@@ -1,6 +1,6 @@
 schema_version: 6
 standard_version: 1.0.0
-revision: 21
+revision: 22
 id: node-standards.python-behavioral-source
 canonical_path: references/node-standards/python-behavioral-source.standard.yaml
 title: Python Behavioral Source Standard
@@ -9,8 +9,8 @@ imports:
   behavioral-source:
     standard_id: node-standards.behavioral-source
     standard_version: 1.0.0
-    revision: 16
-    digest: sha256:ceb1805eaaba0e02057627e0941bc47cdcd02c4480441aea4ab44160bede073e
+    revision: 17
+    digest: sha256:d31e837a3d8bf7cd981e54a5903cd311a6892286a38f4c8f7f969160a5b95f7d
     artifact:
       kind: artifact
       ref: artifact.behavioral-source-standard
@@ -75,12 +75,14 @@ standards:
         resolves the target contract, binding, and authorization independently of caller working directory.
   - kind: guidance
     id: skill-guidelines.dispatcher-role.guidance-009
-    statement: 'A discoverable parent caller may use `--dry-run` with the host-facing compatibility flag
-      to inspect the resolved invocation without executing it:'
+    statement: 'A discoverable parent caller may set `dry_run: true` on
+      `famulus_dispatcher.invoke` to inspect the resolved invocation without executing it:'
   - kind: guidance
     id: skill-guidelines.dispatcher-role.example-001
-    statement: "```bash\ndispatcher --dry-run --caller-skill daily-plan \\\n  list-manager._rtx.interface.read-list\
-      \ /tmp/todo.yaml\n```"
+    statement: 'Call `famulus_dispatcher.invoke` with `caller: daily-plan`,
+      `interface: list-manager._rtx.interface.read-list`, `version: 1`,
+      `arguments: {"options": {}, "positionals": ["/tmp/todo.yaml"], "stdin": null}`,
+      and `dry_run: true`.'
   - kind: rule
     id: skill-guidelines.dispatcher-role.requirement-003
     assertions:
