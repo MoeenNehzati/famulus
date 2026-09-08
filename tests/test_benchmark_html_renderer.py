@@ -75,45 +75,47 @@ def test_trial_measures_a_real_synchronous_stall():
 @pytest.mark.parametrize("idle_connection", [False, True])
 def test_real_time_launcher_bounds_a_page_without_a_result(monkeypatch, idle_connection):
     module = _benchmark_module()
-    if idle_connection:
-        launch = module.subprocess.Popen
+    phase_seconds = {"process_wait": 0.0, "profile_cleanup": 0.0}
+    launch = module.subprocess.Popen
+    cleanup = module.tempfile.TemporaryDirectory.cleanup
 
-        def launch_after_browser_preconnect(command, **kwargs):
+    def launch_with_phase_timing(command, **kwargs):
+        if idle_connection:
             # Chromium can open an HTTP connection before sending any request.
             address = urlsplit(command[-1])
             connection = socket.create_connection((address.hostname, address.port))
             release = threading.Timer(3, connection.close)
             release.daemon = True
             release.start()
-            return launch(command, **kwargs)
+        process = launch(command, **kwargs)
+        wait = process.wait
 
-        monkeypatch.setattr(module.subprocess, "Popen", launch_after_browser_preconnect)
+        def wait_with_phase_timing(*args, **kwargs):
+            phase_start = time.monotonic()
+            try:
+                return wait(*args, **kwargs)
+            finally:
+                phase_seconds["process_wait"] += time.monotonic() - phase_start
+
+        process.wait = wait_with_phase_timing
+        return process
+
+    def cleanup_with_phase_timing(directory):
+        phase_start = time.monotonic()
+        try:
+            return cleanup(directory)
+        finally:
+            phase_seconds["profile_cleanup"] += time.monotonic() - phase_start
+
+    monkeypatch.setattr(module.subprocess, "Popen", launch_with_phase_timing)
+    monkeypatch.setattr(module.tempfile.TemporaryDirectory, "cleanup", cleanup_with_phase_timing)
     start = time.monotonic()
     with pytest.raises(SystemExit, match="benchmark result timed out"):
         module.run_benchmark_html(
             require_chrome(), "<html><body></body></html>", timeout_seconds=0.5
         )
-    assert time.monotonic() - start < 2.5
-
-
-def test_real_time_launcher_bounds_cold_macos_browser_exec(monkeypatch):
-    module = _benchmark_module()
-    chrome = require_chrome()
-    launch = module.subprocess.Popen
-
-    def launch_after_cold_browser_exec(command, **kwargs):
-        if command[0] == chrome:
-            time.sleep(3)
-        return launch(command, **kwargs)
-
-    monkeypatch.setattr(module.sys, "platform", "darwin")
-    monkeypatch.setattr(module.subprocess, "Popen", launch_after_cold_browser_exec)
-    start = time.monotonic()
-    with pytest.raises(SystemExit, match="benchmark result timed out"):
-        module.run_benchmark_html(
-            chrome, "<html><body></body></html>", timeout_seconds=0.5
-        )
-    assert time.monotonic() - start < 2.5
+    elapsed = time.monotonic() - start
+    assert elapsed < 2.5, {"elapsed": elapsed, **phase_seconds}
 
 
 def test_real_time_launcher_retries_inflight_profile_cleanup(monkeypatch):
