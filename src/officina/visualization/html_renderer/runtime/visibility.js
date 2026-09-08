@@ -30,19 +30,29 @@
 
     // ── Hidden nodes list ────────────────────────────────────────────────────
 
-    function renderHiddenNodes() {
+    let renderedHiddenNodesKey = null;
+    function renderHiddenNodes(operations = null) {
       const hiddenEntities = docData.entities
         .filter(e => hiddenNodes.has(e.id))
         .sort((a, b) => (a.position || 0) - (b.position || 0) || a.short_title.localeCompare(b.short_title));
-      clearMathBeforeMutation(hiddenNodesEl);
-      hiddenNodesEl.innerHTML = "";
+      const renderKey = hiddenEntities.map(entity => entity.id).join("\u0000");
+      if (renderKey === renderedHiddenNodesKey) return;
+      applyPresentationOperation(operations, () => {
+        renderedHiddenNodesKey = null;
+        clearMathBeforeMutation(hiddenNodesEl);
+        hiddenNodesEl.innerHTML = "";
+      });
 
       const hasHidden = hiddenEntities.length > 0;
 
-      if (!hasHidden) { hiddenNodesEl.textContent = "None"; return; }
+      if (!hasHidden) {
+        applyPresentationOperation(operations, () => { hiddenNodesEl.textContent = "None"; renderedHiddenNodesKey = renderKey; });
+        return;
+      }
 
       // Individually double-click-hidden nodes
       hiddenEntities.forEach(entity => {
+        applyPresentationOperation(operations, () => {
         const item = document.createElement("div");
         item.className = "hidden-node-item";
         item.tabIndex = 0;
@@ -63,8 +73,9 @@
           showNodes([entity.id]);
         });
         hiddenNodesEl.appendChild(item);
+        });
       });
-      typesetElement(hiddenNodesEl);
+      applyPresentationOperation(operations, () => { typesetElement(hiddenNodesEl); renderedHiddenNodesKey = renderKey; });
     }
 
     function syncToolbar() {
@@ -90,15 +101,18 @@
         : `Dim unselected${dimUnselected.length ? ` (${dimUnselected.length})` : ""}`;
     }
 
-    function applyVisibilityPresentation() {
-      syncToolbar();
-      document.querySelectorAll(".graph-node").forEach(nodeEl => {
+    function applyVisibilityPresentation(operations = null) {
+      applyPresentationOperation(operations, syncToolbar);
+      nodeElementIndex.forEach(nodeEl => {
+        applyPresentationOperation(operations, () => {
         const nodeId = nodeEl.dataset.nodeId;
         nodeEl.style.opacity = dimmedNodes.has(nodeId) ? "0.2" : "1";
         nodeEl.style.display = isHiddenNode(nodeId) ? "none" : "";
+        });
       });
 
-      document.querySelectorAll(".edge-path").forEach(pathEl => {
+      edgeLayer.querySelectorAll(".edge-path").forEach(pathEl => {
+        applyPresentationOperation(operations, () => {
         const src = pathEl.dataset.sourceNodeId;
         const dst = pathEl.dataset.targetNodeId;
         const edge = pathEl.__edgeMeta || {
@@ -115,9 +129,10 @@
           pathEl.style.opacity = "0.96";
           pathEl.style.display = "";
         }
-        syncArrowheadForPath(pathEl);
+        syncArrowheadVisibilityForPath(pathEl);
+        });
       });
 
-      renderHiddenNodes();
-      applyFilterPresentation();
+      renderHiddenNodes(operations);
+      applyFilterPresentation(operations);
     }

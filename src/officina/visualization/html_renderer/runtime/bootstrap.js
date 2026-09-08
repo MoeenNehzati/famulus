@@ -11,7 +11,8 @@
  * This file consumes only the generic graph payload. Domain adapters belong in
  * sibling `from_*` packages and must not be recognized here by name.
  */
-    const docData = @@OFFICINA_GRAPH_DOCUMENT@@;
+    const graphDocumentJson = document.getElementById("officina-graph-data").textContent;
+    const docData = JSON.parse(graphDocumentJson);
     const QUICK_GUIDE_CONFIG = @@OFFICINA_QUICK_GUIDE_CONFIG@@;
     const typeStyleCatalog = new Map(
       (docData.categories || [])
@@ -124,7 +125,9 @@
     const typeStyles = categoryStyles;
     const edgePalette = @@OFFICINA_EDGE_PALETTE@@;
     const fallbackEdgeDashes = [null, "9 5", "2 4", "12 4 2 4", "5 3", "1 5"];
-    const edgeData = @@OFFICINA_EDGE_DATA@@;
+    const edgeData = JSON.parse(
+      document.getElementById("officina-edge-data").textContent
+    );
     const edgeById = new Map(edgeData.map(edge => [String(edge.edge_id), edge]));
     const edgePairCounts = new Map();
     edgeData.forEach(edge => {

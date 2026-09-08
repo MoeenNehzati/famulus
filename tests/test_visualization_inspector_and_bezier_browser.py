@@ -93,6 +93,67 @@ def _payload(edge_type: str = "link") -> dict:
     }
 
 
+def test_restored_mixed_edge_synchronizes_route_geometry_once() -> None:
+    payload = _payload()
+    payload["entities"][0]["connects_to"] = [
+        {"to": "beta", "type": "link", "bundle": True,
+         "bundle_types": ["link", "supports"]}
+    ]
+    payload["edge_categories"].append({"id": "supports", "label": "Supports"})
+    _run_browser_case(
+        "single-route-geometry-sync",
+        payload,
+        """
+        hideNodes(["beta"]);
+        await window.officinaRendererDiagnostics.whenIdle();
+        let lengthReads = 0;
+        let pointReads = 0;
+        const pathPrototype = SVGPathElement.prototype;
+        const originalLength = pathPrototype.getTotalLength;
+        const originalPoint = pathPrototype.getPointAtLength;
+        pathPrototype.getTotalLength = function() {
+          if (this.classList.contains("edge-path")) lengthReads += 1;
+          return originalLength.call(this);
+        };
+        pathPrototype.getPointAtLength = function(distance) {
+          if (this.classList.contains("edge-path")) pointReads += 1;
+          return originalPoint.call(this, distance);
+        };
+        showNodes(["beta"]);
+        await window.officinaRendererDiagnostics.whenIdle();
+        if (lengthReads !== 1 || pointReads !== 3) {
+          throw new Error(`route geometry repeated: lengths=${lengthReads} points=${pointReads}`);
+        }
+        """,
+        virtual_time_budget=8000,
+    )
+
+
+def test_document_inspector_reuses_original_json_without_replacement() -> None:
+    _run_browser_case(
+        "document-json-cache",
+        _payload(),
+        """
+        await window.officinaRendererDiagnostics.whenIdle();
+        const expected = typeof graphDocumentJson === "string"
+          ? graphDocumentJson
+          : JSON.stringify(docData, null, 2);
+        if (rawJsonCodeEl.textContent !== expected) throw new Error("initial document JSON was not preserved");
+        let replacements = 0;
+        const observer = new MutationObserver(records => { replacements += records.length; });
+        observer.observe(rawJsonCodeEl, {childList: true});
+        showSelectionDetails();
+        showSelectionDetails();
+        await delay(0);
+        observer.disconnect();
+        if (replacements !== 0) throw new Error(`unchanged document JSON replaced ${replacements} times`);
+        showEntityDetails(entityMap.get("alpha"));
+        showSelectionDetails();
+        if (rawJsonCodeEl.textContent !== expected) throw new Error("document JSON was not restored after entity inspection");
+        """,
+    )
+
+
 def test_declared_edge_presentation_controls_stroke_and_legend() -> None:
     payload = {
         "schema_version": 2,

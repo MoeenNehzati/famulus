@@ -432,27 +432,32 @@ acceptance.
 
 | File | Add | Delete | Net | Hard churn | Change |
 |---|---:|---:|---:|---:|---|
-| `runtime/layout.js` | 3 | 1 | +2 | 4 | Supply the browser-native ELK worker factory. |
+| `runtime/layout.js` | 10 | 7 | +3 | 17 | Supply the browser-native ELK worker factory and share one routed-path sample. |
 | `page.html` | 8 | 0 | +8 | 8 | Add inert JSON data blocks outside executable runtime code. |
 | `runtime/bootstrap.js` | 7 | 3 | +4 | 10 | Parse the inert graph and edge payloads and retain the original graph text. |
 | `html_renderer/assets.py` | 4 | 2 | +2 | 6 | Assemble data blocks without changing standalone output. |
 | `elk_html_renderer.py` | 4 | 2 | +2 | 6 | Route the two serialized payloads to inert placeholders. |
-| `runtime/core.js` | 5 | 6 | -1 | 11 | Make the mounted index authoritative and stale-safe. |
+| `runtime/core.js` | 6 | 5 | +1 | 11 | Make the mounted index authoritative and stale-safe. |
 | `runtime/filtering.js` | 20 | 20 | 0 | 40 | Present and summarize the mounted visible scene without failed global lookups. |
-| `runtime/visibility.js` | 8 | 10 | -2 | 18 | Remove redundant final edge geometry and expose bounded presentation operations. |
-| `runtime/render_pipeline.js` | 35 | 15 | +20 | Schedule final presentation in cancellable chunks and avoid duplicate geometry. |
-| `runtime/selection.js` | 10 | 4 | +6 | Reuse canonical graph JSON for unchanged document output. |
-| `runtime/edge_presentation.js` | 8 | 2 | +6 | Share one route-geometry sample between arrow and gradient updates. |
-| `scripts/benchmark-html-renderer.py` | 20 | 8 | +12 | Extract payloads from executable legacy or inert candidate pages and record probe support/boundaries. |
-| `tests/test_benchmark_html_renderer.py` | 50 | 5 | +45 | Cover inert payload extraction and explicit timing support. |
-| Focused renderer browser tests | 170 | 15 | +155 | Prove native worker use, one geometry sync, mounted-only presentation, cancellation, and inspector transitions. |
-| This plan | 70 | 0 | +70 | Record the measured scope and budget before implementation. |
+| `runtime/visibility.js` | 27 | 12 | +15 | 39 | Remove redundant final edge geometry, bound hidden-list work, and make its cache cancellation-safe. |
+| `runtime/render_pipeline.js` | 35 | 15 | +20 | 50 | Schedule final presentation in cancellable chunks and avoid duplicate geometry. |
+| `runtime/selection.js` | 10 | 4 | +6 | 14 | Reuse canonical graph JSON for unchanged document output. |
+| `runtime/edge_presentation.js` | 17 | 5 | +12 | 22 | Share one route-geometry sample between arrow and gradient updates. |
+| `runtime/geometry.js` | 4 | 5 | -1 | 9 | Route drag and bulk rerouting through shared geometry synchronization. |
+| `scripts/benchmark-html-renderer.py` | 20 | 8 | +12 | 28 | Extract payloads from executable legacy or inert candidate pages and record probe support/boundaries. |
+| `tests/test_benchmark_html_renderer.py` | 50 | 5 | +45 | 55 | Cover inert payload extraction and explicit timing support. |
+| Focused renderer browser tests | 170 | 15 | +155 | 185 | Prove native worker use, one geometry sync, mounted-only presentation, cancellation, and inspector transitions. |
+| `test_support/browser.py` | 10 | 1 | +9 | 11 | Select the bundled synchronous ELK fallback only inside the identified runtime script. |
+| `tests/test_browser_support.py` | 20 | 0 | +20 | 20 | Prove the runtime-only rewrite with matching content before and after it. |
+| `skills/math-dependency-graph/_rtx/tests/test_graph_builder.py` | 4 | 4 | 0 | 8 | Read the inert graph block in the copied-canonical-JSON compatibility test. |
+| This plan | 90 | 0 | +90 | 90 | Record the measured scope and budget before implementation. |
 
-Task 5 subtotal: **+422 / -93 / net +329**, **515 hard churn**.
-Production JavaScript is budgeted at **+96 / -61 / net +35**, so the original
-production JavaScript diff remains net-negative. The amended whole-plan hard
-ceiling is **2,066 lines**. Any additional runtime file or movement of more than
-20 lines between runtime rows requires another explicit amendment.
+Task 5 subtotal: **+516 / -113 / net +403**, **629 hard churn**.
+Production JavaScript is budgeted at no more than **+60 net**, so the original
+61-line production JavaScript reduction remains net-zero or smaller at the
+worst-case ceiling. The amended whole-plan hard ceiling is **2,180 lines**. Any
+additional runtime file or movement of more than 20 lines between runtime rows
+requires another explicit amendment.
 
 Task 5 checkpoints:
 
@@ -465,6 +470,14 @@ Task 5 checkpoints:
    remaining whole-scene presentation operation obeys the six-millisecond
    paint deadline.
 4. The unchanged full acceptance matrix passes in real-time host Chromium.
+
+The shared functional browser harness uses Chrome virtual time so asynchronous
+tests finish deterministically. Native worker threads do not advance on that
+clock: the virtual 15-second ELK timeout can fire before the worker receives
+real CPU. The harness may therefore rewrite only the exact renderer worker
+factory line to select the vendor's synchronous fallback in virtual-time pages.
+A dedicated real-time loopback test must still exercise the unmodified emitted
+page and prove native-worker construction and scene completion.
 
 ## Out of scope
 

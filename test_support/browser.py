@@ -75,7 +75,16 @@ def run_html(
     with tempfile.TemporaryDirectory(prefix="famulus-browser-") as workdir:
         root = Path(workdir)
         page = root / "page.html"
-        page.write_text(html, encoding="utf-8")
+        prefix, runtime_tag, remainder = html.partition('<script id="officina-viewer-runtime">')
+        runtime, close_tag, suffix = remainder.partition("</script>")
+        if runtime_tag:
+            runtime = runtime.replace(
+                "workerFactory: () => new Worker(ELK_WORKER_URL),",
+                "/* virtual-time ELK uses the bundled worker */",
+                1,
+            )
+        virtual_time_html = prefix + runtime_tag + runtime + close_tag + suffix
+        page.write_text(virtual_time_html, encoding="utf-8")
         command = [
             chrome,
             "--headless",

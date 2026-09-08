@@ -30,7 +30,13 @@ INPUT_LATENCY_LIMITS = {"full_graph": 50, "show_all": 50, "detail_change": 50, "
 
 
 def payload(page: str) -> tuple[dict, bytes]:
-    match = re.search(r"const docData = (\{.*?\});\n", page, re.DOTALL)
+    match = re.search(
+        r'<script[^>]*\bid=["\']officina-graph-data["\'][^>]*>(.*?)</script>',
+        page,
+        re.DOTALL,
+    )
+    if not match:
+        match = re.search(r"const docData = (\{.*?\});\n", page, re.DOTALL)
     if not match:
         raise SystemExit("page has no embedded renderer payload")
     value = json.loads(match.group(1))

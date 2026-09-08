@@ -4,6 +4,99 @@ from officina.visualization.elk_html_renderer import build_html_with_elk
 from test_support.browser import require_chrome, run_html
 
 
+def test_scene_finalization_uses_mounted_index_and_bounded_operations():
+    payload = {
+        "schema_version": 2, "graph_id": "bounded-mounted-presentation",
+        "categories": [{"id": "node", "label": "Node"}], "edge_categories": [],
+        "entities": [
+            {"id": f"n{index:02}", "type": "node", "short_title": f"N {index}",
+             "position": index, "connects_to": []}
+            for index in range(96)
+        ],
+    }
+    script = """<script>
+    window.addEventListener("load", () => setTimeout(async () => {
+      try {
+        const idle = window.officinaRendererDiagnostics.whenIdle;
+        await idle();
+        let globalNodeMisses = 0;
+        const originalSvgQuery = svgEl.querySelector.bind(svgEl);
+        svgEl.querySelector = selector => {
+          if (String(selector).startsWith('[data-node-id=')) globalNodeMisses += 1;
+          return originalSvgQuery(selector);
+        };
+        let boundedFinalizations = 0;
+        let unboundedFinalizations = 0;
+        let boundedHiddenListOperations = 0;
+        let unboundedHiddenListCalls = 0;
+        const originalRenderHiddenNodes = renderHiddenNodes;
+        renderHiddenNodes = operations => {
+          if (Array.isArray(operations)) {
+            const before = operations.length;
+            const result = originalRenderHiddenNodes(operations);
+            boundedHiddenListOperations += operations.length - before;
+            return result;
+          }
+          unboundedHiddenListCalls += 1;
+          return originalRenderHiddenNodes(operations);
+        };
+        const originalApplyVisibility = applyVisibilityPresentation;
+        applyVisibilityPresentation = operations => {
+          if (Array.isArray(operations)) boundedFinalizations += 1;
+          else unboundedFinalizations += 1;
+          return originalApplyVisibility(operations);
+        };
+        const hiddenIds = docData.entities.slice(0, 30).map(entity => entity.id);
+        hideNodes(hiddenIds);
+        await idle();
+        if (globalNodeMisses !== 0) throw new Error(`${globalNodeMisses} unmounted nodes triggered SVG lookup misses`);
+        if (boundedFinalizations !== 1 || unboundedFinalizations !== 0) {
+          throw new Error(`scene finalized outside paint operations: bounded=${boundedFinalizations} unbounded=${unboundedFinalizations}`);
+        }
+        if (unboundedHiddenListCalls !== 0 || boundedHiddenListOperations < 32) {
+          throw new Error(`hidden list escaped paint operations: bounded=${boundedHiddenListOperations} unbounded=${unboundedHiddenListCalls}`);
+        }
+        const unchangedHiddenListOperations = [];
+        originalRenderHiddenNodes(unchangedHiddenListOperations);
+        if (unchangedHiddenListOperations.length !== 0) throw new Error("unchanged hidden list was rebuilt");
+        const summary = document.getElementById("filter-summary").textContent;
+        if (!summary.includes("Showing 66 of 96 nodes")) throw new Error(`mounted summary is stale: ${summary}`);
+        showNodes(hiddenIds);
+        await idle();
+        if (nodeElementIndex.size !== 96 || Array.from(nodeElementIndex.values()).some(node => !node.isConnected)) {
+          throw new Error("restored scene did not refresh the authoritative mounted index");
+        }
+        if (boundedFinalizations !== 2 || unboundedFinalizations !== 0 || unboundedHiddenListCalls !== 0) {
+          throw new Error("restored scene presentation escaped bounded finalization");
+        }
+        const interruptedIds = docData.entities.slice(0, 80).map(entity => entity.id);
+        let interrupted = false;
+        const originalHiddenAppend = hiddenNodesEl.appendChild.bind(hiddenNodesEl);
+        hiddenNodesEl.appendChild = item => {
+          const appended = originalHiddenAppend(item);
+          if (!interrupted && item.classList.contains("hidden-node-item")) {
+            interrupted = true;
+            showNodes(interruptedIds);
+          }
+          return appended;
+        };
+        hideNodes(interruptedIds);
+        await idle();
+        if (!interrupted) throw new Error("hidden-list paint was not interrupted");
+        if (hiddenNodesEl.querySelectorAll(".hidden-node-item").length !== 0
+            || hiddenNodesEl.textContent.trim() !== "None") throw new Error("cancelled hidden list survived newest restore");
+        document.body.dataset.testStatus = "PASS";
+      } catch (error) { document.body.dataset.testStatus = "FAIL:" + error.message; }
+    }, 150));
+    </script>"""
+    html = build_html_with_elk(payload).replace("</body>", script + "</body>")
+    result = run_html(require_chrome(), html, virtual_time_budget=8000)
+    marker = 'data-test-status="'
+    start = result.stdout.find(marker)
+    status = result.stdout[start + len(marker):].split('"', 1)[0] if start >= 0 else "MISSING"
+    assert status == "PASS", status
+
+
 @pytest.mark.parametrize("superseding_action", ["routing", "visibility", "pending-layout"])
 def test_superseded_scene_work_preserves_nodes_and_math(superseding_action):
     payload = {

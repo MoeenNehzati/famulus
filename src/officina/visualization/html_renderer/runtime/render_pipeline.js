@@ -55,8 +55,9 @@
       path.dataset.edgeMetaKey = JSON.stringify(edge);
       path.__edgeMeta = edge;
       edgeLayer.appendChild(path);
-      syncEdgeMetadataPresentationGeometry(path);
-      attachArrowhead(path);
+      const routeSample = pathPointsForArrow(path);
+      syncEdgeMetadataPresentationGeometry(path, routeSample);
+      attachArrowhead(path, routeSample);
       bindEdgeHover(path, edge);
       return path;
     }
@@ -154,23 +155,28 @@
           const cachedPath = lastEdgePaths.get(edgePaintKey(edge));
           const resolvedPathData = !path && cachedPath?.state === routeState ? cachedPath.data : pathData;
           const edgeMetaKey = JSON.stringify(edge);
+          let geometryCurrent = false;
           if (!path || path.dataset.edgeMetaKey !== edgeMetaKey) {
             if (path) { removeEdgePresentationResources(path); arrowForPath(path)?.remove(); path.remove(); }
             path = createRenderedEdge(edge, resolvedPathData);
+            geometryCurrent = true;
           }
           path.__edgeMeta = edge;
           path.dataset.routeState = routeState;
-          path.setAttribute("d", resolvedPathData);
-          syncEdgeMetadataPresentationGeometry(path);
-          syncArrowheadForPath(path);
+          if (!geometryCurrent && path.getAttribute("d") !== resolvedPathData) {
+            path.setAttribute("d", resolvedPathData);
+            syncEdgeRouteGeometry(path);
+          }
         });
       });
 
-      latestPaintPromise = runPaintOperations(operations, version).then(current => {
-        if (!current) return false;
+      operations.push(() => {
         lastRenderedEdges = visibleEdges;
         syncEdgePresentationLegend();
-        applyVisibilityPresentation();
+        applyVisibilityPresentation(operations);
+      });
+      latestPaintPromise = runPaintOperations(operations, version).then(current => {
+        if (!current) return false;
         return currentMathTypesetTail().then(() => true);
       });
       return latestPaintPromise;
@@ -189,7 +195,6 @@
 
     function updateVisibilityFull(options) { return latestStructuralPromise = performVisibilityFull(options); }
     async function performVisibilityFull({preserveManualPositions = false} = {}) {
-      renderHiddenNodes();
       const renderedEntities = docData.entities.filter(e => !isHiddenNode(e.id));
       const allEntities = docData.entities;
       const visibleEdges = computeVisibleEdges();
@@ -327,7 +332,7 @@
           showSelectionDetails();
         } else {
           syncToolbar();
-          rawJsonCodeEl.textContent = JSON.stringify(docData, null, 2);
+          showGraphDocumentJson();
         }
         const renderedNodeCount = svgEl.querySelectorAll(".graph-node").length;
         presentationRestoringManualPositions = false;

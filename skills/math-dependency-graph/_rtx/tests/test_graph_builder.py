@@ -74,10 +74,10 @@ def _write_self_contained_graph(path: Path) -> None:
 
 
 def _embedded_payload(html: str) -> dict:
-    # Anchor on the next bootstrap declaration rather than a named one, so an
-    # added const between docData and typeStyleCatalog does not widen the span.
-    prefix = "    const docData = "
-    suffix = ";\n    const "
+    # The standalone renderer keeps canonical data inert rather than compiling
+    # a multi-megabyte JavaScript object literal during bootstrap.
+    prefix = '<script id="officina-graph-data" type="application/json">'
+    suffix = "</script>"
     return json.loads(html.split(prefix, 1)[1].split(suffix, 1)[0])
 
 

@@ -208,18 +208,31 @@
     }
 
     /** Keep a user-space gradient aligned with the routed path endpoints. */
-    function syncEdgeMetadataPresentationGeometry(path) {
+    function syncEdgeMetadataPresentationGeometry(path, routeSample = null) {
       const gradient = path.__edgePresentationGradient;
       if (!gradient || !path.isConnected) return;
       try {
-        const length = path.getTotalLength();
-        const start = path.getPointAtLength(0);
-        const end = path.getPointAtLength(length);
+        const length = routeSample ? null : path.getTotalLength();
+        const start = routeSample?.start || path.getPointAtLength(0);
+        const end = routeSample?.tip || path.getPointAtLength(length);
         gradient.setAttribute("x1", String(start.x)); gradient.setAttribute("y1", String(start.y));
         gradient.setAttribute("x2", String(end.x)); gradient.setAttribute("y2", String(end.y));
       } catch (_error) {
         // Detached or temporarily empty paths synchronize after their next route update.
       }
+    }
+
+    function syncEdgeRouteGeometry(path) {
+      const routeSample = pathPointsForArrow(path);
+      syncEdgeMetadataPresentationGeometry(path, routeSample);
+      syncArrowheadForPath(path, routeSample);
+    }
+
+    function syncArrowheadVisibilityForPath(path) {
+      const arrow = arrowForPath(path);
+      if (!arrow) return;
+      arrow.style.display = path.style.display;
+      arrow.style.opacity = path.style.opacity;
     }
 
     /** Apply semantic stroke first, then the bounded metadata presentation. */

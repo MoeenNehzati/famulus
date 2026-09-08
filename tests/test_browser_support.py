@@ -101,6 +101,18 @@ def test_run_html_uses_temporary_paths_and_decodes_chrome_as_utf8(
     assert not observed["page"].exists()
 
 
+def test_run_html_uses_bundled_elk_worker_under_virtual_time(monkeypatch) -> None:
+    def fake_run(command, **_kwargs):
+        page = Path(url2pathname(urlparse(command[-1]).path))
+        assert page.read_text(encoding="utf-8") == '<script type="application/json">{"text":"workerFactory: () => new Worker(ELK_WORKER_URL),"}</script><script id="officina-viewer-runtime">/* virtual-time ELK uses the bundled worker */</script><script>workerFactory: () => new Worker(ELK_WORKER_URL),</script>'
+        return subprocess.CompletedProcess(command, 0, stdout="rendered", stderr="")
+    monkeypatch.setattr(browser.subprocess, "run", fake_run)
+    run_html(
+        "/browser", '<script type="application/json">{"text":"workerFactory: () => new Worker(ELK_WORKER_URL),"}</script><script id="officina-viewer-runtime">workerFactory: () => new Worker(ELK_WORKER_URL),</script><script>workerFactory: () => new Worker(ELK_WORKER_URL),</script>',
+        virtual_time_budget=2500,
+    )
+
+
 def test_run_html_propagates_chrome_timeout_after_complete_dom(monkeypatch) -> None:
     def fake_run(command, **_kwargs):
         raise subprocess.TimeoutExpired(

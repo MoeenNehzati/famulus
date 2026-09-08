@@ -22,6 +22,35 @@ def _benchmark_module():
     return module
 
 
+@pytest.mark.parametrize(
+    "page",
+    [
+        '<script>const docData = {"entities": [{"id": "legacy"}]};\n</script>',
+        '<script id="officina-graph-data" type="application/json">'
+        '{"entities": [{"id": "inert"}]}</script>',
+    ],
+)
+def test_payload_extracts_legacy_and_inert_renderer_documents(page):
+    value, canonical = _benchmark_module().payload(page)
+
+    expected_id = "legacy" if "legacy" in page else "inert"
+    assert value["entities"][0]["id"] == expected_id
+    assert canonical == json.dumps(
+        value, sort_keys=True, separators=(",", ":")
+    ).encode()
+
+
+def test_payload_prefers_candidate_inert_data_over_unrelated_script_text():
+    page = """<script>const docData = {not valid graph syntax};</script>
+    <script id="officina-graph-data" type="application/json">
+    {"entities": [{"id": "candidate"}]}
+    </script>"""
+
+    value, _ = _benchmark_module().payload(page)
+
+    assert value["entities"] == [{"id": "candidate"}]
+
+
 def test_trial_measures_a_real_synchronous_stall():
     """The actual launcher must not freeze performance.now during JS work."""
     page = """<!doctype html><html><head></head><body>

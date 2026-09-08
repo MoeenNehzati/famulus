@@ -352,8 +352,7 @@
         routeSeen.set(key, routeIndex + 1);
         pathEl.setAttribute("d", routedPathForEndpoints(srcId, dstId, srcPos, dstPos, routeIndex, routeCounts.get(key) || 1));
         if (pathEl.__edgeMeta) pathEl.dataset.routeState = edgeRouteStateKey(pathEl.__edgeMeta);
-        syncEdgeMetadataPresentationGeometry(pathEl);
-        syncArrowheadForPath(pathEl);
+        syncEdgeRouteGeometry(pathEl);
       });
     }
 
@@ -374,8 +373,7 @@
         const dstPos = getEffectivePos(dstId);
         if (srcPos && dstPos) {
           pathEl.setAttribute("d", routedPathForEndpoints(srcId, dstId, srcPos, dstPos));
-          syncEdgeMetadataPresentationGeometry(pathEl);
-          syncArrowheadForPath(pathEl);
+          syncEdgeRouteGeometry(pathEl);
         }
       });
     }

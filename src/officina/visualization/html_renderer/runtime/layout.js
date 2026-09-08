@@ -109,7 +109,9 @@
     function ensureElk() {
       if (elk) return elk;
       if (typeof ELK === "undefined") return null;
-      elk = new ELK({workerUrl: ELK_WORKER_URL});
+      elk = new ELK({
+        workerFactory: () => new Worker(ELK_WORKER_URL),
+      });
       return elk;
     }
 
@@ -364,9 +366,10 @@
       try {
         const length = pathEl.getTotalLength();
         if (length <= 0) return null;
+        const start = pathEl.getPointAtLength(0);
         const tip = pathEl.getPointAtLength(length);
         const tail = pathEl.getPointAtLength(Math.max(0, length - 14));
-        return { tip, tail };
+        return { start, tip, tail };
       } catch (error) {
         return null;
       }
@@ -381,14 +384,14 @@
       return edgeCategorySetContains(edge.type, hiddenEdgeTypes) || isEdgeFilteredOut(edge);
     }
 
-    function syncArrowheadForPath(pathEl) {
+    function syncArrowheadForPath(pathEl, routeSample = null) {
       const arrowEl = arrowForPath(pathEl);
       if (!arrowEl) return;
       if (pathEl.style.display === "none") {
         arrowEl.style.display = "none";
         return;
       }
-      const points = pathPointsForArrow(pathEl);
+      const points = routeSample || pathPointsForArrow(pathEl);
       if (!points) return;
       const dx = points.tip.x - points.tail.x;
       const dy = points.tip.y - points.tail.y;
@@ -418,14 +421,14 @@
       arrowEl.dataset.derived = pathEl.dataset.derived;
     }
 
-    function attachArrowhead(pathEl) {
+    function attachArrowhead(pathEl, routeSample = null) {
       const existing = arrowForPath(pathEl);
       if (existing) existing.remove();
       const arrowEl = createSvgElement("polygon");
       arrowEl.setAttribute("class", "edge-arrow");
       arrowEl.dataset.edgeId = pathEl.dataset.edgeId;
       edgeLayer.appendChild(arrowEl);
-      syncArrowheadForPath(pathEl);
+      syncArrowheadForPath(pathEl, routeSample);
       return arrowEl;
     }
 
@@ -447,7 +450,6 @@
 
     function updateVisibilityFast() {
       if (!hasFullLayout) return updateVisibilityFull();
-      renderHiddenNodes();
       const renderedEntities = docData.entities.filter(entity => !isHiddenNode(entity.id));
       if (renderedEntities.some(entity => !lastNodePositions.has(entity.id))) {
         return updateVisibilityFull({preserveManualPositions: true});
