@@ -76,17 +76,76 @@ def test_trial_measures_a_real_synchronous_stall():
 def test_real_time_launcher_bounds_a_page_without_a_result(monkeypatch, idle_connection):
     module = _benchmark_module()
     phase_seconds = {
+        "require_chrome": 0.0,
+        "temporary_directory_init": 0.0,
+        "temporary_file_init": 0.0,
+        "temporary_file_close": 0.0,
+        "server_init": 0.0,
         "popen": 0.0,
         "poll": 0.0,
         "handle_request": 0.0,
+        "process_signal": 0.0,
         "process_wait": 0.0,
         "server_close": 0.0,
         "profile_cleanup": 0.0,
     }
     launch = module.subprocess.Popen
+    temporary_directory = module.tempfile.TemporaryDirectory
+    temporary_file = module.tempfile.TemporaryFile
+    server_init = module.ThreadingHTTPServer.__init__
     handle_request = module.ThreadingHTTPServer.handle_request
     server_close = module.ThreadingHTTPServer.server_close
-    cleanup = module.tempfile.TemporaryDirectory.cleanup
+    killpg = getattr(module.os, "killpg", None)
+
+    def temporary_directory_with_phase_timing(*args, **kwargs):
+        phase_start = time.monotonic()
+        try:
+            directory = temporary_directory(*args, **kwargs)
+        finally:
+            phase_seconds["temporary_directory_init"] += time.monotonic() - phase_start
+        cleanup = directory.cleanup
+
+        def cleanup_with_phase_timing():
+            phase_start = time.monotonic()
+            try:
+                return cleanup()
+            finally:
+                phase_seconds["profile_cleanup"] += time.monotonic() - phase_start
+
+        directory.cleanup = cleanup_with_phase_timing
+        return directory
+
+    class TemporaryFileWithPhaseTiming:
+        def __init__(self, file):
+            self.file = file
+
+        def __enter__(self):
+            self.file.__enter__()
+            return self
+
+        def __exit__(self, *exc_info):
+            phase_start = time.monotonic()
+            try:
+                return self.file.__exit__(*exc_info)
+            finally:
+                phase_seconds["temporary_file_close"] += time.monotonic() - phase_start
+
+        def __getattr__(self, name):
+            return getattr(self.file, name)
+
+    def temporary_file_with_phase_timing(*args, **kwargs):
+        phase_start = time.monotonic()
+        try:
+            return TemporaryFileWithPhaseTiming(temporary_file(*args, **kwargs))
+        finally:
+            phase_seconds["temporary_file_init"] += time.monotonic() - phase_start
+
+    def server_init_with_phase_timing(server, *args, **kwargs):
+        phase_start = time.monotonic()
+        try:
+            return server_init(server, *args, **kwargs)
+        finally:
+            phase_seconds["server_init"] += time.monotonic() - phase_start
 
     def launch_with_phase_timing(command, **kwargs):
         phase_start = time.monotonic()
@@ -136,29 +195,44 @@ def test_real_time_launcher_bounds_a_page_without_a_result(monkeypatch, idle_con
         finally:
             phase_seconds["server_close"] += time.monotonic() - phase_start
 
-    def cleanup_with_phase_timing(directory):
+    def killpg_with_phase_timing(*args, **kwargs):
         phase_start = time.monotonic()
         try:
-            return cleanup(directory)
+            return killpg(*args, **kwargs)
         finally:
-            phase_seconds["profile_cleanup"] += time.monotonic() - phase_start
+            phase_seconds["process_signal"] += time.monotonic() - phase_start
 
     monkeypatch.setattr(module.subprocess, "Popen", launch_with_phase_timing)
+    monkeypatch.setattr(module.tempfile, "TemporaryDirectory", temporary_directory_with_phase_timing)
+    monkeypatch.setattr(module.tempfile, "TemporaryFile", temporary_file_with_phase_timing)
+    monkeypatch.setattr(module.ThreadingHTTPServer, "__init__", server_init_with_phase_timing)
     monkeypatch.setattr(module.ThreadingHTTPServer, "handle_request", handle_request_with_phase_timing)
     monkeypatch.setattr(module.ThreadingHTTPServer, "server_close", server_close_with_phase_timing)
-    monkeypatch.setattr(module.tempfile.TemporaryDirectory, "cleanup", cleanup_with_phase_timing)
+    if killpg is not None:
+        monkeypatch.setattr(module.os, "killpg", killpg_with_phase_timing)
     start = time.monotonic()
     with pytest.raises(SystemExit, match="benchmark result timed out"):
+        phase_start = time.monotonic()
+        try:
+            chrome = require_chrome()
+        finally:
+            phase_seconds["require_chrome"] += time.monotonic() - phase_start
         module.run_benchmark_html(
-            require_chrome(), "<html><body></body></html>", timeout_seconds=0.5
+            chrome, "<html><body></body></html>", timeout_seconds=0.5
         )
     elapsed = time.monotonic() - start
     measured = sum(phase_seconds.values())
-    assert elapsed < 2.5, {
+    diagnostics = {
         "elapsed": elapsed,
         **phase_seconds,
         "unmeasured": elapsed - measured,
     }
+    if elapsed >= 2.5:
+        print(
+            "BENCHMARK_TIMEOUT_PHASES=" + json.dumps(diagnostics, sort_keys=True),
+            file=sys.stderr,
+        )
+    assert elapsed < 2.5, diagnostics
 
 
 def test_real_time_launcher_retries_inflight_profile_cleanup(monkeypatch):
