@@ -8,8 +8,11 @@ from officina.visualization.elk_html_renderer import build_html_with_elk
 from test_support.browser import require_chrome, run_html
 
 
-@pytest.mark.parametrize("subtitle", ["Producer group context", "", None])
-def test_presentation_nodes_preserve_producer_subtitle_through_collapse(subtitle):
+@pytest.mark.parametrize(
+    ("subtitle", "expanded_subtitle", "collapsed_subtitle"),
+    [("Domain", "Domain", "Domain · collapsed"), ("", None, "collapsed"), (None, None, "collapsed")],
+)
+def test_presentation_nodes_preserve_producer_subtitle_through_collapse(subtitle, expanded_subtitle, collapsed_subtitle):
     """Facet labels cannot replace producer text in expanded or collapsed shells."""
     group = {
         "id": "group", "type": "node", "short_title": "Group title", "position": 0,
@@ -33,20 +36,22 @@ def test_presentation_nodes_preserve_producer_subtitle_through_collapse(subtitle
     window.addEventListener("load", () => setTimeout(async () => {
       try {
         const idle = window.officinaRendererDiagnostics.whenIdle;
-        const check = expected => {
+        const failures = [];
+        const check = (stage, expected) => {
           const shell = document.querySelector('[data-presentation-node-id="group"]');
           if (!shell || shell.querySelector(".node-label")?.textContent !== "Group title") throw Error("group title missing");
-          const actual = shell.querySelector(".node-subtitle")?.textContent || "";
-          if (actual !== expected) throw Error(`group subtitle ${JSON.stringify(actual)} differs from ${JSON.stringify(expected)}`);
+          const subtitle = shell.querySelector(".node-subtitle");
+          if ((subtitle?.textContent ?? null) !== expected) failures.push(`${stage} subtitle ${JSON.stringify(subtitle?.textContent ?? null)} differs from ${JSON.stringify(expected)}`);
         };
-        await idle(); check(__SUBTITLE__);
-        togglePresentationNodeCollapsed("group"); await idle(); check(__COLLAPSED__);
-        togglePresentationNodeCollapsed("group"); await idle(); check(__SUBTITLE__);
+        await idle(); check("expanded", __EXPANDED_SUBTITLE__);
+        togglePresentationNodeCollapsed("group"); await idle(); check("collapsed", __COLLAPSED_SUBTITLE__);
+        togglePresentationNodeCollapsed("group"); await idle(); check("restored", __EXPANDED_SUBTITLE__);
+        if (failures.length) throw Error(failures.join("; "));
         document.body.dataset.testStatus = "PASS";
       } catch (error) { document.body.dataset.testStatus = "FAIL:" + error.message; }
     }, 100));
-    </script>""".replace("__SUBTITLE__", json.dumps(subtitle or "")).replace(
-        "__COLLAPSED__", json.dumps(f"{subtitle or ''} · collapsed")
+    </script>""".replace("__EXPANDED_SUBTITLE__", json.dumps(expanded_subtitle)).replace(
+        "__COLLAPSED_SUBTITLE__", json.dumps(collapsed_subtitle)
     )
     page = build_html_with_elk(payload).replace("</body>", script + "</body>")
     result = run_html(require_chrome(), page, virtual_time_budget=6000)

@@ -150,8 +150,8 @@ deletions. Moving slack between files requires an explicit plan edit.
 | `src/officina/visualization/html_renderer/viewer.css` | 9 | 3 | +6 | 12 | Support the visible overlap boundary without SVG filters. |
 
 Production subtotal: **+246 / -304 / net -58**, **550 measured hard churn**.
-Shipped first-party renderer code must remain net-zero or
-smaller.
+Shipped first-party renderer runtime modules (`runtime/*.js`) must remain
+net-zero or smaller.
 
 ### Tests, benchmark, and documentation
 

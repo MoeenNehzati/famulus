@@ -104,9 +104,7 @@
       return (hash >>> 0).toString(36);
     }
 
-    function edgePresentationUnderlaysForPath(path) {
-      return path?.__edgePresentationUnderlays || [];
-    }
+    const edgePresentationUnderlaysForPath = path => path?.__edgePresentationUnderlays || [];
 
     /** Remove gradient defs and underlays owned by one path before replacement. */
     function removeEdgePresentationResources(path) {

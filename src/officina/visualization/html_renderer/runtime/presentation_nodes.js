@@ -417,7 +417,7 @@
           layer: presentationNodeLayer,
           id: component.id,
           label: component.label,
-          subtitle: collapsed ? `${component.subtitle} · collapsed` : component.subtitle,
+          subtitle: collapsed ? [component.subtitle, "collapsed"].filter(Boolean).join(" · ") : component.subtitle,
           position,
           style: {color, colors: [color]},
           tone: component.tone,

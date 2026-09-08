@@ -218,3 +218,25 @@ The implementation hard ceiling is therefore **520 changed lines**. Generated HT
 - Empty subtitles do not consume a row or inflate node height.
 - No topology, inspector, filtering, legend, edge, or frozen-gold changes enter the diff.
 - Only named paths are staged; unrelated dirty worktree changes remain untouched.
+
+## Task 7: Close presentation-shell empty-subtitle parity
+
+**Budget:** +18 / -12 / net +6; expected and hard churn 30,
+drawn from the unused whole-plan contingency so the **520-line implementation
+ceiling is unchanged**.
+
+An independent whole-branch audit found that canonical cells omit an absent or
+empty subtitle, but presentation-node shells still create a blank
+`.node-subtitle`; collapsed shells can therefore display ` · collapsed` with
+no producer subtitle. Make presentation shells use the same literal/absent-row
+contract without changing non-empty producer subtitles or the transient
+collapsed state.
+
+- Add a browser regression that distinguishes a missing element from an empty
+  element for absent and explicit-empty presentation subtitles.
+- Render no subtitle element when both producer subtitle and transient state
+  are empty; when collapsed without a producer subtitle, render only the
+  transient `collapsed` text, without a leading separator.
+- Preserve non-empty `Domain · collapsed` behavior and node measurement parity.
+- Run the focused presentation-node browser tests and the affected union, then
+  obtain independent re-audit before committing.

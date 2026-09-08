@@ -68,7 +68,7 @@
       foreignObject.setAttribute("height", Math.min(position.height, 58));
       const body = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
       body.setAttribute("class", "node-fo-body container-node");
-      body.innerHTML = `<div class="node-label">${escapeHtml(label)}</div><div class="node-subtitle">${escapeHtml(subtitle || "")}</div>`;
+      body.innerHTML = nodeVisibleTextMarkup({title: label, subtitle});
       foreignObject.appendChild(body);
       group.appendChild(foreignObject);
       layer.appendChild(group);
