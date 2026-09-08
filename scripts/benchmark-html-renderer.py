@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import math
 from pathlib import Path
@@ -73,6 +73,7 @@ fetch('/benchmark-result',{method:'POST',body:JSON.stringify({result:result?.tex
             pass
 
         def do_GET(self):
+            self.connection.settimeout(max(0.001, deadline - time.monotonic()))
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(document)))
@@ -80,6 +81,7 @@ fetch('/benchmark-result',{method:'POST',body:JSON.stringify({result:result?.tex
             self.wfile.write(document)
 
         def do_POST(self):
+            self.connection.settimeout(max(0.001, deadline - time.monotonic()))
             outcome.update(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
             self.send_response(204)
             self.end_headers()
@@ -87,7 +89,7 @@ fetch('/benchmark-result',{method:'POST',body:JSON.stringify({result:result?.tex
     workspace = tempfile.TemporaryDirectory(prefix="famulus-benchmark-")
     with workspace as workdir, \
             tempfile.TemporaryFile(mode="w+", encoding="utf-8") as errors, \
-            HTTPServer(("127.0.0.1", 0), Handler) as server:
+            ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
         server.timeout = 0.1
         command = [
             chrome, "--headless", "--no-sandbox", "--disable-gpu",

@@ -85,6 +85,30 @@ def test_real_time_launcher_retries_inflight_profile_cleanup(monkeypatch):
     assert module.run_benchmark_html(require_chrome(), page) == {"completed": True}
 
 
+def test_real_time_launcher_serves_large_pages_without_transfer_timeouts(monkeypatch):
+    module = _benchmark_module()
+    request_log = []
+    handle_request = module.BaseHTTPRequestHandler.handle_one_request
+
+    def record_http_diagnostics(handler):
+        handler.log_message = lambda pattern, *args: request_log.append(pattern % args)
+        return handle_request(handler)
+
+    monkeypatch.setattr(module.BaseHTTPRequestHandler, "handle_one_request", record_http_diagnostics)
+    # Pause HTML parsing while a repository-sized payload is still being sent.
+    page = """<html><head><script>
+      const end = Date.now() + 400; while (Date.now() < end) {}
+      </script></head><body><script type="application/json">"""
+    page += json.dumps({"payload": "x" * (12 * 1024 * 1024)})
+    page += '</script><pre id="benchmark-result">{"completed": true}</pre></body></html>'
+
+    try:
+        result = module.run_benchmark_html(require_chrome(), page, timeout_seconds=3)
+    except SystemExit as error:
+        pytest.fail(f"{error}; HTTP diagnostics: {request_log}")
+    assert result == {"completed": True}
+
+
 def test_trial_records_action_wide_frame_and_long_task_maxima():
     graph = {
         "schema_version": 2,
