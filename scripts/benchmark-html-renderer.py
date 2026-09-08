@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import signal
+from socketserver import TCPServer
 import subprocess
 import sys
 import tempfile
@@ -99,6 +100,11 @@ fetch('/benchmark-result',{method:'POST',body:JSON.stringify({result:result?.tex
         # Closing the listener must not wait for an idle browser preconnection.
         daemon_threads = True
 
+        def server_bind(self):
+            # HTTPServer performs reverse DNS here, which can stall on CI hosts.
+            TCPServer.server_bind(self)
+            self.server_name, self.server_port = self.server_address[:2]
+
     workspace = tempfile.TemporaryDirectory(prefix="famulus-benchmark-")
     with workspace as workdir, \
             tempfile.TemporaryFile(mode="w+", encoding="utf-8") as errors, \
@@ -111,10 +117,6 @@ fetch('/benchmark-result',{method:'POST',body:JSON.stringify({result:result?.tex
             f"--user-data-dir={Path(workdir) / 'profile'}", "--window-size=1440,1000",
             f"http://127.0.0.1:{server.server_port}/page.html",
         ]
-        if sys.platform == "darwin":
-            # Let Popen return after execing this system binary; macOS can hold
-            # a cold Chrome exec for admission checks before the browser starts.
-            command.insert(0, "/usr/bin/env")
         popen_options = {"start_new_session": True} if os.name == "posix" else {}
         process = subprocess.Popen(
             command, stdout=subprocess.DEVNULL, stderr=errors, **popen_options
