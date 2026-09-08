@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import sys
+from copy import deepcopy
 from pathlib import Path
 from unittest import mock
 
@@ -651,11 +652,35 @@ def test_finalizer_rejects_duplicate_mathjax_dependencies(tmp_path: Path) -> Non
     assert "renderer_dependencies[1]" in message
 
 
+@pytest.mark.parametrize(
+    ("entity", "expected"),
+    [
+        ({"type": "theorem", "ref": "4.3"}, "theorem 4.3"),
+        ({"type": "proof_sketch"}, "proof sketch"),
+        ({"type": "theorem", "ref": "4.3", "subtitle": "Chosen text"}, "Chosen text"),
+        ({"type": "theorem", "ref": "4.3", "subtitle": ""}, ""),
+        ({"id": "theorem-4.3", "label": "Theorem", "description": "Claim"}, ""),
+    ],
+)
+def test_entity_subtitles_fill_only_missing_text_without_mutating_input(
+    entity: dict, expected: str,
+) -> None:
+    payload = {"entities": [entity], "metadata": {"source": ["unchanged"]}}
+    original = deepcopy(payload)
+
+    finalized = _extraction_finalizer.apply_entity_subtitles(payload)
+
+    assert finalized["entities"][0]["subtitle"] == expected
+    assert payload == original
+    finalized["metadata"]["source"].append("output-only")
+    assert payload == original
+
+
 def test_finalizer_applies_labels_presentation_and_normalizes_embedded_macros(
     tmp_path: Path,
 ) -> None:
     project = tmp_path / "presentation-project"
-    entrypoint = _write_tex(project, "Fixture without custom commands.")
+    entrypoint = _write_tex(project, r"\newcommand{\SubtitleBloom}{\mathbb{B}}")
     draft = project / "draft.json"
     draft_payload = {
         "schema_version": 2,
@@ -686,6 +711,7 @@ def test_finalizer_applies_labels_presentation_and_normalizes_embedded_macros(
                 "id": "result",
                 "type": "result",
                 "short_title": "Result",
+                "subtitle": r"See \ref{assumption:fixture}: $\SubtitleBloom$",
                 "position": 1,
                 "connects_to": [],
             },
@@ -714,7 +740,9 @@ def test_finalizer_applies_labels_presentation_and_normalizes_embedded_macros(
     payload = json.loads(canonical.read_text(encoding="utf-8"))
     premise = payload["entities"][0]
     assert premise["ref"] == "A.1"
+    assert premise["subtitle"] == "assumption A.1"
     assert premise["short_title"] == "See (7)"
+    assert payload["entities"][1]["subtitle"] == r"See A.1: $\SubtitleBloom$"
     assert {item["id"] for item in payload["edge_categories"]} == {
         "supports",
         "exemplifies",
@@ -726,6 +754,7 @@ def test_finalizer_applies_labels_presentation_and_normalizes_embedded_macros(
     assert dependency["configuration"]["input"] == "tex"
     assert dependency["configuration"]["output"] == "svg"
     assert dependency["configuration"]["macros"]["EmbeddedPair"] == ["#1", 1]
+    assert dependency["configuration"]["macros"]["SubtitleBloom"] == r"\mathbb{B}"
     assert json.loads(draft.read_text(encoding="utf-8")) == draft_payload
 
 

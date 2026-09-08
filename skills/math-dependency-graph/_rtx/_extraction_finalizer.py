@@ -44,6 +44,7 @@ _GRAPH_VALIDATOR = jsonschema.Draft7Validator(_GRAPH_SCHEMA)
 LABEL_REFERENCE_RE = re.compile(r"\\(ref|eqref|cref|Cref|autoref)\{([^{}]+)\}")
 _ENTITY_RENDERED_TEXT_FIELDS = (
     "short_title",
+    "subtitle",
     "label",
     "type",
     "kind",
@@ -100,6 +101,38 @@ def apply_label_numbering(
             entity["ref"] = entry["ref"]
             numbered += 1
     return result, numbered
+
+
+def apply_entity_subtitles(doc: dict) -> dict:
+    """Return a copy with missing entity subtitles supplied by the producer.
+
+    Intent
+    ------
+    Give each entity explicit subtitle text after document numbering.
+
+    Rationale
+    ---------
+    Preserve deliberate subtitles, including empty strings, without viewer inference.
+
+    Pseudocode
+    ----------
+    - copy the graph
+    - for each entity without a subtitle key:
+      - join its human-readable type and available reference
+    - return the copy
+
+    Wraps
+    -----
+    - none
+    """
+    result = deepcopy(doc)
+    for entity in result.get("entities", []):
+        if "subtitle" in entity:
+            continue
+        entity_type = re.sub(r"[_-]+", " ", str(entity.get("type") or "")).strip()
+        reference = str(entity.get("ref") or "").strip()
+        entity["subtitle"] = " ".join(part for part in (entity_type, reference) if part)
+    return result
 
 
 def resolve_label_references(
@@ -883,6 +916,9 @@ def finalize_extraction(
       .apply_label_numbering:
         why:
           transforms: "Produces a copy with compiled entity numbers."
+      .apply_entity_subtitles:
+        why:
+          transforms: "Supplies missing producer subtitles after entity numbering."
       .apply_presentation_base:
         why:
           transforms: "Produces a copy with canonical presentation metadata."
@@ -900,6 +936,7 @@ def finalize_extraction(
     - finalized_payload = _merge_mathjax_macros(draft_payload, extracted_macros)
     - finalized_payload = resolve_label_references(finalized_payload, label_map)
     - finalized_payload = apply_label_numbering(finalized_payload, label_map)
+    - finalized_payload = apply_entity_subtitles(finalized_payload)
     - finalized_payload = apply_presentation_base(finalized_payload)
     - @._validate_payload(finalized_payload)
     - @._atomic_write_json(finalized_payload, output_path)
@@ -947,6 +984,7 @@ def finalize_extraction(
     )
     finalized, _ = resolve_label_references(finalized, labels)
     finalized, _ = apply_label_numbering(finalized, labels)
+    finalized = apply_entity_subtitles(finalized)
     finalized = apply_presentation_base(finalized)
     _validate_payload(finalized, draft_path=draft_path)
     _atomic_write_json(finalized, output_path)

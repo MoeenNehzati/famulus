@@ -38,7 +38,7 @@ Each entity must provide the schema-required fields:
 - `short_title`: a compact description of what the object says, written to be read inside a small node cell. Aim for a short noun phrase naming the mathematical content, such as `Beta-prior posterior tail bound` or `Agreement before exit` — never a bare environment name, a label key, or a macro name.
 - `position`: a nonnegative integer preserving source order
 
-Also set `ref` to the number the document assigns the object, such as `4.3`, `A.7`, or `C.2`. The viewer draws `short_title` as the node's title and `type` plus `ref` as its subtitle, so a missing `ref` costs the reader the object's index in the paper.
+Also set `ref` to the number the document assigns the object, such as `4.3`, `A.7`, or `C.2`. The viewer draws `short_title` as the node's title and the producer's `subtitle` as its subtitle. You may provide deliberate subtitle text, including an empty string to suppress it. When the key is absent, the finalizer supplies the human-readable `type` plus the available `ref` after label numbering, so a missing `ref` costs the reader the object's index in the paper.
 
 That number is **not written in the source**: TeX assigns it while typesetting, and a `\label{...}` records only a key. Take it from a resolved label map when the job supplies one, and otherwise derive it.
 
