@@ -453,17 +453,7 @@
         return updateVisibilityFull({preserveManualPositions: true});
       }
       containerIndex = rebuildContainerIndex(docData.entities);
-      let visibleEdges = computeVisibleEdges();
-      const retainedBundles = Array.from(edgeLayer.querySelectorAll(".edge-path"))
-        .map(path => path.__edgeMeta)
-        .filter(edge => edge?.bundle && !isHiddenNode(edge.source) && !isHiddenNode(edge.target))
-        .filter(edge => edgeConstituents(edge).some(constituent => !isHiddenEdgeType(constituent)));
-      retainedBundles.forEach(bundle => {
-        visibleEdges = visibleEdges.filter(edge => (
-          edge.source !== bundle.source || edge.target !== bundle.target
-        ));
-        visibleEdges.push(bundle);
-      });
+      const visibleEdges = computeVisibleEdges();
       return reconcileVisibleScene(
         renderedEntities,
         visibleEdges,

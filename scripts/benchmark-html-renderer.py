@@ -4,17 +4,19 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import html as html_module
+from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import math
 from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
+import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from test_support.browser import chrome_executable, run_html
+from test_support.browser import chrome_executable
 
 
 ACTIONS = (
@@ -22,7 +24,7 @@ ACTIONS = (
     "routing_change", "drag_completion",
 )
 METRICS = ("duration_ms", "longest_task_ms", "input_latency_ms", "heartbeat_gap_ms")
-SCENE_FIELDS = ("mounted_nodes", "mounted_edges", "visible_node_ids", "visible_edge_records")
+SCENE_FIELDS = ("visible_node_ids", "visible_edge_records")
 P95_DURATION_LIMITS = {"reduce_to_40": 75, "show_all": 350, "drag_completion": 32}
 INPUT_LATENCY_LIMITS = {"full_graph": 50, "show_all": 50, "detail_change": 50, "collapse_expand": 50}
 
@@ -53,6 +55,78 @@ const e=document.createElement('pre');e.id='benchmark-result';e.textContent=JSON
 }}catch(e){{document.body.dataset.benchmarkError=e.message}}}});</script>"""
 
 
+def run_benchmark_html(chrome: str, page: str, *, timeout_seconds: float = 30) -> dict:
+    """Wait for the page's explicit result using an unmodified browser clock."""
+    outcome = {}
+    completion = """<script>const benchmarkPoll=setInterval(()=>{
+const result=document.getElementById('benchmark-result'),error=document.body?.dataset.benchmarkError;
+if(!result&&!error)return;clearInterval(benchmarkPoll);
+fetch('/benchmark-result',{method:'POST',body:JSON.stringify({result:result?.textContent,error})});
+},25);</script>"""
+    document = page.replace("</body>", completion + "</body>").encode("utf-8")
+
+    class Handler(BaseHTTPRequestHandler):
+        # Idle browser preconnections must not hold up the host deadline.
+        timeout = 0.1
+
+        def log_message(self, *_args):
+            pass
+
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(document)))
+            self.end_headers()
+            self.wfile.write(document)
+
+        def do_POST(self):
+            outcome.update(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
+            self.send_response(204)
+            self.end_headers()
+
+    workspace = tempfile.TemporaryDirectory(prefix="famulus-benchmark-")
+    with workspace as workdir, \
+            tempfile.TemporaryFile(mode="w+", encoding="utf-8") as errors, \
+            HTTPServer(("127.0.0.1", 0), Handler) as server:
+        server.timeout = 0.1
+        command = [
+            chrome, "--headless", "--no-sandbox", "--disable-gpu",
+            "--disable-dev-shm-usage", "--disable-crash-reporter", "--no-first-run",
+            "--disable-background-networking", "--disable-component-update",
+            f"--user-data-dir={Path(workdir) / 'profile'}", "--window-size=1440,1000",
+            f"http://127.0.0.1:{server.server_port}/page.html",
+        ]
+        process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=errors)
+        try:
+            deadline = time.monotonic() + timeout_seconds
+            while not outcome:
+                if process.poll() is not None:
+                    errors.seek(0)
+                    raise SystemExit(f"benchmark Chrome exited ({process.returncode}): {errors.read()[-2000:]}")
+                if time.monotonic() >= deadline:
+                    raise SystemExit("benchmark result timed out")
+                server.handle_request()
+        finally:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+            # Chrome children may finish profile writes just after the parent exits.
+            for attempt in range(50):
+                try:
+                    workspace.cleanup()
+                    break
+                except OSError:
+                    if attempt == 49:
+                        raise
+                    time.sleep(0.1)
+    if outcome.get("error"):
+        raise SystemExit(outcome["error"])
+    return json.loads(outcome["result"])
+
+
 def trial(chrome: str, page: str, action: str, keep: list[str]) -> dict:
     instrumentation = """<script>localStorage.clear();window.__benchmarkStart=performance.now();window.__benchmarkInput=-1;setTimeout(()=>window.__benchmarkInput=performance.now()-window.__benchmarkStart,0);window.__benchmarkStartHeartbeat=()=>{const state={last:performance.now(),longest:0,active:true},tick=now=>{state.longest=Math.max(state.longest,now-state.last);state.last=now;if(state.active)requestAnimationFrame(tick)};requestAnimationFrame(tick);return state};window.__benchmarkHeartbeat=window.__benchmarkStartHeartbeat();window.__benchmarkGraphMutations=0;window.__benchmarkLongTasks=[];window.__benchmarkLongTaskObserver=null;window.__benchmarkLongTaskBoundary=window.__benchmarkStart;window.__benchmarkKeepLongTask=entry=>entry.startTime===undefined||entry.startTime>=window.__benchmarkLongTaskBoundary;window.__benchmarkDrainLongTasks=()=>{const observer=window.__benchmarkLongTaskObserver;if(observer)window.__benchmarkLongTasks.push(...observer.takeRecords().filter(window.__benchmarkKeepLongTask).map(entry=>entry.duration))};try{window.__benchmarkLongTaskObserver=new PerformanceObserver(entries=>window.__benchmarkLongTasks.push(...entries.getEntries().filter(window.__benchmarkKeepLongTask).map(entry=>entry.duration)));window.__benchmarkLongTaskObserver.observe({entryTypes:['longtask']})}catch(e){}</script>"""
     instrumented = (
@@ -64,12 +138,7 @@ def trial(chrome: str, page: str, action: str, keep: list[str]) -> dict:
         )
         .replace("</body>", probe_script(action, keep) + "</body>")
     )
-    result = run_html(chrome, instrumented, virtual_time_budget=12000, window_size="1440,1000")
-    match = re.search(r'<pre id="benchmark-result">(.*?)</pre>', result.stdout)
-    if not match:
-        error = re.search(r'data-benchmark-error="([^"]+)', result.stdout)
-        raise SystemExit(html_module.unescape(error.group(1)) if error else f"{action} did not complete")
-    return json.loads(html_module.unescape(match.group(1)))
+    return run_benchmark_html(chrome, instrumented)
 
 
 def p95(samples: list[dict], metric: str) -> float:
@@ -90,6 +159,11 @@ def acceptance_verdict(results: dict) -> dict:
     baseline = results.get("baseline", {})
     for action, record in candidate.items():
         samples = record["samples"]
+        for sample in samples:
+            for mounted, visible in (("mounted_nodes", "visible_node_ids"), ("mounted_edges", "visible_edge_records")):
+                expected = len(sample[visible])
+                if sample[mounted] != expected:
+                    violations.append(f"candidate.{action} {mounted} {sample[mounted]} differs from visible scene count {expected}")
         duration_limit = P95_DURATION_LIMITS.get(action)
         duration = record.get("p95_duration_ms", p95(samples, "duration_ms"))
         if duration_limit is not None and duration > duration_limit:

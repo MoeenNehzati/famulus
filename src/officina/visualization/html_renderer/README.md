@@ -185,7 +185,12 @@ long-task, input-latency, and heartbeat observations, and writes an explicit
 benchmark-observable gate/parity verdict before returning nonzero on failure.
 For full graphs, probes are injected in `<head>` before supplied page scripts,
 so duration begins at earliest page-script execution rather than a true
-pre-navigation boundary; parity includes complete stable semantic edge records.
+pre-navigation boundary. A dedicated Chrome launcher uses a fresh profile and a
+1440x1000 viewport, serves each trial on loopback, and polls for explicit completion
+with a bounded timeout. It leaves `performance.now()` and animation frames on real
+time; the functional browser-test harness remains separate. Parity compares visible
+node ids and complete stable semantic edge records. Candidate mounted counts must
+equal its visible scene counts; baseline hidden DOM does not fail semantic parity.
 
 ### Math rendering validation
 

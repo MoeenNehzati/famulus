@@ -123,6 +123,8 @@ def test_selected_skill_scope_summarizes_crossing_relationships() -> None:
     assert entities[skill.node_id]["type"] == "module"
     assert entities[skill.node_id]["kind"] == "structural"
     assert entities[skill.node_id]["category"] == "module:structural"
+    assert entities[nested.node_id]["kind"] == "markdown"
+    assert entities[nested.node_id]["category"] == "module:markdown"
     assert entities[nested.node_id]["short_title"] == "_rtx"
     assert entities[source.node_id]["short_title"] == "runtime"
     assert entities[private_id]["short_title"] == "private"

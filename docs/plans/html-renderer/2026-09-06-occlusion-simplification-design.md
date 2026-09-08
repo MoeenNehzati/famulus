@@ -274,8 +274,8 @@ listed. Define their inputs as follows:
 
 - full graph measures from the earliest page-script execution to the applicable
   completion route below. The benchmark injects its probes into `<head>` before
-  the supplied page's scripts; a file URL cannot instrument a point after
-  navigation but before parsing, so this is not a true pre-navigation measure.
+  the supplied page's scripts. Instrumentation starts during page parsing,
+  so this is not a true pre-navigation measure.
 - reduce-to-40 uses the existing hide action to hide every entity except the
   recorded 40 ids; show-all restores that state;
 - detail change selects the next option after the initial value in the detail
@@ -289,7 +289,12 @@ listed. Define their inputs as follows:
   completion as deterministic setup outside the measured drag action; record
   that setup in the manifest.
 
-Use the repository browser-test launcher at a 1440x1000 viewport. Run three
+Use the dedicated real-time Chrome benchmark launcher at a 1440x1000 viewport,
+with a fresh isolated profile and a loopback page/result server per trial. Poll
+for the explicit benchmark result or error and bound the host wait to 30 seconds.
+Do not enable virtual time: responsiveness measurements need real
+`performance.now()` and animation-frame timing. Keep the functional browser-test
+launcher separate. Run three
 unrecorded warmups and 20 recorded trials per action. Compute p95 as
 `sorted_samples[ceil(0.95 * n) - 1]`.
 
@@ -313,8 +318,11 @@ Record:
 
 The manifest evaluates every benchmark-observable threshold and compares the
 captured visible node ids, complete stable semantic edge records (including
-aggregate, bundle, constituents, provenance, and metadata), and mounted counts
-trial-by-trial between baseline and candidate. It records an explicit `acceptance` verdict
+aggregate, bundle, constituents, provenance, and metadata)
+trial-by-trial between baseline and candidate. Check candidate mounted node/edge
+counts independently against its visible scene counts; the baseline may retain
+hidden DOM, so lower candidate mounted counts do not violate parity.
+It records an explicit `acceptance` verdict
 and violations, writes the manifest before returning failure, and exits nonzero
 when that scoped verdict fails. Its `pass` status is not evidence for inspector,
 control, manual-position, or saved-state parity, which remain browser-test
@@ -357,8 +365,9 @@ Run these gates in host-capable Chromium against the fixed repository payload.
   meeting the responsiveness gates.
 - Mounted `.graph-node` and `.edge-path` ids equal independently computed
   expected ids in small fixtures. For the repository benchmark, compare
-  captured baseline and candidate id sets instead of duplicating projection
-  semantics in a test projector.
+  captured baseline and candidate visible id sets and semantic edge records
+  instead of duplicating projection semantics in a test projector. Independently
+  require candidate mounted counts to equal the corresponding visible counts.
 - The mostly hidden state mounts only nodes in the independently computed
   visible scene, including retained ownership containers, plus its rendered
   edges.

@@ -1,7 +1,12 @@
+import errno
 import importlib.util
 import json
 from pathlib import Path
+import socket
 import sys
+import threading
+import time
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -15,6 +20,69 @@ def _benchmark_module():
     assert spec.loader is not None
     spec.loader.exec_module(module)
     return module
+
+
+def test_trial_measures_a_real_synchronous_stall():
+    """The actual launcher must not freeze performance.now during JS work."""
+    page = """<!doctype html><html><head></head><body>
+      <select id="routing-geometry"><option>curved</option><option>straight</option></select>
+      <svg id="graph-svg"></svg>
+      <script>
+      const docData = {"entities": []};
+      window.officinaRendererDiagnostics = {whenIdle: () => new Promise(resolve => setTimeout(resolve, 25))};
+      document.getElementById("routing-geometry").addEventListener("change", () => {
+        let sum = 0;
+        for (let index = 0; index < 20000000; index++) sum += Math.sin(index);
+        window.stallResult = sum;
+      });
+      </script></body></html>"""
+
+    result = _benchmark_module().trial(require_chrome(), page, "routing_change", [])
+
+    assert result["duration_ms"] >= 100, result
+    assert max(result["longest_task_ms"], result["heartbeat_gap_ms"]) >= 100, result
+
+
+@pytest.mark.parametrize("idle_connection", [False, True])
+def test_real_time_launcher_bounds_a_page_without_a_result(monkeypatch, idle_connection):
+    module = _benchmark_module()
+    if idle_connection:
+        launch = module.subprocess.Popen
+
+        def launch_after_browser_preconnect(command, **kwargs):
+            # Chromium can open an HTTP connection before sending any request.
+            address = urlsplit(command[-1])
+            connection = socket.create_connection((address.hostname, address.port))
+            release = threading.Timer(3, connection.close)
+            release.daemon = True
+            release.start()
+            return launch(command, **kwargs)
+
+        monkeypatch.setattr(module.subprocess, "Popen", launch_after_browser_preconnect)
+    start = time.monotonic()
+    with pytest.raises(SystemExit, match="benchmark result timed out"):
+        module.run_benchmark_html(
+            require_chrome(), "<html><body></body></html>", timeout_seconds=0.5
+        )
+    assert time.monotonic() - start < 2.5
+
+
+def test_real_time_launcher_retries_inflight_profile_cleanup(monkeypatch):
+    module = _benchmark_module()
+    cleanup = module.tempfile.TemporaryDirectory.cleanup
+    raced = False
+
+    def cleanup_with_last_child_write(directory):
+        nonlocal raced
+        if not raced and "famulus-benchmark-" in directory.name:
+            raced = True
+            raise OSError(errno.ENOTEMPTY, "Chrome child finished a profile write")
+        return cleanup(directory)
+
+    monkeypatch.setattr(module.tempfile.TemporaryDirectory, "cleanup", cleanup_with_last_child_write)
+    page = '<html><body><pre id="benchmark-result">{"completed": true}</pre></body></html>'
+
+    assert module.run_benchmark_html(require_chrome(), page) == {"completed": True}
 
 
 def test_trial_records_action_wide_frame_and_long_task_maxima():
@@ -75,7 +143,7 @@ def test_summary_records_p95_metrics_and_reports_gate_and_scene_parity_failures(
             "input_latency_ms": input_latency,
             "heartbeat_gap_ms": heartbeat,
             "mounted_nodes": len(node_ids),
-            "mounted_edges": 0,
+            "mounted_edges": 1,
             "visible_node_ids": list(node_ids),
             "visible_edge_records": [{"id": "edge", "metadata": metadata, "aggregate": {"constituents": ["a"]}}],
             "svg_descendants": 1,
@@ -111,6 +179,31 @@ def test_summary_records_p95_metrics_and_reports_gate_and_scene_parity_failures(
     assert "candidate.drag_completion p95 duration 33.0 ms exceeds 32 ms" in verdict["violations"]
     assert "candidate.full_graph has a 51.0 ms input latency (limit 50 ms)" in verdict["violations"]
     assert "reduce_to_40 sampled scene differs between baseline and candidate" in verdict["violations"]
+
+
+@pytest.mark.parametrize("mounted_nodes,mounted_edges", [(1, 1), (0, 1), (2, 1), (1, 0), (1, 2)])
+def test_visible_parity_allows_dom_reduction_but_checks_candidate_mounts(mounted_nodes, mounted_edges):
+    module = _benchmark_module()
+    baseline = {
+        "duration_ms": 1, "longest_task_ms": 0, "input_latency_ms": 0, "heartbeat_gap_ms": 0,
+        "mounted_nodes": 5, "mounted_edges": 4, "visible_node_ids": ["a"],
+        "visible_edge_records": [{"edge_id": "a-loop", "source": "a", "target": "a",
+                                  "metadata": {"provenance": "canonical"}}],
+    }
+    candidate = baseline | {"mounted_nodes": mounted_nodes, "mounted_edges": mounted_edges}
+
+    verdict = module.acceptance_verdict({
+        "baseline": {"reduce_to_40": {"samples": [baseline]}},
+        "candidate": {"reduce_to_40": {"samples": [candidate]}},
+    })
+
+    assert not any("differs between baseline and candidate" in message for message in verdict["violations"])
+    expected_violations = []
+    for field, actual in (("mounted_nodes", mounted_nodes), ("mounted_edges", mounted_edges)):
+        if actual != 1:
+            expected_violations.append(f"candidate.reduce_to_40 {field} {actual} differs from visible scene count 1")
+    assert verdict["violations"] == expected_violations
+    assert verdict["status"] == ("fail" if expected_violations else "pass")
 
 
 def test_main_rejects_mismatched_payloads_before_launching_chrome(tmp_path, monkeypatch):

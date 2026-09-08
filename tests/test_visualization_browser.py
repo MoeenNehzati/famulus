@@ -761,7 +761,7 @@ def test_filter_interactions_keep_layout_and_explain_projection():
             bundleEdge = document.querySelector('.edge-path[data-source-node-id="alpha"][data-target-node-id="beta"]');
             if (!bundleEdge) throw new Error("hiding one bundle constituent hid surviving relationship types");
             bundleEdge.dispatchEvent(new MouseEvent("click", {bubbles: true}));
-            if (!document.getElementById("details").textContent.includes("1 visible relationship") || document.getElementById("details").textContent.includes("updates records")) throw new Error("bundle inspector ignored constituent visibility");
+            if (bundleEdge.__edgeMeta.bundle || bundleEdge.__edgeMeta.type !== "dependency" || !document.getElementById("details").textContent.includes("requires storage") || document.getElementById("details").textContent.includes("updates records")) throw new Error("single surviving relationship did not restore canonical inspector content");
             lifecycleChildLegend.click();
             bundleEdge = document.querySelector('.edge-path[data-source-node-id="alpha"][data-target-node-id="beta"]');
             bundleEdge.dispatchEvent(new MouseEvent("click", {bubbles: true}));

@@ -1,7 +1,59 @@
 """Browser regression coverage for overview-scale node readability."""
 
+import json
+
+import pytest
+
 from officina.visualization.elk_html_renderer import build_html_with_elk
 from test_support.browser import require_chrome, run_html
+
+
+@pytest.mark.parametrize("subtitle", ["Producer group context", "", None])
+def test_presentation_nodes_preserve_producer_subtitle_through_collapse(subtitle):
+    """Facet labels cannot replace producer text in expanded or collapsed shells."""
+    group = {
+        "id": "group", "type": "node", "short_title": "Group title", "position": 0,
+        "member_ids": ["member"],
+        "presentation": {"form": "supernode", "tone": "subtle", "default_visibility": "visible"},
+        "interaction": {"selectable": True, "inspectable": True, "draggable": "members", "collapse_effect": "self"},
+    }
+    if subtitle is not None:
+        group["subtitle"] = subtitle
+    payload = {
+        "schema_version": 2, "graph_id": "presentation-subtitle",
+        "categories": [{"id": "node", "label": "Node"}], "edge_categories": [],
+        "entities": [{"id": "member", "type": "node", "short_title": "Member", "position": 0}],
+        "presentation_nodes": [group],
+        "ui": {"presentation_node_controls": [{
+            "id": "grouping", "label": "Grouping", "selector_label": "Group by", "default_facet": "facet",
+            "facets": [{"id": "facet", "label": "Deliberately different facet label", "activation": "all", "node_ids": ["group"]}],
+        }]},
+    }
+    script = """<script>
+    window.addEventListener("load", () => setTimeout(async () => {
+      try {
+        const idle = window.officinaRendererDiagnostics.whenIdle;
+        const check = expected => {
+          const shell = document.querySelector('[data-presentation-node-id="group"]');
+          if (!shell || shell.querySelector(".node-label")?.textContent !== "Group title") throw Error("group title missing");
+          const actual = shell.querySelector(".node-subtitle")?.textContent || "";
+          if (actual !== expected) throw Error(`group subtitle ${JSON.stringify(actual)} differs from ${JSON.stringify(expected)}`);
+        };
+        await idle(); check(__SUBTITLE__);
+        togglePresentationNodeCollapsed("group"); await idle(); check(__COLLAPSED__);
+        togglePresentationNodeCollapsed("group"); await idle(); check(__SUBTITLE__);
+        document.body.dataset.testStatus = "PASS";
+      } catch (error) { document.body.dataset.testStatus = "FAIL:" + error.message; }
+    }, 100));
+    </script>""".replace("__SUBTITLE__", json.dumps(subtitle or "")).replace(
+        "__COLLAPSED__", json.dumps(f"{subtitle or ''} · collapsed")
+    )
+    page = build_html_with_elk(payload).replace("</body>", script + "</body>")
+    result = run_html(require_chrome(), page, virtual_time_budget=6000)
+    marker = 'data-test-status="'
+    status = result.stdout.split(marker, 1)[1].split('"', 1)[0] if marker in result.stdout else "MISSING"
+    assert status == "PASS", status
+
 
 def test_default_nodes_use_readable_literal_producer_text() -> None:
     """Core cells use readable producer text rather than descriptive metadata."""
