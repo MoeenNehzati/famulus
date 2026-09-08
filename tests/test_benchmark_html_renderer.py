@@ -60,9 +60,8 @@ def test_trial_measures_a_real_synchronous_stall():
       const docData = {"entities": []};
       window.officinaRendererDiagnostics = {whenIdle: () => new Promise(resolve => setTimeout(resolve, 25))};
       document.getElementById("routing-geometry").addEventListener("change", () => {
-        let sum = 0;
-        for (let index = 0; index < 20000000; index++) sum += Math.sin(index);
-        window.stallResult = sum;
+        const stallUntil = performance.now() + 150;
+        while (performance.now() < stallUntil) {}
       });
       </script></body></html>"""
 
