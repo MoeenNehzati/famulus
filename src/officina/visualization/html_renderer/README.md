@@ -26,6 +26,14 @@ The public renderer accepts the canonical graph payload documented by
 fields:
 
 - `entity.id` is the stable identity used by edges and persisted viewer state.
+- Cell text is producer-owned: `entity.short_title` is the visible title, with
+  a nonempty `entity.label` as its explicit override. `entity.subtitle` supplies
+  the optional second line; missing or empty subtitles render no subtitle row
+  and add no subtitle height. The renderer does not derive cell text from
+  `type`, `ref`, `title`, or `id`.
+- Producers choose domain wording: repository entities use local names and blank
+  subtitles; presentation groups use value titles and facet subtitles. Docstring,
+  Rutter, and math producers supply their useful domain-specific subtitles.
 - `entity.type` selects a generic shape and provides a node-filter category.
 - `entity.kind` selects a generic color and may express an open-ended subtype.
 - `entity.container` places the entity inside another entity.
