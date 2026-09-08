@@ -96,9 +96,10 @@ class CrossHostHook:
         }
         if result.additional_context is not None:
             payload["additionalContext"] = result.additional_context
+        output: dict[str, Any] = {"hookSpecificOutput": payload}
         if result.system_message is not None:
-            payload["systemMessage"] = result.system_message
-        return {"hookSpecificOutput": payload}
+            output["systemMessage"] = result.system_message
+        return output
 
     def claude_output(self, hook_input: HookInput, result: HookResult) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -106,9 +107,10 @@ class CrossHostHook:
         }
         if result.additional_context is not None:
             payload["additionalContext"] = result.additional_context
+        output: dict[str, Any] = {"hookSpecificOutput": payload}
         if result.system_message is not None:
-            payload["systemMessage"] = result.system_message
-        return {"hookSpecificOutput": payload}
+            output["systemMessage"] = result.system_message
+        return output
 
     def cursor_output(self, hook_input: HookInput, result: HookResult) -> dict[str, Any]:
         payload: dict[str, Any] = {}

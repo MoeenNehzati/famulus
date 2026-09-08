@@ -15,9 +15,9 @@ from llmhooks.lib.cross_host import CrossHostHook, HookInput, HookResult, parse_
 
 DISPATCHER_CORE = """\
 ## Skill interfaces
-For SKILL.md `BEGIN BLUEPRINT INTERFACES`, use injected interfaces; do not invoke private scripts directly. Call `Executable Interfaces` through the `famulus_dispatcher` MCP server using invocation metadata and `Arguments JSON`. `Instruction Interfaces` are LLM-readable instructions; follow them directly.
+For `BEGIN BLUEPRINT INTERFACES`, do not invoke private scripts directly. Call `Executable Interfaces` through the `famulus_dispatcher` MCP server using invocation metadata and `Arguments JSON`. `Instruction Interfaces` are LLM-readable instructions; follow them directly.
 
-Use `famulus_dispatcher.invoke` only when an executable interface is needed. If unavailable or failing, report it and ask to follow `bootstrap-dispatcher-runtime`.\
+Use `famulus_dispatcher.invoke` only when an executable interface is needed.\
 """
 
 

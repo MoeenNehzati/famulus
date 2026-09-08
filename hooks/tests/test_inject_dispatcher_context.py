@@ -45,11 +45,10 @@ def _assert_dispatcher_context(text: str) -> None:
     assert len(text) <= 750
 
 
-def test_dispatcher_context_defers_availability_check_until_first_use() -> None:
-    """Break caught: SessionStart triggers an eager Famulus MCP probe."""
+def test_dispatcher_context_keeps_recovery_out_of_static_guidance() -> None:
     text = _mod.DISPATCHER_CORE
 
-    assert "At session start" not in text
+    assert "If startup fails" not in text
     assert "only when an executable interface is needed" in text
 
 
@@ -93,6 +92,49 @@ def test_packaged_hook_command_runs_without_separate_args(
     output = json.loads(result.stdout)
     assert output["hookSpecificOutput"]["hookEventName"] == "SessionStart"
     _assert_dispatcher_context(output["hookSpecificOutput"]["additionalContext"])
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="native Linux hook command")
+@pytest.mark.parametrize(
+    "script_name",
+    ["inject_dispatcher_context.py", "diagnose_dispatcher_runtime.py"],
+)
+def test_packaged_hook_selects_codex_when_compatibility_variables_are_both_set(
+    tmp_path: Path, script_name: str
+) -> None:
+    """Codex exposes CLAUDE_PLUGIN_ROOT as compatibility data too."""
+    payload = json.loads((_REPO_ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+    command = next(
+        registration["hooks"][0]["command"]
+        for registration in payload["hooks"]["SessionStart"]
+        if script_name in registration["hooks"][0]["command"]
+    )
+    plugin_root = tmp_path / "plugin"
+    hook_dir = plugin_root / "llmhooks"
+    hook_dir.mkdir(parents=True)
+    (hook_dir / script_name).write_text(
+        "import json, sys\nprint(json.dumps({'argv': sys.argv}))\n",
+        encoding="utf-8",
+    )
+    python_bin = tmp_path / "bin"
+    python_bin.mkdir()
+    (python_bin / "python").symlink_to(sys.executable)
+
+    result = subprocess.run(
+        command,
+        shell=True,
+        input="{}",
+        text=True,
+        capture_output=True,
+        env={
+            "PLUGIN_ROOT": str(plugin_root),
+            "CLAUDE_PLUGIN_ROOT": str(plugin_root),
+            "PATH": str(python_bin),
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["argv"][-1] == "--codex"
 
 
 def test_background_profile_declares_common_python_and_shared_hook() -> None:

@@ -6,7 +6,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python -c \"import os,runpy,sys; claude=os.environ.get('CLAUDE_PLUGIN_ROOT'); root=claude or os.environ['PLUGIN_ROOT']; sys.argv=['inject_dispatcher_context.py','--claude' if claude else '--codex']; runpy.run_path(os.path.join(root,'llmhooks','inject_dispatcher_context.py'),run_name='__main__')\"",
+            "command": "python -c \"import os,runpy,sys; codex=os.environ.get('PLUGIN_ROOT'); root=codex or os.environ['CLAUDE_PLUGIN_ROOT']; sys.argv=['inject_dispatcher_context.py','--codex' if codex else '--claude']; runpy.run_path(os.path.join(root,'llmhooks','inject_dispatcher_context.py'),run_name='__main__')\"",
+            "async": false
+          }
+        ]
+      },
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -c \"import os,runpy,sys; codex=os.environ.get('PLUGIN_ROOT'); root=codex or os.environ['CLAUDE_PLUGIN_ROOT']; sys.argv=['diagnose_dispatcher_runtime.py','--codex' if codex else '--claude']; runpy.run_path(os.path.join(root,'llmhooks','diagnose_dispatcher_runtime.py'),run_name='__main__')\"",
             "async": false
           }
         ]

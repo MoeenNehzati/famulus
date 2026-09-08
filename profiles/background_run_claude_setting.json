@@ -18,6 +18,16 @@
             "args": ["${FAMULUS_LAUNCHER_RESOURCES}/llmhooks/inject_dispatcher_context.py", "--claude"]
           }
         ]
+      },
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": ["${FAMULUS_LAUNCHER_RESOURCES}/llmhooks/diagnose_dispatcher_runtime.py", "--claude"]
+          }
+        ]
       }
     ]
   }
