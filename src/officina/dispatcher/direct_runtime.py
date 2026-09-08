@@ -246,6 +246,8 @@ def _materialize_metadata(
         metadata.terminal_module_id or metadata.target_module_id,
         "--runtime-caller-source-id",
         metadata.implementing_source_id or "",
+        "--immediate-caller-module-id",
+        metadata.caller_module_id,
         "--runtime-repo-root",
         configuration.repository_root.as_posix(),
         "--runtime-repository-config",

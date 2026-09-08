@@ -213,7 +213,7 @@ class Scenario:
             dispatch=self.dispatch,
             bindings=self.bindings,
             new_flow_id=lambda: f"flow-{self._next_flow}",
-            runtime_caller="acceptance-caller",
+            immediate_caller="acceptance-caller",
         )
         self.controller = controller
         return controller

@@ -410,14 +410,14 @@ class SetupManager:
         dispatch: Callable[..., subprocess.CompletedProcess[str]],
         bindings: Mapping[str, ManagedInterfaceBinding],
         new_flow_id: Callable[[], str] | None = None,
-        runtime_caller: str | None = None,
+        immediate_caller: str | None = None,
     ) -> None:
         self.graph = graph
         self.store = store
         self._dispatch = dispatch
         self._bindings = dict(bindings)
         self._new_flow_id = new_flow_id or (lambda: str(uuid4()))
-        self._runtime_caller = runtime_caller
+        self._immediate_caller = immediate_caller
 
     def _binding(self, setup_interface: str) -> ManagedInterfaceBinding:
         try:
@@ -504,8 +504,8 @@ class SetupManager:
             or ledger.schema_version != 2
             or not flow.owner_verified
             or flow.continuation is None
-            or not self._runtime_caller
-            or self._runtime_caller != flow.continuation.caller
+            or not self._immediate_caller
+            or self._immediate_caller != flow.continuation.caller
         ):
             return None, None
         return flow, step
@@ -954,7 +954,7 @@ class SetupManager:
         )
         if operation not in {"setup", "teardown"}:
             return self._domain_failure("begin", "E01", original=original)
-        if not self._runtime_caller or self._runtime_caller != original_caller:
+        if not self._immediate_caller or self._immediate_caller != original_caller:
             return self._domain_failure("begin", "E48")
         try:
             ledger = self.store.read()
@@ -1012,8 +1012,8 @@ class SetupManager:
                 verified_steps=verified_steps,
                 continuation=original,
                 owner_verified=bool(
-                    self._runtime_caller
-                    and self._runtime_caller == original_caller
+                    self._immediate_caller
+                    and self._immediate_caller == original_caller
                 ),
             )
 
@@ -1299,8 +1299,8 @@ class SetupManager:
                 ledger.schema_version != 2
                 or not flow.owner_verified
                 or flow.continuation is None
-                or not self._runtime_caller
-                or self._runtime_caller != flow.continuation.caller
+                or not self._immediate_caller
+                or self._immediate_caller != flow.continuation.caller
             ):
                 raise SetupFailure("E49")
             if action == "retry":
@@ -1389,8 +1389,8 @@ class SetupManager:
                     or live_step != step
                     or not active.owner_verified
                     or active.continuation is None
-                    or not self._runtime_caller
-                    or self._runtime_caller != active.continuation.caller
+                    or not self._immediate_caller
+                    or self._immediate_caller != active.continuation.caller
                 ):
                     raise FlowConflict(
                         "active flow changed before cancellation", entry_id="E36"
@@ -1559,7 +1559,7 @@ class _ManagerInterface(PythonMachineInterface):
             store=store,
             dispatch=dispatch,
             bindings=self._bindings,
-            runtime_caller=runtime_dispatch_context(self).caller_module_id,
+            immediate_caller=runtime_dispatch_context(self).immediate_caller_module_id,
         )
 
     def _malformed(self, message: str) -> int:

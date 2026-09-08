@@ -109,10 +109,22 @@ class PythonProcessTarget:
 
 @dataclass(frozen=True)
 class RuntimeDispatchContext:
-    """Runtime identity of the Python interface currently being executed."""
+    """Runtime identity of the Python interface currently being executed.
+
+    ``caller_module_id`` is this process's own self-declared identity, used
+    when the process in turn dispatches further nested calls onward -- it is
+    the same for every invocation of a given interface, regardless of who
+    invoked it this time. ``immediate_caller_module_id`` is the opposite: the
+    module that actually sent *this* invocation, resolved fresh per request.
+    Code that needs to know who called this specific invocation (e.g. an
+    authorization or continuation-identity check against a caller-supplied
+    claim) must use ``immediate_caller_module_id``, never
+    ``caller_module_id``.
+    """
 
     caller_module_id: str | None = None
     caller_source_id: str | None = None
+    immediate_caller_module_id: str | None = None
     repo_root: Path | None = None
     repository_config: Path | None = None
 
@@ -125,6 +137,7 @@ def set_runtime_dispatch_context(
     *,
     caller_module_id: str | None = None,
     caller_source_id: str | None = None,
+    immediate_caller_module_id: str | None = None,
     repo_root: Path | None = None,
     repository_config: Path | None = None,
 ) -> None:
@@ -136,6 +149,7 @@ def set_runtime_dispatch_context(
         RuntimeDispatchContext(
             caller_module_id=caller_module_id,
             caller_source_id=caller_source_id,
+            immediate_caller_module_id=immediate_caller_module_id,
             repo_root=repo_root,
             repository_config=repository_config,
         ),

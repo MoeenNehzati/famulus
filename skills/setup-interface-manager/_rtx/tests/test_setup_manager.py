@@ -271,7 +271,11 @@ def _fixture_controller(tmp_path: Path) -> tuple[manager.SetupManager, FixtureRu
     python_canary.reset_state()
     python_canary_teardown.reset_state()
     runtime = FixtureRuntime(tmp_path / "private" / "state" / "ledger.json")
-    set_runtime_dispatch_context(runtime, caller_module_id="original-caller")
+    set_runtime_dispatch_context(
+        runtime,
+        caller_module_id="original-caller",
+        immediate_caller_module_id="original-caller",
+    )
     return runtime.build_manager(argparse.Namespace(target_interface="unused")), runtime
 
 
@@ -299,7 +303,7 @@ def _controller(
     graph: SimpleNamespace,
     dispatch: DispatchHarness,
     *bindings: setup_dispatches.ManagedInterfaceBinding,
-    runtime_caller: str = "original-caller",
+    immediate_caller: str = "original-caller",
 ) -> manager.SetupManager:
     return manager.SetupManager(
         graph=graph,
@@ -307,7 +311,7 @@ def _controller(
         dispatch=dispatch,
         bindings={binding.setup_interface: binding for binding in bindings},
         new_flow_id=lambda: "flow-1",
-        runtime_caller=runtime_caller,
+        immediate_caller=immediate_caller,
     )
 
 
@@ -341,7 +345,7 @@ def test_begin_rejects_spoofed_continuation_owner(tmp_path: Path) -> None:
     item = _managed("canary")
     controller = manager.SetupManager(
         graph=_graph(item), store=_store(tmp_path), dispatch=DispatchHarness(),
-        bindings={item.setup_interface: _binding(item)}, runtime_caller="live-caller",
+        bindings={item.setup_interface: _binding(item)}, immediate_caller="live-caller",
     )
     code, payload = controller.begin(
         "setup", item.setup_interface, "spoofed-caller", item.setup_interface, 1
@@ -351,14 +355,14 @@ def test_begin_rejects_spoofed_continuation_owner(tmp_path: Path) -> None:
     assert payload["flow_id"] is None and "recovery" not in payload
 
 
-@pytest.mark.parametrize("runtime_caller", [None, ""])
+@pytest.mark.parametrize("immediate_caller", [None, ""])
 def test_begin_requires_a_nonempty_exact_runtime_owner(
-    tmp_path: Path, runtime_caller: str | None
+    tmp_path: Path, immediate_caller: str | None
 ) -> None:
     item = _managed("canary")
     controller = manager.SetupManager(
         graph=_graph(item), store=_store(tmp_path), dispatch=DispatchHarness(),
-        bindings={item.setup_interface: _binding(item)}, runtime_caller=runtime_caller,
+        bindings={item.setup_interface: _binding(item)}, immediate_caller=immediate_caller,
     )
 
     code, payload = controller.begin(
@@ -374,26 +378,26 @@ def test_recover_rejects_cross_caller_even_for_verified_flow(tmp_path: Path) -> 
     item = _managed("canary")
     controller = manager.SetupManager(
         graph=_graph(item), store=_store(tmp_path), dispatch=DispatchHarness(),
-        bindings={item.setup_interface: _binding(item)}, runtime_caller="owner",
+        bindings={item.setup_interface: _binding(item)}, immediate_caller="owner",
         new_flow_id=lambda: "flow-1",
     )
     assert controller.begin("setup", item.setup_interface, "owner", item.setup_interface, 1)[0] == 0
-    controller._runtime_caller = "other"
+    controller._immediate_caller = "other"
     code, payload = controller.recover("flow-1", "retry")
     assert code == 2
     assert payload["error_code"] == "setup.recovery_owner_unverified"
     assert payload["flow_id"] is None and "recovery" not in payload
 
 
-def test_recover_rejects_an_absent_runtime_caller(tmp_path: Path) -> None:
+def test_recover_rejects_an_absent_immediate_caller(tmp_path: Path) -> None:
     item = _managed("canary")
     controller = _controller(
-        tmp_path, _graph(item), DispatchHarness(), _binding(item), runtime_caller="owner"
+        tmp_path, _graph(item), DispatchHarness(), _binding(item), immediate_caller="owner"
     )
     assert controller.begin(
         "setup", item.setup_interface, "owner", item.setup_interface, 1
     )[0] == 0
-    controller._runtime_caller = None
+    controller._immediate_caller = None
 
     code, payload = controller.recover("flow-1", "retry")
 
@@ -1252,6 +1256,7 @@ def test_lifecycle_routes_retain_the_canonical_full_graph_loader(
     set_runtime_dispatch_context(
         runtime,
         caller_module_id="caller",
+        immediate_caller_module_id="caller",
         repo_root=repo_root,
         repository_config=tmp_path / "must-not-be-used.toml",
     )
@@ -1787,7 +1792,7 @@ def test_recovery_emission_requires_the_full_expected_flow_on_fresh_reread(
     controller = manager.SetupManager(
         graph=_graph(item), store=_store(tmp_path), dispatch=fail_after_mutating_flow,
         bindings={item.setup_interface: binding}, new_flow_id=lambda: "flow-1",
-        runtime_caller="original-caller",
+        immediate_caller="original-caller",
     )
     _begin_setup(controller, item)
 

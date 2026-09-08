@@ -1000,6 +1000,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     physical_package_prefix: str | None = None
     runtime_caller_module_id: str | None = None
     runtime_caller_source_id: str | None = None
+    immediate_caller_module_id: str | None = None
     runtime_repo_root: Path | None = None
     runtime_repository_config: Path | None = None
     confined_module_root: Path | None = None
@@ -1014,6 +1015,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--physical-package-prefix",
         "--runtime-caller-module-id",
         "--runtime-caller-source-id",
+        "--immediate-caller-module-id",
         "--runtime-repo-root",
         "--runtime-repository-config",
         "--confined-module-root",
@@ -1082,6 +1084,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             if runtime_caller_source_id is not None:
                 return reject("R03", f"duplicate {option}", option=option)
             runtime_caller_source_id = argv.pop(0)
+            continue
+        if option == "--immediate-caller-module-id":
+            if immediate_caller_module_id is not None:
+                return reject("R03", f"duplicate {option}", option=option)
+            immediate_caller_module_id = argv.pop(0)
             continue
         if option == "--runtime-repo-root":
             if runtime_repo_root is not None:
@@ -1158,6 +1165,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             interface,
             caller_module_id=runtime_caller_module_id,
             caller_source_id=runtime_caller_source_id,
+            immediate_caller_module_id=immediate_caller_module_id,
             repo_root=runtime_repo_root,
             repository_config=runtime_repository_config,
         )
