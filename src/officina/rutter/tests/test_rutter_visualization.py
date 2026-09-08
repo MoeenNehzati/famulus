@@ -128,6 +128,20 @@ def test_payload_exposes_prompts_response_formats_transitions_and_hooks() -> Non
         "verify",
         "publish",
     ]
+    assert {
+        entity["id"]: (
+            entity["short_title"],
+            entity["subtitle"],
+            entity["label"],
+            entity["type"],
+        )
+        for entity in payload["entities"]
+    } == {
+        "review": ("review", "llm step", "review", "llm-step"),
+        "edit": ("edit", "machine step", "edit", "machine-step"),
+        "verify": ("verify", "sub rutter", "verify", "sub-rutter"),
+        "publish": ("publish", "terminal", "publish", "terminal"),
+    }
     assert review["description"] == "Review the proposed change."
     assert review["details"]["sections"][0] == {
         "title": "LLM step",

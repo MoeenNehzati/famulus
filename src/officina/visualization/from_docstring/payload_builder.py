@@ -130,6 +130,7 @@ def _build_entity(
         "type": entity_type,
         "category": category or entity_type,
         "short_title": short_title,
+        "subtitle": entity_type.replace("-", " ").replace("_", " "),
         "position": position,
         "signature": signature,
         "source": source,
