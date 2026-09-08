@@ -4,7 +4,6 @@ import hashlib
 import multiprocessing
 import os
 from pathlib import Path
-import queue
 import stat
 import subprocess
 
@@ -471,13 +470,6 @@ def commit_unrelated_change(repo: Path) -> None:
     _git(repo, "commit", "--quiet", "-m", "Unrelated commit")
 
 
-def _fifo_readiness_worker(repo_text: str, path_text: str, result_queue) -> None:
-    result = check_commit_readiness(
-        capture_git_snapshot(Path(repo_text)), [Path(path_text)], {}
-    )
-    result_queue.put(result.reasons)
-
-
 @requires_descriptor_safe_open
 def test_commit_readiness_outcomes_share_one_repository_history(repo: Path) -> None:
     path = repo / "skills" / "demo" / "SKILL.md"
@@ -771,33 +763,32 @@ def test_descriptor_open_rejects_final_path_replaced_by_symlink(
 
 
 @requires_descriptor_safe_open
-def test_fifo_replacement_returns_without_blocking(repo: Path) -> None:
+def test_descriptor_safe_read_rejects_fifo_without_blocking(repo: Path) -> None:
     path = repo / "skills" / "demo" / "SKILL.md"
     path.unlink()
     os.mkfifo(path)
-    result_queue = multiprocessing.Queue()
-    process = multiprocessing.Process(
-        target=_fifo_readiness_worker,
-        args=(str(repo), str(path), result_queue),
-    )
+    context = multiprocessing.get_context("spawn")
+    workers = context.Pool(processes=1)
     try:
-        process.start()
-        process.join(timeout=2)
-        if process.is_alive():
-            process.terminate()
-            process.join()
-            pytest.fail("readiness blocked while opening a FIFO input")
-        assert process.exitcode == 0
-        assert result_queue.get(timeout=1) == (
-            "unsafe-worktree-input:skills/demo/SKILL.md",
+        try:
+            workers.apply_async(os.getpid).get(timeout=10)
+        except multiprocessing.TimeoutError:
+            pytest.fail("FIFO readiness worker did not start")
+        pending = workers.apply_async(
+            git_provenance._read_descriptor_safe_regular_file,
+            (repo, "skills/demo/SKILL.md"),
         )
-    except queue.Empty:
-        pytest.fail("FIFO readiness worker returned no result")
+        try:
+            assert pending.get(timeout=2) == (
+                None,
+                None,
+                "unsafe-worktree-input",
+            )
+        except multiprocessing.TimeoutError:
+            pytest.fail("descriptor-safe read blocked while opening a FIFO input")
     finally:
-        if process.is_alive():
-            process.terminate()
-            process.join()
-        result_queue.close()
+        workers.terminate()
+        workers.join()
 
 
 def test_non_git_snapshot_is_a_no_stamp_outcome(tmp_path: Path) -> None:
