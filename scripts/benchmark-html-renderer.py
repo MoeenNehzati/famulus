@@ -7,8 +7,10 @@ import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import math
+import os
 from pathlib import Path
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -109,7 +111,10 @@ fetch('/benchmark-result',{method:'POST',body:JSON.stringify({result:result?.tex
             f"--user-data-dir={Path(workdir) / 'profile'}", "--window-size=1440,1000",
             f"http://127.0.0.1:{server.server_port}/page.html",
         ]
-        process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=errors)
+        popen_options = {"start_new_session": True} if os.name == "posix" else {}
+        process = subprocess.Popen(
+            command, stdout=subprocess.DEVNULL, stderr=errors, **popen_options
+        )
         try:
             deadline = time.monotonic() + timeout_seconds
             while not outcome:
@@ -120,11 +125,17 @@ fetch('/benchmark-result',{method:'POST',body:JSON.stringify({result:result?.tex
                     raise SystemExit("benchmark result timed out")
                 server.handle_request()
         finally:
-            process.terminate()
+            if os.name == "posix":
+                os.killpg(process.pid, signal.SIGTERM)
+            else:
+                process.terminate()
             try:
                 process.wait(timeout=1)
             except subprocess.TimeoutExpired:
-                process.kill()
+                if os.name == "posix":
+                    os.killpg(process.pid, signal.SIGKILL)
+                else:
+                    process.kill()
                 process.wait()
             # Chrome children may finish profile writes just after the parent exits.
             for attempt in range(50):
