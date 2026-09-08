@@ -482,6 +482,7 @@ def build_payload_from_repository_graph(
                 "tone": "subtle" if role == "module" else "strong",
             },
             "short_title": graph.module_local_segments.get(node_id, node_id.rsplit(".", 1)[-1]),
+            "subtitle": "",
             "title": node_id,
             "ref": node_id,
             "description": str(
@@ -511,6 +512,7 @@ def build_payload_from_repository_graph(
             "category": category_id(role, kind),
             "presentation": {"form": "node", "tone": "strong"},
             "short_title": interface.local_name,
+            "subtitle": "",
             "title": interface_id,
             "ref": interface_id,
             "description": str(
@@ -629,6 +631,7 @@ def build_payload_from_repository_graph(
                 "kind": "out-of-scope",
                 "category": "out-of-scope",
                 "short_title": outside_root,
+                "subtitle": "",
                 "title": f"Outside scope: {outside_root}",
                 "ref": outside_root,
                 "description": "Truncated relationships to an unexpanded module outside the selected scope.",
@@ -644,6 +647,7 @@ def build_payload_from_repository_graph(
                 "kind": "out-of-scope",
                 "category": "out-of-scope",
                 "short_title": outside_root,
+                "subtitle": "",
                 "title": f"Outside scope: {outside_root}",
                 "ref": outside_root,
                 "description": "Truncated relationships to an unexpanded module outside the selected scope.",

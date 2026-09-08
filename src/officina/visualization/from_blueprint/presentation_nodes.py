@@ -250,6 +250,7 @@ def build_presentation_nodes(
                     "id": node_id,
                     "type": "group",
                     "short_title": value_label,
+                    "subtitle": facet_label,
                     "position": len(nodes),
                     "member_ids": members,
                     "presentation": {
