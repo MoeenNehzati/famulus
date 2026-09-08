@@ -294,6 +294,13 @@
         group.appendChild(shapeEl);
       }
 
+      const edgeCoverSource = group.querySelector(".node-shape");
+      if (edgeCoverSource) {
+        const edgeCover = edgeCoverSource.cloneNode(false);
+        for (const [name, value] of Object.entries({class: "node-edge-cover", fill: "#f8fafc", "fill-opacity": "0.78", stroke: "none", "pointer-events": "none"})) edgeCover.setAttribute(name, value);
+        group.insertBefore(edgeCover, edgeCoverSource);
+      }
+
       if (offsetDecoration) {
         const plate = createSvgElement("rect");
         plate.setAttribute("x", x + 5);

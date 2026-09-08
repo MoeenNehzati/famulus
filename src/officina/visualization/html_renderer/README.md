@@ -115,7 +115,8 @@ renderer API and CLI have no sidecar parameter.
 - `runtime/layout.js` builds hierarchical ELK input and converts layout geometry.
 - `runtime/node_renderer.js` paints generic nodes, containers, and decorations.
 - `runtime/interactions.js` owns node/edge hover, selection, and edge emphasis.
-- `runtime/render_pipeline.js` coordinates full layout renders and fast visibility updates.
+- `runtime/render_pipeline.js` reconciles keyed visible scenes, cancels stale paints,
+  and exposes `window.officinaRendererDiagnostics.whenIdle()` for completion.
 - `runtime/controls.js` owns dragging, toolbar controls, routing controls, keyboard
   shortcuts, sidebar ordering, and startup.
 
@@ -164,13 +165,19 @@ The browser runtime follows a fixed pipeline:
    paths only through adapter-declared typed composition rules, and bundle parallel
    visible relationships by directed endpoint pair.
 4. Recursively size contained graphs and obtain geometry from ELK.
-5. Paint container and ordinary node shapes, then masked edges. Each edge remains
-   above its source and target shapes, including containment endpoints, but its
-   mask occludes it beneath every unrelated ordinary node, attenuates it behind
-   unrelated translucent containers, and fully occludes it beneath every measured
-   label and subtitle. Text therefore remains visually above graph lines without
-   sacrificing endpoint-over-edge semantics or erasing contained relationships.
-6. Apply interaction-only updates without relaying out the graph when possible.
+5. Reconcile only visible keyed nodes and edges. Edges paint below nodes; one
+   shape-matched cover per node attenuates crossings without per-edge masks.
+6. Process large paints in cancellable frame-bounded chunks and typeset only new
+   or changed graph labels. Position-reusing updates avoid ELK when geometry exists.
+
+Benchmark two standalone pages with `scripts/benchmark-html-renderer.py
+--baseline-html BASELINE.html --candidate-html CANDIDATE.html --output RESULT.json`.
+It validates matching payloads, records 20-trial p95 metrics for duration,
+long-task, input-latency, and heartbeat observations, and writes an explicit
+benchmark-observable gate/parity verdict before returning nonzero on failure.
+For full graphs, probes are injected in `<head>` before supplied page scripts,
+so duration begins at earliest page-script execution rather than a true
+pre-navigation boundary; parity includes complete stable semantic edge records.
 
 ### Math rendering validation
 

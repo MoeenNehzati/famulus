@@ -15,8 +15,8 @@ This is a bounded refactor, not a replacement renderer:
   updates;
 - yield during large paints so input and browser frames continue;
 - keep shipped first-party renderer code net-zero or smaller;
-- expect **755 changed lines** and never exceed **900 changed lines** without
-  revising this plan.
+- currently measures **1,401 changed lines** and reserves **150 additional
+  lines** of explicitly reviewed contingency, for a **1,551-line** hard ceiling.
 
 “Changed lines” means additions plus deletions. The ceiling is contingency, not
 a target.
@@ -140,38 +140,48 @@ deletions. Moving slack between files requires an explicit plan edit.
 
 | File | Add | Delete | Net | Hard churn | Change |
 |---|---:|---:|---:|---:|---|
-| `src/officina/visualization/html_renderer/runtime/geometry.js` | 0 | 158 | -158 | 165 | Delete bounds scanning, mask blockers, occlusion constants, intersections, and `refreshEdgeOcclusionMasks`; support bounded all-edge routing. |
-| `src/officina/visualization/html_renderer/page.html` | 2 | 2 | 0 | 10 | Put `edge-layer` after `container-layer` and before `node-layer`; keep `presentation-node-layer` behind them. |
-| `src/officina/visualization/html_renderer/runtime/render_pipeline.js` | 90 | 70 | +20 | 180 | Add keyed visible-scene reconciliation, 6 ms yielding, position reuse, latest-paint completion, and paint-generation cancellation. |
-| `src/officina/visualization/html_renderer/runtime/layout.js` | 25 | 65 | -40 | 100 | Replace `updateVisibilityFast` with position-reusing reconciliation; retain ELK fallback for missing positions. |
-| `src/officina/visualization/html_renderer/runtime/controls.js` | 15 | 5 | +10 | 35 | Remove mask refreshes and bound whole-graph routing changes. |
-| `src/officina/visualization/html_renderer/runtime/math_typesetter.js` | 35 | 15 | +20 | 75 | Return the queue tail, clear removed math, and typeset only created or text-changed graph elements. |
+| `src/officina/visualization/html_renderer/runtime/geometry.js` | 1 | 159 | -158 | 160 | Delete bounds scanning, mask blockers, occlusion constants, intersections, and `refreshEdgeOcclusionMasks`; support bounded all-edge routing. |
+| `src/officina/visualization/html_renderer/page.html` | 1 | 1 | 0 | 2 | Put `edge-layer` after `container-layer` and before `node-layer`; keep `presentation-node-layer` behind them. |
+| `src/officina/visualization/html_renderer/runtime/render_pipeline.js` | 196 | 75 | +121 | 271 | Add keyed visible-scene reconciliation, 6 ms yielding, position reuse, latest-paint completion, and paint-generation cancellation. |
+| `src/officina/visualization/html_renderer/runtime/layout.js` | 21 | 61 | -40 | 82 | Replace `updateVisibilityFast` with position-reusing reconciliation; retain ELK fallback for missing positions. |
+| `src/officina/visualization/html_renderer/runtime/controls.js` | 2 | 3 | -1 | 5 | Remove mask refreshes and bound whole-graph routing changes. |
+| `src/officina/visualization/html_renderer/runtime/math_typesetter.js` | 9 | 2 | +7 | 11 | Return the queue tail, clear removed math, and typeset only created or text-changed graph elements. |
+| `src/officina/visualization/html_renderer/runtime/node_renderer.js` | 7 | 0 | +7 | 7 | Preserve readable node fills when dimmed crossings remain visible. |
+| `src/officina/visualization/html_renderer/viewer.css` | 9 | 3 | +6 | 12 | Support the visible overlap boundary without SVG filters. |
 
-Production subtotal: **+167 / -315 / net -148**, **482 expected churn**, and
-**565 hard churn**. Shipped first-party renderer code must remain net-zero or
+Production subtotal: **+246 / -304 / net -58**, **550 measured hard churn**.
+Shipped first-party renderer code must remain net-zero or
 smaller.
 
 ### Tests, benchmark, and documentation
 
 | File | Add | Delete | Net | Hard churn | Change |
 |---|---:|---:|---:|---:|---|
-| `tests/test_visualization_browser.py` | 45 | 10 | +35 | 70 | Test unmount/restore, position reuse, cancellation, completion, input latency, rAF heartbeat, and incremental MathJax. |
-| `tests/test_visualization_containment_edges_browser.py` | 20 | 45 | -25 | 70 | Replace mask tests with layer-order, containment-route, and overlap-readability tests. |
-| `tests/test_visualization_inspector_and_bezier_browser.py` | 20 | 45 | -25 | 70 | Replace shape-mask cloning tests with outcome-based nonrectangular-node readability tests. |
-| `scripts/benchmark-html-renderer.py` | 75 | 0 | +75 | 105 | Add the reproducible responsiveness benchmark and deterministic result manifest. |
-| `src/officina/visualization/html_renderer/README.md` | 8 | 5 | +3 | 20 | Document visible-only reconciliation, cancellation, overlap behavior, completion diagnostics, and benchmarking. |
+| `tests/test_visualization_browser.py` | 369 | 10 | +359 | 379 | Audit-discovered regressions for reconciliation completion, cancellation, input/frame responsiveness, and incremental MathJax. |
+| `tests/test_visualization_containment_edges_browser.py` | 22 | 16 | +6 | 38 | Replace mask tests with layer-order, containment-route, and overlap-readability tests. |
+| `tests/test_visualization_inspector_and_bezier_browser.py` | 9 | 30 | -21 | 39 | Replace shape-mask cloning tests with outcome-based nonrectangular-node readability tests. |
+| `tests/test_visualization_projection_arrangements_browser.py` | 1 | 1 | 0 | 2 | Preserve hidden-DOM compatibility coverage. |
+| `scripts/benchmark-html-renderer.py` | 168 | 0 | +168 | 168 | Add the reproducible benchmark, bounded completion probes, full semantic-edge records, p95 summaries, and observable gate verdict. |
+| `tests/test_benchmark_html_renderer.py` | 202 | 0 | +202 | 202 | Audit-discovered checks for timing, candidate/MathJax timeouts, payload identity, p95 gates, semantic parity, manifest failure, action count, and drag setup. |
+| `src/officina/visualization/html_renderer/README.md` | 15 | 8 | +7 | 23 | Document visible-only reconciliation, cancellation, overlap behavior, completion diagnostics, and benchmarking. |
 
-Supporting subtotal: **+168 / -105 / net +63**, **273 expected churn**, and
-**335 hard churn**.
+Supporting subtotal: **+786 / -65 / net +721**, **851 measured hard churn**.
+
+The regression-test expansion is deliberate: implementation audits exposed
+completion, cancellation, hidden-DOM, timing-boundary, and manifest-verdict
+contracts that the initial mask-focused estimates did not cover. These tests
+make those observable outcomes durable rather than treating the larger diff as
+unexplained implementation slack.
 
 | Budget | Add | Delete | Net | Churn |
 |---|---:|---:|---:|---:|
-| Lean | 250 | 420 | -170 | 670 |
-| Expected | 335 | 420 | -85 | 755 |
-| Hard ceiling | — | — | — | **900** |
+| Current measured diff | 1,032 | 369 | +663 | 1,401 |
+| Explicit contingency | — | — | — | 150 |
+| Hard ceiling | — | — | — | **1,551** |
 
 Tests and documentation do not count as shipped renderer complexity. The
-expected diff leaves 145 lines of contingency below the hard ceiling.
+ceiling leaves 150 lines only for a newly measured regression or acceptance
+gap; any use requires another explicit budget amendment.
 
 ## Implementation sequence
 
@@ -225,7 +235,8 @@ completion waits for the relevant queue tail.
 
 ### Task 4: Benchmark and document
 
-Files: `scripts/benchmark-html-renderer.py` and the renderer `README.md`.
+Files: `scripts/benchmark-html-renderer.py`,
+`tests/test_benchmark_html_renderer.py`, and the renderer `README.md`.
 
 Implement the protocol below and document how to run it. If an acceptance gate
 fails, profile that action and amend this plan before changing another runtime
@@ -261,8 +272,10 @@ routing change, and drag completion. Each trial starts from a fresh page load
 after clearing viewer storage; action cases are isolated and run in the order
 listed. Define their inputs as follows:
 
-- full graph measures initial navigation from immediately before page load to
-  the applicable completion route below;
+- full graph measures from the earliest page-script execution to the applicable
+  completion route below. The benchmark injects its probes into `<head>` before
+  the supplied page's scripts; a file URL cannot instrument a point after
+  navigation but before parsing, so this is not a true pre-navigation measure.
 - reduce-to-40 uses the existing hide action to hide every entity except the
   recorded 40 ids; show-all restores that state;
 - detail change selects the next option after the initial value in the detail
@@ -271,26 +284,47 @@ listed. Define their inputs as follows:
   container id and performs both transitions;
 - routing change selects the next geometry option after the initial value;
 - drag targets the lexicographically first visible, non-container ordinary
-  node and moves it by +40 px horizontally and +20 px vertically.
+  node and moves it by +40 px horizontally and +20 px vertically. If the
+  initial view has no ordinary node, advance one detail level and wait for
+  completion as deterministic setup outside the measured drag action; record
+  that setup in the manifest.
 
 Use the repository browser-test launcher at a 1440x1000 viewport. Run three
 unrecorded warmups and 20 recorded trials per action. Compute p95 as
 `sorted_samples[ceil(0.95 * n) - 1]`.
 
 For action cases, schedule an input probe and an independent
-`requestAnimationFrame` heartbeat before dispatch. For full graph, install both
-probes before navigation. Reset the Long Tasks observer before the measured
+`requestAnimationFrame` heartbeat before dispatch. For full graph, inject both
+probes into `<head>` before supplied page scripts and start duration there, then
+hand completion sampling off from `load` after one animation frame, never a
+fixed post-load delay. Reset the Long Tasks observer before the measured
 boundary and drain it after completion. Candidate completion is
 `window.officinaRendererDiagnostics.whenIdle()`. Because the baseline predates
 that seam, observe `#graph-svg` from its creation for full graph and before
 dispatch for other cases, require the first relevant subtree mutation, then
 require two consecutive mutation-free animation frames and await
-`window.officinaMathDiagnostics()` when present. Apply a fixed 10-second
-timeout to either completion route. Record:
+`window.officinaMathDiagnostics()` when present. Race both completion routes
+and every optional MathJax diagnostic wait against the fixed 10-second timeout.
+Record:
 
-- end-to-end duration and longest observed main-thread task;
-- input-probe latency and longest heartbeat gap;
+- p95 end-to-end duration, longest observed main-thread task, input-probe
+  latency, and longest heartbeat gap;
 - mounted node/edge counts and total SVG descendants.
+
+The manifest evaluates every benchmark-observable threshold and compares the
+captured visible node ids, complete stable semantic edge records (including
+aggregate, bundle, constituents, provenance, and metadata), and mounted counts
+trial-by-trial between baseline and candidate. It records an explicit `acceptance` verdict
+and violations, writes the manifest before returning failure, and exits nonzero
+when that scoped verdict fails. Its `pass` status is not evidence for inspector,
+control, manual-position, or saved-state parity, which remain browser-test
+acceptance gates.
+
+For retained evidence, write each reviewed manifest to
+`docs/benchmarks/html-renderer/YYYY-MM-DD-<payload-sha256>.json`; retain raw
+samples and the command inputs alongside the result, then commit the manifest
+only after the baseline and candidate pages and their source revisions are
+identified in the review. This change does not fabricate a manifest.
 
 ## Acceptance gates
 
@@ -302,6 +336,7 @@ Run these gates in host-capable Chromium against the fixed repository payload.
   projection, ELK layout, graph-scene MathJax pass, or whole-scene repaint.
   Focused inspector or tooltip typesetting remains allowed.
 - Drag-move frames reroute only incident edges; p95 duration is at most 32 ms.
+- Full-graph input-probe latency is at most 50 ms.
 - Hide, filter, selection, dim, routing, and drag completion produce no
   main-thread task above 50 ms.
 - Show-all, detail changes, collapse/expand, and cold layout may exceed 100 ms
@@ -340,9 +375,12 @@ Run these gates in host-capable Chromium against the fixed repository payload.
   edge records, inspector contents, control availability, selection state,
   manual positions, and saved viewer state match.
 
+Acceptance remains pending a retained manifest produced by the checked-in CLI;
+untracked exploratory output is not current evidence for these gates.
+
 ## Measurement-triggered contingency
 
-The eleven files budgeted above are the complete base scope. Add a second-pass
+The fifteen files budgeted above are the complete base scope. Add a second-pass
 file only when a failed gate identifies its measured cause, and assign that file
 a new three-dimensional budget before implementation.
 
@@ -352,7 +390,9 @@ a new three-dimensional budget before implementation.
 | Caller completion ordering fails | `runtime/graph_actions.js`, `runtime/filtering.js`, `runtime/presentation_nodes.js` |
 | Hidden presentation work remains mounted | `runtime/visibility.js` |
 | Overlap readability fails | `viewer.css` |
+| Dimmed nodes expose full-strength crossings | `runtime/node_renderer.js` (+7/-0/net +7, churn 7); `viewer.css` (+9/-3/net +6, churn 12) |
 | Pure projection exceeds 50 ms | `runtime/projection.js`; using a worker requires a separate reviewed design |
+| Hidden-DOM compatibility fixture fails | `tests/test_visualization_projection_arrangements_browser.py` (+1/-1, churn 2) |
 
 ## Out of scope
 

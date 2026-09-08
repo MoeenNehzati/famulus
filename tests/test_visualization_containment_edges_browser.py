@@ -99,10 +99,20 @@ def test_containment_edges_reach_both_endpoint_boundaries() -> None:
               if (!nearBoundary(point, parentRect)) {
                 throw new Error(`${source} -> ${target} terminates inside the parent header`);
               }
-              if (!path.getAttribute("mask")) throw new Error("edge occlusion mask missing");
+              if (path.hasAttribute("mask")) throw new Error("edge retained an occlusion mask");
             };
             check("parent-out", "parent-out.child", "parent-out", true);
             check("parent-in.child", "parent-in", "parent-in", false);
+            const layerIds = Array.from(document.getElementById("graph-svg").children)
+              .filter(element => element.tagName.toLowerCase() === "g")
+              .map(element => element.id);
+            const expectedLayers = ["presentation-node-layer", "container-layer", "edge-layer", "node-layer"];
+            if (JSON.stringify(layerIds) !== JSON.stringify(expectedLayers)) {
+              throw new Error(`unexpected graph layer order: ${layerIds.join(",")}`);
+            }
+            if (document.querySelector("[data-edge-occlusion-mask], .edge-path[mask], .edge-arrow[mask]")) {
+              throw new Error("edge occlusion resources remain");
+            }
             const child = document.querySelector('[data-node-id="parent-out.child"]');
             const edge = document.querySelector(
               '.edge-path[data-source-node-id="parent-out"][data-target-node-id="parent-out.child"]'
@@ -148,8 +158,8 @@ def test_containment_edges_reach_both_endpoint_boundaries() -> None:
     assert 'data-test-status="PASS"' in result.stdout, result.stdout[-1000:]
 
 
-def test_edge_occlusion_geometry_scales_with_local_intersections() -> None:
-    """Avoid multiplying every edge mask by every node in the graph."""
+def test_full_graph_has_no_edge_occlusion_resources() -> None:
+    """Removing masks prevents edge resources from scaling with graph size."""
     chrome = require_chrome()
     node_count = 72
     entities = []
@@ -178,20 +188,16 @@ def test_edge_occlusion_geometry_scales_with_local_intersections() -> None:
     html = build_html_with_elk(payload).replace(
         "</body>",
         """<script>
-        window.addEventListener("load", () => setTimeout(() => {
-          const blockerCount = document.querySelectorAll(
-            "[data-edge-occlusion-mask] rect"
-          ).length;
-          const viewBox = document.getElementById("graph-svg").viewBox.baseVal;
-          const graphArea = Math.max(1, viewBox.width * viewBox.height);
-          const maskArea = Array.from(document.querySelectorAll("[data-edge-occlusion-mask]"))
-            .reduce((total, mask) => total
-              + Number(mask.getAttribute("width")) * Number(mask.getAttribute("height")), 0);
-          document.body.dataset.blockerCount = String(blockerCount);
-          document.body.dataset.maskAreaRatio = String(maskArea / graphArea);
-          document.body.dataset.testStatus = blockerCount < 1000 && maskArea < graphArea * 10
+        window.addEventListener("load", () => setTimeout(async () => {
+          await window.officinaRendererDiagnostics.whenIdle();
+          const masks = document.querySelectorAll("[data-edge-occlusion-mask]");
+          const maskedEdges = document.querySelectorAll(".edge-path[mask], .edge-arrow[mask]");
+          const routes = document.querySelectorAll(".edge-path[d]");
+          document.body.dataset.testStatus = masks.length === 0
+            && maskedEdges.length === 0
+            && routes.length === 71
             ? "PASS"
-            : `FAIL:${blockerCount} mask rectangles; mask ratio ${maskArea / graphArea}`;
+            : `FAIL:${masks.length} masks, ${maskedEdges.length} masked edges, ${routes.length} routes`;
         }, 150));
         </script></body>""",
     )

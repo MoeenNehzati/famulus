@@ -680,9 +680,15 @@
       font-size: 0.78rem;
       line-height: 1.3;
     }
-    .graph-node.filter-dimmed,
     .edge-path.filter-dimmed,
     .edge-arrow.filter-dimmed {
+      opacity: 0.13 !important;
+    }
+    .graph-node.filter-dimmed,
+    .graph-node.user-dimmed {
+      opacity: 1 !important;
+    }
+    .graph-node.filter-dimmed > :not(.node-edge-cover):not(.selection-ring) {
       opacity: 0.13 !important;
     }
     .graph-node.filter-match .node-shape {
@@ -742,10 +748,10 @@
     .graph-node.selected .node-shape {
       filter: none;
     }
-    .graph-node.user-dimmed {
+    .graph-node.user-dimmed > :not(.node-edge-cover):not(.selection-ring) {
       opacity: 0.2;
     }
-    .graph-node.user-dimmed.selected {
+    .graph-node.user-dimmed.selected > :not(.node-edge-cover):not(.selection-ring) {
       opacity: 0.48;
     }
     .selection-summary {

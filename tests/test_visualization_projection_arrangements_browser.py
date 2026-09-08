@@ -462,7 +462,7 @@ def test_overlapping_child_and_container_hides_restore_independently():
       check(hiddenNodes.has("A") && hiddenNodes.has("K") && hiddenNodes.size === 2, "overlapping hides lost explicit state");
       await restore("K");
       check(hiddenNodes.has("A") && !hiddenNodes.has("K"), "restoring container erased child hide");
-      check(node("B").style.display !== "none" && node("A").style.display === "none", "container restore visibility wrong");
+      check(node("B") && !node("A"), "container restore visibility wrong");
       check(one("S", "B", "indirect"), "remaining child hide lacks projection");
       await restore("A");
       check(hiddenNodes.size === 0 && !one("S", "B", "indirect"), "final child restore left stale projection");

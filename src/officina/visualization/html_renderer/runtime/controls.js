@@ -65,7 +65,6 @@
           draggingNodeIds.forEach((nodeId) => {
             rerouteIncidentEdgesFromCurrentPositions(nodeId);
           });
-          refreshEdgeOcclusionMasks();
           saveViewerState();
         }
         draggingNodeIds = [];
@@ -213,8 +212,8 @@
     function applyEdgeRoutingChange(patch) {
       applyRoutingPatch(patch);
       saveViewerState();
-      rerouteAllVisibleEdgesFromCurrentPositions();
-      refreshEdgeOcclusionMasks();
+      const renderedEntities = docData.entities.filter(entity => !isHiddenNode(entity.id));
+      reconcileVisibleScene(renderedEntities, computeVisibleEdges(), renderedEntities.map(entity => entity.id));
     }
 
     function applyLayoutRoutingChange(patch) {

@@ -35,15 +35,22 @@
     }
 
     function typesetElement(element) {
-      if (!window.MathJax || !window.MathJax.typesetPromise || !containsMath(element)) return;
+      if (!window.MathJax || !window.MathJax.typesetPromise || !containsMath(element)) {
+        return mathTypesetQueue;
+      }
       const generation = mathGenerations.get(element) || 0;
       mathTypesetQueue = mathTypesetQueue
         .catch(() => {})
         .then(() => {
-          if (!element.isConnected || mathGenerations.get(element) !== generation) return;
+          if (!element.isConnected || (mathGenerations.get(element) || 0) !== generation) return;
           if (!containsMath(element)) return;
           return window.MathJax.typesetPromise([element]);
         });
+      return mathTypesetQueue;
+    }
+
+    function currentMathTypesetTail() {
+      return mathTypesetQueue;
     }
 
     window.officinaMathDiagnostics = async function () {

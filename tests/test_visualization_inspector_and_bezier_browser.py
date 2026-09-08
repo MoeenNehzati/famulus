@@ -695,7 +695,7 @@ def test_node_and_color_legend_headings_toggle_independently() -> None:
     )
 
 
-def test_edge_occlusion_masks_follow_nonrectangular_node_shapes() -> None:
+def test_dimmed_nonrectangular_nodes_still_attenuate_crossing_edges() -> None:
     shapes = ["ellipse", "circle", "diamond", "hexagon", "parallelogram"]
     payload = {
         "schema_version": 2,
@@ -721,36 +721,15 @@ def test_edge_occlusion_masks_follow_nonrectangular_node_shapes() -> None:
         "shape-aware-edge-occlusion",
         payload,
         """
-        const positions = Array.from(lastNodePositions.values());
-        const left = Math.min(...positions.map(position => position.x)) - 20;
-        const top = Math.min(...positions.map(position => position.y)) - 20;
-        const right = Math.max(...positions.map(position => position.x + position.width)) + 20;
-        const bottom = Math.max(...positions.map(position => position.y + position.height)) + 20;
-        const probe = createSvgElement("path");
-        probe.setAttribute("class", "edge-path");
-        probe.setAttribute("d", `M ${left} ${top} H ${right} V ${bottom} H ${left} Z`);
-        probe.dataset.sourceNodeId = "outside-source";
-        probe.dataset.targetNodeId = "outside-target";
-        edgeLayer.appendChild(probe);
-        refreshEdgeOcclusionMasks();
-
-        const maskReference = probe.getAttribute("mask") || "";
-        const maskId = maskReference.startsWith("url(#") ? maskReference.slice(5, -1) : "";
-        const mask = maskId ? document.getElementById(maskId) : null;
-        if (!mask) throw new Error("probe edge did not receive an occlusion mask");
         for (const nodeId of ["ellipse", "circle", "diamond", "hexagon", "parallelogram"]) {
-          const visibleShape = nodeElement(nodeId)?.querySelector(".node-shape");
-          const blocker = mask.querySelector(`[data-edge-occlusion-node-id="${nodeId}"]`);
-          if (!visibleShape || !blocker) throw new Error(`${nodeId} blocker is missing`);
-          if (blocker.tagName !== visibleShape.tagName) {
-            throw new Error(`${nodeId} uses ${blocker.tagName} occlusion for a ${visibleShape.tagName} node`);
-          }
-          for (const attribute of ["x", "y", "width", "height", "rx", "ry", "cx", "cy", "r", "points"]) {
-            if (visibleShape.hasAttribute(attribute)
-                && blocker.getAttribute(attribute) !== visibleShape.getAttribute(attribute)) {
-              throw new Error(`${nodeId} blocker changed its ${attribute} geometry`);
-            }
-          }
+          const node = nodeElement(nodeId);
+          const shape = node?.querySelector(".node-shape");
+          const cover = node?.querySelector(".node-edge-cover");
+          node.classList.add("user-dimmed");
+          if (!shape || !cover || cover.tagName !== shape.tagName
+              || Number(getComputedStyle(node).opacity) !== 1
+              || Number(getComputedStyle(shape).opacity) !== 0.2
+              || Number(getComputedStyle(cover).fillOpacity) !== 0.78) throw new Error(`${nodeId} dimming loses edge attenuation`);
         }
         """,
     )
