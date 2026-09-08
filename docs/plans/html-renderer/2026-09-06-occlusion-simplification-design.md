@@ -403,6 +403,69 @@ a new three-dimensional budget before implementation.
 | Pure projection exceeds 50 ms | `runtime/projection.js`; using a worker requires a separate reviewed design |
 | Hidden-DOM compatibility fixture fails | `tests/test_visualization_projection_arrangements_browser.py` (+1/-1, churn 2) |
 
+## Task 5: Measurement-triggered responsiveness repair
+
+The required repository benchmark completed on 2026-09-08 and preserved
+semantic visible-scene parity, but failed responsiveness gates. Host Chromium
+profiling localized the failures rather than implicating projection semantics:
+
+- the checked-in ELK bundle silently selected its fake-worker fallback, so a
+  115 ms layout dispatch ran on the main thread;
+- final presentation escaped the reconciler's frame budget, repeated route
+  geometry up to three times per new edge, and repeatedly queried the SVG for
+  deliberately unmounted canonical nodes;
+- the executable runtime script contained 7.8 MB of graph and edge object
+  literals, producing a reproducible pre-DOMContentLoaded compilation task;
+- unchanged whole-document inspector JSON was serialized and assigned after
+  ordinary graph actions.
+
+Repair only these measured boundaries. Instantiate ELK with an explicit native
+`Worker` factory; store serialized payloads in non-executable JSON data blocks;
+use the mounted-node index/collection for presentation; synchronize edge
+geometry only after a route changes; keep remaining presentation work inside
+the cancellable paint budget; and reuse the original serialized graph text in
+the document inspector. Do not change projection, thresholds, or public payload
+semantics. Rerun the unchanged repository benchmark after focused browser
+acceptance.
+
+### Task 5 three-dimensional budget
+
+| File | Add | Delete | Net | Hard churn | Change |
+|---|---:|---:|---:|---:|---|
+| `runtime/layout.js` | 3 | 1 | +2 | 4 | Supply the browser-native ELK worker factory. |
+| `page.html` | 8 | 0 | +8 | 8 | Add inert JSON data blocks outside executable runtime code. |
+| `runtime/bootstrap.js` | 7 | 3 | +4 | 10 | Parse the inert graph and edge payloads and retain the original graph text. |
+| `html_renderer/assets.py` | 4 | 2 | +2 | 6 | Assemble data blocks without changing standalone output. |
+| `elk_html_renderer.py` | 4 | 2 | +2 | 6 | Route the two serialized payloads to inert placeholders. |
+| `runtime/core.js` | 5 | 6 | -1 | 11 | Make the mounted index authoritative and stale-safe. |
+| `runtime/filtering.js` | 20 | 20 | 0 | 40 | Present and summarize the mounted visible scene without failed global lookups. |
+| `runtime/visibility.js` | 8 | 10 | -2 | 18 | Remove redundant final edge geometry and expose bounded presentation operations. |
+| `runtime/render_pipeline.js` | 35 | 15 | +20 | Schedule final presentation in cancellable chunks and avoid duplicate geometry. |
+| `runtime/selection.js` | 10 | 4 | +6 | Reuse canonical graph JSON for unchanged document output. |
+| `runtime/edge_presentation.js` | 8 | 2 | +6 | Share one route-geometry sample between arrow and gradient updates. |
+| `scripts/benchmark-html-renderer.py` | 20 | 8 | +12 | Extract payloads from executable legacy or inert candidate pages and record probe support/boundaries. |
+| `tests/test_benchmark_html_renderer.py` | 50 | 5 | +45 | Cover inert payload extraction and explicit timing support. |
+| Focused renderer browser tests | 170 | 15 | +155 | Prove native worker use, one geometry sync, mounted-only presentation, cancellation, and inspector transitions. |
+| This plan | 70 | 0 | +70 | Record the measured scope and budget before implementation. |
+
+Task 5 subtotal: **+422 / -93 / net +329**, **515 hard churn**.
+Production JavaScript is budgeted at **+96 / -61 / net +35**, so the original
+production JavaScript diff remains net-negative. The amended whole-plan hard
+ceiling is **2,066 lines**. Any additional runtime file or movement of more than
+20 lines between runtime rows requires another explicit amendment.
+
+Task 5 checkpoints:
+
+1. A browser regression observes one native worker, no ELK fake-worker warning,
+   and a semantically complete initial scene.
+2. Repository-scale detail, reduce, show, collapse, and routing actions retain
+   scene parity while mounted-node lookups, edge route geometry, and inspector
+   document output are not repeated unnecessarily.
+3. Cancellation still settles `whenIdle()` on only the newest scene, and every
+   remaining whole-scene presentation operation obeys the six-millisecond
+   paint deadline.
+4. The unchanged full acceptance matrix passes in real-time host Chromium.
+
 ## Out of scope
 
 - A second renderer or permanent dual-runtime cutover.
