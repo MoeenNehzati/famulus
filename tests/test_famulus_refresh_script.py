@@ -45,6 +45,16 @@ def run_refresh(*args: str, env: dict[str, str] | None = None) -> subprocess.Com
     )
 
 
+def _write_fake_host(tmp_path: Path, name: str, body: str) -> tuple[Path, Path]:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    executable = fake_bin / name
+    executable.write_text("#!/usr/bin/env bash\n" + body, encoding="utf-8")
+    executable.chmod(0o755)
+    log = tmp_path / f"{name}.log"
+    return fake_bin, log
+
+
 def test_windows_refresh_bypasses_system_wsl_bash_launcher(
     monkeypatch,
     tmp_path: Path,
@@ -107,6 +117,8 @@ def test_default_dry_run_refreshes_both_from_local_and_preserves_plugin_data(
         "plugin",
         "uninstall",
         "famulus@nullkit",
+        "--scope",
+        "user",
         "--keep-data",
     ] in commands
     assert [
@@ -128,6 +140,124 @@ def test_default_dry_run_refreshes_both_from_local_and_preserves_plugin_data(
         "-y",
     ] in commands
     assert not any(command[:2] == ["rm", "-rf"] for command in commands)
+
+
+def test_claude_refresh_warns_for_absent_state_and_continues_installing(
+    tmp_path: Path,
+) -> None:
+    fake_bin, log = _write_fake_host(
+        tmp_path,
+        "claude",
+        """
+printf '%s\n' "$*" >> "$FAKE_CLAUDE_LOG"
+case "$*" in
+    "plugin uninstall famulus@nullkit --scope user --keep-data")
+        printf '%s\n' 'Plugin "famulus@nullkit" is not installed in user scope. Use --scope to specify the correct scope.' >&2
+        exit 1
+        ;;
+    "plugin marketplace remove nullkit --scope user")
+        printf "%s\n" "Marketplace 'nullkit' not found" >&2
+        exit 1
+        ;;
+esac
+""",
+    )
+    path = os.pathsep.join((str(fake_bin), os.environ.get("PATH", "")))
+
+    result = run_refresh(
+        "--claude",
+        "--github",
+        env={"FAKE_CLAUDE_LOG": str(log), "PATH": path},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert 'Plugin "famulus@nullkit" is not installed in user scope' in result.stderr
+    assert "warning: could not remove Claude Famulus plugin; continuing" in result.stderr
+    assert "Marketplace 'nullkit' not found" in result.stderr
+    assert "warning: could not remove Claude nullkit marketplace; continuing" in result.stderr
+    assert log.read_text(encoding="utf-8").splitlines() == [
+        "plugin uninstall famulus@nullkit --scope user --keep-data",
+        "plugin marketplace remove nullkit --scope user",
+        "plugin marketplace add MoeenNehzati/famulus --scope user",
+        "plugin install famulus@nullkit --scope user -y",
+        "plugin list --json",
+    ]
+
+
+def test_claude_refresh_reports_other_removal_failures_and_continues(
+    tmp_path: Path,
+) -> None:
+    fake_bin, log = _write_fake_host(
+        tmp_path,
+        "claude",
+        """
+printf '%s\n' "$*" >> "$FAKE_CLAUDE_LOG"
+if [[ "$*" == "plugin uninstall famulus@nullkit --scope user --keep-data" ]]; then
+    printf '%s\n' 'permission denied' >&2
+    exit 1
+fi
+""",
+    )
+    path = os.pathsep.join((str(fake_bin), os.environ.get("PATH", "")))
+
+    result = run_refresh(
+        "--claude",
+        "--github",
+        env={"FAKE_CLAUDE_LOG": str(log), "PATH": path},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "permission denied" in result.stderr
+    assert "warning: could not remove Claude Famulus plugin; continuing" in result.stderr
+    assert log.read_text(encoding="utf-8").splitlines() == [
+        "plugin uninstall famulus@nullkit --scope user --keep-data",
+        "plugin marketplace remove nullkit --scope user",
+        "plugin marketplace add MoeenNehzati/famulus --scope user",
+        "plugin install famulus@nullkit --scope user -y",
+        "plugin list --json",
+    ]
+
+
+def test_codex_refresh_reports_removal_failures_and_continues_installing(
+    tmp_path: Path,
+) -> None:
+    fake_bin, log = _write_fake_host(
+        tmp_path,
+        "codex",
+        """
+printf '%s\n' "$*" >> "$FAKE_CODEX_LOG"
+case "$*" in
+    "plugin remove famulus@nullkit --json")
+        printf '%s\n' 'Error: Famulus plugin removal failed' >&2
+        exit 1
+        ;;
+    "plugin marketplace remove nullkit --json")
+        printf '%s\n' 'Error: marketplace `nullkit` is not configured or installed' >&2
+        exit 1
+        ;;
+esac
+""",
+    )
+    path = os.pathsep.join((str(fake_bin), os.environ.get("PATH", "")))
+
+    result = run_refresh(
+        "--codex",
+        "--github",
+        env={"FAKE_CODEX_LOG": str(log), "PATH": path},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Famulus plugin removal failed" in result.stderr
+    assert "warning: could not remove Codex Famulus plugin; continuing" in result.stderr
+    assert "marketplace `nullkit` is not configured or installed" in result.stderr
+    assert "warning: could not remove Codex nullkit marketplace; continuing" in result.stderr
+    assert log.read_text(encoding="utf-8").splitlines() == [
+        "plugin remove famulus@nullkit --json",
+        "plugin marketplace remove nullkit --json",
+        "plugin marketplace add MoeenNehzati/famulus --json",
+        "plugin add famulus@nullkit --json",
+        "plugin list --json",
+    ]
 
 
 def test_reset_refuses_a_codex_data_path_outside_the_agent_plugin_root(tmp_path: Path) -> None:

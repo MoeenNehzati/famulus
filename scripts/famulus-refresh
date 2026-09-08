@@ -34,6 +34,10 @@ die() {
     exit 2
 }
 
+warn() {
+    printf 'famulus-refresh: warning: %s\n' "$*" >&2
+}
+
 dry_run=false
 host=both
 host_was_selected=false
@@ -112,10 +116,35 @@ run() {
     fi
 }
 
+remove_or_warn() {
+    local label=$1
+    shift
+
+    local stderr_file
+    stderr_file=$(mktemp "${TMPDIR:-/tmp}/famulus-refresh.XXXXXX") || return
+
+    local status=0
+    run "$@" 2>"$stderr_file" || status=$?
+
+    local command_stderr
+    command_stderr=$(<"$stderr_file")
+    rm -f -- "$stderr_file"
+
+    [[ -z $command_stderr ]] || printf '%s\n' "$command_stderr" >&2
+    if ((status != 0)); then
+        warn "could not remove $label; continuing"
+    fi
+    return 0
+}
+
 refresh_codex() {
     printf '%s\n' 'Refreshing Famulus for Codex...'
-    run codex plugin remove famulus@nullkit --json || return
-    run codex plugin marketplace remove nullkit --json || return
+    remove_or_warn \
+        'Codex Famulus plugin' \
+        codex plugin remove famulus@nullkit --json || return
+    remove_or_warn \
+        'Codex nullkit marketplace' \
+        codex plugin marketplace remove nullkit --json || return
     if $reset_plugin_data && [[ -e $codex_plugin_data ]]; then
         run rm -rf -- "$codex_plugin_data" || return
     fi
@@ -127,11 +156,17 @@ refresh_codex() {
 refresh_claude() {
     printf '%s\n' 'Refreshing Famulus for Claude...'
     if $reset_plugin_data; then
-        run claude plugin uninstall famulus@nullkit || return
+        remove_or_warn \
+            'Claude Famulus plugin' \
+            claude plugin uninstall famulus@nullkit --scope user || return
     else
-        run claude plugin uninstall famulus@nullkit --keep-data || return
+        remove_or_warn \
+            'Claude Famulus plugin' \
+            claude plugin uninstall famulus@nullkit --scope user --keep-data || return
     fi
-    run claude plugin marketplace remove nullkit --scope user || return
+    remove_or_warn \
+        'Claude nullkit marketplace' \
+        claude plugin marketplace remove nullkit --scope user || return
     run claude plugin marketplace add "$marketplace_source" --scope user || return
     run claude plugin install famulus@nullkit --scope user -y || return
     run claude plugin list --json || return
