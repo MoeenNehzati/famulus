@@ -180,12 +180,13 @@
       const detailPromotionClasses = detailPromoted
         ? ` detail-promoted detail-depth-${Math.min(containmentDepth, 2)}${hasVisibleChildren ? " detail-promoted-branch" : " detail-promoted-leaf"}`
         : "";
+      const toneClass = !isContainer && presentation.tone === "subtle" ? " node-tone-subtle" : "";
       return {
         isContainer,
         containmentDepth,
         detailPromoted,
         hasVisibleChildren,
-        className: `${isContainer ? "node-fo-body container-node" : "node-fo-body"}${detailPromotionClasses}`,
+        className: `${isContainer ? "node-fo-body container-node" : "node-fo-body"}${detailPromotionClasses}${toneClass}`,
       };
     }
 
@@ -273,6 +274,7 @@
         outer.setAttribute("class", "node-shape");
         outer.setAttribute("fill", nodeFill(style)); outer.setAttribute("stroke", stroke);
         outer.setAttribute("stroke-width", "2");
+        if (presentation.tone === "subtle") outer.setAttribute("fill-opacity", "0.16");
         if (isInferred) outer.setAttribute("stroke-dasharray", "6 3");
         group.appendChild(outer);
         const inner = createSvgElement("rect");
@@ -303,6 +305,7 @@
           shapeEl.setAttribute("fill", nodeFill(style));
           shapeEl.setAttribute("stroke", stroke);
           shapeEl.setAttribute("stroke-width", "2");
+          if (presentation.tone === "subtle") shapeEl.setAttribute("fill-opacity", "0.16");
         }
         if (isInferred) shapeEl.setAttribute("stroke-dasharray", "6 3");
         group.appendChild(shapeEl);

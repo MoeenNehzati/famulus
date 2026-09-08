@@ -302,6 +302,8 @@ def apply_presentation_base(doc: dict) -> dict:
         ui.setdefault("edge_presentation", base["ui"]["edge_presentation"])
     if "relation_semantics" in base:
         result.setdefault("relation_semantics", base["relation_semantics"])
+    for entity in result.get("entities", []):
+        entity.setdefault("presentation", {}).setdefault("tone", "subtle")
     return result
 
 

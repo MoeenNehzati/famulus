@@ -834,6 +834,9 @@
       box-sizing: border-box;
       pointer-events: none;
     }
+    .node-fo-body:not(.container-node) {
+      padding: 6px 14px;
+    }
     .node-fo-body.container-node {
       justify-content: flex-start;
       padding-top: 6px;
@@ -842,6 +845,11 @@
     }
     .node-fo-body.container-node .node-label,
     .node-fo-body.container-node .node-subtitle {
+      color: #1f2933;
+      text-shadow: none;
+    }
+    .node-fo-body.node-tone-subtle .node-label,
+    .node-fo-body.node-tone-subtle .node-subtitle {
       color: #1f2933;
       text-shadow: none;
     }

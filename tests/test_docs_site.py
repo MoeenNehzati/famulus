@@ -23,7 +23,7 @@ MATH_DEPENDENCY_SCHEMA = (
     REPO_ROOT / "src/officina/visualization/graph_specification.schema.json"
 )
 MATH_DEPENDENCY_SEMANTIC_SHA256 = (
-    "b734dabce7977c4160466bd5aff4638fa18f3c01c5806711e88b683bfc62032b"
+    "849a3202115af47f49994909ef30ac67cbd1e9459a5f85edc06c57b7ed45d828"
 )
 
 

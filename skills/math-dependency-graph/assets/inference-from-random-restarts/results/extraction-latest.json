@@ -64,7 +64,11 @@
         "in_scope_role": "target of Appendix A, Section 'Terminal Outcomes and Roots'",
         "ref_provenance": "label-map"
       },
-      "connects_to": []
+      "connects_to": [],
+      "subtitle": "proposition 4.7",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "ass-well-behaved-proj",
@@ -91,7 +95,11 @@
             "note": "The lemma presupposes that the dynamic solver and its flow exist; it does not name the assumption."
           }
         }
-      ]
+      ],
+      "subtitle": "standing assumption 4.2",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "lemma-global-lip-flow",
@@ -124,7 +132,11 @@
           "confidence": "Verified",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "lemma A.1",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "ext-nagurney-projected-systems",
@@ -148,7 +160,11 @@
           "confidence": "Verified",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "external result",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "lemma-localized-global-systems",
@@ -212,7 +228,11 @@
           "confidence": "Verified",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "lemma A.2",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "ext-mcshane-extension",
@@ -236,7 +256,11 @@
           "confidence": "Verified",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "external result",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "notation-exit-time",
@@ -266,7 +290,11 @@
           "confidence": "Verified",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "notation",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "lemma-localized-consistency",
@@ -298,7 +326,11 @@
           "confidence": "Verified",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "lemma A.3",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "lemma-local-flow-construction",
@@ -346,7 +378,11 @@
           "confidence": "High",
           "implicit": true
         }
-      ]
+      ],
+      "subtitle": "lemma A.4",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "lemma-maximal-local-flow",
@@ -370,7 +406,11 @@
           "confidence": "Verified",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "lemma A.5",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "lemma-lsc-flow-continuity",
@@ -402,7 +442,11 @@
           "confidence": "Verified",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "lemma A.6",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "lemma-lipschitz",
@@ -430,7 +474,11 @@
             "direction_note": "Edge points lemma to assumption because establishing that the assumption holds requires this lemma; the assumption is not a hypothesis of the lemma."
           }
         }
-      ]
+      ],
+      "subtitle": "lemma 4.3",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "prop-measurable",
@@ -447,7 +495,11 @@
         "inline_tools": "Countable suprema and infima over rational times, used to realize $\\limsup$ and $\\liminf$ of continuous coordinate paths.",
         "ref_provenance": "label-map"
       },
-      "connects_to": []
+      "connects_to": [],
+      "subtitle": "proposition 4.6",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "notation-root-set",
@@ -477,7 +529,11 @@
           "confidence": "High",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "notation",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "lemma-containment",
@@ -511,7 +567,11 @@
           "confidence": "Verified",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "lemma A.7",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "ass-kkq",
@@ -555,7 +615,11 @@
           "confidence": "Verified",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "standing assumption 4.3",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "notation-qtc-boundary",
@@ -605,7 +669,11 @@
           "confidence": "High",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "remark B.1",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "lemma-closed-discrete-finite",
@@ -630,7 +698,11 @@
           "confidence": "Verified",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "lemma B.1",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "lemma-break-into-two",
@@ -654,7 +726,11 @@
           "confidence": "Verified",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "lemma B.2",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "notation-tilde-q",
@@ -684,7 +760,11 @@
           "confidence": "High",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "notation",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "lemma-discrete-preserves",
@@ -708,7 +788,11 @@
           "confidence": "Verified",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "lemma B.3",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "lemma-parametric-submersion",
@@ -750,7 +834,11 @@
           "confidence": "Verified",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "lemma B.4",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "remark-parametric-regularity",
@@ -766,7 +854,11 @@
         "cites": "\\cite{GuilleminPollack1974} is given as a reference for the Sard-theorem requirement; it is mentioned rather than invoked.",
         "ref_provenance": "label-map"
       },
-      "connects_to": []
+      "connects_to": [],
+      "subtitle": "remark B.2",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "ext-preimage-theorem",
@@ -798,7 +890,11 @@
           "confidence": "Verified",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "external result",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "ext-sard-theorem",
@@ -822,7 +918,11 @@
           "confidence": "Verified",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "external result",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "remark-transversality-discrete-roots",
@@ -851,7 +951,11 @@
             "ambiguity": "The proof writes 'and hence' without citing this remark; the remark is the only in-scope statement supplying that implication."
           }
         }
-      ]
+      ],
+      "subtitle": "remark B.3",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "def-perturbed-evaluation-maps",
@@ -885,7 +989,11 @@
           "confidence": "Verified",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "definition B.5",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "theorem-prevalence-submersion-probe",
@@ -910,7 +1018,11 @@
           "confidence": "Verified",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "theorem B.6",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "cor-prevalent-finite-roots",
@@ -934,7 +1046,11 @@
           "confidence": "Verified",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "corollary B.7",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "ass-convex-closed",
@@ -958,7 +1074,11 @@
           "confidence": "Verified",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "standing assumption 4.1",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "prop-e-submersion-finite-attractors",
@@ -974,7 +1094,11 @@
         "proof_location": "appendix-prevalence.tex lines 258-273, preceded by \\phantomsection\\label{proof:e-submersion-finite-attractors}",
         "ref_provenance": "label-map"
       },
-      "connects_to": []
+      "connects_to": [],
+      "subtitle": "proposition 4.10",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "notation-basin-shortfall-event",
@@ -1012,7 +1136,11 @@
           "confidence": "Verified",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "notation",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "lem-eta-bound",
@@ -1044,7 +1172,11 @@
           "confidence": "Verified",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "lemma C.1",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "lem-supp-tail",
@@ -1068,7 +1200,11 @@
           "confidence": "Verified",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "lemma C.2",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "prop-eta-bound",
@@ -1084,7 +1220,11 @@
         "proof_location": "appendix-bayes.tex lines 54-67, preceded by \\phantomsection\\label{proof:eta-bound}",
         "ref_provenance": "label-map"
       },
-      "connects_to": []
+      "connects_to": [],
+      "subtitle": "proposition 5.2",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "prop-basin-posterior-size",
@@ -1101,7 +1241,11 @@
         "inline_tools": "Monotonicity of $(1-1/n)^n$ bounding it below by $1/4$, and $(1-\\varepsilon)^n\\le e^{-n\\varepsilon}$.",
         "ref_provenance": "label-map"
       },
-      "connects_to": []
+      "connects_to": [],
+      "subtitle": "proposition 5.3",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "ass-poly-density",
@@ -1125,7 +1269,11 @@
           "confidence": "Verified",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "standing assumption 5.1",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "prop-beta-prior",
@@ -1143,7 +1291,11 @@
         "inline_tools": "Change of variables $u=1-s$, the Beta-Gamma identity $1/(\\beta B(\\beta,\\alpha+n))=\\Gamma(\\alpha+n+\\beta)/(\\Gamma(\\alpha+n)\\Gamma(\\beta+1))$, and $(1-\\varepsilon)^k\\le e^{-k\\varepsilon}$.",
         "ref_provenance": "label-map"
       },
-      "connects_to": []
+      "connects_to": [],
+      "subtitle": "proposition 5.1",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "ext-gautschi-inequality",
@@ -1167,7 +1319,11 @@
           "confidence": "Verified",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "external result",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "notation-spike-slab-posterior",
@@ -1198,7 +1354,11 @@
           "confidence": "Verified",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "notation",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "lem-master-moment",
@@ -1223,7 +1383,11 @@
           "confidence": "Verified",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "lemma C.3",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "cor-poly-tail",
@@ -1248,7 +1412,11 @@
           "confidence": "Verified",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "corollary C.4",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "prop-spike-slab-rate",
@@ -1264,7 +1432,11 @@
         "proof_location": "appendix-bayes.tex lines 335-351, preceded by \\phantomsection\\label{proof:spike_slab_rate}",
         "ref_provenance": "label-map"
       },
-      "connects_to": []
+      "connects_to": [],
+      "subtitle": "proposition 5.5",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "lem-Lk-twosided",
@@ -1300,7 +1472,11 @@
           "confidence": "Verified",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "lemma C.5",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "lem-Lk-monotone",
@@ -1325,7 +1501,11 @@
           "confidence": "Verified",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "lemma C.6",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "thm-K1-tight-rate",
@@ -1341,7 +1521,11 @@
         "proof_location": "appendix-bayes.tex lines 503-549, labelled proof:K1_tight_fixed",
         "ref_provenance": "label-map"
       },
-      "connects_to": []
+      "connects_to": [],
+      "subtitle": "theorem 5.7",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "construction-smooth-price-domain",
@@ -1388,7 +1572,11 @@
           "confidence": "Medium",
           "implicit": true
         }
-      ]
+      ],
+      "subtitle": "definition D.1",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "ext-skerlos-price-bounds",
@@ -1412,7 +1600,11 @@
           "confidence": "Verified",
           "implicit": false
         }
-      ]
+      ],
+      "subtitle": "external result",
+      "presentation": {
+        "tone": "subtle"
+      }
     },
     {
       "id": "construction-banach-structure",
@@ -1440,7 +1632,11 @@
             "ambiguity": "The application appendix says only that the construction is used in Section~6; the match to the theorem's hypothesis is inferred."
           }
         }
-      ]
+      ],
+      "subtitle": "definition D.2",
+      "presentation": {
+        "tone": "subtle"
+      }
     }
   ],
   "edge_categories": [

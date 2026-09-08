@@ -25,6 +25,7 @@
       }
       function add(el) {
         el.setAttribute("fill", style.color);
+        if (style.tone === "subtle") el.setAttribute("fill-opacity", "0.16");
         el.setAttribute("stroke", stroke);
         el.setAttribute("stroke-width", "1.6");
         svg.appendChild(el);
