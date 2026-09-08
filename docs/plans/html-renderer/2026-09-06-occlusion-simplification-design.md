@@ -479,6 +479,109 @@ factory line to select the vendor's synchronous fallback in virtual-time pages.
 A dedicated real-time loopback test must still exercise the unmodified emitted
 page and prove native-worker construction and scene completion.
 
+## Task 6: Replace per-edge filter graphs with underlay paths
+
+After Task 5 passed its functional audits, five fresh repository-scale detail
+trials still produced 61-106 ms long tasks. Instrumented Long Animation Frame
+records attributed only 6-13 ms to JavaScript callbacks and the remainder to
+browser rendering while the detail scene grew to 5,992 SVG descendants. Its
+368 per-edge filters contained 2,208 filter primitives. Controls that changed
+the scheduler, hid layers, or removed native path measurement were insufficient;
+replacing filter graphs with visually equivalent underlay paths was the only
+narrow control that materially reduced both duration and stalls.
+
+Replace only metadata halo/outline filters with ordinary noninteractive paths
+painted immediately beneath their owning semantic edge. Keep semantic strokes,
+mixed gradients, arrow direction, metadata widths/colors/opacities, hover,
+filtering, visibility, rerouting, cancellation, and cleanup behavior. The
+legend already uses this representation and is the appearance reference. Do
+not change projection or benchmark thresholds.
+
+| File | Add | Delete | Net | Hard churn | Change |
+|---|---:|---:|---:|---:|---|
+| `runtime/edge_presentation.js` | 55 | 65 | -10 | 120 | Replace filter construction with owned underlay creation, synchronization, and cleanup. |
+| `runtime/render_pipeline.js` | 6 | 3 | +3 | 9 | Mount underlays immediately below each owning edge. |
+| `runtime/visibility.js` | 8 | 4 | +4 | Mirror path visibility and opacity to underlays. |
+| `runtime/filtering.js` | 8 | 4 | +4 | Mirror filter disposition to underlays. |
+| `runtime/interactions.js` | 6 | 2 | +4 | Preserve hover emphasis without filter state. |
+| `tests/test_visualization_inspector_and_bezier_browser.py` | 90 | 20 | +70 | Prove appearance attributes, zero edge filters, rerouting, and cleanup. |
+| `tests/test_visualization_browser.py` | 50 | 10 | +40 | Prove visibility, filtering, and cancellation parity with underlays. |
+| `html_renderer/README.md` | 4 | 2 | +2 | Document lightweight metadata underlays. |
+| This plan | 55 | 0 | +55 | 55 | Record the second measured repair before implementation. |
+
+Task 6 subtotal: **+282 / -110 / net +172**, **392 hard churn**. Production
+JavaScript is budgeted at **+5 net**; combined with the audited renderer's
+current 12-line net reduction, shipped runtime JavaScript remains net-negative.
+The amended whole-plan hard ceiling is **2,572 lines**.
+
+Task 6 checkpoints:
+
+1. Aggregate and mixed-bundle fixtures contain no per-edge SVG filters; their
+   underlays use the same declared width, color, opacity, route, and paint order.
+2. Hide, filtering, route changes, drag, replacement, and cancellation leave no
+   visible or detached stale underlay.
+3. The affected browser union passes, a real repository interaction confirms
+   cell/edge readability, and the unchanged full benchmark matrix passes.
+
+## Task 7: Remove measured scheduler and client-loader waste
+
+Task 6 eliminated repository-detail long tasks, but repeated cold-page and
+reduce-to-40 trials exposed two independent costs outside edge painting. Cheap
+reconciliation operations hit the 48-operation cap after less than 1 ms and
+therefore occupied seven browser frames despite retaining ample time budget.
+The main page also parses the 1.6 MB bundled ELK engine even though the engine
+now runs exclusively in the native worker. Controlled trials showed that a
+128-operation cap retains the 6 ms deadline while reducing the action from
+63-81 ms to 34-50 ms, and that the official browser-only ELK API removes the
+roughly 50 ms redundant main-thread bundle parse. Select 128 only for scenes
+that shrink by at least half; keep 48 for growth and replacement so large SVG
+paints remain bounded. Check cancellation between operations and publish only
+the newest reentrant paint promise. Do not move benchmark boundaries or weaken
+thresholds.
+
+| File | Add | Delete | Net | Hard churn | Change |
+|---|---:|---:|---:|---:|---|
+| `vendor/elk-api.js` | 216 | 0 | +216 | 216 | Add the exact pinned upstream browser client API without a duplicate layout engine. |
+| `html_renderer/assets.py` and `page.html` | 2 | 2 | 0 | 4 | Ship the browser client API under a stable test-seam id. |
+| `runtime/render_pipeline.js` | 19 | 7 | +12 | 26 | Select 48/128 from scene shrinkage and make per-operation cancellation/reentrant promise publication safe. |
+| Browser support and renderer tests | 116 | 6 | +110 | 122 | Isolate the synchronous virtual-time seam and prove native-worker, provenance, adaptive batching, and reentrant cancellation behavior. |
+| Notices and renderer documentation | 7 | 4 | +3 | 11 | Record the exact upstream asset and measured boundary. |
+| This plan | 45 | 0 | +45 | 45 | Budget, constrain, and audit-refine the measured follow-up. |
+
+Task 7 subtotal: **+405 / -19 / net +386**, **424 hard churn**. The
+amended whole-plan hard ceiling is **2,996 lines**; 216 lines are an exact
+upstream release asset rather than first-party logic.
+
+Task 7 checkpoints:
+
+1. Generated production pages contain the official ELK browser client API but
+   not a second copy of the layout engine, while real-time Chrome still creates
+   exactly one native worker and preserves the semantic scene.
+2. Virtual-time browser tests retain their explicit bundled fallback seam; no
+   production page silently falls back to main-thread layout.
+3. Strong scene shrinkage uses the higher cheap-operation cap; growth and
+   replacement retain 48. Neither branch exceeds the existing 6 ms deadline,
+   and reentrant cancellation cannot publish or continue stale work.
+4. Repeated repository reduction trials pass the unchanged 75 ms p95 gate.
+
+## Task 8: Close the fast-page benchmark sentinel
+
+Ambient controls found one measurement defect independent of renderer
+performance: on a fast page, the full-graph probe snapshots the head timer's
+`-1` sentinel before the timer fires and never rereads the completed value.
+Collect the same original head timer after completion and fail explicitly if it
+remains unavailable. Do not move its start, change a threshold, subtract an
+ambient control, or alter graph timing.
+
+| File | Add | Delete | Net | Hard churn | Change |
+|---|---:|---:|---:|---:|---|
+| `scripts/benchmark-html-renderer.py` | 4 | 2 | +2 | 6 | Read the completed original timer and reject its sentinel. |
+| `tests/test_benchmark_html_renderer.py` | 18 | 2 | +16 | 20 | Prove fast-page collection retains the head timing boundary. |
+| This plan | 18 | 0 | +18 | 18 | Bound the audit-discovered correction. |
+
+Task 8 subtotal: **+40 / -4 / net +36**, **44 hard churn**. The amended
+whole-plan hard ceiling is **3,040 lines**.
+
 ## Out of scope
 
 - A second renderer or permanent dual-runtime cutover.

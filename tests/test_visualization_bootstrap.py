@@ -77,13 +77,20 @@ def test_graph_and_edges_are_inert_json_with_safe_script_termination() -> None:
 
 def test_bootstrap_retains_source_json_and_uses_a_native_elk_worker() -> None:
     rendered = build_html_with_elk(_payload())
+    vendor = Path(__file__).parents[1] / "src/officina/visualization/html_renderer/vendor"
+    elk_api = (vendor / "elk-api.js").read_text(encoding="utf-8")
+    elk_bundled = (vendor / "elk.bundled.js").read_text(encoding="utf-8")
 
     assert 'document.getElementById("officina-graph-data").textContent' in rendered
     assert 'document.getElementById("officina-edge-data").textContent' in rendered
     assert "const graphDocumentJson" in rendered
     assert "JSON.parse(graphDocumentJson)" in rendered
     assert '<script id="officina-viewer-runtime">' in rendered
+    assert '<script id="officina-elk-client">' in rendered
     assert "workerFactory: () => new Worker(ELK_WORKER_URL)" in rendered
+    assert elk_api in rendered
+    assert elk_bundled not in rendered
+    assert "Falling back to non-web worker version." not in rendered
 
 
 def test_initial_layout_runs_in_one_native_worker_without_fallback_warning() -> None:

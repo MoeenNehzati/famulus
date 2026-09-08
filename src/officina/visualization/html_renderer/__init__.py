@@ -56,8 +56,10 @@ Includes
     Implements the browser runtime's visibility behavior.
 ``vendor/elk-worker.min.js``
     Implements the browser runtime's elk-worker.min behavior.
+``vendor/elk-api.js``
+    Implements the browser runtime's lightweight ELK worker client behavior.
 ``vendor/elk.bundled.js``
-    Implements the browser runtime's elk.bundled behavior.
+    Implements the test-only synchronous ELK fallback behavior.
 ``vendor/mathjax-3.2.2-tex-svg-full.js``
     Implements the browser runtime's mathjax-3.2.2-tex-svg-full behavior.
 ``viewer.css``

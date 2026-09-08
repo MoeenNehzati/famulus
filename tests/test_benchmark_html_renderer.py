@@ -184,6 +184,22 @@ def test_full_graph_starts_completion_sampling_at_load_without_fixed_delay():
     assert "}},100));</script>" not in script
     assert "edge.__edgeMeta" in script
     assert "Object.keys(value).sort()" in script
+    assert "if(full)input=window.__benchmarkInput" in script
+    assert "if(!Number.isFinite(input)||input<0)" in script
+
+
+def test_fast_full_graph_page_collects_the_completed_head_input_timer():
+    module = _benchmark_module()
+    page = """<!doctype html><html><head></head><body>
+      <svg id="graph-svg"></svg>
+      <script>
+      const docData = {entities: []};
+      window.officinaRendererDiagnostics = {whenIdle: () => Promise.resolve()};
+      </script></body></html>"""
+
+    samples = [module.trial(require_chrome(), page, "full_graph", []) for _ in range(5)]
+
+    assert all(sample["input_latency_ms"] >= 0 for sample in samples), samples
 
 
 def test_summary_records_p95_metrics_and_reports_gate_and_scene_parity_failures():

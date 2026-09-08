@@ -6,6 +6,7 @@
       if (strokeColor) pathEl.style.stroke = strokeColor;
       pathEl.style.strokeWidth = String(Math.max(3, Number(pathEl.__edgeBaseStrokeWidth || 0) + 1));
       pathEl.style.opacity = "0.98";
+      syncEdgePresentationVisibilityForPath(pathEl);
       syncArrowheadForPath(pathEl);
     }
 
@@ -14,7 +15,7 @@
       pathEl.style.stroke = "";
       pathEl.style.strokeWidth = pathEl.__edgeBaseStrokeWidth || "";
       pathEl.style.opacity = "";
-      pathEl.style.filter = pathEl.__edgeBaseFilter || "";
+      syncEdgePresentationVisibilityForPath(pathEl);
       syncArrowheadForPath(pathEl);
     }
 

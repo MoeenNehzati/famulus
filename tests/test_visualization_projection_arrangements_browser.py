@@ -414,8 +414,12 @@ def test_collapse_aggregates_without_marking_dependency_indirect():
       const aggregatePresentation = document.querySelector('.legend-row[data-legend-kind="edge-presentation"][data-type="aggregate"]');
       check(aggregatePresentation, "aggregate metadata presentation missing from legend");
       check(getComputedStyle(aggregatePresentation.querySelector(".legend-icon path:not(.edge-presentation-outline)")).strokeWidth === getComputedStyle(aggregate).strokeWidth, "aggregate legend width diverged from rendered edge");
-      check(aggregate.style.filter.includes("edge-presentation-filter"), "hidden-detail summary edge lacks halo");
-      check(aggregatePresentation.querySelector(".edge-presentation-outline"), "hidden-detail summary legend lacks halo");
+      const halo = edgePresentationUnderlaysForPath(aggregate)[0];
+      const legendHalo = aggregatePresentation.querySelector(".edge-presentation-outline");
+      check(halo && legendHalo, "hidden-detail summary edge or legend lacks halo");
+      check(halo.nextElementSibling === aggregate && halo.getAttribute("d") === aggregate.getAttribute("d"), "aggregate halo route or paint order diverged");
+      check(getComputedStyle(halo).strokeWidth === getComputedStyle(legendHalo).strokeWidth && getComputedStyle(halo).stroke === getComputedStyle(legendHalo).stroke && getComputedStyle(halo).strokeOpacity === getComputedStyle(legendHalo).strokeOpacity, "aggregate halo style diverged from legend");
+      check(!document.querySelector('filter[id^="edge-presentation-filter-"]'), "aggregate retained an edge filter graph");
       check(!one("A", "B", "indirect"), "collapse incorrectly created indirect dependency");
     ''', readiness_delays={"A": 150, "B": 600})
 

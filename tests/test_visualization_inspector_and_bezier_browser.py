@@ -222,6 +222,88 @@ def test_declared_edge_presentation_controls_stroke_and_legend() -> None:
     )
 
 
+def test_edge_metadata_underlays_match_route_style_order_and_lifecycle() -> None:
+    payload = _payload("link")
+    payload["ui"] = {
+        "edge_styles": {"link": {"color": "#2563eb"}, "other": {"color": "#b45309"}},
+        "edge_metadata_styles": {
+            "aggregate": {
+                "label": "Aggregate",
+                "style": {"stroke_width": 5, "halo_width": 11, "halo_color": "#64748b", "halo_opacity": 0.21},
+            },
+            "mixed_type_bundle": {
+                "label": "Mixed",
+                "style": {"stroke_width": 5, "outline_width": 8, "outline_color": "#334155", "outline_opacity": 0.31},
+            },
+        },
+    }
+    payload["edge_categories"].append({"id": "other", "label": "Other"})
+    _run_browser_case(
+        "edge-metadata-underlays",
+        payload,
+        """
+        await window.officinaRendererDiagnostics.whenIdle();
+        const edge = {
+          edge_id: "synthetic-underlay",
+          source: "alpha", target: "beta", type: "link",
+          aggregate: true, bundle: true, bundle_types: ["link", "other"],
+          constituent_edges: [{type: "link"}, {type: "other"}],
+        };
+        const path = createRenderedEdge(edge, "M 10 20 C 30 40 50 60 70 80");
+        const underlays = edgePresentationUnderlaysForPath(path);
+        if (svgEl.querySelectorAll('filter[id^="edge-presentation-filter-"]').length) {
+          throw new Error("metadata edge retained an SVG filter graph");
+        }
+        if (underlays.length !== 2) throw new Error(`expected halo and outline underlays; got ${underlays.length}`);
+        if (underlays[0].nextElementSibling !== underlays[1] || underlays[1].nextElementSibling !== path) {
+          throw new Error("underlays are not painted immediately beneath their semantic edge");
+        }
+        const expected = [
+          ["11px", "rgb(100, 116, 139)", "0.21"],
+          ["8px", "rgb(51, 65, 85)", "0.31"],
+        ];
+        underlays.forEach((underlay, index) => {
+          const style = getComputedStyle(underlay);
+          if (underlay.getAttribute("d") !== path.getAttribute("d")) throw new Error("underlay route diverged");
+          if (style.strokeWidth !== expected[index][0] || style.stroke !== expected[index][1]
+              || style.strokeOpacity !== expected[index][2]) throw new Error(`underlay ${index} style diverged`);
+          if (style.pointerEvents !== "none" || underlay.getAttribute("aria-hidden") !== "true") {
+            throw new Error("underlay is interactive");
+          }
+        });
+        if (underlays.some(underlay => getComputedStyle(underlay).opacity !== getComputedStyle(path).opacity)) {
+          throw new Error("initial underlay opacity diverged from semantic edge");
+        }
+        path.setAttribute("d", "M 11 21 C 31 41 51 61 71 81");
+        syncEdgeRouteGeometry(path);
+        if (underlays.some(underlay => underlay.getAttribute("d") !== path.getAttribute("d"))) {
+          throw new Error("rerouting did not synchronize underlays");
+        }
+        path.dispatchEvent(new MouseEvent("mouseenter", {bubbles: true, clientX: 20, clientY: 20}));
+        if (underlays.some(underlay => underlay.style.opacity !== "0.98")) throw new Error("hover emphasis diverged");
+        path.dispatchEvent(new MouseEvent("mouseleave", {bubbles: true}));
+        await delay(150);
+        if (underlays.some(underlay => getComputedStyle(underlay).opacity !== getComputedStyle(path).opacity)) throw new Error("hover cleanup diverged");
+        path.style.display = "none"; path.style.opacity = "0.13";
+        syncEdgePresentationVisibilityForPath(path);
+        if (underlays.some(underlay => underlay.style.display !== "none" || underlay.style.opacity !== "0.13")) {
+          throw new Error("visibility did not synchronize underlays");
+        }
+        const staleUnderlays = underlays.slice();
+        applyEdgeMetadataPresentation(path, edge, edgeStyleForType("link"), "#2563eb");
+        if (staleUnderlays.some(underlay => underlay.isConnected)) throw new Error("replacement leaked stale underlays");
+        const replacementUnderlays = edgePresentationUnderlaysForPath(path);
+        if (replacementUnderlays.length !== 2) throw new Error("replacement lost underlays");
+        if (replacementUnderlays.some(underlay => underlay.style.display !== "none" || underlay.style.opacity !== "0.13")) {
+          throw new Error("replacement exposed underlays of a hidden edge");
+        }
+        removeEdgePresentationResources(path);
+        if (replacementUnderlays.some(underlay => underlay.isConnected)) throw new Error("removal leaked underlays");
+        path.remove();
+        """,
+    )
+
+
 def test_mathjax_typesets_dynamic_tooltip_and_inspector_content() -> None:
     payload = _payload()
     payload["renderer_dependencies"] = [

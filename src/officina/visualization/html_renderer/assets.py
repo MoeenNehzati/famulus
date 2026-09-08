@@ -95,7 +95,7 @@ def render_document(**values: str) -> str:
     document = _read_asset("page.html").replace(
         "@@OFFICINA_VIEWER_STYLES@@", _read_asset("viewer.css")
     ).replace(
-        "@@OFFICINA_ELK_RUNTIME@@", _read_asset("vendor/elk.bundled.js")
+        "@@OFFICINA_ELK_RUNTIME@@", _read_asset("vendor/elk-api.js")
     ).replace(
         "@@OFFICINA_ELK_WORKER_SOURCE@@",
         json.dumps(_read_asset("vendor/elk-worker.min.js")).replace("</", "<\\/"),

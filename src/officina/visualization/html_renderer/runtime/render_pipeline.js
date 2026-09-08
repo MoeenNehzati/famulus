@@ -8,17 +8,23 @@
       return JSON.stringify([routingConfig, getEffectivePos(edge.source), getEffectivePos(edge.target)]);
     }
 
-    function runPaintOperations(operations, version) {
+    function reconciliationOperationCap(currentSize, desiredSize) {
+      return currentSize > 0 && desiredSize * 2 <= currentSize ? 128 : 48;
+    }
+
+    function runPaintOperations(operations, version, operationCap = 48) {
       return new Promise(resolve => {
         let index = 0;
         const runChunk = () => {
           if (version !== paintVersion) { resolve(false); return; }
           const deadline = performance.now() + 6;
           let chunkSize = 0;
-          while (index < operations.length && chunkSize < 48 && performance.now() < deadline) {
+          while (version === paintVersion && index < operations.length
+              && chunkSize < operationCap && performance.now() < deadline) {
             operations[index++]();
             chunkSize += 1;
           }
+          if (version !== paintVersion) { resolve(false); return; }
           if (index < operations.length) {
             let resumed = false;
             const resume = () => {
@@ -54,6 +60,10 @@
       path.dataset.bundle = edge.bundle ? "true" : "false";
       path.dataset.edgeMetaKey = JSON.stringify(edge);
       path.__edgeMeta = edge;
+      edgePresentationUnderlaysForPath(path).forEach(underlay => {
+        underlay.dataset.edgeId = path.dataset.edgeId;
+        edgeLayer.appendChild(underlay);
+      });
       edgeLayer.appendChild(path);
       const routeSample = pathPointsForArrow(path);
       syncEdgeMetadataPresentationGeometry(path, routeSample);
@@ -67,6 +77,13 @@
       const operations = [];
       const desiredNodeIds = new Set(renderedEntities.map(entity => entity.id));
       const desiredEdgeIds = new Set(visibleEdges.map(edgePaintKey));
+      const currentEdgePaths = Array.from(edgeLayer.querySelectorAll(".edge-path")).sort((a, b) =>
+        String(a.dataset.edgeId).localeCompare(String(b.dataset.edgeId))
+      );
+      const operationCap = reconciliationOperationCap(
+        nodeElementIndex.size + currentEdgePaths.length,
+        desiredNodeIds.size + desiredEdgeIds.size,
+      );
 
       Array.from(svgEl.querySelectorAll(".graph-node")).sort((a, b) =>
         String(a.dataset.nodeId).localeCompare(String(b.dataset.nodeId))
@@ -77,9 +94,7 @@
           node.remove();
         });
       });
-      Array.from(edgeLayer.querySelectorAll(".edge-path")).sort((a, b) =>
-        String(a.dataset.edgeId).localeCompare(String(b.dataset.edgeId))
-      ).forEach(path => {
+      currentEdgePaths.forEach(path => {
         if (!desiredEdgeIds.has(path.dataset.edgeId)) operations.push(() => {
           lastEdgePaths.set(path.dataset.edgeId, {
             data: path.getAttribute("d") || "",
@@ -175,11 +190,12 @@
         syncEdgePresentationLegend();
         applyVisibilityPresentation(operations);
       });
-      latestPaintPromise = runPaintOperations(operations, version).then(current => {
+      const paintPromise = runPaintOperations(operations, version, operationCap).then(current => {
         if (!current) return false;
         return currentMathTypesetTail().then(() => true);
       });
-      return latestPaintPromise;
+      if (version === paintVersion) latestPaintPromise = paintPromise;
+      return paintPromise;
     }
 
     window.officinaRendererDiagnostics = {

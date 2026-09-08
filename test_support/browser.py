@@ -12,6 +12,25 @@ from collections.abc import Mapping
 import pytest
 
 
+_ELK_VENDOR_DIRECTORY = (
+    Path(__file__).resolve().parents[1]
+    / "src/officina/visualization/html_renderer/vendor"
+)
+
+
+def _with_virtual_time_elk_fallback(html: str) -> str:
+    """Replace the production ELK client with its explicit test-only engine."""
+    prefix, client_tag, remainder = html.partition('<script id="officina-elk-client">')
+    if not client_tag:
+        return html
+    client, close_tag, suffix = remainder.partition("</script>")
+    elk_api = (_ELK_VENDOR_DIRECTORY / "elk-api.js").read_text(encoding="utf-8")
+    if client != elk_api or not close_tag:
+        raise ValueError("unexpected ELK client script in browser test document")
+    elk_bundled = (_ELK_VENDOR_DIRECTORY / "elk.bundled.js").read_text(encoding="utf-8")
+    return prefix + client_tag + elk_bundled + close_tag + suffix
+
+
 def _native_roots(platform: str, env: Mapping[str, str]) -> tuple[Path, ...]:
     if platform == "win32":
         return tuple(
@@ -75,6 +94,7 @@ def run_html(
     with tempfile.TemporaryDirectory(prefix="famulus-browser-") as workdir:
         root = Path(workdir)
         page = root / "page.html"
+        html = _with_virtual_time_elk_fallback(html)
         prefix, runtime_tag, remainder = html.partition('<script id="officina-viewer-runtime">')
         runtime, close_tag, suffix = remainder.partition("</script>")
         if runtime_tag:

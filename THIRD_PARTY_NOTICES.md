@@ -12,10 +12,11 @@ this repository retain their own upstream licenses.
 - License text: [`LICENSES/EPL-2.0.txt`](LICENSES/EPL-2.0.txt)
 - Copyright: Kiel University and other ELK contributors
 - Distributed files:
+  - `src/officina/visualization/html_renderer/vendor/elk-api.js`
   - `src/officina/visualization/html_renderer/vendor/elk.bundled.js`
   - `src/officina/visualization/html_renderer/vendor/elk-worker.min.js`
 
-Both distributed files are exact byte matches to their paths in the official
+All three distributed files are exact byte matches to their paths in the official
 `elkjs-0.10.0.tgz` npm package. Their SHA-256 values are locked by
 [`tests/test_vendored_asset_provenance.py`](tests/test_vendored_asset_provenance.py).
 

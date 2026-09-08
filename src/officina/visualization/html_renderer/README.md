@@ -16,8 +16,8 @@ ElkHtmlRenderer().write_graph_html(graph_payload, "graph.html")
 
 The result is one standalone HTML file. CSS and JavaScript are maintained as
 separate source assets here, then inlined when the document is generated. Core
-ELK layout is bundled and runs in a worker, so layout remains offline-capable and
-does not block browser interaction while a dense graph is being computed.
+ELK's lightweight client drives the bundled worker, so layout remains
+offline-capable and does not block interaction while a dense graph is computed.
 
 ## Input contract
 
@@ -118,8 +118,8 @@ renderer API and CLI have no sidecar parameter.
 - `runtime/inspector.js` formats and binds generic node and edge details.
 - `runtime/projection.js` projects collapsed or hidden structure into visible edges.
 - `runtime/edge_presentation.js` resolves metadata presentation, owns edge-local
-  gradients and filters, synchronizes them after rerouting, restores base styles
-  after interaction, and constructs matching explanatory legend samples.
+  gradients and lightweight underlay paths, synchronizes them after rerouting,
+  restores base styles after interaction, and constructs matching legend samples.
 - `runtime/layout.js` builds hierarchical ELK input and converts layout geometry.
 - `runtime/node_renderer.js` paints generic nodes, containers, and decorations.
 - `runtime/interactions.js` owns node/edge hover, selection, and edge emphasis.
@@ -233,7 +233,7 @@ different dash patterns cannot truthfully occupy one path.
 render replaces resources with the same edge identity; transient derived-edge
 removal explicitly deletes its resources. User-space gradients are synchronized
 after every route change, and hover emphasis stores/restores the resolved base
-width and filter. The Edge presentation legend calls the same resolver and icon
+width while synchronizing underlays. The Edge presentation legend calls the resolver and icon
 builder, so it documents actual paint behavior rather than a parallel convention.
 
 Declared presentation facets use scalar equality only. `field` names a

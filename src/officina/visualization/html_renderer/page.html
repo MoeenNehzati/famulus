@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>@@OFFICINA_PAGE_TITLE@@</title>
   <script>const GRAPH_BUILD_ID = "@@OFFICINA_GRAPH_BUILD_ID@@";</script>
-  <script>@@OFFICINA_ELK_RUNTIME@@</script>
+  <script id="officina-elk-client">@@OFFICINA_ELK_RUNTIME@@</script>
   <script>
     const ELK_WORKER_SOURCE = @@OFFICINA_ELK_WORKER_SOURCE@@;
     const ELK_WORKER_URL = URL.createObjectURL(

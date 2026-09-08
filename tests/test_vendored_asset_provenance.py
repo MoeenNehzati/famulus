@@ -11,6 +11,8 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 EXPECTED_SHA256 = {
+    "src/officina/visualization/html_renderer/vendor/elk-api.js":
+        "3d72abb2975c93795878439592145292662d40697181e5c07daf066ab19474bc",
     "src/officina/visualization/html_renderer/vendor/elk.bundled.js":
         "48d338d5aeddd9503ccf1d12661c11b5d7d43c6afc5f66c7ddb2ea4170c0f6bf",
     "src/officina/visualization/html_renderer/vendor/elk-worker.min.js":
