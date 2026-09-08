@@ -20,6 +20,5 @@
     "sys.prefix",
     "sys.base_prefix",
     "sys.version_info[:2]"
-  ],
-  "core_packages": ["mcp>=1,<2", "PyYAML>=6", "jsonschema>=4,<5"]
+  ]
 }

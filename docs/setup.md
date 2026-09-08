@@ -21,7 +21,7 @@ it. Keeping it separate means the Python you use for your own work is never
 modified, and upgrading or replacing that Python cannot break Famulus.
 
 Two things follow from the dispatcher running everything with one interpreter.
-The packages in `mcp-core.json` are what the server needs to start at all. A
+The packages in `requirements-mcp.txt` are what the server needs to start at all. A
 skill's own dependency — `marker-pdf` for PDF conversion, say — is installed
 into the same runtime, because that is the interpreter the dispatcher will run
 that skill with. Both belong to `bootstrap-dispatcher-runtime`.
@@ -68,9 +68,18 @@ skills.
 ### 1.2 Verify the dispatcher runtime
 
 Confirm that `python` is Python 3.11 or newer and that `python -m pip` works.
-Ask the assistant to use `bootstrap-dispatcher-runtime` when the command is missing
-entirely, when Famulus reports a missing dependency, or when its shared tool is
-unavailable, and review any requested package changes before approving them.
+Use `bootstrap-dispatcher-runtime` for the launcher's exact missing-runtime
+diagnosis:
+
+```text
+Famulus MCP startup's dedicated dispatcher runtime is missing at ...
+```
+
+Do not infer that route from a generic MCP startup or handshake failure. Report
+the launcher's actual error first. The launcher also checks whether the
+existing runtime satisfies `requirements-mcp.txt`; when it does not, it emits a
+distinct requirements diagnosis and the bootstrap clue rather than starting
+the server.
 
 The plugin manifest starts the stdlib-only launcher through bare `python`.
 Bootstrap creates and verifies the interpreter at the platform-native

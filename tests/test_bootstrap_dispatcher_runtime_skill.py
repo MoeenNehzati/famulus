@@ -28,21 +28,19 @@ def _templates() -> dict[str, list[str]]:
     }
 
 
-def _core_packages() -> list[str]:
-    return json.loads((ROOT / "mcp-core.json").read_text(encoding="utf-8"))[
-        "core_packages"
-    ]
+def _core_install_arguments() -> list[str]:
+    return ["-r", str(ROOT / "requirements-mcp.txt")]
 
 
 def _frontmatter_description() -> str:
     return SKILL.read_text(encoding="utf-8").split("---", 2)[1]
 
 
-def _expand(argv: list[str], bindings: dict[str, str], packages: list[str]) -> list[str]:
+def _expand(argv: list[str], bindings: dict[str, str], requirements: list[str]) -> list[str]:
     expanded: list[str] = []
     for token in argv:
         if token == "${selected_packages}":
-            expanded.extend(packages)
+            expanded.extend(requirements)
         else:
             expanded.append(bindings.get(token, token))
     return expanded
@@ -158,12 +156,12 @@ class _SimulatedHost:
 def _consume_setup(host: _SimulatedHost, plugin: Path) -> str:
     """Walk the core setup route exactly as SKILL.md orders it."""
     templates = _templates()
-    packages = _core_packages()
+    requirements = _core_install_arguments()
 
     discovered: list[tuple[list[int], str]] = []
     for command in CANDIDATES:
         try:
-            probe = host.run(_expand(templates["candidate-fingerprint"], {"${candidate}": command}, packages))
+            probe = host.run(_expand(templates["candidate-fingerprint"], {"${candidate}": command}, requirements))
         except FileNotFoundError:
             continue
         if probe.returncode:
@@ -179,7 +177,7 @@ def _consume_setup(host: _SimulatedHost, plugin: Path) -> str:
         _expand(
             templates["resolve-venv-path"],
             {"${host_python}": host_python, "${plugin_src}": str(plugin / "src")},
-            packages,
+            requirements,
         )
     )
     resolved_paths = json.loads(resolved.stdout)
@@ -190,14 +188,14 @@ def _consume_setup(host: _SimulatedHost, plugin: Path) -> str:
         _expand(
             templates["create-venv"],
             {"${host_python}": host_python, "${venv_root}": host.venv_root},
-            packages,
+            requirements,
         )
     )
     if created.returncode:
         return "create-venv-failed"
 
     selected_probe = host.run(
-        _expand(templates["candidate-fingerprint"], {"${candidate}": host.canonical}, packages)
+        _expand(templates["candidate-fingerprint"], {"${candidate}": host.canonical}, requirements)
     )
     selected = json.loads(selected_probe.stdout)
     if selected["prefix"] == selected["base_prefix"]:
@@ -207,18 +205,18 @@ def _consume_setup(host: _SimulatedHost, plugin: Path) -> str:
 
     bindings = {"${canonical_executable}": canonical}
     for name in ("pip-check", "target-check"):
-        if host.run(_expand(templates[name], bindings, packages)).returncode:
+        if host.run(_expand(templates[name], bindings, requirements)).returncode:
             return name + "-failed"
-    preflight = host.run(_expand(templates["pip-preflight"], bindings, packages))
+    preflight = host.run(_expand(templates["pip-preflight"], bindings, requirements))
     if preflight.returncode:
         return "pip-preflight-failed"
     if json.loads(preflight.stdout)["install"]:
-        if host.run(_expand(templates["pip-install"], bindings, packages)).returncode:
+        if host.run(_expand(templates["pip-install"], bindings, requirements)).returncode:
             return "pip-install-failed"
 
     final = json.loads(
         host.run(
-            _expand(templates["candidate-fingerprint"], {"${candidate}": canonical}, packages)
+            _expand(templates["candidate-fingerprint"], {"${candidate}": canonical}, requirements)
         ).stdout
     )
     if final["version"] < [3, 11] or final != selected:
@@ -232,7 +230,6 @@ def test_setup_skill_is_host_loaded_and_uses_task_1_core_authority() -> None:
         ROOT,
         schema_root=ROOT / "references" / "blueprint-schema",
     )
-    core = json.loads((ROOT / "mcp-core.json").read_text(encoding="utf-8"))
     text = SKILL.read_text(encoding="utf-8")
 
     # Verify module ID is bootstrap-dispatcher-runtime
@@ -250,7 +247,11 @@ def test_setup_skill_is_host_loaded_and_uses_task_1_core_authority() -> None:
         "bootstrap-dispatcher-runtime.source.gateway.interface.default"
     )
     assert "tools:\n  - python" in text
-    assert core["core_packages"] == ["mcp>=1,<2", "PyYAML>=6", "jsonschema>=4,<5"]
+    assert (ROOT / "requirements-mcp.txt").read_text(encoding="utf-8").splitlines() == [
+        "mcp>=1,<2",
+        "PyYAML>=6",
+        "jsonschema>=4,<5",
+    ]
     assert "installation_tier" not in text
     assert all(term not in text.casefold() for term in ("keyring", "google"))
     repair_export = graph.exports[
@@ -263,21 +264,16 @@ def test_setup_skill_is_host_loaded_and_uses_task_1_core_authority() -> None:
 
 
 def test_description_routes_only_evidence_backed_dispatcher_runtime_failures() -> None:
-    description = _frontmatter_description()
+    description = " ".join(_frontmatter_description().split())
 
-    assert set(re.findall(r"dispatcher\.[a-z_]+", description)) == {
-        "dispatcher.mcp_package_unavailable",
-        "dispatcher.mcp_python_unsupported",
-    }
-    assert all(
-        exclusion in description
-        for exclusion in (
-            "routing",
-            "authorization",
-            "setup state",
-            "manager-response failures",
-        )
+    assert "`famulus_dispatcher`" in description
+    assert "MCP server" in description
+    assert (
+        "`Famulus MCP startup's dedicated dispatcher runtime is missing at ...`"
+        in description
     )
+    assert "sets up the required dedicated Python environment" in description
+    assert not re.findall(r"dispatcher\.[a-z_]+", description)
 
 
 def test_graph_execution_contract_covers_the_actual_ordered_command_sequence() -> None:
@@ -363,10 +359,10 @@ def test_fingerprint_template_binds_a_candidate_and_reports_the_four_fields() ->
     }
 
 
-def test_templates_preserve_space_paths_and_install_only_declared_core_packages() -> None:
+def test_templates_preserve_space_paths_and_install_declared_requirements_file() -> None:
     templates = _templates()
     canonical = "/tmp/Python With Spaces/python"
-    packages = _core_packages()
+    requirements = _core_install_arguments()
 
     for name in ("pip-check", "target-check", "pip-preflight", "pip-install"):
         resolved = [
@@ -376,7 +372,7 @@ def test_templates_preserve_space_paths_and_install_only_declared_core_packages(
         assert resolved[0] == canonical
     assert templates["pip-preflight"][-1] == "${selected_packages}"
     assert templates["pip-install"][-1] == "${selected_packages}"
-    assert packages == ["mcp>=1,<2", "PyYAML>=6", "jsonschema>=4,<5"]
+    assert requirements == ["-r", str(ROOT / "requirements-mcp.txt")]
 
 
 @pytest.mark.parametrize("scenario", ["python3-only", "py-only"])
@@ -437,7 +433,7 @@ def test_missing_package_repairs_once_while_satisfied_package_is_not_reinstalled
     assert _consume_setup(satisfied, plugin) == "ready"
     assert satisfied.mutations == 0
     assert all(
-        call[-3:] == ["mcp>=1,<2", "PyYAML>=6", "jsonschema>=4,<5"]
+        call[-2:] == ["-r", str(ROOT / "requirements-mcp.txt")]
         for call in missing.calls
         if call[1:3] == ["-m", "pip"] and "install" in call
     )

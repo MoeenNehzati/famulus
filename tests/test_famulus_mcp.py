@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SERVER = ROOT / "mcp_server.py"
 LAUNCHER = ROOT / "mcp_launcher.py"
 CORE = ROOT / "mcp-core.json"
+REQUIREMENTS = ROOT / "requirements-mcp.txt"
 COMPREHENSION_FIXTURE = ROOT / "tests" / "fixtures" / "famulus_comprehension_payloads.json"
 # Real stdio cases finish in about 6s sequentially and at most 10.71s in an
 # isolated -n8 run. Full-hook worker contention can exceed 15s while the MCP
@@ -64,37 +65,169 @@ def _launcher_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     return paths
 
 
+def _create_runtime_interpreter(paths) -> None:
+    paths.venv_python_path.parent.mkdir(parents=True)
+    paths.venv_python_path.touch()
+
+
 def test_launcher_uses_exact_executable_inherits_stdio_and_propagates_exit(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     launcher = _load_server(LAUNCHER)
     paths = _launcher_paths(monkeypatch, tmp_path)
-    called: list[list[str]] = []
+    _create_runtime_interpreter(paths)
+    called: list[tuple[list[str], dict[str, object]]] = []
+
+    def run(argv, **kwargs):
+        called.append((argv, kwargs))
+        return subprocess.CompletedProcess(argv, 0 if len(called) == 1 else 17, "", "")
+
     monkeypatch.setattr(
         launcher.subprocess,
         "run",
-        lambda argv: called.append(argv) or subprocess.CompletedProcess(argv, 17),
+        run,
     )
 
     assert launcher.main() == 17
-    assert called == [[str(paths.venv_python_path), str(ROOT / "mcp_server.py")]]
+    assert called[0][0][0] == str(paths.venv_python_path)
+    assert called[0][0][-2:] == ["-r", str(REQUIREMENTS)]
+    assert called[0][1]["stdin"] is subprocess.DEVNULL
+    assert called[1][0] == [str(paths.venv_python_path), str(ROOT / "mcp_server.py")]
 
 
-def test_launcher_preserves_error_when_venv_python_is_unlaunchable(
-    monkeypatch: pytest.MonkeyPatch, capsys, tmp_path: Path
+@pytest.mark.parametrize("host", ["codex", "claude"])
+def test_launcher_uses_json_normalized_plugin_data(
+    host: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     launcher = _load_server(LAUNCHER)
-    _launcher_paths(monkeypatch, tmp_path)
-    error = FileNotFoundError("missing interpreter at /dedicated/python")
+    paths = _launcher_paths(monkeypatch, tmp_path)
+    _create_runtime_interpreter(paths)
+    plugin_data = tmp_path / "plugin-data"
+    monkeypatch.setenv("FAMULUS_HOST", host)
+    monkeypatch.setenv("FAMULUS_PLUGIN_DATA", str(plugin_data))
+    monkeypatch.setenv("PLUGIN_DATA", str(tmp_path / "wrong-codex-data"))
+    monkeypatch.setenv("CLAUDE_PLUGIN_DATA", str(tmp_path / "wrong-claude-data"))
+    normalized: list[str | None] = []
+
+    def run(argv, *, env, **_kwargs):
+        normalized.append(env.get("FAMULUS_PLUGIN_DATA"))
+        return subprocess.CompletedProcess(argv, 0 if len(normalized) == 1 else 17)
+
     monkeypatch.setattr(
         launcher.subprocess,
         "run",
-        lambda _argv: (_ for _ in ()).throw(error),
+        run,
     )
+
+    assert launcher.main() == 17
+    assert normalized == [str(plugin_data), str(plugin_data)]
+
+
+@pytest.mark.parametrize("host", ["codex", "claude"])
+def test_launcher_reports_missing_json_normalized_plugin_data(
+    host: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys,
+    tmp_path: Path,
+) -> None:
+    launcher = _load_server(LAUNCHER)
+    _launcher_paths(monkeypatch, tmp_path)
+    monkeypatch.setenv("FAMULUS_HOST", host)
+    monkeypatch.delenv("FAMULUS_PLUGIN_DATA", raising=False)
+
     assert launcher.main() == 1
     assert capsys.readouterr().err == (
-        "famulus MCP launcher: FileNotFoundError: "
-        "missing interpreter at /dedicated/python\n"
+        "error: Famulus MCP startup failed before the server became available.\n"
+        "Cause: InvalidFamulusPluginContextError: plugin host and data must be supplied together\n"
+    )
+
+
+def test_launcher_reports_missing_runtime_and_bootstrap_route(
+    monkeypatch: pytest.MonkeyPatch, capsys, tmp_path: Path
+) -> None:
+    launcher = _load_server(LAUNCHER)
+    paths = _launcher_paths(monkeypatch, tmp_path)
+
+    assert launcher.main() == 1
+    assert capsys.readouterr().err == (
+        "error: Famulus MCP startup's dedicated dispatcher runtime "
+        f"is missing at {paths.venv_python_path}.\n"
+        "Possible clues:\n"
+        "- Use the `bootstrap-dispatcher-runtime` skill's core setup route.\n"
+    )
+
+
+def test_runtime_diagnosis_is_reusable_without_writing_stderr(
+    monkeypatch: pytest.MonkeyPatch, capsys, tmp_path: Path
+) -> None:
+    """Break caught: runtime health can only be consumed through launcher stderr."""
+    launcher = _load_server(LAUNCHER)
+    paths = _launcher_paths(monkeypatch, tmp_path)
+
+    diagnosis = launcher.diagnose_runtime(
+        paths.venv_python_path, os.environ.copy()
+    )
+
+    assert diagnosis == (
+        "error: Famulus MCP startup's dedicated dispatcher runtime "
+        f"is missing at {paths.venv_python_path}.\n"
+        "Possible clues:\n"
+        "- Use the `bootstrap-dispatcher-runtime` skill's core setup route.\n"
+    )
+    assert capsys.readouterr().err == ""
+
+
+def test_launcher_reports_unsatisfied_requirements_before_starting_server(
+    monkeypatch: pytest.MonkeyPatch, capsys, tmp_path: Path
+) -> None:
+    launcher = _load_server(LAUNCHER)
+    paths = _launcher_paths(monkeypatch, tmp_path)
+    _create_runtime_interpreter(paths)
+    called: list[list[str]] = []
+
+    def run(argv, **_kwargs):
+        called.append(argv)
+        return subprocess.CompletedProcess(
+            argv,
+            1,
+            "",
+            "ERROR: No matching distribution found for jsonschema<5,>=4\n",
+        )
+
+    monkeypatch.setattr(launcher.subprocess, "run", run)
+
+    assert launcher.main() == 1
+    assert len(called) == 1
+    assert called[0][-2:] == ["-r", str(REQUIREMENTS)]
+    assert capsys.readouterr().err == (
+        "error: Famulus MCP startup's dedicated dispatcher "
+        f"runtime does not satisfy {REQUIREMENTS}.\n"
+        "Cause: ERROR: No matching distribution found for jsonschema<5,>=4\n"
+        "Possible clues:\n"
+        "- Use the `bootstrap-dispatcher-runtime` skill's core setup route.\n"
+    )
+
+
+def test_launcher_formats_unexpected_startup_failure(
+    monkeypatch: pytest.MonkeyPatch, capsys, tmp_path: Path
+) -> None:
+    launcher = _load_server(LAUNCHER)
+    paths = _launcher_paths(monkeypatch, tmp_path)
+    _create_runtime_interpreter(paths)
+    monkeypatch.setattr(
+        launcher.subprocess,
+        "run",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            PermissionError("cannot execute dedicated runtime")
+        ),
+    )
+
+    assert launcher.main() == 1
+    assert capsys.readouterr().err == (
+        "error: Famulus MCP startup failed before the server became available.\n"
+        "Cause: PermissionError: cannot execute dedicated runtime\n"
     )
 
 
@@ -118,6 +251,7 @@ def _copy_plugin(plugin_root: Path, *, include_graph: bool = False) -> None:
     shutil.copy2(SERVER, plugin_root / SERVER.name)
     shutil.copy2(LAUNCHER, plugin_root / LAUNCHER.name)
     shutil.copy2(CORE, plugin_root / CORE.name)
+    shutil.copy2(REQUIREMENTS, plugin_root / REQUIREMENTS.name)
     shutil.copy2(ROOT / "officina.toml", plugin_root / "officina.toml")
     shutil.copy2(ROOT / ".mcp.json", plugin_root / ".mcp.json")
     shutil.copytree(ROOT / "src", plugin_root / "src")
@@ -895,10 +1029,11 @@ def test_packaged_host_declaration_invokes_dispatcher_through_real_mcp(
     assert [tool.name for tool in after.tools] == [contract["tool"]["name"]]
 
 
-def test_contract_keeps_core_dependency_and_fingerprint_separate_from_skills() -> None:
+def test_contract_keeps_mcp_metadata_separate_from_runtime_requirements() -> None:
     contract = _json(CORE)
 
-    assert contract["core_packages"] == [
+    assert "core_packages" not in contract
+    assert REQUIREMENTS.read_text(encoding="utf-8").splitlines() == [
         "mcp>=1,<2",
         "PyYAML>=6",
         "jsonschema>=4,<5",
@@ -909,10 +1044,8 @@ def test_contract_keeps_core_dependency_and_fingerprint_separate_from_skills() -
         "sys.base_prefix",
         "sys.version_info[:2]",
     ]
-    assert all(
-        "google" not in package and "keyring" not in package
-        for package in contract["core_packages"]
-    )
+    assert "google" not in REQUIREMENTS.read_text(encoding="utf-8").casefold()
+    assert "keyring" not in REQUIREMENTS.read_text(encoding="utf-8").casefold()
 
 
 def test_packaged_server_imports_its_own_src_without_pythonpath(tmp_path: Path) -> None:

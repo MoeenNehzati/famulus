@@ -1,11 +1,11 @@
 ---
 name: bootstrap-dispatcher-runtime
 description: >-
-  Use only when evidence shows that the Famulus dispatcher Python is missing or
-  older than 3.11 (`dispatcher.mcp_python_unsupported`), or that a declared
-  dispatcher package is unavailable (`dispatcher.mcp_package_unavailable`). Do
-  not use for routing, authorization, setup state, manager-response failures,
-  or general Python installation.
+  Use when the Famulus launcher cannot launch the `famulus_dispatcher` MCP
+  server because its dedicated Python runtime is missing, reported as:
+  `Famulus MCP startup's dedicated dispatcher runtime is missing at ...`. This
+  skill sets up the required dedicated Python environment using an available
+  supported Python and installs the packages needed by `famulus_dispatcher`.
 tools:
   - python
 ---
@@ -29,7 +29,7 @@ Five requirements, each separately checkable:
 
 1. **Right version, known path.** Python 3.11 or newer, at a known absolute path. A command name is not a path.
 2. **Dedicated to the dispatcher.** Not the user's system interpreter. The user's systemwide Python may be changed, upgraded, or replaced at any time for reasons that have nothing to do with Famulus, and Famulus's packages must not be installed into an environment the user owns. What form this takes depends on the system: usually a virtual environment, but a fresh interpreter installed for Famulus alone satisfies it equally. The test is consequence, not shape: installing into it must not change anything else the user runs. The converse does not hold as strongly for every form, and do not claim it does: a virtual environment's interpreter is a symlink to the interpreter that built it, so removing or replacing that one breaks the environment, while a separately installed interpreter is immune. Where it is a virtual environment, `prefix` differing from `base_prefix` confirms it is the environment and not its base.
-3. **Required packages installed in it.** The declared packages importable from that interpreter, and from no other. This is why a feature's own packages are in scope: the dispatcher runs that feature's interface with this interpreter, so anything the interface imports must be installed here. The core declaration in `mcp-core.json` is what the server needs to start at all; a caller-owned declaration is what one interface needs to run.
+3. **Required packages installed in it.** The declared packages importable from that interpreter, and from no other. This is why a feature's own packages are in scope: the dispatcher runs that feature's interface with this interpreter, so anything the interface imports must be installed here. The core `requirements-mcp.txt` is what the server needs to start at all; a caller-owned declaration is what one interface needs to run.
 4. **The dispatcher actually runs on it.** The host's bare `python` runs only `mcp_launcher.py`; that stdlib-only launcher resolves `FamulusPaths.venv_python_path` and starts `mcp_server.py` with it. Checkable: the running server reports this absolute path as its own `sys.executable`.
 5. **It keeps happening.** On the next launch, and after a host restart, and after a plugin upgrade. Anything that holds only inside your process, or only in the shell you are in now, has not met requirement 4; neither has an interpreter placed where a plugin upgrade will delete it.
 
@@ -55,11 +55,11 @@ Decide this before anything else. You are in the **repair route** only if a call
 
 If you cannot tell, treat it as the repair route and do not prompt. The two mistakes are not symmetric: guessing repair when it was core stops early and asks nothing, while guessing core when it was repair hangs an unattended job waiting for an answer nobody will give.
 
-**Core setup route.** The dispatcher has no usable runtime. Resolve the installed skill location supplied by the host to its owning plugin root, then read that root's `mcp-core.json`. Its `core_packages` array is the only package authority; reject a caller-supplied replacement. The same root's `src` directory supplies the stdlib-only Famulus path resolver. This route may ask the user questions.
+**Core setup route.** The dispatcher has no usable runtime. Resolve the installed skill location supplied by the host to its owning plugin root. That root's `requirements-mcp.txt` is the only package authority; reject a caller-supplied replacement. Use it as the absolute two-token pip argument `-r`, `<plugin-root>/requirements-mcp.txt`. The same root's `src` directory supplies the stdlib-only Famulus path resolver. This route may ask the user questions.
 
 **Owner-selected repair route.** Repair only the supplied declaration, in only the supplied environment. Do not locate, infer, widen, or combine declarations from any other feature. Its callers include scheduled and background runs with nobody available to answer, so this route must never prompt. If the supplied environment is missing or unusable, stop and report that the core setup route is required.
 
-In both routes, call the selected declaration `${selected_packages}` and the interpreter being installed into `${canonical_executable}`. Do not inspect skill blueprints or any repository-wide dependency inventory. The repair route enters at "Preflight" with `${canonical_executable}` already supplied.
+In both routes, call the ordered pip arguments `${selected_packages}` and the interpreter being installed into `${canonical_executable}`. For core setup these are the `-r` pair above; for repair they are the caller-supplied package declaration, one process argument per item. Do not inspect skill blueprints or any repository-wide dependency inventory. The repair route enters at "Preflight" with `${canonical_executable}` already supplied.
 
 Before entering Preflight, the repair route runs `candidate-fingerprint` against `${canonical_executable}`, requires version 3.11 or newer and `executable` byte-for-byte equal to the supplied absolute path, and retains the complete object as the selected fingerprint.
 
@@ -126,7 +126,7 @@ The target check examines every normal selected-environment scheme destination w
 ["${canonical_executable}", "-c", "import os,sys,sysconfig;p={sysconfig.get_path(k) for k in ('purelib','platlib','scripts','data')};bad=[]\nfor x in p:\n q=x\n while not os.path.exists(q): q=os.path.dirname(q)\n if not os.access(q,os.W_OK): bad.append(x)\nprint('normal install target is not writable: '+', '.join(sorted(bad)) if bad else 'normal install target is writable');raise SystemExit(bool(bad))"]
 ```
 
-Expand `${selected_packages}` to the route's exact ordered declaration, one process argument per item. This dry run is the complete pip preflight and must succeed before mutation; its failure includes externally-managed refusal and resolution failure.
+Expand `${selected_packages}` to the route's exact ordered pip arguments. This dry run is the complete pip preflight and must succeed before mutation; its failure includes externally-managed refusal and resolution failure.
 
 <!-- command:pip-preflight -->
 ```json

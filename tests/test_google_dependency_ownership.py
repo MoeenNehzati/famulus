@@ -265,9 +265,9 @@ def test_google_owners_are_optional_and_declare_only_keyring() -> None:
 
 
 def test_core_does_not_own_google_packages() -> None:
-    core_packages = json.loads((ROOT / "mcp-core.json").read_text(encoding="utf-8"))[
-        "core_packages"
-    ]
+    core_packages = (ROOT / "requirements-mcp.txt").read_text(
+        encoding="utf-8"
+    ).splitlines()
     assert core_packages == ["mcp>=1,<2", "PyYAML>=6", "jsonschema>=4,<5"]
 
 
