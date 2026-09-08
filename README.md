@@ -82,9 +82,7 @@ To install Famulus you need:
   minimum host version
 - Python 3.11 or newer with pip. Famulus runs its skills through a dispatcher
   server, and that server needs a Python runtime of its own;
-  `bootstrap-dispatcher-runtime` builds it, so Famulus's packages never land in the
-  Python you use for your own work. Bare `python` starts only a stdlib launcher;
-  the dispatcher runs under the dedicated venv created by bootstrap
+  `bootstrap-dispatcher-runtime` builds the required virtual environment from the system python.
 
 ## Quick Start
 
@@ -121,12 +119,7 @@ the host loads the plugin.
 ### 2. Set up the dispatcher runtime
 
 In that first session, ask the assistant to use
-`bootstrap-dispatcher-runtime`, then restart the host.
-
-Bootstrap is specifically for the case where the `famulus_dispatcher` MCP
-server cannot start because its dedicated Python runtime is missing. It
-prepares that environment, which runs the Python code used by Famulus skills.
-After the restart, `famulus_dispatcher` can start with it.
+`bootstrap-dispatcher-runtime`, then restart the host. `bootstrap-dispatcher-runtime` sets up the python virtual environment for `famulus_dispatcher`. After the restart, `famulus_dispatcher` can start with it.
 
 See [Setting up Famulus](docs/setup.md) for the full boundary.
 
