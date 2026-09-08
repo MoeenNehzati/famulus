@@ -93,10 +93,14 @@ fetch('/benchmark-result',{method:'POST',body:JSON.stringify({result:result?.tex
             self.send_response(204)
             self.end_headers()
 
+    class Server(ThreadingHTTPServer):
+        # Closing the listener must not wait for an idle browser preconnection.
+        daemon_threads = True
+
     workspace = tempfile.TemporaryDirectory(prefix="famulus-benchmark-")
     with workspace as workdir, \
             tempfile.TemporaryFile(mode="w+", encoding="utf-8") as errors, \
-            ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
+            Server(("127.0.0.1", 0), Handler) as server:
         server.timeout = 0.1
         command = [
             chrome, "--headless", "--no-sandbox", "--disable-gpu",
@@ -118,7 +122,7 @@ fetch('/benchmark-result',{method:'POST',body:JSON.stringify({result:result?.tex
         finally:
             process.terminate()
             try:
-                process.wait(timeout=5)
+                process.wait(timeout=1)
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
