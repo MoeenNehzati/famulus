@@ -238,10 +238,9 @@
         };
       }
       const presentationState = nodePresentationState(entity, {forceContainer: container});
-      const label = String(entity.label || entity.short_title || entity.id || "");
-      const subtitle = String(entity.type + (entity.ref ? " " + entity.ref : ""));
+      const {title, subtitle} = nodeVisibleText(entity);
       const cacheKey = JSON.stringify([
-        label,
+        title,
         subtitle,
         presentationState.className,
         presentationState.isContainer,
@@ -276,7 +275,7 @@
       body.style.height = "auto";
       body.style.minWidth = `${minimumWidth}px`;
       body.style.maxWidth = `${MAX_CONTENT_NODE_WIDTH}px`;
-      body.innerHTML = `<div class="node-label">${escapeHtml(label)}</div><div class="node-subtitle">${escapeHtml(subtitle)}</div>`;
+      body.innerHTML = nodeVisibleTextMarkup({title, subtitle});
       nodeMeasurementHost.appendChild(body);
       const width = Math.ceil(body.getBoundingClientRect().width);
       const height = Math.ceil(body.scrollHeight);

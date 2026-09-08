@@ -3,10 +3,15 @@
 from officina.visualization.elk_html_renderer import build_html_with_elk
 from test_support.browser import require_chrome, run_html
 
-def test_default_nodes_use_larger_cells_and_heavy_condensed_labels() -> None:
-    """Ordinary nodes expose the selected 130%-cell readability treatment."""
+def test_default_nodes_use_readable_literal_producer_text() -> None:
+    """Core cells use readable producer text rather than descriptive metadata."""
     chrome = require_chrome()
 
+    single_line_title = (
+        "A producer-owned title deliberately long enough to wrap across several "
+        "lines while remaining the only visible text in this graph cell for "
+        "measurement"
+    )
     doc = {
         "schema_version": 2,
         "graph_id": "node-readability-smoke",
@@ -16,12 +21,28 @@ def test_default_nodes_use_larger_cells_and_heavy_condensed_labels() -> None:
         "entities": [
             {
                 "id": "alpha",
-                "type": "lemma",
+                "type": "misleading-type",
+                "ref": "misleading-ref",
                 "category": "lemma",
-                "short_title": "Alpha",
+                "title": "An intentionally ignored legacy title that is much longer than the cell",
+                "short_title": "Ignored short title",
+                "label": "Visible producer label",
+                "subtitle": "Visible producer subtitle",
                 "position": 0,
                 "connects_to": [],
-            }
+            },
+            {
+                "id": "empty-subtitle",
+                "type": "misleading-type", "ref": "misleading-ref", "category": "lemma",
+                "title": "Ignored legacy title one", "short_title": single_line_title,
+                "subtitle": "", "position": 1, "connects_to": [],
+            },
+            {
+                "id": "missing-subtitle",
+                "type": "different-misleading-type", "ref": "different-misleading-ref", "category": "lemma",
+                "title": "Ignored legacy title two, deliberately different", "short_title": single_line_title,
+                "position": 2, "connects_to": [],
+            },
         ],
     }
     html = build_html_with_elk(doc).replace(
@@ -31,7 +52,7 @@ def test_default_nodes_use_larger_cells_and_heavy_condensed_labels() -> None:
         window.addEventListener("load", () => setTimeout(async () => {
           try {
             for (let attempt = 0; attempt < 200; attempt += 1) {
-              if (document.querySelector('[data-node-id="alpha"]')) break;
+              if (document.querySelectorAll("[data-node-id]").length === 3) break;
               await delay(20);
             }
             const node = document.querySelector('[data-node-id="alpha"]');
@@ -47,6 +68,36 @@ def test_default_nodes_use_larger_cells_and_heavy_condensed_labels() -> None:
             }
             if (parseFloat(style.fontSize) < 21 || parseFloat(style.fontWeight) < 900) {
               throw new Error(`label typography is ${style.fontSize}/${style.fontWeight}`);
+            }
+            const emptyBody = document.querySelector('[data-node-id="empty-subtitle"] .node-fo-body');
+            const missingBody = document.querySelector('[data-node-id="missing-subtitle"] .node-fo-body');
+            if (!emptyBody || !missingBody) throw new Error("subtitle-free body is missing");
+            if (label.textContent !== "Visible producer label" || node.querySelector(".node-subtitle")?.textContent !== "Visible producer subtitle") {
+              throw new Error(`unexpected visible text ${node.textContent}`);
+            }
+            if (node.textContent.includes("misleading-type misleading-ref")) {
+              throw new Error(`renderer-derived subtitle leaked: ${node.textContent}`);
+            }
+            if (emptyBody.querySelector(".node-subtitle") || missingBody.querySelector(".node-subtitle")) {
+              throw new Error("empty subtitle reserved a subtitle row");
+            }
+            if (emptyBody.textContent !== "A producer-owned title deliberately long enough to wrap across several lines while remaining the only visible text in this graph cell for measurement" || missingBody.textContent !== "A producer-owned title deliberately long enough to wrap across several lines while remaining the only visible text in this graph cell for measurement") {
+              throw new Error("empty subtitle changed visible title text");
+            }
+            const expectedBody = document.createElement("div");
+            expectedBody.className = "node-fo-body";
+            Object.assign(expectedBody.style, {width: "max-content", height: "auto", minWidth: "291px", maxWidth: "416px", position: "absolute", visibility: "hidden"});
+            const expectedLabel = document.createElement("div");
+            expectedLabel.className = "node-label";
+            expectedLabel.textContent = "A producer-owned title deliberately long enough to wrap across several lines while remaining the only visible text in this graph cell for measurement";
+            expectedBody.appendChild(expectedLabel);
+            document.body.appendChild(expectedBody);
+            const singleLineHeight = Math.max(99, Math.ceil(expectedBody.scrollHeight));
+            expectedBody.remove();
+            const emptyHeight = lastNodePositions.get("empty-subtitle")?.height;
+            const missingHeight = lastNodePositions.get("missing-subtitle")?.height;
+            if (emptyHeight !== singleLineHeight || missingHeight !== singleLineHeight) {
+              throw new Error(`subtitle-free dimensions are ${emptyHeight}x${missingHeight}, expected ${singleLineHeight}`);
             }
             document.body.dataset.testStatus = "PASS";
             document.title = "PASS";

@@ -34,6 +34,20 @@
       shapeEl.setAttribute("stroke-width", tone === "strong" ? "2.25" : "3");
     }
 
+    function nodeVisibleText(entity) {
+      return {
+        title: String(entity.label || entity.short_title || ""),
+        subtitle: String(entity.subtitle || ""),
+      };
+    }
+
+    function nodeVisibleTextMarkup({title, subtitle}) {
+      const subtitleMarkup = subtitle
+        ? `<div class="node-subtitle">${escapeHtml(subtitle)}</div>`
+        : "";
+      return `<div class="node-label">${escapeHtml(title)}</div>${subtitleMarkup}`;
+    }
+
     function renderContainerShell({layer, id, label, subtitle, position, style, tone = "subtle", className = ""}) {
       const group = createSvgElement("g");
       group.setAttribute("class", className);
@@ -322,7 +336,7 @@
       foreignObject.setAttribute("width", w); foreignObject.setAttribute("height", h);
       const body = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
       body.setAttribute("class", presentationState.className);
-      body.innerHTML = `<div class="node-label">${escapeHtml(entity.label || entity.short_title)}</div><div class="node-subtitle">${escapeHtml(entity.type + (entity.ref ? " " + entity.ref : ""))}</div>`;
+      body.innerHTML = nodeVisibleTextMarkup(nodeVisibleText(entity));
       foreignObject.appendChild(body);
       group.appendChild(foreignObject);
       if (offsetDecoration) {
