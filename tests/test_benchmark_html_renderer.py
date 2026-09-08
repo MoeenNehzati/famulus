@@ -75,20 +75,41 @@ def test_trial_measures_a_real_synchronous_stall():
 @pytest.mark.parametrize("idle_connection", [False, True])
 def test_real_time_launcher_bounds_a_page_without_a_result(monkeypatch, idle_connection):
     module = _benchmark_module()
-    phase_seconds = {"process_wait": 0.0, "profile_cleanup": 0.0}
+    phase_seconds = {
+        "popen": 0.0,
+        "poll": 0.0,
+        "handle_request": 0.0,
+        "process_wait": 0.0,
+        "server_close": 0.0,
+        "profile_cleanup": 0.0,
+    }
     launch = module.subprocess.Popen
+    handle_request = module.ThreadingHTTPServer.handle_request
+    server_close = module.ThreadingHTTPServer.server_close
     cleanup = module.tempfile.TemporaryDirectory.cleanup
 
     def launch_with_phase_timing(command, **kwargs):
-        if idle_connection:
-            # Chromium can open an HTTP connection before sending any request.
-            address = urlsplit(command[-1])
-            connection = socket.create_connection((address.hostname, address.port))
-            release = threading.Timer(3, connection.close)
-            release.daemon = True
-            release.start()
-        process = launch(command, **kwargs)
+        phase_start = time.monotonic()
+        try:
+            if idle_connection:
+                # Chromium can open an HTTP connection before sending any request.
+                address = urlsplit(command[-1])
+                connection = socket.create_connection((address.hostname, address.port))
+                release = threading.Timer(3, connection.close)
+                release.daemon = True
+                release.start()
+            process = launch(command, **kwargs)
+        finally:
+            phase_seconds["popen"] += time.monotonic() - phase_start
+        poll = process.poll
         wait = process.wait
+
+        def poll_with_phase_timing(*args, **kwargs):
+            phase_start = time.monotonic()
+            try:
+                return poll(*args, **kwargs)
+            finally:
+                phase_seconds["poll"] += time.monotonic() - phase_start
 
         def wait_with_phase_timing(*args, **kwargs):
             phase_start = time.monotonic()
@@ -97,8 +118,23 @@ def test_real_time_launcher_bounds_a_page_without_a_result(monkeypatch, idle_con
             finally:
                 phase_seconds["process_wait"] += time.monotonic() - phase_start
 
+        process.poll = poll_with_phase_timing
         process.wait = wait_with_phase_timing
         return process
+
+    def handle_request_with_phase_timing(server):
+        phase_start = time.monotonic()
+        try:
+            return handle_request(server)
+        finally:
+            phase_seconds["handle_request"] += time.monotonic() - phase_start
+
+    def server_close_with_phase_timing(server):
+        phase_start = time.monotonic()
+        try:
+            return server_close(server)
+        finally:
+            phase_seconds["server_close"] += time.monotonic() - phase_start
 
     def cleanup_with_phase_timing(directory):
         phase_start = time.monotonic()
@@ -108,6 +144,8 @@ def test_real_time_launcher_bounds_a_page_without_a_result(monkeypatch, idle_con
             phase_seconds["profile_cleanup"] += time.monotonic() - phase_start
 
     monkeypatch.setattr(module.subprocess, "Popen", launch_with_phase_timing)
+    monkeypatch.setattr(module.ThreadingHTTPServer, "handle_request", handle_request_with_phase_timing)
+    monkeypatch.setattr(module.ThreadingHTTPServer, "server_close", server_close_with_phase_timing)
     monkeypatch.setattr(module.tempfile.TemporaryDirectory, "cleanup", cleanup_with_phase_timing)
     start = time.monotonic()
     with pytest.raises(SystemExit, match="benchmark result timed out"):
@@ -115,7 +153,12 @@ def test_real_time_launcher_bounds_a_page_without_a_result(monkeypatch, idle_con
             require_chrome(), "<html><body></body></html>", timeout_seconds=0.5
         )
     elapsed = time.monotonic() - start
-    assert elapsed < 2.5, {"elapsed": elapsed, **phase_seconds}
+    measured = sum(phase_seconds.values())
+    assert elapsed < 2.5, {
+        "elapsed": elapsed,
+        **phase_seconds,
+        "unmeasured": elapsed - measured,
+    }
 
 
 def test_real_time_launcher_retries_inflight_profile_cleanup(monkeypatch):
