@@ -111,6 +111,10 @@ fetch('/benchmark-result',{method:'POST',body:JSON.stringify({result:result?.tex
             f"--user-data-dir={Path(workdir) / 'profile'}", "--window-size=1440,1000",
             f"http://127.0.0.1:{server.server_port}/page.html",
         ]
+        if sys.platform == "darwin":
+            # Let Popen return after execing this system binary; macOS can hold
+            # a cold Chrome exec for admission checks before the browser starts.
+            command.insert(0, "/usr/bin/env")
         popen_options = {"start_new_session": True} if os.name == "posix" else {}
         process = subprocess.Popen(
             command, stdout=subprocess.DEVNULL, stderr=errors, **popen_options

@@ -96,6 +96,26 @@ def test_real_time_launcher_bounds_a_page_without_a_result(monkeypatch, idle_con
     assert time.monotonic() - start < 2.5
 
 
+def test_real_time_launcher_bounds_cold_macos_browser_exec(monkeypatch):
+    module = _benchmark_module()
+    chrome = require_chrome()
+    launch = module.subprocess.Popen
+
+    def launch_after_cold_browser_exec(command, **kwargs):
+        if command[0] == chrome:
+            time.sleep(3)
+        return launch(command, **kwargs)
+
+    monkeypatch.setattr(module.sys, "platform", "darwin")
+    monkeypatch.setattr(module.subprocess, "Popen", launch_after_cold_browser_exec)
+    start = time.monotonic()
+    with pytest.raises(SystemExit, match="benchmark result timed out"):
+        module.run_benchmark_html(
+            chrome, "<html><body></body></html>", timeout_seconds=0.5
+        )
+    assert time.monotonic() - start < 2.5
+
+
 def test_real_time_launcher_retries_inflight_profile_cleanup(monkeypatch):
     module = _benchmark_module()
     cleanup = module.tempfile.TemporaryDirectory.cleanup
