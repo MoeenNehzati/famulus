@@ -92,8 +92,14 @@ def test_default_nodes_use_readable_literal_producer_text() -> None:
             expectedLabel.textContent = "A producer-owned title deliberately long enough to wrap across several lines while remaining the only visible text in this graph cell for measurement";
             expectedBody.appendChild(expectedLabel);
             document.body.appendChild(expectedBody);
+            const singleLineWidth = Math.max(291, Math.ceil(expectedBody.getBoundingClientRect().width));
             const singleLineHeight = Math.max(99, Math.ceil(expectedBody.scrollHeight));
             expectedBody.remove();
+            const emptyWidth = lastNodePositions.get("empty-subtitle")?.width;
+            const missingWidth = lastNodePositions.get("missing-subtitle")?.width;
+            if (emptyWidth !== singleLineWidth || missingWidth !== singleLineWidth) {
+              throw new Error(`subtitle-free widths are ${emptyWidth}x${missingWidth}, expected ${singleLineWidth}`);
+            }
             const emptyHeight = lastNodePositions.get("empty-subtitle")?.height;
             const missingHeight = lastNodePositions.get("missing-subtitle")?.height;
             if (emptyHeight !== singleLineHeight || missingHeight !== singleLineHeight) {
