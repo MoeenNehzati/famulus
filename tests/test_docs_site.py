@@ -46,6 +46,29 @@ def _write(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
+def _minimal_graph_payload() -> dict:
+    return {
+        "schema_version": 2,
+        "graph_id": "docs-site",
+        "categories": [{"id": "node", "label": "Node"}],
+        "edge_categories": [],
+        "relation_semantics": {
+            "transformations": {"node_omission": {"rules": []}},
+            "subsumptions": [],
+        },
+        "detail_levels": [{"id": "overview", "label": "Overview"}],
+        "entities": [],
+    }
+
+
+def _embedded_quick_guide(rendered_html: str) -> dict:
+    match = re.search(
+        r"const QUICK_GUIDE_CONFIG = (.*?);\n", rendered_html, re.DOTALL
+    )
+    assert match is not None
+    return json.loads(match.group(1))
+
+
 def test_assemble_site_publishes_docs_tree_except_plans(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     output = repo / "_build" / "docs-site" / "source"
@@ -192,25 +215,16 @@ def test_assemble_site_resolves_default_graph_builder_from_visualizer(
 
     from officina.visualization.from_blueprint import visualizer
 
-    def write_graph(
-        repo_root: str | Path,
-        *,
-        output_dir: str | Path,
-        name: str | None,
-        write_json: bool,
-    ) -> list[Path]:
-        assert Path(repo_root) == repo
-        assert name == "repository"
-        assert write_json is False
-        html = Path(output_dir) / "repository.html"
-        _write(html, "<!doctype html><title>Blueprint</title>\n")
-        return [html]
-
-    monkeypatch.setattr(visualizer, "build_blueprint_graph", write_graph)
+    monkeypatch.setattr(
+        visualizer, "build_blueprint_payload", lambda *_args, **_kwargs: _minimal_graph_payload()
+    )
 
     assemble_site(repo, output)
 
-    assert (output / "graphs" / "blueprint" / "repository.html").is_file()
+    rendered = (output / "graphs" / "blueprint" / "repository.html").read_text(
+        encoding="utf-8"
+    )
+    assert _embedded_quick_guide(rendered)["open_by_default"] is True
 
 
 def test_docs_site_cli_exposes_local_serve_and_static_build_commands() -> None:
@@ -355,3 +369,4 @@ def test_docs_publisher_consumes_embedded_math_macros_unchanged(
     )
     assert embedded_config is not None
     assert json.loads(embedded_config.group(1))["tex"]["macros"] == expected_macros
+    assert _embedded_quick_guide(rendered_text)["open_by_default"] is True

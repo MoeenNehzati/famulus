@@ -45,6 +45,18 @@ def test_replace_step_returns_new_guide() -> None:
     assert updated.title == original.title
 
 
+def test_replace_step_preserves_open_by_default() -> None:
+    original = QuickGuide(
+        title="Guide",
+        steps=(QuickGuideStep(id="a", target="#a", title="A", body="One"),),
+        open_by_default=True,
+    )
+
+    updated = original.replace_step("a", title="Updated")
+
+    assert updated.open_by_default is True
+
+
 def test_replace_step_preserves_untouched_steps() -> None:
     step_a = QuickGuideStep(id="a", target="#a", title="A", body="One")
     step_b = QuickGuideStep(id="b", target="#b", title="B", body="Two")

@@ -16,6 +16,7 @@ publication policy and creation of the repository blueprint artifact.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 import json
 from pathlib import Path
 import posixpath
@@ -148,10 +149,12 @@ def assemble_site(
     if build_graph:
         if graph_builder is None:
             from officina.visualization.from_blueprint.visualizer import (
-                build_blueprint_graph,
+                BlueprintVisualizer,
             )
 
-            graph_builder = build_blueprint_graph
+            graph_builder = BlueprintVisualizer(
+                renderer=_website_graph_renderer()
+            ).build
         graph_builder(
             root,
             output_dir=output / "graphs" / "blueprint",
@@ -166,10 +169,8 @@ def _render_published_graphs(root: Path, destination: Path) -> None:
     """Render each checked-in graph specification as a standalone page."""
 
     from officina.visualization.artifacts import GraphArtifactWriter
-    from officina.visualization.elk_html_renderer import ElkHtmlRenderer
-    from officina.visualization.html_renderer.quick_guides.default import DEFAULT_QUICK_GUIDE
 
-    writer = GraphArtifactWriter(ElkHtmlRenderer(quick_guide=DEFAULT_QUICK_GUIDE))
+    writer = GraphArtifactWriter(_website_graph_renderer())
     for stem, (relative, _) in PUBLISHED_GRAPHS.items():
         source = root / relative
         # A repository without the specification simply publishes no graph;
@@ -181,6 +182,17 @@ def _render_published_graphs(root: Path, destination: Path) -> None:
                 stem=stem,
                 write_payload=False,
             )
+
+
+def _website_graph_renderer():
+    """Return the renderer configuration used by graph pages on the website."""
+
+    from officina.visualization.elk_html_renderer import ElkHtmlRenderer
+    from officina.visualization.html_renderer.quick_guides.default import DEFAULT_QUICK_GUIDE
+
+    return ElkHtmlRenderer(
+        quick_guide=replace(DEFAULT_QUICK_GUIDE, open_by_default=True)
+    )
 
 
 def _validate_output_path(root: Path, docs_root: Path, output: Path) -> None:

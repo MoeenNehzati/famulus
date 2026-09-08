@@ -19,6 +19,7 @@ class QuickGuide:
 
     title: str
     steps: tuple[QuickGuideStep, ...]
+    open_by_default: bool = False
 
     def __post_init__(self) -> None:
         step_ids = {step.id for step in self.steps}
@@ -54,9 +55,9 @@ class QuickGuide:
             body=body if body is not None else self.steps[index].body,
         )
 
-        return QuickGuide(
-            self.title,
-            self.steps[:index] + (replacement,) + self.steps[index + 1 :],
+        return replace(
+            self,
+            steps=self.steps[:index] + (replacement,) + self.steps[index + 1 :],
         )
 
 

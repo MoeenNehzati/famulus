@@ -332,6 +332,7 @@
     syncSidebarLayout();
     restoreSidebarOrder();
 
-    window.addEventListener("load", () => {
-      updateVisibilityFull();
+    window.addEventListener("load", async () => {
+      await updateVisibilityFull();
+      if (QUICK_GUIDE_CONFIG?.open_by_default) startQuickGuide();
     });

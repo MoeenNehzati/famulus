@@ -101,6 +101,57 @@ def test_quick_guide_toolbar_hidden_when_disabled() -> None:
     )
 
 
+def test_quick_guide_stays_closed_without_open_by_default() -> None:
+    _run_quick_guide_case(
+        """
+        if (!document.getElementById("quick-guide-dialog").hidden) {
+          throw new Error("quick guide opened without an explicit opt-in");
+        }
+        """,
+        _payload(),
+        guide=QuickGuide(
+            title="Manual guide",
+            steps=(
+                QuickGuideStep(
+                    id="canvas",
+                    target="#canvas-wrap",
+                    title="Canvas",
+                    body="Canvas target",
+                ),
+            ),
+        ),
+    )
+
+
+def test_quick_guide_opens_by_default_after_initial_layout() -> None:
+    _run_quick_guide_case(
+        """
+        if (document.querySelectorAll(".graph-node").length !== 2) {
+          throw new Error("graph layout was not ready before the guide opened");
+        }
+        if (document.getElementById("quick-guide-dialog").hidden) {
+          throw new Error("quick guide did not open by default");
+        }
+        if (!document.body.classList.contains("quick-guide-open")) {
+          throw new Error("quick guide open state was not applied");
+        }
+        """,
+        _payload(),
+        guide=QuickGuide(
+            title="Automatic guide",
+            steps=(
+                QuickGuideStep(
+                    id="canvas",
+                    target="#canvas-wrap",
+                    title="Canvas",
+                    body="Canvas target",
+                ),
+            ),
+            open_by_default=True,
+        ),
+    )
+
+
 def test_quick_guide_suppresses_toolbar_tooltips_while_open() -> None:
     _run_quick_guide_case(
         """
