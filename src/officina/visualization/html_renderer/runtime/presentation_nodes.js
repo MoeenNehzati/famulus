@@ -62,7 +62,7 @@
       );
       presentationNodeById.forEach(node => {
         if (!controlled.has(String(node.id)) && node.presentation?.default_visibility === "visible") {
-          result.push({...node, facetLabel: String(node.type || "Presentation")});
+          result.push(node);
         }
       });
       presentationNodeControls.forEach(control => {
@@ -73,7 +73,7 @@
         (facet.node_ids || []).map(String).forEach(nodeId => {
           if (facet.activation === "multiple" && !selected.has(nodeId)) return;
           const node = presentationNodeById.get(nodeId);
-          if (node) result.push({...node, facetLabel: String(facet.label || facet.id)});
+          if (node) result.push(node);
         });
       });
       return result;
@@ -226,7 +226,7 @@
             id: `${String(node.id)}::${compartment.signature}`,
             presentationNodeId: String(node.id),
             label: String(node.short_title || node.id),
-            subtitle: node.facetLabel,
+            subtitle: String(node.subtitle || ""),
             colorIndex: Math.max(0, Number(node.position || nodeIndex)),
             tone: String(node.presentation?.tone || "subtle"),
             memberRootIds,
@@ -417,7 +417,7 @@
           layer: presentationNodeLayer,
           id: component.id,
           label: component.label,
-          subtitle: collapsed ? `${component.subtitle} · collapsed` : component.subtitle,
+          subtitle: collapsed ? [component.subtitle, "collapsed"].filter(Boolean).join(" · ") : component.subtitle,
           position,
           style: {color, colors: [color]},
           tone: component.tone,

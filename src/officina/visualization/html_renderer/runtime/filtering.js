@@ -201,21 +201,23 @@
       recordGraphHistory(graphBefore, graphStateSnapshot());
     }
 
-    function applyFilterPresentation() {
+    function applyFilterPresentation(operations = null) {
       const queryActive = Boolean(normalizedFilterText(filterState.query));
-      docData.entities.forEach(entity => {
-        const nodeEl = nodeElement(entity.id);
-        if (!nodeEl) return;
+      nodeElementIndex.forEach((nodeEl, nodeId) => {
+        const entity = entityMap.get(nodeId);
+        if (!nodeEl.isConnected || !entity) return;
+        applyPresentationOperation(operations, () => {
         const fails = nodeFailsFilter(entity);
-        const retained = retainedOwnerIds.has(entity.id) || retainedEndpointIds.has(entity.id) || selectedNodeIds.has(entity.id);
         nodeEl.classList.remove("filter-dimmed", "filter-match");
         nodeEl.classList.toggle("filter-retained-owner", retainedOwnerIds.has(entity.id) && fails);
         nodeEl.classList.toggle("filter-retained-endpoint", retainedEndpointIds.has(entity.id) && fails);
         nodeEl.dataset.filterDisposition = fails
           ? (selectedNodeIds.has(entity.id) ? "retained-selection" : retainedOwnerIds.has(entity.id) ? "retained-owner" : retainedEndpointIds.has(entity.id) ? "retained-endpoint" : "hidden")
           : queryActive && nodeMatchesSearch(entity) ? "matched" : "eligible";
+        });
       });
       edgeLayer.querySelectorAll(".edge-path").forEach(path => {
+        applyPresentationOperation(operations, () => {
         const edge = path.__edgeMeta || edgeById.get(String(path.dataset.edgeId)) || {
           source: path.dataset.sourceNodeId,
           target: path.dataset.targetNodeId,
@@ -227,13 +229,16 @@
         path.classList.remove("filter-dimmed");
         path.classList.toggle("filter-match", queryActive && edgeMatchesSearch(edge));
         if (fails) path.style.display = "none";
+        syncEdgePointerProxy(path);
+        syncEdgePresentationVisibilityForPath(path);
         const arrow = arrowForPath(path);
         if (arrow) {
           arrow.classList.remove("filter-dimmed");
           if (fails) arrow.style.display = "none";
         }
+        });
       });
-      updateFilterSummary();
+      applyPresentationOperation(operations, updateFilterSummary);
     }
 
     function applyFilterProjection() {
@@ -409,7 +414,7 @@
 
     function updateFilterSummary() {
       if (!filterSummaryEl) return;
-      const renderedNodes = docData.entities.map(entity => nodeElement(entity.id)).filter(Boolean);
+      const renderedNodes = Array.from(nodeElementIndex.values()).filter(node => node.isConnected);
       const visibleNodeIds = new Set(renderedNodes
         .filter(node => node.style.display !== "none")
         .map(node => node.dataset.nodeId));

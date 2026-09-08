@@ -11,7 +11,8 @@
  * This file consumes only the generic graph payload. Domain adapters belong in
  * sibling `from_*` packages and must not be recognized here by name.
  */
-    const docData = @@OFFICINA_GRAPH_DOCUMENT@@;
+    const graphDocumentJson = document.getElementById("officina-graph-data").textContent;
+    const docData = JSON.parse(graphDocumentJson);
     const QUICK_GUIDE_CONFIG = @@OFFICINA_QUICK_GUIDE_CONFIG@@;
     const typeStyleCatalog = new Map(
       (docData.categories || [])
@@ -124,7 +125,9 @@
     const typeStyles = categoryStyles;
     const edgePalette = @@OFFICINA_EDGE_PALETTE@@;
     const fallbackEdgeDashes = [null, "9 5", "2 4", "12 4 2 4", "5 3", "1 5"];
-    const edgeData = @@OFFICINA_EDGE_DATA@@;
+    const edgeData = JSON.parse(
+      document.getElementById("officina-edge-data").textContent
+    );
     const edgeById = new Map(edgeData.map(edge => [String(edge.edge_id), edge]));
     const edgePairCounts = new Map();
     edgeData.forEach(edge => {
@@ -209,8 +212,8 @@
     const leftPanelResize = document.getElementById("left-panel-resize");
     const rightPanelResize = document.getElementById("right-panel-resize");
     const svgEl = document.getElementById("graph-svg");
-    const DEFAULT_NODE_WIDTH = 291;
-    const DEFAULT_NODE_HEIGHT = 99;
+    const DEFAULT_NODE_WIDTH = 210;
+    const DEFAULT_NODE_HEIGHT = 72;
     const DEFAULT_CONTAINER_WIDTH = 252;
     const DEFAULT_CONTAINER_HEIGHT = 128;
     const MAX_CONTENT_NODE_WIDTH = 416;
@@ -238,10 +241,9 @@
         };
       }
       const presentationState = nodePresentationState(entity, {forceContainer: container});
-      const label = String(entity.label || entity.short_title || entity.id || "");
-      const subtitle = String(entity.type + (entity.ref ? " " + entity.ref : ""));
+      const {title, subtitle} = nodeVisibleText(entity);
       const cacheKey = JSON.stringify([
-        label,
+        title,
         subtitle,
         presentationState.className,
         presentationState.isContainer,
@@ -270,13 +272,13 @@
         ? DEFAULT_CONTAINER_WIDTH
         : DEFAULT_NODE_WIDTH;
       const minimumHeight = presentationState.isContainer
-        ? (compactContainer ? 88 : DEFAULT_CONTAINER_HEIGHT)
+        ? (compactContainer ? DEFAULT_NODE_HEIGHT : DEFAULT_CONTAINER_HEIGHT)
         : DEFAULT_NODE_HEIGHT;
       body.style.width = "max-content";
       body.style.height = "auto";
       body.style.minWidth = `${minimumWidth}px`;
       body.style.maxWidth = `${MAX_CONTENT_NODE_WIDTH}px`;
-      body.innerHTML = `<div class="node-label">${escapeHtml(label)}</div><div class="node-subtitle">${escapeHtml(subtitle)}</div>`;
+      body.innerHTML = nodeVisibleTextMarkup({title, subtitle});
       nodeMeasurementHost.appendChild(body);
       const width = Math.ceil(body.getBoundingClientRect().width);
       const height = Math.ceil(body.scrollHeight);
@@ -293,6 +295,7 @@
     const presentationNodeLayer = document.getElementById("presentation-node-layer");
     const containerLayer = document.getElementById("container-layer");
     const edgeLayer = document.getElementById("edge-layer");
+    const edgeInteractionLayer = document.getElementById("edge-interaction-layer");
     const nodeLayer = document.getElementById("node-layer");
     const tooltip = document.getElementById("tooltip");
     const details = document.getElementById("details");

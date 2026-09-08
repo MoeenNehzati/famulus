@@ -70,6 +70,41 @@ def test_graph_validation_accepts_declarative_edge_presentation() -> None:
     BaseRenderer().validate(_edge_presentation_payload())
 
 
+@pytest.mark.parametrize("subtitle", ["", "A concise subtitle"])
+def test_graph_validation_accepts_optional_entity_subtitle(subtitle: str) -> None:
+    """Entities may supply a blank or reader-facing subtitle."""
+    payload = _edge_presentation_payload()
+    payload["entities"][0]["subtitle"] = subtitle
+
+    BaseRenderer().validate(payload)
+
+
+def test_graph_validation_accepts_canonical_entity_without_subtitle() -> None:
+    """Direct canonical JSON remains valid when a producer omits subtitle."""
+    Graph().validate_graph(_edge_presentation_payload())
+
+
+@pytest.mark.parametrize(
+    ("node_kind", "subtitle"),
+    [
+        ("entity", 1),
+        ("presentation", None),
+    ],
+)
+def test_graph_validation_rejects_nonstring_node_subtitle(
+    node_kind: str, subtitle: object
+) -> None:
+    """The graph boundary rejects non-string subtitles from direct callers."""
+    payload = _presentation_node_payload()
+    if node_kind == "entity":
+        payload["entities"][0]["subtitle"] = subtitle
+    else:
+        payload["presentation_nodes"][0]["subtitle"] = subtitle
+
+    with pytest.raises(ValueError, match="invalid 'subtitle'"):
+        Graph().validate_graph(payload)
+
+
 def test_schema_rejects_unsupported_edge_presentation_style() -> None:
     payload = _edge_presentation_payload()
     payload["ui"]["edge_presentation"]["facets"][0]["variants"][1]["style"] = {
@@ -175,6 +210,14 @@ def _presentation_node_payload() -> dict[str, object]:
 
 def test_graph_validation_accepts_presentation_node_root_members() -> None:
     Graph().validate_graph(_presentation_node_payload())
+
+
+def test_graph_validation_accepts_presentation_node_subtitle() -> None:
+    """Presentation nodes expose the same subtitle payload contract."""
+    payload = _presentation_node_payload()
+    payload["presentation_nodes"][0]["subtitle"] = "Domain"
+
+    BaseRenderer().validate(payload)
 
 
 @pytest.mark.parametrize(

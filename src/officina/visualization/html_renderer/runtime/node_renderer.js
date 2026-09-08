@@ -34,6 +34,20 @@
       shapeEl.setAttribute("stroke-width", tone === "strong" ? "2.25" : "3");
     }
 
+    function nodeVisibleText(entity) {
+      return {
+        title: String(entity.label || entity.short_title || ""),
+        subtitle: String(entity.subtitle || ""),
+      };
+    }
+
+    function nodeVisibleTextMarkup({title, subtitle}) {
+      const subtitleMarkup = subtitle
+        ? `<div class="node-subtitle">${escapeHtml(subtitle)}</div>`
+        : "";
+      return `<div class="node-label">${escapeHtml(title)}</div>${subtitleMarkup}`;
+    }
+
     function renderContainerShell({layer, id, label, subtitle, position, style, tone = "subtle", className = ""}) {
       const group = createSvgElement("g");
       group.setAttribute("class", className);
@@ -54,7 +68,7 @@
       foreignObject.setAttribute("height", Math.min(position.height, 58));
       const body = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
       body.setAttribute("class", "node-fo-body container-node");
-      body.innerHTML = `<div class="node-label">${escapeHtml(label)}</div><div class="node-subtitle">${escapeHtml(subtitle || "")}</div>`;
+      body.innerHTML = nodeVisibleTextMarkup({title: label, subtitle});
       foreignObject.appendChild(body);
       group.appendChild(foreignObject);
       layer.appendChild(group);
@@ -294,6 +308,13 @@
         group.appendChild(shapeEl);
       }
 
+      const edgeCoverSource = group.querySelector(".node-shape");
+      if (edgeCoverSource) {
+        const edgeCover = edgeCoverSource.cloneNode(false);
+        for (const [name, value] of Object.entries({class: "node-edge-cover", fill: "#f8fafc", "fill-opacity": "0.78", stroke: "none", "pointer-events": "none"})) edgeCover.setAttribute(name, value);
+        group.insertBefore(edgeCover, edgeCoverSource);
+      }
+
       if (offsetDecoration) {
         const plate = createSvgElement("rect");
         plate.setAttribute("x", x + 5);
@@ -315,7 +336,7 @@
       foreignObject.setAttribute("width", w); foreignObject.setAttribute("height", h);
       const body = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
       body.setAttribute("class", presentationState.className);
-      body.innerHTML = `<div class="node-label">${escapeHtml(entity.label || entity.short_title)}</div><div class="node-subtitle">${escapeHtml(entity.type + (entity.ref ? " " + entity.ref : ""))}</div>`;
+      body.innerHTML = nodeVisibleTextMarkup(nodeVisibleText(entity));
       foreignObject.appendChild(body);
       group.appendChild(foreignObject);
       if (offsetDecoration) {

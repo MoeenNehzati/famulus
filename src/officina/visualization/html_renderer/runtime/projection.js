@@ -14,6 +14,11 @@
 
     function derivedProjectionEdge(sourceId, targetId, state) {
       const hiddenLabels = state.omittedNodes.map(id => entityMap.get(id)?.short_title || id);
+      const representedEdges = state.representedEdges.flatMap(edge => {
+        const represented = edge.metadata?.represented_edges;
+        return Array.isArray(represented) && represented.length ? represented : [edge];
+      });
+      const representedEdgeIds = representedEdges.map(edge => edge.edge_id);
       return {
         edge_id: `projection_${sourceId}_${targetId}_${state.type}`,
         source: sourceId,
@@ -29,10 +34,10 @@
             rule_ids: state.ruleIds,
             omitted_nodes: state.omittedNodes,
             omission_causes: state.causes,
-            represented_edge_ids: state.representedEdges.map(edge => edge.edge_id),
+            represented_edge_ids: representedEdgeIds,
             witness_path: state.witnessPath.concat(targetId),
             witnesses: [{
-              canonical_edge_ids: state.representedEdges.map(edge => edge.edge_id),
+              canonical_edge_ids: representedEdgeIds,
               omitted_nodes: state.omittedNodes,
               omission_causes: state.causes,
               witness_path: state.witnessPath.concat(targetId),
@@ -40,8 +45,8 @@
               transitions: state.transitions,
             }],
           },
-          represented_count: state.representedEdges.length,
-          represented_edges: state.representedEdges.map(edge => ({
+          represented_count: representedEdges.length,
+          represented_edges: representedEdges.map(edge => ({
             edge_id: edge.edge_id,
             source: edge.source,
             target: edge.target,
@@ -169,13 +174,14 @@
         }
         return representative;
       }
+      const effectiveOutgoing = new Map();
       for (const edge of edgeData) {
         if (isHiddenEdgeType(edge)) continue;
         const source = collapsedRepresentative(edge.source);
         const target = collapsedRepresentative(edge.target);
-        if (source === edge.source && target === edge.target) continue;
-        if (source === target || isHiddenNode(source) || isHiddenNode(target)) continue;
-        addRendered({
+        if (source === target) continue;
+        const changedRepresentative = source !== edge.source || target !== edge.target;
+        const effectiveEdge = changedRepresentative ? {
           ...edge,
           edge_id: `aggregate_${source}_${target}_${edge.type}_${edge.edge_id}`,
           source,
@@ -183,6 +189,7 @@
           aggregate: true,
           derived: false,
           implicit: true,
+          projection_target: undefined,
           description: "Aggregated relationship between visible structural representatives.",
           metadata: {
             ...(edge.metadata || {}),
@@ -194,7 +201,12 @@
               edge_id: edge.edge_id,
             }],
           },
-        });
+        } : edge;
+        if (!effectiveOutgoing.has(source)) effectiveOutgoing.set(source, []);
+        effectiveOutgoing.get(source).push(effectiveEdge);
+        if (changedRepresentative && !isHiddenNode(source) && !isHiddenNode(target)) {
+          addRendered(effectiveEdge);
+        }
       }
       function traverse(sourceId, currentId, state, seenStates) {
         if (currentId === sourceId) return;
@@ -213,7 +225,7 @@
         if (seenStates.has(stateKey)) return;
         const nextSeen = new Set(seenStates);
         nextSeen.add(stateKey);
-        const nextEdges = (outgoing.get(currentId) || []).filter(edge => !isHiddenEdgeType(edge));
+        const nextEdges = effectiveOutgoing.get(currentId) || [];
         if (nextEdges.length === 0) return;
         for (const outEdge of nextEdges) {
           const transitions = compositionTransitions(cause, state.type, String(outEdge.type));
@@ -244,8 +256,7 @@
       }
       docData.entities.forEach(entity => {
         if (isHiddenNode(entity.id)) return;
-        for (const outEdge of outgoing.get(entity.id) || []) {
-          if (isHiddenEdgeType(outEdge)) continue;
+        for (const outEdge of effectiveOutgoing.get(entity.id) || []) {
           if (
             collapsedRepresentative(outEdge.source) !== outEdge.source ||
             collapsedRepresentative(outEdge.target) !== outEdge.target
@@ -276,23 +287,20 @@
       const projected = Array.from(rendered.values()).filter(edge => !isHiddenEdgeType(edge));
       const byEndpoints = new Map();
       projected.forEach(edge => {
-        const key = JSON.stringify([edge.source, edge.target, edgePresentationSignature(edge)]);
+        const key = JSON.stringify([edge.source, edge.target]);
         if (!byEndpoints.has(key)) byEndpoints.set(key, []);
         byEndpoints.get(key).push(edge);
       });
       const retained = projected.filter(edge => {
-        const peers = byEndpoints.get(JSON.stringify([
-          edge.source,
-          edge.target,
-          edgePresentationSignature(edge),
-        ])) || [];
+        const peers = byEndpoints.get(JSON.stringify([edge.source, edge.target])) || [];
         const fidelityRank = candidate => candidate.derived && candidate.metadata?.projection?.fidelity === "degraded" ? 0 : 1;
         const dominator = peers.find(peer => {
           if (peer === edge) return false;
           const sameType = String(peer.type) === String(edge.type);
           const strongerType = (subsumedTypesByType.get(String(peer.type)) || new Set()).has(String(edge.type));
           const noWorseFidelity = fidelityRank(peer) >= fidelityRank(edge);
-          const strict = strongerType || fidelityRank(peer) > fidelityRank(edge);
+          const strict = strongerType || (sameType && !peer.derived && edge.derived)
+            || fidelityRank(peer) > fidelityRank(edge);
           return (sameType || strongerType) && noWorseFidelity && strict;
         });
         if (!dominator) return true;

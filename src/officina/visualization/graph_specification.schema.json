@@ -328,6 +328,9 @@
           "minLength": 1,
           "description": "Title drawn in the node cell."
         },
+        "subtitle": {
+          "type": "string"
+        },
         "position": {
           "type": "integer",
           "minimum": 0,
@@ -340,7 +343,7 @@
         },
         "ref": {
           "type": "string",
-          "description": "Document-assigned number, drawn as the subtitle alongside the type."
+          "description": "Document-assigned semantic or inspector metadata."
         },
         "details": {
           "type": "object",
@@ -1228,6 +1231,9 @@
         "short_title": {
           "type": "string",
           "minLength": 1
+        },
+        "subtitle": {
+          "type": "string"
         },
         "label": {
           "type": "string",

@@ -1,0 +1,251 @@
+#!/usr/bin/env python3
+"""Compare interaction responsiveness for two standalone renderer pages."""
+from __future__ import annotations
+
+import argparse
+import hashlib
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
+import math
+from pathlib import Path
+import re
+import subprocess
+import sys
+import tempfile
+import time
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from test_support.browser import chrome_executable
+
+
+ACTIONS = (
+    "full_graph", "reduce_to_40", "show_all", "detail_change", "collapse_expand",
+    "routing_change", "drag_completion",
+)
+METRICS = ("duration_ms", "longest_task_ms", "input_latency_ms", "heartbeat_gap_ms")
+SCENE_FIELDS = ("visible_node_ids", "visible_edge_records")
+P95_DURATION_LIMITS = {"reduce_to_40": 75, "show_all": 350, "drag_completion": 32}
+INPUT_LATENCY_LIMITS = {"full_graph": 50, "show_all": 50, "detail_change": 50, "collapse_expand": 50}
+
+
+def payload(page: str) -> tuple[dict, bytes]:
+    match = re.search(
+        r'<script[^>]*\bid=["\']officina-graph-data["\'][^>]*>(.*?)</script>',
+        page,
+        re.DOTALL,
+    )
+    if not match:
+        match = re.search(r"const docData = (\{.*?\});\n", page, re.DOTALL)
+    if not match:
+        raise SystemExit("page has no embedded renderer payload")
+    value = json.loads(match.group(1))
+    return value, json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+
+
+def probe_script(action: str, keep: list[str]) -> str:
+    return f"""<script>window.addEventListener('load',async()=>{{try{{
+const sleep=ms=>new Promise(r=>setTimeout(r,ms)),timeout=promise=>Promise.race([promise,new Promise((_,reject)=>setTimeout(()=>reject(Error('{action}: completion timed out')),10000))]),nextFrame=()=>new Promise(resolve=>{{let done=false,finish=()=>{{if(!done){{done=true;resolve()}}}};requestAnimationFrame(finish);setTimeout(finish,16)}}),baselineIdle=async before=>{{let seen=before<0,last=window.__benchmarkGraphMutations,quiet=0,deadline=performance.now()+10000;while(performance.now()<deadline){{await nextFrame();const now=window.__benchmarkGraphMutations;seen=seen||now>before;quiet=seen&&now===last?quiet+1:0;last=now;if(quiet>=2&&document.getElementById('elk-status')?.textContent!=='Rendering graph layout...')return}}throw Error('{action}: completion timed out')}},settle=async before=>{{if(window.officinaRendererDiagnostics)await timeout(officinaRendererDiagnostics.whenIdle());else await baselineIdle(before);if(window.officinaMathDiagnostics)await timeout(window.officinaMathDiagnostics())}},full='{action}'==='full_graph';if(full)await nextFrame();
+if(!full)await settle(-1);const keep=new Set({json.dumps(keep)}),hide=()=>hideNodes(docData.entities.map(e=>e.id).filter(id=>!keep.has(id))),ordinary=()=>docData.entities.map(e=>e.id).filter(id=>nodeElement(id)&&!isContainerNode(id)).sort();
+if('{action}'==='show_all'){{const before=window.__benchmarkGraphMutations;hide();await settle(before)}}if('{action}'==='drag_completion'&&!ordinary().length){{const detail=document.getElementById('graph-detail-level'),before=window.__benchmarkGraphMutations;if(!detail||detail.selectedIndex+1>=detail.options.length)throw Error('no detail level with ordinary nodes');detail.selectedIndex++;detail.dispatchEvent(new Event('change',{{bubbles:true}}));await settle(before)}}
+const long=window.__benchmarkLongTasks;if(!full){{window.__benchmarkLongTaskBoundary=performance.now();window.__benchmarkDrainLongTasks();long.length=0}}
+let input=full?window.__benchmarkInput:-1,start=full?window.__benchmarkStart:performance.now(),heartbeat=window.__benchmarkHeartbeat;if(!full){{heartbeat.active=false;heartbeat=window.__benchmarkHeartbeat=window.__benchmarkStartHeartbeat();setTimeout(()=>input=performance.now()-start,0)}}const before=window.__benchmarkGraphMutations;
+if('{action}'==='reduce_to_40')hide();if('{action}'==='show_all')showNodes(docData.entities.map(e=>e.id));
+if('{action}'==='detail_change'){{const e=document.getElementById('graph-detail-level');if(!e||e.selectedIndex+1>=e.options.length)throw Error('no next detail option');e.selectedIndex++;e.dispatchEvent(new Event('change',{{bubbles:true}}));}}
+if('{action}'==='collapse_expand'){{const id=docData.entities.map(e=>e.id).filter(id=>nodeElement(id)&&isContainerNode(id)).sort()[0];if(!id)throw Error('no collapsible container');toggleContainerCollapsed(id);await settle(before);toggleContainerCollapsed(id);}}
+if('{action}'==='routing_change'){{const e=document.getElementById('routing-geometry');if(!e||e.selectedIndex+1>=e.options.length)throw Error('no next routing option');e.selectedIndex++;e.dispatchEvent(new Event('change',{{bubbles:true}}));}}
+if('{action}'==='drag_completion'){{const id=ordinary()[0],e=nodeElement(id);if(!e)throw Error('no ordinary node to drag');const r=e.getBoundingClientRect();e.dispatchEvent(new MouseEvent('mousedown',{{bubbles:true,button:0,clientX:r.x,clientY:r.y}}));document.dispatchEvent(new MouseEvent('mousemove',{{bubbles:true,clientX:r.x+40,clientY:r.y+20}}));document.dispatchEvent(new MouseEvent('mouseup',{{bubbles:true,clientX:r.x+40,clientY:r.y+20}}));}}
+await settle(full?0:before);const duration=performance.now()-start;await new Promise(resolve=>requestAnimationFrame(resolve));heartbeat.active=false;window.__benchmarkDrainLongTasks();if(full)input=window.__benchmarkInput;
+for(let i=0;i<10&&input<0;i++){{await sleep(10);if(full)input=window.__benchmarkInput}}if(!Number.isFinite(input)||input<0)throw Error('{action}: input timing unavailable');const nodes=[...document.querySelectorAll('.graph-node')],edges=[...document.querySelectorAll('.edge-path')],visible=e=>getComputedStyle(e).display!=='none'&&getComputedStyle(e).visibility!=='hidden',stable=value=>Array.isArray(value)?value.map(stable):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,stable(value[key])])):value,semanticEdge=edge=>stable(edge.__edgeMeta||Object.fromEntries([...edge.attributes].map(attribute=>[attribute.name,attribute.value])));
+const out={{duration_ms:duration,longest_task_ms:Math.max(0,...long),input_latency_ms:input,heartbeat_gap_ms:heartbeat.longest,mounted_nodes:nodes.length,mounted_edges:edges.length,visible_node_ids:nodes.filter(visible).map(e=>e.dataset.nodeId).sort(),visible_edge_records:edges.filter(visible).map(semanticEdge).sort((left,right)=>JSON.stringify(left).localeCompare(JSON.stringify(right))),svg_descendants:document.querySelectorAll('#graph-svg *').length}};
+const e=document.createElement('pre');e.id='benchmark-result';e.textContent=JSON.stringify(out);document.body.appendChild(e);
+}}catch(e){{document.body.dataset.benchmarkError=e.message}}}});</script>"""
+
+
+def run_benchmark_html(chrome: str, page: str, *, timeout_seconds: float = 30) -> dict:
+    """Wait for the page's explicit result using an unmodified browser clock."""
+    outcome = {}
+    completion = """<script>const benchmarkPoll=setInterval(()=>{
+const result=document.getElementById('benchmark-result'),error=document.body?.dataset.benchmarkError;
+if(!result&&!error)return;clearInterval(benchmarkPoll);
+fetch('/benchmark-result',{method:'POST',body:JSON.stringify({result:result?.textContent,error})});
+},25);</script>"""
+    document = page.replace("</body>", completion + "</body>").encode("utf-8")
+
+    class Handler(BaseHTTPRequestHandler):
+        # Idle browser preconnections must not hold up the host deadline.
+        timeout = 0.1
+
+        def log_message(self, *_args):
+            pass
+
+        def do_GET(self):
+            self.connection.settimeout(max(0.001, deadline - time.monotonic()))
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(document)))
+            self.end_headers()
+            self.wfile.write(document)
+
+        def do_POST(self):
+            self.connection.settimeout(max(0.001, deadline - time.monotonic()))
+            outcome.update(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
+            self.send_response(204)
+            self.end_headers()
+
+    workspace = tempfile.TemporaryDirectory(prefix="famulus-benchmark-")
+    with workspace as workdir, \
+            tempfile.TemporaryFile(mode="w+", encoding="utf-8") as errors, \
+            ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
+        server.timeout = 0.1
+        command = [
+            chrome, "--headless", "--no-sandbox", "--disable-gpu",
+            "--disable-dev-shm-usage", "--disable-crash-reporter", "--no-first-run",
+            "--disable-background-networking", "--disable-component-update",
+            f"--user-data-dir={Path(workdir) / 'profile'}", "--window-size=1440,1000",
+            f"http://127.0.0.1:{server.server_port}/page.html",
+        ]
+        process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=errors)
+        try:
+            deadline = time.monotonic() + timeout_seconds
+            while not outcome:
+                if process.poll() is not None:
+                    errors.seek(0)
+                    raise SystemExit(f"benchmark Chrome exited ({process.returncode}): {errors.read()[-2000:]}")
+                if time.monotonic() >= deadline:
+                    raise SystemExit("benchmark result timed out")
+                server.handle_request()
+        finally:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+            # Chrome children may finish profile writes just after the parent exits.
+            for attempt in range(50):
+                try:
+                    workspace.cleanup()
+                    break
+                except OSError:
+                    if attempt == 49:
+                        raise
+                    time.sleep(0.1)
+    if outcome.get("error"):
+        raise SystemExit(outcome["error"])
+    return json.loads(outcome["result"])
+
+
+def trial(chrome: str, page: str, action: str, keep: list[str]) -> dict:
+    instrumentation = """<script>localStorage.clear();window.__benchmarkStart=performance.now();window.__benchmarkInput=-1;setTimeout(()=>window.__benchmarkInput=performance.now()-window.__benchmarkStart,0);window.__benchmarkStartHeartbeat=()=>{const state={last:performance.now(),longest:0,active:true},tick=now=>{state.longest=Math.max(state.longest,now-state.last);state.last=now;if(state.active)requestAnimationFrame(tick)};requestAnimationFrame(tick);return state};window.__benchmarkHeartbeat=window.__benchmarkStartHeartbeat();window.__benchmarkGraphMutations=0;window.__benchmarkLongTasks=[];window.__benchmarkLongTaskObserver=null;window.__benchmarkLongTaskBoundary=window.__benchmarkStart;window.__benchmarkKeepLongTask=entry=>entry.startTime===undefined||entry.startTime>=window.__benchmarkLongTaskBoundary;window.__benchmarkDrainLongTasks=()=>{const observer=window.__benchmarkLongTaskObserver;if(observer)window.__benchmarkLongTasks.push(...observer.takeRecords().filter(window.__benchmarkKeepLongTask).map(entry=>entry.duration))};try{window.__benchmarkLongTaskObserver=new PerformanceObserver(entries=>window.__benchmarkLongTasks.push(...entries.getEntries().filter(window.__benchmarkKeepLongTask).map(entry=>entry.duration)));window.__benchmarkLongTaskObserver.observe({entryTypes:['longtask']})}catch(e){}</script>"""
+    instrumented = (
+        page.replace("<head>", "<head>" + instrumentation)
+        .replace(
+            "        </svg>\n      </div>",
+            "        </svg><script>new MutationObserver(()=>window.__benchmarkGraphMutations++).observe(document.getElementById('graph-svg'),{attributes:true,childList:true,subtree:true})</script>\n      </div>",
+            1,
+        )
+        .replace("</body>", probe_script(action, keep) + "</body>")
+    )
+    return run_benchmark_html(chrome, instrumented)
+
+
+def p95(samples: list[dict], metric: str) -> float:
+    values = sorted(float(sample[metric]) for sample in samples)
+    if not values:
+        raise ValueError("cannot aggregate an empty sample set")
+    return values[math.ceil(0.95 * len(values)) - 1]
+
+
+def summarize_samples(samples: list[dict]) -> dict:
+    return {f"p95_{metric}": p95(samples, metric) for metric in METRICS} | {"samples": samples}
+
+
+def acceptance_verdict(results: dict) -> dict:
+    """Evaluate only the gates observable in this benchmark manifest."""
+    violations = []
+    candidate = results.get("candidate", {})
+    baseline = results.get("baseline", {})
+    for action, record in candidate.items():
+        samples = record["samples"]
+        for sample in samples:
+            for mounted, visible in (("mounted_nodes", "visible_node_ids"), ("mounted_edges", "visible_edge_records")):
+                expected = len(sample[visible])
+                if sample[mounted] != expected:
+                    violations.append(f"candidate.{action} {mounted} {sample[mounted]} differs from visible scene count {expected}")
+        duration_limit = P95_DURATION_LIMITS.get(action)
+        duration = record.get("p95_duration_ms", p95(samples, "duration_ms"))
+        if duration_limit is not None and duration > duration_limit:
+            violations.append(f"candidate.{action} p95 duration {duration:.1f} ms exceeds {duration_limit} ms")
+        longest_task = max(float(sample["longest_task_ms"]) for sample in samples)
+        if longest_task > 50:
+            violations.append(f"candidate.{action} has a {longest_task:.1f} ms long task (limit 50 ms)")
+        longest_heartbeat = max(float(sample["heartbeat_gap_ms"]) for sample in samples)
+        if longest_heartbeat > 100:
+            violations.append(f"candidate.{action} has a {longest_heartbeat:.1f} ms heartbeat gap (limit 100 ms)")
+        input_limit = INPUT_LATENCY_LIMITS.get(action)
+        if input_limit is not None:
+            longest_input = max(float(sample["input_latency_ms"]) for sample in samples)
+            if longest_input > input_limit:
+                violations.append(f"candidate.{action} has a {longest_input:.1f} ms input latency (limit {input_limit} ms)")
+        other = baseline.get(action)
+        if other and any(
+            any(candidate_sample[field] != baseline_sample[field] for field in SCENE_FIELDS)
+            for baseline_sample, candidate_sample in zip(other["samples"], samples, strict=True)
+        ):
+            violations.append(f"{action} sampled scene differs between baseline and candidate")
+    return {
+        "status": "pass" if not violations else "fail",
+        "scope": "benchmark-observable gates and sampled visible-scene parity only",
+        "violations": violations,
+    }
+
+
+def write_manifest(path: Path, manifest: dict) -> None:
+    path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--baseline-html", required=True, type=Path)
+    parser.add_argument("--candidate-html", required=True, type=Path)
+    parser.add_argument("--output", required=True, type=Path)
+    args = parser.parse_args()
+    pages = {name: path.read_text(encoding="utf-8") for name, path in (("baseline", args.baseline_html), ("candidate", args.candidate_html))}
+    parsed = {name: payload(page) for name, page in pages.items()}
+    if parsed["baseline"][1] != parsed["candidate"][1]:
+        raise SystemExit("baseline and candidate payloads differ")
+    chrome = chrome_executable()
+    if not chrome:
+        raise SystemExit("Chrome unavailable")
+    graph, canonical = parsed["candidate"]
+    keep = sorted(str(entity["id"]) for entity in graph["entities"])[:40]
+    manifest = {
+        "payload_sha256": hashlib.sha256(canonical).hexdigest(),
+        "entity_count": len(graph["entities"]),
+        "relationship_count": sum(len(entity.get("connects_to", [])) for entity in graph["entities"]),
+        "viewport": [1440, 1000],
+        "chromium_version": subprocess.check_output([chrome, "--version"], text=True).strip(),
+        "action_parameters": {"reduce_to": 40, "drag_delta": [40, 20], "drag_setup": "advance detail level only when the initial view has no ordinary node; setup is outside the measured drag action", "timeout_ms": 10000},
+        "warmups": 3,
+        "recorded_trials": 20,
+        "reduce_to_40_ids": keep,
+        "results": {},
+    }
+    for version, page in pages.items():
+        manifest["results"][version] = {}
+        for action in ACTIONS:
+            samples = [trial(chrome, page, action, keep) for _ in range(23)][3:]
+            manifest["results"][version][action] = summarize_samples(samples)
+            write_manifest(args.output, manifest)
+            print(f"completed {version} {action}", flush=True)
+    manifest["acceptance"] = acceptance_verdict(manifest["results"])
+    write_manifest(args.output, manifest)
+    if manifest["acceptance"]["status"] == "fail":
+        print("benchmark acceptance failed; see result manifest", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -9,6 +9,7 @@ import pytest
 from officina.blueprints.graph import (
     BlueprintEdge,
     BlueprintNode,
+    InterfaceExport,
     RepositoryBlueprintGraph,
 )
 from officina.visualization.from_blueprint.extractor import (
@@ -65,9 +66,14 @@ def test_graph_validation_rejects_noncanonical_children() -> None:
 
 def test_selected_skill_scope_summarizes_crossing_relationships() -> None:
     root = Path("/repo")
-    skill = BlueprintNode("skills.alpha", "module", 5, root, root / "a.yaml", None, {})
+    skill = BlueprintNode(
+        "skills.email-triage", "module", 5, root, root / "a.yaml", None, {}
+    )
+    nested = BlueprintNode(
+        "skills.email-triage._rtx", "module", 5, root, root / "rtx.yaml", None, {}
+    )
     source = BlueprintNode(
-        "skills.alpha.source",
+        "skills.email-triage._rtx.runtime",
         "behavioral_source",
         5,
         root,
@@ -75,25 +81,36 @@ def test_selected_skill_scope_summarizes_crossing_relationships() -> None:
         None,
         {"gateway": {"language": "Markdown"}},
     )
-    outside = BlueprintNode("skills.beta", "module", 5, root, root / "b.yaml", None, {})
+    outside = BlueprintNode("skills.other", "module", 5, root, root / "b.yaml", None, {})
     outside_source = BlueprintNode(
-        "skills.beta.source", "behavioral_source", 5, root, root / "bs.yaml", None, {}
+        "skills.other.runtime", "behavioral_source", 5, root, root / "bs.yaml", None, {}
+    )
+    private_id = f"{source.node_id}.interface.private"
+    export_id = f"{nested.node_id}.interface.public"
+    private = InterfaceExport(
+        private_id, 5, "private", nested.node_id, {}, source.node_id, private_id
+    )
+    exported = InterfaceExport(
+        export_id, 5, "public", nested.node_id, {}, source.node_id, private_id,
+        {}, export_id, nested.node_id,
     )
     graph = RepositoryBlueprintGraph(
-        nodes={node.node_id: node for node in (skill, source, outside, outside_source)},
+        nodes={node.node_id: node for node in (skill, nested, source, outside, outside_source)},
         node_edges=(
-            BlueprintEdge("contains-source", skill.node_id, source.node_id, 5),
+            BlueprintEdge("contains-source", nested.node_id, source.node_id, 5),
             BlueprintEdge("contains-source", outside.node_id, outside_source.node_id, 5),
             BlueprintEdge("uses-source", source.node_id, outside_source.node_id, 5),
         ),
-        exports={},
+        exports={export_id: exported},
         export_edges=(),
         helper_edges=(),
         certification_edges=(),
-        module_sources={skill.node_id: (source.node_id,), outside.node_id: (outside_source.node_id,)},
-        source_modules={source.node_id: skill.node_id, outside_source.node_id: outside.node_id},
-        module_parents={skill.node_id: None, outside.node_id: None},
-        module_children={skill.node_id: (), outside.node_id: ()},
+        module_sources={skill.node_id: (), nested.node_id: (source.node_id,), outside.node_id: (outside_source.node_id,)},
+        source_modules={source.node_id: nested.node_id, outside_source.node_id: outside.node_id},
+        source_interfaces={private_id: private},
+        module_parents={skill.node_id: None, nested.node_id: skill.node_id, outside.node_id: None},
+        module_children={skill.node_id: (nested.node_id,), nested.node_id: (), outside.node_id: ()},
+        module_local_segments={nested.node_id: "_rtx"},
         schema_version=6,
     )
 
@@ -104,8 +121,18 @@ def test_selected_skill_scope_summarizes_crossing_relationships() -> None:
 
     assert source.node_id in entities
     assert entities[skill.node_id]["type"] == "module"
-    assert entities[skill.node_id]["kind"] == "markdown"
-    assert entities[skill.node_id]["category"] == "module:markdown"
+    assert entities[skill.node_id]["kind"] == "structural"
+    assert entities[skill.node_id]["category"] == "module:structural"
+    assert entities[nested.node_id]["kind"] == "markdown"
+    assert entities[nested.node_id]["category"] == "module:markdown"
+    assert entities[nested.node_id]["short_title"] == "_rtx"
+    assert entities[source.node_id]["short_title"] == "runtime"
+    assert entities[private_id]["short_title"] == "private"
+    assert entities[export_id]["short_title"] == "public"
+    assert all(entity["subtitle"] == "" for entity in entities.values())
+    assert entities[nested.node_id]["title"] == nested.node_id
+    assert entities[private_id]["ref"] == private_id
+    assert entities[export_id]["container"] == nested.node_id
     assert entities[source.node_id]["type"] == "behavioral_source"
     assert entities[source.node_id]["kind"] == "markdown"
     assert payload["detail_levels"][0]["id"] == "module"
@@ -119,11 +146,11 @@ def test_selected_skill_scope_summarizes_crossing_relationships() -> None:
     assert entities[skill.node_id]["detail_level"] == "module"
     assert entities[source.node_id]["detail_level"] == "source"
     assert outside_source.node_id not in entities
-    assert "boundary:skills.beta" in entities
+    assert "boundary:skills.other" in entities
     boundary_edges = entities[source.node_id]["connects_to"]
     assert len(boundary_edges) == 1
     boundary_edge = boundary_edges[0]
-    assert boundary_edge["to"] == "boundary:skills.beta"
+    assert boundary_edge["to"] == "boundary:skills.other"
     assert boundary_edge["type"] == "depends-on-source"
     assert boundary_edge["implicit"] is True
     assert boundary_edge["metadata"] == {
@@ -242,6 +269,20 @@ def test_blueprint_payload_emits_first_class_presentation_nodes() -> None:
     assert nodes["discovery.persistent_modifier.not-persistent"]["member_ids"] == [
         "alpha"
     ]
+    assert {
+        node_id: node["subtitle"]
+        for node_id, node in nodes.items()
+    } == {
+        "discovery.domain.research": "Domain",
+        "discovery.topics.mathematical-reasoning": "Topics",
+        "discovery.topics.visualization": "Topics",
+        "discovery.activated_by.user-request": "Activated by",
+        "discovery.activated_by.scheduled-job": "Activated by",
+        "discovery.persistent_modifier.persistent": "Persistent modifier",
+        "discovery.persistent_modifier.not-persistent": "Persistent modifier",
+        "discovery.visibility.featured": "Catalog visibility",
+        "discovery.visibility.hidden": "Catalog visibility",
+    }
     assert all(
         node["presentation"]
         == {
@@ -264,6 +305,81 @@ def test_blueprint_payload_emits_first_class_presentation_nodes() -> None:
     assert set(facets["discovery.domain"]["node_ids"]) == {
         "discovery.domain.research"
     }
+
+
+def test_blueprint_payload_uses_presentation_for_derived_edges() -> None:
+    payload = build_payload_from_repository_graph(
+        _presentation_node_graph(), repo_root=REPO_ROOT
+    )
+
+    assert payload["ui"]["edge_presentation"] == {
+        "facets": [
+            {
+                "id": "derivation",
+                "label": "Derivation",
+                "field": "derived",
+                "variants": [
+                    {
+                        "id": "derived",
+                        "equals": True,
+                        "label": "Derived",
+                        "description": "Composed through one or more omitted nodes.",
+                        "style": {"line_pattern": "dashed"},
+                    }
+                ],
+            }
+        ]
+    }
+    assert "dependency" in payload["ui"]["edge_styles"]
+    assert not any(
+        edge_type.startswith("indirectly-")
+        for edge_type in payload["ui"]["edge_styles"]
+    )
+
+
+def test_blueprint_payload_consolidates_module_routes_and_preserves_provenance() -> None:
+    root = BlueprintNode("root", "module", 1, REPO_ROOT, REPO_ROOT / "root.yaml", None, {})
+    child = BlueprintNode("root.child", "module", 1, REPO_ROOT, REPO_ROOT / "child.yaml", None, {})
+    leaf = BlueprintNode("root.child.leaf", "module", 1, REPO_ROOT, REPO_ROOT / "leaf.yaml", None, {})
+    graph = RepositoryBlueprintGraph(
+        nodes={node.node_id: node for node in (root, child, leaf)},
+        node_edges=(
+            BlueprintEdge("routes-child-namespace", root.node_id, child.node_id, 1),
+            BlueprintEdge("routes-terminal-module", root.node_id, leaf.node_id, 1),
+        ),
+        exports={},
+        export_edges=(),
+        helper_edges=(),
+        certification_edges=(),
+        module_sources={node.node_id: () for node in (root, child, leaf)},
+        module_parents={root.node_id: None, child.node_id: root.node_id, leaf.node_id: child.node_id},
+        module_children={root.node_id: (child.node_id,), child.node_id: (leaf.node_id,), leaf.node_id: ()},
+        module_local_segments={child.node_id: "child", leaf.node_id: "leaf"},
+        schema_version=6,
+    )
+
+    payload = build_payload_from_repository_graph(graph, repo_root=REPO_ROOT)
+    root_edges = next(
+        entity["connects_to"] for entity in payload["entities"] if entity["id"] == root.node_id
+    )
+
+    assert [edge["type"] for edge in root_edges] == ["routes-module", "routes-module"]
+    assert {edge["metadata"]["relation"] for edge in root_edges} == {
+        "routes-child-namespace",
+        "routes-terminal-module",
+    }
+    assert {category["id"] for category in payload["edge_categories"]} == {
+        "routes-module"
+    }
+    route_category = next(
+        category
+        for category in payload["edge_categories"]
+        if category["id"] == "routes-module"
+    )
+    assert route_category["label"] == "Routes module"
+    assert route_category["description"] == (
+        "Routes a namespace through a child or terminal module."
+    )
 
 
 def test_blueprint_presentation_nodes_respect_selected_skill_scope() -> None:

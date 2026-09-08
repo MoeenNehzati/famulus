@@ -109,7 +109,9 @@
     function ensureElk() {
       if (elk) return elk;
       if (typeof ELK === "undefined") return null;
-      elk = new ELK({workerUrl: ELK_WORKER_URL});
+      elk = new ELK({
+        workerFactory: () => new Worker(ELK_WORKER_URL),
+      });
       return elk;
     }
 
@@ -364,9 +366,10 @@
       try {
         const length = pathEl.getTotalLength();
         if (length <= 0) return null;
+        const start = pathEl.getPointAtLength(0);
         const tip = pathEl.getPointAtLength(length);
         const tail = pathEl.getPointAtLength(Math.max(0, length - 14));
-        return { tip, tail };
+        return { start, tip, tail };
       } catch (error) {
         return null;
       }
@@ -381,14 +384,14 @@
       return edgeCategorySetContains(edge.type, hiddenEdgeTypes) || isEdgeFilteredOut(edge);
     }
 
-    function syncArrowheadForPath(pathEl) {
+    function syncArrowheadForPath(pathEl, routeSample = null) {
       const arrowEl = arrowForPath(pathEl);
       if (!arrowEl) return;
       if (pathEl.style.display === "none") {
         arrowEl.style.display = "none";
         return;
       }
-      const points = pathPointsForArrow(pathEl);
+      const points = routeSample || pathPointsForArrow(pathEl);
       if (!points) return;
       const dx = points.tip.x - points.tail.x;
       const dy = points.tip.y - points.tail.y;
@@ -418,14 +421,14 @@
       arrowEl.dataset.derived = pathEl.dataset.derived;
     }
 
-    function attachArrowhead(pathEl) {
+    function attachArrowhead(pathEl, routeSample = null) {
       const existing = arrowForPath(pathEl);
       if (existing) existing.remove();
       const arrowEl = createSvgElement("polygon");
       arrowEl.setAttribute("class", "edge-arrow");
       arrowEl.dataset.edgeId = pathEl.dataset.edgeId;
       edgeLayer.appendChild(arrowEl);
-      syncArrowheadForPath(pathEl);
+      syncArrowheadForPath(pathEl, routeSample);
       return arrowEl;
     }
 
@@ -446,67 +449,16 @@
     // ── Fast visibility toggle (no ELK re-run) ───────────────────────────────
 
     function updateVisibilityFast() {
-      if (!hasFullLayout) { updateVisibilityFull(); return; }
-      const missingVisibleNode = docData.entities.some(entity => (
-        !isHiddenNode(entity.id) && !nodeElement(entity.id)
-      ));
-      if (missingVisibleNode) {
-        updateVisibilityFull({preserveManualPositions: true});
-        return;
+      if (!hasFullLayout) return updateVisibilityFull();
+      const renderedEntities = docData.entities.filter(entity => !isHiddenNode(entity.id));
+      if (renderedEntities.some(entity => !lastNodePositions.has(entity.id))) {
+        return updateVisibilityFull({preserveManualPositions: true});
       }
-      renderHiddenNodes();
-
-      // Toggle node elements
-      svgEl.querySelectorAll(".graph-node").forEach(nodeEl => {
-        const nodeId = nodeEl.dataset.nodeId;
-        nodeEl.style.display = isHiddenNode(nodeId) ? "none" : "";
-      });
-
-      // Toggle canonical edge elements without replacing their stable geometry.
-      edgeLayer.querySelectorAll(".edge-path[data-derived='false']").forEach(pathEl => {
-        const src = pathEl.dataset.sourceNodeId;
-        const dst = pathEl.dataset.targetNodeId;
-        const sourceHidden = isHiddenNode(src);
-        const targetHidden = isHiddenNode(dst);
-        const edgeTypeHidden = hiddenEdgeTypes.has(String(pathEl.dataset.edgeType || "unknown"));
-        const edgeVisible = (!edgeTypeHidden && !sourceHidden && !targetHidden);
-        pathEl.style.display = edgeVisible ? "" : "none";
-        syncArrowheadForPath(pathEl);
-      });
-
-      // Derived edges depend on the current omission set, so replace only them.
-      edgeLayer.querySelectorAll(".edge-path[data-derived='true']").forEach(el => {
-        removeEdgePresentationResources(el);
-        el.remove();
-      });
-      edgeLayer.querySelectorAll(".edge-arrow[data-derived='true']").forEach(el => el.remove());
-
+      containerIndex = rebuildContainerIndex(docData.entities);
       const visibleEdges = computeVisibleEdges();
-      visibleEdges.forEach(edge => {
-        if (!edge.derived) return;
-        const srcPos = getEffectivePos(edge.source);
-        const dstPos = getEffectivePos(edge.target);
-        if (!srcPos || !dstPos) return;
-        const path = createSvgElement("path");
-        path.setAttribute("class", "edge-path");
-        path.setAttribute("d", routedPathForEndpoints(edge.source, edge.target, srcPos, dstPos));
-        const edgeStyle = edgeStyleForType(edge.type);
-        applyEdgeMetadataPresentation(path, edge, edgeStyle, edgeColorForTarget(edge.target));
-        path.dataset.edgeId = edge.edge_id || `projection_${edge.source}_${edge.target}`;
-        path.dataset.targetNodeId = edge.target;
-        path.dataset.sourceNodeId = edge.source;
-        path.dataset.derived = "true";
-        path.dataset.edgeType = String(edge.type || "unknown");
-        path.dataset.aggregate = edge.aggregate ? "true" : "false";
-        path.__edgeMeta = edge;
-        edgeLayer.appendChild(path);
-        syncEdgeMetadataPresentationGeometry(path);
-        attachArrowhead(path);
-        bindEdgeHover(path, edge);
-      });
-
-      syncEdgePresentationLegend();
-
-      refreshEdgeOcclusionMasks();
-      applyVisibilityPresentation();
+      return reconcileVisibleScene(
+        renderedEntities,
+        visibleEdges,
+        renderedEntities.map(entity => entity.id)
+      );
     }

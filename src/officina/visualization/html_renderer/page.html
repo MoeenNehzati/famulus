@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>@@OFFICINA_PAGE_TITLE@@</title>
   <script>const GRAPH_BUILD_ID = "@@OFFICINA_GRAPH_BUILD_ID@@";</script>
-  <script>@@OFFICINA_ELK_RUNTIME@@</script>
+  <script id="officina-elk-client">@@OFFICINA_ELK_RUNTIME@@</script>
   <script>
     const ELK_WORKER_SOURCE = @@OFFICINA_ELK_WORKER_SOURCE@@;
     const ELK_WORKER_URL = URL.createObjectURL(
@@ -168,10 +168,11 @@
         <svg id="graph-svg" width="1200" height="800" viewBox="0 0 1200 800">
           <defs>
           </defs>
+          <g id="edge-layer"></g>
           <g id="presentation-node-layer"></g>
           <g id="container-layer"></g>
+          <g id="edge-interaction-layer"></g>
           <g id="node-layer"></g>
-          <g id="edge-layer"></g>
         </svg>
       </div>
     </div>
@@ -221,7 +222,13 @@
       </div>
     </aside>
   </div>
-    <script>
+  <script id="officina-graph-data" type="application/json">
+@@OFFICINA_GRAPH_DOCUMENT@@
+  </script>
+  <script id="officina-edge-data" type="application/json">
+@@OFFICINA_EDGE_DATA@@
+  </script>
+    <script id="officina-viewer-runtime">
 @@OFFICINA_VIEWER_RUNTIME@@  </script>
 </body>
 </html>

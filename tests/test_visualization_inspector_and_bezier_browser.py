@@ -93,6 +93,67 @@ def _payload(edge_type: str = "link") -> dict:
     }
 
 
+def test_restored_mixed_edge_synchronizes_route_geometry_once() -> None:
+    payload = _payload()
+    payload["entities"][0]["connects_to"] = [
+        {"to": "beta", "type": "link", "bundle": True,
+         "bundle_types": ["link", "supports"]}
+    ]
+    payload["edge_categories"].append({"id": "supports", "label": "Supports"})
+    _run_browser_case(
+        "single-route-geometry-sync",
+        payload,
+        """
+        hideNodes(["beta"]);
+        await window.officinaRendererDiagnostics.whenIdle();
+        let lengthReads = 0;
+        let pointReads = 0;
+        const pathPrototype = SVGPathElement.prototype;
+        const originalLength = pathPrototype.getTotalLength;
+        const originalPoint = pathPrototype.getPointAtLength;
+        pathPrototype.getTotalLength = function() {
+          if (this.classList.contains("edge-path")) lengthReads += 1;
+          return originalLength.call(this);
+        };
+        pathPrototype.getPointAtLength = function(distance) {
+          if (this.classList.contains("edge-path")) pointReads += 1;
+          return originalPoint.call(this, distance);
+        };
+        showNodes(["beta"]);
+        await window.officinaRendererDiagnostics.whenIdle();
+        if (lengthReads !== 1 || pointReads !== 3) {
+          throw new Error(`route geometry repeated: lengths=${lengthReads} points=${pointReads}`);
+        }
+        """,
+        virtual_time_budget=8000,
+    )
+
+
+def test_document_inspector_reuses_original_json_without_replacement() -> None:
+    _run_browser_case(
+        "document-json-cache",
+        _payload(),
+        """
+        await window.officinaRendererDiagnostics.whenIdle();
+        const expected = typeof graphDocumentJson === "string"
+          ? graphDocumentJson
+          : JSON.stringify(docData, null, 2);
+        if (rawJsonCodeEl.textContent !== expected) throw new Error("initial document JSON was not preserved");
+        let replacements = 0;
+        const observer = new MutationObserver(records => { replacements += records.length; });
+        observer.observe(rawJsonCodeEl, {childList: true});
+        showSelectionDetails();
+        showSelectionDetails();
+        await delay(0);
+        observer.disconnect();
+        if (replacements !== 0) throw new Error(`unchanged document JSON replaced ${replacements} times`);
+        showEntityDetails(entityMap.get("alpha"));
+        showSelectionDetails();
+        if (rawJsonCodeEl.textContent !== expected) throw new Error("document JSON was not restored after entity inspection");
+        """,
+    )
+
+
 def test_declared_edge_presentation_controls_stroke_and_legend() -> None:
     payload = {
         "schema_version": 2,
@@ -157,6 +218,88 @@ def test_declared_edge_presentation_controls_stroke_and_legend() -> None:
         if (rows.map(row => row.dataset.type).sort().join(",") !== "explicit,inferred") {
           throw new Error("provenance legend variants are incorrect");
         }
+        """,
+    )
+
+
+def test_edge_metadata_underlays_match_route_style_order_and_lifecycle() -> None:
+    payload = _payload("link")
+    payload["ui"] = {
+        "edge_styles": {"link": {"color": "#2563eb"}, "other": {"color": "#b45309"}},
+        "edge_metadata_styles": {
+            "aggregate": {
+                "label": "Aggregate",
+                "style": {"stroke_width": 5, "halo_width": 11, "halo_color": "#64748b", "halo_opacity": 0.21},
+            },
+            "mixed_type_bundle": {
+                "label": "Mixed",
+                "style": {"stroke_width": 5, "outline_width": 8, "outline_color": "#334155", "outline_opacity": 0.31},
+            },
+        },
+    }
+    payload["edge_categories"].append({"id": "other", "label": "Other"})
+    _run_browser_case(
+        "edge-metadata-underlays",
+        payload,
+        """
+        await window.officinaRendererDiagnostics.whenIdle();
+        const edge = {
+          edge_id: "synthetic-underlay",
+          source: "alpha", target: "beta", type: "link",
+          aggregate: true, bundle: true, bundle_types: ["link", "other"],
+          constituent_edges: [{type: "link"}, {type: "other"}],
+        };
+        const path = createRenderedEdge(edge, "M 10 20 C 30 40 50 60 70 80");
+        const underlays = edgePresentationUnderlaysForPath(path);
+        if (svgEl.querySelectorAll('filter[id^="edge-presentation-filter-"]').length) {
+          throw new Error("metadata edge retained an SVG filter graph");
+        }
+        if (underlays.length !== 2) throw new Error(`expected halo and outline underlays; got ${underlays.length}`);
+        if (underlays[0].nextElementSibling !== underlays[1] || underlays[1].nextElementSibling !== path) {
+          throw new Error("underlays are not painted immediately beneath their semantic edge");
+        }
+        const expected = [
+          ["11px", "rgb(100, 116, 139)", "0.21"],
+          ["8px", "rgb(51, 65, 85)", "0.31"],
+        ];
+        underlays.forEach((underlay, index) => {
+          const style = getComputedStyle(underlay);
+          if (underlay.getAttribute("d") !== path.getAttribute("d")) throw new Error("underlay route diverged");
+          if (style.strokeWidth !== expected[index][0] || style.stroke !== expected[index][1]
+              || style.strokeOpacity !== expected[index][2]) throw new Error(`underlay ${index} style diverged`);
+          if (style.pointerEvents !== "none" || underlay.getAttribute("aria-hidden") !== "true") {
+            throw new Error("underlay is interactive");
+          }
+        });
+        if (underlays.some(underlay => getComputedStyle(underlay).opacity !== getComputedStyle(path).opacity)) {
+          throw new Error("initial underlay opacity diverged from semantic edge");
+        }
+        path.setAttribute("d", "M 11 21 C 31 41 51 61 71 81");
+        syncEdgeRouteGeometry(path);
+        if (underlays.some(underlay => underlay.getAttribute("d") !== path.getAttribute("d"))) {
+          throw new Error("rerouting did not synchronize underlays");
+        }
+        path.dispatchEvent(new MouseEvent("mouseenter", {bubbles: true, clientX: 20, clientY: 20}));
+        if (underlays.some(underlay => underlay.style.opacity !== "0.98")) throw new Error("hover emphasis diverged");
+        path.dispatchEvent(new MouseEvent("mouseleave", {bubbles: true}));
+        await delay(150);
+        if (underlays.some(underlay => getComputedStyle(underlay).opacity !== getComputedStyle(path).opacity)) throw new Error("hover cleanup diverged");
+        path.style.display = "none"; path.style.opacity = "0.13";
+        syncEdgePresentationVisibilityForPath(path);
+        if (underlays.some(underlay => underlay.style.display !== "none" || underlay.style.opacity !== "0.13")) {
+          throw new Error("visibility did not synchronize underlays");
+        }
+        const staleUnderlays = underlays.slice();
+        applyEdgeMetadataPresentation(path, edge, edgeStyleForType("link"), "#2563eb");
+        if (staleUnderlays.some(underlay => underlay.isConnected)) throw new Error("replacement leaked stale underlays");
+        const replacementUnderlays = edgePresentationUnderlaysForPath(path);
+        if (replacementUnderlays.length !== 2) throw new Error("replacement lost underlays");
+        if (replacementUnderlays.some(underlay => underlay.style.display !== "none" || underlay.style.opacity !== "0.13")) {
+          throw new Error("replacement exposed underlays of a hidden edge");
+        }
+        removeEdgePresentationResources(path);
+        if (replacementUnderlays.some(underlay => underlay.isConnected)) throw new Error("removal leaked underlays");
+        path.remove();
         """,
     )
 
@@ -695,7 +838,7 @@ def test_node_and_color_legend_headings_toggle_independently() -> None:
     )
 
 
-def test_edge_occlusion_masks_follow_nonrectangular_node_shapes() -> None:
+def test_dimmed_nonrectangular_nodes_still_attenuate_crossing_edges() -> None:
     shapes = ["ellipse", "circle", "diamond", "hexagon", "parallelogram"]
     payload = {
         "schema_version": 2,
@@ -721,36 +864,15 @@ def test_edge_occlusion_masks_follow_nonrectangular_node_shapes() -> None:
         "shape-aware-edge-occlusion",
         payload,
         """
-        const positions = Array.from(lastNodePositions.values());
-        const left = Math.min(...positions.map(position => position.x)) - 20;
-        const top = Math.min(...positions.map(position => position.y)) - 20;
-        const right = Math.max(...positions.map(position => position.x + position.width)) + 20;
-        const bottom = Math.max(...positions.map(position => position.y + position.height)) + 20;
-        const probe = createSvgElement("path");
-        probe.setAttribute("class", "edge-path");
-        probe.setAttribute("d", `M ${left} ${top} H ${right} V ${bottom} H ${left} Z`);
-        probe.dataset.sourceNodeId = "outside-source";
-        probe.dataset.targetNodeId = "outside-target";
-        edgeLayer.appendChild(probe);
-        refreshEdgeOcclusionMasks();
-
-        const maskReference = probe.getAttribute("mask") || "";
-        const maskId = maskReference.startsWith("url(#") ? maskReference.slice(5, -1) : "";
-        const mask = maskId ? document.getElementById(maskId) : null;
-        if (!mask) throw new Error("probe edge did not receive an occlusion mask");
         for (const nodeId of ["ellipse", "circle", "diamond", "hexagon", "parallelogram"]) {
-          const visibleShape = nodeElement(nodeId)?.querySelector(".node-shape");
-          const blocker = mask.querySelector(`[data-edge-occlusion-node-id="${nodeId}"]`);
-          if (!visibleShape || !blocker) throw new Error(`${nodeId} blocker is missing`);
-          if (blocker.tagName !== visibleShape.tagName) {
-            throw new Error(`${nodeId} uses ${blocker.tagName} occlusion for a ${visibleShape.tagName} node`);
-          }
-          for (const attribute of ["x", "y", "width", "height", "rx", "ry", "cx", "cy", "r", "points"]) {
-            if (visibleShape.hasAttribute(attribute)
-                && blocker.getAttribute(attribute) !== visibleShape.getAttribute(attribute)) {
-              throw new Error(`${nodeId} blocker changed its ${attribute} geometry`);
-            }
-          }
+          const node = nodeElement(nodeId);
+          const shape = node?.querySelector(".node-shape");
+          const cover = node?.querySelector(".node-edge-cover");
+          node.classList.add("user-dimmed");
+          if (!shape || !cover || cover.tagName !== shape.tagName
+              || Number(getComputedStyle(node).opacity) !== 1
+              || Number(getComputedStyle(shape).opacity) !== 0.2
+              || Number(getComputedStyle(cover).fillOpacity) !== 0.78) throw new Error(`${nodeId} dimming loses edge attenuation`);
         }
         """,
     )
