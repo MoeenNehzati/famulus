@@ -6,6 +6,7 @@ import json
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -430,8 +431,14 @@ def test_uncorrelated_matrix_request_expires_to_stable_terminal(
 
 
 def test_final_correlation_observation_wins_over_local_deadline(
-    capsys: pytest.CaptureFixture[str], tmp_path: Path
+    capsys: pytest.CaptureFixture[str], monkeypatch, tmp_path: Path
 ) -> None:
+    now = [datetime(2026, 9, 8, 18, 0, tzinfo=UTC)]
+
+    class ControlledDateTime:
+        now = staticmethod(lambda _tz=None: now[0])
+        fromisoformat = staticmethod(datetime.fromisoformat)
+
     class DelayedVisibilityGh(FakeGh):
         list_count = 0
 
@@ -440,9 +447,11 @@ def test_final_correlation_observation_wins_over_local_deadline(
             if arguments[:2] == ("run", "list"):
                 self.list_count += 1
                 if self.list_count == 1:
+                    now[0] += timedelta(seconds=2)
                     return SimpleNamespace(returncode=0, stdout="[]", stderr="")
             return result
 
+    monkeypatch.setattr(remote, "datetime", ControlledDateTime)
     context = tmp_path / "ci-session"
     gh = DelayedVisibilityGh()
     argv = [
@@ -451,7 +460,6 @@ def test_final_correlation_observation_wins_over_local_deadline(
     ]
     assert remote.main(argv, gh=gh, sleep=lambda _: None) == 0
     capsys.readouterr()
-    time.sleep(1.05)
     assert remote.main(argv, gh=gh, sleep=lambda _: None) == 0
     assert json.loads(capsys.readouterr().out)["state"] == "pending"
     assert remote.main(argv, gh=gh, sleep=lambda _: None) == 1
