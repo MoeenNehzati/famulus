@@ -803,6 +803,13 @@ DISPATCHER_ERROR_SPECS: Mapping[str, ErrorSpec] = MappingProxyType(
 )
 
 
+class SetupBlocked(BaseException):
+    def __init__(self, status, call_path, lifecycle=None):
+        self.status = status
+        self.call_path = tuple(call_path)
+        self.lifecycle = lifecycle
+
+
 class InvocationError(Exception):
     """Raised when a dispatcher request is invalid."""
 

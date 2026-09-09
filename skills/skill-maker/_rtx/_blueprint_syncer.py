@@ -239,7 +239,7 @@ def generated_setup_gate(
         "",
         "For an ordinary invocation, use this exact sequence:",
         "",
-        f"1. Call `{_MANAGER_STATUS}` for the original target interface. If it is `unmanaged`, run the original request normally. If it is `setup_busy`, follow only its recovery result.",
+        f"1. Call `{_MANAGER_STATUS}` for the original target interface. If it is `unmanaged`, run the original request normally. If it is `setup_busy`, stop: this passive status authorizes no action.",
         "2. If it is `setup_required`, obtain permission, then call "
         f"`{_MANAGER_BEGIN}` as `begin(setup, ROOT_SETUP_INTERFACE, ORIGINAL_CALLER, "
         "ORIGINAL_INTERFACE, ORIGINAL_VERSION)`, where `ROOT_SETUP_INTERFACE` is the returned root setup interface.",

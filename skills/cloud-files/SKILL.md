@@ -17,7 +17,7 @@ Managed lifecycle entries:
 
 For an ordinary invocation, use this exact sequence:
 
-1. Call `setup-interface-manager._rtx.interface.status@1` for the original target interface. If it is `unmanaged`, run the original request normally. If it is `setup_busy`, follow only its recovery result.
+1. Call `setup-interface-manager._rtx.interface.status@1` for the original target interface. If it is `unmanaged`, run the original request normally. If it is `setup_busy`, stop: this passive status authorizes no action.
 2. If it is `setup_required`, obtain permission, then call `setup-interface-manager._rtx.interface.begin@1` as `begin(setup, ROOT_SETUP_INTERFACE, ORIGINAL_CALLER, ORIGINAL_INTERFACE, ORIGINAL_VERSION)`, where `ROOT_SETUP_INTERFACE` is the returned root setup interface.
 3. Follow only the returned exact structured current step: call `setup-interface-manager._rtx.interface.run-markdown@1` for a Markdown step, follow its returned instructions, then call `setup-interface-manager._rtx.interface.settle@1`; call `setup-interface-manager._rtx.interface.run-python@1` for a Python step. Repeat until the flow is ready.
 4. Perform the ready recheck with `setup-interface-manager._rtx.interface.status@1` for the original target and require `ready`; then call `setup-interface-manager._rtx.interface.authorize@1` with the original target plus caller, interface, and version.

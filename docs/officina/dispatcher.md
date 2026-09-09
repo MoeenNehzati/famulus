@@ -24,6 +24,9 @@ grammar. It does not generally verify gateway output against a declared output
 schema; the producer, consumer, or owning adapter must perform that validation
 where the contract requires it. See [Schemas](schema.md).
 
+MCP execution and every actual `PythonMachineInterface.dispatch()` insert the
+dynamic setup check described below between authorization and binding.
+
 ## Invocation
 
 The shared `famulus_dispatcher` MCP server resolves the current plugin package and invokes
@@ -92,12 +95,14 @@ does not catalogue modules, generate an index, or add another path resolver.
 
 ## Managed setup preflight
 
-For an ordinary non-dry MCP call, Dispatcher first authorizes one exact route.
-Setup classification reuses that invocation-local repository and the already
-loaded target ancestry; it does not resolve or authorize the route a second
-time. A public `.interface.setup` export is managed automatically; if the
-ancestry proves no managed setup is required, MCP launches the authorized
-target without calling setup-interface-manager or touching its ledger.
+An ordinary non-dry MCP call checks setup after authorizing its exact route.
+Every actual `PythonMachineInterface.dispatch()` does the same for its own
+target, including calls in standalone chains. Setup classification reuses the
+invocation-local repository and already loaded target ancestry; it does not
+authorize the route again. A public `.interface.setup` export is managed
+automatically. An unmanaged target trivially proceeds without a manager call
+or ledger access. Metadata inspection, dry-run, and offline resolution do not
+perform these live checks.
 
 When a managed `.interface.setup` is required, the direct setup loader follows
 only explicit `setup_requires_setup_of` references and builds the sparse fields
@@ -105,6 +110,30 @@ consumed by the existing setup evaluator. Exact managed setup and teardown
 interfaces are intercepted before process-binding compilation. An ordinary
 managed target still requires manager `status`, followed by atomic `authorize`
 when ready, before the original target is compiled and launched.
+
+This is a per-call check, not static traversal of `uses_interfaces`. A declared
+dependency that is never called does not trigger setup. Calls whose caller or
+terminal target module is exactly `setup-interface-manager._rtx` bypass this
+gate so manager control routes, actions, and verifiers cannot recurse into it;
+prefix lookalikes do not bypass it. MCP calls carrying `setup_flow_id` retain
+their separate exact-flow authorization path.
+
+A nested setup refusal prevents that target from launching and travels through
+the existing private process diagnostic channel. Each process boundary
+prepends its canonical interface ID to an outer-to-inner `call_path`. At the
+MCP root, the existing validation checks the signal and produces the existing
+setup continuation or error result. `setup_required` preserves the outer MCP
+caller/interface/version as the continuation; `setup_busy` exposes only the
+active flow identity and authorizes no action. Ordinary dispatcher and
+application errors keep their existing behavior. Standalone chains still gate actual dispatches,
+but only MCP renders setup continuations.
+
+The `manager` object returned for `setup_required` or `setup_managed` is a
+complete `famulus_dispatcher.invoke` request and must be used unchanged.
+
+The outer process may already have done work before reaching a blocked nested
+call. Retrying the outer invocation can repeat that work; this is not a promise
+of transitive preflight or exactly-once execution.
 
 Setup-interface-manager remains the sole authority for ledger reads, locks,
 claims, recovery, and settlement. Only its `status` and `authorize` routes load
@@ -136,7 +165,8 @@ Python gateways run through the selected interpreter and a confined importer
 rooted at the selected module. Ambient import paths that expose configured
 repository modules are removed.
 
-Gateway stdout, stderr, and exit status pass through unchanged. `--dry-run`
+Ordinary gateway stdout, stderr, and exit status pass through unchanged;
+private setup refusals follow the diagnostic path described above. `--dry-run`
 does not read stdin or launch the gateway.
 
 ## Failures and warnings

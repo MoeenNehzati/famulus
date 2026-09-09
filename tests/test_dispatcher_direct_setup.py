@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import subprocess
+import json
+from types import SimpleNamespace
 from pathlib import Path
 from shutil import copytree
 
@@ -24,6 +26,8 @@ from officina.blueprints.direct_setup import (
     resolve_direct_export,
 )
 from officina.dispatcher.errors import DirectBlueprintError
+import officina.dispatcher.direct_runtime as direct_runtime
+import officina.dispatcher.errors as dispatch_errors
 
 
 FIXTURE = (
@@ -654,3 +658,137 @@ def test_unrelated_modules_are_never_read(tmp_path: Path, monkeypatch: pytest.Mo
 
     assert reads
     assert not [path for path in reads if "unrelated-" in path.as_posix()]
+
+
+def _dynamic_gate(tmp_path, monkeypatch, *, code="ready", target="root.leaf.interface.execute", caller="root", checked=True, mutate=None):
+    configuration, _ = _managed_repository(tmp_path)
+    events = []
+    original = {"caller": caller, "interface": target, "version": 1}
+    status = {"schema_version": 1, "code": code, "root_setup_interface": "root.interface.setup", "pending_stack": [], "flow_id": None}
+    if code == "setup_required":
+        status["pending_stack"] = [{"interface": "root.interface.setup", "version": 1, "kind": "python", "action": "run-setup"}]
+    if code == "setup_busy":
+        status["flow_id"] = "existing-flow"
+    auth = {"schema_version": 1, "flow_id": None, "operation": "authorize", "state": "ready", "current_step": None, "original": original, "resume_original": True}
+    if mutate:
+        mutate(status, auth)
+
+    def manager(**kwargs):
+        operation = kwargs["target"].rsplit(".", 1)[-1]
+        events.append(operation)
+        assert kwargs.get("check_setup", False) is False
+        assert kwargs["args"] == ([target] if operation == "status" else [target, caller, target, "1"])
+        return SimpleNamespace(payload=status if operation == "status" else auth)
+
+    monkeypatch.setattr(direct_runtime, "_resolve_dispatch", manager)
+    monkeypatch.setattr(direct_runtime, "_run_resolved_invocation", lambda resolved, **kwargs: subprocess.CompletedProcess([], 0, json.dumps(resolved.payload), ""))
+    monkeypatch.setattr(direct_runtime, "materialize_authorized_invocation", lambda *args, **kwargs: events.append("materialize"))
+
+    def invoke():
+        return direct_runtime._materialize(repository_config=configuration.config_path, caller_module_id=caller, target=target, args=[], stdin_requested=False, target_version=1, host_caller=False, check_setup=checked)
+
+    return invoke, events, status
+
+
+@pytest.mark.parametrize("code", ["setup_required", "setup_busy"])
+def test_dynamic_setup_refusal_prevents_materialization(tmp_path, monkeypatch, code):
+    invoke, events, status = _dynamic_gate(tmp_path, monkeypatch, code=code)
+    with pytest.raises(BaseException) as caught:
+        invoke()
+    assert type(caught.value).__name__ == "SetupBlocked"
+    assert caught.value.status == status
+    assert caught.value.call_path == ("root.leaf.interface.execute",)
+    assert events == ["status"]
+
+
+def test_dynamic_ready_setup_authorizes_before_materialization(tmp_path, monkeypatch):
+    invoke, events, _ = _dynamic_gate(tmp_path, monkeypatch)
+    invoke()
+    assert events == ["status", "authorize", "materialize"]
+
+
+def test_dynamic_metadata_resolution_does_not_check_setup(tmp_path, monkeypatch):
+    invoke, events, _ = _dynamic_gate(tmp_path, monkeypatch, checked=False)
+    invoke()
+    assert events == ["materialize"]
+
+
+def test_dynamic_unmanaged_target_does_not_contact_manager(tmp_path, monkeypatch):
+    configuration = _configuration(tmp_path / "repository")
+    _clone_module(configuration.repository_root, "root", managed=False)
+    monkeypatch.setattr(direct_runtime, "_resolve_dispatch", lambda **kwargs: pytest.fail("unmanaged manager call"))
+    events = []
+    monkeypatch.setattr(direct_runtime, "materialize_authorized_invocation", lambda *a, **k: events.append("materialize"))
+    direct_runtime._materialize(repository_config=configuration.config_path, caller_module_id="root", target="root.interface.execute", args=[], stdin_requested=False, target_version=1, host_caller=False, check_setup=True)
+    assert events == ["materialize"]
+
+
+@pytest.mark.parametrize("identity", ["caller", "target"])
+@pytest.mark.parametrize("suffix", ["", "-lookalike"])
+def test_dynamic_exact_manager_identity_bypasses_gate(tmp_path, monkeypatch, identity, suffix):
+    invoke, events, _ = _dynamic_gate(tmp_path, monkeypatch)
+    original = direct_runtime.authorize_direct_invocation
+    def authorize(**kwargs):
+        value = original(**kwargs)
+        authorization = SimpleNamespace(caller_module_id="setup-interface-manager._rtx" + suffix if identity == "caller" else "root", terminal_module_id="setup-interface-manager._rtx" + suffix if identity == "target" else value.export.module_node_id)
+        return SimpleNamespace(repository=value.repository, target_modules=value.target_modules, export=value.export, authorization=authorization)
+    monkeypatch.setattr(direct_runtime, "authorize_direct_invocation", authorize)
+    if suffix:
+        # Status must be queried: a prefix lookalike must not bypass the gate.
+        with pytest.raises(dispatch_errors.SetupBlocked):
+            monkeypatch.setattr(direct_runtime, "_run_resolved_invocation", lambda *a, **k: subprocess.CompletedProcess([], 0, '{"code":"setup_required"}', ""))
+            invoke()
+        assert events == ["status"]
+    else:
+        invoke()
+        assert events == ["materialize"]
+
+
+@pytest.mark.parametrize("field", ["schema", "resume", "version", "extras"])
+def test_dynamic_gate_rejects_permissive_type_confusion(tmp_path, monkeypatch, field):
+    def mutate(status, auth):
+        if field == "schema": status["schema_version"] = True
+        elif field == "resume": auth["resume_original"] = 1
+        elif field == "version": auth["original"]["version"] = True
+        else: auth["secret"] = "not-allowed"
+    invoke, events, _ = _dynamic_gate(tmp_path, monkeypatch, mutate=mutate)
+    with pytest.raises(dispatch_errors.InvocationError):
+        invoke()
+    assert "materialize" not in events
+
+
+def test_dynamic_lifecycle_redirects_before_manager_or_materialization(tmp_path, monkeypatch):
+    invoke, events, _ = _dynamic_gate(tmp_path, monkeypatch, target="root.interface.setup")
+    with pytest.raises(BaseException) as caught:
+        invoke()
+    assert type(caught.value).__name__ == "SetupBlocked"
+    assert caught.value.lifecycle == ("root.interface.setup", "setup")
+    assert events == []
+
+
+@pytest.mark.parametrize("returncode, payload", [(1, '{"code":"setup_required"}'), (0, 'invalid-json'), (0, '[]')])
+def test_dynamic_manager_failures_never_launch(tmp_path, monkeypatch, returncode, payload):
+    invoke, events, _ = _dynamic_gate(tmp_path, monkeypatch)
+    monkeypatch.setattr(direct_runtime, "_run_resolved_invocation", lambda *a, **k: subprocess.CompletedProcess([], returncode, payload, ""))
+    with pytest.raises(dispatch_errors.DispatcherError) as caught:
+        invoke()
+    expected = "D56" if returncode else "D57"
+    assert caught.value.code == dispatch_errors.DispatcherError.from_spec(expected, operation="status").code
+    assert events == ["status"]
+
+
+def test_dynamic_manager_launch_failure_remains_d56(tmp_path, monkeypatch):
+    invoke, events, _ = _dynamic_gate(tmp_path, monkeypatch)
+    def fail_launch(*args, **kwargs):
+        raise OSError("manager unavailable")
+    monkeypatch.setattr(direct_runtime, "_run_resolved_invocation", fail_launch)
+    with pytest.raises(dispatch_errors.DispatcherError) as caught:
+        invoke()
+    assert caught.value.code == dispatch_errors.DispatcherError.from_spec("D56", operation="status").code
+    assert events == ["status"]
+
+
+def test_dynamic_exact_unmanaged_status_needs_no_authorization(tmp_path, monkeypatch):
+    invoke, events, _ = _dynamic_gate(tmp_path, monkeypatch, code="unmanaged", mutate=lambda status, auth: status.update(root_setup_interface=None))
+    invoke()
+    assert events == ["status", "materialize"]

@@ -20,6 +20,7 @@ from officina.dispatcher.errors import (
     DirectBlueprintError,
     DispatcherError,
     InvocationError,
+    SetupBlocked,
 )
 
 
@@ -247,6 +248,7 @@ def test_exact_managed_lifecycle_redirects_before_process_binding_and_redacts(
         "operation": operation,
         "root_setup_interface": "root.interface.setup",
         "manager": {
+            "caller": "root",
             "interface": "setup-interface-manager._rtx.interface.begin",
             "version": 1,
             "arguments": {
@@ -307,6 +309,7 @@ def test_pending_child_target_returns_pop_ordered_suffix_and_redacted_begin(
         "pending_stack": pending_stack,
         "next_setup": pending_stack[-1],
         "manager": {
+            "caller": "root",
             "interface": "setup-interface-manager._rtx.interface.begin",
             "version": 1,
             "arguments": {
@@ -331,7 +334,7 @@ def test_pending_child_target_returns_pop_ordered_suffix_and_redacted_begin(
     assert "original-secret" not in json.dumps(result, sort_keys=True)
 
 
-def test_busy_refusal_returns_only_flow_and_argument_free_recovery_route(
+def test_busy_refusal_returns_only_passive_flow_identity(
     server, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Catches leaking the suspended call or inventing a recovery action."""
@@ -362,12 +365,7 @@ def test_busy_refusal_returns_only_flow_and_argument_free_recovery_route(
     assert result == {
         "code": "setup_busy",
         "flow_id": "flow-7",
-        "manager": {
-            "interface": "setup-interface-manager._rtx.interface.recover",
-            "version": 1,
-        },
     }
-    assert "arguments" not in result["manager"]
     assert events == ["authorize", "status"]
     assert "original-secret" not in json.dumps(result, sort_keys=True)
 
@@ -1008,6 +1006,172 @@ def test_unmanaged_ordinary_call_uses_sparse_context_without_manager_or_full_gra
     assert events == ["authorize", "compile", "launch"]
 
 
+def _nested_status(code: str) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "code": code,
+        "root_setup_interface": "child.interface.setup",
+        "pending_stack": (
+            [{"interface": "child.interface.setup", "version": 1, "kind": "python", "action": "run-setup"}]
+            if code == "setup_required"
+            else []
+        ),
+        "flow_id": "flow-7" if code == "setup_busy" else None,
+    }
+
+
+def _with_private_field(signal: SetupBlocked) -> SetupBlocked:
+    signal.private = "nested-private-secret"
+    return signal
+
+
+@pytest.mark.parametrize("code", ["setup_required", "setup_busy"])
+def test_nested_setup_refusal_rebinds_to_outer_mcp_invocation(
+    server, monkeypatch: pytest.MonkeyPatch, code: str
+) -> None:
+    """Catches exposing a child continuation or recovery arguments at MCP."""
+    secret = "nested-private-secret"
+    _install_authorized_path(
+        server,
+        monkeypatch,
+        [],
+        managed=False,
+        argv=[secret, "--token", secret],
+    )
+    signal = SetupBlocked(
+        _nested_status(code),
+        ("root.interface.run", "child.interface.run"),
+    )
+    monkeypatch.setattr(
+        server,
+        "_run_resolved_invocation",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(signal),
+    )
+
+    result = server.invoke("root", "root.interface.run", 1, _arguments(server, secret=secret))
+
+    assert result["call_path"] == ["root.interface.run", "child.interface.run"]
+    if code == "setup_required":
+        assert result["original"] == {"caller": "root", "interface": "root.interface.run", "version": 1}
+        assert result["manager"]["caller"] == result["original"]["caller"]
+        assert result["manager"]["arguments"]["positionals"] == [
+            "setup", "child.interface.setup", "root", "root.interface.run", "1"
+        ]
+    else:
+        assert result == {
+            "code": "setup_busy",
+            "flow_id": "flow-7",
+            "call_path": ["root.interface.run", "child.interface.run"],
+        }
+    assert secret not in json.dumps(result)
+
+
+def test_nested_managed_lifecycle_rebinds_to_outer_mcp_invocation(
+    server, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Catches validating a nested lifecycle classification as manager status."""
+    _install_authorized_path(server, monkeypatch, [], managed=False)
+    signal = SetupBlocked(
+        None,
+        ("root.interface.run", "child.interface.setup"),
+        ("child.interface.setup", "setup"),
+    )
+    monkeypatch.setattr(
+        server,
+        "_run_resolved_invocation",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(signal),
+    )
+
+    result = server.invoke("root", "root.interface.run", 1, _arguments(server))
+
+    assert result["code"] == "setup_managed"
+    assert result["original"] == {"caller": "root", "interface": "root.interface.run", "version": 1}
+    assert result["manager"]["caller"] == result["original"]["caller"]
+    assert result["manager"]["arguments"]["positionals"] == [
+        "setup", "child.interface.setup", "root", "root.interface.run", "1"
+    ]
+    assert result["call_path"] == ["root.interface.run", "child.interface.setup"]
+
+
+@pytest.mark.parametrize(
+    ("signal", "expected_code"),
+    [
+        (SetupBlocked(_nested_status("setup_required"), ()), "dispatcher.error"),
+        (SetupBlocked(_nested_status("setup_required"), ("other.interface.run",)), "dispatcher.error"),
+        (SetupBlocked(_nested_status("setup_required"), ("root.interface.run", "not canonical")), "dispatcher.invalid_interface_id"),
+        (SetupBlocked(_nested_status("ready"), ("root.interface.run",)), "dispatcher.error"),
+        (SetupBlocked({"code": "setup_required"}, ("root.interface.run",)), "dispatcher.manager_response_invalid"),
+        (SetupBlocked(_nested_status("setup_required"), ("root.interface.run",) * 33), "dispatcher.error"),
+        (_with_private_field(SetupBlocked(_nested_status("setup_required"), ("root.interface.run",))), "dispatcher.error"),
+        (SetupBlocked({}, ("root.interface.run",), ("child.interface.run", "setup")), "dispatcher.error"),
+        (SetupBlocked(None, ("root.interface.run",), ("child.interface.setup", "invalid")), "dispatcher.error"),
+    ],
+)
+def test_nested_setup_signal_is_strictly_validated_before_exposure(
+    server, monkeypatch: pytest.MonkeyPatch, signal: SetupBlocked, expected_code: str
+) -> None:
+    """Catches malformed private setup transport becoming a public refusal."""
+    _install_authorized_path(server, monkeypatch, [], managed=False)
+    monkeypatch.setattr(
+        server,
+        "_run_resolved_invocation",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(signal),
+    )
+
+    result = server.invoke("root", "root.interface.run", 1, _arguments(server))
+
+    assert result["exit_code"] == 2
+    assert result["dispatcher"]["code"] == expected_code
+    assert "nested-private-secret" not in json.dumps(result)
+
+
+@pytest.mark.parametrize(
+    ("status", "secret"),
+    [
+        (
+            {
+                "schema_version": 1,
+                "code": "setup_required",
+                "root_setup_interface": "root-secret/interface.setup",
+                "pending_stack": [{"interface": "child.interface.setup", "version": 1, "kind": "python", "action": "run-setup"}],
+                "flow_id": None,
+            },
+            "root-secret",
+        ),
+        (
+            {
+                "schema_version": 1,
+                "code": "setup_required",
+                "root_setup_interface": "child.interface.setup",
+                "pending_stack": [{"interface": "pending-secret/interface.setup", "version": 1, "kind": "python", "action": "run-setup"}],
+                "flow_id": None,
+            },
+            "pending-secret",
+        ),
+    ],
+)
+def test_nested_status_interface_ids_are_canonical_before_exposure(
+    server,
+    monkeypatch: pytest.MonkeyPatch,
+    status: dict[str, object],
+    secret: str,
+) -> None:
+    """Catches child-controlled status interface IDs entering MCP output."""
+    _install_authorized_path(server, monkeypatch, [], managed=False)
+    signal = SetupBlocked(status, ("root.interface.run", "child.interface.run"))
+    monkeypatch.setattr(
+        server,
+        "_run_resolved_invocation",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(signal),
+    )
+
+    result = server.invoke("root", "root.interface.run", 1, _arguments(server))
+
+    assert result["exit_code"] == 2
+    assert result["dispatcher"]["code"] == "dispatcher.invalid_interface_id"
+    assert secret not in json.dumps(result)
+
+
 def test_projection_direct_blueprint_failure_is_generic_and_redacted(
     server, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1585,9 +1749,5 @@ def test_setup_flow_id_absent_retains_ordinary_preflight_behavior(
     assert result == {
         "code": "setup_busy",
         "flow_id": "flow-7",
-        "manager": {
-            "interface": "setup-interface-manager._rtx.interface.recover",
-            "version": 1,
-        },
     }
     assert events == ["authorize", "status"]

@@ -28,6 +28,7 @@ from officina.common.repository_paths import (
     repository_relative_posix,
 )
 
+from officina.dispatcher.errors import SetupBlocked
 from .python_machine_interface import (
     PythonMachineInterface,
     PythonProcessTarget,
@@ -63,7 +64,7 @@ class _ConfinedImportError(InterfaceLoadError, ImportError):
 
 def _emit_private_diagnosis(
     writer_token: int | None,
-    entry_id: str,
+    entry_id: str | SetupBlocked,
     **context: object,
 ) -> int:
     """Write one bounded registered diagnosis to an already-owned descriptor."""
@@ -75,11 +76,20 @@ def _emit_private_diagnosis(
 
     try:
         payload = json.dumps(
-            DispatcherError.from_spec(entry_id, **context).as_payload(),
+            {"setup_blocked": entry_id.__dict__} if isinstance(entry_id, SetupBlocked) else DispatcherError.from_spec(entry_id, **context).as_payload(),
             sort_keys=True,
             separators=(",", ":"),
         ).encode("utf-8")
-        os.write(writer, payload)
+        if len(payload) >= 16 * 1024 or isinstance(entry_id, SetupBlocked) and not 1 <= len(entry_id.call_path) <= 32:
+            return 70
+        while payload:
+            written = os.write(writer, payload)
+            if written == 0:
+                return 70
+            payload = payload[written:]
+    except (OSError, RecursionError, TypeError, ValueError) as exc:
+        if not isinstance(entry_id, SetupBlocked) and isinstance(exc, (TypeError, ValueError)):
+            raise
     finally:
         os.close(writer)
     return 70
@@ -1258,6 +1268,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             logical_entrypoint=logical_entrypoint,
         )
         return run_loaded_interface(interface)
+    except SetupBlocked as exc:
+        return reject(exc, "setup blocked")
     except InterfaceLoadError as exc:
         return reject(exc.entry_id, str(exc), **exc.context)
     except Exception as exc:
