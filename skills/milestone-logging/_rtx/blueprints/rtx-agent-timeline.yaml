@@ -14,46 +14,24 @@ gateway:
   path: _timeline_interface.py
 id: milestone-logging._rtx.source.rtx-agent-timeline
 interfaces:
-  milestone-logging._rtx.source.rtx-agent-timeline.interface.timeline:
-    content:
+  milestone-logging._rtx.source.rtx-agent-timeline.interface.show-latest-session:
+    content: &content
     - _timeline_interface\.py
     - _agent_timeline\.py
     uses_interfaces: []
-    contract:
+    contract: &timeline_contract
       arguments:
-        session:
-          description: Session identifier to render; omission selects the most recent session.
-          required: false
-          sensitivity: user-private
-          type: {kind: string, sensitivity: user-private}
-        list:
-          default: false
-          description: List known milestone sessions.
-          required: false
-          sensitivity: public
-          type: {kind: flag}
-        slow:
-          default: 10.0
-          description: Flag timeline gaps at least this many seconds long.
+        slow: &slow
+          description: Optional positive finite seconds threshold that adds slow-gap annotations only; omission adds none.
           required: false
           sensitivity: public
           type: {kind: number}
-        run:
-          description: Durable run identifier to reconstruct instead of a session.
-          required: false
-          sensitivity: user-private
-          type: {kind: string, sensitivity: user-private}
-        json:
-          default: false
-          description: Emit the selected durable-run reconstruction as JSON.
-          required: false
-          sensitivity: public
-          type: {kind: flag}
-      caller_warnings: []
-      direct_io:
+      caller_warnings: &warnings []
+      direct_io: &timeline_io
         network: []
         reads:
-        - access: read
+        - &log_read
+          access: read
           content: milestone logs and durable run journals
           formats: [jsonl]
           id: read-1
@@ -64,7 +42,8 @@ interfaces:
             direct runs use a non-empty ASSISTANT_LOGS or $HOME/.assistant-logs.
           sensitivity: user-private
           system: filesystem
-        - access: read
+        - &claude_read
+          access: read
           content: Claude project and subagent transcripts
           formats: [jsonl, json]
           id: read-2
@@ -75,7 +54,8 @@ interfaces:
             a matching session transcript exists.
           sensitivity: user-private
           system: filesystem
-        - access: read
+        - &codex_read
+          access: read
           content: Codex session rollout transcripts
           formats: [jsonl]
           id: read-3
@@ -87,14 +67,15 @@ interfaces:
           sensitivity: user-private
           system: filesystem
         writes:
-        - access: write
+        - &stdout_write
+          access: write
           content: timeline diagnostic
           formats: [text, json]
           id: write-1
           medium: stdout
           sensitivity: derived-private
           system: agent-runtime
-      execution:
+      execution: &timeline_execution
         consistency:
           snapshot: The report is derived from logs observed while the command runs.
         lifecycle: finite
@@ -102,9 +83,9 @@ interfaces:
         verification:
         - method: output-schema
           output_ref: timeline
-      helpers: []
-      interaction: {mode: unattended}
-      outcomes:
+      helpers: &helpers []
+      interaction: &interaction {mode: unattended}
+      outcomes: &timeline_outcomes
       - caller_action: Use the listed session or rendered timeline diagnostic.
         class: success
         effects: []
@@ -115,7 +96,7 @@ interfaces:
         effects: []
         id: failed
         outputs: [timeline]
-      outputs:
+      outputs: &timeline_outputs
       - audience: both
         cardinality: {minimum: 0, maximum: 1}
         description: Timeline, session list, or durable-run reconstruction.
@@ -126,23 +107,53 @@ interfaces:
         pagination: {kind: none}
         truncation: {kind: none}
         type: {kind: string, sensitivity: derived-private}
-      preconditions: []
-    description: List milestone sessions, render one session with its transcript events, or reconstruct one durable run as text or JSON.
+      preconditions: &preconditions []
+    description: Render the latest session and all retained typed metadata; optional slow adds annotations only.
     process_binding:
-      entry: Interface
+      entry: ShowLatestSession
       kind: process
       patterns:
-      - name: timeline
+      - name: show-latest-session
         min_positionals: 0
-        max_positionals: 1
+        max_positionals: 0
         allow_stdin: false
-        notes: Session mode accepts an optional SESSION, list mode enumerates known
-          sessions, and run mode uses --run ID; --json applies only to run mode.
-        allowed_flags: [--help, -h, -l, --list, --slow, --run, --json]
-        flag_patterns:
-          --slow: '(?s).*'
-          --run: '(?s).*'
-    usage: '[SESSION] [-l|--list] [--slow SECONDS] [--run ID] [--json]'
+        notes: Omitting --slow adds no annotations; a positive finite value adds annotations without changing selection.
+        allowed_flags: &slow_flags [--help, -h, --slow]
+        flag_patterns: &slow_patterns
+          --slow: '^(?=.*[1-9])(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)$'
+    usage: '[--slow SECONDS]'
+    version: 1
+  milestone-logging._rtx.source.rtx-agent-timeline.interface.list-sessions:
+    content: *content
+    uses_interfaces: []
+    contract: {arguments: {}, caller_warnings: *warnings, direct_io: &log_io {network: [], reads: [*log_read], writes: [*stdout_write]}, execution: *timeline_execution, helpers: *helpers, interaction: *interaction, outcomes: *timeline_outcomes, outputs: *timeline_outputs, preconditions: *preconditions}
+    description: List known milestone sessions and label counts as log files.
+    process_binding: {entry: ListSessions, kind: process, patterns: [{name: list-sessions, min_positionals: 0, max_positionals: 0, allow_stdin: false}]}
+    usage: ''
+    version: 1
+  milestone-logging._rtx.source.rtx-agent-timeline.interface.show-session:
+    content: *content
+    uses_interfaces: []
+    contract: {arguments: {session: &session {description: Exact session identifier to render., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}, slow: *slow}, caller_warnings: *warnings, direct_io: *timeline_io, execution: *timeline_execution, helpers: *helpers, interaction: *interaction, outcomes: *timeline_outcomes, outputs: *timeline_outputs, preconditions: *preconditions}
+    description: Render one exact session and retained typed metadata; optional slow adds annotations only.
+    process_binding: {entry: ShowSession, kind: process, patterns: [{name: show-session, min_positionals: 1, max_positionals: 1, allow_stdin: false, allowed_flags: *slow_flags, flag_patterns: *slow_patterns}]}
+    usage: 'SESSION [--slow SECONDS]'
+    version: 1
+  milestone-logging._rtx.source.rtx-agent-timeline.interface.show-run:
+    content: *content
+    uses_interfaces: []
+    contract: {arguments: {run: &run {description: Safe durable run identifier to reconstruct., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}}, caller_warnings: *warnings, direct_io: *log_io, execution: *timeline_execution, helpers: *helpers, interaction: *interaction, outcomes: *timeline_outcomes, outputs: *timeline_outputs, preconditions: *preconditions}
+    description: Render one durable run as text with all retained typed metadata.
+    process_binding: {entry: ShowRun, kind: process, patterns: [{name: show-run, min_positionals: 1, max_positionals: 1, allow_stdin: false, positional_patterns: {'0': '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'}}]}
+    usage: RUN
+    version: 1
+  milestone-logging._rtx.source.rtx-agent-timeline.interface.read-run-json:
+    content: *content
+    uses_interfaces: []
+    contract: {arguments: {run: *run}, caller_warnings: *warnings, direct_io: *log_io, execution: *timeline_execution, helpers: *helpers, interaction: *interaction, outcomes: *timeline_outcomes, outputs: *timeline_outputs, preconditions: *preconditions}
+    description: Return one durable run as structured JSON with all retained typed metadata.
+    process_binding: {entry: ReadRunJson, kind: process, patterns: [{name: read-run-json, min_positionals: 1, max_positionals: 1, allow_stdin: false, positional_patterns: {'0': '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'}}]}
+    usage: RUN
     version: 1
 node_type: behavioral_source
 platform_support: {linux: true, macos: true, windows: true}

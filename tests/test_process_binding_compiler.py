@@ -281,7 +281,7 @@ def test_v4_raw_argv_rejected_when_no_authored_pattern_matches() -> None:
         ]
     )
 
-    with pytest.raises(ProcessBindingError, match="does not match any declared pattern"):
+    with pytest.raises(ProcessBindingError, match="unknown option --bogus"):
         parse_caller_invocation(
             export, ["compute-hashes", "--bogus"], stdin_requested=False
         )
@@ -428,7 +428,7 @@ def test_v4_authored_argv_pattern_preserves_unmatched_predecessor_cases(
 
     with pytest.raises(
         ProcessBindingError,
-        match="invocation does not match any declared pattern",
+        match="does not match any declared pattern|unknown option --unknown|invalid value for --output",
     ):
         select_authored_argv_pattern(
             patterns,

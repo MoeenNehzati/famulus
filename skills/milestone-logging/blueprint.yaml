@@ -36,17 +36,25 @@ namespace_exports:
       - milestone-logging
     surface:
       only:
-        milestone-logging._rtx.interface.record: 1
-        milestone-logging._rtx.interface.timeline: 1
+        milestone-logging._rtx.interface.record-progress: 1
+        milestone-logging._rtx.interface.record-completion: 1
+        milestone-logging._rtx.interface.session-path: 1
+        milestone-logging._rtx.interface.run-path: 1
+        milestone-logging._rtx.interface.list-sessions: 1
+        milestone-logging._rtx.interface.show-latest-session: 1
+        milestone-logging._rtx.interface.show-session: 1
+        milestone-logging._rtx.interface.show-run: 1
+        milestone-logging._rtx.interface.read-run-json: 1
     interface_access:
-      milestone-logging._rtx.interface.record:
-        allow_all_modules: false
-        allowed_callers:
-        - milestone-logging
-      milestone-logging._rtx.interface.timeline:
-        allow_all_modules: false
-        allowed_callers:
-        - milestone-logging
+      milestone-logging._rtx.interface.record-progress: &private {allow_all_modules: false, allowed_callers: [milestone-logging]}
+      milestone-logging._rtx.interface.record-completion: *private
+      milestone-logging._rtx.interface.session-path: *private
+      milestone-logging._rtx.interface.run-path: *private
+      milestone-logging._rtx.interface.list-sessions: *private
+      milestone-logging._rtx.interface.show-latest-session: *private
+      milestone-logging._rtx.interface.show-session: *private
+      milestone-logging._rtx.interface.show-run: *private
+      milestone-logging._rtx.interface.read-run-json: *private
 node_type: module
 schema_version: 6
 sources:

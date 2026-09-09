@@ -452,7 +452,7 @@ def test_unmanaged_pending_mcp_call_skips_manager_and_launches_original_once(
     server.configure_plugin_persistence()
 
     secret = "pending-boundary-secret"
-    target = "milestone-logging._rtx.interface.record"
+    target = "milestone-logging._rtx.interface.record-progress"
     original_arguments = server.CompactArguments(
         positionals=[f"record {secret}"],
         options={"--role": f"acceptance-{secret}"},

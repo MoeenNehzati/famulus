@@ -4763,10 +4763,31 @@
         "applies": false
       },
       "interfaces": {
-        "milestone-logging._rtx.interface.record": {
+        "milestone-logging._rtx.interface.list-sessions": {
           "dependencies": []
         },
-        "milestone-logging._rtx.interface.timeline": {
+        "milestone-logging._rtx.interface.read-run-json": {
+          "dependencies": []
+        },
+        "milestone-logging._rtx.interface.record-completion": {
+          "dependencies": []
+        },
+        "milestone-logging._rtx.interface.record-progress": {
+          "dependencies": []
+        },
+        "milestone-logging._rtx.interface.run-path": {
+          "dependencies": []
+        },
+        "milestone-logging._rtx.interface.session-path": {
+          "dependencies": []
+        },
+        "milestone-logging._rtx.interface.show-latest-session": {
+          "dependencies": []
+        },
+        "milestone-logging._rtx.interface.show-run": {
+          "dependencies": []
+        },
+        "milestone-logging._rtx.interface.show-session": {
           "dependencies": []
         }
       }
