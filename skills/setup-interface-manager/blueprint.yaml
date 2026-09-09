@@ -35,6 +35,7 @@ namespace_exports:
         setup-interface-manager._rtx.interface.invalidate: 1
         setup-interface-manager._rtx.interface.teardown-all: 1
         setup-interface-manager._rtx.interface.recover: 1
+        setup-interface-manager._rtx.interface.recover-busy: 1
     interface_access:
       setup-interface-manager._rtx.interface.status: {allow_all_modules: true, allowed_callers: []}
       setup-interface-manager._rtx.interface.authorize: {allow_all_modules: true, allowed_callers: []}
@@ -46,6 +47,7 @@ namespace_exports:
       setup-interface-manager._rtx.interface.invalidate: {allow_all_modules: true, allowed_callers: []}
       setup-interface-manager._rtx.interface.teardown-all: {allow_all_modules: true, allowed_callers: []}
       setup-interface-manager._rtx.interface.recover: {allow_all_modules: true, allowed_callers: []}
+      setup-interface-manager._rtx.interface.recover-busy: {allow_all_modules: true, allowed_callers: []}
 node_type: module
 schema_version: 6
 sources:

@@ -56,6 +56,7 @@ from ._setup_evaluation import (
 from ._setup_state import (
     ActiveFlow,
     ContinuationIdentity,
+    FlowOwner,
     FlowConflict,
     LedgerConflict,
     LedgerCapabilityError,
@@ -231,6 +232,8 @@ SETUP_ERROR_SPECS: Mapping[str, SetupErrorSpec] = MappingProxyType({
     "E52": SetupErrorSpec("setup.settlement_failed", "The setup manager could not record settlement after the current step was submitted as complete.", allowed_setup_causes=_SETTLEMENT_CAUSES),
     "E53": SetupErrorSpec("setup.verifier_dispatch_failed", "The verifier dispatch failed; the managed step's completion is unknown.", allow_dispatcher_cause=True),
     "E54": SetupErrorSpec("setup.verifier_result_invalid", "The verifier dispatch returned an invalid process result; the managed step's completion is unknown."),
+    "E55": SetupErrorSpec("setup.owner_active", "The setup owner process still appears active."),
+    "E56": SetupErrorSpec("setup.owner_unknown", "The active setup flow has no process owner metadata."),
 })
 
 
@@ -501,7 +504,7 @@ class SetupManager:
         if (
             flow != expected_flow
             or step != expected_step
-            or ledger.schema_version != 2
+            or ledger.schema_version < 2
             or not flow.owner_verified
             or flow.continuation is None
             or not self._immediate_caller
@@ -833,7 +836,9 @@ class SetupManager:
             if next_flow is None or not isinstance(next_step, TeardownStep):
                 raise ManagerRecoveryError("global teardown advanced without persisted state")
             flow, step = next_flow, next_step
-    def teardown_all(self) -> tuple[int, dict[str, object]]:
+    def teardown_all(
+        self, flow_id: str | None = None, owner: FlowOwner | None = None
+    ) -> tuple[int, dict[str, object]]:
         flow: ActiveFlow | None = None
         step: TeardownStep | None = None
         try:
@@ -852,7 +857,10 @@ class SetupManager:
                 if binding.arguments:
                     raise SetupFailure("E50")
             step = plan[0]
-            flow = ActiveFlow(self._new_flow_id(), "teardown-all", None, step.setup_interface, (), None)
+            flow = ActiveFlow(
+                flow_id or self._new_flow_id(), "teardown-all", None,
+                step.setup_interface, (), None, owner=owner,
+            )
             def start(current: SetupLedger) -> SetupLedger:
                 if current.active_flow is not None or teardown_all_plan(self.graph, current) != plan:
                     raise FlowConflict("managed teardown changed before the flow began")
@@ -882,16 +890,28 @@ class SetupManager:
             )
     def status(self, target_interface: str) -> tuple[int, dict[str, object]]:
         try:
-            result = evaluate_target(self.graph, target_interface, self.store.read())
-            return 0, {
+            ledger = self.store.read()
+            result = evaluate_target(self.graph, target_interface, ledger)
+            flow = ledger.active_flow if result.code == "setup_busy" else None
+            payload: dict[str, object] = {
                 "schema_version": SCHEMA_VERSION,
                 "code": result.code,
-                "root_setup_interface": result.root_setup_interface,
+                "root_setup_interface": (
+                    result.root_setup_interface if flow is None else flow.root or flow.current_step
+                ),
                 "pending_stack": [
                     _step_payload(step) for step in result.pending_stack
                 ],
                 "flow_id": result.flow_id,
             }
+            if flow is not None:
+                payload["current_step"] = flow.current_step
+                payload["owner"] = None if flow.owner is None else {
+                    "host": flow.owner.host,
+                    "pid": flow.owner.pid,
+                    "started_at": flow.owner.started_at,
+                }
+            return 0, payload
         except FlowConflict:
             return self._domain_failure("status", "E10")
         except LedgerError as exc:
@@ -948,6 +968,8 @@ class SetupManager:
         original_caller: str,
         original_interface: str,
         original_version: int,
+        flow_id: str | None = None,
+        owner: FlowOwner | None = None,
     ) -> tuple[int, dict[str, object]]:
         original = ContinuationIdentity(
             original_caller, original_interface, original_version
@@ -1005,7 +1027,7 @@ class SetupManager:
                 verified_steps = ()
             self._binding(step.setup_interface)
             flow = ActiveFlow(
-                flow_id=self._new_flow_id(),
+                flow_id=flow_id or self._new_flow_id(),
                 operation=operation,  # type: ignore[arg-type]
                 root=root_setup_interface,
                 current_step=step.setup_interface,
@@ -1015,6 +1037,7 @@ class SetupManager:
                     self._immediate_caller
                     and self._immediate_caller == original_caller
                 ),
+                owner=owner,
             )
 
             def start(current: SetupLedger) -> SetupLedger:
@@ -1286,7 +1309,9 @@ class SetupManager:
         except LedgerError as exc:
             return self._domain_failure("invalidate", exc)
 
-    def recover(self, flow_id: str, action: str) -> tuple[int, dict[str, object]]:
+    def recover(
+        self, flow_id: str, action: str, *, bypass_owner: bool = False
+    ) -> tuple[int, dict[str, object]]:
         flow: ActiveFlow | None = None
         step: SetupStep | TeardownStep | None = None
         cancellation_failure: str | None = None
@@ -1295,8 +1320,8 @@ class SetupManager:
             flow, step, binding = self._flow_step(ledger)
             if flow.flow_id != flow_id:
                 raise SetupFailure("E25")
-            if (
-                ledger.schema_version != 2
+            if not bypass_owner and (
+                ledger.schema_version < 2
                 or not flow.owner_verified
                 or flow.continuation is None
                 or not self._immediate_caller
@@ -1384,13 +1409,15 @@ class SetupManager:
                         "active flow changed before cancellation", entry_id="E36"
                     ) from exc
                 if (
-                    current.schema_version != 2
+                    current.schema_version < 2
                     or active != flow
                     or live_step != step
-                    or not active.owner_verified
-                    or active.continuation is None
-                    or not self._immediate_caller
-                    or self._immediate_caller != active.continuation.caller
+                    or not bypass_owner and (
+                        not active.owner_verified
+                        or active.continuation is None
+                        or not self._immediate_caller
+                        or self._immediate_caller != active.continuation.caller
+                    )
                 ):
                     raise FlowConflict(
                         "active flow changed before cancellation", entry_id="E36"
@@ -1471,6 +1498,34 @@ class SetupManager:
                 step=step,
                 original=None if flow is None else flow.continuation,
             )
+
+    def recover_busy(
+        self, flow_id: str, *, force: bool = False
+    ) -> tuple[int, dict[str, object]]:
+        try:
+            flow, _step, _binding = self._flow_step(self.store.read())
+            if flow.flow_id != flow_id:
+                raise SetupFailure("E25")
+            if not force and flow.owner is None:
+                raise SetupFailure("E56")
+            if force:
+                code, payload = self.recover(flow_id, "cancel", bypass_owner=True)
+                payload["forced"] = True
+                return code, payload
+            path = self.store.flow_lock_path(flow_id)
+            try:
+                with atomic_files.exclusive_file_lock(
+                    path, allowed_root=Path(path.anchor), mode=0o600, blocking=False
+                ):
+                    return self.recover(flow_id, "cancel", bypass_owner=True)
+            except atomic_files.AtomicLockUnavailable:
+                raise SetupFailure("E55") from None
+        except SetupFailure as exc:
+            return self._domain_failure("recover-busy", exc)
+        except LedgerError as exc:
+            return self._domain_failure("recover-busy", exc)
+        except atomic_files.AtomicWriteError:
+            return self._domain_failure("recover-busy", "E20")
 
 
 class _StrictParser(argparse.ArgumentParser):
@@ -1688,15 +1743,27 @@ class BeginInterface(_ManagerInterface):
         parser.add_argument("original_caller")
         parser.add_argument("original_interface")
         parser.add_argument("original_version", type=_positive_version)
+        parser.add_argument("flow_id", nargs="?")
+        parser.add_argument("owner_host", nargs="?")
+        parser.add_argument("owner_pid", nargs="?", type=_positive_version)
+        parser.add_argument("owner_started_at", nargs="?")
         return parser
 
     def invoke(self, controller: SetupManager, args: argparse.Namespace):
+        values = (args.flow_id, args.owner_host, args.owner_pid, args.owner_started_at)
+        if any(value is not None for value in values) and any(value is None for value in values):
+            raise ManagerUsageError("begin owner metadata must be complete")
+        owner = None if args.flow_id is None else FlowOwner(
+            args.owner_host, args.owner_pid, args.owner_started_at
+        )
         return controller.begin(
             args.operation,
             args.root_setup,
             args.original_caller,
             args.original_interface,
             args.original_version,
+            args.flow_id,
+            owner,
         )
 
 
@@ -1754,8 +1821,22 @@ class InvalidateInterface(_ManagerInterface):
 class TeardownAllInterface(_ManagerInterface):
     operation = "teardown-all"
 
+    def build_parser(self) -> argparse.ArgumentParser:
+        parser = super().build_parser()
+        parser.add_argument("flow_id", nargs="?")
+        parser.add_argument("owner_host", nargs="?")
+        parser.add_argument("owner_pid", nargs="?", type=_positive_version)
+        parser.add_argument("owner_started_at", nargs="?")
+        return parser
+
     def invoke(self, controller: SetupManager, args: argparse.Namespace):
-        return controller.teardown_all()
+        values = (args.flow_id, args.owner_host, args.owner_pid, args.owner_started_at)
+        if any(value is not None for value in values) and any(value is None for value in values):
+            raise ManagerUsageError("teardown-all owner metadata must be complete")
+        owner = None if args.flow_id is None else FlowOwner(
+            args.owner_host, args.owner_pid, args.owner_started_at
+        )
+        return controller.teardown_all(args.flow_id, owner)
 
 
 class RecoverInterface(_ManagerInterface):
@@ -1769,6 +1850,19 @@ class RecoverInterface(_ManagerInterface):
 
     def invoke(self, controller: SetupManager, args: argparse.Namespace):
         return controller.recover(args.flow_id, args.action)
+
+
+class RecoverBusyInterface(_ManagerInterface):
+    operation = "recover-busy"
+
+    def build_parser(self) -> argparse.ArgumentParser:
+        parser = super().build_parser()
+        parser.add_argument("flow_id")
+        parser.add_argument("--force", action="store_true")
+        return parser
+
+    def invoke(self, controller: SetupManager, args: argparse.Namespace):
+        return controller.recover_busy(args.flow_id, force=args.force)
 
 
 class AuthorizeMarkdownCallInterface(_ManagerInterface):

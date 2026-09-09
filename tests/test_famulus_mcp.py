@@ -21,6 +21,7 @@ from urllib.request import urlopen
 import pytest
 
 from officina.common.famulus_paths import resolve_famulus_paths
+from officina.common import atomic_files
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -235,6 +236,28 @@ def test_launcher_formats_unexpected_startup_failure(
 def server():
     """Load the immutable in-process MCP module once per isolation domain."""
     return _load_server()
+
+
+def test_flow_lease_is_held_until_dispatcher_releases_it(
+    server, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    plugin_data = tmp_path / "plugin-data"
+    plugin_data.mkdir()
+    monkeypatch.setenv("FAMULUS_HOST", "codex")
+    monkeypatch.setenv("FAMULUS_PLUGIN_DATA", str(plugin_data))
+    server._release_flow_lease("flow-1")
+    server._acquire_flow_lease("flow-1")
+    path, root = server._flow_lease_path("flow-1")
+    with pytest.raises(atomic_files.AtomicLockUnavailable):
+        with atomic_files.exclusive_file_lock(
+            path, allowed_root=root, mode=0o600, blocking=False
+        ):
+            pass
+    server._release_flow_lease("flow-1")
+    with atomic_files.exclusive_file_lock(
+        path, allowed_root=root, mode=0o600, blocking=False
+    ):
+        pass
 
 
 def _arguments(server, payload: dict[str, object]):

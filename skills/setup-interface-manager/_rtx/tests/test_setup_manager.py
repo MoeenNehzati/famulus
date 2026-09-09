@@ -323,7 +323,7 @@ def test_setup_error_registry_is_closed_and_catalogue_exact() -> None:
         "E26", "E27", "E28", "E29", "E30", "E31", "E32", "E33", "E34",
         "E35", "E35a", "E36", "E37", "E38", "E39", "E40", "E41", "E42",
         "E44", "E45", "E46", "E47", "E48", "E49", "E50", "E51", "E52",
-        "E53", "E54",
+        "E53", "E54", "E55", "E56",
     }
     assert set(manager.SETUP_ERROR_SPECS) == expected
     assert manager.SETUP_ERROR_SPECS["E37"].message == (
@@ -1867,6 +1867,48 @@ def test_teardown_all_interface_is_exact_zero_argument_adapter(tmp_path: Path, c
     assert run_python_machine_interface(interface, ["unexpected"]) == 64
 
 
+def test_recover_busy_guards_live_owner_and_force_clears_exact_flow(tmp_path: Path) -> None:
+    item = _managed_no_verifier("busy")
+    controller = _controller(tmp_path, _graph(item), DispatchHarness(), _no_verifier_binding("busy"))
+    owner = state.FlowOwner("codex", 1234, "2026-09-09T12:00:00Z")
+    assert controller.begin(
+        "setup", item.setup_interface, "original-caller", "busy.interface.run", 1,
+        "flow-1", owner,
+    )[0] == 0
+    busy = controller.status("busy.interface.run")[1]
+    assert busy["current_step"] == item.setup_interface and busy["owner"]["pid"] == 1234
+    assert controller.recover_busy("flow-2")[1]["error_code"] == "setup.flow_mismatch"
+
+    lock_path = controller.store.flow_lock_path("flow-1")
+    with atomic_files.exclusive_file_lock(
+        lock_path, allowed_root=Path(lock_path.anchor), mode=0o600, blocking=False
+    ):
+        assert controller.recover_busy("flow-1")[1]["error_code"] == "setup.owner_active"
+        code, forced = controller.recover_busy("flow-1", force=True)
+        assert code == 0 and forced["forced"] is True
+        assert controller.settle("flow-1", item.setup_interface)[1]["error_code"] == "setup.flow_not_found"
+        assert controller.begin(
+            "setup", item.setup_interface, "original-caller", "busy.interface.run", 1,
+            "flow-2", owner,
+        )[1]["flow_id"] == "flow-2"
+
+
+def test_recover_busy_clears_free_owner_but_legacy_requires_force(tmp_path: Path) -> None:
+    item = _managed_no_verifier("stale")
+    controller = _controller(tmp_path, _graph(item), DispatchHarness(), _no_verifier_binding("stale"))
+    controller.begin("setup", item.setup_interface, "original-caller", "stale.interface.run", 1)
+    assert controller.recover_busy("flow-1")[1]["error_code"] == "setup.owner_unknown"
+    assert controller.recover_busy("flow-1", force=True)[0] == 0
+
+    owner = state.FlowOwner("claude", 5678, "2026-09-09T12:00:00Z")
+    controller.begin(
+        "setup", item.setup_interface, "original-caller", "stale.interface.run", 1,
+        "flow-2", owner,
+    )
+    code, cleared = controller.recover_busy("flow-2")
+    assert code == 0 and cleared["state"] == "ready"
+
+
 def _managed_no_verifier(stem: str, *, kind: str = "python") -> ManagedSetup:
     """Create a managed setup without verifiers."""
     return ManagedSetup(
@@ -2339,6 +2381,7 @@ def test_registered_manager_is_hidden_and_only_workflow_activated() -> None:
         "setup-interface-manager._rtx.interface.invalidate",
         "setup-interface-manager._rtx.interface.teardown-all",
         "setup-interface-manager._rtx.interface.recover",
+        "setup-interface-manager._rtx.interface.recover-busy",
     }
     assert "setup-interface-manager._rtx" in graph.exports[
         "common.interface.atomic-files"

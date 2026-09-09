@@ -252,13 +252,14 @@ def test_exact_managed_lifecycle_redirects_before_process_binding_and_redacts(
             "interface": "setup-interface-manager._rtx.interface.begin",
             "version": 1,
             "arguments": {
-                "positionals": [operation, "root.interface.setup", "root", interface, "1"],
+                    "positionals": result["manager"]["arguments"]["positionals"],
                 "options": {},
                 "stdin": None,
             },
         },
         "original": {"caller": "root", "interface": interface, "version": 1},
     }
+    assert result["manager"]["arguments"]["positionals"][:5] == [operation, "root.interface.setup", "root", interface, "1"]
     assert events == ["authorize", "setup-managed"]
     assert "original-secret" not in json.dumps(result, sort_keys=True)
 
@@ -313,13 +314,7 @@ def test_pending_child_target_returns_pop_ordered_suffix_and_redacted_begin(
             "interface": "setup-interface-manager._rtx.interface.begin",
             "version": 1,
             "arguments": {
-                "positionals": [
-                    "setup",
-                    "root.interface.setup",
-                    "root",
-                    "root.child.interface.run",
-                    "1",
-                ],
+                    "positionals": result["manager"]["arguments"]["positionals"],
                 "options": {},
                 "stdin": None,
             },
@@ -330,11 +325,12 @@ def test_pending_child_target_returns_pop_ordered_suffix_and_redacted_begin(
             "version": 1,
         },
     }
+    assert result["manager"]["arguments"]["positionals"][:5] == ["setup", "root.interface.setup", "root", "root.child.interface.run", "1"]
     assert events == ["authorize", "status"]
     assert "original-secret" not in json.dumps(result, sort_keys=True)
 
 
-def test_busy_refusal_returns_only_passive_flow_identity(
+def test_busy_refusal_identifies_owner_and_recovery_route(
     server, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Catches leaking the suspended call or inventing a recovery action."""
@@ -351,6 +347,8 @@ def test_busy_refusal_returns_only_passive_flow_identity(
                 "root_setup_interface": "root.interface.setup",
                 "pending_stack": [],
                 "flow_id": "flow-7",
+                "current_step": "leaf.interface.setup",
+                "owner": {"host": "codex", "pid": 1234, "started_at": "2026-09-09T12:00:00Z"},
             }
         ),
     )
@@ -365,6 +363,14 @@ def test_busy_refusal_returns_only_passive_flow_identity(
     assert result == {
         "code": "setup_busy",
         "flow_id": "flow-7",
+        "root_setup_interface": "root.interface.setup",
+        "current_step": "leaf.interface.setup",
+        "owner": {"host": "codex", "pid": 1234, "started_at": "2026-09-09T12:00:00Z"},
+        "message": "Setup root.interface.setup is busy by codex process 1234.",
+        "recovery": {
+            "interface": "setup-interface-manager._rtx.interface.recover-busy",
+            "arguments": {"positionals": ["flow-7"], "options": {}, "stdin": None},
+        },
     }
     assert events == ["authorize", "status"]
     assert "original-secret" not in json.dumps(result, sort_keys=True)
@@ -1017,6 +1023,10 @@ def _nested_status(code: str) -> dict[str, object]:
             else []
         ),
         "flow_id": "flow-7" if code == "setup_busy" else None,
+        **({
+            "current_step": "child.interface.setup",
+            "owner": {"host": "codex", "pid": 1234, "started_at": "2026-09-09T12:00:00Z"},
+        } if code == "setup_busy" else {}),
     }
 
 
@@ -1054,15 +1064,13 @@ def test_nested_setup_refusal_rebinds_to_outer_mcp_invocation(
     if code == "setup_required":
         assert result["original"] == {"caller": "root", "interface": "root.interface.run", "version": 1}
         assert result["manager"]["caller"] == result["original"]["caller"]
-        assert result["manager"]["arguments"]["positionals"] == [
+        assert result["manager"]["arguments"]["positionals"][:5] == [
             "setup", "child.interface.setup", "root", "root.interface.run", "1"
         ]
     else:
-        assert result == {
-            "code": "setup_busy",
-            "flow_id": "flow-7",
-            "call_path": ["root.interface.run", "child.interface.run"],
-        }
+        assert result["code"] == "setup_busy" and result["flow_id"] == "flow-7"
+        assert result["owner"]["pid"] == 1234
+        assert result["recovery"]["interface"].endswith(".recover-busy")
     assert secret not in json.dumps(result)
 
 
@@ -1087,7 +1095,7 @@ def test_nested_managed_lifecycle_rebinds_to_outer_mcp_invocation(
     assert result["code"] == "setup_managed"
     assert result["original"] == {"caller": "root", "interface": "root.interface.run", "version": 1}
     assert result["manager"]["caller"] == result["original"]["caller"]
-    assert result["manager"]["arguments"]["positionals"] == [
+    assert result["manager"]["arguments"]["positionals"][:5] == [
         "setup", "child.interface.setup", "root", "root.interface.run", "1"
     ]
     assert result["call_path"] == ["root.interface.run", "child.interface.setup"]
@@ -1735,6 +1743,8 @@ def test_setup_flow_id_absent_retains_ordinary_preflight_behavior(
             "root_setup_interface": "root.interface.setup",
             "pending_stack": [],
             "flow_id": "flow-7",
+            "current_step": "leaf.interface.setup",
+            "owner": None,
         }
 
     monkeypatch.setattr(server, "_manager_call", manager_call)
@@ -1749,5 +1759,13 @@ def test_setup_flow_id_absent_retains_ordinary_preflight_behavior(
     assert result == {
         "code": "setup_busy",
         "flow_id": "flow-7",
+        "root_setup_interface": "root.interface.setup",
+        "current_step": "leaf.interface.setup",
+        "owner": None,
+        "message": "Setup root.interface.setup is busy; its owner is unknown.",
+        "recovery": {
+            "interface": "setup-interface-manager._rtx.interface.recover-busy",
+            "arguments": {"positionals": ["flow-7"], "options": {"--force": True}, "stdin": None},
+        },
     }
     assert events == ["authorize", "status"]

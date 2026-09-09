@@ -5,8 +5,12 @@ import os
 import re
 import sys
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from hashlib import sha256
 from pathlib import Path
+from threading import Lock
 from typing import Any, Literal
+from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parent
 CONTRACT = json.loads((ROOT / "mcp-core.json").read_text(encoding="utf-8"))
@@ -37,6 +41,7 @@ from officina.dispatcher.errors import (
 )
 from officina.blueprints.graph import BlueprintGraphError
 from officina.common.famulus_paths import resolve_famulus_paths
+from officina.common.atomic_files import ensure_private_directory, exclusive_file_lock
 
 
 MANAGER_MODULE = "setup-interface-manager"
@@ -47,7 +52,12 @@ MANAGER_INTERFACES = {
     "authorize-markdown-call": "setup-interface-manager._rtx.interface.authorize-markdown-call",
     "begin": "setup-interface-manager._rtx.interface.begin",
     "recover": "setup-interface-manager._rtx.interface.recover",
+    "recover-busy": "setup-interface-manager._rtx.interface.recover-busy",
 }
+
+_PROCESS_STARTED_AT = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+_FLOW_LEASES: dict[str, Any] = {}
+_FLOW_LEASE_GUARD = Lock()
 
 _STATUS_CODES = frozenset({"unmanaged", "ready", "setup_required", "setup_busy"})
 _FLOW_SUCCESS_STATES = frozenset("ready run-step awaiting-settlement authorized-markdown-call".split())
@@ -95,6 +105,8 @@ _SETUP_ERROR_MESSAGES = {
     "setup.dispatch_declaration_invalid": {"The managed setup runtime dispatch declaration is inconsistent."},
     "setup.continuation_caller_mismatch": {"The runtime caller does not match the continuation caller supplied to `begin`."},
     "setup.recovery_owner_unverified": {"The active flow has no verified owner for ordinary recovery."},
+    "setup.owner_active": {"The setup owner process still appears active."},
+    "setup.owner_unknown": {"The active setup flow has no process owner metadata."},
     "setup.teardown_all_binding_invalid": {"Global teardown cannot process a managed binding that declares arguments."},
     "setup.verifier_dispatch_failed": {"The verifier dispatch failed; the managed step's completion is unknown."},
     "setup.verifier_result_invalid": {"The verifier dispatch returned an invalid process result; the managed step's completion is unknown."},
@@ -307,9 +319,39 @@ def _manager_route(operation: str, positionals: list[str]) -> dict[str, object]:
 def _begin_route(
     operation: str, root: str, caller: str, interface: str, version: int
 ) -> dict[str, object]:
+    flow_id = str(uuid4())
     return _manager_route(
-        "begin", [operation, root, caller, interface, str(version)]
+        "begin", [
+            operation, root, caller, interface, str(version), flow_id,
+            os.environ.get("FAMULUS_HOST", "unknown"), str(os.getpid()),
+            _PROCESS_STARTED_AT,
+        ]
     ) | {"caller": caller}
+
+
+def _flow_lease_path(flow_id: str) -> tuple[Path, Path]:
+    paths = resolve_famulus_paths(platform=sys.platform, home=Path.home(), environ=os.environ)
+    if paths.plugin_data is None or paths.setup_status is None:
+        raise DispatcherError.from_spec("D51")
+    ensure_private_directory(paths.setup_status.parent, allowed_root=paths.plugin_data)
+    return paths.setup_status.with_name(f".{paths.setup_status.name}.{sha256(flow_id.encode()).hexdigest()}.setup.lock"), paths.plugin_data
+
+
+def _acquire_flow_lease(flow_id: str) -> None:
+    with _FLOW_LEASE_GUARD:
+        if flow_id in _FLOW_LEASES:
+            return
+        path, root = _flow_lease_path(flow_id)
+        lease = exclusive_file_lock(path, allowed_root=root, mode=0o600, blocking=False)
+        lease.__enter__()
+        _FLOW_LEASES[flow_id] = lease
+
+
+def _release_flow_lease(flow_id: str) -> None:
+    with _FLOW_LEASE_GUARD:
+        lease = _FLOW_LEASES.pop(flow_id, None)
+    if lease is not None:
+        lease.__exit__(None, None, None)
 
 
 def _setup_managed(
@@ -369,7 +411,7 @@ def _validate_manager_response(
         raise invalid()
     if "code" in payload:
         required = {"schema_version", "code", "root_setup_interface", "pending_stack", "flow_id"}
-        if operation != "status" or set(payload) != required or returncode != 0:
+        if operation != "status" or not required.issubset(payload) or set(payload) - required - {"current_step", "owner"} or returncode != 0:
             raise invalid()
         try:
             payload["pending_stack"] = _safe_pending_stack(payload["pending_stack"])
@@ -396,7 +438,15 @@ def _validate_manager_response(
         if code == "setup_busy":
             if not isinstance(flow_id, str):
                 raise DispatcherError.from_spec("D62")
-            if payload["pending_stack"]:
+            current_step, owner = payload.get("current_step"), payload.get("owner")
+            if payload["pending_stack"] or not isinstance(current_step, str) or not current_step:
+                raise invalid()
+            if owner is not None and (
+                not isinstance(owner, dict) or set(owner) != {"host", "pid", "started_at"}
+                or not isinstance(owner["host"], str) or not owner["host"]
+                or isinstance(owner["pid"], bool) or not isinstance(owner["pid"], int) or owner["pid"] < 1
+                or not isinstance(owner["started_at"], str) or not owner["started_at"].endswith("Z")
+            ):
                 raise invalid()
         elif code != "setup_required" and (payload["pending_stack"] or flow_id is not None):
             raise invalid()
@@ -661,10 +711,25 @@ def _ordinary_preflight(
             "original": _original(caller, interface, version),
         }
     if code == "setup_busy":
-        flow_id = status["flow_id"]
+        flow_id, root = status["flow_id"], status["root_setup_interface"]
+        owner = status.get("owner")
+        if owner is None:
+            message = f"Setup {root} is busy; its owner is unknown."
+            options: dict[str, object] = {"--force": True}
+        else:
+            message = f"Setup {root} is busy by {owner['host']} process {owner['pid']}."
+            options = {}
         return {
             "code": "setup_busy",
             "flow_id": flow_id,
+            "root_setup_interface": root,
+            "current_step": status["current_step"],
+            "owner": owner,
+            "message": message,
+            "recovery": {
+                "interface": MANAGER_INTERFACES["recover-busy"],
+                "arguments": {"positionals": [flow_id], "options": options, "stdin": None},
+            },
         }
     raise DispatcherError.from_spec("D63")
 
@@ -683,29 +748,52 @@ def invoke(
             raise DispatcherError.from_spec("D65")
 
         if dry_run or interface.startswith(MANAGER_PREFIX):
-            with resolve_dispatch(
-                caller_skill=caller,
-                target=interface,
-                target_version=version,
-                args=caller_argv(arguments),
-                stdin_requested=arguments.stdin is not None,
-                repository_config=ROOT / "officina.toml",
-            ) as resolved:
-                dispatcher = resolved.metadata().as_payload()
-                if dry_run:
-                    return dispatcher
-                result = _run_resolved_invocation(
-                    resolved,
-                    stdin=arguments.stdin,
-                    capture_output=True,
-                    text=True,
-                )
-                return {
-                    "exit_code": result.returncode,
-                    "stdout": result.stdout,
-                    "stderr": result.stderr,
-                    "dispatcher": dispatcher,
-                }
+            argv = caller_argv(arguments)
+            started_flow: str | None = None
+            if not dry_run and interface == MANAGER_INTERFACES["begin"] and len(argv) == 9:
+                started_flow = argv[5]
+            elif not dry_run and interface == "setup-interface-manager._rtx.interface.teardown-all" and not argv:
+                started_flow = str(uuid4())
+                argv = [started_flow, os.environ.get("FAMULUS_HOST", "unknown"), str(os.getpid()), _PROCESS_STARTED_AT]
+            if started_flow is not None:
+                _acquire_flow_lease(started_flow)
+            try:
+                with resolve_dispatch(
+                    caller_skill=caller,
+                    target=interface,
+                    target_version=version,
+                    args=argv,
+                    stdin_requested=arguments.stdin is not None,
+                    repository_config=ROOT / "officina.toml",
+                ) as resolved:
+                    dispatcher = resolved.metadata().as_payload()
+                    if dry_run:
+                        return dispatcher
+                    result = _run_resolved_invocation(
+                        resolved, stdin=arguments.stdin, capture_output=True, text=True
+                    )
+            except Exception:
+                if started_flow is not None:
+                    _release_flow_lease(started_flow)
+                raise
+            candidate = started_flow
+            if candidate is None and argv and interface.rsplit(".", 1)[-1] in {
+                "run-markdown", "run-python", "settle", "recover", "recover-busy"
+            }:
+                candidate = argv[0]
+            try:
+                returned_flow = json.loads(result.stdout).get("flow_id")
+            except (AttributeError, json.JSONDecodeError, TypeError):
+                returned_flow = candidate
+            finished = result.returncode == 0 and returned_flow is None
+            if candidate is not None and (finished or started_flow is not None and returned_flow != started_flow):
+                _release_flow_lease(candidate)
+            return {
+                "exit_code": result.returncode,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "dispatcher": dispatcher,
+            }
 
         try:
             configuration = load_repository_configuration(ROOT / "officina.toml")
@@ -824,7 +912,11 @@ def main() -> None:
     try:
         server = FastMCP(CONTRACT["server"])
         server.tool()(invoke)
-        server.run(transport="stdio")
+        try:
+            server.run(transport="stdio")
+        finally:
+            for flow_id in tuple(_FLOW_LEASES):
+                _release_flow_lease(flow_id)
     except Exception as exc:
         raise DispatcherError.from_spec("D53") from exc
 

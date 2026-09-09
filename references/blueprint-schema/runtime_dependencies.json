@@ -7199,6 +7199,9 @@
         "setup-interface-manager._rtx.interface.recover": {
           "dependencies": []
         },
+        "setup-interface-manager._rtx.interface.recover-busy": {
+          "dependencies": []
+        },
         "setup-interface-manager._rtx.interface.run-markdown": {
           "dependencies": []
         },

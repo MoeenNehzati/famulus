@@ -6,14 +6,16 @@ adapter.  This module deliberately exposes no dispatch or public CLI surface.
 from __future__ import annotations
 
 import json
+from hashlib import sha256
 from contextvars import ContextVar
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from types import MappingProxyType
 from typing import Callable, ContextManager, Literal, Mapping, Protocol
 
 
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
 _LEDGER_MODE = 0o600
 _MAX_COMPARE_RETRIES = 8
 
@@ -133,6 +135,26 @@ class ContinuationIdentity:
 
 
 @dataclass(frozen=True)
+class FlowOwner:
+    """Diagnostic identity for the process holding one flow lease."""
+
+    host: str
+    pid: int
+    started_at: str
+
+    def __post_init__(self) -> None:
+        _require_identifier(self.host, "active_flow.owner.host")
+        if isinstance(self.pid, bool) or not isinstance(self.pid, int) or self.pid < 1:
+            raise LedgerFormatError("active_flow.owner.pid must be a positive integer")
+        try:
+            started = datetime.fromisoformat(self.started_at.replace("Z", "+00:00"))
+        except (AttributeError, ValueError) as exc:
+            raise LedgerFormatError("active_flow.owner.started_at must be UTC RFC 3339") from exc
+        if not self.started_at.endswith("Z") or started.tzinfo != timezone.utc:
+            raise LedgerFormatError("active_flow.owner.started_at must be UTC RFC 3339")
+
+
+@dataclass(frozen=True)
 class ActiveFlow:
     """The sole in-progress managed action, without request payload data."""
 
@@ -143,6 +165,7 @@ class ActiveFlow:
     verified_steps: tuple[str, ...]
     continuation: ContinuationIdentity | None
     owner_verified: bool = False
+    owner: FlowOwner | None = None
 
     def __post_init__(self) -> None:
         _require_identifier(self.flow_id, "active_flow.flow_id")
@@ -167,6 +190,8 @@ class ActiveFlow:
             _require_identifier(self.root, "active_flow.root")
         if type(self.owner_verified) is not bool:
             raise LedgerFormatError("active_flow.owner_verified must be Boolean")
+        if self.owner is not None and not isinstance(self.owner, FlowOwner):
+            raise LedgerFormatError("active_flow.owner is invalid")
 
 
 @dataclass(frozen=True)
@@ -175,7 +200,7 @@ class SetupLedger:
 
     interfaces: Mapping[str, SetupReceipt]
     active_flow: ActiveFlow | None
-    schema_version: Literal[1, 2] = _SCHEMA_VERSION
+    schema_version: Literal[1, 2, 3] = _SCHEMA_VERSION
 
     def __post_init__(self) -> None:
         copied: dict[str, SetupReceipt] = {}
@@ -186,13 +211,15 @@ class SetupLedger:
         object.__setattr__(self, "interfaces", MappingProxyType(copied))
         if self.active_flow is not None and not isinstance(self.active_flow, ActiveFlow):
             raise LedgerFormatError("active_flow is invalid")
-        if type(self.schema_version) is not int or self.schema_version not in {1, 2}:
+        if type(self.schema_version) is not int or self.schema_version not in {1, 2, 3}:
             raise LedgerFormatError("unsupported ledger schema version")
         if self.schema_version == 1 and self.active_flow is not None:
             if self.active_flow.operation == "teardown-all":
                 raise LedgerFormatError("schema-v1 cannot store teardown-all")
             if self.active_flow.owner_verified:
                 raise LedgerFormatError("schema-v1 cannot verify a recovery owner")
+        if self.schema_version < 3 and self.active_flow is not None and self.active_flow.owner is not None:
+            raise LedgerFormatError("older schemas cannot store a process owner")
 
     @classmethod
     def empty(cls) -> SetupLedger:
@@ -230,6 +257,8 @@ def _decode_flow(value: object, schema_version: int) -> ActiveFlow:
     keys = {"flow_id", "operation", "root", "current_step", "verified_steps", "continuation"}
     if schema_version == 2:
         keys.add("owner_verified")
+    elif schema_version == 3:
+        keys.update(("owner_verified", "owner"))
     raw = _require_exact_keys(
         value,
         keys,
@@ -242,6 +271,10 @@ def _decode_flow(value: object, schema_version: int) -> ActiveFlow:
     verified_steps = raw["verified_steps"]
     if not isinstance(verified_steps, list):
         raise LedgerFormatError("active_flow.verified_steps must be a list")
+    owner_value = raw.get("owner")
+    owner_raw = None if owner_value is None else _require_exact_keys(
+        owner_value, {"host", "pid", "started_at"}, "active_flow.owner"
+    )
     return ActiveFlow(
         flow_id=_require_identifier(raw["flow_id"], "active_flow.flow_id"),
         operation=raw["operation"],  # type: ignore[arg-type]
@@ -259,6 +292,11 @@ def _decode_flow(value: object, schema_version: int) -> ActiveFlow:
             version=_require_version(continuation_raw["version"], "continuation.version"),
         ),
         owner_verified=False if schema_version == 1 else raw["owner_verified"],
+        owner=None if owner_raw is None else FlowOwner(
+            host=owner_raw["host"],  # type: ignore[arg-type]
+            pid=owner_raw["pid"],  # type: ignore[arg-type]
+            started_at=owner_raw["started_at"],  # type: ignore[arg-type]
+        ),
     )
 
 
@@ -279,7 +317,7 @@ def parse_ledger(raw: bytes) -> SetupLedger:
         raise LedgerFormatError("ledger is not valid UTF-8 JSON") from exc
     root = _require_exact_keys(value, {"schema_version", "interfaces", "active_flow"}, "ledger")
     schema_version = root["schema_version"]
-    if schema_version not in {1, 2}:
+    if schema_version not in {1, 2, 3}:
         raise LedgerFormatError("unsupported ledger schema version")
     interfaces_raw = root["interfaces"]
     if not isinstance(interfaces_raw, Mapping):
@@ -320,6 +358,13 @@ def encode_ledger(ledger: SetupLedger) -> bytes:
         }
         if ledger.schema_version == 2:
             active_flow["owner_verified"] = flow.owner_verified
+        elif ledger.schema_version == 3:
+            active_flow["owner_verified"] = flow.owner_verified
+            active_flow["owner"] = None if flow.owner is None else {
+                "host": flow.owner.host,
+                "pid": flow.owner.pid,
+                "started_at": flow.owner.started_at,
+            }
     value = {
         "schema_version": ledger.schema_version,
         "interfaces": {
@@ -406,6 +451,11 @@ class LedgerStore:
     @property
     def _lock_path(self) -> Path:
         return self._path.with_name(f".{self._path.name}.lock")
+
+    def flow_lock_path(self, flow_id: str) -> Path:
+        """Return a confined stable sidecar name for one opaque flow ID."""
+        digest = sha256(_require_identifier(flow_id, "flow_id").encode()).hexdigest()
+        return self._path.with_name(f".{self._path.name}.{digest}.setup.lock")
 
     def _read_existing_bytes(self) -> bytes | None:
         try:

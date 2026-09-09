@@ -40,6 +40,9 @@ exports:
   setup-interface-manager._rtx.interface.recover:
     access: {allow_all_modules: true, allowed_callers: []}
     source_interface: setup-interface-manager._rtx.source.rtx-manager.interface.recover
+  setup-interface-manager._rtx.interface.recover-busy:
+    access: {allow_all_modules: true, allowed_callers: []}
+    source_interface: setup-interface-manager._rtx.source.rtx-manager.interface.recover-busy
 gateway: {language: Python>=3.11, path: __init__.py}
 id: setup-interface-manager._rtx
 namespace_exports: {}

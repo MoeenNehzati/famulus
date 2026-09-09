@@ -93,7 +93,7 @@ def test_release_has_no_production_managed_setups() -> None:
     export = graph.exports[route]
     assert export.source_interface_id == "setup-interface-manager._rtx.source.rtx-manager.interface.teardown-all"
     assert export.declaration["contract"]["arguments"] == {}
-    assert export.declaration["process_binding"]["patterns"] == [{"allow_stdin": False, "min_positionals": 0, "max_positionals": 0}]
+    assert export.declaration["process_binding"]["patterns"] == [{"allow_stdin": False, "min_positionals": 0, "max_positionals": 4}]
     assert any(route == target for uses in graph.interface_uses.values() for target, _version in uses)
     assert route in (REPO_ROOT / "references/blueprint-schema/runtime_dependencies.json").read_text()
 
@@ -226,8 +226,8 @@ def test_production_map_has_no_managed_setup_routes() -> None:
     [
         "Follow only the exact evaluated requirements",
         "Treat `clues` as tentative",
-        "Treat `setup_busy` as passive",
-        "Offer recovery only for the owned live flow",
+        "use only its reported",
+        "Try `recover-busy` without force first",
         "Never guess a requirement or retry automatically",
     ],
 )

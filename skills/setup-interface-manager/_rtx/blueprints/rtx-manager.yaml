@@ -159,6 +159,10 @@ interfaces:
         original-caller: *caller_argument
         original-interface: *interface_argument
         original-version: *version_argument
+        flow-id: &flow_argument {description: Exact active flow identity., required: true, sensitivity: public, type: {kind: string}}
+        owner-host: {description: Dispatcher host identity., required: true, sensitivity: public, type: {kind: string}}
+        owner-pid: {description: Dispatcher process identity., required: true, sensitivity: public, type: {kind: integer, minimum: 1}}
+        owner-started-at: {description: Dispatcher UTC RFC 3339 start time., required: true, sensitivity: public, type: {kind: string}}
       caller_warnings:
       - external-side-effect: Creates at most one active lifecycle flow in the private ledger.
       direct_io: *mutating_io
@@ -175,9 +179,9 @@ interfaces:
       patterns:
       - allow_stdin: false
         min_positionals: 5
-        max_positionals: 5
-        positional_patterns: {'0': '^(setup|teardown)$', '4': '^[1-9][0-9]*$'}
-    usage: OPERATION ROOT_SETUP ORIGINAL_CALLER ORIGINAL_INTERFACE ORIGINAL_VERSION
+        max_positionals: 9
+        positional_patterns: {'0': '^(setup|teardown)$', '4': '^[1-9][0-9]*$', '7': '^[1-9][0-9]*$'}
+    usage: OPERATION ROOT_SETUP ORIGINAL_CALLER ORIGINAL_INTERFACE ORIGINAL_VERSION FLOW_ID OWNER_HOST OWNER_PID OWNER_STARTED_AT
     version: 1
 
   setup-interface-manager._rtx.source.rtx-manager.interface.run-markdown:
@@ -185,7 +189,7 @@ interfaces:
     uses_interfaces: *uses
     contract:
       arguments:
-        flow-id: &flow_argument {description: Exact active flow identity., required: true, sensitivity: public, type: {kind: string}}
+        flow-id: *flow_argument
         interface: &step_argument {description: Exact current managed action interface., required: true, sensitivity: public, type: {kind: string}}
       caller_warnings: []
       direct_io: *read_io
@@ -300,7 +304,7 @@ interfaces:
     process_binding:
       entry: TeardownAllInterface
       kind: process
-      patterns: [{allow_stdin: false, min_positionals: 0, max_positionals: 0}]
+      patterns: [{allow_stdin: false, min_positionals: 0, max_positionals: 4}]
     usage: ''
     version: 1
 
@@ -330,6 +334,32 @@ interfaces:
         max_positionals: 2
         positional_patterns: {'1': '^(retry|cancel)$'}
     usage: FLOW_ID ACTION
+    version: 1
+
+  setup-interface-manager._rtx.source.rtx-manager.interface.recover-busy:
+    content: [_setup_dispatches\.py, _setup_evaluation\.py, _setup_manager\.py, _setup_state\.py]
+    uses_interfaces: *uses
+    contract:
+      arguments:
+        flow-id: *flow_argument
+        force: {description: Clear the exact flow even when its owner appears active., required: false, sensitivity: public, type: {kind: boolean}}
+      caller_warnings:
+      - external-side-effect: Clears only the exact named active flow; force bypasses only its process-liveness check.
+      direct_io: *mutating_io
+      execution: *mutating_execution
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes: *mutating_outcomes
+      outputs: *json_outputs
+      preconditions: []
+    description: Clear a stale busy flow after proving its process lease is free, or with explicit force.
+    process_binding:
+      entry: RecoverBusyInterface
+      kind: process
+      patterns:
+      - {allow_stdin: false, allowed_flags: [], min_positionals: 1, max_positionals: 1}
+      - {allow_stdin: false, allowed_flags: [--force], required_flags: [--force], min_positionals: 1, max_positionals: 1}
+    usage: FLOW_ID [--force]
     version: 1
 node_type: behavioral_source
 platform_support: {linux: true, macos: true, windows: true}

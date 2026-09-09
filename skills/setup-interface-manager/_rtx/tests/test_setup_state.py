@@ -107,6 +107,10 @@ def _flow(flow_id: str = "flow-1") -> state.ActiveFlow:
     )
 
 
+def _owner() -> state.FlowOwner:
+    return state.FlowOwner("codex", 1234, "2026-09-09T12:00:00Z")
+
+
 def test_ledger_store_public_constructor_accepts_only_the_getter_path(tmp_path: Path) -> None:
     """Catches reintroducing an adapter or caller-supplied capability argument."""
     path = tmp_path / "private" / "state" / "ledger.json"
@@ -159,7 +163,7 @@ def test_read_rejects_existing_final_parent_without_mode_0700(tmp_path: Path) ->
 @pytest.mark.parametrize(
     "raw",
     [
-        b'{"schema_version":3,"interfaces":{},"active_flow":null}\n',
+        b'{"schema_version":4,"interfaces":{},"active_flow":null}\n',
         b'{"active_flow":null,"interfaces":{},"schema_version":true}\n',
         b'{"schema_version":1,"interfaces":{},"active_flow":null,"extra":true}\n',
         b'{"schema_version":1,"interfaces":{"leaf.interface.setup":{"version":1,"required_by":["root","root"]}},"active_flow":null}\n',
@@ -186,7 +190,7 @@ def test_encoding_is_deterministic_and_strictly_required() -> None:
     assert encoded == (
         b'{"active_flow":null,"interfaces":{"leaf.interface.setup":{"required_by":[],"version":1},'
         b'"root.interface.setup":{"required_by":["a.root","z.root"],"version":2}},'
-        b'"schema_version":2}\n'
+        b'"schema_version":3}\n'
     )
     assert state.parse_ledger(encoded) == ledger
     with pytest.raises(state.LedgerFormatError, match="canonical"):
@@ -200,7 +204,7 @@ def test_canonical_v1_is_read_without_rewriting_and_migrates_on_mutation() -> No
 
     assert state.encode_ledger(ledger) == raw
     migrated = state.claim_receipts(ledger, "root.interface.setup", ("leaf.interface.setup",))
-    assert b'"schema_version":2' in state.encode_ledger(migrated) and migrated.active_flow == ledger.active_flow
+    assert b'"schema_version":3' in state.encode_ledger(migrated) and migrated.active_flow == ledger.active_flow
     assert migrated.active_flow is not None and migrated.active_flow.owner_verified is False
 
 
@@ -211,6 +215,44 @@ def test_schema_v2_round_trips_explicit_verified_owner_invariant() -> None:
 
     assert b'"owner_verified":true' in encoded
     assert state.parse_ledger(encoded).active_flow == flow
+
+
+def test_schema_v3_round_trips_process_owner() -> None:
+    flow = replace(_flow(), owner=_owner())
+    ledger = state.SetupLedger(interfaces={}, active_flow=flow)
+
+    encoded = state.encode_ledger(ledger)
+
+    assert b'"owner":{"host":"codex","pid":1234,"started_at":"2026-09-09T12:00:00Z"}' in encoded
+    assert state.parse_ledger(encoded).active_flow == flow
+
+
+def test_schema_v2_migrates_process_owner_as_unknown() -> None:
+    raw = b'{"active_flow":{"continuation":{"caller":"mcp","interface":"root.interface.run","version":1},"current_step":"leaf.interface.setup","flow_id":"flow-1","operation":"setup","owner_verified":true,"root":"root.interface.setup","verified_steps":[]},"interfaces":{},"schema_version":2}\n'
+
+    ledger = state.parse_ledger(raw)
+
+    assert ledger.active_flow is not None and ledger.active_flow.owner is None
+
+
+@pytest.mark.parametrize(
+    "owner",
+    [
+        {"host": "", "pid": 1, "started_at": "2026-09-09T12:00:00Z"},
+        {"host": "codex", "pid": 0, "started_at": "2026-09-09T12:00:00Z"},
+        {"host": "codex", "pid": 1, "started_at": "not-a-time"},
+    ],
+)
+def test_schema_v3_rejects_malformed_owner(owner: dict[str, object]) -> None:
+    flow = replace(_flow(), owner=_owner())
+    raw = state.encode_ledger(state.SetupLedger({}, flow))
+    document = __import__("json").loads(raw)
+    document["active_flow"]["owner"] = owner
+
+    with pytest.raises(state.LedgerFormatError):
+        state.parse_ledger(
+            __import__("json").dumps(document, sort_keys=True, separators=(",", ":")).encode() + b"\n"
+        )
 
 
 def test_v2_round_trips_ordinary_and_global_flows() -> None:

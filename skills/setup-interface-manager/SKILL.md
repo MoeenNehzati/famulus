@@ -21,8 +21,8 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
   - Version: 1
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
-    {"options": {}, "positionals": ["OPERATION", "ROOT_SETUP", "ORIGINAL_CALLER", "ORIGINAL_INTERFACE", "ORIGINAL_VERSION"], "stdin": null}
-    Required options: []; positional arity: 5..5; stdin: forbidden
+    {"options": {}, "positionals": ["OPERATION", "ROOT_SETUP", "ORIGINAL_CALLER", "ORIGINAL_INTERFACE", "ORIGINAL_VERSION", "FLOW_ID", "OWNER_HOST", "OWNER_PID", "OWNER_STARTED_AT"], "stdin": null}
+    Required options: []; positional arity: 5..9; stdin: forbidden
 - `setup-interface-manager._rtx.interface.invalidate` — Invalidate one setup receipt and its live managed dependents only while idle.
   - Caller: `setup-interface-manager`
   - Version: 1
@@ -71,7 +71,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
   - Alternative: `default`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": [], "stdin": null}
-    Required options: []; positional arity: 0..0; stdin: forbidden
+    Required options: []; positional arity: 0..4; stdin: forbidden
 
 <!-- END BLUEPRINT INTERFACES -->
 Skill: setup-interface-manager
@@ -89,9 +89,10 @@ interface or ledger path, and resume the original request only when
 
 Follow only the exact evaluated requirements in `root_setup_interface`,
 `pending_stack`, and `current_step`. Treat `clues` as tentative possibilities,
-not confirmed causes or instructions. Treat `setup_busy` as passive status: do
-not infer ownership or an available action.
+not confirmed causes or instructions. For `setup_busy`, use only its reported
+owner and exact `recover-busy` route; never infer either.
 
-Offer recovery only for the owned live flow when a `recovery-required` result
-supplies its authorized recovery object, and use only the actions it contains.
+Try `recover-busy` without force first. If it reports `setup.owner_active`,
+force only after the user explicitly confirms interruption. Use ordinary
+recovery only when a `recovery-required` result supplies its authorized route.
 Never guess a requirement or retry automatically.

@@ -306,10 +306,27 @@ optional features after an update.
 
 ### Remove Famulus
 
-There is no single command that removes Famulus and all of its optional
-features. Disable or remove optional features individually; for example,
-disable recurring jobs before removing their scheduler support. Removing the
-plugin does not revoke Google access or delete service data.
+If you want to clean up Famulus's managed setup state and run every declared
+local teardown, first tell your LLM to invoke
+Famulus's `teardown-all` setup interface with no arguments or
+stdin. The LLM will send the interface call through the Famulus MCP dispatcher
+using the currently declared version. Let that operation complete before
+removing the plugin. Then run the standard removal command for each host where
+Famulus is installed:
+
+```bash
+# Claude Code
+claude plugin uninstall famulus@nullkit --scope user
+
+# Codex
+codex plugin remove famulus@nullkit --json
+```
+
+Restart the host after removing the plugin.
+
+The teardown interface covers managed local setup receipts in the selected
+context. It does not revoke Google access, delete service or cloud data, or
+remove unmanaged files.
 
 Famulus does not automatically remove installations that predate the plugin.
 Inspect and remove an older installation separately, and revoke Google access
