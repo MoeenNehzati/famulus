@@ -44,10 +44,10 @@ def _resolve(
 def test_v6_authorization_exercises_public_private_unknown_and_versioned_targets(
     ordinary_repository_graph: RepositoryBlueprintGraph,
 ) -> None:
-    cases = (("milestone-logging.interface.default", 1), ("milestone-logging._rtx.source.rtx-milestone-writer.interface.record", 1), ("missing.interface.call", 1), ("milestone-logging.interface.default", 2))  # noqa: E501
+    cases = (("milestone-logging.interface.default", 1), ("milestone-logging._rtx.source.rtx-milestone-writer.interface.record-progress", 1), ("missing.interface.call", 1), ("milestone-logging.interface.default", 2))  # noqa: E501
     results = [_resolve(ordinary_repository_graph, caller_module_id="email-triage", caller_source_id="email-triage.source.gateway", interface_id=interface_id, version=version) for interface_id, version in cases]  # noqa: E501
     assert ordinary_repository_graph.schema_version == 6
-    assert [(result.allowed, result.diagnostic) for result in results] == [(True, "authorized"), (False, "private-interface:milestone-logging._rtx.source.rtx-milestone-writer.interface.record"), (False, "unknown-interface:missing.interface.call"), (False, "version-mismatch:milestone-logging.interface.default:requested=2:available=1")]  # noqa: E501
+    assert [(result.allowed, result.diagnostic) for result in results] == [(True, "authorized"), (False, "private-interface:milestone-logging._rtx.source.rtx-milestone-writer.interface.record-progress"), (False, "unknown-interface:missing.interface.call"), (False, "version-mismatch:milestone-logging.interface.default:requested=2:available=1")]  # noqa: E501
     assert results[0].implementing_source_id == "milestone-logging.source.gateway"
 
 

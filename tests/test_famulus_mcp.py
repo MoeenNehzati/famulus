@@ -384,11 +384,11 @@ async def _invoke_through_mcp(host: str, plugin_root: Path, home: Path):
                 "invoke",
                 arguments={
                     "caller": "git-workflow",
-                    "interface": "milestone-logging._rtx.interface.record",
+                    "interface": "milestone-logging._rtx.interface.session-path",
                     "version": 1,
                     "arguments": {
                         "positionals": [],
-                        "options": {"--path": True},
+                        "options": {},
                         "stdin": None,
                     },
                 },
@@ -397,10 +397,10 @@ async def _invoke_through_mcp(host: str, plugin_root: Path, home: Path):
                 "invoke",
                 arguments={
                     "caller": "milestone-logging",
-                    "interface": "milestone-logging._rtx.interface.record",
+                    "interface": "milestone-logging._rtx.interface.record-progress",
                     "version": 1,
                     "arguments": {
-                        "positionals": [],
+                        "positionals": ["numeric role"],
                         "options": {"--role": 7},
                         "stdin": None,
                     },
@@ -410,11 +410,11 @@ async def _invoke_through_mcp(host: str, plugin_root: Path, home: Path):
                 "invoke",
                 arguments={
                     "caller": "milestone-logging",
-                    "interface": "milestone-logging._rtx.interface.record",
+                    "interface": "milestone-logging._rtx.interface.session-path",
                     "version": 1,
                     "arguments": {
                         "positionals": ["unexpected"],
-                        "options": ["--path"],
+                        "options": [],
                         "stdin": None,
                     },
                 },
@@ -480,11 +480,11 @@ async def _record_through_persistent_mcp(
             await session.initialize()
             record_arguments = {
                 "caller": "milestone-logging",
-                "interface": "milestone-logging._rtx.interface.record",
+                "interface": "milestone-logging._rtx.interface.record-progress",
                 "version": 1,
                 "arguments": {
                     "positionals": ["persistent milestone"],
-                    "options": {"--role": "task-3-test"},
+                    "options": {"--role": "task-3-test", "--task": "without-run"},
                     "stdin": None,
                 },
             }
@@ -764,6 +764,7 @@ def test_real_mcp_persists_milestone_without_claiming_setup_ledger(
     records = [json.loads(line) for line in logs[0].read_text().splitlines()]
     assert records[0]["role"] == "task-3-test"
     assert records[0]["doing"] == "persistent milestone"
+    assert records[0]["task"] == "without-run" and "run" not in records[0]
     assert marker.read_text(encoding="utf-8") == "untouched"
     assert list(canary.iterdir()) == [marker]
 
@@ -824,11 +825,11 @@ async def _serve_graph_through_mcp(
                     "invoke",
                     arguments={
                         "caller": "milestone-logging",
-                        "interface": "milestone-logging._rtx.interface.record",
+                        "interface": "milestone-logging._rtx.interface.session-path",
                         "version": 1,
                         "arguments": {
                             "positionals": [],
-                            "options": {"--path": True},
+                            "options": {},
                             "stdin": None,
                         },
                         "dry_run": True,
@@ -904,7 +905,7 @@ def test_graph_server_survives_invocation_and_follows_host_teardown_lifecycle(
         assert [tool.name for tool in after.tools] == ["invoke"]
         assert finite.isError is False
         assert finite.structuredContent["result"]["target"] == (
-            "milestone-logging._rtx.interface.record"
+            "milestone-logging._rtx.interface.session-path"
         )
         if sys.platform != "win32":
             assert _pid_is_alive(pid)
@@ -1023,7 +1024,7 @@ def test_packaged_host_declaration_invokes_dispatcher_through_real_mcp(
     failure = unauthorized.structuredContent["result"]
     assert failure["dispatcher"]["code"] == "dispatcher.unauthorized_caller"
     assert failure["dispatcher"]["interface_id"] == (
-        "milestone-logging._rtx.interface.record"
+        "milestone-logging._rtx.interface.session-path"
     )
     assert numeric.isError is True
     assert ordered_positionals.isError is True
@@ -1077,17 +1078,17 @@ def test_dry_run_matches_direct_dispatcher_resolution(server) -> None:
 
     expected = resolve_dispatch_metadata(
         caller_skill="milestone-logging",
-        target="milestone-logging._rtx.interface.record",
+        target="milestone-logging._rtx.interface.session-path",
         target_version=1,
-        args=["--path"],
+        args=[],
         repository_config=ROOT / "officina.toml",
     ).as_payload()
 
     assert server.invoke(
         "milestone-logging",
-        "milestone-logging._rtx.interface.record",
+        "milestone-logging._rtx.interface.session-path",
         1,
-        _arguments(server, {"positionals": [], "options": {"--path": True}, "stdin": None}),
+        _arguments(server, {"positionals": [], "options": {}, "stdin": None}),
         dry_run=True,
     ) == expected
 
@@ -1101,14 +1102,14 @@ def test_generated_outer_payload_uses_real_tool_field_names(tmp_path: Path) -> N
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     graph = module.load_blueprints()["milestone-logging"].repository_graph
-    outer = {"caller": "milestone-logging", "interface": "milestone-logging._rtx.interface.record", "version": 1, "arguments": {"positionals": [], "options": {}, "stdin": None}, "dry_run": False}
+    outer = {"caller": "milestone-logging", "interface": "milestone-logging._rtx.interface.record-progress", "version": 1, "arguments": {"positionals": [], "options": {}, "stdin": None}, "dry_run": False}
     generated = module.generated_interface_block("milestone-logging", graph)
     assert all(
         fragment in generated
         for fragment in (
             '"positionals": ["DOING", "PREV"]',
             '"--role": "ROLE"',
-            '"--path": true',
+            '"--task": "TASK"',
             "Omit optional positionals and options that are not needed.",
         )
     )
@@ -1136,8 +1137,8 @@ def test_generated_outer_payload_uses_real_tool_field_names(tmp_path: Path) -> N
                     arguments={
                         **outer,
                         "arguments": {
-                            "positionals": [],
-                            "options": {"--path": True},
+                            "positionals": ["projection check"],
+                            "options": {"--role": "integration-test"},
                             "stdin": None,
                         },
                         "dry_run": True,
@@ -1346,9 +1347,9 @@ def test_execution_captures_dispatcher_output_without_mcp_stdout(
 def test_structured_dispatcher_error_is_returned(server) -> None:
     result = server.invoke(
         "missing-caller",
-        "milestone-logging._rtx.interface.record",
+        "milestone-logging._rtx.interface.record-progress",
         1,
-        _arguments(server, {"positionals": [], "options": {"--path": True}, "stdin": None}),
+        _arguments(server, {"positionals": ["work"], "options": {"--role": "test"}, "stdin": None}),
     )
 
     assert result["exit_code"] == 2
@@ -1359,10 +1360,10 @@ def test_structured_dispatcher_error_is_returned(server) -> None:
 @pytest.mark.parametrize(
     ("target", "arguments", "argv"),
     [
-        ("milestone-logging._rtx.interface.record", {"positionals": ["one"], "options": {}, "stdin": None}, ["one"]),
-        ("milestone-logging._rtx.interface.record", {"positionals": ["one"], "options": {"--role": "task"}, "stdin": None}, ["one", "--role", "task"]),
-        ("milestone-logging._rtx.interface.record", {"positionals": [], "options": {"--path": True}, "stdin": None}, ["--path"]),
-        ("milestone-logging._rtx.interface.timeline", {"positionals": [], "options": {}, "stdin": None}, []),
+        ("milestone-logging._rtx.interface.record-progress", {"positionals": ["one"], "options": {"--role": "task"}, "stdin": None}, ["one", "--role", "task"]),
+        ("milestone-logging._rtx.interface.record-completion", {"positionals": ["one"], "options": {"--role": "task"}, "stdin": None}, ["one", "--role", "task"]),
+        ("milestone-logging._rtx.interface.session-path", {"positionals": [], "options": {}, "stdin": None}, []),
+        ("milestone-logging._rtx.interface.show-latest-session", {"positionals": [], "options": {}, "stdin": None}, []),
     ],
 )
 def test_json_envelope_matches_direct_dispatcher(
@@ -1594,7 +1595,7 @@ def test_ordered_options_are_lossless_for_repeated_flags(server) -> None:
     from officina.dispatcher.errors import InvocationError
 
     argv = [
-        "--run", "nightly", "--evidence", "first", "--evidence", "second", "--role", "task"
+        "ordered progress", "--run", "nightly", "--evidence", "first", "--evidence", "second", "--role", "task"
     ]
     arguments = {"positionals": [], "options": argv, "stdin": None}
     typed_arguments = _arguments(server, arguments)
@@ -1602,14 +1603,14 @@ def test_ordered_options_are_lossless_for_repeated_flags(server) -> None:
     with pytest.raises(InvocationError) as direct:
         resolve_dispatch_metadata(
             caller_skill="milestone-logging",
-            target="milestone-logging._rtx.interface.record",
+            target="milestone-logging._rtx.interface.record-progress",
             target_version=1,
             args=argv,
             repository_config=ROOT / "officina.toml",
         )
     result = server.invoke(
         "milestone-logging",
-        "milestone-logging._rtx.interface.record",
+        "milestone-logging._rtx.interface.record-progress",
         1,
         typed_arguments,
         dry_run=True,

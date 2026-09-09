@@ -2,20 +2,15 @@ authority:
   owns_filesystem: []
   suggested_permissions:
     bash:
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _milestone_interface.py
-      - Interface
-      reason: Append one durable role-labelled milestone record.
-    - command:
-      - python3
-      - -m
-      - officina.runtime.python_machine_interface_runner
-      - _timeline_interface.py
-      - Interface
-      reason: Read recorded milestone sessions or durable run journals.
+    - {command: [python3, -m, officina.runtime.python_machine_interface_runner, _milestone_interface.py, RecordProgress], reason: Append progress.}
+    - {command: [python3, -m, officina.runtime.python_machine_interface_runner, _milestone_interface.py, RecordCompletion], reason: Append completion.}
+    - {command: [python3, -m, officina.runtime.python_machine_interface_runner, _milestone_interface.py, SessionPath], reason: Report the session path.}
+    - {command: [python3, -m, officina.runtime.python_machine_interface_runner, _milestone_interface.py, RunPath], reason: Report a run path.}
+    - {command: [python3, -m, officina.runtime.python_machine_interface_runner, _timeline_interface.py, ListSessions], reason: List sessions.}
+    - {command: [python3, -m, officina.runtime.python_machine_interface_runner, _timeline_interface.py, ShowLatestSession], reason: Show the latest session.}
+    - {command: [python3, -m, officina.runtime.python_machine_interface_runner, _timeline_interface.py, ShowSession], reason: Show a session.}
+    - {command: [python3, -m, officina.runtime.python_machine_interface_runner, _timeline_interface.py, ShowRun], reason: Show a run.}
+    - {command: [python3, -m, officina.runtime.python_machine_interface_runner, _timeline_interface.py, ReadRunJson], reason: Read run JSON.}
     network: []
 children: {}
 content:
@@ -27,18 +22,15 @@ content:
 - tests/.*
 description: Private Python runtime for milestone records and agent timeline diagnostics.
 exports:
-  milestone-logging._rtx.interface.record:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - milestone-logging
-    source_interface: milestone-logging._rtx.source.rtx-milestone-writer.interface.record
-  milestone-logging._rtx.interface.timeline:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - milestone-logging
-    source_interface: milestone-logging._rtx.source.rtx-agent-timeline.interface.timeline
+  milestone-logging._rtx.interface.record-progress: {access: &private {allow_all_modules: false, allowed_callers: [milestone-logging]}, source_interface: milestone-logging._rtx.source.rtx-milestone-writer.interface.record-progress}
+  milestone-logging._rtx.interface.record-completion: {access: *private, source_interface: milestone-logging._rtx.source.rtx-milestone-writer.interface.record-completion}
+  milestone-logging._rtx.interface.session-path: {access: *private, source_interface: milestone-logging._rtx.source.rtx-milestone-writer.interface.session-path}
+  milestone-logging._rtx.interface.run-path: {access: *private, source_interface: milestone-logging._rtx.source.rtx-milestone-writer.interface.run-path}
+  milestone-logging._rtx.interface.list-sessions: {access: *private, source_interface: milestone-logging._rtx.source.rtx-agent-timeline.interface.list-sessions}
+  milestone-logging._rtx.interface.show-latest-session: {access: *private, source_interface: milestone-logging._rtx.source.rtx-agent-timeline.interface.show-latest-session}
+  milestone-logging._rtx.interface.show-session: {access: *private, source_interface: milestone-logging._rtx.source.rtx-agent-timeline.interface.show-session}
+  milestone-logging._rtx.interface.show-run: {access: *private, source_interface: milestone-logging._rtx.source.rtx-agent-timeline.interface.show-run}
+  milestone-logging._rtx.interface.read-run-json: {access: *private, source_interface: milestone-logging._rtx.source.rtx-agent-timeline.interface.read-run-json}
 gateway:
   language: Python>=3.11
   path: __init__.py

@@ -8,90 +8,78 @@ gateway:
   path: _milestone_interface.py
 id: milestone-logging._rtx.source.rtx-milestone-writer
 interfaces:
-  milestone-logging._rtx.source.rtx-milestone-writer.interface.record:
-    content:
+  milestone-logging._rtx.source.rtx-milestone-writer.interface.record-progress:
+    content: &content
     - _milestone_interface\.py
     - _milestone_writer\.py
     uses_interfaces: []
-    contract:
+    contract: &record_contract
       arguments:
         doing:
-          default: ''
-          description: Description of the work now starting.
-          required: false
+          description: Work now starting; independently limited to 220 serialized JSON bytes.
+          required: true
           sensitivity: user-private
           type: {kind: string, sensitivity: user-private}
         prev:
           default: ''
-          description: How the preceding work item ended.
+          description: How preceding work ended; independently limited to 220 serialized JSON bytes.
           required: false
           sensitivity: user-private
           type: {kind: string, sensitivity: user-private}
-        role:
+        role: &role
+          description: Non-empty agent task label; independently limited to 220 serialized JSON bytes.
+          required: true
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+        run: &run
+          description: Optional safe run ID; adds identity fields and an identical journal mirror without changing session metadata.
+          required: false
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+        event: &event
           default: ''
-          description: Short label identifying the agent's overall task; agent-authored records always supply it.
+          description: Session-retained typed event with an independent 80-byte serialized JSON limit.
           required: false
           sensitivity: user-private
           type: {kind: string, sensitivity: user-private}
-        done:
-          description: Closing result for completion mode; it replaces the ordinary progress positionals.
-          required: false
-          sensitivity: user-private
-          type: {kind: string, sensitivity: user-private}
-        path:
-          default: false
-          description: Print the selected session or run-journal path without writing.
-          required: false
-          sensitivity: public
-          type: {kind: flag}
-        run:
-          description: Durable run identifier for work that outlives this session.
-          required: false
-          sensitivity: user-private
-          type: {kind: string, sensitivity: user-private}
-        event:
-          default: ''
-          description: Typed durable-run event kind.
-          required: false
-          sensitivity: user-private
-          type: {kind: string, sensitivity: user-private}
-        step:
-          description: Typed durable-run algorithm step.
+        step: &step
+          description: Session-retained non-negative typed step with independent validation.
           required: false
           sensitivity: public
           type: {kind: integer}
-        task:
+        task: &task
           default: ''
-          description: Typed durable-run task identity.
+          description: Session-retained typed task with an independent 128-byte serialized JSON limit.
           required: false
           sensitivity: user-private
           type: {kind: string, sensitivity: user-private}
-        state:
+        state: &state
           default: ''
-          description: Typed durable-run task state.
+          description: Session-retained typed state with an independent 64-byte serialized JSON limit.
           required: false
           sensitivity: user-private
           type: {kind: string, sensitivity: user-private}
-        attempt:
-          description: Typed durable-run task attempt number.
+        attempt: &attempt
+          description: Session-retained non-negative typed attempt with independent validation.
           required: false
           sensitivity: public
           type: {kind: integer}
-        evidence:
+        evidence: &evidence
           default: []
-          description: Repeatable path-like durable-run evidence.
+          description: Session-retained evidence; at most 20 independent 220-byte values and 1400 serialized JSON bytes in aggregate.
           required: false
           sensitivity: user-private
           type:
             kind: list
             element_type: {kind: string, sensitivity: user-private}
-      caller_warnings:
+      caller_warnings: &warnings
       - external-side-effect: Appends a durable local milestone record.
-      direct_io:
+      direct_io: &record_io
         network: []
         reads: []
         writes:
-        - access: write
+        -
+          access: write
           content: milestone record
           formats: [jsonl]
           id: write-1
@@ -102,14 +90,15 @@ interfaces:
             direct runs use a non-empty ASSISTANT_LOGS or $HOME/.assistant-logs.
           sensitivity: user-private
           system: filesystem
-        - access: write
+        - &stdout_write
+          access: write
           content: record path or error
           formats: [text]
           id: write-2
           medium: stdout
           sensitivity: derived-private
           system: agent-runtime
-      execution:
+      execution: &record_execution
         consistency:
           live: Appends each accepted record to the selected current log root.
         effects:
@@ -122,9 +111,7 @@ interfaces:
           may_occur_in_outcomes: [recorded, failed]
           reversibility:
             irreversible: Appended progress records are intentionally retained.
-          value_source:
-            argument_ref: doing
-            kind: argument
+          value_source: {direct_io_ref: write-1, kind: direct-io}
         lifecycle: finite
         mutation_safety:
           atomicity: {non_atomic: Session and run-journal appends are separate writes.}
@@ -137,9 +124,9 @@ interfaces:
         verification:
         - method: output-schema
           output_ref: record-path
-      helpers: []
-      interaction: {mode: unattended}
-      outcomes:
+      helpers: &helpers []
+      interaction: &interaction {mode: unattended}
+      outcomes: &record_outcomes
       - caller_action: Continue after the record is appended.
         class: success
         effects: [append-milestone]
@@ -150,43 +137,73 @@ interfaces:
         effects: [append-milestone]
         id: failed
         outputs: [record-path]
-      outputs:
+      outputs: &record_outputs
       - audience: both
         cardinality: {minimum: 0, maximum: 1}
-        description: Printed log path when --path is requested, otherwise empty on success.
+        description: Empty after append success or one error diagnostic.
         direct_io_ref: write-2
-        empty: Empty after a successful append unless --path is requested.
+        empty: Empty after a successful append.
         id: record-path
         ordering: stable
         pagination: {kind: none}
         truncation: {kind: none}
         type: {kind: string, sensitivity: derived-private}
-      preconditions: []
-    description: Append a role-labelled progress milestone or completion record. Progress supplies doing and optional prev; completion supplies the closing result as the done value instead of positional messages. Typed recovery state can also be mirrored into a durable run journal.
+      preconditions: &preconditions []
+    description: Append progress with typed metadata retained in the session; run only adds identity fields and an identical journal mirror.
     process_binding:
-      entry: Interface
+      entry: RecordProgress
       kind: process
       patterns:
-      - name: milestone
-        min_positionals: 0
+      - name: record-progress
+        min_positionals: 1
         max_positionals: 2
         allow_stdin: false
-        notes: Progress mode takes DOING and optional PREV. Completion mode takes
-          --done PREV instead of positional messages, and --done requires its PREV
-          value. Agent-authored records include --role ROLE. --path prints the
-          selected path without recording. Typed event fields require --run ID.
-        allowed_flags: [--help, -h, --role, --done, --path, --run, --event, --step, --task, --state, --attempt, --evidence]
-        flag_patterns:
-          --role: '(?s).*'
-          --done: '(?s).*'
-          --run: '(?s).*'
+        notes: Every metadata field is independently validated and remains in the session record; --run only adds a mirror.
+        required_flags: [--role]
+        allowed_flags: &record_flags [--help, -h, --role, --run, --event, --step, --task, --state, --attempt, --evidence]
+        flag_patterns: &record_patterns
+          --role: '(?s).+'
+          --run: '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'
           --event: '(?s).*'
-          --step: '^[+-]?[0-9]+$'
+          --step: '^[0-9]+$'
           --task: '(?s).*'
           --state: '(?s).*'
-          --attempt: '^[+-]?[0-9]+$'
+          --attempt: '^[0-9]+$'
           --evidence: '(?s).*'
-    usage: '[DOING] [PREV] [--role ROLE] [--done PREV] [--path] [--run ID] [--event EVENT] [--step STEP] [--task TASK] [--state STATE] [--attempt ATTEMPT] [--evidence PATH]'
+    usage: 'DOING [PREV] --role ROLE [--run ID] [--event EVENT] [--step STEP] [--task TASK] [--state STATE] [--attempt ATTEMPT] [--evidence PATH]'
+    version: 1
+  milestone-logging._rtx.source.rtx-milestone-writer.interface.record-completion:
+    content: *content
+    uses_interfaces: []
+    contract:
+      arguments: {result: {description: Closing result independently limited to 220 serialized JSON bytes., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}, role: *role, run: *run, event: *event, step: *step, task: *task, state: *state, attempt: *attempt, evidence: *evidence}
+      caller_warnings: *warnings
+      direct_io: *record_io
+      execution: *record_execution
+      helpers: *helpers
+      interaction: *interaction
+      outcomes: *record_outcomes
+      outputs: *record_outputs
+      preconditions: *preconditions
+    description: Append completion with session-retained typed metadata and an optional additive run mirror.
+    process_binding: {entry: RecordCompletion, kind: process, patterns: [{name: record-completion, min_positionals: 1, max_positionals: 1, allow_stdin: false, required_flags: [--role], allowed_flags: *record_flags, flag_patterns: *record_patterns}]}
+    usage: 'RESULT --role ROLE [--run ID] [--event EVENT] [--step STEP] [--task TASK] [--state STATE] [--attempt ATTEMPT] [--evidence PATH]'
+    version: 1
+  milestone-logging._rtx.source.rtx-milestone-writer.interface.session-path:
+    content: *content
+    uses_interfaces: []
+    contract: {arguments: {}, caller_warnings: &path_warnings [], direct_io: &path_io {network: [], reads: [], writes: [*stdout_write]}, execution: &path_execution {consistency: {live: Reports the selected path.}, lifecycle: finite, state_effect: read-only, verification: [{method: output-schema, output_ref: path}]}, helpers: *helpers, interaction: *interaction, outcomes: &path_outcomes [{caller_action: Use the path., class: success, effects: [], id: reported, outputs: [path]}, {caller_action: Report the exact path error., class: error, effects: [], id: failed, outputs: [path]}], outputs: &path_outputs [{audience: both, cardinality: {minimum: 1, maximum: 1}, description: Selected milestone path., direct_io_ref: write-2, empty: Never empty., id: path, ordering: stable, pagination: {kind: none}, truncation: {kind: none}, type: {kind: string, sensitivity: derived-private}}], preconditions: *preconditions}
+    description: Print the selected session path without appending.
+    process_binding: {entry: SessionPath, kind: process, patterns: [{name: session-path, min_positionals: 0, max_positionals: 0, allow_stdin: false}]}
+    usage: ''
+    version: 1
+  milestone-logging._rtx.source.rtx-milestone-writer.interface.run-path:
+    content: *content
+    uses_interfaces: []
+    contract: {arguments: {run: {description: Safe durable run identifier to locate., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}}, caller_warnings: *path_warnings, direct_io: *path_io, execution: *path_execution, helpers: *helpers, interaction: *interaction, outcomes: *path_outcomes, outputs: *path_outputs, preconditions: *preconditions}
+    description: Validate a run identifier and print its journal path without appending.
+    process_binding: {entry: RunPath, kind: process, patterns: [{name: run-path, min_positionals: 1, max_positionals: 1, allow_stdin: false, positional_patterns: {'0': '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'}}]}
+    usage: RUN
     version: 1
 node_type: behavioral_source
 platform_support: {linux: true, macos: true, windows: true}

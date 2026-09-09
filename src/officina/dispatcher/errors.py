@@ -421,8 +421,8 @@ DISPATCHER_ERROR_SPECS: Mapping[str, ErrorSpec] = MappingProxyType(
         ),
         "D45": ErrorSpec(
             code="dispatcher.resolution_failed",
-            message="The dispatcher could not compile arguments for `{interface_id}`.",
-            context_fields=frozenset({"interface_id"}),
+            message="The dispatcher could not compile arguments for `{interface_id}`: {detail}.",
+            context_fields=frozenset({"interface_id", "detail"}),
             payload_fields=frozenset({"interface_id"}),
             identity_fields=frozenset({"caller_module_id", "target_module_id"}),
         ),
