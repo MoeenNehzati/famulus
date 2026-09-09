@@ -14,6 +14,11 @@ interfaces:
     uses_interfaces: []
     contract:
       arguments:
+        skill-name:
+          description: Lowercase hyphenated skill name for resolve_skill_config_dir.
+          required: false
+          sensitivity: public
+          type: {kind: string}
         platform:
           description: 'Host platform identifier as returned by sys.platform: darwin,
             win32, or any other value treated as XDG-style POSIX.'
@@ -55,6 +60,7 @@ interfaces:
             - {value: logging-path, description: Milestone directory below plugin data.}
             - {value: setup-status, description: Setup readiness file below plugin data.}
       preconditions:
+      - {id: valid-skill-name, description: 'Helper-only: a supplied skill name is lowercase hyphenated and not a Windows reserved basename.', check: {kind: argument, argument_ref: skill-name, predicate: matches, expected: '^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$'}, unmet_outcome: invalid-skill-name, caller_action: Supply a lowercase hyphenated skill name.}
       - id: absolute-home
         description: home must be an absolute path.
         check:
@@ -64,7 +70,7 @@ interfaces:
         unmet_outcome: invalid-home
         caller_action: Supply an absolute home directory path.
       - id: absolute-environment-roots
-        description: Every supplied root override must be non-empty and absolute.
+        description: 'Full resolver only: every supplied root override must be non-empty and absolute.'
         check:
           kind: argument
           argument_ref: environ
@@ -72,8 +78,7 @@ interfaces:
         unmet_outcome: invalid-home
         caller_action: Remove the override or supply a non-empty absolute path.
       - id: complete-plugin-context
-        description: Normalized plugin host and data variables are absent together or
-          contain one supported host and an absolute data root.
+        description: 'Full resolver only: normalized plugin host and data variables are absent together or contain one supported host and an absolute data root.'
         check: {kind: argument, argument_ref: environ, predicate: present}
         unmet_outcome: invalid-plugin-context
         caller_action: Supply valid FAMULUS_HOST and FAMULUS_PLUGIN_DATA together.
@@ -83,8 +88,8 @@ interfaces:
       outputs:
       - id: result
         audience: machine
-        description: FamulusPaths with platform-native roots plus all-or-none plugin fields,
-          or one selected absolute plugin path from FamulusPaths.get.
+        description: FamulusPaths with platform-native roots, a selected plugin path,
+          or one absolute helper-owned skill configuration directory.
         direct_io_ref: return-value
         cardinality:
           minimum: 1
@@ -111,6 +116,11 @@ interfaces:
         outputs: []
         effects: []
         caller_action: Supply an absolute home directory path.
+      - id: invalid-skill-name
+        class: refusal
+        outputs: []
+        effects: []
+        caller_action: Supply a lowercase hyphenated skill name.
       - id: invalid-plugin-context
         class: refusal
         outputs: []

@@ -90,7 +90,7 @@ interfaces:
           - json
           id: read-1
           medium: local-filesystem
-          path: $home/.config/cloud-files/config.json
+          path: <CONFIG>/cloud-files/config.json
           path_match: exact
           sensitivity: user-private
           system: filesystem
@@ -103,7 +103,7 @@ interfaces:
           - json
           id: read-2
           medium: local-filesystem
-          path: $home/.config/cloud-files/credentials.json
+          path: <CONFIG>/cloud-files/credentials.json
           path_match: exact
           sensitivity: secret
           system: filesystem
@@ -124,7 +124,7 @@ interfaces:
           - json
           id: write-2
           medium: local-filesystem
-          path: $home/.config/cloud-files/credentials.json
+          path: <CONFIG>/cloud-files/credentials.json
           path_match: exact
           sensitivity: secret
           system: filesystem
@@ -314,7 +314,7 @@ interfaces:
           - json
           id: read-config
           medium: local-filesystem
-          path: $home/.config/cloud-files/config.json
+          path: <CONFIG>/cloud-files/config.json
           path_match: exact
           sensitivity: user-private
           system: filesystem
@@ -325,7 +325,7 @@ interfaces:
           - json
           id: write-config-file
           medium: local-filesystem
-          path: $home/.config/cloud-files/config.json
+          path: <CONFIG>/cloud-files/config.json
           path_match: exact
           sensitivity: user-private
           system: filesystem
@@ -522,7 +522,7 @@ interfaces:
           - json
           id: read-1
           medium: local-filesystem
-          path: $home/.config/cloud-files/config.json
+          path: <CONFIG>/cloud-files/config.json
           path_match: exact
           sensitivity: user-private
           system: filesystem
@@ -533,7 +533,7 @@ interfaces:
           - json
           id: write-1
           medium: local-filesystem
-          path: $home/.config/cloud-files/config.json
+          path: <CONFIG>/cloud-files/config.json
           path_match: exact
           sensitivity: user-private
           system: filesystem
@@ -603,7 +603,7 @@ interfaces:
           - json
           id: read-1
           medium: local-filesystem
-          path: <home>/.config/cloud-files/config.json
+          path: <CONFIG>/cloud-files/config.json
           path_match: exact
           sensitivity: user-private
           system: filesystem
@@ -614,7 +614,7 @@ interfaces:
           - json
           id: write-1
           medium: local-filesystem
-          path: $home/.config/cloud-files/config.json
+          path: <CONFIG>/cloud-files/config.json
           path_match: exact
           sensitivity: user-private
           system: filesystem
@@ -727,7 +727,7 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Write ~/.config/cloud-files/config.json with the given remote LLM
+    description: Write <CONFIG>/cloud-files/config.json with the given remote LLM
       root. Owned by cloud-files.
     process_binding:
       args_prefix:
@@ -757,8 +757,6 @@ platform_support:
   windows: true
 runtime_dependencies: []
 schema_version: 6
-uses_interfaces:
-- interface: credentials.interface.google
-  version: 1
+uses_interfaces: [{interface: credentials.interface.google, version: 1}, {interface: common.interface.famulus-paths, version: 1}]
 version: 1
 maturity: experimental

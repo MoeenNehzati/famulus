@@ -57,6 +57,10 @@ exports:
       - recurring-tasks
       - recurring-tasks._rtx
       - credentials
+      - connect-google._rtx
+      - cloud-files._rtx
+      - online-calendar._rtx
+      - email-client._rtx
       - launchers
     source_interface: common.source.famulus-paths.interface.python-api
   common.interface.famulus-paths-get:

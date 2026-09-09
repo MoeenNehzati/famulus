@@ -55,11 +55,11 @@ system_kinds:
       repo-entry: "$repo/{path...}"
       home-entry: "$home/{path...}"
       temporary-entry: "$tmp/{path...}"
-      cloud-files-client: "$home/.config/cloud-files/client.json"
-      cloud-files-credentials: "$home/.config/cloud-files/credentials.json"
-      cloud-files-config: "$home/.config/cloud-files/config.json"
-      online-calendar-client: "$home/.config/online-calendar/client.json"
-      online-calendar-credentials: "$home/.config/online-calendar/credentials.json"
+      cloud-files-client: "<CONFIG>/cloud-files/client.json"
+      cloud-files-credentials: "<CONFIG>/cloud-files/credentials.json"
+      cloud-files-config: "<CONFIG>/cloud-files/config.json"
+      online-calendar-client: "<CONFIG>/online-calendar/client.json"
+      online-calendar-credentials: "<CONFIG>/online-calendar/credentials.json"
       datalab-model-cache: "$home/.cache/datalab/models/{path...}"
       repo-skill-blueprint: "$repo/skills/{skill}/blueprint.yaml"
       repo-blueprint-schema-draft: "$repo/references/blueprint/schema.annotated-draft.json"
@@ -143,7 +143,7 @@ system_instances:
 
 examples:
   concrete:
-    - resource://local/$home/.config/online-calendar/credentials.json
+    - resource://local/<CONFIG>/online-calendar/credentials.json
     - resource://cloud-files/plans/7-17-26.md
     - resource://online-calendar/calendars/work%40example.com/events/a1b2c3
   patterns:

@@ -855,7 +855,7 @@ interfaces:
           - json
           id: read-2
           medium: local-filesystem
-          path: $EMAIL_CLIENT_CONFIG_DIR/accounts.json or $home/.config/email-client/accounts.json
+          path: <CONFIG>/email-client/accounts.json
           path_match: exact
           sensitivity: user-private
           system: filesystem
@@ -884,7 +884,7 @@ interfaces:
           - json
           id: write-3
           medium: local-filesystem
-          path: $EMAIL_CLIENT_CONFIG_DIR/accounts.json or $home/.config/email-client/accounts.json
+          path: <CONFIG>/email-client/accounts.json
           path_match: exact
           sensitivity: user-private
           system: filesystem
@@ -1732,10 +1732,6 @@ runtime_dependencies:
   reason: Stores IMAP or SMTP credentials in the host credential store.
   version: any
 schema_version: 6
-uses_interfaces:
-- interface: credentials.interface.secret-store
-  version: 1
-- interface: credentials.interface.google
-  version: 1
+uses_interfaces: [{interface: credentials.interface.secret-store, version: 1}, {interface: credentials.interface.google, version: 1}, {interface: common.interface.famulus-paths, version: 1}]
 version: 1
 maturity: stable

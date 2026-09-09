@@ -6,7 +6,7 @@ Credentials come from the shared secret-store boundary rather than a
 host-specific command.
 
 Accounts are resolved by nickname through accounts.py's registry
-(~/.config/email-client/accounts.json), not hardcoded here. Credentials come
+(the helper-owned Famulus email-client accounts path), not hardcoded here. Credentials come
 from the host credential store via officina.credentials.secret_store.
 
 Subcommands:

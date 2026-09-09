@@ -7,8 +7,8 @@ from officina.credentials.google import GoogleCredentialError, load_credential_f
 from officina.runtime.python_machine_interface import PythonMachineInterface
 
 def _selected_credential_path(*, home: Path, platform: str) -> Path:
-    from officina.common.famulus_paths import resolve_famulus_paths
-    return resolve_famulus_paths(platform=platform, home=Path(home), environ=os.environ).config_root / "connect-google" / "selected-credential.json"
+    from officina.common.famulus_paths import resolve_skill_config_dir
+    return resolve_skill_config_dir("connect-google", platform=platform, home=Path(home), environ=os.environ) / "selected-credential.json"
 
 def _write_atomically(path: Path, cred_file: Path, account: str, subject: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)

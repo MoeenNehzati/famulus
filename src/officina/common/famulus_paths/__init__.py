@@ -6,6 +6,7 @@ other shared file can stay platform-generic.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -22,6 +23,10 @@ class FamulusPathsError(Exception):
 
 class InvalidFamulusHomeError(FamulusPathsError, ValueError):
     """Raised when the supplied home directory is not an absolute path."""
+
+
+class InvalidFamulusSkillNameError(FamulusPathsError, ValueError):
+    """Raised for unsafe skill path components."""
 
 
 class FamulusLocalAppDataMissingError(FamulusPathsError, RuntimeError):
@@ -147,6 +152,23 @@ def _environment_root(environ: Mapping[str, str], name: str) -> Path | None:
     return _absolute_root(environ[name], label=name)
 
 
+def _config_root(*, platform: str, home: Path, environ: Mapping[str, str]) -> Path:
+    home = _absolute_root(home, label="home")
+    if platform == "darwin":
+        return home / "Library" / "Application Support" / "Famulus" / "config"
+    if platform == "win32":
+        return (_environment_root(environ, "APPDATA") or home / "AppData" / "Roaming") / "Famulus"
+    return (_environment_root(environ, "XDG_CONFIG_HOME") or home / ".config") / "famulus"
+
+
+def resolve_skill_config_dir(skill_name: str, *, platform: str, home: Path, environ: Mapping[str, str]) -> Path:
+    """Return the durable Famulus configuration directory for one skill."""
+    reserved = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+    if not isinstance(skill_name, str) or re.fullmatch(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*", skill_name) is None or skill_name.split(".")[0].upper() in reserved:
+        raise InvalidFamulusSkillNameError(f"invalid Famulus skill name {skill_name!r}")
+    return _config_root(platform=platform, home=home, environ=environ) / skill_name
+
+
 def _plugin_context(environ: Mapping[str, str]) -> tuple[AssistantHost | None, Path | None]:
     """Validate and return explicit plugin host provenance.
 
@@ -200,26 +222,22 @@ def resolve_famulus_paths(
     if platform == "darwin":
         base = home / "Library" / "Application Support" / "Famulus"
         app_data_root = base
-        config_root = base / "config"
+        config_root = _config_root(platform=platform, home=home, environ=environ)
         state_root = base / "state"
         user_bin = home / ".local" / "bin"
     elif platform == "win32":
         local_app_data = (
             _environment_root(environ, "LOCALAPPDATA") or home / "AppData" / "Local"
         )
-        app_data = (
-            _environment_root(environ, "APPDATA") or home / "AppData" / "Roaming"
-        )
         base = local_app_data / "Famulus"
         app_data_root = base
-        config_root = app_data / "Famulus"
+        config_root = _config_root(platform=platform, home=home, environ=environ)
         state_root = base / "state"
         user_bin = base / "bin"
     else:
         xdg_data = _environment_root(environ, "XDG_DATA_HOME")
         app_data_root = xdg_data / "famulus" if xdg_data else home / ".local" / "share" / "famulus"
-        xdg_config = _environment_root(environ, "XDG_CONFIG_HOME")
-        config_root = xdg_config / "famulus" if xdg_config else home / ".config" / "famulus"
+        config_root = _config_root(platform=platform, home=home, environ=environ)
         xdg_state = _environment_root(environ, "XDG_STATE_HOME")
         state_root = xdg_state / "famulus" if xdg_state else home / ".local" / "state" / "famulus"
         user_bin = home / ".local" / "bin"
@@ -250,9 +268,11 @@ __all__ = [
     "FamulusPathsError",
     "FamulusPluginContextRequiredError",
     "InvalidFamulusHomeError",
+    "InvalidFamulusSkillNameError",
     "InvalidFamulusPluginContextError",
     "FamulusLocalAppDataMissingError",
     "PathName",
     "UnknownFamulusPathError",
     "resolve_famulus_paths",
+    "resolve_skill_config_dir",
 ]

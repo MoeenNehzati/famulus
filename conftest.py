@@ -18,7 +18,7 @@ from officina.blueprints.graph import (
 )
 
 
-_LOCALAPPDATA_CASES = count()
+_WINDOWS_PATH_CASES = count()
 _REPOSITORY_ROOT = Path(__file__).resolve().parent
 
 
@@ -107,11 +107,11 @@ def _isolate_xdg_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _isolate_localappdata_env(
+def _isolate_windows_path_env(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path_factory: pytest.TempPathFactory,
 ) -> None:
-    """Give every test its own `LOCALAPPDATA`, mirroring `_isolate_xdg_env` above.
+    """Give every test its own Windows path inputs, mirroring `_isolate_xdg_env` above.
 
     `resolve_famulus_paths`'s Windows branch resolves *only* from the
     `LOCALAPPDATA` env var and never falls back to (or is influenced by) its
@@ -136,6 +136,8 @@ def _isolate_localappdata_env(
     case_root = (
         tmp_path_factory.getbasetemp()
         / "localappdata"
-        / f"case-{next(_LOCALAPPDATA_CASES)}"
+        / f"case-{next(_WINDOWS_PATH_CASES)}"
     )
     monkeypatch.setenv("LOCALAPPDATA", str(case_root / "AppData" / "Local"))
+    monkeypatch.setenv("APPDATA", str(case_root / "AppData" / "Roaming"))
+    monkeypatch.setenv("USERPROFILE", str(case_root))

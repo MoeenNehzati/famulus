@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 import officina.common.famulus_paths as famulus_paths
-from officina.common.famulus_paths import resolve_famulus_paths
+from officina.common.famulus_paths import resolve_famulus_paths, resolve_skill_config_dir
 
 
 def _assert_derived_fields(paths):
@@ -284,3 +284,31 @@ def test_get_interface_rejects_names_outside_finite_choices():
         module.Interface().run(["app_data_root"])
 
     assert error.value.code == 2
+
+
+@pytest.mark.parametrize(
+    ("platform", "expected"),
+    [("linux", ".config/famulus/cloud-files"), ("darwin", "Library/Application Support/Famulus/config/cloud-files"), ("win32", "AppData/Roaming/Famulus/cloud-files")],
+)
+def test_resolve_skill_config_dir_uses_platform_config_root_without_creating_it(tmp_path, platform, expected):
+    result = resolve_skill_config_dir("cloud-files", platform=platform, home=tmp_path, environ={})
+    assert result == tmp_path / expected
+    assert not result.exists()
+
+
+@pytest.mark.parametrize("skill_name", ["", ".", "..", "/absolute", "path/name", r"path\\name", "CON", "1skill", "Cloud-Files", "cloud_files", "cloud files", "-cloud-files", "cloud-files-", "cloud--files"])
+def test_resolve_skill_config_dir_rejects_unsafe_skill_names(tmp_path, skill_name):
+    with pytest.raises(famulus_paths.FamulusPathsError):
+        resolve_skill_config_dir(skill_name, platform="linux", home=tmp_path, environ={})
+
+
+def test_resolve_skill_config_dir_ignores_ambient_and_unrelated_resolution_inputs(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "ambient"))
+    assert resolve_skill_config_dir("cloud-files", platform="linux", home=tmp_path, environ={"XDG_DATA_HOME": "relative", "APPDATA": "relative", "FAMULUS_PLUGIN_DATA": "relative"}) == tmp_path / ".config" / "famulus" / "cloud-files"
+    for platform, home, environ in (("linux", tmp_path, {"XDG_CONFIG_HOME": "relative"}), ("win32", tmp_path, {"APPDATA": "relative"}), ("linux", Path("relative"), {})):
+        with pytest.raises(ValueError):
+            resolve_skill_config_dir("cloud-files", platform=platform, home=home, environ=environ)
+@pytest.mark.parametrize(("platform", "key", "suffix"), [("linux", "XDG_CONFIG_HOME", ("famulus", "cloud-files")), ("win32", "APPDATA", ("Famulus", "cloud-files"))])
+def test_resolve_skill_config_dir_uses_the_selected_platform_override(tmp_path, platform, key, suffix):
+    root = tmp_path / "override"
+    assert resolve_skill_config_dir("cloud-files", platform=platform, home=tmp_path, environ={key: str(root)}) == root.joinpath(*suffix)

@@ -70,7 +70,7 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": ["plans/<path>"], "stdin": null}
     Required options: []; positional arity: 1..1; stdin: permitted
-- `cloud-files._rtx.interface.write-config` — Write ~/.config/cloud-files/config.json with the given remote LLM root. Owned by cloud-files.
+- `cloud-files._rtx.interface.write-config` — Write <CONFIG>/cloud-files/config.json with the given remote LLM root. Owned by cloud-files.
   - Caller: `cloud-files`
   - Version: 1
   - Alternative: `default`
@@ -92,8 +92,8 @@ Skill: cloud-files
 This skill owns Google Drive transport. Other skills should call this skill's
 scripts rather than speaking to the Drive API directly.
 
-Install-time config lives at `~/.config/cloud-files/config.json`.
-Legacy OAuth credentials live at `~/.config/cloud-files/credentials.json`.
+Install-time config lives at `<CONFIG>/cloud-files/config.json`.
+Legacy OAuth credentials live at `<CONFIG>/cloud-files/credentials.json`.
 
 For shared Google setup or Drive reauthorization, first invoke
 `connect-google.interface.default`. Its deterministic coordinator creates a

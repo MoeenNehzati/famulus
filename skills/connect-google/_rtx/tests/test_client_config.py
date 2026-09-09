@@ -255,8 +255,8 @@ def test_client_status_discovers_valid_legacy_service_clients_without_copying(
     tmp_path: Path,
 ) -> None:
     home = tmp_path / "home"
-    drive = home / ".config" / "cloud-files" / "client.json"
-    calendar = home / ".config" / "online-calendar" / "client.json"
+    drive = canonical(home).parent.parent / "cloud-files" / "client.json"
+    calendar = canonical(home).parent.parent / "online-calendar" / "client.json"
     drive.parent.mkdir(parents=True)
     calendar.parent.mkdir(parents=True)
     write_json(drive, desktop_client("shared"))
@@ -277,8 +277,8 @@ def test_client_status_reports_conflicting_legacy_clients_and_ignores_invalid(
     tmp_path: Path,
 ) -> None:
     home = tmp_path / "home"
-    drive = home / ".config" / "cloud-files" / "client.json"
-    calendar = home / ".config" / "online-calendar" / "client.json"
+    drive = canonical(home).parent.parent / "cloud-files" / "client.json"
+    calendar = canonical(home).parent.parent / "online-calendar" / "client.json"
     drive.parent.mkdir(parents=True)
     calendar.parent.mkdir(parents=True)
     write_json(drive, desktop_client("drive"))

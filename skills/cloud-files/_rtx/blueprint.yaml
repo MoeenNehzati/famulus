@@ -3,7 +3,7 @@ authority:
   - allowed_readers:
     - cloud-files._rtx.interface.ensure-oauth
     match: exact
-    path: $home/.config/cloud-files/config.json
+    path: <CONFIG>/cloud-files/config.json
     reason: write-config is the declared writer for the cloud-files config.
   suggested_permissions:
     bash:

@@ -95,7 +95,7 @@ Famulus uses these platform roots for newer shared configuration and state:
 | --- | --- | --- |
 | Linux | `$XDG_CONFIG_HOME/famulus`, or `~/.config/famulus` | `$XDG_STATE_HOME/famulus`, or `~/.local/state/famulus` |
 | macOS | `~/Library/Application Support/Famulus/config` | `~/Library/Application Support/Famulus/state` |
-| Windows | `%LOCALAPPDATA%\Famulus\config` | `%LOCALAPPDATA%\Famulus\state` |
+| Windows | `%APPDATA%\Famulus` | `%LOCALAPPDATA%\Famulus\state` |
 
 These are the `standard` context roots. A `development` context instead keeps
 its config, data, state, assistant homes, jobs, and logs under the selected
@@ -159,9 +159,9 @@ paths listed below still do.
 | Google client secret | Python `keyring`, service `Famulus:connect-google`, username `oauth-client:<client-id>:client-secret` | Raw OAuth client secret |
 | Google refresh token for a descriptor | Python `keyring`, service `Famulus:connect-google`, username `credential-file:<descriptor-stem>:refresh-token` | Raw refresh token |
 | Google refresh token for a registry record | Python `keyring`, service `Famulus:connect-google`, username referenced by the registry, normally `google-refresh:<uuid>` (older records may use `<credential-id>:refresh-token`) | Raw refresh token |
-| Drive binding | `~/.config/cloud-files/config.json` | Remote root, timeout, and credential descriptor or ID reference |
-| Calendar binding | `~/.config/online-calendar/config.json` | Credential descriptor or ID reference |
-| Email account registry | `~/.config/email-client/accounts.json` | Email address, display name, server settings, auth mode, and credential reference; no new-route password or refresh token |
+| Drive binding | `<CONFIG>/cloud-files/config.json` | Remote root, timeout, and credential descriptor or ID reference |
+| Calendar binding | `<CONFIG>/online-calendar/config.json` | Credential descriptor or ID reference |
+| Email account registry | `<CONFIG>/email-client/accounts.json` | Email address, display name, server settings, auth mode, and credential reference; no new-route password or refresh token |
 | IMAP/SMTP app passwords | Python `keyring`, service `Famulus:email-client`, usernames `<nickname>:imap` and `<nickname>:smtp` | Raw app passwords |
 | Legacy email OAuth secrets | Python `keyring`, service `Famulus:email-client`, usernames `<nickname>:oauth:client-secret` and `<nickname>:oauth:refresh-token` | Raw client secret and refresh token |
 
@@ -182,10 +182,10 @@ that mode for explicitly requested direct API access.
 
 The runtime still accepts older files at:
 
-- `~/.config/cloud-files/client.json`
-- `~/.config/cloud-files/credentials.json`
-- `~/.config/online-calendar/client.json`
-- `~/.config/online-calendar/credentials.json`
+- `<CONFIG>/cloud-files/client.json`
+- `<CONFIG>/cloud-files/credentials.json`
+- `<CONFIG>/online-calendar/client.json`
+- `<CONFIG>/online-calendar/credentials.json`
 
 Those files may contain raw OAuth client secrets and refresh tokens. They are
 migration compatibility, not the recommended setup. Their continued support is

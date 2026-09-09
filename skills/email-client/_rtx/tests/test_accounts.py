@@ -1,7 +1,4 @@
-"""Integration tests for accounts.py subcommands. All tests operate on a
-tmp_path config dir via EMAIL_CLIENT_CONFIG_DIR — never touch the real
-~/.config/email-client/accounts.json.
-"""
+"""Integration tests for accounts.py subcommands."""
 import json
 import os
 import subprocess
@@ -18,7 +15,7 @@ if str(REPO_SRC) not in sys.path:
 
 def run(config_dir, *args, input=None):
     env = os.environ.copy()
-    env["EMAIL_CLIENT_CONFIG_DIR"] = str(config_dir)
+    env["HOME"] = env["USERPROFILE"] = str(config_dir.parents[{"win32": 3, "darwin": 4}.get(sys.platform, 2)]); env.pop("XDG_CONFIG_HOME", None)
     env["PATH"] = "/usr/bin:/bin"
     env["PYTHONPATH"] = str(REPO_SRC)
     return subprocess.run(
@@ -39,7 +36,7 @@ def read_registry(config_dir: Path) -> dict[str, dict[str, object]]:
 
 @pytest.fixture
 def config_dir(tmp_path):
-    return tmp_path / "email-client"
+    return ({"win32": Path(os.environ["APPDATA"]) / "Famulus", "darwin": tmp_path / "credential-home/Library/Application Support/Famulus/config"}.get(sys.platform, tmp_path / "credential-home/.config/famulus")) / "email-client"
 
 
 @pytest.fixture
@@ -233,7 +230,7 @@ class PasswordDeleteError(KeyringError):
 def run_with_fake_keyring(config_dir, fake_keyring, *args, input=None):
     module_dir, log_file, store_file = fake_keyring
     env = os.environ.copy()
-    env["EMAIL_CLIENT_CONFIG_DIR"] = str(config_dir)
+    env["HOME"] = env["USERPROFILE"] = str(config_dir.parents[{"win32": 3, "darwin": 4}.get(sys.platform, 2)]); env.pop("XDG_CONFIG_HOME", None)
     env["PATH"] = "/usr/bin:/bin"
     env["PYTHONPATH"] = os.pathsep.join([str(module_dir), str(REPO_SRC)])
     env["FAKE_KEYRING_LOG"] = str(log_file)

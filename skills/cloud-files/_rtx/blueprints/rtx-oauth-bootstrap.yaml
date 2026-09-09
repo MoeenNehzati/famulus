@@ -37,7 +37,7 @@ interfaces:
           type:
             kind: string
         from-json:
-          default: $home/.config/cloud-files/client.json
+          default: <CONFIG>/cloud-files/client.json
           description: Optional Google Desktop OAuth client JSON path
           required: false
           sensitivity: secret
@@ -100,7 +100,7 @@ interfaces:
           - json
           id: read-1
           medium: local-filesystem
-          path: $home/.config/cloud-files/client.json
+          path: <CONFIG>/cloud-files/client.json
           path_match: exact
           sensitivity: secret
           system: filesystem
@@ -114,7 +114,7 @@ interfaces:
           - json
           id: write-1
           medium: local-filesystem
-          path: $home/.config/cloud-files/credentials.json
+          path: <CONFIG>/cloud-files/credentials.json
           path_match: exact
           sensitivity: secret
           system: filesystem
@@ -242,8 +242,6 @@ platform_support:
   windows: true
 runtime_dependencies: []
 schema_version: 6
-uses_interfaces:
-- interface: credentials.interface.oauth
-  version: 1
+uses_interfaces: [{interface: credentials.interface.oauth, version: 1}, {interface: common.interface.famulus-paths, version: 1}]
 version: 1
 maturity: experimental

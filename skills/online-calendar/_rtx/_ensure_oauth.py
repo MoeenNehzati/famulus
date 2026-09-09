@@ -39,8 +39,13 @@ def log(msg: str = "") -> None:
     print(msg, flush=True)
 
 
+def _config_dir(home: Path) -> Path:
+    from officina.common.famulus_paths import resolve_skill_config_dir
+    return resolve_skill_config_dir(CONFIG_DIR_NAME, platform=sys.platform, home=home, environ=os.environ)
+
+
 def client_setup_lines(home: Path) -> list[str]:
-    client_json = home / ".config" / CONFIG_DIR_NAME / "client.json"
+    client_json = _config_dir(home) / "client.json"
     return [
         f"{LABEL} OAuth client setup still needed.",
         "  In Google Cloud Console, create or download an OAuth client JSON for a Desktop app.",
@@ -51,11 +56,11 @@ def client_setup_lines(home: Path) -> list[str]:
 
 
 def run(*, home: Path, dry_run: bool, stdin_isatty: bool | None = None) -> str:
-    credentials_path = home / ".config" / CONFIG_DIR_NAME / "credentials.json"
+    credentials_path = _config_dir(home) / "credentials.json"
     if credentials_path.exists():
         return "already_configured"
 
-    client_json = home / ".config" / CONFIG_DIR_NAME / "client.json"
+    client_json = _config_dir(home) / "client.json"
     setup_lines = client_setup_lines(home)
 
     if dry_run:
@@ -95,7 +100,7 @@ def run(*, home: Path, dry_run: bool, stdin_isatty: bool | None = None) -> str:
 
 
 def _config_paths(home: Path) -> tuple[Path, Path]:
-    config_dir = home / ".config" / CONFIG_DIR_NAME
+    config_dir = _config_dir(home)
     return config_dir, config_dir / "config.json"
 
 
@@ -195,7 +200,7 @@ def _existing_binding_subject(
             ).subject
         except GoogleCredentialError:
             return True, None
-    return (home / ".config" / CONFIG_DIR_NAME / "credentials.json").exists(), None
+    return (_config_dir(home) / "credentials.json").exists(), None
 
 
 def use_google_credential_file(

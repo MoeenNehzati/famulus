@@ -26,8 +26,8 @@ _SPEC.loader.exec_module(ensure_oauth)
 
 def test_already_configured_when_credentials_exist(tmp_path):
     home = tmp_path / "home"
-    (home / ".config" / "online-calendar").mkdir(parents=True)
-    (home / ".config" / "online-calendar" / "credentials.json").write_text("{}")
+    ensure_oauth._config_paths(home)[0].mkdir(parents=True)
+    (ensure_oauth._config_paths(home)[0] / "credentials.json").write_text("{}")
 
     status = ensure_oauth.run(home=home, dry_run=False, stdin_isatty=False)
 
@@ -36,7 +36,7 @@ def test_already_configured_when_credentials_exist(tmp_path):
 
 def test_needs_client_json_when_missing_non_interactive(tmp_path, capsys):
     home = tmp_path / "home"
-    (home / ".config" / "online-calendar").mkdir(parents=True)
+    ensure_oauth._config_paths(home)[0].mkdir(parents=True)
 
     status = ensure_oauth.run(home=home, dry_run=False, stdin_isatty=False)
 
@@ -97,7 +97,7 @@ def test_use_google_credential_stores_only_credential_id(tmp_path, fake_registry
 
     ensure_oauth.use_google_credential(credential_id=credential_id, home=tmp_path, platform=PLATFORM)
 
-    config_path = tmp_path / ".config" / "online-calendar" / "config.json"
+    config_path = ensure_oauth._config_paths(tmp_path)[1]
     config = json.loads(config_path.read_text())
     assert config["credential_id"] == credential_id
     assert "client_secret" not in config
@@ -114,7 +114,7 @@ def test_use_google_credential_rejects_insufficient_scope(tmp_path, fake_registr
     with pytest.raises(SystemExit):
         ensure_oauth.use_google_credential(credential_id=credential_id, home=tmp_path, platform=PLATFORM)
 
-    config_path = tmp_path / ".config" / "online-calendar" / "config.json"
+    config_path = ensure_oauth._config_paths(tmp_path)[1]
     assert not config_path.exists()
 
 
@@ -128,7 +128,7 @@ def test_use_google_credential_preserves_unrelated_config_fields(tmp_path, fake_
     # merge-based _merge_and_write_config preserves it rather than replacing
     # the whole payload.
     credential_id = fake_registry_with_calendar_scope
-    config_dir = tmp_path / ".config" / "online-calendar"
+    config_dir = ensure_oauth._config_paths(tmp_path)[0]
     config_dir.mkdir(parents=True)
     (config_dir / "config.json").write_text(json.dumps({"some_future_field": "keep-me"}))
 

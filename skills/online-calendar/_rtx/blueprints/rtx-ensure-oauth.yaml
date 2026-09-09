@@ -103,7 +103,7 @@ interfaces:
           - json
           id: read-1
           medium: local-filesystem
-          path: <home>/.config/online-calendar/credentials.json
+          path: <CONFIG>/online-calendar/credentials.json
           path_match: exact
           sensitivity: secret
           system: filesystem
@@ -113,7 +113,7 @@ interfaces:
           - json
           id: read-2
           medium: local-filesystem
-          path: <home>/.config/online-calendar/client.json
+          path: <CONFIG>/online-calendar/client.json
           path_match: exact
           sensitivity: secret
           system: filesystem
@@ -123,7 +123,7 @@ interfaces:
           - json
           id: read-3
           medium: local-filesystem
-          path: $home/.config/online-calendar/client.json
+          path: <CONFIG>/online-calendar/client.json
           path_match: exact
           sensitivity: secret
           system: filesystem
@@ -144,7 +144,7 @@ interfaces:
           - json
           id: write-2
           medium: local-filesystem
-          path: $home/.config/online-calendar/credentials.json
+          path: <CONFIG>/online-calendar/credentials.json
           path_match: exact
           sensitivity: secret
           system: filesystem
@@ -340,7 +340,7 @@ interfaces:
           - json
           id: read-config
           medium: local-filesystem
-          path: $home/.config/online-calendar/config.json
+          path: <CONFIG>/online-calendar/config.json
           path_match: exact
           sensitivity: user-private
           system: filesystem
@@ -351,7 +351,7 @@ interfaces:
           - json
           id: write-config-file
           medium: local-filesystem
-          path: $home/.config/online-calendar/config.json
+          path: <CONFIG>/online-calendar/config.json
           path_match: exact
           sensitivity: user-private
           system: filesystem
@@ -548,7 +548,7 @@ interfaces:
           - json
           id: read-1
           medium: local-filesystem
-          path: $home/.config/online-calendar/config.json
+          path: <CONFIG>/online-calendar/config.json
           path_match: exact
           sensitivity: user-private
           system: filesystem
@@ -559,7 +559,7 @@ interfaces:
           - json
           id: write-1
           medium: local-filesystem
-          path: $home/.config/online-calendar/config.json
+          path: <CONFIG>/online-calendar/config.json
           path_match: exact
           sensitivity: user-private
           system: filesystem
@@ -596,8 +596,6 @@ platform_support:
   windows: true
 runtime_dependencies: []
 schema_version: 6
-uses_interfaces:
-- interface: credentials.interface.google
-  version: 1
+uses_interfaces: [{interface: credentials.interface.google, version: 1}, {interface: common.interface.famulus-paths, version: 1}]
 version: 1
 maturity: experimental

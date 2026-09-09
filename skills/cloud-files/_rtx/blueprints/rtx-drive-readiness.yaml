@@ -35,7 +35,7 @@ interfaces:
           formats: [json]
           id: read-1
           medium: local-filesystem
-          path: $home/.config/cloud-files/config.json
+          path: <CONFIG>/cloud-files/config.json
           path_match: exact
           sensitivity: user-private
         writes:
@@ -139,7 +139,7 @@ interfaces:
           formats: [json]
           id: read-2
           medium: local-filesystem
-          path: $home/.config/cloud-files/config.json
+          path: <CONFIG>/cloud-files/config.json
           path_match: exact
           sensitivity: user-private
         writes:

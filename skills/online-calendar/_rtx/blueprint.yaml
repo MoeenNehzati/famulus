@@ -4,12 +4,12 @@ authority:
     - online-calendar._rtx.interface.ensure-oauth
     - online-calendar._rtx.interface.scripts-gcal
     match: exact
-    path: $home/.config/online-calendar/credentials.json
+    path: <CONFIG>/online-calendar/credentials.json
     reason: setup-oauth is the declared writer for regenerated calendar OAuth credentials.
   - allowed_readers:
     - online-calendar._rtx.interface.scripts-gcal
     match: exact
-    path: $home/.config/online-calendar/config.json
+    path: <CONFIG>/online-calendar/config.json
     reason: use-google-credential is the declared writer for the online-calendar config.
   suggested_permissions:
     bash:

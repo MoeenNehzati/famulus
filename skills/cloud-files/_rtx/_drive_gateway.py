@@ -15,9 +15,9 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Sequence
 
 from officina.configuration.configured_schema import ConfiguredSchemaError, load_configuration
+from officina.common.famulus_paths import resolve_skill_config_dir
 
 FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
-CONFIG_DIR_NAME = ".config/cloud-files"
 CONFIG_FILE_NAME = "config.json"
 CREDENTIALS_FILE_NAME = "credentials.json"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -130,13 +130,11 @@ def parse_llm_spec(
 
 
 def default_config_path(home: Path | None = None) -> Path:
-    base = home or Path.home()
-    return base / CONFIG_DIR_NAME / CONFIG_FILE_NAME
+    return resolve_skill_config_dir("cloud-files", platform=sys.platform, home=home or Path.home(), environ=os.environ) / CONFIG_FILE_NAME
 
 
 def default_credentials_path(home: Path | None = None) -> Path:
-    base = home or Path.home()
-    return base / CONFIG_DIR_NAME / CREDENTIALS_FILE_NAME
+    return resolve_skill_config_dir("cloud-files", platform=sys.platform, home=home or Path.home(), environ=os.environ) / CREDENTIALS_FILE_NAME
 
 
 def load_config(home: Path | None = None) -> CloudFilesConfig:

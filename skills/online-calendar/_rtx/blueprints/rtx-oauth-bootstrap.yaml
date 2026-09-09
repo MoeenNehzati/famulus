@@ -112,7 +112,7 @@ interfaces:
           - json
           id: read-1
           medium: local-filesystem
-          path: $home/.config/online-calendar/client.json
+          path: <CONFIG>/online-calendar/client.json
           path_match: exact
           sensitivity: secret
           system: filesystem
@@ -136,7 +136,7 @@ interfaces:
           - json
           id: write-1
           medium: local-filesystem
-          path: $home/.config/online-calendar/credentials.json
+          path: <CONFIG>/online-calendar/credentials.json
           path_match: exact
           sensitivity: secret
           system: filesystem
@@ -257,8 +257,6 @@ platform_support:
   windows: true
 runtime_dependencies: []
 schema_version: 6
-uses_interfaces:
-- interface: credentials.interface.oauth
-  version: 1
+uses_interfaces: [{interface: credentials.interface.oauth, version: 1}, {interface: common.interface.famulus-paths, version: 1}]
 version: 1
 maturity: experimental
