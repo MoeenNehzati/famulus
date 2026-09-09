@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -73,6 +74,36 @@ def test_root_entrypoint_exposes_remote_matrix_and_probe_help() -> None:
         )
         assert completed.returncode == 0, completed.stderr
         assert "remote" in completed.stdout.casefold() or command[1] in completed.stdout
+
+
+def test_remote_entrypoint_does_not_require_pytest(tmp_path: Path) -> None:
+    """Catch the lightweight remote route importing the local pytest runner."""
+
+    (tmp_path / "pytest.py").write_text(
+        "raise ImportError('pytest intentionally unavailable')\n",
+        encoding="utf-8",
+    )
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = os.pathsep.join(
+        item
+        for item in (str(tmp_path), environment.get("PYTHONPATH", ""))
+        if item
+    )
+
+    completed = subprocess.run(
+        [sys.executable, str(ENTRYPOINT), "remote", "--help"],
+        cwd=REPO_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="strict",
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "matrix" in completed.stdout
+    assert "probe" in completed.stdout
 
 
 def test_legacy_execution_entrypoints_are_removed() -> None:

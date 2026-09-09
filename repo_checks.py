@@ -12,7 +12,17 @@ SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from officina.repository.checks.runner import main
+
+def main(argv: list[str] | None = None) -> int:
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments and arguments[0] == "remote":
+        from officina.repository.checks import remote
+
+        return remote.main(arguments[1:])
+
+    from officina.repository.checks.runner import main as runner_main
+
+    return runner_main(arguments)
 
 
 if __name__ == "__main__":
