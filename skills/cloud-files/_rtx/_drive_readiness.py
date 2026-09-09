@@ -9,7 +9,7 @@ from pathlib import Path
 
 from officina.runtime.python_machine_interface import PythonMachineInterface
 
-if __package__ and __package__.count(".") >= 1:
+if __package__:
     from . import _drive_gateway
 else:
     SCRIPT_DIR = Path(__file__).resolve().parent
