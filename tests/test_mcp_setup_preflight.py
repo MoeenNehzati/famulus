@@ -10,6 +10,7 @@ from types import ModuleType, SimpleNamespace
 import sys
 
 import pytest
+import yaml
 
 from officina.blueprints.graph import ManagedSetup
 from officina.common.atomic_files import (
@@ -173,8 +174,16 @@ def _install_authorized_path(
         assert actual_export is export
         return projection
 
-    def materialize(actual_authorized, *, argv, stdin_requested):
-        events.append("compile")
+    def materialize(
+        actual_authorized,
+        *,
+        argv,
+        stdin_requested,
+        setup_preflight_authorized=False,
+    ):
+        events.append(
+            "compile-authorized" if setup_preflight_authorized else "compile"
+        )
         assert actual_authorized is authorized
         assert argv == (
             ["original-secret", "--token", "original-secret"]
@@ -1655,7 +1664,7 @@ def test_setup_flow_id_with_successful_authorization_permits_execution(
                 "flow_id": "flow-1",
                 "operation": "setup",
                 "state": "authorized-markdown-call",
-                "interface": "target.interface.helper",
+                "interface": "root.interface.run",
                 "version": 1,
                 "current_step": None,
                 "original": None,
@@ -1680,7 +1689,196 @@ def test_setup_flow_id_with_successful_authorization_permits_execution(
     )
 
     assert result["exit_code"] == 0
-    assert events == ["authorize", "authorize-markdown-call", "compile", "launch"]
+    assert events == [
+        "authorize",
+        "authorize-markdown-call",
+        "compile-authorized",
+        "launch",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("field", "mismatch"),
+    [
+        ("flow_id", "flow-2"),
+        ("interface", "other.interface.run"),
+        ("version", 2),
+    ],
+)
+def test_setup_authorization_response_must_match_requested_identity(
+    server,
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    mismatch: object,
+) -> None:
+    """Catches a mismatched manager response minting a transitive setup grant."""
+    events: list[str] = []
+    _install_authorized_path(server, monkeypatch, events, managed=True)
+    authorization = {
+        "schema_version": 1,
+        "flow_id": "flow-1",
+        "operation": "setup",
+        "state": "authorized-markdown-call",
+        "interface": "root.interface.run",
+        "version": 1,
+        "current_step": None,
+        "original": None,
+        "resume_original": False,
+    }
+    authorization[field] = mismatch
+    monkeypatch.setattr(
+        server,
+        "_manager_call",
+        lambda _caller, operation, _arguments: (
+            events.append(operation) or authorization
+        ),
+    )
+    monkeypatch.setattr(
+        server,
+        "_run_resolved_invocation",
+        lambda *_args, **_kwargs: pytest.fail(
+            "mismatched setup authorization launched the target"
+        ),
+    )
+
+    result = server.invoke(
+        "root",
+        "root.interface.run",
+        1,
+        _arguments(server),
+        setup_flow_id="flow-1",
+    )
+
+    assert result == {
+        "exit_code": 2,
+        "stdout": "",
+        "stderr": "",
+        "dispatcher": DispatcherError.from_spec(
+            "D58", operation="authorize-markdown-call"
+        ).as_payload(),
+    }
+    assert events == ["authorize", "authorize-markdown-call"]
+
+
+def _write_setup_authorization_chain_module(
+    repository: Path,
+    module_id: str,
+    target_module_id: str | None,
+) -> None:
+    from tests.test_dispatcher_direct_setup import _clone_module
+
+    module = _clone_module(repository, module_id, managed=False)
+    module_blueprint_path = module / "blueprint.yaml"
+    module_blueprint = yaml.safe_load(
+        module_blueprint_path.read_text(encoding="utf-8")
+    )
+    module_blueprint["discovery"] = {"mechanism": "skill"}
+    module_blueprint_path.write_text(
+        yaml.safe_dump(module_blueprint, sort_keys=False),
+        encoding="utf-8",
+    )
+    target_interface = (
+        None
+        if target_module_id is None
+        else f"{target_module_id}.interface.execute"
+    )
+    uses_interfaces = (
+        []
+        if target_interface is None
+        else [{"interface": target_interface, "version": 1}]
+    )
+    blueprint_path = module / "blueprints" / "lifecycle.yaml"
+    blueprint = yaml.safe_load(blueprint_path.read_text(encoding="utf-8"))
+    blueprint["uses_interfaces"] = uses_interfaces
+    source_interface = blueprint["interfaces"][
+        f"{module_id}.source.setup.interface.setup"
+    ]
+    source_interface["uses_interfaces"] = uses_interfaces
+    blueprint_path.write_text(
+        yaml.safe_dump(blueprint, sort_keys=False),
+        encoding="utf-8",
+    )
+    if target_module_id is None:
+        body = (
+            "        context = runtime_dispatch_context(self)\n"
+            "        print(json.dumps({'setup_preflight_authorized': "
+            "context.setup_preflight_authorized}))\n"
+            "        return 0\n"
+        )
+        imports = "import json\n"
+        dispatches = ""
+    else:
+        body = (
+            "        result = self.dispatch('next', text=True)\n"
+            "        print(result.stdout, end='')\n"
+            "        return result.returncode\n"
+        )
+        imports = ""
+        dispatches = (
+            "    dispatches = {'next': DispatchCall(\n"
+            f"        caller_module_id='{module_id}',\n"
+            f"        target_module_id='{target_module_id}',\n"
+            "        interface='execute',\n"
+            "    )}\n"
+        )
+    (module / "python_canary.py").write_text(
+        "from __future__ import annotations\n"
+        f"{imports}"
+        "from officina.runtime.python_machine_interface import (\n"
+        "    DispatchCall, PythonMachineInterface, runtime_dispatch_context,\n"
+        ")\n"
+        "class SetupInterface(PythonMachineInterface):\n"
+        f"{dispatches}"
+        "    def run(self, _args):\n"
+        f"{body}",
+        encoding="utf-8",
+    )
+
+
+def test_setup_authorization_crosses_two_real_subprocess_dispatches(
+    server,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches any seam dropping the setup grant before a grandchild runs."""
+    from tests.test_dispatcher_direct_setup import _configuration
+
+    configuration = _configuration(tmp_path / "repository")
+    repository = configuration.repository_root
+    _write_setup_authorization_chain_module(repository, "root", "middle")
+    _write_setup_authorization_chain_module(repository, "middle", "leaf")
+    _write_setup_authorization_chain_module(repository, "leaf", None)
+    monkeypatch.setattr(server, "ROOT", repository)
+    monkeypatch.setattr(
+        server,
+        "_manager_call",
+        lambda _caller, operation, _arguments: {
+            "schema_version": 1,
+            "flow_id": "flow-1",
+            "operation": "setup",
+            "state": "authorized-markdown-call",
+            "interface": "root.interface.execute",
+            "version": 1,
+            "current_step": None,
+            "original": None,
+            "resume_original": False,
+        }
+        if operation == "authorize-markdown-call"
+        else pytest.fail(f"unexpected manager operation: {operation}"),
+    )
+
+    result = server.invoke(
+        "root",
+        "root.interface.execute",
+        1,
+        server.CompactArguments(positionals=[], options={}, stdin=None),
+        setup_flow_id="flow-1",
+    )
+
+    assert result["exit_code"] == 0, result
+    assert json.loads(result["stdout"]) == {
+        "setup_preflight_authorized": True
+    }
 
 
 def test_setup_flow_id_with_unvalidated_authorization_result_is_invalid(

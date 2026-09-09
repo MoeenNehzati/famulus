@@ -120,6 +120,9 @@ class RuntimeDispatchContext:
     authorization or continuation-identity check against a caller-supplied
     claim) must use ``immediate_caller_module_id``, never
     ``caller_module_id``.
+
+    This context is trusted dispatcher metadata for repository-owned Python;
+    it is not a sandbox boundary between the dispatcher and module code.
     """
 
     caller_module_id: str | None = None
@@ -127,6 +130,7 @@ class RuntimeDispatchContext:
     immediate_caller_module_id: str | None = None
     repo_root: Path | None = None
     repository_config: Path | None = None
+    setup_preflight_authorized: bool = False
 
 
 _RUNTIME_DISPATCH_CONTEXT_ATTRIBUTE = "_officina_runtime_dispatch_context"
@@ -140,6 +144,7 @@ def set_runtime_dispatch_context(
     immediate_caller_module_id: str | None = None,
     repo_root: Path | None = None,
     repository_config: Path | None = None,
+    setup_preflight_authorized: bool = False,
 ) -> None:
     """Attach dispatcher-resolved runtime identity to one loaded interface."""
 
@@ -152,6 +157,7 @@ def set_runtime_dispatch_context(
             immediate_caller_module_id=immediate_caller_module_id,
             repo_root=repo_root,
             repository_config=repository_config,
+            setup_preflight_authorized=setup_preflight_authorized,
         ),
     )
 
@@ -1126,6 +1132,7 @@ class PythonMachineInterface:
             certification_view=None,
             host_caller=False,
             check_setup=True,
+            setup_preflight_authorized=context.setup_preflight_authorized,
             repository_config=context.repository_config,
         )
         return _run_resolved_invocation(

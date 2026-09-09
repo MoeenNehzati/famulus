@@ -200,6 +200,29 @@ def _authorize(
     )
 
 
+def test_materialized_setup_authorization_reaches_only_authorized_runner(
+    tmp_path: Path,
+) -> None:
+    """Catches setup authorization being dropped or added to ordinary launches."""
+    configuration, _repository = _managed_repository(tmp_path)
+    authorized = _authorize(configuration)
+
+    ordinary = direct_runtime.materialize_authorized_invocation(
+        authorized,
+        argv=[],
+        stdin_requested=False,
+    )
+    setup = direct_runtime.materialize_authorized_invocation(
+        authorized,
+        argv=[],
+        stdin_requested=False,
+        setup_preflight_authorized=True,
+    )
+
+    assert "--setup-preflight-authorized" not in ordinary.command
+    assert setup.command.count("--setup-preflight-authorized") == 1
+
+
 def _forbid_loader_side_effects(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -660,7 +683,17 @@ def test_unrelated_modules_are_never_read(tmp_path: Path, monkeypatch: pytest.Mo
     assert not [path for path in reads if "unrelated-" in path.as_posix()]
 
 
-def _dynamic_gate(tmp_path, monkeypatch, *, code="ready", target="root.leaf.interface.execute", caller="root", checked=True, mutate=None):
+def _dynamic_gate(
+    tmp_path,
+    monkeypatch,
+    *,
+    code="ready",
+    target="root.leaf.interface.execute",
+    caller="root",
+    checked=True,
+    setup_preflight_authorized=False,
+    mutate=None,
+):
     configuration, _ = _managed_repository(tmp_path)
     events = []
     original = {"caller": caller, "interface": target, "version": 1}
@@ -685,7 +718,7 @@ def _dynamic_gate(tmp_path, monkeypatch, *, code="ready", target="root.leaf.inte
     monkeypatch.setattr(direct_runtime, "materialize_authorized_invocation", lambda *args, **kwargs: events.append("materialize"))
 
     def invoke():
-        return direct_runtime._materialize(repository_config=configuration.config_path, caller_module_id=caller, target=target, args=[], stdin_requested=False, target_version=1, host_caller=False, check_setup=checked)
+        return direct_runtime._materialize(repository_config=configuration.config_path, caller_module_id=caller, target=target, args=[], stdin_requested=False, target_version=1, host_caller=False, check_setup=checked, setup_preflight_authorized=setup_preflight_authorized)
 
     return invoke, events, status
 
@@ -711,6 +744,52 @@ def test_dynamic_metadata_resolution_does_not_check_setup(tmp_path, monkeypatch)
     invoke, events, _ = _dynamic_gate(tmp_path, monkeypatch, checked=False)
     invoke()
     assert events == ["materialize"]
+
+
+def test_authorized_dynamic_dispatch_skips_only_ordinary_setup_preflight(
+    tmp_path,
+    monkeypatch,
+):
+    invoke, events, _ = _dynamic_gate(
+        tmp_path,
+        monkeypatch,
+        setup_preflight_authorized=True,
+    )
+
+    invoke()
+
+    assert events == ["materialize"]
+
+
+def test_authorized_dynamic_dispatch_still_intercepts_setup_lifecycle(
+    tmp_path,
+    monkeypatch,
+):
+    configuration, _repository = _managed_repository(tmp_path)
+    monkeypatch.setattr(
+        direct_runtime,
+        "_resolve_dispatch",
+        lambda **_kwargs: pytest.fail(
+            "managed lifecycle interception contacted the setup manager"
+        ),
+    )
+
+    with pytest.raises(dispatch_errors.SetupBlocked) as caught:
+        direct_runtime._materialize(
+            repository_config=configuration.config_path,
+            caller_module_id="root",
+            target="root.interface.setup",
+            args=[],
+            stdin_requested=False,
+            target_version=1,
+            host_caller=False,
+            check_setup=True,
+            setup_preflight_authorized=True,
+        )
+
+    assert caught.value.status is None
+    assert caught.value.call_path == ("root.interface.setup",)
+    assert caught.value.lifecycle == ("root.interface.setup", "setup")
 
 
 def test_dynamic_unmanaged_target_does_not_contact_manager(tmp_path, monkeypatch):
