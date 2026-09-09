@@ -21,6 +21,7 @@ from officina.dispatcher import (
     load_direct_setup_projection,
     materialize_authorized_invocation,
 )
+from officina.dispatcher.direct_blueprints import parse_interface_id
 from officina.dispatcher.direct_runtime import (
     _run_resolved_invocation,
     resolve_dispatch,
@@ -31,6 +32,7 @@ from officina.dispatcher.errors import (
     DispatcherError,
     InvocationError,
     ReducedCause,
+    SetupBlocked,
     render_dispatcher_error,
 )
 from officina.blueprints.graph import BlueprintGraphError
@@ -307,7 +309,7 @@ def _begin_route(
 ) -> dict[str, object]:
     return _manager_route(
         "begin", [operation, root, caller, interface, str(version)]
-    )
+    ) | {"caller": caller}
 
 
 def _setup_managed(
@@ -629,11 +631,11 @@ def _validate_manager_response(
 
 
 def _ordinary_preflight(
-    caller: str, interface: str, version: int
+    caller: str, interface: str, version: int, status: dict[str, Any] | None = None
 ) -> dict[str, object] | None:
     """Return a redacted refusal, or ``None`` when launch is authorized."""
 
-    status = _manager_call(caller, "status", [interface])
+    status = _manager_call(caller, "status", [interface]) if status is None else status
     code = status.get("code")
     if code == "unmanaged":
         return None
@@ -663,10 +665,6 @@ def _ordinary_preflight(
         return {
             "code": "setup_busy",
             "flow_id": flow_id,
-            "manager": {
-                "interface": MANAGER_INTERFACES["recover"],
-                "version": 1,
-            },
         }
     raise DispatcherError.from_spec("D63")
 
@@ -779,7 +777,28 @@ def invoke(
             "stderr": result.stderr,
             "dispatcher": dispatcher,
         }
-    except InvocationError as error:
+    except (InvocationError, SetupBlocked) as error:
+        if type(error) is SetupBlocked:
+            try:
+                if set(error.__dict__) != {"status", "call_path", "lifecycle"} or type(error.call_path) is not tuple or not 1 <= len(error.call_path) <= 32 or error.call_path[0] != interface: raise DispatcherError.from_spec("D68")
+                for frame in error.call_path:
+                    parse_interface_id(frame)
+                if error.lifecycle is not None:
+                    if error.status is not None or type(error.lifecycle) is not tuple or len(error.lifecycle) != 2: raise DispatcherError.from_spec("D68")
+                    root, operation = error.lifecycle
+                    if parse_interface_id(root)[1] != "setup" or operation not in {"setup", "teardown"}: raise DispatcherError.from_spec("D68")
+                    response = _setup_managed(operation, root, caller, interface, version)
+                else:
+                    if type(error.status) is not dict: raise DispatcherError.from_spec("D68")
+                    status = _validate_manager_response(error.status, "status", 0)
+                    tuple(map(parse_interface_id, (status["root_setup_interface"], *(step["interface"] for step in status["pending_stack"]))))
+                    if status["code"] not in {"setup_required", "setup_busy"}: raise DispatcherError.from_spec("D68")
+                    response = _ordinary_preflight(caller, interface, version, status)
+            except InvocationError as validation_error:
+                error = validation_error
+            else:
+                response["call_path"] = list(error.call_path)
+                return response
         diagnosis = (
             error
             if isinstance(error, DispatcherError)

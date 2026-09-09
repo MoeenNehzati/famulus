@@ -402,7 +402,8 @@ def test_generated_interface_block_includes_the_managed_markdown_protocol(syncer
     assert "`setup-interface-manager._rtx.interface.authorize@1`" in block
     ordinary_protocol = block[block.index("For an ordinary invocation"):]
     assert ordinary_protocol.index("status") < ordinary_protocol.index("permission") < ordinary_protocol.index("begin")
-    assert ordinary_protocol.index("ready recheck") < ordinary_protocol.index("authorize") < ordinary_protocol.index("Retry")
+    authorize_interface = "`setup-interface-manager._rtx.interface.authorize@1`"
+    assert ordinary_protocol.index("ready recheck") < ordinary_protocol.index(authorize_interface) < ordinary_protocol.index("Retry")
     assert (
         "begin(setup, ROOT_SETUP_INTERFACE, ORIGINAL_CALLER, ORIGINAL_INTERFACE, "
         "ORIGINAL_VERSION)" in block
@@ -413,6 +414,7 @@ def test_generated_interface_block_includes_the_managed_markdown_protocol(syncer
     )
     assert "caller, interface, version, arguments, and stdin outside the ledger" in block
     assert "exact structured current step" in block
+    assert "If it is `setup_busy`, stop: this passive status authorizes no action." in block
     assert "Generic setup prose does not activate this gate" in block
     assert "path" not in block.lower()
 

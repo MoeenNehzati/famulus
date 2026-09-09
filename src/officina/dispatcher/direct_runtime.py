@@ -35,7 +35,9 @@ from officina.dispatcher.direct_models import (
     InvocationDiagnostic,
     ResolvedInvocationMetadata,
 )
+from officina.dispatcher.direct_blueprints import parse_interface_id
 from officina.dispatcher.errors import (
+    SetupBlocked,
     DISPATCHER_ERROR_SPECS,
     DispatcherError,
     InvocationError,
@@ -70,14 +72,32 @@ def _collect_diagnostic(
             collected.extend(chunk[:remaining])
         if len(collected) > _DIAGNOSTIC_LIMIT or len(chunk) > remaining:
             overflow[0] = True
-def _registered_diagnosis(payload: bytes) -> DispatcherError | None:
+def _registered_diagnosis(payload: bytes) -> DispatcherError | SetupBlocked | None:
     """Accept exactly one complete registered dispatcher payload."""
 
     if not payload or payload.strip() != payload:
         return None
     try:
         value = json.loads(payload)
-    except (UnicodeDecodeError, json.JSONDecodeError):
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        return None
+    if isinstance(value, dict) and set(value) == {"setup_blocked"}:
+        try:
+            if len(payload) >= _DIAGNOSTIC_LIMIT or json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8") != payload:
+                return None
+            record = value["setup_blocked"]
+            path, status, lifecycle = record["call_path"], record["status"], record["lifecycle"]
+            if set(record) != {"call_path", "status", "lifecycle"} or type(path) is not list or not 1 <= len(path) <= 32:
+                return None
+            for target in path:
+                parse_interface_id(target)
+            if isinstance(status, dict) and lifecycle is None:
+                return SetupBlocked(status, path)
+            if status is None and type(lifecycle) is list and len(lifecycle) == 2 and lifecycle[1] in ("setup", "teardown"):
+                parse_interface_id(lifecycle[0])
+                return SetupBlocked(None, path, tuple(lifecycle))
+        except (KeyError, TypeError, InvocationError, RecursionError):
+            pass
         return None
     if not isinstance(value, dict) or value.get("schema_version") != 1:
         return None
@@ -279,6 +299,43 @@ def materialize_authorized_invocation(
     return _materialize_metadata(authorized.repository.configuration, metadata)
 
 
+def _check_setup(authorized):
+    from officina.blueprints.direct_setup import load_direct_setup_projection
+    def _exact_setup_value(actual, expected):
+        return type(actual) is type(expected) and (set(actual) == set(expected) and all(_exact_setup_value(actual[key], item) for key, item in expected.items()) if isinstance(expected, dict) else actual == expected)
+    caller, target, version = authorized.authorization.caller_module_id, authorized.export.interface_id, authorized.export.version
+    if "setup-interface-manager._rtx" in (caller, authorized.authorization.terminal_module_id):
+        return
+    projection = load_direct_setup_projection(authorized.repository, authorized.target_modules, authorized.export)
+    if not projection.graph.managed_setups:
+        return
+    if projection.lifecycle is not None:
+        raise SetupBlocked(None, (target,), projection.lifecycle)
+    def manager(operation, arguments):
+        try:
+            result = _run_resolved_invocation(_resolve_dispatch(caller_skill=caller, target=f"setup-interface-manager._rtx.interface.{operation}", args=arguments, target_version=1, repository_config=authorized.repository.configuration.config_path), text=True)
+            if result.returncode != 0:
+                raise DispatcherError.from_spec("D56", operation=operation)
+            value = json.loads(result.stdout)
+        except (InvocationError, OSError, ValueError) as exc:
+            raise DispatcherError.from_spec("D57" if isinstance(exc, json.JSONDecodeError) else "D56", operation=operation) from exc
+        if not isinstance(value, dict):
+            raise DispatcherError.from_spec("D57", operation=operation)
+        return value
+    status = manager("status", [target])
+    if status.get("code") in ("setup_required", "setup_busy"):
+        raise SetupBlocked(status, (target,))
+    code, root = status.get("code"), status.get("root_setup_interface")
+    if not _exact_setup_value(status, dict(schema_version=1, code=code, root_setup_interface=root, pending_stack=[], flow_id=None)) or not (code == "unmanaged" and root is None or code == "ready" and isinstance(root, str) and root):
+        raise DispatcherError.from_spec("D58", operation="status")
+    if code == "unmanaged":
+        return
+    parse_interface_id(root)
+    original = dict(caller=caller, interface=target, version=version)
+    if not _exact_setup_value(manager("authorize", [target, caller, target, str(version)]), dict(schema_version=1, flow_id=None, operation="authorize", state="ready", current_step=None, original=original, resume_original=True)):
+        raise DispatcherError.from_spec("D60")
+
+
 def _materialize(
     *,
     repository_config: Path,
@@ -288,6 +345,7 @@ def _materialize(
     stdin_requested: bool,
     target_version: int | None,
     host_caller: bool,
+    check_setup: bool = False,
 ) -> ResolvedInvocation:
     """Authorize one route and construct its confined Python runner command."""
 
@@ -303,6 +361,8 @@ def _materialize(
         interface_version=target_version,
         host_caller=host_caller,
     )
+    if check_setup:
+        _check_setup(authorized)
     return materialize_authorized_invocation(
         authorized,
         argv=args,
@@ -356,6 +416,7 @@ def _resolve_dispatch(
     target_version: int | None = None,
     repository_config: Path | None = None,
     host_caller: bool = False,
+    check_setup: bool = False,
     **_legacy: object,
 ) -> ResolvedInvocation:
     """Internal resolver shared by host and trusted nested callers.
@@ -381,6 +442,7 @@ def _resolve_dispatch(
         stdin_requested=stdin_requested,
         target_version=target_version,
         host_caller=host_caller,
+        check_setup=check_setup,
     )
 
 
@@ -592,8 +654,12 @@ def _run_resolved_invocation(
             )
 
         collector.join(timeout=0.25)
-        if process.returncode == 70 and not collector.is_alive() and not overflow[0]:
-            diagnosis = _registered_diagnosis(bytes(collected))
+        if process.returncode == 70:
+            diagnosis = None if collector.is_alive() or overflow[0] else _registered_diagnosis(bytes(collected))
+            if isinstance(diagnosis, SetupBlocked) and len(diagnosis.call_path) < 32:
+                raise SetupBlocked(diagnosis.status, (resolved.target, *diagnosis.call_path), diagnosis.lifecycle)
+            if diagnosis is None or isinstance(diagnosis, SetupBlocked):
+                raise DispatcherError.from_spec("D68")
             if diagnosis is not None:
                 diagnosis.caller_module_id = resolved.caller_module_id
                 diagnosis.target_module_id = resolved.target_module_id

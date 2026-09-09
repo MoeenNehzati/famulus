@@ -117,8 +117,30 @@ demand-driven: when a requested workflow needs an unconfigured capability,
 Famulus guides you through only that capability and its prerequisites, verifies
 the result, and continues the original request.
 
-If setup is interrupted or another setup operation is already in progress,
-follow the reported recovery guidance rather than editing internal state.
+Setup is checked at the MCP root and at every actual
+`PythonMachineInterface.dispatch()` before its target launches. An unmanaged
+target simply proceeds without contacting the setup manager. These checks are
+dynamic: `uses_interfaces` declarations are not statically traversed, so an
+unused branch does not request setup. Standalone dispatch chains also perform
+these checks, but only MCP turns a refusal into a setup continuation.
+
+If a nested call needs setup, the refusal travels through the existing private
+process diagnostic channel with an outer-to-inner `call_path` of interface
+IDs. The MCP root validates it and returns the existing setup continuation or
+error result. For `setup_required`, the continuation identifies the original
+outer MCP request, not the blocked child. `setup_busy` exposes only the active
+flow identity and authorizes no action.
+
+For `setup_required` or `setup_managed`, pass the returned `manager` object
+unchanged to `famulus_dispatcher.invoke`; it includes the original caller.
+
+The outer workflow may already have done work before reaching the blocked
+child. Retrying the outer request after setup can repeat that work; nested
+setup checking does not make the workflow transactional or exactly-once.
+
+If setup is interrupted, follow only a recovery action returned to the owning
+flow in `recovery-required` state. Another caller that receives `setup_busy`
+must stop rather than infer a recovery action or edit internal state.
 Configure and operate persistent features through their owning skills, and use
 the [Personal Assistance Quickstart](quickstarts/personal-assistance.md) and
 [Automation Quickstart](quickstarts/automation.md) for normal workflow order.
@@ -150,6 +172,12 @@ current flow id as `setup_flow_id` to `famulus_dispatcher.invoke`. MCP asks the
 manager to authorize that exact `(flow, interface, version)` and then executes
 the already-authorized dispatcher target. No nested setup flow is created, and
 calls without `setup_flow_id` keep the normal preflight behavior.
+
+Calls whose caller or terminal target module is exactly
+`setup-interface-manager._rtx` bypass the per-call setup gate. This narrow
+exception lets the manager's control routes, actions, and verifiers operate
+without recursively requesting setup; similarly prefixed module names do not
+receive that bypass.
 
 Generic discussion about setup, installation, configuration, or teardown does
 not activate the manager.
@@ -209,7 +237,8 @@ only the current root's claim. A teardown verifier must return success before
 the receipt is removed, and teardown never resumes an ordinary request.
 
 Only one ledger-mutating flow can be active. A second action receives
-`setup_busy` with the existing flow identity. After an interruption,
+passive `setup_busy` with the existing flow identity and no recovery route.
+After an interruption, the owning flow may receive `recovery-required`; its
 `setup-interface-manager._rtx.interface.recover@1` accepts only `retry` or
 `cancel`: retry checks the verifier before rerunning the exact current step;
 cancel removes claims added by completed steps and clears the flow without

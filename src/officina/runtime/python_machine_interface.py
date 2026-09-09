@@ -1125,6 +1125,7 @@ class PythonMachineInterface:
             target_version=call.version,
             certification_view=None,
             host_caller=False,
+            check_setup=True,
             repository_config=context.repository_config,
         )
         return _run_resolved_invocation(

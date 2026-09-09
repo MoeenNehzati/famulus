@@ -215,7 +215,7 @@ All S rows have disposition `Retain`.
 | S01 | Target has no managed owner | status `unmanaged` | No managed setup applies; do not imply ready, missing, or broken. | `_setup_evaluation.py:127-144` |
 | S02 | Closure receipts are current and no flow is active | status `ready` | Setup evaluation is ready; authorization has not necessarily succeeded. | `:136-144` |
 | S03 | First noncurrent receipt yields a pending closure | status `setup_required` | Exact root/LIFO stack only; do not infer why receipt is absent or that execution began. | `:136-143` |
-| S04 | Any active flow exists | status `setup_busy` | Flow ID and passive route only; do not imply ownership, failure, or recovery action. | `:132-135` |
+| S04 | Any active flow exists | status `setup_busy` | Flow ID only; do not imply ownership, failure, or recovery action. | `:132-135` |
 | S05a | Operation has no external work | flow `ready` | Operation completed without an external step; `resume_original=false`. | `_setup_manager.py:451-466` |
 | S05b | Final settlement clears a setup/teardown flow | flow `ready` | Current step settled and `resume_original=false`. Claim external verification only when a verifier returned true; otherwise record only the zero action status or submitted Markdown completion. Do not generalize teardown completion to setup readiness. | `_setup_manager.py:451-466,795-815,844-868` |
 | S05c | Ready-target authorization atomically claims receipts | flow `ready` | Authorization completed and `resume_original=true`; no setup action ran. | `_setup_manager.py:593-605` |

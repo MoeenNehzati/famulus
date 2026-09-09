@@ -1569,6 +1569,7 @@ def test_declared_v5_dispatch_ignores_runtime_source_context(
     assert captured_resolve["target"] == "cloud-files-rtx.interface.read"
     assert captured_resolve["repo_root"] == tmp_path
     assert captured_resolve["host_caller"] is False
+    assert captured_resolve["check_setup"] is True
     assert captured_run["resolved"] is sentinel
     assert captured_run["stdin"] == "payload"
     assert captured_run["text"] is True
@@ -2546,7 +2547,7 @@ def test_private_diagnosis_wins_before_output_decoding(
     assert caught.value.code == "dispatcher.runner_request_invalid"
 
 
-def test_invalid_private_payload_does_not_reclassify_exit_70(
+def test_invalid_private_payload_fails_closed(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2563,17 +2564,13 @@ def test_invalid_private_payload_does_not_reclassify_exit_70(
         return Process()
 
     monkeypatch.setattr(direct_runtime.subprocess, "Popen", popen)
-    result = dispatcher_core._run_resolved_invocation(
-        _transport_resolved(tmp_path), text=True
-    )
-
-    assert result.returncode == 70
-    assert result.stdout == "ordinary"
-    assert result.stderr == "failure"
+    with pytest.raises(DispatcherError) as caught:
+        dispatcher_core._run_resolved_invocation(_transport_resolved(tmp_path), text=True)
+    assert caught.value.code == "dispatcher.error"
 
 
 @pytest.mark.parametrize("padding", [b" ", b"\n", b"\t"])
-def test_whitespace_around_private_payload_does_not_reclassify_exit_70(
+def test_whitespace_around_private_payload_fails_closed(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     padding: bytes,
@@ -2590,13 +2587,9 @@ def test_whitespace_around_private_payload_does_not_reclassify_exit_70(
         return Process()
 
     monkeypatch.setattr(direct_runtime.subprocess, "Popen", popen)
-    result = dispatcher_core._run_resolved_invocation(
-        _transport_resolved(tmp_path), text=True
-    )
-
-    assert result.returncode == 70
-    assert result.stdout == "ordinary"
-    assert result.stderr == "failure"
+    with pytest.raises(DispatcherError) as caught:
+        dispatcher_core._run_resolved_invocation(_transport_resolved(tmp_path), text=True)
+    assert caught.value.code == "dispatcher.error"
 
 
 @pytest.mark.parametrize(
@@ -2608,7 +2601,7 @@ def test_whitespace_around_private_payload_does_not_reclassify_exit_70(
     ],
     ids=["multiple", "oversized"],
 )
-def test_invalid_private_diagnosis_records_remain_ordinary_exit_70(
+def test_invalid_private_diagnosis_records_fail_closed(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     diagnosis: bytes,
@@ -2627,13 +2620,203 @@ def test_invalid_private_diagnosis_records_remain_ordinary_exit_70(
         return Process()
 
     monkeypatch.setattr(direct_runtime.subprocess, "Popen", popen)
-    result = dispatcher_core._run_resolved_invocation(
-        _transport_resolved(tmp_path), text=True
-    )
-
-    assert result.returncode == 70
-    assert result.stderr == "failure"
+    with pytest.raises(DispatcherError) as caught:
+        dispatcher_core._run_resolved_invocation(_transport_resolved(tmp_path), text=True)
+    assert caught.value.code == "dispatcher.error"
     _assert_private_diagnosis_writer_closed(inherited_writer[0])
+
+
+@pytest.mark.parametrize("mode", ["short", "zero", "partial-error"])
+def test_setup_private_emitter_writes_all_or_fails_closed(monkeypatch, mode):
+    from officina.dispatcher import errors
+
+    signal = errors.SetupBlocked({"code": "setup_required"}, ("leaf.interface.run",))
+    reader, writer = os.pipe()
+    real_write = os.write
+    writes = []
+
+    def write(fd, payload):
+        writes.append(len(payload))
+        if mode == "zero":
+            return 0
+        if mode == "partial-error" and len(writes) > 1:
+            raise OSError("closed")
+        return real_write(fd, payload[:7])
+
+    monkeypatch.setattr(python_runner.os, "write", write)
+    try:
+        assert python_runner._emit_private_diagnosis(writer, signal) == 70
+        with pytest.raises(OSError):
+            os.fstat(writer)
+        payload = os.read(reader, 16384)
+    finally:
+        os.close(reader)
+    if mode == "short":
+        decoded = direct_runtime._registered_diagnosis(payload)
+        assert isinstance(decoded, errors.SetupBlocked)
+        assert decoded.call_path == signal.call_path
+        assert len(writes) > 1
+    else:
+        assert direct_runtime._registered_diagnosis(payload) is None
+
+
+@pytest.mark.parametrize("boundaries", [1, 2])
+def test_setup_private_signal_crosses_process_boundaries(tmp_path, boundaries):
+    from officina.dispatcher import errors
+
+    (tmp_path / "_rtx").mkdir()
+    gateway = tmp_path / "_rtx" / "gateway.py"
+    gateway.write_text(
+        "import os, sys\nfrom pathlib import Path\n"
+        "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
+        "from officina.dispatcher.errors import SetupBlocked\n"
+        "from officina.dispatcher.direct_runtime import ResolvedInvocation, _run_resolved_invocation\n"
+        "from officina.dispatcher.direct_models import ResolvedInvocationMetadata\n"
+        "class Entry(PythonMachineInterface):\n"
+        "    def run(self, argv):\n"
+        "        try:\n"
+        "            if type(self).__name__ == 'Inner':\n"
+        "                raise SetupBlocked({'code': 'setup_required'}, ('leaf.interface.run',))\n"
+        "            metadata = ResolvedInvocationMetadata(caller_module_id='outer', target_module_id='inner', "
+        "script_interface='inner.source.runtime.interface.run', target='inner.interface.run', "
+        "pattern='default', cwd=Path.cwd(), command=[], stdin=False)\n"
+        "            command = [sys.executable, '-P', '-m', 'officina.runtime.python_machine_interface_runner', '_rtx/gateway.py', 'Inner']\n"
+        "            _run_resolved_invocation(ResolvedInvocation(metadata, command, os.environ.copy()))\n"
+        "        except Exception:\n"
+        "            return 0\n"
+        "class Inner(Entry):\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+    resolved = _transport_resolved(tmp_path)
+    command = [sys.executable, "-P", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/gateway.py", "Entry"]
+    if boundaries == 1:
+        command[-1] = "Inner"
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
+    resolved = dispatcher_core.ResolvedInvocation(resolved.metadata(), command, environment)
+    with pytest.raises(BaseException) as caught:
+        dispatcher_core._run_resolved_invocation(resolved, text=True)
+    assert isinstance(caught.value, errors.SetupBlocked)
+    middle = ("inner.interface.run",) if boundaries == 2 else ()
+    assert caught.value.call_path == ("target.interface.run", *middle, "leaf.interface.run")
+
+
+@pytest.mark.parametrize("frames", [0, 33])
+def test_setup_private_emitter_rejects_unbounded_paths(frames):
+    from officina.dispatcher import errors
+
+    signal = errors.SetupBlocked({}, ("leaf.interface.run",) * frames)
+    reader, writer = os.pipe()
+    try:
+        assert python_runner._emit_private_diagnosis(writer, signal) == 70
+        assert os.read(reader, 16384) == b""
+    finally:
+        os.close(reader)
+
+
+@pytest.mark.parametrize("payload", [
+    b'{"setup_blocked":{"call_path":["leaf.interface.run"],"lifecycle":null,"status":{},"status":{}}}',
+    b'{"setup_blocked":{"call_path":["../secret"],"lifecycle":null,"status":{}}}',
+    b'{"setup_blocked":{"call_path":["leaf.interface.run"],"lifecycle":null,"status":{},"secret":"x"}}',
+    b'{"setup_blocked":{"call_path":["leaf.interface.run"],"lifecycle":["root.interface.setup","setup"],"status":{}}}',
+])
+def test_setup_private_decoder_rejects_invalid_envelopes(payload):
+    assert direct_runtime._registered_diagnosis(payload) is None
+
+
+def test_setup_private_decoder_rejects_exact_byte_limit():
+    value = {"setup_blocked": {"call_path": ["leaf.interface.run"], "lifecycle": None, "status": {"padding": ""}}}
+    encode = lambda: json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+    value["setup_blocked"]["status"]["padding"] = "x" * (16384 - len(encode()))
+    assert len(encode()) == 16384
+    assert direct_runtime._registered_diagnosis(encode()) is None
+
+
+def test_setup_private_decoder_rejects_excessive_json_nesting(monkeypatch):
+    def reject_nesting(payload):
+        raise RecursionError("JSON nesting exceeds this Python runtime's bound")
+    monkeypatch.setattr(direct_runtime.json, "loads", reject_nesting)
+    assert direct_runtime._registered_diagnosis(b"{}") is None
+
+
+def test_setup_private_serialization_recursion_fails_closed(monkeypatch):
+    from officina.dispatcher.errors import SetupBlocked
+
+    def reject_nesting(*args, **kwargs):
+        raise RecursionError("JSON nesting")
+    monkeypatch.setattr(direct_runtime.json, "dumps", reject_nesting)
+    assert direct_runtime._registered_diagnosis(b'{"setup_blocked":{}}') is None
+    reader, writer = os.pipe()
+    try:
+        assert python_runner._emit_private_diagnosis(writer, SetupBlocked({}, ("leaf.interface.run",))) == 70
+        assert os.read(reader, 16384) == b""
+    finally:
+        os.close(reader)
+
+
+@pytest.mark.parametrize("frames", [31, 32])
+def test_setup_private_receiver_enforces_total_frame_limit(tmp_path, monkeypatch, frames):
+    from officina.dispatcher.errors import SetupBlocked
+
+    signal = SetupBlocked({}, ("leaf.interface.run",) * frames)
+    payload = json.dumps({"setup_blocked": signal.__dict__}, sort_keys=True, separators=(",", ":")).encode()
+    class Process:
+        returncode = 70
+        def communicate(self, **kwargs):
+            return b"", b""
+    def popen(command, **kwargs):
+        _write_private_diagnosis(command, kwargs, payload)
+        return Process()
+    monkeypatch.setattr(direct_runtime.subprocess, "Popen", popen)
+    with pytest.raises(BaseException) as caught:
+        direct_runtime._run_resolved_invocation(_transport_resolved(tmp_path))
+    if frames == 31:
+        assert isinstance(caught.value, SetupBlocked)
+        assert len(caught.value.call_path) == 32
+        assert caught.value.call_path[0] == "target.interface.run"
+    else:
+        assert isinstance(caught.value, DispatcherError)
+        assert caught.value.code == "dispatcher.error"
+
+
+@pytest.mark.parametrize("invalid", ["nonserializable", "circular"])
+def test_setup_private_serialization_failure_closes_and_exits_70(invalid):
+    from officina.dispatcher.errors import SetupBlocked
+
+    status = {}
+    status["invalid"] = object() if invalid == "nonserializable" else status
+    reader, writer = os.pipe()
+    try:
+        assert python_runner._emit_private_diagnosis(writer, SetupBlocked(status, ("leaf.interface.run",))) == 70
+        with pytest.raises(OSError):
+            os.fstat(writer)
+        assert os.read(reader, 16384) == b""
+    finally:
+        os.close(reader)
+
+
+def test_private_setup_large_integer_fails_closed(tmp_path, monkeypatch):
+    payload = (b'{"setup_blocked":{"call_path":["leaf.interface.run"],'
+               b'"lifecycle":null,"status":{"integer":' + b"9" * 5000 + b'}}}')
+    assert len(payload) < 16 * 1024
+    class Process:
+        returncode = 70
+        def communicate(self, **kwargs):
+            return b"", b""
+    def popen(command, **kwargs):
+        _write_private_diagnosis(command, kwargs, payload)
+        return Process()
+    monkeypatch.setattr(direct_runtime.subprocess, "Popen", popen)
+    previous_limit = sys.get_int_max_str_digits()
+    sys.set_int_max_str_digits(4300)
+    try:
+        assert direct_runtime._registered_diagnosis(payload) is None
+        with pytest.raises(DispatcherError) as caught:
+            direct_runtime._run_resolved_invocation(_transport_resolved(tmp_path))
+        assert caught.value.code == "dispatcher.error"
+    finally:
+        sys.set_int_max_str_digits(previous_limit)
 
 
 def test_output_decode_failure_precedes_checked_nonzero(

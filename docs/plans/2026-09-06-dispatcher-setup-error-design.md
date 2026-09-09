@@ -122,7 +122,7 @@ evaluated closure. Manager-produced `setup_busy` has a nonempty flow ID and no
 pending stack. Manager evaluation establishes ordering and closure membership,
 and manager tests verify them. The adapter checks only shape, safe step fields,
 uniqueness, nonempty identifiers, and exit pairing before MCP constructs a
-begin route or adds its passive manager identity `{interface, version}`.
+begin route. For `setup_busy`, MCP returns only the active flow identity.
 
 `ready`, `run-step`, `awaiting-settlement`, and
 `authorized-markdown-call` exit 0. `busy`, `failed`, and
@@ -152,10 +152,10 @@ older schema and flows without a continuation expose no ordinary recovery
 object; their repair remains an explicit operator concern. Negative
 begin-spoofing, legacy-flow, and cross-caller tests are required.
 
-`setup_busy` remains passive: its optional manager identity contains no action
-or arguments. Bootstrap failures and uncertainty without a live, authorized
-flow use the existing flow-shaped envelope with `state=failed`, facts, and
-possibly clues. The refactor does not widen recovery authority.
+`setup_busy` remains passive: it contains no manager or recovery identity.
+Bootstrap failures and uncertainty without a live, authorized flow use the
+existing flow-shaped envelope with `state=failed`, facts, and possibly clues.
+The refactor does not widen recovery authority.
 
 ## Boundary rules
 
