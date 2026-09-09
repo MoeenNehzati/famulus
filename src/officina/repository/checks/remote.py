@@ -778,7 +778,7 @@ def _advance_context_matrix_locked(
         )
         if observed is None:
             deadline = _timestamp(intent["deadline_at"])
-            if datetime.now(UTC) >= deadline:
+            if not won_dispatch and datetime.now(UTC) >= deadline:
                 timeout_report = {
                     "schema_version": 2,
                     "state": "timed_out",

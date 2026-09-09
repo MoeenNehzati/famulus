@@ -7,8 +7,11 @@ import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import math
+import os
 from pathlib import Path
 import re
+import signal
+from socketserver import TCPServer
 import subprocess
 import sys
 import tempfile
@@ -93,10 +96,19 @@ fetch('/benchmark-result',{method:'POST',body:JSON.stringify({result:result?.tex
             self.send_response(204)
             self.end_headers()
 
+    class Server(ThreadingHTTPServer):
+        # Closing the listener must not wait for an idle browser preconnection.
+        daemon_threads = True
+
+        def server_bind(self):
+            # HTTPServer performs reverse DNS here, which can stall on CI hosts.
+            TCPServer.server_bind(self)
+            self.server_name, self.server_port = self.server_address[:2]
+
     workspace = tempfile.TemporaryDirectory(prefix="famulus-benchmark-")
     with workspace as workdir, \
             tempfile.TemporaryFile(mode="w+", encoding="utf-8") as errors, \
-            ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
+            Server(("127.0.0.1", 0), Handler) as server:
         server.timeout = 0.1
         command = [
             chrome, "--headless", "--no-sandbox", "--disable-gpu",
@@ -105,7 +117,10 @@ fetch('/benchmark-result',{method:'POST',body:JSON.stringify({result:result?.tex
             f"--user-data-dir={Path(workdir) / 'profile'}", "--window-size=1440,1000",
             f"http://127.0.0.1:{server.server_port}/page.html",
         ]
-        process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=errors)
+        popen_options = {"start_new_session": True} if os.name == "posix" else {}
+        process = subprocess.Popen(
+            command, stdout=subprocess.DEVNULL, stderr=errors, **popen_options
+        )
         try:
             deadline = time.monotonic() + timeout_seconds
             while not outcome:
@@ -116,11 +131,17 @@ fetch('/benchmark-result',{method:'POST',body:JSON.stringify({result:result?.tex
                     raise SystemExit("benchmark result timed out")
                 server.handle_request()
         finally:
-            process.terminate()
+            if os.name == "posix":
+                os.killpg(process.pid, signal.SIGTERM)
+            else:
+                process.terminate()
             try:
-                process.wait(timeout=5)
+                process.wait(timeout=1)
             except subprocess.TimeoutExpired:
-                process.kill()
+                if os.name == "posix":
+                    os.killpg(process.pid, signal.SIGKILL)
+                else:
+                    process.kill()
                 process.wait()
             # Chrome children may finish profile writes just after the parent exits.
             for attempt in range(50):

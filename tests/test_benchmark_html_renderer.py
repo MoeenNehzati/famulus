@@ -60,9 +60,8 @@ def test_trial_measures_a_real_synchronous_stall():
       const docData = {"entities": []};
       window.officinaRendererDiagnostics = {whenIdle: () => new Promise(resolve => setTimeout(resolve, 25))};
       document.getElementById("routing-geometry").addEventListener("change", () => {
-        let sum = 0;
-        for (let index = 0; index < 20000000; index++) sum += Math.sin(index);
-        window.stallResult = sum;
+        const stallUntil = performance.now() + 150;
+        while (performance.now() < stallUntil) {}
       });
       </script></body></html>"""
 
@@ -88,6 +87,22 @@ def test_real_time_launcher_bounds_a_page_without_a_result(monkeypatch, idle_con
             return launch(command, **kwargs)
 
         monkeypatch.setattr(module.subprocess, "Popen", launch_after_browser_preconnect)
+    start = time.monotonic()
+    with pytest.raises(SystemExit, match="benchmark result timed out"):
+        module.run_benchmark_html(
+            require_chrome(), "<html><body></body></html>", timeout_seconds=0.5
+        )
+    assert time.monotonic() - start < 2.5
+
+
+def test_real_time_launcher_does_not_wait_for_reverse_dns(monkeypatch):
+    module = _benchmark_module()
+
+    def slow_reverse_dns(host):
+        time.sleep(3)
+        return host
+
+    monkeypatch.setattr(socket, "getfqdn", slow_reverse_dns)
     start = time.monotonic()
     with pytest.raises(SystemExit, match="benchmark result timed out"):
         module.run_benchmark_html(
@@ -132,7 +147,8 @@ def test_real_time_launcher_serves_large_pages_without_transfer_timeouts(monkeyp
     page += '</script><pre id="benchmark-result">{"completed": true}</pre></body></html>'
 
     try:
-        result = module.run_benchmark_html(require_chrome(), page, timeout_seconds=3)
+        # This is a transfer-correctness test, not a contended-host performance gate.
+        result = module.run_benchmark_html(require_chrome(), page, timeout_seconds=10)
     except SystemExit as error:
         pytest.fail(f"{error}; HTTP diagnostics: {request_log}")
     assert result == {"completed": True}
