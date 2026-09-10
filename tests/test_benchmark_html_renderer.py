@@ -23,6 +23,22 @@ def _benchmark_module():
     return module
 
 
+class _FakeBenchmarkServer:
+    def __init__(self, _address, _handler):
+        self.server_address = ("127.0.0.1", 4313)
+        self.server_port = 4313
+        self.timeout = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def handle_request(self):
+        return None
+
+
 @pytest.mark.parametrize(
     "page",
     [
@@ -79,6 +95,8 @@ def test_real_time_launcher_bounds_a_page_without_a_result(monkeypatch, idle_con
         launch = module.subprocess.Popen
 
         def launch_after_browser_preconnect(command, **kwargs):
+            if command[0] == "taskkill":
+                return launch(command, **kwargs)
             # Chromium can open an HTTP connection before sending any request.
             address = urlsplit(command[-1])
             connection = socket.create_connection((address.hostname, address.port))
@@ -110,6 +128,31 @@ def test_real_time_launcher_does_not_wait_for_reverse_dns(monkeypatch):
             require_chrome(), "<html><body></body></html>", timeout_seconds=0.5
         )
     assert time.monotonic() - start < 2.5
+
+
+def test_windows_launcher_default_allows_slow_browser_startup(monkeypatch):
+    module = _benchmark_module()
+
+    class FakeProcess:
+        pid = 4312
+        returncode = 0
+        polls = 0
+
+        def poll(self):
+            self.polls += 1
+            return None if self.polls == 1 else self.returncode
+
+    process = FakeProcess()
+    monotonic_values = iter((0, 31))
+    monkeypatch.setattr(module, "sys", SimpleNamespace(platform="win32"))
+    monkeypatch.setattr(module, "ThreadingHTTPServer", _FakeBenchmarkServer)
+    monkeypatch.setattr(module.subprocess, "Popen", lambda *_args, **_kwargs: process)
+    monkeypatch.setattr(
+        module.time, "monotonic", lambda: next(monotonic_values)
+    )
+
+    with pytest.raises(SystemExit, match=r"benchmark Chrome exited \(0\)"):
+        module.run_benchmark_html("chrome.exe", "<html><body></body></html>")
 
 
 def test_real_time_launcher_retries_inflight_profile_cleanup(monkeypatch):
@@ -155,26 +198,11 @@ def test_windows_launcher_terminates_chrome_tree_before_profile_cleanup(monkeypa
             self.returncode = 0
             return self.returncode
 
-    class FakeServer:
-        def __init__(self, _address, _handler):
-            self.server_address = ("127.0.0.1", 4313)
-            self.server_port = 4313
-            self.timeout = None
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_args):
-            return False
-
-        def handle_request(self):
-            return None
-
     process = FakeProcess()
 
     def terminate_tree(command, **_kwargs):
         commands.append(command)
-        if command == ["taskkill", "/PID", "4312", "/T"]:
+        if command == ["taskkill", "/PID", "4312", "/T", "/F"]:
             state["parent_alive"] = False
             state["child_alive"] = False
             process.returncode = 0
@@ -186,7 +214,7 @@ def test_windows_launcher_terminates_chrome_tree_before_profile_cleanup(monkeypa
         return cleanup(directory)
 
     monkeypatch.setattr(module, "os", SimpleNamespace(name="nt"))
-    monkeypatch.setattr(module, "ThreadingHTTPServer", FakeServer)
+    monkeypatch.setattr(module, "ThreadingHTTPServer", _FakeBenchmarkServer)
     monkeypatch.setattr(module.subprocess, "Popen", lambda *_args, **_kwargs: process)
     monkeypatch.setattr(module.subprocess, "run", terminate_tree)
     monkeypatch.setattr(
@@ -199,7 +227,7 @@ def test_windows_launcher_terminates_chrome_tree_before_profile_cleanup(monkeypa
             "chrome.exe", "<html><body></body></html>", timeout_seconds=0
         )
 
-    assert commands == [["taskkill", "/PID", "4312", "/T"]]
+    assert commands == [["taskkill", "/PID", "4312", "/T", "/F"]]
 
 
 def test_real_time_launcher_serves_large_pages_without_transfer_timeouts(monkeypatch):

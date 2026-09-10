@@ -54,7 +54,7 @@ def _terminate_browser_process(process: subprocess.Popen[object]) -> None:
         os.killpg(process.pid, signal.SIGTERM)
     else:
         subprocess.run(
-            ["taskkill", "/PID", str(process.pid), "/T"],
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=False,
@@ -94,8 +94,12 @@ const e=document.createElement('pre');e.id='benchmark-result';e.textContent=JSON
 }}catch(e){{document.body.dataset.benchmarkError=e.message}}}});</script>"""
 
 
-def run_benchmark_html(chrome: str, page: str, *, timeout_seconds: float = 30) -> dict:
+def run_benchmark_html(
+    chrome: str, page: str, *, timeout_seconds: float | None = None
+) -> dict:
     """Wait for the page's explicit result using an unmodified browser clock."""
+    if timeout_seconds is None:
+        timeout_seconds = 60 if sys.platform == "win32" else 30
     outcome = {}
     completion = """<script>const benchmarkPoll=setInterval(()=>{
 const result=document.getElementById('benchmark-result'),error=document.body?.dataset.benchmarkError;
