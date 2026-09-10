@@ -6,6 +6,7 @@ import socket
 import sys
 import threading
 import time
+from types import SimpleNamespace
 from urllib.parse import urlsplit
 
 import pytest
@@ -127,6 +128,78 @@ def test_real_time_launcher_retries_inflight_profile_cleanup(monkeypatch):
     page = '<html><body><pre id="benchmark-result">{"completed": true}</pre></body></html>'
 
     assert module.run_benchmark_html(require_chrome(), page) == {"completed": True}
+
+
+def test_windows_launcher_terminates_chrome_tree_before_profile_cleanup(monkeypatch):
+    module = _benchmark_module()
+    cleanup = module.tempfile.TemporaryDirectory.cleanup
+    state = {"parent_alive": True, "child_alive": True}
+    commands = []
+
+    class FakeProcess:
+        pid = 4312
+        returncode = None
+
+        def poll(self):
+            return None if state["parent_alive"] else self.returncode
+
+        def terminate(self):
+            state["parent_alive"] = False
+            self.returncode = 0
+
+        def kill(self):
+            self.terminate()
+
+        def wait(self, timeout=None):
+            state["parent_alive"] = False
+            self.returncode = 0
+            return self.returncode
+
+    class FakeServer:
+        def __init__(self, _address, _handler):
+            self.server_address = ("127.0.0.1", 4313)
+            self.server_port = 4313
+            self.timeout = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def handle_request(self):
+            return None
+
+    process = FakeProcess()
+
+    def terminate_tree(command, **_kwargs):
+        commands.append(command)
+        if command == ["taskkill", "/PID", "4312", "/T"]:
+            state["parent_alive"] = False
+            state["child_alive"] = False
+            process.returncode = 0
+        return SimpleNamespace(returncode=0)
+
+    def cleanup_after_child_exit(directory):
+        if state["child_alive"] and "famulus-benchmark-" in directory.name:
+            raise PermissionError(errno.EACCES, "Chrome child holds Account Web Data")
+        return cleanup(directory)
+
+    monkeypatch.setattr(module, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(module, "ThreadingHTTPServer", FakeServer)
+    monkeypatch.setattr(module.subprocess, "Popen", lambda *_args, **_kwargs: process)
+    monkeypatch.setattr(module.subprocess, "run", terminate_tree)
+    monkeypatch.setattr(
+        module.tempfile.TemporaryDirectory, "cleanup", cleanup_after_child_exit
+    )
+    monkeypatch.setattr(module.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(SystemExit, match="benchmark result timed out"):
+        module.run_benchmark_html(
+            "chrome.exe", "<html><body></body></html>", timeout_seconds=0
+        )
+
+    assert commands == [["taskkill", "/PID", "4312", "/T"]]
 
 
 def test_real_time_launcher_serves_large_pages_without_transfer_timeouts(monkeypatch):
