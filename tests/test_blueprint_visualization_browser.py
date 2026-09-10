@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from officina.visualization.elk_html_renderer import build_html_with_elk
 from officina.visualization.from_blueprint.extractor import build_blueprint_payload
 from test_support.browser import require_chrome, run_html
@@ -10,9 +12,20 @@ from test_support.browser import require_chrome, run_html
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_repository_projection_keeps_semantics_and_presents_derivation() -> None:
+@pytest.fixture(scope="module")
+def repository_blueprint_html() -> tuple[frozenset[str], str]:
     payload = build_blueprint_payload(REPO_ROOT)
-    assert {category["id"] for category in payload["edge_categories"]} == {
+    edge_categories = frozenset(
+        category["id"] for category in payload["edge_categories"]
+    )
+    return edge_categories, build_html_with_elk(payload)
+
+
+def test_repository_projection_keeps_semantics_and_presents_derivation(
+    repository_blueprint_html: tuple[frozenset[str], str],
+) -> None:
+    edge_categories, base_html = repository_blueprint_html
+    assert edge_categories == {
         "binds-interface",
         "dependency",
         "depends-on-source",
@@ -59,7 +72,7 @@ def test_repository_projection_keeps_semantics_and_presents_derivation() -> None
     </script>
     </body>
     '''
-    html = build_html_with_elk(payload).replace("</body>", script)
+    html = base_html.replace("</body>", script)
     result = run_html(
         require_chrome(),
         html,
@@ -78,9 +91,11 @@ def test_repository_projection_keeps_semantics_and_presents_derivation() -> None
     assert status == "PASS", status
 
 
-def test_repository_module_removal_projects_across_visible_representatives() -> None:
+def test_repository_module_removal_projects_across_visible_representatives(
+    repository_blueprint_html: tuple[frozenset[str], str],
+) -> None:
     """Removing a module composes the module-level edges already visible to the user."""
-    payload = build_blueprint_payload(REPO_ROOT)
+    _, base_html = repository_blueprint_html
     script = r'''
     <script>
     window.addEventListener("load", () => setTimeout(async () => {
@@ -135,7 +150,7 @@ def test_repository_module_removal_projects_across_visible_representatives() -> 
     </script>
     </body>
     '''
-    html = build_html_with_elk(payload).replace("</body>", script)
+    html = base_html.replace("</body>", script)
     result = run_html(
         require_chrome(),
         html,

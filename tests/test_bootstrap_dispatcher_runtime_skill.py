@@ -6,16 +6,30 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import venv
 from dataclasses import dataclass, field
+from functools import cache
+from typing import Any
 
 import pytest
+import yaml
 
-from officina.blueprints.graph import load_repository_blueprint_graph
+from officina.blueprints.graph import RepositoryBlueprintGraph
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL = ROOT / "skills" / "bootstrap-dispatcher-runtime" / "SKILL.md"
 CANDIDATES = ("python",)
+
+
+@cache
+def _gateway_contract() -> dict[str, Any]:
+    declaration = yaml.safe_load(
+        (SKILL.parent / "blueprints" / "gateway.yaml").read_text(encoding="utf-8")
+    )
+    return declaration["interfaces"][
+        "bootstrap-dispatcher-runtime.source.gateway.interface.default"
+    ]["contract"]
 
 
 def _templates() -> dict[str, list[str]]:
@@ -225,11 +239,10 @@ def _consume_setup(host: _SimulatedHost, plugin: Path) -> str:
     return "ready"
 
 
-def test_setup_skill_is_host_loaded_and_uses_task_1_core_authority() -> None:
-    graph = load_repository_blueprint_graph(
-        ROOT,
-        schema_root=ROOT / "references" / "blueprint-schema",
-    )
+def test_setup_skill_is_host_loaded_and_uses_task_1_core_authority(
+    ordinary_repository_graph: RepositoryBlueprintGraph,
+) -> None:
+    graph = ordinary_repository_graph
     text = SKILL.read_text(encoding="utf-8")
 
     # Verify module ID is bootstrap-dispatcher-runtime
@@ -277,15 +290,7 @@ def test_description_routes_only_evidence_backed_dispatcher_runtime_failures() -
 
 
 def test_graph_execution_contract_covers_the_actual_ordered_command_sequence() -> None:
-    graph = load_repository_blueprint_graph(
-        ROOT,
-        schema_root=ROOT / "references" / "blueprint-schema",
-    )
-    contract = graph.nodes[
-        "bootstrap-dispatcher-runtime.source.gateway"
-    ].declaration["interfaces"][
-        "bootstrap-dispatcher-runtime.source.gateway.interface.default"
-    ]["contract"]
+    contract = _gateway_contract()
     subprocesses = {
         item["id"]: item
         for item in contract["direct_io"]["writes"]
@@ -313,15 +318,7 @@ def test_graph_execution_contract_covers_the_actual_ordered_command_sequence() -
 
 
 def test_the_core_route_may_prompt_while_unattended_callers_get_an_outcome() -> None:
-    graph = load_repository_blueprint_graph(
-        ROOT,
-        schema_root=ROOT / "references" / "blueprint-schema",
-    )
-    contract = graph.nodes[
-        "bootstrap-dispatcher-runtime.source.gateway"
-    ].declaration["interfaces"][
-        "bootstrap-dispatcher-runtime.source.gateway.interface.default"
-    ]["contract"]
+    contract = _gateway_contract()
 
     assert contract["interaction"]["mode"] == "interactive"
     assert contract["interaction"]["unattended_outcome"] == "prerequisite-failed"
@@ -471,16 +468,7 @@ def test_true_native_dedicated_environment_fingerprints_as_its_own_environment(
         pytest.skip("native Windows executable fixture is unavailable in this checkout")
     venv_root = tmp_path / "Famulus State With Spaces" / "venv"
     templates = _templates()
-    subprocess.run(
-        [
-            token.replace("${host_python}", sys.executable).replace(
-                "${venv_root}", str(venv_root)
-            )
-            for token in templates["create-venv"]
-        ],
-        check=True,
-        capture_output=True,
-    )
+    venv.EnvBuilder(with_pip=False).create(venv_root)
     canonical = venv_root / ("Scripts" if os.name == "nt" else "bin") / "python"
 
     result = subprocess.run(

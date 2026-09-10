@@ -1115,7 +1115,7 @@ def test_dry_run_matches_direct_dispatcher_resolution(server) -> None:
     ) == expected
 
 
-def test_generated_outer_payload_uses_real_tool_field_names(tmp_path: Path) -> None:
+def test_generated_outer_payload_uses_real_tool_field_names() -> None:
     """Break caught: projection omits the required outer interface field."""
     syncer = ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py"
     spec = importlib.util.spec_from_file_location("projection_syncer", syncer)
@@ -1124,8 +1124,13 @@ def test_generated_outer_payload_uses_real_tool_field_names(tmp_path: Path) -> N
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     graph = module.load_blueprints()["milestone-logging"].repository_graph
-    outer = {"caller": "milestone-logging", "interface": "milestone-logging._rtx.interface.record", "version": 1, "arguments": {"positionals": [], "options": {}, "stdin": None}, "dry_run": False}
     generated = module.generated_interface_block("milestone-logging", graph)
+    # The two host parameters of the packaged declaration test retain the
+    # physical MCP schema and accepted-request boundary for these field names.
+    assert (
+        "with required `caller` (caller skill), `interface`, `version`, and "
+        "`arguments`; optional `dry_run` defaults to false"
+    ) in generated
     assert all(
         fragment in generated
         for fragment in (
@@ -1135,47 +1140,6 @@ def test_generated_outer_payload_uses_real_tool_field_names(tmp_path: Path) -> N
             "Omit optional positionals and options that are not needed.",
         )
     )
-
-    async def call():
-        from mcp import ClientSession, StdioServerParameters
-
-        plugin = tmp_path / "Plugin Cache" / "famulus"
-        _copy_plugin(plugin)
-        command, args, cwd = _declared_launch("claude", plugin)
-        result = None
-        parameters = StdioServerParameters(
-            command=command,
-            args=args,
-            cwd=cwd,
-            env=_selected_environment(tmp_path / "home"),
-        )
-        async with _stdio_transport(parameters) as (read, write, mark_complete):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                tool = (await session.list_tools()).tools[0]
-                assert tool.inputSchema["required"] == ["caller", "interface", "version", "arguments"]
-                result = await session.call_tool(
-                    "invoke",
-                    arguments={
-                        **outer,
-                        "arguments": {
-                            "positionals": [],
-                            "options": {"--path": True},
-                            "stdin": None,
-                        },
-                        "dry_run": True,
-                    },
-                )
-                mark_complete()
-        assert result is not None
-        return result
-
-    result = asyncio.run(
-        asyncio.wait_for(
-            call(), timeout=REAL_MCP_INTEGRATION_TIMEOUT_SECONDS
-        )
-    )
-    assert result.structuredContent["result"]["target"] == outer["interface"]
 
 
 def test_llm_wakeup_skill_renders_every_public_wakeup_invocation(server) -> None:

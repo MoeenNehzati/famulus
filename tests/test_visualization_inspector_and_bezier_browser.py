@@ -25,7 +25,7 @@ def _run_browser_case(
     payload: dict,
     script: str,
     *,
-    virtual_time_budget: int = 4000,
+    virtual_time_budget: int = 2000,
     wait_for_load: bool = True,
 ) -> None:
     chrome = require_chrome()
@@ -125,7 +125,7 @@ def test_restored_mixed_edge_synchronizes_route_geometry_once() -> None:
           throw new Error(`route geometry repeated: lengths=${lengthReads} points=${pointReads}`);
         }
         """,
-        virtual_time_budget=8000,
+        virtual_time_budget=4000,
     )
 
 
@@ -339,7 +339,7 @@ def test_mathjax_typesets_dynamic_tooltip_and_inspector_content() -> None:
           throw new Error("inspector math was not typeset");
         }
         """,
-        virtual_time_budget=12000,
+        virtual_time_budget=6000,
         wait_for_load=False,
     )
 
@@ -431,7 +431,7 @@ def test_mathjax_diagnostics_waits_for_a_stable_dynamic_typeset_tail() -> None:
           window.MathJax.typesetPromise = originalTypesetPromise;
         }
         """,
-        virtual_time_budget=12000,
+        virtual_time_budget=6000,
         wait_for_load=False,
     )
 
@@ -490,7 +490,7 @@ def test_mathjax_normalizes_both_macro_tuple_orders_to_semantic_mathml() -> None
           throw new Error("valid macro tuples were reported as unresolved");
         }
         """,
-        virtual_time_budget=12000,
+        virtual_time_budget=6000,
         wait_for_load=False,
     )
 
@@ -542,7 +542,7 @@ def test_mathjax_pairs_single_dollars_without_whitespace_or_currency_filters() -
           throw new Error("paired-dollar macros produced diagnostics");
         }
         """,
-        virtual_time_budget=12000,
+        virtual_time_budget=6000,
         wait_for_load=False,
     )
 
@@ -592,7 +592,7 @@ def test_mathjax_reports_direct_and_nested_unknown_control_sequences() -> None:
         const bannerNames = banner.dataset.unresolvedTex.split(",").sort().join(",");
         if (bannerNames !== unresolved) throw new Error("unknown-command banner is stale");
         """,
-        virtual_time_budget=12000,
+        virtual_time_budget=6000,
         wait_for_load=False,
     )
 
@@ -640,7 +640,7 @@ def test_mathjax_unknown_command_oracle_accepts_supported_primitives() -> None:
           throw new Error("supported primitives were reported as unresolved");
         }
         """,
-        virtual_time_budget=12000,
+        virtual_time_budget=6000,
         wait_for_load=False,
     )
 
@@ -740,7 +740,7 @@ def test_self_contained_canonical_graph_renders_all_dynamic_math_semantics() -> 
           throw new Error("canonical graph produced an unresolved-TeX marker");
         }
         """,
-        virtual_time_budget=30000,
+        virtual_time_budget=15000,
         wait_for_load=False,
     )
 

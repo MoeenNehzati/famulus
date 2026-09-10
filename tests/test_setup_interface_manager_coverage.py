@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from officina.blueprints.graph import load_repository_blueprint_graph
+from officina.blueprints.graph import RepositoryBlueprintGraph
 from officina.runtime.python_machine_interface_runner import load_interface
 
 
@@ -35,9 +35,11 @@ def _setup_dispatches():
     return globals_["PRODUCTION_BINDINGS"], dispatch_globals["PRODUCTION_ACTION_CALLS"], globals_["PRODUCTION_DISPATCHES"]
 
 
-def test_release_has_no_production_managed_setups() -> None:
+def test_release_has_no_production_managed_setups(
+    ordinary_repository_graph: RepositoryBlueprintGraph,
+) -> None:
     """Verify all canonical setup exports are discovered and bound to production dispatches."""
-    graph = load_repository_blueprint_graph(REPO_ROOT)
+    graph = ordinary_repository_graph
 
     fixture_managed = {
         interface_id
@@ -98,7 +100,9 @@ def test_release_has_no_production_managed_setups() -> None:
     assert route in (REPO_ROOT / "references/blueprint-schema/runtime_dependencies.json").read_text()
 
 
-def test_production_bindings_include_all_canonical_setups() -> None:
+def test_production_bindings_include_all_canonical_setups(
+    ordinary_repository_graph: RepositoryBlueprintGraph,
+) -> None:
     """Pre-admit all canonical production setups before activation."""
     bindings, action_calls, dispatches = _setup_dispatches()
 
@@ -113,7 +117,7 @@ def test_production_bindings_include_all_canonical_setups() -> None:
     assert set(bindings) == EXPECTED_CANONICAL
 
     # Graph-derived managed setups must match bindings
-    graph = load_repository_blueprint_graph(REPO_ROOT)
+    graph = ordinary_repository_graph
     fixture_managed = {
         interface_id
         for interface_id in graph.managed_setups

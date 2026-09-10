@@ -34,6 +34,12 @@ def syncer():
     return load_module("sync_module_blueprints_tests", SYNCER_PATH)
 
 
+@pytest.fixture(scope="module")
+def blueprints(syncer):
+    """One read-only canonical graph per pytest worker."""
+    return syncer.load_blueprints()
+
+
 def _copy_managed_skill(repo_root: Path) -> Path:
     target = repo_root / "skills" / "loose-mode"
     shutil.copytree(REPO_ROOT / "skills" / "loose-mode", target)
@@ -63,10 +69,8 @@ def test_syncer_loads_canonical_module_and_generates_interface_block(
     assert "`loose-mode.interface.default`" not in interfaces
 
 
-def test_generated_executable_interface_uses_famulus_metadata(syncer) -> None:
+def test_generated_executable_interface_uses_famulus_metadata(syncer, blueprints) -> None:
     """Break caught: generated skill guidance falls back to Dispatcher syntax."""
-    blueprints = syncer.load_blueprints()
-
     interfaces = syncer.generated_interface_block(
         "milestone-logging",
         blueprints["milestone-logging"].repository_graph,
@@ -463,7 +467,9 @@ def test_generated_interface_block_omits_teardown_when_not_present(syncer) -> No
     assert "@None" not in block
 
 
-def test_generated_interface_block_limits_and_removes_the_managed_markdown_gate(syncer) -> None:
+def test_generated_interface_block_limits_and_removes_the_managed_markdown_gate(
+    syncer, blueprints
+) -> None:
     """Catches gates leaking to bootstrap/plain exports or surviving opt-out."""
     managed = _managed_gate_graph()
     block = syncer.generated_interface_block("managed", managed)
@@ -477,7 +483,7 @@ def test_generated_interface_block_limits_and_removes_the_managed_markdown_gate(
     assert "### Managed setup gate" not in syncer.generated_interface_block(
         "managed", _managed_gate_graph(opted_in=False)
     )
-    bootstrap = syncer.load_blueprints()["bootstrap-dispatcher-runtime"]
+    bootstrap = blueprints["bootstrap-dispatcher-runtime"]
     assert "### Managed setup gate" not in syncer.generated_interface_block(
         bootstrap.name, bootstrap.repository_graph
     )
@@ -501,8 +507,8 @@ def test_generated_interface_block_limits_and_removes_the_managed_markdown_gate(
     assert ungated.endswith("\n\nBody bytes stay put.\n")
 
 
-def test_llm_wakeup_generated_interfaces_are_exact(syncer) -> None:
-    blueprint = syncer.load_blueprints()["llm-wakeup"]
+def test_llm_wakeup_generated_interfaces_are_exact(syncer, blueprints) -> None:
+    blueprint = blueprints["llm-wakeup"]
     skill = blueprint.path.parent / "SKILL.md"
     generated = skill.read_text(encoding="utf-8")
 
@@ -564,9 +570,10 @@ def test_public_syncer_repairs_corrupt_llm_wakeup_entry(
     assert syncer.Interface().run(check) == 0
 
 
-def test_generated_executable_preserves_patterns_placeholders_and_arity(syncer) -> None:
+def test_generated_executable_preserves_patterns_placeholders_and_arity(
+    syncer, blueprints
+) -> None:
     """Catch lossy aliases, arity, placeholders, or generated fallbacks."""
-    blueprints = syncer.load_blueprints()
     graph = blueprints["email-client"].repository_graph
 
     interfaces = syncer.generated_interface_block("email-client", graph)
