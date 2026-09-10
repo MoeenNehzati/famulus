@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import stat
 import subprocess
 import sys
 
@@ -11,6 +12,42 @@ import sys
 ROOT = Path(__file__).resolve().parent
 REQUIREMENTS = ROOT / "requirements-mcp.txt"
 BOOTSTRAP_CLUE = "Use the `bootstrap-dispatcher-runtime` skill's core setup route."
+LINUX_RUNTIME_ROOT = Path("/run/user")
+
+
+def _hydrate_linux_session_environment(
+    environment: dict[str, str],
+    *,
+    platform: str = sys.platform,
+    uid: int | None = None,
+    runtime_root: Path | None = None,
+) -> None:
+    if (
+        platform != "linux"
+        or "XDG_RUNTIME_DIR" in environment
+        or "DBUS_SESSION_BUS_ADDRESS" in environment
+    ):
+        return
+    selected_uid = os.getuid() if uid is None else uid
+    runtime = (LINUX_RUNTIME_ROOT if runtime_root is None else runtime_root) / str(
+        selected_uid
+    )
+    bus = runtime / "bus"
+    try:
+        runtime_status = runtime.lstat()
+        bus_status = bus.lstat()
+    except OSError:
+        return
+    if (
+        not stat.S_ISDIR(runtime_status.st_mode)
+        or stat.S_IMODE(runtime_status.st_mode) != 0o700
+        or runtime_status.st_uid != selected_uid
+        or not stat.S_ISSOCK(bus_status.st_mode)
+        or bus_status.st_uid != selected_uid
+    ):
+        return
+    environment["XDG_RUNTIME_DIR"] = str(runtime)
+    environment["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={bus}"
 
 
 def _format_error(
@@ -89,6 +126,7 @@ def main() -> int:
         from officina.common.famulus_paths import resolve_famulus_paths
 
         environment = os.environ.copy()
+        _hydrate_linux_session_environment(environment)
         paths = resolve_famulus_paths(
             platform=sys.platform, home=Path.home(), environ=environment
         )
