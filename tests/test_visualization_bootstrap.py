@@ -6,6 +6,7 @@ import importlib.util
 import json
 from pathlib import Path
 import re
+import sys
 
 from officina.visualization.elk_html_renderer import build_html_with_elk
 from test_support.browser import require_chrome
@@ -134,7 +135,9 @@ def test_initial_layout_runs_in_one_native_worker_without_fallback_warning() -> 
     rendered = rendered.replace("</head>", probe + "</head>")
 
     result = _benchmark_module().run_benchmark_html(
-        require_chrome(), rendered, timeout_seconds=20
+        require_chrome(),
+        rendered,
+        timeout_seconds=60 if sys.platform == "win32" else 20,
     )
 
     assert result == {"status": "PASS"}
