@@ -1,6 +1,6 @@
 schema_version: 6
 id: cloud-files.source.setup
-version: 1
+version: 2
 maturity: experimental
 node_type: behavioral_source
 description: Bind Drive, configure the assistant root, and ensure that root exists.
@@ -55,7 +55,7 @@ interfaces:
         type: {kind: string, sensitivity: derived-private}
       preconditions: []
     description: Bind Drive, configure the assistant root, and ensure that root exists.
-    version: 1
+    version: 2
 uses_interfaces:
 - interface: connect-google._rtx.interface.shared-credential
   version: 1

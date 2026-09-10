@@ -163,6 +163,7 @@ def _config_root(*, platform: str, home: Path, environ: Mapping[str, str]) -> Pa
 
 def resolve_skill_config_dir(skill_name: str, *, platform: str, home: Path, environ: Mapping[str, str]) -> Path:
     """Return the durable Famulus configuration directory for one skill."""
+    # Layout changes require new public setup versions for affected skills.
     reserved = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
     if not isinstance(skill_name, str) or re.fullmatch(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*", skill_name) is None or skill_name.split(".")[0].upper() in reserved:
         raise InvalidFamulusSkillNameError(f"invalid Famulus skill name {skill_name!r}")
