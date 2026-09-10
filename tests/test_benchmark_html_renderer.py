@@ -249,7 +249,7 @@ def test_real_time_launcher_serves_large_pages_without_transfer_timeouts(monkeyp
 
     try:
         # This is a transfer-correctness test, not a contended-host performance gate.
-        result = module.run_benchmark_html(require_chrome(), page, timeout_seconds=10)
+        result = module.run_benchmark_html(require_chrome(), page)
     except SystemExit as error:
         pytest.fail(f"{error}; HTTP diagnostics: {request_log}")
     assert result == {"completed": True}
