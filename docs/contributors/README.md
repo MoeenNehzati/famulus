@@ -119,7 +119,7 @@ For task-oriented routing, see the
 <!-- BEGIN AUTO-GENERATED DOCS: software-development -->
 > Generated from live blueprints. Do not edit this block by hand.
 
-- `ci-debug` — GitHub Actions CI is red, matrix failures need isolated repair, or repeated full reruns make remote diagnosis inefficient
+- `ci-debug` — A local branch must be qualified or repaired against GitHub Actions, CI is red, matrix failures need isolation, or repeated full reruns make diagnosis inefficient
 - `git-workflow` — Branch-safety checks and commit hygiene for any repo
 - `initialize-tdd` — Scaffold a staged, approval-gated TDD project
 - `semantic-integration` — Integrating substantially diverged Git branches and merge or rebase is inadequate because it produces broad structural conflicts, or because mechanical application would place source changes into structures the target architecture has replaced and thereby lose their intent
