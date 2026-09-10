@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -69,6 +70,132 @@ def _launcher_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
 def _create_runtime_interpreter(paths) -> None:
     paths.venv_python_path.parent.mkdir(parents=True)
     paths.venv_python_path.touch()
+
+
+def _create_linux_runtime_bus(root: Path, uid: int):
+    runtime = root / str(uid)
+    runtime.mkdir(parents=True)
+    runtime.chmod(0o700)
+    bus = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    bus.bind(str(runtime / "bus"))
+    return runtime, bus
+
+
+@pytest.mark.parametrize(
+    ("platform", "environment"),
+    [
+        ("darwin", {"PRESERVED": "yes"}),
+        ("linux", {"XDG_RUNTIME_DIR": "/explicit/runtime"}),
+        ("linux", {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/explicit/bus"}),
+        (
+            "linux",
+            {
+                "XDG_RUNTIME_DIR": "/explicit/runtime",
+                "DBUS_SESSION_BUS_ADDRESS": "unix:path=/explicit/bus",
+            },
+        ),
+    ],
+)
+def test_launcher_preserves_explicit_partial_or_non_linux_session_environment(
+    platform: str, environment: dict[str, str], tmp_path: Path
+) -> None:
+    launcher = _load_server(LAUNCHER)
+    original = environment.copy()
+    launcher._hydrate_linux_session_environment(
+        environment, platform=platform, uid=1234, runtime_root=tmp_path
+    )
+    assert environment == original
+
+
+# famulus-skip: category=unsupported-platform; reason=Linux endpoint metadata; alternate=non-Linux no-op case
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux session repair")
+@pytest.mark.parametrize(
+    "unsafe_case",
+    "missing_bus open_mode regular_bus runtime_symlink bus_symlink runtime_owner bus_owner".split(),
+)
+def test_launcher_rejects_unsafe_linux_session_endpoints(
+    unsafe_case: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    launcher = _load_server(LAUNCHER)
+    uid = os.getuid()
+    runtime = tmp_path / str(uid)
+    sockets: list[socket.socket] = []
+    if unsafe_case == "runtime_symlink":
+        target, bus = _create_linux_runtime_bus(tmp_path / "target", uid)
+        sockets.append(bus)
+        runtime.symlink_to(target, target_is_directory=True)
+    else:
+        runtime.mkdir(parents=True)
+        runtime.chmod(0o755 if unsafe_case == "open_mode" else 0o700)
+        if unsafe_case == "regular_bus":
+            (runtime / "bus").write_text("not a socket", encoding="utf-8")
+        elif unsafe_case == "bus_symlink":
+            target = tmp_path / "socket-target"
+            bus = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            bus.bind(str(target))
+            sockets.append(bus)
+            (runtime / "bus").symlink_to(target)
+        elif unsafe_case != "missing_bus":
+            bus = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            bus.bind(str(runtime / "bus"))
+            sockets.append(bus)
+    if unsafe_case in {"runtime_owner", "bus_owner"}:
+        real_lstat = launcher.Path.lstat
+        wrong_name = "bus" if unsafe_case == "bus_owner" else str(uid)
+
+        def lstat(path):
+            status = real_lstat(path)
+            if path.name == wrong_name:
+                return os.stat_result((*status[:4], uid + 1, *status[5:]))
+            return status
+
+        monkeypatch.setattr(launcher.Path, "lstat", lstat)
+    environment: dict[str, str] = {}
+    try:
+        launcher._hydrate_linux_session_environment(
+            environment, platform="linux", uid=uid, runtime_root=tmp_path
+        )
+    finally:
+        for bus in sockets:
+            bus.close()
+    assert environment == {}
+
+
+# famulus-skip: category=unsupported-platform; reason=Linux process environment; alternate=helper no-op case
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux session repair")
+def test_launcher_passes_hydrated_environment_to_both_subprocesses(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    launcher = _load_server(LAUNCHER)
+    paths = _launcher_paths(monkeypatch, tmp_path)
+    _create_runtime_interpreter(paths)
+    runtime_root = tmp_path / "run-user"
+    runtime, bus = _create_linux_runtime_bus(runtime_root, os.getuid())
+    monkeypatch.setattr(launcher, "LINUX_RUNTIME_ROOT", runtime_root)
+    monkeypatch.setenv("PRESERVED", "yes")
+    monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
+    monkeypatch.delenv("DBUS_SESSION_BUS_ADDRESS", raising=False)
+    environments: list[dict[str, str]] = []
+
+    def run(argv, *, env, **_kwargs):
+        environments.append(env)
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(launcher.subprocess, "run", run)
+    try:
+        assert launcher.main() == 0
+    finally:
+        bus.close()
+    expected = {
+        "PRESERVED": "yes",
+        "XDG_RUNTIME_DIR": str(runtime),
+        "DBUS_SESSION_BUS_ADDRESS": f"unix:path={runtime / 'bus'}",
+    }
+    assert [{key: env[key] for key in expected} for env in environments] == [
+        expected,
+        expected,
+    ]
+    assert environments[0] is environments[1]
 
 
 def test_launcher_uses_exact_executable_inherits_stdio_and_propagates_exit(
@@ -407,11 +534,11 @@ async def _invoke_through_mcp(host: str, plugin_root: Path, home: Path):
                 "invoke",
                 arguments={
                     "caller": "git-workflow",
-                    "interface": "milestone-logging._rtx.interface.record",
+                    "interface": "milestone-logging._rtx.interface.session-path",
                     "version": 1,
                     "arguments": {
                         "positionals": [],
-                        "options": {"--path": True},
+                        "options": {},
                         "stdin": None,
                     },
                 },
@@ -420,10 +547,10 @@ async def _invoke_through_mcp(host: str, plugin_root: Path, home: Path):
                 "invoke",
                 arguments={
                     "caller": "milestone-logging",
-                    "interface": "milestone-logging._rtx.interface.record",
+                    "interface": "milestone-logging._rtx.interface.record-progress",
                     "version": 1,
                     "arguments": {
-                        "positionals": [],
+                        "positionals": ["numeric role"],
                         "options": {"--role": 7},
                         "stdin": None,
                     },
@@ -433,11 +560,11 @@ async def _invoke_through_mcp(host: str, plugin_root: Path, home: Path):
                 "invoke",
                 arguments={
                     "caller": "milestone-logging",
-                    "interface": "milestone-logging._rtx.interface.record",
+                    "interface": "milestone-logging._rtx.interface.session-path",
                     "version": 1,
                     "arguments": {
                         "positionals": ["unexpected"],
-                        "options": ["--path"],
+                        "options": [],
                         "stdin": None,
                     },
                 },
@@ -503,11 +630,11 @@ async def _record_through_persistent_mcp(
             await session.initialize()
             record_arguments = {
                 "caller": "milestone-logging",
-                "interface": "milestone-logging._rtx.interface.record",
+                "interface": "milestone-logging._rtx.interface.record-progress",
                 "version": 1,
                 "arguments": {
                     "positionals": ["persistent milestone"],
-                    "options": {"--role": "task-3-test"},
+                    "options": {"--role": "task-3-test", "--task": "without-run"},
                     "stdin": None,
                 },
             }
@@ -787,6 +914,7 @@ def test_real_mcp_persists_milestone_without_claiming_setup_ledger(
     records = [json.loads(line) for line in logs[0].read_text().splitlines()]
     assert records[0]["role"] == "task-3-test"
     assert records[0]["doing"] == "persistent milestone"
+    assert records[0]["task"] == "without-run" and "run" not in records[0]
     assert marker.read_text(encoding="utf-8") == "untouched"
     assert list(canary.iterdir()) == [marker]
 
@@ -847,11 +975,11 @@ async def _serve_graph_through_mcp(
                     "invoke",
                     arguments={
                         "caller": "milestone-logging",
-                        "interface": "milestone-logging._rtx.interface.record",
+                        "interface": "milestone-logging._rtx.interface.session-path",
                         "version": 1,
                         "arguments": {
                             "positionals": [],
-                            "options": {"--path": True},
+                            "options": {},
                             "stdin": None,
                         },
                         "dry_run": True,
@@ -927,7 +1055,7 @@ def test_graph_server_survives_invocation_and_follows_host_teardown_lifecycle(
         assert [tool.name for tool in after.tools] == ["invoke"]
         assert finite.isError is False
         assert finite.structuredContent["result"]["target"] == (
-            "milestone-logging._rtx.interface.record"
+            "milestone-logging._rtx.interface.session-path"
         )
         if sys.platform != "win32":
             assert _pid_is_alive(pid)
@@ -1046,7 +1174,7 @@ def test_packaged_host_declaration_invokes_dispatcher_through_real_mcp(
     failure = unauthorized.structuredContent["result"]
     assert failure["dispatcher"]["code"] == "dispatcher.unauthorized_caller"
     assert failure["dispatcher"]["interface_id"] == (
-        "milestone-logging._rtx.interface.record"
+        "milestone-logging._rtx.interface.session-path"
     )
     assert numeric.isError is True
     assert ordered_positionals.isError is True
@@ -1100,17 +1228,17 @@ def test_dry_run_matches_direct_dispatcher_resolution(server) -> None:
 
     expected = resolve_dispatch_metadata(
         caller_skill="milestone-logging",
-        target="milestone-logging._rtx.interface.record",
+        target="milestone-logging._rtx.interface.session-path",
         target_version=1,
-        args=["--path"],
+        args=[],
         repository_config=ROOT / "officina.toml",
     ).as_payload()
 
     assert server.invoke(
         "milestone-logging",
-        "milestone-logging._rtx.interface.record",
+        "milestone-logging._rtx.interface.session-path",
         1,
-        _arguments(server, {"positionals": [], "options": {"--path": True}, "stdin": None}),
+        _arguments(server, {"positionals": [], "options": {}, "stdin": None}),
         dry_run=True,
     ) == expected
 
@@ -1136,7 +1264,7 @@ def test_generated_outer_payload_uses_real_tool_field_names() -> None:
         for fragment in (
             '"positionals": ["DOING", "PREV"]',
             '"--role": "ROLE"',
-            '"--path": true',
+            '"--task": "TASK"',
             "Omit optional positionals and options that are not needed.",
         )
     )
@@ -1333,9 +1461,9 @@ def test_execution_captures_dispatcher_output_without_mcp_stdout(
 def test_structured_dispatcher_error_is_returned(server) -> None:
     result = server.invoke(
         "missing-caller",
-        "milestone-logging._rtx.interface.record",
+        "milestone-logging._rtx.interface.record-progress",
         1,
-        _arguments(server, {"positionals": [], "options": {"--path": True}, "stdin": None}),
+        _arguments(server, {"positionals": ["work"], "options": {"--role": "test"}, "stdin": None}),
     )
 
     assert result["exit_code"] == 2
@@ -1346,10 +1474,10 @@ def test_structured_dispatcher_error_is_returned(server) -> None:
 @pytest.mark.parametrize(
     ("target", "arguments", "argv"),
     [
-        ("milestone-logging._rtx.interface.record", {"positionals": ["one"], "options": {}, "stdin": None}, ["one"]),
-        ("milestone-logging._rtx.interface.record", {"positionals": ["one"], "options": {"--role": "task"}, "stdin": None}, ["one", "--role", "task"]),
-        ("milestone-logging._rtx.interface.record", {"positionals": [], "options": {"--path": True}, "stdin": None}, ["--path"]),
-        ("milestone-logging._rtx.interface.timeline", {"positionals": [], "options": {}, "stdin": None}, []),
+        ("milestone-logging._rtx.interface.record-progress", {"positionals": ["one"], "options": {"--role": "task"}, "stdin": None}, ["one", "--role", "task"]),
+        ("milestone-logging._rtx.interface.record-completion", {"positionals": ["one"], "options": {"--role": "task"}, "stdin": None}, ["one", "--role", "task"]),
+        ("milestone-logging._rtx.interface.session-path", {"positionals": [], "options": {}, "stdin": None}, []),
+        ("milestone-logging._rtx.interface.show-latest-session", {"positionals": [], "options": {}, "stdin": None}, []),
     ],
 )
 def test_json_envelope_matches_direct_dispatcher(
@@ -1581,7 +1709,7 @@ def test_ordered_options_are_lossless_for_repeated_flags(server) -> None:
     from officina.dispatcher.errors import InvocationError
 
     argv = [
-        "--run", "nightly", "--evidence", "first", "--evidence", "second", "--role", "task"
+        "ordered progress", "--run", "nightly", "--evidence", "first", "--evidence", "second", "--role", "task"
     ]
     arguments = {"positionals": [], "options": argv, "stdin": None}
     typed_arguments = _arguments(server, arguments)
@@ -1589,14 +1717,14 @@ def test_ordered_options_are_lossless_for_repeated_flags(server) -> None:
     with pytest.raises(InvocationError) as direct:
         resolve_dispatch_metadata(
             caller_skill="milestone-logging",
-            target="milestone-logging._rtx.interface.record",
+            target="milestone-logging._rtx.interface.record-progress",
             target_version=1,
             args=argv,
             repository_config=ROOT / "officina.toml",
         )
     result = server.invoke(
         "milestone-logging",
-        "milestone-logging._rtx.interface.record",
+        "milestone-logging._rtx.interface.record-progress",
         1,
         typed_arguments,
         dry_run=True,

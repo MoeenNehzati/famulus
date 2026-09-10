@@ -838,7 +838,13 @@ def invoke(
                 "authorize-markdown-call",
                 [setup_flow_id, interface, str(version)],
             )
-            if authorize_result.get("state") != "authorized-markdown-call":
+            if (
+                authorize_result.get("state") != "authorized-markdown-call"
+                or authorize_result.get("flow_id") != setup_flow_id
+                or authorize_result.get("interface") != interface
+                or type(authorize_result.get("version")) is not int
+                or authorize_result.get("version") != version
+            ):
                 raise DispatcherError.from_spec(
                     "D58", operation="authorize-markdown-call"
                 )
@@ -851,6 +857,7 @@ def invoke(
             authorized,
             argv=caller_argv(arguments),
             stdin_requested=arguments.stdin is not None,
+            setup_preflight_authorized=setup_flow_id is not None,
         )
         dispatcher = resolved.metadata().as_payload()
         result = _run_resolved_invocation(

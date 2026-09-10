@@ -23,11 +23,22 @@ interfaces:
     contract:
       arguments:
         request:
-          description: Repository, workflow, pushed candidate, CI failure evidence,
-            repair constraints, and any existing non-secret debug context.
+          description: CI request, repair constraints, and available evidence.
           required: true
           sensitivity: user-private
           type: {kind: string, sensitivity: user-private}
+        branch:
+          default: master
+          description: Local branch to qualify; defaults to master.
+          required: false
+          sensitivity: user-private
+          type: {kind: string, sensitivity: user-private}
+        push:
+          description: Whether to publish the qualified target to origin; omitted
+            intent is resolved from the request or by asking.
+          required: false
+          sensitivity: public
+          type: {kind: boolean, sensitivity: public}
       preconditions: []
       interaction:
         channel: tty
@@ -36,14 +47,20 @@ interfaces:
       caller_warnings:
       - external-side-effect: Full and targeted runner invocations may dispatch remote
           CI and persist non-secret reports in the shared debug context.
-      - external-side-effect: Accepted repairs may be committed, pushed, and integrated
-          only through the declared Git workflow authority.
+      - external-side-effect: Qualification creates, pushes, and later deletes a temporary
+          remote candidate even when push is false.
+      - external-side-effect: Accepted repairs may be committed and pushed only on invocation-owned
+          candidate and repair branches before local promotion through the declared Git workflow authority.
+      - external-side-effect: A successful ordinary target push may change origin before
+          its live verification becomes unavailable; that uncertain result is blocked
+          even though the remote target may already have changed.
       outputs:
       - id: response
         audience: human
         cardinality: {minimum: 1, maximum: 1}
-        description: Current full-matrix result, integrated repair evidence, or a
-          concrete blocked reason.
+        description: Outcome, repository and target identity, starting and final SHAs,
+          exact CI evidence, publication status, cleanup disposition, or a concrete
+          blocked reason.
         direct_io_ref: response
         empty: Never empty.
         ordering: stable
@@ -51,54 +68,74 @@ interfaces:
         truncation: {kind: none}
         type: {kind: string, sensitivity: derived-private}
       outcomes:
-      - id: green
+      - id: green-local
         class: success
         effects: [repository-change]
         outputs: [response]
-        caller_action: Accept green only from the complete CI report for the exact
-          integrated candidate.
+        caller_action: Accept the local target only at the exact candidate SHA proven
+          green by the complete CI report; do not infer that origin changed.
+      - id: green-pushed
+        class: success
+        effects: [repository-change, remote-target-change]
+        outputs: [response]
+        caller_action: Accept publication only after live origin verification identifies
+          the exact complete-matrix-green SHA on the target branch.
       - id: blocked
         class: partial
-        effects: [repository-change]
+        effects: [repository-change, remote-target-change]
         outputs: [response]
-        caller_action: Resolve the reported repair-element blocker without discarding
-          already accepted repairs.
+        caller_action: After any side effect, resolve the concrete CI, fast-forward,
+          worktree, or publication blocker without discarding candidate commits,
+          reports, completed effects, or recovery coordinates.
       - id: failed
         class: error
         effects: []
         outputs: [response]
-        caller_action: Resolve invalid repository, authentication, candidate, context,
-          or runner evidence before retrying.
+        caller_action: Resolve initial repository, origin, branch, authentication,
+          workflow, or runner validation that failed before any side effect.
       execution:
         consistency:
           snapshot: Each full-matrix decision is bound to the exact pushed candidate;
-            targeted reports update only the failures they actually probed.
+            targeted reports update only failures they actually probed, and local or
+            remote promotion revalidates the live target before a fast-forward operation.
         effects:
         - id: repository-change
           action: update
           direct_io_ref: repository-updates
-          may_occur_in_outcomes: [green, blocked]
+          may_occur_in_outcomes: [green-local, green-pushed, blocked]
           confirmation_evidence: {kind: output, output_ref: response}
           reversibility:
-            compensatable: Git history and reviewed repair commits preserve evidence
-              for an explicit corrective change.
+            compensatable: Invocation-owned branches, Git history, and reviewed repair
+              commits preserve evidence for an explicit corrective change.
           value_source: {kind: argument, argument_ref: request}
+        - id: remote-target-change
+          action: update
+          direct_io_ref: remote-target-ref
+          may_occur_in_outcomes: [green-pushed, blocked]
+          confirmation_evidence: {kind: output, output_ref: response}
+          reversibility:
+            compensatable: The exact pre-push and green SHAs plus ordinary Git history
+              preserve evidence for an explicit corrective change.
+          value_source: {kind: output, output_ref: response}
         lifecycle: finite
         state_effect: mutating
         mutation_safety:
           atomicity:
-            per_effect_only: Repair elements are reviewed and integrated separately
-              before the next full-matrix run.
+            per_effect_only: Candidate repairs, local fast-forward promotion, target
+              publication, and live remote verification are separate bounded effects.
           concurrent_invocations:
             unsafe: Concurrent coordinators can duplicate CI runs or integrate competing
               repairs for the same candidate.
           idempotency:
             non_idempotent: Repeating may dispatch remote CI or duplicate Git changes.
           on_uncertain_completion:
-            verify_then_decide: Inspect the exact pushed SHA, Git state, and request-scoped
-              reports before retrying.
+            verify_then_decide: Inspect invocation ownership, exact candidate and target
+              SHAs, live local and remote refs, and request-scoped reports before retrying;
+              an ordinary push may have succeeded before live remote verification
+              became unavailable.
           partial_effects_on_failure:
-            possible: Remote runs or accepted repair commits may remain after interruption.
+            possible: Remote runs, candidate or repair branches, accepted commits, local
+              promotion, or an unverified successful target push may remain after interruption.
           rollback_on_failure:
             unavailable: Preserve accepted commits and remote-run evidence; repair through
               the declared Git workflow instead of rewriting history.
@@ -107,7 +144,15 @@ interfaces:
         - {method: direct-io-state, direct_io_ref: repository-state}
       helpers: []
       direct_io:
-        network: []
+        network:
+        - id: remote-target-ref
+          medium: network
+          system: github-origin
+          access: read-write
+          content: Exact green Git commit published to and verified on the selected
+            origin target branch.
+          formats: [git-metadata]
+          sensitivity: user-private
         reads:
         - id: request
           medium: prompt
@@ -137,13 +182,13 @@ interfaces:
           system: filesystem
           access: write
           content: User-authorized repair changes and Git metadata produced through
-            the declared Git workflow.
+            isolated candidate qualification, local promotion, and optional target publication.
           formats: [git-metadata, source-code, text]
           sensitivity: user-private
-    description: Coordinate evidence-bounded CI repair until the complete matrix is
-      green or one repair element returns a concrete blocker.
-    usage: request=<repository, workflow, candidate, failure evidence, and constraints>
-    version: 1
+    description: Coordinate structured local-branch qualification and evidence-bounded
+      CI repair through optional target publication.
+    usage: request=<CI request, constraints, and evidence> [branch=master] [push=<true|false|omitted>]
+    version: 2
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:

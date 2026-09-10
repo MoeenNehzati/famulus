@@ -81,11 +81,13 @@ def test_generated_executable_interface_uses_famulus_metadata(syncer, blueprints
     assert "Version: 1" in interfaces
     assert '"positionals": ["DOING", "PREV"]' in interfaces
     assert '"--role": "ROLE"' in interfaces
-    assert '"--done": "PREV"' in interfaces
-    assert '"--path": true' in interfaces
+    assert '`milestone-logging._rtx.interface.record-completion`' in interfaces
+    assert '`milestone-logging._rtx.interface.session-path`' in interfaces
+    assert 'Required options: ["--role"]' in interfaces
+    assert all(flag not in interfaces for flag in ('"--done"', '"--path"', '"--list"', '"--json"'))
     assert "Omit optional positionals and options that are not needed." in interfaces
     assert "Ordered outer JSON" not in interfaces
-    assert "Alternative: `milestone`" in interfaces
+    assert "Alternative: `record-progress`" in interfaces
     assert "dispatcher --caller-skill" not in interfaces
 
 

@@ -27,6 +27,7 @@ from officina.blueprints.authorization import (
 )
 from officina.blueprints.process_binding import (
     ProcessBindingError,
+    ProcessBindingDiagnosticError,
     compile_gateway_invocation,
     compile_route_smoke_invocation,
     parse_caller_invocation,
@@ -702,6 +703,7 @@ def compile_direct_invocation(
             caller_module_id=authorization.caller_module_id,
             target_module_id=authorization.requested_owner_module_id,
             interface_id=export.interface_id,
+            detail=str(exc) if isinstance(exc, ProcessBindingDiagnosticError) else "invalid arguments",
         ) from exc
 
     gateway_relative = source.gateway_path.relative_to(source.module_root)

@@ -1013,6 +1013,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     immediate_caller_module_id: str | None = None
     runtime_repo_root: Path | None = None
     runtime_repository_config: Path | None = None
+    setup_preflight_authorized = False
     confined_module_root: Path | None = None
     private_options = {
         "--source-fd",
@@ -1028,6 +1029,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--immediate-caller-module-id",
         "--runtime-repo-root",
         "--runtime-repository-config",
+        "--setup-preflight-authorized",
         "--confined-module-root",
     }
 
@@ -1053,6 +1055,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     while argv and argv[0] in private_options:
         option = argv.pop(0)
+        if option == "--setup-preflight-authorized":
+            if setup_preflight_authorized:
+                return reject("R03", f"duplicate {option}", option=option)
+            setup_preflight_authorized = True
+            continue
         required = 2 if option == "--package-file" else 1
         if len(argv) < required:
             return reject(
@@ -1178,6 +1185,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             immediate_caller_module_id=immediate_caller_module_id,
             repo_root=runtime_repo_root,
             repository_config=runtime_repository_config,
+            setup_preflight_authorized=setup_preflight_authorized,
         )
         # Also publish it process-wide, so a helper module that builds its own
         # interface at import time can dispatch. This process runs exactly one

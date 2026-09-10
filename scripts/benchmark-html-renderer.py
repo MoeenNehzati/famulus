@@ -46,6 +46,35 @@ def payload(page: str) -> tuple[dict, bytes]:
     return value, json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
 
 
+def _terminate_browser_process(process: subprocess.Popen[object]) -> None:
+    """Stop the benchmark browser and its descendants before profile cleanup."""
+    if process.poll() is not None:
+        return
+    if os.name == "posix":
+        os.killpg(process.pid, signal.SIGTERM)
+    else:
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    try:
+        process.wait(timeout=1)
+    except subprocess.TimeoutExpired:
+        if process.poll() is None:
+            if os.name == "posix":
+                os.killpg(process.pid, signal.SIGKILL)
+            else:
+                subprocess.run(
+                    ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+            process.wait()
+
+
 def probe_script(action: str, keep: list[str]) -> str:
     return f"""<script>window.addEventListener('load',async()=>{{try{{
 const sleep=ms=>new Promise(r=>setTimeout(r,ms)),timeout=promise=>Promise.race([promise,new Promise((_,reject)=>setTimeout(()=>reject(Error('{action}: completion timed out')),10000))]),nextFrame=()=>new Promise(resolve=>{{let done=false,finish=()=>{{if(!done){{done=true;resolve()}}}};requestAnimationFrame(finish);setTimeout(finish,16)}}),baselineIdle=async before=>{{let seen=before<0,last=window.__benchmarkGraphMutations,quiet=0,deadline=performance.now()+10000;while(performance.now()<deadline){{await nextFrame();const now=window.__benchmarkGraphMutations;seen=seen||now>before;quiet=seen&&now===last?quiet+1:0;last=now;if(quiet>=2&&document.getElementById('elk-status')?.textContent!=='Rendering graph layout...')return}}throw Error('{action}: completion timed out')}},settle=async before=>{{if(window.officinaRendererDiagnostics)await timeout(officinaRendererDiagnostics.whenIdle());else await baselineIdle(before);if(window.officinaMathDiagnostics)await timeout(window.officinaMathDiagnostics())}},full='{action}'==='full_graph';if(full)await nextFrame();
@@ -65,8 +94,12 @@ const e=document.createElement('pre');e.id='benchmark-result';e.textContent=JSON
 }}catch(e){{document.body.dataset.benchmarkError=e.message}}}});</script>"""
 
 
-def run_benchmark_html(chrome: str, page: str, *, timeout_seconds: float = 30) -> dict:
+def run_benchmark_html(
+    chrome: str, page: str, *, timeout_seconds: float | None = None
+) -> dict:
     """Wait for the page's explicit result using an unmodified browser clock."""
+    if timeout_seconds is None:
+        timeout_seconds = 60 if sys.platform == "win32" else 30
     outcome = {}
     completion = """<script>const benchmarkPoll=setInterval(()=>{
 const result=document.getElementById('benchmark-result'),error=document.body?.dataset.benchmarkError;
@@ -131,18 +164,7 @@ fetch('/benchmark-result',{method:'POST',body:JSON.stringify({result:result?.tex
                     raise SystemExit("benchmark result timed out")
                 server.handle_request()
         finally:
-            if os.name == "posix":
-                os.killpg(process.pid, signal.SIGTERM)
-            else:
-                process.terminate()
-            try:
-                process.wait(timeout=1)
-            except subprocess.TimeoutExpired:
-                if os.name == "posix":
-                    os.killpg(process.pid, signal.SIGKILL)
-                else:
-                    process.kill()
-                process.wait()
+            _terminate_browser_process(process)
             # Chrome children may finish profile writes just after the parent exits.
             for attempt in range(50):
                 try:

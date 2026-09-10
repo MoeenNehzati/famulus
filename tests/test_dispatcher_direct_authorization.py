@@ -13,6 +13,7 @@ import yaml
 import officina.dispatcher as dispatcher_package
 import officina.dispatcher.direct_authorization as direct_authorization
 import officina.dispatcher.direct_runtime as direct_runtime
+from officina.blueprints.process_binding import ProcessBindingDiagnosticError
 from officina.configuration.repository import RepositoryConfiguration
 from officina.dispatcher.direct_authorization import resolve_direct_invocation
 from officina.dispatcher.direct_models import ResolvedInvocationMetadata
@@ -854,7 +855,9 @@ def test_host_rejects_private_child_caller_identity(tmp_path: Path) -> None:
     )
 
 
-def test_argument_compilation_failure_is_exact_and_redacted(tmp_path: Path) -> None:
+def test_argument_compilation_failure_is_exact_and_redacted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     configuration = _repository(
         tmp_path, terminal_access=_access(public=True), with_value_argument=True
     )
@@ -864,6 +867,10 @@ def test_argument_compilation_failure_is_exact_and_redacted(tmp_path: Path) -> N
         interface_id=INTERFACE_ID,
         interface_version=3,
     )
+    def reject(*_args: object, **_kwargs: object) -> None:
+        raise ProcessBindingDiagnosticError("unknown option --done")
+
+    monkeypatch.setattr(direct_authorization, "parse_caller_invocation", reject)
 
     with pytest.raises(direct_authorization.ResolutionFailedError) as caught:
         direct_authorization.compile_direct_invocation(
@@ -875,7 +882,7 @@ def test_argument_compilation_failure_is_exact_and_redacted(tmp_path: Path) -> N
         "code": "dispatcher.resolution_failed",
         "message": (
             "The dispatcher could not compile arguments for "
-            "`root.alpha.leaf.interface.execute`."
+            "`root.alpha.leaf.interface.execute`: unknown option --done."
         ),
         "caller_module_id": "outsider",
         "target_module_id": "root.alpha.leaf",

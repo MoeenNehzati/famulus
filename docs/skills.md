@@ -43,7 +43,7 @@ This page is the complete skill inventory. For workflows and examples, start fro
 
 ### Listed
 
-- `ci-debug` — GitHub Actions CI is red, matrix failures need isolated repair, or repeated full reruns make remote diagnosis inefficient _(topics: repository-workflow, task-automation, assistant-assurance; activated by: user request, skill workflow)_
+- `ci-debug` — A local branch must be qualified or repaired against GitHub Actions, CI is red, matrix failures need isolation, or repeated full reruns make diagnosis inefficient _(topics: repository-workflow, task-automation, assistant-assurance; activated by: user request, skill workflow)_
 - `git-workflow` — Branch-safety checks and commit hygiene for any repo _(topics: repository-workflow; activated by: user request, skill workflow)_
 - `initialize-tdd` — Scaffold a staged, approval-gated TDD project _(topics: repository-workflow, assistant-assurance; activated by: user request)_
 

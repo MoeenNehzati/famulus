@@ -21,6 +21,7 @@ import argparse
 import glob as _glob
 import importlib.util
 import json
+import math
 import os
 import sys
 from datetime import datetime
@@ -133,7 +134,7 @@ def read_milestones(session: str) -> tuple[list[dict], set[str]]:
                     "text": oneline(rec.get("doing", ""), 200),
                     "prev": oneline(rec.get("prev", ""), 200),
                     "cwd": rec.get("cwd", ""),
-                }
+                } | {key: rec[key] for key in ("event", "step", "task", "state", "attempt", "evidence") if key in rec}
             )
     return events, agent_ids
 
@@ -322,7 +323,7 @@ def list_sessions() -> list[tuple[str, datetime, int]]:
 
 # ── rendering ────────────────────────────────────────────────────────────────
 
-def render(events: list[dict], slow: float) -> None:
+def render(events: list[dict], slow: float | None) -> None:
     if not events:
         print("no events found for that session")
         return
@@ -333,14 +334,23 @@ def render(events: list[dict], slow: float) -> None:
     for ev in events:
         gap = (ev["ts"] - prev_ts).total_seconds() if prev_ts else 0.0
         prev_ts = ev["ts"]
-        mark = " [slow]" if gap >= slow else ""
+        mark = " [slow]" if slow is not None and gap >= slow else ""
         clock = ev["ts"].strftime("%H:%M:%S")
         offset = f"+{int((ev['ts'] - start).total_seconds()):>5}s"
         agent = ev["agent"][:width].ljust(width)
         lead = "> " if ev["kind"] == "milestone" else "  "
         print(f"{clock} {offset}  {agent}  {lead}{ev['text']}{mark}")
-        if ev["kind"] == "milestone" and ev.get("prev"):
-            print(f"{' ' * (len(clock) + len(offset) + width + 6)}prev: {ev['prev']}")
+        if ev["kind"] == "milestone":
+            indent = " " * (len(clock) + len(offset) + width + 6)
+            detail = " ".join(
+                f"{key}={oneline(ev[key], 40)}"
+                for key in ("event", "step", "task", "state", "attempt") if ev.get(key) not in (None, "")
+            )
+            evidence = " ".join(f"evidence: {oneline(item, 120)}" for item in ev.get("evidence") or [])
+            if detail or evidence:
+                print(indent + " ".join(part for part in (detail, evidence) if part))
+            if ev.get("prev"):
+                print(indent + f"prev: {ev['prev']}")
     span = (events[-1]["ts"] - start).total_seconds()
     tools = sum(1 for e in events if e["kind"] == "tool")
     print(f"\n{len(events)} events over {span:.0f}s - {tools} tool calls, {len(events) - tools} milestones")
@@ -349,51 +359,74 @@ def render(events: list[dict], slow: float) -> None:
         print("worked in: " + ", ".join(roots))
 
 
-def main(argv: list[str] | None = None) -> int:
+class _TimelineParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        self.exit(2, f"{self.prog}: error: {message}\n")
+
+
+def _parser(operation: str, prog: str) -> argparse.ArgumentParser:
+    parser = _TimelineParser(prog=prog, description=__doc__)
+    if operation == "list-sessions":
+        return parser
+    if operation in {"show-latest-session", "show-session"}:
+        if operation == "show-session":
+            parser.add_argument("session", metavar="SESSION")
+        parser.add_argument("--slow", type=float)
+        return parser
+    if operation in {"show-run", "read-run-json"}:
+        parser.add_argument("run", metavar="RUN")
+        return parser
+    raise ValueError(f"unknown timeline operation: {operation}")
+
+
+def main(operation: str, argv: list[str] | None = None, *, prog: str) -> int:
     configure_output(sys.stdout)
     configure_output(sys.stderr)
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("session", nargs="?", help="session id (default: most recent)")
-    ap.add_argument("-l", "--list", action="store_true", help="list known sessions")
-    ap.add_argument("--slow", type=float, default=10.0, help="flag gaps at least this long")
-    ap.add_argument("--run", metavar="ID", help="read one run's journal instead of a session")
-    ap.add_argument("--json", action="store_true", help="with --run, dump the reconstruction")
-    args = ap.parse_args(argv)
-
-    if not LOGS.is_dir():
-        print(f"no milestone logs under {LOGS}", file=sys.stderr)
-        return 1
-    if args.run is not None:
-        try:
-            reconstructed = read_run(args.run)
-        except ValueError as exc:
-            print(f"agent-timeline: {exc}", file=sys.stderr)
-            return 2
-        except FileNotFoundError:
-            print(f"no journal for run {args.run!r} under {LOGS / RUNS_DIR}", file=sys.stderr)
+    parser = _parser(operation, prog)
+    try:
+        args = parser.parse_args(argv)
+        if getattr(args, "slow", None) is not None and not (
+            math.isfinite(args.slow) and args.slow > 0
+        ):
+            parser.error("--slow must be a positive finite number")
+        if not LOGS.is_dir():
+            print(f"no milestone logs under {LOGS}", file=sys.stderr)
             return 1
-        if args.json:
-            print(json_output(reconstructed, sys.stdout))
+        if operation == "list-sessions":
+            for session, when, files in list_sessions():
+                print(f"{when:%Y-%m-%d %H:%M}  {session}  ({files} log file{'s' if files != 1 else ''})")
+            return 0
+        if operation in {"show-run", "read-run-json"}:
+            try:
+                reconstructed = read_run(args.run)
+            except ValueError as exc:
+                print(f"{parser.prog}: {exc}", file=sys.stderr)
+                return 2
+            except FileNotFoundError:
+                print(f"no journal for run {args.run!r} under {LOGS / RUNS_DIR}", file=sys.stderr)
+                return 1
+            if operation == "read-run-json":
+                print(json_output(reconstructed, sys.stdout))
+            else:
+                render_run(reconstructed)
+            return 0
+        sessions = list_sessions()
+        if operation == "show-latest-session":
+            if not sessions:
+                print(f"no milestone logs under {LOGS}", file=sys.stderr)
+                return 1
+            session = sessions[-1][0]
         else:
-            render_run(reconstructed)
+            session = args.session
+        events, agent_ids = read_milestones(session)
+        events += claude_events(session)
+        events += codex_events({session} | agent_ids)
+        print(f"session {session}\n{'-' * 70}")
+        render(events, args.slow)
         return 0
-    sessions = list_sessions()
-    if args.list:
-        for session, when, files in sessions:
-            print(f"{when:%Y-%m-%d %H:%M}  {session}  ({files} agent{'s' if files > 1 else ''})")
-        return 0
-    if not sessions and not args.session:
-        print(f"no milestone logs under {LOGS}", file=sys.stderr)
-        return 1
-    session = args.session or sessions[-1][0]
-
-    events, agent_ids = read_milestones(session)
-    events += claude_events(session)
-    events += codex_events({session} | agent_ids)
-    print(f"session {session}\n{'-' * 70}")
-    render(events, args.slow)
-    return 0
+    except SystemExit as exc:
+        return int(exc.code)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main("show-latest-session", prog="show-latest-session"))

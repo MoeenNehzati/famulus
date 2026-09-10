@@ -224,6 +224,8 @@ def _confined_environment(
 def _materialize_metadata(
     configuration: RepositoryConfiguration,
     metadata: ResolvedInvocationMetadata,
+    *,
+    setup_preflight_authorized: bool = False,
 ) -> ResolvedInvocation:
     """Construct the confined Python runner command for compiled metadata.
 
@@ -272,6 +274,11 @@ def _materialize_metadata(
         configuration.repository_root.as_posix(),
         "--runtime-repository-config",
         configuration.config_path.as_posix(),
+        *(
+            ["--setup-preflight-authorized"]
+            if setup_preflight_authorized
+            else []
+        ),
         python_target.gateway_path.as_posix(),
         python_target.process_entry,
         *metadata.command,
@@ -288,6 +295,7 @@ def materialize_authorized_invocation(
     *,
     argv: list[str],
     stdin_requested: bool,
+    setup_preflight_authorized: bool = False,
 ) -> ResolvedInvocation:
     """Compile one authorized route and construct its confined runner."""
 
@@ -296,10 +304,14 @@ def materialize_authorized_invocation(
         argv=argv,
         stdin_requested=stdin_requested,
     )
-    return _materialize_metadata(authorized.repository.configuration, metadata)
+    return _materialize_metadata(
+        authorized.repository.configuration,
+        metadata,
+        setup_preflight_authorized=setup_preflight_authorized,
+    )
 
 
-def _check_setup(authorized):
+def _check_setup(authorized, *, setup_preflight_authorized=False):
     from officina.blueprints.direct_setup import load_direct_setup_projection
     def _exact_setup_value(actual, expected):
         return type(actual) is type(expected) and (set(actual) == set(expected) and all(_exact_setup_value(actual[key], item) for key, item in expected.items()) if isinstance(expected, dict) else actual == expected)
@@ -311,6 +323,8 @@ def _check_setup(authorized):
         return
     if projection.lifecycle is not None:
         raise SetupBlocked(None, (target,), projection.lifecycle)
+    if setup_preflight_authorized:
+        return
     def manager(operation, arguments):
         try:
             result = _run_resolved_invocation(_resolve_dispatch(caller_skill=caller, target=f"setup-interface-manager._rtx.interface.{operation}", args=arguments, target_version=1, repository_config=authorized.repository.configuration.config_path), text=True)
@@ -346,6 +360,7 @@ def _materialize(
     target_version: int | None,
     host_caller: bool,
     check_setup: bool = False,
+    setup_preflight_authorized: bool = False,
 ) -> ResolvedInvocation:
     """Authorize one route and construct its confined Python runner command."""
 
@@ -362,11 +377,15 @@ def _materialize(
         host_caller=host_caller,
     )
     if check_setup:
-        _check_setup(authorized)
+        _check_setup(
+            authorized,
+            setup_preflight_authorized=setup_preflight_authorized,
+        )
     return materialize_authorized_invocation(
         authorized,
         argv=args,
         stdin_requested=stdin_requested,
+        setup_preflight_authorized=setup_preflight_authorized,
     )
 
 
@@ -417,6 +436,7 @@ def _resolve_dispatch(
     repository_config: Path | None = None,
     host_caller: bool = False,
     check_setup: bool = False,
+    setup_preflight_authorized: bool = False,
     **_legacy: object,
 ) -> ResolvedInvocation:
     """Internal resolver shared by host and trusted nested callers.
@@ -443,6 +463,7 @@ def _resolve_dispatch(
         target_version=target_version,
         host_caller=host_caller,
         check_setup=check_setup,
+        setup_preflight_authorized=setup_preflight_authorized,
     )
 
 

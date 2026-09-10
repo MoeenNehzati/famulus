@@ -1,22 +1,5 @@
 #!/usr/bin/env python3
-"""Append one milestone line for the current agent session.
-
-Agents call this instead of composing a path and a JSON object themselves:
-the identifiers live in environment variables that differ per harness, and
-having each agent rebuild that path is where it silently went wrong before.
-
-    milestone "what I am starting now" "how the previous piece ended"
-    milestone --role "trace config loading" "locate the loader"
-    milestone --done "have the answer"
-
-A job that outlives the session that started it passes `--run`, which mirrors
-the same record into one journal per run. That journal is what a later session
-reads back, so anything a recovering agent must act on goes in a typed field
-rather than in the human `doing` and `prev` prose.
-
-    milestone --run nightly-01 --event task --task extract --state failed \
-              --attempt 1 "retry the extract" "schema audit rejected the output"
-"""
+"""Append one bounded milestone record for the current agent session."""
 
 from __future__ import annotations
 
@@ -28,7 +11,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-# Empty or relative would split writer and reader across working directories.
+
 LOGS = Path(os.environ.get("ASSISTANT_LOGS") or Path.home() / ".assistant-logs").expanduser().resolve()
 
 
@@ -42,13 +25,7 @@ def session_id() -> str:
 
 
 def agent_id() -> str:
-    """Per-agent file where the harness exposes a thread id.
-
-    Claude Code exposes no per-agent identifier, and each tool call runs in a
-    fresh shell, so an agent cannot carry a minted suffix between calls. There
-    the whole session shares one file: single-line O_APPEND writes interleave
-    safely, and `role` distinguishes the agents on read.
-    """
+    """Return the harness thread ID, or the shared-session fallback."""
     return os.environ.get("CODEX_THREAD_ID") or "session"
 
 
@@ -57,19 +34,11 @@ def log_path(session: str, agent: str) -> Path:
     return LOGS / day / f"{session}.{agent}.jsonl"
 
 
-# A run id reaches the filesystem as one path component and reaches the reader
-# as a lookup key, so it is restricted to what is safe in both: no separator,
-# no leading dot, and short enough to stay well inside any filename limit.
 RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z")
 
 
 def run_journal(run: str) -> Path:
-    """The one file every session contributing to `run` appends to.
-
-    Kept outside the day directories: a long run spans midnight, and splitting
-    its journal by day would put recovery back in the business of merging
-    files. Raises ValueError on an id that must not become a path component.
-    """
+    """Return the durable journal path for one safe run identifier."""
     if not RUN_ID.match(run):
         raise ValueError(
             f"unsafe run id {run!r}: use letters, digits, dot, dash or underscore "
@@ -78,14 +47,20 @@ def run_journal(run: str) -> Path:
     return LOGS / "runs" / f"{run}.jsonl"
 
 
-# Bytes, not characters: the capped fields plus JSON overhead stay under a 4KB
-# single write even when every character encodes to three.
 LINE_BUDGET = 3800
+STRUCTURAL_OVERHEAD = 124
+
+_VALUE_LIMITS = {
+    "ts": 48, "role": 220, "cwd": 512, "doing": 220, "prev": 220,
+    "run": 66, "session": 128, "agent": 128, "event": 80, "step": 24,
+    "task": 128, "state": 64, "attempt": 24, "evidence": 1400,
+}
+_MAX_EVIDENCE_ENTRIES = 20
+_MAX_EVIDENCE_ENTRY = 220
 
 
 def _append_line(target: Path, line: bytes) -> None:
     """Append one complete record without losing concurrent Windows writers."""
-
     target.parent.mkdir(parents=True, exist_ok=True)
     if os.name != "nt":
         descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
@@ -117,88 +92,129 @@ def _append_line(target: Path, line: bytes) -> None:
             msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
 
 
-def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("doing", nargs="?", default="", help="what you are starting now")
-    ap.add_argument("prev", nargs="?", default="", help="how the previous piece ended")
-    ap.add_argument("--role", default="", help="a few words naming your overall task")
-    ap.add_argument("--done", metavar="PREV", help="final entry; PREV closes the last piece")
-    ap.add_argument("--path", action="store_true", help="print the log path and exit")
-    ap.add_argument("--run", metavar="ID", help="durable run id; also journals to that run")
-    ap.add_argument("--event", default="", help="what kind of event this is, e.g. run-start, task")
-    ap.add_argument("--step", type=int, help="current numbered algorithm step")
-    ap.add_argument("--task", default="", help="identity of the task this concerns")
-    ap.add_argument("--state", default="", help="state that task is now in, e.g. started, failed")
-    ap.add_argument("--attempt", type=int, help="attempt or repair round for that task")
-    ap.add_argument("--evidence", action="append", default=[], metavar="PATH",
-                    help="path to supporting evidence; repeatable")
-    args = ap.parse_args(argv)
+class _WriterParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        self.exit(2, f"{self.prog}: error: {message}\n")
 
-    typed = {
-        "event": args.event[:60],
-        "step": args.step,
-        "task": args.task[:100],
-        "state": args.state[:40],
-        "attempt": args.attempt,
-        "evidence": [str(item)[:200] for item in args.evidence[:20]],
+
+def _add_record_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--role", required=True, help="agent task label")
+    parser.add_argument("--run", metavar="RUN", help="durable run identifier")
+    parser.add_argument("--event", default="", help="typed event")
+    parser.add_argument("--step", type=int, help="typed non-negative step")
+    parser.add_argument("--task", default="", help="typed task identity")
+    parser.add_argument("--state", default="", help="typed task state")
+    parser.add_argument("--attempt", type=int, help="typed non-negative attempt")
+    parser.add_argument("--evidence", action="append", default=[], metavar="PATH")
+
+
+def _parser(operation: str, prog: str) -> _WriterParser:
+    parser = _WriterParser(prog=prog)
+    if operation == "record-progress":
+        parser.add_argument("doing", metavar="DOING")
+        parser.add_argument("prev", metavar="PREV", nargs="?", default="")
+        _add_record_options(parser)
+    elif operation == "record-completion":
+        parser.add_argument("result", metavar="RESULT")
+        _add_record_options(parser)
+    elif operation == "session-path":
+        pass
+    elif operation == "run-path":
+        parser.add_argument("run", metavar="RUN")
+    else:
+        raise ValueError(f"unknown milestone writer operation {operation!r}")
+    return parser
+
+
+def _require_within(parser: _WriterParser, label: str, value: object, limit: int) -> None:
+    if len(json.dumps(value, ensure_ascii=False).encode("utf-8")) > limit:
+        parser.error(f"{label} exceeds its {limit}-byte JSON value limit")
+
+
+def _typed_record(parser: _WriterParser, args: argparse.Namespace) -> dict[str, object]:
+    typed: dict[str, object] = {}
+    for name in ("event", "task", "state", "step", "attempt"):
+        value = getattr(args, name)
+        if value in ("", None):
+            continue
+        if name in {"step", "attempt"} and value < 0:
+            parser.error(f"--{name} cannot be negative")
+        _require_within(parser, f"--{name}", value, _VALUE_LIMITS[name])
+        typed[name] = value
+    evidence = args.evidence
+    if len(evidence) > _MAX_EVIDENCE_ENTRIES:
+        parser.error(f"--evidence accepts at most {_MAX_EVIDENCE_ENTRIES} entries")
+    for item in evidence:
+        _require_within(parser, "--evidence entry", item, _MAX_EVIDENCE_ENTRY)
+    if evidence:
+        _require_within(parser, "--evidence", evidence, _VALUE_LIMITS["evidence"])
+        typed["evidence"] = evidence
+    return typed
+
+
+def _record(operation: str, parser: _WriterParser, args: argparse.Namespace) -> int:
+    progress = operation == "record-progress"
+    doing, prev = (args.doing, args.prev) if progress else ("(done)", args.result)
+    if not args.role:
+        parser.error("--role must be non-empty")
+    _require_within(parser, "--role", args.role, _VALUE_LIMITS["role"])
+    _require_within(parser, "DOING" if progress else "RESULT", doing if progress else prev, _VALUE_LIMITS["doing"])
+    _require_within(parser, "PREV", prev, _VALUE_LIMITS["prev"])
+
+    timestamp, cwd = datetime.now().astimezone().isoformat(timespec="seconds"), os.getcwd()
+    _require_within(parser, "timestamp", timestamp, _VALUE_LIMITS["ts"])
+    _require_within(parser, "cwd", cwd, _VALUE_LIMITS["cwd"])
+    record: dict[str, object] = {
+        "ts": timestamp, "role": args.role, "cwd": cwd,
+        "doing": doing, "prev": prev, **_typed_record(parser, args),
     }
-    typed = {key: value for key, value in typed.items() if value not in ("", None, [])}
-    if typed and args.run is None:
-        # Structured data outside a run journal is unrecoverable later, and
-        # silently keeping it human-only would be the failure this guards.
-        ap.error(f"--run is required with {', '.join('--' + key for key in sorted(typed))}")
-    for key in ("step", "attempt"):
-        if typed.get(key, 0) < 0:
-            ap.error(f"--{key} cannot be negative")
 
     journal = None
     if args.run is not None:
+        _require_within(parser, "--run", args.run, _VALUE_LIMITS["run"])
         try:
             journal = run_journal(args.run)
         except ValueError as exc:
-            ap.error(str(exc))
+            parser.error(str(exc))
+        session, agent = session_id(), agent_id()
+        _require_within(parser, "session", session, _VALUE_LIMITS["session"])
+        _require_within(parser, "agent", agent, _VALUE_LIMITS["agent"])
+        record.update(run=args.run, session=session, agent=agent)
 
-    session, agent = session_id(), agent_id()
-    path = log_path(session, agent)
-    if args.path:
-        print(journal or path)
-        return 0
-
-    doing = "(done)" if args.done is not None else args.doing
-    prev = args.done if args.done is not None else args.prev
-    if not doing:
-        ap.error("nothing to record: pass DOING, or --done PREV")
-
-    record = {
-        "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
-        "role": args.role[:200],
-        "cwd": os.getcwd()[:200],
-        "doing": doing[:200],
-        "prev": prev[:200],
-    }
-    if journal is not None:
-        # The journal is read without its filename for context, so the record
-        # names its own origin. Old records carry none of these keys.
-        record.update(run=args.run, session=session, agent=agent, **typed)
-    line = json.dumps(record, ensure_ascii=False) + "\n"
-    # Interleave safety rests on one line, one write, well under 4KB. Every
-    # other field is individually capped; `--evidence` is the one a caller can
-    # repeat, so it is what gives way — and it says so rather than going quiet.
-    dropped = 0
-    while len(line.encode("utf-8")) > LINE_BUDGET and record.get("evidence"):
-        record["evidence"] = record["evidence"][:-1]
-        dropped += 1
-        record["evidence_dropped"] = dropped
-        line = json.dumps(record, ensure_ascii=False) + "\n"
+    line = (json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
+    assert len(line) <= LINE_BUDGET, "independent record limits exceeded the line budget"
     try:
-        for target in (path, journal) if journal else (path,):
-            _append_line(target, line.encode("utf-8"))
+        path = log_path(session_id(), agent_id())
+        targets = (path, journal) if journal else (path,)
+        for target in targets:
+            _append_line(target, line)
     except OSError as exc:
-        print(f"milestone: {exc}", file=sys.stderr)
+        print(f"{parser.prog}: {exc}", file=sys.stderr)
         return 1
-
     return 0
 
 
+def main(operation: str, argv: list[str] | None = None, *, prog: str) -> int:
+    parser = _parser(operation, prog)
+    try:
+        args = parser.parse_args(argv)
+        if operation == "session-path":
+            print(log_path(session_id(), agent_id()))
+            return 0
+        if operation == "run-path":
+            _require_within(parser, "RUN", args.run, _VALUE_LIMITS["run"])
+            try:
+                print(run_journal(args.run))
+            except ValueError as exc:
+                parser.error(str(exc))
+            return 0
+        return _record(operation, parser, args)
+    except SystemExit as exc:
+        return int(exc.code)
+
+
+assert STRUCTURAL_OVERHEAD + sum(_VALUE_LIMITS.values()) <= LINE_BUDGET
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main("record-progress", prog="record-progress"))

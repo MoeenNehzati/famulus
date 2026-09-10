@@ -1028,6 +1028,66 @@ def test_main_attaches_runtime_dispatch_context(
     }
 
 
+def test_main_attaches_setup_preflight_authorization_to_runtime_context(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches an authorized setup helper losing its grant at process launch."""
+    captured = {}
+
+    class Interface(PythonMachineInterface):
+        def run(self, args):
+            captured["setup_preflight_authorized"] = (
+                python_interface.runtime_dispatch_context(
+                    self
+                ).setup_preflight_authorized
+            )
+            return 0
+
+    monkeypatch.setattr(
+        python_runner, "load_interface", lambda *_args, **_kwargs: Interface()
+    )
+
+    result = main(
+        [
+            "--setup-preflight-authorized",
+            "--runtime-repo-root",
+            str(tmp_path),
+            "_rtx/_demo.py",
+            "Interface",
+        ]
+    )
+
+    assert result == 0
+    assert captured == {"setup_preflight_authorized": True}
+
+
+def test_main_rejects_duplicate_setup_preflight_authorization(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Catches repeated private grant flags reaching interface execution."""
+    monkeypatch.setattr(
+        python_runner,
+        "load_interface",
+        lambda *_args, **_kwargs: pytest.fail(
+            "duplicate setup authorization loaded the interface"
+        ),
+    )
+
+    result = main(
+        [
+            "--setup-preflight-authorized",
+            "--setup-preflight-authorized",
+            "_rtx/_demo.py",
+            "Interface",
+        ]
+    )
+
+    assert result == 2
+    assert "duplicate --setup-preflight-authorized" in capsys.readouterr().err
+
+
 def test_logical_bound_transports_preserve_identity_and_reject_bare_imports(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1573,6 +1633,49 @@ def test_declared_v5_dispatch_ignores_runtime_source_context(
     assert captured_run["resolved"] is sentinel
     assert captured_run["stdin"] == "payload"
     assert captured_run["text"] is True
+
+
+def test_declared_dispatch_propagates_setup_preflight_authorization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches an authorized setup helper re-entering setup on a child call."""
+    captured = {}
+
+    def fake_resolve(**kwargs):
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(
+        "officina.dispatcher.core._resolve_dispatch",
+        fake_resolve,
+    )
+    monkeypatch.setattr(
+        "officina.dispatcher.core._run_resolved_invocation",
+        lambda _resolved, **_kwargs: "ok",
+    )
+
+    class Interface(PythonMachineInterface):
+        dispatches = {
+            "read": DispatchCall(
+                caller_module_id="demo-rtx",
+                target_module_id="cloud-files-rtx",
+                interface="read",
+            )
+        }
+
+    interface = Interface()
+    python_interface.set_runtime_dispatch_context(
+        interface,
+        caller_module_id="demo-rtx",
+        repo_root=tmp_path,
+        repository_config=tmp_path / "officina.toml",
+        setup_preflight_authorized=True,
+    )
+
+    assert interface.dispatch("read") == "ok"
+    assert captured["check_setup"] is True
+    assert captured["setup_preflight_authorized"] is True
 
 
 def test_declared_v5_dispatch_rejects_mismatched_runtime_caller_context(
