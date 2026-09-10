@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -69,6 +70,132 @@ def _launcher_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
 def _create_runtime_interpreter(paths) -> None:
     paths.venv_python_path.parent.mkdir(parents=True)
     paths.venv_python_path.touch()
+
+
+def _create_linux_runtime_bus(root: Path, uid: int):
+    runtime = root / str(uid)
+    runtime.mkdir(parents=True)
+    runtime.chmod(0o700)
+    bus = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    bus.bind(str(runtime / "bus"))
+    return runtime, bus
+
+
+@pytest.mark.parametrize(
+    ("platform", "environment"),
+    [
+        ("darwin", {"PRESERVED": "yes"}),
+        ("linux", {"XDG_RUNTIME_DIR": "/explicit/runtime"}),
+        ("linux", {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/explicit/bus"}),
+        (
+            "linux",
+            {
+                "XDG_RUNTIME_DIR": "/explicit/runtime",
+                "DBUS_SESSION_BUS_ADDRESS": "unix:path=/explicit/bus",
+            },
+        ),
+    ],
+)
+def test_launcher_preserves_explicit_partial_or_non_linux_session_environment(
+    platform: str, environment: dict[str, str], tmp_path: Path
+) -> None:
+    launcher = _load_server(LAUNCHER)
+    original = environment.copy()
+    launcher._hydrate_linux_session_environment(
+        environment, platform=platform, uid=1234, runtime_root=tmp_path
+    )
+    assert environment == original
+
+
+# famulus-skip: category=unsupported-platform; reason=Linux endpoint metadata; alternate=non-Linux no-op case
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux session repair")
+@pytest.mark.parametrize(
+    "unsafe_case",
+    "missing_bus open_mode regular_bus runtime_symlink bus_symlink runtime_owner bus_owner".split(),
+)
+def test_launcher_rejects_unsafe_linux_session_endpoints(
+    unsafe_case: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    launcher = _load_server(LAUNCHER)
+    uid = os.getuid()
+    runtime = tmp_path / str(uid)
+    sockets: list[socket.socket] = []
+    if unsafe_case == "runtime_symlink":
+        target, bus = _create_linux_runtime_bus(tmp_path / "target", uid)
+        sockets.append(bus)
+        runtime.symlink_to(target, target_is_directory=True)
+    else:
+        runtime.mkdir(parents=True)
+        runtime.chmod(0o755 if unsafe_case == "open_mode" else 0o700)
+        if unsafe_case == "regular_bus":
+            (runtime / "bus").write_text("not a socket", encoding="utf-8")
+        elif unsafe_case == "bus_symlink":
+            target = tmp_path / "socket-target"
+            bus = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            bus.bind(str(target))
+            sockets.append(bus)
+            (runtime / "bus").symlink_to(target)
+        elif unsafe_case != "missing_bus":
+            bus = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            bus.bind(str(runtime / "bus"))
+            sockets.append(bus)
+    if unsafe_case in {"runtime_owner", "bus_owner"}:
+        real_lstat = launcher.Path.lstat
+        wrong_name = "bus" if unsafe_case == "bus_owner" else str(uid)
+
+        def lstat(path):
+            status = real_lstat(path)
+            if path.name == wrong_name:
+                return os.stat_result((*status[:4], uid + 1, *status[5:]))
+            return status
+
+        monkeypatch.setattr(launcher.Path, "lstat", lstat)
+    environment: dict[str, str] = {}
+    try:
+        launcher._hydrate_linux_session_environment(
+            environment, platform="linux", uid=uid, runtime_root=tmp_path
+        )
+    finally:
+        for bus in sockets:
+            bus.close()
+    assert environment == {}
+
+
+# famulus-skip: category=unsupported-platform; reason=Linux process environment; alternate=helper no-op case
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux session repair")
+def test_launcher_passes_hydrated_environment_to_both_subprocesses(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    launcher = _load_server(LAUNCHER)
+    paths = _launcher_paths(monkeypatch, tmp_path)
+    _create_runtime_interpreter(paths)
+    runtime_root = tmp_path / "run-user"
+    runtime, bus = _create_linux_runtime_bus(runtime_root, os.getuid())
+    monkeypatch.setattr(launcher, "LINUX_RUNTIME_ROOT", runtime_root)
+    monkeypatch.setenv("PRESERVED", "yes")
+    monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
+    monkeypatch.delenv("DBUS_SESSION_BUS_ADDRESS", raising=False)
+    environments: list[dict[str, str]] = []
+
+    def run(argv, *, env, **_kwargs):
+        environments.append(env)
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(launcher.subprocess, "run", run)
+    try:
+        assert launcher.main() == 0
+    finally:
+        bus.close()
+    expected = {
+        "PRESERVED": "yes",
+        "XDG_RUNTIME_DIR": str(runtime),
+        "DBUS_SESSION_BUS_ADDRESS": f"unix:path={runtime / 'bus'}",
+    }
+    assert [{key: env[key] for key in expected} for env in environments] == [
+        expected,
+        expected,
+    ]
+    assert environments[0] is environments[1]
 
 
 def test_launcher_uses_exact_executable_inherits_stdio_and_propagates_exit(
