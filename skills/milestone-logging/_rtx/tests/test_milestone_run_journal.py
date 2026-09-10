@@ -15,7 +15,7 @@ import os
 import subprocess
 import sys
 import types
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import time
 
@@ -207,8 +207,13 @@ def load_writer_module():
 
 class _FixedDatetime:
     @classmethod
-    def now(cls) -> datetime:
-        return datetime(2026, 9, 9, 12, 34, 56, tzinfo=timezone.utc)
+    def now(cls):
+        return cls()
+
+    def astimezone(self) -> datetime:
+        return datetime(
+            2026, 9, 9, 8, 34, 56, tzinfo=timezone(timedelta(hours=-4))
+        )
 
 
 def _configured_writer(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, thread: str | None):
@@ -327,6 +332,11 @@ def test_maximum_shaped_record_retains_every_value_within_line_budget(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     writer, logs, _cwd = _configured_writer(monkeypatch, tmp_path, thread="agent-a")
+    monkeypatch.setattr(
+        writer,
+        "log_path",
+        lambda _session, _agent: logs / "2026-09-09" / "max.session.jsonl",
+    )
     monkeypatch.setattr(writer, "datetime", _QuotaDatetime); _QuotaDatetime.quota = 48
     monkeypatch.setattr(writer.os, "getcwd", lambda: _json_text_at_quota(512))
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", _json_text_at_quota(128))
@@ -473,7 +483,8 @@ def test_timeline_adapters_select_their_fixed_operations(
     )
     latest = day / "latest.session.jsonl"
     write_json_line(latest, {"ts": "2026-08-22T09:01:00+00:00", "role": "reviewer", "cwd": "/workspace", "doing": "latest", "prev": "start"})
-    os.utime(day / "visible.session.jsonl", (1, 1)); os.utime(latest, (2, 2))
+    os.utime(day / "visible.session.jsonl", (1_800_000_001, 1_800_000_001))
+    os.utime(latest, (1_800_000_002, 1_800_000_002))
     (logs / "runs").mkdir()
     write_json_line(
         logs / "runs" / "nightly-01.jsonl",
