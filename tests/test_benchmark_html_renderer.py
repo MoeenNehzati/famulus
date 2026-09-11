@@ -130,7 +130,8 @@ def test_real_time_launcher_does_not_wait_for_reverse_dns(monkeypatch):
     assert time.monotonic() - start < 2.5
 
 
-def test_windows_launcher_default_allows_slow_browser_startup(monkeypatch):
+@pytest.mark.parametrize(("platform", "ci"), [("win32", None), ("linux", "true")])
+def test_ci_launcher_default_allows_slow_browser_startup(monkeypatch, platform, ci):
     module = _benchmark_module()
 
     class FakeProcess:
@@ -144,7 +145,11 @@ def test_windows_launcher_default_allows_slow_browser_startup(monkeypatch):
 
     process = FakeProcess()
     monotonic_values = iter((0, 31))
-    monkeypatch.setattr(module, "sys", SimpleNamespace(platform="win32"))
+    monkeypatch.setattr(module, "sys", SimpleNamespace(platform=platform))
+    if ci is None:
+        monkeypatch.delenv("CI", raising=False)
+    else:
+        monkeypatch.setenv("CI", ci)
     monkeypatch.setattr(module, "ThreadingHTTPServer", _FakeBenchmarkServer)
     monkeypatch.setattr(module.subprocess, "Popen", lambda *_args, **_kwargs: process)
     monkeypatch.setattr(

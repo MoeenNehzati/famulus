@@ -99,7 +99,7 @@ def run_benchmark_html(
 ) -> dict:
     """Wait for the page's explicit result using an unmodified browser clock."""
     if timeout_seconds is None:
-        timeout_seconds = 60 if sys.platform == "win32" else 30
+        timeout_seconds = 60 if sys.platform == "win32" or os.environ.get("CI") else 30
     outcome = {}
     completion = """<script>const benchmarkPoll=setInterval(()=>{
 const result=document.getElementById('benchmark-result'),error=document.body?.dataset.benchmarkError;
