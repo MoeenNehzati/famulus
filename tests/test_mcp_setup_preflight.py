@@ -50,6 +50,12 @@ def _arguments(server, *, secret: str = "original-secret"):
     )
 
 
+def _without_trace(result: dict[str, object]) -> dict[str, object]:
+    trace_id = result.pop("trace_id")
+    assert isinstance(trace_id, str) and len(trace_id) == 32
+    return result
+
+
 def _managed() -> ManagedSetup:
     return ManagedSetup(
         setup_interface="root.interface.setup",
@@ -252,7 +258,7 @@ def test_exact_managed_lifecycle_redirects_before_process_binding_and_redacts(
         "root", interface, 1, _arguments(server), dry_run=False
     )
 
-    assert result == {
+    assert _without_trace(result) == {
         "code": "setup_managed",
         "operation": operation,
         "root_setup_interface": "root.interface.setup",
@@ -313,7 +319,7 @@ def test_pending_child_target_returns_pop_ordered_suffix_and_redacted_begin(
         "root", "root.child.interface.run", 1, _arguments(server)
     )
 
-    assert result == {
+    assert _without_trace(result) == {
         "code": "setup_required",
         "root_setup_interface": "root.interface.setup",
         "pending_stack": pending_stack,
@@ -369,7 +375,7 @@ def test_busy_refusal_identifies_owner_and_recovery_route(
 
     result = server.invoke("root", "root.interface.run", 1, _arguments(server))
 
-    assert result == {
+    assert _without_trace(result) == {
         "code": "setup_busy",
         "flow_id": "flow-7",
         "root_setup_interface": "root.interface.setup",
@@ -1215,7 +1221,7 @@ def test_projection_direct_blueprint_failure_is_generic_and_redacted(
 
     result = server.invoke("root", "root.interface.run", 1, _arguments(server))
 
-    assert result == {
+    assert _without_trace(result) == {
         "exit_code": 2,
         "stdout": "",
         "stderr": "",
@@ -1297,7 +1303,7 @@ def test_mcp_contains_plain_invocation_error_as_registered_d68(
         )
         result = server.invoke("root", "root.interface.run", 1, _arguments(server))
 
-        assert result == {
+        assert _without_trace(result) == {
             "exit_code": 2,
             "stdout": "",
             "stderr": "",
@@ -1749,7 +1755,7 @@ def test_setup_authorization_response_must_match_requested_identity(
         setup_flow_id="flow-1",
     )
 
-    assert result == {
+    assert _without_trace(result) == {
         "exit_code": 2,
         "stdout": "",
         "stderr": "",
@@ -1915,7 +1921,7 @@ def test_setup_flow_id_with_unvalidated_authorization_result_is_invalid(
         setup_flow_id="flow-1",
     )
 
-    assert result == {
+    assert _without_trace(result) == {
         "exit_code": 2,
         "stdout": "",
         "stderr": "",
@@ -1954,7 +1960,7 @@ def test_setup_flow_id_absent_retains_ordinary_preflight_behavior(
 
     result = server.invoke("root", "root.interface.run", 1, _arguments(server))
 
-    assert result == {
+    assert _without_trace(result) == {
         "code": "setup_busy",
         "flow_id": "flow-7",
         "root_setup_interface": "root.interface.setup",

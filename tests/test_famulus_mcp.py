@@ -1158,6 +1158,7 @@ def test_packaged_host_declaration_invokes_dispatcher_through_real_mcp(
         "stdout",
         "stderr",
         "dispatcher",
+        "trace_id",
     }
     assert output["$defs"]["ExecutionResult"]["properties"]["dispatcher"][
         "additionalProperties"
@@ -1165,6 +1166,7 @@ def test_packaged_host_declaration_invokes_dispatcher_through_real_mcp(
     assert called.isError is False
     result = called.structuredContent["result"]
     assert result["exit_code"] == 0, result
+    assert len(result["trace_id"]) == 32
     assert Path(result["stdout"].strip()) == (
         tmp_path / "home" / "plugin-data" / "milestones"
     )

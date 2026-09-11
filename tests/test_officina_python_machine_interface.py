@@ -2805,6 +2805,72 @@ def test_setup_private_signal_crosses_process_boundaries(tmp_path, boundaries):
     assert caught.value.call_path == ("target.interface.run", *middle, "leaf.interface.run")
 
 
+def test_dispatch_trace_links_nested_processes_and_drops_sink_failures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from officina.runtime.dispatch_trace import invocation_trace, span
+
+    (tmp_path / "_rtx").mkdir()
+    (tmp_path / "_rtx" / "trace_gateway.py").write_text(
+        "import os, sys\nfrom pathlib import Path\n"
+        "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
+        "from officina.dispatcher.direct_runtime import ResolvedInvocation, _run_resolved_invocation\n"
+        "from officina.dispatcher.direct_models import ResolvedInvocationMetadata\n"
+        "class Entry(PythonMachineInterface):\n"
+        " def run(self, argv):\n"
+        "  metadata=ResolvedInvocationMetadata(caller_module_id='outer', target_module_id='inner', script_interface='inner.source.runtime.interface.run', target='inner.interface.run', pattern='default', cwd=Path.cwd(), command=[], stdin=False)\n"
+        "  command=[sys.executable,'-P','-m','officina.runtime.python_machine_interface_runner','_rtx/trace_gateway.py','Inner']\n"
+        "  _run_resolved_invocation(ResolvedInvocation(metadata,command,os.environ.copy()),text=True)\n"
+        "  print('unchanged')\n"
+        "  return 0\n"
+        "class Inner(PythonMachineInterface):\n"
+        " def run(self, argv): return 0\n",
+        encoding="utf-8",
+    )
+    command = [sys.executable, "-P", "-m", "officina.runtime.python_machine_interface_runner",
+               "_rtx/trace_gateway.py", "Entry"]
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
+    base = _transport_resolved(tmp_path)
+
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    monkeypatch.setenv("ASSISTANT_LOGS", str(logs))
+    monkeypatch.setenv("FAMULUS_PARENT_SPAN_ID", "f" * 32)
+    environment["ASSISTANT_LOGS"] = str(logs)
+    with invocation_trace():
+        result = dispatcher_core._run_resolved_invocation(
+            dispatcher_core.ResolvedInvocation(base.metadata(), command, environment.copy()), text=True
+        )
+    rows = [json.loads(path.read_text()) for path in logs.glob("dispatch/*/*/*.json")]
+    assert result.stdout == "unchanged\n" and result.stderr == ""
+    assert len(rows) == 4
+    by_parent = {row["parent_span_id"]: row for row in rows}
+    chain = [by_parent[None]]
+    while chain[-1]["span_id"] in by_parent:
+        chain.append(by_parent[chain[-1]["span_id"]])
+    assert [row["layer"] for row in chain] == ["process", "interface_body", "process", "interface_body"]
+    assert chain[0]["parent_span_id"] is None
+    common = {"schema", "layer", "trace_id", "span_id", "parent_span_id", "wall_started_ns",
+              "monotonic_started_ns", "duration_ns", "outcome"}
+    assert all(set(row) == common | ({"caller", "interface", "exit_code"} if row["layer"] == "process" else set()) for row in rows)
+    monkeypatch.setenv("FAMULUS_TRACE_ID", "e" * 32)
+    monkeypatch.setenv("FAMULUS_PARENT_SPAN_ID", "invalid")
+    with span("interface_body"):
+        pass
+    assert len(list(logs.glob("dispatch/*/*/*.json"))) == 4
+
+    blocked = tmp_path / "not-a-directory"
+    blocked.write_text("blocked")
+    monkeypatch.setenv("ASSISTANT_LOGS", str(blocked))
+    environment["ASSISTANT_LOGS"] = str(blocked)
+    with invocation_trace():
+        unchanged = dispatcher_core._run_resolved_invocation(
+            dispatcher_core.ResolvedInvocation(base.metadata(), command, environment.copy()), text=True
+        )
+    assert (unchanged.returncode, unchanged.stdout, unchanged.stderr) == (result.returncode, result.stdout, result.stderr)
+
+
 @pytest.mark.parametrize("frames", [0, 33])
 def test_setup_private_emitter_rejects_unbounded_paths(frames):
     from officina.dispatcher import errors

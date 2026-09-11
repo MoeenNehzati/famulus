@@ -108,9 +108,13 @@ persisted.
 
 When a supported host starts the Famulus plugin, that host supplies a private
 `plugin_data` directory to the Famulus MCP subprocess. Famulus stores milestone
-logs below `<plugin_data>/milestones/`; MCP startup creates and confines that
-directory and publishes it to the subprocess as `ASSISTANT_LOGS`. It does not
-write a host-readiness record. The hidden setup manager separately owns its
+logs and allowlisted Dispatcher timing traces below
+`<plugin_data>/milestones/`; MCP startup creates and confines that directory and
+publishes it to the subprocess as `ASSISTANT_LOGS`. Timing spans contain IDs,
+caller/interface identity, timestamps, duration, outcome, and optional exit
+status—not arguments, process output, environment values, URLs, credentials,
+working directories, or exception text. Famulus does not write a host-readiness
+record. The hidden setup manager separately owns its
 schema-versioned receipt ledger at the one absolute `setup-status` path returned
 by `common.interface.famulus-paths-get@1`. In a supported host context that
 getter currently selects `<plugin_data>/setup/status.json`. The ledger records
@@ -200,7 +204,7 @@ a known hardening gap.
 | Email | The registered IMAP/SMTP account; selected headers and bodies can enter the model session |
 | Saved attachments | A user-selected local directory; filenames are reduced to a basename before writing |
 | Email-triage state | `<STATE>/email-triage/` |
-| Plugin milestone logs | `<plugin_data>/milestones/` for the active Claude or Codex plugin instance |
+| Plugin assistant logs | Milestones and allowlisted Dispatcher timing spans under `<plugin_data>/milestones/` for the active Claude or Codex plugin instance |
 | Managed setup ledger | The absolute `setup-status` path returned by `common.interface.famulus-paths-get@1`; currently `<plugin_data>/setup/status.json` in a supported host context. Contains verified interface/version receipts, root claims, and at most one active lifecycle flow; it is not an MCP-readiness record. |
 | Email-triage classification log | `<PLUGIN>/skills/email-triage/_rtx/triage.log`; includes account, message ID, sender, subject, decision, and reason |
 | List-manager category cache | `<PLUGIN>/skills/list-manager/_rtx/tmp/categories.<list>.yaml`; contains list category paths and cache counters, not list entries |

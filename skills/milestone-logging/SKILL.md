@@ -76,7 +76,9 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
 <!-- END BLUEPRINT INTERFACES -->
 Skill: milestone-logging
 
-Use `record-progress` before the first substantive action, before each distinct work item, and every few tool calls; use `record-completion` at completion. Both require `--role`. Progress names the work starting now and optionally how the preceding piece ended; completion takes one closing result.
+Use `record-progress` before the first substantive action and before each distinct work item; use `record-completion` at completion. Both require `--role`. Progress names the work starting now and optionally how the preceding piece ended; completion takes one closing result.
+
+Tool calls and Dispatcher timing are recorded mechanically. Record semantic intent, decisions, blockers, and outcomes only; never log a milestone merely to announce or recap a tool call.
 
 If one recording invocation fails, report that exact failure once and continue the task; do not invent a record or retry blindly.
 

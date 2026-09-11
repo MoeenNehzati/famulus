@@ -45,6 +45,7 @@ from officina.dispatcher.errors import (
     LaunchFailedError,
     RuntimeMisconfiguredError,
 )
+from officina.runtime.dispatch_trace import trace_process
 
 
 # Every repo-owned launch that temporarily enables broad native-handle
@@ -554,6 +555,7 @@ def resolve_dispatch_metadata(**kwargs: Any) -> ResolvedInvocationMetadata:
         return resolved.metadata()
 
 
+@trace_process
 def _run_resolved_invocation(
     resolved: ResolvedInvocation,
     *,

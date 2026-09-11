@@ -77,6 +77,7 @@
   "src/officina/repository/checks/discovery.py",
   "src/officina/repository/checks/runner.py",
   "src/officina/runtime/__init__.py",
+  "src/officina/runtime/dispatch_trace.py",
   "src/officina/runtime/python_machine_interface.py",
   "src/officina/runtime/python_machine_interface_runner.py",
   "src/officina/rutter/__init__.py",

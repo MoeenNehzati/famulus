@@ -66,6 +66,16 @@ interfaces:
             then joins matching rollouts with milestone intent.
           sensitivity: user-private
           system: filesystem
+        - access: read
+          content: Dispatcher timing spans
+          formats: [json]
+          id: read-4
+          medium: local-filesystem
+          path: <selected-milestone-log-root>/dispatch/**
+          path_match: glob
+          reason: Joins an exact trace_id returned in a Codex tool result.
+          sensitivity: derived-private
+          system: filesystem
         writes:
         - &stdout_write
           access: write

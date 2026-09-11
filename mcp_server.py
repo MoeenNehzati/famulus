@@ -42,6 +42,7 @@ from officina.dispatcher.errors import (
 from officina.blueprints.graph import BlueprintGraphError
 from officina.common.famulus_paths import resolve_famulus_paths
 from officina.common.atomic_files import ensure_private_directory, exclusive_file_lock
+from officina.runtime.dispatch_trace import invocation_trace
 
 
 MANAGER_MODULE = "setup-interface-manager"
@@ -164,6 +165,7 @@ class ExecutionResult:
     stdout: str
     stderr: str
     dispatcher: dict[str, Any]
+    trace_id: str
 
 
 def require_python(version: tuple[int, int] = sys.version_info[:2]) -> None:
@@ -734,7 +736,7 @@ def _ordinary_preflight(
     raise DispatcherError.from_spec("D63")
 
 
-def invoke(
+def _invoke(
     caller: str,
     interface: str,
     version: int,
@@ -903,6 +905,24 @@ def invoke(
         )
         payload = diagnosis.as_payload()
         return {"exit_code": 2, "stdout": "", "stderr": "", "dispatcher": payload}
+
+
+def invoke(
+    caller: str,
+    interface: str,
+    version: int,
+    arguments: CompactArguments | OrderedArguments,
+    dry_run: bool = False,
+    setup_flow_id: str | None = None,
+) -> dict[str, Any] | ExecutionResult:
+    """Invoke one authorized Famulus interface through the existing Dispatcher."""
+
+    if dry_run:
+        return _invoke(caller, interface, version, arguments, True, setup_flow_id)
+    with invocation_trace() as trace_id:
+        result = _invoke(caller, interface, version, arguments, False, setup_flow_id)
+        result["trace_id"] = trace_id
+        return result
 
 
 def main() -> None:

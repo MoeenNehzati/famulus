@@ -41,6 +41,15 @@ result is JSON containing the canonical caller and target IDs, selected source
 interface, compiled argv, working directory, Python entrypoint, stdin decision,
 and warnings. Failures use the tool's structured dispatcher result.
 
+Every non-dry MCP result also returns a `trace_id`. Best-effort timing spans for
+Dispatcher processes and Python interface bodies are stored under
+`$ASSISTANT_LOGS/dispatch/`; tracing never records arguments, process output,
+environment values, URLs, credentials, working directories, or exception text.
+The milestone timeline joins this ID to Codex call/output events to show
+decision, execution, and response-creation time. Response creation ends when
+the final assistant message exists; it does not include later UI rendering or
+network delivery.
+
 The host caller must be a discoverable top-level skill. Runtime code may make
 nested calls using its immediate canonical module ID through the programmatic
 dispatcher API. A host cannot claim a private child such as `daily-plan._rtx`

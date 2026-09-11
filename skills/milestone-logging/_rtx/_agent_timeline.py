@@ -5,9 +5,9 @@ Two half-logs exist for any session: the harness records every tool call with
 real timestamps but no intent, while the milestone log records intent with no
 mechanical detail. This joins them on session id.
 
-Milestone logs are harness-neutral, so they drive the lookup; the mechanical
-trace is then pulled from whichever store has it — Claude Code's project
-transcripts or Codex's session rollouts.
+Host transcripts drive session lookup; semantic milestones are merged when
+present. Mechanical Dispatcher spans are joined by the exact trace id returned
+in a Codex tool result.
 
 `--run` reads the other axis. A job that outlived the session that started it
 has its milestones spread over every session that worked on it, so the writer
@@ -23,7 +23,9 @@ import importlib.util
 import json
 import math
 import os
+import re
 import sys
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
@@ -276,6 +278,129 @@ def claude_file(path: Path, agent: str) -> list[dict]:
 # ── Codex rollouts ───────────────────────────────────────────────────────────
 
 CODEX_CALLS = {"custom_tool_call", "function_call"}
+CODEX_OUTPUTS = {"custom_tool_call_output", "function_call_output"}
+TRACE_ID = re.compile(r"[0-9a-f]{32}\Z")
+
+
+def _codex_paths(session: str) -> list[Path]:
+    return list(CODEX_SESSIONS.glob(f"**/rollout-*-{_glob.escape(session)}.jsonl"))
+
+
+def _turn(payload: dict, current: str | None) -> str | None:
+    metadata = payload.get("internal_chat_message_metadata_passthrough") or {}
+    return (metadata.get("turn_id") or current) if isinstance(metadata, dict) else current
+
+
+def _returned_trace(value: object) -> str | None:
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (json.JSONDecodeError, RecursionError):
+            return None
+    if isinstance(value, list):
+        return next((found for item in value if (found := _returned_trace(item))), None)
+    if not isinstance(value, dict):
+        return None
+    trace_id = value.get("trace_id")
+    if isinstance(trace_id, str) and TRACE_ID.fullmatch(trace_id):
+        return trace_id
+    keys = ("structuredContent", "result", "content", "text")
+    return next((found for key in keys if key in value and (found := _returned_trace(value[key]))), None)
+
+
+def _trace_rows(trace_id: str) -> list[dict]:
+    rows = []
+    for path in LOGS.glob(f"dispatch/*/{trace_id}/*.json"):
+        for row in iter_json(path):
+            required = {"schema", "layer", "trace_id", "span_id", "parent_span_id",
+                        "wall_started_ns", "monotonic_started_ns", "duration_ns", "outcome"}
+            if (required <= row.keys() and row["schema"] == 1
+                    and row["trace_id"] == trace_id
+                    and row["layer"] in {"process", "interface_body"}
+                    and TRACE_ID.fullmatch(str(row["span_id"]))
+                    and (row["parent_span_id"] is None or TRACE_ID.fullmatch(str(row["parent_span_id"])))
+                    and isinstance(row["wall_started_ns"], int)
+                    and isinstance(row["monotonic_started_ns"], int)
+                    and isinstance(row["duration_ns"], int) and row["duration_ns"] >= 0):
+                rows.append(row)
+    counts = Counter(row["span_id"] for row in rows)
+    return [row for row in rows
+            if counts[row["span_id"]] == 1 and row["parent_span_id"] != row["span_id"]]
+
+
+def _self_ns(row: dict, children: list[dict]) -> int:
+    start, end = row["monotonic_started_ns"], row["monotonic_started_ns"] + row["duration_ns"]
+    intervals = sorted((max(start, child["monotonic_started_ns"]),
+                        min(end, child["monotonic_started_ns"] + child["duration_ns"]))
+                       for child in children)
+    covered, right = 0, start
+    for left, child_end in intervals:
+        if child_end > max(left, right):
+            covered += child_end - max(left, right)
+            right = max(right, child_end)
+    return max(0, row["duration_ns"] - covered)
+
+
+def _trace_lines(trace_id: str) -> list[str]:
+    rows = _trace_rows(trace_id)
+    by_id = {row["span_id"]: row for row in rows}
+    children: dict[str | None, list[dict]] = {}
+    for row in rows:
+        parent = row["parent_span_id"] if row["parent_span_id"] in by_id else None
+        children.setdefault(parent, []).append(row)
+    lines = []
+    def visit(row: dict, prefix: str) -> None:
+        direct = sorted(children.get(row["span_id"], []), key=lambda item: item["monotonic_started_ns"])
+        label = row.get("interface", "interface body")
+        inclusive, own = row["duration_ns"] / 1e9, _self_ns(row, direct) / 1e9
+        lines.append(f"{prefix}{label} {inclusive:.3f}s (self {own:.3f}s)")
+        for index, child in enumerate(direct):
+            visit(child, prefix + ("`- " if index == len(direct) - 1 else "|- "))
+    for root in sorted(children.get(None, []), key=lambda item: item["monotonic_started_ns"]):
+        visit(root, "")
+    return lines
+
+
+def codex_phase_events(session: str) -> list[dict]:
+    events = []
+    for path in _codex_paths(session):
+        current, users, calls, outputs, finals = None, {}, {}, {}, {}
+        for rec in iter_json(path):
+            payload, ts = rec.get("payload") or {}, at(rec, "timestamp")
+            if rec.get("type") == "turn_context":
+                current = payload.get("turn_id")
+                continue
+            if rec.get("type") != "response_item" or ts is None:
+                continue
+            turn, kind = _turn(payload, current), payload.get("type")
+            if not turn:
+                continue
+            if kind == "message" and payload.get("role") == "user":
+                users[turn] = ts
+            elif kind in CODEX_CALLS and isinstance(payload.get("call_id"), str):
+                calls[payload["call_id"]] = (turn, ts)
+            elif kind in CODEX_OUTPUTS and isinstance(payload.get("call_id"), str):
+                trace_id = _returned_trace(payload.get("output"))
+                if trace_id:
+                    outputs[payload["call_id"]] = (turn, ts, trace_id)
+            elif kind == "message" and payload.get("role") == "assistant" and payload.get("phase") == "final_answer":
+                finals[turn] = ts
+        for call_id, (turn, output_ts, trace_id) in outputs.items():
+            call = calls.get(call_id)
+            if not call or call[0] != turn:
+                continue
+            call_ts, final = call[1], finals.get(turn)
+            if turn in users:
+                events.append({"ts": call_ts, "agent": session[:8], "kind": "phase",
+                               "text": f"decision {(call_ts - users[turn]).total_seconds():.3f}s"})
+            events.append({"ts": output_ts, "agent": session[:8], "kind": "phase",
+                           "text": f"Famulus call {(output_ts - call_ts).total_seconds():.3f}s"})
+            events += ({"ts": output_ts, "agent": session[:8], "kind": "phase", "text": line}
+                       for line in _trace_lines(trace_id))
+            if final and final >= output_ts:
+                events.append({"ts": final, "agent": session[:8], "kind": "phase",
+                               "text": f"response creation {(final - output_ts).total_seconds():.3f}s"})
+    return events
 
 
 def codex_events(ids: set[str]) -> list[dict]:
@@ -283,7 +408,7 @@ def codex_events(ids: set[str]) -> list[dict]:
     the root thread), so match every thread id seen in the milestone logs."""
     events = []
     for ident in ids:
-        for path in CODEX_SESSIONS.glob(f"**/rollout-*-{_glob.escape(ident)}.jsonl"):
+        for path in _codex_paths(ident):
             agent = ident[:8]
             for rec in iter_json(path):
                 payload = rec.get("payload") or {}
@@ -311,13 +436,18 @@ def list_sessions() -> list[tuple[str, datetime, int]]:
         session = path.stem.split(".", 1)[0]
         # Unrelated runs share the "unknown" id, so key those by whole filename.
         seen.setdefault(path.stem if session == "unknown" else session, []).append(path)
+    for path in CODEX_SESSIONS.glob("**/rollout-*.jsonl"):
+        match = re.search(r"([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})\.jsonl$", path.name)
+        if match:
+            seen.setdefault(match.group(1), []).append(path)
     rows = []
     for session, paths in seen.items():
         try:
             newest = max(p.stat().st_mtime for p in paths)
         except OSError:
             continue
-        rows.append((session, datetime.fromtimestamp(newest).astimezone(), len(paths)))
+        logs = sum(path.parent.parent == LOGS for path in paths)
+        rows.append((session, datetime.fromtimestamp(newest).astimezone(), logs))
     return sorted(rows, key=lambda r: r[1])
 
 
@@ -389,12 +519,10 @@ def main(operation: str, argv: list[str] | None = None, *, prog: str) -> int:
             math.isfinite(args.slow) and args.slow > 0
         ):
             parser.error("--slow must be a positive finite number")
-        if not LOGS.is_dir():
-            print(f"no milestone logs under {LOGS}", file=sys.stderr)
-            return 1
         if operation == "list-sessions":
             for session, when, files in list_sessions():
-                print(f"{when:%Y-%m-%d %H:%M}  {session}  ({files} log file{'s' if files != 1 else ''})")
+                source = f"{files} log file{'s' if files != 1 else ''}" if files else "Codex transcript"
+                print(f"{when:%Y-%m-%d %H:%M}  {session}  ({source})")
             return 0
         if operation in {"show-run", "read-run-json"}:
             try:
@@ -410,8 +538,8 @@ def main(operation: str, argv: list[str] | None = None, *, prog: str) -> int:
             else:
                 render_run(reconstructed)
             return 0
-        sessions = list_sessions()
         if operation == "show-latest-session":
+            sessions = list_sessions()
             if not sessions:
                 print(f"no milestone logs under {LOGS}", file=sys.stderr)
                 return 1
@@ -421,6 +549,7 @@ def main(operation: str, argv: list[str] | None = None, *, prog: str) -> int:
         events, agent_ids = read_milestones(session)
         events += claude_events(session)
         events += codex_events({session} | agent_ids)
+        events += codex_phase_events(session)
         print(f"session {session}\n{'-' * 70}")
         render(events, args.slow)
         return 0

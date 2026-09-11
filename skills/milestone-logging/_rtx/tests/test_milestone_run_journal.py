@@ -467,6 +467,8 @@ def test_timeline_contract_declares_every_transcript_root() -> None:
     assert reads["read-3"]["medium"] == "local-filesystem"
     assert "CODEX_HOME" in reads["read-3"]["reason"]
     assert "$HOME/.codex" in reads["read-3"]["reason"]
+    assert reads["read-4"]["path"] == "<selected-milestone-log-root>/dispatch/**"
+    assert "trace_id" in reads["read-4"]["reason"]
 
 
 def test_timeline_adapters_select_their_fixed_operations(
@@ -582,6 +584,59 @@ def test_list_sessions_labels_log_files_not_agents(
     assert timeline_interface(monkeypatch, logs).ListSessions().run([]) == 0
     shown = capsys.readouterr().out
     assert "(2 log files)" in shown and "agent" not in shown
+
+
+def test_codex_timeline_needs_no_milestones_and_joins_exact_trace(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    interface = load_timeline_interface_module()
+    timeline = sys.modules["timeline_interface_under_test._agent_timeline"]
+    logs, sessions = tmp_path / "logs", tmp_path / "sessions"
+    trace_id, turn_id = "a" * 32, "turn-1"
+    session = "12345678-1234-1234-1234-123456789abc"
+    trace = logs / "dispatch" / "2026-09-11" / trace_id
+    trace.mkdir(parents=True)
+    spans = [
+        ("1" * 32, None, "process", 0, 2_000_000_000, "root.interface.run"),
+        ("2" * 32, "1" * 32, "interface_body", 200_000_000, 1_500_000_000, None),
+        ("3" * 32, "2" * 32, "process", 500_000_000, 800_000_000, "child.interface.run"),
+        ("4" * 32, "3" * 32, "interface_body", 600_000_000, 400_000_000, None),
+    ]
+    for span_id, parent, layer, started, duration, target in spans:
+        row = {"schema": 1, "layer": layer, "trace_id": trace_id, "span_id": span_id,
+               "parent_span_id": parent, "wall_started_ns": 1, "monotonic_started_ns": started,
+               "duration_ns": duration, "outcome": "success"}
+        if target:
+            row.update(caller="root", interface=target, exit_code=0)
+        (trace / f"{span_id}.json").write_text(json.dumps(row) + "\n")
+    duplicate = dict(row, span_id="5" * 32, parent_span_id=None)
+    (trace / "duplicate-root.json").write_text(json.dumps(duplicate) + "\n")
+    duplicate["parent_span_id"] = duplicate["span_id"]
+    (trace / "duplicate-cycle.json").write_text(json.dumps(duplicate) + "\n")
+    rollout = sessions / "2026" / "09" / "11" / f"rollout-test-{session}.jsonl"
+    rollout.parent.mkdir(parents=True)
+    meta = {"turn_id": turn_id}
+    records = [
+        ("2026-09-11T12:00:00Z", "turn_context", {"turn_id": turn_id}),
+        ("2026-09-11T12:00:00Z", "response_item", {"type": "message", "role": "user", "internal_chat_message_metadata_passthrough": meta}),
+        ("2026-09-11T12:00:01Z", "response_item", {"type": "function_call", "call_id": "call-1", "name": "invoke", "internal_chat_message_metadata_passthrough": meta}),
+        ("2026-09-11T12:00:03Z", "response_item", {"type": "function_call_output", "call_id": "call-1", "output": json.dumps({"content": [{"text": json.dumps({"trace_id": "b" * 32})}], "structuredContent": {"result": {"trace_id": trace_id}}}), "internal_chat_message_metadata_passthrough": meta}),
+        ("2026-09-11T12:00:03.2Z", "response_item", {"type": "message", "role": "assistant", "phase": "commentary", "internal_chat_message_metadata_passthrough": meta}),
+        ("2026-09-11T12:00:04Z", "response_item", {"type": "message", "role": "assistant", "phase": "final_answer", "internal_chat_message_metadata_passthrough": meta}),
+    ]
+    with rollout.open("w") as handle:
+        for timestamp, kind, payload in records:
+            handle.write(json.dumps({"timestamp": timestamp, "type": kind, "payload": payload}) + "\n")
+    monkeypatch.setattr(timeline, "LOGS", logs)
+    monkeypatch.setattr(timeline, "CODEX_SESSIONS", sessions)
+
+    assert interface.ListSessions().run([]) == 0
+    assert f"{session}  (Codex transcript)" in capsys.readouterr().out
+    assert interface.ShowSession().run([session]) == 0
+    shown = capsys.readouterr().out
+    assert all(text in shown for text in ("decision 1.000s", "Famulus call 2.000s",
+        "root.interface.run 2.000s (self 0.500s)", "child.interface.run 0.800s (self 0.400s)",
+        "response creation 1.000s"))
 
 
 # ── backward compatibility ───────────────────────────────────────────────────

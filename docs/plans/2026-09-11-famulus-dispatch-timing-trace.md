@@ -1,7 +1,7 @@
 # Famulus Dispatcher timing trace
 
-**Status:** Fresh-subagent-audited proposal. Do not implement without user
-approval.
+**Status:** Implemented and locally verified on 2026-09-11; certificate
+refresh follows the exact implementation commit.
 
 ## Goal
 

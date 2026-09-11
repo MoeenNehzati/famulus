@@ -29,6 +29,7 @@ from officina.common.repository_paths import (
 )
 
 from officina.dispatcher.errors import SetupBlocked
+from officina.runtime.dispatch_trace import span
 from .python_machine_interface import (
     PythonMachineInterface,
     PythonProcessTarget,
@@ -948,7 +949,9 @@ def run_python_machine_interface(
                 raise
             return diagnostic_handler("R25")
         try:
-            result = interface.run(args)
+            with span("interface_body") as finish:
+                result = interface.run(args)
+                finish(result if type(result) is int else 0)
         except InterfaceLoadError:
             raise
         except Exception:

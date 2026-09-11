@@ -63,7 +63,7 @@ it when you no longer want it to run.
 A failed job leaves a transcript of tool calls but no account of what the
 assistant was trying to do, which is rarely enough to tell a broken job from a
 job that ran and found nothing. `milestone-logging` is the other half: a job
-that records its milestones under a run id can be read back through its
-generated `timeline` interface via the shared `famulus_dispatcher` MCP server, even after
-the session that started it has ended. The `milestone-logging` skill owns the
-recording and timeline protocol.
+that records its milestones under a run id can be read back through
+`show-run` or `read-run-json` via the shared `famulus_dispatcher` MCP server,
+even after the session that started it has ended. Tool calls and Dispatcher
+timing are captured mechanically; milestones record intent and outcomes.
