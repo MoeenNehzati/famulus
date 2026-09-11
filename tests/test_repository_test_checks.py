@@ -368,6 +368,42 @@ def test_full_pooled_phase_defers_browser_tests_and_uses_worksteal() -> None:
     assert runner.CHROME_TESTS <= _deselected_tests(args)
 
 
+def test_exact_chrome_nodes_move_without_moving_their_modules() -> None:
+    expected = {
+        "tests/test_benchmark_html_renderer.py::test_trial_measures_a_real_synchronous_stall",
+        "tests/test_benchmark_html_renderer.py::test_real_time_launcher_bounds_a_page_without_a_result",
+        "tests/test_benchmark_html_renderer.py::test_real_time_launcher_does_not_wait_for_reverse_dns",
+        "tests/test_benchmark_html_renderer.py::test_real_time_launcher_retries_inflight_profile_cleanup",
+        "tests/test_benchmark_html_renderer.py::test_real_time_launcher_serves_large_pages_without_transfer_timeouts",
+        "tests/test_benchmark_html_renderer.py::test_trial_records_action_wide_frame_and_long_task_maxima",
+        "tests/test_benchmark_html_renderer.py::test_fast_full_graph_page_collects_the_completed_head_input_timer",
+        "tests/test_benchmark_html_renderer.py::test_trial_times_out_candidate_completion_and_math_diagnostics",
+        "tests/test_visualization_bootstrap.py::test_initial_layout_runs_in_one_native_worker_without_fallback_warning",
+    }
+    assert runner.CHROME_NODE_TESTS == expected
+    deselected = _deselected_tests(
+        runner._suite_pytest_args("full", verbose=False, jobs=6)
+    )
+    assert expected <= deselected
+    assert "tests/test_benchmark_html_renderer.py" not in deselected
+    assert "tests/test_visualization_bootstrap.py" not in deselected
+
+
+def test_exact_chrome_nodes_collect_eleven_serial_cases() -> None:
+    completed = subprocess.run(
+        [sys.executable, "-m", "pytest", "--collect-only", "-q", *sorted(runner.CHROME_NODE_TESTS)],
+        cwd=REPO_ROOT,
+        env={**os.environ, "PYTHONPATH": str(SRC_ROOT)},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    collected = [line for line in completed.stdout.splitlines() if line.startswith("tests/")]
+    assert len(collected) == 11
+
+
 @pytest.mark.parametrize("suite", ["precommit", "pre-push", "portability"])
 def test_browser_free_suites_keep_worksteal(suite: str) -> None:
     args = runner._suite_pytest_args(suite, verbose=False, jobs=6)
