@@ -1210,12 +1210,12 @@ def test_status_and_authorize_load_one_route_local_graph_from_parsed_target(
     [
         (
             manager.BeginInterface,
-            ["setup", "canary.interface.setup", "caller", "target", "1"],
+            ["teardown", "canary.interface.setup", "caller", "target", "1"],
         ),
         (manager.InvalidateInterface, ["canary.interface.setup"]),
     ],
 )
-def test_lifecycle_routes_retain_the_canonical_full_graph_loader(
+def test_non_setup_lifecycle_routes_retain_the_canonical_full_graph_loader(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
@@ -1266,6 +1266,104 @@ def test_lifecycle_routes_retain_the_canonical_full_graph_loader(
 
     assert code == 0
     assert calls == [repo_root]
+
+
+def test_setup_lifecycle_routes_load_the_active_root_direct_graph(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches setup lifecycle calls loading the full, current-step, or helper graph."""
+    root = "root.interface.setup"
+    item = _managed("prerequisite", kind="markdown")
+    current = item.setup_interface
+    config_path = tmp_path / "repository" / "officina.toml"
+    direct_calls: list[str] = []
+    full_calls: list[Path] = []
+    graph_globals = manager._ManagerInterface.build_graph.__globals__
+    monkeypatch.setitem(
+        graph_globals, "load_repository_configuration", lambda _path: object()
+    )
+
+    def load_direct(_configuration: object, target: str):
+        direct_calls.append(target)
+        return _graph(item)
+
+    def load_full(root_path: Path):
+        full_calls.append(root_path)
+        return _graph(item)
+
+    monkeypatch.setitem(
+        graph_globals,
+        "load_direct_setup_graph",
+        load_direct,
+    )
+    monkeypatch.setitem(graph_globals, "load_repository_blueprint_graph", load_full)
+
+    ledger_path = tmp_path / "private" / "state" / "ledger.json"
+
+    def runtime(interface_type: type):
+        class Runtime(interface_type):
+            def __init__(self) -> None:
+                super().__init__(
+                    graph_loader=load_full,
+                    bindings={current: _binding(item)},
+                )
+
+            def dispatch(self, key: str, **_kwargs: object):
+                assert key == setup_dispatches.GETTER_KEY
+                return subprocess.CompletedProcess([], 0, f"{ledger_path}\n", "")
+
+        runtime = Runtime()
+        set_runtime_dispatch_context(
+            runtime,
+            immediate_caller_module_id="caller",
+            repository_config=config_path,
+        )
+        return runtime
+
+    controller = runtime(manager.BeginInterface).build_manager(
+        argparse.Namespace(operation="setup", root_setup=root)
+    )
+    controller.store.update(
+        lambda ledger: state.begin_flow(
+            ledger,
+            state.ActiveFlow(
+                "flow-1",
+                "setup",
+                root,
+                current,
+                (),
+                state.ContinuationIdentity("caller", "target", 1),
+            ),
+        )
+    )
+    for interface_type, args in (
+        (
+            manager.AuthorizeMarkdownCallInterface,
+            argparse.Namespace(
+                flow_id="flow-1",
+                target_interface="helper.interface.run",
+                target_version=1,
+            ),
+        ),
+        (manager.SettleInterface, argparse.Namespace(flow_id="flow-1", interface=current)),
+        (manager.RecoverInterface, argparse.Namespace(flow_id="flow-1", action="retry")),
+    ):
+        runtime(interface_type).build_manager(args)
+    code = run_python_machine_interface(
+        runtime(manager.BeginInterface),
+        ["setup", "other.interface.setup", "caller", "target", "1"],
+    )
+    payload = json.loads(capsys.readouterr().out)
+    runtime(manager.InvalidateInterface).build_manager(
+        argparse.Namespace(setup_interface=current)
+    )
+    runtime(manager.TeardownAllInterface).build_manager(argparse.Namespace())
+
+    assert code == 2 and payload["state"] == "busy"
+    assert direct_calls == [root] * 4
+    assert full_calls == [manager.REPO_ROOT] * 3
 
 
 @pytest.mark.parametrize("route", ["status", "authorize"])

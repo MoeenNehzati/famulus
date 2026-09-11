@@ -1556,7 +1556,56 @@ class _ManagerInterface(PythonMachineInterface):
         except ManagerUsageError as exc:
             return argparse.Namespace(_manager_usage_error=str(exc))
 
-    def build_graph(self, args: argparse.Namespace):
+    def _build_direct_graph(self, target_interface: str):
+        context = runtime_dispatch_context(self)
+        if context.repository_config is None:
+            raise ManagerBootstrapError("E08")
+        try:
+            configuration = load_repository_configuration(
+                Path(context.repository_config)
+            )
+            return load_direct_setup_graph(configuration, target_interface)
+        except RepositoryConfigurationError as exc:
+            raise ManagerBootstrapError("E09") from exc
+        except DirectBlueprintError as exc:
+            raise ManagerBootstrapError("E10", cause=exc) from exc
+        except BlueprintGraphError as exc:
+            raise ManagerBootstrapError("E10") from exc
+        except OSError as exc:
+            caught: BaseException | None = exc
+            denied = False
+            for _ in range(3):
+                if isinstance(caught, PermissionError):
+                    denied = True
+                    break
+                caught = caught.__cause__ if caught is not None else None
+            raise ManagerBootstrapError("E11p" if denied else "E11") from exc
+
+    def build_graph(self, args: argparse.Namespace, store: LedgerStore | None = None):
+        target = None
+        if self._graph_loader is load_repository_blueprint_graph:
+            flow = store.read().active_flow if store is not None else None
+            if (
+                self.operation in {
+                    "run-markdown",
+                    "run-python",
+                    "settle",
+                    "recover",
+                    "recover-busy",
+                    "authorize-markdown-call",
+                }
+                and flow is not None
+                and flow.operation == "setup"
+            ):
+                target = flow.root
+            elif (
+                flow is None
+                and self.operation == "begin"
+                and getattr(args, "operation", None) == "setup"
+            ):
+                target = args.root_setup
+        if target is not None:
+            return self._build_direct_graph(target)
         context = runtime_dispatch_context(self)
         repo_root = Path(context.repo_root or REPO_ROOT)
         try:
@@ -1602,7 +1651,7 @@ class _ManagerInterface(PythonMachineInterface):
         if not path.is_absolute():
             raise ManagerBootstrapError("E19", expected="one absolute path")
         store = LedgerStore._from_atomic_files(path, _AtomicFilesAdapter())
-        graph = self.build_graph(args)
+        graph = self.build_graph(args, store)
 
         def dispatch(
             key: str, *, args: tuple[str, ...] = (), stdin: str | None = None
@@ -1675,30 +1724,8 @@ class _ManagerInterface(PythonMachineInterface):
 class _DirectPreflightInterface(_ManagerInterface):
     """Load only one parsed target's setup closure for read/authorize preflight."""
 
-    def build_graph(self, args: argparse.Namespace):
-        context = runtime_dispatch_context(self)
-        if context.repository_config is None:
-            raise ManagerBootstrapError("E08")
-        try:
-            configuration = load_repository_configuration(
-                Path(context.repository_config)
-            )
-            return load_direct_setup_graph(configuration, args.target_interface)
-        except RepositoryConfigurationError as exc:
-            raise ManagerBootstrapError("E09") from exc
-        except DirectBlueprintError as exc:
-            raise ManagerBootstrapError("E10", cause=exc) from exc
-        except BlueprintGraphError as exc:
-            raise ManagerBootstrapError("E10") from exc
-        except OSError as exc:
-            caught: BaseException | None = exc
-            denied = False
-            for _ in range(3):
-                if isinstance(caught, PermissionError):
-                    denied = True
-                    break
-                caught = caught.__cause__ if caught is not None else None
-            raise ManagerBootstrapError("E11p" if denied else "E11") from exc
+    def build_graph(self, args: argparse.Namespace, store: LedgerStore | None = None):
+        return self._build_direct_graph(args.target_interface)
 
 
 class StatusInterface(_DirectPreflightInterface):
