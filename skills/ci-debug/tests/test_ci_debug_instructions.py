@@ -293,6 +293,41 @@ def test_gateway_probes_integrated_candidate_before_full_matrix() -> None:
     assert "only after every affected matrix element is green" in text
 
 
+def test_gateway_gates_and_batches_each_remote_wave() -> None:
+    raw = QUALIFY.read_text(encoding="utf-8")
+    section_4 = " ".join(
+        raw[raw.index("## 4.") : raw.index("## 5.")].lower().split()
+    )
+    section_5 = " ".join(
+        raw[raw.index("## 5.") : raw.index("## 6.")].lower().split()
+    )
+    text = " ".join(raw.lower().split())
+
+    assert "before every complete matrix and remote probe batch" in text
+    assert section_4.index("refresh") < section_4.index("run-ci")
+    assert section_5.index("refresh") < section_5.index("run-targeted-tests")
+    assert "normalized failure signature" in section_5
+    for component in ("category", "normalized message", "terminal project frame"):
+        assert component in section_5
+    for variable in ("temporary roots", "run ids", "timestamps", "durations"):
+        assert variable in section_5
+    assert "one repair owner" in section_5
+    assert "validation ledger entry" in section_5
+    assert "clustering is only a scheduling hint" in section_5
+    assert "--selectors-json" in section_5
+    assert "one complete run of every affected element" in section_5
+    for counter in (
+        "elapsed wall time",
+        "drift-check count",
+        "targeted request count",
+        "whole-element count",
+        "full-matrix count",
+        "repair rounds",
+        "repeated unchanged failure signatures",
+    ):
+        assert counter in text
+
+
 def test_gateway_retires_obsolete_runs_and_recovers_completed_job_evidence() -> None:
     text = " ".join(
         QUALIFY.read_text(encoding="utf-8").lower().split()

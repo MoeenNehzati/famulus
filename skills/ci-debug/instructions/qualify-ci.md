@@ -75,6 +75,12 @@ may remove.
 
 ## 4. Run and observe the complete exact-SHA matrix
 
+Before every complete matrix and remote probe batch, refresh both the local
+target tip and live remote target tip. Continue only while both still satisfy
+the candidate's recorded promotion preconditions. On drift, preserve the
+candidate and recovery evidence, stop dispatch, and ask the user how to
+proceed.
+
 Use `ci-debug._rtx.interface.run-ci` for the exact pushed candidate. When it
 returns `state=pending`, invoke it again with the identical repository, ref,
 SHA, context, and timeout until it returns a terminal report. Do not create a
@@ -92,7 +98,15 @@ failure ledger immediately.
 
 While its report is red:
 
-1. Group failures by matrix element. Give each repair subagent one element, the
+1. Before dispatching repair work or probes, refresh both target tips and apply
+   the step 4 drift gate. Cluster the ledger by normalized failure signature:
+   exception or assertion category, normalized message, and terminal project frame.
+   Remove only nondeterministic temporary roots, run IDs, timestamps,
+   and durations. Do not add a parser or signature service. Identical
+   cross-element signatures share one repair owner, while every affected
+   element retains a validation ledger entry. Clustering is only a scheduling
+   hint and never clears another element's ledger entry.
+2. Group failures by matrix element. Give each repair subagent one element, the
    shared debug context, smallest selector set containing its known failures,
    the report, an invocation-owned repair branch and isolated repair worktree,
    and an allowed path scope. Before bounded-parallel dispatch, create and record
@@ -103,21 +117,25 @@ While its report is red:
    Prefer exact failing test nodes, then the smallest set of containing test
    files when exact nodes are unavailable. Do not include selectors already
    known to pass, and retain every unresolved or unprobed failure in the ledger.
-2. Run independent repair elements in bounded parallel through
+3. Run independent repair elements in bounded parallel through
    `ci-debug.interface.repair-element`; use a sequential fallback when workers
    are unavailable.
-3. Review returned commits, diffs, and targeted-test evidence. Integrate accepted
+4. Review returned commits, diffs, and targeted-test evidence. Integrate accepted
    patches sequentially into the candidate under
    `git-workflow.interface.default`.
-4. Push the integrated candidate without force and record its exact SHA in the
+5. Push the integrated candidate without force and record its exact SHA in the
    invocation record.
-5. Before the next complete matrix, use
+6. Before the next complete matrix, refresh both target tips, then use
    `ci-debug._rtx.interface.run-targeted-tests` on the exact integrated
-   candidate for every affected matrix element. Start with the smallest
-   selectors needed to detect integration interactions, then run each whole
-   affected element. Verify every requested selector actually executed and
-   return new or repeated failures to the ledger.
-6. Only after every affected matrix element is green, use
+   candidate for every affected matrix element. Submit all independent known
+   selectors for one element in one `--selectors-json` request, and dispatch
+   independent elements through the existing bounded parallelism. Start with
+   the smallest selectors needed to detect integration interactions, batched by
+   element, then run each whole affected element, retaining one complete run of
+   every affected element. Verify every requested selector actually executed
+   and return new or repeated failures to the ledger.
+7. Only after every affected matrix element is green, apply the step 4 drift
+   gate and use
    `ci-debug._rtx.interface.run-ci` again for the complete matrix.
 
 Treat stalls as bounded failure classes and preserve the repair-element rule
@@ -127,6 +145,10 @@ are nonterminal; targeted tests and whole-element tests never establish overall
 green. Qualification stops only when the complete report is green for the exact
 current candidate tip, or when a repair element or CI-capacity boundary returns
 a concrete blocker.
+
+For each candidate SHA, every terminal response reports elapsed wall time,
+drift-check count, targeted request count, whole-element count, full-matrix
+count, repair rounds, and repeated unchanged failure signatures.
 
 ## 6. Complete the existing prevention review
 
