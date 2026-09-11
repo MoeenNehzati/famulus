@@ -2,4 +2,50 @@
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-python3 "$REPO_ROOT/repo_checks.py" --suite pre-push
+
+run_checks() {
+  python3 "$REPO_ROOT/repo_checks.py" --suite pre-push
+}
+
+if [[ $# -ne 2 || -t 0 ]]; then
+  run_checks
+  exit $?
+fi
+
+ZERO40=0000000000000000000000000000000000000000
+ZERO64=0000000000000000000000000000000000000000000000000000000000000000
+RECORD_PATTERN='^([^[:space:]]+) ([^[:space:]]+) ([^[:space:]]+) ([^[:space:]]+)$'
+seen_record=false
+deletion_only=true
+
+while true; do
+  line=
+  if ! IFS= read -r line; then
+    [[ -z "$line" ]] || deletion_only=false
+    break
+  fi
+  if [[ ! "$line" =~ $RECORD_PATTERN ]]; then
+    deletion_only=false
+    continue
+  fi
+  local_ref=${BASH_REMATCH[1]}
+  local_oid=${BASH_REMATCH[2]}
+  remote_ref=${BASH_REMATCH[3]}
+  remote_oid=${BASH_REMATCH[4]}
+  seen_record=true
+  if [[ "$local_ref" != "(delete)" || "$remote_ref" != refs/?* ]]; then
+    deletion_only=false
+  elif [[ "$local_oid" == "$ZERO40" ]]; then
+    [[ "$remote_oid" =~ ^[0-9A-Fa-f]{40}$ ]] || deletion_only=false
+  elif [[ "$local_oid" == "$ZERO64" ]]; then
+    [[ "$remote_oid" =~ ^[0-9A-Fa-f]{64}$ ]] || deletion_only=false
+  else
+    deletion_only=false
+  fi
+done
+
+if [[ "$seen_record" == true && "$deletion_only" == true ]]; then
+  exit 0
+fi
+
+run_checks

@@ -64,6 +64,11 @@ This suite uses the working tree and runs the broad local validator and
 functional-test gate selected by the repository-check runner. It does not
 regenerate or stage files. A failure stops the push.
 
+Deletion-only pushes skip repository validation. Ordinary or mixed updates,
+malformed records, missing hook arguments, TTY input, and direct invocation
+without input all run the suite; missing arguments and TTY input delegate
+immediately without waiting for stdin.
+
 A local pre-push result is not proof that remote CI will pass. It does not
 reproduce every supported operating system, runner environment, or exact-SHA
 matrix element. See the [Continuous Integration Handbook](../ci-handbook.md)
