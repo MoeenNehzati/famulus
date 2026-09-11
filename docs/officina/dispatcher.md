@@ -136,10 +136,16 @@ call. Retrying the outer invocation can repeat that work; this is not a promise
 of transitive preflight or exactly-once execution.
 
 Setup-interface-manager remains the sole authority for ledger reads, locks,
-claims, recovery, and settlement. Only its `status` and `authorize` routes load
-the live route-local sparse graph. `begin`, run/settle/recover, teardown, and
-`invalidate` retain canonical repository-wide graph loading because those
-operations need broader lifecycle state or reverse-dependent discovery.
+claims, recovery, and settlement. Its `status` and `authorize` routes load the
+sparse setup closure for the requested target. A `begin setup` call with
+no active flow loads the closure rooted at its requested setup interface.
+During an active setup flow, `run-markdown`, `run-python`, `settle`, `recover`,
+`recover-busy`, and `authorize-markdown-call` load the closure rooted at the
+flow's ledger-recorded root setup interface. Begin calls while a flow is active,
+teardown operations (including `teardown-all`), invalidation, and flow-bound
+lifecycle calls without an active setup flow retain canonical repository-wide
+graph loading. Teardown and invalidation need broader lifecycle topology; the
+other fallbacks fail closed without assuming setup-flow state.
 
 ## Authorization
 
@@ -205,9 +211,10 @@ The live routing path does not build repository-wide graphs, inventories,
 snapshots, catalogs, caches, or manifests; inspect Git; derive or repair
 certificates; synchronize blueprints; contact a network; acquire routing locks;
 or write routing state. The sparse setup projection described above is limited
-to an authorized route and its explicit setup prerequisites; it is not a
-repository inventory. Repository-wide operations belong to explicit validators
-or the non-hot-path setup-manager operations described above.
+to the setup closure selected by one requested target or ledger-recorded
+setup-flow root; it is not a repository inventory. Selecting that graph grants
+no runtime authority. Repository-wide operations belong to explicit validators
+or the setup-manager fallback cases described above.
 
 ## Related documentation
 

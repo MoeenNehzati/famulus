@@ -86,9 +86,14 @@ AI="/absolute/path/to/checkout" \
 ```
 
 Use `--claude` instead of `--codex` for Claude, or omit the host option to
-refresh both. Then start a new host session. The refresh preserves plugin data
-unless `--reset-plugin-data` is explicitly requested; ordinary code and
-declaration testing should not reset it.
+refresh both. Local refresh packages committed `HEAD` with `git archive` into
+`_build/plugin` and installs that snapshot; it does not copy the live working
+tree. Commit the changes under test first. Uncommitted tracked changes are
+excluded with a warning; only files committed in `HEAD` are packaged.
+
+Then start a new host session. The refresh preserves plugin data unless
+`--reset-plugin-data` is explicitly requested; ordinary code and declaration
+testing should not reset it.
 
 ## Development-Facing Skill Areas
 
