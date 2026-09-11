@@ -205,9 +205,10 @@ def test_publication_rejects_unsafe_member_shapes_and_modes(tmp_path: Path) -> N
     module = load()
     root = module.reserve_private_root(tmp_path / "published")
     module.publish_tree(root, manifest_fields={"kind": "fixture"}, members={"runs.json": b"{}\n"}, outcome="collected", gaps=[])
-    (root / "runs.json").chmod(0o644)
-    with pytest.raises(module.HistoryError, match="not private"):
-        module.load_published_tree(root)
+    if os.name != "nt":
+        (root / "runs.json").chmod(0o644)
+        with pytest.raises(module.HistoryError, match="not private"):
+            module.load_published_tree(root)
     other = module.reserve_private_root(tmp_path / "other")
     with pytest.raises(module.HistoryError) as raised:
         module.publish_tree(other, manifest_fields={}, members={"C:\\escape.txt": b"x"}, outcome="collected", gaps=[])
@@ -240,9 +241,10 @@ def test_publication_rejects_symlinked_root_and_public_modes(tmp_path: Path) -> 
     alias.symlink_to(root, target_is_directory=True)
     with pytest.raises(module.HistoryError):
         module.load_published_tree(alias)
-    (root / "manifest.json").chmod(0o644)
-    with pytest.raises(module.HistoryError, match="not private"):
-        module.load_published_tree(root)
+    if os.name != "nt":
+        (root / "manifest.json").chmod(0o644)
+        with pytest.raises(module.HistoryError, match="not private"):
+            module.load_published_tree(root)
 
 
 def test_nested_publication_parent_swap_cannot_redirect_creation(
