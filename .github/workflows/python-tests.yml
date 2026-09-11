@@ -133,6 +133,7 @@ jobs:
               raise SystemExit("checked-out commit does not match expected SHA")
 
       - name: Set up Node.js
+        if: matrix.task == 'combined' || matrix.task == 'tests:shared'
         uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -141,12 +142,11 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
+          cache: pip
+          cache-dependency-path: requirements-ci.txt
 
       - name: Install test dependencies
         run: python3 -m pip install -r requirements-ci.txt
-
-      - name: Install Claude and Codex CLIs
-        run: npm install -g @anthropic-ai/claude-code @openai/codex
 
       - name: Run repository checks
         if: matrix.task == 'combined'
@@ -224,6 +224,7 @@ jobs:
               raise SystemExit("checked-out commit does not match expected SHA")
 
       - name: Set up Node.js
+        if: inputs.task == 'combined' || inputs.task == 'tests:shared'
         uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -232,12 +233,11 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
+          cache: pip
+          cache-dependency-path: requirements-ci.txt
 
       - name: Install test dependencies
         run: python3 -m pip install -r requirements-ci.txt
-
-      - name: Install Claude and Codex CLIs
-        run: npm install -g @anthropic-ai/claude-code @openai/codex
 
       - name: Run selected repository checks
         env:

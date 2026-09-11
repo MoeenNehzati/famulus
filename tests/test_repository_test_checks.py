@@ -1189,6 +1189,25 @@ def test_ci_workflow_preserves_execution_dispatch_and_evidence_contracts() -> No
     ).read_text(encoding="utf-8")
     parsed = yaml.safe_load(workflow)
 
+    for job_name in ("test", "probe"):
+        job_steps = parsed["jobs"][job_name]["steps"]
+        setup_python = next(
+            step
+            for step in job_steps
+            if step.get("uses", "").startswith("actions/setup-python@")
+        )
+        assert setup_python["with"]["cache"] == "pip"
+        assert setup_python["with"]["cache-dependency-path"] == "requirements-ci.txt"
+        assert all("@anthropic-ai/claude-code" not in str(step) for step in job_steps)
+        assert all("@openai/codex" not in str(step) for step in job_steps)
+
+    matrix_node = next(
+        step
+        for step in parsed["jobs"]["test"]["steps"]
+        if step.get("uses", "").startswith("actions/setup-node@")
+    )
+    assert matrix_node["if"] == "matrix.task == 'combined' || matrix.task == 'tests:shared'"
+
     # Ordered full-suite and portability execution.
     full = workflow.index("python3 repo_checks.py --suite full --verbose --jobs 1")
     portability = workflow.index(
@@ -1285,6 +1304,15 @@ def test_ci_workflow_dispatches_a_full_matrix_or_one_safe_probe() -> None:
         / "workflows"
         / "python-tests.yml"
     ).read_text(encoding="utf-8")
+    parsed = yaml.safe_load(workflow)
+
+    probe_node = next(
+        step
+        for step in parsed["jobs"]["probe"]["steps"]
+        if step.get("uses", "").startswith("actions/setup-node@")
+    )
+    assert probe_node["if"] == "inputs.task == 'combined' || inputs.task == 'tests:shared'"
+    assert "LLM_WAKEUP_RUN_CLIENT_TESTS" not in workflow
 
     assert "workflow_dispatch:" in workflow
     for input_name in (
