@@ -98,7 +98,7 @@ def _resolve_executable(
         raise RecurringPrerequisiteError(f"selected backend {name!r} is unreadable") from exc
     if not resolved.is_file() or not os.access(resolved, os.X_OK):
         raise RecurringPrerequisiteError(f"selected backend {name!r} is not executable")
-    return resolved
+    return path
 
 
 def build_managed_schedule(*, python: Path, plugin_root: Path, environ: Mapping[str, str], platform: str | None = None) -> ManagedSchedule:
@@ -106,9 +106,19 @@ def build_managed_schedule(*, python: Path, plugin_root: Path, environ: Mapping[
     home, paths, native = _roots(environ, platform)
     config = _absolute(paths.recurring_config_root, "config root").resolve(strict=False)
     state = _absolute(paths.recurring_state_root, "state root").resolve(strict=False)
-    python = _absolute(python, "selected Python").resolve(strict=False)
+    python = _absolute(python, "selected Python")
     plugin_root = _absolute(plugin_root, "plugin root").resolve(strict=False)
-    if not python.is_file() or not plugin_root.is_dir():
+    try:
+        python_target = python.resolve(strict=True)
+    except OSError as exc:
+        raise RecurringPrerequisiteError(
+            "selected Python and plugin root must exist"
+        ) from exc
+    if (
+        not python_target.is_file()
+        or not os.access(python_target, os.X_OK)
+        or not plugin_root.is_dir()
+    ):
         raise RecurringPrerequisiteError("selected Python and plugin root must exist")
     backends = {name: _resolve_executable(name, environ, platform=platform) for name in _BACKENDS}
     environment = {
@@ -191,10 +201,13 @@ def load_managed_schedule(*, descriptor_path: Path, log_root: Path | None = None
     def path(name: str) -> Path:
         return _absolute(Path(str(payload[name])), name).resolve(strict=False)
 
+    def executable_locator(name: str) -> Path:
+        return _absolute(Path(str(payload[name])), name)
+
     schedule = ManagedSchedule(
         descriptor_path=descriptor_path,
         owner_id=str(payload["owner_id"]),
-        python=path("python"),
+        python=executable_locator("python"),
         plugin_root=path("plugin_root"),
         jobs_file=path("jobs_file"),
         log_root=path("log_root"),
@@ -203,7 +216,7 @@ def load_managed_schedule(*, descriptor_path: Path, log_root: Path | None = None
         native_registration_root=path("native_registration_root"),
         default_backend=str(payload["default_backend"]),
         backend_executables={
-            name: _absolute(Path(str(value)), name).resolve(strict=False)
+            name: _absolute(Path(str(value)), name)
             for name, value in payload["backend_executables"].items()
         },
         environment=dict(payload["environment"]),

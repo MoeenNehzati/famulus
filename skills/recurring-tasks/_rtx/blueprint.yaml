@@ -167,5 +167,5 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/rtx-unit-writer.yaml
-version: 1
+version: 2
 maturity: experimental

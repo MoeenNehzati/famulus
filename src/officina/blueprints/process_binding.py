@@ -513,7 +513,9 @@ def _authored_argv_pattern_matches(
             raise ProcessBindingError(
                 f"positional_patterns[{raw_index!r}]: expected regex string"
             )
-        if position < 0 or position >= len(positionals):
+        if not 0 <= position < len(positionals):
+            if position >= minimum:
+                continue
             return False
         if re.match(regex_pattern, positionals[position]) is None:
             return False

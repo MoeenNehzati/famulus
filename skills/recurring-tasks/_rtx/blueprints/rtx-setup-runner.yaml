@@ -7,7 +7,7 @@ dependencies:
   reason: Delegates setup through the recurring-owned command helper.
   source: recurring-tasks._rtx.source.rtx-managed-control
   version: 1
-description: Captures caller-selected Python and plugin values in recurring-owned setup.
+description: Captures dispatcher-selected Python and plugin values in recurring-owned setup.
 gateway:
   language: Python
   path: _setup_runner.py
@@ -20,17 +20,7 @@ interfaces:
     - interface: recurring.interface.control
       version: 1
     contract:
-      arguments:
-        canonical-python:
-          description: Canonical absolute executable for the selected Python interpreter.
-          required: true
-          sensitivity: user-private
-          type: {kind: string, sensitivity: user-private}
-        plugin-root:
-          description: Absolute root of the current host-selected Famulus plugin implementation.
-          required: true
-          sensitivity: user-private
-          type: {kind: string, sensitivity: user-private}
+      arguments: {}
       caller_warnings:
       - external-side-effect: Writes recurring-owned descriptor and jobs state and reconciles the one shared native scheduler set and healthcheck sentinel.
       direct_io:
@@ -54,6 +44,14 @@ interfaces:
           medium: local-system
           sensitivity: user-private
           system: crontab
+        - access: read
+          content: Dispatcher-selected Python executable and plugin root.
+          formats:
+          - python-object
+          id: read-3
+          medium: local-system
+          sensitivity: user-private
+          system: agent-runtime
         writes:
         - access: configure
           content: recurring descriptor and jobs state
@@ -89,7 +87,7 @@ interfaces:
           sensitivity: derived-private
       execution:
         consistency:
-          live: Applies caller-selected Python and plugin values to durable recurring state and current scheduler state.
+          live: Applies dispatcher-selected Python and plugin values to durable recurring state and current scheduler state.
         effects:
         - action: configure
           confirmation_evidence:
@@ -103,8 +101,8 @@ interfaces:
           reversibility:
             reversible: Rerun setup with the intended selected Python and plugin root.
           value_source:
-            argument_ref: canonical-python
-            kind: argument
+            direct_io_ref: read-3
+            kind: direct-io
         - action: configure
           confirmation_evidence:
             direct_io_ref: write-2
@@ -131,8 +129,8 @@ interfaces:
           reversibility:
             reversible: Owner-checked recurring teardown removes the managed sentinel.
           value_source:
-            argument_ref: plugin-root
-            kind: argument
+            direct_io_ref: read-3
+            kind: direct-io
         lifecycle: finite
         mutation_safety:
           atomicity:
@@ -193,25 +191,18 @@ interfaces:
         type:
           kind: string
       preconditions: []
-    description: Capture the selected Python and plugin root, initialize recurring-owned state without default jobs, and reconcile the shared scheduler set.
+    description: Capture the dispatcher-selected Python and plugin root, initialize recurring-owned state without default jobs, and reconcile the shared scheduler set.
     process_binding:
       entry: Interface
       kind: process
       patterns:
-      - allowed_flags:
-        - --canonical-python
-        - --plugin-root
-        required_flags:
-        - --canonical-python
-        - --plugin-root
-        flag_patterns:
-          --canonical-python: ^.+$
-          --plugin-root: ^.+$
+      - allowed_flags: []
+        allow_stdin: false
         max_positionals: 0
         min_positionals: 0
         name: owner
-    usage: --canonical-python FILE --plugin-root DIR
-    version: 1
+    usage: ''
+    version: 2
 node_type: behavioral_source
 platform_support:
   linux: true
@@ -286,5 +277,5 @@ schema_version: 6
 uses_interfaces:
 - interface: recurring.interface.control
   version: 1
-version: 1
+version: 2
 maturity: experimental
