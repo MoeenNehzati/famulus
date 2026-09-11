@@ -130,15 +130,12 @@ def test_default_dry_run_refreshes_both_from_local_and_preserves_plugin_data(
         "user",
         "--keep-data",
     ] in commands
-    assert [
-        "claude",
-        "plugin",
-        "marketplace",
-        "add",
-        str(package),
-        "--scope",
-        "user",
-    ] in commands
+    assert any(
+        command[:4] == ["claude", "plugin", "marketplace", "add"]
+        and Path(command[4]) == package
+        and command[5:] == ["--scope", "user"]
+        for command in commands
+    )
     assert [
         "claude",
         "plugin",
