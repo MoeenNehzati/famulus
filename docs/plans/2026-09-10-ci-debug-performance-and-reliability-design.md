@@ -8,6 +8,13 @@ failure ledger, and exact-SHA qualification model. The first implementation
 wave removes demonstrated delay and missing test ownership; it does not add a
 new scheduler, test taxonomy, attestation system, or CI authority layer.
 
+Since this plan was drafted, ci-debug has gained a separate non-dispatching
+`analyze-ci` route. It reads GitHub Actions history, creates a new private local
+evidence root, and independently publishes one bounded immutable snapshot plus
+green-to-green failure-episode and descriptive runtime-hotspot reports. This
+changes how historical evidence can be gathered; it does not implement the
+first-wave changes below or change qualification authority.
+
 ## Evidence from the 2026-09-10 episode
 
 - Target-branch drift was discovered only after roughly 3 hours 45 minutes of
@@ -31,6 +38,8 @@ new scheduler, test taxonomy, attestation system, or CI authority layer.
 
 1. Preserve exact-SHA, complete-matrix green as the qualification authority.
    Pending, targeted-green, and affected-element-green remain nonterminal.
+   Historical `analyze-ci` snapshots and reports are observational evidence,
+   not qualification reports or promotion authority.
 2. Preserve the numbered ci-debug lifecycle, isolated candidate worktree,
    failure ledger, prevention review, and fast-forward/compare-and-swap
    promotion gates.
@@ -60,7 +69,9 @@ new scheduler, test taxonomy, attestation system, or CI authority layer.
 
 Amend the existing numbered algorithm rather than adding a coordinator:
 
-1. Record local and live remote target tips at the initial snapshot.
+1. Record local and live remote target tips in the qualification invocation's
+   initial state. This is distinct from an immutable historical-analysis
+   snapshot.
 2. Before every full matrix and every new batch of remote probes, refresh both
    tips. Continue only when they still satisfy the candidate's recorded
    promotion preconditions. Preserve the candidate and ask when they do not.
@@ -79,8 +90,11 @@ Amend the existing numbered algorithm rather than adding a coordinator:
    evidence is green.
 7. Report elapsed wall time, drift-check count, targeted request count, whole
    element count, full-matrix count, repair rounds, and repeated unchanged
-   failure signatures from the invocation record. These are orchestration
-   metrics, not a new machine-report schema.
+   failure signatures from the qualification invocation record. These remain
+   qualification-orchestration metrics rather than additions to the historical
+   analysis schema. The existing `analyze-ci` route may supply bounded
+   historical run, job, and step timing evidence, but it does not own these
+   counters or establish qualification.
 
 The existing `run-targeted-tests` interface remains synchronous in the first
 wave. Batching reduces calls without changing its contract. Durable targeted
@@ -171,5 +185,10 @@ The first wave is acceptable only when:
    `git diff --check` are green from a clean exact-revision worktree.
 8. A before/after timing report distinguishes shared, performance, browser,
    full-suite, CI setup, targeted-request, whole-element, full-matrix, and total
-   wall time. Timing from unmatched or single noisy samples is observational;
-   no correctness claim depends on an unmeasured estimate.
+   wall time. Use matched `analyze-ci` snapshots and runtime-hotspot reports for
+   bounded historical GitHub run, job, and step comparisons; collect local
+   suite timings and qualification-orchestration counters from their existing
+   owners. Historical comparisons remain observational rather than controlled
+   benchmarks, and neither they nor single noisy samples establish causal
+   speedup or qualification. No correctness claim depends on an unmeasured
+   estimate.

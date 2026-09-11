@@ -4,7 +4,7 @@
 
 **Goal:** Reduce CI-debug wall time and prevent locally invisible CI failures through small changes to existing orchestration, test ownership, workflow setup, and hook behavior.
 
-**Architecture:** Keep the current exact-SHA candidate lifecycle, repository-check suites, GitHub workflow, and targeted-probe interface. The first wave changes their policies and call patterns only; server-side branch admission and any measurement-gated follow-up remain separate decisions.
+**Architecture:** Keep the current exact-SHA candidate lifecycle, repository-check suites, GitHub workflow, and targeted-probe interface. Route CI dispatch and the Git candidate lifecycle through `ci-debug.interface.qualify-ci@2`, and observational baseline/timing collection through the already implemented `ci-debug.interface.analyze-ci@1`. The first wave changes qualification policy and existing call patterns only; server-side branch admission and any measurement-gated follow-up remain separate decisions.
 
 **Tech Stack:** Markdown skill instructions, Python/pytest, Bash pre-push hook, GitHub Actions YAML, existing `repo_checks.py` and ci-debug remote interfaces.
 
@@ -15,7 +15,8 @@
 - Complete exact-SHA matrix green remains the only CI qualification authority.
 - Add no new service, queue, daemon, suite family, registry, or generalized execution layer in the first wave.
 - Preserve the isolated candidate, failure ledger, prevention review, native/portability/browser/performance evidence, and fast-forward/compare-and-swap safety.
-- Use existing `run-targeted-tests --selectors-json` and bounded parallel element dispatch before changing machine interfaces.
+- Use the existing `qualify-ci@2` route, `run-targeted-tests --selectors-json`, and bounded parallel element dispatch before changing machine interfaces.
+- Treat the existing immutable history snapshot and runtime-hotspot report as measurement inputs, not first-wave implementation work.
 - Do not implement any explicitly deferred design item without a new reviewed plan.
 - Keep branch-protection administration outside code commits and require separate authorization.
 - Use eight workers for parallel-safe repository validation; retain canonical serial browser and performance execution.
@@ -28,18 +29,24 @@
 
 **Interfaces:**
 
-- Consumes: the exact implementation base, a clean worktree, the current
-  ci-debug context/report mechanism, GitHub job-step timestamps, and
-  `repo_checks.py` timing output.
+- Consumes: the exact implementation base, a clean worktree,
+  `ci-debug.interface.qualify-ci@2`, `ci-debug.interface.analyze-ci@1`, the
+  immutable history snapshot and runtime-hotspot report, and `repo_checks.py`
+  timing output.
 - Produces: a named isolated implementation branch/worktree, exact-base local
-  timing artifacts, and an exact-base full-matrix report in a durable context
-  outside every implementation/candidate/repair worktree.
+  timing artifacts, an exact-base full-matrix qualification report, and a
+  separate exact-base analysis output root containing independently published
+  snapshot and report directories, all outside every
+  implementation/candidate/repair worktree.
 
 - [ ] **Step 1: Record the exact base and evidence root**
 
   Record local and live remote target tips, the exact implementation base SHA,
-  and an absolute durable ci-debug context outside all Git worktrees. Save these
-  in the invocation record before any edit.
+  an absolute durable ci-debug qualification context, and a new private
+  `baseline-analysis` destination outside all Git worktrees. Save these in the
+  invocation record before any edit. The qualification context and analysis
+  output root are separate evidence stores; the latter has no root publication
+  marker.
 
 - [ ] **Step 2: Create the named isolated implementation worktree**
 
@@ -69,16 +76,28 @@
   preserve the evidence and stop to select or approve a new base.
 
   Reuse an already completed full-matrix report only if its tested SHA equals
-  the implementation base. Otherwise use the current `ci-debug` isolated
-  candidate route to dispatch exactly one base matrix. Persist the matrix report
-  in `CI_CONTEXT`.
+  the implementation base. Otherwise use `ci-debug.interface.qualify-ci@2`
+  with `push=false` to run exactly one isolated exact-base candidate matrix.
+  Persist the qualification report in `CI_CONTEXT`, including the temporary
+  candidate ref, event, run ID, tested SHA, and matrix topology needed to bind
+  the timing snapshot.
 
-- [ ] **Step 5: Capture existing GitHub step timing without changing schemas**
+- [ ] **Step 5: Capture exact-base timing through immutable analysis**
 
-  Use the read-only GitHub run view for that exact run and save job/step
-  `startedAt` and `completedAt` values beside the existing report. Record the
-  dependency-install and assistant-CLI-install duration for each element. Do
-  not extend the ci-debug machine-report schema.
+  Use `ci-debug.interface.analyze-ci@1` with the exact workflow, temporary
+  candidate branch, `event=workflow_dispatch`, a `since` bound preceding the
+  baseline run, `run-limit=1`, and the new `baseline-analysis` destination.
+  Verify that the immutable snapshot contains the exact qualification run and
+  implementation-base SHA with the same matrix topology; reject a newest-run
+  mismatch or unlike topology rather than silently comparing it.
+
+  Preserve the common snapshot digest and read the existing
+  `runtime-hotspots` report for observed job envelopes, job-minutes, and stable
+  step-ordinal timings. Record dependency-install and assistant-CLI-install
+  duration for each element, with every missing boundary or collection gap
+  explicit. Do not add ad hoc fields to the qualification context or any
+  machine-report schema; keep the immutable snapshot and reports as the timing
+  evidence.
 
 - [ ] **Step 6: Stop on an invalid baseline**
 
@@ -91,12 +110,15 @@
 
 **Files:**
 
-- Modify: `skills/ci-debug/SKILL.md`
+- Modify: `skills/ci-debug/instructions/qualify-ci.md`
 - Modify: `skills/ci-debug/tests/test_ci_debug_instructions.py`
 
 **Interfaces:**
 
-- Consumes: existing `ci-debug._rtx.interface.run-ci`, `ci-debug._rtx.interface.run-targeted-tests`, invocation record, debug context, and repair-element bounded parallelism.
+- Consumes: `ci-debug.interface.qualify-ci@2`, existing
+  `ci-debug._rtx.interface.run-ci@2`,
+  `ci-debug._rtx.interface.run-targeted-tests@1`, invocation record, debug
+  context, and repair-element bounded parallelism.
 - Produces: an instruction-only orchestration policy with early drift gates,
   normalized failure clustering, selector batching, mandatory affected-element
   verification, and final counters.
@@ -142,7 +164,8 @@
 
 - [ ] **Step 3: Amend the numbered algorithm without adding an interface**
 
-  In steps 4 and 5 of `SKILL.md`, insert the design's exact sequence:
+  In sections 4 and 5 of `instructions/qualify-ci.md`, insert the design's exact
+  sequence:
   refresh local and remote target tips before each remote wave; block and
   preserve recovery evidence on violated promotion preconditions; cluster the
   ledger using the design's manual signature rule; assign one repair owner to
@@ -162,14 +185,15 @@
   python3 repo_checks.py --suite validators --jobs 8
   ```
 
-  Expected: both commands pass; `instructions/repair-element.md` and generated
-  interface/blueprint files are unchanged because their safety contract and no
-  public interface changed.
+  Expected: both commands pass; `SKILL.md`, `instructions/analyze-ci.md`,
+  `instructions/repair-element.md`, and generated interface/blueprint files are
+  unchanged because routing, analysis behavior, repair safety, and public
+  interfaces did not change.
 
 - [ ] **Step 5: Commit only Task 1**
 
   ```bash
-  git add skills/ci-debug/SKILL.md skills/ci-debug/tests/test_ci_debug_instructions.py
+  git add skills/ci-debug/instructions/qualify-ci.md skills/ci-debug/tests/test_ci_debug_instructions.py
   git commit -m "perf(ci-debug): gate and batch remote diagnosis"
   ```
 
@@ -500,13 +524,17 @@
 
 **Files:**
 
-- Create: `first-wave.json` beside the Task 0 baseline in the recorded durable
-  ci-debug context outside all worktrees (untracked evidence only)
+- Create: a new private `candidate-analysis` tree beside the Task 0
+  `baseline-analysis` tree in the recorded durable evidence root (untracked
+  evidence only)
+- Create: `first-wave.json` beside those two analysis trees (untracked evidence
+  only)
 - No production or test files may change in this task.
 
 **Interfaces:**
 
-- Consumes: accepted Task 1-5 commits and existing timing/report outputs.
+- Consumes: accepted Task 1-5 commits, qualification reports, local timing
+  outputs, and the existing immutable snapshot/runtime-hotspot report format.
 - Produces: one comparison artifact and a decision on whether any deferred item merits a separate plan.
 
 - [ ] **Step 1: Verify exact scope from a clean worktree**
@@ -528,20 +556,34 @@
 
 - [ ] **Step 3: Qualify the exact candidate through ci-debug**
 
-  Use the amended numbered algorithm. Record candidate SHA, each drift check,
-  targeted batches, affected whole elements, complete matrices, repair rounds,
-  and elapsed wall time. If CI is red, leave this measurement checkpoint, run
-  the ordinary separately scoped repair loop, and restart Task 6 for the new
-  SHA. A changed SHA never inherits qualification.
+  Use `ci-debug.interface.qualify-ci@2` and its amended numbered algorithm with
+  `push=false`. Record candidate ref and event, candidate SHA, run ID, each
+  drift check, targeted batches, affected whole elements, complete matrices,
+  repair rounds, and elapsed wall time. If CI is red, leave this measurement
+  checkpoint, run the ordinary separately scoped repair loop, and restart Task
+  6 for the new SHA. A changed SHA never inherits qualification.
 
 - [ ] **Step 4: Write the comparison artifact**
 
+  After qualification, use `ci-debug.interface.analyze-ci@1` with the exact
+  workflow, candidate branch, `event=workflow_dispatch`, a `since` bound
+  preceding the candidate run, `run-limit=1`, and the new
+  `candidate-analysis` destination. Verify the immutable snapshot contains the
+  exact candidate run ID and SHA with matrix topology matching the accepted
+  baseline. Bind the comparison to the baseline and candidate snapshot
+  digests.
+
   Store baseline/candidate values for local precommit, shared, performance,
-  browser, and full-suite wall time. From matching per-element job-step
-  timestamps, record Node setup, setup-python/cache restoration, pip install,
-  assistant CLI install/removal, and total setup envelopes. Record cache hit or
-  miss; mark cache savings `not_measured` on a miss and wait for a naturally
-  occurring warm-cache run rather than dispatching a matrix only for timing.
+  browser, and full-suite wall time. From the two existing `runtime-hotspots`
+  reports, match normalized job names, runner labels, and step names; use step
+  ordinals as an identity check, not as the sole key, because removing setup
+  steps can shift later ordinals. Record Node setup, setup-python/cache
+  restoration, pip install, removed assistant CLI setup, observed job
+  envelopes, and observed job-minutes. The immutable snapshot does not retain
+  successful-run logs, so do not infer a pip-cache hit from step duration. Mark
+  cache savings `not_measured` unless already retained evidence explicitly
+  records the cache state; wait for a naturally occurring evidenced warm-cache
+  run rather than dispatching a matrix only for timing.
   Also record targeted request count, whole-element count,
   full-matrix count, and end-to-end elapsed time. Mark unavailable comparisons
   as `not_measured`; a normally green run does not measure red-matrix batching
