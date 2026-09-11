@@ -296,14 +296,15 @@ def test_v4_raw_argv_passthrough_does_not_activate_without_patterns() -> None:
         )
 
 
-def test_authored_pattern_treats_unpatterned_flag_as_switch() -> None:
+def test_authored_pattern_allows_switch_and_omitted_optional_patterned_positional() -> None:
     pattern, name = select_authored_argv_pattern(
         [
             {
                 "name": "switch",
                 "min_positionals": 1,
+                "max_positionals": 2,
                 "allowed_flags": ["--verbose"],
-                "positional_patterns": {"0": "^run$"},
+                "positional_patterns": {"0": "^run$", "1": "^[0-9]+$"},
             }
         ],
         ["--verbose", "run"],
