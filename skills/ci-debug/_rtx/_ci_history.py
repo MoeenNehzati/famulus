@@ -24,7 +24,10 @@ from officina.common.atomic_files import (
     read_regular_file_bytes,
 )
 
-from _runner_labels import classify_runner_labels
+try:
+    from ._runner_labels import classify_runner_labels
+except ImportError:
+    from _runner_labels import classify_runner_labels
 
 
 SCHEMA_VERSION = 1
