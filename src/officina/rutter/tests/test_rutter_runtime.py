@@ -1495,19 +1495,27 @@ def test_registry_open_waits_for_the_reckoning_lock(
     writer = ReckoningStore((reckoning_root / "locked.reckoning.json").absolute())
     attempted = Event()
     opened: list[object] = []
+    worker_errors: list[BaseException] = []
 
     def open_from_registry() -> None:
-        attempted.set()
-        opened.append(registry.open(Path("locked.reckoning.json")))
+        try:
+            attempted.set()
+            opened.append(registry.open(Path("locked.reckoning.json")))
+        except BaseException as error:
+            worker_errors.append(error)
 
-    with writer.transaction():
-        thread = Thread(target=open_from_registry)
-        thread.start()
-        assert attempted.wait(timeout=1)
-        thread.join(timeout=0.1)
-        assert not opened
-    thread.join(timeout=1)
+    thread = Thread(target=open_from_registry)
+    try:
+        with writer.transaction():
+            thread.start()
+            assert attempted.wait(timeout=1)
+            thread.join(timeout=0.1)
+            assert not opened
+    finally:
+        thread.join(timeout=1)
 
+    assert not thread.is_alive()
+    assert worker_errors == []
     assert len(opened) == 1
 
 

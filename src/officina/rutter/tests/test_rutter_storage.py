@@ -1620,19 +1620,27 @@ def test_transactions_serialize_real_store_instances(tmp_path: Path) -> None:
     first.create(_example_reckoning())
     attempted = Event()
     entered = Event()
+    worker_errors: list[BaseException] = []
 
     def enter_second() -> None:
-        attempted.set()
-        with second.transaction():
-            entered.set()
+        try:
+            attempted.set()
+            with second.transaction():
+                entered.set()
+        except BaseException as error:
+            worker_errors.append(error)
 
-    with first.transaction():
-        thread = Thread(target=enter_second)
-        thread.start()
-        assert attempted.wait(timeout=1)
-        assert not entered.wait(timeout=0.1)
-    thread.join(timeout=1)
+    thread = Thread(target=enter_second)
+    try:
+        with first.transaction():
+            thread.start()
+            assert attempted.wait(timeout=1)
+            assert not entered.wait(timeout=0.1)
+    finally:
+        thread.join(timeout=1)
 
+    assert not thread.is_alive()
+    assert worker_errors == []
     assert entered.is_set()
 
 
