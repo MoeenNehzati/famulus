@@ -117,19 +117,21 @@ run() {
 }
 
 package_local_marketplace() {
-    local stage=$marketplace_source.tmp
-    local archive=$AI/_build/plugin.tar
-
     if ! $dry_run && ! git -C "$AI" diff --quiet HEAD --; then
         warn 'local package uses HEAD; uncommitted tracked changes are excluded'
     fi
-    run rm -rf -- "$stage" || return
-    run mkdir -p -- "$stage" || return
-    run git -C "$AI" archive --format=tar --output="$archive" HEAD || return
-    run tar -xf "$archive" -C "$stage" || return
-    run rm -f -- "$archive" || return
-    run rm -rf -- "$marketplace_source" || return
-    run mv -- "$stage" "$marketplace_source" || return
+    (
+        cd "$AI" || return
+        local stage=_build/plugin.tmp
+        local archive=_build/plugin.tar
+        run rm -rf -- "$stage" || return
+        run mkdir -p -- "$stage" || return
+        run git archive --format=tar --output="$archive" HEAD || return
+        run tar -xf "$archive" -C "$stage" || return
+        run rm -f -- "$archive" || return
+        run rm -rf -- _build/plugin || return
+        run mv -- "$stage" _build/plugin || return
+    )
 }
 
 remove_or_warn() {

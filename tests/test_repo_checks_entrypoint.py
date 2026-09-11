@@ -129,6 +129,15 @@ ZERO40 = "0" * 40
 ZERO64 = "0" * 64
 
 
+def _bash_executable() -> str:
+    if os.name != "nt":
+        return "bash"
+    git_executable = shutil.which("git")
+    if git_executable is None:
+        raise FileNotFoundError("Git for Windows is required")
+    return str(Path(git_executable).parent.parent / "bin" / "bash.exe")
+
+
 def _pre_push_fixture(tmp_path: Path) -> tuple[GitTestRepository, Path, dict[str, str]]:
     repository = GitTestRepository.create(tmp_path / "repository")
     hooks = repository.root / ".githooks"
@@ -152,7 +161,7 @@ def _run_pre_push(
     arguments: tuple[str, ...] = ("origin", "file:///tmp/remote.git"),
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["bash", str(repository.root / ".githooks" / "pre-push"), *arguments],
+        [_bash_executable(), str(repository.root / ".githooks" / "pre-push"), *arguments],
         cwd=repository.root,
         env=environment,
         input=records,
@@ -212,7 +221,7 @@ def test_pre_push_hook_without_arguments_delegates_without_reading_stdin(
 ) -> None:
     repository, calls, environment = _pre_push_fixture(tmp_path)
     process = subprocess.Popen(
-        ["bash", str(repository.root / ".githooks" / "pre-push")],
+        [_bash_executable(), str(repository.root / ".githooks" / "pre-push")],
         cwd=repository.root,
         env=environment,
         stdin=subprocess.PIPE,
@@ -238,7 +247,7 @@ def test_pre_push_hook_with_tty_stdin_delegates(tmp_path: Path) -> None:
     master, slave = pty.openpty()
     try:
         completed = subprocess.run(
-            ["bash", str(repository.root / ".githooks" / "pre-push"), "origin", "remote"],
+            [_bash_executable(), str(repository.root / ".githooks" / "pre-push"), "origin", "remote"],
             cwd=repository.root,
             env=environment,
             stdin=slave,

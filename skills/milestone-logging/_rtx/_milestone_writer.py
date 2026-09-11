@@ -8,6 +8,7 @@ import json
 import os
 import re
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -79,8 +80,16 @@ def _append_line(target: Path, line: bytes) -> None:
         if lock.tell() == 0:
             lock.write(b"\0")
             lock.flush()
-        lock.seek(0)
-        msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
+        deadline = time.monotonic() + 30.0
+        while True:
+            lock.seek(0)
+            try:
+                msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
+                break
+            except PermissionError:
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.01)
         try:
             with target.open("ab") as handle:
                 if handle.write(line) != len(line):

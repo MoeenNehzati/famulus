@@ -105,14 +105,12 @@ def test_default_dry_run_refreshes_both_from_local_and_preserves_plugin_data(
     assert result.returncode == 0, result.stderr
     commands = _dry_run_commands(result.stdout)
     package = checkout / "_build" / "plugin"
-    assert ["rm", "-rf", "--", str(package) + ".tmp"] in commands
+    assert ["rm", "-rf", "--", "_build/plugin.tmp"] in commands
     assert [
         "git",
-        "-C",
-        str(checkout),
         "archive",
         "--format=tar",
-        f"--output={checkout / '_build' / 'plugin.tar'}",
+        "--output=_build/plugin.tar",
         "HEAD",
     ] in commands
     assert ["codex", "plugin", "remove", "famulus@nullkit", "--json"] in commands
@@ -153,7 +151,7 @@ def test_default_dry_run_refreshes_both_from_local_and_preserves_plugin_data(
         "-y",
     ] in commands
     assert all(
-        str(checkout / "_build") in command[-1]
+        command[-1].startswith("_build/")
         for command in commands
         if command[:2] == ["rm", "-rf"]
     )
