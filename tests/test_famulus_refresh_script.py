@@ -114,14 +114,12 @@ def test_default_dry_run_refreshes_both_from_local_and_preserves_plugin_data(
         "HEAD",
     ] in commands
     assert ["codex", "plugin", "remove", "famulus@nullkit", "--json"] in commands
-    assert [
-        "codex",
-        "plugin",
-        "marketplace",
-        "add",
-        str(package),
-        "--json",
-    ] in commands
+    assert any(
+        command[:4] == ["codex", "plugin", "marketplace", "add"]
+        and Path(command[4]) == package
+        and command[5:] == ["--json"]
+        for command in commands
+    )
     assert ["codex", "plugin", "add", "famulus@nullkit", "--json"] in commands
     assert [
         "claude",
@@ -186,9 +184,17 @@ def test_local_refresh_packages_only_committed_files(tmp_path: Path) -> None:
     assert "uncommitted tracked changes are excluded" in result.stderr
     assert (package / "tracked.txt").read_text(encoding="utf-8") == "included\n"
     assert not (package / "ignored").exists()
-    assert f"plugin marketplace add {package} --json" in log.read_text(
-        encoding="utf-8"
-    )
+    marketplace_lines = [
+        line
+        for line in log.read_text(encoding="utf-8").splitlines()
+        if line.startswith("plugin marketplace add ")
+    ]
+    assert len(marketplace_lines) == 1
+    assert Path(
+        marketplace_lines[0].removeprefix("plugin marketplace add ").removesuffix(
+            " --json"
+        )
+    ) == package
 
 
 def test_claude_refresh_warns_for_absent_state_and_continues_installing(

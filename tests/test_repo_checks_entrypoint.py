@@ -159,16 +159,13 @@ def _run_pre_push(
     records: str,
     *,
     arguments: tuple[str, ...] = ("origin", "file:///tmp/remote.git"),
-) -> subprocess.CompletedProcess[str]:
+) -> subprocess.CompletedProcess[bytes]:
     return subprocess.run(
         [_bash_executable(), str(repository.root / ".githooks" / "pre-push"), *arguments],
         cwd=repository.root,
         env=environment,
-        input=records,
+        input=records.encode("utf-8"),
         capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="strict",
         check=False,
     )
 
