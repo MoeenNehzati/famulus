@@ -120,6 +120,72 @@ def test_managed_descriptor_rejects_noncanonical_authority(tmp_path, field, valu
         runtime.load_managed_schedule(descriptor_path=expected.descriptor_path)
 
 
+def test_managed_descriptor_preserves_validated_executable_locators(tmp_path):
+    home = tmp_path / "home"
+    bin_root = tmp_path / "bin"
+    targets = tmp_path / "targets"
+    plugin_root = tmp_path / "plugin"
+    venv_python = tmp_path / "dispatcher-runtime" / "venv" / "bin" / "python"
+    for directory in (home, bin_root, targets, plugin_root, venv_python.parent):
+        directory.mkdir(parents=True, exist_ok=True)
+
+    real_python = targets / "python3.13"
+    real_claude = targets / "claude-2.1.263"
+    real_codex = targets / "codex-0.153.4"
+    for executable in (real_python, real_claude, real_codex):
+        executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        executable.chmod(0o700)
+    venv_python.symlink_to(real_python)
+    (bin_root / "claude").symlink_to(real_claude)
+    (bin_root / "codex").symlink_to(real_codex)
+
+    schedule = runtime.build_managed_schedule(
+        python=venv_python,
+        plugin_root=plugin_root,
+        environ={"HOME": str(home), "PATH": str(bin_root)},
+        platform="linux",
+    )
+
+    assert schedule.python == venv_python
+    assert schedule.backend_executables == {
+        "claude": bin_root / "claude",
+        "codex": bin_root / "codex",
+    }
+
+    schedule.descriptor_path.parent.mkdir(parents=True)
+    schedule.descriptor_path.parent.chmod(0o700)
+    schedule.descriptor_path.write_text(
+        json.dumps(runtime._payload(schedule)), encoding="utf-8"
+    )
+    schedule.descriptor_path.chmod(0o600)
+
+    replacements = {
+        venv_python: targets / "python3.14",
+        bin_root / "claude": targets / "claude-2.1.264",
+        bin_root / "codex": targets / "codex-0.154.0",
+    }
+    for locator, replacement in replacements.items():
+        replacement.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        replacement.chmod(0o700)
+        locator.unlink()
+        locator.symlink_to(replacement)
+    for retired in (real_python, real_claude, real_codex):
+        retired.unlink()
+
+    loaded = runtime.load_managed_schedule(descriptor_path=schedule.descriptor_path)
+
+    assert loaded.python == venv_python
+    assert loaded.backend_executables == schedule.backend_executables
+    assert loaded.python.resolve() == replacements[venv_python]
+    assert {
+        name: locator.resolve()
+        for name, locator in loaded.backend_executables.items()
+    } == {
+        "claude": replacements[bin_root / "claude"],
+        "codex": replacements[bin_root / "codex"],
+    }
+
+
 @pytest.mark.parametrize(
     "module,extra",
     [

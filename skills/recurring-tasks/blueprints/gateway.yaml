@@ -21,7 +21,7 @@ interfaces:
     - interface: recurring-tasks._rtx.interface.scripts-remove-context
       version: 1
     - interface: recurring-tasks._rtx.interface.scripts-setup
-      version: 1
+      version: 2
     - interface: recurring-tasks._rtx.interface.scripts-status
       version: 1
     - interface: recurring-tasks._rtx.interface.scripts-sync
@@ -102,7 +102,7 @@ interfaces:
           kind: string
       preconditions: []
     description: Primary LLM-facing skill instructions.
-    version: 1
+    version: 2
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
@@ -115,7 +115,7 @@ uses_interfaces:
 - interface: recurring-tasks._rtx.interface.scripts-remove-context
   version: 1
 - interface: recurring-tasks._rtx.interface.scripts-setup
-  version: 1
+  version: 2
 - interface: recurring-tasks._rtx.interface.scripts-status
   version: 1
 - interface: recurring-tasks._rtx.interface.scripts-sync
@@ -124,5 +124,5 @@ uses_interfaces:
   version: 1
 - interface: recurring-tasks._rtx.interface.scripts-view-logs
   version: 1
-version: 1
+version: 2
 maturity: experimental

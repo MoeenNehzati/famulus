@@ -39,13 +39,13 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": [], "stdin": null}
     Required options: []; positional arity: 0..0; stdin: forbidden
-- `recurring-tasks._rtx.interface.scripts-setup` — Capture the selected Python and plugin root, initialize recurring-owned state without default jobs, and reconcile the shared scheduler set.
+- `recurring-tasks._rtx.interface.scripts-setup` — Capture the dispatcher-selected Python and plugin root, initialize recurring-owned state without default jobs, and reconcile the shared scheduler set.
   - Caller: `recurring-tasks`
-  - Version: 1
+  - Version: 2
   - Alternative: `owner`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
-    {"options": {"--canonical-python": "FILE", "--plugin-root": "DIR"}, "positionals": [], "stdin": null}
-    Required options: ["--canonical-python", "--plugin-root"]; positional arity: 0..0; stdin: forbidden
+    {"options": {}, "positionals": [], "stdin": null}
+    Required options: []; positional arity: 0..0; stdin: forbidden
 - `recurring-tasks._rtx.interface.scripts-status` — List active recurring scheduler entries, next fire times, and service status.
   - Caller: `recurring-tasks`
   - Version: 1
@@ -85,11 +85,11 @@ create, enable, or run a job.
 
 ## Context and ownership
 
-Resolve the current selected plugin root from the host-loaded location of this
-skill. Invoke `scripts-setup` with that root and the retained canonical Python.
-Setup captures both values in the validated recurring-owned descriptor. A
-plugin-cache path change is repaired by rerunning setup; there is no generic
-updater or installer-runtime indirection.
+Invoke `scripts-setup` without path arguments. The dispatcher supplies its
+current dedicated Python executable and trusted plugin root to setup, which
+captures their stable absolute locators in the validated recurring-owned
+descriptor. A plugin-cache path change is repaired by rerunning setup; there is
+no generic updater or installer-runtime indirection.
 
 All feature contexts share one native scheduler set for the host account.
 Setup, sync, enable, or disable replaces that complete set from the selected

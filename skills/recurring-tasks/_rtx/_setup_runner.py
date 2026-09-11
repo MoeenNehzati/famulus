@@ -6,7 +6,10 @@ import argparse
 import sys
 from pathlib import Path
 
-from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+from officina.runtime.python_machine_interface import (
+    PythonArgvMachineInterface,
+    runtime_dispatch_context,
+)
 
 RTX_DIR = Path(__file__).resolve().parent
 if not __package__ and str(RTX_DIR) not in sys.path:
@@ -24,18 +27,28 @@ class Interface(PythonArgvMachineInterface):
     prog = "setup_runner.py"
 
     def run(self, argv: list[str]) -> int:
-        """Delegate setup arguments to the module entry point."""
-        return main(argv)
+        """Set up recurring tasks from dispatcher-owned runtime identity."""
+        plugin_root = runtime_dispatch_context(self).repo_root
+        if plugin_root is None:
+            raise RuntimeError("recurring setup requires the dispatcher plugin root")
+        return main(
+            argv,
+            python=Path(sys.executable),
+            plugin_root=plugin_root,
+        )
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(
+    argv: list[str] | None = None,
+    *,
+    python: Path,
+    plugin_root: Path,
+) -> int:
     """Run recurring-task host setup and return the managed status."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--canonical-python", type=Path, required=True)
-    parser.add_argument("--plugin-root", type=Path, required=True)
-    args = parser.parse_args(argv)
-    return run_managed_control("setup", python=args.canonical_python, plugin_root=args.plugin_root)
+    parser.parse_args(argv)
+    return run_managed_control("setup", python=python, plugin_root=plugin_root)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise RuntimeError("recurring setup must be invoked through the dispatcher")
