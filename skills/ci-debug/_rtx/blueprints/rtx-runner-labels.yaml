@@ -1,0 +1,16 @@
+content:
+- _runner_labels/__init__\.py
+- _runner_labels/_linux_macos_windows\.py
+- tests/test_runner_labels\.py
+dependencies: []
+description: Classifies exact CI runner labels behind a generic package export.
+gateway: {language: Python>=3.11, path: _runner_labels/__init__.py}
+id: ci-debug._rtx.source.rtx-runner-labels
+interfaces: {}
+node_type: behavioral_source
+platform_support: {linux: true, macos: true, windows: true}
+runtime_dependencies: []
+schema_version: 6
+uses_interfaces: []
+version: 1
+maturity: experimental

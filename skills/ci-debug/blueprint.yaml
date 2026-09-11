@@ -3,9 +3,8 @@ authority:
 children:
   _rtx: {}
 content:
-- (?:SKILL\.md|instructions/repair-element\.md|tests/test_ci_debug_instructions\.py)
-description: Coordinates evidence-bounded remote CI repair through an outer matrix loop
-  and isolated repair-element routes.
+- (?:SKILL\.md|prevention\.md|instructions/(?:analyze-ci|qualify-ci|repair-element)\.md|tests/test_ci_debug_instructions\.py)
+description: Routes CI history analysis, exact-SHA qualification, and isolated matrix-element repair with separate authority boundaries.
 discovery:
   mechanism: skill
   catalog:
@@ -25,6 +24,16 @@ exports:
       allow_all_modules: true
       allowed_callers: []
     source_interface: ci-debug.source.gateway.interface.default
+  ci-debug.interface.analyze-ci:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: ci-debug.source.instructions-analyze-ci.interface.analyze-ci
+  ci-debug.interface.qualify-ci:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: ci-debug.source.instructions-qualify-ci.interface.qualify-ci
   ci-debug.interface.repair-element:
     access:
       allow_all_modules: false
@@ -42,9 +51,21 @@ namespace_exports:
       allowed_callers: []
     surface:
       only:
+        ci-debug._rtx.interface.fetch-github-actions-history: 1
+        ci-debug._rtx.interface.report-test-failures-between-green-runs: 1
+        ci-debug._rtx.interface.report-ci-runtime-hotspots: 1
         ci-debug._rtx.interface.run-ci: 2
         ci-debug._rtx.interface.run-targeted-tests: 1
     interface_access:
+      ci-debug._rtx.interface.fetch-github-actions-history:
+        allow_all_modules: false
+        allowed_callers: []
+      ci-debug._rtx.interface.report-test-failures-between-green-runs:
+        allow_all_modules: false
+        allowed_callers: []
+      ci-debug._rtx.interface.report-ci-runtime-hotspots:
+        allow_all_modules: false
+        allowed_callers: []
       ci-debug._rtx.interface.run-ci:
         allow_all_modules: false
         allowed_callers: []
@@ -58,6 +79,14 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
+  ci-debug.source.instructions-analyze-ci:
+    blueprint:
+      base: module-root
+      path: blueprints/instructions-analyze-ci.yaml
+  ci-debug.source.instructions-qualify-ci:
+    blueprint:
+      base: module-root
+      path: blueprints/instructions-qualify-ci.yaml
   ci-debug.source.instructions-repair-element:
     blueprint:
       base: module-root

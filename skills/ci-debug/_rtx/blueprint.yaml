@@ -2,19 +2,42 @@ authority:
   owns_filesystem: []
   suggested_permissions:
     bash:
+    - command: [python3, -m, officina.runtime.python_machine_interface_runner, _fetch_github_actions_history.py, Interface]
+      reason: Collect bounded read-only GitHub Actions and Git provenance evidence.
+    - command: [python3, -m, officina.runtime.python_machine_interface_runner, _report_test_failures_between_green_runs.py, Interface]
+      reason: Produce deterministic offline failure-episode reports.
+    - command: [python3, -m, officina.runtime.python_machine_interface_runner, _report_ci_runtime_hotspots.py, Interface]
+      reason: Produce deterministic offline runtime-hotspot reports.
     - command: [python3, -m, officina.runtime.python_machine_interface_runner, _run_ci.py, Interface]
       reason: Delegate the complete remote matrix to the repository-owned runner.
     - command: [python3, -m, officina.runtime.python_machine_interface_runner, _run_targeted_tests.py, Interface]
       reason: Delegate one selected matrix element to the repository-owned runner.
-    network: []
+    network:
+    - domains: [api.github.com]
+      kind: web_fetch
+      reason: Read GitHub Actions workflow run attempt job and log evidence.
 children: {}
 content:
 - __init__\.py
+- _ci_history\.py
+- _fetch_github_actions_history\.py
+- _report_ci_runtime_hotspots\.py
+- _report_test_failures_between_green_runs\.py
+- _runner_labels/.*
 - _run_ci\.py
 - _run_targeted_tests\.py
 - tests/.*
-description: Thin process adapters from CI-debug to the repository-owned check runner.
+description: CI-debug process adapters for exact-SHA runners and bounded deterministic historical analysis.
 exports:
+  ci-debug._rtx.interface.fetch-github-actions-history:
+    access: {allow_all_modules: false, allowed_callers: [ci-debug]}
+    source_interface: ci-debug._rtx.source.rtx-fetch-github-actions-history.interface.fetch-github-actions-history
+  ci-debug._rtx.interface.report-test-failures-between-green-runs:
+    access: {allow_all_modules: false, allowed_callers: [ci-debug]}
+    source_interface: ci-debug._rtx.source.rtx-report-test-failures-between-green-runs.interface.report-test-failures-between-green-runs
+  ci-debug._rtx.interface.report-ci-runtime-hotspots:
+    access: {allow_all_modules: false, allowed_callers: [ci-debug]}
+    source_interface: ci-debug._rtx.source.rtx-report-ci-runtime-hotspots.interface.report-ci-runtime-hotspots
   ci-debug._rtx.interface.run-ci:
     access: {allow_all_modules: false, allowed_callers: [ci-debug]}
     source_interface: ci-debug._rtx.source.rtx-run-ci.interface.run-ci
@@ -27,8 +50,18 @@ namespace_exports: {}
 node_type: module
 schema_version: 6
 sources:
+  ci-debug._rtx.source.rtx-ci-history:
+    blueprint: {base: module-root, path: blueprints/rtx-ci-history.yaml}
+  ci-debug._rtx.source.rtx-fetch-github-actions-history:
+    blueprint: {base: module-root, path: blueprints/rtx-fetch-github-actions-history.yaml}
   ci-debug._rtx.source.rtx-init:
     blueprint: {base: module-root, path: blueprints/rtx-init.yaml}
+  ci-debug._rtx.source.rtx-report-ci-runtime-hotspots:
+    blueprint: {base: module-root, path: blueprints/rtx-report-ci-runtime-hotspots.yaml}
+  ci-debug._rtx.source.rtx-report-test-failures-between-green-runs:
+    blueprint: {base: module-root, path: blueprints/rtx-report-test-failures-between-green-runs.yaml}
+  ci-debug._rtx.source.rtx-runner-labels:
+    blueprint: {base: module-root, path: blueprints/rtx-runner-labels.yaml}
   ci-debug._rtx.source.rtx-run-ci:
     blueprint: {base: module-root, path: blueprints/rtx-run-ci.yaml}
   ci-debug._rtx.source.rtx-run-targeted-tests:

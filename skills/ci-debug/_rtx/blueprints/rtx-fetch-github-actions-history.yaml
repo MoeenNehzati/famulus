@@ -1,0 +1,88 @@
+content: [_fetch_github_actions_history\.py, tests/test_fetch_github_actions_history\.py]
+dependencies:
+- {source: ci-debug._rtx.source.rtx-ci-history, version: 1, blueprint: {base: module-root, path: blueprints/rtx-ci-history.yaml}, reason: Uses canonical snapshot analysis and publication primitives.}
+description: Collects bounded GitHub Actions run attempt job step log and Git provenance evidence into one private snapshot.
+gateway: {language: Python>=3.11, path: _fetch_github_actions_history.py}
+id: ci-debug._rtx.source.rtx-fetch-github-actions-history
+interfaces:
+  ci-debug._rtx.source.rtx-fetch-github-actions-history.interface.fetch-github-actions-history:
+    content: [_fetch_github_actions_history\.py, tests/test_fetch_github_actions_history\.py]
+    uses_interfaces: []
+    contract:
+      arguments:
+        repo-root:
+          description: Existing local Git worktree used for repository identity and frozen provenance.
+          direct_io_ref: repository
+          required: true
+          sensitivity: user-private
+          type: {kind: dir, access: read, must_exist: true, relative_to: caller-cwd, syntax: literal}
+        workflow: {description: Numeric workflow ID workflow file or unique exact display name., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+        branch: {description: Exact branch history filter., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+        snapshot-dir:
+          description: New private snapshot directory outside every repository worktree.
+          direct_io_ref: snapshot
+          required: true
+          sensitivity: user-private
+          type: {kind: dir, access: write, must_exist: false, relative_to: caller-cwd, syntax: literal}
+        event: {default: push, description: Additional exact event filter., required: false, sensitivity: public, type: {kind: string, sensitivity: public}}
+        since: {description: Inclusive ISO-8601 lower bound on run creation time., required: false, sensitivity: public, type: {kind: string, sensitivity: public}}
+        run-limit: {default: 200, description: Maximum newest logical runs after exact filters., required: false, sensitivity: public, type: {kind: integer}}
+        timeout: {default: 1800, description: Total collection deadline in seconds., required: false, sensitivity: public, type: {kind: integer}}
+        workers: {default: 4, description: Bounded concurrent read-only request workers., required: false, sensitivity: public, type: {kind: integer}}
+      caller_warnings:
+      - external-side-effect: Creates potentially secret-bearing private evidence at snapshot-dir but never dispatches or mutates GitHub workflows.
+      direct_io:
+        network:
+        - {id: github-history, medium: network, system: github-actions, access: read, content: Repository workflow run attempt job step and log evidence, formats: [json, zip, text], sensitivity: user-private}
+        reads:
+        - {id: repository, medium: repository-filesystem, system: filesystem, access: read, path: <repo-root>/**, path_match: glob, content: Git identity worktrees commits and test definitions, formats: [git-metadata, source-code], sensitivity: user-private}
+        writes:
+        - {id: snapshot, medium: local-filesystem, system: filesystem, access: write, path: <snapshot-dir>/**, path_match: glob, content: Private immutable history snapshot and publication metadata, formats: [json, text, zip], sensitivity: user-private}
+        - {id: result, medium: stdout, system: agent-runtime, access: write, content: Compact collection receipt, formats: [json], sensitivity: derived-private}
+        - {id: diagnostics, medium: stderr, system: agent-runtime, access: write, content: Classified collection diagnostics without raw logs, formats: [text], sensitivity: derived-private}
+      execution:
+        consistency: {snapshot: Run attempt job log and Git evidence are frozen under one content-derived snapshot identity.}
+        effects:
+        - {id: write-incomplete-result, action: create, direct_io_ref: snapshot, may_occur_in_outcomes: [collected, collected-with-gaps, failed], confirmation_evidence: {kind: output, output_ref: result}, reversibility: {reversible: Remove only the invocation-created snapshot directory.}, value_source: {kind: argument, argument_ref: snapshot-dir}}
+        - {id: publish-result, action: create, direct_io_ref: snapshot, may_occur_in_outcomes: [collected, collected-with-gaps], confirmation_evidence: {kind: direct-io, direct_io_ref: snapshot}, reversibility: {reversible: Remove the validated private snapshot after retaining required evidence.}, value_source: {kind: argument, argument_ref: snapshot-dir}}
+        lifecycle: finite
+        state_effect: mutating
+        mutation_safety:
+          atomicity: {per_effect_only: Members and manifest precede an atomic create-once publication marker.}
+          concurrent_invocations: {safe: Atomic directory reservation rejects destination collisions.}
+          idempotency: {non_idempotent: A repeated live collection requires a new destination and may observe newer remote state.}
+          on_uncertain_completion: {verify_then_decide: Validate publication marker manifest and all member digests.}
+          partial_effects_on_failure: {possible: An unmarked incomplete snapshot directory may remain and is named in the receipt.}
+          rollback_on_failure: {available: Remove only the invocation-created unmarked snapshot.}
+        verification: [{method: output-schema, output_ref: result}, {method: direct-io-state, direct_io_ref: snapshot}]
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes:
+      - {id: collected, class: success, effects: [write-incomplete-result, publish-result], outputs: [result], caller_action: Use the validated snapshot digest for both offline reports.}
+      - {id: collected-with-gaps, class: partial, effects: [write-incomplete-result, publish-result], outputs: [result], caller_action: Preserve gap coverage and do not infer missing evidence as success or absence.}
+      - {id: failed, class: error, effects: [write-incomplete-result], outputs: [result], caller_action: Resolve the classified preflight collection or publication failure and inspect any incomplete path.}
+      outputs:
+      - {id: result, audience: both, cardinality: {minimum: 1, maximum: 1}, description: Collection state snapshot identity counts path and gap count., direct_io_ref: result, empty: Never empty., ordering: stable, pagination: {kind: none}, truncation: {kind: none}, type: {kind: string, sensitivity: derived-private}}
+      preconditions: []
+    description: Fetch one bounded GitHub Actions workflow history with complete attempt enumeration and frozen Git provenance into a private snapshot.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_stdin: false
+        min_positionals: 0
+        max_positionals: 0
+        allowed_flags: [--repo-root, --workflow, --branch, --snapshot-dir, --event, --since, --run-limit, --timeout, --workers]
+        required_flags: [--repo-root, --workflow, --branch, --snapshot-dir]
+        flag_patterns: {--repo-root: '^.+$', --workflow: '^.+$', --branch: '^.+$', --snapshot-dir: '^.+$', --event: '^[A-Za-z0-9._-]+$', --since: '^.+$', --run-limit: '^[1-9][0-9]*$', --timeout: '^[1-9][0-9]*$', --workers: '^[1-9][0-9]*$'}
+    usage: --repo-root REPO --workflow WORKFLOW --branch BRANCH --snapshot-dir NEW_DIR [--event EVENT] [--since ISO_8601] [--run-limit N] [--timeout SECONDS] [--workers N]
+    version: 1
+node_type: behavioral_source
+platform_support: {linux: true, macos: true, windows: true}
+runtime_dependencies:
+- {kind: binary, name: gh, reason: Reads GitHub Actions REST endpoints with authenticated Actions-read access., version: any, platforms: {linux: true, macos: true, windows: true}}
+- {kind: binary, name: git, reason: Reads repository identity worktree containment and frozen provenance evidence., version: any, platforms: {linux: true, macos: true, windows: true}}
+schema_version: 6
+uses_interfaces: []
+version: 1
+maturity: experimental

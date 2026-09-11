@@ -1,0 +1,73 @@
+content: [_report_test_failures_between_green_runs\.py, tests/test_report_test_failures_between_green_runs\.py]
+dependencies:
+- {source: ci-debug._rtx.source.rtx-ci-history, version: 1, blueprint: {base: module-root, path: blueprints/rtx-ci-history.yaml}, reason: Uses canonical snapshot validation episode analysis and report publication.}
+description: Produces deterministic green-to-green pytest failure incidence recurrence bounds provenance and coverage reports from one snapshot.
+gateway: {language: Python>=3.11, path: _report_test_failures_between_green_runs.py}
+id: ci-debug._rtx.source.rtx-report-test-failures-between-green-runs
+interfaces:
+  ci-debug._rtx.source.rtx-report-test-failures-between-green-runs.interface.report-test-failures-between-green-runs:
+    content: [_report_test_failures_between_green_runs\.py, tests/test_report_test_failures_between_green_runs\.py]
+    uses_interfaces: []
+    contract:
+      arguments:
+        snapshot-dir:
+          description: Existing validated published CI history snapshot.
+          direct_io_ref: snapshot
+          required: true
+          sensitivity: user-private
+          type: {kind: dir, access: read, must_exist: true, relative_to: caller-cwd, syntax: literal}
+        report-dir:
+          description: New private failure report directory.
+          direct_io_ref: report
+          required: true
+          sensitivity: user-private
+          type: {kind: dir, access: write, must_exist: false, relative_to: caller-cwd, syntax: literal}
+      caller_warnings:
+      - external-side-effect: Creates JSON CSV and HTML reports at report-dir; it performs no network calls and does not read Git.
+      direct_io:
+        network: []
+        reads:
+        - {id: snapshot, medium: local-filesystem, system: filesystem, access: read, path: <snapshot-dir>/**, path_match: glob, content: Published CI snapshot and frozen provenance, formats: [json, text, zip], sensitivity: user-private}
+        writes:
+        - {id: report, medium: local-filesystem, system: filesystem, access: write, path: <report-dir>/**, path_match: glob, content: Published failure episode reports, formats: [json, csv, html], sensitivity: derived-private}
+        - {id: result, medium: stdout, system: agent-runtime, access: write, content: Compact report receipt, formats: [json], sensitivity: derived-private}
+        - {id: diagnostics, medium: stderr, system: agent-runtime, access: write, content: Classified diagnostics without raw logs, formats: [text], sensitivity: derived-private}
+      execution:
+        consistency: {snapshot: Every output is bound to and names the validated source snapshot digest.}
+        effects:
+        - {id: write-incomplete-result, action: create, direct_io_ref: report, may_occur_in_outcomes: [reported, reported-with-gaps, failed], confirmation_evidence: {kind: output, output_ref: result}, reversibility: {reversible: Remove only the invocation-created report directory.}, value_source: {kind: argument, argument_ref: report-dir}}
+        - {id: publish-result, action: create, direct_io_ref: report, may_occur_in_outcomes: [reported, reported-with-gaps], confirmation_evidence: {kind: direct-io, direct_io_ref: report}, reversibility: {reversible: Remove the published private report.}, value_source: {kind: argument, argument_ref: report-dir}}
+        lifecycle: finite
+        state_effect: mutating
+        mutation_safety:
+          atomicity: {per_effect_only: Members and manifest precede an atomic create-once publication marker.}
+          concurrent_invocations: {safe: Atomic directory reservation rejects destination collisions.}
+          idempotency: {idempotent: Identical snapshot bytes produce byte-identical canonical JSON and CSV in a new destination.}
+          on_uncertain_completion: {verify_then_decide: Validate publication marker manifest and member digests.}
+          partial_effects_on_failure: {possible: An unmarked incomplete report directory may remain.}
+          rollback_on_failure: {available: Remove only the invocation-created unmarked report.}
+        verification: [{method: output-schema, output_ref: result}, {method: direct-io-state, direct_io_ref: report}]
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes:
+      - {id: reported, class: success, effects: [write-incomplete-result, publish-result], outputs: [result], caller_action: Interpret incidence and recurrence using the stated episode denominator.}
+      - {id: reported-with-gaps, class: partial, effects: [write-incomplete-result, publish-result], outputs: [result], caller_action: Use recurrence bounds and preserve every evidence gap.}
+      - {id: failed, class: error, effects: [write-incomplete-result], outputs: [result], caller_action: Resolve snapshot validation or publication failure before using a report.}
+      outputs:
+      - {id: result, audience: both, cardinality: {minimum: 1, maximum: 1}, description: Report state source snapshot digest path counts and gap count., direct_io_ref: result, empty: Never empty., ordering: stable, pagination: {kind: none}, truncation: {kind: none}, type: {kind: string, sensitivity: derived-private}}
+      preconditions: []
+    description: Report one canonical test incidence per complete green-to-green episode with recurrence bounds frozen provenance and explicit coverage gaps.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - {allow_stdin: false, min_positionals: 0, max_positionals: 0, allowed_flags: [--snapshot-dir, --report-dir], required_flags: [--snapshot-dir, --report-dir], flag_patterns: {--snapshot-dir: '^.+$', --report-dir: '^.+$'}}
+    usage: --snapshot-dir SNAPSHOT --report-dir NEW_DIR
+    version: 1
+node_type: behavioral_source
+platform_support: {linux: true, macos: true, windows: true}
+runtime_dependencies: []
+schema_version: 6
+uses_interfaces: []
+version: 1
+maturity: experimental

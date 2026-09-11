@@ -12,9 +12,10 @@ from officina.blueprints.graph import RepositoryBlueprintGraph, resolve_export
 
 ROOT = Path(__file__).resolve().parents[3]
 SKILL = ROOT / "skills" / "ci-debug"
+QUALIFY = SKILL / "instructions" / "qualify-ci.md"
 
 
-def test_module_exposes_only_the_two_instruction_routes_and_two_machine_calls() -> None:
+def test_module_exposes_separate_public_routes_and_machine_calls() -> None:
     module = yaml.safe_load((SKILL / "blueprint.yaml").read_text(encoding="utf-8"))
     assert module["discovery"]["catalog"] == {
         "domain": "software-development",
@@ -23,39 +24,56 @@ def test_module_exposes_only_the_two_instruction_routes_and_two_machine_calls() 
     }
     assert set(module["exports"]) == {
         "ci-debug.interface.default",
+        "ci-debug.interface.analyze-ci",
+        "ci-debug.interface.qualify-ci",
         "ci-debug.interface.repair-element",
     }
     assert module["namespace_exports"]["_rtx"]["surface"]["only"] == {
+        "ci-debug._rtx.interface.fetch-github-actions-history": 1,
+        "ci-debug._rtx.interface.report-test-failures-between-green-runs": 1,
+        "ci-debug._rtx.interface.report-ci-runtime-hotspots": 1,
         "ci-debug._rtx.interface.run-ci": 2,
         "ci-debug._rtx.interface.run-targeted-tests": 1,
     }
 
 
-def test_gateway_contains_only_the_outer_loop() -> None:
+def test_gateway_is_only_a_route_selector() -> None:
     text = " ".join(
         (SKILL / "SKILL.md").read_text(encoding="utf-8").lower().split()
     )
+    for phrase in ("historical failures", "exact-sha qualification", "explicitly assigned matrix element", "mixed historical-analysis"):
+        assert phrase in text
+    assert "while its report is red" not in text
+    assert "git worktree" not in text
+    assert "monetary pricing is unsupported" in text
+    assert "controlled benchmark" in text
+
+
+def test_analysis_route_uses_three_independently_published_sibling_directories() -> None:
+    text = " ".join(
+        (SKILL / "instructions" / "analyze-ci.md")
+        .read_text(encoding="utf-8")
+        .lower()
+        .split()
+    )
     for phrase in (
-        "while its report is red",
-        "group failures by matrix element",
-        "one non-secret debug context",
-        "immutable request-scoped reports",
-        "still revalidate authentication",
-        "failure ledger, branch assignments, and agent state outside",
-        "bounded parallel",
-        "integrate accepted patches sequentially",
-        "use `ci-debug._rtx.interface.run-ci` again",
-        "targeted tests and whole-element tests never establish overall green",
+        "refuse an existing destination",
+        "three new child paths",
+        "fetch-github-actions-history",
+        "report-test-failures-between-green-runs",
+        "report-ci-runtime-hotspots",
+        "same published snapshot",
+        "source snapshot digest mismatch",
+        "do not create a root manifest or root publication marker",
     ):
         assert phrase in text
-    assert "replace the failure set" not in text
 
 
 def test_gateway_public_contract_qualifies_local_branch_and_optionally_pushes() -> None:
     gateway = yaml.safe_load(
-        (SKILL / "blueprints" / "gateway.yaml").read_text(encoding="utf-8")
+        (SKILL / "blueprints" / "instructions-qualify-ci.yaml").read_text(encoding="utf-8")
     )
-    interface = gateway["interfaces"]["ci-debug.source.gateway.interface.default"]
+    interface = gateway["interfaces"]["ci-debug.source.instructions-qualify-ci.interface.qualify-ci"]
     contract = interface["contract"]
 
     assert interface["version"] == 2
@@ -140,23 +158,23 @@ def test_gateway_public_contract_qualifies_local_branch_and_optionally_pushes() 
     assert "structured" in interface["description"].lower()
 
 
-def test_public_export_resolves_gateway_version_two(
+def test_public_export_resolves_qualification_version_two(
     ordinary_repository_graph: RepositoryBlueprintGraph,
 ) -> None:
     _, source, export = resolve_export(
         ordinary_repository_graph,
-        "ci-debug.interface.default",
+        "ci-debug.interface.qualify-ci",
         2,
     )
 
-    assert source.node_id == "ci-debug.source.gateway"
+    assert source.node_id == "ci-debug.source.instructions-qualify-ci"
     assert export.source_interface_id == (
-        "ci-debug.source.gateway.interface.default"
+        "ci-debug.source.instructions-qualify-ci.interface.qualify-ci"
     )
 
 
 def test_gateway_has_numbered_isolated_qualification_algorithm() -> None:
-    raw = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+    raw = QUALIFY.read_text(encoding="utf-8")
     assert re.findall(r"^## ([0-9])\. ", raw, flags=re.MULTILINE) == list(
         "0123456789"
     )
@@ -202,7 +220,7 @@ def test_gateway_has_numbered_isolated_qualification_algorithm() -> None:
 
 
 def test_gateway_sections_guard_promotion_and_terminal_evidence() -> None:
-    raw = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+    raw = QUALIFY.read_text(encoding="utf-8")
     matches = list(re.finditer(r"^## ([0-9])\. ", raw, flags=re.MULTILINE))
     sections = {
         match.group(1): " ".join(
@@ -249,9 +267,9 @@ def test_gateway_sections_guard_promotion_and_terminal_evidence() -> None:
 
 def test_gateway_contract_routes_post_effect_failures_to_blocked() -> None:
     gateway = yaml.safe_load(
-        (SKILL / "blueprints" / "gateway.yaml").read_text(encoding="utf-8")
+        (SKILL / "blueprints" / "instructions-qualify-ci.yaml").read_text(encoding="utf-8")
     )
-    interface = gateway["interfaces"]["ci-debug.source.gateway.interface.default"]
+    interface = gateway["interfaces"]["ci-debug.source.instructions-qualify-ci.interface.qualify-ci"]
     contract = interface["contract"]
     outcomes = {item["id"]: item for item in contract["outcomes"]}
     uncertain = contract["execution"]["mutation_safety"][
@@ -266,7 +284,7 @@ def test_gateway_contract_routes_post_effect_failures_to_blocked() -> None:
 
 def test_gateway_probes_integrated_candidate_before_full_matrix() -> None:
     text = " ".join(
-        (SKILL / "SKILL.md").read_text(encoding="utf-8").lower().split()
+        QUALIFY.read_text(encoding="utf-8").lower().split()
     )
 
     assert "exact integrated candidate" in text
@@ -277,7 +295,7 @@ def test_gateway_probes_integrated_candidate_before_full_matrix() -> None:
 
 def test_gateway_retires_obsolete_runs_and_recovers_completed_job_evidence() -> None:
     text = " ".join(
-        (SKILL / "SKILL.md").read_text(encoding="utf-8").lower().split()
+        QUALIFY.read_text(encoding="utf-8").lower().split()
     )
 
     assert "retire superseded runs before dispatching replacement work" in text
@@ -328,12 +346,47 @@ def test_instruction_sources_use_only_the_interface_they_need() -> None:
     gateway = yaml.safe_load(
         (SKILL / "blueprints" / "gateway.yaml").read_text(encoding="utf-8")
     )
+    analyze = yaml.safe_load(
+        (SKILL / "blueprints" / "instructions-analyze-ci.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    qualify = yaml.safe_load(
+        (SKILL / "blueprints" / "instructions-qualify-ci.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
     repair = yaml.safe_load(
         (SKILL / "blueprints" / "instructions-repair-element.yaml").read_text(
             encoding="utf-8"
         )
     )
     assert gateway["uses_interfaces"] == [
+        {
+            "interface": "ci-debug.source.instructions-analyze-ci.interface.analyze-ci",
+            "version": 1,
+        },
+        {
+            "interface": "ci-debug.source.instructions-qualify-ci.interface.qualify-ci",
+            "version": 2,
+        },
+        {
+            "interface": "ci-debug.source.instructions-repair-element.interface.repair-element",
+            "version": 1,
+        },
+        {"interface": "ci-debug._rtx.interface.fetch-github-actions-history", "version": 1},
+        {"interface": "ci-debug._rtx.interface.report-test-failures-between-green-runs", "version": 1},
+        {"interface": "ci-debug._rtx.interface.report-ci-runtime-hotspots", "version": 1},
+        {"interface": "ci-debug._rtx.interface.run-ci", "version": 2},
+        {"interface": "ci-debug._rtx.interface.run-targeted-tests", "version": 1},
+        {"interface": "git-workflow.interface.default", "version": 1},
+    ]
+    assert analyze["uses_interfaces"] == [
+        {"interface": "ci-debug._rtx.interface.fetch-github-actions-history", "version": 1},
+        {"interface": "ci-debug._rtx.interface.report-test-failures-between-green-runs", "version": 1},
+        {"interface": "ci-debug._rtx.interface.report-ci-runtime-hotspots", "version": 1},
+    ]
+    assert qualify["uses_interfaces"] == [
         {"interface": "ci-debug._rtx.interface.run-ci", "version": 2},
         {"interface": "ci-debug._rtx.interface.run-targeted-tests", "version": 1},
         {

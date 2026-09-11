@@ -55,6 +55,38 @@
         "applies": false
       },
       "interfaces": {
+        "ci-debug._rtx.interface.fetch-github-actions-history": {
+          "dependencies": [
+            {
+              "kind": "binary",
+              "name": "gh",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Reads GitHub Actions REST endpoints with authenticated Actions-read access."
+            },
+            {
+              "kind": "binary",
+              "name": "git",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Reads repository identity worktree containment and frozen provenance evidence."
+            }
+          ]
+        },
+        "ci-debug._rtx.interface.report-ci-runtime-hotspots": {
+          "dependencies": []
+        },
+        "ci-debug._rtx.interface.report-test-failures-between-green-runs": {
+          "dependencies": []
+        },
         "ci-debug._rtx.interface.run-ci": {
           "dependencies": []
         },
@@ -7330,6 +7362,8 @@
     ],
     "binary": [
       "crontab",
+      "gh",
+      "git",
       "journalctl",
       "launchctl",
       "schtasks",
