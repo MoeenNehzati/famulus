@@ -7,6 +7,8 @@ import shutil
 import subprocess
 import sys
 
+from test_support.git_repository import GitTestRepository
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "famulus-refresh"
@@ -102,13 +104,24 @@ def test_default_dry_run_refreshes_both_from_local_and_preserves_plugin_data(
 
     assert result.returncode == 0, result.stderr
     commands = _dry_run_commands(result.stdout)
+    package = checkout / "_build" / "plugin"
+    assert ["rm", "-rf", "--", str(package) + ".tmp"] in commands
+    assert [
+        "git",
+        "-C",
+        str(checkout),
+        "archive",
+        "--format=tar",
+        f"--output={checkout / '_build' / 'plugin.tar'}",
+        "HEAD",
+    ] in commands
     assert ["codex", "plugin", "remove", "famulus@nullkit", "--json"] in commands
     assert [
         "codex",
         "plugin",
         "marketplace",
         "add",
-        str(checkout),
+        str(package),
         "--json",
     ] in commands
     assert ["codex", "plugin", "add", "famulus@nullkit", "--json"] in commands
@@ -126,7 +139,7 @@ def test_default_dry_run_refreshes_both_from_local_and_preserves_plugin_data(
         "plugin",
         "marketplace",
         "add",
-        str(checkout),
+        str(package),
         "--scope",
         "user",
     ] in commands
@@ -139,7 +152,45 @@ def test_default_dry_run_refreshes_both_from_local_and_preserves_plugin_data(
         "user",
         "-y",
     ] in commands
-    assert not any(command[:2] == ["rm", "-rf"] for command in commands)
+    assert all(
+        str(checkout / "_build") in command[-1]
+        for command in commands
+        if command[:2] == ["rm", "-rf"]
+    )
+
+
+def test_local_refresh_packages_only_committed_files(tmp_path: Path) -> None:
+    repository = GitTestRepository.create(tmp_path / "checkout")
+    checkout = repository.root
+    (checkout / ".gitignore").write_text("_build/\nignored/\n", encoding="utf-8")
+    (checkout / "tracked.txt").write_text("included\n", encoding="utf-8")
+    ignored = checkout / "ignored"
+    ignored.mkdir()
+    (ignored / "runtime.txt").write_text("excluded\n", encoding="utf-8")
+    repository.git("add", ".")
+    repository.git("commit", "-qm", "fixture")
+    (checkout / "tracked.txt").write_text("uncommitted\n", encoding="utf-8")
+    fake_bin, log = _write_fake_host(
+        tmp_path,
+        "codex",
+        'printf "%s\\n" "$*" >> "$FAKE_CODEX_LOG"\n',
+    )
+    path = os.pathsep.join((str(fake_bin), os.environ.get("PATH", "")))
+
+    result = run_refresh(
+        "--codex",
+        "--local",
+        env={"AI": str(checkout), "FAKE_CODEX_LOG": str(log), "PATH": path},
+    )
+
+    package = checkout / "_build" / "plugin"
+    assert result.returncode == 0, result.stderr
+    assert "uncommitted tracked changes are excluded" in result.stderr
+    assert (package / "tracked.txt").read_text(encoding="utf-8") == "included\n"
+    assert not (package / "ignored").exists()
+    assert f"plugin marketplace add {package} --json" in log.read_text(
+        encoding="utf-8"
+    )
 
 
 def test_claude_refresh_warns_for_absent_state_and_continues_installing(

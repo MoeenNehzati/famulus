@@ -12,7 +12,7 @@ System-level Famulus data and configuration are always preserved.
 Options:
   --codex                 Refresh Codex only (default: both hosts)
   --claude                Refresh Claude only (default: both hosts)
-  --local                 Add the marketplace from $AI (default)
+  --local                 Package HEAD from $AI and add it locally (default)
   --github                Add the marketplace from MoeenNehzati/famulus
   --reset-plugin-data     Remove host-specific setup receipts and milestone logs
   --dry-run               Print commands without executing them
@@ -83,7 +83,7 @@ done
 if [[ $source_kind == local ]]; then
     [[ -n ${AI:-} ]] || die '\$AI must name the local Famulus checkout'
     [[ -d $AI ]] || die "local Famulus checkout does not exist: $AI"
-    marketplace_source=$AI
+    marketplace_source=$AI/_build/plugin
 else
     marketplace_source=MoeenNehzati/famulus
 fi
@@ -114,6 +114,22 @@ run() {
     else
         "$@"
     fi
+}
+
+package_local_marketplace() {
+    local stage=$marketplace_source.tmp
+    local archive=$AI/_build/plugin.tar
+
+    if ! $dry_run && ! git -C "$AI" diff --quiet HEAD --; then
+        warn 'local package uses HEAD; uncommitted tracked changes are excluded'
+    fi
+    run rm -rf -- "$stage" || return
+    run mkdir -p -- "$stage" || return
+    run git -C "$AI" archive --format=tar --output="$archive" HEAD || return
+    run tar -xf "$archive" -C "$stage" || return
+    run rm -f -- "$archive" || return
+    run rm -rf -- "$marketplace_source" || return
+    run mv -- "$stage" "$marketplace_source" || return
 }
 
 remove_or_warn() {
@@ -171,6 +187,10 @@ refresh_claude() {
     run claude plugin install famulus@nullkit --scope user -y || return
     run claude plugin list --json || return
 }
+
+if [[ $source_kind == local ]]; then
+    package_local_marketplace || die 'could not package the local Famulus checkout'
+fi
 
 case $host in
     codex) refresh_codex || exit $? ;;
