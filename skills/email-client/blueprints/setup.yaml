@@ -1,6 +1,6 @@
 schema_version: 6
 id: email-client.source.setup
-version: 1
+version: 2
 maturity: stable
 node_type: behavioral_source
 description: Configure the Gmail account, bind the selected shared credential, and verify IMAP and SMTP authentication.
@@ -61,7 +61,7 @@ interfaces:
         type: {kind: string, sensitivity: derived-private}
       preconditions: []
     description: Configure the Gmail account, bind the selected shared credential, and verify IMAP and SMTP authentication.
-    version: 1
+    version: 2
 uses_interfaces:
 - interface: connect-google._rtx.interface.shared-credential
   version: 1

@@ -1,6 +1,6 @@
 schema_version: 6
 id: online-calendar.source.setup
-version: 1
+version: 2
 maturity: experimental
 node_type: behavioral_source
 description: Bind the selected shared Google credential to Calendar-owned state.
@@ -51,7 +51,7 @@ interfaces:
         type: {kind: string, sensitivity: derived-private}
       preconditions: []
     description: Bind the selected shared Google credential to Calendar-owned state.
-    version: 1
+    version: 2
 uses_interfaces:
 - interface: connect-google._rtx.interface.shared-credential
   version: 1

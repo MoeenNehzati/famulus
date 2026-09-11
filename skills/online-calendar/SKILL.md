@@ -13,7 +13,7 @@ Activate this gate only for an invocation of this skill's interfaces or an exact
 Keep the original caller, interface, version, arguments, and stdin outside the ledger; the manager receives only its public continuation identity.
 
 Managed lifecycle entries:
-- Setup `online-calendar.interface.setup@1` routes to `begin(setup, online-calendar.interface.setup, ORIGINAL_CALLER, ORIGINAL_INTERFACE, ORIGINAL_VERSION)`.
+- Setup `online-calendar.interface.setup@2` routes to `begin(setup, online-calendar.interface.setup, ORIGINAL_CALLER, ORIGINAL_INTERFACE, ORIGINAL_VERSION)`.
 
 For an ordinary invocation, use this exact sequence:
 

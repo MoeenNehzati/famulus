@@ -155,17 +155,19 @@ def test_production_bindings_include_all_canonical_setups(
                 assert binding.teardown_verifier_interface == graph_metadata.teardown_verifier_interface
                 assert binding.teardown_verifier_version == graph_metadata.teardown_verifier_version
 
-    # Verify four Markdown bindings have no runtime dispatch keys
-    for setup_interface in {
-        "connect-google.interface.setup",
-        "online-calendar.interface.setup",
-        "cloud-files.interface.setup",
-        "list-manager.interface.setup",
-    }:
+    # Verify five Markdown bindings have no runtime dispatch keys
+    expected_markdown_versions = {
+        "connect-google.interface.setup": 1,
+        "online-calendar.interface.setup": 2,
+        "cloud-files.interface.setup": 2,
+        "email-client.interface.setup": 2,
+        "list-manager.interface.setup": 1,
+    }
+    for setup_interface, setup_version in expected_markdown_versions.items():
         binding = bindings[setup_interface]
         # Setup interface/version match
         assert binding.setup_interface == setup_interface
-        assert binding.setup_version == 1
+        assert binding.setup_version == setup_version
         # Markdown kind
         assert binding.setup_kind == "markdown"
         # Setup instructions are nonempty
