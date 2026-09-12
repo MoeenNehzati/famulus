@@ -52,7 +52,7 @@ LINE_BUDGET = 3800
 STRUCTURAL_OVERHEAD = 124
 
 _VALUE_LIMITS = {
-    "ts": 48, "role": 220, "cwd": 512, "doing": 220, "prev": 220,
+    "ts": 48, "role": 220, "cwd": 512, "doing": 256, "prev": 256,
     "run": 66, "session": 128, "agent": 128, "event": 80, "step": 24,
     "task": 128, "state": 64, "attempt": 24, "evidence": 1400,
 }

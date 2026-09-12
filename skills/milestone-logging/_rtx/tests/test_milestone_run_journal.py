@@ -343,7 +343,7 @@ def test_maximum_shaped_record_retains_every_value_within_line_budget(
     monkeypatch.setenv("CODEX_THREAD_ID", _json_text_at_quota(128))
     evidence, integer = _evidence_at_quota(1400), 10 ** 23
     args = [
-        _json_text_at_quota(220), _json_text_at_quota(220), "--role", _json_text_at_quota(220),
+        _json_text_at_quota(256), _json_text_at_quota(256), "--role", _json_text_at_quota(220),
         "--run", "r" * 64, "--event", _json_text_at_quota(80), "--step", str(integer),
         "--task", _json_text_at_quota(128), "--state", _json_text_at_quota(64),
         "--attempt", str(integer), *(part for item in evidence for part in ("--evidence", item)),
@@ -353,17 +353,19 @@ def test_maximum_shaped_record_retains_every_value_within_line_budget(
     record = json.loads(line)
     expected_sizes = writer._VALUE_LIMITS
     assert set(record) == set(expected_sizes) and all(_json_value_size(record[key]) == size for key, size in expected_sizes.items())
-    assert (record["doing"], record["prev"], record["role"]) == (_json_text_at_quota(220),) * 3
+    assert (record["doing"], record["prev"], record["role"]) == (
+        _json_text_at_quota(256), _json_text_at_quota(256), _json_text_at_quota(220)
+    )
     assert (record["run"], record["event"], record["task"], record["state"]) == ("r" * 64, _json_text_at_quota(80), _json_text_at_quota(128), _json_text_at_quota(64))
     assert (record["step"], record["attempt"], record["evidence"], record["ts"], record["cwd"], record["session"], record["agent"]) == (integer, integer, evidence, _json_text_at_quota(48), _json_text_at_quota(512), _json_text_at_quota(128), _json_text_at_quota(128))
     assert len(line) <= writer.LINE_BUDGET
-    assert _scalar_status(writer, "result", _json_text_at_quota(220), monkeypatch) == 0
-    assert any(item["prev"] == _json_text_at_quota(220) for path in session_files(logs) for item in records(path))
+    assert _scalar_status(writer, "result", _json_text_at_quota(256), monkeypatch) == 0
+    assert any(item["prev"] == _json_text_at_quota(256) for path in session_files(logs) for item in records(path))
 
 
 @pytest.mark.parametrize(
     ("field", "quota"),
-    [("doing", 220), ("result", 220), ("prev", 220), ("role", 220), ("cwd", 512),
+    [("doing", 256), ("result", 256), ("prev", 256), ("role", 220), ("cwd", 512),
      ("event", 80), ("task", 128), ("state", 64), ("step", 24), ("attempt", 24),
      ("session", 128), ("agent", 128), ("run", 66), ("timestamp", 48)],
 )

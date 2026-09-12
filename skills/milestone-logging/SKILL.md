@@ -23,14 +23,14 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {}, "positionals": ["SAFE_RUN_ID"], "stdin": null}
     Required options: []; positional arity: 1..1; stdin: forbidden
-- `milestone-logging._rtx.interface.record-completion` — Append completion with session-retained typed metadata and an optional additive run mirror.
+- `milestone-logging._rtx.interface.record-completion` — Append completion with session-retained typed metadata and an optional additive run mirror; RESULT is limited to 256 serialized JSON bytes, including quotes and escaping, to keep each JSONL record within its fixed 3,800-byte budget.
   - Caller: `milestone-logging`
   - Version: 1
   - Alternative: `record-completion`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--attempt": "NON_NEGATIVE_INTEGER", "--event": "EVENT", "--evidence": "PATH", "--role": "NONEMPTY_ROLE", "--run": "SAFE_RUN_ID", "--state": "STATE", "--step": "NON_NEGATIVE_INTEGER", "--task": "TASK"}, "positionals": ["RESULT"], "stdin": null}
     Required options: ["--role"]; positional arity: 1..1; stdin: forbidden
-- `milestone-logging._rtx.interface.record-progress` — Append progress with typed metadata retained in the session; run only adds identity fields and an identical journal mirror.
+- `milestone-logging._rtx.interface.record-progress` — Append progress with typed metadata retained in the session; DOING and PREV are each limited to 256 serialized JSON bytes, including quotes and escaping, to keep each JSONL record within its fixed 3,800-byte budget; run only adds identity fields and an identical journal mirror.
   - Caller: `milestone-logging`
   - Version: 1
   - Alternative: `record-progress`

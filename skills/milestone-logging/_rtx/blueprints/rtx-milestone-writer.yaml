@@ -16,13 +16,13 @@ interfaces:
     contract: &record_contract
       arguments:
         doing:
-          description: Work now starting; independently limited to 220 serialized JSON bytes.
+          description: Work now starting; independently limited to 256 serialized JSON bytes.
           required: true
           sensitivity: user-private
           type: {kind: string, sensitivity: user-private}
         prev:
           default: ''
-          description: How preceding work ended; independently limited to 220 serialized JSON bytes.
+          description: How preceding work ended; independently limited to 256 serialized JSON bytes.
           required: false
           sensitivity: user-private
           type: {kind: string, sensitivity: user-private}
@@ -149,7 +149,7 @@ interfaces:
         truncation: {kind: none}
         type: {kind: string, sensitivity: derived-private}
       preconditions: &preconditions []
-    description: Append progress with typed metadata retained in the session; run only adds identity fields and an identical journal mirror.
+    description: Append progress with typed metadata retained in the session; DOING and PREV are each limited to 256 serialized JSON bytes, including quotes and escaping, to keep each JSONL record within its fixed 3,800-byte budget; run only adds identity fields and an identical journal mirror.
     process_binding:
       entry: RecordProgress
       kind: process
@@ -176,7 +176,7 @@ interfaces:
     content: *content
     uses_interfaces: []
     contract:
-      arguments: {result: {description: Closing result independently limited to 220 serialized JSON bytes., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}, role: *role, run: *run, event: *event, step: *step, task: *task, state: *state, attempt: *attempt, evidence: *evidence}
+      arguments: {result: {description: Closing result independently limited to 256 serialized JSON bytes., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}, role: *role, run: *run, event: *event, step: *step, task: *task, state: *state, attempt: *attempt, evidence: *evidence}
       caller_warnings: *warnings
       direct_io: *record_io
       execution: *record_execution
@@ -185,7 +185,7 @@ interfaces:
       outcomes: *record_outcomes
       outputs: *record_outputs
       preconditions: *preconditions
-    description: Append completion with session-retained typed metadata and an optional additive run mirror.
+    description: Append completion with session-retained typed metadata and an optional additive run mirror; RESULT is limited to 256 serialized JSON bytes, including quotes and escaping, to keep each JSONL record within its fixed 3,800-byte budget.
     process_binding: {entry: RecordCompletion, kind: process, patterns: [{name: record-completion, min_positionals: 1, max_positionals: 1, allow_stdin: false, required_flags: [--role], allowed_flags: *record_flags, flag_patterns: *record_patterns}]}
     usage: 'RESULT --role NONEMPTY_ROLE [--run SAFE_RUN_ID] [--event EVENT] [--step NON_NEGATIVE_INTEGER] [--task TASK] [--state STATE] [--attempt NON_NEGATIVE_INTEGER] [--evidence PATH]'
     version: 1
