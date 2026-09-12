@@ -32,7 +32,7 @@ interfaces:
           sensitivity: user-private
           type: {kind: string, sensitivity: user-private}
         run: &run
-          description: Optional safe run ID; adds identity fields and an identical journal mirror without changing session metadata.
+          description: Optional 1-64 character run ID starting with an ASCII letter or digit and containing only ASCII letters, digits, dot, underscore, or hyphen; adds identity fields and an identical journal mirror without changing session metadata.
           required: false
           sensitivity: user-private
           type: {kind: string, sensitivity: user-private}
@@ -46,7 +46,7 @@ interfaces:
           description: Session-retained non-negative typed step with independent validation.
           required: false
           sensitivity: public
-          type: {kind: integer}
+          type: {kind: integer, minimum: 0}
         task: &task
           default: ''
           description: Session-retained typed task with an independent 128-byte serialized JSON limit.
@@ -63,10 +63,10 @@ interfaces:
           description: Session-retained non-negative typed attempt with independent validation.
           required: false
           sensitivity: public
-          type: {kind: integer}
+          type: {kind: integer, minimum: 0}
         evidence: &evidence
           default: []
-          description: Session-retained evidence; at most 20 independent 220-byte values and 1400 serialized JSON bytes in aggregate.
+          description: Session-retained evidence; Dispatcher callers may supply zero or one path per invocation, while direct argv accepts up to 20 independent 220-byte values and 1400 serialized JSON bytes in aggregate.
           required: false
           sensitivity: user-private
           type:
@@ -170,7 +170,7 @@ interfaces:
           --state: '(?s).*'
           --attempt: '^[0-9]+$'
           --evidence: '(?s).*'
-    usage: 'DOING [PREV] --role ROLE [--run ID] [--event EVENT] [--step STEP] [--task TASK] [--state STATE] [--attempt ATTEMPT] [--evidence PATH]'
+    usage: 'DOING [PREV] --role NONEMPTY_ROLE [--run SAFE_RUN_ID] [--event EVENT] [--step NON_NEGATIVE_INTEGER] [--task TASK] [--state STATE] [--attempt NON_NEGATIVE_INTEGER] [--evidence PATH]'
     version: 1
   milestone-logging._rtx.source.rtx-milestone-writer.interface.record-completion:
     content: *content
@@ -187,7 +187,7 @@ interfaces:
       preconditions: *preconditions
     description: Append completion with session-retained typed metadata and an optional additive run mirror.
     process_binding: {entry: RecordCompletion, kind: process, patterns: [{name: record-completion, min_positionals: 1, max_positionals: 1, allow_stdin: false, required_flags: [--role], allowed_flags: *record_flags, flag_patterns: *record_patterns}]}
-    usage: 'RESULT --role ROLE [--run ID] [--event EVENT] [--step STEP] [--task TASK] [--state STATE] [--attempt ATTEMPT] [--evidence PATH]'
+    usage: 'RESULT --role NONEMPTY_ROLE [--run SAFE_RUN_ID] [--event EVENT] [--step NON_NEGATIVE_INTEGER] [--task TASK] [--state STATE] [--attempt NON_NEGATIVE_INTEGER] [--evidence PATH]'
     version: 1
   milestone-logging._rtx.source.rtx-milestone-writer.interface.session-path:
     content: *content
@@ -200,10 +200,10 @@ interfaces:
   milestone-logging._rtx.source.rtx-milestone-writer.interface.run-path:
     content: *content
     uses_interfaces: []
-    contract: {arguments: {run: {description: Safe durable run identifier to locate., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}}, caller_warnings: *path_warnings, direct_io: *path_io, execution: *path_execution, helpers: *helpers, interaction: *interaction, outcomes: *path_outcomes, outputs: *path_outputs, preconditions: *preconditions}
+    contract: {arguments: {run: {description: '1-64 character run ID starting with an ASCII letter or digit and containing only ASCII letters, digits, dot, underscore, or hyphen.', required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}}, caller_warnings: *path_warnings, direct_io: *path_io, execution: *path_execution, helpers: *helpers, interaction: *interaction, outcomes: *path_outcomes, outputs: *path_outputs, preconditions: *preconditions}
     description: Validate a run identifier and print its journal path without appending.
     process_binding: {entry: RunPath, kind: process, patterns: [{name: run-path, min_positionals: 1, max_positionals: 1, allow_stdin: false, positional_patterns: {'0': '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'}}]}
-    usage: RUN
+    usage: SAFE_RUN_ID
     version: 1
 node_type: behavioral_source
 platform_support: {linux: true, macos: true, windows: true}

@@ -80,7 +80,13 @@ def test_generated_executable_interface_uses_famulus_metadata(syncer, blueprints
     assert "Caller: `milestone-logging`" in interfaces
     assert "Version: 1" in interfaces
     assert '"positionals": ["DOING", "PREV"]' in interfaces
-    assert '"--role": "ROLE"' in interfaces
+    assert '"--role": "NONEMPTY_ROLE"' in interfaces
+    assert '"--run": "SAFE_RUN_ID"' in interfaces
+    assert '"--step": "NON_NEGATIVE_INTEGER"' in interfaces
+    assert '"--attempt": "NON_NEGATIVE_INTEGER"' in interfaces
+    assert '"--slow": "POSITIVE_DECIMAL_SECONDS"' in interfaces
+    assert '"--evidence": "PATH"' in interfaces
+    assert '"positionals": ["SAFE_RUN_ID"]' in interfaces
     assert '`milestone-logging._rtx.interface.record-completion`' in interfaces
     assert '`milestone-logging._rtx.interface.session-path`' in interfaces
     assert 'Required options: ["--role"]' in interfaces

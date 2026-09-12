@@ -21,28 +21,28 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
   - Version: 1
   - Alternative: `read-run-json`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
-    {"options": {}, "positionals": ["RUN"], "stdin": null}
+    {"options": {}, "positionals": ["SAFE_RUN_ID"], "stdin": null}
     Required options: []; positional arity: 1..1; stdin: forbidden
 - `milestone-logging._rtx.interface.record-completion` — Append completion with session-retained typed metadata and an optional additive run mirror.
   - Caller: `milestone-logging`
   - Version: 1
   - Alternative: `record-completion`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
-    {"options": {"--attempt": "ATTEMPT", "--event": "EVENT", "--evidence": "PATH", "--role": "ROLE", "--run": "ID", "--state": "STATE", "--step": "STEP", "--task": "TASK"}, "positionals": ["RESULT"], "stdin": null}
+    {"options": {"--attempt": "NON_NEGATIVE_INTEGER", "--event": "EVENT", "--evidence": "PATH", "--role": "NONEMPTY_ROLE", "--run": "SAFE_RUN_ID", "--state": "STATE", "--step": "NON_NEGATIVE_INTEGER", "--task": "TASK"}, "positionals": ["RESULT"], "stdin": null}
     Required options: ["--role"]; positional arity: 1..1; stdin: forbidden
 - `milestone-logging._rtx.interface.record-progress` — Append progress with typed metadata retained in the session; run only adds identity fields and an identical journal mirror.
   - Caller: `milestone-logging`
   - Version: 1
   - Alternative: `record-progress`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
-    {"options": {"--attempt": "ATTEMPT", "--event": "EVENT", "--evidence": "PATH", "--role": "ROLE", "--run": "ID", "--state": "STATE", "--step": "STEP", "--task": "TASK"}, "positionals": ["DOING", "PREV"], "stdin": null}
+    {"options": {"--attempt": "NON_NEGATIVE_INTEGER", "--event": "EVENT", "--evidence": "PATH", "--role": "NONEMPTY_ROLE", "--run": "SAFE_RUN_ID", "--state": "STATE", "--step": "NON_NEGATIVE_INTEGER", "--task": "TASK"}, "positionals": ["DOING", "PREV"], "stdin": null}
     Required options: ["--role"]; positional arity: 1..2; stdin: forbidden
 - `milestone-logging._rtx.interface.run-path` — Validate a run identifier and print its journal path without appending.
   - Caller: `milestone-logging`
   - Version: 1
   - Alternative: `run-path`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
-    {"options": {}, "positionals": ["RUN"], "stdin": null}
+    {"options": {}, "positionals": ["SAFE_RUN_ID"], "stdin": null}
     Required options: []; positional arity: 1..1; stdin: forbidden
 - `milestone-logging._rtx.interface.session-path` — Print the selected session path without appending.
   - Caller: `milestone-logging`
@@ -56,21 +56,21 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
   - Version: 1
   - Alternative: `show-latest-session`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
-    {"options": {"--slow": "SECONDS"}, "positionals": [], "stdin": null}
+    {"options": {"--slow": "POSITIVE_DECIMAL_SECONDS"}, "positionals": [], "stdin": null}
     Required options: []; positional arity: 0..0; stdin: forbidden
 - `milestone-logging._rtx.interface.show-run` — Render one durable run as text with all retained typed metadata.
   - Caller: `milestone-logging`
   - Version: 1
   - Alternative: `show-run`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
-    {"options": {}, "positionals": ["RUN"], "stdin": null}
+    {"options": {}, "positionals": ["SAFE_RUN_ID"], "stdin": null}
     Required options: []; positional arity: 1..1; stdin: forbidden
 - `milestone-logging._rtx.interface.show-session` — Render one exact session and retained typed metadata; optional slow adds annotations only.
   - Caller: `milestone-logging`
   - Version: 1
   - Alternative: `show-session`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
-    {"options": {"--slow": "SECONDS"}, "positionals": ["SESSION"], "stdin": null}
+    {"options": {"--slow": "POSITIVE_DECIMAL_SECONDS"}, "positionals": ["SESSION"], "stdin": null}
     Required options: []; positional arity: 1..1; stdin: forbidden
 
 <!-- END BLUEPRINT INTERFACES -->

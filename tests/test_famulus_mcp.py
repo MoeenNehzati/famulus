@@ -1265,7 +1265,7 @@ def test_generated_outer_payload_uses_real_tool_field_names() -> None:
         fragment in generated
         for fragment in (
             '"positionals": ["DOING", "PREV"]',
-            '"--role": "ROLE"',
+            '"--role": "NONEMPTY_ROLE"',
             '"--task": "TASK"',
             "Omit optional positionals and options that are not needed.",
         )

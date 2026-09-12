@@ -131,7 +131,7 @@ interfaces:
         allowed_flags: &slow_flags [--help, -h, --slow]
         flag_patterns: &slow_patterns
           --slow: '^(?=.*[1-9])(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)$'
-    usage: '[--slow SECONDS]'
+    usage: '[--slow POSITIVE_DECIMAL_SECONDS]'
     version: 1
   milestone-logging._rtx.source.rtx-agent-timeline.interface.list-sessions:
     content: *content
@@ -147,15 +147,15 @@ interfaces:
     contract: {arguments: {session: &session {description: Exact session identifier to render., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}, slow: *slow}, caller_warnings: *warnings, direct_io: *timeline_io, execution: *timeline_execution, helpers: *helpers, interaction: *interaction, outcomes: *timeline_outcomes, outputs: *timeline_outputs, preconditions: *preconditions}
     description: Render one exact session and retained typed metadata; optional slow adds annotations only.
     process_binding: {entry: ShowSession, kind: process, patterns: [{name: show-session, min_positionals: 1, max_positionals: 1, allow_stdin: false, allowed_flags: *slow_flags, flag_patterns: *slow_patterns}]}
-    usage: 'SESSION [--slow SECONDS]'
+    usage: 'SESSION [--slow POSITIVE_DECIMAL_SECONDS]'
     version: 1
   milestone-logging._rtx.source.rtx-agent-timeline.interface.show-run:
     content: *content
     uses_interfaces: []
-    contract: {arguments: {run: &run {description: Safe durable run identifier to reconstruct., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}}, caller_warnings: *warnings, direct_io: *log_io, execution: *timeline_execution, helpers: *helpers, interaction: *interaction, outcomes: *timeline_outcomes, outputs: *timeline_outputs, preconditions: *preconditions}
+    contract: {arguments: {run: &run {description: '1-64 character run ID starting with an ASCII letter or digit and containing only ASCII letters, digits, dot, underscore, or hyphen.', required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}}, caller_warnings: *warnings, direct_io: *log_io, execution: *timeline_execution, helpers: *helpers, interaction: *interaction, outcomes: *timeline_outcomes, outputs: *timeline_outputs, preconditions: *preconditions}
     description: Render one durable run as text with all retained typed metadata.
     process_binding: {entry: ShowRun, kind: process, patterns: [{name: show-run, min_positionals: 1, max_positionals: 1, allow_stdin: false, positional_patterns: {'0': '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'}}]}
-    usage: RUN
+    usage: SAFE_RUN_ID
     version: 1
   milestone-logging._rtx.source.rtx-agent-timeline.interface.read-run-json:
     content: *content
@@ -163,7 +163,7 @@ interfaces:
     contract: {arguments: {run: *run}, caller_warnings: *warnings, direct_io: *log_io, execution: *timeline_execution, helpers: *helpers, interaction: *interaction, outcomes: *timeline_outcomes, outputs: *timeline_outputs, preconditions: *preconditions}
     description: Return one durable run as structured JSON with all retained typed metadata.
     process_binding: {entry: ReadRunJson, kind: process, patterns: [{name: read-run-json, min_positionals: 1, max_positionals: 1, allow_stdin: false, positional_patterns: {'0': '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'}}]}
-    usage: RUN
+    usage: SAFE_RUN_ID
     version: 1
 node_type: behavioral_source
 platform_support: {linux: true, macos: true, windows: true}
