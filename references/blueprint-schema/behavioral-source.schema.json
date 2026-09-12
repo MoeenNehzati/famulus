@@ -127,6 +127,10 @@
         "content": {
           "$ref": "common.schema.json#/definitions/contentPatterns"
         },
+        "renderer": {
+          "$ref": "common.schema.json#/definitions/relativePath",
+          "description": "Optional UI renderer file included in this interface's content."
+        },
         "uses_interfaces": {
           "$ref": "common.schema.json#/definitions/interfaceUseList"
         },

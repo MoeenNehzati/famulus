@@ -191,6 +191,7 @@ def _write_v6_interface_facet_fixture(root: Path) -> Path:
                 "demo-skill.source.worker.interface.run": {
                     "version": 1,
                     "content": [r"(?:worker|helper)\.py"],
+                    "renderer": "helper.py",
                     "uses_interfaces": [
                         {"interface": provider_interface, "version": 1}
                     ],
@@ -305,6 +306,10 @@ def test_v6_graph_resolves_overlapping_interface_content_and_use_subsets(
     [
         ("outside-content", "content must be a non-empty subset"),
         ("missing-gateway", "gateway must be included in content"),
+        (
+            "renderer-outside-content",
+            "renderer must be included in interface content",
+        ),
         ("outside-use", "uses_interfaces must be a subset"),
     ],
 )
@@ -324,6 +329,8 @@ def test_v6_graph_rejects_interface_facets_outside_source_envelope(
         interface["content"] = [r"(?:worker|outside)\.py"]
     elif mutation == "missing-gateway":
         interface["content"] = [r"helper\.py"]
+    elif mutation == "renderer-outside-content":
+        interface["renderer"] = "provider.py"
     else:
         interface["uses_interfaces"] = [
             {"interface": "missing-skill.interface.read", "version": 1}

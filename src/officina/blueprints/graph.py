@@ -4498,6 +4498,14 @@ def _v6_interface_facets(
                     f"{interface_id}: content must be a non-empty subset of "
                     f"source {source_id} content"
                 )
+            raw_renderer = declaration.get("renderer")
+            if raw_renderer is not None and (
+                not isinstance(raw_renderer, str)
+                or source.module_root / raw_renderer not in resolved
+            ):
+                raise BlueprintGraphError(
+                    f"{interface_id}: renderer must be included in interface content"
+                )
 
             raw_uses = declaration.get("uses_interfaces")
             if not isinstance(raw_uses, list):
