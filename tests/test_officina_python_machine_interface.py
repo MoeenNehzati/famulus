@@ -2843,7 +2843,7 @@ def test_dispatch_trace_links_nested_processes_and_drops_sink_failures(
             dispatcher_core.ResolvedInvocation(base.metadata(), command, environment.copy()), text=True
         )
     rows = [json.loads(path.read_text()) for path in logs.glob("dispatch/*/*/*.json")]
-    assert result.stdout == "unchanged\n" and result.stderr == ""
+    assert result.stdout == f"unchanged{os.linesep}" and result.stderr == ""
     assert len(rows) == 4
     by_parent = {row["parent_span_id"]: row for row in rows}
     chain = [by_parent[None]]
