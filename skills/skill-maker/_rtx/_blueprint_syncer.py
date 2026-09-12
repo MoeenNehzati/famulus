@@ -187,7 +187,7 @@ def generated_setup_gate(
     module_id: str,
     repository_graph: RepositoryBlueprintGraph,
 ) -> list[str]:
-    """Render the managed-setup protocol for one opted-in Markdown gateway."""
+    """Render the one-time managed-setup call for an opted-in Markdown gateway."""
 
     gateway = _host_gateway_source(module_id, repository_graph)
     gateway_declaration = getattr(gateway, "declaration", None)
@@ -212,54 +212,24 @@ def generated_setup_gate(
     if not managed_entries:
         return []
 
-    lines = [
-        "### Managed setup gate",
+    managed = managed_entries[0]
+    invocation = {
+        "caller": module_id,
+        "interface": managed.setup_interface,
+        "version": managed.setup_version,
+        "arguments": {"positionals": [], "options": {}, "stdin": None},
+    }
+    return [
+        "### Managed setup",
         "",
-        "Activate this gate only for an invocation of this skill's interfaces or an exact managed lifecycle entry below. Generic setup prose does not activate this gate.",
-        "Keep the original caller, interface, version, arguments, and stdin outside the ledger; the manager receives only its public continuation identity.",
+        "When first exposed to this skill in a session, invoke `famulus_dispatcher.invoke` once with:",
         "",
-        "Managed lifecycle entries:",
+        "```json",
+        *json.dumps(invocation, indent=2).splitlines(),
+        "```",
+        "",
+        "Do not repeat this initial call during the session. Obtain permission before carrying out setup, then follow the returned setup-manager instructions exactly. If the result is busy or failed, stop and report it.",
     ]
-    for managed in managed_entries:
-        setup_line = (
-            f"- Setup `{managed.setup_interface}@{managed.setup_version}` routes to "
-            f"`begin(setup, {managed.setup_interface}, ORIGINAL_CALLER, "
-            f"ORIGINAL_INTERFACE, ORIGINAL_VERSION)`"
-        )
-        if managed.teardown_interface is not None:
-            setup_line += (
-                f"; teardown "
-                f"`{managed.teardown_interface}@{managed.teardown_version}` routes to "
-                f"`begin(teardown, {managed.setup_interface}, ORIGINAL_CALLER, "
-                f"ORIGINAL_INTERFACE, ORIGINAL_VERSION)`"
-            )
-        setup_line += "."
-        lines.append(setup_line)
-    lines.extend([
-        "",
-        "For an ordinary invocation, use this exact sequence:",
-        "",
-        f"1. Call `{_MANAGER_STATUS}` for the original target interface. If it is `unmanaged`, run the original request normally. If it is `setup_busy`, stop: this passive status authorizes no action.",
-        "2. If it is `setup_required`, obtain permission, then call "
-        f"`{_MANAGER_BEGIN}` as `begin(setup, ROOT_SETUP_INTERFACE, ORIGINAL_CALLER, "
-        "ORIGINAL_INTERFACE, ORIGINAL_VERSION)`, where `ROOT_SETUP_INTERFACE` is the returned root setup interface.",
-        f"3. Follow only the returned exact structured current step: call `{_MANAGER_RUN_MARKDOWN}` for a Markdown step, follow its returned instructions, then call `{_MANAGER_SETTLE}`; call `{_MANAGER_RUN_PYTHON}` for a Python step. Repeat until the flow is ready.",
-        f"4. Perform the ready recheck with `{_MANAGER_STATUS}` for the original target and require `ready`; then call `{_MANAGER_AUTHORIZE}` with the original target plus caller, interface, and version.",
-        "5. Retry the original request exactly once, with its original arguments and stdin, only when `authorize` returns `resume_original: true`.",
-        "",
-        "For an exact managed setup or teardown invocation, do not launch it directly; use its "
-        f"listed `{_MANAGER_BEGIN}` route. "
-        "A manager result that names an exact structured current step is the only bypass of this gate.",
-    ])
-    return lines
-
-
-_MANAGER_STATUS = "setup-interface-manager._rtx.interface.status@1"
-_MANAGER_AUTHORIZE = "setup-interface-manager._rtx.interface.authorize@1"
-_MANAGER_BEGIN = "setup-interface-manager._rtx.interface.begin@1"
-_MANAGER_RUN_MARKDOWN = "setup-interface-manager._rtx.interface.run-markdown@1"
-_MANAGER_RUN_PYTHON = "setup-interface-manager._rtx.interface.run-python@1"
-_MANAGER_SETTLE = "setup-interface-manager._rtx.interface.settle@1"
 
 
 def generated_interface_block(

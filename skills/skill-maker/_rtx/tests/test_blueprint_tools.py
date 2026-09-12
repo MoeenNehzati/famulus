@@ -400,39 +400,30 @@ def _managed_gate_graph(
     )
 
 
-def test_generated_interface_block_includes_the_managed_markdown_protocol(syncer) -> None:
-    """Catches a gate that skips ready authorization or exposes continuation data."""
+def test_generated_interface_block_includes_one_managed_setup_call(syncer) -> None:
+    """The generated gate makes one concrete call and delegates continuation."""
     block = syncer.generated_interface_block("managed", _managed_gate_graph())
 
-    assert "### Managed setup gate" in block
-    assert "`managed.interface.setup@1`" in block
-    assert "`managed.interface.teardown@1`" in block
-    assert "`setup-interface-manager._rtx.interface.status@1`" in block
-    assert "`setup-interface-manager._rtx.interface.begin@1`" in block
-    assert "`setup-interface-manager._rtx.interface.run-markdown@1`" in block
-    assert "`setup-interface-manager._rtx.interface.settle@1`" in block
-    assert "`setup-interface-manager._rtx.interface.authorize@1`" in block
-    ordinary_protocol = block[block.index("For an ordinary invocation"):]
-    assert ordinary_protocol.index("status") < ordinary_protocol.index("permission") < ordinary_protocol.index("begin")
-    authorize_interface = "`setup-interface-manager._rtx.interface.authorize@1`"
-    assert ordinary_protocol.index("ready recheck") < ordinary_protocol.index(authorize_interface) < ordinary_protocol.index("Retry")
-    assert (
-        "begin(setup, ROOT_SETUP_INTERFACE, ORIGINAL_CALLER, ORIGINAL_INTERFACE, "
-        "ORIGINAL_VERSION)" in block
-    )
-    assert (
-        "begin(teardown, managed.interface.setup, ORIGINAL_CALLER, "
-        "ORIGINAL_INTERFACE, ORIGINAL_VERSION)" in block
-    )
-    assert "caller, interface, version, arguments, and stdin outside the ledger" in block
-    assert "exact structured current step" in block
-    assert "If it is `setup_busy`, stop: this passive status authorizes no action." in block
-    assert "Generic setup prose does not activate this gate" in block
-    assert "path" not in block.lower()
+    assert "### Managed setup" in block
+    assert '"caller": "managed"' in block
+    assert '"interface": "managed.interface.setup"' in block
+    assert '"version": 1' in block
+    assert '"positionals": []' in block
+    assert '"options": {}' in block
+    assert '"stdin": null' in block
+    assert "invoke `famulus_dispatcher.invoke` once" in block
+    assert "Do not repeat this initial call during the session." in block
+    assert "Obtain permission before carrying out setup" in block
+    assert "follow the returned setup-manager instructions exactly" in block
+    assert "managed.interface.teardown" not in block
+    for redundant_interface in (
+        "status", "authorize", "begin", "run-markdown", "run-python", "settle"
+    ):
+        assert f"setup-interface-manager._rtx.interface.{redundant_interface}" not in block
 
 
-def test_generated_interface_block_omits_teardown_when_not_present(syncer) -> None:
-    """Markdown setups with no teardown never render teardown lifecycle entry."""
+def test_generated_interface_block_uses_setup_version(syncer) -> None:
+    """The generated invocation uses the managed setup's exact version."""
     setup_interface = "no-teardown.interface.setup"
     graph = SimpleNamespace(
         schema_version=6,
@@ -459,7 +450,7 @@ def test_generated_interface_block_omits_teardown_when_not_present(syncer) -> No
         managed_setups={
             setup_interface: SimpleNamespace(
                 setup_interface=setup_interface,
-                setup_version=1,
+                setup_version=3,
                 teardown_interface=None,
                 teardown_version=None,
                 kind="markdown",
@@ -467,12 +458,9 @@ def test_generated_interface_block_omits_teardown_when_not_present(syncer) -> No
         },
     )
     block = syncer.generated_interface_block("no-teardown", graph)
-    assert "### Managed setup gate" in block
-    assert f"`{setup_interface}@1`" in block
-    assert "begin(setup," in block
-    # Lifecycle entry must not have teardown route
-    assert "`no-teardown.interface.teardown" not in block
-    assert "@None" not in block
+    assert "### Managed setup" in block
+    assert f'"interface": "{setup_interface}"' in block
+    assert '"version": 3' in block
 
 
 def test_generated_interface_block_limits_and_removes_the_managed_markdown_gate(
@@ -482,17 +470,17 @@ def test_generated_interface_block_limits_and_removes_the_managed_markdown_gate(
     managed = _managed_gate_graph()
     block = syncer.generated_interface_block("managed", managed)
     assert block == syncer.generated_interface_block("managed", managed)
-    assert "### Managed setup gate" not in syncer.generated_interface_block(
+    assert "### Managed setup" not in syncer.generated_interface_block(
         "managed", _managed_gate_graph(kind="python")
     )
-    assert "### Managed setup gate" not in syncer.generated_interface_block(
+    assert "### Managed setup" not in syncer.generated_interface_block(
         "managed", _managed_gate_graph(gateway_language="Python")
     )
-    assert "### Managed setup gate" not in syncer.generated_interface_block(
+    assert "### Managed setup" not in syncer.generated_interface_block(
         "managed", _managed_gate_graph(opted_in=False)
     )
     bootstrap = blueprints["bootstrap-dispatcher-runtime"]
-    assert "### Managed setup gate" not in syncer.generated_interface_block(
+    assert "### Managed setup" not in syncer.generated_interface_block(
         bootstrap.name, bootstrap.repository_graph
     )
 
@@ -510,7 +498,7 @@ def test_generated_interface_block_limits_and_removes_the_managed_markdown_gate(
     assert gated.startswith("---\nname: managed\n---\n\n")
     assert gated.endswith("\n\nBody bytes stay put.\n")
     assert syncer.sync_interface_block(gated, block) == gated
-    assert "### Managed setup gate" not in ungated
+    assert "### Managed setup" not in ungated
     assert ungated.startswith("---\nname: managed\n---\n\n")
     assert ungated.endswith("\n\nBody bytes stay put.\n")
 
