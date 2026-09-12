@@ -13,6 +13,7 @@ from officina.blueprints.inventory import (
     collect_blueprints,
     iter_blueprints,
 )
+from officina.blueprints.unverified import quick_fetch_from_all
 from test_support.git_repository import GitTestRepository
 
 
@@ -101,6 +102,42 @@ def test_selected_strict_loader_rejects_duplicate_keys() -> None:
             "id: one\nid: two\n",
             Loader=blueprint_inventory._StrictBlueprintLoader,
         )
+
+
+def test_quick_fetch_from_all_returns_nested_values_and_locations(
+    tmp_path: Path,
+) -> None:
+    _write(
+        tmp_path / "skill" / "blueprint.yaml",
+        "maturity: stable\n",
+    )
+    _write(
+        tmp_path / "skill" / "blueprints" / "source.yaml",
+        "interfaces:\n  demo.interface.read:\n    ui_renderer: ui/read.js\n",
+    )
+    _write(
+        tmp_path / "legacy.blueprint.yaml",
+        "maturity: experimental\n",
+    )
+    _write(tmp_path / ".worktree" / "blueprint.yaml", "maturity: ignored\n")
+    _write(tmp_path / "not-a-blueprint.yaml", "maturity: ignored\n")
+
+    matches = quick_fetch_from_all(tmp_path, ["maturity", "ui_renderer"])
+
+    assert [match.value for match in matches] == [
+        "experimental",
+        "stable",
+        "ui/read.js",
+    ]
+    assert [match.path for match in matches] == [
+        ("maturity",),
+        ("maturity",),
+        ("interfaces", "demo.interface.read", "ui_renderer"),
+    ]
+    assert all(match.blueprint_path.is_absolute() for match in matches)
+    assert [match.value for match in quick_fetch_from_all(tmp_path, "ui_renderer")] == [
+        "ui/read.js"
+    ]
 
 
 def test_ignored_path_lookup_does_not_scan_all_ignored_entries(

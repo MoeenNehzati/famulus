@@ -34,4 +34,6 @@ Includes
     Searches blueprint metadata and renders stable machine-readable results.
 ``template.py``
     Validates and expands blueprint template declarations.
+``unverified.py``
+    Quickly fetches raw blueprint values without graph validation.
 """

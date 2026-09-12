@@ -11,6 +11,7 @@ content:
 - projection\.py
 - search\.py
 - template\.py
+- unverified\.py
 description: Blueprint discovery, graph validation, authorization, rendering, projection,
   process binding, and structured search.
 exports:
@@ -61,6 +62,10 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/template.yaml
+  blueprints.source.unverified:
+    blueprint:
+      base: module-root
+      path: blueprints/unverified.yaml
   blueprints.source.pooled:
     blueprint:
       base: module-root

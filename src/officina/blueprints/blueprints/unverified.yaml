@@ -1,0 +1,21 @@
+content:
+- unverified\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/inventory.yaml
+  reason: Reuses safe strict YAML parsing and JSON-compatible blueprint values.
+  source: blueprints.source.inventory
+  version: 1
+description: Quickly fetches named values from blueprint YAML without schema validation,
+  graph construction, ownership checks, routing, or authorization.
+gateway:
+  language: Python
+  path: unverified.py
+id: blueprints.source.unverified
+interfaces: {}
+node_type: behavioral_source
+schema_version: 6
+uses_interfaces: []
+version: 1
+maturity: stable
