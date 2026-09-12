@@ -15,6 +15,11 @@
       }
     }
   },
+  "render_tool": {
+    "name": "invoke_and_render",
+    "wraps": "invoke",
+    "renderer_discovery": "quick_fetch_from_all"
+  },
   "fingerprint": [
     "sys.executable",
     "sys.prefix",

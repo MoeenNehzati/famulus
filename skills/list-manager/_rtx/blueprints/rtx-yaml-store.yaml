@@ -9,6 +9,7 @@ content:
 - schemas/types/entry\.json
 - schemas/types/task_entry\.json
 - schemas/types/triage_action\.json
+- _ui_renderers/_read_list\.js
 dependencies:
 - blueprint:
     base: repository-root
@@ -1920,6 +1921,8 @@ interfaces:
     - schemas/types/entry\.json
     - schemas/types/task_entry\.json
     - schemas/types/triage_action\.json
+    - _ui_renderers/_read_list\.js
+    renderer: _ui_renderers/_read_list.js
     uses_interfaces:
     - interface: cloud-files._rtx.interface.lists-read
       version: 1

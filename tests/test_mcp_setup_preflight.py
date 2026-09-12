@@ -1410,7 +1410,10 @@ def test_main_classifies_server_startup_failures_as_d53(
             if stage == "construct":
                 raise RuntimeError("private constructor failure")
 
-        def tool(self):
+        def tool(self, **_kwargs):
+            return lambda function: function
+
+        def resource(self, *_args, **_kwargs):
             return lambda function: function
 
         def run(self, *, transport: str) -> None:

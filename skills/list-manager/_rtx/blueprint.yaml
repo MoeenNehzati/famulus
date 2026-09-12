@@ -61,6 +61,7 @@ content:
 - schemas/types/task_entry\.json
 - schemas/types/triage_action\.json
 - tests/.*
+- _ui_renderers/_read_list\.js
 description: Code module for the list-manager skill.
 exports:
   list-manager._rtx.interface.beautify-list:

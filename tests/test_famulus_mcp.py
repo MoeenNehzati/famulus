@@ -1035,7 +1035,10 @@ def test_graph_server_survives_invocation_and_follows_host_teardown_lifecycle(
         result = called.structuredContent["result"]
         ready = json.loads(result["stdout"])
         pid = ready["pid"]
-        assert [tool.name for tool in listed.tools] == ["invoke"]
+        assert [tool.name for tool in listed.tools] == [
+            "invoke",
+            "invoke_and_render",
+        ]
         assert called.isError is False
         assert result["exit_code"] == 0
         assert result["stderr"] == ""
@@ -1052,7 +1055,10 @@ def test_graph_server_survives_invocation_and_follows_host_teardown_lifecycle(
         assert body == expected
         assert cache_control == "no-store, no-cache, must-revalidate, max-age=0"
         assert alive is True
-        assert [tool.name for tool in after.tools] == ["invoke"]
+        assert [tool.name for tool in after.tools] == [
+            "invoke",
+            "invoke_and_render",
+        ]
         assert finite.isError is False
         assert finite.structuredContent["result"]["target"] == (
             "milestone-logging._rtx.interface.session-path"
@@ -1115,7 +1121,10 @@ def test_packaged_host_declaration_invokes_dispatcher_through_real_mcp(
         )
     )
 
-    assert [tool.name for tool in listed.tools] == [contract["tool"]["name"]]
+    assert [tool.name for tool in listed.tools] == [
+        contract["tool"]["name"],
+        contract["render_tool"]["name"],
+    ]
     tool = listed.tools[0]
     assert tool.description.startswith("Invoke one authorized Famulus interface")
     schema = tool.inputSchema
@@ -1180,7 +1189,82 @@ def test_packaged_host_declaration_invokes_dispatcher_through_real_mcp(
     )
     assert numeric.isError is True
     assert ordered_positionals.isError is True
-    assert [tool.name for tool in after.tools] == [contract["tool"]["name"]]
+    assert [tool.name for tool in after.tools] == [
+        contract["tool"]["name"],
+        contract["render_tool"]["name"],
+    ]
+
+
+def test_render_tool_uses_blueprint_renderer_bundle(server) -> None:
+    FastMCP = pytest.importorskip("mcp.server.fastmcp").FastMCP
+    mcp = FastMCP("famulus")
+
+    server._register_mcp_surface(mcp)
+
+    tools = asyncio.run(mcp.list_tools())
+    render_tool = next(tool for tool in tools if tool.name == "invoke_and_render")
+    resource_uri = render_tool.meta["ui"]["resourceUri"]
+    assert render_tool.meta["openai/outputTemplate"] == resource_uri
+    resources = asyncio.run(mcp.list_resources())
+    assert [str(resource.uri) for resource in resources] == [resource_uri]
+    assert resources[0].mimeType == "text/html;profile=mcp-app"
+    content = list(asyncio.run(mcp.read_resource(resource_uri)))[0]
+    assert "list-manager._rtx.source.rtx-yaml-store.interface.read-list" in (
+        content.content
+    )
+    assert "ui/notifications/tool-result" in content.content
+
+
+def test_invoke_and_render_adds_parsed_data_only_for_declared_renderer(
+    server, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fake_invoke(*_args, **_kwargs):
+        return {
+            "exit_code": 0,
+            "stdout": "entries:\n- id: aaaaaa\n  title: Task\n",
+            "stderr": "",
+            "dispatcher": {"script_interface": "example.source.ui.interface.read"},
+            "trace_id": "a" * 32,
+        }
+
+    FastMCP = pytest.importorskip("mcp.server.fastmcp").FastMCP
+    mcp = FastMCP("famulus")
+    server._register_mcp_surface(mcp)
+    monkeypatch.setattr(server, "invoke", fake_invoke)
+    monkeypatch.setattr(
+        server,
+        "_RENDERER_INTERFACES",
+        frozenset({"example.source.ui.interface.read"}),
+    )
+
+    _content, payload = asyncio.run(
+        mcp.call_tool(
+            "invoke_and_render",
+            {
+                "caller": "caller",
+                "interface": "example.interface.read",
+                "version": 1,
+                "arguments": {"positionals": [], "options": {}, "stdin": None},
+            },
+        )
+    )
+
+    assert payload["result"]["render_data"] == {
+        "entries": [{"id": "aaaaaa", "title": "Task"}]
+    }
+    monkeypatch.setattr(server, "_RENDERER_INTERFACES", frozenset())
+    _content, plain = asyncio.run(
+        mcp.call_tool(
+            "invoke_and_render",
+            {
+                "caller": "caller",
+                "interface": "example.interface.read",
+                "version": 1,
+                "arguments": {"positionals": [], "options": {}, "stdin": None},
+            },
+        )
+    )
+    assert "render_data" not in plain["result"]
 
 
 def test_contract_keeps_mcp_metadata_separate_from_runtime_requirements() -> None:

@@ -7,10 +7,12 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from threading import Lock
 from typing import Any, Literal
 from uuid import uuid4
+
+import yaml
 
 ROOT = Path(__file__).resolve().parent
 CONTRACT = json.loads((ROOT / "mcp-core.json").read_text(encoding="utf-8"))
@@ -40,6 +42,7 @@ from officina.dispatcher.errors import (
     render_dispatcher_error,
 )
 from officina.blueprints.graph import BlueprintGraphError
+from officina.blueprints.unverified import quick_fetch_from_all
 from officina.common.famulus_paths import resolve_famulus_paths
 from officina.common.atomic_files import ensure_private_directory, exclusive_file_lock
 from officina.runtime.dispatch_trace import invocation_trace
@@ -59,6 +62,7 @@ MANAGER_INTERFACES = {
 _PROCESS_STARTED_AT = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 _FLOW_LEASES: dict[str, Any] = {}
 _FLOW_LEASE_GUARD = Lock()
+_RENDERER_INTERFACES: frozenset[str] = frozenset()
 
 _STATUS_CODES = frozenset({"unmanaged", "ready", "setup_required", "setup_busy"})
 _FLOW_SUCCESS_STATES = frozenset("ready run-step awaiting-settlement authorized-markdown-call".split())
@@ -166,6 +170,74 @@ class ExecutionResult:
     stderr: str
     dispatcher: dict[str, Any]
     trace_id: str
+
+
+def _renderer_app(repo_root: Path) -> tuple[str, frozenset[str]]:
+    """Build one MCP Apps router from repository-declared interface renderers."""
+
+    registrations: list[str] = []
+    interfaces: set[str] = set()
+    for match in quick_fetch_from_all(repo_root, "renderer"):
+        if len(match.path) != 3 or match.path[0] != "interfaces":
+            continue
+        interface_id, renderer = match.path[1], match.value
+        if not isinstance(interface_id, str) or not isinstance(renderer, str):
+            continue
+        relative = PurePosixPath(renderer)
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ValueError(f"unsafe renderer path for {interface_id}")
+        source_root = (
+            match.blueprint_path.parent.parent
+            if match.blueprint_path.parent.name == "blueprints"
+            else match.blueprint_path.parent
+        )
+        renderer_path = source_root.joinpath(*relative.parts)
+        if (
+            interface_id in interfaces
+            or renderer_path.is_symlink()
+            or not renderer_path.is_file()
+            or not renderer_path.resolve().is_relative_to(source_root.resolve())
+        ):
+            raise ValueError(f"invalid renderer for {interface_id}")
+        source = renderer_path.read_text(encoding="utf-8")
+        marker = "export function render"
+        if source.count(marker) != 1 or "</script" in source.casefold():
+            raise ValueError(f"invalid renderer module for {interface_id}")
+        source = source.replace(marker, "function render", 1)
+        registrations.append(
+            f"renderers[{json.dumps(interface_id)}] = (() => {{\n"
+            f"{source}\nreturn render;\n}})();"
+        )
+        interfaces.add(interface_id)
+
+    registrations_js = "\n".join(registrations)
+    html = f"""<!doctype html>
+<html><head><meta charset="utf-8"><style>
+body {{ margin: 0; font: 14px system-ui, sans-serif; color: CanvasText; }}
+table {{ border-collapse: collapse; width: 100%; }}
+th, td {{ border-bottom: 1px solid color-mix(in srgb, CanvasText 18%, transparent); padding: 6px 8px; text-align: left; }}
+th {{ font-weight: 600; }}
+</style></head><body hidden><div id="root"></div><script type="module">
+const renderers = {{}};
+{registrations_js}
+const root = document.getElementById("root");
+function renderOutput(output) {{
+  const result = output?.result;
+  const renderer = renderers[result?.dispatcher?.script_interface];
+  const html = renderer ? renderer(result.render_data) : "";
+  root.innerHTML = html;
+  document.body.hidden = !html;
+}}
+window.addEventListener("message", (event) => {{
+  if (event.source !== window.parent) return;
+  const message = event.data;
+  if (message?.jsonrpc === "2.0" && message.method === "ui/notifications/tool-result") {{
+    renderOutput(message.params?.structuredContent);
+  }}
+}}, {{ passive: true }});
+renderOutput(window.openai?.toolOutput);
+</script></body></html>"""
+    return html, frozenset(interfaces)
 
 
 def require_python(version: tuple[int, int] = sys.version_info[:2]) -> None:
@@ -925,6 +997,58 @@ def invoke(
         return result
 
 
+def invoke_and_render(
+    caller: str,
+    interface: str,
+    version: int,
+    arguments: CompactArguments | OrderedArguments,
+    dry_run: bool = False,
+    setup_flow_id: str | None = None,
+) -> dict[str, Any] | ExecutionResult:
+    """Invoke one interface and render its result when it declares a renderer."""
+
+    result = invoke(caller, interface, version, arguments, dry_run, setup_flow_id)
+    if not isinstance(result, dict) or result.get("exit_code") != 0:
+        return result
+    dispatcher = result.get("dispatcher")
+    if not isinstance(dispatcher, dict):
+        return result
+    if dispatcher.get("script_interface") not in _RENDERER_INTERFACES:
+        return result
+    stdout = result.get("stdout")
+    if isinstance(stdout, str):
+        try:
+            result["render_data"] = yaml.safe_load(stdout)
+        except yaml.YAMLError:
+            result["render_data"] = stdout
+    return result
+
+
+def _register_mcp_surface(server: Any) -> None:
+    """Register the plain and renderer-backed dispatcher tools."""
+
+    global _RENDERER_INTERFACES
+    renderer_html, _RENDERER_INTERFACES = _renderer_app(ROOT)
+    resource_uri = (
+        "ui://famulus/invoke-and-render-"
+        f"{sha256(renderer_html.encode('utf-8')).hexdigest()[:16]}.html"
+    )
+    server.tool()(invoke)
+    server.tool(
+        name=CONTRACT["render_tool"]["name"],
+        meta={
+            "ui": {"resourceUri": resource_uri},
+            "openai/outputTemplate": resource_uri,
+        },
+    )(invoke_and_render)
+    server.resource(
+        resource_uri,
+        name="famulus-invoke-and-render",
+        mime_type="text/html;profile=mcp-app",
+        meta={"ui": {"prefersBorder": True}},
+    )(lambda: renderer_html)
+
+
 def main() -> None:
     require_python()
     configure_plugin_persistence()
@@ -938,7 +1062,7 @@ def main() -> None:
         raise DispatcherError.from_spec("D53") from exc
     try:
         server = FastMCP(CONTRACT["server"])
-        server.tool()(invoke)
+        _register_mcp_surface(server)
         try:
             server.run(transport="stdio")
         finally:
