@@ -117,16 +117,15 @@ run() {
 }
 
 package_local_marketplace() {
-    if ! $dry_run && ! git -C "$AI" diff --quiet HEAD --; then
-        warn 'local package uses HEAD; uncommitted tracked changes are excluded'
-    fi
     (
         cd "$AI" || return
         local stage=_build/plugin.tmp
         local archive=_build/plugin.tar
+        local snapshot
+        $dry_run || snapshot=$(git stash create) || return
         run rm -rf -- "$stage" || return
         run mkdir -p -- "$stage" || return
-        run git archive --format=tar --output="$archive" HEAD || return
+        run git archive --format=tar --output="$archive" "${snapshot:-HEAD}" || return
         run tar -xf "$archive" -C "$stage" || return
         run rm -f -- "$archive" || return
         run rm -rf -- _build/plugin || return

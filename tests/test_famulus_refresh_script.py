@@ -152,7 +152,7 @@ def test_default_dry_run_refreshes_both_from_local_and_preserves_plugin_data(
     )
 
 
-def test_local_refresh_packages_only_committed_files(tmp_path: Path) -> None:
+def test_local_refresh_packages_only_tracked_worktree_files(tmp_path: Path) -> None:
     repository = GitTestRepository.create(tmp_path / "checkout")
     checkout = repository.root
     (checkout / ".gitignore").write_text("_build/\nignored/\n", encoding="utf-8")
@@ -163,6 +163,7 @@ def test_local_refresh_packages_only_committed_files(tmp_path: Path) -> None:
     repository.git("add", ".")
     repository.git("commit", "-qm", "fixture")
     (checkout / "tracked.txt").write_text("uncommitted\n", encoding="utf-8")
+    (checkout / "untracked.txt").write_text("excluded\n", encoding="utf-8")
     fake_bin, log = _write_fake_host(
         tmp_path,
         "codex",
@@ -178,9 +179,9 @@ def test_local_refresh_packages_only_committed_files(tmp_path: Path) -> None:
 
     package = checkout / "_build" / "plugin"
     assert result.returncode == 0, result.stderr
-    assert "uncommitted tracked changes are excluded" in result.stderr
-    assert (package / "tracked.txt").read_text(encoding="utf-8") == "included\n"
+    assert (package / "tracked.txt").read_text(encoding="utf-8") == "uncommitted\n"
     assert not (package / "ignored").exists()
+    assert not (package / "untracked.txt").exists()
     marketplace_lines = [
         line
         for line in log.read_text(encoding="utf-8").splitlines()
