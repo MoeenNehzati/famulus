@@ -1204,7 +1204,9 @@ def test_render_tool_uses_blueprint_renderer_bundle(server) -> None:
     tools = asyncio.run(mcp.list_tools())
     render_tool = next(tool for tool in tools if tool.name == "invoke_and_render")
     resource_uri = render_tool.meta["ui"]["resourceUri"]
+    assert render_tool.meta["ui"]["visibility"] == ["model", "app"]
     assert render_tool.meta["openai/outputTemplate"] == resource_uri
+    assert render_tool.meta["openai/visibility"] == "public"
     resources = asyncio.run(mcp.list_resources())
     assert [str(resource.uri) for resource in resources] == [resource_uri]
     assert resources[0].mimeType == "text/html;profile=mcp-app"

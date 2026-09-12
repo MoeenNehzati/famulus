@@ -1120,8 +1120,12 @@ def _register_mcp_surface(server: Any) -> None:
     server.tool(
         name=CONTRACT["render_tool"]["name"],
         meta={
-            "ui": {"resourceUri": resource_uri},
+            "ui": {
+                "resourceUri": resource_uri,
+                "visibility": ["model", "app"],
+            },
             "openai/outputTemplate": resource_uri,
+            "openai/visibility": "public",
         },
     )(invoke_and_render)
     server.resource(
