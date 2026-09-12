@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path, PurePosixPath
 from threading import Lock
-from typing import Any, Literal
+from typing import Annotated, Any, Literal, TypedDict
 from uuid import uuid4
 
 import yaml
@@ -63,6 +63,23 @@ _PROCESS_STARTED_AT = datetime.now(timezone.utc).isoformat().replace("+00:00", "
 _FLOW_LEASES: dict[str, Any] = {}
 _FLOW_LEASE_GUARD = Lock()
 _RENDERER_INTERFACES: frozenset[str] = frozenset()
+_RENDER_PROBE_URI = "ui://famulus/render-probe-v1.html"
+_RENDER_PROBE_HTML = """<!doctype html>
+<html><body><strong id="output" style="color:#d946ef">Waiting…</strong><script>
+function render(output) {
+  document.getElementById("output").textContent = output?.text ?? "No result";
+}
+window.addEventListener("message", (event) => {
+  if (event.source === window.parent && event.data?.method === "ui/notifications/tool-result") {
+    render(event.data.params?.structuredContent);
+  }
+});
+render(window.openai?.toolOutput);
+</script></body></html>"""
+
+
+class RenderProbeOutput(TypedDict):
+    text: str
 
 _STATUS_CODES = frozenset({"unmanaged", "ready", "setup_required", "setup_busy"})
 _FLOW_SUCCESS_STATES = frozenset("ready run-step awaiting-settlement authorized-markdown-call".split())
@@ -1107,8 +1124,41 @@ def invoke_and_render(
     return result
 
 
+def _serve_ui_resource(uri: str, html: str) -> str:
+    """Record whether the host actually requests an MCP Apps resource."""
+
+    if plugin_data := os.environ.get("FAMULUS_PLUGIN_DATA"):
+        try:
+            with (Path(plugin_data) / "mcp-ui-resource-reads.jsonl").open(
+                "a", encoding="utf-8"
+            ) as stream:
+                stream.write(
+                    json.dumps(
+                        {
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "pid": os.getpid(),
+                            "uri": uri,
+                        }
+                    )
+                    + "\n"
+                )
+        except OSError:
+            pass
+    return html
+
+
 def _register_mcp_surface(server: Any) -> None:
     """Register the plain and renderer-backed dispatcher tools."""
+
+    from mcp.types import CallToolResult, TextContent
+
+    def render_probe(
+        text: str = "Famulus renderer probe",
+    ) -> Annotated[CallToolResult, RenderProbeOutput]:
+        return CallToolResult(
+            structuredContent={"text": text},
+            content=[TextContent(type="text", text=f"Showing: {text}.")],
+        )
 
     global _RENDERER_INTERFACES
     renderer_html, _RENDERER_INTERFACES = _renderer_app(ROOT)
@@ -1128,12 +1178,28 @@ def _register_mcp_surface(server: Any) -> None:
             "openai/visibility": "public",
         },
     )(invoke_and_render)
+    server.tool(
+        name="render_probe",
+        title="Render probe",
+        description="Render supplied text in the isolated probe widget.",
+        meta={
+            "ui": {"resourceUri": _RENDER_PROBE_URI},
+            "openai/toolInvocation/invoking": "Rendering…",
+            "openai/toolInvocation/invoked": "Rendered.",
+        },
+    )(render_probe)
     server.resource(
         resource_uri,
         name="famulus-invoke-and-render",
         mime_type="text/html;profile=mcp-app",
         meta={"ui": {"prefersBorder": True}},
-    )(lambda: renderer_html)
+    )(lambda: _serve_ui_resource(resource_uri, renderer_html))
+    server.resource(
+        _RENDER_PROBE_URI,
+        name="famulus-render-probe",
+        mime_type="text/html;profile=mcp-app",
+        meta={"ui": {"prefersBorder": True}},
+    )(lambda: _serve_ui_resource(_RENDER_PROBE_URI, _RENDER_PROBE_HTML))
 
 
 def main() -> None:

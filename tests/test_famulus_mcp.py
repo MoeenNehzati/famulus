@@ -1038,6 +1038,7 @@ def test_graph_server_survives_invocation_and_follows_host_teardown_lifecycle(
         assert [tool.name for tool in listed.tools] == [
             "invoke",
             "invoke_and_render",
+            "render_probe",
         ]
         assert called.isError is False
         assert result["exit_code"] == 0
@@ -1058,6 +1059,7 @@ def test_graph_server_survives_invocation_and_follows_host_teardown_lifecycle(
         assert [tool.name for tool in after.tools] == [
             "invoke",
             "invoke_and_render",
+            "render_probe",
         ]
         assert finite.isError is False
         assert finite.structuredContent["result"]["target"] == (
@@ -1124,6 +1126,7 @@ def test_packaged_host_declaration_invokes_dispatcher_through_real_mcp(
     assert [tool.name for tool in listed.tools] == [
         contract["tool"]["name"],
         contract["render_tool"]["name"],
+        "render_probe",
     ]
     tool = listed.tools[0]
     assert tool.description.startswith("Invoke one authorized Famulus interface")
@@ -1192,6 +1195,7 @@ def test_packaged_host_declaration_invokes_dispatcher_through_real_mcp(
     assert [tool.name for tool in after.tools] == [
         contract["tool"]["name"],
         contract["render_tool"]["name"],
+        "render_probe",
     ]
 
 
@@ -1208,8 +1212,8 @@ def test_render_tool_uses_blueprint_renderer_bundle(server) -> None:
     assert render_tool.meta["openai/outputTemplate"] == resource_uri
     assert render_tool.meta["openai/visibility"] == "public"
     resources = asyncio.run(mcp.list_resources())
-    assert [str(resource.uri) for resource in resources] == [resource_uri]
-    assert resources[0].mimeType == "text/html;profile=mcp-app"
+    resource = next(resource for resource in resources if str(resource.uri) == resource_uri)
+    assert resource.mimeType == "text/html;profile=mcp-app"
     content = list(asyncio.run(mcp.read_resource(resource_uri)))[0]
     assert "list-manager._rtx.source.rtx-yaml-store.interface.read-list" in (
         content.content
