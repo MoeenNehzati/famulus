@@ -94,5 +94,12 @@ owner and exact `recover-busy` route; never infer either.
 
 Try `recover-busy` without force first. If it reports `setup.owner_active`,
 force only after the user explicitly confirms interruption. Use ordinary
-recovery only when a `recovery-required` result supplies its authorized route.
+recovery only when a `recovery-required` result or `run-markdown`
+`terminal_actions` supplies its exact route.
 Never guess a requirement or retry automatically.
+
+When `run-markdown` returns `terminal_actions`, invoke its exact `success` route
+after the instructions succeed. Before stopping, reporting failure, asking for
+input, or otherwise yielding with unfinished instructions, invoke its exact
+`failure_or_abort` route instead. If that route returns `recovery-required`,
+report the returned recovery state without guessing.

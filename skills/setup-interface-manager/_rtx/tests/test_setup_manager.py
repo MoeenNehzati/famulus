@@ -932,12 +932,52 @@ def test_markdown_returns_exact_instructions_then_settle_verifies(tmp_path: Path
     assert code == 0
     assert instruction["state"] == "awaiting-settlement"
     assert instruction["instructions"] == binding.setup_instructions
+    assert instruction["terminal_actions"] == {
+        "success": {
+            "caller": "original-caller",
+            "interface": "setup-interface-manager._rtx.interface.settle",
+            "version": 1,
+            "arguments": {
+                "positionals": ["flow-1", item.setup_interface],
+                "options": {},
+                "stdin": None,
+            },
+        },
+        "failure_or_abort": {
+            "caller": "original-caller",
+            "interface": "setup-interface-manager._rtx.interface.recover",
+            "version": 1,
+            "arguments": {
+                "positionals": ["flow-1", "cancel"],
+                "options": {},
+                "stdin": None,
+            },
+        },
+    }
     assert controller.store.read().interfaces == {}
 
     code, settled = controller.settle("flow-1", item.setup_interface)
     assert code == 0
     assert settled["state"] == "ready"
     assert controller.store.read().interfaces[item.setup_interface].version == 1
+
+
+def test_markdown_failure_route_clears_the_active_flow(tmp_path: Path) -> None:
+    item = _managed("notes", kind="markdown")
+    binding = _binding(item)
+    dispatch = DispatchHarness()
+    dispatch.queue(binding.setup_verifier_dispatch_key, '{"set_up":false}\n')
+    controller = _controller(tmp_path, _graph(item), dispatch, binding)
+    _begin_setup(controller, item)
+
+    _code, instruction = controller.run_markdown("flow-1", item.setup_interface)
+    positionals = instruction["terminal_actions"]["failure_or_abort"]["arguments"][
+        "positionals"
+    ]
+    code, cancelled = controller.recover(*positionals)
+
+    assert code == 0 and cancelled["state"] == "ready"
+    assert controller.store.read().active_flow is None
 
 
 def test_teardown_verifies_before_removal_and_finishes_without_resume(tmp_path: Path) -> None:

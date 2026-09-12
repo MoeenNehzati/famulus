@@ -351,12 +351,16 @@ def test_busy_refusal_identifies_owner_and_recovery_route(
     """Catches leaking the suspended call or inventing a recovery action."""
     events: list[str] = []
     _install_authorized_path(server, monkeypatch, events, managed=True)
-    monkeypatch.setattr(
-        server,
-        "_manager_call",
-        lambda _caller, operation, _arguments: (
-            events.append(operation)
-            or {
+    def manager_call(_caller, operation, _arguments):
+        events.append(operation)
+        if operation == "recover-busy":
+            raise DispatcherError.from_spec(
+                "D64",
+                operation=operation,
+                setup_error="The setup owner process still appears active.",
+                setup_error_code="setup.owner_active",
+            )
+        return {
                 "schema_version": 1,
                 "code": "setup_busy",
                 "root_setup_interface": "root.interface.setup",
@@ -364,9 +368,9 @@ def test_busy_refusal_identifies_owner_and_recovery_route(
                 "flow_id": "flow-7",
                 "current_step": "leaf.interface.setup",
                 "owner": {"host": "codex", "pid": 1234, "started_at": "2026-09-09T12:00:00Z"},
-            }
-        ),
-    )
+        }
+
+    monkeypatch.setattr(server, "_manager_call", manager_call)
     monkeypatch.setattr(
         server,
         "materialize_authorized_invocation",
@@ -387,8 +391,42 @@ def test_busy_refusal_identifies_owner_and_recovery_route(
             "arguments": {"positionals": ["flow-7"], "options": {}, "stdin": None},
         },
     }
-    assert events == ["authorize", "status"]
+    assert events == ["authorize", "status", "recover-busy"]
     assert "original-secret" not in json.dumps(result, sort_keys=True)
+
+
+def test_stale_busy_flow_recovers_and_rechecks_once(
+    server, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    busy = {
+        "schema_version": 1,
+        "code": "setup_busy",
+        "root_setup_interface": "root.interface.setup",
+        "pending_stack": [],
+        "flow_id": "flow-7",
+        "current_step": "root.interface.setup",
+        "owner": {"host": "codex", "pid": 1234, "started_at": "2026-09-09T12:00:00Z"},
+    }
+
+    def manager_call(_caller, operation, _arguments):
+        events.append(operation)
+        if operation == "recover-busy":
+            return {"state": "ready", "flow_id": None}
+        if operation == "status":
+            return {
+                "schema_version": 1,
+                "code": "ready",
+                "root_setup_interface": "root.interface.setup",
+                "pending_stack": [],
+                "flow_id": None,
+            }
+        return {"state": "ready", "resume_original": True}
+
+    monkeypatch.setattr(server, "_manager_call", manager_call)
+
+    assert server._ordinary_preflight("root", "root.interface.run", 1, busy) is None
+    assert events == ["recover-busy", "status", "authorize"]
 
 
 def test_busy_validation_error_is_returned_by_mcp(
@@ -719,6 +757,58 @@ def test_manager_validator_accepts_exact_teardown_begin_flow(server) -> None:
     }
 
     assert server._validate_manager_response(payload, "begin", 0) == payload
+
+
+def test_manager_validator_accepts_markdown_terminal_actions(server) -> None:
+    payload = {
+        "schema_version": 1,
+        "flow_id": "flow-1",
+        "operation": "setup",
+        "state": "awaiting-settlement",
+        "current_step": {
+            "interface": "root.interface.setup",
+            "version": 1,
+            "kind": "markdown",
+            "action": "run-setup",
+        },
+        "original": {"caller": "root", "interface": "root.interface.run", "version": 1},
+        "resume_original": False,
+        "instructions": "Do setup.",
+        "terminal_actions": {
+            "success": {
+                "caller": "root",
+                "interface": "setup-interface-manager._rtx.interface.settle",
+                "version": 1,
+                "arguments": {
+                    "positionals": ["flow-1", "root.interface.setup"],
+                    "options": {},
+                    "stdin": None,
+                },
+            },
+            "failure_or_abort": {
+                "caller": "root",
+                "interface": "setup-interface-manager._rtx.interface.recover",
+                "version": 1,
+                "arguments": {
+                    "positionals": ["flow-1", "cancel"],
+                    "options": {},
+                    "stdin": None,
+                },
+            },
+        },
+    }
+
+    assert server._validate_manager_response(payload, "run-markdown", 0) == payload
+    ready = {
+        "schema_version": 1,
+        "flow_id": None,
+        "operation": "setup",
+        "state": "ready",
+        "current_step": None,
+        "original": payload["original"],
+        "resume_original": False,
+    }
+    assert server._validate_manager_response(ready, "recover-busy", 0) == ready
 
 
 def test_manager_validator_rejects_mismatched_setup_message(server) -> None:
@@ -1072,6 +1162,19 @@ def test_nested_setup_refusal_rebinds_to_outer_mcp_invocation(
         "_run_resolved_invocation",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(signal),
     )
+    if code == "setup_busy":
+        monkeypatch.setattr(
+            server,
+            "_manager_call",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                DispatcherError.from_spec(
+                    "D64",
+                    operation="recover-busy",
+                    setup_error="The setup owner process still appears active.",
+                    setup_error_code="setup.owner_active",
+                )
+            ),
+        )
 
     result = server.invoke("root", "root.interface.run", 1, _arguments(server, secret=secret))
 
@@ -1087,6 +1190,33 @@ def test_nested_setup_refusal_rebinds_to_outer_mcp_invocation(
         assert result["owner"]["pid"] == 1234
         assert result["recovery"]["interface"].endswith(".recover-busy")
     assert secret not in json.dumps(result)
+
+
+def test_nested_busy_refusal_does_not_recover_after_launch(
+    server, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _install_authorized_path(server, monkeypatch, [], managed=False)
+    signal = SetupBlocked(
+        _nested_status("setup_busy"),
+        ("root.interface.run", "child.interface.run"),
+    )
+    monkeypatch.setattr(
+        server,
+        "_run_resolved_invocation",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(signal),
+    )
+    calls = []
+    monkeypatch.setattr(
+        server,
+        "_manager_call",
+        lambda *_args, **_kwargs: calls.append((_args, _kwargs)),
+    )
+
+    result = server.invoke("root", "root.interface.run", 1, _arguments(server))
+
+    assert result["code"] == "setup_busy"
+    assert result["call_path"] == ["root.interface.run", "child.interface.run"]
+    assert calls == []
 
 
 def test_nested_managed_lifecycle_rebinds_to_outer_mcp_invocation(

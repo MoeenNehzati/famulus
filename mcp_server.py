@@ -475,6 +475,33 @@ def _safe_pending_stack(value: object) -> list[dict[str, object]]:
     return safe
 
 
+def _safe_terminal_actions(
+    value: object,
+    flow_id: str,
+    current_step: dict[str, object],
+    caller: str,
+) -> dict[str, object]:
+    def arguments(positionals: list[str]) -> dict[str, object]:
+        return {"positionals": positionals, "options": {}, "stdin": None}
+    expected = {
+        "success": {
+            "caller": caller,
+            "interface": "setup-interface-manager._rtx.interface.settle",
+            "version": 1,
+            "arguments": arguments([flow_id, current_step["interface"]]),
+        },
+        "failure_or_abort": {
+            "caller": caller,
+            "interface": MANAGER_INTERFACES["recover"],
+            "version": 1,
+            "arguments": arguments([flow_id, "cancel"]),
+        },
+    }
+    if value != expected:
+        raise ValueError("manager terminal actions are invalid")
+    return expected
+
+
 def _validate_manager_response(
     payload: dict[str, Any], operation: str, returncode: int
 ) -> dict[str, Any]:
@@ -530,7 +557,7 @@ def _validate_manager_response(
         "schema_version", "flow_id", "operation", "state", "current_step",
         "original", "resume_original",
     }
-    optional = {"error", "error_code", "clues", "cause", "recovery", "instructions", "interface", "version", "removed"}
+    optional = {"error", "error_code", "clues", "cause", "recovery", "instructions", "terminal_actions", "interface", "version", "removed"}
     if not base.issubset(payload) or set(payload) - base - optional:
         raise invalid()
     response_operation = payload["operation"]
@@ -538,6 +565,8 @@ def _validate_manager_response(
         "begin": {"setup", "teardown"},
         "authorize-markdown-call": {"setup"},
         "recover": {"setup", "teardown", "recover"},
+        "recover-busy": {"setup", "teardown", "teardown-all", "recover-busy"},
+        "run-markdown": {"setup", "teardown"},
     }.get(operation, {operation})
     if not isinstance(response_operation, str) or response_operation not in allowed_operations or type(payload["resume_original"]) is not bool:
         raise invalid()
@@ -568,6 +597,22 @@ def _validate_manager_response(
     state = payload["state"]
     if not isinstance(state, str):
         raise invalid()
+    terminal_actions = payload.get("terminal_actions")
+    if terminal_actions is not None:
+        if (
+            flow_id is None
+            or current_step is None
+            or original is None
+            or current_step["kind"] != "markdown"
+            or state not in {"run-step", "awaiting-settlement"}
+        ):
+            raise invalid()
+        try:
+            payload["terminal_actions"] = _safe_terminal_actions(
+                terminal_actions, flow_id, current_step, original["caller"]
+            )
+        except ValueError:
+            raise invalid() from None
     if state in _FLOW_SUCCESS_STATES:
         if returncode != 0 or set(payload) & {"error", "error_code", "clues", "cause", "recovery"}:
             raise invalid()
@@ -577,6 +622,8 @@ def _validate_manager_response(
             "begin": frozenset({"ready", "run-step"}),
             "authorize-markdown-call": frozenset({"authorized-markdown-call"}),
             "recover": frozenset({"ready", "run-step"}),
+            "recover-busy": frozenset({"ready", "run-step"}),
+            "run-markdown": frozenset({"awaiting-settlement"}),
         }.get(operation, frozenset())
         if state not in expected_success:
             raise invalid()
@@ -587,9 +634,19 @@ def _validate_manager_response(
             if operation != "authorize" and payload["resume_original"] is not False:
                 raise invalid()
         elif state == "run-step":
-            if extras - {"instructions"} or flow_id is None or current_step is None or original is None or payload["resume_original"]:
+            if extras - {"instructions", "terminal_actions"} or flow_id is None or current_step is None or original is None or payload["resume_original"]:
+                raise invalid()
+            if ("instructions" in payload) != ("terminal_actions" in payload):
                 raise invalid()
             if "instructions" in payload and (current_step["kind"] != "markdown" or not isinstance(payload["instructions"], str) or not payload["instructions"]):
+                raise invalid()
+        elif state == "awaiting-settlement":
+            if (
+                extras != {"instructions", "terminal_actions"}
+                or flow_id is None or current_step is None or original is None
+                or payload["resume_original"]
+                or not isinstance(payload["instructions"], str) or not payload["instructions"]
+            ):
                 raise invalid()
         elif (
             extras != {"interface", "version"}
@@ -610,6 +667,7 @@ def _validate_manager_response(
         "begin": frozenset({"busy", "failed"}),
         "authorize-markdown-call": frozenset({"failed"}),
         "recover": frozenset({"failed", "recovery-required"}),
+        "recover-busy": frozenset({"failed", "recovery-required"}),
     }.get(operation, frozenset())
     if state not in expected_failure or set(payload) - base - {"error", "error_code", "clues", "cause", "recovery"}:
         raise invalid()
@@ -755,7 +813,12 @@ def _validate_manager_response(
 
 
 def _ordinary_preflight(
-    caller: str, interface: str, version: int, status: dict[str, Any] | None = None
+    caller: str,
+    interface: str,
+    version: int,
+    status: dict[str, Any] | None = None,
+    *,
+    recover_stale: bool = True,
 ) -> dict[str, object] | None:
     """Return a redacted refusal, or ``None`` when launch is authorized."""
 
@@ -787,6 +850,24 @@ def _ordinary_preflight(
     if code == "setup_busy":
         flow_id, root = status["flow_id"], status["root_setup_interface"]
         owner = status.get("owner")
+        if owner is not None and recover_stale:
+            try:
+                _manager_call(caller, "recover-busy", [flow_id])
+            except DispatcherError as exc:
+                if (
+                    getattr(exc, "_entry_id", None) != "D64"
+                    or exc.as_payload().get("setup_error_code")
+                    != "setup.owner_active"
+                ):
+                    raise
+            else:
+                return _ordinary_preflight(
+                    caller,
+                    interface,
+                    version,
+                    _manager_call(caller, "status", [interface]),
+                    recover_stale=False,
+                )
         if owner is None:
             message = f"Setup {root} is busy; its owner is unknown."
             options: dict[str, object] = {"--force": True}
@@ -962,7 +1043,9 @@ def _invoke(
                     status = _validate_manager_response(error.status, "status", 0)
                     tuple(map(parse_interface_id, (status["root_setup_interface"], *(step["interface"] for step in status["pending_stack"]))))
                     if status["code"] not in {"setup_required", "setup_busy"}: raise DispatcherError.from_spec("D68")
-                    response = _ordinary_preflight(caller, interface, version, status)
+                    response = _ordinary_preflight(
+                        caller, interface, version, status, recover_stale=False
+                    )
             except InvocationError as validation_error:
                 error = validation_error
             else:

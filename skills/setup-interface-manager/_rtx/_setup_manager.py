@@ -1136,6 +1136,11 @@ class SetupManager:
                 if isinstance(step, SetupStep)
                 else binding.teardown_instructions
             )
+            extra = {}
+            if flow.continuation is not None:
+                extra["terminal_actions"] = self._markdown_terminal_actions(
+                    flow, step
+                )
             return 0, _response(
                 flow_id=flow.flow_id,
                 operation=flow.operation,
@@ -1143,6 +1148,7 @@ class SetupManager:
                 current_step=step,
                 original=flow.continuation,
                 instructions=instructions,
+                **extra,
             )
         except SetupFailure as exc:
             return self._domain_failure("run-markdown", exc)
@@ -1152,6 +1158,37 @@ class SetupManager:
             return self._domain_failure(
                 "run-markdown", "E35"
             )
+
+    def _markdown_terminal_actions(
+        self, flow: ActiveFlow, step: SetupStep | TeardownStep
+    ) -> dict[str, object]:
+        if flow.continuation is None:
+            raise ManagerRecoveryError("Markdown flow has no recovery owner")
+        caller = flow.continuation.caller
+
+        def arguments(positionals: list[str]) -> dict[str, object]:
+            return {
+                "positionals": positionals,
+                "options": {},
+                "stdin": None,
+            }
+
+        return {
+            "success": {
+                "caller": caller,
+                "interface": "setup-interface-manager._rtx.interface.settle",
+                "version": 1,
+                "arguments": arguments(
+                    [flow.flow_id, self._expected_interface(step)]
+                ),
+            },
+            "failure_or_abort": {
+                "caller": caller,
+                "interface": "setup-interface-manager._rtx.interface.recover",
+                "version": 1,
+                "arguments": arguments([flow.flow_id, "cancel"]),
+            },
+        }
 
     def run_python(
         self, flow_id: str, interface: str, stdin_request: str
@@ -1363,6 +1400,10 @@ class SetupManager:
                             if isinstance(step, SetupStep)
                             else binding.teardown_instructions
                         )
+                        if flow.continuation is not None:
+                            extra["terminal_actions"] = self._markdown_terminal_actions(
+                                flow, step
+                            )
                     return 0, _response(
                         flow_id=flow.flow_id,
                         operation=flow.operation,
@@ -1379,6 +1420,10 @@ class SetupManager:
                             if isinstance(step, SetupStep)
                             else binding.teardown_instructions
                         )
+                        if flow.continuation is not None:
+                            extra["terminal_actions"] = self._markdown_terminal_actions(
+                                flow, step
+                            )
                     return 0, _response(
                         flow_id=flow.flow_id,
                         operation=flow.operation,
