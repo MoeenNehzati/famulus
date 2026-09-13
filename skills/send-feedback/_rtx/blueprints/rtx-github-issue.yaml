@@ -14,7 +14,10 @@ interfaces:
     uses_interfaces: []
     contract:
       arguments: {}
-      caller_warnings: []
+      caller_warnings:
+      - external-side-effect: When gh is installed, authentication is checked by
+          running gh auth status; this subprocess may contact configured GitHub
+          hosts and is not a local-only credential check.
       direct_io:
         network: []
         reads:
@@ -29,8 +32,8 @@ interfaces:
           path_match: exact
           sensitivity: user-private
         - access: read
-          content: Local availability and authentication state of the configured issue-filing
-            command.
+          content: Local gh availability and the captured result of gh auth status,
+            whose authentication probe may contact configured GitHub hosts.
           formats:
           - text
           id: route-probe
@@ -162,6 +165,9 @@ interfaces:
       - external-side-effect: On the command route this publishes the report as a
           public issue on the configured repository, which cannot be recalled by this
           interface.
+      - external-side-effect: gh auth status may contact configured GitHub hosts.
+          A failed command or missing confirmation URL does not establish that issue
+          publication did not occur; do not retry automatically.
       direct_io:
         network: []
         reads:
@@ -218,6 +224,7 @@ interfaces:
           id: publish-issue
           may_occur_in_outcomes:
           - filed
+          - filing-failed
           reversibility:
             irreversible: A published public issue cannot be recalled by this interface.
           value_source:
@@ -235,7 +242,8 @@ interfaces:
           on_uncertain_completion:
             stop: Do not retry when the command fails or the issue location is unconfirmed.
           partial_effects_on_failure:
-            impossible: A failed invocation publishes nothing.
+            possible: The issue may be published before gh reports failure or before
+              this interface rejects an absent or malformed confirmation URL.
           rollback_on_failure:
             unavailable: A published issue cannot be withdrawn by this interface.
         state_effect: mutating
@@ -262,10 +270,11 @@ interfaces:
         id: submission-prepared
         outputs:
         - result
-      - caller_action: Preserve the report, resolve the configuration or filing failure,
-          and do not retry automatically.
+      - caller_action: Preserve the report and check whether the issue was published
+          before deciding how to recover; do not retry automatically.
         class: error
-        effects: []
+        effects:
+        - publish-issue
         id: filing-failed
         outputs:
         - diagnostic

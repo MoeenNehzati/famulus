@@ -84,7 +84,7 @@ def feedback_repository() -> str:
 
 
 def delivery_route() -> dict[str, Any]:
-    """Report which delivery route is available without contacting the network."""
+    """Report command availability and the result of its authentication probe."""
     command = _which(COMMAND_NAME)
     if command is None:
         return {
