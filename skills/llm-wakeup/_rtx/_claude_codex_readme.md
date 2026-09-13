@@ -401,7 +401,7 @@ From the repository root:
 
 ```bash
 python3 -m pytest -q -o pythonpath=src skills/llm-wakeup/_rtx/tests
-python3 validators/skill/blueprint_relationships.py
+python3 repo_checks.py --task validators --validator skill-maker/blueprints --repository-view working
 ```
 
 Real installed-client tests are opt-in because they invoke Claude and Codex and

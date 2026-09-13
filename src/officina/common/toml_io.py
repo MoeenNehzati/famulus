@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import builtins
 from dataclasses import dataclass, field
-import errno
 import hashlib
 import json
 import os
@@ -168,7 +167,6 @@ _TABLE_RE = re.compile(
     r"(?m)^[ \t]*(?:\[\[[^\]\r\n]+\]\]|\[[^\]\r\n]+\])"
     r"[ \t]*(?:#[^\r\n]*)?(?:\r?\n|$)"
 )
-_UNSUPPORTED_DIRECTORY_SYNC = {errno.EINVAL, errno.ENOTSUP, errno.EBADF}
 
 
 def _identity(raw: bytes | None) -> str | None:
@@ -677,20 +675,6 @@ def inspect_managed_string_array(base: Path | str, name: str, *, table_name: str
         raw, path=path, table_name=table_name, key_name=key_name, begin=begin, end=end,
     )
     return ManagedArrayInspection(path, roots, marker_values, True, hashlib.sha256(block).hexdigest())
-
-
-def _sync_managed_directory(path: Path) -> None:
-    if os.name != "posix": return
-    try:
-        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-    except OSError as exc:
-        if exc.errno in _UNSUPPORTED_DIRECTORY_SYNC: return
-        raise
-    try:
-        try: os.fsync(descriptor)
-        except OSError as exc:
-            if exc.errno not in _UNSUPPORTED_DIRECTORY_SYNC: raise
-    finally: os.close(descriptor)
 
 
 def apply_managed_array_plan(plan: ManagedArrayPlan) -> None:

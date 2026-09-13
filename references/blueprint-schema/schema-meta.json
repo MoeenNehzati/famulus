@@ -210,7 +210,7 @@
         "rule_kind": "repository-validation",
         "description": "Validate module, behavioral-source, source-interface, and export IDs and namespaces.",
         "creation": "Use the canonical module, source, source-interface, or export namespace required by the concrete schema.",
-        "validator": "validators/skill/interface_ids.py",
+        "validator": "validators/skill/blueprints.py",
         "tests": [
           "tests/validate_interface_ids.py"
         ],
@@ -242,7 +242,7 @@
         "rule_kind": "repository-validation",
         "description": "Require positive versions and exact edge-to-target version matches.",
         "creation": "Use positive versions and pin every declared source or interface edge to the target version.",
-        "validator": "validators/skill/blueprint_relationships.py",
+        "validator": "validators/skill/blueprints.py",
         "tests": [
           "tests/validate_blueprint_relationships.py"
         ],
@@ -326,7 +326,7 @@
         "rule_kind": "repository-validation",
         "description": "Resolve containment, source dependency, private-interface, export, and contract-reference edges.",
         "creation": "Declare only canonical, version-pinned graph edges with the required locator or target interface.",
-        "validator": "validators/skill/blueprint_relationships.py",
+        "validator": "validators/skill/blueprints.py",
         "tests": [
           "tests/validate_blueprint_relationships.py",
           "tests/test_officina_blueprint_graph.py"
@@ -343,7 +343,7 @@
         "rule_kind": "repository-validation",
         "description": "Validate immediate-caller access for unrestricted, subtree-allowlisted, and owner-private module surfaces.",
         "creation": "Set allow_all_modules or enumerate caller module roots whose registered descendants are admitted; an empty false allowlist admits only the owner.",
-        "validator": "validators/skill/blueprint_relationships.py",
+        "validator": "validators/skill/blueprints.py",
         "tests": [
           "tests/validate_blueprint_relationships.py",
           "tests/test_officina_blueprint_graph.py"
@@ -394,7 +394,7 @@
         "rule_kind": "repository-validation",
         "description": "Require behavioral-source dependency targets, exact versions, locators, and consumer-local reasons.",
         "creation": "Use a version-pinned behavioral-source blueprint locator and state the consumer-local reason.",
-        "validator": "validators/skill/blueprint_relationships.py",
+        "validator": "validators/skill/blueprints.py",
         "tests": [
           "tests/test_typed_blueprint_schemas.py",
           "tests/validate_blueprint_relationships.py"

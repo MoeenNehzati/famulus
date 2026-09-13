@@ -67,17 +67,6 @@ def _module_exports(module: DirectModule) -> dict[str, InterfaceExport]:
     return dict(sorted(exports.items()))
 
 
-def _canonical_setup_export(module: DirectModule) -> str | None:
-    """Return the canonical .interface.setup export if present, or None."""
-
-    declarations = module.declaration["exports"]
-    assert isinstance(declarations, Mapping)
-    setup_export_id = f"{module.module_id}.interface.setup"
-    if setup_export_id in declarations:
-        return setup_export_id
-    return None
-
-
 def _sole_managed_declaration(module: DirectModule) -> str | None:
     """Return the canonical .interface.setup export if present, or None."""
 

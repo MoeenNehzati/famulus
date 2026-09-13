@@ -4,7 +4,7 @@ dependencies:
 - blueprint:
     base: module-root
     path: blueprints/rtx-init.yaml
-  reason: Loads Python package support from _rtx/__init__.py.
+  reason: Loads package support and the shared email-triage state-directory resolver.
   source: email-triage._rtx.source.rtx-init
   version: 1
 description: Computes the conservative date-level cutoff used for email retrieval
@@ -17,9 +17,7 @@ interfaces:
   email-triage._rtx.source.rtx-watermark-floor.interface.scripts-get-cutoff:
     content:
     - _watermark_floor\.py
-    uses_interfaces:
-    - interface: common.interface.famulus-paths
-      version: 1
+    uses_interfaces: []
     contract:
       arguments:
         days:
@@ -183,8 +181,6 @@ platform_support:
   windows: true
 runtime_dependencies: []
 schema_version: 6
-uses_interfaces:
-- interface: common.interface.famulus-paths
-  version: 1
+uses_interfaces: []
 version: 1
 maturity: stable

@@ -19,7 +19,7 @@ dependencies:
 - blueprint:
     base: module-root
     path: blueprints/rtx-init.yaml
-  reason: Loads Python package support from _rtx/__init__.py.
+  reason: Loads package support and the shared email-triage state-directory resolver.
   source: email-triage._rtx.source.rtx-init
   version: 1
 description: Ordered, idempotent, replay-safe finalization of one triage run — writes
@@ -32,9 +32,7 @@ interfaces:
   email-triage._rtx.source.rtx-finalize-run.interface.scripts-finalize-triage:
     content:
     - _finalize_run\.py
-    uses_interfaces:
-    - interface: common.interface.famulus-paths
-      version: 1
+    uses_interfaces: []
     contract:
       arguments:
         run-id:
@@ -331,8 +329,6 @@ platform_support:
   windows: true
 runtime_dependencies: []
 schema_version: 6
-uses_interfaces:
-- interface: common.interface.famulus-paths
-  version: 1
+uses_interfaces: []
 version: 1
 maturity: stable

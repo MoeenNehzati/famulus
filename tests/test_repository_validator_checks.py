@@ -322,7 +322,7 @@ def test_graph_preflight_shares_schema_and_isolates_consumer_mutation(
         "def validate(repo_root): return ['duplicate graph load']\n",
         encoding="utf-8",
     )
-    for name in ("blueprint_relationships", "interface_ids"):
+    for name in ("graph_consumer_a", "graph_consumer_b"):
         (skill_validators / f"{name}.py").write_text(
             "REQUIRES_BLUEPRINT_GRAPH = True\n"
             "def validate_with_graph(repo_root, graph):\n"
@@ -362,8 +362,8 @@ def test_graph_preflight_shares_schema_and_isolates_consumer_mutation(
         validator_ids=[
             "repo/duplicate_subcommand_tokens",
             "skill-maker/a_mutator",
-            "skill-maker/blueprint_relationships",
-            "skill-maker/interface_ids",
+            "skill-maker/graph_consumer_a",
+            "skill-maker/graph_consumer_b",
             "skill-maker/z_observer",
         ],
     )
@@ -389,7 +389,7 @@ def test_selected_graph_consumer_is_a_noop_when_preflight_has_no_graph(
         "def validate(repo_root): return []\n",
         encoding="utf-8",
     )
-    (skill_validators / "interface_ids.py").write_text(
+    (skill_validators / "graph_consumer_a.py").write_text(
         "REQUIRES_BLUEPRINT_GRAPH = True\n"
         "def validate_with_graph(repo_root, graph): return ['must not run']\n"
         "def validate(repo_root): return []\n",
@@ -400,7 +400,7 @@ def test_selected_graph_consumer_is_a_noop_when_preflight_has_no_graph(
     # Phase 1: an optional missing graph is a successful no-op.
     assert _RUNNER.run_all(
         repo,
-        validator_ids=["skill-maker/interface_ids"],
+        validator_ids=["skill-maker/graph_consumer_a"],
     ) == {}
 
     # Phase 2: after explicitly staging a failing owner and every consumer
@@ -411,7 +411,7 @@ def test_selected_graph_consumer_is_a_noop_when_preflight_has_no_graph(
         "def validate(repo_root): return ['duplicate topology error']\n",
         encoding="utf-8",
     )
-    (skill_validators / "blueprint_relationships.py").write_text(
+    (skill_validators / "graph_consumer_b.py").write_text(
         "REQUIRES_BLUEPRINT_GRAPH = True\n"
         "def validate_with_graph(repo_root, graph): return ['consumer ran']\n"
         "def validate(repo_root): return ['duplicate topology error']\n",
@@ -440,9 +440,9 @@ def test_selected_graph_consumer_is_a_noop_when_preflight_has_no_graph(
         repo,
         validator_ids=[
             "repo/duplicate_subcommand_tokens",
-            "skill-maker/blueprint_relationships",
+            "skill-maker/graph_consumer_b",
             "skill-maker/fixture_consumer",
-            "skill-maker/interface_ids",
+            "skill-maker/graph_consumer_a",
         ],
     ) == {"skill-maker/blueprints": ["topology error"]}
     assert not sentinel.exists()

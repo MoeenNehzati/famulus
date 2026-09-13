@@ -89,6 +89,7 @@ content:
 - _log_compactor\.py
 - _mail_envelope_stream\.py
 - _rescan_filter\.py
+- _state_paths\.py
 - _watermark_floor\.py
 - _watermark_writer\.py
 - _write_metrics\.py

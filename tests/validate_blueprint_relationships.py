@@ -1,25 +1,15 @@
-"""Tests for canonical repository relationship validation."""
+"""Tests for relationship enforcement by the shared blueprint preflight."""
 from __future__ import annotations
 
-import importlib.util
 from pathlib import Path
 import shutil
 
 import pytest
 import yaml
 
+from validators.skill.blueprints import preflight
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-VALIDATOR = (
-    REPO_ROOT
-    / "validators"
-    / "skill"
-    / "blueprint_relationships.py"
-)
-SPEC = importlib.util.spec_from_file_location("blueprint_relationships", VALIDATOR)
-assert SPEC is not None and SPEC.loader is not None
-MOD = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(MOD)
 
 
 def _copy_schema_root(repo_root: Path) -> None:
@@ -79,10 +69,14 @@ def two_module_repository(tmp_path: Path) -> tuple[Path, Path]:
     return provider, consumer
 
 
-def test_repo_without_modules_passes(tmp_path: Path) -> None:
+def test_preflight_requires_at_least_one_module(tmp_path: Path) -> None:
+    _copy_schema_root(tmp_path)
     (tmp_path / "skills").mkdir()
 
-    assert MOD.validate(tmp_path) == []
+    errors, graph = preflight(tmp_path)
+
+    assert errors == ["version 6 repository graph requires at least one module"]
+    assert graph is None
 
 
 def test_export_relationship_scenarios(
@@ -183,7 +177,9 @@ def test_export_relationship_scenarios(
         try:
             try:
                 mutate()
-                assert MOD.validate(repository) == expected
+                errors, graph = preflight(repository)
+                assert errors == expected
+                assert (graph is None) == bool(expected)
             except BaseException as exc:
                 exc.add_note(f"scenario: {label}")
                 raise

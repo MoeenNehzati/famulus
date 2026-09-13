@@ -4,7 +4,7 @@ dependencies:
 - blueprint:
     base: module-root
     path: blueprints/rtx-init.yaml
-  reason: Loads Python package support from _rtx/__init__.py.
+  reason: Loads package support and the shared email-triage state-directory resolver.
   source: email-triage._rtx.source.rtx-init
   version: 1
 description: Clears a latched triage error while deliberately leaving the mail watermark
@@ -17,9 +17,7 @@ interfaces:
   email-triage._rtx.source.rtx-failure-clearer.interface.scripts-clear-failure:
     content:
     - _failure_clearer\.py
-    uses_interfaces:
-    - interface: common.interface.famulus-paths
-      version: 1
+    uses_interfaces: []
     contract:
       arguments:
         reason:
@@ -151,8 +149,6 @@ platform_support:
   windows: true
 runtime_dependencies: []
 schema_version: 6
-uses_interfaces:
-- interface: common.interface.famulus-paths
-  version: 1
+uses_interfaces: []
 version: 1
 maturity: stable

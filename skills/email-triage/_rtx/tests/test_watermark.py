@@ -17,13 +17,16 @@ if str(REPO_SRC) not in sys.path:
 
 
 def _load_module(module_name: str):
-    spec = importlib.util.spec_from_file_location(
-        module_name.removesuffix(".py"), SCRIPTS_DIR / module_name
-    )
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
-    return module
+    package_name = "_email_triage_watermark_tests"
+    if package_name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(
+            package_name, SCRIPTS_DIR / "__init__.py"
+        )
+        package = importlib.util.module_from_spec(spec)
+        sys.modules[package_name] = package
+        assert spec.loader is not None
+        spec.loader.exec_module(package)
+    return importlib.import_module(f"{package_name}.{module_name.removesuffix('.py')}")
 
 
 # Execute each implementation module once. Every mutating scenario below then
@@ -37,6 +40,17 @@ WRITE_METRICS = _load_module("_write_metrics.py")
 
 def _status(state_root: Path) -> dict:
     return json.loads((state_root / "status.json").read_text())
+
+
+def test_machine_runner_loads_shared_state_helper(monkeypatch, tmp_path, capsys):
+    from officina.runtime.python_machine_interface_runner import load_interface
+
+    monkeypatch.setenv("EMAIL_TRIAGE_STATE_DIR", str(tmp_path))
+    monkeypatch.chdir(SCRIPTS_DIR.parent)
+    interface = load_interface("_rtx/_watermark_floor.py", "Interface")
+    assert interface.run(["--days", "0"]) == 0
+    assert capsys.readouterr().out == (date.today() - timedelta(days=1)).isoformat() + "\n"
+    assert not tuple(tmp_path.iterdir())
 
 
 def _metrics_args() -> list[str]:
@@ -220,16 +234,27 @@ def test_state_dir_defaults_and_overrides_for_all_state_modules(monkeypatch, tmp
         "watermark-floor": WATERMARK_FLOOR,
         "failure-clearer": FAILURE_CLEARER,
         "failure-sentinel": FAILURE_SENTINEL,
+        "write-metrics": WRITE_METRICS,
+        "envelope-gate": _load_module("_envelope_gate.py"),
+        "finalize-run": _load_module("_finalize_run.py"),
     }
     for label, module in modules.items():
         home = tmp_path / label / "home"
-        monkeypatch.delenv("EMAIL_TRIAGE_STATE_DIR", raising=False)
+        monkeypatch.setattr(Path, "home", lambda: home)
         expected = resolve_famulus_paths(
             platform=sys.platform, home=home, environ=os.environ
         ).email_triage_state_root
-        assert module.default_state_dir(home=home) == expected
-        assert module.default_state_dir(home=home) != module.SKILL_DIR / "state"
+        for empty_override in (None, ""):
+            if empty_override is None:
+                monkeypatch.delenv("EMAIL_TRIAGE_STATE_DIR", raising=False)
+            else:
+                monkeypatch.setenv("EMAIL_TRIAGE_STATE_DIR", empty_override)
+            assert module.default_state_dir(home=home) == expected
+            assert module.default_state_dir() == expected
+            assert module.default_state_dir(home=home) != SCRIPTS_DIR.parent / "state"
 
         override = tmp_path / label / "explicit-state"
         monkeypatch.setenv("EMAIL_TRIAGE_STATE_DIR", str(override))
         assert module.default_state_dir() == override
+        monkeypatch.setenv("EMAIL_TRIAGE_STATE_DIR", "relative/state")
+        assert module.default_state_dir(home=home) == Path("relative/state")
