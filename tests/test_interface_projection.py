@@ -366,7 +366,7 @@ def test_live_repository_exports_project_their_complete_cli_contracts(
         ]
 
     list_export = graph.exports["list-manager._rtx.interface.read-list"]
-    assert list_export.declaration["usage"] == "<file> [filters] [--sort FIELD]"
+    assert list_export.declaration["usage"] == "<file> [filters] [--sort FIELD] [-o FILE | --output FILE]"
 
 
 

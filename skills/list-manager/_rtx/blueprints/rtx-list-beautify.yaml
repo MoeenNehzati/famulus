@@ -133,19 +133,25 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Render YAML list entries from stdin (nested bullet-list markdown
-      by default for todo/triage; --table for a flat GFM table, --diff for the legacy
-      diff-fenced view). Pass YAML via stdin using `dispatcher --stdin`.
+    description: Render YAML list entries from stdin (nested bullet-list markdown by default
+      for todo/triage; --table for a flat GFM table, --diff for the legacy diff-fenced
+      view). Pass YAML in the invocation's stdin field.
     process_binding:
       entry: BeautifyListInterface
       kind: process
       patterns:
-      - allow_extra_positionals: true
-        allow_stdin: true
+      - allow_stdin: true
         min_positionals: 0
-        notes: 'Reads YAML from stdin and renders user-facing list output. No allowed_flags
-          restriction: -D/--markdown/--table/--diff/--relative-deadlines/--ids all
-          pass through.'
+        notes: Reads YAML from stdin and renders user-facing list output.
+        max_positionals: 0
+        allowed_flags:
+        - -D
+        - --no-descriptions
+        - --markdown
+        - --table
+        - --diff
+        - --relative-deadlines
+        - --ids
     usage: '[-D|--no-descriptions] [--markdown|--table|--diff] [--relative-deadlines]
       [--ids]'
     version: 1

@@ -447,9 +447,13 @@ def _authored_argv_pattern_matches(
     pattern_name: str,
 ) -> bool:
     flag_patterns = _pattern_mapping(pattern.get("flag_patterns"), "flag_patterns")
-    flags, positionals = _split_pattern_argv(
-        argv, value_flags={str(flag) for flag in flag_patterns}
-    )
+    try:
+        flags, positionals = _split_pattern_argv(
+            argv, value_flags={str(flag) for flag in flag_patterns}
+        )
+    except ProcessBindingError:
+        # Another alternative may declare this option as value-bearing.
+        return False
     provided_flags = set(flags)
 
     if stdin_requested and not bool(pattern.get("allow_stdin", False)):

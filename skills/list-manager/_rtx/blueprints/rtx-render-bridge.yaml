@@ -66,6 +66,42 @@ interfaces:
             must_exist: false
             relative_to: caller-cwd
             syntax: literal
+        sort:
+          description: Optional entry field used to sort matching branches
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+        diff:
+          default: false
+          description: Render the legacy diff-fenced view; takes precedence over table
+            and markdown.
+          required: false
+          sensitivity: public
+          type:
+            kind: flag
+        markdown:
+          default: false
+          description: Explicitly select the default nested Markdown view; ignored when
+            diff or table is selected.
+          required: false
+          sensitivity: public
+          type:
+            kind: flag
+        no-descriptions:
+          default: false
+          description: Hide entry descriptions
+          required: false
+          sensitivity: public
+          type:
+            kind: flag
+        table:
+          default: false
+          description: Render a flat GitHub-Flavored Markdown table unless diff is selected.
+          required: false
+          sensitivity: public
+          type:
+            kind: flag
       caller_warnings:
       - may-wait: Downloads the cloud list before rendering it.
       - rate-limited: Cloud reads consume Google Drive API quota through cloud-files.
@@ -237,7 +273,12 @@ interfaces:
           '0': ^[a-zA-Z0-9_-]+$
         required_flags:
         - --cloud
-    usage: <name> [filters] --cloud [-o FILE]
+        flag_patterns:
+          --sort: ^.+$
+          -o: ^.+$
+          --output: ^.+$
+    usage: <name> [filters] --cloud [--sort FIELD] [-D|--no-descriptions] [--markdown|--table|--diff]
+      [-o FILE | --output FILE]
     version: 1
   list-manager._rtx.source.rtx-render-bridge.interface.read-beautify:
     content:
@@ -286,6 +327,49 @@ interfaces:
             must_exist: false
             relative_to: caller-cwd
             syntax: literal
+        sort:
+          description: Optional entry field used to sort matching branches
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+        diff:
+          default: false
+          description: Render the legacy diff-fenced view; takes precedence over table
+            and markdown.
+          required: false
+          sensitivity: public
+          type:
+            kind: flag
+        markdown:
+          default: false
+          description: Explicitly select the default nested Markdown view; ignored when
+            diff or table is selected.
+          required: false
+          sensitivity: public
+          type:
+            kind: flag
+        no-descriptions:
+          default: false
+          description: Hide entry descriptions
+          required: false
+          sensitivity: public
+          type:
+            kind: flag
+        table:
+          default: false
+          description: Render a flat GitHub-Flavored Markdown table unless diff is selected.
+          required: false
+          sensitivity: public
+          type:
+            kind: flag
+        no-ids:
+          default: false
+          description: Omit stable entry IDs from rendered rows; IDs are shown by default.
+          required: false
+          sensitivity: public
+          type:
+            kind: flag
       caller_warnings:
       - external-side-effect: Supplying an output path writes the rendered report
           to that file instead of stdout.
@@ -458,11 +542,23 @@ interfaces:
       - allow_extra_positionals: true
         allow_stdin: false
         min_positionals: 1
-        notes: 'Read a local YAML list file and immediately return pretty output.
-          No allowed_flags restriction: --sort/-D/--markdown/--table/--diff/--no-ids/-o
-          all pass through.'
+        notes: Read a local YAML list file and immediately return pretty output.
+        flag_patterns:
+          --sort: ^.+$
+          -o: ^.+$
+          --output: ^.+$
+        allowed_flags:
+        - --sort
+        - -D
+        - --no-descriptions
+        - --markdown
+        - --table
+        - --diff
+        - --no-ids
+        - -o
+        - --output
     usage: <file> [filters] [--sort FIELD] [-D|--no-descriptions] [--markdown|--table|--diff]
-      [--no-ids] [-o FILE]
+      [--no-ids] [-o FILE | --output FILE]
     version: 1
 node_type: behavioral_source
 platform_support:
