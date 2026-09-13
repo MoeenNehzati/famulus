@@ -58,7 +58,7 @@ def test_required_browser_gate_fails_instead_of_skipping(monkeypatch) -> None:
 
 @pytest.mark.parametrize(
     ("platform", "virtual_time_budget", "expected_timeout"),
-    [("linux", 2500, 30), ("win32", 2500, 60), ("linux", 20_000, 35)],
+    [("linux", 2500, 30), ("win32", 2500, 60), ("linux", 20_000, 60)],
 )
 def test_run_html_uses_temporary_paths_and_decodes_chrome_as_utf8(
     monkeypatch,

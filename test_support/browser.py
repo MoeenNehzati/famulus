@@ -129,6 +129,6 @@ def run_html(
             errors="replace",
             timeout=max(
                 60 if sys.platform == "win32" else 30,
-                virtual_time_budget // 1000 + 15,
+                virtual_time_budget * 3 // 1000,
             ),
         )
