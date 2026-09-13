@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Iterable, Mapping, Sequence
 
+import officina.common.toml_io as toml_io
+
 if TYPE_CHECKING:
     from officina.blueprints.graph import RepositoryBlueprintGraph
     from officina.dispatcher import ResolvedInvocationMetadata
@@ -199,6 +201,55 @@ def runtime_dispatch_context(
     if _PROCESS_DISPATCH_CONTEXT is not None:
         return _PROCESS_DISPATCH_CONTEXT
     return RuntimeDispatchContext()
+
+
+def relay_candidate_interface(
+    repository: Path,
+    *,
+    caller_module_id: str,
+    interface_id: str,
+    version: int,
+    expected_gateway: Path,
+    argv: Sequence[str],
+) -> subprocess.CompletedProcess[str]:
+    """Run this interface from a reviewed repository, including its libraries."""
+    from officina.dispatcher.direct_runtime import (
+        _run_resolved_invocation,
+        resolve_dispatch,
+    )
+    from officina.dispatcher.errors import InvocationError
+
+    repository = repository.resolve()
+    if expected_gateway.is_absolute() or ".." in expected_gateway.parts:
+        raise ValueError("candidate gateway must be repository-relative")
+    context = _PROCESS_DISPATCH_CONTEXT
+    if (context is not None and context.immediate_caller_module_id is not None
+            and context.immediate_caller_module_id != caller_module_id):
+        raise ValueError("candidate relay must preserve the immediate caller")
+    try:
+        with resolve_dispatch(
+            caller_skill=caller_module_id, target=interface_id,
+            target_version=version, args=list(argv),
+            repository_config=repository / toml_io.repository_config_filename(),
+        ) as resolved:
+            metadata = resolved.metadata()
+            target = metadata.python_target
+            if (target is None or (resolved.cwd / target.gateway_path).resolve()
+                    != repository / expected_gateway):
+                raise ValueError("candidate route does not resolve to the reviewed repository")
+            if context is not None and (
+                (context.caller_module_id is not None
+                 and context.caller_module_id != metadata.terminal_module_id)
+                or (context.caller_source_id is not None
+                    and context.caller_source_id != metadata.implementing_source_id)
+            ):
+                raise ValueError("candidate relay must preserve the executing source")
+            resolved.env["PYTHONPATH"] = str(repository / "src")
+            return _run_resolved_invocation(
+                resolved, subprocess=True, capture_output=True, text=True,
+            )
+    except InvocationError as error:
+        raise ValueError(str(error)) from error
 
 
 @dataclass(frozen=True)

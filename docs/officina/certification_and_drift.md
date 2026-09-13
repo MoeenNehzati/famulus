@@ -399,13 +399,18 @@ whole-node semantic-review pass. Selective reuse interprets that pass as
 covering each included unchanged facet; it is not an independent per-facet
 semantic attestation.
 
-`node-certify._rtx.interface.certification-voyage@1` owns one immutable
+`node-certify._rtx.interface.certification-voyage@2` owns one immutable
 Charter and one Reckoning. Its machine evolutions select the canonical
 dependency-first node order (including structural child modules), construct
 bounded packets, and fill a bounded pool of semantic workers. There is no
 separate scheduler state or public scheduler operation.
 
-The controller initializes once, then uses atomic `next` only. Each message
+The controller initializes once, then uses atomic `next` only. All stateful
+operations require `--repository` with the reviewed checkout. The installed
+interface delegates through the existing confined runner into that checkout,
+using its shared runtime and keeping Voyage state beside its certifier. Candidate
+ownership is verified before audit dispatch and remains guarded during signing.
+Each message
 supplies exact instruction routes, versioned packets and outstanding assignment
 IDs. The controller spawns fresh workers, retains handles, waits and forwards raw
 output unchanged in a correlated host event. It does not parse reports, inspect

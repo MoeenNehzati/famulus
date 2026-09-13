@@ -18,6 +18,7 @@ from officina.certification.view import (
 from officina.rutter import RutterRegistry, RutterValidationError, voyage_dispenser_cli
 
 from .. import _certification_support as support
+from .. import _certification_voyage as certification_cli
 from .._certification_voyage import CERTIFICATION_RUTTER, make_voyage_dispenser
 
 
@@ -83,6 +84,7 @@ def _run(tmp_path, monkeypatch, capacity=2):
 
     monkeypatch.setattr(support, "observe", lambda _root: observed)
     monkeypatch.setattr(support, "_ready_inputs", lambda *_args: SimpleNamespace(identity="scope"))
+    monkeypatch.setattr(support.certifier, "_verify_executing_candidate_certifier", lambda *_args: None)
     monkeypatch.setattr(support.certifier, "certify_exact_node", sign)
     charter = support.make_charter(tmp_path, ["module"], capacity, "run-one")
     registry = RutterRegistry({"certification": CERTIFICATION_RUTTER}, tmp_path)
@@ -293,6 +295,45 @@ def test_public_dispenser_initializes_defaults_and_correlates_next(tmp_path, mon
     assert json.loads(capsys.readouterr().out)["error"]["code"] == "invalid-response"
     assert next((tmp_path / "runs").rglob("*.reckoning.json")).read_bytes() == before
     assert signed == []
+
+
+def test_candidate_relay_preserves_arguments_output_and_exit(tmp_path, monkeypatch, capsys):
+    arguments = ["next", "run/1", "--repository", str(tmp_path),
+                 "--response-file", str(tmp_path / "event.json"), "--responding-to", "entry"]
+    calls = []
+
+    def relay(repository, **kwargs):
+        assert repository == tmp_path
+        assert kwargs == {
+            "caller_module_id": "node-certify", "interface_id": "node-certify._rtx.interface.certification-voyage",
+            "version": 2, "argv": arguments,
+            "expected_gateway": Path("skills/node-certify/_rtx/_certification_voyage.py"),
+        }
+        calls.append(repository)
+        return SimpleNamespace(returncode=4, stdout='{"raw":"result"}\n', stderr="diagnostic\n")
+
+    monkeypatch.setattr(certification_cli, "relay_candidate_interface", relay)
+    assert certification_cli.main(arguments) == 4
+    output = capsys.readouterr()
+    assert output.out == '{"raw":"result"}\n'
+    assert output.err == "diagnostic\n"
+    assert calls == [tmp_path]
+    assert certification_cli.main(["next", "run/1"]) == 2
+    assert calls == [tmp_path]
+
+
+def test_candidate_ownership_failure_precedes_voyage_initialization(tmp_path, monkeypatch):
+    _run(tmp_path, monkeypatch)
+
+    def reject(*_args):
+        raise support.certifier.CertificationError("executing certifier bytes are outside the candidate")
+
+    monkeypatch.setattr(support.certifier, "_verify_executing_candidate_certifier", reject)
+    run_root = tmp_path / "must-not-be-created"
+    assert voyage_dispenser_cli(make_voyage_dispenser(run_root), [
+        "initiate", "--repository", str(tmp_path), "--worker-capacity", "1",
+    ]) == 2
+    assert not run_root.exists()
 
 
 def test_structural_child_without_namespace_route_precedes_parent(tmp_path, monkeypatch):

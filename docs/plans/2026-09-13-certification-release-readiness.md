@@ -60,7 +60,7 @@ MCP dry-run returns `dispatcher.interface_not_found` for the Voyage route.
   signer and explicitly record the new identity. Never copy private keys into files.
 - [ ] From the fresh candidate-bound host, call `famulus_dispatcher.invoke` with
   caller `node-certify`, interface
-  `node-certify._rtx.interface.certification-voyage`, version `1`, arguments
+  `node-certify._rtx.interface.certification-voyage`, version `2`, arguments
   `{"positionals":["help"],"options":{},"stdin":null}`. Require real success,
   resolved candidate provenance, and confinement of the selected runtime/state.
   A dry-run or CLI-only success is insufficient.
@@ -87,7 +87,8 @@ host capability is missing, retain a concrete blocker; do not call release-ready
   before initialization; do not reconstruct baseline intervals afterward.
 - [ ] Invoke the public host route with `initiate`, `--repository` set to the
   worktree, `--targets tight-mode` (or the recorded replacement), and bounded
-  `--worker-capacity 1`. Use only `next` afterward. Follow the current
+  `--worker-capacity 1`. Use only `next` afterward, retaining `--repository` on
+  every stateful call. Follow the current
   [node-certify instructions](../../skills/node-certify/SKILL.md).
 - [ ] Controller only dispatches fresh semantic workers and forwards their exact
   raw completions. Machines select dependencies, validate reports, decide reuse,

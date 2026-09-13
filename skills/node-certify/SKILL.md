@@ -12,15 +12,15 @@ Executable Interfaces:
 Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
 - `node-certify._rtx.interface.certification-voyage` — Initiate and operate one certification Voyage; machines schedule audits, validate raw worker reports and sign exact nodes.
   - Caller: `node-certify`
-  - Version: 1
+  - Version: 2
   - Alternative: `discovery`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
-    {"options": {}, "positionals": ["help|modes"], "stdin": null}
+    {"options": {"--repository": "PATH"}, "positionals": ["help|modes"], "stdin": null}
     Required options: []; positional arity: 1..1; stdin: forbidden
   - Alternative: `list`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
-    {"options": {"--run-prefix": "PREFIX"}, "positionals": ["list"], "stdin": null}
-    Required options: []; positional arity: 1..1; stdin: forbidden
+    {"options": {"--repository": "PATH", "--run-prefix": "PREFIX"}, "positionals": ["list"], "stdin": null}
+    Required options: ["--repository"]; positional arity: 1..1; stdin: forbidden
   - Alternative: `initiate-default-implicit`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
     {"options": {"--repository": "PATH", "--retry-interval-seconds": "N", "--run-prefix": "PREFIX", "--targets": "IDS", "--worker-capacity": "K"}, "positionals": ["initiate"], "stdin": null}
@@ -31,12 +31,12 @@ Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interfa
     Required options: ["--repository", "--worker-capacity"]; positional arity: 2..2; stdin: forbidden
   - Alternative: `operation`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
-    {"options": {"--responding-to": "ENTRY", "--response-file": "PATH"}, "positionals": ["status|validate|advance|next", "VOYAGE_ID"], "stdin": null}
-    Required options: []; positional arity: 2..2; stdin: forbidden
+    {"options": {"--repository": "PATH", "--responding-to": "ENTRY", "--response-file": "PATH"}, "positionals": ["status|validate|advance|next", "VOYAGE_ID"], "stdin": null}
+    Required options: ["--repository"]; positional arity: 2..2; stdin: forbidden
   - Alternative: `release`
     Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
-    {"options": {"--force": true}, "positionals": ["release", "RUN_ID"], "stdin": null}
-    Required options: []; positional arity: 2..2; stdin: forbidden
+    {"options": {"--force": true, "--repository": "PATH"}, "positionals": ["release", "RUN_ID"], "stdin": null}
+    Required options: ["--repository"]; positional arity: 2..2; stdin: forbidden
 
 Instruction Interfaces:
 
@@ -47,14 +47,16 @@ These are LLM-readable instruction surfaces. Read and follow them directly; do n
 <!-- END BLUEPRINT INTERFACES -->
 ## Certification algorithm
 
-Use `node-certify._rtx.interface.certification-voyage@1`. Determine available
+Use `node-certify._rtx.interface.certification-voyage@2`. Determine available
 worker slots excluding yourself; use one if unknown. Invoke `initiate` with
 `--repository` and `--worker-capacity`. Supply `--targets` only for explicitly
 requested exact module or source IDs. Omission selects the whole graph.
 The optional `--retry-interval-seconds` overrides the default 10 seconds.
 Retain the returned Voyage ID; one live controller owns its workers.
+Pass the same absolute `--repository` on every subsequent operation. The installed
+interface runs the candidate's own runtime and keeps Voyage state in that repository.
 
-Call `next VOYAGE_ID`, then follow its typed result:
+Call `next VOYAGE_ID --repository ROOT`, then follow its typed result:
 
 - `message`: spawn one fresh subagent for every supplied packet, using its exact
   instruction interface and version. Pass the packet unchanged. Never reuse a
@@ -64,7 +66,7 @@ Call `next VOYAGE_ID`, then follow its typed result:
   `{"outcome":"worker-completed","task_id":"ASSIGNED_ID","raw_output":"EXACT_OUTPUT"}`.
   For host spawn failure or worker loss only, forward
   `{"outcome":"worker-failed","task_id":"ASSIGNED_ID","reason":"HOST_FAILURE"}`.
-  Write the envelope as JSON and call `next VOYAGE_ID --response-file PATH
+  Write the envelope as JSON and call `next VOYAGE_ID --repository ROOT --response-file PATH
   --responding-to ENTRY` with the returned message entrance. Retain other handles
   and raw completions for subsequent messages.
 - `retry-later`: wait the supplied positive delay and resubmit the unchanged

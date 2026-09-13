@@ -117,7 +117,7 @@ def test_certification_routes_preserve_exact_machine_arguments(ordinary_reposito
         ("node-certify._rtx.interface.certification-voyage",
          ["initiate", "--repository", str(REPO_ROOT), "--worker-capacity", "2"]),
         ("node-certify._rtx.interface.certification-voyage",
-         ["next", "run/1", "--response-file", "event.json", "--responding-to", "entry"]),
+         ["next", "run/1", "--repository", str(REPO_ROOT), "--response-file", "event.json", "--responding-to", "entry"]),
         ("node-certify._rtx.source.rtx-certifier.interface.exact-node",
          ["example.source", "--reviewed-repository", str(REPO_ROOT),
           "--reviewed-commit", "a" * 40, "--audited-inputs", "inputs.json"]),

@@ -11,12 +11,12 @@ node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
 - interface: node-certify._rtx.interface.certification-voyage
-  version: 1
+  version: 2
 - interface: node-certify.source.audit-interface.interface.audit
   version: 3
 - interface: node-certify.source.audit-behavioral-source.interface.audit
   version: 3
 - interface: node-certify.source.audit-module.interface.audit
   version: 3
-version: 7
+version: 8
 maturity: stable

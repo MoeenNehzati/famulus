@@ -3,14 +3,16 @@
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
+import sys
 from typing import Sequence
 
 from officina.rutter import (
     LLMStep, MachineStep, Rutter, RutterRegistry, Terminal,
     VoyageDispenser, voyage_dispenser_cli,
 )
-from officina.runtime.python_machine_interface import PythonArgvMachineInterface
+from officina.runtime.python_machine_interface import PythonArgvMachineInterface, relay_candidate_interface
 from officina.rutter.dispenser import InvalidVoyageModeArgumentsError
 
 from . import _certification_support as support
@@ -104,9 +106,36 @@ def make_voyage_dispenser(root: Path = RUN_ROOT) -> VoyageDispenser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Run the declared certification Voyage process interface."""
+    """Run the Voyage in its reviewed repository through the existing runner."""
 
-    return voyage_dispenser_cli(make_voyage_dispenser(), argv)
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    discovery = bool(arguments) and arguments[0] in {"help", "modes", "-h", "--help"}
+    parser = argparse.ArgumentParser(prog="certification-voyage", add_help=False)
+    parser.add_argument("--repository", required=not discovery)
+    try:
+        selected, local_arguments = parser.parse_known_args(arguments)
+        repository = (
+            Path(selected.repository).expanduser().resolve(strict=True)
+            if selected.repository else Path(__file__).resolve().parents[3]
+        )
+        if repository != Path(__file__).resolve().parents[3]:
+            completed = relay_candidate_interface(
+                repository, caller_module_id="node-certify",
+                interface_id="node-certify._rtx.interface.certification-voyage", version=2,
+                expected_gateway=Path("skills/node-certify/_rtx/_certification_voyage.py"),
+                argv=arguments,
+            )
+            sys.stdout.write(completed.stdout)
+            sys.stderr.write(completed.stderr)
+            return completed.returncode
+        if local_arguments and local_arguments[0] == "initiate":
+            local_arguments.extend(["--repository", str(repository)])
+        return voyage_dispenser_cli(make_voyage_dispenser(), local_arguments)
+    except SystemExit as error:
+        return int(error.code)
+    except (OSError, ValueError) as error:
+        print(str(error), file=sys.stderr)
+        return 2
 
 
 class Interface(PythonArgvMachineInterface):

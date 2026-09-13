@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ast
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 import hashlib
 import importlib
 import json
@@ -85,6 +86,64 @@ def test_dispatch_invocation_error_classifier_rejects_arbitrary_runtime_error() 
     error = RuntimeError("programmer defect")
 
     assert not python_interface.is_dispatch_invocation_error(error)
+
+
+def test_candidate_relay_confines_code_identity_and_captures_process_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Prevent cache libraries, foreign routes, or raw child output in a relay."""
+    gateway = Path("skills/demo/_rtx/_demo.py")
+    metadata = types.SimpleNamespace(
+        python_target=_target(), terminal_module_id="demo",
+        implementing_source_id="demo.source.gateway",
+    )
+    resolved = types.SimpleNamespace(
+        cwd=tmp_path / "skills/demo", env={"PYTHONPATH": "/installed/src"},
+        metadata=lambda: metadata,
+    )
+    route_calls = []
+    monkeypatch.setattr(
+        direct_runtime, "resolve_dispatch",
+        lambda **kwargs: (route_calls.append(kwargs), nullcontext(resolved))[1],
+    )
+    completed = subprocess.CompletedProcess([], 3, "result\n", "diagnostic\n")
+
+    def run(candidate, **kwargs):
+        assert candidate.env["PYTHONPATH"] == str(tmp_path / "src")
+        assert kwargs == {"subprocess": True, "capture_output": True, "text": True}
+        return completed
+
+    monkeypatch.setattr(direct_runtime, "_run_resolved_invocation", run)
+    monkeypatch.setattr(python_interface, "_PROCESS_DISPATCH_CONTEXT", None)
+    arguments = dict(
+        caller_module_id="public", interface_id="demo.interface.run", version=2,
+        expected_gateway=gateway, argv=["current", "--repository", str(tmp_path)],
+    )
+    assert python_interface.relay_candidate_interface(tmp_path, **arguments) is completed
+    assert route_calls == [{
+        "caller_skill": "public", "target": "demo.interface.run", "target_version": 2,
+        "args": arguments["argv"], "repository_config": tmp_path / "officina.toml",
+    }]
+    monkeypatch.setattr(python_interface, "_PROCESS_DISPATCH_CONTEXT",
+        python_interface.RuntimeDispatchContext(
+            caller_module_id="demo", caller_source_id="demo.source.gateway",
+            immediate_caller_module_id="public",
+        ))
+    assert python_interface.relay_candidate_interface(tmp_path, **arguments) is completed
+    metadata.implementing_source_id = "foreign.source.gateway"
+    with pytest.raises(ValueError, match="preserve the executing source"):
+        python_interface.relay_candidate_interface(tmp_path, **arguments)
+    metadata.implementing_source_id = "demo.source.gateway"
+    resolved.cwd = tmp_path / "installed"
+    with pytest.raises(ValueError, match="reviewed repository"):
+        python_interface.relay_candidate_interface(tmp_path, **arguments)
+
+    def fail(**kwargs):
+        raise dispatcher_core.InvocationError("route unavailable")
+
+    monkeypatch.setattr(direct_runtime, "resolve_dispatch", fail)
+    with pytest.raises(ValueError, match="route unavailable"):
+        python_interface.relay_candidate_interface(tmp_path, **arguments)
 
 
 def _write_logical_runtime(

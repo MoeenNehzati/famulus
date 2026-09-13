@@ -7,7 +7,7 @@ dependencies:
   reason: Defines the exclusive certification writer whose state this read-only module
     inspects.
   source: node-certify.source.gateway
-  version: 7
+  version: 8
 description: Defines the LLM-facing rules for reading exact signed-certificate currentness,
   stale worklists, and canonical v6 node hashes.
 gateway:

@@ -119,6 +119,7 @@ def make_charter(
     if any(target not in graph.nodes for target in requested):
         raise ValueError("targets must be registered modules or behavioral sources")
     scope = _ready_inputs(repository, observation, requested, not targets)
+    certifier._verify_executing_candidate_certifier(repository, graph, observation.states)
     order = certification_target_postorder(graph, observation.states, requested)
     dag = build_dependency_dag(graph, observation.states, repository)
     indexes = {node["id"]: node for node in dag["nodes"]}

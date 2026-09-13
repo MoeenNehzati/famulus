@@ -35,14 +35,14 @@ gateway:
 id: node-certify
 namespace_exports:
   _rtx:
-    version: 4
+    version: 5
     access:
       allow_all_modules: true
       allowed_callers: []
     surface:
       only:
         node-certify._rtx.interface.certify: 2
-        node-certify._rtx.interface.certification-voyage: 1
+        node-certify._rtx.interface.certification-voyage: 2
     interface_access:
       node-certify._rtx.interface.certify:
         allow_all_modules: false
@@ -69,7 +69,7 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
-version: 7
+version: 8
 maturity: stable
 installation_tier: optional
 personal_preference:

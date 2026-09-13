@@ -1,7 +1,7 @@
 schema_version: 6
 node_type: behavioral_source
 id: node-certify._rtx.source.certification-voyage
-version: 1
+version: 2
 maturity: stable
 description: Initiate and operate one certification Voyage; machines schedule audits, validate raw worker
   reports and sign exact nodes.
@@ -35,12 +35,10 @@ uses_interfaces: &id002
   version: 1
 interfaces:
   node-certify._rtx.source.certification-voyage.interface.voyage:
-    version: 1
+    version: 2
     description: Initiate and operate one certification Voyage; machines schedule audits, validate raw
       worker reports and sign exact nodes.
-    usage: initiate [default] --repository PATH --worker-capacity K [--targets IDS] [--retry-interval-seconds
-      N] [--run-prefix PREFIX] | next VOYAGE_ID [--response-file PATH --responding-to ENTRY] | <help|modes|list|status|validate|advance|release>
-      [arguments]
+    usage: OPERATION [VOYAGE_ID] --repository PATH [options]
     content: *id001
     uses_interfaces: *id002
     process_binding:
@@ -48,24 +46,26 @@ interfaces:
       entry: Interface
       patterns:
       - name: discovery
-        notes: '`help|modes`'
+        notes: '`help|modes [--repository PATH]`'
         min_positionals: 1
         max_positionals: 1
         positional_patterns:
           '0': ^(help|modes)$
-        allowed_flags: []
+        allowed_flags: [--repository]
         required_flags: []
-        flag_patterns: {}
+        flag_patterns: {--repository: ^.+$}
       - name: list
-        notes: '`list [--run-prefix PREFIX]`'
+        notes: '`list --repository PATH [--run-prefix PREFIX]`'
         min_positionals: 1
         max_positionals: 1
         positional_patterns:
           '0': ^list$
         allowed_flags:
+        - --repository
         - --run-prefix
-        required_flags: []
+        required_flags: [--repository]
         flag_patterns:
+          --repository: ^.+$
           --run-prefix: ^[A-Za-z0-9][A-Za-z0-9._-]*$
       - name: initiate-default-implicit
         notes: '`initiate --repository PATH --worker-capacity K [--targets IDS] [--retry-interval-seconds N] [--run-prefix PREFIX]`'
@@ -111,28 +111,31 @@ interfaces:
           --targets: ^.+$
           --retry-interval-seconds: ^[1-9][0-9]*$
       - name: operation
-        notes: '`status|validate|advance|next VOYAGE_ID [--response-file PATH --responding-to ENTRY]`'
+        notes: '`status|validate|advance|next VOYAGE_ID --repository PATH [--response-file PATH --responding-to ENTRY]`'
         min_positionals: 2
         max_positionals: 2
         positional_patterns:
           '0': ^(status|validate|advance|next)$
         allowed_flags:
+        - --repository
         - --response-file
         - --responding-to
-        required_flags: []
+        required_flags: [--repository]
         flag_patterns:
+          --repository: ^.+$
           --response-file: ^.+$
           --responding-to: ^.+$
       - name: release
-        notes: '`release RUN_ID [--force]`'
+        notes: '`release RUN_ID --repository PATH [--force]`'
         min_positionals: 2
         max_positionals: 2
         positional_patterns:
           '0': ^release$
         allowed_flags:
+        - --repository
         - --force
-        required_flags: []
-        flag_patterns: {}
+        required_flags: [--repository]
+        flag_patterns: {--repository: ^.+$}
     contract:
       arguments:
         operation:
@@ -165,7 +168,8 @@ interfaces:
             kind: string
             sensitivity: user-private
         repository:
-          description: Exact reviewed repository root.
+          description: Exact reviewed repository with a compatible committed certification runtime;
+            required for every operation except help and modes.
           required: false
           sensitivity: user-private
           type:
@@ -270,7 +274,9 @@ interfaces:
         consistency:
           snapshot: An immutable Charter binds repository, commit, canonical input identities, DAG, capacity
             and retry interval. Each next validates and advances under the Reckoning lock; the exact signer
-            checks audited inputs inside its frozen-input path.
+            checks audited inputs inside its frozen-input path. External repositories execute through
+            the confined candidate dispatcher process; initiation verifies candidate signer ownership
+            before creating a Reckoning or dispatching workers.
         effects:
         - id: voyage-state
           direct_io_ref: voyage-state
@@ -325,7 +331,7 @@ interfaces:
           medium: local-filesystem
           access: read
           system: filesystem
-          content: Reviewed graph, selected content, manifests and authenticated certificate evidence
+          content: Reviewed graph, selected content, candidate runtime, manifests and authenticated certificate evidence
           formats:
           - yaml
           - json
@@ -353,7 +359,7 @@ interfaces:
           formats:
           - json
           sensitivity: derived-private
-          path: skills/node-certify/_build/certification-voyages/**
+          path: <repository>/skills/node-certify/_build/certification-voyages/**
           path_match: glob
         - id: certificates
           medium: local-filesystem
@@ -381,6 +387,7 @@ interfaces:
           content: Operation error
           formats:
           - json
+          - text
           sensitivity: derived-private
 platform_support:
   linux: true
