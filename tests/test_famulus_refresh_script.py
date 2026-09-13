@@ -369,6 +369,10 @@ def test_refresh_restores_settings_even_when_install_fails(
     fake_bin, _log = _write_fake_host(tmp_path, host, '''
 exec "$TEST_PYTHON" "$FAKE_HOST" "$@"
 ''')
+    if sys.platform == "win32":
+        (fake_bin / f"{host}.cmd").write_text(
+            '@"%TEST_PYTHON%" "%FAKE_HOST%" %*\n', encoding="utf-8",
+        )
     fake_host = tmp_path / "fake_host.py"
     fake_host.write_text('''
 import json, os, pathlib, sys
@@ -430,7 +434,13 @@ fi
     assert result.returncode != 0
     match = re.search(r"saved preferences retained at (.+)", result.stderr)
     assert match, result.stderr
-    assert json.loads(Path(match[1]).read_text()) == original
+    snapshot_name = match[1]
+    if sys.platform == "win32":
+        snapshot_name = subprocess.run(
+            [_bash_executable(os.environ), "-c", 'cygpath -w -- "$1"', "bash", snapshot_name],
+            text=True, capture_output=True, check=True,
+        ).stdout.strip()
+    assert json.loads(Path(snapshot_name).read_text()) == original
     assert config.read_text() == "broken json"
 
 
