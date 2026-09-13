@@ -231,7 +231,6 @@ def _build_parser(start_rule: str, grammar: str | None = None) -> Lark | None:
 _DOCSTRING_GRAMMAR_TEXT = _load_docstring_grammar()
 _EDGE_PARSER = _build_parser("edge")
 _WRAP_PARSER = _build_parser("wraps")
-_DEPENDENCY_PARSER = _build_parser("module_dependency")
 _PSEUDOCODE_BULLET_PARSER = _build_parser("pseudocode_bullet")
 _PSEUDOCODE_REF_PARSER = _build_parser("pseudocode_ref_expr")
 
@@ -739,33 +738,6 @@ def _parse_with_lark(parser: "Lark | None", line: str):
         return None
 
 
-def _parse_dependency_implicit_marker(
-    marker_token: str | None,
-) -> bool:
-    """Return parsed implicit flag from a marker token.
-
-    Intent
-    ------
-    Expose the parse dependency implicit marker step in docstring syntax parsing and typed IR construction so readers and tools can locate its exact responsibility.
-
-    Rationale
-    ---------
-    This boundary keeps parse dependency implicit marker behavior separate inside docstring syntax parsing and typed IR construction; documenting it makes dependency checks and graph extraction reviewable.
-
-    Pseudocode
-    ----------
-    - set parse_dependency_implicit_marker_inputs = received_context
-    - return parse_dependency_implicit_marker_inputs
-
-    Wraps
-    -----
-    - none
-    """
-    if marker_token is None:
-        return False
-    return marker_token.strip().lower() == "implicit"
-
-
 def _resolve_wrap_field_key(
     raw_key: str,
     *,
@@ -851,57 +823,6 @@ def _extract_wrap_fields(tree, *, allowed_fields: tuple[str, ...]) -> dict[str, 
             current_key = None
 
     return entries
-
-
-def _extract_dependency_parts(
-    source: str,
-    tree,
-) -> tuple[str, str, str | None]:
-    """Extract dependency name, rationale, and marker from a dependency tree.
-
-    Intent
-    ------
-    Expose the extract dependency parts step in docstring syntax parsing and typed IR construction so readers and tools can locate its exact responsibility.
-
-    Rationale
-    ---------
-    This boundary keeps extract dependency parts behavior separate inside docstring syntax parsing and typed IR construction; documenting it makes dependency checks and graph extraction reviewable.
-
-    Pseudocode
-    ----------
-    - set extract_dependency_parts_inputs = received_context
-    - return extract_dependency_parts_inputs
-
-    Wraps
-    -----
-    - none
-    """
-    from lark.lexer import Token
-
-    name = ""
-    why = ""
-    marker: str | None = None
-
-    for node in tree.scan_values(lambda value: isinstance(value, Token)):
-        if node.type in {"name", "IDENT"}:
-            name = str(node)
-        elif node.type in {"DEPS_RATIONALE", "DEPS_REASON"}:
-            why = str(node).strip()
-        elif node.type == "IMPLICIT":
-            marker = str(node)
-
-    if marker is None and re.search(r"\[\s*implicit\s*\]", source, flags=re.IGNORECASE):
-        marker = "implicit"
-
-    return name, why, marker
-
-
-_LEGACY_DEPENDENCY_RE = re.compile(
-    r"^(?P<name>\.?[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)*)"
-    r"(?:\([^)]*\))?"
-    r"\s*(?P<implicit>\[\s*implicit\s*\])?"
-    r"\s*->\s*(?P<why>.+?)\s*$"
-)
 
 
 def parse_pseudocode_dependency_ref(
@@ -1689,86 +1610,6 @@ def _parse_wraps(lines: Iterable[str]) -> tuple[list[WrapSpec], list[str]]:
             continue
         wraps.append(parsed)
     return wraps, invalid
-
-
-def _parse_module_dependency_ref(
-    line: str,
-    *,
-    allow_implicit: bool = True,
-    require_why: bool = True,
-) -> ModuleDependencyRef | None:
-    """Parse a module dependency reference entry.
-
-    Intent
-    ------
-    Expose the parse module dependency ref step in docstring syntax parsing and typed IR construction so readers and tools can locate its exact responsibility.
-
-    Rationale
-    ---------
-    This boundary keeps parse module dependency ref behavior separate inside docstring syntax parsing and typed IR construction; documenting it makes dependency checks and graph extraction reviewable.
-
-    Pseudocode
-    ----------
-    - set parse_module_dependency_ref_inputs = received_context
-    - set parse_module_dependency_ref_products = carried_outputs
-    - return parse_module_dependency_ref_products
-
-    Wraps
-    -----
-    - none
-
-    InstantiationsFromRepo
-    ----------------------
-    .ModuleDependencyRef:
-      why:
-        constructs: "ModuleDependencyRef produces a value carried by parse module dependency ref; this edge is documented from the observed product position in the body."
-    ._clean_item:
-      why:
-        constructs: "clean item produces a value carried by parse module dependency ref; this edge is documented from the observed product position in the body."
-    ._extract_dependency_parts:
-      why:
-        constructs: "extract dependency parts produces a value carried by parse module dependency ref; this edge is documented from the observed product position in the body."
-    ._parse_dependency_implicit_marker:
-      why:
-        constructs: "parse dependency implicit marker produces a value carried by parse module dependency ref; this edge is documented from the observed product position in the body."
-    ._parse_with_lark:
-      why:
-        constructs: "parse with lark produces a value carried by parse module dependency ref; this edge is documented from the observed product position in the body."
-    """
-    cleaned = _clean_item(line)
-    if not cleaned:
-        return None
-    normalized = re.sub(r"\s*\[\s*implicit\s*\]\s*", "[implicit]", cleaned)
-    normalized = re.sub(r"\s*->\s*", "->", normalized)
-    parse_tree = _parse_with_lark(_DEPENDENCY_PARSER, normalized)
-    if parse_tree is None:
-        match = _LEGACY_DEPENDENCY_RE.fullmatch(cleaned)
-        if match is None:
-            return None
-        name = match.group("name").strip()
-        why = (match.group("why") or "").strip()
-        marker = match.group("implicit")
-    else:
-        name, why, marker = _extract_dependency_parts(cleaned, parse_tree)
-    if not name:
-        return None
-
-    if marker is not None:
-        if not allow_implicit:
-            return None
-        is_implicit = _parse_dependency_implicit_marker(marker)
-    else:
-        is_implicit = False
-
-    if require_why and not why:
-        return None
-
-    return ModuleDependencyRef(
-        name=name,
-        why=why,
-        why_legacy_string=True,
-        implicit=is_implicit,
-    )
 
 
 def _parse_dependency_implicit_from_name(
