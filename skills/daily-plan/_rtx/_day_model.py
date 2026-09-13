@@ -334,6 +334,29 @@ def get_weather() -> str:
     return run_dispatcher("get-weather", "scripts-weather").strip()
 
 
+def format_weather(weather: str) -> str:
+    """Render hourly forecast JSON as plain text, keeping legacy prose readable."""
+    if not weather.strip():
+        return "(weather unavailable)"
+    try:
+        forecast = json.loads(weather)
+    except json.JSONDecodeError:
+        return "(weather unavailable)" if weather.lstrip().startswith(("{", "[")) else weather.strip()
+    try:
+        hourly = forecast["hourly"]
+        rows = zip(*(hourly[key] for key in (
+            "time", "temperature_2m", "precipitation_probability", "wind_speed_10m"
+        )), strict=True)
+        lines = ["Hour   Temp °C  Precip %  Wind km/h"]
+        for timestamp, *values in rows:
+            hour = datetime.fromisoformat(timestamp).strftime("%H:%M")
+            temp, precip, wind = ("?" if value is None else f"{value:g}" for value in values)
+            lines.append(f"{hour}  {temp:>7}  {precip:>8}  {wind:>9}")
+        return "\n".join(lines) if len(lines) > 1 else "(weather unavailable)"
+    except (KeyError, TypeError, ValueError):
+        return "(weather unavailable)"
+
+
 def calculate_free_time(events: list[dict[str, str]]) -> tuple[int, str]:
     total_hours = 10
     busy_hours = 1.5 * len(events)
@@ -356,14 +379,7 @@ def build_base_plan(today_date: str, calendar_today: list[str], calendar_week: l
     lines.extend(["", f"Free time: ~{free_hours}h (10h budget - {breakdown})", ""])
 
     lines.append("## The Day")
-    if weather:
-        sentences = weather.split(". ")
-        text = ". ".join(sentences[:2]).strip()
-        if text and not text.endswith("."):
-            text += "."
-        lines.append(text or "(weather unavailable)")
-    else:
-        lines.append("(weather unavailable)")
+    lines.append(format_weather(weather))
     lines.append("")
 
     lines.append("## Upcoming")
@@ -418,7 +434,7 @@ def render_entries(entries: list[dict[str, Any]]) -> str:
         yaml.safe_dump(entries, tmp, allow_unicode=True, default_flow_style=False, sort_keys=False)
         tmp_path = tmp.name
     try:
-        rendered = run_dispatcher("list-manager", "read-beautify", tmp_path, "--no-ids")
+        rendered = run_dispatcher("list-manager", "read-beautify", tmp_path)
     finally:
         Path(tmp_path).unlink(missing_ok=True)
     return rendered.rstrip()
@@ -427,7 +443,7 @@ def render_entries(entries: list[dict[str, Any]]) -> str:
 def inject_block(plan_text: str, marker: str, content: str) -> str:
     pattern = re.compile(rf"<!-- BEGIN {marker} -->.*?<!-- END {marker} -->", re.DOTALL)
     replacement = f"<!-- BEGIN {marker} -->\n{content}\n<!-- END {marker} -->"
-    return pattern.sub(replacement, plan_text)
+    return pattern.sub(lambda _: replacement, plan_text)
 
 
 def refresh_rendered_plan(
@@ -445,7 +461,8 @@ def refresh_rendered_plan(
         current_plan = inject_block(current_plan, spec["marker"], rendered or spec["none"])
     write_meta(date_key, current_meta)
     write_plan_text(date_key, current_plan)
-    return current_plan
+    # Keep section markers in storage, but omit them from the displayed plan.
+    return re.sub(r"^<!-- (?:BEGIN|END) (?:ACTIONS|TRIAGE) -->\n?", "", current_plan, flags=re.MULTILINE)
 
 
 def generate_plan(date_key: str, forced_today: str | None = None) -> str:

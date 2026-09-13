@@ -1199,6 +1199,48 @@ def test_packaged_host_declaration_invokes_dispatcher_through_real_mcp(
     ]
 
 
+@pytest.mark.parametrize("text", [
+    "", "short\n", "x" * 240, "x" * 241, "x" * 1000,
+    "First line\r\n\n" + "Forecast: 26°C ☀️\n" * 40 + "  trailing spaces  ",
+])
+def test_mcp_text_chunking_is_bounded_and_lossless(server, text: str) -> None:
+    chunks = server._chunk_text(text)
+    assert chunks
+    assert "".join(chunks) == text
+    assert all(len(chunk) <= 240 for chunk in chunks)
+    assert text == "" or all(chunks)
+    if text.startswith("First line"):
+        assert all(chunk.endswith("\n") for chunk in chunks[:-1])
+
+
+@pytest.mark.parametrize("exit_code", [0, 2])
+def test_invoke_mcp_chunks_text_but_preserves_structured_result(
+    server, monkeypatch: pytest.MonkeyPatch, exit_code: int
+) -> None:
+    FastMCP = pytest.importorskip("mcp.server.fastmcp").FastMCP
+    mcp = FastMCP("famulus")
+    server._register_mcp_surface(mcp)
+    result = {
+        "exit_code": exit_code,
+        "stdout": "Forecast: 26°C\n" * 100,
+        "stderr": "Diagnostic detail\n" * 40,
+        "dispatcher": {},
+        "trace_id": "a" * 32,
+    }
+    monkeypatch.setattr(server, "invoke", lambda *args, **kwargs: result)
+
+    called = asyncio.run(mcp.call_tool("invoke", {
+        "caller": "caller", "interface": "example.interface.read", "version": 1,
+        "arguments": {"positionals": [], "options": {}, "stdin": None},
+    }))
+
+    assert len(called.content) > 1
+    assert all(block.type == "text" and len(block.text) <= 240 for block in called.content)
+    expected = result["stdout"] + result["stderr"] if exit_code == 0 else json.dumps(result, ensure_ascii=False)
+    assert "".join(block.text for block in called.content) == expected
+    assert called.structuredContent == {"result": result}
+
+
 def test_render_tool_uses_blueprint_renderer_bundle(server) -> None:
     FastMCP = pytest.importorskip("mcp.server.fastmcp").FastMCP
     mcp = FastMCP("famulus")

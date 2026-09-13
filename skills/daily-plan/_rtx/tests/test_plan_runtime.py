@@ -85,10 +85,10 @@ old triage
     monkeypatch.setattr(plan_runtime, "write_plan_text", lambda date_key, content: written.setdefault("plan", content))
 
     result = plan_runtime.refresh_rendered_plan("7-2-26", plan_text=plan_text, meta=meta)
-    assert "<!-- BEGIN ACTIONS -->\nA\n<!-- END ACTIONS -->" in result
-    assert "<!-- BEGIN TRIAGE -->\nT\n<!-- END TRIAGE -->" in result
+    assert "<!-- BEGIN ACTIONS -->\nA\n<!-- END ACTIONS -->" in written["plan"]
+    assert "<!-- BEGIN TRIAGE -->\nT\n<!-- END TRIAGE -->" in written["plan"]
     assert written["meta"] == {"actions": [["a", "shown"]], "triage": [["t", "shown"]]}
-    assert written["plan"] == result
+    assert result == "# Plan: July 02, 2026\n\n## Actions (suggestions)\nA\n\n## Triage\nT\n"
 
 
 def test_mutate_plan_add_only_changes_plan_metadata(monkeypatch):

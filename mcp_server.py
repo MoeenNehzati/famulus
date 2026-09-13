@@ -1151,6 +1151,23 @@ def _serve_ui_resource(uri: str, html: str) -> str:
     return html
 
 
+def _chunk_text(text: str) -> list[str]:
+    """Split MCP display text losslessly, preferring newline boundaries."""
+
+    # ponytail: 240 characters targets ordinary terminal previews; tune if narrower hosts truncate.
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = min(start + 240, len(text))
+        if end < len(text):
+            newline = text.rfind("\n", start, end)
+            if newline >= start:
+                end = newline + 1
+        chunks.append(text[start:end])
+        start = end
+    return chunks or [""]
+
+
 def _register_mcp_surface(server: Any) -> None:
     """Register the plain and renderer-backed dispatcher tools."""
 
@@ -1170,9 +1187,12 @@ def _register_mcp_surface(server: Any) -> None:
             if result.get("exit_code") == 0
             else json.dumps(result, ensure_ascii=False)
         )
-        content = [TextContent(type="text", text=text)]
+        content = [TextContent(type="text", text=chunk) for chunk in _chunk_text(text)]
         if result.get("exit_code") == 0 and result.get("stderr"):
-            content.append(TextContent(type="text", text=result["stderr"]))
+            content.extend(
+                TextContent(type="text", text=chunk)
+                for chunk in _chunk_text(result["stderr"])
+            )
         return CallToolResult(content=content, structuredContent={"result": result})
 
     def render_probe(
