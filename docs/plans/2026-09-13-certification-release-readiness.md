@@ -1,6 +1,10 @@
 # Rutter certification release readiness
 
-Status: independent plan reviews GREEN, 2026-09-13; execution pending.
+Status: independent plan reviews GREEN, 2026-09-13; task 1 complete, task 2
+blocked on provisioning the certifier's declared packages in the dedicated host
+runtime. The scoped Codex refresh succeeded; the first installed trial stopped
+before issuance because that runtime lacks pytest. Its timing is excluded from
+the baseline comparison. Evidence is retained under `_build/certification-release/`.
 
 ## Outcome and boundaries
 
@@ -24,17 +28,18 @@ optional docstring suite, or unrelated cleanup.
 
 Existing evidence: normal merge hooks passed (3,979 tests, 22 skips); independent
 merge reviews were green. Earlier CLI trials proved issuance, dependency order,
-zero-audit repeats and selective savings, but precede the merge. A current installed
-MCP dry-run returns `dispatcher.interface_not_found` for the Voyage route.
+zero-audit repeats and selective savings, but precede the merge. The initial installed
+MCP dry-run returned `dispatcher.interface_not_found` for the Voyage route; task 1
+resolved that failure through the approved scoped refresh.
 
 ## 1. Establish a usable candidate host route
 
-- [ ] Record full candidate SHA, clean tracked state, runtime/plugin root and
+- [x] Record full candidate SHA, clean tracked state, runtime/plugin root and
   executable path. Read current installation/runtime bindings and construct the
   smallest supported way for a fresh host session to load this candidate.
   `scripts/famulus-refresh` can archive a dirty tracked snapshot: a refresh receipt
   alone does not prove that the host runs the recorded commit.
-- [ ] Resolve the observed ownership mismatch before dispatching auditors:
+- [x] Resolve the observed ownership mismatch before dispatching auditors:
   installed Voyage state follows its plugin root, while the exact signer requires
   execution from the reviewed repository. Prefer an existing checkout-bound host
   binding. If none works, fix the existing boundary minimally after independent
@@ -43,13 +48,13 @@ MCP dry-run returns `dispatcher.interface_not_found` for the Voyage route.
   The binding must be a documented supported user path from plugin installation.
   A one-off developer override is diagnostic only; if ordinary installed use still
   fails, fix the existing delegation/ownership boundary and retest that user path.
-- [ ] Prepare any necessary host registration change as an exact configuration
+- [x] Prepare any necessary host registration change as an exact configuration
   delta with restoration instructions. The standing worktree-only rule still
   applies: request its narrow exception only after the change is reviewable.
   Do not change the main checkout, global plugin settings, or installed cache
   merely to make a smoke test pass. Keep public keys, certificates and Voyage
   records in the certification worktree.
-- [ ] Verify renamed signing storage: current namespace is `node-certify`, public
+- [x] Verify renamed signing storage: current namespace is `node-certify`, public
   material is under `skills/node-certify/.certificates/public-keys`. Old
   `skill-certifier` material is not automatically discovered. Preserve it and copy
   its valid `<key-id>.pub` verification files into the renamed canonical public-key root
@@ -58,7 +63,7 @@ MCP dry-run returns `dispatcher.interface_not_found` for the Voyage route.
   Record the selected active public key identity. Reuse the current namespace's key when present;
   otherwise use the already-authorized host signing-key creation through the normal
   signer and explicitly record the new identity. Never copy private keys into files.
-- [ ] From the fresh candidate-bound host, call `famulus_dispatcher.invoke` with
+- [x] From the fresh candidate-bound host, call `famulus_dispatcher.invoke` with
   caller `node-certify`, interface
   `node-certify._rtx.interface.certification-voyage`, version `2`, arguments
   `{"positionals":["help"],"options":{},"stdin":null}`. Require real success,
@@ -71,6 +76,13 @@ host capability is missing, retain a concrete blocker; do not call release-ready
 
 ## 2. Complete one monitored dependency trial
 
+- [ ] Resolve the observed missing-runtime-package failure through the existing
+  bootstrap owner-selected repair route, using the certifier's exact declared
+  Python packages and the dedicated dispatcher's interpreter. Host-runtime writes
+  need a separate narrow exception to the worktree-only scope; the approved Codex
+  cache/registration refresh does not cover them. Preserve ignored old skill
+  artifacts outside the live skills namespace after the rename. Require the
+  existing validator gate to pass before spending more semantic-worker time.
 - [ ] Use `tight-mode` as the bounded target, including its source prerequisite.
   Snapshot exact hashes, basis, currentness and certificate-log lengths first.
   Require a prerequisite without a currently acceptable certificate; distinguish

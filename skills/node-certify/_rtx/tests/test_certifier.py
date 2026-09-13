@@ -874,6 +874,21 @@ def test_mechanical_gate_runs_only_the_repository_checks_entrypoint(
         )
     ]
 
+    monkeypatch.setattr(
+        certifier,
+        "run_local_command",
+        lambda *_args, **_kwargs: certifier.CommandResult(
+            name="validators", command=[], exit_code=1,
+            stdout="validator finding\n", stderr="missing dependency\n",
+        ),
+    )
+    with pytest.raises(certifier.CertificationError) as error:
+        certifier.run_mechanical_checks(tmp_path)
+    assert str(error.value) == (
+        "mechanical certification checks failed: validators (exit 1)\n"
+        "validator finding\nmissing dependency\n"
+    )
+
 
 def test_cli_propagates_explicit_non_atomic_fallback(
     tmp_path: Path,

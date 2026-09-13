@@ -405,6 +405,16 @@ dependency-first node order (including structural child modules), construct
 bounded packets, and fill a bounded pool of semantic workers. There is no
 separate scheduler state or public scheduler operation.
 
+The dedicated dispatcher interpreter must also have the certifier's declared
+Python packages installed; refreshing the plugin does not provision them. The
+package authority is `node-certify._rtx.source.rtx-certifier`'s
+`runtime_dependencies`. Missing packages use the
+[bootstrap runtime owner-selected repair route](../../skills/bootstrap-dispatcher-runtime/SKILL.md)
+with that exact declaration and the dispatcher's absolute interpreter path.
+Keep the required repository validators and interpreter unchanged. A failed
+mechanical gate reports its exit code and captured stdout/stderr in the terminal
+failure reason; repair the cause before starting a fresh Voyage.
+
 The controller initializes once, then uses atomic `next` only. All stateful
 operations require `--repository` with the reviewed checkout. The installed
 interface delegates through the existing confined runner into that checkout,

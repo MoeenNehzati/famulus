@@ -3382,7 +3382,8 @@ def run_mechanical_checks(
     )
     if not result.passed:
         raise CertificationError(
-            f"mechanical certification checks failed: {result.name}"
+            f"mechanical certification checks failed: {result.name} "
+            f"(exit {result.exit_code})\n{result.stdout}{result.stderr}"
         )
     return result
 
