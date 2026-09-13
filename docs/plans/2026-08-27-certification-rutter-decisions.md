@@ -1,10 +1,12 @@
 # Certification Rutter design
 
-Status: cleanup and full/unchanged-repeat benchmarks complete in
-`feat/certification-audit-pool`, 2026-09-13. Small-change speedup is not yet
-verified: the live incremental scope check below exposed a planner/reuse gap
-and a separate target contract blocker. The shared admissibility correction
-below resolves the planning gap; its live timing repeat is pending. Production cleanup is committed as
+Status: cleanup and full/unchanged/selective benchmarks complete in
+`feat/certification-audit-pool`, 2026-09-13. The shared admissibility correction
+in `8bfef580` resolves the planner/reuse gap. A real source-only clarification
+then reduced tight-mode certification from two audits to one and from 284.516
+to 156.235 seconds (45.1% less elapsed time). The global basis remained unchanged
+between those measured runs. Details and limits are recorded below; the dates
+target's independent contract blocker remains outside this correction. Production cleanup is committed as
 `5efa8e37`; its independent reviews and normal hooks were GREEN. Fresh reducer
 certification took 258.633 seconds:
 61.359 machine, 197.275 LLM/host/controller combined. A mechanically chained
@@ -699,8 +701,8 @@ owning source still has `certification-basis-mismatch`. After the four planned
 prerequisite audits, reducer packet construction would therefore reject the
 required interface evidence. That later failure was inferred from the code;
 the four audits were not run. The five-task selection and first values-interface
-dispatch were observed live. This remains an unresolved implementation gap;
-the earlier GREEN cleanup review does not establish readiness for this case.
+dispatch were observed live. This was unresolved in that trial; the shared
+admissibility correction below now prevents the inconsistent selective plan.
 
 The fallback `common.source.dates` trial targeted a 56-line, dependency-free
 source outside the certification basis. Its first fresh interface worker
@@ -711,8 +713,8 @@ without issuing a certificate. Reinterpreting the schema's `date_formats` as
 Python-object union descriptions was not independently justified; this benchmark
 does not change the schema, runtime, or audit standard to obtain a pass.
 
-No successful full-versus-small-change pair was completed, so no audit latency
-reduction or speedup percentage is claimed. The prior 258.633-second cold run
+No successful full-versus-small-change pair was completed in those initial
+attempts, so they establish no latency reduction. The prior 258.633-second cold run
 and 10.312-second unchanged skip do not prove small-change speedup. Retained
 artifacts include exact init/dispatch/terminal receipts, the raw rejection
 envelope, timing records, and before/changed/restored canonical snapshots in
@@ -738,9 +740,63 @@ invalid evidence, unknown qualified concern forms, missing certificates,
 pending dependency consumption, and basis invalidation before mechanical
 skipping. The focused file passed all 23 tests in 1.83 seconds (2.48 seconds
 through the runner, eight workers). No additional test fixture or cache was
-introduced. A live full-versus-remainder comparison will use the already-tested
-`tight-mode.source.gateway`, which has one interface, no dependencies, and no
-inputs in the certification basis.
+introduced. Independent implementation review was GREEN. The normal precommit
+suite passed 3,922 tests with 21 skips.
+
+### Verified full-versus-remainder timing
+
+Both live runs targeted only `tight-mode.source.gateway`, which has one
+interface, no dependencies, and no inputs in the certification basis. The
+full run at `8bfef580` needed two fresh semantic workers after the framework
+basis changed. Commit `b8e70058` then clarified only the source description:
+the response policy persists until the user switches modes. Canonical snapshots
+prove that its runtime manifest, dependencies, interface facet, and global basis
+were identical; only the remainder's declaration/hash changed.
+
+| Observed interval/work | Full source | Small remainder change | Reduction |
+| --- | ---: | ---: | ---: |
+| Complete certification run | 284.516s | 156.235s | 45.1% |
+| Machine CLI work | 64.554s | 53.587s | 17.0% |
+| LLM, host and controller combined | 219.962s | 102.648s | 53.3% |
+| Worker dispatch through final-report receipt | 170.229s | 82.780s | 51.4% |
+| Fresh semantic workers | 2 | 1 | 50.0% |
+
+The source worker itself took 81.510s in the full run and 82.780s in the small
+run. The avoided interface worker took 88.719s. That is direct evidence of
+eliminated audit work without speeding up the remaining source review. Time
+outside the machine calls and worker dispatch intervals also fell from 49.733s
+to 19.868s. That residual includes controller/host overhead and variability;
+the entire 128.281s difference cannot be attributed to the skipped audit. The
+machine also performed three observed reconciliation reads instead of five.
+Inclusive exact-signing time remained comparable (30.577s versus 31.042s), as
+did its nested mechanical checks (12.655s versus 13.015s).
+
+Both machine terminal results were `complete`, issued only the exact source,
+and reported the expected audit counts. All three packets and raw envelopes
+matched their retained receipts and Reckoning records. The selective packet
+carried reusable evidence for the unchanged interface; no interface worker was
+dispatched. Certificate-entry counts advanced from one to two to three, and
+each new certificate was checked current after issuance with no concerns.
+
+This is one measured pair on the same host with worker capacity one and the
+same source-worker instruction/template, not a median or universal speedup
+guarantee. Timing begins at initialization process start and ends at terminal
+CLI exit; commit hooks, setup and later verification/reporting are excluded.
+Worker dispatch-to-receipt includes host startup, tools, review and final JSON
+generation; pure inference time is unavailable. First-to-last worker tool spans
+omit final JSON generation and are not used as complete worker duration.
+The small worker reported an invalid milestone run ID; independent timing
+events remained intact. Future benchmark workers should omit that optional
+milestone run ID. Basis changes still require full semantic audits under the
+existing policy, and an edit inside one interface still audits that whole
+interface plus its source; there is no changed-line-only review claim.
+
+Evidence is retained in `_build/incremental-fix/`: `tight-comparison.json`,
+the two summaries, canonical snapshots, exact packets/envelopes, controller
+events, per-call and nested phase timings. Independent review was GREEN on
+the bounded result and its stated limitations. Voyages:
+`tight-full/r-90ce7154aff3466d9beb40c9351cdb35/1` and
+`tight-small/r-e07f1ff218b449eb8223da41b3b05082/1`.
 
 ## Non-goals
 
