@@ -1,10 +1,11 @@
 # Rutter certification release readiness
 
-Status: independent plan reviews GREEN, 2026-09-13; task 1 complete, task 2
-blocked on provisioning the certifier's declared packages in the dedicated host
-runtime. The scoped Codex refresh succeeded; the first installed trial stopped
-before issuance because that runtime lacks pytest. Its timing is excluded from
-the baseline comparison. Evidence is retained under `_build/certification-release/`.
+Status: tasks 1–3 complete with independent functionality, Ponytail and simplicity
+reviews GREEN, 2026-09-13. Installed-host certification and selective reuse passed.
+Task 4 remains open until the frozen candidate passes complete exact-SHA remote CI;
+publishing the feature ref and dispatching CI still need their scoped authorization.
+Final freeze and qualification receipts belong under `_build/certification-release/`
+after this document is committed, avoiding a commit that records its own final SHA.
 
 ## Outcome and boundaries
 
@@ -76,41 +77,41 @@ host capability is missing, retain a concrete blocker; do not call release-ready
 
 ## 2. Complete one monitored dependency trial
 
-- [ ] Resolve the observed missing-runtime-package failure through the existing
+- [x] Resolve the observed missing-runtime-package failure through the existing
   bootstrap owner-selected repair route, using the certifier's exact declared
   Python packages and the dedicated dispatcher's interpreter. Host-runtime writes
   need a separate narrow exception to the worktree-only scope; the approved Codex
   cache/registration refresh does not cover them. Preserve ignored old skill
   artifacts outside the live skills namespace after the rename. Require the
   existing validator gate to pass before spending more semantic-worker time.
-- [ ] Use `tight-mode` as the bounded target, including its source prerequisite.
+- [x] Use `tight-mode` as the bounded target, including its source prerequisite.
   Snapshot exact hashes, basis, currentness and certificate-log lengths first.
   Require a prerequisite without a currently acceptable certificate; distinguish
   absent from stale evidence. Do not delete existing certificates to manufacture it.
   If already current, select one comparably small existing target using machine
   graph/currentness output; record its closure before starting, without expanding
   to unrelated service dependencies.
-- [ ] Before this run, choose the same target and source-description delta for
+- [x] Before this run, choose the same target and source-description delta for
   step 3. Require the baseline to need the full intended semantic audit set,
   including the interface that the delta should reuse. Otherwise select a small
   still-uncertified comparable target now; a zero-audit current-node skip is not a
   full baseline. Confirm the planned delta lies outside the certification basis.
   Prepare the updated timing harness and start instrumentation described in step 3
   before initialization; do not reconstruct baseline intervals afterward.
-- [ ] Invoke the public host route with `initiate`, `--repository` set to the
+- [x] Invoke the public host route with `initiate`, `--repository` set to the
   worktree, `--targets tight-mode` (or the recorded replacement), and bounded
   `--worker-capacity 1`. Use only `next` afterward, retaining `--repository` on
   every stateful call. Follow the current
   [node-certify instructions](../../skills/node-certify/SKILL.md).
-- [ ] Controller only dispatches fresh semantic workers and forwards their exact
+- [x] Controller only dispatches fresh semantic workers and forwards their exact
   raw completions. Machines select dependencies, validate reports, decide reuse,
   sign exact nodes and produce the terminal receipt. Keep monitoring outside those
   decisions; inspect the completed trace rather than directing audits manually.
-- [ ] Require successful terminal receipt, prerequisite issuance before its dependent,
+- [x] Require successful terminal receipt, prerequisite issuance before its dependent,
   exact selected-node coverage, no unrelated issuance, and independent read-only
   drift verification of signatures/currentness with no concerns. Record the actual
   dependency type; an ownership edge does not prove a cross-module trial.
-- [ ] Start one fresh unchanged Voyage for the same target. Require zero semantic
+- [x] Start one fresh unchanged Voyage for the same target. Require zero semantic
   assignments and zero appended certificates. Retain terminal and log-count evidence.
 
 Gate: fresh host invocation completes the full machine/worker/signing/currentness
@@ -119,11 +120,11 @@ trial only if this run exposes an uncovered integration failure.
 
 ## 3. Verify selective audit correctness and speed
 
-- [ ] Reuse the existing ignored benchmark scripts with current `node-certify`
+- [x] Reuse the existing ignored benchmark scripts with current `node-certify`
   names and supported milestone protocol. Omit optional unsafe task-derived run IDs.
   Time the actual host route, not a separate local import harness. Preserve old
   measurements unchanged and label new ones with their actual candidate SHA.
-- [ ] Compare the same target, host, worker capacity and audit instructions before
+- [x] Compare the same target, host, worker capacity and audit instructions before
   and after one committed, truthful source-description clarification outside the
   certification basis. Use step 2's full run as the baseline; do not switch to its
   now-current source as a supposed fresh baseline or remove certificates.
@@ -131,17 +132,17 @@ trial only if this run exposes an uncovered integration failure.
   runtime bytes and interface facets identical while changing its remainder.
   Its containing module's dependency claim will change and requires a module audit.
   Snapshot these facts mechanically.
-- [ ] Require unchanged interface evidence reused, fewer semantic assignments,
+- [x] Require unchanged interface evidence reused, fewer semantic assignments,
   all changed source/module obligations still audited, and independently current
   signed results. Never narrow the audit merely to hit a timing target.
-- [ ] Measure initiation start to terminal receipt; separately report machine
+- [x] Measure initiation start to terminal receipt; separately report machine
   invocation intervals, worker dispatch-to-final-receipt intervals, and residual
   controller/transport/wait time. Worker intervals include tools and output;
   pure inference time is unavailable. Do not double-count nested signer/check time
   or sum overlapping workers as elapsed time.
   Separate server/process timing from MCP round-trip timing when both are exposed;
   if only round-trip timing is available, label it as such, not pure machine time.
-- [ ] Acceptance target: at least 25% lower observed end-to-end time for the narrow
+- [x] Acceptance target: at least 25% lower observed end-to-end time for the narrow
   run, alongside fewer audits. One pair is a release smoke comparison, not a median
   or statistical guarantee. If it misses, inspect recorded intervals; allow one
   equivalent pair to resolve observed host noise only when its full baseline can
@@ -149,7 +150,7 @@ trial only if this run exposes an uncovered integration failure.
   A current-target rerun is not equivalent; otherwise retain the noisy comparison
   as unresolved. Persistent failure remains a
   performance blocker; fix only the measured cause, then repeat affected evidence.
-- [ ] Keep a useful truthful clarification; otherwise restore it in a new commit
+- [x] Keep a useful truthful clarification; otherwise restore it in a new commit
   and renew affected certificates. No uncommitted certification targets or temporary
   benchmark edits may remain in the final candidate. Record any final SHA change.
 
@@ -184,6 +185,50 @@ evidence, not a substitute for this merged-host comparison.
   candidate. Preserve run IDs and check that the local/remote tips still match.
 
 ## Completion record
+
+### Verified local execution
+
+The scoped Codex refresh installed the public Voyage route from `7351d659`.
+That installed route delegated subsequent stateful calls to the committed candidate
+checkout. The separately authorized runtime repair installed only the certifier's
+already-declared missing packages and their dependencies; all 26 required validators
+then passed in the dedicated interpreter. Its fingerprint remained unchanged.
+The initial failed trial issued nothing and is excluded from timing comparisons.
+
+The full baseline at `81d91a7c` certified `tight-mode.source.gateway` before
+`tight-mode`. The prerequisite had retained valid historical signatures, but its
+final signing key was no longer active; its evidence was stale, not absent. This
+is a `contains-source` ownership dependency trial, not a cross-module trial.
+Independent public drift returned both nodes current with no concerns.
+
+The useful source-description clarification was committed as `9c965bd7`.
+Machine assertions confirmed identical basis, runtime content, source outgoing
+dependencies and interface facet claim. The source remainder/hash and the module's
+signed dependency claim changed; the module's local hash remained unchanged.
+The small run reused the exact authenticated interface evidence, audited both
+remaining obligations, and renewed both certificates in dependency order. Public
+drift again returned current with no concerns. Certificate logs grew from 3/1 to
+4/2 in the full run, stayed 4/2 in the unchanged run, and became 5/3 in the small run.
+
+| Run | Semantic audits | Elapsed | Machine process | Worker intervals | Controller and transport |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Full baseline | 3 | 409.58 s | 96.26 s | 229.44 s | 83.88 s |
+| Unchanged repeat | 0 | 32.22 s | 10.32 s | 0.00 s | 21.90 s |
+| Small change | 2 | 274.55 s | 86.24 s | 131.61 s | 56.71 s |
+
+The small run was 32.97% faster in this one observed pair, exceeding the 25%
+acceptance threshold. Savings came primarily from skipping the 91.75-second
+interface worker; the source worker itself took 62.68 seconds full versus 64.64
+seconds small. This does not establish a median or uniformly faster individual
+audits. Worker intervals include tools, scheduling and final delivery; pure
+inference time is unavailable. Controller delays remain visible in elapsed time.
+Root process spans are counted once, without adding their nested signing/check spans.
+
+Evidence under `_build/certification-release/`: `full-summary.json`,
+`unchanged-summary.json`, `small-summary.json`, `comparison.json`,
+`tight-small-assertions.json`, public drift receipts `live/11-payload.json` and
+`live/18-payload.json`, and the per-task independent review records. Both reviewers,
+`merge_core` and `merge_certifier`, returned GREEN for each completed task.
 
 Release-ready only when every execution gate above passes. In the ignored completion
 report and user-facing handoff, record the final SHA,
