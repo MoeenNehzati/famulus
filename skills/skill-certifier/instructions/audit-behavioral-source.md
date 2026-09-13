@@ -55,5 +55,24 @@ or `abort`; list evidence strings and direct passing dependency results actually
 consumed, using exactly the task IDs in `prerequisite_reports` (reusable
 certificates have no report task ID); use an empty `findings` array only for `pass`.
 
+Use this complete object shape, replacing the example values with your judgment:
+
+```json
+{
+  "schema_version": "skill-certifier.semantic-audit-result/v1",
+  "task_id": "ASSIGNED_TASK_ID",
+  "verdict": "pass",
+  "summary": "Nonempty assessment summary.",
+  "evidence": ["Evidence supporting the assessment."],
+  "consumed_dependencies": [],
+  "findings": []
+}
+```
+
+Include all seven keys and no others. Each consumed dependency is exactly
+`{"task_id": "PREREQUISITE_REPORT_TASK_ID", "verdict": "pass"}`; use `[]` when
+there are no prerequisite reports. `evidence` and `findings` contain strings;
+`reject` and `abort` require at least one finding.
+
 Do not sign, write certificate history, or claim that the parent module is
 certified.

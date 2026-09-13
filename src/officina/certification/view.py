@@ -18,7 +18,7 @@ from .hashing import (
     certification_facet_claims,
     certification_target_postorder,
     _certification_input_scope_builder,
-    compute_certification_basis_hash,
+    _hash_certification_basis_paths,
     compute_node_hash_states,
     derive_certifier_identity,
     EVIDENCE_ONLY_RELATIONS,
@@ -40,7 +40,7 @@ from ..blueprints.graph import (
 )
 from ..blueprints.authorization import AuthorizationResult
 from ..blueprints.template import load_schema, schema_validator
-from ..git.provenance import capture_git_snapshot, check_commit_readiness
+from ..git.provenance import capture_git_snapshot, check_commit_readiness, check_commit_readiness_by_path
 from ..common.repository_paths import RepositoryPathError, repository_relative_posix
 
 
@@ -813,14 +813,13 @@ def evaluate_certificate_currentness(
             )
             scopes = {node_id: build_scope((node_id,)) for node_id in graph.nodes}
             # Observe each shared authority/basis path once, not once per node.
-            path_readiness = {
-                path: check_commit_readiness(
-                    snapshot, (path,), {}, allow_non_atomic=allow_non_atomic,
-                ).stamp_worthy
-                for path in sorted({path for scope in scopes.values() for path in scope.tracked_paths})
-            }
+            path_readiness = check_commit_readiness_by_path(
+                snapshot,
+                tuple(sorted({path for scope in scopes.values() for path in scope.tracked_paths})),
+                {}, allow_non_atomic=allow_non_atomic,
+            )
             node_tracked_inputs_clean = {
-                node_id: snapshot is not None and all(path_readiness[path] for path in scope.tracked_paths)
+                node_id: snapshot is not None and all(path_readiness[path].stamp_worthy for path in scope.tracked_paths)
                 for node_id, scope in scopes.items()
             }
         else:
@@ -1178,9 +1177,8 @@ def derive_repository_certification_state(
             expected_schema_version=expected_schema_version,
             allow_non_atomic=allow_non_atomic,
         )
-        basis_hash = compute_certification_basis_hash(
-            root,
-            expected_schema_version=expected_schema_version,
+        basis_hash = _hash_certification_basis_paths(
+            root, basis_paths,
             allow_non_atomic=allow_non_atomic,
         )
         states = compute_node_hash_states(

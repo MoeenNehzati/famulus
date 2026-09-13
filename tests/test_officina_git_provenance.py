@@ -500,6 +500,97 @@ def test_unrelated_dirty_file_does_not_block_node(repo: Path) -> None:
     assert result.reasons == ()
 
 
+def test_readiness_batch_isolates_paths_and_reads_each_observation_fresh(
+    repo: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clean = Path("skills/demo/SKILL.md")
+    paths = {name: repo / f"{name}[literal].txt" for name in ("dirty", "staged", "conflict")}
+    for path in paths.values():
+        path.write_bytes(b"original\x00\nbytes")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "mixed readiness inputs")
+    snapshot = capture_git_snapshot(repo)
+    for name in ("dirty", "staged"):
+        paths[name].write_bytes(b"changed\n")
+    _git(repo, "add", "--", paths["staged"].name)
+    conflict = paths["conflict"].name
+    object_id = _git(repo, "rev-parse", f"HEAD:{conflict}").stdout.decode().strip()
+    _git(repo, "update-index", "--force-remove", "--", conflict)
+    _git_bytes(repo, "update-index", "--index-info", input_bytes=(
+        f"100644 {object_id} 1\t{conflict}\n100644 {object_id} 2\t{conflict}\n"
+    ).encode())
+    outside = repo.parent / "outside.txt"
+    untracked = repo / "untracked.txt"
+    requested = (clean, *paths.values(), outside, untracked, clean)
+    operations = []
+    original_git = git_provenance.run_git
+
+    def counted_git(root, *args, **kwargs):
+        operations.append(args[0])
+        return original_git(root, *args, **kwargs)
+
+    monkeypatch.setattr(git_provenance, "run_git", counted_git)
+    results = git_provenance.check_commit_readiness_by_path(snapshot, requested, {})
+    assert operations == ["ls-tree", "ls-files", "cat-file"]
+    assert set(results) == set(requested)
+    assert results[clean].stamp_worthy
+    assert results[clean].source["input_paths"] == [clean.as_posix()]
+    assert {path: result.reasons for path, result in results.items() if path != clean} == {
+        paths["dirty"]: (f"worktree-differs-from-commit:{paths['dirty'].name}",),
+        paths["staged"]: (f"index-differs-from-commit:{paths['staged'].name}",),
+        paths["conflict"]: (f"nonzero-index-stage:{conflict}",),
+        outside: ("input-outside-repository",),
+        untracked: ("not-tracked-at-commit:untracked.txt",),
+    }
+    (repo / clean).write_text("changed after first observation\n")
+    fresh = git_provenance.check_commit_readiness_by_path(snapshot, (clean,), {})
+    assert fresh[clean].reasons == (f"worktree-differs-from-commit:{clean.as_posix()}",)
+    assert git_provenance.check_commit_readiness_by_path(snapshot, (), {}) == {}
+    assert git_provenance.check_commit_readiness_by_path(None, (clean,), {})[clean].reasons == (
+        "not-a-git-repository",
+    )
+    assert check_commit_readiness(snapshot, (), {}).stamp_worthy
+    assert not check_commit_readiness(None, (), {}).stamp_worthy
+
+
+@pytest.mark.parametrize("operation,fault,reason", [
+    ("ls-tree", "nonzero", "not-tracked-at-commit"),
+    ("ls-files", "nonzero", "missing-index-entry"),
+    ("cat-file", "nonzero", "unreadable-commit-blob"),
+    ("ls-tree", "duplicate", "not-tracked-at-commit"),
+    ("ls-files", "malformed", "missing-index-entry"),
+    ("cat-file", "truncated", "unreadable-commit-blob"),
+    ("cat-file", "negative-size", "unreadable-commit-blob"),
+])
+def test_readiness_batch_retains_canonical_query_failure_reasons(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, operation: str, fault: str, reason: str,
+) -> None:
+    snapshot = capture_git_snapshot(repo)
+    path = repo / "skills/demo/SKILL.md"
+    original_git = git_provenance.run_git
+
+    def failed_query(root, *args, **kwargs):
+        if args[0] == operation and fault == "nonzero":
+            return subprocess.CompletedProcess(args, 1, stdout=b"", stderr=b"failed")
+        result = original_git(root, *args, **kwargs)
+        if args[0] == operation:
+            if fault == "duplicate":
+                result.stdout *= 2
+            elif fault == "malformed":
+                result.stdout += b"invalid\tskills/demo/SKILL.md\0"
+            elif fault == "truncated":
+                result.stdout = result.stdout[:-1]
+            elif fault == "negative-size":
+                object_id = result.stdout.split(b" ", 1)[0]
+                result.stdout = object_id + b" blob -1\n\n"
+        return result
+
+    monkeypatch.setattr(git_provenance, "run_git", failed_query)
+    assert check_commit_readiness(snapshot, (path,), {}).reasons == (
+        f"{reason}:skills/demo/SKILL.md",
+    )
+
+
 def test_native_confined_reader_supports_commit_readiness_and_fallback(
     repo: Path,
     monkeypatch: pytest.MonkeyPatch,

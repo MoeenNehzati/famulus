@@ -430,7 +430,9 @@ def test_v6_postorder_covers_structural_children_and_cross_source_audits(tmp_pat
                 assert provider == owner or order.index(provider) < order.index(owner)
 
 
-def test_v6_input_scope_tracks_dependencies_and_registration_without_unrelated_sources(tmp_path: Path) -> None:
+def test_v6_input_scope_tracks_dependencies_and_registration_without_unrelated_sources(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
     root, policy = _v6_repository(tmp_path)
     _write_module(root, "unrelated-skill", schema_version=6)
     repository = GitTestRepository(root)
@@ -459,6 +461,19 @@ def test_v6_input_scope_tracks_dependencies_and_registration_without_unrelated_s
     )
     states = _v6_states(root, policy)
     target = "consumer-skill.source.gateway"
+    build_scope = certification_hashing._certification_input_scope_builder(
+        graph, states, repo_root=root, certification_basis_paths=(policy,),
+    )
+    assert build_scope((target,)) == initial
+    # Overlapping targets reuse path conversion, not evidence from another observation.
+    with monkeypatch.context() as patch:
+        def repeated_conversion(*args, **kwargs):
+            pytest.fail("the same observation normalized an already selected path again")
+        patch.setattr(certification_hashing, "repository_relative_path", repeated_conversion)
+        assert build_scope((target,)) == initial
+        assert build_scope(("provider-skill.source.gateway",)).node_ids == (
+            "provider-skill.source.gateway",
+        )
     states[target] = replace(states[target], dependency_hashes=(
         *states[target].dependency_hashes,
         {"relation": "certified-under", "target": "unrelated-skill.source.gateway", "version": 1},

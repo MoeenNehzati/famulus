@@ -74,6 +74,10 @@ interfaces:
             - description: Prove selected worktree files and index entries equal their
                 captured commit blobs and expected hashes.
               value: check-readiness
+            - description: Return independent readiness reports keyed by original
+                input Path values using one fresh tree, index, and blob batch;
+                duplicates collapse and an empty input returns an empty mapping.
+              value: check-readiness-by-path
             - description: Resolve the immutable mechanical or source-overlay migration
                 ref.
               value: read-migration-ref
@@ -245,7 +249,8 @@ interfaces:
         cardinality:
           maximum: 1
           minimum: 1
-        description: Git command result, snapshot, readiness report, provenance classification,
+        description: Git command result, snapshot, aggregate readiness report or per-input
+          readiness mapping, provenance classification,
           ignored paths, exact commit ID, or sorted materialized paths.
         direct_io_ref: return-value
         empty: Snapshot capture returns no value outside a Git repository; ignored-path

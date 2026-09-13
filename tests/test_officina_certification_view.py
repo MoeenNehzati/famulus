@@ -11,6 +11,8 @@ import pytest
 import yaml
 
 import officina.certification.view as certification_view_module
+import officina.certification.hashing as certification_hashing_module
+import officina.git.provenance as git_provenance_module
 from officina.certification.hashing import (
     CertificationFacetHashState,
     NodeHashState,
@@ -736,6 +738,7 @@ def test_certificate_currentness_accepts_later_head_with_unchanged_certified_inp
 
 def test_repository_certification_state_accepts_later_head_with_unchanged_certified_inputs(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _graph, _states, certified_commit, public_key_root, _backend, _key = (
         create_certified_fixture(tmp_path)
@@ -749,6 +752,16 @@ def test_repository_certification_state_accepts_later_head_with_unchanged_certif
         != certified_commit
     )
 
+    selected = []
+    real_basis = certification_view_module.resolve_certification_basis_paths
+
+    def select_basis(*args, **kwargs):
+        paths = real_basis(*args, **kwargs)
+        selected.append(paths)
+        return paths
+
+    monkeypatch.setattr(certification_view_module, "resolve_certification_basis_paths", select_basis)
+    monkeypatch.setattr(certification_hashing_module, "resolve_certification_basis_paths", select_basis)
     state = derive_repository_certification_state(
         tmp_path,
         public_key_root=public_key_root,
@@ -757,6 +770,10 @@ def test_repository_certification_state_accepts_later_head_with_unchanged_certif
     )
 
     assert all(status.current for status in state.currentness.nodes.values())
+    assert len(selected) == 1
+    assert state.certification_basis_hash == certification_hashing_module.compute_certification_basis_hash(
+        tmp_path, expected_schema_version=4,
+    )
 
 
 def test_certificate_currentness_propagates_explicit_non_atomic_fallback(
@@ -941,16 +958,24 @@ def test_v6_currentness_scopes_unrelated_dirt_but_requires_voyage_authority(
     repository.git("add", "unrelated.py", "unrelated.yaml", "authority.py", "authority.yaml")
     repository.git("commit", "-qm", "register scope test inputs")
     observed_paths = []
-    real_readiness = certification_view_module.check_commit_readiness
+    real_readiness = certification_view_module.check_commit_readiness_by_path
+    git_operations = []
+    real_run_git = git_provenance_module.run_git
+
+    def run_git(root, *args, **kwargs):
+        git_operations.append(args[0])
+        return real_run_git(root, *args, **kwargs)
 
     def readiness(snapshot, paths, hashes, **kwargs):
         observed_paths.extend(paths)
         return real_readiness(snapshot, paths, hashes, **kwargs)
 
-    monkeypatch.setattr(certification_view_module, "check_commit_readiness", readiness)
+    monkeypatch.setattr(certification_view_module, "check_commit_readiness_by_path", readiness)
+    monkeypatch.setattr(git_provenance_module, "run_git", run_git)
 
     def evaluate():
         observed_paths.clear()
+        git_operations.clear()
         report = evaluate_certificate_currentness(
             graph, states, repo_root=tmp_path, public_key_root=public_keys,
             source_commit=commit, certifier_identity=CERTIFIER,
@@ -958,6 +983,9 @@ def test_v6_currentness_scopes_unrelated_dirt_but_requires_voyage_authority(
             certification_basis_paths=(), schema_root=CANONICAL_SCHEMA_ROOT,
         )
         assert len(observed_paths) == len(set(observed_paths))
+        assert [operation for operation in git_operations if operation in {"ls-tree", "ls-files", "cat-file"}] == [
+            "ls-tree", "ls-files", "cat-file",
+        ]
         return report.nodes[target]
 
     assert evaluate().current

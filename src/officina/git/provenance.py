@@ -465,33 +465,126 @@ def snapshot_head_matches(snapshot: GitSnapshot | None) -> bool:
     return current.returncode == 0 and _output_text(current) == snapshot.commit
 
 
-def _tree_entry(
-    snapshot: GitSnapshot, relative_path: str
-) -> tuple[str, str] | None:
-    result = _git(
+def _commit_entries_batch(snapshot: GitSnapshot, relative_paths: Sequence[str]) -> dict[str, tuple[str, str]] | None:
+    """Load requested commit modes and object IDs in one tree query."""
+    if not relative_paths:
+        return {}
+    requested_paths = set(relative_paths)
+    result = run_git(
         snapshot.repo_root,
         "ls-tree",
+        "-r",
         "-z",
+        "--full-tree",
         snapshot.commit,
-        "--",
-        _literal_pathspec(relative_path),
         check=False,
     )
-    if result.returncode != 0 or not result.stdout:
+    if result.returncode != 0:
         return None
-    records = result.stdout.rstrip(b"\0").split(b"\0")
-    if len(records) != 1:
+    entries: dict[str, tuple[str, str]] = {}
+    invalid: set[str] = set()
+    for record in result.stdout.rstrip(b"\0").split(b"\0"):
+        metadata, separator, raw_path = record.partition(b"\t")
+        relative_path = os.fsdecode(raw_path)
+        if relative_path not in requested_paths:
+            continue
+        fields = metadata.split()
+        if relative_path in entries or not separator or len(fields) != 3 or fields[1] != b"blob":
+            invalid.add(relative_path)
+            continue
+        try:
+            mode = fields[0].decode("ascii")
+            object_id = fields[2].decode("ascii")
+        except UnicodeError:
+            invalid.add(relative_path)
+            continue
+        entries[relative_path] = (mode, object_id)
+    return {path: entry for path, entry in entries.items() if path not in invalid}
+
+
+def _index_entries_batch(snapshot: GitSnapshot, relative_paths: Sequence[str]) -> dict[str, tuple[tuple[str, str, str], ...]] | None:
+    """Load requested index modes, object IDs, and stages in one query."""
+    if not relative_paths:
+        return {}
+    requested_paths = set(relative_paths)
+    result = run_git(
+        snapshot.repo_root,
+        "ls-files",
+        "--stage",
+        "-z",
+        check=False,
+    )
+    if result.returncode != 0:
         return None
-    metadata, separator, returned_path = records[0].partition(b"\t")
-    fields = metadata.split()
-    if (
-        not separator
-        or returned_path != os.fsencode(relative_path)
-        or len(fields) != 3
-        or fields[1] != b"blob"
-    ):
+    grouped: dict[str, list[tuple[str, str, str]]] = {}
+    invalid: set[str] = set()
+    for record in result.stdout.rstrip(b"\0").split(b"\0"):
+        metadata, separator, raw_path = record.partition(b"\t")
+        try:
+            relative_path = os.fsdecode(raw_path)
+        except UnicodeError:
+            continue
+        if relative_path not in requested_paths:
+            continue
+        fields = metadata.split()
+        if not separator or len(fields) != 3:
+            invalid.add(relative_path)
+            continue
+        try:
+            entry = tuple(field.decode("ascii") for field in fields)
+        except UnicodeError:
+            invalid.add(relative_path)
+            continue
+        grouped.setdefault(relative_path, []).append(entry)
+    return {
+        path: tuple(entries)
+        for path, entries in grouped.items()
+        if path not in invalid
+    }
+
+
+def _commit_blobs_batch(snapshot: GitSnapshot, object_ids: Sequence[str]) -> dict[str, bytes] | None:
+    """Read unique commit blobs through one size-delimited batch."""
+    ordered_ids = tuple(sorted(set(object_ids)))
+    if not ordered_ids:
+        return {}
+    result = run_git(
+        snapshot.repo_root,
+        "cat-file",
+        "--batch",
+        check=False,
+        input_bytes=b"".join(
+            object_id.encode("ascii") + b"\n" for object_id in ordered_ids
+        ),
+    )
+    if result.returncode != 0:
         return None
-    return fields[0].decode("ascii"), fields[2].decode("ascii")
+    blobs: dict[str, bytes] = {}
+    output = result.stdout
+    offset = 0
+    for requested_id in ordered_ids:
+        header_end = output.find(b"\n", offset)
+        if header_end < 0:
+            break
+        header = output[offset:header_end].split()
+        offset = header_end + 1
+        if header == [requested_id.encode("ascii"), b"missing"]:
+            continue
+        if len(header) != 3 or header[1] != b"blob":
+            break
+        try:
+            returned_id = header[0].decode("ascii")
+            size = int(header[2])
+        except (UnicodeError, ValueError):
+            break
+        payload_end = offset + size
+        if size < 0 or payload_end >= len(output) or output[payload_end : payload_end + 1] != b"\n":
+            break
+        payload = output[offset:payload_end]
+        offset = payload_end + 1
+        if returned_id == requested_id:
+            blobs[requested_id] = payload
+    return blobs
 
 
 def _literal_pathspec(relative_path: str) -> str:
@@ -595,36 +688,6 @@ def git_file_provenance(repo_root: Path, path: Path) -> str:
     return next(iter(git_file_provenance_batch(repo_root, (path,)).values()))
 
 
-def _index_entries(
-    repo_root: Path, relative_path: str
-) -> tuple[tuple[str, str, str], ...] | None:
-    result = _git(
-        repo_root,
-        "ls-files",
-        "--stage",
-        "-z",
-        "--",
-        _literal_pathspec(relative_path),
-        check=False,
-    )
-    if result.returncode != 0 or not result.stdout:
-        return None
-    records = result.stdout.rstrip(b"\0").split(b"\0")
-    entries: list[tuple[str, str, str]] = []
-    for record in records:
-        metadata, separator, returned_path = record.partition(b"\t")
-        fields = metadata.split()
-        if (
-            not separator
-            or returned_path != os.fsencode(relative_path)
-            or len(fields) != 3
-        ):
-            return None
-        mode, object_id, stage = (field.decode("ascii") for field in fields)
-        entries.append((mode, object_id, stage))
-    return tuple(entries)
-
-
 def _descriptor_safe_open_supported() -> bool:
     return (
         os.name == "posix"
@@ -702,13 +765,6 @@ def _read_descriptor_safe_regular_file(
             os.close(directory_fd)
 
 
-def _commit_blob(repo_root: Path, object_id: str) -> bytes | None:
-    result = _git(repo_root, "cat-file", "blob", object_id, check=False)
-    if result.returncode != 0:
-        return None
-    return result.stdout
-
-
 def _readiness(reasons: set[str], source: dict[str, object]) -> CommitReadiness:
     ordered_reasons = tuple(sorted(reasons))
     return CommitReadiness(
@@ -730,24 +786,68 @@ def check_commit_readiness(
     if snapshot is None:
         return CommitReadiness(False, None, ("not-a-git-repository",))
 
-    reasons: set[str] = set()
-    relative_paths: set[str] = set()
+    results = check_commit_readiness_by_path(
+        snapshot, input_paths, expected_hashes, allow_non_atomic=allow_non_atomic,
+    )
+    return _readiness(
+        {reason for result in results.values() for reason in result.reasons},
+        {
+            "vcs": "git",
+            "commit": snapshot.commit,
+            "input_paths": sorted({
+                path for result in results.values() if result.source is not None
+                for path in result.source["input_paths"]
+            }),
+        },
+    )
+
+
+def check_commit_readiness_by_path(
+    snapshot: GitSnapshot | None,
+    input_paths: Sequence[Path],
+    expected_hashes: Mapping[str, str],
+    *,
+    allow_non_atomic: bool = False,
+) -> dict[Path, CommitReadiness]:
+    """Check each input independently with one fresh tree, index and blob batch."""
+    if snapshot is None:
+        return {
+            path: CommitReadiness(False, None, ("not-a-git-repository",))
+            for path in input_paths
+        }
+
+    results: dict[Path, CommitReadiness] = {}
+    relative_paths: dict[Path, str] = {}
     for path in input_paths:
         try:
-            relative_path = repository_relative_posix(path, snapshot.repo_root)
+            relative_paths[path] = repository_relative_posix(path, snapshot.repo_root)
         except RepositoryPathError:
-            reasons.add("input-outside-repository")
-        else:
-            relative_paths.add(relative_path)
-    ordered_paths = sorted(relative_paths)
+            results[path] = CommitReadiness(False, None, ("input-outside-repository",))
+    ordered_paths = sorted(set(relative_paths.values()))
+    try:
+        commit_entries = _commit_entries_batch(snapshot, ordered_paths) or {}
+        index_by_path = _index_entries_batch(snapshot, ordered_paths) or {}
+    except OSError:
+        results.update({
+            path: CommitReadiness(False, None, (f"git-unavailable:{relative}",))
+            for path, relative in relative_paths.items()
+        })
+        return results
+    try:
+        commit_blobs = _commit_blobs_batch(
+            snapshot, tuple(object_id for _mode, object_id in commit_entries.values()),
+        ) or {}
+    except OSError:
+        commit_blobs = {}
+        blob_unavailable = True
+    else:
+        blob_unavailable = False
 
+    reasons_by_path: dict[str, set[str]] = {}
     for relative_path in ordered_paths:
-        try:
-            commit_entry = _tree_entry(snapshot, relative_path)
-            index_entries = _index_entries(snapshot.repo_root, relative_path)
-        except OSError:
-            reasons.add(f"git-unavailable:{relative_path}")
-            continue
+        reasons = reasons_by_path[relative_path] = set()
+        commit_entry = commit_entries.get(relative_path)
+        index_entries = index_by_path.get(relative_path)
         if commit_entry is None:
             reasons.add(f"not-tracked-at-commit:{relative_path}")
             continue
@@ -774,13 +874,10 @@ def check_commit_readiness(
         if index_object_id != commit_object_id:
             reasons.add(f"index-differs-from-commit:{relative_path}")
             continue
-        try:
-            commit_bytes = _commit_blob(snapshot.repo_root, commit_object_id)
-        except OSError:
-            reasons.add(f"git-unavailable:{relative_path}")
-            continue
+        commit_bytes = commit_blobs.get(commit_object_id)
         if commit_bytes is None:
-            reasons.add(f"unreadable-commit-blob:{relative_path}")
+            reason = "git-unavailable" if blob_unavailable else "unreadable-commit-blob"
+            reasons.add(f"{reason}:{relative_path}")
             continue
         worktree_bytes, worktree_mode, worktree_reason = (
             _read_descriptor_safe_regular_file(
@@ -806,9 +903,10 @@ def check_commit_readiness(
         if expected_hash is not None and working_hash != expected_hash:
             reasons.add(f"expected-hash-mismatch:{relative_path}")
 
-    source = {
-        "vcs": "git",
-        "commit": snapshot.commit,
-        "input_paths": ordered_paths,
-    }
-    return _readiness(reasons, source)
+    results.update({
+        path: _readiness(reasons_by_path[relative], {
+            "vcs": "git", "commit": snapshot.commit, "input_paths": [relative],
+        })
+        for path, relative in relative_paths.items()
+    })
+    return results

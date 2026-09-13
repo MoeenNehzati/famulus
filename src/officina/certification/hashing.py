@@ -288,7 +288,18 @@ def _certification_input_scope_builder(
     """
 
     root = Path(repo_root).resolve()
-    basis = tuple(sorted({_repository_path(path, root) for path in certification_basis_paths}))
+
+    @lru_cache(maxsize=None)
+    def confined_path(path: Path) -> Path:
+        """Normalize one evidence path within this observation."""
+        return _repository_path(path, root)
+
+    @lru_cache(maxsize=None)
+    def relative_path(path: Path) -> str:
+        """Encode one evidence path within this observation."""
+        return repository_relative_path(path, root).as_posix()
+
+    basis = tuple(sorted({confined_path(path) for path in certification_basis_paths}))
     # Whole-repository requests must also account for independent roots removed
     # before observation. A selected-target request does not own those roots.
     inventory_paths = tuple(
@@ -429,7 +440,7 @@ def _certification_input_scope_builder(
         local: dict[str, str] = {}
         for node_id in identity_nodes:
             for entry in states[node_id].input_manifest:
-                path = _repository_path(root / entry["path"], root)
+                path = confined_path(root / entry["path"])
                 if entry["git_provenance"] == "tracked":
                     tracked.add(path)
                 else:
@@ -437,7 +448,7 @@ def _certification_input_scope_builder(
                     if entry["path"] in local and local[entry["path"]] != digest:
                         raise CertificationHashError(f"conflicting local scope input: {entry['path']}")
                     local[entry["path"]] = digest
-        tracked.update(_repository_path(graph.nodes[node_id].blueprint_path, root) for node_id in declarations)
+        tracked.update(confined_path(graph.nodes[node_id].blueprint_path) for node_id in declarations)
         node_ids = tuple(sorted(identity_nodes))
         identity = _hash_value({
             "whole_graph": whole_graph,
@@ -454,15 +465,15 @@ def _certification_input_scope_builder(
             },
             "declarations": {
                 node_id: {
-                    "path": repository_relative_path(graph.nodes[node_id].blueprint_path, root).as_posix(),
+                    "path": relative_path(graph.nodes[node_id].blueprint_path),
                     "declaration": graph.nodes[node_id].declaration,
                     "owner": graph.source_modules.get(node_id),
                     "parent": graph.module_parents.get(node_id),
                 }
                 for node_id in sorted(declarations)
             },
-            "tracked_paths": [repository_relative_path(path, root).as_posix() for path in sorted(tracked)],
-            "basis_paths": [repository_relative_path(path, root).as_posix() for path in basis],
+            "tracked_paths": [relative_path(path) for path in sorted(tracked)],
+            "basis_paths": [relative_path(path) for path in basis],
             "local_claims": local,
         })
         return CertificationInputScope(node_ids, tuple(sorted(tracked)), MappingProxyType(local), identity)
@@ -1021,12 +1032,20 @@ def compute_certification_basis_hash(
     """Hash the explicitly selected certification-basis manifest and files."""
 
     root = Path(repo_root).resolve()
-    entries: list[dict[str, str]] = []
-    for path in resolve_certification_basis_paths(
+    paths = resolve_certification_basis_paths(
         root,
         expected_schema_version=expected_schema_version,
         allow_non_atomic=allow_non_atomic,
-    ):
+    )
+    return _hash_certification_basis_paths(root, paths, allow_non_atomic=allow_non_atomic)
+
+
+def _hash_certification_basis_paths(
+    root: Path, paths: Sequence[Path], *, allow_non_atomic: bool = False,
+) -> str:
+    """Read and hash basis paths already selected for this observation."""
+    entries: list[dict[str, str]] = []
+    for path in paths:
         try:
             relative = repository_relative_path(path, root).as_posix()
         except RepositoryPathError as exc:

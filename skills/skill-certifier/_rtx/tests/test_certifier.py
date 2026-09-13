@@ -28,6 +28,7 @@ from officina.certification.records import (
     sign_certificate_payload,
 )
 from officina.git.provenance import check_commit_readiness
+import officina.git.provenance as git_provenance
 from officina.runtime.python_machine_interface import (
     logical_python_package_name,
 )
@@ -1210,13 +1211,13 @@ def test_batched_readiness_uses_fixed_git_process_count(
     )
     expected_hashes = certifier._expected_file_hashes(snapshot, paths)
     operations: list[tuple[str, ...]] = []
-    real_run_git = certifier.run_git
+    real_run_git = git_provenance.run_git
 
     def counted_run_git(repo_root: Path, *args: str, **kwargs: object):
         operations.append(args)
         return real_run_git(repo_root, *args, **kwargs)
 
-    monkeypatch.setattr(certifier, "run_git", counted_run_git)
+    monkeypatch.setattr(git_provenance, "run_git", counted_run_git)
 
     readiness = certifier.CommitReadinessInspector(
         snapshot,
@@ -1279,14 +1280,14 @@ def test_batched_readiness_names_failed_metadata_query(
     assert snapshot is not None
     path = tmp_path / "skills" / "demo-skill" / "SKILL.md"
     expected_hashes = certifier._expected_file_hashes(snapshot, (path,))
-    real_run_git = certifier.run_git
+    real_run_git = git_provenance.run_git
 
     def fail_metadata_query(repo_root: Path, *args: str, **kwargs: object):
         if args[0] == failed_operation:
             return SimpleNamespace(returncode=1, stdout=b"", stderr=b"query failed")
         return real_run_git(repo_root, *args, **kwargs)
 
-    monkeypatch.setattr(certifier, "run_git", fail_metadata_query)
+    monkeypatch.setattr(git_provenance, "run_git", fail_metadata_query)
 
     readiness = certifier.CommitReadinessInspector(
         snapshot,
@@ -1460,14 +1461,14 @@ def test_batched_readiness_preserves_blob_query_unavailable_reason(
     assert snapshot is not None
     path = tmp_path / "skills" / "demo-skill" / "SKILL.md"
     expected_hashes = certifier._expected_file_hashes(snapshot, (path,))
-    real_run_git = certifier.run_git
+    real_run_git = git_provenance.run_git
 
     def fail_blob_query(repo_root: Path, *args: str, **kwargs: object):
         if args[:2] == ("cat-file", "--batch"):
             raise OSError("Git unavailable")
         return real_run_git(repo_root, *args, **kwargs)
 
-    monkeypatch.setattr(certifier, "run_git", fail_blob_query)
+    monkeypatch.setattr(git_provenance, "run_git", fail_blob_query)
 
     readiness = certifier.CommitReadinessInspector(
         snapshot,

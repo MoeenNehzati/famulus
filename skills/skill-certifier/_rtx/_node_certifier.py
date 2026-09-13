@@ -65,6 +65,9 @@ from officina.certification.view import (
 )
 from officina.git.provenance import (
     CommitReadiness,
+    _commit_entries_batch,
+    _index_entries_batch,
+    _commit_blobs_batch,
     GitMaterializationError,
     GitSnapshot,
     blueprint_v4_mechanical_commit as blueprint_mechanical_commit,
@@ -594,208 +597,20 @@ class CommitReadinessInspector:
                 reasons.add("input-outside-repository")
         return tuple(sorted(relative_paths))
 
-    def _commit_entries(
-        self,
-        relative_paths: Sequence[str],
-    ) -> dict[str, tuple[str, str]] | None:
-        """Load requested commit modes and object IDs in one tree query.
-
-        Intent
-        ------
-        Filter the captured commit's complete recursive tree to the exact requested input paths and map each matching blob to its mode and object ID.
-
-        Rationale
-        ---------
-        A fixed-size Git command avoids host command-line limits, while set membership keeps filtering linear in the returned tree size.
-
-        Pseudocode
-        ----------
-        - set requested_paths = exact_input_path_set
-        - set tree_result = complete_recursive_commit_tree_query
-        - if tree_result failed:
-          - return unavailable
-        - set commit_entries = requested_parsed_blob_entries
-        - return commit_entries
-
-        Wraps
-        -----
-        - none
-
-        InstantiationsFromRepo
-        ----------------------
-        officina.git.provenance.run_git:
-          why:
-            constructs: "Produces the batched tree bytes parsed into returned commit entries."
-        """
+    def _commit_entries(self, relative_paths: Sequence[str]) -> dict[str, tuple[str, str]] | None:
+        """Delegate the batch read while retaining inspector failure handling."""
         assert self._snapshot is not None
-        if not relative_paths:
-            return {}
-        requested_paths = set(relative_paths)
-        result = run_git(
-            self._snapshot.repo_root,
-            "ls-tree",
-            "-r",
-            "-z",
-            "--full-tree",
-            self._snapshot.commit,
-            check=False,
-        )
-        if result.returncode != 0:
-            return None
-        entries: dict[str, tuple[str, str]] = {}
-        for record in result.stdout.rstrip(b"\0").split(b"\0"):
-            metadata, separator, raw_path = record.partition(b"\t")
-            fields = metadata.split()
-            if not separator or len(fields) != 3 or fields[1] != b"blob":
-                continue
-            try:
-                relative_path = os.fsdecode(raw_path)
-                mode = fields[0].decode("ascii")
-                object_id = fields[2].decode("ascii")
-            except UnicodeError:
-                continue
-            if relative_path in requested_paths:
-                entries[relative_path] = (mode, object_id)
-        return entries
+        return _commit_entries_batch(self._snapshot, relative_paths)
 
-    def _index_entries(
-        self,
-        relative_paths: Sequence[str],
-    ) -> dict[str, tuple[tuple[str, str, str], ...]] | None:
-        """Load requested index modes, object IDs, and stages in one query.
-
-        Intent
-        ------
-        Filter the complete index to the exact requested repository-relative inputs and group every matching entry by path.
-
-        Rationale
-        ---------
-        A fixed-size Git command avoids host command-line limits and still retains conflict-stage evidence for requested paths.
-
-        Pseudocode
-        ----------
-        - set requested_paths = exact_input_path_set
-        - set index_result = complete_index_query
-        - if index_result failed:
-          - return unavailable
-        - set grouped_entries = requested_index_records_by_path
-        - return grouped_entries_without_malformed_paths
-
-        Wraps
-        -----
-        - none
-
-        InstantiationsFromRepo
-        ----------------------
-        officina.git.provenance.run_git:
-          why:
-            constructs: "Produces the batched index bytes parsed into returned grouped entries."
-        """
+    def _index_entries(self, relative_paths: Sequence[str]) -> dict[str, tuple[tuple[str, str, str], ...]] | None:
+        """Delegate the batch read while retaining inspector failure handling."""
         assert self._snapshot is not None
-        if not relative_paths:
-            return {}
-        requested_paths = set(relative_paths)
-        result = run_git(
-            self._snapshot.repo_root,
-            "ls-files",
-            "--stage",
-            "-z",
-            check=False,
-        )
-        if result.returncode != 0:
-            return None
-        grouped: dict[str, list[tuple[str, str, str]]] = {}
-        invalid: set[str] = set()
-        for record in result.stdout.rstrip(b"\0").split(b"\0"):
-            metadata, separator, raw_path = record.partition(b"\t")
-            try:
-                relative_path = os.fsdecode(raw_path)
-            except UnicodeError:
-                continue
-            if relative_path not in requested_paths:
-                continue
-            fields = metadata.split()
-            if not separator or len(fields) != 3:
-                invalid.add(relative_path)
-                continue
-            try:
-                entry = tuple(field.decode("ascii") for field in fields)
-            except UnicodeError:
-                invalid.add(relative_path)
-                continue
-            grouped.setdefault(relative_path, []).append(entry)
-        return {
-            path: tuple(entries)
-            for path, entries in grouped.items()
-            if path not in invalid
-        }
+        return _index_entries_batch(self._snapshot, relative_paths)
 
     def _commit_blobs(self, object_ids: Sequence[str]) -> dict[str, bytes] | None:
-        """Read unique commit blobs through one size-delimited batch.
-
-        Intent
-        ------
-        Return exact blob bytes keyed by object ID for every requested commit object that Git can read, or report that the batch query failed.
-
-        Rationale
-        ---------
-        Size-delimited parsing preserves arbitrary binary content while bounding Git process count.
-
-        Pseudocode
-        ----------
-        - set batch_result = commit_blob_batch_query
-        - set blobs = size_delimited_payloads_by_object_id
-        - return blobs
-
-        Wraps
-        -----
-        - none
-
-        InstantiationsFromRepo
-        ----------------------
-        officina.git.provenance.run_git:
-          why:
-            constructs: "Produces size-delimited batch output parsed into returned blob bytes."
-        """
+        """Delegate the batch read while retaining inspector failure handling."""
         assert self._snapshot is not None
-        ordered_ids = tuple(sorted(set(object_ids)))
-        if not ordered_ids:
-            return {}
-        result = run_git(
-            self._snapshot.repo_root,
-            "cat-file",
-            "--batch",
-            check=False,
-            input_bytes=b"".join(
-                object_id.encode("ascii") + b"\n" for object_id in ordered_ids
-            ),
-        )
-        if result.returncode != 0:
-            return None
-        blobs: dict[str, bytes] = {}
-        output = result.stdout
-        offset = 0
-        for requested_id in ordered_ids:
-            header_end = output.find(b"\n", offset)
-            if header_end < 0:
-                break
-            header = output[offset:header_end].split()
-            offset = header_end + 1
-            if len(header) != 3 or header[1] != b"blob":
-                continue
-            try:
-                returned_id = header[0].decode("ascii")
-                size = int(header[2])
-            except (UnicodeError, ValueError):
-                break
-            payload_end = offset + size
-            if payload_end >= len(output) or output[payload_end : payload_end + 1] != b"\n":
-                break
-            payload = output[offset:payload_end]
-            offset = payload_end + 1
-            if returned_id == requested_id:
-                blobs[requested_id] = payload
-        return blobs
+        return _commit_blobs_batch(self._snapshot, object_ids)
 
     @staticmethod
     def _descriptor_safe_open_supported() -> bool:
