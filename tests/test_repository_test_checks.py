@@ -305,10 +305,18 @@ def test_prepush_defers_browser_and_slow_tests_from_parallel_pool() -> None:
     )
 
 
+@pytest.mark.parametrize("suite", ["pre-push", "validators"])
 def test_docstring_validator_is_reserved_for_full_unless_explicit(
     tmp_path: Path,
     monkeypatch,
+    suite: str,
 ) -> None:
+    validators = tmp_path / "validators"
+    validators.mkdir()
+    docstrings = validators / "docstrings.py"
+    docstrings.write_text("", encoding="utf-8")
+    other = validators / "other.py"
+    other.write_text("", encoding="utf-8")
     commands = []
     monkeypatch.setattr(runner, "_capture_working_staged_paths", lambda _root: ())
     monkeypatch.setattr(
@@ -317,11 +325,11 @@ def test_docstring_validator_is_reserved_for_full_unless_explicit(
         lambda command, **_kwargs: commands.append(command) or 0,
     )
 
-    assert runner.run_suite(tmp_path, "pre-push", repository_view="working") == 0
+    assert runner.run_suite(tmp_path, suite, repository_view="working") == 0
     assert runner.run_suite(tmp_path, "full", repository_view="working") == 0
     assert runner.run_suite(
         tmp_path,
-        "pre-push",
+        suite,
         validator_ids=("repo/docstrings",),
         repository_view="working",
     ) == 0
@@ -330,6 +338,11 @@ def test_docstring_validator_is_reserved_for_full_unless_explicit(
     assert "--officina-exclude-validator" not in combined[1]
     assert "--officina-validator" in combined[2]
     assert "--officina-exclude-validator" not in combined[2]
+    if suite == "validators":
+        assert str(docstrings) not in combined[0]
+        assert str(other) in combined[0]
+        assert str(docstrings) in combined[2]
+        assert str(other) not in combined[2]
 
 
 def test_functional_phase_uses_native_discovery_without_explicit_roots(

@@ -75,6 +75,7 @@ PRECOMMIT_EXCLUDED_TESTS = {
 }
 PREPUSH_EXCLUDED_TESTS = CHROME_TESTS | DOCSTRING_TESTS | PERFORMANCE_TESTS
 SUITE_EXCLUDED_VALIDATORS = {
+    "validators": {"repo/docstrings"},
     "precommit": {"repo/docstrings"},
     "pre-push": {"repo/docstrings"},
 }

@@ -57,7 +57,7 @@ of test directories.
 
 | Suite | Repository view by default | Contents |
 | --- | --- | --- |
-| `validators` | working | All selected repository validators. |
+| `validators` | working | Repository validators except docstrings, unless explicitly selected. |
 | `tests` | working | Full functional selection, then performance thresholds serially. |
 | `precommit` | staged | Validators and the fast functional selection in one pytest invocation. |
 | `pre-push` | working | Validators and functional tests except docstring and performance tests. |
@@ -68,6 +68,10 @@ The precommit selection excludes installation tests, Chrome tests, docstring
 tests, performance thresholds, the docstring validator, and the nested-module
 inventory assertion that requires a clean committed checkout. The latter is
 incompatible with a hook that necessarily runs while changes are staged.
+
+Run the docstring validator explicitly with
+`repo_checks.py --suite validators --validator repo/docstrings`.
+The `full` suite still includes it.
 
 The full suite runs `tests/test_dispatcher_performance.py` first and keeps
 Chrome-backed modules in a later separate single-worker invocation. Prior
