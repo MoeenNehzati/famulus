@@ -1796,11 +1796,13 @@ def _windows_atomic_compare_and_replace_bytes(path: Path, data: bytes, *, expect
         predecessor, _information = _windows_open_validated(parent_handle, name, access=_WIN_READ_ACCESS, disposition=1, options=_WIN_FILE_OPTIONS, directory=False)
         if _windows_read_handle(predecessor) != expected_previous_bytes:
             raise AtomicWriteError(f"compare predecessor mismatch: {path}")
+        _windows_require_restrictive_acl(predecessor, name)
         temp_handle, _temp_name = _windows_write_temp(parent_handle, name, data)
         _windows_verify_parent_chain(parents, parts)
         _windows_verify_named_handle(parent_handle, name, predecessor)
         if _windows_read_handle(predecessor) != expected_previous_bytes:
             raise AtomicWriteError(f"destination changed after preflight: {path}")
+        _windows_require_restrictive_acl(predecessor, name)
         renamed = _windows_rename_handle(temp_handle, parent_handle, name, replace=True)
         if not renamed:
             raise AtomicWriteError(f"native replace collision: {name}")
@@ -1825,6 +1827,7 @@ def _windows_atomic_compare_and_delete(path: Path, *, expected_previous_bytes: b
         if _windows_read_handle(predecessor) != expected_previous_bytes:
             raise AtomicWriteError(f"compare predecessor mismatch: {path}")
         _windows_verify_named_handle(parent_handle, name, predecessor)
+        _windows_require_restrictive_acl(predecessor, name)
         _windows_mark_delete(predecessor)
         _windows_flush_handle(predecessor)
     finally:

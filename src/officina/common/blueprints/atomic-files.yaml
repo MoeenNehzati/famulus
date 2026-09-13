@@ -43,8 +43,8 @@ interfaces:
             kind: string
         expected-previous-bytes:
           description: Complete expected predecessor bytes for compare-and-append,
-            compare-and-replace, or compare-and-delete; compare-and-replace alone
-            also accepts null when absence is expected.
+            compare-and-replace, or compare-and-delete; compare-and-append and
+            compare-and-replace also accept null when absence is expected.
           required: false
           sensitivity: user-private
           type:
@@ -60,8 +60,10 @@ interfaces:
             maximum: 4095
             minimum: 0
         mode:
-          default: 384
-          description: Requested file permission bits for mutation operations.
+          description: Required keyword for replace, create, append, compare-and-append,
+            and compare-and-replace. Exclusive-lock alone defaults to 384 (0600);
+            read and compare-and-delete do not accept it. POSIX applies these
+            permission bits; Windows uses its restrictive native DACL instead.
           required: false
           sensitivity: public
           type:
@@ -105,7 +107,8 @@ interfaces:
             syntax: literal
       caller_warnings:
       - external-side-effect: Mutation operations create, change, or remove a local file;
-          compare operations may fail when another writer changes it. Exclusive locking serializes only callers
+          compare operations may fail when another writer changes it. Compare-and-append
+          can change permissions before rejecting a predecessor mismatch. Exclusive locking serializes only callers
           that acquire the same stable sidecar; it does not govern direct edits or external
           systems. Handle confinement rejects path and symlink swaps, but a noncooperating
           already-open writer can race the separate final comparison and publication steps;
@@ -114,7 +117,7 @@ interfaces:
         network: []
         reads:
         - access: read
-          content: confined regular-file bytes
+          content: confined regular-file bytes and permission metadata
           formats:
           - binary
           id: target-file
@@ -123,7 +126,7 @@ interfaces:
           sensitivity: user-private
         writes:
         - access: read-write
-          content: confined regular-file bytes
+          content: confined regular-file bytes and permission metadata
           formats:
           - binary
           id: target-file
@@ -149,6 +152,20 @@ interfaces:
           value_source:
             argument_ref: data
             kind: argument
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: target-file
+            kind: direct-io
+          direct_io_ref: target-file
+          id: file-permissions
+          may_occur_in_outcomes:
+          - completed
+          - conflict
+          reversibility:
+            irreversible: Previous permission bits or DACL are not retained for rollback.
+          value_source:
+            direct_io_ref: target-file
+            kind: direct-io
         lifecycle: finite
         mutation_safety:
           atomicity:
@@ -183,6 +200,7 @@ interfaces:
         class: success
         effects:
         - file-state
+        - file-permissions
         id: completed
         outputs:
         - result
@@ -193,9 +211,11 @@ interfaces:
         id: rejected
         outputs: []
       - caller_action: Reread the file and decide whether to retry the compare-and-append,
-          compare-and-replace, or compare-and-delete operation.
+          compare-and-replace, or compare-and-delete operation; inspect permissions
+          because compare-and-append may have changed them before the conflict.
         class: error
-        effects: []
+        effects:
+        - file-permissions
         id: conflict
         outputs: []
       outputs:

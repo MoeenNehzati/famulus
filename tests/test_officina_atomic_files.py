@@ -682,6 +682,8 @@ def test_compare_and_append_distinguishes_missing_empty_and_exact_predecessor(
 ) -> None:
     target = tmp_path / "certificate.jsonl"
     target.write_bytes(b"")
+    if os.name == "posix":
+        target.chmod(0o644)
 
     with pytest.raises(AtomicWriteError, match="predecessor mismatch"):
         atomic_compare_and_append_bytes(
@@ -691,6 +693,9 @@ def test_compare_and_append_distinguishes_missing_empty_and_exact_predecessor(
             allowed_root=tmp_path,
             mode=0o600,
         )
+    assert target.read_bytes() == b""
+    if os.name == "posix":
+        assert stat.S_IMODE(target.stat().st_mode) == 0o600
     atomic_compare_and_append_bytes(
         target,
         b"first\n",
@@ -965,6 +970,40 @@ def test_windows_file_disposition_boolean_has_native_one_byte_abi() -> None:
 
     assert fields["DeleteFile"] is ctypes.c_ubyte
     assert ctypes.sizeof(atomic_files._WinFileDispositionInformation) == 1
+
+
+@pytest.mark.parametrize("operation,refuse_check", [("replace", 1), ("replace", 2), ("delete", 1)])
+def test_windows_compare_refuses_predecessor_acl_before_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str, refuse_check: int,
+) -> None:
+    checks = []
+    deleted = []
+    monkeypatch.setattr(atomic_files, "_windows_open_parent", lambda *_a: ([10], ("target",)))
+    monkeypatch.setattr(atomic_files, "_windows_open_validated", lambda *_a, **_k: (11, 1))
+    monkeypatch.setattr(atomic_files, "_windows_read_handle", lambda _handle: b"previous")
+    monkeypatch.setattr(atomic_files, "_windows_write_temp", lambda *_a: (12, "temporary"))
+    for name in ("_windows_verify_parent_chain", "_windows_verify_named_handle", "_windows_close_chain"):
+        monkeypatch.setattr(atomic_files, name, lambda *_a: None)
+
+    def restrictive(handle):
+        checks.append(handle)
+        return len(checks) < refuse_check
+
+    def delete(handle):
+        assert handle == 12, "predecessor deleted despite invalid ACL"
+        deleted.append(handle)
+
+    monkeypatch.setattr(atomic_files, "_windows_verify_handle_user_restrictive_acl", restrictive)
+    monkeypatch.setattr(atomic_files, "_windows_mark_delete", delete)
+    monkeypatch.setattr(atomic_files, "_windows_rename_handle", lambda *_a, **_k: pytest.fail("replacement published despite invalid ACL"))
+    arguments = dict(expected_previous_bytes=b"previous", expected_previous_mode=0o600, allowed_root=tmp_path)
+    with pytest.raises(AtomicWriteError, match="restrictive native ACL verification failed"):
+        if operation == "replace":
+            atomic_files._windows_atomic_compare_and_replace_bytes(tmp_path / "target", b"new", mode=0o600, **arguments)
+        else:
+            atomic_files._windows_atomic_compare_and_delete(tmp_path / "target", **arguments)
+    assert checks == [11] * refuse_check
+    assert deleted == ([12] if refuse_check == 2 else [])
 
 
 def test_windows_directory_handle_requests_relative_rename_target_access() -> None:

@@ -2,8 +2,22 @@
 
 Status: scoped-guard correction implemented and validated in
 `feat/certification-audit-pool`, 2026-09-13. Rutter contract repairs are committed
-as `1b1c4512`; scoped guards, regressions and documentation form this separate
-follow-up. Live certificate issuance remains unverified.
+as `1b1c4512`; scoped guards, regressions and documentation are committed as
+`48560387`. Default standalone docstring validation became opt-in in `e55a3851`.
+Live certificate issuance remains unverified.
+
+The committed-input trial at `e55a3851` initialized successfully and dispatched
+one fresh `audit-interface@3` worker for
+`common.source.atomic-files.interface.python-api`. Its unchanged raw report
+produced terminal `failed`: the atomic-files contract misstated mode defaults,
+missing-predecessor support and conflict permission effects, and Windows compare
+replace/delete omitted the promised predecessor ACL checks. No certificate was
+issued. Two independent reviewers confirmed the findings and approved a narrow
+repair: correct the declarations and reuse the existing ACL helper at the Windows
+mutation boundaries. Four focused regression cases passed on Linux; native
+Windows execution remains unverified. Resume with a fresh Voyage after committing
+the repair; the failed Voyage and raw report remain retained under
+`_build/interactive-certification/committed-toml-io-*`.
 
 Version-6 preparation, signing and currentness now share an evidence scope:
 selected nodes and prerequisites, certification authorities and Voyage machinery,
