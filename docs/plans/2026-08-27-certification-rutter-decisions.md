@@ -673,6 +673,19 @@ Run supported focused/validator checks on the final implementation and retain
 evidence before claiming completion. Green plan review is not implementation
 validation.
 
+### Incremental benchmark scope check, 2026-09-13
+
+A live reducer source-description experiment at `70981223` changed only its
+remainder facet, but also changed the global certification basis because that
+basis includes Rutter blueprints. The Voyage selected five semantic tasks:
+values interface/source, history interface/source, and reducer source. It
+requested the values interface first. No worker was dispatched and no
+certificate was issued; the unstarted Voyage is retained as diagnostic evidence
+under `_build/incremental-benchmark/`. This is not a completed speed benchmark.
+The experimental reducer description was restored to avoid leaving existing
+Rutter certificates stale merely for measurement. An ordinary source outside
+the certification basis is needed to isolate incremental audit savings.
+
 ## Non-goals
 
 No daemon, persisted runner, leases, heartbeat, resume protocol, automatic semantic
