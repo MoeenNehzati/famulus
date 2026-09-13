@@ -3,7 +3,7 @@
 Status: tasks 1–3 complete with independent functionality, Ponytail and simplicity
 reviews GREEN, 2026-09-13. Installed-host certification and selective reuse passed.
 Task 4 remains open until the frozen candidate passes complete exact-SHA remote CI;
-publishing the feature ref and dispatching CI still need their scoped authorization.
+the user authorized scoped feature publication and CI qualification.
 Final freeze and qualification receipts belong under `_build/certification-release/`
 after this document is committed, avoiding a commit that records its own final SHA.
 
@@ -185,6 +185,14 @@ evidence, not a substitute for this merged-host comparison.
   candidate. Preserve run IDs and check that the local/remote tips still match.
 
 ## Completion record
+
+The first remote matrix found two Codex TOML success fixtures that used ordinary
+file creation without the restrictive native ACL required by Windows guarded
+replacement. Prepare those predecessors with the existing secure atomic creator;
+retain all assertions and the production fail-closed ACL policy. The repaired
+candidate still requires a complete exact-SHA matrix. CI's separate existing MCP
+wrapper output-capture defect is recorded in the ignored completion evidence;
+the same durable request can be completed by its canonical repository runner.
 
 ### Verified local execution
 

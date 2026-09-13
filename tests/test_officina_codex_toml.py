@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from officina.common import codex_toml, toml_io
+from officina.common.atomic_files import atomic_create_bytes
 
 
 BEGIN = "# >>> famulus-access >>>"
@@ -20,8 +21,7 @@ def test_access_plan_preserves_foreign_toml_and_crlf(tmp_path: Path) -> None:
         "[sandbox_workspace_write]\r\n"
         'writable_roots = [\r\n  "/foreign", # keep\r\n]\r\n'
     ).encode()
-    config.write_bytes(original)
-    config.chmod(0o640)
+    assert atomic_create_bytes(config, original, allowed_root=tmp_path, mode=0o640)
 
     plan = codex_toml.plan_access_roots(
         tmp_path,
@@ -65,7 +65,7 @@ def test_access_removal_plan_removes_only_owned_block_and_scaffolding(
     tmp_path: Path,
 ) -> None:
     config = tmp_path / "config.toml"
-    config.write_text('model = "keep"\n', encoding="utf-8")
+    assert atomic_create_bytes(config, b'model = "keep"\n', allowed_root=tmp_path, mode=0o600)
     install = codex_toml.plan_access_roots(
         tmp_path, ["/famulus/logs"], prior=None, begin=BEGIN, end=END
     )
