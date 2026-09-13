@@ -81,75 +81,82 @@ def test_read_beautify_default_executable_chain(todo_file):
     assert "- [x] ~~Tomorrow task~~  `#cccccc`" in result.stdout
 
 
-def test_render_bridge_forwards_exact_protocol_and_child_errors(tmp_path, capsys):
+def test_render_bridge_forwards_exact_protocol_and_entrypoint_errors(tmp_path, capsys):
     source = tmp_path / "todo.yaml"
     source.write_text("unused by the adapter spy")
 
     scenarios = [
         (
             [str(source), "state=incomplete", "--sort", "deadline"],
-            [sys.executable, str(render_bridge.LISTS_PY), "read", str(source), "--sort", "deadline", "state=incomplete"],
-            [sys.executable, str(render_bridge.BEAUTIFY_PY), "--relative-deadlines", "--markdown", "--ids"],
+            ["read", str(source), "--sort", "deadline", "state=incomplete"],
+            ["--relative-deadlines", "--markdown", "--ids"],
         ),
         (
             [str(source), "--markdown", "--table", "--diff", "--no-descriptions", "--no-ids"],
-            [sys.executable, str(render_bridge.LISTS_PY), "read", str(source)],
-            [sys.executable, str(render_bridge.BEAUTIFY_PY), "--relative-deadlines", "--diff", "--no-descriptions"],
+            ["read", str(source)],
+            ["--relative-deadlines", "--diff", "--no-descriptions"],
         ),
         (
             [str(source), "--markdown", "--table"],
-            [sys.executable, str(render_bridge.LISTS_PY), "read", str(source)],
-            [sys.executable, str(render_bridge.BEAUTIFY_PY), "--relative-deadlines", "--table", "--ids"],
+            ["read", str(source)],
+            ["--relative-deadlines", "--table", "--ids"],
         ),
     ]
 
     for argv, expected_read, expected_beautify in scenarios:
         calls = []
 
-        def fake_run(command, **kwargs):
-            calls.append((command, kwargs))
-            if command[1] == str(render_bridge.LISTS_PY):
-                return subprocess.CompletedProcess(command, 0, "filtered-yaml\n", "")
-            return subprocess.CompletedProcess(command, 0, "rendered\n", "")
+        def fake_entrypoint(main, command, *, stdin=""):
+            calls.append((main, command, stdin))
+            if main is render_bridge._yaml_store.main:
+                return 0, "filtered-yaml\n", ""
+            return 0, "rendered\n", ""
 
-        with patch.object(render_bridge.subprocess, "run", side_effect=fake_run):
+        with patch.object(render_bridge, "_run_entrypoint", side_effect=fake_entrypoint):
             assert render_bridge.main(argv) == 0
 
-        assert [call[0] for call in calls] == [expected_read, expected_beautify]
-        assert calls[0][1] == {
-            "capture_output": True,
-            "text": True,
-            "encoding": "utf-8",
-            "errors": "strict",
-            "check": False,
-        }
-        assert calls[1][1] == {
-            "input": "filtered-yaml\n",
-            "capture_output": True,
-            "text": True,
-            "encoding": "utf-8",
-            "errors": "strict",
-            "check": False,
-        }
+        assert [call[1] for call in calls] == [expected_read, expected_beautify]
+        assert calls[1][2] == "filtered-yaml\n"
         assert capsys.readouterr().out == "rendered\n"
 
-    read_error = subprocess.CompletedProcess([], 7, "partial\n", "read failed\n")
-    with patch.object(render_bridge.subprocess, "run", return_value=read_error) as child:
+    with patch.object(render_bridge, "_run_entrypoint", return_value=(7, "partial\n", "read failed\n")) as child:
         assert render_bridge.main([str(source)]) == 7
     assert child.call_count == 1
     captured = capsys.readouterr()
     assert captured.out == "partial\n"
     assert captured.err == "read failed\n"
 
-    results = [
-        subprocess.CompletedProcess([], 0, "filtered-yaml\n", ""),
-        subprocess.CompletedProcess([], 9, "partial render\n", "render failed\n"),
-    ]
-    with patch.object(render_bridge.subprocess, "run", side_effect=results):
+    results = [(0, "filtered-yaml\n", ""), (9, "partial render\n", "render failed\n")]
+    with patch.object(render_bridge, "_run_entrypoint", side_effect=results):
         assert render_bridge.main([str(source)]) == 9
     captured = capsys.readouterr()
     assert captured.out == "partial render\n"
     assert captured.err == "render failed\n"
+
+
+def test_cloud_transport_dispatch_has_no_process_timeout(monkeypatch):
+    observed = {}
+
+    class Result:
+        returncode = 0
+        stdout = "content"
+        stderr = ""
+
+    def dispatch(*args, **kwargs):
+        observed["args"] = args
+        observed["kwargs"] = kwargs
+        return Result()
+
+    monkeypatch.setattr(render_bridge.cloud_transport._DISPATCHER, "dispatch", dispatch)
+
+    assert render_bridge.cloud_transport._dispatch("lists-read", "lists/todo.yaml") == (0, "content", "")
+    assert observed["kwargs"] == {
+        "args": ["lists/todo.yaml"],
+        "stdin": None,
+        "capture_output": True,
+        "text": True,
+        "check": False,
+    }
 
 
 def test_renderer_modes_and_filtered_ids(todo_file):

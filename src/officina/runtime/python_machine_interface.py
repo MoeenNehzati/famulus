@@ -173,11 +173,15 @@ def set_runtime_dispatch_context(
 _PROCESS_DISPATCH_CONTEXT: RuntimeDispatchContext | None = None
 
 
-def set_process_dispatch_context(context: RuntimeDispatchContext | None) -> None:
-    """Publish (or clear) the dispatch context for this whole process."""
+def set_process_dispatch_context(
+    context: RuntimeDispatchContext | None,
+) -> RuntimeDispatchContext | None:
+    """Publish a dispatch context and return the context it replaced."""
 
     global _PROCESS_DISPATCH_CONTEXT
+    previous = _PROCESS_DISPATCH_CONTEXT
     _PROCESS_DISPATCH_CONTEXT = context
+    return previous
 
 
 def runtime_dispatch_context(

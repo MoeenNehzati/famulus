@@ -110,6 +110,7 @@ def test_resolved_invocation_never_inherits_host_stdin(
         resolved,
         stdin=logical_stdin,
         text=True,
+        subprocess=True,
     )
 
     if logical_stdin is None:
@@ -837,6 +838,11 @@ def test_host_executes_direct_route_with_explicit_config(
 ) -> None:
     configuration = _repository(tmp_path, terminal_access=_access(public=True))
     monkeypatch.setenv("PYTHONPATH", str(Path(__file__).resolve().parents[1] / "src"))
+    monkeypatch.setattr(
+        direct_runtime.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: pytest.fail("default route spawned a subprocess"),
+    )
 
     completed = _dispatch_host(
         caller_skill="root",
@@ -868,6 +874,7 @@ def test_host_execution_cannot_import_sibling_from_ambient_pythonpath(
     monkeypatch.setenv(
         "PYTHONPATH", os.pathsep.join((str(sibling), str(source_root)))
     )
+    monkeypatch.syspath_prepend(str(sibling))
 
     with pytest.raises(DispatcherError) as caught:
         _dispatch_host(
@@ -881,6 +888,28 @@ def test_host_execution_cannot_import_sibling_from_ambient_pythonpath(
 
     assert caught.value.code == "dispatcher.runner_import_failed"
     assert "leaked-sibling" not in str(caught.value.as_payload())
+
+
+def test_in_process_runner_reports_interface_failures(
+    tmp_path: Path,
+) -> None:
+    configuration = _repository(tmp_path, terminal_access=_access(public=True))
+    gateway = configuration.module_roots[0] / "root" / "alpha" / "leaf" / "runtime.py"
+    gateway.write_text(
+        gateway.read_text().replace("print(message)\n        return 0", "raise RuntimeError('boom')")
+    )
+
+    with pytest.raises(DispatcherError) as caught:
+        _dispatch_host(
+            caller_skill="root",
+            target=INTERFACE_ID,
+            args=[],
+            repository_config=configuration.config_path,
+            capture_output=True,
+            text=True,
+        )
+
+    assert caught.value.code == "dispatcher.runner_execution_failed"
 
 
 def test_host_rejects_private_child_caller_identity(tmp_path: Path) -> None:

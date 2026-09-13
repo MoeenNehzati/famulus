@@ -966,6 +966,45 @@ def test_main_shares_dispatch_context_with_a_helper_modules_own_instance(
     assert seen["repo_root"] == tmp_path
 
 
+def test_nested_main_restores_the_outer_process_dispatch_context(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    helper = PythonMachineInterface()
+    seen = {}
+    outer_config = tmp_path / "outer.toml"
+    inner_config = tmp_path / "inner.toml"
+
+    class Inner(PythonMachineInterface):
+        def run(self, _args):
+            return 0
+
+    class Outer(PythonMachineInterface):
+        def run(self, _args):
+            assert main([
+                "--runtime-caller-module-id", "inner",
+                "--runtime-repository-config", str(inner_config),
+                "_rtx/inner.py", "Inner",
+            ]) == 0
+            seen["config"] = python_interface.runtime_dispatch_context(
+                helper
+            ).repository_config
+            return 0
+
+    monkeypatch.setattr(
+        python_runner,
+        "load_interface",
+        lambda _path, entry, **_kwargs: Inner() if entry == "Inner" else Outer(),
+    )
+
+    assert main([
+        "--runtime-caller-module-id", "outer",
+        "--runtime-repository-config", str(outer_config),
+        "_rtx/outer.py", "Outer",
+    ]) == 0
+    assert seen["config"] == outer_config
+
+
 def test_runtime_dispatch_context_prefers_an_objects_own_context(
     tmp_path: Path,
 ) -> None:
@@ -2414,7 +2453,7 @@ def test_windows_launch_uses_only_the_private_diagnostic_handle(
     resolved = _transport_resolved(tmp_path)
     with monkeypatch.context() as platform:
         _fake_windows_platform(platform, popen)
-        dispatcher_core._run_resolved_invocation(resolved)
+        dispatcher_core._run_resolved_invocation(resolved, subprocess=True)
 
     assert observed[0]["close_fds"] is True
     assert len(observed[0]["startupinfo"].lpAttributeList["handle_list"]) == 1
@@ -2434,7 +2473,7 @@ def test_windows_launch_restores_and_closes_duplicated_writer(
     resolved = _transport_resolved(tmp_path)
     with monkeypatch.context() as platform:
         inheritance, _ = _fake_windows_platform(platform, popen)
-        dispatcher_core._run_resolved_invocation(resolved)
+        dispatcher_core._run_resolved_invocation(resolved, subprocess=True)
 
     assert inheritance == [(inherited[0], True), (inherited[0], False)]
     with pytest.raises(OSError):
@@ -2455,7 +2494,7 @@ def test_windows_popen_failure_restores_and_closes_duplicated_writer(
     with monkeypatch.context() as platform:
         inheritance, _ = _fake_windows_platform(platform, popen)
         with pytest.raises(DispatcherError) as caught:
-            dispatcher_core._run_resolved_invocation(resolved)
+            dispatcher_core._run_resolved_invocation(resolved, subprocess=True)
 
     assert caught.value.code == "dispatcher.launch_failed"
     assert inheritance == [(inherited[0], True), (inherited[0], False)]
@@ -2487,7 +2526,7 @@ def test_windows_restore_failure_after_launch_closes_writer_and_reaps_process(
     with monkeypatch.context() as platform:
         _fake_windows_platform(platform, popen)
         platform.setattr(direct_runtime.os, "set_handle_inheritable", set_inheritable)
-        result = dispatcher_core._run_resolved_invocation(resolved)
+        result = dispatcher_core._run_resolved_invocation(resolved, subprocess=True)
 
     assert result.returncode == 0
     assert communicated == [True]
@@ -2515,7 +2554,7 @@ def test_windows_restore_failure_preserves_popen_failure_and_closes_writer(
         _fake_windows_platform(platform, popen)
         platform.setattr(direct_runtime.os, "set_handle_inheritable", set_inheritable)
         with pytest.raises(DispatcherError) as caught:
-            dispatcher_core._run_resolved_invocation(resolved)
+            dispatcher_core._run_resolved_invocation(resolved, subprocess=True)
 
     assert caught.value.code == "dispatcher.launch_failed"
     assert caught.value.__cause__ is launch_failure
@@ -2588,7 +2627,7 @@ def test_windows_launch_lock_isolates_concurrent_diagnostic_handles(
             raising=False,
         )
         with ThreadPoolExecutor(max_workers=4) as executor:
-            results = list(executor.map(dispatcher_core._run_resolved_invocation, resolved))
+            results = list(executor.map(lambda item: dispatcher_core._run_resolved_invocation(item, subprocess=True), resolved))
 
     assert [result.returncode for result in results] == [0, 0, 0, 0]
     assert maximum_active == 1
@@ -2644,7 +2683,7 @@ def test_private_diagnosis_wins_before_output_decoding(
 
     with pytest.raises(DispatcherError) as caught:
         dispatcher_core._run_resolved_invocation(
-            _transport_resolved(tmp_path), text=True
+            _transport_resolved(tmp_path), text=True, subprocess=True
         )
 
     assert caught.value.code == "dispatcher.runner_request_invalid"
@@ -2668,7 +2707,7 @@ def test_invalid_private_payload_fails_closed(
 
     monkeypatch.setattr(direct_runtime.subprocess, "Popen", popen)
     with pytest.raises(DispatcherError) as caught:
-        dispatcher_core._run_resolved_invocation(_transport_resolved(tmp_path), text=True)
+        dispatcher_core._run_resolved_invocation(_transport_resolved(tmp_path), text=True, subprocess=True)
     assert caught.value.code == "dispatcher.error"
 
 
@@ -2691,7 +2730,7 @@ def test_whitespace_around_private_payload_fails_closed(
 
     monkeypatch.setattr(direct_runtime.subprocess, "Popen", popen)
     with pytest.raises(DispatcherError) as caught:
-        dispatcher_core._run_resolved_invocation(_transport_resolved(tmp_path), text=True)
+        dispatcher_core._run_resolved_invocation(_transport_resolved(tmp_path), text=True, subprocess=True)
     assert caught.value.code == "dispatcher.error"
 
 
@@ -2724,7 +2763,7 @@ def test_invalid_private_diagnosis_records_fail_closed(
 
     monkeypatch.setattr(direct_runtime.subprocess, "Popen", popen)
     with pytest.raises(DispatcherError) as caught:
-        dispatcher_core._run_resolved_invocation(_transport_resolved(tmp_path), text=True)
+        dispatcher_core._run_resolved_invocation(_transport_resolved(tmp_path), text=True, subprocess=True)
     assert caught.value.code == "dispatcher.error"
     _assert_private_diagnosis_writer_closed(inherited_writer[0])
 
@@ -2939,7 +2978,7 @@ def test_setup_private_receiver_enforces_total_frame_limit(tmp_path, monkeypatch
         return Process()
     monkeypatch.setattr(direct_runtime.subprocess, "Popen", popen)
     with pytest.raises(BaseException) as caught:
-        direct_runtime._run_resolved_invocation(_transport_resolved(tmp_path))
+        direct_runtime._run_resolved_invocation(_transport_resolved(tmp_path), subprocess=True)
     if frames == 31:
         assert isinstance(caught.value, SetupBlocked)
         assert len(caught.value.call_path) == 32
@@ -2982,7 +3021,7 @@ def test_private_setup_large_integer_fails_closed(tmp_path, monkeypatch):
     try:
         assert direct_runtime._registered_diagnosis(payload) is None
         with pytest.raises(DispatcherError) as caught:
-            direct_runtime._run_resolved_invocation(_transport_resolved(tmp_path))
+            direct_runtime._run_resolved_invocation(_transport_resolved(tmp_path), subprocess=True)
         assert caught.value.code == "dispatcher.error"
     finally:
         sys.set_int_max_str_digits(previous_limit)
@@ -3006,7 +3045,7 @@ def test_output_decode_failure_precedes_checked_nonzero(
 
     with pytest.raises(DispatcherError) as caught:
         dispatcher_core._run_resolved_invocation(
-            _transport_resolved(tmp_path), text=True, check=True
+            _transport_resolved(tmp_path), text=True, check=True, subprocess=True
         )
 
     assert caught.value.code == "dispatcher.output_decode_failed"
@@ -3030,7 +3069,7 @@ def test_checked_nonzero_uses_registered_dispatcher_error(
 
     with pytest.raises(DispatcherError) as caught:
         dispatcher_core._run_resolved_invocation(
-            _transport_resolved(tmp_path), text=True, check=True
+            _transport_resolved(tmp_path), text=True, check=True, subprocess=True
         )
 
     assert caught.value.code == "dispatcher.checked_process_failed"
@@ -3069,7 +3108,7 @@ def test_timeout_terminates_then_kills_and_wins(
 
     with pytest.raises(DispatcherError) as caught:
         dispatcher_core._run_resolved_invocation(
-            _transport_resolved(tmp_path), timeout=0.01, text=True, check=True
+            _transport_resolved(tmp_path), timeout=0.01, text=True, check=True, subprocess=True
         )
 
     assert caught.value.code == "dispatcher.execution_timeout"

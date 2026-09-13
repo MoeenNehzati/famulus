@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import os
 import shutil
-import subprocess
 from pathlib import Path
 
 from officina.runtime.python_machine_interface import DispatchCall, PythonMachineInterface
@@ -64,11 +63,8 @@ def _dispatch(interface_id: str, remote_path: str, *, stdin: str | None = None) 
             stdin=stdin,
             capture_output=True,
             text=True,
-            timeout=30,
             check=False,
         )
-    except subprocess.TimeoutExpired as exc:
-        raise CloudTransportError(f"{interface_id} timed out") from exc
     except Exception as exc:
         raise CloudTransportError(f"{interface_id} failed: {exc}") from exc
 
