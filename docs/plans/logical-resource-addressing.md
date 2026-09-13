@@ -121,11 +121,11 @@ The current predefined local snippets are:
 $repo/{path...}
 $home/{path...}
 $tmp/{path...}
-$home/.config/cloud-files/client.json
-$home/.config/cloud-files/credentials.json
-$home/.config/cloud-files/config.json
-$home/.config/online-calendar/client.json
-$home/.config/online-calendar/credentials.json
+<CONFIG>/cloud-files/client.json
+<CONFIG>/cloud-files/credentials.json
+<CONFIG>/cloud-files/config.json
+<CONFIG>/online-calendar/client.json
+<CONFIG>/online-calendar/credentials.json
 $home/.cache/datalab/models/{path...}
 $repo/skills/{skill}/blueprint.yaml
 $repo/references/blueprint/schema.annotated-draft.json

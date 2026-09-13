@@ -26,8 +26,8 @@ _SPEC.loader.exec_module(ensure_oauth)
 
 def test_already_configured_when_credentials_exist(tmp_path):
     home = tmp_path / "home"
-    (home / ".config" / "cloud-files").mkdir(parents=True)
-    (home / ".config" / "cloud-files" / "credentials.json").write_text("{}")
+    ensure_oauth._config_dir(home).mkdir(parents=True)
+    (ensure_oauth._config_dir(home) / "credentials.json").write_text("{}")
 
     status = ensure_oauth.run(home=home, dry_run=False, stdin_isatty=False)
 
@@ -36,7 +36,7 @@ def test_already_configured_when_credentials_exist(tmp_path):
 
 def test_needs_client_json_when_missing_non_interactive(tmp_path, capsys):
     home = tmp_path / "home"
-    (home / ".config" / "cloud-files").mkdir(parents=True)
+    ensure_oauth._config_dir(home).mkdir(parents=True)
 
     status = ensure_oauth.run(home=home, dry_run=False, stdin_isatty=False)
 
@@ -49,7 +49,7 @@ def test_write_config_writes_expected_json(tmp_path):
 
     ensure_oauth.write_config(home, remote_llm_root="assistant/", dry_run=False)
 
-    config_path = home / ".config" / "cloud-files" / "config.json"
+    config_path = ensure_oauth._config_dir(home) / "config.json"
     assert config_path.is_file()
     assert '"remote_llm_root": "assistant"' in config_path.read_text()
 
@@ -59,12 +59,12 @@ def test_write_config_dry_run_writes_nothing(tmp_path):
 
     ensure_oauth.write_config(home, remote_llm_root="assistant/", dry_run=True)
 
-    assert not (home / ".config" / "cloud-files" / "config.json").exists()
+    assert not (ensure_oauth._config_dir(home) / "config.json").exists()
 
 
 def test_write_config_preserves_credentials_path(tmp_path):
     home = tmp_path / "home"
-    config_dir = home / ".config" / "cloud-files"
+    config_dir = ensure_oauth._config_dir(home)
     config_dir.mkdir(parents=True)
     (config_dir / "config.json").write_text(
         '{"remote_llm_root": "old", "timeout_seconds": 45, "credentials_path": "/custom/path.json"}'
@@ -130,7 +130,7 @@ def test_use_google_credential_stores_only_credential_id(tmp_path, fake_registry
 
     ensure_oauth.use_google_credential(credential_id=credential_id, home=tmp_path, platform=PLATFORM)
 
-    config_path = tmp_path / ".config" / "cloud-files" / "config.json"
+    config_path = ensure_oauth._config_dir(tmp_path) / "config.json"
     config = json.loads(config_path.read_text())
     assert config["credential_id"] == credential_id
     assert "client_secret" not in config
@@ -146,7 +146,7 @@ def test_use_google_credential_rejects_insufficient_scope(tmp_path, fake_registr
     with pytest.raises(SystemExit):
         ensure_oauth.use_google_credential(credential_id=credential_id, home=tmp_path, platform=PLATFORM)
 
-    config_path = tmp_path / ".config" / "cloud-files" / "config.json"
+    config_path = ensure_oauth._config_dir(tmp_path) / "config.json"
     assert not config_path.exists()
 
 
@@ -161,7 +161,7 @@ def test_use_google_credential_then_write_config_preserves_credential_id(tmp_pat
     ensure_oauth.use_google_credential(credential_id=credential_id, home=tmp_path, platform=PLATFORM)
     ensure_oauth.write_config(tmp_path, remote_llm_root="assistant/", dry_run=False)
 
-    config_path = tmp_path / ".config" / "cloud-files" / "config.json"
+    config_path = ensure_oauth._config_dir(tmp_path) / "config.json"
     payload = json.loads(config_path.read_text())
     assert payload["credential_id"] == credential_id
     assert payload["remote_llm_root"] == "assistant"

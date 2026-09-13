@@ -22,8 +22,6 @@ from ..common.repository_paths import RepositoryPathError, repository_relative_p
 _REGULAR_FILE_MODES = {"100644", "100755"}
 _MATERIALIZED_FILE_MODES = {*_REGULAR_FILE_MODES, "120000"}
 _FULL_GIT_OBJECT_ID = re.compile(r"(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})")
-BLUEPRINT_V4_MECHANICAL_REF = "refs/famulus/blueprint-v4-mechanical"
-BLUEPRINT_V4_SOURCE_OVERLAY_REF = "refs/famulus/blueprint-v4-source-overlay"
 
 
 class GitMaterializationError(RuntimeError):
@@ -109,99 +107,6 @@ def _exact_git_commit(repo_root: Path, commit: str) -> str:
     if resolved.lower() != commit.lower():
         raise GitMaterializationError("Git commit ID did not resolve exactly")
     return resolved
-
-
-def blueprint_v4_mechanical_commit(repo_root: Path) -> str:
-    """Return the immutable candidate mechanical baseline from its reserved ref."""
-
-    root = Path(repo_root).resolve()
-    result = run_git(
-        root,
-        "rev-parse",
-        "--verify",
-        f"{BLUEPRINT_V4_MECHANICAL_REF}^{{commit}}",
-        check=False,
-    )
-    if result.returncode != 0:
-        raise GitMaterializationError("blueprint v4 mechanical baseline is unavailable")
-    try:
-        commit = result.stdout.decode("ascii").strip()
-    except UnicodeError as exc:
-        raise GitMaterializationError(
-            "blueprint v4 mechanical baseline is invalid"
-        ) from exc
-    return _exact_git_commit(root, commit)
-
-
-def pin_blueprint_v4_mechanical_commit(repo_root: Path, commit: str) -> str:
-    """Create the reserved candidate baseline ref once, without replacement."""
-
-    root = Path(repo_root).resolve()
-    resolved = _exact_git_commit(root, commit)
-    existing = run_git(
-        root,
-        "show-ref",
-        "--verify",
-        "--quiet",
-        BLUEPRINT_V4_MECHANICAL_REF,
-        check=False,
-    )
-    if existing.returncode == 0:
-        raise GitMaterializationError("blueprint v4 mechanical baseline is already pinned")
-    if existing.returncode not in {0, 1}:
-        raise GitMaterializationError("cannot inspect blueprint v4 mechanical baseline")
-    created = run_git(
-        root,
-        "update-ref",
-        "--create-reflog",
-        BLUEPRINT_V4_MECHANICAL_REF,
-        resolved,
-        "",
-        check=False,
-    )
-    if created.returncode != 0:
-        raise GitMaterializationError("cannot pin blueprint v4 mechanical baseline")
-    pinned = blueprint_v4_mechanical_commit(root)
-    if pinned != resolved:
-        raise GitMaterializationError("blueprint v4 mechanical baseline changed")
-    return pinned
-
-
-def blueprint_v4_source_overlay_commit(repo_root: Path) -> str:
-    """Return the immutable authorized preconversion overlay commit."""
-
-    root = Path(repo_root).resolve()
-    result = run_git(
-        root,
-        "rev-parse",
-        "--verify",
-        f"{BLUEPRINT_V4_SOURCE_OVERLAY_REF}^{{commit}}",
-        check=False,
-    )
-    if result.returncode != 0:
-        raise GitMaterializationError("blueprint v4 source overlay is unavailable")
-    return _exact_git_commit(root, result.stdout.decode("ascii").strip())
-
-
-def pin_blueprint_v4_source_overlay_commit(repo_root: Path, commit: str) -> str:
-    """Create the reserved source-overlay ref once, without replacement."""
-
-    root = Path(repo_root).resolve()
-    resolved = _exact_git_commit(root, commit)
-    created = run_git(
-        root,
-        "update-ref",
-        BLUEPRINT_V4_SOURCE_OVERLAY_REF,
-        resolved,
-        "",
-        check=False,
-    )
-    if created.returncode != 0:
-        raise GitMaterializationError("cannot pin blueprint v4 source overlay")
-    pinned = blueprint_v4_source_overlay_commit(root)
-    if pinned != resolved:
-        raise GitMaterializationError("blueprint v4 source overlay changed")
-    return pinned
 
 
 def _tree_relative_path(raw: str) -> Path:

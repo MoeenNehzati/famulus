@@ -11,15 +11,14 @@
     "online-calendar-rtx": "online-calendar._rtx",
     "get-weather-rtx": "get-weather._rtx",
     "initialize-tdd-rtx": "initialize-tdd._rtx",
-    "install-assistant-tools-rtx": "install-assistant-tools._rtx",
     "list-manager-rtx": "list-manager._rtx",
     "math-dependency-graph-rtx": "math-dependency-graph._rtx",
     "pdf-to-markdown-rtx": "pdf-to-markdown._rtx",
     "recurring-tasks-rtx": "recurring-tasks._rtx",
     "refactor-node-rtx": "refactor-node._rtx",
     "regenerate-blueprints-rtx": "regenerate-blueprints._rtx",
-    "skill-certifier-rtx": "skill-certifier._rtx",
-    "skill-drift-rtx": "skill-drift._rtx",
+    "node-certify-rtx": "node-certify._rtx",
+    "node-drift-rtx": "node-drift._rtx",
     "skill-maker-rtx": "skill-maker._rtx"
   },
   "facade_interfaces": {
@@ -74,10 +73,6 @@
     "online-calendar.interface.use-google-credential": "online-calendar._rtx.interface.use-google-credential",
     "get-weather.interface.scripts-weather": "get-weather._rtx.interface.scripts-weather",
     "initialize-tdd.interface.setup-compat-aliases": "initialize-tdd._rtx.interface.setup-compat-aliases",
-    "install-assistant-tools.interface.scripts-dev-link": "install-assistant-tools._rtx.interface.scripts-dev-link",
-    "install-assistant-tools.interface.scripts-install": "install-assistant-tools._rtx.interface.scripts-install",
-    "install-assistant-tools.interface.scripts-launchers": "install-assistant-tools._rtx.interface.scripts-launchers",
-    "install-assistant-tools.interface.scripts-scaffold": "install-assistant-tools._rtx.interface.scripts-scaffold",
     "list-manager.interface.beautify-list": "list-manager._rtx.interface.beautify-list",
     "list-manager.interface.cloud-create-entry": "list-manager._rtx.interface.cloud-create-entry",
     "list-manager.interface.cloud-delete": "list-manager._rtx.interface.cloud-delete",
@@ -108,9 +103,9 @@
     "recurring-tasks.interface.scripts-view-logs": "recurring-tasks._rtx.interface.scripts-view-logs",
     "refactor-node.interface.query-standards": "refactor-node._rtx.interface.query-standards",
     "regenerate-blueprints.interface.regenerate-blueprint": "regenerate-blueprints._rtx.interface.regenerate-blueprint",
-    "skill-certifier.interface.certify": "skill-certifier._rtx.interface.certify",
-    "skill-drift.interface.compute-hashes": "skill-drift._rtx.interface.compute-hashes",
-    "skill-drift.interface.drift-status": "skill-drift._rtx.interface.drift-status",
+    "node-certify.interface.certify": "node-certify._rtx.interface.certify",
+    "node-drift.interface.compute-hashes": "node-drift._rtx.interface.compute-hashes",
+    "node-drift.interface.drift-status": "node-drift._rtx.interface.drift-status",
     "skill-maker.interface.sync-blueprints": "skill-maker._rtx.interface.sync-blueprints"
   }
 }

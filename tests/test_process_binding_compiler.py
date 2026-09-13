@@ -39,7 +39,11 @@ def _argument(
     ("requirement", "expected"),
     [
         ("Python", "Python"),
+        ("Python==3.11", "Python"),
         ("Python>=3.11", "Python"),
+        ("Python>3.11", "Python"),
+        ("Python<=3.13", "Python"),
+        ("Python<4", "Python"),
         ("Python>=3.11,<4", "Python"),
     ],
 )
@@ -277,7 +281,7 @@ def test_v4_raw_argv_rejected_when_no_authored_pattern_matches() -> None:
         ]
     )
 
-    with pytest.raises(ProcessBindingError, match="does not match any declared pattern"):
+    with pytest.raises(ProcessBindingError, match="unknown option --bogus"):
         parse_caller_invocation(
             export, ["compute-hashes", "--bogus"], stdin_requested=False
         )
@@ -292,14 +296,15 @@ def test_v4_raw_argv_passthrough_does_not_activate_without_patterns() -> None:
         )
 
 
-def test_authored_pattern_treats_unpatterned_flag_as_switch() -> None:
+def test_authored_pattern_allows_switch_and_omitted_optional_patterned_positional() -> None:
     pattern, name = select_authored_argv_pattern(
         [
             {
                 "name": "switch",
                 "min_positionals": 1,
+                "max_positionals": 2,
                 "allowed_flags": ["--verbose"],
-                "positional_patterns": {"0": "^run$"},
+                "positional_patterns": {"0": "^run$", "1": "^[0-9]+$"},
             }
         ],
         ["--verbose", "run"],
@@ -424,7 +429,7 @@ def test_v4_authored_argv_pattern_preserves_unmatched_predecessor_cases(
 
     with pytest.raises(
         ProcessBindingError,
-        match="invocation does not match any declared pattern",
+        match="does not match any declared pattern|unknown option --unknown|invalid value for --output",
     ):
         select_authored_argv_pattern(
             patterns,

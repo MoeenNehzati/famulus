@@ -4,36 +4,75 @@ description: >-
   Use when the user asks to view or change their Google Calendar. Do not use for daily planning.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: personal-assistance; topics: planning, personal-organization, external-integrations; visibility: featured
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces:
-- `online-calendar.source.gateway -> connect-google.interface.default@1`
-- `online-calendar.source.gateway -> online-calendar._rtx.interface.scripts-gcal@1`
-
-Setup Requires Setup Of:
-- `connect-google.interface.setup@1`
-Setup Order:
-1. `connect-google.interface.setup`
-2. `online-calendar.interface.setup`
-
-Public Interfaces:
-- `online-calendar.interface.default`
-- `online-calendar.interface.setup`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
+### Managed setup
+
+When first exposed to this skill in a session, invoke `famulus_dispatcher.invoke` once with:
+
+```json
+{
+  "caller": "online-calendar",
+  "interface": "online-calendar.interface.setup",
+  "version": 2,
+  "arguments": {
+    "positionals": [],
+    "options": {},
+    "stdin": null
+  }
+}
+```
+
+Do not repeat this initial call during the session. Obtain permission before carrying out setup, then follow the returned setup-manager instructions exactly. If the result is busy or failed, stop and report it.
+
+Executable Interfaces:
+
+Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+- `online-calendar._rtx.interface.scripts-gcal` — Query or modify Google Calendar events via the Python calendar CLI (agenda, search, create, update, delete, etc.).
+  - Caller: `online-calendar`
+  - Version: 1
+  - Alternative: `token-or-calendars`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {}, "positionals": ["token"], "stdin": null}
+    Required options: []; positional arity: 1..1; stdin: forbidden
+  - Alternative: `create-calendar`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--color-id": "ID", "--description": "TEXT", "--summary": "TEXT", "--timezone": "TZ"}, "positionals": ["create-calendar"], "stdin": null}
+    Required options: ["--summary"]; positional arity: 1..1; stdin: forbidden
+  - Alternative: `agenda`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--all-calendars": true, "--calendar": "ID", "--days": "N", "--from": "ISO", "--to": "ISO"}, "positionals": ["agenda"], "stdin": null}
+    Required options: []; positional arity: 1..1; stdin: forbidden
+  - Alternative: `search`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--all-calendars": true, "--calendar": "ID", "--days": "N", "--from": "ISO", "--to": "ISO"}, "positionals": ["search", "QUERY"], "stdin": null}
+    Required options: []; positional arity: 2..2; stdin: forbidden
+  - Alternative: `get`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--calendar": "ID", "--event-id": "ID"}, "positionals": ["get"], "stdin": null}
+    Required options: ["--event-id"]; positional arity: 1..1; stdin: forbidden
+  - Alternative: `create`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--all-day": true, "--calendar": "ID", "--description": "TEXT", "--end": "ISO", "--location": "TEXT", "--start": "ISO", "--summary": "TEXT", "--timezone": "TZ"}, "positionals": ["create"], "stdin": null}
+    Required options: ["--end", "--start", "--summary"]; positional arity: 1..1; stdin: forbidden
+  - Alternative: `update`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--calendar": "ID", "--description": "TEXT", "--end": "ISO", "--event-id": "ID", "--location": "TEXT", "--start": "ISO", "--summary": "TEXT", "--timezone": "TZ"}, "positionals": ["update"], "stdin": null}
+    Required options: ["--event-id"]; positional arity: 1..1; stdin: forbidden
+  - Alternative: `delete`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--calendar": "ID", "--event-id": "ID"}, "positionals": ["delete"], "stdin": null}
+    Required options: ["--event-id"]; positional arity: 1..1; stdin: forbidden
+  - Alternative: `move`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--event-id": "ID", "--from": "CALENDAR_ID", "--to": "CALENDAR_ID"}, "positionals": ["move"], "stdin": null}
+    Required options: ["--event-id", "--to"]; positional arity: 1..1; stdin: forbidden
+
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `online-calendar.interface.default` — Primary LLM-facing skill instructions.
-- `online-calendar.interface.setup` — Primary LLM-facing skill instructions.
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
+- `connect-google.interface.default@1` — Route Google OAuth-client preparation according to whether a valid Desktop client is already installed.
 <!-- END BLUEPRINT INTERFACES -->
 # Google Calendar
 

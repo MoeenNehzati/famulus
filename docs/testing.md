@@ -1,11 +1,56 @@
 # Repository Testing
 
-This is the canonical maintainer guide to the repository's Python tests,
-validators, local hook, CI jobs, and benchmark interfaces.
+This is the canonical maintainer guide to the repository's tests, validators,
+suites, and benchmark interfaces.
 
 For pipeline architecture, exact-SHA debugging, platform-specific pitfalls,
 historical failure lessons, and performance baselines, see the
 [Continuous Integration Handbook](./ci-handbook.md).
+
+Binding test-code requirements, smells, and remedies live in the
+[Code Test Design and Performance Standard](../references/node-standards/code-testing.standard.yaml).
+For performance work, use the
+[code-test optimization playbook](./contributors/optimizing-code-tests.md).
+Historical campaign measurements and rejected approaches are preserved in the
+[2026-08 cleanup retrospective](./history/2026-08-code-test-performance-cleanup.md).
+
+## Tests and validators
+
+Tests and validators are both evidence about nodes, but they answer different
+questions. Any node may be covered by either or both. A test or validator's
+location follows its ownership scope, not the node type.
+
+- A **test** runs a scenario and asserts an observable result. Tests cover
+  behavior, integrations, and the behavior of validators themselves.
+- A **validator** deterministically checks a repository or node artifact for
+  conformance with a rule and reports each finding. The rule belongs to its
+  standard or contract; the validator enforces that rule but does not define it.
+
+Validators also need focused tests. For example,
+`validators/portable_dates.py` is a validator, while
+`tests/validate_portable_dates.py` tests its accepted and rejected cases. The
+`validate_*.py` test filename does not make a file a repository validator.
+
+The current repository runner discovers validator implementations from two
+central locations:
+
+| Location | Scope | Canonical ID |
+| --- | --- | --- |
+| `validators/<name>.py` | Repository-wide conformance | `repo/<name>` |
+| `validators/skill/<name>.py` | Shared skill-system conformance | `skill-maker/<name>` |
+
+Tests live with the narrowest scope that owns the scenario:
+
+| Location | Scope |
+| --- | --- |
+| `tests/` | Repository-wide, integration, and validator tests |
+| `hooks/tests/` | Git and assistant lifecycle hooks |
+| `skills/<skill>/tests/` | A skill's instruction gateway and declared interface contract |
+| `skills/<skill>/_rtx/tests/` | A skill's private runtime behavior |
+| `src/officina/rutter/tests/` | Officina Rutter behavior |
+
+These paths describe current collection. They are not a claim that tests or
+validators belong only to particular node types.
 
 ## Commands
 
@@ -35,39 +80,39 @@ Use `--jobs N` to choose the pytest-xdist worker count. The default is two
 thirds of the machine's logical CPUs, with a minimum of one. Requests above one
 require `pytest-xdist`.
 
-## Collection
+## Collection and execution
 
 `repo_checks.py` is the only repository-check entry point.
 `src/officina/repository/checks/runner.py` owns suite policy, repository views, pytest
 arguments, and validator integration. `pytest.ini` owns ordinary discovery:
 
-- roots: `tests/`, `hooks/tests/`, `skills/`, `src/officina/wakeup/tests/`, and
+- roots: `tests/`, `hooks/tests/`, `skills/`, `src/officina/rutter/tests/`, and
   `validators/`;
 - file names: `test_*.py` and `validate_*.py`;
 - import mode: pytest `importlib` mode;
 - excluded template: `skills/initialize-tdd/assets/python/tests/`.
 
-The custom plugin turns repository validators into ordinary pytest function
-items. Pytest's default collector contributes the functional items. When a
-suite includes both, validator and functional items enter the same xdist queue
-and consume one worker budget. The runner does not maintain a second inventory
-of test directories.
+The custom plugin adapts repository validators into pytest function items for
+scheduling, reporting, and fixture injection. This does not make them tests.
+Pytest's default collector contributes the test items. When a suite includes
+both, validator and test items enter the same xdist queue and consume one
+worker budget. The runner does not maintain a second inventory of test
+directories.
 
 ## Suites
 
 | Suite | Repository view by default | Contents |
 | --- | --- | --- |
 | `validators` | working | Repository validators except docstrings, unless explicitly selected. |
-| `tests` | working | Full functional selection, then performance thresholds serially. |
+| `tests` | working | Browser-free functional tests, performance thresholds serially, then Chrome-backed tests serially. |
 | `precommit` | staged | Validators and the fast functional selection in one pytest invocation. |
 | `pre-push` | working | Validators and functional tests except docstring and performance tests. |
 | `portability` | working | Seven cross-platform boundary sentinels. |
 | `full` | working | Performance thresholds serially, then validators and browser-free functional tests together, then Chrome-backed tests serially. |
 
-The precommit selection excludes installation tests, Chrome tests, docstring
-tests, performance thresholds, the docstring validator, and the nested-module
-inventory assertion that requires a clean committed checkout. The latter is
-incompatible with a hook that necessarily runs while changes are staged.
+The precommit selection excludes Chrome tests, docstring tests, performance
+thresholds, the docstring validator, and reviewed expensive integration tests
+that do not belong in the fast staged gate.
 
 Run the docstring validator explicitly with
 `repo_checks.py --suite validators --validator repo/docstrings`.
@@ -84,12 +129,14 @@ because later Chrome cases are not useful evidence after its first failure.
 
 ## Repository views
 
-Every pytest session uses one internally consistent source tree:
+Every run containing validators uses one internally consistent source tree for
+its validator and test items:
 
 - `precommit` uses an exact temporary mirror of the Git index;
-- all other suites use the working tree by default;
-- `--repository-view staged` and `--repository-view working` override the
-  default;
+- other validator-bearing suites use the working tree by default;
+- `--repository-view staged` and `--repository-view working` override that
+  default for runs containing validators;
+- test-only suites and tasks always execute from the working tree;
 - CI's clean checkout already represents the commit under test.
 
 Unstaged and untracked files are absent from the staged mirror. This means a
@@ -132,36 +179,29 @@ include collection, controller startup, or unattributed scheduler overhead.
 
 ## Local hook
 
-`.githooks/pre-commit` performs these operations in order:
-
-1. reject detached `HEAD`;
-2. regenerate `PROFILES.md` when configuration changed;
-3. regenerate and stage maintained documentation artifacts;
-4. regenerate the local README preview;
-5. scan staged content with `gitleaks`;
-6. run `python3 repo_checks.py --suite precommit`.
-
-The hook may update generated files in the index. Review the staged diff after
-it completes.
+The pre-commit hook runs the staged `precommit` suite after its generation and
+secret-scanning steps. The pre-push hook runs the working-tree `pre-push`
+suite. See [Repository Git Hooks](./contributors/git-hooks.md) for activation,
+exact ordering, generated-file side effects, targeted validator commands, and
+failure handling.
 
 ## CI
 
 `.github/workflows/python-tests.yml` runs on pushes and pull requests to
 `master` and `main` using Linux, macOS, and Windows. Each matrix job installs
-the exact Python test environment from `requirements-ci.txt` and both
-supported assistant CLIs, then runs:
+the Python test environment from `requirements-ci.txt`, then runs:
 
 1. the full repository suite on Ubuntu;
 2. explicit validator, shared, and performance shards on macOS and Windows;
 3. the complete browser suite in a separate Windows shard;
-4. the portability sentinel on every supported OS;
+4. the portability sentinel after a failed combined or shared check on every supported OS;
 5. on macOS and Windows, the native keyring smoke;
 6. on macOS and Windows, the native recurring-scheduler smoke.
 
 The native smokes use `always()` so their platform evidence is still collected
 after an unrelated full-suite failure.
 
-`requirements-ci.txt` is the reproducible GitHub Actions lock for pytest,
+`requirements-ci.txt` is the GitHub Actions dependency manifest for pytest,
 pytest-xdist, and every imported test/validator dependency. Update it only
 after the proposed versions pass the full repository suite; runtime dependency
 declarations remain governed separately by the blueprint inventory.
@@ -181,18 +221,41 @@ explicit platform contract and preserve alternate coverage.
 
 ## Adding tests
 
-Place repository tests under `tests/` or `hooks/tests/`, and wakeup tests under
-`src/officina/wakeup/tests/`. A skill has two test locations, and which one a
-test belongs in follows from what it asserts about. Runtime behavior — the
-Python a machine interface executes — goes under `skills/<skill>/_rtx/tests/`,
-beside the code it covers. The module's own gateway contract goes under
-`skills/<skill>/tests/`: instruction wording the skill promises, routing
-between its interfaces, and the shape of its declared exports. Both are
-collected, because `pytest.ini` lists bare `skills` in `testpaths`. Update `pytest.ini` only when a discovery boundary
-changes. Update `src/officina/repository/checks/runner.py` only when suite policy
-changes, and update this guide whenever either contract changes.
+Place repository-wide tests under `tests/`, hook tests under `hooks/tests/`, and
+Rutter tests under `src/officina/rutter/tests/`. A skill has two test locations,
+and which one a test belongs in follows from what it asserts about. Runtime
+behavior—the Python code executed by a machine interface—goes under
+`skills/<skill>/_rtx/tests/`, beside the code it covers. The module's own
+gateway contract goes under `skills/<skill>/tests/`: instruction wording the
+skill promises, routing between its interfaces, and the shape of its declared
+exports. Both are collected, because `pytest.ini` lists bare `skills` in
+`testpaths`. Update `pytest.ini` only when a discovery boundary changes. Update
+`src/officina/repository/checks/runner.py` only when suite policy changes, and
+update this guide whenever either contract changes.
 
 Prefer normal pytest fixtures at the narrowest correct scope for immutable or
 resettable preparation. Keep real subprocess, filesystem, browser, and platform
 boundaries when they are the behavior under test. A faster test is not an
 improvement if it weakens the assertion or changes isolation semantics.
+
+### Preventing setup inflation
+
+For every expensive test, record its entry point, initial state, action or
+mutation, exact observable, retained evidence owner, and required physical
+boundary. Setup should stop at the lowest stable layer owning that observable.
+Share only immutable preparation, isolate mutating consumers, and remember that
+pytest fixture scope is per xdist worker.
+
+The binding details and remedies are in the
+[code-testing standard](../references/node-standards/code-testing.standard.yaml).
+Use the [optimization playbook](./contributors/optimizing-code-tests.md) when
+auditing or reducing existing cost. Do not copy those rules into this guide.
+
+## Adding validators
+
+Place a repository-wide validator in `validators/` and a shared skill-system
+validator in `validators/skill/`. Each exposes the validator protocol expected
+by the repository runner and has focused tests of accepted and rejected cases
+under `tests/`. Do not add a second test that merely invokes the validator and
+expects an empty finding list: the validator suite already owns that live
+conformance result.

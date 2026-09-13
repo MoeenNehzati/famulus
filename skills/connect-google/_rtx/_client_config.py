@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -187,8 +188,9 @@ def _result(status: str, client_type: str, path: Path) -> dict[str, object]:
 def _legacy_candidates(home: Path) -> tuple[list[dict[str, str]], list[dict[str, object]]]:
     candidates: list[dict[str, str]] = []
     payloads: list[dict[str, object]] = []
+    from officina.common.famulus_paths import resolve_skill_config_dir
     for service in ("cloud-files", "online-calendar"):
-        path = Path(home) / ".config" / service / "client.json"
+        path = resolve_skill_config_dir(service, platform=sys.platform, home=Path(home), environ=os.environ) / "client.json"
         if path.is_symlink():
             continue
         try:
@@ -222,9 +224,11 @@ def client_status(home: Path, *, secret_backend=None) -> dict[str, object]:
                 return {
                     **_result("needs-migration", "desktop", path),
                     "remediation": (
-                        "dispatcher --caller-skill connect-google "
-                        "connect-google._rtx.interface.install-client --from-json "
-                        "PRIVATE_DOWNLOADED_CLIENT.json --replace"
+                        "Call famulus_dispatcher.invoke with caller='connect-google', "
+                        "interface='connect-google._rtx.interface.install-client', "
+                        "version=1, and arguments={\"options\": "
+                        "{\"--from-json\": \"PRIVATE_DOWNLOADED_CLIENT.json\", "
+                        "\"--replace\": true}, \"positionals\": [], \"stdin\": null}."
                     ),
                 }
             load_authorization_client(home, secret_backend=secret_backend)

@@ -7,7 +7,8 @@ one session after a usage reset or timeout.
 
 ## Before enabling a job
 
-1. Install or repair the assistant launchers with `install-assistant-tools`.
+1. Configure the assistant launchers with `install-launchers` if the job needs
+   unattended agent execution.
 2. Configure and test the skill the job will invoke. For personal planning and
    inbox automation, complete the
    [Personal Assistance Quickstart](personal-assistance.md) first.
@@ -34,7 +35,7 @@ send it only after you review and approve the complete message.
 
 | Need | Skill |
 |---|---|
-| Install or repair assistant commands and background execution support | `install-assistant-tools` |
+| Configure assistant commands and background execution support | `install-launchers` |
 | Connect Google services needed by a job | `connect-google` |
 | Enable, disable, test, inspect, or repair a recurring assistant job | `recurring-tasks` |
 | Run the work once right now | Invoke the underlying skill directly |
@@ -48,8 +49,11 @@ the job once and confirm that it produced the expected result. If it fails or
 stops running, use `recurring-tasks` to inspect the failure and help repair it.
 
 Common recurring workflows include inbox triage and daily planning:
-`email-triage` updates the personal lists, while `daily-plan` creates the day's
-plan.
+`email-triage` can add obligations to `todo` and opportunities to `triage`,
+while `daily-plan` prepares the day's plan from the current lists and calendar.
+These jobs operate on the same persistent personal-assistance state as their
+interactive versions; scheduling changes when they run, not what data they
+use.
 
 ## Operate and troubleshoot
 
@@ -59,6 +63,7 @@ it when you no longer want it to run.
 A failed job leaves a transcript of tool calls but no account of what the
 assistant was trying to do, which is rarely enough to tell a broken job from a
 job that ran and found nothing. `milestone-logging` is the other half: a job
-that records its milestones under a run id can be read back with
-`agent-timeline --run <id>` even though the session that started it has ended.
-See [Agent milestone logging](../agent-milestone-logging.md).
+that records its milestones under a run id can be read back through
+`show-run` or `read-run-json` via the shared `famulus_dispatcher` MCP server,
+even after the session that started it has ended. Tool calls and Dispatcher
+timing are captured mechanically; milestones record intent and outcomes.

@@ -4,47 +4,65 @@ description: >-
   Use when the user needs to set up or restore Google authentication for Famulus. Do not use for ordinary Google-service operations.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: assistant-operations; topics: external-integrations; visibility: listed
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces:
-- `connect-google.source.gateway -> connect-google._rtx.interface.bind-credential-file@1`
-- `connect-google.source.gateway -> connect-google._rtx.interface.client-status@1`
-- `connect-google.source.gateway -> connect-google._rtx.interface.connect-services@1`
-- `connect-google.source.gateway -> connect-google._rtx.interface.install-client@1`
-- `connect-google.source.gateway -> connect-google.source.instructions-connect-services.interface.connect-services@1`
-- `connect-google.source.gateway -> connect-google.source.instructions-create-client.interface.create-client@1`
-- `connect-google.source.instructions-connect-services -> connect-google._rtx.interface.bind-credential-file@1`
-- `connect-google.source.instructions-connect-services -> connect-google._rtx.interface.client-status@1`
-- `connect-google.source.instructions-connect-services -> connect-google._rtx.interface.connect-services@1`
-- `connect-google.source.instructions-connect-services -> connect-google._rtx.interface.install-client@1`
-- `connect-google.source.instructions-create-client -> connect-google.source.instructions-connect-services.interface.connect-services@1`
-
-Setup Requires Setup Of: none
-Setup Order:
-1. `connect-google.interface.setup`
-
-Public Interfaces:
-- `connect-google.interface.connect-services`
-- `connect-google.interface.create-client`
-- `connect-google.interface.default`
-- `connect-google.interface.setup`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
+### Managed setup
+
+When first exposed to this skill in a session, invoke `famulus_dispatcher.invoke` once with:
+
+```json
+{
+  "caller": "connect-google",
+  "interface": "connect-google.interface.setup",
+  "version": 1,
+  "arguments": {
+    "positionals": [],
+    "options": {},
+    "stdin": null
+  }
+}
+```
+
+Do not repeat this initial call during the session. Obtain permission before carrying out setup, then follow the returned setup-manager instructions exactly. If the result is busy or failed, stop and report it.
+
+Executable Interfaces:
+
+Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+- `connect-google._rtx.interface.bind-credential-file` — Retry service-owned binding with an existing credential descriptor; never invoke OAuth authorization.
+  - Caller: `connect-google`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--allow-account-change": "comma-separated-list", "--credential-file": "path", "--gmail-nickname": "name", "--home": "dir", "--services": "comma-separated-list"}, "positionals": [], "stdin": null}
+    Required options: ["--credential-file", "--home", "--services"]; positional arity: 0..0; stdin: forbidden
+- `connect-google._rtx.interface.client-status` — Report whether the canonical Google Desktop OAuth client is missing, valid, invalid, or needs migration from plaintext, including whether its opaque client-secret reference resolves, without exposing secrets.
+  - Caller: `connect-google`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--home": "dir"}, "positionals": [], "stdin": null}
+    Required options: []; positional arity: 0..0; stdin: forbidden
+- `connect-google._rtx.interface.connect-services` — Run one combined OAuth authorization and bind its new credential file through the fixed service-owner map.
+  - Caller: `connect-google`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--account-hint": "email", "--allow-account-change": "comma-separated-list", "--callback-port": "port", "--gmail-nickname": "name", "--home": "dir", "--no-open-browser": true, "--services": "comma-separated-list"}, "positionals": [], "stdin": null}
+    Required options: ["--home", "--services"]; positional arity: 0..0; stdin: forbidden
+- `connect-google._rtx.interface.install-client` — Validate a Google Desktop OAuth client JSON and atomically install a private canonical copy.
+  - Caller: `connect-google`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--from-json": "client-json", "--home": "dir", "--replace": true}, "positionals": [], "stdin": null}
+    Required options: ["--from-json"]; positional arity: 0..0; stdin: forbidden
+
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `connect-google.interface.connect-services` — Install or reuse a Google Desktop OAuth client and hand selected Google services to their owning skills.
-- `connect-google.interface.create-client` — Guide a user through creating and privately downloading a Google Desktop OAuth client for selected Famulus services.
-- `connect-google.interface.default` — Route Google OAuth-client preparation according to whether a valid Desktop client is already installed.
-- `connect-google.interface.setup` — Route Google OAuth-client preparation according to whether a valid Desktop client is already installed.
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
+- `connect-google.source.instructions-connect-services.interface.connect-services@1` — Install or reuse a Google Desktop OAuth client and hand selected Google services to their owning skills.
+- `connect-google.source.instructions-create-client.interface.create-client@1` — Guide a user through creating and privately downloading a Google Desktop OAuth client for selected Famulus services.
 <!-- END BLUEPRINT INTERFACES -->
 Skill: connect-google
 
@@ -52,14 +70,24 @@ This is the shared router for Google OAuth-client preparation.
 
 1. Use `connect-google._rtx.interface.client-status` before asking the user for a file.
 2. If the stored client is valid, use `connect-google.interface.connect-services`.
-3. If no valid client is installed, ask whether the user already has a Google
-   Desktop OAuth client JSON, naming both ways to have one: they created it in
-   their own Google Cloud project, or the Famulus maintainer added them to a
-   shared project and sent them the file. If status reports legacy candidates,
-   ask before importing one; when candidates differ, ask which one to use. A
-   confirmed or supplied file routes to
-   `connect-google.interface.connect-services`; otherwise route to
-   `connect-google.interface.create-client`.
+3. If no valid client is installed and status reports legacy candidates, ask
+   before importing one; when candidates differ, ask which one to use. A
+   confirmed candidate routes to `connect-google.interface.connect-services`.
+4. If no candidate is selected, explain that Famulus needs a Google Cloud
+   project to register its Desktop OAuth client. Present the two options:
+   - use the developer's experimental Google Cloud project; or
+   - use their own Google Cloud project.
+   Then ask whether the Google account they want to connect has been added by
+   the developer to the experimental project's OAuth test-user list.
+   - If yes, ask for the local path to the Desktop OAuth client JSON provided
+     by the developer, then route it to `connect-google.interface.connect-services`.
+     If the user was added but does not have the file, tell them to obtain the
+     JSON from the developer; never request its contents.
+   - If no, route to `connect-google.interface.create-client`. After the user
+     creates their own project and downloads its Desktop client JSON, obtain
+     its local path and continue through `connect-google.interface.connect-services`.
+   - If the user is unsure, tell them to confirm with the developer; do not
+     assume enrollment.
 
 When a user without a client asks why this step cannot be automated, explain
 that Google requires every application reaching an account to be registered in
@@ -75,9 +103,9 @@ costs or timelines:
 > listed test users, and their refresh tokens expire after seven days, so those
 > users must authorize again.
 
-Owning a project removes that cap for its owner; joining the maintainer's
-project is subject to it. `instructions/create-client.md` repeats the second
-sentence at the configuration step; keep both copies identical.
+Owning a project removes that cap for its owner; using the developer's
+experimental project is subject to it. `instructions/create-client.md` repeats
+the second sentence at the configuration step; keep both copies identical.
 
 Apply the same route to initial setup and reconnect requests. Recommend Drive,
 Calendar, and Gmail while allowing the user to choose a subset. The connection

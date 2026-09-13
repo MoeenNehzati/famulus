@@ -4,58 +4,171 @@ description: >-
   Use when the user asks to view or change a persistent personal list. Do not use for an ad hoc generated list, repository inventory, or prose checklist.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: personal-assistance; topics: personal-organization, storage-and-sync; visibility: featured
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces:
-- `list-manager.source.gateway -> list-manager._rtx.interface.beautify-list@1`
-- `list-manager.source.gateway -> list-manager._rtx.interface.cloud-create-entry@1`
-- `list-manager.source.gateway -> list-manager._rtx.interface.cloud-delete@1`
-- `list-manager.source.gateway -> list-manager._rtx.interface.cloud-init@1`
-- `list-manager.source.gateway -> list-manager._rtx.interface.cloud-list-categories@1`
-- `list-manager.source.gateway -> list-manager._rtx.interface.cloud-read-beautify@1`
-- `list-manager.source.gateway -> list-manager._rtx.interface.cloud-read@1`
-- `list-manager.source.gateway -> list-manager._rtx.interface.cloud-update@1`
-- `list-manager.source.gateway -> list-manager._rtx.interface.create-entry@1`
-- `list-manager.source.gateway -> list-manager._rtx.interface.describe-schema@1`
-- `list-manager.source.gateway -> list-manager._rtx.interface.generate-id@1`
-- `list-manager.source.gateway -> list-manager._rtx.interface.init-list@1`
-- `list-manager.source.gateway -> list-manager._rtx.interface.migrate-markdown@1`
-- `list-manager.source.gateway -> list-manager._rtx.interface.read-beautify@1`
-- `list-manager.source.gateway -> list-manager._rtx.interface.read-list@1`
-- `list-manager.source.gateway -> list-manager._rtx.interface.update-list@1`
-
-Setup Requires Setup Of:
-- `connect-google.interface.setup@1`
-Setup Order:
-1. `connect-google.interface.setup`
-2. `list-manager.interface.setup`
-
-Public Interfaces:
-- `list-manager.interface.default`
-- `list-manager.interface.setup`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Instruction Interfaces:
+### Managed setup
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `list-manager.interface.default` — Primary LLM-facing skill instructions.
-- `list-manager.interface.setup` — Primary LLM-facing skill instructions.
+When first exposed to this skill in a session, invoke `famulus_dispatcher.invoke` once with:
+
+```json
+{
+  "caller": "list-manager",
+  "interface": "list-manager.interface.setup",
+  "version": 1,
+  "arguments": {
+    "positionals": [],
+    "options": {},
+    "stdin": null
+  }
+}
+```
+
+Do not repeat this initial call during the session. Obtain permission before carrying out setup, then follow the returned setup-manager instructions exactly. If the result is busy or failed, stop and report it.
+
+Executable Interfaces:
+
+Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+- `list-manager._rtx.interface.beautify-list` — Render YAML list entries from stdin (nested bullet-list markdown by default for todo/triage; --table for a flat GFM table, --diff for the legacy diff-fenced view). Pass YAML in the invocation's stdin field.
+  - Caller: `list-manager`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--diff": true, "--ids": true, "--markdown": true, "--no-descriptions": true, "--relative-deadlines": true, "--table": true, "-D": true}, "positionals": [], "stdin": null}
+    Required options: []; positional arity: 0..0; stdin: permitted
+- `list-manager._rtx.interface.cloud-create-entry` — Add entries to a cloud list under a category path.
+  - Caller: `list-manager`
+  - Version: 1
+  - Alternative: `stdin-mode`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--cloud": true, "--expected-revision": "N"}, "positionals": ["name", "category/path"], "stdin": null}
+    Required options: ["--cloud"]; positional arity: 2..2; stdin: permitted
+  - Alternative: `file-mode`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--cloud": true, "--entries": "/tmp/entry.yaml", "--expected-revision": "N"}, "positionals": ["name", "category/path"], "stdin": null}
+    Required options: ["--cloud", "--entries"]; positional arity: 2..2; stdin: forbidden
+- `list-manager._rtx.interface.cloud-delete` — Delete one or more entries by id from a cloud list. Ids come after --cloud.
+  - Caller: `list-manager`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--cloud": true, "--expected-revision": "N"}, "positionals": ["name", "id", "id..."], "stdin": null}
+    Required options: ["--cloud"]; positional arity: 2..unbounded; stdin: forbidden
+- `list-manager._rtx.interface.cloud-init` — Create a new list in cloud storage.
+  - Caller: `list-manager`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--cloud": true, "--name": "NAME", "--schema": "schema"}, "positionals": ["name"], "stdin": null}
+    Required options: ["--cloud", "--schema"]; positional arity: 1..1; stdin: forbidden
+- `list-manager._rtx.interface.cloud-list-categories` — Return cached cloud-list category paths, refreshing them after the local use countdown expires or on request.
+  - Caller: `list-manager`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--cloud": true, "--refresh": true}, "positionals": ["name"], "stdin": null}
+    Required options: ["--cloud"]; positional arity: 1..1; stdin: forbidden
+- `list-manager._rtx.interface.cloud-read` — Read a cloud list by name (raw YAML), optionally filtered. A filtered read preserves structure: same shape as the full doc, pruned to only branches containing a match -- ancestor categories/parent entries are kept, and a match is never duplicated as both a nested child and a top-level result.
+  - Caller: `list-manager`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--cloud": true, "--output": "FILE", "--sort": "FIELD", "-o": "FILE"}, "positionals": ["name", "filters"], "stdin": null}
+    Required options: ["--cloud"]; positional arity: 1..unbounded; stdin: forbidden
+- `list-manager._rtx.interface.cloud-read-beautify` — Read a cloud list by name and render it (nested bullet-list markdown by default, id-annotated; --table for a flat GFM table, --diff for the legacy diff-fenced view), writing stdout or an optional output file.
+  - Caller: `list-manager`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--cloud": true, "--diff": true, "--markdown": true, "--no-descriptions": true, "--output": "FILE", "--sort": "FIELD", "--table": true, "-D": true, "-o": "FILE"}, "positionals": ["name", "filters"], "stdin": null}
+    Required options: ["--cloud"]; positional arity: 1..unbounded; stdin: forbidden
+- `list-manager._rtx.interface.cloud-update` — Update cloud-list entries from a YAML list of patch objects, each with a quoted string `id`; input is not a mapping keyed by id.
+  - Caller: `list-manager`
+  - Version: 1
+  - Alternative: `file-mode`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--cloud": true, "--expected-revision": "N", "--file": "/tmp/patch.yaml"}, "positionals": ["name"], "stdin": null}
+    Required options: ["--cloud", "--file"]; positional arity: 1..1; stdin: forbidden
+  - Alternative: `stdin-mode`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--cloud": true, "--expected-revision": "N"}, "positionals": ["name"], "stdin": null}
+    Required options: ["--cloud"]; positional arity: 1..1; stdin: permitted
+- `list-manager._rtx.interface.create-entry` — Add entries to a local YAML list under a category path.
+  - Caller: `list-manager`
+  - Version: 1
+  - Alternative: `stdin-mode`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--expected-revision": "N"}, "positionals": ["file", "category/path"], "stdin": null}
+    Required options: []; positional arity: 2..2; stdin: permitted
+  - Alternative: `file-mode`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--entries": "/tmp/entry.yaml", "--expected-revision": "N"}, "positionals": ["file", "category/path"], "stdin": null}
+    Required options: ["--entries"]; positional arity: 2..2; stdin: forbidden
+- `list-manager._rtx.interface.describe-schema` — Describe entry-level fields (types/required/enums) for a list schema.
+  - Caller: `list-manager`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {}, "positionals": ["schema", "field"], "stdin": null}
+    Required options: []; positional arity: 1..2; stdin: forbidden
+- `list-manager._rtx.interface.generate-id` — Generate one or more collision-free 6-char entry IDs against a local list file.
+  - Caller: `list-manager`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--count": "N"}, "positionals": ["file"], "stdin": null}
+    Required options: []; positional arity: 1..1; stdin: forbidden
+- `list-manager._rtx.interface.init-list` — Create a new empty local YAML list file.
+  - Caller: `list-manager`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--name": "NAME", "--schema": "schema"}, "positionals": ["file"], "stdin": null}
+    Required options: ["--schema"]; positional arity: 1..1; stdin: forbidden
+- `list-manager._rtx.interface.migrate-markdown` — Migrate a legacy Markdown list to YAML format.
+  - Caller: `list-manager`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--name": "NAME", "--schema": "schema"}, "positionals": ["source.md", "dest.yaml"], "stdin": null}
+    Required options: ["--schema"]; positional arity: 2..2; stdin: forbidden
+- `list-manager._rtx.interface.read-beautify` — Read a local YAML list file and render it for display (nested bullet-list markdown by default; --table for a flat GFM table, --diff for the legacy diff-fenced view).
+  - Caller: `list-manager`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--diff": true, "--markdown": true, "--no-descriptions": true, "--no-ids": true, "--output": "FILE", "--sort": "FIELD", "--table": true, "-D": true, "-o": "FILE"}, "positionals": ["file", "filters"], "stdin": null}
+    Required options: []; positional arity: 1..unbounded; stdin: forbidden
+- `list-manager._rtx.interface.read-list` — Read a local YAML list file, optionally filtered (raw YAML output). A filtered read preserves structure: it returns the same shape as the input (full doc with categories, or a bare list) pruned to only branches containing a match -- every ancestor category and parent entry of a match is kept for context, and a match is never duplicated as both a nested child and an independent top-level result.
+  - Caller: `list-manager`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--output": "FILE", "--sort": "FIELD", "-o": "FILE"}, "positionals": ["file", "filters"], "stdin": null}
+    Required options: []; positional arity: 1..unbounded; stdin: forbidden
+- `list-manager._rtx.interface.update-list` — Update entries in a local YAML list file using a YAML sequence of patch objects supplied by file or stdin.
+  - Caller: `list-manager`
+  - Version: 1
+  - Alternative: `file-mode`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--expected-revision": "N", "--file": "/tmp/patch.yaml"}, "positionals": ["file"], "stdin": null}
+    Required options: ["--file"]; positional arity: 1..1; stdin: forbidden
+  - Alternative: `stdin-batch`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--expected-revision": "N"}, "positionals": ["file"], "stdin": null}
+    Required options: []; positional arity: 1..1; stdin: permitted
+
 <!-- END BLUEPRINT INTERFACES -->
+Local/default selection repairs only this declaration. Google connection setup remains a
+separate user-selected step only for cloud routes; local/default setup never selects it.
+
 When this skill is used, begin with:
 
 Skill: list-manager
 
 ## Rules
 
-- **Show to user:** use `cloud-read-beautify`; relay stdout **verbatim** — it is pre-formatted nested bullet-list markdown, id-annotated. Do not reformat.
+- **Show to user:** invoke `cloud-read-beautify` through `famulus_dispatcher.invoke`. The tool result is the user-facing output. Do not reproduce or reformat the list in your response unless the user explicitly requests it. A brief acknowledgment is sufficient.
 - **Ids and mutation patches:** every rendered row ends with `#id`. Mutations always use these stable ids, never row numbers. Patch input for `update-list` and `cloud-update` is a YAML list of objects. Every object must contain a string `id`; quote every `id`, never use an id-keyed YAML mapping, and never leave numeric-looking ids unquoted. If ids are not in context, run `cloud-read-beautify` first. For example:
   ```yaml
   - id: "421753"

@@ -1,0 +1,189 @@
+content:
+- _tex_macro_reader\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: math-dependency-graph._rtx.source.rtx-init
+  version: 1
+description: Recursively reads the TeX entrypoint's local input and class closure
+  and prints extracted MathJax macro definitions as JSON.
+gateway:
+  language: Python
+  path: _tex_macro_reader.py
+id: math-dependency-graph._rtx.source.rtx-tex-macro-reader
+interfaces:
+  math-dependency-graph._rtx.source.rtx-tex-macro-reader.interface.scripts-extract-mathjax-macros:
+    uses_interfaces: []
+    content:
+    - _tex_macro_reader\.py
+    contract:
+      arguments:
+        entrypoint:
+          description: TeX entrypoint whose reachable input and include tree is scanned.
+          direct_io_ref: read-1
+          required: true
+          sensitivity: user-private
+          type:
+            access: read
+            content_type:
+              kind: string
+              sensitivity: user-private
+            kind: file
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+        out:
+          description: Optional MathJax macro JSON destination.
+          direct_io_ref: write-1
+          required: false
+          sensitivity: user-private
+          type:
+            access: write
+            content_type:
+              format:
+                named: json
+              kind: string
+              sensitivity: derived-private
+            kind: file
+            must_exist: false
+            relative_to: caller-cwd
+            syntax: literal
+      caller_warnings:
+      - external-side-effect: Writes or replaces the selected macro JSON file.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: TeX entrypoint and reachable input or include files
+          formats:
+          - tex
+          id: read-1
+          medium: local-filesystem
+          path: <entrypoint.tex> and reachable source files
+          path_match: glob
+          sensitivity: user-private
+          system: filesystem
+        writes:
+        - access: write
+          content: extracted MathJax macro definitions
+          formats:
+          - json
+          id: write-1
+          medium: local-filesystem
+          path: <out> or <entry-dir>/_build/<entry>-mathjax-macros.json
+          path_match: exact
+          sensitivity: derived-private
+          system: filesystem
+        - access: write
+          content: extraction report
+          formats:
+          - json
+          id: write-2
+          medium: stdout
+          sensitivity: derived-private
+      execution:
+        consistency:
+          snapshot: Extraction uses the reachable TeX content read during this invocation.
+        effects:
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: write-1
+            kind: direct-io
+          direct_io_ref: write-1
+          id: macro-file
+          may_occur_in_outcomes:
+          - extracted
+          reversibility:
+            reversible: The generated macro JSON can be deleted or regenerated.
+          value_source:
+            argument_ref: entrypoint
+            kind: argument
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            non_atomic: The JSON file is written directly after creating its parent
+              directory.
+          concurrent_invocations:
+            unsafe: Concurrent writers to the same path are not serialized.
+          idempotency:
+            idempotent: Unchanged reachable TeX sources produce equivalent sorted
+              JSON.
+          on_uncertain_completion:
+            verify_then_decide: Parse the selected output JSON before retrying.
+          partial_effects_on_failure:
+            possible: A direct write can leave incomplete output if interrupted.
+          rollback_on_failure:
+            unavailable: Prior output content is not retained.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: report
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Use the reported macro JSON path for graph rendering.
+        class: success
+        effects:
+        - macro-file
+        id: extracted
+        outputs:
+        - report
+      - caller_action: Supply an existing TeX entrypoint.
+        class: refusal
+        effects: []
+        id: missing
+        outputs: []
+      - caller_action: Correct unreadable includes or an unwritable output path.
+        class: error
+        effects: []
+        id: failed
+        outputs: []
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: JSON object containing entrypoint and output path and extracted
+          macro count.
+        direct_io_ref: write-2
+        empty: Never empty.
+        id: report
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          format:
+            named: json
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Extract MathJax macro definitions from a TeX entrypoint, recursively
+      following \input/\include.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allowed_flags:
+        - --out
+        flag_patterns:
+          --out: ^.+$
+        max_positionals: 1
+        min_positionals: 1
+        name: owner
+    usage: <entrypoint.tex> [--out <path>]
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 6
+uses_interfaces: []
+version: 1
+maturity: stable

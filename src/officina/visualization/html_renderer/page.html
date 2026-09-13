@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>@@OFFICINA_PAGE_TITLE@@</title>
   <script>const GRAPH_BUILD_ID = "@@OFFICINA_GRAPH_BUILD_ID@@";</script>
-  <script>@@OFFICINA_ELK_RUNTIME@@</script>
+  <script id="officina-elk-client">@@OFFICINA_ELK_RUNTIME@@</script>
   <script>
     const ELK_WORKER_SOURCE = @@OFFICINA_ELK_WORKER_SOURCE@@;
     const ELK_WORKER_URL = URL.createObjectURL(
@@ -18,6 +18,19 @@
 </head>
 <body>
   <div id="tooltip"></div>
+  <div id="quick-guide-highlight" hidden></div>
+  <div id="quick-guide-dialog" role="dialog" aria-modal="false"
+     aria-labelledby="quick-guide-title" aria-describedby="quick-guide-body" hidden>
+    <button id="quick-guide-close" type="button" aria-label="Close Quick guide">×</button>
+    <div id="quick-guide-step"></div>
+    <h2 id="quick-guide-title"></h2>
+    <div id="quick-guide-body"></div>
+    <div class="quick-guide-actions">
+      <button id="quick-guide-back" type="button">Back</button>
+      <button id="quick-guide-next" type="button">Next</button>
+      <button id="quick-guide-finish" type="button">Finish</button>
+    </div>
+  </div>
   <div class="layout" id="layout">
     <aside class="side-panel left-panel" id="left-panel" aria-label="Selection inspector">
       <button class="panel-toggle" id="left-panel-toggle" type="button" aria-expanded="true" aria-controls="left-panel-content" title="Collapse selection inspector">⟨</button>
@@ -41,16 +54,16 @@
           <button id="visibility-redo-btn" class="toolbar-btn" type="button" disabled aria-label="Redo graph action">Redo</button>
         </span>
         <div class="toolbar-sep"></div>
-        <span class="toolbar-tip" data-tooltip="Hide every selected node from the visible graph. Double-click a node to hide it directly.">
+        <span class="toolbar-tip" data-tooltip="Hide every selected node from the visible graph. Double-click a node to hide it directly. Shortcut: h.">
           <button id="hide-selected-btn" class="toolbar-btn" type="button" disabled aria-label="Hide selected nodes">Hide selected</button>
         </span>
-        <span class="toolbar-tip" data-tooltip="Dim or undim every selected node without changing graph layout.">
+        <span class="toolbar-tip" data-tooltip="Dim or undim every selected node without changing graph layout. Shortcut: d.">
           <button id="dim-selected-btn" class="toolbar-btn" type="button" disabled aria-label="Dim selected nodes">Dim selected</button>
         </span>
-        <span class="toolbar-tip" data-tooltip="Hide every currently visible node except the selection and the containment ancestors needed to keep selected nodes visible.">
+        <span class="toolbar-tip" data-tooltip="Hide every currently visible node except the selection and the containment ancestors needed to keep selected nodes visible. Shortcut: Shift+h.">
           <button id="hide-unselected-btn" class="toolbar-btn" type="button" disabled aria-label="Hide unselected nodes">Hide unselected</button>
         </span>
-        <span class="toolbar-tip" data-tooltip="Dim or undim every currently visible node outside the selection without changing graph layout.">
+        <span class="toolbar-tip" data-tooltip="Dim or undim every currently visible node outside the selection without changing graph layout. Shortcut: Shift+d.">
           <button id="dim-unselected-btn" class="toolbar-btn" type="button" disabled aria-label="Dim unselected nodes">Dim unselected</button>
         </span>
         <div class="toolbar-sep"></div>
@@ -70,6 +83,9 @@
         </span>
         <span class="toolbar-tip" data-tooltip="Fit graph in viewport. Shortcut: f">
           <button id="fit-btn" class="toolbar-btn" type="button" aria-label="Fit graph in viewport">Fit</button>
+        </span>
+        <span id="quick-guide-toolbar-item" class="toolbar-tip" data-tooltip="Open a short, step-by-step walkthrough of how to read and use this graph." hidden>
+          <button id="quick-guide-btn" class="toolbar-btn" type="button">Quick guide</button>
         </span>
       </div>
       <div class="routing-controls" id="routing-controls">
@@ -152,10 +168,11 @@
         <svg id="graph-svg" width="1200" height="800" viewBox="0 0 1200 800">
           <defs>
           </defs>
+          <g id="edge-layer"></g>
           <g id="presentation-node-layer"></g>
           <g id="container-layer"></g>
+          <g id="edge-interaction-layer"></g>
           <g id="node-layer"></g>
-          <g id="edge-layer"></g>
         </svg>
       </div>
     </div>
@@ -173,7 +190,7 @@
             <div class="small" style="margin-top:0.25rem;"><strong>Toolbar</strong> (top-left, always visible): <em>Hide selected</em> and <em>Dim selected</em> act on the complete selection; <em>Redraw all</em> resets layout.</div>
             <div class="small" style="margin-top:0.25rem;">Hover a node or edge to preview metadata. Click to pin details in the left inspector.</div>
             <div class="small" style="margin-top:0.25rem;">Click a node to select it; hold <kbd>Ctrl</kbd>/<kbd>Cmd</kbd> to toggle multiple nodes. In a multi-selection, click a selected-node name to inspect it or double-click it to remove it from the selection.</div>
-            <div class="small" style="margin-top:0.25rem;">The node and color legends select matching nodes. Relation-row arrows add the union of ancestors or successors of all selected nodes through that relation type. Existing hide and dim buttons act on the resulting selection. Click the rest of a relation row to hide or show that relation.</div>
+            <div class="small" style="margin-top:0.25rem;">The node and color legends select matching nodes. Arrows beside Relations add ancestors or successors through every visible relation type; relation-row arrows restrict traversal to that type. Existing hide and dim buttons act on the resulting selection. Click the rest of a relation row to hide or show that relation.</div>
             <div class="small" style="margin-top:0.25rem;"><kbd>Esc</kbd> or ✕ deselects. <kbd>r</kbd> redraws. <kbd>c</kbd> restores hidden nodes; <kbd>Shift+C</kbd> also clears filters and legend exclusions. <kbd>f</kbd> fits the graph.</div>
             <div class="small" style="margin-top:0.25rem;">Drag a node to reposition it. Drag a sidebar edge or focus its resize handle and use arrow keys to adjust width.</div>
             <div class="small" style="margin-top:0.25rem;"><strong>Scroll</strong> to zoom in/out (centered at cursor). <strong>Drag empty space</strong> to pan. Use the toolbar +/−/Fit buttons or keyboard <kbd>+</kbd> <kbd>−</kbd> <kbd>f</kbd>.</div>
@@ -205,7 +222,13 @@
       </div>
     </aside>
   </div>
-    <script>
+  <script id="officina-graph-data" type="application/json">
+@@OFFICINA_GRAPH_DOCUMENT@@
+  </script>
+  <script id="officina-edge-data" type="application/json">
+@@OFFICINA_EDGE_DATA@@
+  </script>
+    <script id="officina-viewer-runtime">
 @@OFFICINA_VIEWER_RUNTIME@@  </script>
 </body>
 </html>

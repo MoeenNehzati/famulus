@@ -1,9 +1,19 @@
 {
   "name": "famulus",
-  "description": "Personal productivity skills \u2014 daily planning, calendar, lists, writing, and math tooling",
+  "description": "Personal and research assistant combining model guidance with machine-executable Python",
   "author": {
     "name": "Moeen Nehzati"
   },
   "repository": "https://github.com/MoeenNehzati/famulus",
-  "version": "0.0.0"
+  "version": "0.0.0",
+  "mcpServers": {
+    "famulus_dispatcher": {
+      "command": "python",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp_launcher.py"],
+      "env": {
+        "FAMULUS_HOST": "claude",
+        "FAMULUS_PLUGIN_DATA": "${CLAUDE_PLUGIN_DATA}"
+      }
+    }
+  }
 }

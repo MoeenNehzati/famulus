@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Account registry for email-client: nickname -> {email, IMAP/SMTP settings}.
 
-Lives at ~/.config/email-client/accounts.json — deliberately OUTSIDE the
+Lives at the helper-owned Famulus email-client accounts path — deliberately OUTSIDE the
 skills git repo (which may go public). Passwords are never stored here; they
 stay in the host credential store via officina.credentials.secret_store.
 
@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Callable
 
 import officina.credentials.secret_store as secret_store
+from officina.common.famulus_paths import resolve_skill_config_dir
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 try:
@@ -37,10 +38,7 @@ except ImportError:
     assert _oauth_spec.loader is not None
     _oauth_spec.loader.exec_module(_oauth_tokens)
 
-# Overridable via env var so tests can point at a tmp_path instead of the
-# real ~/.config/email-client/accounts.json.
-CONFIG_DIR = Path(os.environ["EMAIL_CLIENT_CONFIG_DIR"]) if os.environ.get("EMAIL_CLIENT_CONFIG_DIR") \
-    else Path.home() / ".config" / "email-client"
+CONFIG_DIR = resolve_skill_config_dir("email-client", platform=sys.platform, home=Path.home(), environ=os.environ)
 ACCOUNTS_FILE = CONFIG_DIR / "accounts.json"
 SECRET_NAMESPACE = "email-client"
 

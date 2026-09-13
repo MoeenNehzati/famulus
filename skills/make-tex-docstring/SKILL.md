@@ -4,26 +4,10 @@ description: >-
   Use when the user asks to create or standardize a TeX document-profile comment, or when a selected TeX task requires profile information that the document does not state clearly. Do not use merely because the target is a `.tex` file.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: research; topics: scholarly-documents, research-writing; visibility: listed
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces: none
-
-Public Interfaces:
-- `make-tex-docstring.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Instruction Interfaces:
-
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `make-tex-docstring.interface.default` — Inspect a TeX document against the canonical profile standard, infer cautiously, and gate any edit on approval.
+Used Interfaces: none
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

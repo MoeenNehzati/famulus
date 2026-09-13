@@ -2,7 +2,7 @@ content:
 - SKILL\.md
 dependencies: []
 description: Interprets calendar requests, invokes the calendar client, and routes
-  missing OAuth setup through connect-google and the local bootstrap interface.
+  missing OAuth setup through connect-google.
 gateway:
   language: Markdown
   path: SKILL.md

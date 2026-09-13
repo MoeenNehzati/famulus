@@ -1758,35 +1758,3 @@ def _write_tracked_result(
     except (OSError, UnicodeError, ValidatorRunnerError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
-
-
-def _render_findings(results: dict[str, list[str]]) -> int:
-    """Render validator findings to stderr and return the hook exit status.
-
-    Intent
-    ------
-    Present grouped root-validator failures to command-line callers.
-
-    Rationale
-    ---------
-    A stable summary distinguishes a clean run from policy findings without
-    conflating either state with runner execution errors.
-
-    Pseudocode
-    ----------
-    - if results is empty:
-      - return success
-    - set stderr_report = each validator id count and finding
-    - return findings-present status
-
-    Wraps
-    -----
-    - none
-    """
-    if not results:
-        return 0
-    for name, errors in results.items():
-        print(f"error: {name} found {len(errors)} issue(s):", file=sys.stderr)
-        for error in errors:
-            print(f"  {error}", file=sys.stderr)
-    return 1

@@ -1,0 +1,109 @@
+content:
+- famulus_paths/_get_interface\.py
+dependencies:
+- blueprint: {base: module-root, path: blueprints/famulus-paths.yaml}
+  reason: Selects one path from the canonical normalized FamulusPaths result.
+  source: common.source.famulus-paths
+  version: 1
+description: Prints one finite named plugin path from normalized hosted-process context.
+gateway:
+  language: Python
+  path: famulus_paths/_get_interface.py
+id: common.source.famulus-paths-get
+interfaces:
+  common.source.famulus-paths-get.interface.get:
+    content:
+    - famulus_paths/_get_interface\.py
+    uses_interfaces:
+    - interface: common.interface.famulus-paths
+      version: 1
+    contract:
+      arguments:
+        name:
+          description: Declared plugin path to print.
+          required: true
+          sensitivity: public
+          type:
+            kind: enum
+            values:
+            - {value: plugin-data, description: Client-managed persistent plugin root.}
+            - {value: logging-path, description: Milestone directory below plugin data.}
+            - {value: setup-status, description: Setup readiness file below plugin data.}
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: normalized hosted-process environment and home path
+          formats: [text, path]
+          id: process-context
+          medium: local-system
+          reason: Resolve the selected path from FAMULUS_HOST, FAMULUS_PLUGIN_DATA,
+            the current platform, and the current home without filesystem access.
+          sensitivity: user-private
+        writes:
+        - access: write
+          content: selected absolute plugin path
+          formats: [path, text]
+          id: selected-path
+          medium: stdout
+          sensitivity: user-private
+      execution:
+        consistency:
+          snapshot: Environment and home inputs are sampled once during the finite call.
+        lifecycle: finite
+        state_effect: read-only
+        verification:
+        - {method: output-schema, output_ref: result}
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes:
+      - id: completed
+        class: success
+        outputs: [result]
+        effects: []
+        caller_action: Use the printed absolute plugin path.
+      - id: invalid-plugin-context
+        class: refusal
+        outputs: []
+        effects: []
+        caller_action: Launch through a supported host with complete normalized context.
+      - id: plugin-context-required
+        class: refusal
+        outputs: []
+        effects: []
+        caller_action: Invoke only from a hosted process with plugin context.
+      outputs:
+      - audience: machine
+        cardinality: {minimum: 1, maximum: 1}
+        description: One selected absolute path followed by a newline.
+        direct_io_ref: selected-path
+        empty: Never empty on success.
+        id: result
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        type: {kind: string, sensitivity: user-private}
+      preconditions: []
+    description: Print one declared plugin-data path from the current hosted process.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_stdin: false
+        max_positionals: 1
+        min_positionals: 1
+        notes: Accepts exactly plugin-data, logging-path, or setup-status.
+        positional_patterns:
+          '0': ^(?:plugin-data|logging-path|setup-status)$
+    usage: <plugin-data|logging-path|setup-status>
+    version: 1
+node_type: behavioral_source
+platform_support: {linux: true, macos: true, windows: true}
+runtime_dependencies: []
+schema_version: 6
+uses_interfaces:
+- interface: common.interface.famulus-paths
+  version: 1
+version: 1
+maturity: stable

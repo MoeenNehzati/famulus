@@ -231,7 +231,6 @@ def _build_parser(start_rule: str, grammar: str | None = None) -> Lark | None:
 _DOCSTRING_GRAMMAR_TEXT = _load_docstring_grammar()
 _EDGE_PARSER = _build_parser("edge")
 _WRAP_PARSER = _build_parser("wraps")
-_DEPENDENCY_PARSER = _build_parser("module_dependency")
 _PSEUDOCODE_BULLET_PARSER = _build_parser("pseudocode_bullet")
 _PSEUDOCODE_REF_PARSER = _build_parser("pseudocode_ref_expr")
 
@@ -739,33 +738,6 @@ def _parse_with_lark(parser: "Lark | None", line: str):
         return None
 
 
-def _parse_dependency_implicit_marker(
-    marker_token: str | None,
-) -> bool:
-    """Return parsed implicit flag from a marker token.
-
-    Intent
-    ------
-    Expose the parse dependency implicit marker step in docstring syntax parsing and typed IR construction so readers and tools can locate its exact responsibility.
-
-    Rationale
-    ---------
-    This boundary keeps parse dependency implicit marker behavior separate inside docstring syntax parsing and typed IR construction; documenting it makes dependency checks and graph extraction reviewable.
-
-    Pseudocode
-    ----------
-    - set parse_dependency_implicit_marker_inputs = received_context
-    - return parse_dependency_implicit_marker_inputs
-
-    Wraps
-    -----
-    - none
-    """
-    if marker_token is None:
-        return False
-    return marker_token.strip().lower() == "implicit"
-
-
 def _resolve_wrap_field_key(
     raw_key: str,
     *,
@@ -851,57 +823,6 @@ def _extract_wrap_fields(tree, *, allowed_fields: tuple[str, ...]) -> dict[str, 
             current_key = None
 
     return entries
-
-
-def _extract_dependency_parts(
-    source: str,
-    tree,
-) -> tuple[str, str, str | None]:
-    """Extract dependency name, rationale, and marker from a dependency tree.
-
-    Intent
-    ------
-    Expose the extract dependency parts step in docstring syntax parsing and typed IR construction so readers and tools can locate its exact responsibility.
-
-    Rationale
-    ---------
-    This boundary keeps extract dependency parts behavior separate inside docstring syntax parsing and typed IR construction; documenting it makes dependency checks and graph extraction reviewable.
-
-    Pseudocode
-    ----------
-    - set extract_dependency_parts_inputs = received_context
-    - return extract_dependency_parts_inputs
-
-    Wraps
-    -----
-    - none
-    """
-    from lark.lexer import Token
-
-    name = ""
-    why = ""
-    marker: str | None = None
-
-    for node in tree.scan_values(lambda value: isinstance(value, Token)):
-        if node.type in {"name", "IDENT"}:
-            name = str(node)
-        elif node.type in {"DEPS_RATIONALE", "DEPS_REASON"}:
-            why = str(node).strip()
-        elif node.type == "IMPLICIT":
-            marker = str(node)
-
-    if marker is None and re.search(r"\[\s*implicit\s*\]", source, flags=re.IGNORECASE):
-        marker = "implicit"
-
-    return name, why, marker
-
-
-_LEGACY_DEPENDENCY_RE = re.compile(
-    r"^(?P<name>\.?[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)*)"
-    r"(?:\([^)]*\))?"
-    r"\s*(?P<implicit>\[\s*implicit\s*\])?"
-    r"\s*->\s*(?P<why>.+?)\s*$"
-)
 
 
 def parse_pseudocode_dependency_ref(
@@ -1691,92 +1612,12 @@ def _parse_wraps(lines: Iterable[str]) -> tuple[list[WrapSpec], list[str]]:
     return wraps, invalid
 
 
-def _parse_module_dependency_ref(
-    line: str,
-    *,
-    allow_implicit: bool = True,
-    require_why: bool = True,
-) -> ModuleDependencyRef | None:
-    """Parse a module dependency reference entry.
-
-    Intent
-    ------
-    Expose the parse module dependency ref step in docstring syntax parsing and typed IR construction so readers and tools can locate its exact responsibility.
-
-    Rationale
-    ---------
-    This boundary keeps parse module dependency ref behavior separate inside docstring syntax parsing and typed IR construction; documenting it makes dependency checks and graph extraction reviewable.
-
-    Pseudocode
-    ----------
-    - set parse_module_dependency_ref_inputs = received_context
-    - set parse_module_dependency_ref_products = carried_outputs
-    - return parse_module_dependency_ref_products
-
-    Wraps
-    -----
-    - none
-
-    InstantiationsFromRepo
-    ----------------------
-    .ModuleDependencyRef:
-      why:
-        constructs: "ModuleDependencyRef produces a value carried by parse module dependency ref; this edge is documented from the observed product position in the body."
-    ._clean_item:
-      why:
-        constructs: "clean item produces a value carried by parse module dependency ref; this edge is documented from the observed product position in the body."
-    ._extract_dependency_parts:
-      why:
-        constructs: "extract dependency parts produces a value carried by parse module dependency ref; this edge is documented from the observed product position in the body."
-    ._parse_dependency_implicit_marker:
-      why:
-        constructs: "parse dependency implicit marker produces a value carried by parse module dependency ref; this edge is documented from the observed product position in the body."
-    ._parse_with_lark:
-      why:
-        constructs: "parse with lark produces a value carried by parse module dependency ref; this edge is documented from the observed product position in the body."
-    """
-    cleaned = _clean_item(line)
-    if not cleaned:
-        return None
-    normalized = re.sub(r"\s*\[\s*implicit\s*\]\s*", "[implicit]", cleaned)
-    normalized = re.sub(r"\s*->\s*", "->", normalized)
-    parse_tree = _parse_with_lark(_DEPENDENCY_PARSER, normalized)
-    if parse_tree is None:
-        match = _LEGACY_DEPENDENCY_RE.fullmatch(cleaned)
-        if match is None:
-            return None
-        name = match.group("name").strip()
-        why = (match.group("why") or "").strip()
-        marker = match.group("implicit")
-    else:
-        name, why, marker = _extract_dependency_parts(cleaned, parse_tree)
-    if not name:
-        return None
-
-    if marker is not None:
-        if not allow_implicit:
-            return None
-        is_implicit = _parse_dependency_implicit_marker(marker)
-    else:
-        is_implicit = False
-
-    if require_why and not why:
-        return None
-
-    return ModuleDependencyRef(
-        name=name,
-        why=why,
-        why_legacy_string=True,
-        implicit=is_implicit,
-    )
-
-
 def _parse_dependency_implicit_from_name(
     name: str,
     *,
     allow_implicit: bool,
 ) -> tuple[str, bool] | None:
-    """Extract legacy ``[implicit]`` markers from tree dependency keys.
+    """Extract ``[implicit]`` markers from tree dependency keys.
 
     Intent
     ------
@@ -2177,10 +2018,9 @@ def _parse_module_dependency_section(
     lines: Iterable[str],
     *,
     allow_implicit: bool,
-    allow_legacy_flat: bool,
     require_why: bool,
 ) -> tuple[list[ModuleDependencyRef], list[str]]:
-    """Parse a module dependency section using tree syntax plus optional legacy flat syntax.
+    """Parse a module dependency section using structured tree syntax.
 
     Intent
     ------
@@ -2205,9 +2045,6 @@ def _parse_module_dependency_section(
     ._parse_dependency_section_tree:
       why:
         constructs: "parse dependency section tree produces a value carried by parse module dependency section; this edge is documented from the observed product position in the body."
-    ._parse_module_dependency_ref:
-      why:
-        constructs: "parse module dependency ref produces a value carried by parse module dependency section; this edge is documented from the observed product position in the body."
     """
     raw_lines = [line.rstrip() for line in lines if line.strip()]
     tree_entries, tree_invalid = _parse_dependency_section_tree(
@@ -2215,31 +2052,15 @@ def _parse_module_dependency_section(
         allow_implicit=allow_implicit,
         require_why=require_why,
     )
-    if tree_entries or not allow_legacy_flat:
-        return tree_entries, tree_invalid
-
-    legacy_entries: list[ModuleDependencyRef] = []
-    legacy_invalid: list[str] = []
-    for line in raw_lines:
-        parsed = _parse_module_dependency_ref(
-            line,
-            allow_implicit=allow_implicit,
-            require_why=require_why,
-        )
-        if parsed is None:
-            legacy_invalid.append(line.strip())
-            continue
-        legacy_entries.append(parsed)
-    return legacy_entries, legacy_invalid
+    return tree_entries, tree_invalid
 
 
 def _parse_dispatch_dependency_section(
     lines: Iterable[str],
     *,
-    allow_legacy_flat: bool,
     require_why: bool,
 ) -> tuple[list[DispatchDependencyRef], list[str]]:
-    """Parse a dispatch dependency section using tree syntax plus optional flat syntax.
+    """Parse a dispatch dependency section using structured tree syntax.
 
     Intent
     ------
@@ -2267,39 +2088,13 @@ def _parse_dispatch_dependency_section(
     ._parse_dispatch_section_tree:
       why:
         constructs: "parse dispatch section tree produces a value carried by parse dispatch dependency section; this edge is documented from the observed product position in the body."
-    ._parse_module_dependency_ref:
-      why:
-        constructs: "parse module dependency ref produces a value carried by parse dispatch dependency section; this edge is documented from the observed product position in the body."
     """
     raw_lines = [line.rstrip() for line in lines if line.strip()]
     tree_entries, tree_invalid = _parse_dispatch_section_tree(
         raw_lines,
         require_why=require_why,
     )
-    if tree_entries or not allow_legacy_flat:
-        return tree_entries, tree_invalid
-
-    legacy_entries: list[DispatchDependencyRef] = []
-    legacy_invalid: list[str] = []
-    for line in raw_lines:
-        parsed = _parse_module_dependency_ref(
-            line,
-            allow_implicit=False,
-            require_why=require_why,
-        )
-        if parsed is None:
-            legacy_invalid.append(line.strip())
-            continue
-        legacy_entries.append(
-            DispatchDependencyRef(
-                id=parsed.name,
-                why=parsed.why,
-                why_action=parsed.why_action,
-                why_legacy_string=parsed.why_legacy_string,
-                why_action_count=parsed.why_action_count,
-            )
-        )
-    return legacy_entries, legacy_invalid
+    return tree_entries, tree_invalid
 
 
 def _parse_resource_section(
@@ -2800,7 +2595,6 @@ def parse_graph_block(docstring: str, *, section_names: frozenset[str] | None = 
         _parse_module_dependency_section(
             spec.sections.get(module_dependency_rules.calls_section, []),
             allow_implicit=module_dependency_rules.allow_implicit,
-            allow_legacy_flat=module_dependency_rules.allow_legacy_flat,
             require_why=module_dependency_rules.require_why,
         )[0]
     )
@@ -2808,14 +2602,12 @@ def parse_graph_block(docstring: str, *, section_names: frozenset[str] | None = 
         _parse_module_dependency_section(
             spec.sections.get(module_dependency_rules.instantiates_section, []),
             allow_implicit=module_dependency_rules.allow_implicit,
-            allow_legacy_flat=module_dependency_rules.allow_legacy_flat,
             require_why=module_dependency_rules.require_why,
         )[0]
     )
     spec.dispatches.extend(
         _parse_dispatch_dependency_section(
             spec.sections.get(module_dependency_rules.dispatches_section, []),
-            allow_legacy_flat=module_dependency_rules.allow_legacy_flat,
             require_why=module_dependency_rules.require_why,
         )[0]
     )

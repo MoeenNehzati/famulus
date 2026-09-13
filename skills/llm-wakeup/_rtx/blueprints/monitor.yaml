@@ -1,0 +1,35 @@
+schema_version: 6
+id: llm-wakeup._rtx.source.monitor
+version: 1
+maturity: stable
+node_type: behavioral_source
+description: Acquire normalized quota observations and convert refusal evidence or
+  near-limit events into reminders or policy-controlled wakeups.
+gateway:
+  language: Python
+  path: _claude_codex_monitor.py
+content:
+- _claude_codex_usage\.py
+- _claude_codex_monitor\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/session-data.yaml
+  source: llm-wakeup._rtx.source.session-data
+  version: 1
+  reason: Read provider transcripts and normalize reset deadlines.
+- blueprint:
+    base: module-root
+    path: blueprints/persistence.yaml
+  source: llm-wakeup._rtx.source.persistence
+  version: 1
+  reason: Read auto-schedule policy and persist usage snapshots and deduplication
+    markers.
+- blueprint:
+    base: module-root
+    path: blueprints/scheduler.yaml
+  source: llm-wakeup._rtx.source.scheduler
+  version: 1
+  reason: Schedule a wakeup when an observed session has opted into automation.
+interfaces: {}
+uses_interfaces: []

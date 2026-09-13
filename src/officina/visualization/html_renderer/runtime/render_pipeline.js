@@ -1,23 +1,246 @@
     // ── Full ELK-based layout/render ─────────────────────────────────────────
 
-    async function updateVisibilityFull({preserveManualPositions = false} = {}) {
-      renderHiddenNodes();
+    let paintVersion = 0;
+    let edgeVisualSerial = 0;
+    let latestPaintPromise = Promise.resolve(), latestStructuralPromise = Promise.resolve();
+    const lastEdgePaths = new Map();
+
+    function edgeRouteStateKey(edge) {
+      return JSON.stringify([routingConfig, getEffectivePos(edge.source), getEffectivePos(edge.target)]);
+    }
+
+    function reconciliationOperationCap(currentSize, desiredSize) {
+      return currentSize > 0 && desiredSize * 2 <= currentSize ? 128 : 48;
+    }
+
+    function runPaintOperations(operations, version, operationCap = 48) {
+      return new Promise(resolve => {
+        let index = 0;
+        const runChunk = () => {
+          if (version !== paintVersion) { resolve(false); return; }
+          const deadline = performance.now() + 6;
+          let chunkSize = 0;
+          while (version === paintVersion && index < operations.length
+              && chunkSize < operationCap && performance.now() < deadline) {
+            operations[index++]();
+            chunkSize += 1;
+          }
+          if (version !== paintVersion) { resolve(false); return; }
+          if (index < operations.length) {
+            let resumed = false;
+            const resume = () => {
+              if (resumed) return;
+              resumed = true;
+              runChunk();
+            };
+            requestAnimationFrame(resume);
+            setTimeout(resume, 16);
+          }
+          else resolve(version === paintVersion);
+        };
+        runChunk();
+      });
+    }
+
+    function edgePaintKey(edge) {
+      return String(edge.edge_id || `projection_${edge.source}_${edge.target}_${edge.type || "unknown"}`);
+    }
+
+    function createRenderedEdge(edge, pathData) {
+      const path = createSvgElement("path");
+      path.setAttribute("class", "edge-path");
+      path.setAttribute("d", pathData);
+      path.id = `edge-visual-${++edgeVisualSerial}`;
+      const edgeStyle = edgeStyleForType(edge.type);
+      applyEdgeMetadataPresentation(path, edge, edgeStyle, edgeColorForTarget(edge.target));
+      path.dataset.edgeId = edgePaintKey(edge);
+      path.dataset.targetNodeId = edge.target;
+      path.dataset.sourceNodeId = edge.source;
+      path.dataset.derived = edge.derived ? "true" : "false";
+      path.dataset.edgeType = String(edge.type || "unknown");
+      path.dataset.aggregate = edge.aggregate ? "true" : "false";
+      path.dataset.bundle = edge.bundle ? "true" : "false";
+      path.dataset.edgeMetaKey = JSON.stringify(edge);
+      path.__edgeMeta = edge;
+      edgePresentationUnderlaysForPath(path).forEach(underlay => {
+        underlay.dataset.edgeId = path.dataset.edgeId;
+        edgeLayer.appendChild(underlay);
+      });
+      edgeLayer.appendChild(path);
+      const pointerProxy = createSvgElement("use");
+      pointerProxy.setAttribute("class", "edge-pointer-proxy");
+      pointerProxy.setAttribute("href", `#${path.id}`);
+      pointerProxy.setAttribute("aria-hidden", "true");
+      pointerProxy.setAttribute("focusable", "false");
+      pointerProxy.setAttribute("opacity", "0");
+      pointerProxy.setAttribute("pointer-events", "stroke");
+      pointerProxy.dataset.edgeId = path.dataset.edgeId;
+      edgeInteractionLayer.appendChild(pointerProxy);
+      path.__edgePointerProxy = pointerProxy;
+      const routeSample = pathPointsForArrow(path);
+      syncEdgeMetadataPresentationGeometry(path, routeSample);
+      attachArrowhead(path, routeSample);
+      bindEdgeHover(path, edge, pointerProxy);
+      return path;
+    }
+
+    function reconcileVisibleScene(renderedEntities, visibleEdges, renderedOrder) {
+      const version = ++paintVersion;
+      const operations = [];
+      const desiredNodeIds = new Set(renderedEntities.map(entity => entity.id));
+      const desiredEdgeIds = new Set(visibleEdges.map(edgePaintKey));
+      const currentEdgePaths = Array.from(edgeLayer.querySelectorAll(".edge-path")).sort((a, b) =>
+        String(a.dataset.edgeId).localeCompare(String(b.dataset.edgeId))
+      );
+      const operationCap = reconciliationOperationCap(
+        nodeElementIndex.size + currentEdgePaths.length,
+        desiredNodeIds.size + desiredEdgeIds.size,
+      );
+
+      Array.from(svgEl.querySelectorAll(".graph-node")).sort((a, b) =>
+        String(a.dataset.nodeId).localeCompare(String(b.dataset.nodeId))
+      ).forEach(node => {
+        if (!desiredNodeIds.has(node.dataset.nodeId)) operations.push(() => {
+          clearMathBeforeMutation(node);
+          nodeElementIndex.delete(node.dataset.nodeId);
+          node.remove();
+        });
+      });
+      currentEdgePaths.forEach(path => {
+        if (!desiredEdgeIds.has(path.dataset.edgeId)) operations.push(() => {
+          lastEdgePaths.set(path.dataset.edgeId, {
+            data: path.getAttribute("d") || "",
+            state: path.dataset.routeState || "",
+          });
+          removeEdgePresentationResources(path);
+          arrowForPath(path)?.remove();
+          path.__edgePointerProxy?.remove();
+          path.remove();
+        });
+      });
+
+      const entityById = new Map(renderedEntities.map(entity => [entity.id, entity]));
+      const orderedNodeIds = [], visitedNodeIds = new Set(), previousNodeByLayer = new Map();
+      const visitNode = id => {
+        if (!desiredNodeIds.has(id) || visitedNodeIds.has(id)) return;
+        visitedNodeIds.add(id);
+        visitNode(parentByNode.get(id));
+        orderedNodeIds.push(id);
+      };
+      renderedOrder.forEach(visitNode);
+      orderedNodeIds.forEach(entityId => {
+        const entity = entityById.get(entityId);
+        const position = lastNodePositions.get(entityId);
+        if (!entity || !position) return;
+        operations.push(() => {
+          let node = nodeElement(entityId);
+          const key = JSON.stringify([entity, position, nodePresentationState(entity).className]);
+          if (node?.dataset.renderKey !== key) {
+            if (node) { clearMathBeforeMutation(node); node.remove(); }
+            node = renderNode(entity, position);
+            node.dataset.renderKey = key;
+            bindNodeInteractions(node, entity);
+            typesetElement(node);
+          }
+          const manual = manualPositions.get(entityId);
+          if (manual && !presentationGroupedNodeIds.has(entityId)) {
+            const dx = manual.x - position.x;
+            const dy = manual.y - position.y;
+            if (dx || dy) node.setAttribute("transform", `translate(${dx},${dy})`);
+          } else node.removeAttribute("transform");
+          const layer = isContainerNode(entityId) ? containerLayer : nodeLayer;
+          const previousNode = previousNodeByLayer.get(layer);
+          const nextNode = previousNode ? previousNode.nextElementSibling : layer.firstElementChild;
+          if (node.parentNode !== layer || node !== nextNode) {
+            const focused = node.contains(document.activeElement) ? document.activeElement : null;
+            layer.insertBefore(node, nextNode);
+            focused?.focus({preventScroll: true});
+          }
+          previousNodeByLayer.set(layer, node);
+          nodeElementIndex.set(entityId, node);
+        });
+      });
+
+      const routeCounts = new Map();
+      visibleEdges.forEach(edge => {
+        const key = [edge.source, edge.target].sort().join("::");
+        routeCounts.set(key, (routeCounts.get(key) || 0) + 1);
+      });
+      const routeSeen = new Map();
+      visibleEdges.slice().sort((a, b) => edgePaintKey(a).localeCompare(edgePaintKey(b))).forEach(edge => {
+        operations.push(() => {
+          const srcPos = getEffectivePos(edge.source);
+          const dstPos = getEffectivePos(edge.target);
+          if (!srcPos || !dstPos) return;
+          const routeKey = [edge.source, edge.target].sort().join("::");
+          const routeIndex = routeSeen.get(routeKey) || 0;
+          routeSeen.set(routeKey, routeIndex + 1);
+          const pathData = routedPathForEndpoints(
+            edge.source, edge.target, srcPos, dstPos, routeIndex, routeCounts.get(routeKey) || 1
+          );
+          const routeState = edgeRouteStateKey(edge);
+          let path = edgeLayer.querySelector(`.edge-path[data-edge-id="${selectorValue(edgePaintKey(edge))}"]`);
+          const cachedPath = lastEdgePaths.get(edgePaintKey(edge));
+          const resolvedPathData = !path && cachedPath?.state === routeState ? cachedPath.data : pathData;
+          const edgeMetaKey = JSON.stringify(edge);
+          let geometryCurrent = false;
+          if (!path || path.dataset.edgeMetaKey !== edgeMetaKey) {
+            if (path) {
+              removeEdgePresentationResources(path);
+              arrowForPath(path)?.remove();
+              path.__edgePointerProxy?.remove();
+              path.remove();
+            }
+            path = createRenderedEdge(edge, resolvedPathData);
+            geometryCurrent = true;
+          }
+          path.__edgeMeta = edge;
+          path.dataset.routeState = routeState;
+          if (!geometryCurrent && path.getAttribute("d") !== resolvedPathData) {
+            path.setAttribute("d", resolvedPathData);
+            syncEdgeRouteGeometry(path);
+          }
+        });
+      });
+
+      operations.push(() => {
+        lastRenderedEdges = visibleEdges;
+        syncEdgePresentationLegend();
+        applyVisibilityPresentation(operations);
+      });
+      const paintPromise = runPaintOperations(operations, version, operationCap).then(current => {
+        if (!current) return false;
+        return currentMathTypesetTail().then(() => true);
+      });
+      if (version === paintVersion) latestPaintPromise = paintPromise;
+      return paintPromise;
+    }
+
+    window.officinaRendererDiagnostics = {
+      whenIdle: async () => {
+        let observed, structural;
+        do {
+          structural = latestStructuralPromise;
+          observed = latestPaintPromise;
+          await Promise.all([structural, observed]);
+        } while (structural !== latestStructuralPromise || observed !== latestPaintPromise);
+      },
+    };
+
+    function updateVisibilityFull(options) { return latestStructuralPromise = performVisibilityFull(options); }
+    async function performVisibilityFull({preserveManualPositions = false} = {}) {
       const renderedEntities = docData.entities.filter(e => !isHiddenNode(e.id));
       const allEntities = docData.entities;
       const visibleEdges = computeVisibleEdges();
       const currentVersion = ++renderVersion;
+      const requestedPaintVersion = ++paintVersion;
       const previousNodePositions = lastNodePositions;
       const previousPresentationRenderState = snapshotPresentationNodesRenderState();
       containerIndex = rebuildContainerIndex(allEntities);
 
       if (renderedEntities.length === 0) {
-        clearMathBeforeMutation(containerLayer);
         presentationNodeLayer.replaceChildren();
-        clearMathBeforeMutation(nodeLayer);
-        containerLayer.innerHTML = "";
-        edgeLayer.innerHTML = "";
-        nodeLayer.innerHTML = "";
-        lastRenderedEdges = [];
+        await reconcileVisibleScene([], [], []);
         elkStatus.textContent = "No visible nodes.";
         svgEl.setAttribute("width", "800"); svgEl.setAttribute("height", "200");
         svgEl.setAttribute("viewBox", "0 0 800 200");
@@ -29,6 +252,9 @@
         elkStatus.textContent = "Rendering graph layout...";
         const graph = await computeLayout(renderedEntities, visibleEdges);
         if (currentVersion !== renderVersion) return null;
+        if (requestedPaintVersion !== paintVersion) {
+          return updateVisibilityFull({preserveManualPositions});
+        }
         lastNodePositions = new Map(lastNodePositions);
         const layoutNodes = [];
         flattenLayoutNodes(graph.children || [], 0, 0, layoutNodes);
@@ -121,13 +347,7 @@
         const graphMaxY = Math.max(500, ...committedBounds.map(pos => pos.y + pos.height + 80));
         const graphWidth = graphMaxX - graphMinX;
         const graphHeight = graphMaxY - graphMinY;
-        clearMathBeforeMutation(containerLayer);
-        clearMathBeforeMutation(nodeLayer);
         presentationNodeLayer.replaceChildren();
-        containerLayer.innerHTML = "";
-        edgeLayer.innerHTML = "";
-        nodeLayer.innerHTML = "";
-        lastRenderedEdges = [];
         elkStatus.textContent = "";
         renderPresentationNodes();
         svgEl.setAttribute("width", String(graphWidth));
@@ -136,68 +356,8 @@
         fitGraph();
         hasFittedOnce = true;
 
-        const targetCounts = new Map();
-        visibleEdges.forEach(edge => targetCounts.set(edge.target, (targetCounts.get(edge.target) || 0) + 1));
-
-        (graph.edges || []).forEach((elkEdge) => {
-          const idx = parseInt(elkEdge.id.replace("elk_edge_", ""), 10);
-          const meta = visibleEdges[idx];
-          const section = (elkEdge.sections || [])[0];
-          if (!section || !meta) return;
-          const points = offsetEdgeEndpoints(
-            mergedTargetPoints(meta, pointsForSection(section), targetCounts),
-            meta.source,
-            meta.target
-          );
-          const path = createSvgElement("path");
-          path.setAttribute("class", "edge-path");
-          path.setAttribute("d", roundedPathForPoints(points));
-          const edgeStyle = edgeStyleForType(meta.type);
-          applyEdgeMetadataPresentation(path, meta, edgeStyle, edgeColorForTarget(meta.target));
-          path.dataset.edgeId = meta.edge_id || elkEdge.id;
-          path.dataset.targetNodeId = meta.target;
-          path.dataset.sourceNodeId = meta.source;
-          path.dataset.derived = meta.derived ? "true" : "false";
-          path.dataset.edgeType = String(meta.type || "unknown");
-          path.dataset.aggregate = meta.aggregate ? "true" : "false";
-          path.dataset.bundle = meta.bundle ? "true" : "false";
-          path.__edgeMeta = meta;
-          edgeLayer.appendChild(path);
-          syncEdgeMetadataPresentationGeometry(path);
-          attachArrowhead(path);
-          bindEdgeHover(path, meta);
-          lastRenderedEdges.push(meta);
-        });
-        syncEdgePresentationLegend();
-
-        renderedOrder.forEach(entityId => {
-          const entity = entityMap.get(entityId);
-          const positioned = lastNodePositions.get(entityId);
-          if (!positioned) return;
-          if (!entity) return;
-          if (isHiddenNode(entityId)) return;
-          const nodeEl = renderNode(entity, positioned);
-          // Restore manual position as transform offset
-          const manual = manualPositions.get(entityId);
-          if (manual && !presentationGroupedNodeIds.has(entityId)) {
-            const dx = manual.x - positioned.x;
-            const dy = manual.y - positioned.y;
-            if (dx !== 0 || dy !== 0) nodeEl.setAttribute("transform", `translate(${dx},${dy})`);
-          }
-          bindNodeInteractions(nodeEl, entity);
-          (isContainerNode(entityId) ? containerLayer : nodeLayer).appendChild(nodeEl);
-        });
-
-        manualPositions.forEach((_, nodeId) => {
-          if (!isHiddenNode(nodeId)) rerouteIncidentEdgesFromCurrentPositions(nodeId);
-        });
-        rerouteAllVisibleEdgesFromCurrentPositions();
-        refreshEdgeOcclusionMasks();
-
-        applyVisibilityPresentation();
-        typesetElement(containerLayer);
-        typesetElement(nodeLayer);
-
+        const paintCurrent = await reconcileVisibleScene(renderedEntities, visibleEdges, renderedOrder);
+        if (!paintCurrent || currentVersion !== renderVersion) return null;
         // Restore selection highlight and details
         if (selectedPresentationNodeId) {
           showPresentationNodeDetails(selectedPresentationNodeId);
@@ -206,7 +366,7 @@
           showSelectionDetails();
         } else {
           syncToolbar();
-          rawJsonCodeEl.textContent = JSON.stringify(docData, null, 2);
+          showGraphDocumentJson();
         }
         const renderedNodeCount = svgEl.querySelectorAll(".graph-node").length;
         presentationRestoringManualPositions = false;

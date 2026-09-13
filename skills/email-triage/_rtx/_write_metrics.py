@@ -12,8 +12,6 @@ import json
 import sys
 import argparse
 from datetime import datetime
-from pathlib import Path
-import os
 
 try:
     from officina.runtime.python_machine_interface import PythonArgvMachineInterface
@@ -21,21 +19,10 @@ try:
 except ImportError:
     HAS_OFFICINA = False
 
-def default_state_dir(*, home: Path | None = None) -> Path:
-    """Resolve the mutable state root for email-triage.
-
-    Defaults to the shared Famulus state root (not SKILL_DIR/state, which may
-    be a read-only installed/plugin tree). Overridable via
-    EMAIL_TRIAGE_STATE_DIR so tests and CI can point at a tmp_path.
-    """
-    override = os.environ.get("EMAIL_TRIAGE_STATE_DIR")
-    if override:
-        return Path(override)
-    from officina.common.famulus_paths import resolve_famulus_paths
-
-    return resolve_famulus_paths(
-        platform=sys.platform, home=home or Path.home(), environ=os.environ
-    ).email_triage_state_root
+if __package__:
+    from ._state_paths import default_state_dir
+else:
+    from _state_paths import default_state_dir
 
 
 STATUS_FILE = default_state_dir() / "status.json"

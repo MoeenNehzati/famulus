@@ -12,7 +12,17 @@ from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 try:
     from . import RunnerInvocationError, invoke_runner
 except ImportError:
-    from __init__ import RunnerInvocationError, invoke_runner
+    import importlib.util
+
+    _runtime_spec = importlib.util.spec_from_file_location(
+        "ci_debug_rtx_runtime", Path(__file__).with_name("__init__.py")
+    )
+    if _runtime_spec is None or _runtime_spec.loader is None:
+        raise ImportError("CI-debug runtime adapter is unavailable")
+    _runtime = importlib.util.module_from_spec(_runtime_spec)
+    _runtime_spec.loader.exec_module(_runtime)
+    RunnerInvocationError = _runtime.RunnerInvocationError
+    invoke_runner = _runtime.invoke_runner
 
 
 def main(argv: list[str] | None = None) -> int:

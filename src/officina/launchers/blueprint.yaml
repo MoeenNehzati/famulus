@@ -15,7 +15,7 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers:
-      - install-assistant-tools._rtx
+      - install-launchers._rtx
       - recurring-tasks._rtx
       - recurring
     source_interface: launchers.source.agent.interface.python-api
@@ -32,5 +32,5 @@ authority:
     match: exact
     allowed_readers:
     - launchers.interface.agent
-    - install-assistant-tools._rtx.interface.scripts-launchers
+    - install-launchers._rtx.interface.agent-launchers
     reason: The managed launcher is the sole durable backend-selection owner.

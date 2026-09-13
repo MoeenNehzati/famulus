@@ -65,7 +65,6 @@
           draggingNodeIds.forEach((nodeId) => {
             rerouteIncidentEdgesFromCurrentPositions(nodeId);
           });
-          refreshEdgeOcclusionMasks();
           saveViewerState();
         }
         draggingNodeIds = [];
@@ -78,29 +77,34 @@
 
     // ── Toolbar button handlers ───────────────────────────────────────────────
 
-    hideSelectedBtn.addEventListener("click", () => {
+    function handleHideSelected() {
       const nodeIds = visibleSelectedNodeIds();
       if (!nodeIds.length) return;
       hideNodes(nodeIds);
-    });
+    }
 
-    dimSelectedBtn.addEventListener("click", () => {
+    function handleDimSelected() {
       const nodeIds = visibleSelectedNodeIds();
       if (!nodeIds.length) return;
       toggleDimNodes(nodeIds);
-    });
+    }
 
-    hideUnselectedBtn.addEventListener("click", () => {
+    function handleHideUnselected() {
       const nodeIds = visibleUnselectedNodeIds({preserveSelectionAncestors: true});
       if (!visibleSelectedNodeIds().length || !nodeIds.length) return;
       hideNodes(nodeIds);
-    });
+    }
 
-    dimUnselectedBtn.addEventListener("click", () => {
+    function handleDimUnselected() {
       const nodeIds = visibleUnselectedNodeIds();
       if (!visibleSelectedNodeIds().length || !nodeIds.length) return;
       toggleDimNodes(nodeIds);
-    });
+    }
+
+    hideSelectedBtn.addEventListener("click", handleHideSelected);
+    dimSelectedBtn.addEventListener("click", handleDimSelected);
+    hideUnselectedBtn.addEventListener("click", handleHideUnselected);
+    dimUnselectedBtn.addEventListener("click", handleDimUnselected);
 
     document.getElementById("redraw-btn").addEventListener("click", () => {
       manualPositions.clear();
@@ -208,8 +212,8 @@
     function applyEdgeRoutingChange(patch) {
       applyRoutingPatch(patch);
       saveViewerState();
-      rerouteAllVisibleEdgesFromCurrentPositions();
-      refreshEdgeOcclusionMasks();
+      const renderedEntities = docData.entities.filter(entity => !isHiddenNode(entity.id));
+      reconcileVisibleScene(renderedEntities, computeVisibleEdges(), renderedEntities.map(entity => entity.id));
     }
 
     function applyLayoutRoutingChange(patch) {
@@ -253,6 +257,7 @@
     // ── Other event listeners ────────────────────────────────────────────────
 
     document.addEventListener("keydown", event => {
+      if (quickGuideOwnsFocus()) return;
       const tag = document.activeElement?.tagName?.toLowerCase();
       if (["input", "textarea", "select"].includes(tag) || document.activeElement?.isContentEditable) return;
       if (event.key === "Escape") {
@@ -271,6 +276,24 @@
       if (event.key.toLowerCase() === "c") {
         event.preventDefault();
         resetViewState({includeCategories: event.shiftKey});
+        return;
+      }
+      if (event.key.toLowerCase() === "h") {
+        event.preventDefault();
+        if (event.shiftKey) {
+          handleHideUnselected();
+        } else {
+          handleHideSelected();
+        }
+        return;
+      }
+      if (event.key.toLowerCase() === "d") {
+        event.preventDefault();
+        if (event.shiftKey) {
+          handleDimUnselected();
+        } else {
+          handleDimSelected();
+        }
         return;
       }
       if (event.key === "+" || event.key === "=") {
@@ -309,6 +332,7 @@
     syncSidebarLayout();
     restoreSidebarOrder();
 
-    window.addEventListener("load", () => {
-      updateVisibilityFull();
+    window.addEventListener("load", async () => {
+      await updateVisibilityFull();
+      if (QUICK_GUIDE_CONFIG?.open_by_default) startQuickGuide();
     });

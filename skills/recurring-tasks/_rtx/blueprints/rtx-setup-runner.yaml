@@ -4,10 +4,10 @@ dependencies:
 - blueprint:
     base: module-root
     path: blueprints/rtx-managed-control.yaml
-  reason: Delegates setup through the shared managed-runtime command helper.
+  reason: Delegates setup through the recurring-owned command helper.
   source: recurring-tasks._rtx.source.rtx-managed-control
   version: 1
-description: Delegates recurring-task host setup to the canonical managed runtime.
+description: Captures dispatcher-selected Python and plugin values in recurring-owned setup.
 gateway:
   language: Python
   path: _setup_runner.py
@@ -20,19 +20,9 @@ interfaces:
     - interface: recurring.interface.control
       version: 1
     contract:
-      arguments:
-        migrate-cron:
-          default: false
-          description: Remove obsolete ai-recurring cron lines before installing the
-            healthcheck entry
-          required: false
-          sensitivity: public
-          type:
-            kind: flag
+      arguments: {}
       caller_warnings:
-      - external-side-effect: Configures the agent environment and installation-ID-owned
-          native scheduler entries; Linux also receives a namespaced recurring healthcheck
-          cron line.
+      - external-side-effect: Writes recurring-owned descriptor and jobs state and reconciles the one shared native scheduler set and healthcheck sentinel.
       direct_io:
         network: []
         reads:
@@ -54,15 +44,24 @@ interfaces:
           medium: local-system
           sensitivity: user-private
           system: crontab
-        writes:
-        - access: configure
-          content: config
+        - access: read
+          content: Dispatcher-selected Python executable and plugin root.
           formats:
-          - text
-          id: write-1
+          - python-object
+          id: read-3
           medium: local-system
           sensitivity: user-private
-          system: agent-environment
+          system: agent-runtime
+        writes:
+        - access: configure
+          content: recurring descriptor and jobs state
+          formats:
+          - json
+          - yaml
+          id: write-1
+          medium: local-filesystem
+          sensitivity: user-private
+          system: filesystem
         - access: configure
           content: scheduler-config
           formats:
@@ -88,22 +87,21 @@ interfaces:
           sensitivity: derived-private
       execution:
         consistency:
-          live: Applies setup sequentially against current host environment scheduler
-            and crontab state.
+          live: Applies dispatcher-selected Python and plugin values to durable recurring state and current scheduler state.
         effects:
         - action: configure
           confirmation_evidence:
             direct_io_ref: write-1
             kind: direct-io
           direct_io_ref: write-1
-          id: configure-environment
+          id: configure-recurring
           may_occur_in_outcomes:
           - configured
           - failed
           reversibility:
-            reversible: Restore or remove the installed agent environment setting.
+            reversible: Rerun setup with the intended selected Python and plugin root.
           value_source:
-            direct_io_ref: write-1
+            direct_io_ref: read-3
             kind: direct-io
         - action: configure
           confirmation_evidence:
@@ -129,10 +127,10 @@ interfaces:
           - configured
           - failed
           reversibility:
-            reversible: Remove the marked healthcheck line from the user crontab.
+            reversible: Owner-checked recurring teardown removes the managed sentinel.
           value_source:
-            argument_ref: migrate-cron
-            kind: argument
+            direct_io_ref: read-3
+            kind: direct-io
         lifecycle: finite
         mutation_safety:
           atomicity:
@@ -142,8 +140,7 @@ interfaces:
             unsafe: Concurrent setup calls can race on scheduler entries and crontab
               content.
           idempotency:
-            idempotent: Repeating with unchanged inputs converges to one healthcheck
-              entry per installation ID on Linux and matching scheduler state on every platform.
+            idempotent: Repeating with unchanged inputs converges to one shared healthcheck entry and matching scheduler state.
           on_uncertain_completion:
             verify_then_decide: Inspect environment scheduler and crontab state before
               retrying.
@@ -162,7 +159,7 @@ interfaces:
       - caller_action: Use the reported scheduler status to confirm active jobs.
         class: success
         effects:
-        - configure-environment
+        - configure-recurring
         - sync-scheduler
         - install-healthcheck
         id: configured
@@ -172,13 +169,13 @@ interfaces:
           retrying.
         class: error
         effects:
-        - configure-environment
+        - configure-recurring
         - sync-scheduler
         - install-healthcheck
         id: failed
         outputs: []
       outputs:
-      - audience: both
+      - audience: machine
         cardinality:
           maximum: null
           minimum: 1
@@ -194,19 +191,18 @@ interfaces:
         type:
           kind: string
       preconditions: []
-    description: Verify prerequisites, sync native scheduler entries from jobs.yaml,
-      install recurring health checks, and list active timers/tasks.
+    description: Capture the dispatcher-selected Python and plugin root, initialize recurring-owned state without default jobs, and reconcile the shared scheduler set.
     process_binding:
       entry: Interface
       kind: process
       patterns:
-      - allowed_flags:
-        - --migrate-cron
+      - allowed_flags: []
+        allow_stdin: false
         max_positionals: 0
         min_positionals: 0
         name: owner
-    usage: '[--migrate-cron]'
-    version: 1
+    usage: ''
+    version: 2
 node_type: behavioral_source
 platform_support:
   linux: true
@@ -281,5 +277,5 @@ schema_version: 6
 uses_interfaces:
 - interface: recurring.interface.control
   version: 1
-version: 1
+version: 2
 maturity: experimental

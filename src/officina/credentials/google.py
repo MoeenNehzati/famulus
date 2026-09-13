@@ -24,6 +24,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from officina.common.famulus_paths import resolve_skill_config_dir
+
 SERVICE_SCOPES: dict[str, frozenset[str]] = {
     "drive": frozenset({"https://www.googleapis.com/auth/drive"}),
     "calendar": frozenset({"https://www.googleapis.com/auth/calendar"}),
@@ -123,40 +125,16 @@ _CREDENTIAL_FILE_STEM_RE = re.compile(
 
 def canonical_client_path(*, home: Path, platform: str) -> Path:
     """Return the single canonical Google Desktop OAuth client path."""
-    from officina.common.famulus_paths import resolve_famulus_paths
-
-    return (
-        resolve_famulus_paths(
-            platform=platform, home=Path(home), environ=os.environ
-        ).config_root
-        / "connect-google"
-        / "client.json"
-    )
+    return resolve_skill_config_dir("connect-google", platform=platform, home=Path(home), environ=os.environ) / "client.json"
 
 
 def _credentials_registry_path(*, home: Path, platform: str) -> Path:
-    from officina.common.famulus_paths import resolve_famulus_paths
-
-    return (
-        resolve_famulus_paths(
-            platform=platform, home=Path(home), environ=os.environ
-        ).config_root
-        / "connect-google"
-        / "credentials.json"
-    )
+    return resolve_skill_config_dir("connect-google", platform=platform, home=Path(home), environ=os.environ) / "credentials.json"
 
 
 def _credential_files_dir(*, home: Path, platform: str) -> Path:
     """Return the directory containing immutable per-authorization descriptors."""
-    from officina.common.famulus_paths import resolve_famulus_paths
-
-    return (
-        resolve_famulus_paths(
-            platform=platform, home=Path(home), environ=os.environ
-        ).config_root
-        / "connect-google"
-        / "credentials"
-    )
+    return resolve_skill_config_dir("connect-google", platform=platform, home=Path(home), environ=os.environ) / "credentials"
 
 
 def _validated_granted_services(services: Sequence[str]) -> tuple[str, ...]:

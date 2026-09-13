@@ -4,29 +4,32 @@ description: >-
   Use when the user asks to create a personal skill or change an existing personal skill's intended behavior or public interface in the shared skills directory. Do not use for behavior-preserving refactoring, blueprint regeneration, certificate work, or standards maintenance.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: assistant-development; topics: assistant-authoring, assistant-architecture, assistant-assurance, repository-workflow; visibility: featured
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 5
-
-Uses Interfaces:
-- `skill-maker.source.gateway -> skill-maker._rtx.interface.sync-blueprints@1`
-- `skill-maker.source.gateway -> standards.interface.query-standard@1`
-
-Public Interfaces:
-- `skill-maker.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Instruction Interfaces:
+Executable Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `skill-maker.interface.default` — Create or edit a personal skill under the repository's canonical module, interface, validation, and Git-safety standards.
+Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+- `skill-maker._rtx.interface.sync-blueprints` — Validate every skill blueprint and either check or refresh generated SKILL.md interface blocks and the runtime-dependency manifest.
+  - Caller: `skill-maker`
+  - Version: 1
+  - Alternative: `sync`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {}, "positionals": [], "stdin": null}
+    Required options: []; positional arity: 0..0; stdin: forbidden
+  - Alternative: `check`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--check": true}, "positionals": [], "stdin": null}
+    Required options: ["--check"]; positional arity: 0..0; stdin: forbidden
+- `standards.interface.query-standard` — Query one explicit standard and its complete pinned import closure.
+  - Caller: `skill-maker`
+  - Version: 1
+  - Alternative: `standard-and-options`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--facts-json": "JSON", "--query-json": "JSON", "--refs-json": "JSON", "--repo-root": "PATH", "--view": "requirements|context|evidence|remedies|full"}, "positionals": ["standard-path"], "stdin": null}
+    Required options: []; positional arity: 1..1; stdin: forbidden
+
 <!-- END BLUEPRINT INTERFACES -->
 ## Research option when creating a skill
 
@@ -58,6 +61,14 @@ A typical registered `<skill>.source.gateway` requires both instruction roots.
 A Python runtime child adds python-module; each registered Python source adds
 python-behavioral-source. Query neither absent components nor inferred targets,
 owners, or languages.
+
+If selected work touches test files or their fixtures or helpers, query
+`references/node-standards/code-testing.standard.yaml` as an additional
+independent root with `task.kind=author-skill`. Set
+`task.optimizes-test-performance` true for performance work and false otherwise.
+Test artifacts are collected or executed by configured test or validation runner.
+Markdown-only means no executable test file, fixture, or helper changes. Test
+code that validates Markdown remains test code.
 
 Each root returns its complete pinned import closure; never query imported
 documents separately.

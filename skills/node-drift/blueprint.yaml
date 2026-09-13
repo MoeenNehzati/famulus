@@ -1,0 +1,59 @@
+authority:
+  owns_filesystem: []
+children:
+  _rtx: {}
+content:
+- (?:README\.md|SKILL\.md)
+description: Computes canonical v6 node hashes and reports whether installed modules
+  have current signed certificates.
+discovery:
+  mechanism: skill
+  catalog:
+    domain: assistant-development
+    topics:
+    - assistant-assurance
+    - assistant-architecture
+    visibility: listed
+  activated_by:
+  - user-request
+  - skill-workflow
+  persistent_modifier: false
+exports:
+  node-drift.interface.default:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: node-drift.source.gateway.interface.default
+gateway:
+  language: Markdown
+  path: SKILL.md
+id: node-drift
+namespace_exports:
+  _rtx:
+    version: 4
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    surface:
+      only:
+        node-drift._rtx.interface.compute-hashes: 2
+        node-drift._rtx.interface.drift-status: 4
+    interface_access:
+      node-drift._rtx.interface.compute-hashes:
+        allow_all_modules: true
+        allowed_callers: []
+      node-drift._rtx.interface.drift-status:
+        allow_all_modules: true
+        allowed_callers: []
+node_type: module
+schema_version: 6
+sources:
+  node-drift.source.gateway:
+    blueprint:
+      base: module-root
+      path: blueprints/gateway.yaml
+version: 5
+maturity: stable
+installation_tier: optional
+personal_preference:
+  applies: false

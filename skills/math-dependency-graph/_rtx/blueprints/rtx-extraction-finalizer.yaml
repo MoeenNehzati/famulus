@@ -1,0 +1,271 @@
+content:
+- _extraction_finalizer\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: math-dependency-graph._rtx.source.rtx-init
+  version: 1
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-tex-macro-reader.yaml
+  reason: Extracts normalized graph-relevant macros with source diagnostics.
+  source: math-dependency-graph._rtx.source.rtx-tex-macro-reader
+  version: 1
+description: Finalizes a semantic graph draft into one validated and atomically replaced
+  canonical JSON artifact containing its complete MathJax macro closure and presentation
+  metadata.
+gateway:
+  language: Python
+  path: _extraction_finalizer.py
+id: math-dependency-graph._rtx.source.rtx-extraction-finalizer
+interfaces:
+  math-dependency-graph._rtx.source.rtx-extraction-finalizer.interface.scripts-finalize-extraction:
+    content:
+    - _extraction_finalizer\.py
+    contract:
+      arguments:
+        draft:
+          description: Semantic dependency-graph draft to finalize.
+          direct_io_ref: read-1
+          required: true
+          sensitivity: user-private
+          type:
+            access: read
+            content_type:
+              format:
+                named: json
+              kind: string
+              sensitivity: user-private
+            kind: file
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+        label-map:
+          description: Optional TeX-resolved label map to apply before validation.
+          direct_io_ref: read-3
+          required: false
+          sensitivity: user-private
+          type:
+            access: read
+            content_type:
+              format:
+                named: json
+              kind: string
+              sensitivity: user-private
+            kind: file
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+        output:
+          description: Canonical self-contained graph JSON destination.
+          direct_io_ref: write-1
+          required: true
+          sensitivity: user-private
+          type:
+            access: write
+            content_type:
+              format:
+                named: json
+              kind: string
+              sensitivity: derived-private
+            kind: file
+            must_exist: false
+            relative_to: caller-cwd
+            syntax: literal
+        tex-entrypoint:
+          description: Root TeX entrypoint whose reachable source tree defines macros.
+          direct_io_ref: read-2
+          required: true
+          sensitivity: user-private
+          type:
+            access: read
+            content_type:
+              kind: string
+              sensitivity: user-private
+            kind: file
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+      caller_warnings:
+      - external-side-effect: Atomically writes or replaces the canonical graph JSON.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: semantic dependency-graph draft
+          formats:
+          - json
+          id: read-1
+          medium: local-filesystem
+          path: <draft.json>
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        - access: read
+          content: root TeX entrypoint and reachable input package and class sources
+          formats:
+          - tex
+          id: read-2
+          medium: local-filesystem
+          path: <entrypoint.tex> and reachable source files
+          path_match: glob
+          sensitivity: user-private
+          system: filesystem
+        - access: read
+          content: optional TeX-resolved label map
+          formats:
+          - json
+          id: read-3
+          medium: local-filesystem
+          path: <label-map.json>
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        writes:
+        - access: write
+          content: validated self-contained canonical dependency graph
+          formats:
+          - json
+          id: write-1
+          medium: local-filesystem
+          path: <output.json>
+          path_match: exact
+          sensitivity: derived-private
+          system: filesystem
+        - access: write
+          content: finalization report
+          formats:
+          - json
+          id: write-2
+          medium: stdout
+          sensitivity: derived-private
+      execution:
+        consistency:
+          snapshot: Finalization uses the draft TeX tree and optional label map read
+            during this invocation.
+        effects:
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: write-1
+            kind: direct-io
+          direct_io_ref: write-1
+          id: canonical-graph
+          may_occur_in_outcomes:
+          - finalized
+          reversibility:
+            reversible: The canonical graph can be regenerated from the semantic draft
+              and TeX inputs.
+          value_source:
+            argument_ref: draft
+            kind: argument
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            atomic: Schema validation completes before a sibling temporary file atomically
+              replaces the canonical output.
+          concurrent_invocations:
+            unsafe: Concurrent finalizers targeting one output are not serialized and
+              the last atomic replacement wins.
+          idempotency:
+            idempotent: Unchanged inputs produce an equivalent canonical JSON artifact.
+          on_uncertain_completion:
+            verify_then_decide: Parse and validate the canonical output before retrying.
+          partial_effects_on_failure:
+            impossible: A validation or serialization failure preserves the previous
+              canonical output.
+          rollback_on_failure:
+            automatic: Failed temporary output is removed before the prior canonical
+              artifact is exposed again.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: report
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Use the canonical JSON as the only required renderer input.
+        class: success
+        effects:
+        - canonical-graph
+        id: finalized
+        outputs:
+        - report
+      - caller_action: Correct the draft TeX source label map or macro conflict and retry.
+        class: refusal
+        effects: []
+        id: invalid
+        outputs: []
+      - caller_action: Report the filesystem failure and inspect the preserved output.
+        class: error
+        effects: []
+        id: failed
+        outputs: []
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: JSON report naming all explicit inputs the canonical output and
+          embedded macro count.
+        direct_io_ref: write-2
+        empty: Never empty.
+        id: report
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          format:
+            named: json
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Finalize a semantic graph draft into validated self-contained canonical
+      JSON with embedded MathJax macros and presentation metadata.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allowed_flags:
+        - --draft
+        - --tex-entrypoint
+        - --label-map
+        - --output
+        flag_patterns:
+          --draft: ^.+$
+          --label-map: ^.+$
+          --output: ^.+$
+          --tex-entrypoint: ^.+$
+        max_positionals: 0
+        min_positionals: 0
+        name: owner
+        required_flags:
+        - --draft
+        - --tex-entrypoint
+        - --output
+    usage: --draft <draft.json> --tex-entrypoint <entrypoint.tex> [--label-map
+      <labels.json>] --output <canonical.json>
+    uses_interfaces: []
+    version: 1
+maturity: stable
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies:
+- kind: python-package
+  name: jsonschema
+  platforms:
+    linux: true
+    macos: true
+    windows: true
+  reason: Validates the finalized graph against the existing JSON Schema before replacement.
+  version: '>=4'
+schema_version: 6
+uses_interfaces: []
+version: 1

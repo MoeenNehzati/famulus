@@ -5,15 +5,18 @@ import shutil
 from pathlib import Path
 
 import jsonschema
+import pytest
 import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
 VALIDATOR_PATH = ROOT / "validators" / "standard_documents.py"
-CANONICAL = (
-    "references/node-standards/refactoring.standard.yaml",
-    "references/document-standards/document-profile.standard.yaml",
-    "references/standards-schema/docstring.standard.yaml",
+STANDARD = "references/node-standards/refactoring.standard.yaml"
+GENERATED_STANDARD = "references/document-standards/document-profile.standard.yaml"
+TOOLING = (
+    "standard-v6.schema.json",
+    "validate_standard_v6.py",
+    "render_standard_v6.py",
 )
 
 
@@ -25,8 +28,17 @@ def _load_validator():
     return module
 
 
-def _copy_standard_repo(tmp_path: Path) -> Path:
-    for relative in CANONICAL:
+@pytest.fixture(scope="module")
+def validator_module():
+    return _load_validator()
+
+
+def _copy_standard_repo(
+    tmp_path: Path,
+    *,
+    standards: tuple[str, ...] = (STANDARD,),
+) -> Path:
+    for relative in standards:
         target = tmp_path / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / relative, target)
@@ -38,20 +50,22 @@ def _copy_standard_repo(tmp_path: Path) -> Path:
             shutil.copy2(source_rendered, rendered)
     tooling = tmp_path / "references" / "standards-schema"
     tooling.mkdir(parents=True, exist_ok=True)
-    for name in ("standard-v6.schema.json", "validate_standard_v6.py", "render_standard_v6.py"):
+    for name in TOOLING:
         shutil.copy2(ROOT / "references" / "standards-schema" / name, tooling / name)
     return tmp_path
 
 
-def test_repository_canonical_standards_are_valid_and_fresh():
-    validator = _load_validator()
-    assert validator.validate(ROOT) == []
-
-
-def test_repository_validation_prepares_the_v6_schema_once(tmp_path, monkeypatch):
-    repo = _copy_standard_repo(tmp_path)
+def test_repository_validation_prepares_the_v6_schema_once(
+    tmp_path, monkeypatch, validator_module
+):
+    repo = _copy_standard_repo(
+        tmp_path,
+        standards=(STANDARD, GENERATED_STANDARD),
+    )
     original_validator_for = jsonschema.validators.validator_for
+    original_load_tool = validator_module._load_tool
     preparation_count = 0
+    top_level_caches = []
 
     def counting_validator_for(schema, *args, **kwargs):
         nonlocal preparation_count
@@ -60,20 +74,6 @@ def test_repository_validation_prepares_the_v6_schema_once(tmp_path, monkeypatch
         ):
             preparation_count += 1
         return original_validator_for(schema, *args, **kwargs)
-
-    monkeypatch.setattr(jsonschema.validators, "validator_for", counting_validator_for)
-
-    assert _load_validator().validate(repo) == []
-    assert preparation_count == 1
-
-
-def test_repository_validation_does_not_reuse_standard_import_cache(
-    tmp_path, monkeypatch
-):
-    repo = _copy_standard_repo(tmp_path)
-    validator = _load_validator()
-    original_load_tool = validator._load_tool
-    top_level_caches = []
 
     def load_tool_with_observed_cache(repo_root, module_name):
         module = original_load_tool(repo_root, module_name)
@@ -101,24 +101,56 @@ def test_repository_validation_does_not_reuse_standard_import_cache(
         module.validate_file = validate_file
         return module
 
-    monkeypatch.setattr(validator, "_load_tool", load_tool_with_observed_cache)
+    monkeypatch.setattr(jsonschema.validators, "validator_for", counting_validator_for)
+    monkeypatch.setattr(validator_module, "_load_tool", load_tool_with_observed_cache)
 
-    assert validator.validate(repo) == []
-    assert top_level_caches
-    materialized = [cache for cache in top_level_caches if cache is not None]
-    assert len({id(cache) for cache in materialized}) == len(materialized)
+    assert validator_module.validate(repo) == []
+    assert preparation_count == 1
+    assert len(top_level_caches) == 2
+    assert all(cache is not None for cache in top_level_caches)
+    assert len({id(cache) for cache in top_level_caches}) == 2
+
+
+def test_repository_validation_renders_only_registered_generated_views(
+    tmp_path, monkeypatch, validator_module
+):
+    repo = _copy_standard_repo(
+        tmp_path,
+        standards=(STANDARD, GENERATED_STANDARD),
+    )
+    original_load_tool = validator_module._load_tool
+    rendered_standards = []
+
+    def load_tool_with_observed_rendering(repo_root, module_name):
+        module = original_load_tool(repo_root, module_name)
+        if module_name != "render_standard_v6":
+            return module
+        original_render_document = module.render_document
+
+        def render_document(document):
+            rendered_standards.append(document["canonical_path"])
+            return original_render_document(document)
+
+        module.render_document = render_document
+        return module
+
+    monkeypatch.setattr(
+        validator_module,
+        "_load_tool",
+        load_tool_with_observed_rendering,
+    )
+
+    assert validator_module.validate(repo) == []
+    assert rendered_standards == [GENERATED_STANDARD]
 
 
 def test_accepts_utf8_standards_and_crlf_views_under_windows_default_encoding(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, validator_module
 ):
-    repo = _copy_standard_repo(tmp_path)
-    for relative in CANONICAL:
-        view = repo / Path(relative.removesuffix(".standard.yaml") + ".md")
-        if not view.is_file():
-            continue
-        text = view.read_text(encoding="utf-8")
-        view.write_bytes(text.replace("\n", "\r\n").encode("utf-8"))
+    repo = _copy_standard_repo(tmp_path, standards=(GENERATED_STANDARD,))
+    view = repo / Path(GENERATED_STANDARD.removesuffix(".standard.yaml") + ".md")
+    text = view.read_text(encoding="utf-8")
+    view.write_bytes(text.replace("\n", "\r\n").encode("utf-8"))
 
     original_read_text = Path.read_text
 
@@ -131,53 +163,75 @@ def test_accepts_utf8_standards_and_crlf_views_under_windows_default_encoding(
 
     monkeypatch.setattr(Path, "read_text", read_text_with_windows_default)
 
-    assert _load_validator().validate(repo) == []
+    assert validator_module.validate(repo) == []
 
 
-def test_rejects_schema_or_semantically_invalid_standard(tmp_path):
+def test_reports_distinct_document_validation_failures(tmp_path, validator_module):
     repo = _copy_standard_repo(tmp_path)
-    path = repo / CANONICAL[0]
-    document = yaml.safe_load(path.read_text(encoding="utf-8"))
-    remedy = next(link for link in document["links"].values() if link["relation"] == "remedied-by")
+    source = repo / STANDARD
+    source_document = yaml.safe_load(source.read_text(encoding="utf-8"))
+
+    semantic_relative = Path(
+        "references/node-standards/semantic-invalid.standard.yaml"
+    )
+    semantic_document = source_document.copy()
+    semantic_document["id"] = "node-standards.semantic-invalid"
+    semantic_document["canonical_path"] = semantic_relative.as_posix()
+    semantic_document["links"] = {
+        name: link.copy() for name, link in source_document["links"].items()
+    }
+    remedy = next(
+        link
+        for link in semantic_document["links"].values()
+        if link["relation"] == "remedied-by"
+    )
+    remedy["source"] = remedy["source"].copy()
     remedy["source"]["kind"] = "procedure"
-    path.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
+    semantic_path = repo / semantic_relative
+    semantic_path.write_text(
+        yaml.safe_dump(semantic_document, sort_keys=False), encoding="utf-8"
+    )
 
-    errors = _load_validator().validate(repo)
+    schema_relative = Path("references/node-standards/schema-invalid.standard.yaml")
+    schema_document = source_document.copy()
+    schema_document["id"] = "node-standards.schema-invalid"
+    schema_document["canonical_path"] = schema_relative.as_posix()
+    del schema_document["title"]
+    schema_path = repo / schema_relative
+    schema_path.write_text(
+        yaml.safe_dump(schema_document, sort_keys=False), encoding="utf-8"
+    )
 
-    assert any("remedied-by source must be a family" in error for error in errors)
+    malformed_relative = Path("references/node-standards/malformed.standard.yaml")
+    malformed_path = repo / malformed_relative
+    malformed_path.write_text("standards: [\n", encoding="utf-8")
+
+    errors = validator_module.validate(repo)
+
+    assert any(
+        error.startswith(f"{semantic_relative.as_posix()}:")
+        and "remedied-by source must be a family" in error
+        for error in errors
+    )
+    assert any(
+        f"{schema_relative.as_posix()}: schema validation failed" in error
+        for error in errors
+    )
+    assert any(
+        f"{malformed_relative.as_posix()}: cannot load document" in error
+        for error in errors
+    )
 
 
-def test_rejects_json_schema_invalid_standard(tmp_path):
-    repo = _copy_standard_repo(tmp_path)
-    path = repo / CANONICAL[0]
-    document = yaml.safe_load(path.read_text(encoding="utf-8"))
-    del document["title"]
-    path.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
-
-    errors = _load_validator().validate(repo)
-
-    assert any(f"{CANONICAL[0]}: schema validation failed" in error for error in errors)
-
-
-def test_reports_malformed_yaml_without_crashing(tmp_path):
-    repo = _copy_standard_repo(tmp_path)
-    path = repo / CANONICAL[1]
-    path.write_text("standards: [\n", encoding="utf-8")
-
-    errors = _load_validator().validate(repo)
-
-    assert any(f"{CANONICAL[1]}: cannot load document" in error for error in errors)
-
-
-def test_rejects_stale_generated_markdown(tmp_path):
-    repo = _copy_standard_repo(tmp_path)
+def test_rejects_stale_generated_markdown(tmp_path, validator_module):
+    repo = _copy_standard_repo(tmp_path, standards=(GENERATED_STANDARD,))
     view = repo / "references/document-standards/document-profile.md"
     view.write_text(
         view.read_text(encoding="utf-8") + "\nstale edit\n",
         encoding="utf-8",
     )
 
-    errors = _load_validator().validate(repo)
+    errors = validator_module.validate(repo)
 
     assert errors == [
         "references/document-standards/document-profile.md: generated view is stale; "
@@ -185,48 +239,68 @@ def test_rejects_stale_generated_markdown(tmp_path):
     ]
 
 
-def test_discovers_additional_v6_standard_without_requiring_generated_view(tmp_path):
+def test_discovers_and_validates_additional_v6_standards(
+    tmp_path, monkeypatch, validator_module
+):
     repo = _copy_standard_repo(tmp_path)
-    source = repo / CANONICAL[0]
+    source = repo / STANDARD
     document = yaml.safe_load(source.read_text(encoding="utf-8"))
-    relative = Path("references/node-standards/node.standard.yaml")
+    valid_relative = Path("references/node-standards/node.standard.yaml")
     document["id"] = "node-standards.node"
-    document["canonical_path"] = relative.as_posix()
+    document["canonical_path"] = valid_relative.as_posix()
     document["title"] = "Node Standard"
     document["purpose"] = "Define requirements common to repository nodes."
-    extra = repo / relative
-    extra.parent.mkdir(parents=True, exist_ok=True)
-    extra.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
+    valid_path = repo / valid_relative
+    valid_path.parent.mkdir(parents=True, exist_ok=True)
+    valid_path.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
 
-    errors = _load_validator().validate(repo)
+    invalid_relative = Path("references/node-standards/node-invalid.standard.yaml")
+    invalid_document = document.copy()
+    invalid_document["id"] = "node-standards.node-invalid"
+    invalid_document["canonical_path"] = invalid_relative.as_posix()
+    del invalid_document["title"]
+    invalid_path = repo / invalid_relative
+    invalid_path.write_text(
+        yaml.safe_dump(invalid_document, sort_keys=False), encoding="utf-8"
+    )
 
-    assert errors == []
+    original_load_tool = validator_module._load_tool
+    validated_paths = []
 
+    def load_tool_with_observed_paths(repo_root, module_name):
+        module = original_load_tool(repo_root, module_name)
+        if module_name != "validate_standard_v6":
+            return module
+        original_validate_file = module.validate_file
 
-def test_validates_discovered_v6_standard(tmp_path):
-    repo = _copy_standard_repo(tmp_path)
-    source = repo / CANONICAL[0]
-    document = yaml.safe_load(source.read_text(encoding="utf-8"))
-    relative = Path("references/node-standards/node.standard.yaml")
-    document["id"] = "node-standards.node"
-    document["canonical_path"] = relative.as_posix()
-    del document["title"]
-    extra = repo / relative
-    extra.parent.mkdir(parents=True, exist_ok=True)
-    extra.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
+        def validate_file(path, *args, **kwargs):
+            validated_paths.append(path.relative_to(repo))
+            return original_validate_file(path, *args, **kwargs)
 
-    errors = _load_validator().validate(repo)
+        module.validate_file = validate_file
+        return module
 
+    monkeypatch.setattr(validator_module, "_load_tool", load_tool_with_observed_paths)
+
+    errors = validator_module.validate(repo)
+
+    assert valid_relative in validated_paths
     assert any(
-        f"{relative.as_posix()}: schema validation failed" in error
+        f"{invalid_relative.as_posix()}: schema validation failed" in error
         for error in errors
+    )
+    assert all(
+        error.startswith(f"{invalid_relative.as_posix()}:") for error in errors
     )
 
 
-def test_rejects_canonical_path_mismatch_at_allowlisted_location(tmp_path):
-    repo = _copy_standard_repo(tmp_path)
-    first = repo / CANONICAL[0]
-    second = repo / CANONICAL[1]
+def test_rejects_canonical_path_mismatch_at_allowlisted_location(
+    tmp_path, validator_module
+):
+    standards = (STANDARD, GENERATED_STANDARD)
+    repo = _copy_standard_repo(tmp_path, standards=standards)
+    first = repo / standards[0]
+    second = repo / standards[1]
     first_document = yaml.safe_load(first.read_text(encoding="utf-8"))
     second_document = yaml.safe_load(second.read_text(encoding="utf-8"))
     first_document["canonical_path"], second_document["canonical_path"] = (
@@ -242,41 +316,41 @@ def test_rejects_canonical_path_mismatch_at_allowlisted_location(tmp_path):
         encoding="utf-8",
     )
 
-    errors = _load_validator().validate(repo)
+    errors = validator_module.validate(repo)
 
     assert any(
-        f"{CANONICAL[0]}: canonical_path must equal {CANONICAL[0]}" in error
+        f"{standards[0]}: canonical_path must equal {standards[0]}" in error
         for error in errors
     )
     assert any(
-        f"{CANONICAL[1]}: canonical_path must equal {CANONICAL[1]}" in error
+        f"{standards[1]}: canonical_path must equal {standards[1]}" in error
         for error in errors
     )
 
 
-def test_fails_closed_when_standards_directory_is_missing(tmp_path):
-    errors = _load_validator().validate(tmp_path)
+def test_fails_closed_when_standards_directory_is_missing(tmp_path, validator_module):
+    errors = validator_module.validate(tmp_path)
 
     assert errors == ["references/standards-schema: missing standards tooling directory"]
 
 
-def test_fails_closed_when_schema_or_tool_is_missing(tmp_path):
-    repo = _copy_standard_repo(tmp_path)
+def test_fails_closed_when_schema_or_tool_is_missing(tmp_path, validator_module):
+    repo = _copy_standard_repo(tmp_path, standards=())
     (repo / "references/standards-schema/standard-v6.schema.json").unlink()
     (repo / "references/standards-schema/render_standard_v6.py").unlink()
 
-    errors = _load_validator().validate(repo)
+    errors = validator_module.validate(repo)
 
     assert "references/standards-schema/standard-v6.schema.json: missing standards tooling artifact" in errors
     assert "references/standards-schema/render_standard_v6.py: missing standards tooling artifact" in errors
 
 
-def test_fails_closed_when_generated_view_is_missing(tmp_path):
-    repo = _copy_standard_repo(tmp_path)
+def test_fails_closed_when_generated_view_is_missing(tmp_path, validator_module):
+    repo = _copy_standard_repo(tmp_path, standards=(GENERATED_STANDARD,))
     view = repo / "references/document-standards/document-profile.md"
     view.unlink()
 
-    errors = _load_validator().validate(repo)
+    errors = validator_module.validate(repo)
 
     assert errors == [
         f"{view.relative_to(repo).as_posix()}: missing generated view"

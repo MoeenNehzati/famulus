@@ -536,10 +536,10 @@ if PythonMachineInterface is not None:
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> int:
     parser = _configure_parser(argparse.ArgumentParser(prog="beautify.py"))
-    raise SystemExit(_run_from_args(parser.parse_args()))
+    return _run_from_args(parser.parse_args(argv))
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

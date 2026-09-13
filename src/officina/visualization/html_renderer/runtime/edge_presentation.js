@@ -11,12 +11,12 @@
  *
  * This fragment owns every visual consequence of those states. Render and
  * layout stages call applyEdgeMetadataPresentation when creating a path;
- * geometry calls syncEdgeMetadataPresentationGeometry after rerouting; the
+ * geometry calls syncEdgeRouteGeometry after rerouting; the
  * legend calls createEdgePresentationLegendIcon. Keeping those operations
  * together prevents graph strokes and their explanatory legend from drifting.
  *
- * SVG gradients and filters are graph-local resources. Their deterministic
- * ids let full renders replace prior definitions, while derived-edge removal
+ * SVG gradients are graph-local resources. Their deterministic ids let full
+ * renders replace prior definitions, while derived-edge removal
  * calls removeEdgePresentationResources to avoid accumulating transient defs.
  */
 
@@ -104,8 +104,12 @@
       return (hash >>> 0).toString(36);
     }
 
-    /** Remove gradient/filter defs owned by one path before replacement. */
+    const edgePresentationUnderlaysForPath = path => path?.__edgePresentationUnderlays || [];
+
+    /** Remove gradient defs and underlays owned by one path before replacement. */
     function removeEdgePresentationResources(path) {
+      (path.__edgePresentationUnderlays || []).forEach(underlay => underlay.remove());
+      path.__edgePresentationUnderlays = [];
       String(path.dataset.edgePresentationResources || "").split(" ").filter(Boolean).forEach(id => {
         document.getElementById(id)?.remove();
       });
@@ -157,8 +161,8 @@
       return id;
     }
 
-    /** Build one filter containing every outer halo/outline in paint order. */
-    function createEdgePresentationFilter(path, edge, style) {
+    /** Build lightweight outer halo/outline paths in paint order. */
+    function createEdgePresentationUnderlays(path, style) {
       const effects = [];
       if (style.halo_width) effects.push({
         width: style.halo_width,
@@ -170,56 +174,60 @@
         color: style.outline_color || "#334155",
         opacity: style.outline_opacity ?? 0.32,
       });
-      if (!effects.length) return null;
-      const id = `edge-presentation-filter-${edgePresentationResourceToken(edge)}`;
-      document.getElementById(id)?.remove();
-      const filter = createSvgElement("filter");
-      filter.id = id;
-      filter.setAttribute("x", "-30%"); filter.setAttribute("y", "-30%");
-      filter.setAttribute("width", "160%"); filter.setAttribute("height", "160%");
-      const merge = createSvgElement("feMerge");
-      effects.forEach((effect, index) => {
-        const radius = Math.max(0.5, (Number(effect.width) - Number(style.stroke_width || 2)) / 2);
-        const morphology = createSvgElement("feMorphology");
-        morphology.setAttribute("in", "SourceAlpha");
-        morphology.setAttribute("operator", "dilate");
-        morphology.setAttribute("radius", String(radius));
-        morphology.setAttribute("result", `expanded${index}`);
-        const flood = createSvgElement("feFlood");
-        flood.setAttribute("flood-color", effect.color);
-        flood.setAttribute("flood-opacity", String(effect.opacity));
-        flood.setAttribute("result", `color${index}`);
-        const composite = createSvgElement("feComposite");
-        composite.setAttribute("in", `color${index}`);
-        composite.setAttribute("in2", `expanded${index}`);
-        composite.setAttribute("operator", "in");
-        composite.setAttribute("result", `effect${index}`);
-        const node = createSvgElement("feMergeNode");
-        node.setAttribute("in", `effect${index}`);
-        filter.appendChild(morphology); filter.appendChild(flood); filter.appendChild(composite);
-        merge.appendChild(node);
+      path.__edgePresentationUnderlays = effects.map(effect => {
+        const underlay = createSvgElement("path");
+        underlay.setAttribute("class", "edge-presentation-underlay");
+        underlay.setAttribute("d", path.getAttribute("d") || "");
+        underlay.setAttribute("fill", "none");
+        underlay.setAttribute("stroke", effect.color);
+        underlay.setAttribute("stroke-opacity", String(effect.opacity));
+        underlay.setAttribute("stroke-linecap", "round");
+        underlay.setAttribute("stroke-linejoin", "round");
+        underlay.setAttribute("pointer-events", "none");
+        underlay.setAttribute("aria-hidden", "true");
+        underlay.style.strokeWidth = String(effect.width);
+        underlay.style.transition = "opacity 0.12s ease";
+        if (path.parentNode) path.parentNode.insertBefore(underlay, path);
+        return underlay;
       });
-      const sourceNode = createSvgElement("feMergeNode");
-      sourceNode.setAttribute("in", "SourceGraphic");
-      merge.appendChild(sourceNode);
-      filter.appendChild(merge);
-      svgEl.querySelector("defs").appendChild(filter);
-      return id;
     }
 
     /** Keep a user-space gradient aligned with the routed path endpoints. */
-    function syncEdgeMetadataPresentationGeometry(path) {
+    function syncEdgeMetadataPresentationGeometry(path, routeSample = null) {
       const gradient = path.__edgePresentationGradient;
       if (!gradient || !path.isConnected) return;
       try {
-        const length = path.getTotalLength();
-        const start = path.getPointAtLength(0);
-        const end = path.getPointAtLength(length);
+        const length = routeSample ? null : path.getTotalLength();
+        const start = routeSample?.start || path.getPointAtLength(0);
+        const end = routeSample?.tip || path.getPointAtLength(length);
         gradient.setAttribute("x1", String(start.x)); gradient.setAttribute("y1", String(start.y));
         gradient.setAttribute("x2", String(end.x)); gradient.setAttribute("y2", String(end.y));
       } catch (_error) {
         // Detached or temporarily empty paths synchronize after their next route update.
       }
+    }
+
+    function syncEdgeRouteGeometry(path) {
+      edgePresentationUnderlaysForPath(path).forEach(underlay => {
+        underlay.setAttribute("d", path.getAttribute("d") || "");
+      });
+      const routeSample = pathPointsForArrow(path);
+      syncEdgeMetadataPresentationGeometry(path, routeSample);
+      syncArrowheadForPath(path, routeSample);
+    }
+
+    function syncArrowheadVisibilityForPath(path) {
+      const arrow = arrowForPath(path);
+      if (!arrow) return;
+      arrow.style.display = path.style.display;
+      arrow.style.opacity = path.style.opacity;
+    }
+
+    function syncEdgePresentationVisibilityForPath(path) {
+      edgePresentationUnderlaysForPath(path).forEach(underlay => {
+        underlay.style.display = path.style.display;
+        underlay.style.opacity = path.classList.contains("filter-match") ? "1" : (path.style.opacity || "0.92");
+      });
     }
 
     /** Apply semantic stroke first, then the bounded metadata presentation. */
@@ -238,8 +246,7 @@
         stroke = `url(#${gradientId})`;
         dash = null;
       }
-      const filterId = createEdgePresentationFilter(path, edge, presentation.style);
-      if (filterId) resourceIds.push(filterId);
+      createEdgePresentationUnderlays(path, presentation.style);
       path.setAttribute("stroke", stroke);
       if (dash) path.setAttribute("stroke-dasharray", dash);
       else path.removeAttribute("stroke-dasharray");
@@ -253,12 +260,11 @@
       path.dataset.edgeArrowOpacity = declaredStyle.opacity != null
         ? String(declaredStyle.opacity)
         : "";
-      path.style.filter = filterId ? `url(#${filterId})` : "";
       path.__edgeBaseStrokeWidth = path.style.strokeWidth;
-      path.__edgeBaseFilter = path.style.filter;
       path.dataset.edgePresentationResources = resourceIds.join(" ");
       path.dataset.edgePresentations = presentation.stateIds.join(" ");
       path.dataset.edgePresentationSignature = edgePresentationSignature(edge);
+      syncEdgePresentationVisibilityForPath(path);
       return presentation;
     }
 

@@ -172,7 +172,7 @@ interfaces:
         outputs:
         - diagnostics
       outputs:
-      - audience: both
+      - audience: machine
         cardinality:
           maximum: 1
           minimum: 1
@@ -228,10 +228,18 @@ interfaces:
       entry: Interface
       kind: process
       patterns:
-      - allow_extra_positionals: true
-        allow_stdin: false
-        min_positionals: 3
-    usage: <source.md> <dest.yaml> --schema <schema>
+      - allow_stdin: false
+        min_positionals: 2
+        max_positionals: 2
+        allowed_flags:
+        - --schema
+        - --name
+        required_flags:
+        - --schema
+        flag_patterns:
+          --schema: ^.+$
+          --name: ^.+$
+    usage: <source.md> <dest.yaml> --schema <schema> [--name NAME]
     version: 1
 node_type: behavioral_source
 platform_support:

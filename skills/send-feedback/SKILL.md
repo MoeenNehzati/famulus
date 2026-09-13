@@ -4,29 +4,31 @@ description: >-
   Use when the user asks to send feedback, report a problem, or describe a failed Famulus workflow to its maintainer. Do not use for ordinary email or for reviewing document content.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: personal-assistance; topics: communications, assistant-assurance; visibility: featured
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces:
-- `send-feedback.source.gateway -> email-client.interface.default@3`
-- `send-feedback.source.gateway -> send-feedback._rtx.interface.check-route@1`
-- `send-feedback.source.gateway -> send-feedback._rtx.interface.file-issue@1`
-
-Public Interfaces:
-- `send-feedback.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
+Executable Interfaces:
+
+Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+- `send-feedback._rtx.interface.check-route` — Report the configured feedback repository and which delivery route is currently available.
+  - Caller: `send-feedback`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {}, "positionals": [], "stdin": null}
+    Required options: []; positional arity: 0..0; stdin: forbidden
+- `send-feedback._rtx.interface.file-issue` — File a reviewed report as a public issue, or return a prepared submission URL when the issue-filing command is unavailable.
+  - Caller: `send-feedback`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--body-file": "path", "--title": "title"}, "positionals": [], "stdin": null}
+    Required options: []; positional arity: 0..0; stdin: forbidden
+
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `send-feedback.interface.default` — Prepare a reviewed Famulus feedback report and delegate its delivery to the configured project or recipient.
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
+- `email-client.interface.default@3` — Primary LLM-facing skill instructions.
 <!-- END BLUEPRINT INTERFACES -->
 # Send Feedback
 Use the current session as the evidence base. Do not run additional diagnostics.

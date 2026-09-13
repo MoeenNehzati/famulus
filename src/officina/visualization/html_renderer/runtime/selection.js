@@ -33,11 +33,18 @@
       if (typeof syncEdgeLegendRows === "function") syncEdgeLegendRows();
     }
 
+    function showGraphDocumentJson() {
+      const documentJson = typeof graphDocumentJson === "string"
+        ? graphDocumentJson
+        : JSON.stringify(docData, null, 2);
+      if (rawJsonCodeEl.textContent !== documentJson) rawJsonCodeEl.textContent = documentJson;
+    }
+
     function showSelectionDetails() {
       if (!selectedNodeId || !entityMap.has(selectedNodeId)) {
         clearMathBeforeMutation(details);
         details.innerHTML = "Select a node or edge to inspect its metadata.";
-        rawJsonCodeEl.textContent = JSON.stringify(docData, null, 2);
+        showGraphDocumentJson();
         return;
       }
       showEntityDetails(entityMap.get(selectedNodeId));

@@ -31,7 +31,7 @@ gateway:
 id: recurring-tasks
 namespace_exports:
   _rtx:
-    version: 1
+    version: 2
     access:
       allow_all_modules: true
       allowed_callers: []
@@ -41,7 +41,7 @@ namespace_exports:
         recurring-tasks._rtx.interface.scripts-enable: 1
         recurring-tasks._rtx.interface.scripts-healthcheck: 1
         recurring-tasks._rtx.interface.scripts-remove-context: 1
-        recurring-tasks._rtx.interface.scripts-setup: 1
+        recurring-tasks._rtx.interface.scripts-setup: 2
         recurring-tasks._rtx.interface.scripts-status: 1
         recurring-tasks._rtx.interface.scripts-sync: 1
         recurring-tasks._rtx.interface.scripts-test: 1
@@ -81,7 +81,7 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
-version: 3
+version: 4
 maturity: experimental
 installation_tier: core
 personal_preference:

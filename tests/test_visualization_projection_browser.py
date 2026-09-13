@@ -1,7 +1,81 @@
 """Browser regression coverage for adapter-declared omission projection."""
 
+import pytest
+
 from officina.visualization.elk_html_renderer import build_html_with_elk
 from test_support.browser import require_chrome, run_html
+
+
+@pytest.mark.parametrize("scenario", ["presentation_groups", "restore_projection"])
+def test_fast_reconciliation_uses_current_projected_bundle_membership(scenario):
+    """A cached bundle cannot erase presentation peers or retain omitted paths."""
+    payload = {
+        "schema_version": 2, "graph_id": "fast-bundle-membership",
+        "categories": [{"id": "node", "label": "Node"}],
+        "edge_categories": [{"id": kind, "label": kind} for kind in
+                            ("uses-interface", "binds-interface", "indirectly-uses-interface")],
+        "entities": [
+            {"id": "S", "type": "node", "short_title": "S", "position": 0, "connects_to": []},
+            {"id": "M", "type": "node", "short_title": "M", "position": 1, "connects_to": []},
+            {"id": "T", "type": "node", "short_title": "T", "position": 2, "connects_to": []},
+        ],
+    }
+    if scenario == "presentation_groups":
+        payload["entities"][0]["connects_to"] = [
+            {"to": "T", "type": kind, "implicit": implicit}
+            for implicit in (False, True) for kind in ("uses-interface", "binds-interface")
+        ]
+        payload["ui"] = {"edge_presentation": {"facets": [{
+            "id": "origin", "label": "Origin", "field": "implicit", "variants": [
+                {"id": "explicit", "label": "Explicit", "description": "Declared edge", "equals": False, "style": {"line_pattern": "solid"}},
+                {"id": "inferred", "label": "Inferred", "description": "Inferred edge", "equals": True, "style": {"line_pattern": "dashed"}},
+            ],
+        }]}}
+    else:
+        payload["entities"][0]["connects_to"] = [
+            {"to": "M", "type": "uses-interface"}, {"to": "T", "type": "binds-interface"},
+        ]
+        payload["entities"][1]["connects_to"] = [{"to": "T", "type": "uses-interface"}]
+        payload["relation_semantics"] = {"transformations": {"node_omission": {"rules": [{
+            "id": "hidden-use", "causes": ["user-hidden"],
+            "left_types": ["uses-interface"], "right_types": ["uses-interface"],
+            "outcomes": [{"type": "indirectly-uses-interface", "fidelity": "exact"}],
+        }]}}}
+    script = """<script>
+    window.addEventListener("load", () => setTimeout(async () => {
+      try {
+        const idle = window.officinaRendererDiagnostics.whenIdle;
+        const edges = () => Array.from(document.querySelectorAll(".edge-path"));
+        const signatures = () => edges().map(path => [path.dataset.edgePresentationSignature,
+          path.__edgeMeta.constituent_edges?.length]).sort();
+        await idle();
+        const version = renderVersion;
+        if ("__SCENARIO__" === "presentation_groups") {
+          const expected = JSON.stringify([["origin:explicit", 2], ["origin:inferred", 2]]);
+          if (JSON.stringify(signatures()) !== expected) throw Error("initial presentation bundles missing");
+          hideNodes(["M"]); await idle();
+          if (JSON.stringify(signatures()) !== expected) throw Error("unrelated hide lost a presentation bundle");
+        } else {
+          const initial = edges().map(path => JSON.stringify(path.__edgeMeta)).sort();
+          if (initial.length !== 3) throw Error("initial canonical edges missing");
+          hideNodes(["M"]); await idle();
+          const bundle = edges()[0]?.__edgeMeta;
+          if (edges().length !== 1 || !bundle?.bundle || bundle.constituent_edges.length !== 2
+              || !bundle.constituent_edges.some(edge => edge.derived)) throw Error("hidden path bundle missing");
+          showNodes(["M"]); await idle();
+          const restored = edges().map(path => JSON.stringify(path.__edgeMeta)).sort();
+          if (JSON.stringify(restored) !== JSON.stringify(initial)) throw Error("restore retained obsolete projected constituents");
+        }
+        if (renderVersion !== version) throw Error("visibility update unexpectedly reran full layout");
+        document.body.dataset.testStatus = "PASS";
+      } catch (error) { document.body.dataset.testStatus = "FAIL:" + error.message; }
+    }, 100));
+    </script>""".replace("__SCENARIO__", scenario)
+    page = build_html_with_elk(payload).replace("</body>", script + "</body>")
+    result = run_html(require_chrome(), page, virtual_time_budget=6000)
+    marker = 'data-test-status="'
+    status = result.stdout.split(marker, 1)[1].split('"', 1)[0] if marker in result.stdout else "MISSING"
+    assert status == "PASS", status
 
 
 def test_hidden_module_projects_only_its_used_interface_implementation() -> None:

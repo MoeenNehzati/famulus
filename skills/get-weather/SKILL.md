@@ -4,27 +4,20 @@ description: >-
   Use when the user asks about weather for the current location or a named location, including a specific day or date range.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: personal-assistance; topics: planning, external-integrations; visibility: featured
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces:
-- `get-weather.source.gateway -> get-weather._rtx.interface.scripts-weather@1`
-
-Public Interfaces:
-- `get-weather.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Instruction Interfaces:
+Executable Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `get-weather.interface.default` — Primary LLM-facing skill instructions.
+Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+- `get-weather._rtx.interface.scripts-weather` — Fetch weather data for a location and date range, returning hourly forecast JSON.
+  - Caller: `get-weather`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--date": "YYYY-MM-DD", "--end-date": "YYYY-MM-DD", "--location": "loc"}, "positionals": [], "stdin": null}
+    Required options: []; positional arity: 0..0; stdin: forbidden
+
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 

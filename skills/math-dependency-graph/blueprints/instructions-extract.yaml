@@ -1,322 +1,143 @@
 content:
 - instructions/extract\.md
 dependencies: []
-description: Reconciles pooled version-2 inventory and its retained absolute TeX entrypoint
-  into transitional source-grounded entities, proof ownership, direct relationships,
-  and exact dispositions.
+description: Owns semantic extraction of direct mathematical dependencies into a
+  draft, then delegates self-contained canonical JSON finalization and optional
+  rendering.
 gateway:
   language: Markdown
   path: instructions/extract.md
 id: math-dependency-graph.source.instructions-extract
 interfaces:
   math-dependency-graph.source.instructions-extract.interface.extract:
+    uses_interfaces:
+    - interface: math-dependency-graph._rtx.interface.scripts-finalize-extraction
+      version: 1
+    - interface: math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph
+      version: 2
     content:
     - instructions/extract\.md
-    uses_interfaces: []
     contract:
       arguments:
         request:
-          description: Exact whole-document extract or localized-correction assignment,
-            schema and taxonomy paths, stable progress-sidecar path, diagnostic when applicable,
-            and destination.
+          description: Included mathematical content, requested scope, semantic-draft
+            and canonical output paths, the distinct root TeX entrypoint, optional
+            label map, and optional HTML destination.
           required: true
           sensitivity: user-private
           type:
             kind: string
             sensitivity: user-private
-        packet:
-          description: Document-wide packet embedding the complete pooled inventory
-            IR and naming its immutable source-coordinate inputs.
-          direct_io_ref: read-1
-          required: true
-          sensitivity: user-private
-          type:
-            access: read
-            content_type:
-              kind: string
-              sensitivity: user-private
-            kind: file
-            must_exist: true
-            relative_to: caller-cwd
-            syntax: literal
-        entrypoint:
-          description: Retained absolute TeX entrypoint, equal to the packet's entrypoint_path
-            and copied exactly to document.source_file in a full semantic extract.
-          required: true
-          sensitivity: user-private
-          type:
-            kind: string
-            sensitivity: user-private
-        diagnostic:
-          description: Complete validator diagnostic returned only with a localized-correction assignment.
-          required: false
-          sensitivity: derived-private
-          type:
-            kind: string
-            sensitivity: derived-private
-        sidecar:
-          description: Deterministic source identity, file table, and bounded lookup
-            rules for registered inventory locations.
-          direct_io_ref: read-2
-          required: true
-          sensitivity: user-private
-          type:
-            access: read
-            content_type:
-              kind: string
-              sensitivity: user-private
-            kind: file
-            must_exist: true
-            relative_to: caller-cwd
-            syntax: literal
-        source-packet:
-          description: Immutable active-source snapshot reopened only at registered
-            inventory locations under the coordinate lookup limits.
-          direct_io_ref: read-6
-          required: true
-          sensitivity: user-private
-          type:
-            access: read
-            content_type:
-              kind: string
-              sensitivity: user-private
-            kind: file
-            must_exist: true
-            relative_to: caller-cwd
-            syntax: literal
-        repair-base:
-          description: Persisted rejected whole-document extract used only for a returned
-            localized-correction assignment.
-          direct_io_ref: read-7
-          required: false
-          sensitivity: derived-private
-          type:
-            access: read
-            content_type:
-              kind: string
-              sensitivity: derived-private
-            kind: file
-            must_exist: true
-            relative_to: caller-cwd
-            syntax: literal
-        inventory-ir:
-          description: Saved pooled inventory used with repair-base to validate a localized correction.
-          direct_io_ref: read-8
-          required: false
-          sensitivity: derived-private
-          type:
-            access: read
-            content_type:
-              kind: string
-              sensitivity: derived-private
-            kind: file
-            must_exist: true
-            relative_to: caller-cwd
-            syntax: literal
-        progress-sidecar:
-          description: Stable append-only Markdown path for bounded actual-clock milestones and counters across normal retries and localized correction.
-          direct_io_ref: write-2
-          required: true
-          sensitivity: derived-private
-          type:
-            access: write
-            content_type:
-              kind: string
-              sensitivity: derived-private
-            kind: file
-            must_exist: false
-            relative_to: caller-cwd
-            syntax: literal
-      caller_warnings: []
+      caller_warnings:
+      - external-side-effect: Writes a semantic draft, atomically finalizes canonical
+          JSON, and writes HTML only when rendering is requested.
       direct_io:
         network: []
         reads:
         - access: read
-          content: extract packet containing the complete pooled version-2 inventory IR
-          formats:
-          - json
-          id: read-1
-          medium: local-filesystem
-          path: <packet>
-          path_match: exact
-          sensitivity: user-private
-          system: filesystem
-        - access: read
-          content: source-coordinate sidecar with source identity and bounded lookup rules
-          formats:
-          - json
-          id: read-2
-          medium: local-filesystem
-          path: <sidecar>
-          path_match: exact
-          sensitivity: user-private
-          system: filesystem
-        - access: read
-          content: whole-document extraction scope and output-path request
+          content: included mathematical source and extraction request
           formats:
           - text
-          id: read-3
+          id: read-1
           medium: prompt
           sensitivity: user-private
-        - access: read
-          content: final semantic-graph and localized-repair schemas
-          formats:
-          - json
-          id: read-4
-          medium: local-filesystem
-          path: $skill/schemas/semantic-{graph,repair}.schema.json
-          path_match: glob
-          sensitivity: public
-          system: filesystem
-        - access: read
-          content: skill-owned mathematical graph taxonomy and presentation base
-          formats:
-          - json
-          id: read-5
-          medium: local-filesystem
-          path: $skill/resources/graph-base.json
-          path_match: exact
-          sensitivity: public
-          system: filesystem
-        - access: read
-          content: immutable active TeX source snapshot at registered inventory locations
-          formats:
-          - text
-          id: read-6
-          medium: local-filesystem
-          path: <source-packet>
-          path_match: exact
-          sensitivity: user-private
-          system: filesystem
-        - access: read
-          content: persisted rejected semantic extract selected as the localized repair base
-          formats:
-          - json
-          id: read-7
-          medium: local-filesystem
-          path: <repair-base>
-          path_match: exact
-          sensitivity: derived-private
-          system: filesystem
-        - access: read
-          content: pooled version-2 inventory used to validate the localized repair result
-          formats:
-          - json
-          id: read-8
-          medium: local-filesystem
-          path: <inventory-ir>
-          path_match: exact
-          sensitivity: derived-private
-          system: filesystem
         writes:
         - access: write
-          content: resolved transitional whole-document mathematical semantic IR or localized semantic repair object
+          content: semantic mathematical dependency draft
           formats:
           - json
           id: write-1
           medium: local-filesystem
           sensitivity: derived-private
         - access: write
-          content: append-only bounded actual-clock extract progress milestones and counters
+          content: finalized self-contained canonical mathematical dependency graph
           formats:
-          - markdown
+          - json
           id: write-2
           medium: local-filesystem
-          path: <progress-sidecar>
-          path_match: exact
           sensitivity: derived-private
-          system: filesystem
       execution:
         consistency:
-          snapshot: Every final disposition uses one pooled inventory, its matching hashed
-            source snapshot and retained entrypoint; a correction additionally uses the
-            exact rejected repair base and validator diagnostic returned by the phase driver.
-            Normal extraction retains qualifying proof entities, their single ownership
-            edges, and incoming proof-use dependencies for separate reconciliation.
+          snapshot: Semantic extraction uses the included source snapshot, while
+            finalization uses the explicitly identified root TeX tree and optional
+            label map from the same run.
         effects:
         - action: create
           confirmation_evidence:
-            kind: output
-            output_ref: semantic-ir
+            direct_io_ref: write-1
+            kind: direct-io
           direct_io_ref: write-1
-          id: semantic-ir-write
+          id: draft-write
           may_occur_in_outcomes:
           - extracted
           - extracted-with-gaps
-          - correction-authored
           reversibility:
-            reversible: Delete the generated semantic IR or repair object without changing
-              the source document, repair base, or pooled inventory.
+            reversible: Delete the draft after retaining the finalized canonical
+              JSON.
           value_source:
-            argument_ref: packet
+            argument_ref: request
             kind: argument
         - action: update
           confirmation_evidence:
-            kind: direct-io
             direct_io_ref: write-2
+            kind: direct-io
           direct_io_ref: write-2
-          id: progress-sidecar-append
+          id: canonical-write
           may_occur_in_outcomes:
           - extracted
           - extracted-with-gaps
-          - correction-authored
           reversibility:
-            reversible: Delete the derived progress sidecar with the fresh run directory.
+            reversible: Regenerate the canonical graph from the draft and root TeX
+              inputs.
           value_source:
-            argument_ref: progress-sidecar
+            argument_ref: request
             kind: argument
         lifecycle: finite
         mutation_safety:
           atomicity:
-            per_effect_only: The schema-valid semantic IR or repair is completed before
-              return; bounded progress lines are appended separately as work advances.
+            per_effect_only: The draft is a separate artifact; delegated finalization
+              validates before atomically replacing canonical JSON.
           concurrent_invocations:
-            unsafe: Concurrent extraction to the same destination can overwrite an
-              artifact.
+            unsafe: Concurrent extraction to the same requested paths is not serialized.
           idempotency:
-            idempotent: Resolving the same inventory and source snapshots, or correcting
-              the same repair base from the same diagnostic, produces an equivalent artifact.
+            idempotent: Re-extracting the same source snapshots and scope produces
+              equivalent semantic and canonical graph artifacts.
           on_uncertain_completion:
-            verify_then_decide: Validate the requested semantic-IR path before retrying.
+            verify_then_decide: Validate the requested canonical JSON path before
+              retrying extraction or rendering.
           partial_effects_on_failure:
-            possible: An incomplete artifact may remain if writing is interrupted.
+            possible: The semantic draft may remain when finalization or optional
+              rendering fails; a failed finalization preserves prior canonical JSON.
           rollback_on_failure:
-            available: Remove only the incomplete artifact created by this invocation.
+            unavailable: The separate semantic draft is not removed automatically.
         state_effect: mutating
         verification:
         - method: output-schema
-          output_ref: semantic-ir
+          output_ref: graph-json
       helpers: []
       interaction:
         mode: unattended
       outcomes:
-      - caller_action: Add the semantic-IR path to the extract manifest for deterministic
-          validation, compilation, and rendering.
+      - caller_action: Use the self-contained canonical JSON directly or optionally
+          render it.
         class: success
         effects:
-        - semantic-ir-write
-        - progress-sidecar-append
+        - draft-write
+        - canonical-write
         id: extracted
         outputs:
-        - semantic-ir
-      - caller_action: Preserve explicit unresolved dispositions and gaps for deterministic
-          validation and reporting.
+        - graph-json
+      - caller_action: Report unresolved evidence gaps without inventing dependencies;
+          the canonical JSON remains render-ready.
         class: success
         effects:
-        - semantic-ir-write
-        - progress-sidecar-append
+        - draft-write
+        - canonical-write
         id: extracted-with-gaps
         outputs:
-        - semantic-ir
-      - caller_action: Add the repair-object path to a new manifest and resubmit it to finalize-extract.
-        class: success
-        effects:
-        - semantic-ir-write
-        - progress-sidecar-append
-        id: correction-authored
-        outputs:
-        - semantic-ir
-      - caller_action: Correct the immutable input or output-path request before retrying.
+        - graph-json
+      - caller_action: Correct the source, root entrypoint, or output-path request
+          before retrying.
         class: error
         effects: []
         id: invalid-request
@@ -326,12 +147,11 @@ interfaces:
         cardinality:
           maximum: 1
           minimum: 1
-        description: Filesystem path to a schema-valid version-2 semantic IR or localized
-          repair object; finalization publishes semantic-ir.json only after complete
-          reconciliation against the saved pooled inventory.
-        direct_io_ref: write-1
+        description: Filesystem path to a schema-version-2, self-contained canonical
+          graph plus evidence gaps and optional render or browser-diagnostics status.
+        direct_io_ref: write-2
         empty: Never empty on success.
-        id: semantic-ir
+        id: graph-json
         ordering: stable
         pagination:
           kind: none
@@ -341,11 +161,15 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Reconcile pooled inventory and the retained entrypoint into transitional
-      notation-faithful entities, proof ownership, and direct relationships, or author one returned narrow repair.
-    version: 29
+    description: Extract a notation-faithful semantic graph draft, finalize it as
+      self-contained canonical JSON, and optionally render it.
+    version: 2
 node_type: behavioral_source
 schema_version: 6
-uses_interfaces: []
-version: 29
+uses_interfaces:
+- interface: math-dependency-graph._rtx.interface.scripts-finalize-extraction
+  version: 1
+- interface: math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph
+  version: 2
+version: 2
 maturity: stable

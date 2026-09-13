@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import queue
 import subprocess
@@ -12,7 +13,7 @@ import pytest
 import yaml
 
 from officina.dispatcher import cli
-from officina.dispatcher.errors import DirectBlueprintError
+from officina.dispatcher.errors import DirectBlueprintError, DispatcherError
 
 
 @pytest.fixture
@@ -196,18 +197,43 @@ def test_live_cli_exposes_child_stderr_before_child_completes(
     reader = threading.Thread(target=read_two_lines, daemon=True)
     reader.start()
 
-    assert observed.get(timeout=3).startswith(
-        "warning: certification-status-unavailable:"
-    )
-    assert observed.get(timeout=3) == "oauth.authorization_url\n"
-    assert process.poll() is None
-    release.touch()
-    stdout, stderr = process.communicate(timeout=3)
+    try:
+        assert observed.get(timeout=3).startswith(
+            "warning: certification-status-unavailable:"
+        )
+        assert observed.get(timeout=3) == "oauth.authorization_url\n"
+        assert process.poll() is None
+    finally:
+        release.touch()
+        stdout, stderr = process.communicate(timeout=3)
+        reader.join(timeout=1)
 
-    reader.join(timeout=1)
+    assert not reader.is_alive()
     assert stdout == "authorized\n"
     assert stderr == ""
     assert process.returncode == 0
+
+    stale = subprocess.run(
+        [
+            sys.executable,
+            "-P",
+            "-m",
+            "officina.dispatcher.cli",
+            "--repository-config",
+            str(config),
+            "--caller-skill",
+            "probe",
+            "probe.interface.stream@7",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=environment,
+    )
+    assert stale.returncode == 0, stale.stderr
+    assert stale.stdout == "authorized\n"
+    assert "warning: interface-version-pin-stale:" in stale.stderr
+    assert "requested 7, available 1" in stale.stderr
 
 
 @pytest.mark.parametrize(
@@ -280,10 +306,12 @@ def test_cli_warns_and_resolves_anyway_when_a_version_pin_is_stale(
 ) -> None:
     target = "connect-google._rtx.interface.authorize-services"
     cli_args.target_or_skill = f"{target}@1"
-    stale = DirectBlueprintError(
-        f"version mismatch for {target}: requested 1, available 2",
-        code="dispatcher.interface_version_mismatch",
+    stale = DirectBlueprintError.from_spec(
+        "D40",
         target_module_id="connect-google._rtx",
+        interface_id=target,
+        requested_version=1,
+        available_version=2,
     )
     calls = _record_dispatch(monkeypatch, cli_args, [stale, _OK])
 
@@ -313,10 +341,12 @@ def test_cli_forwards_identical_stdin_to_both_attempts_of_a_stale_pin(
     def fake_dispatch(**kwargs):
         observed.append(kwargs["stdin"])
         if len(observed) == 1:
-            raise DirectBlueprintError(
-                f"version mismatch for {target}: requested 1, available 2",
-                code="dispatcher.interface_version_mismatch",
+            raise DirectBlueprintError.from_spec(
+                "D40",
                 target_module_id="connect-google._rtx",
+                interface_id=target,
+                requested_version=1,
+                available_version=2,
             )
         return _OK
 
@@ -329,56 +359,74 @@ def test_cli_forwards_identical_stdin_to_both_attempts_of_a_stale_pin(
     assert observed == [payload, payload]
 
 
-def test_live_cli_accepts_a_version_pin_and_warns_when_it_is_stale(
-    live_stream_repository: tuple[Path, Path, Path],
-) -> None:
-    """End-to-end, through a real child process rather than a stub."""
-    config, release, _module_root = live_stream_repository
-    release.touch()  # let the child exit immediately
-    environment = os.environ.copy()
-    environment["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
-    environment["DISPATCHER_STREAM_RELEASE"] = str(release)
-
-    def run(target: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            [
-                sys.executable, "-P", "-m", "officina.dispatcher.cli",
-                "--repository-config", str(config),
-                "--caller-skill", "probe",
-                target,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            env=environment,
-        )
-
-    matching = run("probe.interface.stream@1")
-    assert matching.returncode == 0, matching.stderr
-    assert matching.stdout == "authorized\n"
-    assert "interface-version-pin-stale" not in matching.stderr
-
-    stale = run("probe.interface.stream@7")
-    assert stale.returncode == 0, stale.stderr
-    assert stale.stdout == "authorized\n"
-    assert "warning: interface-version-pin-stale:" in stale.stderr
-    assert "requested 7, available 1" in stale.stderr
-
-    bare = run("probe.interface.stream")
-    assert bare.returncode == 0, bare.stderr
-    assert bare.stdout == "authorized\n"
-
-
 def test_cli_does_not_retry_failures_unrelated_to_the_version_pin(
     monkeypatch: pytest.MonkeyPatch, cli_args: argparse.Namespace
 ) -> None:
     cli_args.target_or_skill = "connect-google._rtx.interface.authorize-services@1"
-    missing = DirectBlueprintError(
-        "interface not found",
-        code="dispatcher.interface_not_found",
+    missing = DirectBlueprintError.from_spec(
+        "D38",
         target_module_id="connect-google._rtx",
+        interface_id="connect-google._rtx.interface.authorize-services",
+        reason="was not found",
     )
     calls = _record_dispatch(monkeypatch, cli_args, [missing])
 
     assert cli.main() == 2
     assert calls == [1]
+
+
+def test_cli_text_error_renders_confirmed_cause(
+    monkeypatch: pytest.MonkeyPatch,
+    cli_args: argparse.Namespace,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    error = DispatcherError.from_spec(
+        "D64",
+        operation="status",
+        setup_error="Managed-setup state changed while this operation was updating it.",
+        setup_error_code="setup.ledger_conflict",
+        cause=DispatcherError.from_spec("D10", interface_id="setup.interface.status"),
+    )
+    monkeypatch.setattr(cli, "parse_cli", lambda: cli_args)
+    monkeypatch.setattr(
+        cli, "_dispatch_host", lambda **_kwargs: (_ for _ in ()).throw(error)
+    )
+
+    assert cli.main() == 2
+    assert capsys.readouterr().err.splitlines() == [
+        "error: The setup manager `status` failed: Managed-setup state changed while this operation was updating it.",
+        "Cause: The dispatcher could not start `setup.interface.status`.",
+    ]
+
+
+def test_cli_invalid_target_uses_registered_text_carrier(
+    monkeypatch: pytest.MonkeyPatch,
+    cli_args: argparse.Namespace,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli_args.target_or_skill = "not-an-interface"
+    monkeypatch.setattr(cli, "parse_cli", lambda: cli_args)
+    monkeypatch.setattr(
+        cli, "_dispatch_host", lambda **_kwargs: pytest.fail("invalid target dispatched")
+    )
+
+    assert cli.main() == 2
+    assert capsys.readouterr().err == (
+        "error: Target must be a fully qualified "
+        "`<module>.interface.<name>` export.\n"
+    )
+
+
+def test_cli_parser_error_uses_schema_one_json_carrier(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(sys, "argv", ["dispatcher", "--error-format=json"])
+
+    with pytest.raises(SystemExit) as caught:
+        cli.parse_cli()
+
+    assert caught.value.code == 2
+    output = capsys.readouterr().err
+    assert output.count("\n") == 1
+    assert json.loads(output) == DispatcherError.from_spec("D48").as_payload()

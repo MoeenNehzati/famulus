@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "campaign_outcome": {
+    "passed": 20,
+    "total": 20
+  },
+  "raw_evidence": {
+    "location": "<repository-root>/.famulus/interactive-llm-testing/campaigns/setup-interface-manager-2026-09-01",
+    "original_temporary_location": "/tmp/famulus-setup-interactive.dg4FCF",
+    "file_count": 44783,
+    "file_manifest_sha256": "2fef702562b8c89aa11d3cba6b7a27cc3093bc02f3414964069d65021037f4f0",
+    "committed": false,
+    "retention": "private, Git-ignored, and preserved on local durable storage",
+    "reason": "Contains private prompts, raw model events, authentication-adjacent state, temporary ledgers, and isolated installations."
+  },
+  "production": {
+    "P00": {"status": "passed", "raw_evidence": "evidence/P00-installation"},
+    "P01": {"status": "passed", "raw_evidence": "p01-evidence", "format_exception": "No contemporaneous event copy or ledger snapshot; isolated session remains in p01-codex-home."},
+    "P02": {"status": "passed", "raw_evidence": "evidence/P02-generic-prose", "format_exception": "No contemporaneous event copy or ledger snapshot; isolated session remains in codex-home."},
+    "P03": {"status": "passed", "raw_evidence": "evidence/P03-unmanaged", "format_exception": "Three harness iterations; accepted run has a session event copy but no contemporaneous ledger snapshot."},
+    "P04": {"status": "passed", "raw_evidence": "evidence/P04-first-use-trigger"},
+    "P05": {"status": "passed", "raw_evidence": "evidence/P05-follow-setup"},
+    "P06": {"status": "passed", "raw_evidence": "evidence/P06-persistence"},
+    "P07": {"status": "passed", "raw_evidence": "evidence/P07-redirection", "format_exception": "Two cards and two event streams; controller actions are summarized by state and verdict."},
+    "P08": {"status": "passed", "raw_evidence": "evidence/P08-redaction", "format_exception": "Corrected run plus preserved failed-experiment attempt."},
+    "P09": {"status": "passed", "raw_evidence": "evidence/P09-exactly-once", "format_exception": "Read-only derived verdict over frozen P05 evidence; no worker card or new thread."}
+  },
+  "synthetic": {
+    "F00": {"status": "passed", "raw_evidence": "fixture/evidence/F00-fixture-validation"},
+    "F01": {"status": "passed", "raw_evidence": "fixture/evidence/F01-deep-setup-green", "failed_experiments": ["fixture/evidence/F01-deep-setup", "fixture/evidence/F01-deep-setup-rerun"]},
+    "F02": {"status": "passed", "raw_evidence": "fixture/evidence/F02-busy", "failed_experiment": "Preserved status-only card with zero state delta."},
+    "F03": {"status": "passed", "raw_evidence": "fixture/evidence/F03-retry", "failed_experiment": "First recovery card stopped at B; a fresh continuation completed the same flow."},
+    "F04": {"status": "passed", "raw_evidence": "fixture/evidence/F04-cancel", "failed_experiment": "Controller-overlap iteration preserved and excluded."},
+    "F05": {"status": "passed", "raw_evidence": "fixture/evidence/F05-stale-suffix", "fixture_v2_commit": "5968dfed54f07e36e77a78c8c215647543630bcf"},
+    "F06": {"status": "passed", "raw_evidence": "fixture/evidence/F06-invalidate"},
+    "F07": {"status": "passed", "raw_evidence": "fixture/evidence/F07-shared"},
+    "F08": {"status": "passed", "raw_evidence": "fixture/evidence/F08-malformed"},
+    "F09": {"status": "passed", "raw_evidence": "fixture/evidence/F09-reverse-teardown", "failed_experiment": "The approval reviewer rejected the first teardown before begin; state delta was zero."}
+  }
+}

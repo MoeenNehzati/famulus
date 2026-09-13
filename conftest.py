@@ -1,18 +1,78 @@
 """Repository-wide pytest scaffolding.
 
 Sits at the pytest rootdir, so its fixtures apply to every test collected under
-`tests/`, `hooks/tests/`, `src/officina/wakeup/tests/`, and skill-owned test
+`tests/`, `hooks/tests/`, `skills/llm-wakeup/_rtx/tests/`, and skill-owned test
 directories -- not just the top-level `tests/` suite (which has its own,
 narrower conftest.py).
 """
 from __future__ import annotations
 
 from itertools import count
+from pathlib import Path
 
 import pytest
 
+from officina.blueprints.graph import (
+    RepositoryBlueprintGraph,
+    load_repository_blueprint_graph,
+)
 
-_LOCALAPPDATA_CASES = count()
+
+_WINDOWS_PATH_CASES = count()
+_REPOSITORY_ROOT = Path(__file__).resolve().parent
+
+
+@pytest.fixture
+def ordinary_repository_graph(
+    request: pytest.FixtureRequest,
+) -> RepositoryBlueprintGraph:
+    """Return an isolated live graph for ordinary repository contract tests.
+
+    Canonical repository checks already prepare a graph snapshot and expose a
+    function-scoped defensive copy as ``graph``. Direct pytest invocations do
+    not install that runner plugin, so they load a fresh graph for this test.
+    """
+
+    try:
+        candidate = request.getfixturevalue("graph")
+    except pytest.FixtureLookupError as exc:
+        if exc.argname != "graph":
+            raise
+        candidate = None
+    if candidate is None:
+        candidate = load_repository_blueprint_graph(_REPOSITORY_ROOT)
+    if not isinstance(candidate, RepositoryBlueprintGraph):
+        raise TypeError(
+            "ordinary repository graph must be a RepositoryBlueprintGraph, "
+            f"got {type(candidate).__name__}"
+        )
+
+    materialized_paths = (
+        path
+        for node in candidate.nodes.values()
+        for path in (node.module_root, node.blueprint_path, node.gateway_path)
+        if path is not None
+    )
+    mismatched = []
+    for path in materialized_paths:
+        if not isinstance(path, Path):
+            raise TypeError(
+                "ordinary repository graph paths must be pathlib.Path values, "
+                f"got {type(path).__name__}"
+            )
+        resolved = (
+            path.resolve()
+            if path.is_absolute()
+            else (_REPOSITORY_ROOT / path).resolve()
+        )
+        if not resolved.is_relative_to(_REPOSITORY_ROOT):
+            mismatched.append(path)
+    if mismatched:
+        raise AssertionError(
+            "ordinary repository graph belongs to a different materialized root: "
+            f"{mismatched[0]} is outside {_REPOSITORY_ROOT}"
+        )
+    return candidate
 
 
 @pytest.fixture(autouse=True)
@@ -47,11 +107,11 @@ def _isolate_xdg_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _isolate_localappdata_env(
+def _isolate_windows_path_env(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path_factory: pytest.TempPathFactory,
 ) -> None:
-    """Give every test its own `LOCALAPPDATA`, mirroring `_isolate_xdg_env` above.
+    """Give every test its own Windows path inputs, mirroring `_isolate_xdg_env` above.
 
     `resolve_famulus_paths`'s Windows branch resolves *only* from the
     `LOCALAPPDATA` env var and never falls back to (or is influenced by) its
@@ -76,6 +136,8 @@ def _isolate_localappdata_env(
     case_root = (
         tmp_path_factory.getbasetemp()
         / "localappdata"
-        / f"case-{next(_LOCALAPPDATA_CASES)}"
+        / f"case-{next(_WINDOWS_PATH_CASES)}"
     )
     monkeypatch.setenv("LOCALAPPDATA", str(case_root / "AppData" / "Local"))
+    monkeypatch.setenv("APPDATA", str(case_root / "AppData" / "Roaming"))
+    monkeypatch.setenv("USERPROFILE", str(case_root))

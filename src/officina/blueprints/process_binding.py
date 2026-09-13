@@ -20,6 +20,10 @@ class ProcessBindingError(ValueError):
     """Raised when an export binding or caller invocation is ambiguous or invalid."""
 
 
+class ProcessBindingDiagnosticError(ProcessBindingError):
+    """Caller-safe argument diagnostic."""
+
+
 @dataclass(frozen=True)
 class ParsedCallerInvocation:
     values: Mapping[str, object]
@@ -443,9 +447,13 @@ def _authored_argv_pattern_matches(
     pattern_name: str,
 ) -> bool:
     flag_patterns = _pattern_mapping(pattern.get("flag_patterns"), "flag_patterns")
-    flags, positionals = _split_pattern_argv(
-        argv, value_flags={str(flag) for flag in flag_patterns}
-    )
+    try:
+        flags, positionals = _split_pattern_argv(
+            argv, value_flags={str(flag) for flag in flag_patterns}
+        )
+    except ProcessBindingError:
+        # Another alternative may declare this option as value-bearing.
+        return False
     provided_flags = set(flags)
 
     if stdin_requested and not bool(pattern.get("allow_stdin", False)):
@@ -509,7 +517,9 @@ def _authored_argv_pattern_matches(
             raise ProcessBindingError(
                 f"positional_patterns[{raw_index!r}]: expected regex string"
             )
-        if position < 0 or position >= len(positionals):
+        if not 0 <= position < len(positionals):
+            if position >= minimum:
+                continue
             return False
         if re.match(regex_pattern, positionals[position]) is None:
             return False
@@ -567,6 +577,22 @@ def select_authored_argv_pattern(
             matching = pattern
             matching_name = raw_name
     if matching is None:
+        value_patterns = [
+            _pattern_mapping(pattern.get("flag_patterns"), "flag_patterns")
+            for pattern in patterns
+        ]
+        flags, _ = _split_pattern_argv(
+            argv, value_flags={flag for item in value_patterns for flag in item}
+        )
+        allowed = {flag for pattern in patterns for flag in _pattern_string_list(pattern.get("allowed_flags"), "allowed_flags")}
+        unknown = next((flag for flag in flags if flag not in allowed), None)
+        if all("allowed_flags" in pattern for pattern in patterns) and unknown:
+            raise ProcessBindingDiagnosticError(f"unknown option {unknown}")
+        for flag, value in flags.items():
+            if any(flag in item for item in value_patterns) and not any(
+                re.fullmatch(str(item[flag]), value or "") for item in value_patterns if flag in item
+            ):
+                raise ProcessBindingDiagnosticError(f"invalid value for {flag}")
         raise ProcessBindingError("invocation does not match any declared pattern")
     return matching, matching_name
 

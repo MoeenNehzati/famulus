@@ -167,7 +167,6 @@ SUMMARY_OVERRIDES = {
     "git-workflow": "Branch-safety checks and commit hygiene for any repo",
     "hook-maker": "Design cross-host assistant hooks with one purpose and per-host bindings",
     "initialize-tdd": "Scaffold a staged, approval-gated TDD project",
-    "install-assistant-tools": "Install or update launchers, wiring, hooks, and environment on a machine",
     "list-manager": "Manage personal YAML lists in cloud storage",
     "loose-mode": "Broad, fast exploration mode with breadth over certainty",
     "math-dependency-graph": "Extract an assumptions-to-results dependency graph from a LaTeX document",
@@ -436,7 +435,6 @@ def load_catalog(repo_root: Path) -> list[SkillInfo]:
     validate_blueprint = prepare_module_blueprint_loader(
         repo_root,
         schema_root=repo_root / "references" / "blueprint-schema",
-        expected_schema_version=6,
     )
     skills: list[SkillInfo] = []
     for blueprint_path in sorted((repo_root / "skills").glob("*/blueprint.yaml")):

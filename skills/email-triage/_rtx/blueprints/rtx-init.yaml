@@ -1,8 +1,8 @@
 content:
 - __init__\.py
+- _state_paths\.py
 dependencies: []
-description: Marks the email-triage runtime directory as a Python package for sibling
-  behavioral sources.
+description: Provides the runtime package and shared email-triage state-directory resolver.
 gateway:
   language: Python
   path: __init__.py
@@ -10,6 +10,8 @@ id: email-triage._rtx.source.rtx-init
 interfaces: {}
 node_type: behavioral_source
 schema_version: 6
-uses_interfaces: []
+uses_interfaces:
+- interface: common.interface.famulus-paths
+  version: 1
 version: 1
 maturity: stable

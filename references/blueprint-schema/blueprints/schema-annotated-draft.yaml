@@ -1,8 +1,8 @@
 content:
 - schema\.annotated\-draft\.json
 dependencies: []
-description: Provides the annotated JSON Schema draft consumed by blueprint schema
-  tooling.
+description: Provides the current version-6 authoring entry point consumed by blueprint
+  schema tooling.
 gateway:
   language: JSON-Schema
   path: schema.annotated-draft.json

@@ -94,7 +94,7 @@ interfaces:
       - {id: failed, class: error, effects: [], outputs: [route-decision], caller_action: 'Correct the malformed artifact, unknown outcome, cycle, or product failure without advancing.'}
       - {id: blocked, class: refusal, effects: [], outputs: [route-decision], caller_action: Stop until the named external capability or environment prerequisite changes.}
       outputs:
-      - audience: both
+      - audience: machine
         cardinality: {minimum: 1, maximum: 1}
         description: JSON containing status, artifact_digest, outcome, authorized_route, and earliest_stale_prerequisite.
         direct_io_ref: write-1

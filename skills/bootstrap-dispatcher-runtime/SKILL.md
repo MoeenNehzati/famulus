@@ -1,0 +1,181 @@
+---
+name: bootstrap-dispatcher-runtime
+description: >-
+  Use when the Famulus launcher cannot launch the `famulus_dispatcher` MCP
+  server because its dedicated Python runtime is missing, reported as:
+  `Famulus MCP startup's dedicated dispatcher runtime is missing at ...`. This
+  skill sets up the required dedicated Python environment using an available
+  supported Python and installs the packages needed by `famulus_dispatcher`.
+tools:
+  - python
+---
+
+<!-- BEGIN BLUEPRINT INTERFACES -->
+> Generated from `blueprint.yaml`. Do not edit this block by hand.
+
+Used Interfaces: none
+<!-- END BLUEPRINT INTERFACES -->
+Skill: bootstrap-dispatcher-runtime
+
+## What the dispatcher runtime is
+
+The dispatcher is the server that runs every Famulus interface, and it launches each one with its own interpreter. That interpreter is this skill's whole subject: not Famulus as a product, and not the user's Python, but the one runtime the dispatcher server executes in.
+
+One end state, and nothing in this skill matters except reaching it:
+
+**A dedicated Python 3.11 or newer interpreter, at a known absolute path, with the required packages installed, and actually used by the dispatcher server every time the host launches it.**
+
+Five requirements, each separately checkable:
+
+1. **Right version, known path.** Python 3.11 or newer, at a known absolute path. A command name is not a path.
+2. **Dedicated to the dispatcher.** Not the user's system interpreter. The user's systemwide Python may be changed, upgraded, or replaced at any time for reasons that have nothing to do with Famulus, and Famulus's packages must not be installed into an environment the user owns. What form this takes depends on the system: usually a virtual environment, but a fresh interpreter installed for Famulus alone satisfies it equally. The test is consequence, not shape: installing into it must not change anything else the user runs. The converse does not hold as strongly for every form, and do not claim it does: a virtual environment's interpreter is a symlink to the interpreter that built it, so removing or replacing that one breaks the environment, while a separately installed interpreter is immune. Where it is a virtual environment, `prefix` differing from `base_prefix` confirms it is the environment and not its base.
+3. **Required packages installed in it.** The declared packages importable from that interpreter, and from no other. This is why a feature's own packages are in scope: the dispatcher runs that feature's interface with this interpreter, so anything the interface imports must be installed here. The core `requirements-mcp.txt` is what the server needs to start at all; a caller-owned declaration is what one interface needs to run.
+4. **The dispatcher actually runs on it.** The host's bare `python` runs only `mcp_launcher.py`; that stdlib-only launcher resolves `FamulusPaths.venv_python_path` and starts `mcp_server.py` with it. Checkable: the running server reports this absolute path as its own `sys.executable`.
+5. **It keeps happening.** On the next launch, and after a host restart, and after a plugin upgrade. Anything that holds only inside your process, or only in the shell you are in now, has not met requirement 4; neither has an interpreter placed where a plugin upgrade will delete it.
+
+## How to work
+
+This is the MCP-independent prerequisite escape hatch. Use only shell-free process execution, each displayed array element as one argument. Never use a shell command string.
+
+Each step states a requirement and, where the method is open, how it is usually met. The requirement binds. The usual method is a starting point you may leave when the requirement is better served. Displayed command arrays are not open: run them exactly as shown.
+
+**The latitude never extends to these.** Adapting the method is not permission to:
+
+- install Python, or have a package manager install it;
+- change the PATH, aliases, or shims of the user's own shell, or write any user or host configuration file yourself; arranging what the launched dispatcher sees is in scope, changing what the user's own commands mean is not;
+- substitute `uv`, a pip bootstrap, an externally-managed bypass, a user or root install target, an executable fallback, or any wrapper for the declared pip flow;
+- install into any interpreter other than `${canonical_executable}`;
+- report a requirement met without the evidence named for it in the closing section.
+
+When a requirement cannot be met inside these limits, stop and tell the user exactly what you need from them. That is a correct outcome of this skill, not a failure of it.
+
+## Which route you are in
+
+Decide this before anything else. You are in the **repair route** only if a calling feature identified itself and supplied both its exact package declaration and an absolute interpreter. Everything else is the **core setup route**.
+
+If you cannot tell, treat it as the repair route and do not prompt. The two mistakes are not symmetric: guessing repair when it was core stops early and asks nothing, while guessing core when it was repair hangs an unattended job waiting for an answer nobody will give.
+
+**Core setup route.** The dispatcher has no usable runtime. Resolve the installed skill location supplied by the host to its owning plugin root. That root's `requirements-mcp.txt` is the only package authority; reject a caller-supplied replacement. Use it as the absolute two-token pip argument `-r`, `<plugin-root>/requirements-mcp.txt`. The same root's `src` directory supplies the stdlib-only Famulus path resolver. This route may ask the user questions.
+
+**Owner-selected repair route.** Repair only the supplied declaration, in only the supplied environment. Do not locate, infer, widen, or combine declarations from any other feature. Its callers include scheduled and background runs with nobody available to answer, so this route must never prompt. If the supplied environment is missing or unusable, stop and report that the core setup route is required.
+
+In both routes, call the ordered pip arguments `${selected_packages}` and the interpreter being installed into `${canonical_executable}`. For core setup these are the `-r` pair above; for repair they are the caller-supplied package declaration, one process argument per item. Do not inspect skill blueprints or any repository-wide dependency inventory. The repair route enters at "Preflight" with `${canonical_executable}` already supplied.
+
+Before entering Preflight, the repair route runs `candidate-fingerprint` against `${canonical_executable}`, requires version 3.11 or newer and `executable` byte-for-byte equal to the supplied absolute path, and retains the complete object as the selected fingerprint.
+
+Everything below is the usual way to reach the end state. If the machine in front of you differs, keep the objective, adapt the method, and stay inside the limits above.
+
+## Select an interpreter
+
+*Core setup route only.*
+
+**Requirement.** An interpreter of version 3.11 or newer, whose absolute path is known, capable of producing the dedicated interpreter of the next step, and confirmed by the user. This one may be the user's system Python: nothing is installed into it.
+
+Fingerprint the literal command `python` that the host uses to start `mcp_launcher.py`. Do not substitute `python3` or `py`: success requires the host's declared command to start the launcher without PATH, alias, shim, or manifest changes.
+
+Fingerprint it exactly, substituting `python` for `${candidate}`:
+
+<!-- command:candidate-fingerprint -->
+```json
+["${candidate}", "-c", "import json,sys;print(json.dumps({'executable':sys.executable,'prefix':sys.prefix,'base_prefix':sys.base_prefix,'version':list(sys.version_info[:2])},separators=(',',':')))" ]
+```
+
+Require an absolute `executable`. A missing or older bare `python` is an expected prerequisite outcome: ask the user to install Python 3.11 or newer so that command exists. Do not install Python or alter command resolution yourself.
+
+Call the confirmed interpreter `${host_python}`.
+
+## Provide a dedicated interpreter
+
+*Core setup route only.*
+
+**Requirement.** Requirement 2 above: a virtual environment dedicated to the dispatcher at the platform-native `FamulusPaths.venv_path`, which persists across plugin upgrades and is writable without elevation.
+
+Use the confirmed `${host_python}` with isolated startup and no site packages to import the shipped resolver. Substitute the owning plugin root's absolute `src` directory for `${plugin_src}`:
+
+<!-- command:resolve-venv-path -->
+```json
+["${host_python}", "-I", "-S", "-c", "import json,os,sys;from pathlib import Path;sys.path.insert(0,sys.argv[1]);from officina.common.famulus_paths import resolve_famulus_paths;p=resolve_famulus_paths(platform=sys.platform,home=Path.home(),environ=os.environ);print(json.dumps({'venv_path':str(p.venv_path),'venv_python_path':str(p.venv_python_path)},separators=(',',':')))", "${plugin_src}"]
+```
+
+Require successful JSON shaped exactly as `{"venv_path":"<absolute path>","venv_python_path":"<absolute path>"}` and both paths to be absolute. If resolution or import fails, stop; do not choose, infer, or ask for another location. Call the returned paths `${venv_root}` and `${canonical_executable}`.
+
+Create the virtual environment with:
+
+<!-- command:create-venv -->
+```json
+["${host_python}", "-m", "venv", "${venv_root}"]
+```
+
+**Verify.** Run the fingerprint against `${canonical_executable}` and require version 3.11 or newer, `executable` exactly equal to `${canonical_executable}`, and `prefix` to differ from `base_prefix`: that inequality is what proves you are holding the environment rather than the interpreter that built it.
+
+Retain the complete object as the selected fingerprint, substituting `${canonical_executable}` as one token even when it contains spaces.
+
+## Preflight
+
+Run every check below before installation. Stop on the first failure and report it without mutation. The limits under "How to work" apply in full here.
+
+<!-- command:pip-check -->
+```json
+["${canonical_executable}", "-m", "pip", "--version"]
+```
+
+The target check examines every normal selected-environment scheme destination without creating a probe file. A nonzero result is a definite refusal. A zero result means only that the selected Python's effective access check found every existing destination, or the nearest existing parent of a missing destination, writable; do not describe it as proof against unusual ACL, elevation, mount, quota, or race behavior. The complete pip dry run remains a separate required refusal boundary.
+
+<!-- command:target-check -->
+```json
+["${canonical_executable}", "-c", "import os,sys,sysconfig;p={sysconfig.get_path(k) for k in ('purelib','platlib','scripts','data')};bad=[]\nfor x in p:\n q=x\n while not os.path.exists(q): q=os.path.dirname(q)\n if not os.access(q,os.W_OK): bad.append(x)\nprint('normal install target is not writable: '+', '.join(sorted(bad)) if bad else 'normal install target is writable');raise SystemExit(bool(bad))"]
+```
+
+Expand `${selected_packages}` to the route's exact ordered pip arguments. This dry run is the complete pip preflight and must succeed before mutation; its failure includes externally-managed refusal and resolution failure.
+
+<!-- command:pip-preflight -->
+```json
+["${canonical_executable}", "-m", "pip", "install", "--dry-run", "--quiet", "--report", "-", "--disable-pip-version-check", "--no-input", "--no-cache-dir", "${selected_packages}"]
+```
+
+## Install and verify
+
+If the dry-run report has an empty `install` array, report that the environment already satisfies the declaration and skip installation. Otherwise run the same declared requirements without `--dry-run`. Pip's default satisfied-requirement behavior prevents reinstalling packages already present. Parse the report's `install` records to report exactly what changed.
+
+<!-- command:pip-install -->
+```json
+["${canonical_executable}", "-m", "pip", "install", "--quiet", "--report", "-", "--disable-pip-version-check", "--no-input", "--no-cache-dir", "${selected_packages}"]
+```
+
+Rerun the fingerprint against `${canonical_executable}` and require byte-for-byte equality of all four fields with the selected fingerprint. A mismatch or version regression is a terminal failure: do not repair another environment or accept the MCP launch.
+
+## Connect the launcher
+
+*Core setup route only.*
+
+**Requirement.** Requirements 4 and 5 above: the dispatcher runs on `${canonical_executable}` when the host launches it, and does so again on later launches. Because the launcher and bootstrap resolve the same `FamulusPaths.venv_python_path`, a fresh MCP launch will use that interpreter. The step is complete when a newly launched server reports `${canonical_executable}` as its own `sys.executable`, and not before.
+
+## Close against the five requirements
+
+Finish by walking the requirements in order and reporting each one: whether it is met, the evidence that it is met, and how it was achieved. The method was open, so the user cannot infer what you did — state it.
+
+The core setup route reports all five. The repair route reports requirements 1 and 3 only, and says which environment it repaired; it did not choose the interpreter or own where it lives.
+
+Report a requirement as met only on evidence, never on the strength of an action you took. Having run a command is not evidence that its goal holds.
+
+1. **Right version, known path.** Evidence: the fingerprint of `${canonical_executable}`. Report the absolute path and version.
+2. **Dedicated to the dispatcher.** Evidence: the resolved `FamulusPaths.venv_path`, plus the environment's `prefix` and `base_prefix`. Report what would and would not affect this interpreter now.
+3. **Required packages installed in it.** Evidence: the pip report's `install` records, or that the declaration was already satisfied. Report the exact declared package set.
+4. **The dispatcher actually runs on it.** You cannot confirm this from inside this session: the server you are talking to predates the new environment. Report `${canonical_executable}` and require a fresh launch.
+5. **It keeps happening.** Met only once a newly launched server reports `${canonical_executable}` as its `sys.executable`. Report it as pending that restart, and say how the user can check it.
+
+If any requirement is unmet, name it and stop there rather than reporting overall success.
+
+When every applicable requirement is met, allow the host to retry its packaged `famulus_dispatcher` MCP declaration. Never start a private server path directly.
+
+## Red flags
+
+Each of these means you are about to break the skill. Stop.
+
+| Thought | Reality |
+|---|---|
+| "Nothing is on PATH, I will just install Python." | Installing Python is outside the latitude. Report what you tried and ask the user to install a supported Python that provides literal `python`. |
+| "No caller identified itself, so someone must be here to ask." | Absence of a caller is not presence of a person. If unsure, do not prompt. |
+| "I printed the change, so it is set up." | Requirement 4 is met by the dispatcher running on it, not by your output. |
+| "The venv is the requirement, so any venv will do." | Requirement 2 is dedication and survival. A venv where an upgrade deletes it fails. |
+| "`python` works here, so it is fine." | A command name is not a path, and the user may repoint it tomorrow. |

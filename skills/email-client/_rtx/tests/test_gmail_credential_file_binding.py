@@ -45,7 +45,7 @@ def account_registry(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ):
-    config_dir = tmp_path / ".config" / "email-client"
+    config_dir = tmp_path / ".config" / "famulus" / "email-client"
     accounts_file = config_dir / "accounts.json"
     monkeypatch.setattr(accounts_module, "CONFIG_DIR", config_dir)
     monkeypatch.setattr(accounts_module, "ACCOUNTS_FILE", accounts_file)

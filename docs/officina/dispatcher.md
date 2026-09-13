@@ -1,42 +1,137 @@
 # Dispatcher
 
+## Operating model
+
 This document is the operational reference for the version-6 dispatcher. The
 dispatcher is a bounded router and authorization checker: it resolves one
 declared interface, checks the relevant blueprint policies, compiles the
 declared process binding, and launches the gateway. It does not repair or
 synchronize repository state.
 
-## Invocation
+For the end-to-end role of dispatch, see [Getting Started](getting-started.md).
+[Blueprints](blueprints.md) explains the declarations Dispatcher consumes.
 
-On first installation, the host registry locates the Famulus package and its
-package-relative installer. After apply, both standard commands and
-development adapters use a self-locating fixed resolver, then the selected
-context's `runtime/current.json`, then the active managed runtime. Neither
-chain discovers a checkout from the current directory.
+For each invocation, Dispatcher follows one bounded path:
 
-Host callers use the installed command:
-
-```bash
-dispatcher --caller-skill <top-level-skill> \
-  <module>.interface.<name> [arguments...]
+```text
+resolve -> authorize -> bind -> execute
 ```
 
-Use `--dry-run` to authorize and compile without launching the gateway. The
+It resolves the canonical caller and target, authorizes every crossed module
+boundary, binds supplied arguments and stdin to the declared process grammar,
+then executes the selected gateway. It mechanically enforces that invocation
+grammar. It does not generally verify gateway output against a declared output
+schema; the producer, consumer, or owning adapter must perform that validation
+where the contract requires it. See [Schemas](schema.md).
+
+MCP execution and every actual `PythonMachineInterface.dispatch()` insert the
+dynamic setup check described below between authorization and binding.
+
+## Invocation
+
+The shared `famulus_dispatcher` MCP server resolves the current plugin package and invokes
+Dispatcher internally. Its `invoke` tool accepts the generated projection:
+
+```json
+{"caller":"<top-level-skill>","interface":"<module>.interface.<name>","version":1,"arguments":{"positionals":[],"options":{},"stdin":null},"dry_run":false}
+```
+
+Set `dry_run` to `true` to authorize and compile without launching the gateway. The
 result is JSON containing the canonical caller and target IDs, selected source
 interface, compiled argv, working directory, Python entrypoint, stdin decision,
-and warnings. `--error-format json` produces a stable structured failure.
+and warnings. Failures use the tool's structured dispatcher result.
+
+Every non-dry MCP result also returns a `trace_id`. Best-effort timing spans for
+Dispatcher processes and Python interface bodies are stored under
+`$ASSISTANT_LOGS/dispatch/`; tracing never records arguments, process output,
+environment values, URLs, credentials, working directories, or exception text.
+The milestone timeline joins this ID to Codex call/output events to show
+decision, execution, and response-creation time. Response creation ends when
+the final assistant message exists; it does not include later UI rendering or
+network delivery.
 
 The host caller must be a discoverable top-level skill. Runtime code may make
 nested calls using its immediate canonical module ID through the programmatic
 dispatcher API. A host cannot claim a private child such as `daily-plan._rtx`
 as its identity.
 
+## MCP result audiences
+
+Tool calls should remain visible while output intended for the assistant does
+not fill the user's result preview. Both `invoke` and `invoke_and_render` apply
+the same stream filter at the MCP boundary:
+
+| Declared stream audience | Text `content` | `structuredContent.result` |
+|---|---|---|
+| `machine` | Omit the stream | Preserve the complete stream |
+| `human` | Include the stream | Preserve the complete stream |
+| `both` | Include the stream | Preserve the complete stream |
+
+The dispatcher derives `dispatcher.output_audiences` from the already resolved
+implementing interface's `contract.outputs`: each output's `direct_io_ref` links
+to an entry in `contract.direct_io.writes` whose `medium` is `stdout` or `stderr`.
+This requires no additional blueprint read. Each stream is classified separately;
+all declarations contributing to it must agree on one valid audience. Missing,
+invalid, unmatched or conflicting declarations default to `machine`. The filter
+cannot separate differently intended messages within an unframed stream.
+
+Display text contains qualifying stdout followed by qualifying stderr, split
+into text blocks. If neither contributes nonempty display text, `content` is
+exactly `[{"type":"text","text":""}]`. The complete execution result remains
+under `structuredContent.result`, including stdout, stderr, exit status and
+dispatcher metadata. For example, this abbreviated machine-output response has
+no preview text:
+
+```json
+{
+  "content": [{"type": "text", "text": ""}],
+  "structuredContent": {
+    "result": {
+      "stdout": "query result",
+      "stderr": "",
+      "exit_code": 0,
+      "dispatcher": {"output_audiences": {"stdout": "machine", "stderr": "machine"}}
+    }
+  }
+}
+```
+
+Consumers must read the structured result for machine output, status, dispatcher
+errors, dry-run results and setup continuations. Failed calls use the same
+filter; failure does not trigger a full-result text dump. A machine stdout
+declaration does not suppress separately declared human/both stderr. Declared
+renderers on `invoke_and_render` still receive the complete structured payload
+for explicit rendering.
+
+Audience declarations express intended recipients. Use `machine` for query
+data, receipts, paths, hashes, raw logs and diagnostics the assistant interprets
+or summarizes. Reserve `human`/`both` for finished output intended for direct
+presentation. The stdout cleanup retained `both` for
+`daily-plan._rtx.interface.orchestrate`,
+`daily-plan._rtx.interface.mutate-plan` and
+`relocate-nodes._rtx.interface.build-review-packet`; the other 56 formerly `both`
+stdout interfaces became `machine`. Existing `human` stdout and stderr
+declarations were unchanged.
+
+In the Codex surface tested during development, MCP audience annotations alone
+did not hide text: unannotated, assistant, user and both probes all displayed
+the same preview. An empty text block preserved the call row with a blank
+preview, while structured data remained available through `functions.exec`.
+Fresh MCP processes launched using both Codex and Claude configurations passed
+response-shape checks; Claude's actual UI and model consumption were not
+verified. Preview suppression is host behavior, not an access-control boundary.
+
+Human/both streams currently occur in both response fields. This preserves the
+complete structured-result contract but duplicates those bytes in the MCP
+payload. In the tested `functions.exec` route, execution code can forward only
+the structured result to the model. The MCP adapter itself does not guarantee
+that every host avoids duplicate model tokens, and `human` does not exclude
+the stream from model-accessible data.
+
 ## Repository configuration
 
-The installed launcher supplies one exact absolute `officina.toml` path from
-the active managed-runtime pointer. Development adapters select their own
-checkout-local context, while standard launchers select platform Famulus
-roots. Users cannot override that value. The
+The MCP runtime supplies one exact absolute
+`officina.toml` path from the selected plugin or checkout. The
 configuration file's directory is the repository root and its ordered
 `modules.roots` entries are the only blueprint lookup roots:
 
@@ -76,6 +171,64 @@ For one request, dispatcher reads only:
 It does not list module directories or read unrelated blueprints. Repository
 size therefore does not determine route-resolution work.
 
+The lookup rule remains direct and catalog-free:
+`module_id -> configured root/module segments/blueprint.yaml`. The MCP server
+does not catalogue modules, generate an index, or add another path resolver.
+
+## Managed setup preflight
+
+An ordinary non-dry MCP call checks setup after authorizing its exact route.
+Every actual `PythonMachineInterface.dispatch()` does the same for its own
+target, including calls in standalone chains. Setup classification reuses the
+invocation-local repository and already loaded target ancestry; it does not
+authorize the route again. A public `.interface.setup` export is managed
+automatically. An unmanaged target trivially proceeds without a manager call
+or ledger access. Metadata inspection, dry-run, and offline resolution do not
+perform these live checks.
+
+When a managed `.interface.setup` is required, the direct setup loader follows
+only explicit `setup_requires_setup_of` references and builds the sparse fields
+consumed by the existing setup evaluator. Exact managed setup and teardown
+interfaces are intercepted before process-binding compilation. An ordinary
+managed target still requires manager `status`, followed by atomic `authorize`
+when ready, before the original target is compiled and launched.
+
+This is a per-call check, not static traversal of `uses_interfaces`. A declared
+dependency that is never called does not trigger setup. Calls whose caller or
+terminal target module is exactly `setup-interface-manager._rtx` bypass this
+gate so manager control routes, actions, and verifiers cannot recurse into it;
+prefix lookalikes do not bypass it. MCP calls carrying `setup_flow_id` retain
+their separate exact-flow authorization path.
+
+A nested setup refusal prevents that target from launching and travels through
+the existing private process diagnostic channel. Each process boundary
+prepends its canonical interface ID to an outer-to-inner `call_path`. At the
+MCP root, the existing validation checks the signal and produces the existing
+setup continuation or error result. `setup_required` preserves the outer MCP
+caller/interface/version as the continuation; `setup_busy` exposes only the
+active flow identity and authorizes no action. Ordinary dispatcher and
+application errors keep their existing behavior. Standalone chains still gate actual dispatches,
+but only MCP renders setup continuations.
+
+The `manager` object returned for `setup_required` or `setup_managed` is a
+complete `famulus_dispatcher.invoke` request and must be used unchanged.
+
+The outer process may already have done work before reaching a blocked nested
+call. Retrying the outer invocation can repeat that work; this is not a promise
+of transitive preflight or exactly-once execution.
+
+Setup-interface-manager remains the sole authority for ledger reads, locks,
+claims, recovery, and settlement. Its `status` and `authorize` routes load the
+sparse setup closure for the requested target. A `begin setup` call with
+no active flow loads the closure rooted at its requested setup interface.
+During an active setup flow, `run-markdown`, `run-python`, `settle`, `recover`,
+`recover-busy`, and `authorize-markdown-call` load the closure rooted at the
+flow's ledger-recorded root setup interface. Begin calls while a flow is active,
+teardown operations (including `teardown-all`), invalidation, and flow-bound
+lifecycle calls without an active setup flow retain canonical repository-wide
+graph loading. Teardown and invalidation need broader lifecycle topology; the
+other fallbacks fail closed without assuming setup-flow state.
+
 ## Authorization
 
 For a policy owned by module `y`, caller `x` is admitted when `x == y`, the
@@ -96,11 +249,12 @@ facts. They do not independently grant runtime authority.
 
 Dispatcher accepts only a process-bindable exported interface. It compiles
 arguments and stdin against the selected source declaration before launch.
-Python gateways run through the managed interpreter and a confined importer
+Python gateways run through the selected interpreter and a confined importer
 rooted at the selected module. Ambient import paths that expose configured
 repository modules are removed.
 
-Gateway stdout, stderr, and exit status pass through unchanged. `--dry-run`
+Ordinary gateway stdout, stderr, and exit status pass through unchanged;
+private setup refusals follow the diagnostic path described above. `--dry-run`
 does not read stdin or launch the gateway.
 
 ## Failures and warnings
@@ -119,15 +273,9 @@ expired, malformed, or unavailable status produces a warning but cannot grant
 or deny permission. Certification and drift tools remain authoritative for
 reviewing and signing repository state outside the live route.
 
-## Launcher and performance
+## Process and performance
 
-The public command is a small platform launcher. On Unix it enters a stable,
-dependency-free resolver; on Windows a batch launcher invokes the same
-resolver contract. The resolver validates `current.json`, rejects attempts to
-override `repository_config`, and replaces itself with the active managed
-Python interpreter running `officina.dispatcher.cli`.
-
-Fresh-process measurements include interpreter and launcher startup. They are
+Fresh-process measurements include interpreter and module startup. They are
 not measurements of authorization alone. The repository performance gates
 require warm in-process resolution below 50 ms median, and fresh CLI resolution
 below a median that `_fresh_cli_budget_ms` sets per OS family: 125 ms on Linux,
@@ -141,15 +289,21 @@ and host-load variation is expected.
 
 ## What dispatcher never does
 
-The live path does not build repository graphs, inventories, snapshots,
-catalogs, caches, or manifests; inspect Git; derive or repair certificates;
-synchronize blueprints; contact a network; acquire routing locks; or write
-routing state. Those operations belong to explicit offline tools.
+The live routing path does not build repository-wide graphs, inventories,
+snapshots, catalogs, caches, or manifests; inspect Git; derive or repair
+certificates; synchronize blueprints; contact a network; acquire routing locks;
+or write routing state. The sparse setup projection described above is limited
+to the setup closure selected by one requested target or ledger-recorded
+setup-flow root; it is not a repository inventory. Selecting that graph grants
+no runtime authority. Repository-wide operations belong to explicit validators
+or the setup-manager fallback cases described above.
 
 ## Related documentation
 
-- [Architecture](architecture.md)
-- [Skill blueprints](skill-blueprints.md)
+- [Overview](README.md)
+- [Getting Started](getting-started.md)
+- [Architectural principles](architectural-principles.md)
+- [Blueprints](blueprints.md)
+- [Schemas](schema.md)
 - [Certification and drift](certification_and_drift.md)
-- [Installation](installation.md)
 - [Blueprint schemas](../../references/blueprint-schema/README.md)

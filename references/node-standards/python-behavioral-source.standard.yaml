@@ -1,6 +1,6 @@
 schema_version: 6
 standard_version: 1.0.0
-revision: 19
+revision: 22
 id: node-standards.python-behavioral-source
 canonical_path: references/node-standards/python-behavioral-source.standard.yaml
 title: Python Behavioral Source Standard
@@ -9,16 +9,16 @@ imports:
   behavioral-source:
     standard_id: node-standards.behavioral-source
     standard_version: 1.0.0
-    revision: 14
-    digest: sha256:c4685ac1bbe3b5277b41d4a8700267caa50ad87d7597930d755b4dff95104f34
+    revision: 17
+    digest: sha256:d31e837a3d8bf7cd981e54a5903cd311a6892286a38f4c8f7f969160a5b95f7d
     artifact:
       kind: artifact
       ref: artifact.behavioral-source-standard
   python-node:
     standard_id: node-standards.python-node
     standard_version: 1.0.0
-    revision: 18
-    digest: sha256:838a11126d31d7bf1f0ce9e4ceb8fefeb04068d0fd7d04cc2fb52d11f4b75a8b
+    revision: 20
+    digest: sha256:2359123210ec6e9064e763f0a3c687490f8c99e127261cf93bbc4922c45688c1
     artifact:
       kind: artifact
       ref: artifact.python-node-standard
@@ -75,12 +75,14 @@ standards:
         resolves the target contract, binding, and authorization independently of caller working directory.
   - kind: guidance
     id: skill-guidelines.dispatcher-role.guidance-009
-    statement: 'A discoverable parent caller may use `--dry-run` with the host-facing compatibility flag
-      to inspect the resolved invocation without executing it:'
+    statement: 'A discoverable parent caller may set `dry_run: true` on
+      `famulus_dispatcher.invoke` to inspect the resolved invocation without executing it:'
   - kind: guidance
     id: skill-guidelines.dispatcher-role.example-001
-    statement: "```bash\ndispatcher --dry-run --caller-skill daily-plan \\\n  list-manager._rtx.interface.read-list\
-      \ /tmp/todo.yaml\n```"
+    statement: 'Call `famulus_dispatcher.invoke` with `caller: daily-plan`,
+      `interface: list-manager._rtx.interface.read-list`, `version: 1`,
+      `arguments: {"options": {}, "positionals": ["/tmp/todo.yaml"], "stdin": null}`,
+      and `dry_run: true`.'
   - kind: rule
     id: skill-guidelines.dispatcher-role.requirement-003
     assertions:
@@ -119,7 +121,7 @@ standards:
 
       _rtx/_mail_transport.py
 
-      _rtx/_install_launcher/_windows_launcher.py
+      _rtx/_platform_adapter/_windows_adapter.py
 
       ```'
   - kind: guidance

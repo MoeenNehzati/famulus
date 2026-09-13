@@ -4,27 +4,20 @@ description: >-
   Use when an existing skill blueprint needs regeneration, whether requested directly or required by another skill. Do not use for ordinary blueprint editing or synchronization.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: assistant-development; topics: assistant-authoring, assistant-architecture; visibility: listed
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces:
-- `regenerate-blueprints.source.gateway -> regenerate-blueprints._rtx.interface.regenerate-blueprint@1`
-
-Public Interfaces:
-- `regenerate-blueprints.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Instruction Interfaces:
+Executable Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `regenerate-blueprints.interface.default` — Regenerate one existing skill blueprint into /tmp, report its path or validation failure, and never modify the source blueprint.
+Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+- `regenerate-blueprints._rtx.interface.regenerate-blueprint` — Generate a refreshed blueprint YAML for one existing skill under /tmp.
+  - Caller: `regenerate-blueprints`
+  - Version: 1
+  - Alternative: `skill-name`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {}, "positionals": ["skill-name"], "stdin": null}
+    Required options: []; positional arity: 1..1; stdin: forbidden
+
 <!-- END BLUEPRINT INTERFACES -->
 ## Purpose
 

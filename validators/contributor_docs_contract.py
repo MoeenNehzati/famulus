@@ -9,15 +9,16 @@ from docs_tooling.render import render_doc_with_updated_blocks
 
 _README_REQUIRED = (
     "blueprint.yaml",
-    "skill-maker._rtx.interface.sync-blueprints --check",
-    "dispatcher --caller-skill <caller> <callee>.interface.<name> [args...]",
+    '"interface":"skill-maker._rtx.interface.sync-blueprints","version":1',
+    '"--check":true',
+    '"caller":"<caller>","interface":"<callee>.interface.<name>"',
     "repo_checks.py",
     ".githooks/pre-commit",
-    "docs/officina/skill-blueprints.md",
+    "../officina/blueprints.md",
     "references/blueprint-schema/schema.json",
     "references/blueprint-schema/template.yaml",
-    "docs/officina/scaffolding/README.md",
-    "docs/contributors/documentation-system.md",
+    "../officina/scaffolding/README.md",
+    "documentation-system.md",
 )
 
 _DOC_SYSTEM_REQUIRED = (

@@ -190,7 +190,7 @@ class CloudFilesTests(unittest.TestCase):
     def test_load_config_reads_default_location(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
-            config_dir = home / ".config" / "cloud-files"
+            config_dir = cloud_files.default_config_path(home).parent
             config_dir.mkdir(parents=True)
             (config_dir / "config.json").write_text(
                 json.dumps(
@@ -206,13 +206,13 @@ class CloudFilesTests(unittest.TestCase):
         self.assertEqual(config.timeout_seconds, 12)
         self.assertEqual(
             config.credentials_path,
-            home / ".config" / "cloud-files" / "credentials.json",
+            cloud_files.default_credentials_path(home),
         )
 
     def test_load_config_reads_credential_id_and_home_when_present(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
-            config_dir = home / ".config" / "cloud-files"
+            config_dir = cloud_files.default_config_path(home).parent
             config_dir.mkdir(parents=True)
             (config_dir / "config.json").write_text(
                 json.dumps(
@@ -231,7 +231,7 @@ class CloudFilesTests(unittest.TestCase):
     def test_load_config_credential_id_defaults_to_none(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
-            config_dir = home / ".config" / "cloud-files"
+            config_dir = cloud_files.default_config_path(home).parent
             config_dir.mkdir(parents=True)
             (config_dir / "config.json").write_text(
                 json.dumps({"remote_llm_root": "assistant/", "timeout_seconds": 12}),

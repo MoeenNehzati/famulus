@@ -1,0 +1,205 @@
+content:
+- _graph_builder\.py
+dependencies:
+- blueprint:
+    base: module-root
+    path: blueprints/rtx-init.yaml
+  reason: Loads Python package support from _rtx/__init__.py.
+  source: math-dependency-graph._rtx.source.rtx-init
+  version: 1
+description: Validates self-contained canonical graph JSON and writes an offline interactive
+  HTML dependency graph without reading TeX or sidecar files.
+gateway:
+  language: Python
+  path: _graph_builder.py
+id: math-dependency-graph._rtx.source.rtx-graph-builder
+interfaces:
+  math-dependency-graph._rtx.source.rtx-graph-builder.interface.scripts-build-math-dependency-graph:
+    uses_interfaces: []
+    content:
+    - _graph_builder\.py
+    contract:
+      arguments:
+        html-out:
+          description: Optional exact standalone HTML destination; any filename suffix
+            is preserved.
+          direct_io_ref: write-1
+          required: false
+          sensitivity: user-private
+          type:
+            access: write
+            content_type:
+              kind: string
+              sensitivity: derived-private
+            kind: file
+            must_exist: false
+            relative_to: caller-cwd
+            syntax: literal
+        reduce-transitive-edges:
+          default: false
+          description: Remove graph-theoretically redundant edges from the rendered
+            view without changing the canonical JSON.
+          required: false
+          sensitivity: public
+          type:
+            kind: flag
+        source:
+          description: Self-contained canonical dependency-graph JSON file.
+          direct_io_ref: read-1
+          required: true
+          sensitivity: user-private
+          type:
+            access: read
+            content_type:
+              format:
+                named: json
+              kind: string
+              sensitivity: user-private
+            kind: file
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+      caller_warnings:
+      - external-side-effect: Writes standalone HTML at the requested or default destination.
+      direct_io:
+        network: []
+        reads:
+        - access: read
+          content: self-contained canonical dependency graph
+          formats:
+          - json
+          id: read-1
+          medium: local-filesystem
+          path: <source.json>
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
+        writes:
+        - access: write
+          content: offline standalone interactive dependency graph
+          formats:
+          - html
+          id: write-1
+          medium: local-filesystem
+          path: <html-out> or <source-dir>/_build/<source>.html
+          path_match: exact
+          sensitivity: derived-private
+          system: filesystem
+        - access: write
+          content: render report
+          formats:
+          - json
+          id: write-2
+          medium: stdout
+          sensitivity: derived-private
+      execution:
+        consistency:
+          snapshot: Rendering uses only the canonical JSON content read during this
+            invocation.
+        effects:
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: write-1
+            kind: direct-io
+          direct_io_ref: write-1
+          id: html-file
+          may_occur_in_outcomes:
+          - rendered
+          reversibility:
+            reversible: The generated HTML can be deleted or regenerated from canonical
+              JSON.
+          value_source:
+            argument_ref: source
+            kind: argument
+        lifecycle: finite
+        mutation_safety:
+          atomicity:
+            atomic: The artifact writer renders inside a sibling temporary directory,
+              then atomically replaces the exact HTML destination.
+          concurrent_invocations:
+            unsafe: Concurrent renders to the same path are not serialized and the
+              last atomic replacement wins.
+          idempotency:
+            idempotent: Unchanged canonical JSON and options produce equivalent HTML.
+          on_uncertain_completion:
+            verify_then_decide: Inspect the reported HTML path before retrying.
+          partial_effects_on_failure:
+            impossible: A rendering or serialization failure preserves the prior HTML
+              destination.
+          rollback_on_failure:
+            automatic: The temporary render is removed and the prior destination remains
+              visible when publication fails.
+        state_effect: mutating
+        verification:
+        - method: output-schema
+          output_ref: report
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - caller_action: Open the reported HTML path for inspection and optionally run
+          browser diagnostics.
+        class: success
+        effects:
+        - html-file
+        id: rendered
+        outputs:
+        - report
+      - caller_action: Correct the self-contained canonical graph JSON.
+        class: refusal
+        effects: []
+        id: invalid
+        outputs: []
+      - caller_action: Report the file or rendering error and inspect the destination
+          before retrying.
+        class: error
+        effects: []
+        id: failed
+        outputs: []
+      outputs:
+      - audience: machine
+        cardinality:
+          maximum: 1
+          minimum: 1
+        description: JSON report with canonical JSON path, HTML path, entity count,
+          and optional rendered-view reduction count.
+        direct_io_ref: write-2
+        empty: Never empty.
+        id: report
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          format:
+            named: json
+          kind: string
+          sensitivity: derived-private
+      preconditions: []
+    description: Render offline interactive HTML from self-contained canonical graph
+      JSON without reading or rewriting source material.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allowed_flags:
+        - --html-out
+        - --reduce-transitive-edges
+        flag_patterns:
+          --html-out: ^.+$
+        max_positionals: 1
+        min_positionals: 1
+        name: owner
+    usage: <source.json> [--html-out <path>] [--reduce-transitive-edges]
+    version: 2
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 6
+uses_interfaces: []
+version: 2
+maturity: stable

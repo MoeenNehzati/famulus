@@ -1,0 +1,60 @@
+schema_version: 6
+node_type: behavioral_source
+id: python-canary.source.setup
+version: 1
+maturity: experimental
+description: Fixed setup action and read-only setup verifier for the test canary.
+gateway: {language: Python, path: python_canary.py}
+content: [python_canary\.py]
+dependencies: []
+uses_interfaces: []
+interfaces:
+  python-canary.source.setup.interface.setup:
+    version: 1
+    description: Move the in-process canary only to its set-up state.
+    usage: ''
+    content: [python_canary\.py]
+    uses_interfaces: []
+    process_binding:
+      entry: SetupInterface
+      kind: process
+      patterns: [{allow_stdin: false, min_positionals: 0, max_positionals: 0}]
+  python-canary.source.setup.interface.setup-status:
+    version: 1
+    description: Return true only after the fixed setup action succeeds.
+    usage: ''
+    content: [python_canary\.py]
+    uses_interfaces: []
+    contract:
+      arguments: {}
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads: []
+        writes:
+        - {access: write, content: exact setup status object, formats: [json], id: result-write, medium: stdout, sensitivity: public, system: agent-runtime}
+      execution:
+        consistency: {live: The result reflects the in-process canary state at verification time.}
+        lifecycle: finite
+        state_effect: read-only
+        verification: [{method: output-schema, output_ref: result}]
+      helpers: []
+      interaction: {mode: unattended}
+      outcomes:
+      - {id: completed, class: success, outputs: [result], effects: [], caller_action: Accept setup only when set_up is true.}
+      outputs:
+      - id: result
+        audience: machine
+        description: One object containing only the set_up Boolean.
+        direct_io_ref: result-write
+        cardinality: {minimum: 1, maximum: 1}
+        ordering: stable
+        pagination: {kind: none}
+        truncation: {kind: none}
+        empty: Never empty.
+        type: {kind: string, sensitivity: public, format: {named: json}}
+      preconditions: []
+    process_binding:
+      entry: SetupStatusInterface
+      kind: process
+      patterns: [{allow_stdin: false, min_positionals: 0, max_positionals: 0}]

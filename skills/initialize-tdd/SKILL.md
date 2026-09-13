@@ -4,28 +4,21 @@ description: >-
   Use when the user asks to initialize a brand-new TDD project. Do not use for adding TDD to an existing project.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: software-development; topics: repository-workflow, assistant-assurance; visibility: listed
-Activation: user-request; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces:
-- `initialize-tdd.source.gateway -> initialize-tdd._rtx.interface.setup-compat-aliases@1`
-
-Public Interfaces:
-- `initialize-tdd.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Instruction Interfaces:
+Executable Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `initialize-tdd.interface.default` — Create a new approval-gated TDD project scaffold from explicit project name and language inputs, verify the Python starter when selected, and never commit it.
+Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+- `initialize-tdd._rtx.interface.setup-compat-aliases` — Create every host compatibility alias symlink (e.g. a legacy filename some host looks for specifically) in a freshly scaffolded project directory.
+  - Caller: `initialize-tdd`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {}, "positionals": ["project-dir"], "stdin": null}
+    Required options: []; positional arity: 1..1; stdin: forbidden
+
 <!-- END BLUEPRINT INTERFACES -->
 # Initialize TDD Project
 

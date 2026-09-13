@@ -3,13 +3,12 @@ from __future__ import annotations
 
 import importlib.util
 import shutil
+import sys
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import pytest
 import yaml
-
-from test_support.v5_blueprint_fixtures import copy_v5_fixture_tree
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -28,14 +27,6 @@ def _copy_schema_root(repo_root: Path) -> None:
     )
 
 
-def _copy_v5_schema_root(repo_root: Path) -> None:
-    shutil.copytree(
-        REPO_ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v5",
-        repo_root / "references" / "blueprint-schema" / "migrations" / "v5",
-        dirs_exist_ok=True,
-    )
-
-
 def _copy_canonical_skill(repo_root: Path) -> Path:
     _copy_schema_root(repo_root)
     target = repo_root / "skills" / "loose-mode"
@@ -51,28 +42,6 @@ def _tracked(repo_root: Path) -> dict[str, tuple[tuple[str, str], ...]]:
     }
 
 
-@pytest.mark.parametrize("version", [4, 5])
-def test_repository_schema_version_reads_canonical_bootstrap_marker(
-    tmp_path: Path,
-    version: int,
-) -> None:
-    marker = tmp_path / "references" / "blueprint-schema" / "blueprint.yaml"
-    marker.parent.mkdir(parents=True)
-    marker.write_text(
-        f"schema_version: {version}\nnode_type: module\n",
-        encoding="utf-8",
-    )
-
-    assert MOD.repository_schema_version(tmp_path) == version
-
-
-def test_repository_schema_version_rejects_missing_marker(
-    tmp_path: Path,
-) -> None:
-    with pytest.raises(ValueError, match="canonical schema marker is missing"):
-        MOD.repository_schema_version(tmp_path)
-
-
 def test_canonical_skill_passes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -81,24 +50,6 @@ def test_canonical_skill_passes(
     monkeypatch.setattr(MOD, "_git_tracked_files", lambda _root: _tracked(tmp_path))
 
     assert MOD.validate(tmp_path) == []
-
-
-def test_preflight_explicitly_selects_v5_for_an_all_v5_staged_tree(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _copy_schema_root(tmp_path)
-    _copy_v5_schema_root(tmp_path)
-    fixture = REPO_ROOT / "tests" / "fixtures" / "blueprint_v5" / "authorization"
-    copy_v5_fixture_tree(fixture / "modules", tmp_path / "modules")
-    copy_v5_fixture_tree(fixture / "skills", tmp_path / "skills")
-    monkeypatch.setattr(MOD, "_validate_generated_markers", lambda _path: [])
-
-    errors, graph = MOD.preflight(tmp_path, expected_schema_version=5)
-
-    assert errors == []
-    assert graph is not None
-    assert graph.schema_version == 5
 
 
 def test_preflight_defaults_to_v6_for_an_all_v6_tree(
@@ -117,27 +68,12 @@ def test_preflight_defaults_to_v6_for_an_all_v6_tree(
     assert graph.schema_version == 6
 
 
-def test_full_v5_validate_checks_generated_views_with_v5_syncer_mode(
+def test_validate_with_graph_checks_sync_state_in_process(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _copy_schema_root(tmp_path)
-    _copy_v5_schema_root(tmp_path)
-    fixture = REPO_ROOT / "tests" / "fixtures" / "blueprint_v5" / "authorization"
-    copy_v5_fixture_tree(fixture / "modules", tmp_path / "modules")
-    copy_v5_fixture_tree(fixture / "skills", tmp_path / "skills")
-    sync_script = (
-        tmp_path
-        / "skills"
-        / "skill-maker"
-        / "_rtx"
-        / "_blueprint_syncer.py"
-    )
-    sync_script.parent.mkdir(parents=True)
-    sync_script.write_text("", encoding="utf-8")
-    commands: list[list[str]] = []
-
-    monkeypatch.setattr(MOD, "_validate_generated_markers", lambda _path: [])
+    graph = SimpleNamespace(schema_version=6)
+    calls: list[dict[str, object]] = []
     monkeypatch.setattr(MOD, "_git_tracked_files", lambda _root: _tracked(tmp_path))
     monkeypatch.setattr(
         MOD,
@@ -145,57 +81,76 @@ def test_full_v5_validate_checks_generated_views_with_v5_syncer_mode(
         lambda _graph, _root, _tracked_files: [],
     )
 
-    def _run(command: list[str], **_kwargs: object) -> SimpleNamespace:
-        commands.append(command)
-        return SimpleNamespace(returncode=0, stdout="", stderr="")
+    def _check_sync_state(**kwargs: object) -> list[str]:
+        calls.append(kwargs)
+        return ["sync-state sentinel for schema 6"]
 
-    monkeypatch.setattr(MOD.subprocess, "run", _run)
+    monkeypatch.setattr(
+        MOD,
+        "_load_blueprint_syncer",
+        lambda _repo_root: SimpleNamespace(validate_sync_state=_check_sync_state),
+    )
 
-    assert MOD.validate(tmp_path, expected_schema_version=5) == []
-    assert commands == [
-        [
-            MOD.sys.executable,
-            str(sync_script),
-            "--check",
-            "--schema-version",
-            "5",
-        ]
+    def _unexpected_subprocess(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("the canonical validator must not launch the sync child")
+
+    monkeypatch.setattr(MOD.subprocess, "run", _unexpected_subprocess)
+
+    assert MOD.validate_with_graph(tmp_path, graph) == [
+        "sync-state sentinel for schema 6"
+    ]
+    assert calls == [
+        {
+            "repository_graph": graph,
+            "repository_root": tmp_path,
+            "skills_root": tmp_path / "skills",
+            "runtime_dependencies_path": (
+                tmp_path
+                / "references"
+                / "blueprint-schema"
+                / "runtime_dependencies.json"
+            ),
+        }
     ]
 
 
-def test_default_validate_uses_v6_syncer_argv(
+@pytest.mark.parametrize("fails", [False, True])
+@pytest.mark.parametrize("preexisting", [False, True])
+def test_load_blueprint_syncer_restores_private_module_slot(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    fails: bool,
+    preexisting: bool,
 ) -> None:
-    _copy_canonical_skill(tmp_path)
-    sync_script = (
-        tmp_path
-        / "skills"
-        / "skill-maker"
-        / "_rtx"
-        / "_blueprint_syncer.py"
+    sync_path = (
+        tmp_path / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py"
     )
-    sync_script.parent.mkdir(parents=True)
-    sync_script.write_text("", encoding="utf-8")
-    commands: list[list[str]] = []
-    monkeypatch.setattr(MOD, "_git_tracked_files", lambda _root: _tracked(tmp_path))
+    sync_path.parent.mkdir(parents=True)
+    sync_path.write_text(
+        "raise RuntimeError('syncer fixture failure')\n"
+        if fails
+        else "marker = 'loaded syncer'\n",
+        encoding="utf-8",
+    )
+    module_name = "_officina_blueprint_syncer_validator"
+    previous = ModuleType(module_name)
+    if preexisting:
+        monkeypatch.setitem(sys.modules, module_name, previous)
+    else:
+        monkeypatch.delitem(sys.modules, module_name, raising=False)
 
-    def _run(command: list[str], **_kwargs: object) -> SimpleNamespace:
-        commands.append(command)
-        return SimpleNamespace(returncode=0, stdout="", stderr="")
+    if fails:
+        with pytest.raises(RuntimeError, match="syncer fixture failure"):
+            MOD._load_blueprint_syncer(tmp_path)
+    else:
+        loaded = MOD._load_blueprint_syncer(tmp_path)
+        assert loaded is not None
+        assert loaded.marker == "loaded syncer"
 
-    monkeypatch.setattr(MOD.subprocess, "run", _run)
-
-    assert MOD.validate(tmp_path) == []
-    assert commands == [
-        [
-            MOD.sys.executable,
-            str(sync_script),
-            "--check",
-            "--schema-version",
-            "6",
-        ]
-    ]
+    if preexisting:
+        assert sys.modules[module_name] is previous
+    else:
+        assert module_name not in sys.modules
 
 
 def test_canonical_skill_passes_through_equivalent_repository_alias(
@@ -263,7 +218,7 @@ def test_unbalanced_generated_markers_are_rejected(
     skill_file = skill / "SKILL.md"
     skill_file.write_text(
         skill_file.read_text(encoding="utf-8").replace(
-            MOD.CONTRACT_END,
+            MOD.INTERFACES_END,
             "",
         ),
         encoding="utf-8",
@@ -272,7 +227,7 @@ def test_unbalanced_generated_markers_are_rejected(
 
     errors = MOD.validate(tmp_path)
 
-    assert any("contract markers are unbalanced" in error for error in errors)
+    assert any("blueprint interface markers are unbalanced" in error for error in errors)
 
 
 def test_authored_inputs_must_be_tracked(

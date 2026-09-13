@@ -11,7 +11,7 @@
 #   `docstring_format_version` should be bumped whenever this policy shape
 #   changes in a way that can affect docstring quality checks.
 #   `name` is used as an identifier in diagnostics and docs.
-docstring_format_version: 30
+docstring_format_version: 31
 # Stable contract identifier used by tooling outputs and diagnostics.
 name: docstring_format
 # If true, required settings are enforced and surface as warnings.
@@ -155,10 +155,8 @@ callable:
     instantiates_section: InstantiationsFromRepo
     dispatches_section: Dispatches
     allow_implicit: true
-    allow_legacy_flat: false
     require_why: true
     dependency_why:
-      allow_legacy_string: false
       misc_min_chars: 80
       actions:
         - reads
@@ -315,7 +313,7 @@ check_categories:
     - code: docstring.invalid-wraps
       intent: Wraps line could not be parsed.
     - code: docstring.invalid-module-dependency
-      intent: Dependency declaration tree or legacy dependency reference cannot be parsed.
+      intent: Dependency declaration tree or non-structured dependency reference cannot be parsed.
     - code: docstring.invalid-resource
       intent: Resources section declaration cannot be parsed or lacks required fields.
     - code: docstring.invalid-dataflow

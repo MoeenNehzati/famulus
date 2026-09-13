@@ -3,38 +3,43 @@ name: distill-to-rutters
 description: Use when an existing Markdown skill instruction should be transformed into transparent Rutters and an operable Voyage dispenser. Do not use for ordinary summarization, general Rutter development, or operating an existing compass.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: assistant-development; topics: assistant-authoring, assistant-architecture, assistant-assurance, repository-workflow; visibility: listed
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 1
-
-Uses Interfaces:
-- `distill-to-rutters.source.design-implementation -> using-compass.interface.default@12`
-- `distill-to-rutters.source.gateway -> distill-to-rutters._rtx.interface.validate-and-route@1`
-- `distill-to-rutters.source.gateway -> distill-to-rutters.source.assign-rutters.interface.assign-rutters@1`
-- `distill-to-rutters.source.gateway -> distill-to-rutters.source.breakdown.interface.breakdown@1`
-- `distill-to-rutters.source.gateway -> distill-to-rutters.source.design-implementation.interface.design-implementation@1`
-- `distill-to-rutters.source.gateway -> distill-to-rutters.source.extract-evolutions.interface.extract-evolutions@1`
-- `distill-to-rutters.source.gateway -> distill-to-rutters.source.finalize.interface.finalize@1`
-- `distill-to-rutters.source.gateway -> distill-to-rutters.source.implement.interface.implement@1`
-- `distill-to-rutters.source.gateway -> distill-to-rutters.source.validate-logic.interface.validate-logic@1`
-- `distill-to-rutters.source.gateway -> distill-to-rutters.source.verify.interface.verify@1`
-
-Public Interfaces:
-- `distill-to-rutters.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
+Executable Interfaces:
+
+Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+- `distill-to-rutters._rtx.interface.validate-and-route` — Validate one source or exact-fixed-basename typed artifact and authorize no more than one deterministic route.
+  - Caller: `distill-to-rutters`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--approved-digest": "SHA256", "--artifact-path": "PATH", "--expected-stage": "STAGE", "--user-decision": "approve|reject"}, "positionals": [], "stdin": null}
+    Required options: ["--approved-digest", "--artifact-path", "--expected-stage", "--user-decision"]; positional arity: 0..0; stdin: forbidden
+
 Instruction Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `distill-to-rutters.interface.default` — Route exactly one approval-authorized stage only after exact workflow identity, recursive freshness, typed predecessor success, and a final consulted-path rehash; then stop for validation.
+These are LLM-readable instruction surfaces. Read and follow them directly; do not invoke the MCP server for them.
+- `distill-to-rutters.source.assign-rutters.interface.assign-rutters@1` — Assign every and only approved part to Rutter-owned execution, preserve exact Rutter, Voyage, workflow, obligation, and coordinator identities, and require coordinator authorization for multi-Voyage policy.
+- `distill-to-rutters.source.breakdown.interface.breakdown@1` — Close recursive contained behavior-defining context, include every generated projection's governing source, reject ready status for missing, unreadable, unresolved, conflicting, or changed rows, and identify behaviorally inseparable work.
+- `distill-to-rutters.source.design-implementation.interface.design-implementation@1` — Design exact target changes only when the owned production public-runtime compatibility predicate passes; otherwise report the exact design block.
+- `distill-to-rutters.source.extract-evolutions.interface.extract-evolutions@1` — Extract assignment-closed evolutions, Voyage membership, coordinator rules, actor-owned decisions, validators, outcomes, and a deterministic transition matrix with valid evolution or terminal targets.
+- `distill-to-rutters.source.finalize.interface.finalize@1` — Finalize projections, write the exact source-stem Compass candidate, and bind its identical contained path and digest in the envelope and 07_entrypoint.md body.
+- `distill-to-rutters.source.implement.interface.implement@1` — Apply exactly one approved design and report complete implemented-only trace correspondence before finalization.
+- `distill-to-rutters.source.validate-logic.interface.validate-logic@1` — Validate that every normative and coordinator obligation has actor-preserving enforcement through a current versioned public Rutter binding contract.
+- `distill-to-rutters.source.verify.interface.verify@1` — Verify the exact approved entrypoint predecessor and candidate identity, orchestration, and semantic preservation; any failed or blocked check prevents verified.
 <!-- END BLUEPRINT INTERFACES -->
 # Distill to Rutters
+
+## First-release scope
+
+This release supports exactly one Rutter and one Voyage. If the approved
+breakdown requires independent Voyages or coordinator policy, route to
+`assignment-gap` and stop. Successful implementation and verification must
+cover every approved logic obligation exactly once. Runtime readiness is based
+on exercised public Rutter, Voyage, VoyageDispenser, and persistence behavior,
+plus the declared executable Compass process-binding dependency; typed
+semantic-capability declarations remain later hardening work.
 
 Turn one Markdown instruction into a review-gated Rutter implementation. The
 gateway routes one stage at a time; stage interfaces own the actual analysis,

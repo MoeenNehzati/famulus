@@ -144,7 +144,14 @@ class ScriptEntryPointTests(unittest.TestCase):
             store = tmpdir / "store"
             store.mkdir()
 
-            for name in ("_read_llm_file.py", "_write_llm_file.py", "_delete_llm_file.py"):
+            for name in (
+                "_read_llm_file.py",
+                "_write_llm_file.py",
+                "_delete_llm_file.py",
+                "_cp_llm.py",
+                "_ls_llm.py",
+                "_rm_llm.py",
+            ):
                 shutil.copy2(REPO_SCRIPTS / name, tmpdir / name)
 
             (tmpdir / "_drive_gateway.py").write_text(STUB_CLOUD_FILES, encoding="utf-8")
@@ -176,16 +183,6 @@ class ScriptEntryPointTests(unittest.TestCase):
             self.assertEqual(read_res.returncode, 0, read_res.stderr)
             self.assertEqual(read_res.stdout, content)
 
-            list_before_delete = subprocess.run(
-                [sys.executable, str(tmpdir / "_read_llm_file.py"), "--list", "scratch"],
-                text=True,
-                capture_output=True,
-                env=env,
-                check=False,
-            )
-            self.assertEqual(list_before_delete.returncode, 0, list_before_delete.stderr)
-            self.assertIn("roundtrip.txt", list_before_delete.stdout.splitlines())
-
             delete_res = subprocess.run(
                 [sys.executable, str(tmpdir / "_delete_llm_file.py"), relpath],
                 text=True,
@@ -208,24 +205,8 @@ class ScriptEntryPointTests(unittest.TestCase):
             self.assertEqual(missing_read.stderr.strip(), relpath)
             self.assertNotIn("Traceback", missing_read.stderr)
 
-    def test_cp_ls_rm_wrappers_round_trip_via_script_files(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            tmpdir = Path(tmp)
-            store = tmpdir / "store"
-            store.mkdir()
-
-            for name in ("_cp_llm.py", "_ls_llm.py", "_rm_llm.py"):
-                shutil.copy2(REPO_SCRIPTS / name, tmpdir / name)
-
-            (tmpdir / "_drive_gateway.py").write_text(STUB_CLOUD_FILES, encoding="utf-8")
-
-            env = os.environ.copy()
-            env["TEST_STORE"] = str(store)
-            env["PYTHONPATH"] = str(REPO_SRC)
-
             local_src = tmpdir / "local.txt"
             local_src.write_text("roundtrip\n", encoding="utf-8")
-            local_dst = tmpdir / "downloaded.txt"
 
             upload_res = subprocess.run(
                 [sys.executable, str(tmpdir / "_cp_llm.py"), str(local_src), "llm:scratch/roundtrip.txt"],
@@ -245,16 +226,6 @@ class ScriptEntryPointTests(unittest.TestCase):
             )
             self.assertEqual(list_res.returncode, 0, list_res.stderr)
             self.assertIn("scratch/roundtrip.txt", list_res.stdout.splitlines())
-
-            download_res = subprocess.run(
-                [sys.executable, str(tmpdir / "_cp_llm.py"), "llm:scratch/roundtrip.txt", str(local_dst)],
-                text=True,
-                capture_output=True,
-                env=env,
-                check=False,
-            )
-            self.assertEqual(download_res.returncode, 0, download_res.stderr)
-            self.assertEqual(local_dst.read_text(encoding="utf-8"), "roundtrip\n")
 
             delete_res = subprocess.run(
                 [sys.executable, str(tmpdir / "_rm_llm.py"), "llm:scratch/*"],

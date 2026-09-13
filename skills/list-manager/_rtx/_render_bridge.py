@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import argparse
-import subprocess
 import sys
 import tempfile
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 from pathlib import Path
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
@@ -21,12 +22,11 @@ _configure_stdio()
 
 try:
     from . import _cloud_transport as cloud_transport
+    from . import _list_beautify, _yaml_store
 except ImportError:
     import _cloud_transport as cloud_transport
-
-SKILL_ROOT = Path(__file__).resolve().parents[0]
-LISTS_PY = SKILL_ROOT / "_yaml_store.py"
-BEAUTIFY_PY = SKILL_ROOT / "_list_beautify.py"
+    import _list_beautify
+    import _yaml_store
 
 
 def download_list(list_name: str, dest_path: Path) -> None:
@@ -36,6 +36,23 @@ def download_list(list_name: str, dest_path: Path) -> None:
     except cloud_transport.CloudTransportError as exc:
         print(f"error: {exc}", file=sys.stderr)
         sys.exit(1)
+
+
+def _run_entrypoint(main, argv: list[str], *, stdin: str = "") -> tuple[int, str, str]:
+    """Run one sibling CLI entrypoint with isolated text streams."""
+
+    stdout, stderr = StringIO(), StringIO()
+    saved_stdin = sys.stdin
+    try:
+        sys.stdin = StringIO(stdin)
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            try:
+                exit_code = main(argv)
+            except SystemExit as exc:
+                exit_code = exc.code if type(exc.code) is int else 1
+    finally:
+        sys.stdin = saved_stdin
+    return int(exit_code or 0), stdout.getvalue(), stderr.getvalue()
 
 
 class Interface(PythonArgvMachineInterface):
@@ -71,31 +88,25 @@ def main(argv: list[str] | None = None) -> int:
         file_to_read = str(temp_path)
 
     try:
-        read_cmd = [sys.executable, str(LISTS_PY), "read", file_to_read]
+        read_args = ["read", file_to_read]
         if args.sort:
-            read_cmd.extend(["--sort", args.sort])
-        read_cmd.extend(args.filters)
-
-        read_result = subprocess.run(
-            read_cmd,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="strict",
-            check=False,
+            read_args.extend(["--sort", args.sort])
+        read_args.extend(args.filters)
+        read_code, read_stdout, read_stderr = _run_entrypoint(
+            _yaml_store.main, read_args
         )
-        if read_result.returncode != 0:
-            if read_result.stdout:
-                print(read_result.stdout, end="")
-            if read_result.stderr:
-                print(read_result.stderr, end="", file=sys.stderr)
-            return read_result.returncode
+        if read_code:
+            if read_stdout:
+                print(read_stdout, end="")
+            if read_stderr:
+                print(read_stderr, end="", file=sys.stderr)
+            return read_code
 
-        beautify_cmd = [sys.executable, str(BEAUTIFY_PY), "--relative-deadlines"]
+        beautify_args = ["--relative-deadlines"]
         if args.diff:
-            beautify_cmd.append("--diff")
+            beautify_args.append("--diff")
         elif args.table:
-            beautify_cmd.append("--table")
+            beautify_args.append("--table")
         else:
             # Force the bullet-list renderer explicitly rather than relying on
             # beautify.py's schema-based auto-detection: filtered `lists.py
@@ -103,33 +114,26 @@ def main(argv: list[str] | None = None) -> int:
             # file was a full document. If the source itself was already a
             # bare entry list (e.g. a caller re-reading an intermediate file),
             # there's no `schema` key to detect from, so force it here.
-            beautify_cmd.append("--markdown")
+            beautify_args.append("--markdown")
         if args.no_descriptions:
-            beautify_cmd.append("--no-descriptions")
+            beautify_args.append("--no-descriptions")
         if not args.no_ids:
-            beautify_cmd.append("--ids")
-
-        pretty = subprocess.run(
-            beautify_cmd,
-            input=read_result.stdout,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="strict",
-            check=False,
+            beautify_args.append("--ids")
+        pretty_code, pretty_stdout, pretty_stderr = _run_entrypoint(
+            _list_beautify.main, beautify_args, stdin=read_stdout
         )
 
         if args.output:
             with open(args.output, "w", encoding="utf-8") as f:
-                if pretty.stdout:
-                    f.write(pretty.stdout)
+                if pretty_stdout:
+                    f.write(pretty_stdout)
         else:
-            if pretty.stdout:
-                print(pretty.stdout, end="")
+            if pretty_stdout:
+                print(pretty_stdout, end="")
 
-        if pretty.stderr:
-            print(pretty.stderr, end="", file=sys.stderr)
-        return pretty.returncode
+        if pretty_stderr:
+            print(pretty_stderr, end="", file=sys.stderr)
+        return pretty_code
     finally:
         if temp_path:
             temp_path.unlink(missing_ok=True)

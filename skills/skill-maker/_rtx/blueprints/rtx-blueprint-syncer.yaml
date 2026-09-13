@@ -3,7 +3,7 @@ content:
 - tests/test_blueprint_tools\.py
 dependencies: []
 description: Loads every skill blueprint, validates cross-skill interface and runtime
-  declarations, and either checks or refreshes generated SKILL.md contract blocks
+  declarations, and either checks or refreshes generated SKILL.md interface blocks
   and the runtime-dependency manifest.
 gateway:
   language: Python
@@ -15,8 +15,6 @@ interfaces:
     - _blueprint_syncer\.py
     - tests/test_blueprint_tools\.py
     uses_interfaces:
-    - interface: common.interface.atomic-files
-      version: 2
     - interface: blueprints.interface.graph
       version: 1
     contract:
@@ -30,14 +28,14 @@ interfaces:
           type:
             kind: flag
       caller_warnings:
-      - external-side-effect: Without --check, generated contract/interface blocks
+      - external-side-effect: Without --check, generated interface blocks
           in every skill SKILL.md and the repository runtime-dependency manifest may
           be replaced.
       direct_io:
         network: []
         reads:
         - access: read
-          content: skill blueprints and generated contracts
+          content: skill blueprints and generated interface blocks
           formats:
           - yaml
           - markdown
@@ -63,14 +61,14 @@ interfaces:
           system: filesystem
         writes:
         - access: write
-          content: generated skill contract and interface blocks
+          content: generated skill interface blocks
           formats:
           - markdown
           id: write-1
           medium: repository-filesystem
           path: $repo/skills/*/SKILL.md
           path_match: glob
-          reason: Refresh generated blueprint blocks when --check is absent.
+          reason: Refresh generated skill interface blocks when --check is absent.
           sensitivity: public
           system: filesystem
         - access: write
@@ -104,11 +102,11 @@ interfaces:
             direct_io_ref: write-1
             kind: direct-io
           direct_io_ref: write-1
-          id: skill-contracts
+          id: skill-interfaces
           may_occur_in_outcomes:
           - synchronized
           reversibility:
-            irreversible: Previous generated blocks are replaced in place without
+            irreversible: Previous generated interface blocks are replaced in place without
               separate backups.
           value_source:
             direct_io_ref: read-1
@@ -130,8 +128,8 @@ interfaces:
         lifecycle: finite
         mutation_safety:
           atomicity:
-            per_effect_only: Consumer interface blocks use atomic replacement, while
-              root SKILL.md blocks and the runtime manifest use direct text writes.
+            non_atomic: SKILL.md interface blocks and the runtime manifest use separate
+              direct text writes.
           concurrent_invocations:
             unsafe: Concurrent sync invocations are not serialized and may race on
               generated files.
@@ -166,7 +164,7 @@ interfaces:
       - caller_action: Review the refreshed generated artifacts.
         class: success
         effects:
-        - skill-contracts
+        - skill-interfaces
         - runtime-manifest
         id: synchronized
         outputs: []
@@ -197,7 +195,7 @@ interfaces:
           sensitivity: derived-private
       preconditions: []
     description: Validate every skill blueprint and either check or refresh generated
-      SKILL.md contract blocks and the runtime-dependency manifest.
+      SKILL.md interface blocks and the runtime-dependency manifest.
     process_binding:
       entry: Interface
       kind: process
@@ -236,8 +234,6 @@ runtime_dependencies:
   version: any
 schema_version: 6
 uses_interfaces:
-- interface: common.interface.atomic-files
-  version: 2
 - interface: blueprints.interface.graph
   version: 1
 version: 1

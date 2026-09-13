@@ -33,7 +33,7 @@ from officina.common.python_source_cache import PythonSourceCache
 from pyflakes import checker as pyflakes_checker
 from pyflakes import messages as pyflakes_messages
 
-_CHECK_ROOTS = ["skills", "src", "script_dispatcher", "validators"]
+_CHECK_ROOTS = ["skills", "src", "validators"]
 _SKIP_PARTS = {"__pycache__", ".git", ".claude-plugin", ".codex-plugin", "logs", "_build"}
 
 # UndefinedLocal is "local variable referenced before assignment"; UndefinedName

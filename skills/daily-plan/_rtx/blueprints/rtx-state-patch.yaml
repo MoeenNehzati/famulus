@@ -324,8 +324,8 @@ interfaces:
         positional_patterns:
           '0': ^set-deadline$
           '1': ^(actions|triage)$
-    usage: '[--date <M-D-YY|YYYY-MM-DD>] {hide,show,keep,remove,mark-done,reject,set-deadline,add}
-      ...'
+    usage: '[--date <M-D-YY|YYYY-MM-DD>] <hide|show|keep|remove|mark-done|reject|set-deadline|add>
+      <actions|triage> <indices-or-item-id> [<deadline-for-set-deadline>]'
     version: 1
 node_type: behavioral_source
 platform_support:

@@ -1,4 +1,4 @@
-"""Pure version 5 interface authorization over a loaded blueprint graph."""
+"""Pure interface authorization over the canonical blueprint graph."""
 
 from __future__ import annotations
 
@@ -378,9 +378,9 @@ def resolve_interface_authorization(
     graph: RepositoryBlueprintGraph,
     request: AuthorizationRequest,
 ) -> AuthorizationResult:
-    """Resolve one v5 interface request without filesystem or certificate I/O."""
+    """Resolve one interface request without filesystem or certificate I/O."""
 
-    if graph.schema_version not in {5, 6}:
+    if graph.schema_version != 6:
         return _result(
             graph,
             request,
@@ -704,7 +704,7 @@ def _validate_authorization_declarations(
 ) -> None:
     """Resolve every authored caller reference once during graph validation."""
 
-    if graph.schema_version not in {5, 6}:
+    if graph.schema_version != 6:
         return
     declarations: list[tuple[str, str, str, object]] = []
     for interface_id, export in graph.exports.items():

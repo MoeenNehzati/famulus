@@ -8,6 +8,7 @@ from typing import Iterable
 
 from ..elk_html_renderer import ElkHtmlRenderer
 from ..artifacts import GraphArtifactWriter
+from ..html_renderer.quick_guides.default import DEFAULT_QUICK_GUIDE
 from .extractor import build_blueprint_payload
 
 
@@ -15,7 +16,7 @@ class BlueprintVisualizer:
     """Build canonical JSON and standalone HTML from repository blueprints."""
 
     def __init__(self, *, renderer: ElkHtmlRenderer | None = None) -> None:
-        self.renderer = renderer or ElkHtmlRenderer()
+        self.renderer = renderer or ElkHtmlRenderer(quick_guide=DEFAULT_QUICK_GUIDE)
         self.artifacts = GraphArtifactWriter(self.renderer)
 
     def build(

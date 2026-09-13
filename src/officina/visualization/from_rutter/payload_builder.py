@@ -267,6 +267,7 @@ def build_rutter_payload(rutter_class: Rutter | type[Rutter]) -> dict[str, Any]:
                 "id": evolution_id,
                 "type": _evolution_kind(evolution),
                 "short_title": evolution_id,
+                "subtitle": _evolution_kind(evolution).replace("-", " "),
                 "label": evolution_id,
                 "position": position,
                 "description": description,

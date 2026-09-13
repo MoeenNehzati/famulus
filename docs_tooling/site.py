@@ -16,6 +16,8 @@ publication policy and creation of the repository blueprint artifact.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
+import json
 from pathlib import Path
 import posixpath
 import re
@@ -25,6 +27,19 @@ from urllib.parse import quote
 
 DEFAULT_REPOSITORY_URL = "https://github.com/MoeenNehzati/famulus"
 DEFAULT_REPOSITORY_REF = "master"
+
+# Checked-in graph specifications published as standalone pages, mapping page
+# stem to its repository-relative specification and link label.  These are
+# skill outputs, so a visitor sees what the producing skill actually generates.
+PUBLISHED_GRAPHS: dict[str, tuple[Path, str]] = {
+    "math-dependency": (
+        Path(
+            "skills/math-dependency-graph/assets/inference-from-random-restarts"
+            "/results/extraction-latest.json"
+        ),
+        "Math dependency graph of a paper appendix",
+    ),
+}
 
 # Working notes and implementation plans live under ``docs`` for the assistant
 # to read, but they are not documentation. ``superpowers`` is also gitignored,
@@ -134,17 +149,50 @@ def assemble_site(
     if build_graph:
         if graph_builder is None:
             from officina.visualization.from_blueprint.visualizer import (
-                build_blueprint_graph,
+                BlueprintVisualizer,
             )
 
-            graph_builder = build_blueprint_graph
+            graph_builder = BlueprintVisualizer(
+                renderer=_website_graph_renderer()
+            ).build
         graph_builder(
             root,
             output_dir=output / "graphs" / "blueprint",
             name="repository",
             write_json=False,
         )
+    _render_published_graphs(root, output / "graphs")
     return output
+
+
+def _render_published_graphs(root: Path, destination: Path) -> None:
+    """Render each checked-in graph specification as a standalone page."""
+
+    from officina.visualization.artifacts import GraphArtifactWriter
+
+    writer = GraphArtifactWriter(_website_graph_renderer())
+    for stem, (relative, _) in PUBLISHED_GRAPHS.items():
+        source = root / relative
+        # A repository without the specification simply publishes no graph;
+        # a test that checks the manifest owns that failure instead.
+        if source.is_file():
+            writer.write(
+                json.loads(source.read_text(encoding="utf-8")),
+                output_dir=destination,
+                stem=stem,
+                write_payload=False,
+            )
+
+
+def _website_graph_renderer():
+    """Return the renderer configuration used by graph pages on the website."""
+
+    from officina.visualization.elk_html_renderer import ElkHtmlRenderer
+    from officina.visualization.html_renderer.quick_guides.default import DEFAULT_QUICK_GUIDE
+
+    return ElkHtmlRenderer(
+        quick_guide=replace(DEFAULT_QUICK_GUIDE, open_by_default=True)
+    )
 
 
 def _validate_output_path(root: Path, docs_root: Path, output: Path) -> None:
@@ -182,13 +230,18 @@ def _published_paths(repo_root: Path, docs_root: Path) -> dict[Path, Path]:
 
 
 def _clear_managed_site_sources(output: Path) -> None:
-    """Remove stale staged docs while retaining a previously built blueprint."""
+    """Remove stale staged docs while retaining previously built graphs.
 
+    Only ``assemble_site`` renders graphs, so a live-reload pass through this
+    function must leave them alone or nothing would rebuild them.
+    """
+
+    retained = {"blueprint"} | {f"{stem}.html" for stem in PUBLISHED_GRAPHS}
     output.mkdir(parents=True, exist_ok=True)
     for child in output.iterdir():
         if child.name == "graphs" and child.is_dir() and not child.is_symlink():
             for graph_child in child.iterdir():
-                if graph_child.name == "blueprint":
+                if graph_child.name in retained:
                     continue
                 _remove_path(graph_child)
             continue
@@ -207,13 +260,14 @@ def _remove_path(path: Path) -> None:
 
 
 def _write_graph_index(destination: Path) -> None:
-    """Write the navigable page that owns the interactive graph link."""
+    """Write the navigable page that owns the interactive graph links."""
 
     lines = [
         "# Graphs",
         "",
         "- [Interactive repository blueprint](blueprint/repository.html)",
     ]
+    lines += [f"- [{label}]({stem}.html)" for stem, (_, label) in PUBLISHED_GRAPHS.items()]
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text("\n".join(lines) + "\n", encoding="utf-8")
 

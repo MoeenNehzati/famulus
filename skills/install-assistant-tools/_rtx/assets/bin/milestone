@@ -1,2 +1,0 @@
-#!/bin/sh
-exec dispatcher --caller-skill install-assistant-tools milestone-logging._rtx.interface.record "$@"

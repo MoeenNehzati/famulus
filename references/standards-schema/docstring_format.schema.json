@@ -8,7 +8,7 @@
   "required": ["docstring_format_version", "name", "callable"],
   "examples": [
     {
-      "docstring_format_version": 27,
+      "docstring_format_version": 31,
       "name": "docstring_format",
       "strict": true,
       "callable": {
@@ -104,10 +104,8 @@
           "instantiates_section": "InstantiationsFromRepo",
           "dispatches_section": "Dispatches",
           "allow_implicit": true,
-          "allow_legacy_flat": false,
           "require_why": true,
           "dependency_why": {
-            "allow_legacy_string": false,
             "misc_min_chars": 80,
             "actions": [
               "reads",
@@ -263,17 +261,11 @@
     }
   ],
   "properties": {
-    "docstring_schema_version": {
-      "type": "integer",
-      "minimum": 1,
-    "description": "Legacy alias kept for compatibility with earlier schema naming.",
-    "examples": [23]
-    },
     "docstring_format_version": {
       "type": "integer",
       "minimum": 1,
       "description": "Current policy version for this docstring format contract.",
-      "examples": [23]
+      "examples": [31]
     },
     "name": {
       "type": "string",
@@ -358,7 +350,6 @@
             "instantiates_section": {"type": "string"},
             "dispatches_section": {"type": "string"},
             "allow_implicit": {"type": "boolean"},
-            "allow_legacy_flat": {"type": "boolean"},
             "require_why": {"type": "boolean"},
             "validate_declared_calls": {"type": "boolean"},
             "validate_declared_instantiations": {"type": "boolean"},
@@ -377,7 +368,6 @@
                   "type": "array",
                   "items": {"type": "string"}
                 },
-                "allow_legacy_string": {"type": "boolean"},
                 "misc_min_chars": {"type": "integer", "minimum": 0}
               }
             },

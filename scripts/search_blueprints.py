@@ -36,7 +36,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--query-file",
         type=Path,
-        help="YAML or JSON query file. If omitted, generic v4 node metadata is returned.",
+        help="YAML or JSON query file. If omitted, canonical node metadata is returned.",
     )
     parser.add_argument(
         "--pretty",

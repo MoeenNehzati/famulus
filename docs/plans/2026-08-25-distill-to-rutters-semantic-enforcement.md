@@ -1,5 +1,43 @@
 # Distill-to-Rutters Semantic Enforcement Plan
 
+> **First-release scope (2026-09-07):** The initial working release supports
+> exactly one Rutter and one Voyage. A source that genuinely requires
+> independent Voyages or coordinator policy returns `assignment-gap` instead
+> of constructing a partial coordinator. Success requires exact logic-obligation
+> coverage in implementation and verification, and unavailable governing
+> sources are represented truthfully by `breakdown-gap`. Runtime readiness is
+> established by exercised public Rutter, Voyage, persistence, VoyageDispenser,
+> and the declared executable Compass process-binding dependency. Typed
+> semantic-capability declarations, multi-Voyage coordination, and final
+> rehashes on non-advancing routes remain post-first-release hardening. This
+> note narrows conflicting requirements below for the first release; it does
+> not mark unchecked work complete.
+
+## First-release implementation status (2026-09-07)
+
+- [x] Enforce the single-Rutter, single-Voyage boundary and return an assignment
+  gap when independent Voyages or coordinator policy are required.
+- [x] Require implemented and verified traces to cover every approved logic
+  obligation exactly once.
+- [x] Permit unavailable governing sources to be represented truthfully by a
+  `breakdown-gap` artifact.
+- [x] Exercise the public Rutter, Voyage, persistence, and VoyageDispenser
+  surfaces and validate the declared executable Compass process binding. A
+  runtime exception produces typed `design-blocked` evidence.
+- [x] Pass the five focused distillation test files through `repo_checks.py`
+  (`176 passed`), the worktree blueprint validator (`1 passed`), and
+  `git diff --check`.
+- [ ] Complete one live single-Rutter distillation through all eight approval
+  gates. The worktree-local dispatcher produced `01_breakdown.md` for the
+  `inseparable` fixture with outcome `breakdown-ready`; that artifact remains
+  unapproved and intentionally outside this implementation commit.
+
+The dispatcher-wide blueprint-sync check is not evidence for this worktree: it
+inspected the installed plugin cache and reported 13 unrelated out-of-sync
+skills. No files outside `distill-to-rutters` and this plan are in release
+scope. The first release remains a candidate until the live approval chain and
+exact-entrypoint verification complete.
+
 > **For agentic workers:** implement Phase A in the current checkout. Do not begin Phase B until its public-runtime prerequisite is verified. Use `superpowers:test-driven-development` for implementation and request separate authorization before staging or committing.
 
 **Goal:** Preserve the observable job of a source Markdown instruction while making the generated Rutter own every enforceable algorithmic decision. Human or external judgment may remain outside automation, but the Rutter must own when that judgment is requested, what evidence is accepted, and which transition the result authorizes.
@@ -99,8 +137,8 @@ For source `<source-dir>/<source-stem>.md`, the distillation workspace is `<sour
 - [ ] Record the complete new-node closure and distinguish unrelated modifications from this node's generated projections.
 - [ ] Set maturity to `experimental` immediately.
 - [ ] Ensure the root blueprint owns every current instruction, source blueprint, and test; later tasks add `_rtx`, schemas, and fixtures.
-- [ ] Work from an inventory-clean `master` checkout. First run `dispatcher --caller-skill skill-certifier skill-maker._rtx.interface.sync-blueprints --check`; if nested repositories or duplicate module IDs still block inventory, record the exact external blocker and do not claim Phase A complete.
-- [ ] Regenerate with `dispatcher --caller-skill skill-certifier skill-maker._rtx.interface.sync-blueprints`, then rerun the same interface with `--check`; do not hand-edit generated blocks.
+- [ ] Work from an inventory-clean `master` checkout. First run `dispatcher --caller-skill node-certify skill-maker._rtx.interface.sync-blueprints --check`; if nested repositories or duplicate module IDs still block inventory, record the exact external blocker and do not claim Phase A complete.
+- [ ] Regenerate with `dispatcher --caller-skill node-certify skill-maker._rtx.interface.sync-blueprints`, then rerun the same interface with `--check`; do not hand-edit generated blocks.
 - [ ] Run focused skill tests. Enumerate untracked paths with `git ls-files --others --exclude-standard -- skills/distill-to-rutters docs/plans/2026-08-25-distill-to-rutters-semantic-enforcement.md`; run `git diff --no-index --check /dev/null <exact-path>` for each, treating empty whitespace diagnostics—not the expected nonzero difference exit—as clean. Once separately authorized staging makes the baseline tracked, use ordinary `git diff --check` as well.
 - [ ] If the baseline cannot be isolated from existing generated-file changes, stop and request scope guidance; do not create a partial node commit.
 
@@ -324,7 +362,7 @@ On current `master`, Phase A must end as `hardening-complete; runtime-blocked`. 
 - Write: `<source-dir>/<source-stem>_distillation/07_entrypoint.md`
 
 - [ ] Regenerate target-skill blueprints, ownership, runtime dependencies, and documentation before creating the entrypoint candidate.
-- [ ] Run `dispatcher --caller-skill skill-certifier skill-maker._rtx.interface.sync-blueprints --check` from an inventory-clean checkout. If inventory crosses nested worktrees or duplicate IDs, report `verification-blocked`; do not call the repository green.
+- [ ] Run `dispatcher --caller-skill node-certify skill-maker._rtx.interface.sync-blueprints --check` from an inventory-clean checkout. If inventory crosses nested worktrees or duplicate IDs, report `verification-blocked`; do not call the repository green.
 - [ ] Create the one-line entrypoint only if the verified live Compass contract accepts it. Use its exact public binding handoff, not the obsolete `interface@version` guess.
 - [ ] If an authorization or interaction wrapper cannot be represented by that handoff, report `entrypoint-gap`.
 - [ ] Make the `07_entrypoint.md` envelope name `<source-dir>/<source-stem>_distilled.md` as a `kind: deliverable` leaf prerequisite with its raw-byte digest. Record candidate path, source outcome, and gateway interpretation; pause for user validation. Routing to verification rechecks both report and entrypoint digests.

@@ -1,11 +1,11 @@
-"""Validate canonical blueprint source files and generated skill blocks."""
+"""Validate canonical blueprint source files and the generated interface block."""
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 import sys
 from pathlib import Path
-
-import yaml
+from types import ModuleType
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SRC_ROOT = _REPO_ROOT / "src"
@@ -28,31 +28,9 @@ from officina.common.repository_paths import (  # noqa: E402
 )
 
 
-CONTRACT_START = "<!-- BEGIN BLUEPRINT CONTRACT -->"
-CONTRACT_END = "<!-- END BLUEPRINT CONTRACT -->"
 INTERFACES_START = "<!-- BEGIN BLUEPRINT INTERFACES -->"
 INTERFACES_END = "<!-- END BLUEPRINT INTERFACES -->"
 _REGULAR_GIT_MODES = {"100644", "100755"}
-
-
-def repository_schema_version(repo_root: Path) -> int:
-    """Read the required canonical repository schema version."""
-
-    marker = repo_root / "references" / "blueprint-schema" / "blueprint.yaml"
-    try:
-        document = yaml.safe_load(marker.read_text(encoding="utf-8"))
-    except FileNotFoundError as exc:
-        raise ValueError(f"{marker}: canonical schema marker is missing") from exc
-    except (OSError, UnicodeError, yaml.YAMLError) as exc:
-        raise ValueError(
-            f"{marker}: cannot determine repository schema version"
-        ) from exc
-    version = document.get("schema_version") if isinstance(document, dict) else None
-    if version not in {4, 5, 6}:
-        raise ValueError(
-            f"{marker}: repository schema version must be 4, 5, or 6"
-        )
-    return int(version)
 
 
 def _git_tracked_files(
@@ -156,27 +134,50 @@ def _validate_generated_markers(skill_file: Path) -> list[str]:
         return [f"{skill_file}: cannot read SKILL.md: {exc}"]
     errors: list[str] = []
     pairs = (
-        ("blueprint contract", CONTRACT_START, CONTRACT_END),
         ("blueprint interface", INTERFACES_START, INTERFACES_END),
     )
     for label, start, end in pairs:
         start_count = text.count(start)
         end_count = text.count(end)
-        if start_count != end_count:
-            errors.append(f"{skill_file}: {label} markers are unbalanced")
-        if start_count > 1 or end_count > 1:
-            errors.append(f"{skill_file}: {label} block must appear at most once")
-    if CONTRACT_START not in text:
-        errors.append(
-            f"{skill_file}: local skill is missing generated blueprint contract block"
+        reversed_pair = (
+            start_count == end_count == 1
+            and text.find(start) > text.find(end)
         )
+        if start_count != end_count or reversed_pair:
+            errors.append(f"{skill_file}: {label} markers are unbalanced")
+        if start_count != 1 or end_count != 1:
+            errors.append(f"{skill_file}: {label} block must appear exactly once")
     return errors
+
+
+def _load_blueprint_syncer(repo_root: Path) -> ModuleType | None:
+    """Load the repository-local sync checker without launching its CLI."""
+
+    sync_path = (
+        repo_root / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py"
+    )
+    if not sync_path.is_file():
+        return None
+    module_name = "_officina_blueprint_syncer_validator"
+    spec = importlib.util.spec_from_file_location(module_name, sync_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load blueprint syncer: {sync_path}")
+    module = importlib.util.module_from_spec(spec)
+    missing = object()
+    previous = sys.modules.get(module_name, missing)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        if previous is missing:
+            sys.modules.pop(module_name, None)
+        else:
+            sys.modules[module_name] = previous
 
 
 def preflight(
     repo_root: Path,
-    *,
-    expected_schema_version: int = 6,
 ) -> tuple[list[str], RepositoryBlueprintGraph | None]:
     """Own repository graph loading and its canonical diagnostics."""
 
@@ -184,10 +185,6 @@ def preflight(
     skills_root = repo_root / "skills"
     blueprint_template = repo_root / "references" / "blueprint-schema" / "template.yaml"
     schema_root = repo_root / "references" / "blueprint-schema"
-    if expected_schema_version != 6:
-        schema_root = (
-            schema_root / "migrations" / f"v{expected_schema_version}"
-        )
 
     if not skills_root.is_dir():
         return errors, None
@@ -209,7 +206,6 @@ def preflight(
         graph = load_repository_blueprint_graph(
             repo_root,
             schema_root=schema_root,
-            expected_schema_version=expected_schema_version,
         )
     except BlueprintInventoryError as exc:
         errors.extend(
@@ -242,38 +238,26 @@ def validate_with_graph(
     if errors:
         return errors
 
-    sync_script = (
-        repo_root / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py"
-    )
-    if sync_script.is_file():
-        sync_command = [sys.executable, str(sync_script), "--check"]
-        sync_command.extend(
-            ("--schema-version", str(graph.schema_version))
+    syncer = _load_blueprint_syncer(repo_root)
+    if syncer is not None and graph.schema_version == 6:
+        errors.extend(
+            syncer.validate_sync_state(
+                repository_graph=graph,
+                repository_root=repo_root,
+                skills_root=repo_root / "skills",
+                runtime_dependencies_path=(
+                    repo_root
+                    / "references"
+                    / "blueprint-schema"
+                    / "runtime_dependencies.json"
+                ),
+            )
         )
-        result = subprocess.run(
-            sync_command,
-            cwd=repo_root,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="strict",
-            check=False,
-        )
-        if result.returncode != 0:
-            errors.extend(result.stdout.splitlines())
-            errors.extend(result.stderr.splitlines())
     return errors
 
 
-def validate(
-    repo_root: Path,
-    *,
-    expected_schema_version: int = 6,
-) -> list[str]:
-    errors, graph = preflight(
-        repo_root,
-        expected_schema_version=expected_schema_version,
-    )
+def validate(repo_root: Path) -> list[str]:
+    errors, graph = preflight(repo_root)
     if errors or graph is None:
         return errors
     return validate_with_graph(repo_root, graph)

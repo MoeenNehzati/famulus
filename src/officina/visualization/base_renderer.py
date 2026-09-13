@@ -32,14 +32,6 @@ class BaseRenderer:
         """Return a normalized payload."""
         return self.payloads.normalize(graph_json)
 
-    def _normalize_graph_json(self, graph_json: Payload) -> dict[str, Any]:
-        """Normalize one payload using renderer-independent canonicalization rules."""
-        return self.payloads.normalize(graph_json)
-
-    def _edge_from_edge_payload(self, edge: dict[str, Any]) -> dict[str, Any]:
-        """Validate and normalize one edge payload for strict schema compliance."""
-        return self.payloads._normalize_edge(edge)
-
     def validate(self, graph_json: Payload) -> None:
         """Validate one graph payload."""
         self.payloads.validate_prepared(self.payloads.normalize(graph_json))
@@ -97,14 +89,6 @@ class BaseRenderer:
         """Perform graph-level transitive reduction and return a reduced payload."""
         return self.payloads.reduce_transitive_edges(graph_json)
 
-    def _validate_graph_json(self, graph_json: Payload) -> None:
-        """Validate a payload with the local JSON schema and graph invariants."""
-        self.payloads.validate_prepared(self.payloads.normalize(graph_json))
-
-    def _validate_with_json_schema(self, graph_json: dict[str, Any]) -> None:
-        """Validate graph payload against the local JSON schema."""
-        self.payloads.validate_prepared(graph_json)
-
     def _apply_transitive_reduction(
         self,
         graph_json: Payload,
@@ -115,10 +99,6 @@ class BaseRenderer:
     def _render_graph(self, graph_json: Payload, reduction_note: str = "") -> str:
         """Render one normalized payload. Subclasses must provide presentation output."""
         raise NotImplementedError("Concrete renderers must implement _render_graph().")
-
-    def _load_graph_payload_schema(self) -> dict[str, Any]:
-        """Load the shared graph payload schema once."""
-        return self.payloads.schema()
 
 
 __all__ = [

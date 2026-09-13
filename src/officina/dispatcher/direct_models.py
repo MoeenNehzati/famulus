@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Mapping
 
@@ -81,6 +81,7 @@ class ResolvedInvocationMetadata:
     authorization: AuthorizationResult | None = None
     schema_version: int = 6
     diagnostics: tuple[InvocationDiagnostic, ...] = ()
+    output_audiences: dict[str, str] = field(default_factory=dict)
 
     @property
     def caller_skill(self) -> str:
@@ -104,6 +105,7 @@ class ResolvedInvocationMetadata:
             "target_module_id": self.target_module_id,
             "terminal_module_id": self.terminal_module_id,
             "implementing_source_id": self.implementing_source_id,
+            "output_audiences": dict(self.output_audiences),
         }
         if self.python_target is not None:
             payload["python_target"] = {

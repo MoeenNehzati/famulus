@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Focused tests for canonical version-5 blueprint synchronization."""
+"""Focused tests for canonical blueprint synchronization."""
 
 from __future__ import annotations
 
@@ -11,19 +11,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-from test_support.v5_blueprint_fixtures import copy_v5_fixture_tree
 
 
 SYNCER_PATH = REPO_ROOT / "skills" / "skill-maker" / "_rtx" / "_blueprint_syncer.py"
-BLUEPRINT_TEMPLATE = REPO_ROOT / "references" / "blueprint-schema" / "template.yaml"
-V5_SCHEMA_ROOT = REPO_ROOT / "tests" / "fixtures" / "blueprint_schemas" / "v5"
-V5_AUTHORIZATION_FIXTURE = (
-    REPO_ROOT / "tests" / "fixtures" / "blueprint_v5" / "authorization"
-)
 
 
 def load_module(module_name: str, path: Path):
@@ -36,9 +29,15 @@ def load_module(module_name: str, path: Path):
     return module
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def syncer():
-    return load_module("sync_module_blueprints_v5_tests", SYNCER_PATH)
+    return load_module("sync_module_blueprints_tests", SYNCER_PATH)
+
+
+@pytest.fixture(scope="module")
+def blueprints(syncer):
+    """One read-only canonical graph per pytest worker."""
+    return syncer.load_blueprints()
 
 
 def _copy_managed_skill(repo_root: Path) -> Path:
@@ -47,63 +46,13 @@ def _copy_managed_skill(repo_root: Path) -> Path:
     return target
 
 
-def _copy_v5_managed_skill(repo_root: Path) -> tuple[Path, dict[str, object]]:
-    root = copy_v5_fixture_tree(V5_AUTHORIZATION_FIXTURE, repo_root)
-
-    runtime_path = (
-        root
-        / "skills"
-        / "demo"
-        / "_rtx"
-        / "blueprints"
-        / "runtime.yaml"
-    )
-    runtime = yaml.safe_load(runtime_path.read_text(encoding="utf-8"))
-    dependency = {
-        "kind": "python-package",
-        "name": "PyYAML",
-        "version": ">=6",
-        "platforms": {"linux": True, "macos": True, "windows": True},
-        "reason": "Parses YAML.",
-    }
-    runtime["platform_support"] = {
-        "linux": True,
-        "macos": True,
-        "windows": True,
-    }
-    runtime["runtime_dependencies"] = [dependency]
-    runtime["interfaces"][
-        "demo-rtx.source.runtime.interface.execute"
-    ]["process_binding"] = {
-        "kind": "process",
-        "entry": "Interface",
-        "arguments": {},
-        "fixed": [],
-    }
-    runtime_path.write_text(
-        yaml.safe_dump(runtime, sort_keys=False),
-        encoding="utf-8",
-    )
-    return root, dependency
-
-
-def test_blueprint_template_is_canonical_v6_module() -> None:
-    manifest = yaml.safe_load(BLUEPRINT_TEMPLATE.read_text(encoding="utf-8"))
-
-    assert manifest["schema_version"] == 6
-    assert manifest["node_type"] == "module"
-    assert manifest["children"] == {}
-    assert manifest["namespace_exports"] == {}
-
-
-def test_syncer_loads_canonical_v5_modules_from_repository_graph(
+def test_syncer_loads_canonical_module_and_generates_interface_block(
     tmp_path: Path,
     syncer,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _copy_managed_skill(tmp_path)
     monkeypatch.setattr(syncer, "SKILLS_ROOT", tmp_path / "skills")
-
     blueprint = syncer.load_blueprints()["loose-mode"]
 
     assert blueprint.data["node_type"] == "module"
@@ -111,246 +60,701 @@ def test_syncer_loads_canonical_v5_modules_from_repository_graph(
         "loose-mode.source.gateway"
     ].node_type == "behavioral_source"
 
-
-def test_generated_blocks_use_canonical_v5_exports(
-    tmp_path: Path,
-    syncer,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _copy_managed_skill(tmp_path)
-    monkeypatch.setattr(syncer, "SKILLS_ROOT", tmp_path / "skills")
-    blueprint = syncer.load_blueprints()["loose-mode"]
-
-    contract = syncer.generated_contract_block(
-        blueprint.name,
-        blueprint.data,
-        blueprint.repository_graph,
-    )
     interfaces = syncer.generated_interface_block(
         blueprint.name,
         blueprint.repository_graph,
     )
 
-    assert (
-        "Catalog: assistant-interaction; topics: reasoning-control; "
-        "visibility: featured"
-    ) in contract
-    assert "Activation: user-request; persistent modifier: yes" in contract
-    assert "Skill Version: 2" in contract
-    assert "`loose-mode.interface.default`" in contract
-    assert "Instruction Interfaces:" in interfaces
-    assert "`loose-mode.interface.default`" in interfaces
+    assert "Used Interfaces: none" in interfaces
+    assert "`loose-mode.interface.default`" not in interfaces
 
 
-def test_generated_contract_keeps_setup_requirements_separate(syncer) -> None:
-    blueprints = syncer.load_blueprints()
-
-    installer = syncer.generated_contract_block(
-        "install-assistant-tools",
-        blueprints["install-assistant-tools"].data,
-        blueprints["install-assistant-tools"].repository_graph,
-    )
-    google = syncer.generated_contract_block(
-        "connect-google",
-        blueprints["connect-google"].data,
-        blueprints["connect-google"].repository_graph,
-    )
-    lists = syncer.generated_contract_block(
-        "list-manager",
-        blueprints["list-manager"].data,
-        blueprints["list-manager"].repository_graph,
+def test_generated_executable_interface_uses_famulus_metadata(syncer, blueprints) -> None:
+    """Break caught: generated skill guidance falls back to Dispatcher syntax."""
+    interfaces = syncer.generated_interface_block(
+        "milestone-logging",
+        blueprints["milestone-logging"].repository_graph,
     )
 
-    assert "Setup Requires Setup Of: none" in installer
-    assert "Setup Requires Setup Of: none" in google
-    assert "`connect-google.interface.setup@1`" in lists
-    assert (
-        "Setup Order:\n"
-        "1. `connect-google.interface.setup`\n"
-        "2. `list-manager.interface.setup`"
-    ) in lists
-    uses, setup = lists.split("Setup Requires Setup Of:", 1)
-    assert "connect-google.interface.setup" not in uses
-    assert "connect-google.interface.setup" in setup
+    assert "Executable Interfaces:" in interfaces
+    assert "Caller: `milestone-logging`" in interfaces
+    assert "Version: 1" in interfaces
+    assert '"positionals": ["DOING", "PREV"]' in interfaces
+    assert '"--role": "NONEMPTY_ROLE"' in interfaces
+    assert '"--run": "SAFE_RUN_ID"' in interfaces
+    assert '"--step": "NON_NEGATIVE_INTEGER"' in interfaces
+    assert '"--attempt": "NON_NEGATIVE_INTEGER"' in interfaces
+    assert '"--slow": "POSITIVE_DECIMAL_SECONDS"' in interfaces
+    assert '"--evidence": "PATH"' in interfaces
+    assert '"positionals": ["SAFE_RUN_ID"]' in interfaces
+    assert '`milestone-logging._rtx.interface.record-completion`' in interfaces
+    assert '`milestone-logging._rtx.interface.session-path`' in interfaces
+    assert 'Required options: ["--role"]' in interfaces
+    assert all(flag not in interfaces for flag in ('"--done"', '"--path"', '"--list"', '"--json"'))
+    assert "Omit optional positionals and options that are not needed." in interfaces
+    assert "Ordered outer JSON" not in interfaces
+    assert "Alternative: `record-progress`" in interfaces
+    assert "dispatcher --caller-skill" not in interfaces
 
 
-def test_generated_setup_order_deduplicates_transitive_dependencies(syncer) -> None:
-    module_id = "root"
+def test_generated_interface_block_renders_only_direct_gateway_uses(syncer) -> None:
+    """Direct gateway uses reach MCP guidance without transitive leakage."""
+    gateway = "consumer.source.gateway"
+    process = "provider.interface.run"
+    owner = "consumer.interface.owner"
+    unused = "provider.interface.unused"
+    instructions = "provider.interface.instructions"
+    source = "provider.source.cli"
+    unused_source = "provider.source.unused"
+    process_spec = {
+        "description": "Run the provider.",
+        "usage": "",
+        "process_binding": {
+            "kind": "process",
+            "entry": "Interface",
+            "patterns": [
+                {
+                    "name": "default",
+                    "min_positionals": 0,
+                    "max_positionals": 0,
+                    "allow_stdin": False,
+                }
+            ],
+        },
+    }
     graph = SimpleNamespace(
         schema_version=6,
-        module_sources={},
-        nodes={},
+        module_sources={"consumer": (gateway,)},
+        module_ancestry={"consumer": ("consumer",), "provider": ("provider",)},
+        nodes={
+            "consumer": SimpleNamespace(gateway_path=Path("SKILL.md")),
+            gateway: SimpleNamespace(node_id=gateway, gateway_path=Path("SKILL.md")),
+            source: SimpleNamespace(version=1),
+            unused_source: SimpleNamespace(version=1),
+        },
         exports={
-            f"{module_id}.interface.setup": SimpleNamespace(module_node_id=module_id)
-        },
-        setup_requirements={
-            "root.interface.setup": (
-                ("left.interface.setup", 1),
-                ("right.interface.setup", 1),
+            process: SimpleNamespace(
+                interface_id=process,
+                version=1,
+                module_node_id="provider",
+                declaration=process_spec,
+                source_node_id=source,
             ),
-            "left.interface.setup": (("leaf.interface.setup", 1),),
-            "right.interface.setup": (("leaf.interface.setup", 1),),
-            "leaf.interface.setup": (),
+            instructions: SimpleNamespace(
+                interface_id=instructions,
+                version=1,
+                module_node_id="provider",
+                declaration={"description": "Read the provider."},
+                source_node_id=source,
+            ),
+            owner: SimpleNamespace(
+                interface_id=owner,
+                version=1,
+                module_node_id="consumer",
+                declaration=process_spec,
+                source_node_id=source,
+            ),
+            unused: SimpleNamespace(
+                interface_id=unused,
+                version=1,
+                module_node_id="provider",
+                declaration=process_spec,
+                source_node_id=unused_source,
+            ),
+        },
+        source_interfaces={},
+        node_edges=(
+            SimpleNamespace(
+                relation="uses-source",
+                source_id=gateway,
+                target_id=source,
+                required_version=1,
+            ),
+            SimpleNamespace(
+                relation="uses-source",
+                source_id=gateway,
+                target_id=unused_source,
+                required_version=1,
+            ),
+            SimpleNamespace(
+                relation="uses-export",
+                source_id=gateway,
+                target_id=process,
+                required_version=1,
+            ),
+            SimpleNamespace(
+                relation="uses-export",
+                source_id=gateway,
+                target_id=owner,
+                required_version=1,
+            ),
+            SimpleNamespace(
+                relation="uses-export",
+                source_id=gateway,
+                target_id=process,
+                required_version=1,
+            ),
+            SimpleNamespace(
+                relation="uses-export",
+                source_id=gateway,
+                target_id=instructions,
+                required_version=1,
+            ),
+            SimpleNamespace(
+                relation="uses-export",
+                source_id="consumer.source.worker",
+                target_id="provider.interface.transitive",
+                required_version=1,
+            ),
+        ),
+    )
+
+    rendered = syncer.generated_interface_block("consumer", graph)
+
+    assert "`provider.interface.run`" in rendered
+    assert rendered.count("`provider.interface.run`") == 1
+    assert rendered.count("`consumer.interface.owner`") == 1
+    assert "Caller: `consumer`" in rendered
+    assert instructions in rendered
+    assert unused not in rendered
+    assert "provider.interface.transitive" not in rendered
+
+    original_edges = graph.node_edges
+    graph.node_edges = tuple(
+        SimpleNamespace(
+            relation=edge.relation,
+            source_id=edge.source_id,
+            target_id=edge.target_id,
+            required_version=(
+                2
+                if edge.relation == "uses-export" and edge.target_id == process
+                else edge.required_version
+            ),
+        )
+        for edge in original_edges
+    )
+    with pytest.raises(syncer.BlueprintError, match="use version"):
+        syncer.generated_interface_block("consumer", graph)
+
+
+def test_generated_interface_block_rejects_blank_direct_use_description(syncer) -> None:
+    interface_id = "provider.interface.run"
+    gateway = "consumer.source.gateway"
+    graph = SimpleNamespace(
+        nodes={
+            "consumer": SimpleNamespace(gateway_path=Path("SKILL.md")),
+            gateway: SimpleNamespace(node_id=gateway, gateway_path=Path("SKILL.md")),
+        },
+        module_sources={"consumer": (gateway,)},
+        node_edges=(
+            SimpleNamespace(
+                source_id=gateway,
+                relation="uses-export",
+                target_id=interface_id,
+                required_version=1,
+            ),
+        ),
+        exports={
+            interface_id: SimpleNamespace(
+                version=1,
+                declaration={"description": " ", "process_binding": {}},
+            )
+        },
+        source_interfaces={},
+    )
+
+    with pytest.raises(syncer.BlueprintError, match="description"):
+        syncer.generated_interface_block("consumer", graph)
+
+
+def test_generated_interface_block_rejects_unresolved_direct_use(syncer) -> None:
+    gateway = "consumer.source.gateway"
+    graph = SimpleNamespace(
+        nodes={
+            "consumer": SimpleNamespace(gateway_path=Path("SKILL.md")),
+            gateway: SimpleNamespace(node_id=gateway, gateway_path=Path("SKILL.md")),
+        },
+        module_sources={"consumer": (gateway,)},
+        node_edges=(
+            SimpleNamespace(
+                source_id=gateway,
+                relation="uses-export",
+                target_id="provider.interface.missing",
+                required_version=1,
+            ),
+        ),
+        exports={},
+        source_interfaces={},
+    )
+
+    with pytest.raises(syncer.BlueprintError, match="unresolved"):
+        syncer.generated_interface_block("consumer", graph)
+
+
+def test_sync_interface_block_preserves_bytes_outside_existing_markers(syncer) -> None:
+    text = (
+        "---\nname: demo\n---\n\n"
+        "<!-- BEGIN BLUEPRINT INTERFACES -->\nold\n"
+        "<!-- END BLUEPRINT INTERFACES -->\n\n\nBody.\n"
+    )
+    replacement = (
+        "<!-- BEGIN BLUEPRINT INTERFACES -->\nnew\n"
+        "<!-- END BLUEPRINT INTERFACES -->\n"
+    )
+
+    assert syncer.sync_interface_block(text, replacement) == (
+        "---\nname: demo\n---\n\n"
+        "<!-- BEGIN BLUEPRINT INTERFACES -->\nnew\n"
+        "<!-- END BLUEPRINT INTERFACES -->\n\n\nBody.\n"
+    )
+
+
+def test_sync_interface_block_replaces_legacy_contract_without_touching_body(syncer) -> None:
+    """Break caught: interface regeneration leaves the obsolete contract block behind."""
+    text = (
+        "---\nname: demo\n---\n\n"
+        "<!-- BEGIN BLUEPRINT CONTRACT -->\nlegacy\n"
+        "<!-- END BLUEPRINT CONTRACT -->\n"
+        "Body.\n"
+    )
+    replacement = (
+        "<!-- BEGIN BLUEPRINT INTERFACES -->\nnew\n"
+        "<!-- END BLUEPRINT INTERFACES -->\n"
+    )
+
+    assert syncer.sync_interface_block(text, replacement) == (
+        "---\nname: demo\n---\n\n"
+        "<!-- BEGIN BLUEPRINT INTERFACES -->\nnew\n"
+        "<!-- END BLUEPRINT INTERFACES -->\n"
+        "Body.\n"
+    )
+
+
+def test_sync_interface_block_removes_legacy_contract_before_replacing_interface(syncer) -> None:
+    """Break caught: an existing interface block masks a preceding legacy contract."""
+    text = (
+        "---\nname: demo\n---\n\n"
+        "<!-- BEGIN BLUEPRINT CONTRACT -->\nlegacy\n"
+        "<!-- END BLUEPRINT CONTRACT -->\n"
+        "<!-- BEGIN BLUEPRINT INTERFACES -->\nold\n"
+        "<!-- END BLUEPRINT INTERFACES -->\n"
+        "Body.\n"
+    )
+    replacement = (
+        "<!-- BEGIN BLUEPRINT INTERFACES -->\nnew\n"
+        "<!-- END BLUEPRINT INTERFACES -->\n"
+    )
+
+    assert syncer.sync_interface_block(text, replacement) == (
+        "---\nname: demo\n---\n\n"
+        "<!-- BEGIN BLUEPRINT INTERFACES -->\nnew\n"
+        "<!-- END BLUEPRINT INTERFACES -->\n"
+        "Body.\n"
+    )
+
+
+def _managed_gate_graph(
+    *,
+    kind: str = "markdown",
+    opted_in: bool = True,
+    gateway_language: str = "Markdown",
+):
+    module_id = "managed"
+    gateway_id = "managed.source.gateway"
+    setup_interface = "managed.interface.setup"
+    return SimpleNamespace(
+        schema_version=6,
+        module_sources={module_id: (gateway_id,)},
+        module_ancestry={module_id: (module_id,)},
+        nodes={
+            module_id: SimpleNamespace(gateway_path=Path("SKILL.md")),
+            gateway_id: SimpleNamespace(
+                node_id=gateway_id,
+                gateway_path=Path("SKILL.md"),
+                declaration={"gateway": {"language": gateway_language}},
+            ),
+        },
+        node_edges=(),
+        exports={
+            setup_interface: SimpleNamespace(
+                interface_id=setup_interface,
+                module_node_id=module_id,
+                version=1,
+                declaration={"description": "Set up managed."},
+            )
+        },
+        source_interfaces={},
+        managed_setups=(
+            {
+                setup_interface: SimpleNamespace(
+                    setup_interface=setup_interface,
+                    setup_version=1,
+                    teardown_interface="managed.interface.teardown",
+                    teardown_version=1,
+                    kind=kind,
+                )
+            }
+            if opted_in
+            else {}
+        ),
+    )
+
+
+def test_generated_interface_block_includes_one_managed_setup_call(syncer) -> None:
+    """The generated gate makes one concrete call and delegates continuation."""
+    block = syncer.generated_interface_block("managed", _managed_gate_graph())
+
+    assert "### Managed setup" in block
+    assert '"caller": "managed"' in block
+    assert '"interface": "managed.interface.setup"' in block
+    assert '"version": 1' in block
+    assert '"positionals": []' in block
+    assert '"options": {}' in block
+    assert '"stdin": null' in block
+    assert "invoke `famulus_dispatcher.invoke` once" in block
+    assert "Do not repeat this initial call during the session." in block
+    assert "Obtain permission before carrying out setup" in block
+    assert "follow the returned setup-manager instructions exactly" in block
+    assert "managed.interface.teardown" not in block
+    for redundant_interface in (
+        "status", "authorize", "begin", "run-markdown", "run-python", "settle"
+    ):
+        assert f"setup-interface-manager._rtx.interface.{redundant_interface}" not in block
+
+
+def test_generated_interface_block_uses_setup_version(syncer) -> None:
+    """The generated invocation uses the managed setup's exact version."""
+    setup_interface = "no-teardown.interface.setup"
+    graph = SimpleNamespace(
+        schema_version=6,
+        module_sources={"no-teardown": ("no-teardown.source.gateway",)},
+        module_ancestry={"no-teardown": ("no-teardown",)},
+        nodes={
+            "no-teardown": SimpleNamespace(gateway_path=Path("SKILL.md")),
+            "no-teardown.source.gateway": SimpleNamespace(
+                node_id="no-teardown.source.gateway",
+                gateway_path=Path("SKILL.md"),
+                declaration={"gateway": {"language": "Markdown"}},
+            ),
+        },
+        node_edges=(),
+        exports={
+            setup_interface: SimpleNamespace(
+                interface_id=setup_interface,
+                module_node_id="no-teardown",
+                version=1,
+                declaration={"description": "Set up no-teardown."},
+            )
+        },
+        source_interfaces={},
+        managed_setups={
+            setup_interface: SimpleNamespace(
+                setup_interface=setup_interface,
+                setup_version=3,
+                teardown_interface=None,
+                teardown_version=None,
+                kind="markdown",
+            )
         },
     )
-    data = {
-        "version": 1,
-        "discovery": {
-            "catalog": {
-                "domain": "test",
-                "topics": ["setup"],
-                "visibility": "listed",
-            },
-            "activated_by": ["user-request"],
-            "persistent_modifier": False,
-        },
-    }
-
-    contract = syncer.generated_contract_block(module_id, data, graph)
-
-    assert (
-        "Setup Order:\n"
-        "1. `leaf.interface.setup`\n"
-        "2. `left.interface.setup`\n"
-        "3. `right.interface.setup`\n"
-        "4. `root.interface.setup`"
-    ) in contract
-    assert contract.count("`leaf.interface.setup`") == 1
+    block = syncer.generated_interface_block("no-teardown", graph)
+    assert "### Managed setup" in block
+    assert f'"interface": "{setup_interface}"' in block
+    assert '"version": 3' in block
 
 
-def test_v5_generated_views_are_parent_only_and_derive_facade_contract(
-    tmp_path: Path,
-    syncer,
-    monkeypatch: pytest.MonkeyPatch,
+def test_generated_interface_block_limits_and_removes_the_managed_markdown_gate(
+    syncer, blueprints
 ) -> None:
-    root, dependency = _copy_v5_managed_skill(tmp_path / "repo")
-    monkeypatch.setattr(syncer, "SKILLS_ROOT", root / "skills")
-
-    blueprints = syncer.load_blueprints(
-        schema_version=5,
-        schema_root=V5_SCHEMA_ROOT,
+    """Catches gates leaking to bootstrap/plain exports or surviving opt-out."""
+    managed = _managed_gate_graph()
+    block = syncer.generated_interface_block("managed", managed)
+    assert block == syncer.generated_interface_block("managed", managed)
+    assert "### Managed setup" not in syncer.generated_interface_block(
+        "managed", _managed_gate_graph(kind="python")
+    )
+    assert "### Managed setup" not in syncer.generated_interface_block(
+        "managed", _managed_gate_graph(gateway_language="Python")
+    )
+    assert "### Managed setup" not in syncer.generated_interface_block(
+        "managed", _managed_gate_graph(opted_in=False)
+    )
+    bootstrap = blueprints["bootstrap-dispatcher-runtime"]
+    assert "### Managed setup" not in syncer.generated_interface_block(
+        bootstrap.name, bootstrap.repository_graph
     )
 
-    assert set(blueprints) == {"demo"}
-    blueprint = blueprints["demo"]
-    contract = syncer.generated_contract_block(
-        blueprint.name,
-        blueprint.data,
-        blueprint.repository_graph,
+    original = (
+        "---\nname: managed\n---\n\n"
+        "<!-- BEGIN BLUEPRINT INTERFACES -->\nold\n"
+        "<!-- END BLUEPRINT INTERFACES -->\n\nBody bytes stay put.\n"
     )
-    interfaces = syncer.generated_interface_block(
-        blueprint.name,
-        blueprint.repository_graph,
+    gated = syncer.sync_interface_block(original, block)
+    ungated = syncer.sync_interface_block(
+        gated,
+        syncer.generated_interface_block("managed", _managed_gate_graph(opted_in=False)),
     )
-    manifest = syncer.generated_runtime_dependencies_manifest(blueprints)
 
-    assert "`demo.interface.execute`" in contract
-    assert "demo.source.gateway -> demo.interface.execute@3" not in contract
-    assert "demo-rtx.interface.execute" not in contract + interfaces
-    assert "`demo.interface.execute` — Execute the demo." in interfaces
-    assert "dispatcher --caller-skill demo demo.interface.execute" in interfaces
-    assert set(manifest["skills"]) == {"demo"}
-    assert manifest["version"] == 2
-    assert manifest["skills"]["demo"]["interfaces"]["demo.interface.execute"] == {
-        "dependencies": [dependency],
-    }
+    assert gated.startswith("---\nname: managed\n---\n\n")
+    assert gated.endswith("\n\nBody bytes stay put.\n")
+    assert syncer.sync_interface_block(gated, block) == gated
+    assert "### Managed setup" not in ungated
+    assert ungated.startswith("---\nname: managed\n---\n\n")
+    assert ungated.endswith("\n\nBody bytes stay put.\n")
 
 
-def test_v5_generated_facade_view_uses_validated_structural_binding(
-    tmp_path: Path,
-    syncer,
-    monkeypatch: pytest.MonkeyPatch,
+def test_llm_wakeup_generated_interfaces_are_exact(syncer, blueprints) -> None:
+    blueprint = blueprints["llm-wakeup"]
+    skill = blueprint.path.parent / "SKILL.md"
+    generated = skill.read_text(encoding="utf-8")
+
+    assert syncer.generated_interface_block(
+        blueprint.name, blueprint.repository_graph
+    ) in generated
+
+
+def test_public_syncer_repairs_corrupt_llm_wakeup_entry(
+    syncer, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    root, _dependency = _copy_v5_managed_skill(tmp_path / "repo")
-    monkeypatch.setattr(syncer, "SKILLS_ROOT", root / "skills")
-    blueprint = syncer.load_blueprints(
-        schema_version=5,
-        schema_root=V5_SCHEMA_ROOT,
-    )["demo"]
-    terminal = blueprint.repository_graph.exports[
-        "demo-rtx.interface.execute"
-    ]
-    assert isinstance(terminal.export_declaration, dict)
-    terminal.export_declaration["access"] = {
-        "allow_all_modules": False,
-        "allowed_callers": ["outsider"],
-    }
-
-    interfaces = syncer.generated_interface_block(
-        blueprint.name,
-        blueprint.repository_graph,
+    """Break caught: public sync check does not repair a selected external use."""
+    repository = tmp_path / "repository"
+    shutil.copytree(REPO_ROOT / "skills", repository / "skills")
+    shutil.copytree(
+        REPO_ROOT / "references" / "blueprint-schema",
+        repository / "references" / "blueprint-schema",
     )
-
-    assert "`demo.interface.execute` — Execute the demo." in interfaces
-    assert "demo-rtx.interface.execute" not in interfaces
-
-
-def test_v5_syncer_rejects_generated_dispatch_missing_gateway_use(
-    tmp_path: Path,
-    syncer,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    root, _dependency = _copy_v5_managed_skill(tmp_path / "repo")
-    gateway_path = root / "skills" / "demo" / "blueprints" / "gateway.yaml"
-    gateway = yaml.safe_load(gateway_path.read_text(encoding="utf-8"))
-    gateway["uses_interfaces"] = [
-        entry
-        for entry in gateway["uses_interfaces"]
-        if entry["interface"] != "demo.interface.execute"
-    ]
-    gateway_path.write_text(
-        yaml.safe_dump(gateway, sort_keys=False),
-        encoding="utf-8",
+    shutil.copytree(REPO_ROOT / "src", repository / "src")
+    shutil.copytree(
+        REPO_ROOT / "references" / "node-standards",
+        repository / "references" / "node-standards",
     )
-    monkeypatch.setattr(syncer, "SKILLS_ROOT", root / "skills")
-    blueprint = syncer.load_blueprints(
-        schema_version=5,
-        schema_root=V5_SCHEMA_ROOT,
-    )["demo"]
-
-    assert syncer.validate_gateway_declares_generated_dispatches(
-        blueprint.name,
-        blueprint.repository_graph,
-    ) == [
-        "demo.source.gateway: generated dispatcher exports are missing from "
-        "uses_interfaces: demo.interface.execute@3"
-    ]
-
-
-def test_sync_module_check_then_refreshes_generated_blocks(
-    tmp_path: Path,
-    syncer,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    module_root = _copy_managed_skill(tmp_path)
-    monkeypatch.setattr(syncer, "SKILLS_ROOT", tmp_path / "skills")
-    blueprint = syncer.load_blueprints()["loose-mode"]
-    gateway = module_root / "SKILL.md"
-    gateway.write_text(
-        gateway.read_text(encoding="utf-8").replace(
-            "Catalog: assistant-interaction; topics: reasoning-control; "
-            "visibility: featured",
-            "Catalog: stale",
+    shutil.copy2(REPO_ROOT / "officina.toml", repository / "officina.toml")
+    monkeypatch.setattr(syncer, "REPO_ROOT", repository)
+    monkeypatch.setattr(syncer, "SKILLS_ROOT", repository / "skills")
+    monkeypatch.setattr(
+        syncer,
+        "BLUEPRINT_SCHEMA_ROOT",
+        repository / "references" / "blueprint-schema",
+    )
+    monkeypatch.setattr(
+        syncer,
+        "RUNTIME_DEPENDENCIES_PATH",
+        repository / "references" / "blueprint-schema" / "runtime_dependencies.json",
+    )
+    skill = repository / "skills" / "llm-wakeup" / "SKILL.md"
+    original = skill.read_text(encoding="utf-8")
+    start = original.index(syncer.INTERFACES_START)
+    skill.write_text(
+        original[:start]
+        + original[start:].replace(
+            "`llm-wakeup._rtx.interface.explicit-schedule`",
+            "`llm-wakeup._rtx.interface.removed`",
             1,
         ),
         encoding="utf-8",
     )
 
-    assert syncer.sync_module(blueprint, check_only=True) == [
-        f"{gateway}: generated blueprint blocks are out of sync"
-    ]
-    assert syncer.sync_module(blueprint, check_only=False) == []
-    assert syncer.sync_module(blueprint, check_only=True) == []
+    check = SimpleNamespace(check=True, schema_version=6)
+    assert syncer.Interface().run(check) == 1
+    assert syncer.Interface().run(SimpleNamespace(check=False, schema_version=6)) == 0
+
+    blueprint = syncer.load_blueprints()["llm-wakeup"]
+    repaired = skill.read_text(encoding="utf-8")
+    assert syncer.generated_interface_block(
+        blueprint.name, blueprint.repository_graph
+    ) in repaired
+    assert syncer.Interface().run(check) == 0
 
 
-def test_generated_contract_requires_catalog_discovery(syncer) -> None:
-    graph = SimpleNamespace(module_sources={}, nodes={}, exports={})
+def test_generated_executable_preserves_patterns_placeholders_and_arity(
+    syncer, blueprints
+) -> None:
+    """Catch lossy aliases, arity, placeholders, or generated fallbacks."""
+    graph = blueprints["email-client"].repository_graph
 
-    with pytest.raises(syncer.BlueprintError, match="discovery.*mapping"):
-        syncer.generated_contract_block(
-            "demo-skill",
-            {"version": 1},
+    interfaces = syncer.generated_interface_block("email-client", graph)
+    start = interfaces.index("email-client._rtx.interface.mail-attachments")
+    end = interfaces.index("email-client._rtx.interface.mail-folders")
+    attachments = interfaces[start:end]
+
+    assert "Alternative: `short-account`" in attachments
+    short_attachments = attachments[:attachments.index("Alternative: `long-account`")]
+    assert 'Required options: ["-a"]; positional arity: 1..unbounded; stdin: forbidden' in short_attachments
+    assert '"positionals": ["uid", "uid..."]' in short_attachments
+    assert '"-a": "nickname"' in short_attachments
+    assert '"--folder": "inbox|sent|drafts|trash|all|<literal>"' in short_attachments
+    assert '"--account":' not in short_attachments
+    long_attachments = attachments[attachments.index("Alternative: `long-account`"):]
+    assert '"positionals": ["uid", "uid..."]' in long_attachments
+    assert '"--account": "nickname"' in long_attachments
+    assert '"-a":' not in long_attachments
+    folders = interfaces[interfaces.index("email-client._rtx.interface.mail-folders"):]
+    assert "Alternative: `long-account`" in folders
+    assert 'Required options: ["--account"]' in folders
+    assert "stdin: permitted" in interfaces
+
+    assert '"--attach": "/path[:DisplayName]"' in interfaces
+    for skill in ("email-client", "daily-plan", "node-certify", "node-drift"):
+        blueprint = blueprints[skill]
+        generated = syncer.generated_interface_block(
+            skill, blueprint.repository_graph
+        )
+        assert "POSITIONAL_" not in generated
+
+    daily = syncer.generated_interface_block(
+        "daily-plan", blueprints["daily-plan"].repository_graph
+    )
+    indexed = daily[daily.index("Alternative: `indexed-or-add`"):daily.index("Alternative: `set-deadline`")]
+    assert "set-deadline" not in indexed
+    assert '"positionals": ["set-deadline", "actions|triage", "indices-or-item-id", "deadline-for-set-deadline"]' in daily
+
+    triage = syncer.generated_interface_block(
+        "email-triage", blueprints["email-triage"].repository_graph
+    )
+    assert '"--total-scanned": "N"' in triage
+    assert '"--added-todo": "N"' in triage
+
+
+def test_generated_executable_rejects_ambiguous_usage_and_option_alias(syncer) -> None:
+    graph = syncer.load_blueprints()["email-client"].repository_graph
+    attachments = graph.exports[
+        "email-client._rtx.interface.mail-attachments"
+    ].declaration
+    original_usage = attachments["usage"]
+    attachments["usage"] = ""
+
+    with pytest.raises(
+        syncer.BlueprintError,
+        match="usage cannot be projected unambiguously",
+    ):
+        syncer.generated_interface_block("email-client", graph)
+
+    attachments["usage"] = original_usage
+    export = graph.exports["email-client._rtx.interface.mail-folders"]
+    spec = export.declaration
+    long_pattern = spec["process_binding"]["patterns"][1]
+    spec["process_binding"]["patterns"] = [long_pattern]
+    spec["usage"] = "-a <nickname> -b <other>"
+    long_pattern["forbidden_flags"] = ["-a", "-b"]
+
+    with pytest.raises(syncer.BlueprintError, match="ambiguous option alias"):
+        syncer.generated_interface_block("email-client", graph)
+
+
+def _blueprints_with_unprojectable_usage(tmp_path: Path, syncer):
+    skill_dir = tmp_path / "skills" / "consumer"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: consumer\n---\n\nInstructions.\n",
+        encoding="utf-8",
+    )
+    interface_id = "provider.interface.run"
+    gateway_path = skill_dir / "SKILL.md"
+    graph = SimpleNamespace(
+        nodes={
+            "consumer": SimpleNamespace(gateway_path=gateway_path),
+            "consumer.source.gateway": SimpleNamespace(
+                node_id="consumer.source.gateway",
+                gateway_path=gateway_path,
+            ),
+        },
+        module_sources={"consumer": ("consumer.source.gateway",)},
+        node_edges=(
+            SimpleNamespace(
+                source_id="consumer.source.gateway",
+                relation="uses-export",
+                target_id=interface_id,
+                required_version=1,
+            ),
+        ),
+        exports={
+            interface_id: SimpleNamespace(
+                version=1,
+                declaration={
+                    "description": "Run.",
+                    "usage": "",
+                    "process_binding": {
+                        "kind": "process",
+                        "min_positionals": 1,
+                        "max_positionals": 1,
+                    },
+                },
+            ),
+        },
+        source_interfaces={},
+    )
+    return {
+        "consumer": syncer.ModuleBlueprint(
+            "consumer",
+            skill_dir / "blueprint.yaml",
+            {},
             graph,
+        )
+    }
+
+
+def test_run_sync_reports_usage_projection_error(
+    tmp_path: Path,
+    syncer,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    blueprints = _blueprints_with_unprojectable_usage(tmp_path, syncer)
+    monkeypatch.setattr(syncer, "load_blueprints", lambda: blueprints)
+
+    assert syncer.run_sync(check_only=True) == 1
+    assert capsys.readouterr().err == (
+        "error: provider.interface.run: usage cannot be projected "
+        "unambiguously: positional labels\n"
+    )
+
+
+def test_validate_sync_state_returns_usage_projection_diagnostic(
+    tmp_path: Path,
+    syncer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    blueprints = _blueprints_with_unprojectable_usage(tmp_path, syncer)
+    monkeypatch.setattr(
+        syncer,
+        "blueprints_from_graph",
+        lambda _graph, *, skills_root: blueprints,
+    )
+
+    assert syncer.validate_sync_state(
+        repository_graph=SimpleNamespace(schema_version=6),
+        repository_root=tmp_path,
+        skills_root=tmp_path / "skills",
+        runtime_dependencies_path=tmp_path / "runtime_dependencies.json",
+    ) == [
+        "provider.interface.run: usage cannot be projected unambiguously: "
+        "positional labels"
+    ]
+
+
+def test_validate_sync_state_does_not_swallow_unrelated_errors(
+    tmp_path: Path,
+    syncer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    blueprints = _blueprints_with_unprojectable_usage(tmp_path, syncer)
+    monkeypatch.setattr(
+        syncer,
+        "blueprints_from_graph",
+        lambda _graph, *, skills_root: blueprints,
+    )
+
+    def _unexpected_failure(*_args: object, **_kwargs: object) -> list[str]:
+        raise RuntimeError("unrelated failure")
+
+    monkeypatch.setattr(syncer, "sync_module", _unexpected_failure)
+
+    with pytest.raises(RuntimeError, match="unrelated failure"):
+        syncer.validate_sync_state(
+            repository_graph=SimpleNamespace(schema_version=6),
+            repository_root=tmp_path,
+            skills_root=tmp_path / "skills",
+            runtime_dependencies_path=tmp_path / "runtime_dependencies.json",
         )
 
 
@@ -517,140 +921,52 @@ def test_runtime_dependency_manifest_v2_keeps_all_descendant_interface_ids(synce
     assert interfaces["demo.worker.interface.run"]["dependencies"] == [dependencies["demo.worker"]]
 
 
-def test_consumer_blocks_use_root_and_named_gateway_placement(
-    tmp_path: Path,
-    syncer,
-) -> None:
-    module_root = tmp_path / "demo-skill"
-    root_gateway = module_root / "SKILL.md"
-    named_gateway = module_root / "instructions" / "coach.md"
-    named_gateway.parent.mkdir(parents=True)
-    root_gateway.write_text(
-        "---\nname: demo-skill\n---\n"
-        f"{syncer.CONTRACT_START}\nContract\n{syncer.CONTRACT_END}\n"
-        "Root body.\n",
-        encoding="utf-8",
-    )
-    named_gateway.write_text("Named body.\n", encoding="utf-8")
-    graph = SimpleNamespace(
-        nodes={
-            "demo-skill.source.gateway": SimpleNamespace(
-                node_type="behavioral_source",
-                gateway_path=root_gateway,
-                module_root=module_root,
-            ),
-            "demo-skill.source.coach": SimpleNamespace(
-                node_type="behavioral_source",
-                gateway_path=named_gateway,
-                module_root=module_root,
-            ),
-        }
-    )
-    selected = {
-        "schema_version": 2,
-        "consumer": "demo-skill.source.gateway",
-        "interfaces": {"provider.interface.run": {"id": "provider.interface.run"}},
-        "helper_interfaces": {},
-        "definitions": {},
-    }
-    projections = {
-        "demo-skill.source.gateway": SimpleNamespace(document=selected),
-        "demo-skill.source.coach": SimpleNamespace(
-            document={**selected, "consumer": "demo-skill.source.coach"}
-        ),
-    }
-
-    planned = syncer.plan_consumer_interface_updates(graph, projections)
-
-    assert planned[root_gateway].index(syncer.USED_INTERFACES_START) > planned[
-        root_gateway
-    ].index(syncer.CONTRACT_END)
-    assert planned[named_gateway].startswith(syncer.USED_INTERFACES_START)
-    assert planned[named_gateway].endswith("Named body.\n")
-
-
-def test_consumer_update_planning_rejects_shared_gateway(
-    tmp_path: Path,
-    syncer,
-) -> None:
-    module_root = tmp_path / "demo-skill"
-    module_root.mkdir()
-    gateway = module_root / "instructions.md"
-    gateway.write_text("Body.\n", encoding="utf-8")
-    graph = SimpleNamespace(
-        nodes={
-            node_id: SimpleNamespace(
-                node_type="behavioral_source",
-                gateway_path=gateway,
-                module_root=module_root,
-            )
-            for node_id in ("demo-skill.source.one", "demo-skill.source.two")
-        }
-    )
-    projections = {
-        node_id: SimpleNamespace(
-            document={
-                "schema_version": 2,
-                "consumer": node_id,
-                "interfaces": {},
-                "helper_interfaces": {},
-                "definitions": {},
-            }
-        )
-        for node_id in graph.nodes
-    }
-
-    with pytest.raises(syncer.BlueprintError, match="shared by consumers"):
-        syncer.plan_consumer_interface_updates(graph, projections)
-
-
-def test_generated_used_interface_block_is_deterministic(syncer) -> None:
-    document = {
-        "schema_version": 2,
-        "consumer": "demo-skill.source.gateway",
-        "interfaces": {"provider.interface.run": {"version": 1}},
-        "helper_interfaces": {},
-        "definitions": {},
-    }
-
-    first = syncer.generated_used_interfaces_block(document)
-    second = syncer.generated_used_interfaces_block(
-        json.loads(json.dumps(document))
-    )
-
-    assert first == second
-    assert first.startswith(syncer.USED_INTERFACES_START)
-    assert first.endswith(f"{syncer.USED_INTERFACES_END}\n")
-
-
-def test_sync_does_not_create_dispatch_routing_state(
+def test_validate_sync_state_reuses_the_provided_graph(
     tmp_path: Path,
     syncer,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    repo_root, _dependency = _copy_v5_managed_skill(tmp_path / "repo")
-    skill_file = repo_root / "skills" / "demo" / "SKILL.md"
-    skill_file.write_text(
-        "---\nname: demo\ndescription: Test fixture.\n---\n\nInstructions.\n",
+    _copy_managed_skill(tmp_path)
+    skills_root = tmp_path / "skills"
+    monkeypatch.setattr(syncer, "SKILLS_ROOT", skills_root)
+    graph = syncer.load_blueprints()["loose-mode"].repository_graph
+    skill_path = skills_root / "loose-mode" / "SKILL.md"
+    skill_path.write_text(
+        syncer.sync_interface_block(
+            skill_path.read_text(encoding="utf-8"),
+            syncer.generated_interface_block("loose-mode", graph),
+        ),
         encoding="utf-8",
     )
-    manifest = repo_root / "references" / "blueprint-schema" / "runtime_dependencies.json"
-    manifest.parent.mkdir(parents=True)
-    monkeypatch.setattr(syncer, "REPO_ROOT", repo_root)
-    monkeypatch.setattr(syncer, "SKILLS_ROOT", repo_root / "skills")
-    monkeypatch.setattr(syncer, "RUNTIME_DEPENDENCIES_PATH", manifest)
-    original_load_blueprints = syncer.load_blueprints
+    runtime_dependencies_path = (
+        tmp_path / "references" / "blueprint-schema" / "runtime_dependencies.json"
+    )
+    runtime_dependencies_path.parent.mkdir(parents=True)
+    blueprints = syncer.blueprints_from_graph(
+        graph,
+        skills_root=skills_root,
+    )
+    runtime_dependencies_path.write_text(
+        json.dumps(
+            syncer.generated_runtime_dependencies_manifest(blueprints),
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    def _unexpected_graph_load(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("sync-state checking must use the supplied graph")
+
     monkeypatch.setattr(
         syncer,
-        "load_blueprints",
-        lambda **kwargs: original_load_blueprints(
-            schema_root=V5_SCHEMA_ROOT,
-            **kwargs,
-        ),
+        "load_repository_blueprint_graph",
+        _unexpected_graph_load,
     )
-    data_home = tmp_path / "data"
-    monkeypatch.setenv("XDG_DATA_HOME", str(data_home))
 
-    assert syncer.run_sync(check_only=False, schema_version=5) == 0
-    assert syncer.run_sync(check_only=True, schema_version=5) == 0
-    assert not data_home.exists()
+    assert syncer.validate_sync_state(
+        repository_graph=graph,
+        repository_root=tmp_path,
+        skills_root=skills_root,
+        runtime_dependencies_path=runtime_dependencies_path,
+    ) == []

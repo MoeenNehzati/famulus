@@ -23,6 +23,7 @@ from validators.skill_md_body import (  # noqa: E402
     strip_fenced_code_blocks,
 )
 REQUIRES_BLUEPRINT_GRAPH = True
+_DISPATCHER_CLI_RE = re.compile(r"\bdispatcher\b[^\n]*\s--caller-skill\b")
 
 
 def _body_for_invocation_check(text: str) -> str:
@@ -57,7 +58,7 @@ def _validate_skill_text(
             f"{skill_md}: skill body must not invoke runtime files directly; "
             "reference dispatcher interface names instead"
         )
-    if "dispatcher --caller-skill" in body:
+    if _DISPATCHER_CLI_RE.search(body):
         errors.append(
             f"{skill_md}: skill body must not invoke dispatcher directly; "
             "interface invocations belong in the generated block (blueprint.yaml owns them)"
@@ -74,16 +75,20 @@ def _validate_skill_text(
             f"{skill_md}: generated interface block must not expose raw runtime files"
         )
     for interface_id in dispatcher_targets:
-        expected = f"dispatcher --caller-skill {skill_name} {interface_id}"
-        if expected not in block:
+        required_metadata = (
+            "famulus_dispatcher.invoke",
+            f"Caller: `{skill_name}`",
+            f"`{interface_id}`",
+        )
+        if not all(fragment in block for fragment in required_metadata):
             errors.append(
-                f"{skill_md}: generated interface block is missing dispatcher command "
+                f"{skill_md}: generated interface block is missing MCP invocation metadata "
                 f"for `{interface_id}`"
             )
     return errors
 
 
-def _validate_v4(
+def _validate_graph(
     graph: RepositoryBlueprintGraph,
     repo_root: Path,
 ) -> list[str]:
@@ -131,6 +136,18 @@ def _validate_v4(
                 dispatcher_targets=dispatcher_targets,
             )
         )
+        for markdown_path in sorted(module.module_root.rglob("*.md")):
+            if markdown_path == skill_md or "plans" in markdown_path.parts:
+                continue
+            try:
+                markdown_text = markdown_path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                continue
+            if _DISPATCHER_CLI_RE.search(markdown_text):
+                errors.append(
+                    f"{markdown_path}: skill documentation must not invoke "
+                    "dispatcher directly; use famulus_dispatcher.invoke"
+                )
     return errors
 
 
@@ -144,10 +161,10 @@ def validate(repo_root: Path) -> list[str]:
 
     schema_root = repo_root / "references" / "blueprint-schema"
     try:
+        # The canonical loader owns the repository's fixed v6 boundary.
         repository_graph = load_repository_blueprint_graph(
             repo_root,
             schema_root=schema_root if (schema_root / "module.schema.json").is_file() else None,
-            expected_schema_version=6,
         )
     except (BlueprintGraphError, BlueprintInventoryError, OSError, UnicodeError) as exc:
         return [str(exc)]
@@ -158,7 +175,7 @@ def validate_with_graph(
     repo_root: Path,
     graph: RepositoryBlueprintGraph,
 ) -> list[str]:
-    return _validate_v4(graph, repo_root)
+    return _validate_graph(graph, repo_root)
 
 
 def main() -> int:

@@ -1,4 +1,4 @@
-"""Dispatcher gateway for the milestone writer's stable argv contract."""
+"""Fixed-operation dispatcher adapters for the milestone writer."""
 from __future__ import annotations
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
@@ -6,7 +6,7 @@ from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 from ._milestone_writer import main as _writer_main
 
 
-class Interface(PythonArgvMachineInterface):
+class _WriterInterface(PythonArgvMachineInterface):
     """Interface exposes the milestone writer argv boundary.
 
     Intent
@@ -27,7 +27,7 @@ class Interface(PythonArgvMachineInterface):
     - none
     """
 
-    prog = "milestone"
+    operation: str
 
     def run(self, argv: list[str]) -> int:
         """Delegate dispatcher arguments to the milestone writer.
@@ -48,8 +48,24 @@ class Interface(PythonArgvMachineInterface):
         -----
         _writer_main -> preprocess: pass argv unchanged; postprocess: return the writer status unchanged; fixed_arguments: none
         """
-        return _writer_main(argv)
+        return _writer_main(self.operation, argv, prog=self.prog)
 
 
-if __name__ == "__main__":
-    raise SystemExit(Interface().main())
+class RecordProgress(_WriterInterface):
+    operation = "record-progress"
+    prog = "record-progress"
+
+
+class RecordCompletion(_WriterInterface):
+    operation = "record-completion"
+    prog = "record-completion"
+
+
+class SessionPath(_WriterInterface):
+    operation = "session-path"
+    prog = "session-path"
+
+
+class RunPath(_WriterInterface):
+    operation = "run-path"
+    prog = "run-path"

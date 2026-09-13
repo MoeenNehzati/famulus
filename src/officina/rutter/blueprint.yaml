@@ -76,7 +76,7 @@ exports:
       allow_all_modules: false
       allowed_callers:
       - math-dependency-graph._rtx
-      - skill-certifier._rtx
+      - node-certify._rtx
   rutter.interface.bound-operations:
     source_interface: rutter.source.engine.interface.bound-operations
     access:
@@ -84,7 +84,7 @@ exports:
       allowed_callers:
       - math-dependency-graph._rtx
       - using-compass
-      - skill-certifier._rtx
+      - node-certify._rtx
   rutter.interface.diagnostic:
     source_interface: rutter.source.diagnostic.interface.python-api
     access:
@@ -98,12 +98,12 @@ exports:
       allowed_callers:
       - math-dependency-graph._rtx
       - using-compass
-      - skill-certifier._rtx
+      - node-certify._rtx
   rutter.interface.model:
     source_interface: rutter.source.model.interface.python-api
     access:
       allow_all_modules: false
       allowed_callers:
       - math-dependency-graph._rtx
-      - skill-certifier._rtx
+      - node-certify._rtx
 maturity: experimental

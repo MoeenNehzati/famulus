@@ -15,11 +15,15 @@ SCRIPT_PATH = Path(__file__).parent.parent / "_envelope_gate.py"
 REPO_SRC = Path(__file__).resolve().parents[4] / "src"
 if str(REPO_SRC) not in sys.path:
     sys.path.insert(0, str(REPO_SRC))
-MODULE_PATH = SCRIPT_PATH
-spec = importlib.util.spec_from_file_location("filter_envelopes", MODULE_PATH)
-fe = importlib.util.module_from_spec(spec)
+PACKAGE_NAME = "_email_triage_filter_tests"
+spec = importlib.util.spec_from_file_location(
+    PACKAGE_NAME, SCRIPT_PATH.parent / "__init__.py"
+)
+package = importlib.util.module_from_spec(spec)
+sys.modules[PACKAGE_NAME] = package
 assert spec.loader is not None
-spec.loader.exec_module(fe)
+spec.loader.exec_module(package)
+fe = importlib.import_module(f"{PACKAGE_NAME}._envelope_gate")
 
 
 def _isolate(monkeypatch, tmp_path):

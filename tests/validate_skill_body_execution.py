@@ -69,13 +69,10 @@ def test_generated_blocks_are_ignored(tmp_path: Path) -> None:
         "<!-- BEGIN BLUEPRINT CONTRACT -->\n"
         "`_rtx/_run_tool.py`\n"
         "<!-- END BLUEPRINT CONTRACT -->\n"
-        "<!-- BEGIN BLUEPRINT INTERFACES -->\n"
-        "dispatcher --caller-skill demo-skill demo-skill.interface.run _rtx/_run_tool.py\n"
-        "<!-- END BLUEPRINT INTERFACES -->\n"
         "Use the `run` interface.\n",
     )
 
-    assert _mod.validate(tmp_path) == []
+    assert any("_rtx/_run_tool.py" in error for error in _mod.validate(tmp_path))
 
 
 def test_cx_path_is_rejected_even_without_execution_verb(tmp_path: Path) -> None:

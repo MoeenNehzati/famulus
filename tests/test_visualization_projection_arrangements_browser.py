@@ -91,7 +91,7 @@ def payload(entities):
     }
 
 
-def run_case(name, entities, assertions, *, readiness_delays=None):
+def run_case(name, entities, assertions, *, readiness_delays=None, configure=None):
     chrome = require_chrome()
     # Optional gates make a missing-readiness wait fail deterministically without
     # extending the browser deadline used by the real assertion helper.
@@ -157,7 +157,10 @@ def run_case(name, entities, assertions, *, readiness_delays=None):
       }}
     }}, 100));
     </script></body>'''
-    html = build_html_with_elk(payload(entities)).replace("</body>", script)
+    document = payload(entities)
+    if configure:
+        configure(document)
+    html = build_html_with_elk(document).replace("</body>", script)
     result = run_html(
         chrome,
         html,
@@ -218,14 +221,30 @@ def test_converging_hidden_paths_are_deduplicated():
     ''')
 
 
-def test_direct_edge_precedence_suppresses_indirect_duplicate():
+def test_direct_edge_precedence_crosses_presentation_facets():
+    def configure(document):
+        document["relation_semantics"]["transformations"]["node_omission"]["rules"][0]["outcomes"] = [
+            {"type": "direct", "fidelity": "exact"}
+        ]
+        document["ui"]["edge_presentation"] = {"facets": [{
+            "id": "directness",
+            "label": "Directness",
+            "field": "derived",
+            "variants": [
+                {"id": "direct", "equals": False, "label": "Direct", "description": "Canonical edge.", "style": {"line_pattern": "solid"}},
+                {"id": "indirect", "equals": True, "label": "Indirect", "description": "Projected edge.", "style": {"line_pattern": "dashed"}},
+            ],
+        }]}
+
     run_case("precedence", [
         entity("X", 0, [edge("Y"), edge("Z")]), entity("Y", 1, [edge("Z")]), entity("Z", 2),
     ], '''
       await hide("Y");
       check(paths("X", "Z").length === 1, "direct endpoint duplicated");
       check(one("X", "Z").dataset.edgeType === "direct" && one("X", "Z").dataset.bundle !== "true", "direct edge lost precedence");
-    ''')
+      const suppressed = one("X", "Z").__edgeMeta.metadata.suppressed_relationships || [];
+      check(suppressed.length === 1 && suppressed[0].derived === true, "suppressed projection provenance missing");
+    ''', configure=configure)
 
 
 def test_interface_use_composes_through_hidden_binding():
@@ -414,8 +433,12 @@ def test_collapse_aggregates_without_marking_dependency_indirect():
       const aggregatePresentation = document.querySelector('.legend-row[data-legend-kind="edge-presentation"][data-type="aggregate"]');
       check(aggregatePresentation, "aggregate metadata presentation missing from legend");
       check(getComputedStyle(aggregatePresentation.querySelector(".legend-icon path:not(.edge-presentation-outline)")).strokeWidth === getComputedStyle(aggregate).strokeWidth, "aggregate legend width diverged from rendered edge");
-      check(aggregate.style.filter.includes("edge-presentation-filter"), "hidden-detail summary edge lacks halo");
-      check(aggregatePresentation.querySelector(".edge-presentation-outline"), "hidden-detail summary legend lacks halo");
+      const halo = edgePresentationUnderlaysForPath(aggregate)[0];
+      const legendHalo = aggregatePresentation.querySelector(".edge-presentation-outline");
+      check(halo && legendHalo, "hidden-detail summary edge or legend lacks halo");
+      check(halo.nextElementSibling === aggregate && halo.getAttribute("d") === aggregate.getAttribute("d"), "aggregate halo route or paint order diverged");
+      check(getComputedStyle(halo).strokeWidth === getComputedStyle(legendHalo).strokeWidth && getComputedStyle(halo).stroke === getComputedStyle(legendHalo).stroke && getComputedStyle(halo).strokeOpacity === getComputedStyle(legendHalo).strokeOpacity, "aggregate halo style diverged from legend");
+      check(!document.querySelector('filter[id^="edge-presentation-filter-"]'), "aggregate retained an edge filter graph");
       check(!one("A", "B", "indirect"), "collapse incorrectly created indirect dependency");
     ''', readiness_delays={"A": 150, "B": 600})
 
@@ -462,7 +485,7 @@ def test_overlapping_child_and_container_hides_restore_independently():
       check(hiddenNodes.has("A") && hiddenNodes.has("K") && hiddenNodes.size === 2, "overlapping hides lost explicit state");
       await restore("K");
       check(hiddenNodes.has("A") && !hiddenNodes.has("K"), "restoring container erased child hide");
-      check(node("B").style.display !== "none" && node("A").style.display === "none", "container restore visibility wrong");
+      check(node("B") && !node("A"), "container restore visibility wrong");
       check(one("S", "B", "indirect"), "remaining child hide lacks projection");
       await restore("A");
       check(hiddenNodes.size === 0 && !one("S", "B", "indirect"), "final child restore left stale projection");

@@ -91,7 +91,7 @@ _ALLOWED_PATHS = {
     Path("tests/validate_personal_info.py"),
     Path(".claude-plugin/plugin.json"),
     Path(".claude-plugin/marketplace.json"),
-    Path(".codex-plugin/plugin.json"),
+    Path("plugin.json"),
 }
 
 

@@ -49,7 +49,7 @@ interfaces:
             - description: Resolve a module export and its exact implementing source
                 interface.
               value: resolve-export
-            - description: Resolve one v5 caller, route, facade, terminal interface,
+            - description: Resolve one caller, route, terminal interface,
                 diagnostic, relation, and certificate requirement result.
               value: resolve-authorization
             - description: Resolve the certified module and implementing source required

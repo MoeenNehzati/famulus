@@ -1,266 +1,140 @@
 # Officina
 
-Officina is a framework for the continuous development of systems whose
-behavior is expressed through both machine code and human-language
-instructions. It seeks reliability and maintainability by dividing such a
-system into cohesive parts, encapsulating those parts, and making the
-relationships between them explicit.
+> **Status:** Nonnormative overview.
+>
+> [Architectural Principles](architectural-principles.md) states the governing
+> rules. This page explains the problem, the working model, and where the
+> current implementation lives.
 
-This page explains the problem Officina solves, the reasoning behind its
-design, and what the framework is made of. It is not normative. The rules
-themselves live in [Architectural Principles](architectural-principles.md).
+Officina is a framework for continuously developing systems whose behavior
+spans model-interpreted instructions and machine-executable code. It seeks
+reliability and maintainability by dividing such a system into cohesive parts,
+encapsulating those parts, and making their relationships explicit.
 
-## The problem
+## Why Officina exists
 
-While most existing programming languages enforce structure to foster these
-goals, such structures don't exist for modules composed of a mixture of LLM
-instructions and code. Officina aims to fill this gap by providing a harness
-for the continuous development of mixed LLM/code projects. One example of such
-a project is a skill library. It's natural to think of each skill as a module
-that can reuse the code and LLM instructions of other modules if needed.
+Famulus is the motivating implementation. To make complex personal-assistance
+and research tasks more reliable, it implements deterministically specifiable
+operations in machine-executable code wherever practical and uses
+model-interpreted instructions for work that requires semantic judgment. This
+reduces the portion of a task delegated to the model, though the model still
+interprets results and decides what to do next.
 
-The trouble is not the reuse itself but that nothing keeps track of it. In a
-programming language, one module cannot quietly depend on the internals of
-another: the dependency must be declared before it can exist, and the compiler
-or module system refuses whatever was not declared. Between two skills, that
-same dependency is just a sentence. Nothing resolves it, nothing records it,
-and nothing can reject it. Undocumented coupling is therefore not a tendency
-that some projects fall into. It is the default state of any system where
-nothing prevents it, and its absence would be the surprising outcome.
+Conventional machine-executable software benefits from physical organization
+into source modules and from language and toolchain constructs such as imports,
+packages, interfaces, and types. These mechanisms do not eliminate hidden
+coupling, but they make many references visible, inhibit many undeclared uses,
+and expose dependency surfaces that tools can check.
 
-LLM assistance turns this from a slow problem into a fast one. Architectural
-decay is a function of how much change a system absorbs against how much of
-that change is checked; LLM-assisted development multiplies the first and
-leaves the second at zero. This matches what I have seen building this
-library. The coupling accumulates quietly, and by the time it is visible,
-neither a human nor a model can safely change one skill without breaking
-another.
+Mixed systems do not receive equivalent coverage across their full behavior. A
+human-language instruction can tell one component to rely on another
+component's internals without creating an import, declaring an interface, or
+recording a dependency. As the system evolves, such relationships can
+accumulate until a change requires broad repository inspection and becomes
+difficult to make safely.
 
-To be specific, the project addresses two main concerns:
-1. Undocumented and unregulated dependencies grow ever more numerous over the
-   course of development. Each skill may reuse any part of the existing
-   project in any fashion.
-2. The lack of a boundary between LLM instructions and machine instructions
-   hinders reproducibility and performance. A good LLM-assisted module should
-   do as much as it can with scripts and use an LLM only where a script won't
-   do.
+Officina supplies the missing structure. It represents the repository as
+explicit nodes with ownership and authority boundaries, records dependencies
+and interfaces in machine-readable blueprints, checks the resulting graph
+through schemas and validators, and retains semantic assurance through
+certification and drift detection.
 
-## The remedy
+## The working model
 
-The proposed remedy is as follows: develop standards for what such mixed
-projects should look like, then check them statically and periodically (via
-git hooks). Officina calls such conformance tests validators. Failures are
-accompanied by informative messages guiding the LLM to make the right
-adjustments. An LLM may still find a way to forgo these checks (by forcing a
-commit, for instance), but this is unlikely, since it is directly instructed
-not to force commits unless the user approves.
+Officina has two node kinds:
 
-## Nodes and blueprints
+1. A **module** is an identity, namespace, discovery, access, and authority
+   boundary.
+2. A **behavioral source** is a cohesive unit of instructions or implementation
+   contained by one module.
 
-Any such standard presupposes that we can formally analyze mixed modules. The
-first step is structuring the code base into logical components we call nodes.
-A node is a logical unit that exists in the project and can be contained by
-other nodes; it may be a mixed module, a Python file, or even a JSON schema.
+Each node has an operational face and a descriptive face. The gateway is the
+file through which the node behaves. The blueprint describes the node's
+identity, ownership, dependencies, interfaces, authority, effects, and other
+architectural facts in a form tools can inspect.
 
-Since nodes in mixed projects can be of different types, some of which (like
-LLM instructions) have next to no structure, we accompany them with
-machine-readable documentation files called blueprints. A blueprint documents
-all the relevant information about the node. Once machine-readable blueprints
-reflect the node, interactions between different nodes can be allowed or
-prohibited based on the blueprints. We can even construct the graph of the
-repository and put constraints on its shape, for example banning dependency
-cycles.
+Blueprints taken together form the repository graph. Mechanical validators can
+then check document shape, ownership, references, dependency rules, interface
+access, and generated views. These checks are necessary but not exhaustive: a
+schema-valid blueprint may still describe its gateway inaccurately.
 
-## Where mechanical checking runs out
+Semantic review supplies the assurance that mechanical checks cannot. The
+certification process records and retains the combined evidence for the exact
+committed state, and the resulting certificate becomes stale when relevant
+inputs drift. The
+[Certification and Drift](certification_and_drift.md) guide owns the lifecycle
+details.
 
-The catch is that quality assurance for blueprints is not trivial. This is
-part of a bigger problem: not every standard we set for the objects in the
-repository will be mechanically checkable. For example, we want to remove
-direct references a skill makes to the content of another skill. We can ban
-all exact paths from the blueprints and ban paths that look like
-`../<other-skill-name>/`. But there are many ways of sneaking that address in,
-for example by stating "go to the parent skills directory and look under
-`<other-skill-name>`". As the example demonstrates, there are meaningful
-mechanical harnesses that get some of the job done, but when dealing with
-free-form instructions, you can rarely exhaust all the bad behaviors
-mechanically.
+## How to read these documents
 
-The solution is a hybrid. Keep mechanical tests, and design the system to
-favor them. For example, take skill names. We want to know whether a skill is
-being addressed in another skill. If skill names are allowed to be single
-words, like `design`, then it's next to impossible to mechanically assess
-whether an occurrence of design is just the word design or a reference to
-`design`. Officina's solution is to require skill names to contain a hyphen,
-renaming `design` to, for example, `design-code`. Then an occurrence of
-`design-code` can be interpreted as a reference to `design-code`. The trick is
-to enrich the language with additional structure and then use that structure
-for machine checks. This is a recurring pattern across Officina: when in need,
-we enrich the problem with structure that allows for mechanical checks,
-sometimes even building a domain-specific language.
+After this overview, read [Getting Started](getting-started.md) once from top to
+bottom. Then use the groups below as a task-based map rather than another
+required sequence.
 
-## Certification
+### Start here
 
-Still, these mechanical checks aren't exhaustive, and we occasionally need
-human/LLM audits. Chief among the things only an audit can settle is the
-question we started with: whether a blueprint faithfully describes the node it
-claims to. The problem with human/LLM checks is that they are orders of
-magnitude more expensive than mechanical ones. The solution is to do them only
-when needed and to retain the checks that passed until relevant changes happen
-in the repo. The certification process takes care of this. A certificate is
-given to a node if it passes all its mechanical and human/LLM tests. The
-certificate contains the relevant hashes for the node's content and its
-dependencies. Hence a certificate is retained so long as those hashes do not
-change, meaning the changes in the repo were not relevant to our node. If
-hashes drift, the certificate goes stale and re-certification is required.
+These pages are for newcomers: read the walkthrough sequentially, and consult
+the principles when you need the governing rule behind it.
 
-## In short
+- [Getting Started](getting-started.md) follows one illustrative node profile
+  from boundary to drift; open it for a first practical tour of Officina.
+- [Architectural Principles](architectural-principles.md) states the normative
+  model; open it when a design choice or another guide needs an authoritative
+  answer.
 
-1. Officina contains a rich set of standards for how modules should be
-   organized and interact, to ensure encapsulation, reproducibility, and
-   maintainability.
-2. The standards are designed to be checkable with mechanical validators as
-   much as possible.
-3. A certification process augments these with LLM/human-assisted validation.
-4. The certification and validators are used to harness LLM-assisted
-   continuous development.
+### Understand the machinery
 
-## What Officina comprises
+These guides are for readers tracing how the model works: open the page that
+owns the mechanism you need to understand or verify.
 
-Officina is the shared code, the machine-readable contracts, and the
-framework-authoring skills listed below. Everything else in this repository is
-Famulus — the skill library that happens to be built on Officina.
+- [Blueprints](blueprints.md) explains how nodes declare structure and
+  relationships; open it when reading or authoring a blueprint.
+- [Dispatcher](dispatcher.md) explains interface routing, authorization, and
+  launch; open it when following or diagnosing an invocation.
+- [Schemas](schema.md) explains machine-checkable structural
+  contracts and configured variants; open it when choosing or validating a
+  structured boundary.
+- [Certification and Drift](certification_and_drift.md) explains how semantic
+  assurance is recorded and becomes stale; open it when reviewing or
+  certifying a node.
+- [Standards](standards.md) explains how structured standards are represented,
+  queried, and changed; open it when a rule has repository-wide authority.
 
-One distinction matters when reading this list. Many Famulus skills import
-`officina` in order to reach the dispatcher or the runtime. **That makes them
-consumers of the framework, not parts of it.** `email-client`, `online-calendar`,
-and `daily-plan` all import `officina`; none of them is Officina. Membership
-follows from what a component is *for*, not from what it depends on — the same
-reasoning principle 4.1 applies to authority, which is likewise not inherited
-from a dependency.
+### Build and change
 
-### Shared code — [`src/officina/`](../../src/officina/)
+These guides are for maintainers changing nodes: follow the relevant workflow
+while making the change.
 
-- `dispatcher/` — the direct, read-only boundary through which one node invokes
-  another node's exported interface: bounded blueprint resolution,
-  authorization, CLI, and per-platform process handling
-- `runtime/` — execution of Python machine interfaces in their own process
-- `blueprints/` — blueprint discovery, graph loading, authorization, templates,
-  process bindings, projections, and search
-- `certification/` — certificate hashing, records, and currentness views
-- `configuration/` — configured-schema and repository-configuration loading
-- `rutter/` — immutable authoring, history, and operating values; `Voyage`
-  lifecycle ownership; strict confined v3 persistence; explicit name binding
-  through `RutterRegistry.create`/`open`; and the process-safe
-  `VoyageDispenser` interface for mode-aware initialization, run-scoped
-  discovery, operation by opaque Voyage ID, and terminal release
-- `credentials/` — Google credentials, OAuth JSON, and secret storage
-- `docstring/` — docstring parsing, policy, schema, and validation
-- `git/` — repository provenance and pinned Git snapshots
-- `repository/` — repository-check discovery, selection, and execution
-- `standards/` — pinned-standard extraction and deterministic queries
-- `visualization/` — graph extraction, projection, rendering, and browser assets
-- `common/` — small cross-cutting primitives such as atomic file operations,
-  repository paths, TOML handling, dates, and Python-source caching
-- `install/` — installing an Officina project onto a machine: managed runtime,
-  launcher entries, resolvers, runtime pointer, uv bootstrap, the assistant
-  access roots granted to a launched agent, and the ownership-aware install
-  manifest that makes uninstall exact
-- `launchers/` — managed runtime policy for agent launch commands and durable
-  backend selection
-- `recurring/` — recurring-task control, execution, healthcheck, and native
-  scheduler rendering
-- `validators/` — validators shipped by the framework itself
-- `wakeup/` — host-session lifecycle across supported hosts
+- [Skill-node Maintainer Scaffolding](scaffolding/README.md) explains the
+  current Famulus authoring and validation machinery; open it when creating or
+  maintaining that skill-node profile.
+- [Refactoring Officina Nodes](refactor.md) explains in-place refactoring and
+  relocation boundaries; open it before changing a node's structure or
+  ownership.
 
-`launchers/` and `recurring/` carry a Famulus roster as data — the agent names
-one launches, the jobs the other ships enabled by default — but neither is
-Famulus. What they are *for* is the same machinery `install/` and `wakeup/`
-provide: policy that a host applies to whatever roster it is given.
+### Inspect and operate
 
-### Machine-readable contracts — [`references/`](../../references/)
+These pages are for maintainers interrogating or running the system: use them
+as operational references for a specific task.
 
-- [`blueprint/`](../../references/blueprint-schema/) — the blueprint schema, its
-  metadata, and the authoring template
-- [`node-standards/`](../../references/node-standards/) — the layered node
-  standards: `node` at the root, specialized into `module` and
-  `behavioral-source`, then into instruction- and Python-specific variants,
-  plus the refactoring standard, authority disposition, and semantic-review
-  criteria
-- [`standards-schema/`](../../references/standards-schema/) — the standard-v6 schema, its
-  validator and renderer, and the docstring standard and grammar
-- [`skill-standards/`](../../references/skill-standards/) — skill-authoring
-  guidelines
-- [`certification-policy/`](../../references/certification-policy/) — node-hash policy and
-  the certification-basis roots
-- [`runtime/`](../../references/runtime/) — the core requirement set and the
-  hash-locked resolution of it that every managed runtime is built from
+- [Blueprint Search](blueprint_search.md) explains repository-graph queries;
+  open it when locating owners, dependencies, interfaces, or related nodes.
+- [Compass and Rutter](compass-rutter.md) explains durable LLM-operated
+  algorithms; open it when defining or operating a Rutter through its public
+  dispenser.
+- [Visualization](visualization.md) explains graph extraction and rendering;
+  open it when choosing a projection or producing a visual view.
 
-`references/document-standards/` is **not** part of Officina. It holds the
-research-document profile consumed by Famulus's writing skills. It is written
-in Officina's standard format, but the format is Officina's and the content is
-Famulus's.
+### Implementation reference
 
-### Framework-authoring skills — [`skills/`](../../skills/)
+These references are for contributors working close to the current code: open
+them for an exact implementation concern, not as onboarding material.
 
-These skills exist to operate on the framework itself:
+- [Docstring Contract](docstring.md) explains the structured Python docstring
+  format; open it when authoring or validating those contracts.
+- [Implementation Map](utility-map.md) explains current task-to-package
+  ownership; open it when locating the code that implements a framework
+  concern.
 
-- [`skill-maker`](../../skills/skill-maker/) — author skills and keep
-  blueprints and generated views in sync
-- [`skill-certifier`](../../skills/skill-certifier/) — issue node certificates
-  for an exact committed state
-- [`skill-drift`](../../skills/skill-drift/) — read certificate currentness
-  and canonical node hashes
-- [`regenerate-blueprints`](../../skills/regenerate-blueprints/) — refresh an
-  existing blueprint
-- [`refactor-node`](../../skills/refactor-node/) — audit or refactor a node
-  against the standards
-- [`relocate-nodes`](../../skills/relocate-nodes/) — preflight and atomically
-  apply exact node-relocation manifests through skill-owned runtime behavior
-- [`update-standards`](../../skills/update-standards/) — change a canonical
-  standard together with its pinned dependents, generated views, and
-  enforcement artifacts
-- [`install-assistant-tools`](../../skills/install-assistant-tools/) — install
-  or repair an Officina project on a machine
-- [`llm-wakeup`](../../skills/llm-wakeup/) — schedule and manage host sessions
-  around usage resets; the instruction side of `src/officina/wakeup/`
-- [`using-compass`](../../skills/using-compass/) — the generic LLM-facing
-  Compass guide for initializing and operating a named Rutter through its
-  authorized `VoyageDispenser`; each named Rutter owns its modes, domain
-  evolutions, initialization arguments, and public guide. See
-  [Compass and Rutter](compass-rutter.md) for the architecture and vocabulary.
-
-## Where to go next
-
-**Read [Architectural Principles](architectural-principles.md) first.** It is
-the normative layer: it states what must be true of any node, boundary,
-dependency, and certificate, and every other document here is subordinate to
-it. Everything below explains how those principles are realized.
-
-Then, depending on what you need:
-
-- [Architecture](architecture.md) — how the principles are implemented:
-  nodes, gateways, blueprints, interfaces, discovery, and the graph
-- [Dispatcher](dispatcher.md) — direct route resolution, authorization,
-  execution, failures, and performance budgets
-- [Certification and Drift](certification_and_drift.md) — certificate
-  lifecycle, drift evaluation, and what makes a certificate stale
-- [Skill Blueprints](skill-blueprints.md) — authoring blueprints in practice
-- [Blueprint Search](blueprint_search.md) — querying the graph
-- [Compass and Rutter](compass-rutter.md) — durable algorithms and their
-  generic LLM-facing operating protocol
-- [Blueprint Discovery Metadata](blueprint-discovery-metadata.md) — how
-  discoverable modules declare when they apply
-- [Source Relocation](source-relocation.md) — safely moving a source and its
-  blueprint metadata while updating repository references
-- [Configured Schemas](configured-schema.md) — the configuration and
-  JSON Schema loading boundary
-- [Docstring Contract](docstring.md) — the docstring policy, grammar, and
-  validation pipeline
-- [Visualization](visualization.md) — the Officina visualization module
-- [Scaffolding](scaffolding/README.md) — the scaffolding layer and why it
-  exists
-- [Installation](installation.md) — how an Officina project is installed, and
-  the manifest-based uninstall process
-
-If you are extending Famulus rather than working on Officina itself, start
-from the [Contributor Guide](../contributors/README.md) instead.
+If you are extending Famulus rather than working on the framework, start from
+the [Contributor Guide](../contributors/README.md).

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .. import _day_model as plan_runtime
+from .. import _plan_orchestrate as orchestrate
 from .. import _state_patch as state_patch
 
 
@@ -85,10 +86,45 @@ old triage
     monkeypatch.setattr(plan_runtime, "write_plan_text", lambda date_key, content: written.setdefault("plan", content))
 
     result = plan_runtime.refresh_rendered_plan("7-2-26", plan_text=plan_text, meta=meta)
-    assert "<!-- BEGIN ACTIONS -->\nA\n<!-- END ACTIONS -->" in result
-    assert "<!-- BEGIN TRIAGE -->\nT\n<!-- END TRIAGE -->" in result
+    assert "<!-- BEGIN ACTIONS -->\nA\n<!-- END ACTIONS -->" in written["plan"]
+    assert "<!-- BEGIN TRIAGE -->\nT\n<!-- END TRIAGE -->" in written["plan"]
     assert written["meta"] == {"actions": [["a", "shown"]], "triage": [["t", "shown"]]}
-    assert written["plan"] == result
+    assert result == "# Plan: July 02, 2026\n\n## Actions (suggestions)\nA\n\n## Triage\nT\n"
+
+
+def test_refresh_rendered_plan_skips_unchanged_cloud_writes(monkeypatch):
+    plan_text = """## Actions (suggestions)
+<!-- BEGIN ACTIONS -->
+(nothing selected for actions)
+<!-- END ACTIONS -->
+
+## Triage
+<!-- BEGIN TRIAGE -->
+(nothing selected for triage)
+<!-- END TRIAGE -->
+"""
+    writes = []
+
+    monkeypatch.setattr(plan_runtime, "load_list_doc", lambda _: {"categories": []})
+    monkeypatch.setattr(plan_runtime, "write_meta", lambda *_: writes.append("meta"))
+    monkeypatch.setattr(plan_runtime, "write_plan_text", lambda *_: writes.append("plan"))
+    monkeypatch.setattr(plan_runtime, "_record_status_ok", lambda _: writes.append("status"))
+
+    assert plan_runtime.refresh_rendered_plan("7-2-26", plan_text=plan_text, meta={"actions": [], "triage": []})
+    assert writes == ["status"]
+
+
+def test_orchestrate_generates_only_when_the_plan_file_is_missing(monkeypatch, capsys):
+    monkeypatch.setattr(orchestrate, "get_today_date", lambda: "7-2-26")
+    monkeypatch.setattr(
+        orchestrate,
+        "refresh_rendered_plan",
+        lambda _: (_ for _ in ()).throw(plan_runtime.PlanNotFound("plans/7-2-26.md")),
+    )
+    monkeypatch.setattr(orchestrate, "generate_plan", lambda _: "generated\n")
+
+    assert orchestrate.main([]) == 0
+    assert capsys.readouterr().out == "generated\n"
 
 
 def test_mutate_plan_add_only_changes_plan_metadata(monkeypatch):

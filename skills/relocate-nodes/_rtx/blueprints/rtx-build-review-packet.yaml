@@ -1,0 +1,220 @@
+content:
+- _build_review_packet\.py
+- tests/test_build_review_packet\.py
+dependencies: []
+description: Compiles one relocation preflight into a deterministic grouped review packet.
+gateway:
+  language: Python>=3.11
+  path: _build_review_packet.py
+id: relocate-nodes._rtx.source.rtx-build-review-packet
+interfaces:
+  relocate-nodes._rtx.source.rtx-build-review-packet.interface.build-review-packet:
+    content:
+    - _build_review_packet\.py
+    - tests/test_build_review_packet\.py
+    uses_interfaces: []
+    contract:
+      arguments:
+        root:
+          description: Existing repository whose source headings provide review grouping.
+          direct_io_ref: repository
+          required: true
+          sensitivity: user-private
+          type:
+            kind: dir
+            access: read
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+        report:
+          description: Step 1 relocation JSON report.
+          direct_io_ref: report-file
+          required: true
+          sensitivity: user-private
+          type:
+            kind: file
+            access: read
+            must_exist: true
+            relative_to: caller-cwd
+            syntax: literal
+            opaque_content: true
+        output:
+          description: Destination for the grouped JSON review packet.
+          direct_io_ref: packet-file
+          required: true
+          sensitivity: user-private
+          type:
+            kind: file
+            access: write
+            must_exist: false
+            relative_to: caller-cwd
+            syntax: literal
+            opaque_content: true
+      caller_warnings: []
+      direct_io:
+        network: []
+        reads:
+        - id: repository
+          medium: local-filesystem
+          system: filesystem
+          access: read
+          path: <root>/**
+          path_match: glob
+          content: Markdown headings for reported repository paths.
+          formats:
+          - markdown
+          sensitivity: user-private
+        - id: report-file
+          medium: local-filesystem
+          system: filesystem
+          access: read
+          path: <report>
+          path_match: exact
+          content: Step 1 relocation report.
+          formats:
+          - json
+          sensitivity: user-private
+        writes:
+        - id: packet-file
+          medium: local-filesystem
+          system: filesystem
+          access: write
+          path: <output>
+          path_match: exact
+          content: Deterministic grouped review units and skipped-file inventory.
+          formats:
+          - json
+          sensitivity: derived-private
+        - id: summary
+          medium: stdout
+          system: agent-runtime
+          access: write
+          content: Compact occurrence and review-unit counts.
+          formats:
+          - text
+          sensitivity: derived-private
+        - id: error
+          medium: stderr
+          system: agent-runtime
+          access: write
+          content: Invalid report or filesystem error.
+          formats:
+          - text
+          sensitivity: derived-private
+      execution:
+        consistency:
+          snapshot: The packet reflects the supplied report and headings read during one invocation.
+        effects:
+        - id: packet
+          action: create
+          direct_io_ref: packet-file
+          may_occur_in_outcomes:
+          - completed
+          confirmation_evidence:
+            kind: direct-io
+            direct_io_ref: packet-file
+          reversibility:
+            compensatable: Delete or replace the temporary packet without changing the repository.
+          value_source:
+            kind: argument
+            argument_ref: output
+        lifecycle: finite
+        state_effect: mutating
+        mutation_safety:
+          atomicity:
+            atomic: The complete packet atomically replaces its destination.
+          concurrent_invocations:
+            safe: Separate output paths do not share mutable state; the last complete replacement wins on one path.
+          idempotency:
+            idempotent: Identical repository and report inputs produce identical packet content.
+          on_uncertain_completion:
+            verify_then_decide: Parse the output JSON and rerun when it is absent or invalid.
+          partial_effects_on_failure:
+            impossible: A temporary file is removed unless its complete replacement succeeds.
+          rollback_on_failure:
+            automatic: Failed temporary output is removed before returning.
+        verification:
+        - method: direct-io-state
+          direct_io_ref: packet-file
+      helpers: []
+      interaction:
+        mode: unattended
+      outcomes:
+      - id: completed
+        class: success
+        effects:
+        - packet
+        outputs:
+        - summary
+        caller_action: Present grouped suggestions to the user and record broad exclusions before individual edits.
+      - id: failed
+        class: error
+        effects: []
+        outputs:
+        - error
+        caller_action: Correct the report, repository, or output path and rerun.
+      outputs:
+      - id: summary
+        audience: both
+        cardinality:
+          minimum: 1
+          maximum: 1
+        description: Compact packet counts.
+        direct_io_ref: summary
+        empty: Never empty after success.
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+      - id: error
+        audience: human
+        cardinality:
+          minimum: 0
+          maximum: 1
+        description: Review-packet compilation error.
+        direct_io_ref: error
+        empty: Never empty when present.
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        type:
+          kind: string
+          sensitivity: derived-private
+    description: Group one exhaustive relocation preflight for user-assisted false-positive filtering.
+    process_binding:
+      entry: Interface
+      kind: process
+      patterns:
+      - allow_stdin: false
+        min_positionals: 0
+        max_positionals: 0
+        allowed_flags:
+        - --root
+        - --report
+        - --output
+        required_flags:
+        - --root
+        - --report
+        - --output
+        flag_patterns:
+          --root: ^.+$
+          --report: ^.+$
+          --output: ^.+$
+    usage: --root ROOT --report REPORT --output OUTPUT
+    version: 1
+node_type: behavioral_source
+platform_support:
+  linux: true
+  macos: true
+  windows: true
+runtime_dependencies: []
+schema_version: 6
+uses_interfaces: []
+version: 1
+maturity: stable

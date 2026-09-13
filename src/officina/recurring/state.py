@@ -52,8 +52,6 @@ def _validated_jobs(raw: bytes, *, source: Path) -> bytes:
 
 
 def _legacy_source(schedule: ManagedSchedule) -> Path | None:
-    if schedule.installation_id != "standard":
-        return None
     owner = schedule.native_registration_root / "install-owner.json"
     try:
         payload = json.loads(owner.read_text(encoding="utf-8"))
@@ -153,7 +151,7 @@ def prepare_context_state(
                 schedule.jobs_file, desired, allowed_root=schedule.config_root, mode=0o600
             )
     elif not schedule.jobs_file.exists():
-        desired = _validated_jobs(default_jobs.read_bytes(), source=default_jobs)
+        desired = b"jobs: []\n"
         atomic_replace_bytes(
             schedule.jobs_file, desired, allowed_root=schedule.config_root, mode=0o600
         )
@@ -167,7 +165,7 @@ def prepare_context_state(
 
 
 def cleanup_legacy_agent_environment(schedule: ManagedSchedule) -> None:
-    if schedule.installation_id != "standard" or not sys_platform_linux():
+    if not sys_platform_linux():
         return
     environment_file = Path(schedule.environment["HOME"]) / ".config/environment.d/20-ai-agent.conf"
     try:

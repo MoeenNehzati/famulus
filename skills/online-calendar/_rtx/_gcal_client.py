@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from officina.runtime.python_machine_interface import PythonMachineInterface
+from officina.common.famulus_paths import resolve_skill_config_dir
 
 CONFIG_DIR_NAME = "online-calendar"
 API_BASE = "https://www.googleapis.com/calendar/v3"
@@ -29,11 +30,11 @@ MAX_CALENDAR_WORKERS = 8
 
 
 def _credentials_path(home: Path) -> Path:
-    return home / ".config" / CONFIG_DIR_NAME / "credentials.json"
+    return resolve_skill_config_dir(CONFIG_DIR_NAME, platform=sys.platform, home=home, environ=os.environ) / "credentials.json"
 
 
 def _config_path(home: Path) -> Path:
-    return home / ".config" / CONFIG_DIR_NAME / "config.json"
+    return resolve_skill_config_dir(CONFIG_DIR_NAME, platform=sys.platform, home=home, environ=os.environ) / "config.json"
 
 
 def _load_service_config(home: Path) -> dict[str, object]:

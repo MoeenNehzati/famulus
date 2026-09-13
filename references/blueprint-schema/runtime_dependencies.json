@@ -3,7 +3,7 @@
   "skills": {
     "bib-audit": {
       "maturity": "stable",
-      "installation_tier": "core",
+      "installation_tier": "optional",
       "personal_preference": {
         "applies": false
       },
@@ -40,6 +40,14 @@
         }
       }
     },
+    "bootstrap-dispatcher-runtime": {
+      "maturity": "stable",
+      "installation_tier": "core",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {}
+    },
     "ci-debug": {
       "maturity": "stable",
       "installation_tier": "core",
@@ -47,6 +55,38 @@
         "applies": false
       },
       "interfaces": {
+        "ci-debug._rtx.interface.fetch-github-actions-history": {
+          "dependencies": [
+            {
+              "kind": "binary",
+              "name": "gh",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Reads GitHub Actions REST endpoints with authenticated Actions-read access."
+            },
+            {
+              "kind": "binary",
+              "name": "git",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Reads repository identity worktree containment and frozen provenance evidence."
+            }
+          ]
+        },
+        "ci-debug._rtx.interface.report-ci-runtime-hotspots": {
+          "dependencies": []
+        },
+        "ci-debug._rtx.interface.report-test-failures-between-green-runs": {
+          "dependencies": []
+        },
         "ci-debug._rtx.interface.run-ci": {
           "dependencies": []
         },
@@ -57,11 +97,26 @@
     },
     "cloud-files": {
       "maturity": "experimental",
-      "installation_tier": "core",
+      "installation_tier": "optional",
       "personal_preference": {
         "applies": false
       },
       "interfaces": {
+        "cloud-files._rtx.interface.ensure-assistant-root": {
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
+        },
         "cloud-files._rtx.interface.ensure-oauth": {
           "dependencies": [
             {
@@ -78,6 +133,21 @@
           ]
         },
         "cloud-files._rtx.interface.lists-delete": {
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
+        },
+        "cloud-files._rtx.interface.lists-exists": {
           "dependencies": [
             {
               "kind": "python-package",
@@ -231,11 +301,26 @@
     },
     "connect-google": {
       "maturity": "experimental",
-      "installation_tier": "core",
+      "installation_tier": "optional",
       "personal_preference": {
         "applies": false
       },
       "interfaces": {
+        "connect-google._rtx.interface.authorize-services": {
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
+        },
         "connect-google._rtx.interface.bind-credential-file": {
           "dependencies": [
             {
@@ -361,12 +446,42 @@
               "reason": "Provides the system credential-store API imported by secret_store.py."
             }
           ]
+        },
+        "connect-google._rtx.interface.select-shared-credential": {
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
+        },
+        "connect-google._rtx.interface.shared-credential": {
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
         }
       }
     },
     "daily-plan": {
       "maturity": "stable",
-      "installation_tier": "core",
+      "installation_tier": "optional",
       "personal_preference": {
         "applies": false
       },
@@ -1038,7 +1153,7 @@
     },
     "email-client": {
       "maturity": "stable",
-      "installation_tier": "core",
+      "installation_tier": "optional",
       "personal_preference": {
         "applies": false
       },
@@ -1866,7 +1981,7 @@
     },
     "email-triage": {
       "maturity": "stable",
-      "installation_tier": "core",
+      "installation_tier": "optional",
       "personal_preference": {
         "applies": false
       },
@@ -2187,109 +2302,15 @@
         }
       }
     },
-    "install-assistant-tools": {
+    "install-launchers": {
       "maturity": "stable",
-      "installation_tier": "core",
+      "installation_tier": "optional",
       "personal_preference": {
         "applies": false
       },
       "interfaces": {
-        "install-assistant-tools._rtx.interface.scripts-dev-link": {
-          "dependencies": [
-            {
-              "kind": "binary",
-              "name": "git",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Configures repository hook settings during development installs."
-            },
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Parses canonical recurring jobs configuration."
-            }
-          ]
-        },
-        "install-assistant-tools._rtx.interface.scripts-doctor": {
-          "dependencies": [
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Parses canonical recurring jobs configuration."
-            }
-          ]
-        },
-        "install-assistant-tools._rtx.interface.scripts-install": {
-          "dependencies": [
-            {
-              "kind": "binary",
-              "name": "git",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Configures repository hook settings during development installs."
-            },
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Parses canonical recurring jobs configuration."
-            }
-          ]
-        },
-        "install-assistant-tools._rtx.interface.scripts-launchers": {
-          "dependencies": [
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Parses canonical recurring jobs configuration."
-            }
-          ]
-        },
-        "install-assistant-tools._rtx.interface.scripts-scaffold": {
-          "dependencies": [
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Parses canonical recurring jobs configuration."
-            }
-          ]
+        "install-launchers._rtx.interface.agent-launchers": {
+          "dependencies": []
         }
       }
     },
@@ -2303,7 +2324,7 @@
     },
     "list-manager": {
       "maturity": "stable",
-      "installation_tier": "core",
+      "installation_tier": "optional",
       "personal_preference": {
         "applies": false
       },
@@ -4690,7 +4711,29 @@
       "personal_preference": {
         "applies": false
       },
-      "interfaces": {}
+      "interfaces": {
+        "llm-wakeup._rtx.interface.auto-policy": {
+          "dependencies": []
+        },
+        "llm-wakeup._rtx.interface.explicit-schedule": {
+          "dependencies": []
+        },
+        "llm-wakeup._rtx.interface.infer-schedule": {
+          "dependencies": []
+        },
+        "llm-wakeup._rtx.interface.setup": {
+          "dependencies": []
+        },
+        "llm-wakeup._rtx.interface.setup-status": {
+          "dependencies": []
+        },
+        "llm-wakeup._rtx.interface.teardown": {
+          "dependencies": []
+        },
+        "llm-wakeup._rtx.interface.teardown-status": {
+          "dependencies": []
+        }
+      }
     },
     "loose-mode": {
       "maturity": "stable",
@@ -4716,44 +4759,32 @@
         "applies": false
       },
       "interfaces": {
-        "math-dependency-graph._rtx.interface.inventory-voyage-dispenser": {
+        "math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph": {
           "dependencies": []
         },
-        "math-dependency-graph._rtx.interface.scripts-apply-proof-digest": {
+        "math-dependency-graph._rtx.interface.scripts-extract-mathjax-macros": {
           "dependencies": []
         },
-        "math-dependency-graph._rtx.interface.scripts-extract-inventory-chunks": {
-          "dependencies": []
-        },
-        "math-dependency-graph._rtx.interface.scripts-pool-inventory-chunks": {
+        "math-dependency-graph._rtx.interface.scripts-finalize-extraction": {
           "dependencies": [
             {
               "kind": "python-package",
               "name": "jsonschema",
-              "version": ">=4,<5",
+              "version": ">=4",
               "platforms": {
                 "linux": true,
                 "macos": true,
                 "windows": true
               },
-              "reason": "Validates completed chunk inventories against the skill-owned schema."
+              "reason": "Validates the finalized graph against the existing JSON Schema before replacement."
             }
           ]
         },
-        "math-dependency-graph._rtx.interface.scripts-semantic-to-canonical-json": {
-          "dependencies": [
-            {
-              "kind": "python-package",
-              "name": "jsonschema",
-              "version": ">=4,<5",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Validates semantic graph artifacts against the skill-owned JSON Schema."
-            }
-          ]
+        "math-dependency-graph._rtx.interface.scripts-read-tex-labels": {
+          "dependencies": []
+        },
+        "math-dependency-graph._rtx.interface.scripts-serve-graph": {
+          "dependencies": []
         }
       }
     },
@@ -4764,11 +4795,253 @@
         "applies": false
       },
       "interfaces": {
-        "milestone-logging._rtx.interface.record": {
+        "milestone-logging._rtx.interface.list-sessions": {
           "dependencies": []
         },
-        "milestone-logging._rtx.interface.timeline": {
+        "milestone-logging._rtx.interface.read-run-json": {
           "dependencies": []
+        },
+        "milestone-logging._rtx.interface.record-completion": {
+          "dependencies": []
+        },
+        "milestone-logging._rtx.interface.record-progress": {
+          "dependencies": []
+        },
+        "milestone-logging._rtx.interface.run-path": {
+          "dependencies": []
+        },
+        "milestone-logging._rtx.interface.session-path": {
+          "dependencies": []
+        },
+        "milestone-logging._rtx.interface.show-latest-session": {
+          "dependencies": []
+        },
+        "milestone-logging._rtx.interface.show-run": {
+          "dependencies": []
+        },
+        "milestone-logging._rtx.interface.show-session": {
+          "dependencies": []
+        }
+      }
+    },
+    "node-certify": {
+      "maturity": "stable",
+      "installation_tier": "optional",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {
+        "node-certify._rtx.interface.certification-voyage": {
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Parses v6 blueprint declarations during semantic inspection."
+            },
+            {
+              "kind": "python-package",
+              "name": "cryptography",
+              "version": ">=44.0.1",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Implements Ed25519 key and signature primitives."
+            },
+            {
+              "kind": "python-package",
+              "name": "jsonschema",
+              "version": ">=4,<5",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Validates declared response schemas and their local references when binding Rutter definitions."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            },
+            {
+              "kind": "python-package",
+              "name": "pyflakes",
+              "version": "==3.2.0",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the undefined-name analysis used by the repository validator gate."
+            },
+            {
+              "kind": "python-package",
+              "name": "pytest",
+              "version": "==8.3.4",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Executes the repository validator gate before any certificate is signed."
+            },
+            {
+              "kind": "python-package",
+              "name": "pytest-xdist",
+              "version": "==3.8.0",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the parallel pytest worker support used by the repository validator runner."
+            }
+          ]
+        },
+        "node-certify._rtx.interface.certify": {
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "PyYAML",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Parses v6 blueprint declarations during semantic inspection."
+            },
+            {
+              "kind": "python-package",
+              "name": "cryptography",
+              "version": ">=44.0.1",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Implements Ed25519 key and signature primitives."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            },
+            {
+              "kind": "python-package",
+              "name": "pyflakes",
+              "version": "==3.2.0",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the undefined-name analysis used by the repository validator gate."
+            },
+            {
+              "kind": "python-package",
+              "name": "pytest",
+              "version": "==8.3.4",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Executes the repository validator gate before any certificate is signed."
+            },
+            {
+              "kind": "python-package",
+              "name": "pytest-xdist",
+              "version": "==3.8.0",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the parallel pytest worker support used by the repository validator runner."
+            }
+          ]
+        }
+      }
+    },
+    "node-drift": {
+      "maturity": "stable",
+      "installation_tier": "optional",
+      "personal_preference": {
+        "applies": false
+      },
+      "interfaces": {
+        "node-drift._rtx.interface.compute-hashes": {
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "cryptography",
+              "version": ">=44.0.1",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Implements Ed25519 key and signature primitives."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
+        },
+        "node-drift._rtx.interface.drift-status": {
+          "dependencies": [
+            {
+              "kind": "python-package",
+              "name": "cryptography",
+              "version": ">=44.0.1",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Implements Ed25519 key and signature primitives."
+            },
+            {
+              "kind": "python-package",
+              "name": "keyring",
+              "version": "any",
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              },
+              "reason": "Provides the system credential-store API imported by secret_store.py."
+            }
+          ]
         }
       }
     },
@@ -4782,7 +5055,7 @@
     },
     "online-calendar": {
       "maturity": "experimental",
-      "installation_tier": "core",
+      "installation_tier": "optional",
       "personal_preference": {
         "applies": false
       },
@@ -6992,6 +7265,9 @@
         "applies": false
       },
       "interfaces": {
+        "relocate-nodes._rtx.interface.build-review-packet": {
+          "dependencies": []
+        },
         "relocate-nodes._rtx.interface.relocate": {
           "dependencies": [
             {
@@ -7004,28 +7280,6 @@
                 "windows": true
               },
               "reason": "Parses caller-selected relocation manifests in the skill-owned engine."
-            },
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Parses skill blueprint YAML files."
-            },
-            {
-              "kind": "python-package",
-              "name": "jsonschema",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Validates caller-selected relocation manifests against the skill-owned schema."
             }
           ]
         }
@@ -7054,224 +7308,45 @@
         }
       }
     },
-    "skill-certifier": {
-      "maturity": "stable",
+    "setup-interface-manager": {
+      "maturity": "experimental",
       "installation_tier": "core",
       "personal_preference": {
         "applies": false
       },
       "interfaces": {
-        "skill-certifier._rtx.interface.certification-voyage": {
-          "dependencies": [
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Parses v6 blueprint declarations during semantic inspection."
-            },
-            {
-              "kind": "python-package",
-              "name": "cryptography",
-              "version": ">=44.0.1",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Implements Ed25519 key and signature primitives."
-            },
-            {
-              "kind": "python-package",
-              "name": "jsonschema",
-              "version": ">=4,<5",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Validates declared response schemas and their local references when binding Rutter definitions."
-            },
-            {
-              "kind": "python-package",
-              "name": "keyring",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
-            },
-            {
-              "kind": "python-package",
-              "name": "pyflakes",
-              "version": "==3.2.0",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Provides the undefined-name analysis used by the repository validator gate."
-            },
-            {
-              "kind": "python-package",
-              "name": "pytest",
-              "version": "==8.3.4",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Executes the repository validator gate before any certificate is signed."
-            },
-            {
-              "kind": "python-package",
-              "name": "pytest-xdist",
-              "version": "==3.8.0",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Provides the parallel pytest worker support used by the repository validator runner."
-            }
-          ]
+        "setup-interface-manager._rtx.interface.authorize": {
+          "dependencies": []
         },
-        "skill-certifier._rtx.interface.certify": {
-          "dependencies": [
-            {
-              "kind": "python-package",
-              "name": "PyYAML",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Parses v6 blueprint declarations during semantic inspection."
-            },
-            {
-              "kind": "python-package",
-              "name": "cryptography",
-              "version": ">=44.0.1",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Implements Ed25519 key and signature primitives."
-            },
-            {
-              "kind": "python-package",
-              "name": "keyring",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
-            },
-            {
-              "kind": "python-package",
-              "name": "pyflakes",
-              "version": "==3.2.0",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Provides the undefined-name analysis used by the repository validator gate."
-            },
-            {
-              "kind": "python-package",
-              "name": "pytest",
-              "version": "==8.3.4",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Executes the repository validator gate before any certificate is signed."
-            },
-            {
-              "kind": "python-package",
-              "name": "pytest-xdist",
-              "version": "==3.8.0",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Provides the parallel pytest worker support used by the repository validator runner."
-            }
-          ]
-        }
-      }
-    },
-    "skill-drift": {
-      "maturity": "stable",
-      "installation_tier": "core",
-      "personal_preference": {
-        "applies": false
-      },
-      "interfaces": {
-        "skill-drift._rtx.interface.compute-hashes": {
-          "dependencies": [
-            {
-              "kind": "python-package",
-              "name": "cryptography",
-              "version": ">=44.0.1",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Implements Ed25519 key and signature primitives."
-            },
-            {
-              "kind": "python-package",
-              "name": "keyring",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
-            }
-          ]
+        "setup-interface-manager._rtx.interface.authorize-markdown-call": {
+          "dependencies": []
         },
-        "skill-drift._rtx.interface.drift-status": {
-          "dependencies": [
-            {
-              "kind": "python-package",
-              "name": "cryptography",
-              "version": ">=44.0.1",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Implements Ed25519 key and signature primitives."
-            },
-            {
-              "kind": "python-package",
-              "name": "keyring",
-              "version": "any",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Provides the system credential-store API imported by secret_store.py."
-            }
-          ]
+        "setup-interface-manager._rtx.interface.begin": {
+          "dependencies": []
+        },
+        "setup-interface-manager._rtx.interface.invalidate": {
+          "dependencies": []
+        },
+        "setup-interface-manager._rtx.interface.recover": {
+          "dependencies": []
+        },
+        "setup-interface-manager._rtx.interface.recover-busy": {
+          "dependencies": []
+        },
+        "setup-interface-manager._rtx.interface.run-markdown": {
+          "dependencies": []
+        },
+        "setup-interface-manager._rtx.interface.run-python": {
+          "dependencies": []
+        },
+        "setup-interface-manager._rtx.interface.settle": {
+          "dependencies": []
+        },
+        "setup-interface-manager._rtx.interface.status": {
+          "dependencies": []
+        },
+        "setup-interface-manager._rtx.interface.teardown-all": {
+          "dependencies": []
         }
       }
     },
@@ -7365,6 +7440,7 @@
     ],
     "binary": [
       "crontab",
+      "gh",
       "git",
       "journalctl",
       "launchctl",

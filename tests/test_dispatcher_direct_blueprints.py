@@ -185,3 +185,7 @@ def test_symlinked_module_path_is_rejected(tmp_path: Path) -> None:
     with pytest.raises(DirectBlueprintError) as caught:
         DirectBlueprintRepository(configuration).load_module("child")
     assert caught.value.code == "dispatcher.unsafe_blueprint_path"
+    assert str(caught.value) == (
+        "The blueprint path for module `child` contains a symbolic link."
+    )
+    assert str(tmp_path) not in str(caught.value.as_payload())

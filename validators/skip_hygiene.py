@@ -17,7 +17,7 @@ if str(_SRC_ROOT) not in sys.path:
 
 from officina.common.python_source_cache import PythonSourceCache
 
-_CHECK_ROOTS = ["tests", "skills", "src/officina/wakeup/tests"]
+_CHECK_ROOTS = ["tests", "skills", "skills/llm-wakeup/_rtx/tests"]
 _SKIP_PARTS = {"__pycache__", ".system"}
 _ALLOWED_CATEGORIES = {
     "capability-unavailable",
@@ -27,6 +27,11 @@ _ALLOWED_CATEGORIES = {
     "platform-contract",
     "unsupported-platform",
 }
+
+# Conservative gate invariant: every skip form recognized by _is_skip_call or
+# _skip_lines' raised-exception branch must contain at least one of these source
+# tokens.  Extend this evidence whenever adding a recognized form.
+_SKIP_TOKENS = ("skip", "SkipTest")
 
 
 def _iter_python_test_files(repo_root: Path):
@@ -337,10 +342,13 @@ def _validate_file(
       why:
         constructs: "Builds the justification payload adjacent to each skip."
     """
+    display_path = rel_path.as_posix()
     try:
         source, tree = source_cache.read_parse(path)
     except SyntaxError as exc:
-        return [f"{rel_path}:{exc.lineno}: failed to parse Python: {exc.msg}"]
+        return [f"{display_path}:{exc.lineno}: failed to parse Python: {exc.msg}"]
+    if not any(token in source for token in _SKIP_TOKENS):
+        return []
     lines = source.splitlines()
 
     errors: list[str] = []
@@ -348,12 +356,14 @@ def _validate_file(
         marker = _marker_for(lines, lineno)
         if marker is None:
             errors.append(
-                f"{rel_path}:{lineno}: test skip must have a nearby "
+                f"{display_path}:{lineno}: test skip must have a nearby "
                 "`# famulus-skip: category=...; reason=...; alternate=...` comment"
             )
             continue
         for marker_error in _validate_marker(marker):
-            errors.append(f"{rel_path}:{lineno}: invalid famulus-skip marker: {marker_error}")
+            errors.append(
+                f"{display_path}:{lineno}: invalid famulus-skip marker: {marker_error}"
+            )
     return errors
 
 

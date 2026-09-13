@@ -2,189 +2,45 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version"],
+  "required": ["schema_version", "relocations"],
   "properties": {
     "schema_version": {"const": 3},
-    "package_boundaries": {
-      "type": "array",
-      "items": {"$ref": "#/$defs/package_boundary"}
-    },
     "relocations": {
       "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["from", "to"],
-        "properties": {
-          "from": {"type": "string", "minLength": 1},
-          "to": {"type": "string", "minLength": 1},
-          "python_modules": {
-            "type": "array",
-            "items": {"$ref": "#/$defs/rename"}
-          }
-        }
-      }
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/rename"}
     },
-    "blueprint_documents": {
+    "python_modules": {
       "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["path", "document"],
-        "properties": {"path": {"type": "string"}, "document": {"type": "object"}}
-      }
+      "items": {"$ref": "#/$defs/rename"}
     },
-    "ownership_transfers": {
+    "inventory_exclusions": {
       "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["from_blueprint", "to_blueprint", "source", "content"],
-        "properties": {
-          "from_blueprint": {"type": "string"},
-          "to_blueprint": {"type": "string"},
-          "source": {"$ref": "#/$defs/rename"},
-          "export": {"$ref": "#/$defs/rename"},
-          "content": {"$ref": "#/$defs/rename"}
-        }
-      }
-    },
-    "caller_additions": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["blueprint", "interface", "caller"],
-        "properties": {
-          "blueprint": {"type": "string"},
-          "interface": {"type": "string"},
-          "caller": {"type": "string"}
-        }
-      }
-    },
-    "exact_rewrites": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["path", "from", "to"],
-        "properties": {
-          "path": {"type": "string"},
-          "from": {"type": "string"},
-          "to": {"type": "string"},
-          "count": {"type": "integer", "minimum": 1}
-        }
-      }
+      "items": {"type": "string", "minLength": 1}
     },
     "semantic_decisions": {
       "type": "array",
-      "items": {"$ref": "#/$defs/semantic_decision"}
-    },
-    "package_catalogs": {
-      "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["path", "summary", "description"],
+        "required": ["occurrence_id", "disposition"],
         "properties": {
-          "path": {"type": "string"},
-          "summary": {"type": "string"},
-          "description": {"type": "string"},
-          "roles": {"type": "object", "additionalProperties": {"type": "string"}}
+          "occurrence_id": {"type": "string", "minLength": 1},
+          "disposition": {"enum": ["rewrite", "preserve"]},
+          "replacement": {"type": "string"}
         }
       }
-    },
-    "forbid_facade_imports": {"$ref": "#/$defs/strings"},
-    "text_exclusions": {"$ref": "#/$defs/strings"},
-    "active_address_exclusions": {"$ref": "#/$defs/strings"},
-    "inventory_exclusions": {"$ref": "#/$defs/strings"},
-    "standard_digest_roots": {"$ref": "#/$defs/strings"}
+    }
   },
   "$defs": {
     "rename": {
       "type": "object",
       "additionalProperties": false,
       "required": ["from", "to"],
-      "properties": {"from": {"type": "string"}, "to": {"type": "string"}}
-    },
-    "strings": {"type": "array", "items": {"type": "string"}},
-    "semantic_decision": {
-      "oneOf": [
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["occurrence_id", "mapping_kind", "mapping_id", "path", "original_digest", "byte_start", "byte_end", "ordinal", "match", "count", "disposition", "text", "replacement", "reason"],
-          "properties": {
-            "occurrence_id": {"type": "string", "minLength": 1},
-            "mapping_kind": {"enum": ["logical_fragment", "physical_path", "physical_fragment", "python_module"]},
-            "mapping_id": {"type": "string", "minLength": 1},
-            "path": {"type": "string", "minLength": 1},
-            "original_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-            "byte_start": {"type": "integer", "minimum": 0},
-            "byte_end": {"type": "integer", "minimum": 1},
-            "ordinal": {"type": "integer", "minimum": 1},
-            "match": {"type": "string", "minLength": 1},
-            "count": {"type": "integer", "const": 1},
-            "disposition": {"const": "rewrite"},
-            "text": {"type": "string", "minLength": 1},
-            "replacement": {"type": "string"},
-            "reason": {"type": "string", "minLength": 1}
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["occurrence_id", "mapping_kind", "mapping_id", "path", "original_digest", "byte_start", "byte_end", "ordinal", "match", "count", "disposition", "text", "reason"],
-          "properties": {
-            "occurrence_id": {"type": "string", "minLength": 1},
-            "mapping_kind": {"enum": ["logical_fragment", "physical_path", "physical_fragment", "python_module"]},
-            "mapping_id": {"type": "string", "minLength": 1},
-            "path": {"type": "string", "minLength": 1},
-            "original_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-            "byte_start": {"type": "integer", "minimum": 0},
-            "byte_end": {"type": "integer", "minimum": 1},
-            "ordinal": {"type": "integer", "minimum": 1},
-            "match": {"type": "string", "minLength": 1},
-            "count": {"type": "integer", "const": 1},
-            "disposition": {"const": "preserve"},
-            "text": {"type": "string", "minLength": 1},
-            "reason": {"type": "string", "minLength": 1}
-          }
-        }
-      ]
-    },
-    "package_boundary": {
-      "oneOf": [
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["path", "disposition", "module_id", "blueprint"],
-          "properties": {
-            "path": {"type": "string"},
-            "disposition": {"const": "registered-module"},
-            "module_id": {"type": "string", "minLength": 1},
-            "blueprint": {"type": "string"}
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["path", "disposition"],
-          "properties": {
-            "path": {"type": "string"},
-            "disposition": {"const": "existing-module"}
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["path", "disposition"],
-          "properties": {
-            "path": {"type": "string"},
-            "disposition": {"const": "unregistered-package"}
-          }
-        }
-      ]
+      "properties": {
+        "from": {"type": "string", "minLength": 1},
+        "to": {"type": "string", "minLength": 1}
+      }
     }
   }
 }

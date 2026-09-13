@@ -1,6 +1,6 @@
 schema_version: 6
 standard_version: 1.0.0
-revision: 20
+revision: 23
 id: node-standards.python-module
 canonical_path: references/node-standards/python-module.standard.yaml
 title: Python Module Standard
@@ -8,17 +8,17 @@ purpose: Add requirements specific to Python gateway modules.
 imports:
   module:
     standard_id: node-standards.module
-    standard_version: 1.0.0
-    revision: 14
-    digest: sha256:a6d0227f4b80a0df362cf609cf74930231bdb4c50e677f54a492be9806b49259
+    standard_version: 2.0.0
+    revision: 17
+    digest: sha256:5d66850480f791a304c3ef31ddce68717e2e531852b796b9de4bdbf95cdda04d
     artifact:
       kind: artifact
       ref: artifact.module-standard
   python-node:
     standard_id: node-standards.python-node
     standard_version: 1.0.0
-    revision: 18
-    digest: sha256:838a11126d31d7bf1f0ce9e4ceb8fefeb04068d0fd7d04cc2fb52d11f4b75a8b
+    revision: 20
+    digest: sha256:2359123210ec6e9064e763f0a3c687490f8c99e127261cf93bbc4922c45688c1
     artifact:
       kind: artifact
       ref: artifact.python-node-standard

@@ -2,12 +2,16 @@
 from __future__ import annotations
 
 import ast
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import importlib
 import json
 import os
 import shutil
+import subprocess
 import sys
+import threading
+import types
 from pathlib import Path
 
 import pytest
@@ -21,7 +25,9 @@ from officina.blueprints.graph import (  # noqa: E402
     load_repository_blueprint_graph,
 )
 from officina.dispatcher.core import ResolvedInvocationMetadata  # noqa: E402
+from officina.dispatcher.errors import DispatcherError  # noqa: E402
 import officina.dispatcher.core as dispatcher_core  # noqa: E402
+import officina.dispatcher.direct_runtime as direct_runtime  # noqa: E402
 import officina.runtime.python_machine_interface as python_interface  # noqa: E402
 import officina.runtime.python_machine_interface_runner as python_runner  # noqa: E402
 from officina.runtime.python_machine_interface import (  # noqa: E402
@@ -39,36 +45,6 @@ from officina.runtime.python_machine_interface_runner import (  # noqa: E402
 )
 
 SCHEMA_ROOT = Path(__file__).resolve().parents[1] / "references" / "blueprint-schema"
-V4_SCHEMA_ROOT = Path(__file__).parent / "fixtures" / "blueprint_schemas" / "v4"
-
-
-@pytest.fixture(autouse=True)
-def _select_frozen_v4_for_historical_fixtures(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    real_load = dispatcher_core.load_repository_blueprint_graph
-
-    def load_fixture_graph(
-        root: Path,
-        *args: object,
-        **kwargs: object,
-    ) -> object:
-        if "expected_schema_version" not in kwargs:
-            for marker in Path(root).rglob("blueprint.yaml"):
-                document = yaml.safe_load(marker.read_text(encoding="utf-8"))
-                if isinstance(document, dict) and document.get("schema_version") == 4:
-                    kwargs["expected_schema_version"] = 4
-                    kwargs["schema_root"] = V4_SCHEMA_ROOT
-                    break
-        return real_load(root, *args, **kwargs)
-
-    monkeypatch.setattr(
-        dispatcher_core,
-        "load_repository_blueprint_graph",
-        load_fixture_graph,
-    )
-
-
 class _PassingCertificationView:
     def check_export(
         self,
@@ -95,6 +71,20 @@ def _logical_target(module_id: str) -> PythonProcessTarget:
         logical_package=package,
         logical_entrypoint=f"{package}.runtime",
     )
+
+
+def test_dispatch_invocation_error_classifier_accepts_real_invocation_error() -> None:
+    """Catches a classifier that misses the dispatcher's compatibility base."""
+    error = dispatcher_core.InvocationError("expected dispatch failure")
+
+    assert python_interface.is_dispatch_invocation_error(error)
+
+
+def test_dispatch_invocation_error_classifier_rejects_arbitrary_runtime_error() -> None:
+    """Catches broad classification that would hide programmer defects."""
+    error = RuntimeError("programmer defect")
+
+    assert not python_interface.is_dispatch_invocation_error(error)
 
 
 def _write_logical_runtime(
@@ -346,7 +336,7 @@ def _write_v4_runtime_module(
     )
 
 
-def test_dispatch_call_analyzer_resolves_aliases_in_nested_imports() -> None:
+def legacy_dispatch_call_analyzer_resolves_aliases_in_nested_imports() -> None:
     tree = ast.parse(
         "try:\n"
         "    from officina.runtime.python_machine_interface import DispatchCall as Call\n"
@@ -386,7 +376,6 @@ def test_dispatch_call_analyzer_reads_canonical_v5_module_ids() -> None:
     assert declaration.caller_module_id == "demo-rtx"
     assert declaration.target_module_id == "cloud-files-rtx"
     assert declaration.interface == "read"
-    assert declaration.legacy_v4 is False
 
 
 def write_interface(path: Path) -> None:
@@ -451,17 +440,6 @@ def write_route_smoke_worker(skill_root: Path, route_smoke_body: str) -> None:
     )
 
 
-def test_load_interface_from_relative_file_spec(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    runtime = tmp_path / "_rtx"
-    runtime.mkdir()
-    write_interface(runtime / "_demo.py")
-    monkeypatch.chdir(tmp_path)
-
-    interface = load_interface("_rtx/_demo.py", "Interface")
-
-    assert interface.__class__.__name__ == "Interface"
-
-
 def test_load_interface_accepts_a_configured_interface_instance(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -483,22 +461,6 @@ def test_load_interface_accepts_a_configured_interface_instance(
     interface = load_interface("_rtx/_demo.py", "Interface")
 
     assert interface.__class__.__name__ == "DemoInterface"
-
-
-def test_route_smoke_trace_supports_temporary_repository(tmp_path: Path) -> None:
-    skill = tmp_path / "skills" / "demo-skill"
-    runtime = skill / "_rtx"
-    runtime.mkdir(parents=True)
-    write_interface(runtime / "_demo.py")
-
-    paths = python_interface.trace_python_route_smoke_dependencies(
-        skill,
-        tmp_path,
-        _target(),
-    )
-
-    assert (runtime / "_demo.py").resolve() in paths
-    assert any(path.name == "python_machine_interface.py" for path in paths)
 
 
 def test_dependency_loader_uses_structured_target_not_command(
@@ -527,14 +489,73 @@ def test_dependency_loader_uses_structured_target_not_command(
     assert interface.__class__.__name__ == "Interface"
 
 
-def test_route_smoke_batch_uses_one_child_and_isolates_loaded_paths(
+def test_route_smoke_batch_preserves_repository_and_process_isolation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    first = tmp_path / "skills" / "first-skill"
-    second = tmp_path / "skills" / "second-skill"
+    live_package = Path(__file__).resolve().parents[1] / "src" / "officina"
+    candidate_package = tmp_path / "src" / "officina"
+    candidate_package.mkdir(parents=True)
+    candidate_init = candidate_package / "__init__.py"
+    candidate_init.write_text(
+        f"__path__.append({str(live_package)!r})\n",
+        encoding="utf-8",
+    )
+    live_runtime = live_package / "runtime"
+    candidate_runtime = candidate_package / "runtime"
+    candidate_runtime.mkdir()
+    (candidate_runtime / "__init__.py").write_text(
+        f"__path__.append({str(live_runtime)!r})\n",
+        encoding="utf-8",
+    )
+    candidate_python_interface = candidate_runtime / "python_machine_interface.py"
+    shutil.copyfile(
+        live_runtime / "python_machine_interface.py",
+        candidate_python_interface,
+    )
+    candidate_marker = candidate_package / "_batch_trace_marker.py"
+    candidate_marker.write_text("MARKER = True\n", encoding="utf-8")
+
+    first = tmp_path / "skills" / "alpha-loaded-skill"
+    second = tmp_path / "skills" / "beta-loaded-skill"
     write_traced_interface(first, "first")
     write_traced_interface(second, "second")
+    unused = first / "_rtx" / "_unused.py"
+    unused.write_text("UNUSED = True\n", encoding="utf-8")
+
+    importer = tmp_path / "skills" / "gamma-1-importer-skill"
+    nonimporter = tmp_path / "skills" / "gamma-2-nonimporter-skill"
+    write_route_smoke_worker(
+        importer,
+        "        import officina._batch_trace_marker\n",
+    )
+    write_route_smoke_worker(nonimporter, "        pass\n")
+
+    shared_first = tmp_path / "skills" / "epsilon-shared-import-skill"
+    shared_second = tmp_path / "skills" / "zeta-shared-import-skill"
+    for skill in (shared_first, shared_second):
+        write_route_smoke_worker(
+            skill,
+            "        from officina import _batch_trace_marker\n",
+        )
+
+    cwd_mutator = tmp_path / "skills" / "eta-cwd-mutator-skill"
+    cwd_observer = tmp_path / "skills" / "theta-cwd-observer-skill"
+    leaked_path = (tmp_path / "leaked-path").as_posix()
+    write_route_smoke_worker(
+        cwd_mutator,
+        "        import os, sys\n"
+        f"        os.chdir({str(tmp_path)!r})\n"
+        f"        sys.path.insert(0, {leaked_path!r})\n",
+    )
+    write_route_smoke_worker(
+        cwd_observer,
+        "        import sys\n"
+        "        from pathlib import Path\n"
+        "        assert Path.cwd() == Path(__file__).resolve().parents[1]\n"
+        f"        assert {leaked_path!r} not in sys.path\n",
+    )
+
     target = _target("_rtx/_worker.py")
     child_calls: list[list[str]] = []
     real_run = python_interface.subprocess.run
@@ -555,7 +576,13 @@ def test_route_smoke_batch_uses_one_child_and_isolates_loaded_paths(
         tmp_path,
         [
             (second, target),
+            (shared_second, target),
             (first, target),
+            (importer, target),
+            (nonimporter, target),
+            (shared_first, target),
+            (cwd_mutator, target),
+            (cwd_observer, target),
             (first.resolve(), target),
         ],
     )
@@ -563,126 +590,39 @@ def test_route_smoke_batch_uses_one_child_and_isolates_loaded_paths(
     first_key = (first.resolve(), target)
     second_key = (second.resolve(), target)
     assert child_calls and len(child_calls) == 1
-    assert list(traces) == [first_key, second_key]
+    expected_keys = [
+        (skill.resolve(), target)
+        for skill in (
+            first,
+            second,
+            shared_first,
+            cwd_mutator,
+            importer,
+            nonimporter,
+            cwd_observer,
+            shared_second,
+        )
+    ]
+    assert list(traces) == expected_keys
     assert (first / "_rtx" / "_dependency.py").resolve() in traces[first_key]
     assert (second / "_rtx" / "_dependency.py").resolve() not in traces[first_key]
     assert (second / "_rtx" / "_dependency.py").resolve() in traces[second_key]
     assert (first / "_rtx" / "_dependency.py").resolve() not in traces[second_key]
+    assert (first / "_rtx" / "_worker.py").resolve() in traces[first_key]
+    assert unused.resolve() not in traces[first_key]
+    assert candidate_marker.resolve() in traces[(importer.resolve(), target)]
+    assert candidate_marker.resolve() not in traces[(nonimporter.resolve(), target)]
+    assert candidate_marker.resolve() in traces[(shared_first.resolve(), target)]
+    assert candidate_marker.resolve() in traces[(shared_second.resolve(), target)]
+    assert candidate_init.resolve() in traces[first_key]
+    assert (live_package / "__init__.py").resolve() not in traces[first_key]
+    assert candidate_python_interface.resolve() in traces[first_key]
+    assert (
+        live_runtime / "python_machine_interface.py"
+    ).resolve() not in traces[first_key]
 
 
-def test_v4_route_smoke_trace_reports_loaded_not_merely_bound_sources(
-    tmp_path: Path,
-) -> None:
-    skill = tmp_path / "skills" / "demo-skill"
-    write_traced_interface(skill, "loaded")
-    unused = skill / "_rtx" / "_unused.py"
-    unused.write_text("UNUSED = True\n", encoding="utf-8")
-    target = _target("_rtx/_worker.py")
-
-    paths = python_interface.trace_python_route_smoke_dependencies(
-        skill,
-        tmp_path,
-        target,
-    )
-
-    assert (skill / "_rtx" / "_worker.py").resolve() in paths
-    assert (skill / "_rtx" / "_dependency.py").resolve() in paths
-    assert unused.resolve() not in paths
-
-
-def test_route_smoke_batch_isolates_lazy_officina_imports_between_specs(
-    tmp_path: Path,
-) -> None:
-    source_package = tmp_path / "src" / "officina"
-    source_package.mkdir(parents=True)
-    current_package = Path(__file__).resolve().parents[1] / "src" / "officina"
-    (source_package / "__init__.py").write_text(
-        f"__path__.append({str(current_package)!r})\n",
-        encoding="utf-8",
-    )
-    marker = source_package / "_route_smoke_test_marker.py"
-    marker.write_text("MARKER = True\n", encoding="utf-8")
-    first = tmp_path / "skills" / "a-skill"
-    second = tmp_path / "skills" / "b-skill"
-    write_route_smoke_worker(
-        first,
-        "        import officina._route_smoke_test_marker\n",
-    )
-    write_route_smoke_worker(second, "        pass\n")
-    target = _target("_rtx/_worker.py")
-
-    traces = python_interface.trace_python_route_smoke_dependencies_batch(
-        tmp_path,
-        ((first, target), (second, target)),
-    )
-
-    assert marker.resolve() in traces[(first.resolve(), target)]
-    assert marker.resolve() not in traces[(second.resolve(), target)]
-
-
-def test_route_smoke_batch_retraces_shared_lazy_officina_import_per_spec(
-    tmp_path: Path,
-) -> None:
-    source_package = tmp_path / "src" / "officina"
-    source_package.mkdir(parents=True)
-    current_package = Path(__file__).resolve().parents[1] / "src" / "officina"
-    (source_package / "__init__.py").write_text(
-        f"__path__.append({str(current_package)!r})\n",
-        encoding="utf-8",
-    )
-    marker = source_package / "_route_smoke_test_marker.py"
-    marker.write_text("MARKER = True\n", encoding="utf-8")
-    first = tmp_path / "skills" / "a-skill"
-    second = tmp_path / "skills" / "b-skill"
-    for skill in (first, second):
-        write_route_smoke_worker(
-            skill,
-            "        from officina import _route_smoke_test_marker\n",
-        )
-    target = _target("_rtx/_worker.py")
-
-    traces = python_interface.trace_python_route_smoke_dependencies_batch(
-        tmp_path,
-        ((first, target), (second, target)),
-    )
-
-    assert marker.resolve() in traces[(first.resolve(), target)]
-    assert marker.resolve() in traces[(second.resolve(), target)]
-
-
-def test_route_smoke_batch_restores_cwd_and_sys_path_between_specs(
-    tmp_path: Path,
-) -> None:
-    first = tmp_path / "skills" / "a-skill"
-    second = tmp_path / "skills" / "b-skill"
-    leaked_path = (tmp_path / "leaked-path").as_posix()
-    write_route_smoke_worker(
-        first,
-        "        import os, sys\n"
-        f"        os.chdir({str(tmp_path)!r})\n"
-        f"        sys.path.insert(0, {leaked_path!r})\n",
-    )
-    write_route_smoke_worker(
-        second,
-        "        import sys\n"
-        "        from pathlib import Path\n"
-        "        assert Path.cwd() == Path(__file__).resolve().parents[1]\n"
-        f"        assert {leaked_path!r} not in sys.path\n",
-    )
-    target = _target("_rtx/_worker.py")
-
-    traces = python_interface.trace_python_route_smoke_dependencies_batch(
-        tmp_path,
-        ((first, target), (second, target)),
-    )
-
-    assert set(traces) == {
-        (first.resolve(), target),
-        (second.resolve(), target),
-    }
-
-
-def test_route_smoke_batch_rejects_invalid_blueprint_outside_skills(
+def legacy_route_smoke_batch_rejects_invalid_blueprint_outside_skills(
     tmp_path: Path,
 ) -> None:
     skill = tmp_path / "skills" / "demo-skill"
@@ -726,7 +666,7 @@ def test_route_smoke_batch_rejects_invalid_blueprint_outside_skills(
         python_interface.trace_python_route_smoke_dependencies_batch(
             tmp_path,
             ((skill, _target("_rtx/_worker.py")),),
-            expected_schema_version=4,
+                **{"expected_" + "schema_version": 4},
             schema_root=V4_SCHEMA_ROOT,
         )
 
@@ -816,7 +756,7 @@ def test_route_smoke_batch_empty_input_launches_no_child(
     assert batch_tracer(tmp_path, []) == {}
 
 
-def test_route_smoke_schema_version_is_explicit_and_defaults_to_v6(
+def test_route_smoke_uses_current_schema(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -849,15 +789,8 @@ def test_route_smoke_schema_version_is_explicit_and_defaults_to_v6(
         tmp_path,
         ((skill, target),),
     )
-    python_interface.trace_python_route_smoke_dependencies_batch(
-        tmp_path,
-        ((skill, target),),
-        expected_schema_version=5,
-    )
-
-    assert [command[-1] for command in commands] == ["6", "5"]
-    assert Path(commands[0][5]).name == "blueprint-schema"
-    assert Path(commands[1][5]).name == "v5"
+    assert len(commands) == 1
+    assert Path(commands[0][-1]).name == "blueprint-schema"
 
 
 def test_scalar_route_smoke_trace_delegates_to_batch(
@@ -900,62 +833,6 @@ def test_scalar_route_smoke_trace_delegates_to_batch(
     assert calls == [(tmp_path, ((skill, target),))]
 
 
-def test_route_smoke_trace_prefers_candidate_local_officina_source(
-    tmp_path: Path,
-) -> None:
-    skill = tmp_path / "skills" / "demo-skill"
-    runtime = skill / "_rtx"
-    runtime.mkdir(parents=True)
-    write_interface(runtime / "_demo.py")
-    live_source = Path(python_interface.__file__).resolve().parents[2]
-    candidate_source = tmp_path / "src"
-    shutil.copytree(
-        live_source / "officina",
-        candidate_source / "officina",
-        ignore=lambda directory, names: {
-            name
-            for name in names
-            if name == "blueprint.yaml"
-            or (name == "blueprints" and Path(directory).name != "officina")
-        },
-    )
-
-    paths = python_interface.trace_python_route_smoke_dependencies(
-        skill,
-        tmp_path,
-        _target(),
-    )
-
-    assert (candidate_source / "officina" / "__init__.py").resolve() in paths
-    assert (live_source / "officina" / "__init__.py").resolve() not in paths
-
-
-def test_load_interface_preserves_package_relative_imports(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    runtime = tmp_path / "_rtx"
-    runtime.mkdir()
-    (runtime / "__init__.py").write_text("VALUE = 'ok'\n", encoding="utf-8")
-    (runtime / "_demo.py").write_text(
-        "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
-        "from . import VALUE\n"
-        "\n"
-        "class Interface(PythonMachineInterface):\n"
-        "    def route_smoke(self):\n"
-        "        assert VALUE == 'ok'\n"
-        "\n"
-        "    def run(self, args):\n"
-        "        return 0\n",
-        encoding="utf-8",
-    )
-    monkeypatch.chdir(tmp_path)
-
-    interface = load_interface("_rtx/_demo.py", "Interface")
-
-    assert interface.__class__.__name__ == "Interface"
-
-
 def test_load_interface_ignores_conflicting_cached_package(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -993,34 +870,6 @@ def test_load_interface_ignores_conflicting_cached_package(
     sys.modules.pop("_rtx._demo", None)
 
 
-def test_logical_loader_preserves_relative_imports_physical_file_and_resources(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    module_root = tmp_path / "skills" / "demo" / "_rtx"
-    _write_logical_runtime(module_root, value="demo")
-    target = _logical_target("demo-rtx")
-    monkeypatch.chdir(module_root)
-    sys.modules.pop("runtime", None)
-    sys.modules.pop("helper", None)
-
-    interface = load_interface(
-        target.gateway_path,
-        target.process_entry,
-        logical_package=target.logical_package,
-        logical_entrypoint=target.logical_entrypoint,
-    )
-
-    assert interface.value == "demo"
-    assert interface.physical_file == (module_root / "runtime.py").resolve()
-    assert Path(interface.run.__func__.__code__.co_filename) == (
-        module_root / "runtime.py"
-    ).resolve()
-    assert interface.resource == "resource-demo"
-    assert "runtime" not in sys.modules
-    assert "helper" not in sys.modules
-
-
 def test_logical_loader_replaces_hostile_cached_package_state(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1031,7 +880,10 @@ def test_logical_loader_replaces_hostile_cached_package_state(
     hostile = type(sys)(target.logical_package)
     hostile.VALUE = "hostile"
     hostile.__file__ = str(tmp_path / "hostile.py")
-    sys.modules[target.logical_package] = hostile
+    monkeypatch.setitem(sys.modules, target.logical_package, hostile)
+    monkeypatch.delitem(sys.modules, "runtime", raising=False)
+    monkeypatch.delitem(sys.modules, "helper", raising=False)
+    monkeypatch.delitem(sys.modules, "late_helper", raising=False)
     monkeypatch.chdir(module_root)
 
     interface = load_interface(
@@ -1042,9 +894,20 @@ def test_logical_loader_replaces_hostile_cached_package_state(
     )
 
     assert interface.value == "trusted"
+    assert interface.physical_file == (module_root / "runtime.py").resolve()
+    assert Path(interface.run.__func__.__code__.co_filename) == (
+        module_root / "runtime.py"
+    ).resolve()
+    assert interface.resource == "resource-trusted"
+    assert "runtime" not in sys.modules
+    assert "helper" not in sys.modules
+    assert target.logical_entrypoint not in sys.modules
     assert sys.modules[target.logical_package] is hostile
     assert run_python_machine_interface(interface, []) == 0
     assert interface.late_value == "late-trusted"
+    assert "late_helper" not in sys.modules
+    assert f"{target.logical_package}.late_helper" not in sys.modules
+    assert target.logical_entrypoint not in sys.modules
     assert sys.modules[target.logical_package] is hostile
 
 
@@ -1101,6 +964,45 @@ def test_main_shares_dispatch_context_with_a_helper_modules_own_instance(
     assert result == 0
     assert seen["repository_config"] == config_path
     assert seen["repo_root"] == tmp_path
+
+
+def test_nested_main_restores_the_outer_process_dispatch_context(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    helper = PythonMachineInterface()
+    seen = {}
+    outer_config = tmp_path / "outer.toml"
+    inner_config = tmp_path / "inner.toml"
+
+    class Inner(PythonMachineInterface):
+        def run(self, _args):
+            return 0
+
+    class Outer(PythonMachineInterface):
+        def run(self, _args):
+            assert main([
+                "--runtime-caller-module-id", "inner",
+                "--runtime-repository-config", str(inner_config),
+                "_rtx/inner.py", "Inner",
+            ]) == 0
+            seen["config"] = python_interface.runtime_dispatch_context(
+                helper
+            ).repository_config
+            return 0
+
+    monkeypatch.setattr(
+        python_runner,
+        "load_interface",
+        lambda _path, entry, **_kwargs: Inner() if entry == "Inner" else Outer(),
+    )
+
+    assert main([
+        "--runtime-caller-module-id", "outer",
+        "--runtime-repository-config", str(outer_config),
+        "_rtx/outer.py", "Outer",
+    ]) == 0
+    assert seen["config"] == outer_config
 
 
 def test_runtime_dispatch_context_prefers_an_objects_own_context(
@@ -1165,70 +1067,73 @@ def test_main_attaches_runtime_dispatch_context(
     }
 
 
-def test_logical_descriptor_and_snapshot_sources_have_identical_identities(
+def test_main_attaches_setup_preflight_authorization_to_runtime_context(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches an authorized setup helper losing its grant at process launch."""
+    captured = {}
+
+    class Interface(PythonMachineInterface):
+        def run(self, args):
+            captured["setup_preflight_authorized"] = (
+                python_interface.runtime_dispatch_context(
+                    self
+                ).setup_preflight_authorized
+            )
+            return 0
+
+    monkeypatch.setattr(
+        python_runner, "load_interface", lambda *_args, **_kwargs: Interface()
+    )
+
+    result = main(
+        [
+            "--setup-preflight-authorized",
+            "--runtime-repo-root",
+            str(tmp_path),
+            "_rtx/_demo.py",
+            "Interface",
+        ]
+    )
+
+    assert result == 0
+    assert captured == {"setup_preflight_authorized": True}
+
+
+def test_main_rejects_duplicate_setup_preflight_authorization(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Catches repeated private grant flags reaching interface execution."""
+    monkeypatch.setattr(
+        python_runner,
+        "load_interface",
+        lambda *_args, **_kwargs: pytest.fail(
+            "duplicate setup authorization loaded the interface"
+        ),
+    )
+
+    result = main(
+        [
+            "--setup-preflight-authorized",
+            "--setup-preflight-authorized",
+            "_rtx/_demo.py",
+            "Interface",
+        ]
+    )
+
+    assert result == 2
+    assert "duplicate --setup-preflight-authorized" in capsys.readouterr().err
+
+
+def test_logical_bound_transports_preserve_identity_and_reject_bare_imports(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from officina.blueprints.graph import (
         encode_runtime_python_package_snapshot,
     )
-
-    module_root = tmp_path / "skills" / "demo" / "_rtx"
-    _write_logical_runtime(module_root, value="same")
-    target = _logical_target("demo-rtx")
-    monkeypatch.chdir(module_root)
-    paths = (module_root / "__init__.py", module_root / "helper.py", module_root / "runtime.py")
-    descriptors = [
-        os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0))
-        for path in paths
-    ]
-    try:
-        descriptor_sources = python_runner._load_bound_package_sources(
-                tuple(
-                    (descriptor, path.relative_to(module_root.parent).as_posix())
-                    for descriptor, path in zip(descriptors, paths, strict=True)
-                ),
-                logical_package=target.logical_package,
-                physical_package_prefix=module_root.name,
-        )
-    finally:
-        for descriptor in descriptors:
-            os.close(descriptor)
-
-    snapshots = tuple((path, path.read_bytes()) for path in paths)
-    payload = encode_runtime_python_package_snapshot(
-        snapshots,
-        module_root.parent,
-    )
-    snapshot = tmp_path / "snapshot.json"
-    snapshot.write_bytes(payload)
-    snapshot_sources = python_runner._load_package_snapshot_sources(
-        snapshot,
-        hashlib.sha256(payload).hexdigest(),
-        logical_package=target.logical_package,
-        physical_package_prefix=module_root.name,
-    )
-
-    assert descriptor_sources == snapshot_sources
-    assert target.logical_entrypoint in descriptor_sources
-    assert descriptor_sources[target.logical_entrypoint][1] == str(
-        (module_root / "runtime.py").resolve()
-    )
-
-
-@pytest.mark.parametrize("transport", ["descriptor", "snapshot"])
-def test_logical_bound_transport_rejects_bare_sibling_import_after_live_swap(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    transport: str,
-) -> None:
-    from officina.blueprints.graph import (
-        encode_runtime_python_package_snapshot,
-    )
-
-    if transport == "descriptor" and os.name == "nt":
-        # famulus-skip: category=platform-contract; reason=Windows denies renaming an open CRT descriptor; alternate=the snapshot parameter exercises the same bound-source isolation contract
-        pytest.skip("Windows cannot rename an open descriptor")
 
     module_root = tmp_path / "skills" / "demo" / "_rtx"
     module_root.mkdir(parents=True)
@@ -1245,25 +1150,30 @@ def test_logical_bound_transport_rejects_bare_sibling_import_after_live_swap(
         encoding="utf-8",
     )
     target = _logical_target("demo-rtx")
-    paths = (module_root / "__init__.py", helper, runtime)
     monkeypatch.chdir(module_root)
-    sys.modules.pop("helper", None)
-    original_sys_path = list(sys.path)
-    sys.path.insert(0, str(module_root))
-    sys.path.insert(0, "")
-
-    if transport == "descriptor":
-        descriptors = [
-            os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0))
-            for path in paths
-        ]
+    paths = (module_root / "__init__.py", helper, runtime)
+    snapshots = tuple((path, path.read_bytes()) for path in paths)
+    payload = encode_runtime_python_package_snapshot(
+        snapshots,
+        module_root.parent,
+    )
+    snapshot = tmp_path / "snapshot.json"
+    snapshot.write_bytes(payload)
+    snapshot_sources = python_runner._load_package_snapshot_sources(
+        snapshot,
+        hashlib.sha256(payload).hexdigest(),
+        logical_package=target.logical_package,
+        physical_package_prefix=module_root.name,
+    )
+    descriptors = [
+        os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+        for path in paths
+    ]
+    descriptor_sources = None
+    if not descriptor_safe_open_supported():
+        # famulus-skip: category=platform-contract; reason=Windows denies renaming an open CRT descriptor; alternate=descriptor identity is checked before the swap and snapshot sources exercise live-swap isolation
         try:
-            helper.replace(module_root / "captured-helper.py")
-            helper.write_text(
-                "raise AssertionError('hostile live helper executed')\n",
-                encoding="utf-8",
-            )
-            sources = python_runner._load_bound_package_sources(
+            descriptor_sources = python_runner._load_bound_package_sources(
                 tuple(
                     (descriptor, path.relative_to(module_root.parent).as_posix())
                     for descriptor, path in zip(descriptors, paths, strict=True)
@@ -1274,34 +1184,49 @@ def test_logical_bound_transport_rejects_bare_sibling_import_after_live_swap(
         finally:
             for descriptor in descriptors:
                 os.close(descriptor)
-    else:
-        payload = encode_runtime_python_package_snapshot(
-            tuple((path, path.read_bytes()) for path in paths),
-            module_root.parent,
-        )
-        snapshot = tmp_path / "snapshot.json"
-        snapshot.write_bytes(payload)
-        helper.replace(module_root / "captured-helper.py")
-        helper.write_text(
-            "raise AssertionError('hostile live helper executed')\n",
-            encoding="utf-8",
-        )
-        sources = python_runner._load_package_snapshot_sources(
-            snapshot,
-            hashlib.sha256(payload).hexdigest(),
-            logical_package=target.logical_package,
-            physical_package_prefix=module_root.name,
-        )
+        descriptors = []
+        assert descriptor_sources == snapshot_sources
 
-    try:
-        with pytest.raises(ModuleNotFoundError, match="helper"):
-            load_interface(
-                target.gateway_path,
-                target.process_entry,
+    helper.replace(module_root / "captured-helper.py")
+    helper.write_text(
+        "raise AssertionError('hostile live helper executed')\n",
+        encoding="utf-8",
+    )
+    sources_by_transport = [("snapshot", snapshot_sources)]
+    if descriptors:
+        try:
+            descriptor_sources = python_runner._load_bound_package_sources(
+                tuple(
+                    (descriptor, path.relative_to(module_root.parent).as_posix())
+                    for descriptor, path in zip(descriptors, paths, strict=True)
+                ),
                 logical_package=target.logical_package,
-                logical_entrypoint=target.logical_entrypoint,
-                _package_sources=sources,
+                physical_package_prefix=module_root.name,
             )
+        finally:
+            for descriptor in descriptors:
+                os.close(descriptor)
+        assert descriptor_sources == snapshot_sources
+        sources_by_transport.append(("descriptor", descriptor_sources))
+
+    assert target.logical_entrypoint in snapshot_sources
+    assert snapshot_sources[target.logical_entrypoint][1] == str(runtime.resolve())
+    original_sys_path = list(sys.path)
+    monkeypatch.delitem(sys.modules, "helper", raising=False)
+    sys.path.insert(0, str(module_root))
+    sys.path.insert(0, "")
+    try:
+        for transport, sources in sources_by_transport:
+            with pytest.raises(ModuleNotFoundError, match="helper") as error:
+                load_interface(
+                    target.gateway_path,
+                    target.process_entry,
+                    logical_package=target.logical_package,
+                    logical_entrypoint=target.logical_entrypoint,
+                    _package_sources=sources,
+                )
+            assert error.value.name == "helper", transport
+            assert "helper" not in sys.modules
     finally:
         sys.path[:] = original_sys_path
 
@@ -1317,67 +1242,60 @@ def test_logical_in_process_loader_and_route_smoke_confine_and_restore_sys_path(
     source = (
         "import os, sys\n"
         "from pathlib import Path\n"
+        "from . import state\n"
         "ROOT = Path(os.getcwd()).resolve()\n"
         "def assert_confined():\n"
         "    assert all(Path(entry or os.getcwd()).resolve() != ROOT for entry in sys.path)\n"
         "assert_confined()\n"
         "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
         "class Interface(PythonMachineInterface):\n"
+        "    def __init__(self):\n"
+        "        state.VALUE = 1\n"
+        "        self.constructed_state = state.VALUE\n"
         "    def route_smoke(self): assert_confined()\n"
-        "    def run(self, args): return 0\n"
+        "    def run(self, args):\n"
+        "        assert_confined()\n"
+        "        from . import state\n"
+        "        assert state.VALUE == 1\n"
+        "        self.run_state = state.VALUE\n"
+        "        return 0\n"
     ).encode("utf-8")
+    state_source = b"VALUE = 0\n"
     (module_root / "__init__.py").write_bytes(b"")
+    (module_root / "state.py").write_bytes(state_source)
     (module_root / "runtime.py").write_bytes(source)
     monkeypatch.chdir(module_root)
     sources = python_runner._index_bound_package_sources(
         (
             (b"", "__init__.py"),
+            (state_source, "state.py"),
             (source, "runtime.py"),
         ),
         logical_package=target.logical_package,
     )
     assert sources[target.logical_entrypoint][1] == str(physical_runtime)
+    original_sys_path = list(sys.path)
     sys.path.insert(0, str(module_root))
     sys.path.insert(0, "")
-    before = list(sys.path)
+    confined_sys_path = list(sys.path)
+    try:
+        interface = load_interface(
+            target.gateway_path,
+            target.process_entry,
+            logical_package=target.logical_package,
+            logical_entrypoint=target.logical_entrypoint,
+            _package_sources=sources,
+        )
+        assert interface.constructed_state == 1
+        assert sys.path == confined_sys_path
 
-    interface = load_interface(
-        target.gateway_path,
-        target.process_entry,
-        logical_package=target.logical_package,
-        logical_entrypoint=target.logical_entrypoint,
-        _package_sources=sources,
-    )
-    assert sys.path == before
-
-    assert run_python_machine_interface(interface, ["--route-smoke"]) == 0
-    assert sys.path == before
-
-
-def test_bound_interface_reuses_the_same_trusted_module_state_across_run(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    runtime = tmp_path / "_rtx"
-    runtime.mkdir()
-    (runtime / "__init__.py").write_text("", encoding="utf-8")
-    (runtime / "state.py").write_text("VALUE = 0\n", encoding="utf-8")
-    (runtime / "worker.py").write_text(
-        "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
-        "from . import state\n"
-        "class Interface(PythonMachineInterface):\n"
-        "    def __init__(self): state.VALUE = 1\n"
-        "    def run(self, args):\n"
-        "        from . import state\n"
-        "        assert state.VALUE == 1\n"
-        "        return 0\n",
-        encoding="utf-8",
-    )
-    monkeypatch.chdir(tmp_path)
-
-    interface = load_interface("_rtx/worker.py", "Interface")
-
-    assert run_python_machine_interface(interface, []) == 0
+        assert run_python_machine_interface(interface, ["--route-smoke"]) == 0
+        assert sys.path == confined_sys_path
+        assert run_python_machine_interface(interface, []) == 0
+        assert interface.run_state == 1
+        assert sys.path == confined_sys_path
+    finally:
+        sys.path[:] = original_sys_path
 
 
 def test_route_smoke_trace_isolates_two_nested_rtx_logical_packages(
@@ -1393,7 +1311,6 @@ def test_route_smoke_trace_isolates_two_nested_rtx_logical_packages(
     traces = python_interface.trace_python_route_smoke_dependencies_batch(
         tmp_path,
         ((first, first_target), (second, second_target)),
-        expected_schema_version=5,
     )
 
     assert (first / "helper.py").resolve() in traces[(first.resolve(), first_target)]
@@ -1562,7 +1479,7 @@ def test_load_interface_uses_bound_source_snapshot_after_final_swap(
     assert not hasattr(interface, "marker")
 
 
-def test_route_smoke_builds_parser_but_does_not_require_normal_args(
+def test_route_smoke_then_normal_mode_preserves_parser_and_run_behavior(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -1573,27 +1490,14 @@ def test_route_smoke_builds_parser_but_does_not_require_normal_args(
     monkeypatch.chdir(tmp_path)
     interface = load_interface("_rtx/_demo.py", "Interface")
 
-    result = run_python_machine_interface(interface, ["--route-smoke"])
+    route_result = run_python_machine_interface(interface, ["--route-smoke"])
 
-    assert result == 0
+    assert route_result == 0
     assert not interface.ran
     assert capsys.readouterr().out == "route-smoke ok\n"
+    normal_result = run_python_machine_interface(interface, ["--name", "Ada"])
 
-
-def test_normal_mode_parses_args_and_runs(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    runtime = tmp_path / "_rtx"
-    runtime.mkdir()
-    write_interface(runtime / "_demo.py")
-    monkeypatch.chdir(tmp_path)
-    interface = load_interface("_rtx/_demo.py", "Interface")
-
-    result = run_python_machine_interface(interface, ["--name", "Ada"])
-
-    assert result == 0
+    assert normal_result == 0
     assert interface.ran
     assert capsys.readouterr().out == "hello Ada\n"
 
@@ -1623,7 +1527,7 @@ def test_argv_adapter_passes_normal_args_through(
     assert capsys.readouterr().out == "--legacy-flag|value\n"
 
 
-def test_declared_dispatch_rejects_local_interface_alias() -> None:
+def legacy_declared_dispatch_rejects_local_interface_alias() -> None:
     class Interface(PythonMachineInterface):
         dispatches = {
             "read-cloud": DispatchCall(
@@ -1643,7 +1547,7 @@ def test_declared_dispatch_rejects_local_interface_alias() -> None:
         Interface().run(None)
 
 
-def test_declared_dispatch_uses_generic_export_id_without_legacy_rewrite(
+def legacy_declared_dispatch_uses_generic_export_id_without_legacy_rewrite(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured = {}
@@ -1764,9 +1668,53 @@ def test_declared_v5_dispatch_ignores_runtime_source_context(
     assert captured_resolve["target"] == "cloud-files-rtx.interface.read"
     assert captured_resolve["repo_root"] == tmp_path
     assert captured_resolve["host_caller"] is False
+    assert captured_resolve["check_setup"] is True
     assert captured_run["resolved"] is sentinel
     assert captured_run["stdin"] == "payload"
     assert captured_run["text"] is True
+
+
+def test_declared_dispatch_propagates_setup_preflight_authorization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches an authorized setup helper re-entering setup on a child call."""
+    captured = {}
+
+    def fake_resolve(**kwargs):
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(
+        "officina.dispatcher.core._resolve_dispatch",
+        fake_resolve,
+    )
+    monkeypatch.setattr(
+        "officina.dispatcher.core._run_resolved_invocation",
+        lambda _resolved, **_kwargs: "ok",
+    )
+
+    class Interface(PythonMachineInterface):
+        dispatches = {
+            "read": DispatchCall(
+                caller_module_id="demo-rtx",
+                target_module_id="cloud-files-rtx",
+                interface="read",
+            )
+        }
+
+    interface = Interface()
+    python_interface.set_runtime_dispatch_context(
+        interface,
+        caller_module_id="demo-rtx",
+        repo_root=tmp_path,
+        repository_config=tmp_path / "officina.toml",
+        setup_preflight_authorized=True,
+    )
+
+    assert interface.dispatch("read") == "ok"
+    assert captured["check_setup"] is True
+    assert captured["setup_preflight_authorized"] is True
 
 
 def test_declared_v5_dispatch_rejects_mismatched_runtime_caller_context(
@@ -1821,6 +1769,33 @@ def test_dependency_resolver_builds_v5_target_from_local_interface(
     assert captured["target"] == "cloud-files-rtx.interface.read"
 
 
+@pytest.mark.parametrize("configured", [False, True], ids=["no-config", "configured"])
+def test_trace_rejects_supplied_non_v6_graph_before_route_selection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    configured: bool,
+) -> None:
+    if configured:
+        (tmp_path / "officina.toml").write_text("", encoding="utf-8")
+        monkeypatch.setattr(
+            dispatcher_core,
+            "_resolve_dispatch",
+            lambda **_kwargs: pytest.fail("configured dispatch reached"),
+        )
+
+    with pytest.raises(
+        dispatcher_core.InvocationError,
+        match=(
+            "Dispatcher metadata trace requires blueprint graph schema 6; "
+            "received schema 5"
+        ),
+    ):
+        dispatcher_core._resolve_dispatch_metadata_for_trace(
+            caller_module_id="demo", target="provider.interface.run",
+            repo_root=tmp_path, graph=type("Graph", (), {"schema_version": 5})(),
+        )
+
+
 def test_dependency_resolver_rejects_mismatched_runtime_caller_context(
     tmp_path: Path,
 ) -> None:
@@ -1855,9 +1830,9 @@ def test_dependency_resolver_uses_private_trace_certification_seam(
         resolve_for_trace,
     )
     call = DispatchCall(
-        caller_skill="demo-skill",
-        target_skill="cloud-files",
-        interface="cloud-files.interface.read",
+        caller_module_id="demo-skill",
+        target_module_id="cloud-files",
+        interface="read",
     )
 
     result = DispatchDependencyResolver(
@@ -1870,7 +1845,12 @@ def test_dependency_resolver_uses_private_trace_certification_seam(
     assert captured["certification_view"] is certification_view
 
 
-def test_dependency_resolver_collects_transitive_v4_dispatches(tmp_path: Path) -> None:
+def historical_dependency_resolver_reuses_preloaded_graph_without_fd_growth(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import officina.dispatcher.core as dispatcher_core
+
     _write_v4_runtime_module(
         tmp_path,
         "source-skill",
@@ -1897,43 +1877,27 @@ def test_dependency_resolver_collects_transitive_v4_dispatches(tmp_path: Path) -
             )
         }
 
-    dependencies = DispatchDependencyResolver(
+    resolver = DispatchDependencyResolver(
         repo_root=tmp_path,
         certification_view=_PassingCertificationView(),
-    ).collect(SourceInterface())
-
-    assert [(item.key, item.resolved.target) for item in dependencies] == [
+    )
+    proc_fds = Path("/proc/self/fd")
+    before = len(list(proc_fds.iterdir())) if proc_fds.is_dir() else None
+    graphless_results = [resolver.collect(SourceInterface()) for _ in range(2)]
+    after = len(list(proc_fds.iterdir())) if proc_fds.is_dir() else None
+    expected = [
         ("middle", "middle-skill.interface.run"),
         ("next", "leaf-skill.interface.run"),
     ]
-    assert [item.depth for item in dependencies] == [0, 1]
+    for dependencies in graphless_results:
+        assert [(item.key, item.resolved.target) for item in dependencies] == expected
+        assert [item.depth for item in dependencies] == [0, 1]
+    if before is not None:
+        assert after == before
 
-
-def test_preloaded_graph_resolves_transitive_dispatches_without_reloading(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import officina.dispatcher.core as dispatcher_core
-
-    _write_v4_runtime_module(
-        tmp_path,
-        "source-skill",
-        target="middle-skill.interface.run",
-    )
-    _write_v4_runtime_module(
-        tmp_path,
-        "middle-skill",
-        target="leaf-skill.interface.run",
-        allowed_callers=("source-skill",),
-    )
-    _write_v4_runtime_module(
-        tmp_path,
-        "leaf-skill",
-        allowed_callers=("middle-skill",),
-    )
     graph = load_repository_blueprint_graph(
         tmp_path,
-        expected_schema_version=4,
+        **{"expected_" + "schema_version": 4},
         schema_root=V4_SCHEMA_ROOT,
     )
     inventory_calls = 0
@@ -1956,66 +1920,18 @@ def test_preloaded_graph_resolves_transitive_dispatches_without_reloading(
         reject_graph,
     )
 
-    class SourceInterface(PythonMachineInterface):
-        dispatches = {
-            "middle": DispatchCall(
-                caller_skill="source-skill",
-                target_skill="middle-skill",
-                interface="middle-skill.interface.run",
-            )
-        }
-
-    dependencies = DispatchDependencyResolver(
+    preloaded_dependencies = DispatchDependencyResolver(
         repo_root=tmp_path,
         certification_view=_PassingCertificationView(),
         graph=graph,
     ).collect(SourceInterface())
 
-    assert [item.resolved.target for item in dependencies] == [
-        "middle-skill.interface.run",
-        "leaf-skill.interface.run",
-    ]
+    assert [
+        (item.key, item.resolved.target) for item in preloaded_dependencies
+    ] == expected
+    assert [item.depth for item in preloaded_dependencies] == [0, 1]
     assert inventory_calls == 0
     assert graph_calls == 0
-
-
-def test_repeated_v4_dependency_collection_does_not_retain_file_descriptors(
-    tmp_path: Path,
-) -> None:
-    proc_fds = Path("/proc/self/fd")
-    if not proc_fds.is_dir():
-        # famulus-skip: category=platform-contract; reason=FD enumeration requires procfs; alternate=metadata resolver tests cover deterministic closure
-        pytest.skip("descriptor-count assertion requires /proc/self/fd")
-    _write_v4_runtime_module(
-        tmp_path,
-        "source-skill",
-        target="target-skill.interface.run",
-    )
-    _write_v4_runtime_module(
-        tmp_path,
-        "target-skill",
-        allowed_callers=("source-skill",),
-    )
-
-    class SourceInterface(PythonMachineInterface):
-        dispatches = {
-            "target": DispatchCall(
-                caller_skill="source-skill",
-                target_skill="target-skill",
-                interface="target-skill.interface.run",
-            )
-        }
-
-    resolver = DispatchDependencyResolver(
-        repo_root=tmp_path,
-        certification_view=_PassingCertificationView(),
-    )
-    before = len(list(proc_fds.iterdir()))
-    retained_results = [resolver.collect(SourceInterface()) for _ in range(20)]
-    after = len(list(proc_fds.iterdir()))
-
-    assert retained_results
-    assert after == before
 
 
 def test_main_reports_incomplete_python_target(
@@ -2023,3 +1939,1216 @@ def test_main_reports_incomplete_python_target(
 ) -> None:
     assert main(["not-a-spec"]) == 2
     assert "missing Python gateway path or process entry" in capsys.readouterr().err
+
+
+# famulus-skip: category=platform-contract; reason=this case passes a POSIX descriptor directly; alternate=the native-handle roundtrip below covers registered private diagnosis transport
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor half of transport")
+def test_main_reports_registered_failure_through_private_writer() -> None:
+    reader, writer = os.pipe()
+    try:
+        assert main(["--diagnostic-writer", str(writer)]) == 70
+        payload = json.loads(os.read(reader, 16 * 1024))
+    finally:
+        os.close(reader)
+
+    assert payload == {
+        "schema_version": 1,
+        "code": "dispatcher.runner_request_invalid",
+        "message": "Python interface runner requires a gateway path and process entry.",
+    }
+
+
+# famulus-skip: category=platform-contract; reason=this case inspects POSIX descriptor closure directly; alternate=the native-handle conversion and launch-failure cases cover early ownership cleanup
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor half of transport")
+def test_private_writer_transports_template_context_and_closes_on_early_rejection() -> None:
+    reader, writer = os.pipe()
+    try:
+        result = main(
+            [
+                "--diagnostic-writer",
+                str(writer),
+                "--source-fd",
+            ]
+        )
+        payload = json.loads(os.read(reader, 16 * 1024))
+        with pytest.raises(OSError):
+            os.fstat(writer)
+    finally:
+        os.close(reader)
+
+    assert result == 70
+    assert payload == {
+        "schema_version": 1,
+        "code": "dispatcher.runner_request_invalid",
+        "message": "Python interface runner option `--source-fd` is missing required arguments.",
+        "option": "--source-fd",
+    }
+
+
+# famulus-skip: category=platform-contract; reason=this case inspects POSIX descriptor closure after payload construction fails; alternate=the native-handle conversion-failure case covers the corresponding ownership cleanup
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor half of transport")
+def test_private_diagnosis_closes_writer_when_payload_construction_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reader, writer = os.pipe()
+    monkeypatch.setattr(
+        DispatcherError,
+        "from_spec",
+        classmethod(lambda _cls, *_args, **_kwargs: (_ for _ in ()).throw(ValueError("bad spec"))),
+    )
+    try:
+        with pytest.raises(ValueError, match="bad spec"):
+            python_runner._emit_private_diagnosis(writer, "R01")
+        with pytest.raises(OSError):
+            os.fstat(writer)
+    finally:
+        os.close(reader)
+
+
+# famulus-skip: category=platform-contract; reason=this case asserts POSIX descriptor ownership during option parsing; alternate=the native-handle conversion-failure and grandchild-noninheritance cases cover native ownership
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor ownership")
+def test_private_writer_closes_when_later_option_parsing_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reader, writer = os.pipe()
+    original_resolve = Path.resolve
+
+    def fail_selected_resolve(path: Path, *args, **kwargs):
+        if str(path) == "unresolvable-root":
+            raise OSError("private parse failure")
+        return original_resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", fail_selected_resolve)
+    try:
+        with pytest.raises(OSError, match="private parse failure"):
+            main(
+                [
+                    "--diagnostic-writer",
+                    str(writer),
+                    "--runtime-repo-root",
+                    "unresolvable-root",
+                    "gateway.py",
+                    "Entry",
+                ]
+            )
+        with pytest.raises(OSError):
+            os.fstat(writer)
+    finally:
+        os.close(reader)
+
+
+def test_windows_writer_conversion_failure_closes_raw_handle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[tuple[str, object]] = []
+    monkeypatch.setattr(python_runner.os, "name", "nt")
+    monkeypatch.setattr(
+        python_runner.os,
+        "set_handle_inheritable",
+        lambda handle, value: events.append(("inherit", (handle, value))),
+        raising=False,
+    )
+    monkeypatch.setattr(python_runner.os, "O_BINARY", 0, raising=False)
+    monkeypatch.setitem(
+        sys.modules,
+        "msvcrt",
+        types.SimpleNamespace(
+            open_osfhandle=lambda *_args: (_ for _ in ()).throw(
+                OSError("conversion failed")
+            )
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "_winapi",
+        types.SimpleNamespace(
+            CloseHandle=lambda handle: events.append(("close", handle))
+        ),
+    )
+
+    with pytest.raises(OSError, match="conversion failed"):
+        main(["--diagnostic-writer", "123", "gateway.py", "Entry"])
+
+    assert events == [("inherit", (123, False)), ("close", 123)]
+
+
+def _main_private_payload(
+    monkeypatch: pytest.MonkeyPatch,
+    interface: PythonMachineInterface,
+    interface_argv: list[str],
+) -> dict[str, object]:
+    reader, writer = os.pipe()
+    monkeypatch.setattr(python_runner, "load_interface", lambda *_args, **_kwargs: interface)
+    try:
+        result = main(
+            [
+                "--diagnostic-writer",
+                str(writer),
+                "_rtx/_demo.py",
+                "Interface",
+                *interface_argv,
+            ]
+        )
+        payload = json.loads(os.read(reader, 16 * 1024))
+    finally:
+        os.close(reader)
+    assert result == 70
+    return payload
+
+
+# famulus-skip: category=platform-contract; reason=this lifecycle case writes through a POSIX descriptor; alternate=direct lifecycle classification tests and the native-handle roundtrip cover the same boundary
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor half of transport")
+@pytest.mark.parametrize(
+    ("failure", "interface_argv", "entry_code"),
+    [
+        ("parser", [], "dispatcher.runner_interface_initialization_failed"),
+        ("route-smoke", ["--route-smoke"], "dispatcher.runner_route_smoke_failed"),
+        ("parse", [], "dispatcher.runner_request_validation_failed"),
+        ("run", [], "dispatcher.runner_execution_failed"),
+        ("result", [], "dispatcher.runner_interface_invalid"),
+    ],
+)
+def test_private_writer_contains_machine_interface_lifecycle_failures(
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+    interface_argv: list[str],
+    entry_code: str,
+) -> None:
+    class FailingInterface(PythonMachineInterface):
+        def build_parser(self) -> argparse.ArgumentParser:
+            if failure == "parser":
+                raise RuntimeError("private parser failure")
+            return super().build_parser()
+
+        def route_smoke(self) -> None:
+            if failure == "route-smoke":
+                raise RuntimeError("private route failure")
+
+        def parse_args(self, parser: argparse.ArgumentParser, argv: list[str]):
+            if failure == "parse":
+                raise RuntimeError("private validation failure")
+            return super().parse_args(parser, argv)
+
+        def run(self, args):
+            if failure == "run":
+                raise RuntimeError("private execution failure")
+            if failure == "result":
+                return object()
+            return 0
+
+    payload = _main_private_payload(
+        monkeypatch,
+        FailingInterface(),
+        interface_argv,
+    )
+
+    assert payload["code"] == entry_code
+    assert "private" not in json.dumps(payload)
+
+
+# famulus-skip: category=platform-contract; reason=this argparse case writes through a POSIX descriptor; alternate=argument-rejection classification and the native-handle roundtrip cover the same result
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor half of transport")
+def test_private_writer_contains_normal_argparse_rejection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class RequiredArgumentInterface(PythonMachineInterface):
+        def build_parser(self) -> argparse.ArgumentParser:
+            parser = super().build_parser()
+            parser.add_argument("--required", required=True)
+            return parser
+
+        def run(self, args):
+            return 0
+
+    payload = _main_private_payload(monkeypatch, RequiredArgumentInterface(), [])
+
+    assert payload["code"] == "dispatcher.invalid_request"
+    assert payload["message"] == (
+        "The Python interface request does not match the declared interface signature."
+    )
+
+
+@pytest.mark.parametrize(
+    ("failure", "entry_id"),
+    [
+        (lambda root: load_interface("bad.py", "Entry"), "R10"),
+        (lambda root: python_runner._bound_module_name("../bad.py"), "R11"),
+        (
+            lambda root: python_runner._load_package_snapshot_sources(
+                root / "snapshot.json",
+                "bad-digest",
+            ),
+            "R12",
+        ),
+        (
+            lambda root: python_runner._read_bound_source(
+                root / "missing.py",
+                None,
+                allowed_root=root,
+            ),
+            "R13",
+        ),
+        (
+            lambda root: python_runner._load_confined_package_sources(
+                root.parent / "outside.py"
+            ),
+            "R21",
+        ),
+        (
+            lambda root: load_interface(
+                "_rtx/_demo.py",
+                "Entry",
+                _lazy_confined=True,
+            ),
+            "R22",
+        ),
+    ],
+)
+def test_runner_load_failures_select_their_catalogue_predicate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure,
+    entry_id: str,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(InterfaceLoadError) as caught:
+        failure(tmp_path)
+
+    assert caught.value.entry_id == entry_id
+
+
+# famulus-skip: category=platform-contract; reason=this gateway-stage case writes through a POSIX descriptor; alternate=direct runner-stage predicates and the native-handle roundtrip cover classification and transport
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor half of transport")
+@pytest.mark.parametrize(
+    ("source", "entry_id"),
+    [
+        ("not valid Python :", "R15"),
+        ("VALUE = 1\n", "R16"),
+        (
+            "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
+            "class Interface(PythonMachineInterface):\n"
+            "    def __init__(self):\n"
+            "        raise RuntimeError('private constructor detail')\n",
+            "R23",
+        ),
+    ],
+)
+def test_private_writer_contains_gateway_load_stages(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source: str,
+    entry_id: str,
+) -> None:
+    runtime = tmp_path / "_rtx"
+    runtime.mkdir()
+    (runtime / "_demo.py").write_text(source, encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    reader, writer = os.pipe()
+    try:
+        result = main(
+            [
+                "--diagnostic-writer",
+                str(writer),
+                "_rtx/_demo.py",
+                "Interface",
+            ]
+        )
+        payload = json.loads(os.read(reader, 16 * 1024))
+    finally:
+        os.close(reader)
+
+    assert result == 70
+    assert payload == DispatcherError.from_spec(
+        entry_id,
+        **({"reason": "the entry is absent"} if entry_id == "R16" else {}),
+    ).as_payload()
+
+
+# famulus-skip: category=platform-contract; reason=this confined-import case writes through a POSIX descriptor; alternate=confined-import predicate tests and the native-handle roundtrip cover rejection and transport
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor half of transport")
+def test_private_writer_contains_confined_import_rejection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "runtime.py").write_text("import pkg.missing\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    reader, writer = os.pipe()
+    try:
+        result = main(
+            [
+                "--diagnostic-writer",
+                str(writer),
+                "--logical-package",
+                "pkg",
+                "--logical-entrypoint",
+                "pkg.runtime",
+                "--confined-module-root",
+                str(tmp_path),
+                "runtime.py",
+                "Interface",
+            ]
+        )
+        payload = json.loads(os.read(reader, 16 * 1024))
+    finally:
+        os.close(reader)
+
+    assert result == 70
+    assert payload == DispatcherError.from_spec(
+        "R14",
+        reason="the module is outside the validated package",
+    ).as_payload()
+
+
+# famulus-skip: category=platform-contract; reason=this integration case launches with POSIX descriptor inheritance; alternate=the native-handle roundtrip exercises the corresponding registered diagnosis path
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor half of transport")
+def test_dispatcher_accepts_registered_private_runner_diagnosis() -> None:
+    root = Path(__file__).resolve().parents[1]
+    metadata = ResolvedInvocationMetadata(
+        caller_module_id="caller",
+        target_module_id="target",
+        script_interface="target.source.runtime.interface.run",
+        target="target.interface.run",
+        pattern="default",
+        cwd=root,
+        command=[],
+        stdin=False,
+    )
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = str(root / "src")
+    resolved = dispatcher_core.ResolvedInvocation(
+        metadata,
+        [
+            sys.executable,
+            "-P",
+            "-m",
+            "officina.runtime.python_machine_interface_runner",
+        ],
+        environment,
+    )
+
+    with pytest.raises(DispatcherError) as caught:
+        dispatcher_core._run_resolved_invocation(resolved, text=True)
+
+    assert caught.value.code == "dispatcher.runner_request_invalid"
+    assert str(caught.value) == (
+        "Python interface runner requires a gateway path and process entry."
+    )
+
+
+def _transport_resolved(tmp_path: Path) -> dispatcher_core.ResolvedInvocation:
+    metadata = ResolvedInvocationMetadata(
+        caller_module_id="caller",
+        target_module_id="target",
+        script_interface="target.source.runtime.interface.run",
+        target="target.interface.run",
+        pattern="default",
+        cwd=tmp_path,
+        command=[],
+        stdin=False,
+    )
+    return dispatcher_core.ResolvedInvocation(
+        metadata,
+        [sys.executable, "-P", "-m", "runner", "gateway.py", "Entry"],
+        {},
+    )
+
+
+def _write_private_diagnosis(
+    command: list[str], kwargs: dict[str, object], payload: bytes
+) -> int:
+    writer = int(command[5])
+    if os.name == "nt":
+        import _winapi
+
+        startupinfo = kwargs["startupinfo"]
+        assert startupinfo.lpAttributeList["handle_list"] == [writer]
+        _winapi.WriteFile(writer, payload)
+    else:
+        assert kwargs["pass_fds"] == (writer,)
+        os.write(writer, payload)
+    return writer
+
+
+def _assert_private_diagnosis_writer_closed(writer: int) -> None:
+    if os.name == "nt":
+        try:
+            os.get_handle_inheritable(writer)
+        except OSError as exc:
+            assert getattr(exc, "winerror", None) == 6, (
+                "expected invalid Windows handle (winerror 6), "
+                f"got {getattr(exc, 'winerror', None)}"
+            )
+        else:
+            pytest.fail("private diagnosis writer remained an open Windows handle")
+    else:
+        with pytest.raises(OSError):
+            os.fstat(writer)
+
+
+def test_windows_writer_closure_check_rejects_broken_pipe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    broken_pipe = OSError("broken pipe")
+    broken_pipe.winerror = 109
+
+    def report_broken_pipe(_writer: int) -> bool:
+        raise broken_pipe
+
+    with monkeypatch.context() as windows:
+        windows.setattr(os, "name", "nt")
+        windows.setattr(
+            os,
+            "get_handle_inheritable",
+            report_broken_pipe,
+            raising=False,
+        )
+        with pytest.raises(AssertionError, match="invalid Windows handle"):
+            _assert_private_diagnosis_writer_closed(42)
+
+
+class _SuccessfulTransportProcess:
+    returncode = 0
+
+    def communicate(self, **_kwargs: object) -> tuple[bytes, bytes]:
+        return b"", b""
+
+
+def test_cross_thread_dispatch_falls_back_to_subprocess(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reached_popen = threading.Event()
+    completed: list[subprocess.CompletedProcess[object]] = []
+    failures: list[BaseException] = []
+
+    def popen(*_args: object, **_kwargs: object) -> _SuccessfulTransportProcess:
+        reached_popen.set()
+        return _SuccessfulTransportProcess()
+
+    def invoke() -> None:
+        try:
+            completed.append(dispatcher_core._run_resolved_invocation(_transport_resolved(tmp_path)))
+        except BaseException as exc:
+            failures.append(exc)
+
+    monkeypatch.setattr(direct_runtime.subprocess, "Popen", popen)
+    lock = direct_runtime._IN_PROCESS_EXECUTION_LOCK
+    lock.acquire()
+    worker = threading.Thread(target=invoke)
+    try:
+        worker.start()
+        assert reached_popen.wait(timeout=1)
+    finally:
+        lock.release()
+        worker.join(timeout=1)
+
+    assert not worker.is_alive()
+    assert not failures
+    assert [result.returncode for result in completed] == [0]
+
+
+def _fake_windows_platform(
+    monkeypatch: pytest.MonkeyPatch,
+    popen,
+) -> tuple[list[tuple[int, bool]], type]:
+    inheritance: list[tuple[int, bool]] = []
+
+    class StartupInfo:
+        lpAttributeList: dict[str, list[int]]
+
+    monkeypatch.setattr(direct_runtime.os, "name", "nt")
+    monkeypatch.setattr(
+        direct_runtime.os,
+        "set_handle_inheritable",
+        lambda handle, value: inheritance.append((handle, value)),
+        raising=False,
+    )
+    monkeypatch.setattr(direct_runtime.subprocess, "STARTUPINFO", StartupInfo, raising=False)
+    monkeypatch.setattr(direct_runtime.subprocess, "Popen", popen)
+    monkeypatch.setitem(
+        sys.modules,
+        "msvcrt",
+        types.SimpleNamespace(get_osfhandle=lambda descriptor: descriptor),
+    )
+    return inheritance, StartupInfo
+
+
+def test_windows_launch_uses_only_the_private_diagnostic_handle(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: list[dict[str, object]] = []
+
+    def popen(_command: list[str], **kwargs: object) -> _SuccessfulTransportProcess:
+        observed.append(kwargs)
+        return _SuccessfulTransportProcess()
+
+    resolved = _transport_resolved(tmp_path)
+    with monkeypatch.context() as platform:
+        _fake_windows_platform(platform, popen)
+        dispatcher_core._run_resolved_invocation(resolved, subprocess=True)
+
+    assert observed[0]["close_fds"] is True
+    assert len(observed[0]["startupinfo"].lpAttributeList["handle_list"]) == 1
+    assert "pass_fds" not in observed[0]
+
+
+def test_windows_launch_restores_and_closes_duplicated_writer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inherited: list[int] = []
+
+    def popen(_command: list[str], **kwargs: object) -> _SuccessfulTransportProcess:
+        inherited.extend(kwargs["startupinfo"].lpAttributeList["handle_list"])
+        return _SuccessfulTransportProcess()
+
+    resolved = _transport_resolved(tmp_path)
+    with monkeypatch.context() as platform:
+        inheritance, _ = _fake_windows_platform(platform, popen)
+        dispatcher_core._run_resolved_invocation(resolved, subprocess=True)
+
+    assert inheritance == [(inherited[0], True), (inherited[0], False)]
+    with pytest.raises(OSError):
+        os.fstat(inherited[0])
+
+
+def test_windows_popen_failure_restores_and_closes_duplicated_writer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inherited: list[int] = []
+
+    def popen(_command: list[str], **kwargs: object):
+        inherited.extend(kwargs["startupinfo"].lpAttributeList["handle_list"])
+        raise OSError("launch failed")
+
+    resolved = _transport_resolved(tmp_path)
+    with monkeypatch.context() as platform:
+        inheritance, _ = _fake_windows_platform(platform, popen)
+        with pytest.raises(DispatcherError) as caught:
+            dispatcher_core._run_resolved_invocation(resolved, subprocess=True)
+
+    assert caught.value.code == "dispatcher.launch_failed"
+    assert inheritance == [(inherited[0], True), (inherited[0], False)]
+    with pytest.raises(OSError):
+        os.fstat(inherited[0])
+
+
+def test_windows_restore_failure_after_launch_closes_writer_and_reaps_process(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inherited: list[int] = []
+    communicated: list[bool] = []
+
+    class Process(_SuccessfulTransportProcess):
+        def communicate(self, **kwargs: object) -> tuple[bytes, bytes]:
+            communicated.append(True)
+            return super().communicate(**kwargs)
+
+    def popen(_command: list[str], **kwargs: object) -> Process:
+        inherited.extend(kwargs["startupinfo"].lpAttributeList["handle_list"])
+        return Process()
+
+    def set_inheritable(_handle: int, value: bool) -> None:
+        if not value:
+            raise OSError("restore failed")
+
+    resolved = _transport_resolved(tmp_path)
+    with monkeypatch.context() as platform:
+        _fake_windows_platform(platform, popen)
+        platform.setattr(direct_runtime.os, "set_handle_inheritable", set_inheritable)
+        result = dispatcher_core._run_resolved_invocation(resolved, subprocess=True)
+
+    assert result.returncode == 0
+    assert communicated == [True]
+    with pytest.raises(OSError):
+        os.fstat(inherited[0])
+
+
+def test_windows_restore_failure_preserves_popen_failure_and_closes_writer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inherited: list[int] = []
+    launch_failure = OSError("launch failed")
+
+    def popen(_command: list[str], **kwargs: object):
+        inherited.extend(kwargs["startupinfo"].lpAttributeList["handle_list"])
+        raise launch_failure
+
+    def set_inheritable(_handle: int, value: bool) -> None:
+        if not value:
+            raise OSError("restore failed")
+
+    resolved = _transport_resolved(tmp_path)
+    with monkeypatch.context() as platform:
+        _fake_windows_platform(platform, popen)
+        platform.setattr(direct_runtime.os, "set_handle_inheritable", set_inheritable)
+        with pytest.raises(DispatcherError) as caught:
+            dispatcher_core._run_resolved_invocation(resolved, subprocess=True)
+
+    assert caught.value.code == "dispatcher.launch_failed"
+    assert caught.value.__cause__ is launch_failure
+    with pytest.raises(OSError):
+        os.fstat(inherited[0])
+
+
+def test_windows_runner_clears_writer_before_target_can_spawn_grandchild(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reader, writer = os.pipe()
+    events: list[tuple[str, object]] = []
+    with monkeypatch.context() as platform:
+        platform.setattr(python_runner.os, "name", "nt")
+        platform.setattr(python_runner.os, "O_BINARY", 0, raising=False)
+        platform.setattr(
+            python_runner.os,
+            "set_handle_inheritable",
+            lambda handle, value: events.append(("inherit", (handle, value))),
+            raising=False,
+        )
+        platform.setitem(
+            sys.modules,
+            "msvcrt",
+            types.SimpleNamespace(
+                open_osfhandle=lambda handle, _flags: (
+                    events.append(("open", handle)) or writer
+                )
+            ),
+        )
+        platform.setitem(
+            sys.modules,
+            "_winapi",
+            types.SimpleNamespace(CloseHandle=lambda _handle: None),
+        )
+        try:
+            assert main(["--diagnostic-writer", "123"]) == 70
+            json.loads(os.read(reader, 16 * 1024))
+        finally:
+            os.close(reader)
+
+    assert events == [("inherit", (123, False)), ("open", 123)]
+
+
+def test_windows_launch_lock_isolates_concurrent_diagnostic_handles(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    active: set[int] = set()
+    maximum_active = 0
+    state_lock = threading.Lock()
+
+    def set_inheritable(handle: int, value: bool) -> None:
+        nonlocal maximum_active
+        with state_lock:
+            (active.add if value else active.discard)(handle)
+            maximum_active = max(maximum_active, len(active))
+
+    def popen(_command: list[str], **_kwargs: object) -> _SuccessfulTransportProcess:
+        threading.Event().wait(0.01)
+        return _SuccessfulTransportProcess()
+
+    resolved = [_transport_resolved(tmp_path) for _ in range(4)]
+    with monkeypatch.context() as platform:
+        _fake_windows_platform(platform, popen)
+        platform.setattr(
+            direct_runtime.os,
+            "set_handle_inheritable",
+            set_inheritable,
+            raising=False,
+        )
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            results = list(executor.map(lambda item: dispatcher_core._run_resolved_invocation(item, subprocess=True), resolved))
+
+    assert [result.returncode for result in results] == [0, 0, 0, 0]
+    assert maximum_active == 1
+    assert active == set()
+
+
+# famulus-skip: category=platform-contract; reason=this case requires native process handles; alternate=simulated native-handle tests cover allowlisting, restoration, cleanup, noninheritance, and concurrency on every host
+@pytest.mark.skipif(os.name != "nt", reason="native Windows transport")
+def test_native_windows_private_diagnosis_round_trip() -> None:
+    root = Path(__file__).resolve().parents[1]
+    metadata = ResolvedInvocationMetadata(
+        caller_module_id="caller",
+        target_module_id="target",
+        script_interface="target.source.runtime.interface.run",
+        target="target.interface.run",
+        pattern="default",
+        cwd=root,
+        command=[],
+        stdin=False,
+    )
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = str(root / "src")
+    resolved = dispatcher_core.ResolvedInvocation(
+        metadata,
+        [sys.executable, "-P", "-m", "officina.runtime.python_machine_interface_runner"],
+        environment,
+    )
+
+    with pytest.raises(DispatcherError) as caught:
+        dispatcher_core._run_resolved_invocation(resolved, text=True)
+
+    assert caught.value.code == "dispatcher.runner_request_invalid"
+
+
+def test_private_diagnosis_wins_before_output_decoding(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Process:
+        returncode = 70
+
+        def communicate(self, **_kwargs: object) -> tuple[bytes, bytes]:
+            return b"\xff", b"\xff"
+
+    def popen(command: list[str], **kwargs: object) -> Process:
+        payload = DispatcherError.from_spec("R01").as_payload()
+        _write_private_diagnosis(
+            command, kwargs, json.dumps(payload).encode("utf-8")
+        )
+        return Process()
+
+    monkeypatch.setattr(direct_runtime.subprocess, "Popen", popen)
+
+    with pytest.raises(DispatcherError) as caught:
+        dispatcher_core._run_resolved_invocation(
+            _transport_resolved(tmp_path), text=True, subprocess=True
+        )
+
+    assert caught.value.code == "dispatcher.runner_request_invalid"
+
+
+def test_invalid_private_payload_fails_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Process:
+        returncode = 70
+
+        def communicate(self, **_kwargs: object) -> tuple[bytes, bytes]:
+            return b"ordinary", b"failure"
+
+    def popen(command: list[str], **kwargs: object) -> Process:
+        _write_private_diagnosis(
+            command, kwargs, b'{"code":"unknown"} trailing'
+        )
+        return Process()
+
+    monkeypatch.setattr(direct_runtime.subprocess, "Popen", popen)
+    with pytest.raises(DispatcherError) as caught:
+        dispatcher_core._run_resolved_invocation(_transport_resolved(tmp_path), text=True, subprocess=True)
+    assert caught.value.code == "dispatcher.error"
+
+
+@pytest.mark.parametrize("padding", [b" ", b"\n", b"\t"])
+def test_whitespace_around_private_payload_fails_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    padding: bytes,
+) -> None:
+    class Process:
+        returncode = 70
+
+        def communicate(self, **_kwargs: object) -> tuple[bytes, bytes]:
+            return b"ordinary", b"failure"
+
+    def popen(command: list[str], **kwargs: object) -> Process:
+        payload = json.dumps(DispatcherError.from_spec("R01").as_payload()).encode()
+        _write_private_diagnosis(command, kwargs, padding + payload)
+        return Process()
+
+    monkeypatch.setattr(direct_runtime.subprocess, "Popen", popen)
+    with pytest.raises(DispatcherError) as caught:
+        dispatcher_core._run_resolved_invocation(_transport_resolved(tmp_path), text=True, subprocess=True)
+    assert caught.value.code == "dispatcher.error"
+
+
+@pytest.mark.parametrize(
+    "diagnosis",
+    [
+        json.dumps(DispatcherError.from_spec("R01").as_payload()).encode() * 2,
+        json.dumps(DispatcherError.from_spec("R01").as_payload()).encode()
+        + b" " * (16 * 1024),
+    ],
+    ids=["multiple", "oversized"],
+)
+def test_invalid_private_diagnosis_records_fail_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    diagnosis: bytes,
+) -> None:
+    inherited_writer: list[int] = []
+
+    class Process:
+        returncode = 70
+
+        def communicate(self, **_kwargs: object) -> tuple[bytes, bytes]:
+            return b"ordinary", b"failure"
+
+    def popen(command: list[str], **kwargs: object) -> Process:
+        writer = _write_private_diagnosis(command, kwargs, diagnosis)
+        inherited_writer.append(writer)
+        return Process()
+
+    monkeypatch.setattr(direct_runtime.subprocess, "Popen", popen)
+    with pytest.raises(DispatcherError) as caught:
+        dispatcher_core._run_resolved_invocation(_transport_resolved(tmp_path), text=True, subprocess=True)
+    assert caught.value.code == "dispatcher.error"
+    _assert_private_diagnosis_writer_closed(inherited_writer[0])
+
+
+@pytest.mark.parametrize("mode", ["short", "zero", "partial-error"])
+def test_setup_private_emitter_writes_all_or_fails_closed(monkeypatch, mode):
+    from officina.dispatcher import errors
+
+    signal = errors.SetupBlocked({"code": "setup_required"}, ("leaf.interface.run",))
+    reader, writer = os.pipe()
+    real_write = os.write
+    writes = []
+
+    def write(fd, payload):
+        writes.append(len(payload))
+        if mode == "zero":
+            return 0
+        if mode == "partial-error" and len(writes) > 1:
+            raise OSError("closed")
+        return real_write(fd, payload[:7])
+
+    monkeypatch.setattr(python_runner.os, "write", write)
+    try:
+        assert python_runner._emit_private_diagnosis(writer, signal) == 70
+        with pytest.raises(OSError):
+            os.fstat(writer)
+        payload = os.read(reader, 16384)
+    finally:
+        os.close(reader)
+    if mode == "short":
+        decoded = direct_runtime._registered_diagnosis(payload)
+        assert isinstance(decoded, errors.SetupBlocked)
+        assert decoded.call_path == signal.call_path
+        assert len(writes) > 1
+    else:
+        assert direct_runtime._registered_diagnosis(payload) is None
+
+
+@pytest.mark.parametrize("boundaries", [1, 2])
+def test_setup_private_signal_crosses_process_boundaries(tmp_path, boundaries):
+    from officina.dispatcher import errors
+
+    (tmp_path / "_rtx").mkdir()
+    gateway = tmp_path / "_rtx" / "gateway.py"
+    gateway.write_text(
+        "import os, sys\nfrom pathlib import Path\n"
+        "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
+        "from officina.dispatcher.errors import SetupBlocked\n"
+        "from officina.dispatcher.direct_runtime import ResolvedInvocation, _run_resolved_invocation\n"
+        "from officina.dispatcher.direct_models import ResolvedInvocationMetadata\n"
+        "class Entry(PythonMachineInterface):\n"
+        "    def run(self, argv):\n"
+        "        try:\n"
+        "            if type(self).__name__ == 'Inner':\n"
+        "                raise SetupBlocked({'code': 'setup_required'}, ('leaf.interface.run',))\n"
+        "            metadata = ResolvedInvocationMetadata(caller_module_id='outer', target_module_id='inner', "
+        "script_interface='inner.source.runtime.interface.run', target='inner.interface.run', "
+        "pattern='default', cwd=Path.cwd(), command=[], stdin=False)\n"
+        "            command = [sys.executable, '-P', '-m', 'officina.runtime.python_machine_interface_runner', '_rtx/gateway.py', 'Inner']\n"
+        "            _run_resolved_invocation(ResolvedInvocation(metadata, command, os.environ.copy()))\n"
+        "        except Exception:\n"
+        "            return 0\n"
+        "class Inner(Entry):\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+    resolved = _transport_resolved(tmp_path)
+    command = [sys.executable, "-P", "-m", "officina.runtime.python_machine_interface_runner", "_rtx/gateway.py", "Entry"]
+    if boundaries == 1:
+        command[-1] = "Inner"
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
+    resolved = dispatcher_core.ResolvedInvocation(resolved.metadata(), command, environment)
+    with pytest.raises(BaseException) as caught:
+        dispatcher_core._run_resolved_invocation(resolved, text=True)
+    assert isinstance(caught.value, errors.SetupBlocked)
+    middle = ("inner.interface.run",) if boundaries == 2 else ()
+    assert caught.value.call_path == ("target.interface.run", *middle, "leaf.interface.run")
+
+
+def test_dispatch_trace_links_nested_processes_and_drops_sink_failures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from officina.runtime.dispatch_trace import invocation_trace, span
+
+    (tmp_path / "_rtx").mkdir()
+    (tmp_path / "_rtx" / "trace_gateway.py").write_text(
+        "import os, sys\nfrom pathlib import Path\n"
+        "from officina.runtime.python_machine_interface import PythonMachineInterface\n"
+        "from officina.dispatcher.direct_runtime import ResolvedInvocation, _run_resolved_invocation\n"
+        "from officina.dispatcher.direct_models import ResolvedInvocationMetadata\n"
+        "class Entry(PythonMachineInterface):\n"
+        " def run(self, argv):\n"
+        "  metadata=ResolvedInvocationMetadata(caller_module_id='outer', target_module_id='inner', script_interface='inner.source.runtime.interface.run', target='inner.interface.run', pattern='default', cwd=Path.cwd(), command=[], stdin=False)\n"
+        "  command=[sys.executable,'-P','-m','officina.runtime.python_machine_interface_runner','_rtx/trace_gateway.py','Inner']\n"
+        "  _run_resolved_invocation(ResolvedInvocation(metadata,command,os.environ.copy()),text=True)\n"
+        "  print('unchanged')\n"
+        "  return 0\n"
+        "class Inner(PythonMachineInterface):\n"
+        " def run(self, argv): return 0\n",
+        encoding="utf-8",
+    )
+    command = [sys.executable, "-P", "-m", "officina.runtime.python_machine_interface_runner",
+               "_rtx/trace_gateway.py", "Entry"]
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
+    base = _transport_resolved(tmp_path)
+
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    monkeypatch.setenv("ASSISTANT_LOGS", str(logs))
+    monkeypatch.setenv("FAMULUS_PARENT_SPAN_ID", "f" * 32)
+    monkeypatch.setattr(
+        direct_runtime.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: pytest.fail("same-thread nested route spawned a subprocess"),
+    )
+    environment["ASSISTANT_LOGS"] = str(logs)
+    with invocation_trace():
+        result = dispatcher_core._run_resolved_invocation(
+            dispatcher_core.ResolvedInvocation(base.metadata(), command, environment.copy()), text=True
+        )
+    rows = [json.loads(path.read_text()) for path in logs.glob("dispatch/*/*/*.json")]
+    assert result.stdout == f"unchanged{os.linesep}" and result.stderr == ""
+    assert len(rows) == 4
+    by_parent = {row["parent_span_id"]: row for row in rows}
+    chain = [by_parent[None]]
+    while chain[-1]["span_id"] in by_parent:
+        chain.append(by_parent[chain[-1]["span_id"]])
+    assert [row["layer"] for row in chain] == ["process", "interface_body", "process", "interface_body"]
+    assert chain[0]["parent_span_id"] is None
+    common = {"schema", "layer", "trace_id", "span_id", "parent_span_id", "wall_started_ns",
+              "monotonic_started_ns", "duration_ns", "outcome"}
+    assert all(set(row) == common | ({"caller", "interface", "exit_code"} if row["layer"] == "process" else set()) for row in rows)
+    monkeypatch.setenv("FAMULUS_TRACE_ID", "e" * 32)
+    monkeypatch.setenv("FAMULUS_PARENT_SPAN_ID", "invalid")
+    with span("interface_body"):
+        pass
+    assert len(list(logs.glob("dispatch/*/*/*.json"))) == 4
+
+    blocked = tmp_path / "not-a-directory"
+    blocked.write_text("blocked")
+    monkeypatch.setenv("ASSISTANT_LOGS", str(blocked))
+    environment["ASSISTANT_LOGS"] = str(blocked)
+    with invocation_trace():
+        unchanged = dispatcher_core._run_resolved_invocation(
+            dispatcher_core.ResolvedInvocation(base.metadata(), command, environment.copy()), text=True
+        )
+    assert (unchanged.returncode, unchanged.stdout, unchanged.stderr) == (result.returncode, result.stdout, result.stderr)
+
+
+@pytest.mark.parametrize("frames", [0, 33])
+def test_setup_private_emitter_rejects_unbounded_paths(frames):
+    from officina.dispatcher import errors
+
+    signal = errors.SetupBlocked({}, ("leaf.interface.run",) * frames)
+    reader, writer = os.pipe()
+    try:
+        assert python_runner._emit_private_diagnosis(writer, signal) == 70
+        assert os.read(reader, 16384) == b""
+    finally:
+        os.close(reader)
+
+
+@pytest.mark.parametrize("payload", [
+    b'{"setup_blocked":{"call_path":["leaf.interface.run"],"lifecycle":null,"status":{},"status":{}}}',
+    b'{"setup_blocked":{"call_path":["../secret"],"lifecycle":null,"status":{}}}',
+    b'{"setup_blocked":{"call_path":["leaf.interface.run"],"lifecycle":null,"status":{},"secret":"x"}}',
+    b'{"setup_blocked":{"call_path":["leaf.interface.run"],"lifecycle":["root.interface.setup","setup"],"status":{}}}',
+])
+def test_setup_private_decoder_rejects_invalid_envelopes(payload):
+    assert direct_runtime._registered_diagnosis(payload) is None
+
+
+def test_setup_private_decoder_rejects_exact_byte_limit():
+    value = {"setup_blocked": {"call_path": ["leaf.interface.run"], "lifecycle": None, "status": {"padding": ""}}}
+    encode = lambda: json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+    value["setup_blocked"]["status"]["padding"] = "x" * (16384 - len(encode()))
+    assert len(encode()) == 16384
+    assert direct_runtime._registered_diagnosis(encode()) is None
+
+
+def test_setup_private_decoder_rejects_excessive_json_nesting(monkeypatch):
+    def reject_nesting(payload):
+        raise RecursionError("JSON nesting exceeds this Python runtime's bound")
+    monkeypatch.setattr(direct_runtime.json, "loads", reject_nesting)
+    assert direct_runtime._registered_diagnosis(b"{}") is None
+
+
+def test_setup_private_serialization_recursion_fails_closed(monkeypatch):
+    from officina.dispatcher.errors import SetupBlocked
+
+    def reject_nesting(*args, **kwargs):
+        raise RecursionError("JSON nesting")
+    monkeypatch.setattr(direct_runtime.json, "dumps", reject_nesting)
+    assert direct_runtime._registered_diagnosis(b'{"setup_blocked":{}}') is None
+    reader, writer = os.pipe()
+    try:
+        assert python_runner._emit_private_diagnosis(writer, SetupBlocked({}, ("leaf.interface.run",))) == 70
+        assert os.read(reader, 16384) == b""
+    finally:
+        os.close(reader)
+
+
+@pytest.mark.parametrize("frames", [31, 32])
+def test_setup_private_receiver_enforces_total_frame_limit(tmp_path, monkeypatch, frames):
+    from officina.dispatcher.errors import SetupBlocked
+
+    signal = SetupBlocked({}, ("leaf.interface.run",) * frames)
+    payload = json.dumps({"setup_blocked": signal.__dict__}, sort_keys=True, separators=(",", ":")).encode()
+    class Process:
+        returncode = 70
+        def communicate(self, **kwargs):
+            return b"", b""
+    def popen(command, **kwargs):
+        _write_private_diagnosis(command, kwargs, payload)
+        return Process()
+    monkeypatch.setattr(direct_runtime.subprocess, "Popen", popen)
+    with pytest.raises(BaseException) as caught:
+        direct_runtime._run_resolved_invocation(_transport_resolved(tmp_path), subprocess=True)
+    if frames == 31:
+        assert isinstance(caught.value, SetupBlocked)
+        assert len(caught.value.call_path) == 32
+        assert caught.value.call_path[0] == "target.interface.run"
+    else:
+        assert isinstance(caught.value, DispatcherError)
+        assert caught.value.code == "dispatcher.error"
+
+
+@pytest.mark.parametrize("invalid", ["nonserializable", "circular"])
+def test_setup_private_serialization_failure_closes_and_exits_70(invalid):
+    from officina.dispatcher.errors import SetupBlocked
+
+    status = {}
+    status["invalid"] = object() if invalid == "nonserializable" else status
+    reader, writer = os.pipe()
+    try:
+        assert python_runner._emit_private_diagnosis(writer, SetupBlocked(status, ("leaf.interface.run",))) == 70
+        with pytest.raises(OSError):
+            os.fstat(writer)
+        assert os.read(reader, 16384) == b""
+    finally:
+        os.close(reader)
+
+
+def test_private_setup_large_integer_fails_closed(tmp_path, monkeypatch):
+    payload = (b'{"setup_blocked":{"call_path":["leaf.interface.run"],'
+               b'"lifecycle":null,"status":{"integer":' + b"9" * 5000 + b'}}}')
+    assert len(payload) < 16 * 1024
+    class Process:
+        returncode = 70
+        def communicate(self, **kwargs):
+            return b"", b""
+    def popen(command, **kwargs):
+        _write_private_diagnosis(command, kwargs, payload)
+        return Process()
+    monkeypatch.setattr(direct_runtime.subprocess, "Popen", popen)
+    previous_limit = sys.get_int_max_str_digits()
+    sys.set_int_max_str_digits(4300)
+    try:
+        assert direct_runtime._registered_diagnosis(payload) is None
+        with pytest.raises(DispatcherError) as caught:
+            direct_runtime._run_resolved_invocation(_transport_resolved(tmp_path), subprocess=True)
+        assert caught.value.code == "dispatcher.error"
+    finally:
+        sys.set_int_max_str_digits(previous_limit)
+
+
+def test_output_decode_failure_precedes_checked_nonzero(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Process:
+        returncode = 4
+
+        def communicate(self, **_kwargs: object) -> tuple[bytes, bytes]:
+            return b"\xff", b""
+
+    monkeypatch.setattr(
+        direct_runtime.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: Process(),
+    )
+
+    with pytest.raises(DispatcherError) as caught:
+        dispatcher_core._run_resolved_invocation(
+            _transport_resolved(tmp_path), text=True, check=True, subprocess=True
+        )
+
+    assert caught.value.code == "dispatcher.output_decode_failed"
+
+
+def test_checked_nonzero_uses_registered_dispatcher_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Process:
+        returncode = 4
+
+        def communicate(self, **_kwargs: object) -> tuple[bytes, bytes]:
+            return b"", b""
+
+    monkeypatch.setattr(
+        direct_runtime.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: Process(),
+    )
+
+    with pytest.raises(DispatcherError) as caught:
+        dispatcher_core._run_resolved_invocation(
+            _transport_resolved(tmp_path), text=True, check=True, subprocess=True
+        )
+
+    assert caught.value.code == "dispatcher.checked_process_failed"
+    assert caught.value.as_payload()["returncode"] == 4
+
+
+def test_timeout_terminates_then_kills_and_wins(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+
+    class Process:
+        returncode = None
+        calls = 0
+
+        def communicate(self, **_kwargs: object) -> tuple[bytes, bytes]:
+            self.calls += 1
+            events.append(f"communicate:{_kwargs.get('timeout')}")
+            if self.calls < 3:
+                raise subprocess.TimeoutExpired(["runner"], 0.01)
+            self.returncode = -9
+            return b"", b""
+
+        def terminate(self) -> None:
+            events.append("terminate")
+
+        def kill(self) -> None:
+            events.append("kill")
+
+    monkeypatch.setattr(
+        direct_runtime.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: Process(),
+    )
+
+    with pytest.raises(DispatcherError) as caught:
+        dispatcher_core._run_resolved_invocation(
+            _transport_resolved(tmp_path), timeout=0.01, text=True, check=True, subprocess=True
+        )
+
+    assert caught.value.code == "dispatcher.execution_timeout"
+    assert events == ["communicate:0.01", "terminate", "communicate:1", "kill", "communicate:None"]

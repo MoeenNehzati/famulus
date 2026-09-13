@@ -53,7 +53,7 @@ interfaces:
           - json
           id: read-2
           medium: local-filesystem
-          path: $HOME/.config/cloud-files/client.json
+          path: <CONFIG>/cloud-files/client.json
           path_match: exact
           reason: Discover a valid legacy Drive OAuth client that the user may choose
             to import.
@@ -65,7 +65,7 @@ interfaces:
           - json
           id: read-3
           medium: local-filesystem
-          path: $HOME/.config/online-calendar/client.json
+          path: <CONFIG>/online-calendar/client.json
           path_match: exact
           reason: Discover a valid legacy Calendar OAuth client that the user may
             choose to import.
@@ -325,8 +325,6 @@ platform_support:
   windows: true
 runtime_dependencies: []
 schema_version: 6
-uses_interfaces:
-- interface: credentials.interface.google
-  version: 1
+uses_interfaces: [{interface: credentials.interface.google, version: 1}, {interface: common.interface.famulus-paths, version: 1}]
 version: 1
 maturity: experimental

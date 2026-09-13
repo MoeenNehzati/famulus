@@ -1,0 +1,21 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "famulus",
+  "version": "0.0.0",
+  "description": "Personal and research assistant combining model guidance with machine-executable Python",
+  "author": {
+    "name": "Moeen Nehzati",
+    "url": "https://github.com/MoeenNehzati"
+  },
+  "homepage": "https://github.com/MoeenNehzati/famulus",
+  "repository": "https://github.com/MoeenNehzati/famulus",
+  "license": "MIT",
+  "keywords": [
+    "skills",
+    "writing",
+    "math",
+    "latex",
+    "productivity",
+    "automation"
+  ]
+}

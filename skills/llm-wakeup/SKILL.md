@@ -4,29 +4,41 @@ description: >-
   Use when the user asks to schedule or manage an automatic assistant-session wakeup after a usage reset or timeout.
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: assistant-interaction; topics: session-management, task-automation; visibility: listed
-Activation: user-request, skill-workflow, scheduled-job; persistent modifier: no
-
-Skill Version: 1
-
-Uses Interfaces:
-- `llm-wakeup.source.gateway -> wakeup.interface.auto-policy@1`
-- `llm-wakeup.source.gateway -> wakeup.interface.explicit-schedule@1`
-- `llm-wakeup.source.gateway -> wakeup.interface.infer-schedule@1`
-
-Public Interfaces:
-- `llm-wakeup.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Instruction Interfaces:
+Executable Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `llm-wakeup.interface.default` — Primary LLM-facing wakeup routing instructions.
+Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+- `llm-wakeup._rtx.interface.auto-policy` — Manage opt-in automatic near-limit wakeup scheduling for one provider session.
+  - Caller: `llm-wakeup`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {}, "positionals": ["action", "provider", "session-id"], "stdin": null}
+    Required options: []; positional arity: 1..3; stdin: forbidden
+- `llm-wakeup._rtx.interface.explicit-schedule` — Persist a guarded wakeup for an explicitly identified provider session and reset time.
+  - Caller: `llm-wakeup`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--delay": "duration", "--message": "message"}, "positionals": ["provider", "session-id", "reset-time"], "stdin": null}
+    Required options: []; positional arity: 3..3; stdin: forbidden
+- `llm-wakeup._rtx.interface.infer-schedule` — Infer provider, canonical session, and reset time before persisting a guarded wakeup.
+  - Caller: `llm-wakeup`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {"--delay": "duration", "--message": "message", "--text": "timeout-or-resume-text"}, "positionals": [], "stdin": null}
+    Required options: []; positional arity: 0..0; stdin: forbidden
+- `llm-wakeup._rtx.interface.setup` — Install or refresh the wakeup integration without caller arguments.
+  - Caller: `llm-wakeup`
+  - Version: 1
+  - Alternative: `default`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {}, "positionals": [], "stdin": null}
+    Required options: []; positional arity: 0..0; stdin: forbidden
+
 <!-- END BLUEPRINT INTERFACES -->
 When this skill is used, begin with:
 
@@ -44,6 +56,9 @@ Skill: llm-wakeup
   invoke `infer-schedule`.
 - Schedule when provider, session, and reset are all explicit: invoke
   `explicit-schedule`.
+- Set up, refresh, or tear down the optional wakeup commands and dedicated
+  due-delivery registration: invoke `setup`. For setup, first obtain the exact
+  selected Python fingerprint and current plugin root; do not discover Python.
 
 Pass `message` and `delay` only when the user supplies them. Otherwise preserve
 the interface defaults.

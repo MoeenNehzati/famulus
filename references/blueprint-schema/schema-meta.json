@@ -196,7 +196,7 @@
         "creation": "Render each module and behavioral-source document from its concrete schema and reject values outside that schema before graph construction.",
         "validator": "references/blueprint-schema/schema.json",
         "tests": [
-          "tests/test_nested_module_v5_schemas.py"
+          "tests/test_direct_blueprint_v6_schemas.py"
         ],
         "template": "Render every module and behavioral source from its concrete schema.",
         "enforcement": {
@@ -210,7 +210,7 @@
         "rule_kind": "repository-validation",
         "description": "Validate module, behavioral-source, source-interface, and export IDs and namespaces.",
         "creation": "Use the canonical module, source, source-interface, or export namespace required by the concrete schema.",
-        "validator": "validators/skill/interface_ids.py",
+        "validator": "validators/skill/blueprints.py",
         "tests": [
           "tests/validate_interface_ids.py"
         ],
@@ -242,7 +242,7 @@
         "rule_kind": "repository-validation",
         "description": "Require positive versions and exact edge-to-target version matches.",
         "creation": "Use positive versions and pin every declared source or interface edge to the target version.",
-        "validator": "validators/skill/blueprint_relationships.py",
+        "validator": "validators/skill/blueprints.py",
         "tests": [
           "tests/validate_blueprint_relationships.py"
         ],
@@ -326,7 +326,7 @@
         "rule_kind": "repository-validation",
         "description": "Resolve containment, source dependency, private-interface, export, and contract-reference edges.",
         "creation": "Declare only canonical, version-pinned graph edges with the required locator or target interface.",
-        "validator": "validators/skill/blueprint_relationships.py",
+        "validator": "validators/skill/blueprints.py",
         "tests": [
           "tests/validate_blueprint_relationships.py",
           "tests/test_officina_blueprint_graph.py"
@@ -343,7 +343,7 @@
         "rule_kind": "repository-validation",
         "description": "Validate immediate-caller access for unrestricted, subtree-allowlisted, and owner-private module surfaces.",
         "creation": "Set allow_all_modules or enumerate caller module roots whose registered descendants are admitted; an empty false allowlist admits only the owner.",
-        "validator": "validators/skill/blueprint_relationships.py",
+        "validator": "validators/skill/blueprints.py",
         "tests": [
           "tests/validate_blueprint_relationships.py",
           "tests/test_officina_blueprint_graph.py"
@@ -394,7 +394,7 @@
         "rule_kind": "repository-validation",
         "description": "Require behavioral-source dependency targets, exact versions, locators, and consumer-local reasons.",
         "creation": "Use a version-pinned behavioral-source blueprint locator and state the consumer-local reason.",
-        "validator": "validators/skill/blueprint_relationships.py",
+        "validator": "validators/skill/blueprints.py",
         "tests": [
           "tests/test_typed_blueprint_schemas.py",
           "tests/validate_blueprint_relationships.py"
@@ -441,21 +441,21 @@
           "note": "The process-binding schema validates the declared pattern shape."
         }
       },
-      "generated-contract-block": {
+      "generated-interface-block": {
         "rule_kind": "repository-validation",
-        "description": "Require generated SKILL.md contract and interface blocks to match the discoverable module and its exports.",
-        "creation": "Generate both blocks from the module and source declarations; do not hand-maintain them.",
+        "description": "Require the generated SKILL.md interface block to match the gateway source's declared interface uses.",
+        "creation": "Generate the interface block from the gateway source's declared interface uses; do not hand-maintain it.",
         "validator": "validators/skill/blueprints.py",
         "tests": [
           "tests/validate_blueprints.py",
           "tests/validate_skill_body_execution.py"
         ],
-        "template": "The example discoverable module includes both generated marker blocks.",
+        "template": "The example discoverable module includes one generated interface marker block.",
         "enforcement": {
           "state": "current",
           "task": "current",
           "acceptance": "isolated-validator",
-          "note": "Blueprint and skill-body validation compare generated blocks with the unified graph."
+          "note": "Blueprint and skill-body validation compare the generated interface block with the unified graph."
         }
       },
       "interface-body-use": {
@@ -497,7 +497,7 @@
         "creation": "Register each physical direct child with an empty record keyed by its local directory segment.",
         "validator": "references/blueprint-schema/module.schema.json",
         "tests": [
-          "tests/test_nested_module_v5_schemas.py"
+          "tests/test_direct_blueprint_v6_schemas.py"
         ],
         "template": "The example module declares an explicit children mapping.",
         "enforcement": {
@@ -513,7 +513,7 @@
         "creation": "Declare exact canonical descendant interface IDs and versions under surface.only.",
         "validator": "references/blueprint-schema/module.schema.json",
         "tests": [
-          "tests/test_nested_module_v5_schemas.py"
+          "tests/test_direct_blueprint_v6_schemas.py"
         ],
         "template": "The example module declares an explicit namespace_exports mapping.",
         "enforcement": {
@@ -529,7 +529,7 @@
         "creation": "Use a globally unique module ID or a relative reference such as ._rtx or ..parser.",
         "validator": "references/blueprint-schema/common.schema.json",
         "tests": [
-          "tests/test_nested_module_v5_schemas.py"
+          "tests/test_direct_blueprint_v6_schemas.py"
         ],
         "template": "Caller allowlists use exact global or leading-dot relative references.",
         "enforcement": {

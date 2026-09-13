@@ -3,7 +3,7 @@ authority:
 children:
   _rtx: {}
 content:
-- (?:SKILL\.md|lessons\.md|references/action\-structure\.md|references/list\-structure\.md)
+- (?:SKILL\.md|lessons\.md|references/action\-structure\.md|references/list\-structure\.md|instructions/setup\.md)
 description: Manage schema-validated local and cloud-backed personal lists through
   a Markdown LLM gateway and bounded Python interfaces for reading, rendering, creating,
   updating, deleting, and migrating list data.
@@ -29,10 +29,9 @@ exports:
     access:
       allow_all_modules: true
       allowed_callers: []
-    source_interface: list-manager.source.gateway.interface.default
+    source_interface: list-manager.source.setup.interface.setup
     setup_requires_setup_of:
-    - interface: connect-google.interface.setup
-      version: 1
+    - {interface: cloud-files.interface.setup, version: 2}
 gateway:
   language: Markdown
   path: SKILL.md
@@ -124,8 +123,12 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
+  list-manager.source.setup:
+    blueprint:
+      base: module-root
+      path: blueprints/setup.yaml
 version: 2
 maturity: stable
-installation_tier: core
+installation_tier: optional
 personal_preference:
   applies: false

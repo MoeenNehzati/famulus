@@ -1,0 +1,252 @@
+# Qualify CI
+
+Follow this algorithm in order. The branch lifecycle surrounds the existing
+failure-ledger and repair-element logic; it does not replace it. Machine reports
+are evidence, not Git authority. Machine interfaces never create branches,
+commit, push, integrate, or clean worktrees; perform those operations only under
+`git-workflow.interface.default`.
+
+## 0. Resolve the requested terminal state
+
+Structured arguments take precedence over conflicting prose in `request`.
+Resolve `branch` from its structured value; when omitted, the branch defaults
+to `master`. Resolve `push` from its structured value when present. When `push` is
+omitted, infer false only from an unambiguous request for a green local branch
+without target publication, and infer true only from an unambiguous request to
+push or publish the green target. Otherwise ask whether to stop with a green
+local branch or also push it to `origin/<branch>`.
+
+Finish this decision before any Git mutation or remote CI dispatch. If the
+interaction cannot obtain a required answer, return `blocked`; never silently
+choose the target-publication state.
+
+## 1. Snapshot the repository and protect existing state
+
+Under `git-workflow.interface.default`, establish the repository and live
+`origin` identity, the selected named local branch and its exact tip, whether
+`origin/<branch>` exists and its live tip, every worktree that checks out the
+target, in-progress Git operations, and staged, unstaged, and untracked state.
+Reject an absent or unresolved local target. Do not stash, reset, clean, stage,
+commit, or otherwise absorb unrelated state.
+
+Return `failed` only when repository, origin, branch, authentication, workflow,
+or runner validation fails before any side effect. After candidate creation or
+any other side effect, route every non-success terminal condition to `blocked`
+and report the completed effects.
+
+Create or reuse one durable invocation record and one non-secret debug context
+outside every temporary worktree. The invocation record owns the starting refs
+and the identities and expected tips of every candidate worktree, candidate
+branch, repair branch, and repair worktree created by this invocation. The CI
+context owns stable
+repository/workflow identity and immutable request-scoped reports; it never
+owns credentials, credential-bearing URLs, or raw authentication output. Keep
+the coordinator's failure ledger, branch assignments, and agent state outside
+the machine-owned context; keep resource ownership there too, and do not extend
+the context schema ad hoc.
+
+Leave existing local and remote branches unchanged during qualification.
+
+## 2. Create a fresh isolated candidate
+
+Create a new collision-resistant candidate branch in the
+`ci-debug/<branch>/<unique-id>` namespace and an isolated worktree from the
+selected local target tip. Record both as invocation-owned before repair work
+begins. If the proposed local or remote name already exists, choose a new name
+regardless of its SHA; name or SHA similarity never proves ownership and never
+authorizes adoption or deletion.
+
+All source edits, generated changes, repair commits, and integrations occur on
+the invocation-owned candidate or its invocation-owned repair branches. The
+original target branch remains untouched until step 7.
+
+## 3. Publish only the candidate and bind the context
+
+Choose the push transport before paying for long pre-push hooks. If SSH idle
+disconnects are already evidenced for this origin and authenticated HTTPS is
+available, use it with command-scoped settings for this invocation. Keep
+hooks enabled and credentials out of arguments, logs, and persisted config.
+After a transport error, verify the live destination before retrying; an
+already successful push needs no retry.
+
+Push the new candidate branch to a new branch of the same name on `origin`
+without force, then record its exact SHA and remote tip. This temporary remote
+candidate is required even when `push` is false because GitHub CI can qualify
+only a reachable remote ref.
+
+Supply the same context to every full-matrix, targeted-test, and repair-element
+invocation. Persisted setup is a handoff aid, not authority: every invocation
+must still revalidate authentication, repository identity, ref, and exact SHA. Never
+place the context or invocation record inside a worktree that success cleanup
+may remove.
+
+## 4. Run and observe the complete exact-SHA matrix
+
+Before every complete matrix and remote probe batch, refresh both the local
+target tip and live remote target tip. Continue only while both still satisfy
+the candidate's recorded promotion preconditions. On drift, preserve the
+candidate and recovery evidence, stop dispatch, and ask the user how to
+proceed.
+
+Before each probe, record its exact SHA, selectors, and effective runner, task,
+profile, and worker count in the invocation record; attach its run ID when
+available. Keep this evidence outside the machine-owned context.
+
+Use `ci-debug._rtx.interface.run-ci` for the exact pushed candidate. When it
+returns `state=pending`, invoke it again with the identical repository, ref,
+SHA, context, and timeout until it returns a terminal report. Do not create a
+new context merely to bypass an active request.
+
+For any probe or matrix call that loses its tool connection or returns a
+polling error, inspect the existing context, collector, and correlated GitHub
+run before retrying. A collector error is not a test failure. Record request,
+run, and job IDs as soon as available; recover completed reports, job logs,
+and artifacts through already-authorized read surfaces. Empty enclosing-run
+logs do not establish that a completed job has no logs. Do not redispatch while
+the original request may still be active; if its identity or result cannot be
+established, preserve recovery coordinates and report the collection blocker.
+
+Retire superseded runs before dispatching replacement work through the
+already-authorized CI control surface. If cancellation authority is
+unavailable, record a capacity blocker and do not duplicate the full run. While
+a matrix remains active, consume completed matrix-element reports and logs as
+soon as an already-authorized CI surface exposes them. Do not wait for the
+enclosing matrix: route completed failures and stalled elements into the
+failure ledger immediately.
+
+## 5. Preserve the existing red-matrix repair loop
+
+While its report is red:
+
+1. Before dispatching repair work or probes, refresh both target tips and apply
+   the step 4 drift gate. Cluster the ledger by normalized failure signature:
+   exception or assertion category, normalized message, and terminal project frame.
+   Remove only nondeterministic temporary roots, run IDs, timestamps,
+   and durations. Do not add a parser or signature service. Identical
+   cross-element signatures share one repair owner, while every affected
+   element retains a validation ledger entry. Clustering is only a scheduling
+   hint and never clears another element's ledger entry.
+2. Group failures by matrix element. Give each repair subagent one element, the
+   shared debug context, smallest selector set containing its known failures,
+   the report, an invocation-owned repair branch and isolated repair worktree,
+   an allowed path scope, and the element's runner, profile, and worker count
+   read from the workflow at the candidate SHA. Local host worker defaults do
+   not apply to remote runners. Before bounded-parallel dispatch, create and record
+   one collision-resistant repair branch and worktree per element from the exact
+   current candidate SHA. Apply the candidate no-adoption, collision, and
+   expected-tip rules to every local and remote repair ref, and pass both the
+   assigned branch and worktree to that element.
+   Prefer exact failing test nodes, then the smallest set of containing test
+   files when exact nodes are unavailable. Do not include selectors already
+   known to pass, and retain every unresolved or unprobed failure in the ledger.
+3. Run independent repair elements in bounded parallel through
+   `ci-debug.interface.repair-element`; use a sequential fallback when workers
+   are unavailable.
+4. Review returned commits, diffs, and targeted-test evidence. Integrate accepted
+   patches sequentially into the candidate under
+   `git-workflow.interface.default`.
+5. Push the integrated candidate without force and record its exact SHA in the
+   invocation record.
+6. Before the next complete matrix, refresh both target tips. Reuse terminal
+   green targeted and whole-element reports when a fast-forward preserves the
+   exact tested SHA and repository, workflow, runner, task, profile, worker
+   count, and selector coverage match, with no later matching red result or
+   changed ref-dependent inputs. Record the reused reports; a branch-name
+   change alone does not require rerunning them. A new integration SHA or
+   changed execution conditions requires fresh affected-element evidence.
+   For settings absent from a report, require the recorded invocation or job
+   logs as proof; unknown settings make that evidence ineligible for reuse.
+   For evidence still missing, use
+   `ci-debug._rtx.interface.run-targeted-tests` on the exact integrated
+   candidate for every affected matrix element. Submit all independent known
+   selectors for one element in one `--selectors-json` request, and dispatch
+   independent elements through the existing bounded parallelism. Start with
+   the smallest selectors needed to detect integration interactions, batched by
+   element, then run each whole affected element still lacking matching green
+   evidence, retaining one complete run of every affected element. Verify
+   every requested selector actually executed
+   and return new or repeated failures to the ledger.
+7. Only after every affected matrix element is green, apply the step 4 drift
+   gate and use
+   `ci-debug._rtx.interface.run-ci` again for the complete matrix.
+
+Treat stalls as bounded failure classes and preserve the repair-element rule
+that a repeated unchanged failure set returns a concrete blocked reason rather
+than looping indefinitely. Pending, red, targeted-green, and whole-element-green
+are nonterminal; targeted tests and whole-element tests never establish overall
+green. Qualification stops only when the complete report is green for the exact
+current candidate tip, or when a repair element or CI-capacity boundary returns
+a concrete blocker.
+
+For each candidate SHA, every terminal response reports elapsed wall time,
+drift-check count, targeted request count, whole-element count, full-matrix
+count, repair rounds, and repeated unchanged failure signatures.
+Record phase start and end times as work happens, including hooks, transport
+retries, and user waits. Label missing timing as unmeasured; do not reconstruct
+per-SHA durations from aggregate session time.
+
+## 6. Complete the existing prevention review
+
+After the full report is green, **REQUIRED:** read [prevention.md](../prevention.md)
+and complete its report-only prevention review before promotion. Do not modify
+production code, tests, or suite selection from that review until the user
+explicitly approves its proposal. If approved prevention work changes the
+candidate SHA, return to the affected-element checks and complete exact-SHA
+matrix loop before continuing.
+
+## 7. Promote the green candidate locally by fast-forward only
+
+Refresh the local target. Its current tip must be an ancestor of the exact green
+candidate; a compatible advance may be included by a true fast-forward. If the
+target diverged from or is already beyond the candidate, ask the user for
+guidance without merging, rebasing, overwriting, or discarding either line.
+
+When the target is checked out in exactly one worktree, immediately verify that
+the worktree is still on the target branch, has no in-progress Git operation or
+staged or unstaged tracked changes, and has no untracked collision with the
+candidate. Use a fast-forward-only merge there. When the target is not checked
+out, use a compare-and-swap ref update from its freshly observed current tip to
+the green SHA. If it is checked out in multiple worktrees, Git refuses the
+operation, or the preconditions change concurrently, ask the user for guidance.
+
+This is the first point at which an existing local branch may change. A blocked
+promotion preserves the candidate, context, reports, and recovery coordinates.
+
+## 8. Optionally publish the exact green target
+
+When `push` is false, leave `origin/<branch>` unchanged and return
+`green-local` after step 9 cleanup.
+
+When `push` is true, fetch the live `origin/<branch>`. If it exists, its current
+tip must be an ancestor of the exact green SHA; a compatible advance may be
+included by a true fast-forward. If it does not exist, the final push may create
+it. Use an ordinary, non-force push of the exact green local target, then verify
+that `origin/<branch>` equals the exact green SHA and return `green-pushed`
+after cleanup.
+
+If the remote is divergent, the ordinary push is rejected, or the verified ref
+does not equal the green SHA, ask the user for guidance. Never integrate the
+remote change or force-push. If the push may have succeeded but live
+verification becomes unavailable, return `blocked` and report that the remote
+target may already have changed.
+
+## 9. Clean owned resources or preserve recovery evidence
+
+On success, remove only invocation-owned temporary resources: candidate and
+repair worktrees plus local and remote candidate and repair branches that the
+invocation record proves this invocation created and that still have their
+expected tips. If a resource is dirty, its tip changed,
+or ownership is uncertain, retain it and report the exact cleanup gap without
+changing the green result. Retain the durable context and final reports outside
+the removed worktrees.
+
+Every `green-local` and `green-pushed` response includes the repository
+identity, target branch, starting local and remote SHAs, exact green SHA,
+candidate ref, CI run, report location, publication status, and cleanup
+disposition.
+
+On any blocked or uncertain outcome, preserve the candidate, context,
+reports, and recovery coordinates together with invocation-owned branches. Report the exact
+repository, target branch, starting and current refs, candidate SHA, CI run and
+report, completed Git effects, unresolved ledger entries, and failed
+precondition. Never clean unrelated worktrees, branches, files, or contexts.

@@ -20,6 +20,8 @@ import ast
 import re
 import sys
 from pathlib import Path
+from types import MappingProxyType
+from typing import Mapping, NamedTuple
 
 import yaml
 
@@ -38,7 +40,10 @@ from officina.blueprints.graph import (  # noqa: E402
 from officina.blueprints.inventory import BlueprintInventoryError  # noqa: E402
 from officina.common.python_source_cache import PythonSourceCache  # noqa: E402
 from officina.common.repository_paths import repository_relative_path  # noqa: E402
-from validators.skill_runtime_files import _registered_child_artifact  # noqa: E402
+from validators.skill_runtime_files import (  # noqa: E402
+    _CHILD_ARTIFACT_DIRS,
+    _CHILD_ARTIFACT_FILENAMES,
+)
 
 
 FORBIDDEN_SUFFIXES = {".sh", ".bash", ".bat", ".cmd", ".ps1"}
@@ -80,6 +85,16 @@ _PLATFORM_COMMAND_ALLOWLIST = {
 }
 _CROSS_PLATFORM_ADAPTER_FILES = {
     Path("skills/recurring-tasks/_rtx/_assistant_desktop_notify.py"),
+}
+
+# Files permitted to pass `shell=True`, because the command string is supplied
+# by the user rather than authored here. A host status line is an arbitrary
+# shell expression that may contain pipes or redirection, so it cannot be
+# reduced to a portable argv without changing what the user configured.
+# Widening the platform command allowlist does not cover this: that list only
+# names permitted executables, while the shell rule is otherwise unconditional.
+_USER_SHELL_COMMAND_FILES = {
+    Path("skills/llm-wakeup/_rtx/_claude_codex_cli.py"),
 }
 
 _SKIP_PARTS = {"tests", "validators", "__pycache__", ".git", ".claude-plugin", ".codex-plugin", "logs"}
@@ -129,25 +144,42 @@ def _is_excluded(rel_path: Path) -> bool:
     return False
 
 
-def _iter_skill_files(
-    repo_root: Path,
-    graph: RepositoryBlueprintGraph | None,
-):
-    """Yield non-excluded, unregistered files below the skills directory.
+class _RepositoryPathInventory(NamedTuple):
+    """Immutable path projections consumed by the validator's scan passes."""
+
+    skill_files: tuple[Path, ...]
+    ordinary_test_files: tuple[Path, ...]
+    live_python_files: tuple[Path, ...]
+    pooled_permission_documents: tuple[Path, ...]
+
+
+class _PythonAnalysis(NamedTuple):
+    """Reusable derived state for one parsed Python source file."""
+
+    source: str
+    calls: tuple[ast.Call, ...]
+    string_literals: tuple[ast.Constant, ...]
+    parents: Mapping[ast.AST, ast.AST]
+
+
+def _build_path_inventory(repo_root: Path) -> _RepositoryPathInventory:
+    """Build immutable path classifications with one walk per live root.
 
     Intent
     ------
-    Discover skill files subject to runtime portability checks.
+    Discover all authored files used by the validator's independent passes.
 
     Rationale
     ---------
-    Registered child artifacts and excluded trees have separate ownership.
+    Classifying paths during one root-local walk avoids repeated traversal of
+    the growing skills tree while retaining untracked authored files.
 
     Pseudocode
     ----------
-    - for path in skill tree:
-      - if path is a governed file:
-        - return path
+    - for each configured live root:
+      - walk its authored files once
+      - classify each file into every applicable immutable projection
+    - return the frozen path inventory
 
     Wraps
     -----
@@ -157,97 +189,170 @@ def _iter_skill_files(
     -------------
     ._is_excluded:
       why:
-        computes: "Recognizes exclusions while this function filters file type and child ownership."
+        computes: "Recognizes files outside the governed skill runtime surface."
     """
 
-    skills_root = repo_root / "skills"
-    if not skills_root.is_dir():
-        return
-    for path in skills_root.rglob("*"):
-        if not path.is_file():
-            continue
-        rel_path = path.relative_to(repo_root)
-        if _is_excluded(rel_path):
-            continue
-        if _registered_child_artifact(path, graph):
-            continue
-        yield path
-
-
-def _iter_ordinary_test_files(repo_root: Path):
-    """Yield Python tests governed by the raw-Git annotation policy.
-
-    Intent
-    ------
-    Discover ordinary repository and skill test modules.
-
-    Rationale
-    ---------
-    Raw Git calls in tests require explicit policy annotations.
-
-    Pseudocode
-    ----------
-    - for path in repository and skill test roots:
-      - return Python test path
-
-    Wraps
-    -----
-    - none
-    """
-
-    tests_root = repo_root / "tests"
-    if tests_root.is_dir():
-        yield from sorted(tests_root.rglob("*.py"))
-    skills_root = repo_root / "skills"
-    if skills_root.is_dir():
-        for tests_dir in sorted(
-            (
-                *skills_root.glob("*/tests"),
-                *skills_root.glob("*/_rtx/tests"),
-            )
-        ):
-            yield from sorted(tests_dir.rglob("*.py"))
-
-
-def _iter_live_python_files(repo_root: Path):
-    """Yield each non-test Python source file in the validator's live roots.
-
-    Intent
-    ------
-    Discover live Python sources for composite-target validation.
-
-    Rationale
-    ---------
-    Runtime process targets must keep path and entry point separate.
-
-    Pseudocode
-    ----------
-    - for path in configured live roots:
-      - if path is a unique non-test Python file:
-        - return path
-
-    Wraps
-    -----
-    - none
-    """
-
-    roots = (
-        repo_root / "src",
-        repo_root / "validators",
-        repo_root / "scripts",
-        repo_root / "docs_tooling",
-        repo_root / "skills",
+    skill_files: list[Path] = []
+    repository_test_files: list[Path] = []
+    skill_test_files: list[Path] = []
+    pooled_permission_documents: list[Path] = []
+    live_root_names = (
+        "src",
+        "validators",
+        "scripts",
+        "docs_tooling",
+        "skills",
+        "tests",
     )
-    seen: set[Path] = set()
-    for root in roots:
+    live_python_files_by_root: dict[str, list[Path]] = {
+        root_name: []
+        for root_name in live_root_names
+        if root_name != "tests"
+    }
+    for root_name in live_root_names:
+        root = repo_root / root_name
         if not root.is_dir():
             continue
-        for path in sorted(root.rglob("*.py")):
-            rel_path = path.relative_to(repo_root)
-            if "tests" in rel_path.parts or path in seen:
+        for path in root.rglob("*"):
+            if not path.is_file():
                 continue
-            seen.add(path)
-            yield path
+            rel_path = path.relative_to(repo_root)
+            parts = rel_path.parts
+            is_python = path.suffix == PYTHON_SUFFIX
+            if root_name == "skills":
+                if not _is_excluded(rel_path):
+                    skill_files.append(path)
+                if (
+                    len(parts) == 3
+                    and path.name == ".pooled-blueprint-review.yaml"
+                ):
+                    pooled_permission_documents.append(path)
+                is_ordinary_skill_test = (
+                    len(parts) >= 4 and parts[2] == "tests"
+                ) or (
+                    len(parts) >= 5
+                    and parts[2:4] == ("_rtx", "tests")
+                )
+                if is_python and is_ordinary_skill_test:
+                    skill_test_files.append(path)
+            elif root_name == "tests" and is_python:
+                repository_test_files.append(path)
+            if (
+                root_name != "tests"
+                and is_python
+                and "tests" not in parts
+            ):
+                live_python_files_by_root[root_name].append(path)
+    return _RepositoryPathInventory(
+        skill_files=tuple(skill_files),
+        ordinary_test_files=(
+            *sorted(repository_test_files),
+            *sorted(skill_test_files),
+        ),
+        live_python_files=tuple(
+            path
+            for root_name in live_root_names
+            if root_name != "tests"
+            for path in sorted(live_python_files_by_root[root_name])
+        ),
+        pooled_permission_documents=tuple(sorted(pooled_permission_documents)),
+    )
+
+
+def _build_child_artifact_index(
+    graph: RepositoryBlueprintGraph | None,
+) -> tuple[frozenset[Path], frozenset[Path]]:
+    """Index registered child roots and their non-Python gateway artifacts.
+
+    Intent
+    ------
+    Prepare constant-time ancestor membership for child artifact ownership.
+
+    Rationale
+    ---------
+    Rechecking every registered child root for every skill file scales as the
+    product of files and child modules.
+
+    Pseudocode
+    ----------
+    - collect module roots for registered child modules
+    - collect directly owned non-Python behavioral-source gateways
+    - return both immutable path sets
+
+    Wraps
+    -----
+    - none
+    """
+
+    if graph is None:
+        return frozenset(), frozenset()
+    nodes = getattr(graph, "nodes", {})
+    module_parents = getattr(graph, "module_parents", {})
+    child_roots = frozenset(
+        module_root
+        for module_id, parent_id in module_parents.items()
+        if parent_id is not None
+        for module_root in [getattr(nodes.get(module_id), "module_root", None)]
+        if isinstance(module_root, Path)
+    )
+    non_python_gateways: set[Path] = set()
+    for path, owner_id in getattr(graph, "direct_file_owners", {}).items():
+        owner = nodes.get(owner_id)
+        if (
+            not isinstance(path, Path)
+            or getattr(owner, "node_type", None) != "behavioral_source"
+            or getattr(owner, "gateway_path", None) != path
+        ):
+            continue
+        declaration = getattr(owner, "declaration", {})
+        gateway = declaration.get("gateway") if isinstance(declaration, dict) else None
+        language = gateway.get("language") if isinstance(gateway, dict) else None
+        if isinstance(language, str) and not language.startswith("Python"):
+            non_python_gateways.add(path)
+    return child_roots, frozenset(non_python_gateways)
+
+
+def _is_registered_child_artifact(
+    path: Path,
+    child_roots: frozenset[Path],
+    non_python_gateways: frozenset[Path],
+) -> bool:
+    """Return whether an indexed child module owns a non-runtime artifact.
+
+    Intent
+    ------
+    Exclude fixed child artifacts and directly owned non-Python gateways.
+
+    Rationale
+    ---------
+    Walking path ancestors finds the deepest registered child root without
+    comparing the file against every child root.
+
+    Pseudocode
+    ----------
+    - find the first indexed root among the file's ancestors
+    - return true for fixed child artifacts
+    - otherwise return whether the file is an indexed non-Python gateway
+
+    Wraps
+    -----
+    - none
+    """
+
+    child_root = next(
+        (parent for parent in path.parents if parent in child_roots),
+        None,
+    )
+    if child_root is None:
+        return False
+    relative = path.relative_to(child_root)
+    fixed_artifact = (
+        relative.parent == Path(".")
+        and relative.name in _CHILD_ARTIFACT_FILENAMES
+        or bool(relative.parts)
+        and relative.parts[0] in _CHILD_ARTIFACT_DIRS
+    )
+    return fixed_artifact or path in non_python_gateways
 
 
 def _is_runtime_script(rel_path: Path) -> bool:
@@ -345,7 +450,7 @@ def _command_violations(tokens: list[str], context: str, allowed_commands: set[s
     return errors
 
 
-def _validate_v4_blueprints(
+def _validate_blueprints(
     graph: RepositoryBlueprintGraph,
     repo_root: Path,
 ) -> list[str]:
@@ -422,7 +527,7 @@ def _validate_v4_blueprints(
                         )
                     ):
                         context = (
-                            f"{rel_path}: authority.suggested_permissions."
+                            f"{rel_path.as_posix()}: authority.suggested_permissions."
                             f"bash[{index}]"
                         )
                         tokens = [*command, *args_prefix]
@@ -464,7 +569,9 @@ def _validate_v4_blueprints(
                 for platform in ("linux", "macos", "windows")
             ):
                 continue
-            context = f"{rel_path}: runtime_dependencies[{index}].name"
+            context = (
+                f"{rel_path.as_posix()}: runtime_dependencies[{index}].name"
+            )
             errors.extend(_command_violations([name], context))
     return errors
 
@@ -669,7 +776,7 @@ def _raw_git_kind(node: ast.Call) -> str | None:
 
 def _nearest_statement(
     node: ast.AST,
-    parents: dict[ast.AST, ast.AST],
+    parents: Mapping[ast.AST, ast.AST],
 ) -> ast.stmt | None:
     """Return the closest enclosing statement for an AST node.
 
@@ -702,10 +809,65 @@ def _nearest_statement(
     return None
 
 
+def _python_analysis(
+    path: Path,
+    source_cache: PythonSourceCache,
+    analyses: dict[Path, _PythonAnalysis],
+) -> _PythonAnalysis:
+    """Return cached AST-derived state for one Python file.
+
+    Intent
+    ------
+    Derive calls, literals, and parent relationships once per parsed source.
+
+    Rationale
+    ---------
+    Several validator passes inspect the same skill sources; parse caching
+    alone still repeats complete AST walks.
+
+    Pseudocode
+    ----------
+    - if analysis exists for path:
+      - return it
+    - read and parse source through the shared source cache
+    - walk the tree once and derive all consumer projections
+    - store and return the immutable analysis
+
+    Wraps
+    -----
+    - none
+    """
+
+    cached = analyses.get(path)
+    if cached is not None:
+        return cached
+    source, tree = source_cache.read_parse(path)
+    nodes = tuple(ast.walk(tree))
+    analysis = _PythonAnalysis(
+        source=source,
+        calls=tuple(node for node in nodes if isinstance(node, ast.Call)),
+        string_literals=tuple(
+            node
+            for node in nodes
+            if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        ),
+        parents=MappingProxyType(
+            {
+                child: parent
+                for parent in nodes
+                for child in ast.iter_child_nodes(parent)
+            }
+        ),
+    )
+    analyses[path] = analysis
+    return analysis
+
+
 def _validate_raw_git_test(
     path: Path,
     rel_path: Path,
     source_cache: PythonSourceCache,
+    analyses: dict[Path, _PythonAnalysis],
 ) -> list[str]:
     """Validate required annotations on raw Git calls in one test file.
 
@@ -744,24 +906,17 @@ def _validate_raw_git_test(
     """
 
     try:
-        source, tree = source_cache.read_parse(path)
+        analysis = _python_analysis(path, source_cache, analyses)
     except (OSError, UnicodeError, SyntaxError):
         return []
-    lines = source.splitlines()
-    parents = {
-        child: parent
-        for parent in ast.walk(tree)
-        for child in ast.iter_child_nodes(parent)
-    }
+    lines = analysis.source.splitlines()
     errors: list[str] = []
     checked_statements: set[int] = set()
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
+    for node in analysis.calls:
         kind = _raw_git_kind(node)
         if kind is None:
             continue
-        statement = _nearest_statement(node, parents)
+        statement = _nearest_statement(node, analysis.parents)
         if statement is None or id(statement) in checked_statements:
             continue
         checked_statements.add(id(statement))
@@ -773,7 +928,7 @@ def _validate_raw_git_test(
         )
         if annotation is None:
             errors.append(
-                f"{rel_path}:{node.lineno}: {kind} call requires an immediately "
+                f"{rel_path.as_posix()}:{node.lineno}: {kind} call requires an immediately "
                 "preceding famulus-raw-git annotation"
             )
             continue
@@ -781,12 +936,12 @@ def _validate_raw_git_test(
         reason = annotation.group(2).strip()
         if category not in _RAW_GIT_CATEGORIES:
             errors.append(
-                f"{rel_path}:{node.lineno}: unknown famulus-raw-git category "
+                f"{rel_path.as_posix()}:{node.lineno}: unknown famulus-raw-git category "
                 f"`{category}`"
             )
         elif not reason:
             errors.append(
-                f"{rel_path}:{node.lineno}: famulus-raw-git reason must not be empty"
+                f"{rel_path.as_posix()}:{node.lineno}: famulus-raw-git reason must not be empty"
             )
     return errors
 
@@ -795,6 +950,7 @@ def _validate_composite_python_targets(
     path: Path,
     rel_path: Path,
     source_cache: PythonSourceCache,
+    analyses: dict[Path, _PythonAnalysis],
 ) -> list[str]:
     """Reject composite runtime-path and function targets in one Python file.
 
@@ -820,19 +976,17 @@ def _validate_composite_python_targets(
     """
 
     try:
-        _source, tree = source_cache.read_parse(path)
+        analysis = _python_analysis(path, source_cache, analyses)
     except (OSError, UnicodeError, SyntaxError):
         return []
     errors: list[str] = []
-    for node in ast.walk(tree):
+    for node in analysis.string_literals:
         if (
-            not isinstance(node, ast.Constant)
-            or not isinstance(node.value, str)
-            or _COMPOSITE_PYTHON_TARGET.search(node.value) is None
+            _COMPOSITE_PYTHON_TARGET.search(node.value) is None
         ):
             continue
         errors.append(
-            f"{rel_path}:{node.lineno}: composite Python process target is not "
+            f"{rel_path.as_posix()}:{node.lineno}: composite Python process target is not "
             "allowed; carry gateway path and process entry separately"
         )
     return errors
@@ -879,20 +1033,24 @@ def _iter_nested_lists(value: object):
             yield from _iter_nested_lists(item)
 
 
-def _validate_runner_permission_documents(repo_root: Path) -> list[str]:
+def _validate_runner_permission_documents(
+    repo_root: Path,
+    paths: tuple[Path, ...],
+) -> list[str]:
     """Reject composite Python targets in skill permission documents.
 
     Intent
     ------
-    Scan blueprint and pooled-review command lists for combined runner targets.
+    Scan pooled-review command lists for combined runner targets.
 
     Rationale
     ---------
-    Permission documents are not all represented by the prepared blueprint graph.
+    Pooled projections are not represented by the prepared blueprint graph;
+    root and registered-child blueprints are validated from graph declarations.
 
     Pseudocode
     ----------
-    - for document in skill permission documents:
+    - for document in pooled permission documents:
       - set document_tree = parsed YAML
       - for tokens in nested document lists:
         - if tokens contain a composite Python runner target:
@@ -911,10 +1069,6 @@ def _validate_runner_permission_documents(repo_root: Path) -> list[str]:
     """
 
     errors: list[str] = []
-    paths = [
-        *sorted((repo_root / "skills").glob("*/blueprint.yaml")),
-        *sorted((repo_root / "skills").glob("*/.pooled-blueprint-review.yaml")),
-    ]
     for path in paths:
         try:
             document = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -935,7 +1089,7 @@ def _validate_runner_permission_documents(repo_root: Path) -> list[str]:
                 None,
             )
             if composite is not None:
-                rel_path = path.relative_to(repo_root)
+                rel_path = path.relative_to(repo_root).as_posix()
                 errors.append(
                     f"{rel_path}: composite runner permission target "
                     f"`{composite}` is not allowed"
@@ -976,6 +1130,7 @@ def _validate_python(
     path: Path,
     rel_path: Path,
     source_cache: PythonSourceCache,
+    analyses: dict[Path, _PythonAnalysis],
 ) -> list[str]:
     """Validate portable process execution in one skill Python file.
 
@@ -1030,31 +1185,42 @@ def _validate_python(
     errors: list[str] = []
     allowed_commands = _allowed_platform_commands(rel_path)
     try:
-        _source, tree = source_cache.read_parse(path)
+        analysis = _python_analysis(path, source_cache, analyses)
     except SyntaxError as exc:
-        return [f"{rel_path}:{exc.lineno}: failed to parse Python: {exc.msg}"]
+        return [
+            f"{rel_path.as_posix()}:{exc.lineno}: failed to parse Python: {exc.msg}"
+        ]
 
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-
+    for node in analysis.calls:
         if _is_os_system(node):
-            errors.append(f"{rel_path}:{node.lineno}: os.system is not cross-platform")
+            errors.append(
+                f"{rel_path.as_posix()}:{node.lineno}: os.system is not cross-platform"
+            )
             continue
 
         if not _is_subprocess_call(node):
             continue
 
         for kw in node.keywords:
-            if kw.arg == "shell" and _is_true_constant(kw.value):
-                errors.append(f"{rel_path}:{node.lineno}: shell=True is not allowed")
+            if (
+                kw.arg == "shell"
+                and _is_true_constant(kw.value)
+                and rel_path not in _USER_SHELL_COMMAND_FILES
+            ):
+                errors.append(
+                    f"{rel_path.as_posix()}:{node.lineno}: shell=True is not allowed"
+                )
 
         if not node.args:
             continue
         tokens = _literal_string_tokens(node.args[0])
         if not tokens:
             continue
-        for error in _command_violations(tokens, f"{rel_path}:{node.lineno}", allowed_commands):
+        for error in _command_violations(
+            tokens,
+            f"{rel_path.as_posix()}:{node.lineno}",
+            allowed_commands,
+        ):
             errors.append(error)
 
     return errors
@@ -1095,25 +1261,25 @@ def _validate(
 
     CallsFromRepo
     -------------
-    ._iter_skill_files:
+    ._build_path_inventory:
       why:
-        computes: "Provides governed skill files in scan order."
+        constructs: "Builds root-local immutable path projections for every scan pass."
+    ._build_child_artifact_index:
+      why:
+        constructs: "Builds registered-child ownership indexes once per validation."
+    ._is_registered_child_artifact:
+      why:
+        computes: "Recognizes child-owned files without scanning every child root."
     ._is_runtime_script:
       why:
         computes: "Recognizes forbidden runtime script locations."
-    ._iter_ordinary_test_files:
-      why:
-        computes: "Provides tests subject to raw-Git annotation checks."
-    ._iter_live_python_files:
-      why:
-        computes: "Provides live sources subject to composite-target checks."
 
     InstantiationsFromRepo
     ----------------------
     .officina.blueprints.graph.load_repository_blueprint_graph:
       why:
         constructs: "Builds standalone blueprint preparation when no graph is supplied."
-    ._validate_v4_blueprints:
+    ._validate_blueprints:
       why:
         constructs: "Builds declaration portability findings."
     ._validate_python:
@@ -1131,6 +1297,7 @@ def _validate(
     """
 
     errors: list[str] = []
+    inventory = _build_path_inventory(repo_root)
     skills_root = repo_root / "skills"
     if repository_graph is None and skills_root.is_dir() and any(
         skills_root.glob("*/blueprint.yaml")
@@ -1154,36 +1321,57 @@ def _validate(
             errors.append(str(exc))
         else:
             errors.extend(
-                _validate_v4_blueprints(repository_graph, repo_root)
+                _validate_blueprints(repository_graph, repo_root)
             )
     elif repository_graph is not None:
-        errors.extend(_validate_v4_blueprints(repository_graph, repo_root))
-    for path in _iter_skill_files(repo_root, repository_graph):
+        errors.extend(_validate_blueprints(repository_graph, repo_root))
+    child_roots, non_python_gateways = _build_child_artifact_index(
+        repository_graph
+    )
+    analyses: dict[Path, _PythonAnalysis] = {}
+    for path in inventory.skill_files:
         rel_path = path.relative_to(repo_root)
+        if _is_registered_child_artifact(
+            path,
+            child_roots,
+            non_python_gateways,
+        ):
+            continue
         if path.suffix in FORBIDDEN_SUFFIXES and _is_runtime_script(rel_path):
-            errors.append(f"{rel_path}: shell scripts are not allowed in shared skills")
+            errors.append(
+                f"{rel_path.as_posix()}: shell scripts are not allowed in shared skills"
+            )
             continue
         if path.name == "blueprint.yaml":
             continue
         if path.suffix == PYTHON_SUFFIX:
-            errors.extend(_validate_python(path, rel_path, source_cache))
-    for path in _iter_ordinary_test_files(repo_root):
+            errors.extend(
+                _validate_python(path, rel_path, source_cache, analyses)
+            )
+    for path in inventory.ordinary_test_files:
         errors.extend(
             _validate_raw_git_test(
                 path,
                 path.relative_to(repo_root),
                 source_cache,
+                analyses,
             )
         )
-    for path in _iter_live_python_files(repo_root):
+    for path in inventory.live_python_files:
         errors.extend(
             _validate_composite_python_targets(
                 path,
                 path.relative_to(repo_root),
                 source_cache,
+                analyses,
             )
         )
-    errors.extend(_validate_runner_permission_documents(repo_root))
+    errors.extend(
+        _validate_runner_permission_documents(
+            repo_root,
+            inventory.pooled_permission_documents,
+        )
+    )
     return errors
 
 

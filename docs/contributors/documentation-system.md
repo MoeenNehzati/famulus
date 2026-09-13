@@ -30,7 +30,7 @@ of the region, not only of the file.
 
 ## What Is Generated
 
-The generated documentation surfaces are:
+The generated Markdown surfaces are:
 
 - [docs/skills.md](../skills.md) — the complete skill inventory
 - embedded coverage blocks inside the domain and contributor docs
@@ -65,9 +65,9 @@ and rewrites links to unpublished repository content.
 Coverage blocks are embedded between markers such as:
 
 ```text
-<!-- BEGIN AUTO-GENERATED DOCS: workflow-general-assistant -->
+<!-- BEGIN AUTO-GENERATED DOCS: personal-assistance -->
 ...
-<!-- END AUTO-GENERATED DOCS: workflow-general-assistant -->
+<!-- END AUTO-GENERATED DOCS: personal-assistance -->
 ```
 
 Do not edit the contents inside those markers by hand. Edit the surrounding prose if you need a better explanation, and rerun the generator if the skill inventory changed.
@@ -101,8 +101,9 @@ The site includes:
 - the repository `README.md` as the website homepage
 - `docs/README.md` as the `/documentation/` index
 - every regular file under `docs/`, recursively, except the private subtrees
-- standalone assets such as generated HTML demos under `docs/demo/`
+- non-Markdown assets under `docs/`, when present
 - the generated interactive repository blueprint graph
+- configured published graphs, currently the math-dependency example
 
 `docs/plans/` and `docs/superpowers/` are the private documentation subtrees,
 named in `_PRIVATE_SUBTREES` in the assembler. They hold working notes and

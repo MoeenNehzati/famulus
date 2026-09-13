@@ -11,10 +11,15 @@ interfaces:
     content:
     - SKILL\.md
     uses_interfaces:
-    - interface: milestone-logging._rtx.interface.record
-      version: 1
-    - interface: milestone-logging._rtx.interface.timeline
-      version: 1
+    - &record_progress {interface: milestone-logging._rtx.interface.record-progress, version: 1}
+    - &record_completion {interface: milestone-logging._rtx.interface.record-completion, version: 1}
+    - &session_path {interface: milestone-logging._rtx.interface.session-path, version: 1}
+    - &run_path {interface: milestone-logging._rtx.interface.run-path, version: 1}
+    - &list_sessions {interface: milestone-logging._rtx.interface.list-sessions, version: 1}
+    - &show_latest {interface: milestone-logging._rtx.interface.show-latest-session, version: 1}
+    - &show_session {interface: milestone-logging._rtx.interface.show-session, version: 1}
+    - &show_run {interface: milestone-logging._rtx.interface.show-run, version: 1}
+    - &read_run_json {interface: milestone-logging._rtx.interface.read-run-json, version: 1}
     contract:
       arguments:
         request:
@@ -47,8 +52,11 @@ interfaces:
       execution:
         consistency:
           live: The response reflects records observed or appended during this invocation.
+        effects:
+        - {action: append, confirmation_evidence: {kind: output, output_ref: response}, direct_io_ref: write-1, id: append-milestone, may_occur_in_outcomes: [completed, failed], reversibility: {irreversible: Appended progress records are intentionally retained.}, value_source: {kind: argument, argument_ref: request}}
         lifecycle: finite
-        state_effect: read-only
+        mutation_safety: {atomicity: {non_atomic: Session and optional run-journal appends are separate writes.}, concurrent_invocations: {safe: Each record is one bounded append write per target.}, idempotency: {non_idempotent: Repeating a record request can append another event.}, on_uncertain_completion: {stop: Inspect the selected log before deciding whether to append again.}, partial_effects_on_failure: {possible: A session append can precede a run-journal failure.}, rollback_on_failure: {unavailable: Appended records are retained.}}
+        state_effect: mutating
         verification:
         - method: output-schema
           output_ref: response
@@ -58,13 +66,13 @@ interfaces:
       outcomes:
       - caller_action: Use the resulting record or diagnostic output.
         class: success
-        effects: []
+        effects: [append-milestone]
         id: completed
         outputs:
         - response
       - caller_action: Report the exact logging or reading failure and continue the task.
         class: error
-        effects: []
+        effects: [append-milestone]
         id: failed
         outputs:
         - response
@@ -86,14 +94,19 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Record a role-labelled progress event or inspect existing milestone records.
+    description: Append a role-labelled milestone through an explicit record interface or read records through an explicit path, list, session, or run interface.
     version: 1
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
-- interface: milestone-logging._rtx.interface.record
-  version: 1
-- interface: milestone-logging._rtx.interface.timeline
-  version: 1
+- *record_progress
+- *record_completion
+- *session_path
+- *run_path
+- *list_sessions
+- *show_latest
+- *show_session
+- *show_run
+- *read_run_json
 version: 1
 maturity: stable

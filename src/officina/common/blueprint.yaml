@@ -5,8 +5,10 @@ content:
 - __init__\.py
 - atomic_files\.py
 - codex_toml\.py
+- command_files\.py
 - dates\.py
 - famulus_paths/__init__\.py
+- famulus_paths/_get_interface\.py
 - repository_paths\.py
 - toml_io\.py
 description: Shared, narrowly exported Python helpers for secure file updates, project
@@ -16,30 +18,25 @@ exports:
     access:
       allow_all_modules: false
       allowed_callers:
-      - install
-      - install-assistant-tools
-      - install-assistant-tools._rtx
       - recurring-tasks
       - recurring-tasks._rtx
       - recurring
-      - skill-certifier
-      - skill-certifier._rtx
-      - skill-drift
-      - skill-drift._rtx
+      - node-certify
+      - node-certify._rtx
+      - node-drift
+      - node-drift._rtx
       - skill-maker
       - skill-maker._rtx
       - credentials
       - rutter
       - math-dependency-graph._rtx
       - launchers
+      - setup-interface-manager._rtx
     source_interface: common.source.atomic-files.interface.python-api
   common.interface.codex-toml:
     access:
       allow_all_modules: false
-      allowed_callers:
-      - install
-      - install-assistant-tools
-      - install-assistant-tools._rtx
+      allowed_callers: []
     source_interface: common.source.codex-toml.interface.python-api
   common.interface.dates:
     access:
@@ -54,30 +51,36 @@ exports:
       allowed_callers:
       - email-triage
       - email-triage._rtx
-      - install-assistant-tools
-      - install-assistant-tools._rtx
-      - install
+      - install-launchers._rtx
       - list-manager
       - list-manager._rtx
       - recurring-tasks
       - recurring-tasks._rtx
       - credentials
+      - connect-google._rtx
+      - cloud-files._rtx
+      - online-calendar._rtx
+      - email-client._rtx
       - launchers
     source_interface: common.source.famulus-paths.interface.python-api
+  common.interface.famulus-paths-get:
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+    source_interface: common.source.famulus-paths-get.interface.get
   common.interface.repository-paths:
     access:
       allow_all_modules: false
       allowed_callers:
-      - skill-certifier
-      - skill-certifier._rtx
+      - node-certify
+      - node-certify._rtx
       - skill-maker
     source_interface: common.source.repository-paths.interface.python-api
   common.interface.toml-io:
     access:
       allow_all_modules: false
       allowed_callers:
-      - install-assistant-tools
-      - install-assistant-tools._rtx
+      - install-launchers._rtx
       - configuration
     source_interface: common.source.toml-io.interface.python-api
 gateway:
@@ -88,6 +91,10 @@ namespace_exports: {}
 node_type: module
 schema_version: 6
 sources:
+  common.source.command-files:
+    blueprint:
+      base: module-root
+      path: blueprints/command-files.yaml
   common.source.atomic-files:
     blueprint:
       base: module-root
@@ -104,6 +111,10 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/famulus-paths.yaml
+  common.source.famulus-paths-get:
+    blueprint:
+      base: module-root
+      path: blueprints/famulus-paths-get.yaml
   common.source.repository-paths:
     blueprint:
       base: module-root

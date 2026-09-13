@@ -1,20 +1,72 @@
 from __future__ import annotations
 
+import copy
+import hashlib
+import json
+import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 
+from jsonschema import Draft7Validator
 import yaml
 
-from docs_tooling.site import assemble_site
+from docs_tooling import site
+from docs_tooling.site import PUBLISHED_GRAPHS, assemble_site
+from officina.visualization.artifacts import GraphArtifactWriter
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+MATH_DEPENDENCY_GRAPH = REPO_ROOT / PUBLISHED_GRAPHS["math-dependency"][0]
+MATH_DEPENDENCY_SCHEMA = (
+    REPO_ROOT / "src/officina/visualization/graph_specification.schema.json"
+)
+MATH_DEPENDENCY_SEMANTIC_SHA256 = (
+    "849a3202115af47f49994909ef30ac67cbd1e9459a5f85edc06c57b7ed45d828"
+)
+
+
+def _task5_math_dependency_graph() -> Path:
+    override = os.environ.get("FAMULUS_MATH_DEPENDENCY_GRAPH")
+    return Path(override) if override else MATH_DEPENDENCY_GRAPH
+
+
+def _without_task5_macro_changes(payload: dict) -> dict:
+    normalized = copy.deepcopy(payload)
+    normalized.get("metadata", {}).pop("macro_gap", None)
+    for dependency in normalized.get("renderer_dependencies", []):
+        if dependency.get("id") == "mathjax":
+            dependency.get("configuration", {}).pop("macros", None)
+    return normalized
 
 
 def _write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
+
+
+def _minimal_graph_payload() -> dict:
+    return {
+        "schema_version": 2,
+        "graph_id": "docs-site",
+        "categories": [{"id": "node", "label": "Node"}],
+        "edge_categories": [],
+        "relation_semantics": {
+            "transformations": {"node_omission": {"rules": []}},
+            "subsumptions": [],
+        },
+        "detail_levels": [{"id": "overview", "label": "Overview"}],
+        "entities": [],
+    }
+
+
+def _embedded_quick_guide(rendered_html: str) -> dict:
+    match = re.search(
+        r"const QUICK_GUIDE_CONFIG = (.*?);\n", rendered_html, re.DOTALL
+    )
+    assert match is not None
+    return json.loads(match.group(1))
 
 
 def test_assemble_site_publishes_docs_tree_except_plans(tmp_path: Path) -> None:
@@ -163,25 +215,16 @@ def test_assemble_site_resolves_default_graph_builder_from_visualizer(
 
     from officina.visualization.from_blueprint import visualizer
 
-    def write_graph(
-        repo_root: str | Path,
-        *,
-        output_dir: str | Path,
-        name: str | None,
-        write_json: bool,
-    ) -> list[Path]:
-        assert Path(repo_root) == repo
-        assert name == "repository"
-        assert write_json is False
-        html = Path(output_dir) / "repository.html"
-        _write(html, "<!doctype html><title>Blueprint</title>\n")
-        return [html]
-
-    monkeypatch.setattr(visualizer, "build_blueprint_graph", write_graph)
+    monkeypatch.setattr(
+        visualizer, "build_blueprint_payload", lambda *_args, **_kwargs: _minimal_graph_payload()
+    )
 
     assemble_site(repo, output)
 
-    assert (output / "graphs" / "blueprint" / "repository.html").is_file()
+    rendered = (output / "graphs" / "blueprint" / "repository.html").read_text(
+        encoding="utf-8"
+    )
+    assert _embedded_quick_guide(rendered)["open_by_default"] is True
 
 
 def test_docs_site_cli_exposes_local_serve_and_static_build_commands() -> None:
@@ -245,3 +288,85 @@ def test_pages_workflow_builds_and_deploys_independently_of_repository_tests() -
     assert any(
         step.get("uses") == "actions/deploy-pages@v4" for step in deploy["steps"]
     )
+
+
+def test_assemble_site_publishes_every_declared_graph(tmp_path: Path) -> None:
+    """Each manifest entry names a real specification and reaches the site."""
+
+    output = tmp_path / "source"
+    assemble_site(REPO_ROOT, output, build_graph=False)
+    index = (output / "graphs" / "index.md").read_text(encoding="utf-8")
+    for stem, (relative, label) in PUBLISHED_GRAPHS.items():
+        assert (REPO_ROOT / relative).is_file(), f"missing specification: {relative}"
+        assert (output / "graphs" / f"{stem}.html").stat().st_size > 0
+        assert f"- [{label}]({stem}.html)" in index
+
+
+def test_published_math_dependency_graph_is_scoped_self_contained_candidate() -> None:
+    candidate = _task5_math_dependency_graph()
+    payload = json.loads(candidate.read_text(encoding="utf-8"))
+    schema = json.loads(MATH_DEPENDENCY_SCHEMA.read_text(encoding="utf-8"))
+    Draft7Validator(schema).validate(payload)
+
+    mathjax = [
+        dependency
+        for dependency in payload["renderer_dependencies"]
+        if dependency.get("id") == "mathjax"
+    ]
+    assert len(mathjax) == 1
+    macros = mathjax[0]["configuration"]["macros"]
+    assert macros
+    assert len(json.dumps(macros, separators=(",", ":")).encode("utf-8")) <= 4096
+    assert candidate.stat().st_size <= 77_454 + 8192
+    assert "macro_gap" not in payload.get("metadata", {})
+
+    semantic_payload = json.dumps(
+        _without_task5_macro_changes(payload),
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    assert hashlib.sha256(semantic_payload).hexdigest() == (
+        MATH_DEPENDENCY_SEMANTIC_SHA256
+    )
+
+
+def test_docs_publisher_consumes_embedded_math_macros_unchanged(
+    tmp_path: Path, monkeypatch
+) -> None:
+    candidate = _task5_math_dependency_graph()
+    expected = json.loads(candidate.read_text(encoding="utf-8"))
+    repo = tmp_path / "repo"
+    _write(repo / "README.md", "# Repository\n")
+    _write(repo / "docs" / "README.md", "# Documentation\n")
+    graph_relative = Path("fixtures/math-dependency.json")
+    graph_path = repo / graph_relative
+    graph_path.parent.mkdir(parents=True)
+    graph_path.write_bytes(candidate.read_bytes())
+
+    monkeypatch.setattr(
+        site,
+        "PUBLISHED_GRAPHS",
+        {"math-dependency": (graph_relative, "Math dependency graph")},
+    )
+    captured = []
+    original_write = GraphArtifactWriter.write
+
+    def capture_write(self, payload, **kwargs):
+        captured.append(copy.deepcopy(payload))
+        return original_write(self, payload, **kwargs)
+
+    monkeypatch.setattr(GraphArtifactWriter, "write", capture_write)
+    output = tmp_path / "source"
+    site.assemble_site(repo, output, build_graph=False)
+
+    rendered = output / "graphs" / "math-dependency.html"
+    assert captured == [expected]
+    expected_macros = captured[0]["renderer_dependencies"][0]["configuration"]["macros"]
+    assert expected_macros
+    rendered_text = rendered.read_text(encoding="utf-8")
+    embedded_config = re.search(
+        r"window\.MathJax = (\{.*?\});\n\s*\(function", rendered_text, re.DOTALL
+    )
+    assert embedded_config is not None
+    assert json.loads(embedded_config.group(1))["tex"]["macros"] == expected_macros
+    assert _embedded_quick_guide(rendered_text)["open_by_default"] is True

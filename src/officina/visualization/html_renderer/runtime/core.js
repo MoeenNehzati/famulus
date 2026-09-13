@@ -19,9 +19,12 @@
       const key = String(nodeId);
       const cached = nodeElementIndex.get(key);
       if (cached?.isConnected) return cached;
-      const found = svgEl.querySelector(`[data-node-id="${selectorValue(key)}"]`);
-      if (found) nodeElementIndex.set(key, found);
-      return found;
+      nodeElementIndex.delete(key);
+      return null;
+    }
+
+    function applyPresentationOperation(operations, operation) {
+      operations ? operations.push(operation) : operation();
     }
 
     function edgeElementsForNode(attribute, nodeId) {

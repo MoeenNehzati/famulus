@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """One-time OAuth2 setup for the cloud-files skill.
 
-Two files live at ~/.config/cloud-files/ (both mode 600, never git-tracked):
   client.json      — original Google Cloud Console OAuth client JSON
                      (client_id + client_secret). Kept permanently; never
                      overwritten by this script. Source of truth for re-auth.
@@ -10,7 +9,6 @@ Two files live at ~/.config/cloud-files/ (both mode 600, never git-tracked):
                      on every run. Used by cloud-files to mint access tokens.
 
 Usage:
-    setup_oauth.py                              # reads ~/.config/cloud-files/client.json
     setup_oauth.py --from-json /path/to/client_secret_*.json
     setup_oauth.py --client-id ID --client-secret SECRET [--port 8765]
 
@@ -25,6 +23,7 @@ from __future__ import annotations
 import argparse
 import http.server
 import json
+import os, sys
 import secrets
 import urllib.parse
 import urllib.request
@@ -32,14 +31,16 @@ import webbrowser
 from pathlib import Path
 
 from officina.credentials.oauth import write_oauth_json
+from officina.common.famulus_paths import resolve_skill_config_dir
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
 SCOPE = "https://www.googleapis.com/auth/drive"
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 DRIVE_VERIFY_URL = "https://www.googleapis.com/drive/v3/about?fields=user"
-CLIENT_PATH = Path.home() / ".config" / "cloud-files" / "client.json"
-CREDS_PATH = Path.home() / ".config" / "cloud-files" / "credentials.json"
+CONFIG_DIR = resolve_skill_config_dir("cloud-files", platform=sys.platform, home=Path.home(), environ=os.environ)
+CLIENT_PATH = CONFIG_DIR / "client.json"
+CREDS_PATH = CONFIG_DIR / "credentials.json"
 
 
 def verify_access_token(access_token: str) -> None:

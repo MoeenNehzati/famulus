@@ -1,116 +1,156 @@
-authority:
-  owns_filesystem: []
-children:
-  _rtx: {}
+# Generated documentation comments.
+# Blueprint values are editable; comments are regenerated from the schema.
+# Do not store durable notes in this file's comments.
+# @schema-doc path=$
+# @summary Closed version 6 contract for path-derived module identity, explicit child
+#   registration, namespace routing, and source-owned exports.
+schema_version: 6
+node_type: module
+id: math-dependency-graph
+# @schema-doc path=version
+# @summary Human-managed interface contract version.
+version: 4
+# @schema-doc path=maturity
+# @summary The node's current readiness for use: stable or experimental.
+# @status required
+# @validator schema-shape
+maturity: stable
+description: >-
+  Extracts a direct dependency graph from mathematical LaTeX into self-contained
+  canonical JSON, optionally renders offline HTML, and serves it for inspection.
+# @schema-doc path=gateway
+# @summary A whole-file gateway plus its language and optional alternative machine
+#   requirements.
+gateway:
+  # @schema-doc path=gateway.path
+  # @summary Relative path without parent traversal. Filesystem validators additionally
+  #   require the expected file type.
+  # @status required
+  # @validator gateway-file
+  path: SKILL.md
+  # @schema-doc path=gateway.language
+  # @summary A language or machine requirement: a name, an exact version, or a comma-
+  #   separated intersection of version constraints.
+  # @status required
+  # @validator schema-shape
+  language: Markdown
+# @schema-doc path=content
+# @summary Case-sensitive Python regular expressions matched with re.fullmatch against
+#   normalized POSIX paths under the node ownership root.
 content:
-- SKILL\.md
-- resources/graph-base\.json
-- schemas/(?:inventory|semantic-graph|semantic-repair|proof-normalization)\.schema\.json
-- instructions/(?:inventory|inventory-voyages|extract|proof-reconciliation)\.md
-- references/(?:experimental-improvement|gold-standard-extraction)\.md
-description: Extracts a direct dependency graph from a mathematical TeX or Markdown
-  document and emits canonical graph JSON for the shared visualization layer.
+  - (?:\.gitignore|SKILL\.md|instructions/extract\.md|resources/graph-base\.json)
+# @schema-doc path=discovery
+# @status optional
+# @validator schema-shape
 discovery:
+  # @schema-doc path=discovery.mechanism
+  # @summary The host discovery convention used to find this module.
   mechanism: skill
   catalog:
+    # @schema-doc path=discovery.catalog.domain
+    # @summary The single configured documentation domain matching the module's primary
+    #   direct user outcome.
     domain: research
     topics:
-    - mathematical-reasoning
-    - visualization
-    - scholarly-documents
+      - mathematical-reasoning
+      - visualization
+      - scholarly-documents
+    # @schema-doc path=discovery.catalog.visibility
+    # @summary The configured generated-documentation prominence of this discoverable
+    #   module.
     visibility: featured
+  # @schema-doc path=discovery.activated_by
+  # @summary Every supported class of initiator that can directly activate this skill.
   activated_by:
-  - user-request
-  - skill-workflow
+    - user-request
+    - skill-workflow
+  # @schema-doc path=discovery.persistent_modifier
+  # @summary Whether invocation intentionally changes assistant behavior beyond the
+  #   activating invocation; true requires the reasoning-control topic.
   persistent_modifier: false
-exports:
-  math-dependency-graph.interface.default:
-    access:
-      allow_all_modules: true
-      allowed_callers: []
-    source_interface: math-dependency-graph.source.gateway.interface.default
-  math-dependency-graph.interface.extract:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - math-dependency-graph
-    source_interface: math-dependency-graph.source.instructions-extract.interface.extract
-  math-dependency-graph.interface.inventory:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - math-dependency-graph
-    source_interface: math-dependency-graph.source.instructions-inventory.interface.inventory
-  math-dependency-graph.interface.inventory-voyages:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - math-dependency-graph
-    source_interface: math-dependency-graph.source.instructions-inventory-voyages.interface.inventory-voyages
-  math-dependency-graph.interface.proof-reconciliation:
-    access:
-      allow_all_modules: false
-      allowed_callers:
-      - math-dependency-graph
-    source_interface: math-dependency-graph.source.instructions-proof-reconciliation.interface.proof-reconciliation
-gateway:
-  language: Markdown
-  path: SKILL.md
-id: math-dependency-graph
+# @schema-doc path=installation_tier
+# @summary The default installation tier for a discoverable module.
+# @status optional
+# @validator schema-shape
+installation_tier: core
+# @schema-doc path=personal_preference
+# @status optional
+# @validator schema-shape
+personal_preference:
+  applies: false
+authority:
+  owns_filesystem: []
+sources:
+  math-dependency-graph.source.gateway:
+    blueprint:
+      # @schema-doc path=sources.math-dependency-graph.source.gateway.blueprint.base
+      # @status required
+      # @validator gateway-file
+      base: module-root
+      # @schema-doc path=sources.math-dependency-graph.source.gateway.blueprint.path
+      # @summary Relative path without parent traversal. Filesystem validators
+      #   additionally require the expected file type.
+      # @status required
+      # @validator gateway-file
+      path: blueprints/gateway.yaml
+  math-dependency-graph.source.instructions-extract:
+    blueprint:
+      # @schema-doc path=sources.math-dependency-graph.source.instructions-extract.blueprint.base
+      # @status required
+      # @validator gateway-file
+      base: module-root
+      # @schema-doc path=sources.math-dependency-graph.source.instructions-extract.blueprint.path
+      # @summary Relative path without parent traversal. Filesystem validators
+      #   additionally require the expected file type.
+      # @status required
+      # @validator gateway-file
+      path: blueprints/instructions-extract.yaml
+children:
+  _rtx: {}
 namespace_exports:
   _rtx:
-    version: 85
+    # @schema-doc path=namespace_exports._rtx.version
+    # @summary Human-managed interface contract version.
+    version: 2
     access:
       allow_all_modules: true
       allowed_callers: []
     surface:
       only:
-        math-dependency-graph._rtx.interface.inventory-voyage-dispenser: 11
-        math-dependency-graph._rtx.interface.scripts-apply-proof-digest: 1
-        math-dependency-graph._rtx.interface.scripts-extract-inventory-chunks: 1
-        math-dependency-graph._rtx.interface.scripts-pool-inventory-chunks: 1
-        math-dependency-graph._rtx.interface.scripts-semantic-to-canonical-json: 1
+        # @schema-doc path=namespace_exports._rtx.surface.only.math-dependency-graph._rtx.interface.scripts-finalize-extraction
+        # @summary Human-managed interface contract version.
+        math-dependency-graph._rtx.interface.scripts-finalize-extraction: 1
+        # @schema-doc path=namespace_exports._rtx.surface.only.math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph
+        # @summary Human-managed interface contract version.
+        math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph: 2
+        # @schema-doc path=namespace_exports._rtx.surface.only.math-dependency-graph._rtx.interface.scripts-read-tex-labels
+        # @summary Human-managed interface contract version.
+        math-dependency-graph._rtx.interface.scripts-read-tex-labels: 1
+        # @schema-doc path=namespace_exports._rtx.surface.only.math-dependency-graph._rtx.interface.scripts-serve-graph
+        # @summary Human-managed interface contract version.
+        math-dependency-graph._rtx.interface.scripts-serve-graph: 1
     interface_access:
-      math-dependency-graph._rtx.interface.inventory-voyage-dispenser:
+      math-dependency-graph._rtx.interface.scripts-finalize-extraction:
         allow_all_modules: false
         allowed_callers: []
-      math-dependency-graph._rtx.interface.scripts-apply-proof-digest:
+      math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph:
         allow_all_modules: false
         allowed_callers: []
-      math-dependency-graph._rtx.interface.scripts-extract-inventory-chunks:
+      math-dependency-graph._rtx.interface.scripts-read-tex-labels:
         allow_all_modules: false
         allowed_callers: []
-      math-dependency-graph._rtx.interface.scripts-pool-inventory-chunks:
+      math-dependency-graph._rtx.interface.scripts-serve-graph:
         allow_all_modules: false
         allowed_callers: []
-      math-dependency-graph._rtx.interface.scripts-semantic-to-canonical-json:
-        allow_all_modules: false
-        allowed_callers: []
-node_type: module
-schema_version: 6
-sources:
-  math-dependency-graph.source.gateway:
-    blueprint:
-      base: module-root
-      path: blueprints/gateway.yaml
-  math-dependency-graph.source.instructions-extract:
-    blueprint:
-      base: module-root
-      path: blueprints/instructions-extract.yaml
-  math-dependency-graph.source.instructions-inventory:
-    blueprint:
-      base: module-root
-      path: blueprints/instructions-inventory.yaml
-  math-dependency-graph.source.instructions-inventory-voyages:
-    blueprint:
-      base: module-root
-      path: blueprints/instructions-inventory-voyages.yaml
-  math-dependency-graph.source.instructions-proof-reconciliation:
-    blueprint:
-      base: module-root
-      path: blueprints/instructions-proof-reconciliation.yaml
-version: 112
-maturity: stable
-installation_tier: core
-personal_preference:
-  applies: false
+exports:
+  math-dependency-graph.interface.default:
+    source_interface: math-dependency-graph.source.gateway.interface.default
+    access:
+      allow_all_modules: true
+      allowed_callers: []
+  math-dependency-graph.interface.extract:
+    source_interface: math-dependency-graph.source.instructions-extract.interface.extract
+    access:
+      allow_all_modules: false
+      allowed_callers:
+        - math-dependency-graph

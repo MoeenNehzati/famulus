@@ -160,145 +160,6 @@
       "default": {},
       "description": "Imports are pinned references, not inheritance. Imported items cannot be overwritten in place; use local exceptions, replacement assertions, supersedes, or conflicts-with links."
     },
-    "sources": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "object",
-        "required": [
-          "artifact",
-          "revision",
-          "digest"
-        ],
-        "additionalProperties": false,
-        "properties": {
-          "artifact": {
-            "type": "object",
-            "required": [
-              "kind",
-              "ref"
-            ],
-            "additionalProperties": false,
-            "properties": {
-              "kind": {
-                "const": "artifact"
-              },
-              "ref": {
-                "type": "string",
-                "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"
-              }
-            }
-          },
-          "revision": {
-            "type": "string",
-            "minLength": 1
-          },
-          "digest": {
-            "type": "string",
-            "pattern": "^sha256:[0-9a-f]{64}$"
-          }
-        }
-      },
-      "default": {}
-    },
-    "source_units": {
-      "type": "object",
-      "description": "Optional conversion-audit slices of retained migration sources. Remove them, and imported origins that cite them, after the normalized standard becomes canonical.",
-      "additionalProperties": {
-        "type": "object",
-        "required": [
-          "source",
-          "selector",
-          "content_digest",
-          "summary",
-          "disposition"
-        ],
-        "additionalProperties": false,
-        "properties": {
-          "source": {
-            "type": "object",
-            "required": [
-              "kind",
-              "ref"
-            ],
-            "additionalProperties": false,
-            "properties": {
-              "kind": {
-                "const": "source"
-              },
-              "ref": {
-                "type": "string",
-                "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"
-              }
-            }
-          },
-          "selector": {
-            "type": "object",
-            "required": [
-              "kind",
-              "start",
-              "end"
-            ],
-            "additionalProperties": false,
-            "properties": {
-              "kind": {
-                "const": "line-range"
-              },
-              "start": {
-                "type": "integer",
-                "minimum": 1
-              },
-              "end": {
-                "type": "integer",
-                "minimum": 1
-              }
-            }
-          },
-          "content_digest": {
-            "type": "string",
-            "pattern": "^sha256:[0-9a-f]{64}$"
-          },
-          "summary": {
-            "type": "string",
-            "minLength": 1
-          },
-          "overlap_reason": {
-            "type": "string",
-            "minLength": 1
-          },
-          "disposition": {
-            "enum": [
-              "direct",
-              "contextual",
-              "excluded"
-            ]
-          },
-          "note": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "allOf": [
-          {
-            "if": {
-              "properties": {
-                "disposition": {
-                  "enum": [
-                    "contextual",
-                    "excluded"
-                  ]
-                }
-              }
-            },
-            "then": {
-              "required": [
-                "note"
-              ]
-            }
-          }
-        ]
-      },
-      "default": {}
-    },
     "standards": {
       "type": "array",
       "minItems": 1,
@@ -1134,9 +995,6 @@
       },
       "default": {}
     },
-    "migration": {
-      "type": "object"
-    },
     "semantic_reviews": {
       "type": "object",
       "additionalProperties": {
@@ -1251,60 +1109,6 @@
                     },
                     "review_relation": {
                       "const": "resolves-conflict"
-                    },
-                    "strength": {
-                      "enum": [
-                        "full",
-                        "partial",
-                        "supporting"
-                      ]
-                    },
-                    "aspects": {
-                      "type": "array",
-                      "minItems": 1,
-                      "uniqueItems": true,
-                      "items": {
-                        "type": "string",
-                        "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"
-                      }
-                    },
-                    "scope": {
-                      "enum": [
-                        "node-only",
-                        "node-and-descendants"
-                      ]
-                    }
-                  }
-                },
-                {
-                  "type": "object",
-                  "required": [
-                    "target",
-                    "review_relation",
-                    "strength",
-                    "aspects"
-                  ],
-                  "additionalProperties": false,
-                  "properties": {
-                    "target": {
-                      "type": "object",
-                      "required": [
-                        "kind",
-                        "ref"
-                      ],
-                      "additionalProperties": false,
-                      "properties": {
-                        "kind": {
-                          "const": "source-unit"
-                        },
-                        "ref": {
-                          "type": "string",
-                          "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"
-                        }
-                      }
-                    },
-                    "review_relation": {
-                      "const": "reviews-traceability"
                     },
                     "strength": {
                       "enum": [
@@ -1902,32 +1706,8 @@
                   "kind": {
                     "enum": [
                       "authored",
-                      "imported",
-                      "derived",
-                      "source-repair"
+                      "derived"
                     ]
-                  },
-                  "source_units": {
-                    "type": "array",
-                    "minItems": 1,
-                    "uniqueItems": true,
-                    "items": {
-                      "type": "object",
-                      "required": [
-                        "kind",
-                        "ref"
-                      ],
-                      "additionalProperties": false,
-                      "properties": {
-                        "kind": {
-                          "const": "source-unit"
-                        },
-                        "ref": {
-                          "type": "string",
-                          "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"
-                        }
-                      }
-                    }
                   },
                   "derived_from": {
                     "type": "array",
@@ -1974,20 +1754,6 @@
                     "if": {
                       "properties": {
                         "kind": {
-                          "const": "imported"
-                        }
-                      }
-                    },
-                    "then": {
-                      "required": [
-                        "source_units"
-                      ]
-                    }
-                  },
-                  {
-                    "if": {
-                      "properties": {
-                        "kind": {
                           "const": "derived"
                         }
                       }
@@ -1995,21 +1761,6 @@
                     "then": {
                       "required": [
                         "derived_from"
-                      ]
-                    }
-                  },
-                  {
-                    "if": {
-                      "properties": {
-                        "kind": {
-                          "const": "source-repair"
-                        }
-                      }
-                    },
-                    "then": {
-                      "required": [
-                        "source_units",
-                        "note"
                       ]
                     }
                   }
@@ -2142,32 +1893,8 @@
             "kind": {
               "enum": [
                 "authored",
-                "imported",
-                "derived",
-                "source-repair"
+                "derived"
               ]
-            },
-            "source_units": {
-              "type": "array",
-              "minItems": 1,
-              "uniqueItems": true,
-              "items": {
-                "type": "object",
-                "required": [
-                  "kind",
-                  "ref"
-                ],
-                "additionalProperties": false,
-                "properties": {
-                  "kind": {
-                    "const": "source-unit"
-                  },
-                  "ref": {
-                    "type": "string",
-                    "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"
-                  }
-                }
-              }
             },
             "derived_from": {
               "type": "array",
@@ -2214,20 +1941,6 @@
               "if": {
                 "properties": {
                   "kind": {
-                    "const": "imported"
-                  }
-                }
-              },
-              "then": {
-                "required": [
-                  "source_units"
-                ]
-              }
-            },
-            {
-              "if": {
-                "properties": {
-                  "kind": {
                     "const": "derived"
                   }
                 }
@@ -2235,21 +1948,6 @@
               "then": {
                 "required": [
                   "derived_from"
-                ]
-              }
-            },
-            {
-              "if": {
-                "properties": {
-                  "kind": {
-                    "const": "source-repair"
-                  }
-                }
-              },
-              "then": {
-                "required": [
-                  "source_units",
-                  "note"
                 ]
               }
             }
@@ -2382,32 +2080,8 @@
                       "kind": {
                         "enum": [
                           "authored",
-                          "imported",
-                          "derived",
-                          "source-repair"
+                          "derived"
                         ]
-                      },
-                      "source_units": {
-                        "type": "array",
-                        "minItems": 1,
-                        "uniqueItems": true,
-                        "items": {
-                          "type": "object",
-                          "required": [
-                            "kind",
-                            "ref"
-                          ],
-                          "additionalProperties": false,
-                          "properties": {
-                            "kind": {
-                              "const": "source-unit"
-                            },
-                            "ref": {
-                              "type": "string",
-                              "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"
-                            }
-                          }
-                        }
                       },
                       "derived_from": {
                         "type": "array",
@@ -2454,20 +2128,6 @@
                         "if": {
                           "properties": {
                             "kind": {
-                              "const": "imported"
-                            }
-                          }
-                        },
-                        "then": {
-                          "required": [
-                            "source_units"
-                          ]
-                        }
-                      },
-                      {
-                        "if": {
-                          "properties": {
-                            "kind": {
                               "const": "derived"
                             }
                           }
@@ -2475,21 +2135,6 @@
                         "then": {
                           "required": [
                             "derived_from"
-                          ]
-                        }
-                      },
-                      {
-                        "if": {
-                          "properties": {
-                            "kind": {
-                              "const": "source-repair"
-                            }
-                          }
-                        },
-                        "then": {
-                          "required": [
-                            "source_units",
-                            "note"
                           ]
                         }
                       }
@@ -2594,32 +2239,8 @@
                                 "kind": {
                                   "enum": [
                                     "authored",
-                                    "imported",
-                                    "derived",
-                                    "source-repair"
+                                    "derived"
                                   ]
-                                },
-                                "source_units": {
-                                  "type": "array",
-                                  "minItems": 1,
-                                  "uniqueItems": true,
-                                  "items": {
-                                    "type": "object",
-                                    "required": [
-                                      "kind",
-                                      "ref"
-                                    ],
-                                    "additionalProperties": false,
-                                    "properties": {
-                                      "kind": {
-                                        "const": "source-unit"
-                                      },
-                                      "ref": {
-                                        "type": "string",
-                                        "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"
-                                      }
-                                    }
-                                  }
                                 },
                                 "derived_from": {
                                   "type": "array",
@@ -2666,20 +2287,6 @@
                                   "if": {
                                     "properties": {
                                       "kind": {
-                                        "const": "imported"
-                                      }
-                                    }
-                                  },
-                                  "then": {
-                                    "required": [
-                                      "source_units"
-                                    ]
-                                  }
-                                },
-                                {
-                                  "if": {
-                                    "properties": {
-                                      "kind": {
                                         "const": "derived"
                                       }
                                     }
@@ -2687,21 +2294,6 @@
                                   "then": {
                                     "required": [
                                       "derived_from"
-                                    ]
-                                  }
-                                },
-                                {
-                                  "if": {
-                                    "properties": {
-                                      "kind": {
-                                        "const": "source-repair"
-                                      }
-                                    }
-                                  },
-                                  "then": {
-                                    "required": [
-                                      "source_units",
-                                      "note"
                                     ]
                                   }
                                 }
@@ -2746,32 +2338,8 @@
                 "kind": {
                   "enum": [
                     "authored",
-                    "imported",
-                    "derived",
-                    "source-repair"
+                    "derived"
                   ]
-                },
-                "source_units": {
-                  "type": "array",
-                  "minItems": 1,
-                  "uniqueItems": true,
-                  "items": {
-                    "type": "object",
-                    "required": [
-                      "kind",
-                      "ref"
-                    ],
-                    "additionalProperties": false,
-                    "properties": {
-                      "kind": {
-                        "const": "source-unit"
-                      },
-                      "ref": {
-                        "type": "string",
-                        "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"
-                      }
-                    }
-                  }
                 },
                 "derived_from": {
                   "type": "array",
@@ -2818,20 +2386,6 @@
                   "if": {
                     "properties": {
                       "kind": {
-                        "const": "imported"
-                      }
-                    }
-                  },
-                  "then": {
-                    "required": [
-                      "source_units"
-                    ]
-                  }
-                },
-                {
-                  "if": {
-                    "properties": {
-                      "kind": {
                         "const": "derived"
                       }
                     }
@@ -2839,21 +2393,6 @@
                   "then": {
                     "required": [
                       "derived_from"
-                    ]
-                  }
-                },
-                {
-                  "if": {
-                    "properties": {
-                      "kind": {
-                        "const": "source-repair"
-                      }
-                    }
-                  },
-                  "then": {
-                    "required": [
-                      "source_units",
-                      "note"
                     ]
                   }
                 }
@@ -2934,32 +2473,8 @@
                 "kind": {
                   "enum": [
                     "authored",
-                    "imported",
-                    "derived",
-                    "source-repair"
+                    "derived"
                   ]
-                },
-                "source_units": {
-                  "type": "array",
-                  "minItems": 1,
-                  "uniqueItems": true,
-                  "items": {
-                    "type": "object",
-                    "required": [
-                      "kind",
-                      "ref"
-                    ],
-                    "additionalProperties": false,
-                    "properties": {
-                      "kind": {
-                        "const": "source-unit"
-                      },
-                      "ref": {
-                        "type": "string",
-                        "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"
-                      }
-                    }
-                  }
                 },
                 "derived_from": {
                   "type": "array",
@@ -3006,20 +2521,6 @@
                   "if": {
                     "properties": {
                       "kind": {
-                        "const": "imported"
-                      }
-                    }
-                  },
-                  "then": {
-                    "required": [
-                      "source_units"
-                    ]
-                  }
-                },
-                {
-                  "if": {
-                    "properties": {
-                      "kind": {
                         "const": "derived"
                       }
                     }
@@ -3027,21 +2528,6 @@
                   "then": {
                     "required": [
                       "derived_from"
-                    ]
-                  }
-                },
-                {
-                  "if": {
-                    "properties": {
-                      "kind": {
-                        "const": "source-repair"
-                      }
-                    }
-                  },
-                  "then": {
-                    "required": [
-                      "source_units",
-                      "note"
                     ]
                   }
                 }
@@ -3120,32 +2606,8 @@
                 "kind": {
                   "enum": [
                     "authored",
-                    "imported",
-                    "derived",
-                    "source-repair"
+                    "derived"
                   ]
-                },
-                "source_units": {
-                  "type": "array",
-                  "minItems": 1,
-                  "uniqueItems": true,
-                  "items": {
-                    "type": "object",
-                    "required": [
-                      "kind",
-                      "ref"
-                    ],
-                    "additionalProperties": false,
-                    "properties": {
-                      "kind": {
-                        "const": "source-unit"
-                      },
-                      "ref": {
-                        "type": "string",
-                        "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"
-                      }
-                    }
-                  }
                 },
                 "derived_from": {
                   "type": "array",
@@ -3192,20 +2654,6 @@
                   "if": {
                     "properties": {
                       "kind": {
-                        "const": "imported"
-                      }
-                    }
-                  },
-                  "then": {
-                    "required": [
-                      "source_units"
-                    ]
-                  }
-                },
-                {
-                  "if": {
-                    "properties": {
-                      "kind": {
                         "const": "derived"
                       }
                     }
@@ -3213,21 +2661,6 @@
                   "then": {
                     "required": [
                       "derived_from"
-                    ]
-                  }
-                },
-                {
-                  "if": {
-                    "properties": {
-                      "kind": {
-                        "const": "source-repair"
-                      }
-                    }
-                  },
-                  "then": {
-                    "required": [
-                      "source_units",
-                      "note"
                     ]
                   }
                 }
@@ -3352,32 +2785,8 @@
                       "kind": {
                         "enum": [
                           "authored",
-                          "imported",
-                          "derived",
-                          "source-repair"
+                          "derived"
                         ]
-                      },
-                      "source_units": {
-                        "type": "array",
-                        "minItems": 1,
-                        "uniqueItems": true,
-                        "items": {
-                          "type": "object",
-                          "required": [
-                            "kind",
-                            "ref"
-                          ],
-                          "additionalProperties": false,
-                          "properties": {
-                            "kind": {
-                              "const": "source-unit"
-                            },
-                            "ref": {
-                              "type": "string",
-                              "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"
-                            }
-                          }
-                        }
                       },
                       "derived_from": {
                         "type": "array",
@@ -3424,20 +2833,6 @@
                         "if": {
                           "properties": {
                             "kind": {
-                              "const": "imported"
-                            }
-                          }
-                        },
-                        "then": {
-                          "required": [
-                            "source_units"
-                          ]
-                        }
-                      },
-                      {
-                        "if": {
-                          "properties": {
-                            "kind": {
                               "const": "derived"
                             }
                           }
@@ -3445,21 +2840,6 @@
                         "then": {
                           "required": [
                             "derived_from"
-                          ]
-                        }
-                      },
-                      {
-                        "if": {
-                          "properties": {
-                            "kind": {
-                              "const": "source-repair"
-                            }
-                          }
-                        },
-                        "then": {
-                          "required": [
-                            "source_units",
-                            "note"
                           ]
                         }
                       }
@@ -3496,32 +2876,8 @@
                       "kind": {
                         "enum": [
                           "authored",
-                          "imported",
-                          "derived",
-                          "source-repair"
+                          "derived"
                         ]
-                      },
-                      "source_units": {
-                        "type": "array",
-                        "minItems": 1,
-                        "uniqueItems": true,
-                        "items": {
-                          "type": "object",
-                          "required": [
-                            "kind",
-                            "ref"
-                          ],
-                          "additionalProperties": false,
-                          "properties": {
-                            "kind": {
-                              "const": "source-unit"
-                            },
-                            "ref": {
-                              "type": "string",
-                              "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"
-                            }
-                          }
-                        }
                       },
                       "derived_from": {
                         "type": "array",
@@ -3568,20 +2924,6 @@
                         "if": {
                           "properties": {
                             "kind": {
-                              "const": "imported"
-                            }
-                          }
-                        },
-                        "then": {
-                          "required": [
-                            "source_units"
-                          ]
-                        }
-                      },
-                      {
-                        "if": {
-                          "properties": {
-                            "kind": {
                               "const": "derived"
                             }
                           }
@@ -3589,21 +2931,6 @@
                         "then": {
                           "required": [
                             "derived_from"
-                          ]
-                        }
-                      },
-                      {
-                        "if": {
-                          "properties": {
-                            "kind": {
-                              "const": "source-repair"
-                            }
-                          }
-                        },
-                        "then": {
-                          "required": [
-                            "source_units",
-                            "note"
                           ]
                         }
                       }
@@ -3641,32 +2968,8 @@
                       "kind": {
                         "enum": [
                           "authored",
-                          "imported",
-                          "derived",
-                          "source-repair"
+                          "derived"
                         ]
-                      },
-                      "source_units": {
-                        "type": "array",
-                        "minItems": 1,
-                        "uniqueItems": true,
-                        "items": {
-                          "type": "object",
-                          "required": [
-                            "kind",
-                            "ref"
-                          ],
-                          "additionalProperties": false,
-                          "properties": {
-                            "kind": {
-                              "const": "source-unit"
-                            },
-                            "ref": {
-                              "type": "string",
-                              "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"
-                            }
-                          }
-                        }
                       },
                       "derived_from": {
                         "type": "array",
@@ -3713,20 +3016,6 @@
                         "if": {
                           "properties": {
                             "kind": {
-                              "const": "imported"
-                            }
-                          }
-                        },
-                        "then": {
-                          "required": [
-                            "source_units"
-                          ]
-                        }
-                      },
-                      {
-                        "if": {
-                          "properties": {
-                            "kind": {
                               "const": "derived"
                             }
                           }
@@ -3734,21 +3023,6 @@
                         "then": {
                           "required": [
                             "derived_from"
-                          ]
-                        }
-                      },
-                      {
-                        "if": {
-                          "properties": {
-                            "kind": {
-                              "const": "source-repair"
-                            }
-                          }
-                        },
-                        "then": {
-                          "required": [
-                            "source_units",
-                            "note"
                           ]
                         }
                       }
@@ -3786,32 +3060,8 @@
                     "kind": {
                       "enum": [
                         "authored",
-                        "imported",
-                        "derived",
-                        "source-repair"
+                        "derived"
                       ]
-                    },
-                    "source_units": {
-                      "type": "array",
-                      "minItems": 1,
-                      "uniqueItems": true,
-                      "items": {
-                        "type": "object",
-                        "required": [
-                          "kind",
-                          "ref"
-                        ],
-                        "additionalProperties": false,
-                        "properties": {
-                          "kind": {
-                            "const": "source-unit"
-                          },
-                          "ref": {
-                            "type": "string",
-                            "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"
-                          }
-                        }
-                      }
                     },
                     "derived_from": {
                       "type": "array",
@@ -3858,20 +3108,6 @@
                       "if": {
                         "properties": {
                           "kind": {
-                            "const": "imported"
-                          }
-                        }
-                      },
-                      "then": {
-                        "required": [
-                          "source_units"
-                        ]
-                      }
-                    },
-                    {
-                      "if": {
-                        "properties": {
-                          "kind": {
                             "const": "derived"
                           }
                         }
@@ -3879,21 +3115,6 @@
                       "then": {
                         "required": [
                           "derived_from"
-                        ]
-                      }
-                    },
-                    {
-                      "if": {
-                        "properties": {
-                          "kind": {
-                            "const": "source-repair"
-                          }
-                        }
-                      },
-                      "then": {
-                        "required": [
-                          "source_units",
-                          "note"
                         ]
                       }
                     }
@@ -3911,32 +3132,8 @@
                 "kind": {
                   "enum": [
                     "authored",
-                    "imported",
-                    "derived",
-                    "source-repair"
+                    "derived"
                   ]
-                },
-                "source_units": {
-                  "type": "array",
-                  "minItems": 1,
-                  "uniqueItems": true,
-                  "items": {
-                    "type": "object",
-                    "required": [
-                      "kind",
-                      "ref"
-                    ],
-                    "additionalProperties": false,
-                    "properties": {
-                      "kind": {
-                        "const": "source-unit"
-                      },
-                      "ref": {
-                        "type": "string",
-                        "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"
-                      }
-                    }
-                  }
                 },
                 "derived_from": {
                   "type": "array",
@@ -3983,20 +3180,6 @@
                   "if": {
                     "properties": {
                       "kind": {
-                        "const": "imported"
-                      }
-                    }
-                  },
-                  "then": {
-                    "required": [
-                      "source_units"
-                    ]
-                  }
-                },
-                {
-                  "if": {
-                    "properties": {
-                      "kind": {
                         "const": "derived"
                       }
                     }
@@ -4004,21 +3187,6 @@
                   "then": {
                     "required": [
                       "derived_from"
-                    ]
-                  }
-                },
-                {
-                  "if": {
-                    "properties": {
-                      "kind": {
-                        "const": "source-repair"
-                      }
-                    }
-                  },
-                  "then": {
-                    "required": [
-                      "source_units",
-                      "note"
                     ]
                   }
                 }

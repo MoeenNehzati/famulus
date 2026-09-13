@@ -27,7 +27,7 @@ from ..common.atomic_files import (
 )
 
 
-CERTIFIER_SECRET_NAMESPACE = "skill-certifier"
+CERTIFIER_SECRET_NAMESPACE = "node-certify"
 CERTIFICATE_SIGNATURE_SCHEME = "ed25519"
 ACTIVE_KEY_ID_NAME = "active-key-id"
 ED25519_PRIVATE_KEY_BYTES = 32
@@ -43,7 +43,7 @@ def certificate_public_key_root(repo_root: Path) -> Path:
     return (
         Path(repo_root).resolve()
         / "skills"
-        / "skill-certifier"
+        / "node-certify"
         / ".certificates"
         / "public-keys"
     )
@@ -334,7 +334,7 @@ def provision_certificate_signing_material(
 
     root = Path(repo_root).resolve()
     public_key_root = certificate_public_key_root(root)
-    certifier_root = root / "skills" / "skill-certifier"
+    certifier_root = root / "skills" / "node-certify"
     for current in (root / "skills", certifier_root):
         try:
             metadata = current.lstat()

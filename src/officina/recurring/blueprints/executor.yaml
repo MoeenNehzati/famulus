@@ -3,7 +3,7 @@ id: recurring.source.executor
 version: 1
 maturity: experimental
 node_type: behavioral_source
-description: Executes one descriptor-selected recurring job and atomically records its result without skill source.
+description: Executes one descriptor-selected recurring job through the captured selected plugin and atomically records its result.
 gateway: {language: Python, path: executor.py}
 content: [executor\.py]
 dependencies: [{source: recurring.source.runtime, version: 1, blueprint: {base: module-root, path: blueprints/runtime.yaml}, reason: Uses sealed schedule authority and managed run records.}]
@@ -16,7 +16,7 @@ interfaces:
     uses_interfaces: []
     contract:
       arguments:
-        runtime-root: {description: Active runtime root injected by the fixed resolver., required: true, sensitivity: user-private, direct_io_ref: authority, type: {kind: dir, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read}}
+        plugin-root: {description: Selected current Famulus plugin root captured by recurring setup., required: true, sensitivity: user-private, direct_io_ref: authority, type: {kind: dir, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read}}
         descriptor: {description: Canonical schedule descriptor., required: true, sensitivity: user-private, direct_io_ref: authority, type: {kind: file, syntax: literal, relative_to: caller-cwd, must_exist: true, access: read, opaque_content: true}}
         job: {description: Exact job name., required: true, sensitivity: user-private, type: {kind: string}}
         log-root: {description: Explicit canonical log root which must match the descriptor., required: true, sensitivity: user-private, direct_io_ref: authority, type: {kind: dir, syntax: literal, relative_to: caller-cwd, must_exist: false, access: read-write}}
@@ -35,7 +35,7 @@ interfaces:
         verification: [{method: output-schema, output_ref: result}]
       helpers: []
       direct_io: {network: [], reads: [{id: authority, medium: local-filesystem, access: read, content: Descriptor jobs and launcher authority., formats: [json, yaml], sensitivity: user-private, path: <selected-context>/**, path_match: glob}], writes: [{id: run-state, medium: local-filesystem, access: read-write, content: Per-job log running marker and latest outcome., formats: [text, json], sensitivity: user-private, path: <recurring-log-root>/**, path_match: glob}, {id: result, medium: local-system, access: write, content: Exit status., formats: [integer], sensitivity: public}]}
-    process_binding: {kind: process, entry: Interface, patterns: [{name: execute, min_positionals: 0, max_positionals: 0, allowed_flags: [--runtime-root, --descriptor, --job, --log-root], required_flags: [--runtime-root, --descriptor, --job, --log-root], allow_stdin: false}]}
-    usage: --runtime-root ROOT --descriptor FILE --job NAME --log-root DIR
+    process_binding: {kind: process, entry: Interface, patterns: [{name: execute, min_positionals: 0, max_positionals: 0, allowed_flags: [--plugin-root, --descriptor, --job, --log-root], required_flags: [--plugin-root, --descriptor, --job, --log-root], allow_stdin: false}]}
+    usage: --plugin-root DIR --descriptor FILE --job NAME --log-root DIR
 platform_support: {linux: true, macos: true, windows: true}
 runtime_dependencies: [{kind: python-package, name: PyYAML, version: any, platforms: {linux: true, macos: true, windows: true}, reason: Parses canonical recurring jobs configuration.}]

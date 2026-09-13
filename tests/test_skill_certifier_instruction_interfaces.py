@@ -4,7 +4,9 @@ from pathlib import Path
 
 import yaml
 
-from officina.blueprints.graph import load_repository_blueprint_graph
+from officina.blueprints.graph import (
+    RepositoryBlueprintGraph,
+)
 from officina.blueprints.process_binding import (
     compile_gateway_invocation,
     parse_caller_invocation,
@@ -12,24 +14,24 @@ from officina.blueprints.process_binding import (
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SKILL_ROOT = REPO_ROOT / "skills" / "skill-certifier"
-DRIFT_ROOT = REPO_ROOT / "skills" / "skill-drift"
+SKILL_ROOT = REPO_ROOT / "skills" / "node-certify"
+DRIFT_ROOT = REPO_ROOT / "skills" / "node-drift"
 
 AUDIT_SOURCES = {
-    "skill-certifier.source.audit-interface": (
+    "node-certify.source.audit-interface": (
         "instructions/audit-interface.md",
         "blueprints/instructions-audit-interface.yaml",
-        "skill-certifier.source.audit-interface.interface.audit",
+        "node-certify.source.audit-interface.interface.audit",
     ),
-    "skill-certifier.source.audit-behavioral-source": (
+    "node-certify.source.audit-behavioral-source": (
         "instructions/audit-behavioral-source.md",
         "blueprints/instructions-audit-behavioral-source.yaml",
-        "skill-certifier.source.audit-behavioral-source.interface.audit",
+        "node-certify.source.audit-behavioral-source.interface.audit",
     ),
-    "skill-certifier.source.audit-module": (
+    "node-certify.source.audit-module": (
         "instructions/audit-module.md",
         "blueprints/instructions-audit-module.yaml",
-        "skill-certifier.source.audit-module.interface.audit",
+        "node-certify.source.audit-module.interface.audit",
     ),
 }
 
@@ -45,7 +47,7 @@ def test_certifier_exposes_three_private_semantic_audit_sources() -> None:
 
     assert module["exports"] == {}
     assert set(module["sources"]) == {
-        "skill-certifier.source.gateway",
+        "node-certify.source.gateway",
         *AUDIT_SOURCES,
     }
 
@@ -66,15 +68,15 @@ def test_certifier_exposes_three_private_semantic_audit_sources() -> None:
         assert source["version"] == 3
 
 
-def test_certifier_gateway_only_dispatches_the_machine_owned_voyage() -> None:
-    graph = load_repository_blueprint_graph(REPO_ROOT)
+def test_certifier_gateway_only_dispatches_the_machine_owned_voyage(ordinary_repository_graph: RepositoryBlueprintGraph) -> None:
+    graph = ordinary_repository_graph
     gateway = _yaml(SKILL_ROOT / "blueprints/gateway.yaml")
     assert gateway["interfaces"] == {}
     assert {use["interface"] for use in gateway["uses_interfaces"]} == {
-        "skill-certifier._rtx.interface.certification-voyage",
+        "node-certify._rtx.interface.certification-voyage",
         *(value[2] for value in AUDIT_SOURCES.values()),
     }
-    assert "skill-certifier._rtx.interface.semantic-audit-scheduler" not in graph.exports
+    assert "node-certify._rtx.interface.semantic-audit-scheduler" not in graph.exports
     text = (SKILL_ROOT / "SKILL.md").read_text().split("## Certification algorithm", 1)[1]
     normalized = " ".join(text.split())
     assert "one fresh subagent" in normalized
@@ -84,12 +86,12 @@ def test_certifier_gateway_only_dispatches_the_machine_owned_voyage() -> None:
     assert "initialization and `next`" in normalized
 
 
-def test_drift_repository_routes_supply_their_subcommands() -> None:
-    graph = load_repository_blueprint_graph(REPO_ROOT)
+def test_drift_repository_routes_supply_their_subcommands(ordinary_repository_graph: RepositoryBlueprintGraph) -> None:
+    graph = ordinary_repository_graph
 
     for interface_id, subcommand in (
-        ("skill-drift._rtx.interface.compute-hashes", "compute-hashes"),
-        ("skill-drift._rtx.interface.drift-status", "status"),
+        ("node-drift._rtx.interface.compute-hashes", "compute-hashes"),
+        ("node-drift._rtx.interface.drift-status", "status"),
     ):
         export = graph.exports[interface_id]
         parsed = parse_caller_invocation(
@@ -109,14 +111,14 @@ def test_drift_repository_routes_supply_their_subcommands() -> None:
         )
 
 
-def test_certification_routes_preserve_exact_machine_arguments() -> None:
-    graph = load_repository_blueprint_graph(REPO_ROOT)
+def test_certification_routes_preserve_exact_machine_arguments(ordinary_repository_graph: RepositoryBlueprintGraph) -> None:
+    graph = ordinary_repository_graph
     for interface_id, argv in (
-        ("skill-certifier._rtx.interface.certification-voyage",
+        ("node-certify._rtx.interface.certification-voyage",
          ["initiate", "--repository", str(REPO_ROOT), "--worker-capacity", "2"]),
-        ("skill-certifier._rtx.interface.certification-voyage",
+        ("node-certify._rtx.interface.certification-voyage",
          ["next", "run/1", "--response-file", "event.json", "--responding-to", "entry"]),
-        ("skill-certifier._rtx.source.rtx-certifier.interface.exact-node",
+        ("node-certify._rtx.source.rtx-certifier.interface.exact-node",
          ["example.source", "--reviewed-repository", str(REPO_ROOT),
           "--reviewed-commit", "a" * 40, "--audited-inputs", "inputs.json"]),
     ):
@@ -126,10 +128,10 @@ def test_certification_routes_preserve_exact_machine_arguments() -> None:
         assert plan.argv == tuple(argv)
 
 
-def test_drift_status_route_preserves_dag_file() -> None:
-    graph = load_repository_blueprint_graph(REPO_ROOT)
-    export = graph.exports["skill-drift._rtx.interface.drift-status"]
-    dag_file = REPO_ROOT / "skills" / "skill-certifier" / "_build" / "dag.json"
+def test_drift_status_route_preserves_dag_file(ordinary_repository_graph: RepositoryBlueprintGraph) -> None:
+    graph = ordinary_repository_graph
+    export = graph.exports["node-drift._rtx.interface.drift-status"]
+    dag_file = REPO_ROOT / "skills" / "node-certify" / "_build" / "dag.json"
     parsed = parse_caller_invocation(
         export,
         [
@@ -153,8 +155,6 @@ def test_drift_status_route_preserves_dag_file() -> None:
         "--dag-file",
         str(dag_file),
     )
-
-
 def test_drift_and_canonical_docs_describe_selective_v6_worklist() -> None:
     drift_text = (DRIFT_ROOT / "SKILL.md").read_text(encoding="utf-8")
     canonical_text = (
@@ -180,7 +180,7 @@ def test_drift_and_canonical_docs_describe_selective_v6_worklist() -> None:
     assert "route smoke" in normalized_canonical
     assert "stale worklist" in normalized_canonical
     assert "all direct facet dependencies" in normalized_canonical
-    assert "interface: skill-certifier._rtx.interface.certify version: 2" in (
+    assert "interface: node-certify._rtx.interface.certify version: 2" in (
         normalized_canonical
     )
 
@@ -226,9 +226,9 @@ def test_repository_docs_do_not_reference_removed_default_interface() -> None:
         encoding="utf-8"
     )
 
-    assert "skill-certifier.interface.default" not in docstring_guide
+    assert "node-certify.interface.default" not in docstring_guide
     assert (
-        "skill-certifier.source.audit-interface.interface.audit"
+        "node-certify.source.audit-interface.interface.audit"
         in docstring_guide
     )
 

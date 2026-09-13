@@ -4,7 +4,7 @@ dependencies:
 - blueprint:
     base: module-root
     path: blueprints/rtx-init.yaml
-  reason: Loads Python package support from _rtx/__init__.py.
+  reason: Loads package support and the shared email-triage state-directory resolver.
   source: email-triage._rtx.source.rtx-init
   version: 1
 description: Filters email envelope JSON against the exact stored triage watermark
@@ -17,9 +17,7 @@ interfaces:
   email-triage._rtx.source.rtx-envelope-gate.interface.scripts-filter-envelopes:
     content:
     - _envelope_gate\.py
-    uses_interfaces:
-    - interface: common.interface.famulus-paths
-      version: 1
+    uses_interfaces: []
     contract:
       arguments:
         account:
@@ -208,8 +206,6 @@ platform_support:
   windows: true
 runtime_dependencies: []
 schema_version: 6
-uses_interfaces:
-- interface: common.interface.famulus-paths
-  version: 1
+uses_interfaces: []
 version: 1
 maturity: stable

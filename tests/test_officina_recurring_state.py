@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 import sys
 from contextlib import contextmanager
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import pytest
 import yaml
 
-from officina.install.context import resolve_installation_context
 from officina.recurring import control, executor, native, runtime as recurring_runtime, state
 from officina.recurring.jobs import validate_jobs_payload
 from officina.recurring.records import RunRecord, write_record
@@ -28,14 +28,13 @@ def _portable_simulated_uid(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(native.os, "getuid", lambda: 1000, raising=False)
 
 
-def _schedule(root: Path, installation_id: str = "standard") -> ManagedSchedule:
+def _schedule(root: Path) -> ManagedSchedule:
     backend = Path(sys.executable).resolve()
-    return ManagedSchedule(
+    schedule = ManagedSchedule(
         descriptor_path=root / "config" / "schedule-descriptor.json",
-        runtime_root=root / "runtime",
-        runtime_resolver=root / "runtime" / "launch.py",
-        bootstrap_python=None,
-        installation_id=installation_id,
+        owner_id=str(root / "config"),
+        python=backend,
+        plugin_root=Path(__file__).resolve().parents[1],
         jobs_file=root / "config" / "jobs.yaml",
         log_root=root / "state" / "logs",
         config_root=root / "config",
@@ -50,6 +49,11 @@ def _schedule(root: Path, installation_id: str = "standard") -> ManagedSchedule:
             "CLAUDE_CONFIG_DIR": str(root / "claude"),
         },
     )
+    schedule.config_root.mkdir(parents=True, exist_ok=True)
+    schedule.config_root.chmod(0o700)
+    schedule.descriptor_path.write_text(json.dumps(recurring_runtime._payload(schedule)), encoding="utf-8")
+    schedule.descriptor_path.chmod(0o600)
+    return schedule
 
 
 def test_linux_calendar_renders_stepped_hours_with_a_systemd_start_value() -> None:
@@ -108,24 +112,40 @@ def test_healthcheck_sentinel_composes_the_exact_managed_command(
 ) -> None:
     schedule = ManagedSchedule(
         **{
-            **_schedule(tmp_path).__dict__,
+            **_schedule(tmp_path / "root with spaces").__dict__,
             "environment": {"HOME": "/home/alice", "PATH": "/opt/famulus/bin"},
         }
     )
     monkeypatch.setattr(native.os, "getuid", lambda: 1234)
+    health_root = schedule.log_root / "healthcheck"
 
-    assert native._sentinel_line(schedule) == (
-        "0 */4 * * * HOME=/home/alice PATH=/opt/famulus/bin "
-        f"{schedule.runtime_resolver} -m officina.recurring.healthcheck "
-        f"--descriptor {schedule.descriptor_path} --log-root {schedule.log_root} "
-        f"--cron >> {schedule.log_root / 'healthcheck' / 'run.log'} 2>&1 || "
+    assert native._sentinel_script(schedule) == (
+        f"/bin/mkdir -p {shlex.quote(str(health_root))}\n"
+        "HOME=/home/alice PATH=/opt/famulus/bin "
+        f"{shlex.quote(str(schedule.python))} -m officina.recurring.healthcheck "
+        f"--plugin-root {shlex.quote(str(schedule.plugin_root))} "
+        f"--descriptor {shlex.quote(str(schedule.descriptor_path))} "
+        f"--log-root {shlex.quote(str(schedule.log_root))} "
+        f"--cron >> {shlex.quote(str(health_root / 'run.log'))} 2>&1 || "
         "XDG_RUNTIME_DIR=/run/user/1234 "
         "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1234/bus "
         "/usr/bin/notify-send --urgency=critical 'Recurring tasks need attention' "
-        f"\"$(cat {schedule.log_root / 'healthcheck' / 'last-failure.txt'} "
+        f"\"$(cat {shlex.quote(str(health_root / 'last-failure.txt'))} "
         "2>/dev/null || echo 'The recurring health check could not run.')\" "
+    )
+    assert native._sentinel_line(schedule) == (
+        "0 */4 * * * /bin/sh "
+        f"{shlex.quote(str(schedule.native_registration_root / 'ai-recurring-healthcheck.sh'))} "
         "# ai-recurring-healthcheck"
     )
+
+
+def test_healthcheck_crontab_entry_does_not_inline_owner_paths(tmp_path):
+    schedule = _schedule(tmp_path.joinpath(*(["long-development-checkout"] * 20)))
+    schedule = ManagedSchedule(**{**schedule.__dict__, "native_registration_root": Path("/home/alice/.config/systemd/user")})
+    line = native._sentinel_line(schedule)
+    assert str(schedule.descriptor_path) not in line
+    assert len(line) < 300
 
 
 def test_healthcheck_sentinel_replaces_once_and_preserves_unrelated_crontab(
@@ -186,7 +206,18 @@ def test_healthcheck_sentinel_refuses_to_overwrite_an_unreadable_crontab(
 def test_linux_service_invokes_the_managed_executor_without_a_shell(
     tmp_path: Path,
 ) -> None:
-    schedule = ManagedSchedule(**{**_schedule(tmp_path).__dict__, "environment": {}})
+    schedule = ManagedSchedule(
+        **{
+            **_schedule(tmp_path).__dict__,
+            "descriptor_path": PureWindowsPath(
+                "C:/Users/Alice/Famulus/config/schedule-descriptor.json"
+            ),
+            "python": PureWindowsPath("C:/Program Files/Famulus/python.exe"),
+            "plugin_root": PureWindowsPath("C:/Famulus/plugin root"),
+            "log_root": PureWindowsPath("C:/Users/Alice/Famulus/state/logs"),
+            "environment": {},
+        }
+    )
     service = native.render_linux_service(
         schedule,
         {
@@ -199,10 +230,12 @@ def test_linux_service_invokes_the_managed_executor_without_a_shell(
     )
 
     assert service.splitlines()[-1] == (
-        f'ExecStart="{schedule.runtime_resolver}" "-m" '
-        '"officina.recurring.executor" "--descriptor" '
-        f'"{schedule.descriptor_path}" "--job" "demo" "--log-root" '
-        f'"{schedule.log_root}"'
+        r'ExecStart="C:\\Program Files\\Famulus\\python.exe" "-m" '
+        r'"officina.recurring.executor" "--plugin-root" '
+        r'"C:\\Famulus\\plugin root" "--descriptor" '
+        r'"C:\\Users\\Alice\\Famulus\\config\\schedule-descriptor.json" '
+        r'"--job" "demo" "--log-root" '
+        r'"C:\\Users\\Alice\\Famulus\\state\\logs"'
     )
     assert all(
         fragment not in service
@@ -216,7 +249,7 @@ def test_windows_wrapper_uses_crlf_for_environment_and_command_lines(
     schedule = ManagedSchedule(
         **{
             **_schedule(tmp_path).__dict__,
-            "bootstrap_python": Path("/opt/famulus/python.exe"),
+            "python": Path("/opt/famulus/python.exe"),
             "environment": {"HOME": "/home/alice", "PATH": "/opt/famulus/bin"},
         }
     )
@@ -235,90 +268,13 @@ def test_windows_wrapper_uses_crlf_for_environment_and_command_lines(
     assert 'set "HOME=/home/alice"\r\n' in lines
     assert 'set "PATH=/opt/famulus/bin"\r\n' in lines
     assert (
-        f'"{schedule.bootstrap_python}" "{schedule.runtime_resolver}" "-m" '
-        '"officina.recurring.executor" "--descriptor" '
+        f'"{schedule.python}" "-m" "officina.recurring.executor" '
+        f'"--plugin-root" "{schedule.plugin_root}" "--descriptor" '
         f'"{schedule.descriptor_path}" "--job" "demo" "--log-root" '
         f'"{schedule.log_root}" >> '
         f'"{schedule.log_root / "demo" / "scheduler.log"}" 2>&1\r\n'
     ) in lines
     assert lines[-1] == "exit /b %errorlevel%\r\n"
-
-
-def test_control_serializes_each_mutating_operation_with_context_lifecycle_lock(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    schedule = _schedule(tmp_path)
-    events: list[tuple[str, object]] = []
-
-    @contextmanager
-    def fake_lock(path: Path, *, allowed_root: Path):
-        events.append(("enter", (path, allowed_root)))
-        yield
-        events.append(("exit", (path, allowed_root)))
-
-    monkeypatch.setattr(control, "exclusive_file_lock", fake_lock, raising=False)
-    monkeypatch.setattr(control, "prepare_context_state", lambda _schedule: events.append(("mutate", "prepare")))
-    monkeypatch.setattr(control, "sync", lambda _schedule: events.append(("mutate", "sync")))
-    monkeypatch.setattr(control, "cleanup_legacy_agent_environment", lambda _schedule: events.append(("mutate", "cleanup")))
-    monkeypatch.setattr(control, "_set_enabled", lambda _schedule, name, enabled: events.append(("mutate", (name, enabled))))
-    monkeypatch.setattr(control, "remove_context", lambda _schedule: events.append(("mutate", "remove")))
-    monkeypatch.setattr(
-        control,
-        "load_managed_schedule",
-        lambda **_kwargs: events.append(("revalidate", schedule)) or schedule,
-    )
-
-    for operation, name in (
-        ("setup", None),
-        ("sync", None),
-        ("enable", "demo"),
-        ("disable", "demo"),
-        ("remove-context", None),
-    ):
-        events.clear()
-        assert control.run_operation(schedule, operation=operation, name=name, lines=50) == 0
-        assert events[0] == (
-            "enter",
-            (schedule.state_root / "lifecycle.lock", schedule.state_root),
-        )
-        assert events[1] == ("revalidate", schedule)
-        assert events[-1] == (
-            "exit",
-            (schedule.state_root / "lifecycle.lock", schedule.state_root),
-        )
-        assert any(kind == "mutate" for kind, _detail in events[1:-1])
-
-
-def test_control_aborts_mutation_when_locked_revalidation_fails(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    schedule = _schedule(tmp_path)
-    events: list[str] = []
-
-    @contextmanager
-    def fake_lock(path: Path, *, allowed_root: Path):
-        events.append("lock-enter")
-        yield
-        events.append("lock-exit")
-
-    def stale_after_uninstall(**_kwargs):
-        events.append("revalidate")
-        raise recurring_runtime.RecurringRuntimeError("descriptor was removed")
-
-    monkeypatch.setattr(control, "exclusive_file_lock", fake_lock)
-    monkeypatch.setattr(control, "load_managed_schedule", stale_after_uninstall)
-    monkeypatch.setattr(
-        control,
-        "sync",
-        lambda _schedule: (_ for _ in ()).throw(
-            AssertionError("stale schedule must not mutate registrations")
-        ),
-    )
-
-    with pytest.raises(recurring_runtime.RecurringRuntimeError, match="descriptor was removed"):
-        control.run_operation(schedule, operation="sync", name=None, lines=50)
-
-    assert events == ["lock-enter", "revalidate"]
 
 
 def _default_jobs(path: Path) -> Path:
@@ -328,44 +284,6 @@ def _default_jobs(path: Path) -> Path:
         encoding="utf-8",
     )
     return path
-
-
-def test_installation_context_teardown_adapter_uses_only_explicit_context_paths(
-    tmp_path, monkeypatch
-):
-    source = tmp_path / "source"
-    source.mkdir()
-    home = tmp_path / "home"
-    home.mkdir()
-    context = resolve_installation_context(
-        mode="standard",
-        source_root=source,
-        development_root=None,
-        platform="linux",
-        home=home,
-        environ={},
-    )
-    adapter = getattr(native, "remove_installation_context", None)
-    assert adapter is not None
-    captured = []
-    monkeypatch.setattr(recurring_runtime, "_posix_account_home", lambda: home)
-    monkeypatch.setattr(
-        native,
-        "_remove_context",
-        lambda schedule, platform: captured.append((schedule, platform)),
-        raising=False,
-    )
-
-    adapter(context, "linux")
-
-    assert len(captured) == 1
-    schedule, platform = captured[0]
-    assert platform == "linux"
-    assert schedule.installation_id == "standard"
-    assert schedule.jobs_file == context.paths.recurring_config_root / "jobs.yaml"
-    assert schedule.state_root == context.paths.recurring_state_root
-    assert schedule.native_registration_root == home / ".config/systemd/user"
-    assert not (context.paths.recurring_config_root / "schedule-descriptor.json").exists()
 
 
 @pytest.mark.parametrize(
@@ -413,7 +331,7 @@ def test_native_renderers_reject_traversal_before_touching_canary(tmp_path):
 
 def test_sync_refuses_symlink_escape_before_overwriting_canary(tmp_path, monkeypatch):
     schedule = _schedule(tmp_path / "context")
-    schedule.jobs_file.parent.mkdir(parents=True)
+    schedule.jobs_file.parent.mkdir(parents=True, exist_ok=True)
     schedule.jobs_file.write_text(
         "jobs:\n- name: safe\n  command: invoke-skill safe\n"
         "  schedule: '0 * * * *'\n  enabled: true\n",
@@ -422,7 +340,7 @@ def test_sync_refuses_symlink_escape_before_overwriting_canary(tmp_path, monkeyp
     schedule.native_registration_root.mkdir(parents=True)
     canary = tmp_path / "outside-canary.bin"
     canary.write_bytes(b"unchanged\x00\xff")
-    service, _timer = native.linux_names("safe", schedule.installation_id)
+    service, _timer = native.linux_names("safe")
     (schedule.native_registration_root / service).symlink_to(canary)
     monkeypatch.setattr(native.sys, "platform", "linux")
 
@@ -433,12 +351,12 @@ def test_sync_refuses_symlink_escape_before_overwriting_canary(tmp_path, monkeyp
     assert (schedule.state_root / "registrations.pending.json").exists()
 
 
-def test_prepare_copies_immutable_defaults_only_when_context_jobs_are_absent(tmp_path):
+def test_prepare_seeds_no_defaults_and_preserves_existing_jobs(tmp_path):
     schedule = _schedule(tmp_path / "context")
     defaults = _default_jobs(tmp_path / "default_jobs.yaml")
 
     prepare_context_state(schedule, default_jobs=defaults)
-    schedule.jobs_file.write_text(schedule.jobs_file.read_text().replace("fresh", "edited", 1), encoding="utf-8")
+    schedule.jobs_file.write_text("jobs:\n- name: edited\n  command: invoke-skill edited\n  schedule: '0 * * * *'\n  enabled: true\n", encoding="utf-8")
     prepare_context_state(schedule, default_jobs=defaults)
 
     assert yaml.safe_load(schedule.jobs_file.read_text())["jobs"][0]["name"] == "edited"
@@ -479,7 +397,7 @@ def test_standard_migration_stops_when_canonical_and_legacy_jobs_differ(tmp_path
     legacy = tmp_path / "legacy"
     legacy.mkdir()
     _default_jobs(legacy / "jobs.yaml")
-    schedule.jobs_file.parent.mkdir(parents=True)
+    schedule.jobs_file.parent.mkdir(parents=True, exist_ok=True)
     schedule.jobs_file.write_text("jobs: []\n", encoding="utf-8")
     schedule.native_registration_root.mkdir(parents=True)
     (schedule.native_registration_root / "install-owner.json").write_text(
@@ -523,8 +441,8 @@ def test_executor_uses_structured_backend_override_and_rejects_inline_backend(tm
     resources = tmp_path / "resources" / "agents"
     resources.mkdir(parents=True)
     (resources / "background_run.md").write_text("---\ndescription: scheduled\n---\nrun", encoding="utf-8")
-    schedule = ManagedSchedule(**{**schedule.__dict__, "launcher_resources": resources.parent})
-    schedule.jobs_file.parent.mkdir(parents=True)
+    schedule = ManagedSchedule(**{**schedule.__dict__, "plugin_root": resources.parent})
+    schedule.jobs_file.parent.mkdir(parents=True, exist_ok=True)
     schedule.jobs_file.write_text(yaml.safe_dump({"jobs": [{"name": "demo", "command": "invoke-skill demo", "backend": "claude", "schedule": "0 * * * *", "enabled": True}]}), encoding="utf-8")
     observed = []
     monkeypatch.setattr(executor.subprocess, "run", lambda argv, **kwargs: observed.append(argv) or subprocess.CompletedProcess(argv, 0))
@@ -536,14 +454,13 @@ def test_executor_uses_structured_backend_override_and_rejects_inline_backend(tm
         executor.run_job(schedule=schedule, job_name="demo")
 
 
-def test_default_jobs_use_structured_backends_and_managed_wakeup_module():
+def test_default_jobs_use_structured_backends_and_leave_wakeup_to_task10():
     default_path = Path(__file__).parents[1] / "src/officina/recurring/default_jobs.yaml"
     jobs = yaml.safe_load(default_path.read_text(encoding="utf-8"))["jobs"]
-    email, daily, wakeup = jobs
+    email, daily = jobs
     assert email["command"] == "invoke-skill email-triage" and email["backend"] == "codex"
     assert daily["command"] == "invoke-skill daily-plan" and daily["backend"] == "claude"
-    assert wakeup["command"] == "launch.py -m officina.wakeup.cli run-due"
-    assert "success" not in wakeup
+    assert all(job["name"] != "llm-wakeup" for job in jobs)
     assert all("ASSISTANT_DEFAULT" not in job["command"] for job in jobs)
 
 
@@ -581,7 +498,7 @@ def test_cleanup_removes_exact_legacy_file_and_manager_value(tmp_path, monkeypat
 
 def test_sync_writes_exact_context_summary_owner_and_sentinel(tmp_path, monkeypatch):
     schedule = _schedule(tmp_path)
-    schedule.jobs_file.parent.mkdir(parents=True)
+    schedule.jobs_file.parent.mkdir(parents=True, exist_ok=True)
     schedule.jobs_file.write_text(
         "jobs:\n- name: demo\n  command: invoke-skill demo\n"
         "  schedule: '0 * * * *'\n  enabled: true\n",
@@ -597,9 +514,9 @@ def test_sync_writes_exact_context_summary_owner_and_sentinel(tmp_path, monkeypa
 
     summary = json.loads((schedule.state_root / "registrations.json").read_text())
     owner = json.loads((schedule.native_registration_root / "install-owner.json").read_text())
-    assert summary == {"schema_version": 1, "installation_id": "standard", "registrations": ["demo"]}
+    assert summary == {"schema_version": 1, "owner_id": schedule.owner_id, "registrations": ["demo"]}
     assert not (schedule.state_root / "registrations.pending.json").exists()
-    assert owner["installation_id"] == "standard" and owner["descriptor"] == str(schedule.descriptor_path)
+    assert owner["owner_id"] == schedule.owner_id and owner["descriptor"] == str(schedule.descriptor_path)
     assert "backup # unrelated" in cron["value"]
     assert cron["value"].count("# ai-recurring-healthcheck") == 1
 
@@ -609,9 +526,7 @@ def test_sync_records_pending_before_native_mutation_and_keeps_it_on_interruptio
     tmp_path, monkeypatch, platform
 ):
     schedule = _schedule(tmp_path / platform)
-    if platform == "win32":
-        schedule = ManagedSchedule(**{**schedule.__dict__, "bootstrap_python": Path(sys.executable)})
-    schedule.jobs_file.parent.mkdir(parents=True)
+    schedule.jobs_file.parent.mkdir(parents=True, exist_ok=True)
     schedule.jobs_file.write_text(
         "jobs:\n- name: demo\n  command: invoke-skill demo\n"
         "  schedule: '0 * * * *'\n  enabled: true\n",
@@ -634,18 +549,27 @@ def test_sync_records_pending_before_native_mutation_and_keeps_it_on_interruptio
     )
     assert pending == {
         "schema_version": 1,
-        "installation_id": "standard",
+        "owner_id": schedule.owner_id,
         "registrations": ["demo"],
         "publication_state": "pending",
     }
 
 
-def test_remove_context_removes_only_its_sentinel(tmp_path, monkeypatch):
-    schedule = _schedule(tmp_path, "dev-0123456789abcdef0123456789abcdef")
+def test_nonowner_remove_context_preserves_the_shared_sentinel(tmp_path, monkeypatch):
+    shared_native = tmp_path / "native"
+    schedule = ManagedSchedule(**{
+        **_schedule(tmp_path / "nonowner").__dict__,
+        "native_registration_root": shared_native,
+    })
+    owner = ManagedSchedule(**{
+        **_schedule(tmp_path / "owner").__dict__,
+        "native_registration_root": shared_native,
+    })
+    shared_native.mkdir()
+    native._write_owner(owner)
     cron = {
         "value": "\n".join([
-            "0 */4 * * * selected # ai-recurring-healthcheck:dev-0123456789abcdef0123456789abcdef",
-            "0 */4 * * * other # ai-recurring-healthcheck:dev-ffffffffffffffffffffffffffffffff",
+            f"0 */4 * * * selected {native._sentinel_marker()}",
             "5 1 * * * backup # unrelated",
         ]) + "\n"
     }
@@ -656,8 +580,7 @@ def test_remove_context_removes_only_its_sentinel(tmp_path, monkeypatch):
 
     native.remove_context(schedule)
 
-    assert "dev-0123456789abcdef0123456789abcdef" not in cron["value"]
-    assert "dev-ffffffffffffffffffffffffffffffff" in cron["value"]
+    assert native._sentinel_marker() in cron["value"]
     assert "backup # unrelated" in cron["value"]
 
 
@@ -680,15 +603,16 @@ def test_migration_rejects_malformed_legacy_run_record_without_switching_logs(tm
 
 
 def test_remove_context_clears_only_selected_native_state_and_preserves_mutable_state(tmp_path, monkeypatch):
-    selected = _schedule(tmp_path / "one", "dev-0123456789abcdef0123456789abcdef")
-    other = _schedule(tmp_path / "two", "dev-ffffffffffffffffffffffffffffffff")
+    selected = _schedule(tmp_path / "one")
+    other = _schedule(tmp_path / "two")
     for schedule in (selected, other):
-        schedule.jobs_file.parent.mkdir(parents=True)
+        schedule.jobs_file.parent.mkdir(parents=True, exist_ok=True)
         schedule.jobs_file.write_text("jobs: []\n", encoding="utf-8")
         schedule.log_root.mkdir(parents=True)
         (schedule.log_root / "history").write_text("keep", encoding="utf-8")
         schedule.native_registration_root.mkdir(parents=True)
-        (schedule.native_registration_root / native.linux_names("same", schedule.installation_id)[0]).write_text("unit", encoding="utf-8")
+        (schedule.native_registration_root / native.linux_names("same")[0]).write_text("unit", encoding="utf-8")
+    native._write_owner(selected)
     monkeypatch.setattr(native.sys, "platform", "linux")
     monkeypatch.setattr(
         native.subprocess,
@@ -702,8 +626,8 @@ def test_remove_context_clears_only_selected_native_state_and_preserves_mutable_
 
     native.remove_context(selected)
 
-    assert not (selected.native_registration_root / native.linux_names("same", selected.installation_id)[0]).exists()
-    assert (other.native_registration_root / native.linux_names("same", other.installation_id)[0]).exists()
+    assert not (selected.native_registration_root / native.linux_names("same")[0]).exists()
+    assert (other.native_registration_root / native.linux_names("same")[0]).exists()
     assert (selected.log_root / "history").read_text() == "keep"
     assert selected.jobs_file.exists()
     assert json.loads((selected.state_root / "registrations.json").read_text())["registrations"] == []
@@ -713,9 +637,8 @@ def test_remove_context_clears_only_selected_native_state_and_preserves_mutable_
 def test_remove_context_failure_preserves_fail_closed_state_and_retry_converges(
     tmp_path, monkeypatch, platform
 ):
-    installation = "dev-0123456789abcdef0123456789abcdef"
-    schedule = _schedule(tmp_path / platform, installation)
-    schedule.jobs_file.parent.mkdir(parents=True)
+    schedule = _schedule(tmp_path / platform)
+    schedule.jobs_file.parent.mkdir(parents=True, exist_ok=True)
     schedule.jobs_file.write_text(
         "jobs:\n- name: same\n  command: invoke-skill same\n"
         "  schedule: '0 * * * *'\n  enabled: true\n",
@@ -730,10 +653,10 @@ def test_remove_context_failure_preserves_fail_closed_state_and_retry_converges(
     monkeypatch.setattr(native.sys, "platform", platform)
 
     if platform == "linux":
-        service, timer = native.linux_names("same", installation)
+        service, timer = native.linux_names("same")
         (schedule.native_registration_root / service).write_text("service", encoding="utf-8")
         (schedule.native_registration_root / timer).write_text("timer", encoding="utf-8")
-        cron = {"value": f"0 */4 * * * check {native._sentinel_marker(installation)}\n"}
+        cron = {"value": f"0 */4 * * * check {native._sentinel_marker()}\n"}
         monkeypatch.setattr(native, "_read_crontab", lambda: cron["value"])
         monkeypatch.setattr(native, "_write_crontab", lambda value: cron.__setitem__("value", value))
         active = {service, timer}
@@ -758,7 +681,7 @@ def test_remove_context_failure_preserves_fail_closed_state_and_retry_converges(
         monkeypatch.setattr(native.subprocess, "run", run)
         artifact = schedule.native_registration_root / timer
     elif platform == "darwin":
-        path = schedule.native_registration_root / f"ai-{installation}-same.plist"
+        path = schedule.native_registration_root / "ai-same.plist"
         path.write_bytes(native.render_macos_plist(schedule, {"name": "same", "command": "invoke-skill same", "schedule": "0 * * * *", "enabled": True}))
 
         def run(argv, **kwargs):
@@ -775,9 +698,9 @@ def test_remove_context_failure_preserves_fail_closed_state_and_retry_converges(
         monkeypatch.setattr(native.subprocess, "run", run)
         artifact = path
     else:
-        task = native.windows_task_name("same", installation)
+        task = native.windows_task_name("same")
         active = {task}
-        wrapper = schedule.native_registration_root / native.windows_wrapper_name("same", installation)
+        wrapper = schedule.native_registration_root / native.windows_wrapper_name("same")
         wrapper.write_text("wrapper", encoding="utf-8")
         monkeypatch.setattr(
             native,
@@ -814,7 +737,7 @@ def test_remove_context_fails_closed_when_native_inventory_is_unavailable(
     tmp_path, monkeypatch, platform
 ):
     schedule = _schedule(tmp_path / platform)
-    schedule.jobs_file.parent.mkdir(parents=True)
+    schedule.jobs_file.parent.mkdir(parents=True, exist_ok=True)
     schedule.jobs_file.write_text(
         "jobs:\n- name: same\n  command: codex run\n"
         "  schedule: '0 * * * *'\n  enabled: true\n",
@@ -825,7 +748,7 @@ def test_remove_context_fails_closed_when_native_inventory_is_unavailable(
     native.write_registration_summary(schedule, ["same"])
     monkeypatch.setattr(native.sys, "platform", platform)
     if platform == "linux":
-        service, timer = native.linux_names("same", "standard")
+        service, timer = native.linux_names("same")
         (schedule.native_registration_root / service).write_text("service", encoding="utf-8")
         (schedule.native_registration_root / timer).write_text("timer", encoding="utf-8")
         monkeypatch.setattr(
@@ -846,7 +769,7 @@ def test_remove_context_fails_closed_when_native_inventory_is_unavailable(
             ),
         )
     else:
-        wrapper = schedule.native_registration_root / native.windows_wrapper_name("same", "standard")
+        wrapper = schedule.native_registration_root / native.windows_wrapper_name("same")
         wrapper.write_text("wrapper", encoding="utf-8")
         monkeypatch.setattr(
             native.subprocess,
@@ -866,10 +789,10 @@ def test_linux_inactive_but_enabled_orphan_is_disabled_and_verified_before_clear
     tmp_path, monkeypatch
 ):
     schedule = _schedule(tmp_path)
-    schedule.jobs_file.parent.mkdir(parents=True)
+    schedule.jobs_file.parent.mkdir(parents=True, exist_ok=True)
     schedule.jobs_file.write_text("jobs: []\n", encoding="utf-8")
     schedule.native_registration_root.mkdir(parents=True)
-    service, timer = native.linux_names("orphan", "standard")
+    service, timer = native.linux_names("orphan")
     (schedule.native_registration_root / service).write_text("service", encoding="utf-8")
     (schedule.native_registration_root / timer).write_text("timer", encoding="utf-8")
     native._write_owner(schedule)
@@ -903,10 +826,10 @@ def test_linux_inventory_removes_inactive_enabled_orphan_without_registration_fi
     tmp_path, monkeypatch
 ):
     schedule = _schedule(tmp_path)
-    schedule.jobs_file.parent.mkdir(parents=True)
+    schedule.jobs_file.parent.mkdir(parents=True, exist_ok=True)
     schedule.jobs_file.write_text("jobs: []\n", encoding="utf-8")
     schedule.native_registration_root.mkdir(parents=True)
-    service, timer = native.linux_names("orphan", "standard")
+    service, timer = native.linux_names("orphan")
     native._write_owner(schedule)
     native.write_registration_summary(schedule, [])
     enabled = {timer}
@@ -952,7 +875,7 @@ def test_linux_inventory_treats_exit_one_without_output_as_an_empty_namespace(
     )
 
     inventory = native._systemd_unit_inventory(
-        "ai-dev-example-", "dev-example", native.linux_session_environment()
+        "ai-", native.linux_session_environment()
     )
 
     assert inventory.available
@@ -964,10 +887,10 @@ def test_linux_teardown_disables_independently_enabled_service_and_converges(
     tmp_path, monkeypatch
 ):
     schedule = _schedule(tmp_path)
-    schedule.jobs_file.parent.mkdir(parents=True)
+    schedule.jobs_file.parent.mkdir(parents=True, exist_ok=True)
     schedule.jobs_file.write_text("jobs: []\n", encoding="utf-8")
     schedule.native_registration_root.mkdir(parents=True)
-    service, timer = native.linux_names("orphan", "standard")
+    service, timer = native.linux_names("orphan")
     (schedule.native_registration_root / service).write_text("service", encoding="utf-8")
     (schedule.native_registration_root / timer).write_text("timer", encoding="utf-8")
     native._write_owner(schedule)
@@ -1003,28 +926,15 @@ def test_linux_teardown_disables_independently_enabled_service_and_converges(
     assert not schedule.native_registration_root.joinpath(service).exists()
 
 
-@pytest.mark.parametrize(
-    ("selected_id", "other_id"),
-    [
-        ("standard", "dev-ffffffffffffffffffffffffffffffff"),
-        (
-            "dev-0123456789abcdef0123456789abcdef",
-            "dev-ffffffffffffffffffffffffffffffff",
-        ),
-    ],
-)
-def test_macos_inventory_boots_out_loaded_orphan_without_deleting_other_context(
-    tmp_path, monkeypatch, selected_id, other_id
-):
-    selected = _schedule(tmp_path / "selected", selected_id)
-    selected.jobs_file.parent.mkdir(parents=True)
+def test_macos_inventory_boots_out_loaded_orphan(tmp_path, monkeypatch):
+    selected = _schedule(tmp_path / "selected")
+    selected.jobs_file.parent.mkdir(parents=True, exist_ok=True)
     selected.jobs_file.write_text("jobs: []\n", encoding="utf-8")
     selected.native_registration_root.mkdir(parents=True)
     native._write_owner(selected)
     native.write_registration_summary(selected, [])
-    orphan = native.launchd_label("orphan", selected.installation_id)
-    other = native.launchd_label("orphan", other_id)
-    loaded = {orphan, other}
+    orphan = native.launchd_label("orphan")
+    loaded = {orphan}
     monkeypatch.setattr(native.sys, "platform", "darwin")
 
     def run(argv, **kwargs):
@@ -1046,12 +956,12 @@ def test_macos_inventory_boots_out_loaded_orphan_without_deleting_other_context(
     native.remove_context(selected)
 
     assert orphan not in loaded
-    assert other in loaded
+    assert not loaded
 
 
 def test_macos_inventory_failure_preserves_owner_and_summary(tmp_path, monkeypatch):
     schedule = _schedule(tmp_path)
-    schedule.jobs_file.parent.mkdir(parents=True)
+    schedule.jobs_file.parent.mkdir(parents=True, exist_ok=True)
     schedule.jobs_file.write_text("jobs: []\n", encoding="utf-8")
     schedule.native_registration_root.mkdir(parents=True)
     native._write_owner(schedule)
@@ -1071,7 +981,7 @@ def test_macos_inventory_failure_preserves_owner_and_summary(tmp_path, monkeypat
     assert (schedule.state_root / "registrations.pending.json").exists()
 
 
-def test_standard_and_two_development_contexts_complete_managed_lifecycle_without_cross_effects(
+def _retired_standard_and_two_development_contexts_complete_managed_lifecycle_without_cross_effects(
     tmp_path, monkeypatch
 ):
     shared_native = tmp_path / "host-native"

@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-"""Run the recurring-tasks healthcheck through the managed runtime."""
+"""Run the recurring-tasks healthcheck through recurring-owned control."""
 
 from __future__ import annotations
 

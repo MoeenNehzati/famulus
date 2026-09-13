@@ -1,9 +1,15 @@
-"""Tests for version-4 generated SKILL.md dispatcher exposure."""
+"""Tests for version-6 generated SKILL.md direct-interface exposure."""
 from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
 import shutil
+
+from officina.blueprints.graph import (
+    BlueprintNode,
+    InterfaceExport,
+    RepositoryBlueprintGraph,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -39,13 +45,6 @@ def _copy_weather_module(repo_root: Path) -> Path:
     return target
 
 
-def _replace(skill_file: Path, old: str, new: str) -> None:
-    skill_file.write_text(
-        skill_file.read_text(encoding="utf-8").replace(old, new),
-        encoding="utf-8",
-    )
-
-
 def test_repo_without_modules_passes(tmp_path: Path) -> None:
     (tmp_path / "skills").mkdir()
 
@@ -74,10 +73,34 @@ def test_missing_interface_block_is_rejected(tmp_path: Path) -> None:
     assert any("missing generated blueprint interface block" in error for error in errors)
 
 
-def test_child_process_export_is_not_exposed_in_parent_skill_block(
+def test_child_process_export_is_projected_as_famulus_interface(
     tmp_path: Path,
+    monkeypatch,
 ) -> None:
     skill = _copy_weather_module(tmp_path)
+    observed: list[tuple[Path, list[str], list[str], list[str]]] = []
+    original = MOD._validate_skill_text
+
+    def observe(
+        skill_md: Path,
+        skill_name: str,
+        text: str,
+        *,
+        all_ids: list[str],
+        visible_ids: list[str],
+        dispatcher_targets: list[str],
+    ) -> list[str]:
+        observed.append((skill_md, all_ids, visible_ids, dispatcher_targets))
+        return original(
+            skill_md,
+            skill_name,
+            text,
+            all_ids=all_ids,
+            visible_ids=visible_ids,
+            dispatcher_targets=dispatcher_targets,
+        )
+
+    monkeypatch.setattr(MOD, "_validate_skill_text", observe)
     skill_text = (skill / "SKILL.md").read_text(encoding="utf-8")
     interface_block = skill_text.split("<!-- BEGIN BLUEPRINT INTERFACES -->", 1)[
         1
@@ -85,50 +108,160 @@ def test_child_process_export_is_not_exposed_in_parent_skill_block(
 
     errors = MOD.validate(tmp_path)
 
-    assert "get-weather._rtx.interface.scripts-weather" not in interface_block
-    assert "dispatcher --caller-skill" not in interface_block
     assert errors == []
+    assert len(observed) == 1
+    assert observed[0][0] == skill / "SKILL.md"
+    assert "get-weather._rtx.interface.scripts-weather" in interface_block
+    assert "get-weather.interface.default" not in interface_block
+    assert "Executable Interfaces:" in interface_block
+    assert "dispatcher --caller-skill" not in interface_block
 
 
-def test_generated_block_rejects_raw_runtime_path(tmp_path: Path) -> None:
-    skill = _copy_weather_module(tmp_path)
-    marker = "<!-- END BLUEPRINT INTERFACES -->"
-    _replace(
-        skill / "SKILL.md",
-        marker,
-        "_rtx/_weather_client.py\n" + marker,
+def test_skill_text_diagnostics_are_exact_and_side_effect_free() -> None:
+    skill_md = Path("skills/demo/SKILL.md")
+    block = (
+        "<!-- BEGIN BLUEPRINT INTERFACES -->\n"
+        "<!-- END BLUEPRINT INTERFACES -->"
+    )
+    cases = (
+        (
+            "missing generated block",
+            "Skill: demo\n",
+            ["demo.interface.default"],
+            ["demo.interface.default"],
+            [],
+            [f"{skill_md}: missing generated blueprint interface block"],
+        ),
+        (
+            "raw runtime path in generated block",
+            block.replace("\n<!-- END", "\n_rtx/client.py\n<!-- END"),
+            ["demo.interface.default"],
+            ["demo.interface.default"],
+            [],
+            [
+                f"{skill_md}: generated interface block must not expose raw runtime files"
+            ],
+        ),
+        (
+            "runtime invocation in authored body",
+            block + "\nRun `_rtx/client.py` directly.\n",
+            ["demo.interface.default"],
+            ["demo.interface.default"],
+            [],
+            [
+                f"{skill_md}: skill body must not invoke runtime files directly; "
+                "reference dispatcher interface names instead"
+            ],
+        ),
+        (
+            "dispatcher command in authored body",
+            block + f"\nRun `{DISPATCH}`.\n",
+            ["demo.interface.default"],
+            ["demo.interface.default"],
+            [],
+            [
+                f"{skill_md}: skill body must not invoke dispatcher directly; "
+                "interface invocations belong in the generated block "
+                "(blueprint.yaml owns them)"
+            ],
+        ),
     )
 
-    errors = MOD.validate(tmp_path)
+    for label, text, all_ids, visible_ids, dispatcher_targets, expected in cases:
+        assert MOD._validate_skill_text(
+            skill_md,
+            "demo",
+            text,
+            all_ids=all_ids,
+            visible_ids=visible_ids,
+            dispatcher_targets=dispatcher_targets,
+        ) == expected, label
 
-    assert any("must not expose raw runtime files" in error for error in errors)
 
-
-def test_hand_authored_body_rejects_runtime_invocation(tmp_path: Path) -> None:
+def test_auxiliary_skill_markdown_dispatcher_command_is_rejected(
+    tmp_path: Path,
+) -> None:
     skill = _copy_weather_module(tmp_path)
-    skill_file = skill / "SKILL.md"
-    skill_file.write_text(
-        skill_file.read_text(encoding="utf-8")
-        + "\nRun `_rtx/_weather_client.py` directly.\n",
+    debugging = skill / "DEBUGGING.md"
+    debugging.write_text(
+        "Run `dispatcher --caller-skill get-weather target.interface.run`.\n",
         encoding="utf-8",
     )
 
     errors = MOD.validate(tmp_path)
 
-    assert any(
-        "skill body must not invoke runtime files directly" in error
-        for error in errors
-    )
+    assert errors == [
+        f"{debugging}: skill documentation must not invoke dispatcher directly; "
+        "use famulus_dispatcher.invoke"
+    ]
 
 
-def test_hand_authored_body_rejects_dispatcher_command(tmp_path: Path) -> None:
+def test_auxiliary_skill_markdown_dispatcher_dry_run_command_is_rejected(
+    tmp_path: Path,
+) -> None:
     skill = _copy_weather_module(tmp_path)
-    skill_file = skill / "SKILL.md"
-    skill_file.write_text(
-        skill_file.read_text(encoding="utf-8") + f"\nRun `{DISPATCH}`.\n",
+    debugging = skill / "DEBUGGING.md"
+    debugging.write_text(
+        "Run `dispatcher --dry-run --caller-skill get-weather target.interface.run`.\n",
         encoding="utf-8",
     )
 
     errors = MOD.validate(tmp_path)
 
-    assert any("skill body must not invoke dispatcher directly" in error for error in errors)
+    assert errors == [
+        f"{debugging}: skill documentation must not invoke dispatcher directly; "
+        "use famulus_dispatcher.invoke"
+    ]
+
+
+def test_two_process_exports_report_missing_mcp_metadata_in_stable_order(
+    tmp_path: Path,
+) -> None:
+    skill_root = tmp_path / "skills" / "demo"
+    skill_root.mkdir(parents=True)
+    skill_md = skill_root / "SKILL.md"
+    skill_md.write_text(
+        "<!-- BEGIN BLUEPRINT INTERFACES -->\n"
+        "<!-- END BLUEPRINT INTERFACES -->\n",
+        encoding="utf-8",
+    )
+    graph = RepositoryBlueprintGraph(
+        nodes={
+            "demo": BlueprintNode(
+                node_id="demo",
+                node_type="module",
+                version=1,
+                module_root=skill_root,
+                blueprint_path=skill_root / "blueprint.yaml",
+                gateway_path=None,
+                declaration={},
+            )
+        },
+        node_edges=(),
+        exports={
+            "demo.interface.zeta": InterfaceExport(
+                interface_id="demo.interface.zeta",
+                version=1,
+                local_name="zeta",
+                module_node_id="demo",
+                declaration={"process_binding": {"kind": "process"}},
+            ),
+            "demo.interface.alpha": InterfaceExport(
+                interface_id="demo.interface.alpha",
+                version=1,
+                local_name="alpha",
+                module_node_id="demo",
+                declaration={"process_binding": {"kind": "process"}},
+            ),
+        },
+        export_edges=(),
+        helper_edges=(),
+        certification_edges=(),
+    )
+
+    assert MOD.validate_with_graph(tmp_path, graph) == [
+        f"{skill_md}: generated interface block is missing MCP invocation metadata "
+        "for `demo.interface.alpha`",
+        f"{skill_md}: generated interface block is missing MCP invocation metadata "
+        "for `demo.interface.zeta`",
+    ]

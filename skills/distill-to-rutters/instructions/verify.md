@@ -35,7 +35,10 @@ For `verified`, the predecessor must be `entrypoint-ready`, the verification
 envelope's single contained deliverable leaf must equal that approved
 entrypoint's candidate path and digest, and the verification body must repeat
 the same exact path and digest. Every verification evidence row must be
-`passed`; a `failed` or `blocked` row requires a non-success outcome.
+`passed`, and the semantic-trace obligation IDs must equal the approved logic
+enforcement-matrix obligation IDs exactly once. An omitted, duplicate, or
+foreign obligation, or a `failed` or `blocked` row, requires a non-success
+outcome.
 
 Run focused contracts, every distinct transition and validator, terminal
 results, orchestration, public dispenser and Compass entrypoints, blueprint

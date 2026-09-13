@@ -1,6 +1,6 @@
 schema_version: 6
 standard_version: 1.0.0
-revision: 15
+revision: 17
 id: node-standards.instruction-node
 canonical_path: references/node-standards/instruction-node.standard.yaml
 title: Instruction Node Standard
@@ -8,9 +8,9 @@ purpose: Add requirements common to instruction-language gateway nodes.
 imports:
   node:
     standard_id: node-standards.node
-    standard_version: 1.0.0
-    revision: 14
-    digest: sha256:aeebcac6e2212b96ed4d92539843fc36251268591aa418262ca7a31874354719
+    standard_version: 2.0.0
+    revision: 16
+    digest: sha256:f7cd7edbbc7c9957b0694de2a398a3bf0398c3e74b7380e2b8aa73b9cc2a893f
     artifact:
       kind: artifact
       ref: artifact.node-standard

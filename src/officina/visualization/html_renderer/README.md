@@ -9,15 +9,15 @@ module, call, or blueprint is.
 Most callers should use the public renderer rather than importing this package:
 
 ```python
-from officina.visualization import ElkHtmlRenderer
+from officina.visualization.elk_html_renderer import ElkHtmlRenderer
 
-ElkHtmlRenderer().render(graph_payload, "graph.html")
+ElkHtmlRenderer().write_graph_html(graph_payload, "graph.html")
 ```
 
 The result is one standalone HTML file. CSS and JavaScript are maintained as
 separate source assets here, then inlined when the document is generated. Core
-ELK layout is bundled and runs in a worker, so layout remains offline-capable and
-does not block browser interaction while a dense graph is being computed.
+ELK's lightweight client drives the bundled worker, so layout remains
+offline-capable and does not block interaction while a dense graph is computed.
 
 ## Input contract
 
@@ -26,6 +26,14 @@ The public renderer accepts the canonical graph payload documented by
 fields:
 
 - `entity.id` is the stable identity used by edges and persisted viewer state.
+- Cell text is producer-owned: `entity.short_title` is the visible title, with
+  a nonempty `entity.label` as its explicit override. `entity.subtitle` supplies
+  the optional second line; missing or empty subtitles render no subtitle row
+  and add no subtitle height. The renderer does not derive cell text from
+  `type`, `ref`, `title`, or `id`.
+- Producers choose domain wording: repository entities use local names and blank
+  subtitles; presentation groups use value titles and facet subtitles. Docstring,
+  Rutter, and math producers supply their useful domain-specific subtitles.
 - `entity.type` selects a generic shape and provides a node-filter category.
 - `entity.kind` selects a generic color and may express an open-ended subtype.
 - `entity.container` places the entity inside another entity.
@@ -60,9 +68,19 @@ fields:
   presentations for hidden-detail summaries, same-type multiplicity, and
   mixed-type edges. It cannot define arbitrary metadata predicates.
 - Additional entity and edge fields are retained for the details panel.
+- `renderer_dependencies` declares every optional runtime input inside the JSON
+  payload. A MathJax dependency carries its complete macro mapping in
+  `configuration.macros`; replacement-first parameter arrays are canonical and
+  integer-first arrays are normalized only for schema-v2 compatibility.
 
 Adapters are responsible for translating domain concepts into these fields.
 The renderer must not branch on adapter-specific names.
+
+Renderer inputs are self-contained JSON. The renderer API never reads TeX
+sources, macro sidecars, package installations, or network resources. The
+generic base CLI also accepts only one self-contained JSON payload. MathJax
+macro arrays are normalized at the renderer dependency adapter boundary; the
+renderer API and CLI have no sidecar parameter.
 
 ## Architecture
 
@@ -92,26 +110,60 @@ The renderer must not branch on adapter-specific names.
 - `runtime/presentation_nodes.js` parses generic presentation-node instances and
   controls, lays out overlapping memberships, and owns their independent
   selection, inspection, drag, hide, collapse, persistence, and migration state.
-- `runtime/math_typesetter.js` owns optional MathJax detection, invalidation, and
-  serialized dynamic typesetting.
+- `runtime/math_typesetter.js` owns optional MathJax detection, invalidation,
+  serialized dynamic typesetting, and the generic browser-validation seam.
 - `runtime/geometry.js` owns SVG geometry and edge rerouting from current positions.
 - `runtime/legend.js` builds category controls and legend tooltips.
 - `runtime/visibility.js` owns node visibility, hidden-node restoration, and ancestor focus.
 - `runtime/inspector.js` formats and binds generic node and edge details.
 - `runtime/projection.js` projects collapsed or hidden structure into visible edges.
 - `runtime/edge_presentation.js` resolves metadata presentation, owns edge-local
-  gradients and filters, synchronizes them after rerouting, restores base styles
-  after interaction, and constructs matching explanatory legend samples.
+  gradients and lightweight underlay paths, synchronizes them after rerouting,
+  restores base styles after interaction, and constructs matching legend samples.
 - `runtime/layout.js` builds hierarchical ELK input and converts layout geometry.
 - `runtime/node_renderer.js` paints generic nodes, containers, and decorations.
 - `runtime/interactions.js` owns node/edge hover, selection, and edge emphasis.
-- `runtime/render_pipeline.js` coordinates full layout renders and fast visibility updates.
+- `runtime/render_pipeline.js` reconciles keyed visible scenes, cancels stale paints,
+  and exposes `window.officinaRendererDiagnostics.whenIdle()` for completion.
 - `runtime/controls.js` owns dragging, toolbar controls, routing controls, keyboard
   shortcuts, sidebar ordering, and startup.
 
 `assets.py` defines the runtime order. Fragments are not independent browser
 modules and must not load one another; generated HTML still contains one runtime
 closure and has no dependency on local source assets.
+
+## Quick guides
+
+- `quick_guide.py` — data model and `replace_step()`.
+- `quick_guides/default.py` — complete editable default guide.
+- `quick_guides/<domain>.py` — domain guide derived from `DEFAULT_QUICK_GUIDE`.
+- `runtime/quick_guide.js` — generic passive UI controller.
+
+Quick guides are passive anchored explanations:
+
+- Back/Next are unconditional and do not depend on whether each step target was acted on.
+- The toolbar button manually opens the guide.
+- Missing, hidden, or invalid targets are skipped.
+- Edit `quick_guides/default.py` to change global guide content or ordering.
+- Create specialized guides by calling `replace_step()` on `DEFAULT_QUICK_GUIDE`; do not copy the tuple.
+- Guide data is renderer configuration only and is not persisted in graph payloads.
+- There is no guide persistence, workflow action, or guide-specific browser API.
+
+Pass an explicit guide to opt in; omitting `quick_guide` preserves the guide-free
+viewer. Domain guides should replace stable steps in the default instead of
+copying its tuple:
+
+```python
+from officina.visualization.elk_html_renderer import ElkHtmlRenderer
+from officina.visualization.html_renderer.quick_guides.default import DEFAULT_QUICK_GUIDE
+
+domain_guide = DEFAULT_QUICK_GUIDE.replace_step(
+    "read-graph",
+    title="Read domain dependencies",
+    body="Follow arrows from prerequisites toward the results they support.",
+)
+renderer = ElkHtmlRenderer(quick_guide=domain_guide)
+```
 
 The browser runtime follows a fixed pipeline:
 
@@ -121,13 +173,40 @@ The browser runtime follows a fixed pipeline:
    paths only through adapter-declared typed composition rules, and bundle parallel
    visible relationships by directed endpoint pair.
 4. Recursively size contained graphs and obtain geometry from ELK.
-5. Paint container and ordinary node shapes, then masked edges. Each edge remains
-   above its source and target shapes, including containment endpoints, but its
-   mask occludes it beneath every unrelated ordinary node, attenuates it behind
-   unrelated translucent containers, and fully occludes it beneath every measured
-   label and subtitle. Text therefore remains visually above graph lines without
-   sacrificing endpoint-over-edge semantics or erasing contained relationships.
-6. Apply interaction-only updates without relaying out the graph when possible.
+5. Reconcile only visible keyed nodes and edges. Edges paint below nodes; one
+   shape-matched cover per node attenuates crossings without per-edge masks.
+6. Process large paints in cancellable frame-bounded chunks and typeset only new
+   or changed graph labels. Position-reusing updates avoid ELK when geometry exists.
+
+Benchmark two standalone pages with `scripts/benchmark-html-renderer.py
+--baseline-html BASELINE.html --candidate-html CANDIDATE.html --output RESULT.json`.
+It validates matching payloads, records 20-trial p95 metrics for duration,
+long-task, input-latency, and heartbeat observations, and writes an explicit
+benchmark-observable gate/parity verdict before returning nonzero on failure.
+For full graphs, probes are injected in `<head>` before supplied page scripts,
+so duration begins at earliest page-script execution rather than a true
+pre-navigation boundary. A dedicated Chrome launcher uses a fresh profile and a
+1440x1000 viewport, serves each trial on loopback, and polls for explicit completion
+with a bounded timeout. It leaves `performance.now()` and animation frames on real
+time; the functional browser-test harness remains separate. Parity compares visible
+node ids and complete stable semantic edge records. Candidate mounted counts must
+equal its visible scene counts; baseline hidden DOM does not fail semantic parity.
+
+### Math rendering validation
+
+`dependencies.py` adapts every schema-supported macro representation to
+MathJax's replacement-first configuration and loads only the pinned offline
+runtime. Its undefined-command observer disables MathJax's `noundefined`
+literal-text fallback so the runtime's own parser remains the oracle; no TeX
+command allowlist is maintained by the renderer. Direct and macro-nested unknown
+control sequences are collected in the `data-unresolved-tex` reader banner.
+
+Browser gates can call `await window.officinaMathDiagnostics()` after the
+relevant graph content or inspector surface has rendered. The call waits for
+MathJax startup and the renderer's current serialized typesetting queue, then
+returns sorted `unresolvedCommands` and a generic `mathErrorCount` covering
+MathML and SVG error nodes. A candidate is render-clean only when both are empty
+or zero and no unresolved-command banner is present.
 
 ### Edge meaning and presentation
 
@@ -154,7 +233,7 @@ different dash patterns cannot truthfully occupy one path.
 render replaces resources with the same edge identity; transient derived-edge
 removal explicitly deletes its resources. User-space gradients are synchronized
 after every route change, and hover emphasis stores/restores the resolved base
-width and filter. The Edge presentation legend calls the same resolver and icon
+width while synchronizing underlays. The Edge presentation legend calls the resolver and icon
 builder, so it documents actual paint behavior rather than a parallel convention.
 
 Declared presentation facets use scalar equality only. `field` names a
@@ -227,7 +306,9 @@ replaces the selection, Ctrl/Cmd-click toggles membership, and a search selects
 matching nodes plus both endpoints of matching relations. Hide and Dim are bulk
 actions over that selection; user dimming preserves layout and is distinct from
 category exclusion. The most recently selected member remains the primary node
-for inspection and ancestor focus.
+for inspection and ancestor focus. Relation-row arrows expand the selection
+transitively through one visible relation type; the arrows beside the Relations
+heading perform the same traversal through every visible relation type.
 
 Ordinary filters use the fast interaction path and preserve the current layout.
 Changing `detail_level` is intentionally structural: it runs the full layout,

@@ -98,13 +98,11 @@ directories.
 | `tests:performance` | Load-sensitive dispatcher performance invariants | Serial and executed before pooled work in a full suite |
 | `tests:browser` | HTML, SVG, graph projection, inspector, containment, and readability behavior in a real Chrome DOM | Serial, `--maxfail=1`, and a 30-second bound per Chrome invocation |
 | `tests:portability` | Seven cross-platform boundary sentinels | Serial, outside the main shard |
-| `tests:github` | Installation from the published default branch | Serial network-dependent smoke, separate from working-tree assertions |
 | `native:keyring` | Native credential-store behavior | Serial on macOS and Windows |
 | `native:scheduler` | Native recurring-scheduler behavior | Serial on macOS and Windows |
 
-Other selectable tasks, such as `tests:install` and `tests:docstrings`, exist
-for focused local or probe use. The matrix topology is intentionally smaller
-than the selectable-task inventory.
+`tests:docstrings` remains selectable for focused local or probe use. The
+matrix topology is intentionally smaller than the selectable-task inventory.
 
 In a full suite, the runner orders performance first, pools validators with
 shared tests, and runs browser tests afterward. The pooled invocation gives
@@ -118,7 +116,7 @@ The current matrix has eight elements:
 
 | Operating system | Matrix task | Main evidence | Additional sentinels |
 | --- | --- | --- | --- |
-| Ubuntu | `combined` | Performance, pooled validators/shared tests, and browser tests | Portability and published-GitHub installation |
+| Ubuntu | `combined` | Performance, pooled validators/shared tests, and browser tests | Portability |
 | macOS | `validators` | Validators | None |
 | macOS | `tests:shared` | Shared tests | Portability |
 | macOS | `tests:performance` | Performance invariants | Native keyring and scheduler |
@@ -255,7 +253,6 @@ Useful failure classes are:
 | Browser lifecycle | Chrome starts, hangs, times out, or leaves descendants | Bound one browser selector; inspect process completion and cleanup, not only DOM output |
 | Infrastructure/setup | Checkout, network install, authentication, or hosted-runner service fails | Retry the unchanged operation or narrowly escalate host access before editing product code |
 | Coverage-policy failure | A task skips, disappears, or runs on the wrong host | Repair category routing and its policy test, not one test filename |
-| Published-install smoke | Default-branch installation fails independently of the candidate diff | Verify the published source and report it separately from working-tree failures |
 
 Sandbox errors such as repository unavailability, loopback `PermissionError`,
 or SSH owner/permission rejection are not evidence of a source regression.
@@ -367,12 +364,6 @@ Distinguish subject failure from fixture-control-flow failure.
 A portability or native smoke may execute after the main shard fails. Do not
 attribute the job's first failure to the last red step. Read timestamps and
 artifacts in execution order.
-
-### Published-source tests have a different authority
-
-`tests:github` installs from the published default branch. Its failure may
-describe default-branch or network health rather than the candidate checkout.
-Keep it out of the pooled working-tree phase and label it accordingly.
 
 ### Keep unrelated maintenance outside the repair
 

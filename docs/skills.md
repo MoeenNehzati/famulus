@@ -43,7 +43,7 @@ This page is the complete skill inventory. For workflows and examples, start fro
 
 ### Listed
 
-- `ci-debug` — GitHub Actions CI is red, matrix failures need isolated repair, or repeated full reruns make remote diagnosis inefficient _(topics: repository-workflow, task-automation, assistant-assurance; activated by: user request, skill workflow)_
+- `ci-debug` — CI history needs analysis, a local branch needs exact-SHA GitHub Actions qualification, CI is red, or one matrix failure needs isolated repair _(topics: repository-workflow, task-automation, assistant-assurance; activated by: user request, skill workflow)_
 - `git-workflow` — Branch-safety checks and commit hygiene for any repo _(topics: repository-workflow; activated by: user request, skill workflow)_
 - `initialize-tdd` — Scaffold a staged, approval-gated TDD project _(topics: repository-workflow, assistant-assurance; activated by: user request)_
 
@@ -58,10 +58,10 @@ This page is the complete skill inventory. For workflows and examples, start fro
 
 - `distill-to-rutters` — An existing Markdown skill instruction should be transformed into transparent Rutters and an operable Voyage dispenser _(topics: assistant-authoring, assistant-architecture, assistant-assurance, repository-workflow; activated by: user request, skill workflow)_
 - `hook-maker` — Design cross-host assistant hooks with one purpose and per-host bindings _(topics: assistant-authoring, assistant-architecture; activated by: user request, skill workflow)_
+- `node-certify` — Fresh certificates are requested for one or more Officina nodes _(topics: assistant-assurance, assistant-architecture; activated by: user request, skill workflow)_
+- `node-drift` — Whether Officina node certificates are current or stale, or asks for canonical node hashes _(topics: assistant-assurance, assistant-architecture; activated by: user request, skill workflow)_
 - `regenerate-blueprints` — An existing skill blueprint needs regeneration, whether requested directly or required by another skill _(topics: assistant-authoring, assistant-architecture; activated by: user request, skill workflow)_
 - `relocate-nodes` — Registered Officina nodes or their owned files must be moved while mechanically updating blueprint ownership, references, generated artifacts, and callers _(topics: assistant-architecture, repository-workflow, assistant-assurance; activated by: user request, skill workflow)_
-- `skill-certifier` — Fresh certificates are requested for one or more Officina nodes _(topics: assistant-assurance, assistant-architecture; activated by: user request, skill workflow)_
-- `skill-drift` — Whether Officina node certificates are current or stale, or asks for canonical node hashes _(topics: assistant-assurance, assistant-architecture; activated by: user request, skill workflow)_
 - `update-standards` — Change canonical standards and keep their pinned closures aligned _(topics: assistant-authoring, assistant-architecture, assistant-assurance; activated by: user request, skill workflow)_
 
 ## Assistant Operations
@@ -72,9 +72,10 @@ This page is the complete skill inventory. For workflows and examples, start fro
 
 ### Listed
 
+- `bootstrap-dispatcher-runtime` — The Famulus launcher cannot launch the `famulus_dispatcher` MCP server because its dedicated Python runtime is missing, reported as: `Famulus MCP startup's dedicated dispatcher runtime is missing at ...` _(topics: assistant-installation, system-maintenance; activated by: user request, skill workflow)_
 - `cloud-files` — Bounded read/write of plain files under a configured Google Drive root _(topics: external-integrations, storage-and-sync; activated by: user request, skill workflow)_
 - `connect-google` — The user needs to set up or restore Google authentication for Famulus _(topics: external-integrations; activated by: user request, skill workflow)_
-- `install-assistant-tools` — Install or update launchers, wiring, hooks, and environment on a machine _(topics: assistant-installation, system-maintenance; activated by: user request)_
+- `install-launchers` — Install or repair an explicit subset of the optional assistant, collab, coauthor, and tw launchers _(topics: assistant-installation; activated by: user request, skill workflow)_
 - `milestone-logging` — Starting or completing substantive agent work that needs durable, role-labelled progress records and optional run recovery _(topics: task-automation, assistant-assurance; activated by: user request, skill workflow)_
 - `using-compass` — A user or another skill directs the agent to use a named compass _(topics: task-automation, session-management; activated by: user request, skill workflow)_
 

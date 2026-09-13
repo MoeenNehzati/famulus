@@ -2,8 +2,8 @@
 
 Transcript layout: ~/.codex/sessions/YYYY/MM/DD/rollout-...-<session_id>.jsonl
 (overridable via the CODEX_HOME env var, which points at ~/.codex by
-default -- matching the convention used elsewhere in this repo, e.g.
-skills/install-assistant-tools). One JSON object per line; the working
+default -- matching the convention used elsewhere in this repo). One JSON
+object per line; the working
 directory and session id live nested under a "payload" object (only on
 certain event types, e.g. "session_meta"), not at the top level like the
 sibling host's format. The YYYY/MM/DD directory reflects the session's

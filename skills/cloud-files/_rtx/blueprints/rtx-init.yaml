@@ -17,8 +17,6 @@ id: cloud-files._rtx.source.rtx-init
 interfaces: {}
 node_type: behavioral_source
 schema_version: 6
-uses_interfaces:
-- interface: credentials.interface.google
-  version: 1
+uses_interfaces: [{interface: credentials.interface.google, version: 1}, {interface: common.interface.famulus-paths, version: 1}]
 version: 1
 maturity: experimental

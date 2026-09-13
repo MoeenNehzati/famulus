@@ -9,6 +9,7 @@ content:
 - schemas/types/entry\.json
 - schemas/types/task_entry\.json
 - schemas/types/triage_action\.json
+- _ui_renderers/_read_list\.js
 dependencies:
 - blueprint:
     base: repository-root
@@ -256,6 +257,7 @@ interfaces:
         required_flags:
         - --cloud
         allowed_flags:
+        - --cloud
         - --expected-revision
         flag_patterns:
           --expected-revision: ^[0-9]+$
@@ -459,7 +461,7 @@ interfaces:
         outputs:
         - diagnostic
       outputs:
-      - audience: both
+      - audience: machine
         cardinality:
           maximum: 1
           minimum: 1
@@ -710,7 +712,7 @@ interfaces:
         type:
           kind: string
           sensitivity: derived-private
-      - audience: both
+      - audience: machine
         cardinality:
           maximum: 1
           minimum: 1
@@ -750,7 +752,7 @@ interfaces:
         required_flags:
         - --cloud
         - --schema
-    usage: <name> --cloud --schema <schema>
+    usage: <name> --cloud --schema <schema> [--name NAME]
     version: 1
   list-manager._rtx.source.rtx-yaml-store.interface.cloud-read:
     content:
@@ -796,18 +798,37 @@ interfaces:
           sensitivity: user-private
           type:
             kind: string
+        output:
+          description: Optional destination for raw YAML (-o/--output); creates or truncates
+            the file instead of writing stdout.
+          direct_io_ref: write-3
+          required: false
+          sensitivity: user-private
+          type:
+            access: write
+            content_type:
+              format:
+                named: yaml
+              kind: string
+            kind: file
+            must_exist: false
+            relative_to: caller-cwd
+            syntax: literal
       caller_warnings:
       - may-wait: Downloads and parses the named cloud list before filtering.
       - rate-limited: The cloud read helper consumes Google Drive API quota.
       - external-side-effect: Stores the downloaded private snapshot under the managed
           list-manager cache and removes it on normal completion; an abrupt crash can
           leave private cache residue.
+      - external-side-effect: Supplying an output path writes raw YAML there instead
+          of stdout and truncates any existing destination; writes are not atomic.
       direct_io:
         network: []
         reads:
         - access: read
           content: Private downloaded cloud-list snapshot used during this invocation.
-          formats: [yaml]
+          formats:
+          - yaml
           id: cache-snapshot-read
           medium: local-filesystem
           path: <famulus-state-root>/list-manager/cache/**
@@ -816,7 +837,8 @@ interfaces:
         writes:
         - access: write
           content: Private downloaded cloud-list snapshot.
-          formats: [yaml]
+          formats:
+          - yaml
           id: cache-snapshot-write
           medium: local-filesystem
           path: <famulus-state-root>/list-manager/cache/**
@@ -824,7 +846,8 @@ interfaces:
           sensitivity: user-private
         - access: delete
           content: Per-invocation private cache directory and snapshot cleanup.
-          formats: [files]
+          formats:
+          - files
           id: cache-snapshot-cleanup
           medium: local-filesystem
           path: <famulus-state-root>/list-manager/cache/**
@@ -844,6 +867,17 @@ interfaces:
           id: write-2
           medium: stderr
           sensitivity: derived-private
+        - access: write
+          content: Raw YAML list document or ancestor-preserving filtered tree when
+            output is supplied.
+          formats:
+          - yaml
+          id: write-3
+          medium: local-filesystem
+          path: <output-file>
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
       execution:
         consistency:
           live: Downloads one current remote snapshot and filters only that snapshot.
@@ -854,56 +888,103 @@ interfaces:
             kind: direct-io
           direct_io_ref: cache-snapshot-write
           id: cache-snapshot-lifecycle
-          may_occur_in_outcomes: [success, error]
+          may_occur_in_outcomes:
+          - success
+          - written
+          - error
+          - write-failed
           reversibility:
-            compensatable: Remove a residual per-invocation cache directory after confirming no process uses it.
+            compensatable: Remove a residual per-invocation cache directory after confirming
+              no process uses it.
           value_source:
             direct_io_ref: cache-snapshot-write
+            kind: direct-io
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: write-3
+            kind: direct-io
+          direct_io_ref: write-3
+          id: output-file
+          may_occur_in_outcomes:
+          - written
+          - write-failed
+          reversibility:
+            irreversible: Existing destination bytes are not retained when raw YAML
+              replaces or truncates them.
+          value_source:
+            direct_io_ref: write-3
             kind: direct-io
         lifecycle: finite
         mutation_safety:
           atomicity:
-            per_effect_only: Cache snapshot creation, use, and cleanup are separate local operations.
+            non_atomic: Cache creation/cleanup and direct output-file writes are separate
+              operations; output replacement is not atomic.
           concurrent_invocations:
-            safe: Each invocation uses a distinct cache directory; cloud-read does not mutate remote state.
+            unsafe: Cache directories are distinct and remote state is not mutated,
+              but writers to the same output destination are not serialized.
           idempotency:
-            idempotent: Repeating the same read does not intentionally retain local cache state.
+            idempotent: Unchanged input and filter/sort options produce equivalent YAML;
+              an output destination is overwritten on each call.
           on_uncertain_completion:
-            verify_then_decide: Remove only an identified residual invocation cache after confirming no live process uses it.
+            verify_then_decide: Inspect the output destination before retrying; remove
+              residual invocation caches only after confirming no live process uses
+              them.
           partial_effects_on_failure:
-            possible: An abrupt crash can leave a private downloaded snapshot or cache directory as residue.
+            possible: A write failure can leave a truncated or partial output file;
+              abrupt termination can also leave a private cache snapshot.
           rollback_on_failure:
-            unavailable: Normal exception unwinding removes the cache in a finally block,
-              but abrupt process termination has no automatic residual-cache cleanup.
+            unavailable: Previous output bytes are not retained; normal unwinding removes
+              the cache, but abrupt termination can leave cache residue.
         state_effect: mutating
         verification:
         - method: output-schema
           output_ref: list
+        - direct_io_ref: write-3
+          method: direct-io-state
       helpers: []
       interaction:
         mode: unattended
       outcomes:
       - caller_action: Preserve the returned tree shape; do not flatten filtered results.
         class: success
-        effects: [cache-snapshot-lifecycle]
+        effects:
+        - cache-snapshot-lifecycle
         id: success
         outputs:
         - list
-      - caller_action: Correct the list name, filter, sort field, schema, or cloud
-          error.
+      - caller_action: Correct the list name, filter, sort field, schema, or cloud error.
         class: error
-        effects: [cache-snapshot-lifecycle]
+        effects:
+        - cache-snapshot-lifecycle
         id: error
+        outputs:
+        - diagnostic
+      - caller_action: Consume the requested raw YAML output file; stdout is intentionally
+          empty.
+        class: success
+        effects:
+        - cache-snapshot-lifecycle
+        - output-file
+        id: written
+        outputs: []
+      - caller_action: Inspect the destination for truncation or partial content before
+          retrying the failed output write.
+        class: partial
+        effects:
+        - cache-snapshot-lifecycle
+        - output-file
+        id: write-failed
         outputs:
         - diagnostic
       outputs:
       - audience: machine
         cardinality:
           maximum: 1
-          minimum: 1
+          minimum: 0
         description: Raw YAML list document or ancestor-preserving filtered tree.
         direct_io_ref: write-1
-        empty: No matching entries produces an empty pruned YAML result.
+        empty: Stdout is empty when output is supplied; otherwise no matches produces
+          an empty pruned YAML result.
         id: list
         ordering: stable
         pagination:
@@ -951,13 +1032,16 @@ interfaces:
         - --output
         min_positionals: 1
         notes: Read cloud list by name (raw YAML), optionally filtered. Filtered output
-          is a pruned tree, not a flat list of matches -- do not assume flat-list
-          shape.
+          is a pruned tree, not a flat list of matches -- do not assume flat-list shape.
         positional_patterns:
           '0': ^[a-zA-Z0-9_-]+$
         required_flags:
         - --cloud
-    usage: <name> [filters] --cloud
+        flag_patterns:
+          --sort: ^.+$
+          -o: ^.+$
+          --output: ^.+$
+    usage: <name> [filters] --cloud [--sort FIELD] [-o FILE | --output FILE]
     version: 1
   list-manager._rtx.source.rtx-yaml-store.interface.cloud-update:
     content:
@@ -1197,6 +1281,7 @@ interfaces:
         required_flags:
         - --cloud
         allowed_flags:
+        - --cloud
         - --expected-revision
         flag_patterns:
           --expected-revision: ^[0-9]+$
@@ -1554,6 +1639,7 @@ interfaces:
       kind: process
       patterns:
       - allow_stdin: false
+        allowed_flags: []
         max_positionals: 2
         min_positionals: 1
         notes: First positional is the schema name (todo, triage, default); optional
@@ -1708,9 +1794,13 @@ interfaces:
       entry: Interface
       kind: process
       patterns:
-      - allow_extra_positionals: true
-        allow_stdin: false
+      - allow_stdin: false
         min_positionals: 1
+        max_positionals: 1
+        allowed_flags:
+        - --count
+        flag_patterns:
+          --count: ^[1-9][0-9]*$
     usage: <file> [--count N]
     version: 1
   list-manager._rtx.source.rtx-yaml-store.interface.init-list:
@@ -1879,7 +1969,7 @@ interfaces:
         type:
           kind: string
           sensitivity: derived-private
-      - audience: both
+      - audience: machine
         cardinality:
           maximum: 1
           minimum: 1
@@ -1903,10 +1993,18 @@ interfaces:
       entry: Interface
       kind: process
       patterns:
-      - allow_extra_positionals: true
-        allow_stdin: false
+      - allow_stdin: false
         min_positionals: 1
-    usage: <file> [--schema <name>]
+        max_positionals: 1
+        allowed_flags:
+        - --schema
+        - --name
+        required_flags:
+        - --schema
+        flag_patterns:
+          --schema: ^.+$
+          --name: ^.+$
+    usage: <file> --schema <schema> [--name NAME]
     version: 1
   list-manager._rtx.source.rtx-yaml-store.interface.read-list:
     content:
@@ -1920,6 +2018,8 @@ interfaces:
     - schemas/types/entry\.json
     - schemas/types/task_entry\.json
     - schemas/types/triage_action\.json
+    - _ui_renderers/_read_list\.js
+    renderer: _ui_renderers/_read_list.js
     uses_interfaces:
     - interface: cloud-files._rtx.interface.lists-read
       version: 1
@@ -1957,7 +2057,25 @@ interfaces:
           sensitivity: user-private
           type:
             kind: string
-      caller_warnings: []
+        output:
+          description: Optional destination for raw YAML (-o/--output); creates or truncates
+            the file instead of writing stdout.
+          direct_io_ref: write-3
+          required: false
+          sensitivity: user-private
+          type:
+            access: write
+            content_type:
+              format:
+                named: yaml
+              kind: string
+            kind: file
+            must_exist: false
+            relative_to: caller-cwd
+            syntax: literal
+      caller_warnings:
+      - external-side-effect: Supplying an output path writes raw YAML there instead
+          of stdout and truncates any existing destination; writes are not atomic.
       direct_io:
         network: []
         reads:
@@ -1986,14 +2104,60 @@ interfaces:
           id: write-2
           medium: stderr
           sensitivity: derived-private
+        - access: write
+          content: Raw YAML list document or ancestor-preserving filtered tree when
+            output is supplied.
+          formats:
+          - yaml
+          id: write-3
+          medium: local-filesystem
+          path: <output-file>
+          path_match: exact
+          sensitivity: user-private
+          system: filesystem
       execution:
         consistency:
           snapshot: Reads and filters one local list snapshot.
         lifecycle: finite
-        state_effect: read-only
+        state_effect: mutating
         verification:
         - method: output-schema
           output_ref: list
+        - direct_io_ref: write-3
+          method: direct-io-state
+        effects:
+        - action: update
+          confirmation_evidence:
+            direct_io_ref: write-3
+            kind: direct-io
+          direct_io_ref: write-3
+          id: output-file
+          may_occur_in_outcomes:
+          - written
+          - write-failed
+          reversibility:
+            irreversible: Existing destination bytes are not retained when raw YAML
+              replaces or truncates them.
+          value_source:
+            direct_io_ref: write-3
+            kind: direct-io
+        mutation_safety:
+          atomicity:
+            non_atomic: The output file is opened directly and written without atomic
+              replacement.
+          concurrent_invocations:
+            unsafe: Concurrent writers to the same output path are not serialized.
+          idempotency:
+            idempotent: Unchanged input and filter/sort options produce equivalent YAML;
+              an output destination is overwritten on each call.
+          on_uncertain_completion:
+            verify_then_decide: Inspect the output file before retrying after interruption
+              or write failure.
+          partial_effects_on_failure:
+            possible: Opening the output path can truncate an existing file before a
+              later write failure.
+          rollback_on_failure:
+            unavailable: Previous output-file bytes are not retained.
       helpers: []
       interaction:
         mode: unattended
@@ -2010,14 +2174,30 @@ interfaces:
         id: error
         outputs:
         - diagnostic
+      - caller_action: Consume the requested raw YAML output file; stdout is intentionally
+          empty.
+        class: success
+        effects:
+        - output-file
+        id: written
+        outputs: []
+      - caller_action: Inspect the destination for truncation or partial content before
+          retrying the failed output write.
+        class: partial
+        effects:
+        - output-file
+        id: write-failed
+        outputs:
+        - diagnostic
       outputs:
       - audience: machine
         cardinality:
           maximum: 1
-          minimum: 1
+          minimum: 0
         description: Raw YAML list document or ancestor-preserving filtered tree.
         direct_io_ref: write-1
-        empty: No matching entries produces an empty pruned YAML result.
+        empty: Stdout is empty when output is supplied; otherwise no matches produces
+          an empty pruned YAML result.
         id: list
         ordering: stable
         pagination:
@@ -2069,11 +2249,18 @@ interfaces:
       - allow_extra_positionals: true
         allow_stdin: false
         min_positionals: 1
-        notes: First positional is the local YAML file; remaining positionals are
-          filters. Filtered output is a pruned tree (or pruned list, if the input
-          itself was a bare list), not a flat list of matches -- do not assume flat-list
-          shape.
-    usage: <file> [filters] [--sort FIELD]
+        notes: First positional is the local YAML file; remaining positionals are filters.
+          Filtered output is a pruned tree (or pruned list, if the input itself was a
+          bare list), not a flat list of matches -- do not assume flat-list shape.
+        flag_patterns:
+          --sort: ^.+$
+          -o: ^.+$
+          --output: ^.+$
+        allowed_flags:
+        - --sort
+        - -o
+        - --output
+    usage: <file> [filters] [--sort FIELD] [-o FILE | --output FILE]
     version: 1
   list-manager._rtx.source.rtx-yaml-store.interface.update-list:
     content:

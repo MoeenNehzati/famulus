@@ -184,6 +184,18 @@ def test_decode_dependency_dag_rejects_unknown_targets_and_cycles() -> None:
         decode_dependency_dag(cyclic)
 
 
+def test_decode_dependency_dag_accepts_cross_host_absolute_repository() -> None:
+    payload = {
+        "schema_version": "officina.certification-dependency-dag/v1",
+        "repository": r"C:\repo",
+        "nodes": [],
+    }
+
+    decoded = decode_dependency_dag(payload)
+
+    assert decoded["repository"] == r"C:\repo"
+
+
 def test_decode_dependency_dag_rejects_unsorted_nodes_and_dependencies() -> None:
     payload = {
         "schema_version": "officina.certification-dependency-dag/v1",

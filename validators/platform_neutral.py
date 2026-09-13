@@ -22,6 +22,8 @@ subject to the normal checks. Validated blueprint files are descriptive graph
 artifacts rather than module content; once the canonical graph validates them,
 this text guard scans their owned files instead of their declaration metadata.
 Frozen version-4 blueprint fixtures retain the line-level checks below.
+Generated, marker-bounded interface projections in ``SKILL.md`` are excluded;
+frontmatter and hand-authored skill text remain subject to this prose policy.
 """
 from __future__ import annotations
 
@@ -32,14 +34,18 @@ from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SRC_ROOT = _REPO_ROOT / "src"
-if str(_SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(_SRC_ROOT))
+for import_root in (_REPO_ROOT, _SRC_ROOT):
+    if str(import_root) not in sys.path:
+        sys.path.insert(0, str(import_root))
 
 from officina.blueprints.graph import (  # noqa: E402
     BlueprintGraphError,
     load_repository_blueprint_graph,
 )
 from officina.blueprints.inventory import BlueprintInventoryError  # noqa: E402
+from validators.skill_md_body import (  # noqa: E402
+    strip_generated_blueprint_blocks,
+)
 
 _PLATFORM_GROUPS: dict[str, tuple[set[str], re.Pattern[str]]] = {
     "claude": ({"claude"}, re.compile(r"(?i:(\.claude|claude))")),
@@ -55,22 +61,15 @@ _CHECK_ROOTS = ["skills", "references", "agents", "CLAUDE.md", "src/officina"]
 _EXCLUDED_PARTS = {"tests", "validators", ".git", ".claude-plugin", ".codex-plugin"}
 _EXCLUDED_PATHS = {
     Path("references/node-standards"),
-    Path("skills/install-assistant-tools"),
+    Path("skills/install-launchers"),
     Path("skills/latex-workshop"),
     Path("skills/recurring-tasks"),
 }
 _PLATFORM_METADATA_TOOLING_PATHS = {
     Path("skills/skill-maker/_rtx/_blueprint_syncer.py"),
-    Path("src/officina/install/runtime_lock.py"),
 }
 _BINDING_CROSS_HOST_ORCHESTRATION_PATHS = {
     Path("skills/relocate-nodes/_rtx/_relocation_engine.py"),
-    Path("src/officina/install/assistant_access.py"),
-    Path("src/officina/install/context.py"),
-    Path("src/officina/install/development_activation.py"),
-    Path("src/officina/install/doctor.py"),
-    Path("src/officina/install/runtime_pointer.py"),
-    Path("src/officina/install/resolvers/launch.py"),
     Path("src/officina/launchers/agent.py"),
     Path("src/officina/recurring/runtime.py"),
     Path("src/officina/recurring/healthcheck.py"),
@@ -89,14 +88,51 @@ _HOST_PATTERN = re.compile(r"(?i:(\.claude|claude|\.codex|codex))")
 _PLATFORM_METADATA_LINE_RE = re.compile(
     r"^\s*(?:#\s*)?[\"']?(?:linux|macos|windows)[\"']?\s*:\s*(?:true|false|\{)"
 )
-_PEP508_PLATFORM_MARKER_LINE_RE = re.compile(
-    r";.*\bsys_platform\s*==\s*['\"](?:linux|darwin|win32)['\"]"
-)
+_METADATA_PLATFORM_KEYS = "platform-keys"
+_METADATA_ALL_NON_HOST_LINES = "all-non-host-lines"
+_UNCLASSIFIED_METADATA = object()
 REQUIRES_BLUEPRINT_GRAPH = True
 BLUEPRINT_GRAPH_OPTIONAL = True
 
 
-def _is_allowed_platform_metadata_line(rel_path: Path, line: str) -> bool:
+def _platform_metadata_exemption_kind(rel_path: Path) -> str | None:
+    """Classify the metadata exemption available to one authored file.
+
+    Intent
+    ------
+    Precompute path-dependent metadata eligibility once per file.
+
+    Rationale
+    ---------
+    Ordinary shared files need no metadata regex or repeated path comparisons.
+
+    Pseudocode
+    ----------
+    - return the narrow line matcher kind for structured metadata files
+    - return the all-non-host-lines kind for schema/tooling definitions
+    - return none for ordinary files
+
+    Wraps
+    -----
+    - none
+    """
+    if rel_path.parts[:2] == ("references", "blueprint-schema"):
+        return _METADATA_ALL_NON_HOST_LINES
+    if rel_path.name.endswith("blueprint.yaml"):
+        return _METADATA_PLATFORM_KEYS
+    if rel_path == Path("references/blueprint-schema/runtime_dependencies.json"):
+        return _METADATA_PLATFORM_KEYS
+    if rel_path in _PLATFORM_METADATA_TOOLING_PATHS:
+        return _METADATA_ALL_NON_HOST_LINES
+    return None
+
+
+def _is_allowed_platform_metadata_line(
+    rel_path: Path,
+    line: str,
+    *,
+    exemption_kind: str | None | object = _UNCLASSIFIED_METADATA,
+) -> bool:
     """Return whether one platform metadata line is allowed.
 
     Intent
@@ -109,27 +145,28 @@ def _is_allowed_platform_metadata_line(rel_path: Path, line: str) -> bool:
 
     Pseudocode
     ----------
-    - if line contains a host name:
+    - classify the file when no prepared classification was supplied
+    - if the file has no metadata exemption or line contains a host name:
       - return false
-    - return whether path and line form recognized platform metadata
+    - return whether the line matches the prepared exemption kind
 
     Wraps
     -----
     - none
+
+    CallsFromRepo
+    -------------
+    ._platform_metadata_exemption_kind:
+      why:
+        computes: "Classifies callers that do not supply prepared eligibility."
     """
-    if _HOST_PATTERN.search(line):
+    if exemption_kind is _UNCLASSIFIED_METADATA:
+        exemption_kind = _platform_metadata_exemption_kind(rel_path)
+    if exemption_kind is None or _HOST_PATTERN.search(line):
         return False
-    if rel_path.name.endswith("blueprint.yaml") and _PLATFORM_METADATA_LINE_RE.search(line):
-        return True
-    if rel_path == Path("references/blueprint-schema/runtime_dependencies.json"):
+    if exemption_kind == _METADATA_PLATFORM_KEYS:
         return _PLATFORM_METADATA_LINE_RE.search(line) is not None
-    if rel_path == Path("references/runtime/requirements-core.lock"):
-        return _PEP508_PLATFORM_MARKER_LINE_RE.search(line) is not None
-    if rel_path.parts[:2] == ("references", "blueprint-schema"):
-        return True
-    if rel_path in _PLATFORM_METADATA_TOOLING_PATHS:
-        return True
-    return False
+    return exemption_kind == _METADATA_ALL_NON_HOST_LINES
 
 
 def _forbidden_pattern_for(path: Path) -> re.Pattern[str] | None:
@@ -354,6 +391,7 @@ def _validate(
     ----------
     - for path in eligible files:
       - set pattern = file-specific matcher
+      - remove the generated interface block from skill instructions
       - for line in decodable file lines:
         - if line contains a non-exempt match:
           - return formatted finding
@@ -370,6 +408,12 @@ def _validate(
     ._is_allowed_platform_metadata_line:
       why:
         computes: "Recognizes allowed descriptive platform metadata."
+    ._platform_metadata_exemption_kind:
+      why:
+        computes: "Preclassifies whether each file can contain exempt metadata."
+    .validators.skill_md_body.strip_generated_blueprint_blocks:
+      why:
+        computes: "Projects SKILL.md to text owned by authors while preserving line numbers."
 
     InstantiationsFromRepo
     ----------------------
@@ -388,12 +432,19 @@ def _validate(
         pattern = _forbidden_pattern_for(path)
         if pattern is None:
             continue
+        metadata_exemption = _platform_metadata_exemption_kind(rel)
         try:
             text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             continue
+        if rel.parts[:1] == ("skills",) and rel.name == "SKILL.md":
+            text = strip_generated_blueprint_blocks(text)
         for lineno, line in enumerate(text.splitlines(), start=1):
-            if _is_allowed_platform_metadata_line(rel, line):
+            if metadata_exemption is not None and _is_allowed_platform_metadata_line(
+                rel,
+                line,
+                exemption_kind=metadata_exemption,
+            ):
                 continue
             if pattern.search(line):
                 errors.append(f"{rel.as_posix()}:{lineno}: {line.strip()}")

@@ -133,6 +133,8 @@ class Graph:
                 containers[entity_id] = container.strip()
             if not isinstance(entity.get("type"), str) or not entity.get("type"):
                 raise ValueError(f"Entity '{entity_id}' has invalid 'type'.")
+            if "subtitle" in entity and not isinstance(entity["subtitle"], str):
+                raise ValueError(f"Entity '{entity_id}' has invalid 'subtitle'.")
             if not isinstance(entity.get("position"), int):
                 raise ValueError(f"Entity '{entity_id}' has invalid 'position'.")
             if entity.get("ref") is not None and not isinstance(entity.get("ref"), str):
@@ -284,6 +286,11 @@ class Graph:
                     f"{node_id!r}"
                 )
             presentation_ids.add(node_id)
+
+            if "subtitle" in node and not isinstance(node["subtitle"], str):
+                raise ValueError(
+                    f"Presentation node {node_id!r} has invalid 'subtitle'."
+                )
 
             members = node["member_ids"]
             if not isinstance(members, list) or not members:
@@ -692,6 +699,10 @@ class Graph:
         canonical_fields = {
             "type",
             "implicit",
+            # Renderer-set on edges composed across omitted nodes. Declared
+            # presentation is the only way to distinguish such an edge, so the
+            # flag is readable by facets even though adapters never author it.
+            "derived",
             "confidence",
             "phase",
             "weight",

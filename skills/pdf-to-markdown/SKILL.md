@@ -6,29 +6,28 @@ tools:
   - marker_single
 ---
 
-<!-- BEGIN BLUEPRINT CONTRACT -->
-> Generated from `blueprint.yaml`. Do not edit this block by hand.
-
-Catalog: research; topics: scholarly-documents; visibility: listed
-Activation: user-request, skill-workflow; persistent modifier: no
-
-Skill Version: 2
-
-Uses Interfaces:
-- `pdf-to-markdown.source.gateway -> pdf-to-markdown._rtx.interface.scripts-check-marker-models@1`
-- `pdf-to-markdown.source.gateway -> pdf-to-markdown._rtx.interface.scripts-fetch-arxiv-source@1`
-
-Public Interfaces:
-- `pdf-to-markdown.interface.default`
-<!-- END BLUEPRINT CONTRACT -->
 
 <!-- BEGIN BLUEPRINT INTERFACES -->
 > Generated from `blueprint.yaml`. Do not edit this block by hand.
 
-Instruction Interfaces:
+Executable Interfaces:
 
-These interfaces are documented prompt surfaces. They are not executed through `dispatcher`:
-- `pdf-to-markdown.interface.default` — Primary LLM-facing skill instructions.
+Call `famulus_dispatcher.invoke` with required `caller` (caller skill), `interface`, `version`, and `arguments`; optional `dry_run` defaults to false. Compact uses ordered `positionals` plus an option mapping; ordered raw argv uses `positionals: []` plus every argv token in list `options`. Never mix forms.
+- `pdf-to-markdown._rtx.interface.scripts-check-marker-models` — Check whether required Marker/Surya models are downloaded and cached locally.
+  - Caller: `pdf-to-markdown`
+  - Version: 1
+  - Alternative: `owner`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {}, "positionals": [], "stdin": null}
+    Required options: []; positional arity: 0..0; stdin: forbidden
+- `pdf-to-markdown._rtx.interface.scripts-fetch-arxiv-source` — Download and extract the LaTeX source tarball for a paper from arXiv.
+  - Caller: `pdf-to-markdown`
+  - Version: 1
+  - Alternative: `owner`
+    Arguments JSON (replace labels with actual values). Omit optional positionals and options that are not needed.
+    {"options": {}, "positionals": ["arxiv-id", "output-dir"], "stdin": null}
+    Required options: []; positional arity: 1..2; stdin: forbidden
+
 <!-- END BLUEPRINT INTERFACES -->
 # PDF to Markdown
 

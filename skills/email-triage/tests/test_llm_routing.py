@@ -26,9 +26,9 @@ def _source_for_export(root: dict, export_id: str) -> tuple[dict, dict]:
     return _source_for_interface(root, source_interface)
 
 
-def test_default_interface_routes_to_triage_and_declares_generated_dispatches() -> None:
+def test_default_interface_routes_to_triage_and_declares_generated_interfaces() -> None:
     root = _load_yaml(SKILL_ROOT / "blueprint.yaml")
-    default, default_interface = _source_for_export(
+    _default, default_interface = _source_for_export(
         root, "email-triage.interface.default"
     )
 
@@ -46,37 +46,48 @@ def test_default_interface_routes_to_triage_and_declares_generated_dispatches() 
     assert default_interface["version"] == 2
     declared = {
         (entry["interface"], entry["version"])
-        for entry in default["uses_interfaces"]
+        for entry in default_interface["uses_interfaces"]
     }
     body = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
     generated_block = body.split("<!-- BEGIN BLUEPRINT INTERFACES -->", 1)[
         1
     ].split("<!-- END BLUEPRINT INTERFACES -->", 1)[0]
-    generated_dispatch_ids = {
-        line.split("dispatcher --caller-skill email-triage ", 1)[1]
-        .split()[0]
-        .strip("`")
-        for line in generated_block.splitlines()
-        if "dispatcher --caller-skill email-triage " in line
+    executable_block = generated_block.split("Executable Interfaces:", 1)[1].split(
+        "Instruction Interfaces:", 1
+    )[0]
+    generated_interface_ids = {
+        line.split("`", 2)[1]
+        for line in executable_block.splitlines()
+        if line.startswith("- `")
     }
-    generated_dispatches = {
+    generated_executable_interfaces = {
         (interface_id, version)
         for interface_id, version in declared
-        if interface_id in generated_dispatch_ids
+        if interface_id in generated_interface_ids
     }
     triage_route = (
         "email-triage.source.instructions-triage.interface.triage",
         2,
     )
+    process_routes = {
+        ("email-triage._rtx.interface.fetch-filtered-envelopes", 1),
+        ("email-triage._rtx.interface.scripts-clear-failure", 1),
+        ("email-triage._rtx.interface.scripts-filter-envelopes", 1),
+        ("email-triage._rtx.interface.scripts-finalize-triage", 1),
+        ("email-triage._rtx.interface.scripts-get-cutoff", 1),
+        ("email-triage._rtx.interface.scripts-log-decision", 1),
+        ("email-triage._rtx.interface.scripts-mark-failure", 1),
+        ("email-triage._rtx.interface.scripts-prune-log", 1),
+        ("email-triage._rtx.interface.scripts-update-watermark", 1),
+        ("email-triage._rtx.interface.scripts-write-metrics", 1),
+    }
 
-    assert generated_dispatch_ids == set()
-    assert generated_dispatches <= declared
-    assert triage_route in declared - generated_dispatches
-    assert all(
-        interface_id == triage_route[0]
-        or ".source." not in interface_id
-        for interface_id, _version in declared - generated_dispatches
-    )
+    assert generated_interface_ids == {
+        interface_id for interface_id, _version in process_routes
+    }
+    assert generated_executable_interfaces == process_routes
+    assert declared == process_routes | {triage_route}
+    assert f"`{triage_route[0]}@{triage_route[1]}`" in generated_block
 
     authored = body.split("<!-- END BLUEPRINT INTERFACES -->", 1)[1]
     assert "email-triage.interface.triage" in authored
@@ -117,7 +128,7 @@ def test_triage_contract_has_no_preference_source_or_read() -> None:
     )
 
     assert triage["version"] == 2
-    assert triage_source["dependencies"] == []
+    assert triage_source.get("dependencies", []) == []
     assert all(
         entry.get("path") != "references/personal-preferences.md"
         for entry in triage["contract"]["direct_io"]["reads"]

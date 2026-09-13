@@ -181,7 +181,34 @@ def _validate_markdown_source(
         )
     declared = _effective_declared_interface_ids(graph, source)
     mentioned = set(_CANONICAL_INTERFACE_RE.findall(body))
-    for interface_id in sorted(mentioned - declared):
+
+    # Permit a Markdown behavioral source to mention its own module's exact
+    # `.interface.setup` prerequisites without redundantly declaring them in
+    # uses_interfaces -- but only for the one source that implements that
+    # setup export, and only for its exact direct prerequisites.
+    permitted_prerequisites: set[str] = set()
+    source_module_id = source.node_id.split(".")[0]
+    module_export_key = f"{source_module_id}.interface.setup"
+    module_node = graph.nodes.get(source_module_id)
+    setup_export = graph.exports.get(module_export_key)
+    if (
+        module_node is not None
+        and setup_export is not None
+        and setup_export.source_interface_id is not None
+        and setup_export.source_interface_id.rsplit(".interface.", 1)[0]
+        == source.node_id
+    ):
+        exports = module_node.declaration.get("exports", {})
+        setup_export_decl = exports.get(module_export_key, {})
+        setup_requires = setup_export_decl.get("setup_requires_setup_of", [])
+        if isinstance(setup_requires, list):
+            for prereq in setup_requires:
+                if isinstance(prereq, dict) and isinstance(
+                    prereq.get("interface"), str
+                ):
+                    permitted_prerequisites.add(prereq["interface"])
+
+    for interface_id in sorted((mentioned - declared) - permitted_prerequisites):
         errors.append(
             f"{source.gateway_path}: canonical interface `{interface_id}` is not "
             f"declared in {source.node_id}.uses_interfaces"

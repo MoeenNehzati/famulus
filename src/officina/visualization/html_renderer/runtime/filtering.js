@@ -201,21 +201,23 @@
       recordGraphHistory(graphBefore, graphStateSnapshot());
     }
 
-    function applyFilterPresentation() {
+    function applyFilterPresentation(operations = null) {
       const queryActive = Boolean(normalizedFilterText(filterState.query));
-      docData.entities.forEach(entity => {
-        const nodeEl = nodeElement(entity.id);
-        if (!nodeEl) return;
+      nodeElementIndex.forEach((nodeEl, nodeId) => {
+        const entity = entityMap.get(nodeId);
+        if (!nodeEl.isConnected || !entity) return;
+        applyPresentationOperation(operations, () => {
         const fails = nodeFailsFilter(entity);
-        const retained = retainedOwnerIds.has(entity.id) || retainedEndpointIds.has(entity.id) || selectedNodeIds.has(entity.id);
         nodeEl.classList.remove("filter-dimmed", "filter-match");
         nodeEl.classList.toggle("filter-retained-owner", retainedOwnerIds.has(entity.id) && fails);
         nodeEl.classList.toggle("filter-retained-endpoint", retainedEndpointIds.has(entity.id) && fails);
         nodeEl.dataset.filterDisposition = fails
           ? (selectedNodeIds.has(entity.id) ? "retained-selection" : retainedOwnerIds.has(entity.id) ? "retained-owner" : retainedEndpointIds.has(entity.id) ? "retained-endpoint" : "hidden")
           : queryActive && nodeMatchesSearch(entity) ? "matched" : "eligible";
+        });
       });
       edgeLayer.querySelectorAll(".edge-path").forEach(path => {
+        applyPresentationOperation(operations, () => {
         const edge = path.__edgeMeta || edgeById.get(String(path.dataset.edgeId)) || {
           source: path.dataset.sourceNodeId,
           target: path.dataset.targetNodeId,
@@ -227,13 +229,16 @@
         path.classList.remove("filter-dimmed");
         path.classList.toggle("filter-match", queryActive && edgeMatchesSearch(edge));
         if (fails) path.style.display = "none";
+        syncEdgePointerProxy(path);
+        syncEdgePresentationVisibilityForPath(path);
         const arrow = arrowForPath(path);
         if (arrow) {
           arrow.classList.remove("filter-dimmed");
           if (fails) arrow.style.display = "none";
         }
+        });
       });
-      updateFilterSummary();
+      applyPresentationOperation(operations, updateFilterSummary);
     }
 
     function applyFilterProjection() {
@@ -250,11 +255,11 @@
       <div class="filter-search-row">
         <input id="graph-filter-search" class="filter-search" type="search" aria-label="Search nodes and relations"
           placeholder="Find nodes or relations" />
+        <button id="filter-clear" class="filter-action" type="button" title="Deselect (Esc)">Clear</button>
       </div>
       <div class="filter-search-row detail-level-row" style="margin-top:6px">
         <label for="graph-detail-level">Visible detail</label>
         <select id="graph-detail-level" class="filter-mode" aria-label="Visible graph detail level"></select>
-        <button id="filter-clear" class="filter-action" type="button" style="margin-left:auto">Clear</button>
       </div>
       <div id="filter-legend-slot"></div>
       <div id="filter-chips" class="filter-chips"></div>
@@ -409,7 +414,7 @@
 
     function updateFilterSummary() {
       if (!filterSummaryEl) return;
-      const renderedNodes = docData.entities.map(entity => nodeElement(entity.id)).filter(Boolean);
+      const renderedNodes = Array.from(nodeElementIndex.values()).filter(node => node.isConnected);
       const visibleNodeIds = new Set(renderedNodes
         .filter(node => node.style.display !== "none")
         .map(node => node.dataset.nodeId));
@@ -458,14 +463,7 @@
         ? detailLevelSelect.value
         : defaultDetailLevel;
     }));
-    filterClearButton.addEventListener("click", () => mutateFilter(() => {
-      filterState.query = "";
-      filterState.excludedTypes.clear();
-      filterState.excludedKinds.clear();
-      filterState.excludedCategories.clear();
-      filterState.excludedEdgeTypes.clear();
-      replaceNodeSelectionState([], null, "explicit");
-    }));
+    filterClearButton.addEventListener("click", () => deselect());
     function resetFilteringState() {
       filterState.query = "";
       filterState.detailLevel = detailLevelRank.has(String(initialVisibility.detail_level))
@@ -482,6 +480,7 @@
       refreshFilterControls();
     }
     document.addEventListener("keydown", event => {
+      if (quickGuideOwnsFocus()) return;
       const typing = ["input", "textarea", "select"].includes(document.activeElement?.tagName?.toLowerCase());
       if ((event.key === "/" || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k")) && !typing) {
         event.preventDefault();

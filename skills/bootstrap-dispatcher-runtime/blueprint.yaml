@@ -1,0 +1,37 @@
+authority:
+  owns_filesystem: []
+  suggested_permissions:
+    bash: []
+    network: []
+children: {}
+content:
+- SKILL\.md
+description: Provides the dedicated Python 3.11+ runtime the dispatcher server executes in, and repairs only the declared packages inside it, without depending on MCP.
+discovery:
+  mechanism: skill
+  catalog:
+    domain: assistant-operations
+    topics: [assistant-installation, system-maintenance]
+    visibility: listed
+  activated_by: [user-request, skill-workflow]
+  persistent_modifier: false
+exports:
+  bootstrap-dispatcher-runtime.interface.repair-selected-packages:
+    access: {allow_all_modules: true, allowed_callers: []}
+    source_interface: bootstrap-dispatcher-runtime.source.gateway.interface.repair-selected-packages
+  bootstrap-dispatcher-runtime.interface.default:
+    access: {allow_all_modules: true, allowed_callers: []}
+    source_interface: bootstrap-dispatcher-runtime.source.gateway.interface.default
+gateway: {language: Markdown, path: SKILL.md}
+id: bootstrap-dispatcher-runtime
+namespace_exports: {}
+node_type: module
+schema_version: 6
+sources:
+  bootstrap-dispatcher-runtime.source.gateway:
+    blueprint: {base: module-root, path: blueprints/gateway.yaml}
+version: 1
+maturity: stable
+installation_tier: core
+personal_preference:
+  applies: false

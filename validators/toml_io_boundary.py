@@ -8,7 +8,7 @@ from pathlib import Path
 from officina.common.python_source_cache import PythonSourceCache
 
 
-_CHECK_ROOTS = ["skills", "src", "script_dispatcher", "llmhooks"]
+_CHECK_ROOTS = ["skills", "src", "llmhooks"]
 _SKIP_PARTS = {"tests", "validators", "__pycache__", ".git", ".claude-plugin", ".codex-plugin", "logs"}
 _ALLOWED_REL = Path("src/officina/common/toml_io.py")
 _ALLOWED_COMMON_TOML_DIR = Path("src/officina/common")

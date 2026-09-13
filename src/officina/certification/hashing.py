@@ -41,55 +41,33 @@ def _repository_path(path: Path, repo_root: Path) -> Path:
         raise CertificationHashError(str(exc)) from exc
 
 
-V4_CERTIFICATION_BASIS_MANIFEST = Path(
-    "skills/skill-drift/references/certification-basis-roots.json"
-)
 CERTIFICATION_BASIS_MANIFEST = Path(
     "references/certification-policy/certification-basis-roots.json"
 )
 CANONICAL_NODE_HASH_POLICY = Path(
     "references/certification-policy/node-hash-policy.yaml"
 )
-CERTIFIER_NODE_ID = "skill-certifier"
-CERTIFIER_INTERFACE_ID = "skill-certifier.interface.certify"
-V6_CERTIFIER_INTERFACE_ID = "skill-certifier._rtx.interface.certify"
+CERTIFIER_NODE_ID = "node-certify"
+CERTIFIER_INTERFACE_ID = "node-certify._rtx.interface.certify"
 CERTIFIER_INTERFACE_VERSION = 2
 CERTIFIER_AUDIT_INTERFACE_VERSION = 3
 CERTIFIER_AUDIT_INTERFACES = {
-    "interface": "skill-certifier.source.audit-interface.interface.audit",
-    "remainder": "skill-certifier.source.audit-behavioral-source.interface.audit",
-    "module": "skill-certifier.source.audit-module.interface.audit",
+    "interface": "node-certify.source.audit-interface.interface.audit",
+    "remainder": "node-certify.source.audit-behavioral-source.interface.audit",
+    "module": "node-certify.source.audit-module.interface.audit",
 }
 EVIDENCE_ONLY_RELATIONS = frozenset({"certified-under"})
 CERTIFIER_CHECK_REGISTRY: Mapping[str, tuple[str, int]] = {
-    "deterministic": ("v4-deterministic", 1),
-    "route-smoke": ("route-smoke-dependencies", 1),
-    "semantic-review": ("blueprint-accuracy", 1),
-}
-V5_CERTIFIER_CHECK_REGISTRY: Mapping[str, tuple[str, int]] = {
-    "deterministic": ("v5-deterministic", 1),
-    "route-smoke": ("route-smoke-dependencies", 2),
-    "semantic-review": ("blueprint-accuracy", 2),
-}
-V6_CERTIFIER_CHECK_REGISTRY: Mapping[str, tuple[str, int]] = {
     "deterministic": ("v6-deterministic", 1),
     "route-smoke": ("route-smoke-dependencies", 3),
     "semantic-review": ("blueprint-accuracy", 3),
 }
 
 
-def certifier_check_registry(
-    expected_schema_version: int = 6,
-) -> Mapping[str, tuple[str, int]]:
-    """Select the immutable check registry for one repository schema."""
+def certifier_check_registry() -> Mapping[str, tuple[str, int]]:
+    """Return the immutable check registry for the canonical v6 graph."""
 
-    if expected_schema_version == 4:
-        return CERTIFIER_CHECK_REGISTRY
-    if expected_schema_version == 5:
-        return V5_CERTIFIER_CHECK_REGISTRY
-    if expected_schema_version == 6:
-        return V6_CERTIFIER_CHECK_REGISTRY
-    raise ValueError("expected_schema_version must be 4, 5, or 6")
+    return CERTIFIER_CHECK_REGISTRY
 
 
 @dataclass(frozen=True)
@@ -359,14 +337,14 @@ def _certification_input_scope_builder(
         return frozenset(selected)
 
     authority_roots = []
-    for interface_id in (V6_CERTIFIER_INTERFACE_ID, *CERTIFIER_AUDIT_INTERFACES.values()):
+    for interface_id in (CERTIFIER_INTERFACE_ID, *CERTIFIER_AUDIT_INTERFACES.values()):
         export = graph.exports.get(interface_id)
         if export is not None and export.source_node_id is not None:
             authority_roots.append(export.source_node_id)
-    voyage = "skill-certifier._rtx.source.certification-voyage"
+    voyage = "node-certify._rtx.source.certification-voyage"
     if voyage in graph.nodes:
         authority_roots.append(voyage)
-    authority = closure(authority_roots) if graph.schema_version == 6 else frozenset(graph.nodes)
+    authority = closure(authority_roots)
 
     def build(requested: Sequence[str]) -> CertificationInputScope:
         """Bind one requested closure to its evidence and resolving declarations.
@@ -495,9 +473,8 @@ def certification_input_scope(
 
     Rationale
     ---------
-    Version 6 permits unrelated worktree changes. Earlier schema versions retain
-    their repository-wide evidence scope. Metadata-only module declarations do
-    not expand into unrelated owned sources.
+    Unrelated worktree changes remain outside the selected evidence scope.
+    Metadata-only module declarations do not expand into unrelated owned sources.
 
     Pseudocode
     ----------
@@ -609,7 +586,7 @@ def map_route_smoke_dependencies(
         state = states.get(node_id)
         if not isinstance(state, NodeHashState):
             raise CertificationHashError(
-                f"{node_id}: route-smoke mapping requires canonical v4 node state"
+                f"{node_id}: route-smoke mapping requires canonical v6 node state"
             )
         _require_sha256_hash(node_id, "node_hash", state.node_hash)
         if not isinstance(state.input_manifest, tuple):
@@ -783,7 +760,7 @@ def map_route_smoke_dependencies(
                 mapping = RouteSmokeDependencyMapping(
                     relative, "certification-basis", None
                 )
-            elif graph.schema_version in {5, 6}:
+            else:
                 reachable_modules = {
                     graph.source_modules.get(node_id)
                     for node_id in reachable
@@ -820,11 +797,6 @@ def map_route_smoke_dependencies(
                     raise CertificationHashError(
                         f"unmapped route-smoke dependency {relative}: {detail}"
                     )
-            else:
-                detail = "no authority" if not candidates else "ambiguous authority"
-                raise CertificationHashError(
-                    f"unmapped route-smoke dependency {relative}: {detail}"
-                )
         mappings[relative] = mapping
     return tuple(mappings[path] for path in sorted(mappings))
 
@@ -866,18 +838,10 @@ def _hash_bytes(value: bytes) -> str:
 
 def certification_basis_roots_path(
     repo_root: Path,
-    *,
-    expected_schema_version: int = 6,
 ) -> Path:
     """Return the canonical repository-owned certification-basis manifest."""
 
-    if expected_schema_version == 4:
-        relative = V4_CERTIFICATION_BASIS_MANIFEST
-    elif expected_schema_version in {5, 6}:
-        relative = CERTIFICATION_BASIS_MANIFEST
-    else:
-        raise ValueError("expected_schema_version must be 4, 5, or 6")
-    return Path(repo_root).resolve() / relative
+    return Path(repo_root).resolve() / CERTIFICATION_BASIS_MANIFEST
 
 
 def _tracked_basis_paths_at_head(root: Path) -> tuple[PurePosixPath, ...]:
@@ -940,16 +904,12 @@ def _basis_pattern_matches(path: PurePosixPath, pattern: PurePosixPath) -> bool:
 def resolve_certification_basis_paths(
     repo_root: Path,
     *,
-    expected_schema_version: int = 6,
     allow_non_atomic: bool = False,
 ) -> tuple[Path, ...]:
     """Resolve the canonical manifest without accepting caller-selected inputs."""
 
     root = Path(repo_root).resolve()
-    manifest = certification_basis_roots_path(
-        root,
-        expected_schema_version=expected_schema_version,
-    )
+    manifest = certification_basis_roots_path(root)
     try:
         raw = json.loads(
             read_regular_file_bytes(
@@ -1023,7 +983,6 @@ def resolve_certification_basis_paths(
 def compute_certification_basis_hash(
     repo_root: Path,
     *,
-    expected_schema_version: int = 6,
     allow_non_atomic: bool = False,
 ) -> str:
     """Hash the explicitly selected certification-basis manifest and files."""
@@ -1031,7 +990,6 @@ def compute_certification_basis_hash(
     root = Path(repo_root).resolve()
     paths = resolve_certification_basis_paths(
         root,
-        expected_schema_version=expected_schema_version,
         allow_non_atomic=allow_non_atomic,
     )
     return _hash_certification_basis_paths(root, paths, allow_non_atomic=allow_non_atomic)
@@ -1067,10 +1025,8 @@ def _hash_certification_basis_paths(
     return _hash_value(entries)
 
 
-def expected_certifier_checks(
-    expected_schema_version: int = 6,
-) -> tuple[dict[str, object], ...]:
-    """Return the exact passed records owned by the versioned certifier registry."""
+def expected_certifier_checks() -> tuple[dict[str, object], ...]:
+    """Return the exact passed records owned by the v6 certifier registry."""
 
     return normalize_node_checks(
         {
@@ -1079,9 +1035,7 @@ def expected_certifier_checks(
             "passed": True,
             "findings": [],
         }
-        for check_id, version in certifier_check_registry(
-            expected_schema_version
-        ).values()
+        for check_id, version in certifier_check_registry().values()
     )
 
 
@@ -1095,19 +1049,12 @@ def derive_certifier_identity(
     node = graph.nodes.get(CERTIFIER_NODE_ID)
     if node is None or node.node_type != "module":
         raise CertificationHashError("canonical certifier module is absent from the graph")
-    if graph.schema_version == 6:
-        interface_id = V6_CERTIFIER_INTERFACE_ID
-        interface_owner_id = f"{CERTIFIER_NODE_ID}._rtx"
-        interface_version = CERTIFIER_INTERFACE_VERSION
-    else:
-        interface_id = CERTIFIER_INTERFACE_ID
-        interface_owner_id = CERTIFIER_NODE_ID
-        interface_version = 1
-    export = graph.exports.get(interface_id)
+    interface_owner_id = f"{CERTIFIER_NODE_ID}._rtx"
+    export = graph.exports.get(CERTIFIER_INTERFACE_ID)
     if (
         export is None
         or export.module_node_id != interface_owner_id
-        or export.version != interface_version
+        or export.version != CERTIFIER_INTERFACE_VERSION
     ):
         raise CertificationHashError(
             "canonical certifier interface is absent or has the wrong version"
@@ -1128,8 +1075,8 @@ def derive_certifier_identity(
     ):
         raise CertificationHashError("canonical certifier source commit is unavailable")
     return {
-        "interface": interface_id,
-        "version": interface_version,
+        "interface": CERTIFIER_INTERFACE_ID,
+        "version": CERTIFIER_INTERFACE_VERSION,
         "node_hash": node_hash,
         "source_commit": source_commit,
     }
@@ -1571,7 +1518,7 @@ def _read_node_input(
         raise CertificationHashError(str(exc)) from exc
 
 
-def _v4_node_input_manifests(
+def _node_input_manifests(
     graph: RepositoryBlueprintGraph,
     repo_root: Path,
     policy: Mapping[str, Any],
@@ -1988,7 +1935,7 @@ def _compute_node_hash_states(
     allow_non_atomic: bool = False,
 ) -> dict[str, NodeHashState]:
     policy = load_node_hash_policy(policy_path)
-    manifests, contract_dependencies = _v4_node_input_manifests(
+    manifests, contract_dependencies = _node_input_manifests(
         graph,
         repo_root,
         policy,
@@ -2082,7 +2029,7 @@ def _compute_node_hash_states(
             )
 
         if CERTIFIER_NODE_ID in graph.nodes:
-            versions = {V6_CERTIFIER_INTERFACE_ID: CERTIFIER_INTERFACE_VERSION}
+            versions = {CERTIFIER_INTERFACE_ID: CERTIFIER_INTERFACE_VERSION}
             versions.update(
                 (interface_id, CERTIFIER_AUDIT_INTERFACE_VERSION)
                 for interface_id in CERTIFIER_AUDIT_INTERFACES.values()
@@ -2107,7 +2054,7 @@ def _compute_node_hash_states(
             for node_id, node in graph.nodes.items():
                 facet_type = "module" if node.node_type == "module" else "remainder"
                 selected = {
-                    certified_under[V6_CERTIFIER_INTERFACE_ID],
+                    certified_under[CERTIFIER_INTERFACE_ID],
                     certified_under[CERTIFIER_AUDIT_INTERFACES[facet_type]],
                 }
                 if facet_type == "remainder" and node.declaration.get("interfaces"):
@@ -2208,7 +2155,7 @@ def _compute_node_hash_states(
             populated: list[CertificationFacetHashState] = []
             for facet in local_facets:
                 certifier_interfaces = {
-                    V6_CERTIFIER_INTERFACE_ID,
+                    CERTIFIER_INTERFACE_ID,
                     CERTIFIER_AUDIT_INTERFACES[facet.facet_type],
                 }
                 if facet.facet_type == "interface":
@@ -2323,13 +2270,9 @@ def compute_node_hash_states(
         node.declaration.get("schema_version")
         for node in graph.nodes.values()
     }
-    if schema_versions != {graph.schema_version} or graph.schema_version not in {
-        4,
-        5,
-        6,
-    }:
+    if schema_versions != {6} or graph.schema_version != 6:
         raise CertificationHashError(
-            "node hashing requires one closed all-v4, all-v5, or all-v6 repository graph"
+            "node hashing requires one closed all-v6 repository graph"
         )
     return _compute_node_hash_states(
         graph,

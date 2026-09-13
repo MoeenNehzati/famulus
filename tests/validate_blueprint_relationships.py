@@ -1,24 +1,15 @@
-"""Tests for canonical repository relationship validation."""
+"""Tests for relationship enforcement by the shared blueprint preflight."""
 from __future__ import annotations
 
-import importlib.util
 from pathlib import Path
 import shutil
 
+import pytest
 import yaml
 
+from validators.skill.blueprints import preflight
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-VALIDATOR = (
-    REPO_ROOT
-    / "validators"
-    / "skill"
-    / "blueprint_relationships.py"
-)
-SPEC = importlib.util.spec_from_file_location("blueprint_relationships", VALIDATOR)
-assert SPEC is not None and SPEC.loader is not None
-MOD = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(MOD)
 
 
 def _copy_schema_root(repo_root: Path) -> None:
@@ -70,103 +61,140 @@ def _set_gateway_uses(module: Path, uses: list[tuple[str, int]]) -> None:
     _write_yaml(path, declaration)
 
 
-def _two_modules(repo_root: Path) -> tuple[Path, Path]:
-    _copy_schema_root(repo_root)
-    provider = _copy_module(repo_root, "provider-skill")
-    consumer = _copy_module(repo_root, "consumer-skill")
+@pytest.fixture(scope="function")
+def two_module_repository(tmp_path: Path) -> tuple[Path, Path]:
+    _copy_schema_root(tmp_path)
+    provider = _copy_module(tmp_path, "provider-skill")
+    consumer = _copy_module(tmp_path, "consumer-skill")
     return provider, consumer
 
 
-def test_repo_without_modules_passes(tmp_path: Path) -> None:
+def test_preflight_requires_at_least_one_module(tmp_path: Path) -> None:
+    _copy_schema_root(tmp_path)
     (tmp_path / "skills").mkdir()
 
-    assert MOD.validate(tmp_path) == []
+    errors, graph = preflight(tmp_path)
+
+    assert errors == ["version 6 repository graph requires at least one module"]
+    assert graph is None
 
 
-def test_valid_export_use_passes(tmp_path: Path) -> None:
-    provider, consumer = _two_modules(tmp_path)
-    _set_export_access(
-        provider,
-        allow_all_modules=False,
-        allowed_callers=[consumer.name],
-    )
-    _set_gateway_uses(
-        consumer,
-        [("provider-skill.interface.default", 1)],
-    )
+def test_export_relationship_scenarios(
+    two_module_repository: tuple[Path, Path],
+) -> None:
+    """Keep each relationship scenario independent on one exact v6 repository."""
 
-    assert MOD.validate(tmp_path) == []
-
-
-def test_unknown_export_is_rejected(tmp_path: Path) -> None:
-    _provider, consumer = _two_modules(tmp_path)
-    _set_gateway_uses(
-        consumer,
-        [("missing-skill.interface.default", 1)],
+    provider, consumer = two_module_repository
+    repository = provider.parents[1]
+    blueprint_paths = tuple(
+        path
+        for module in (provider, consumer)
+        for path in module.rglob("*.yaml")
     )
 
-    errors = MOD.validate(tmp_path)
+    def allow_consumer() -> None:
+        _set_export_access(
+            provider,
+            allow_all_modules=False,
+            allowed_callers=[consumer.name],
+        )
 
-    assert any("unresolved interface" in error for error in errors)
+    def valid_relation() -> None:
+        allow_consumer()
+        _set_gateway_uses(
+            consumer,
+            [("provider-skill.interface.default", 1)],
+        )
 
+    def stale_version() -> None:
+        _set_gateway_uses(
+            consumer,
+            [("provider-skill.interface.default", 2)],
+        )
 
-def test_stale_export_version_is_rejected(tmp_path: Path) -> None:
-    _provider, consumer = _two_modules(tmp_path)
-    _set_gateway_uses(
-        consumer,
-        [("provider-skill.interface.default", 2)],
+    def unknown_caller() -> None:
+        _set_export_access(
+            provider,
+            allow_all_modules=False,
+            allowed_callers=["other-skill"],
+        )
+        _set_gateway_uses(
+            consumer,
+            [("provider-skill.interface.default", 1)],
+        )
+
+    def private_interface() -> None:
+        _set_gateway_uses(
+            consumer,
+            [("provider-skill.source.gateway.interface.default", 1)],
+        )
+
+    def export_cycle() -> None:
+        _set_gateway_uses(
+            provider,
+            [("consumer-skill.interface.default", 1)],
+        )
+        _set_gateway_uses(
+            consumer,
+            [("provider-skill.interface.default", 1)],
+        )
+
+    scenarios = (
+        ("valid relation", valid_relation, []),
+        (
+            "stale version",
+            stale_version,
+            [
+                "consumer-skill.source.gateway: version-mismatch:"
+                "provider-skill.interface.default:requested=2:available=1"
+            ],
+        ),
+        (
+            "unknown caller",
+            unknown_caller,
+            ["unknown-caller-reference:provider-skill:other-skill"],
+        ),
+        (
+            "private interface",
+            private_interface,
+            [
+                "consumer-skill.source.gateway: private interface "
+                "'provider-skill.source.gateway.interface.default' "
+                "cannot be used cross-module"
+            ],
+        ),
+        (
+            "export cycle",
+            export_cycle,
+            [
+                "certification dependency cycle: consumer-skill.source.gateway "
+                "-> provider-skill.source.gateway -> consumer-skill.source.gateway"
+            ],
+        ),
     )
-
-    errors = MOD.validate(tmp_path)
-
-    assert any(
-        "provider-skill.interface.default" in error
-        and "requested=2" in error
-        and "available=1" in error
-        for error in errors
-    ), errors
-
-
-def test_export_access_control_is_enforced(tmp_path: Path) -> None:
-    provider, consumer = _two_modules(tmp_path)
-    _set_export_access(
-        provider,
-        allow_all_modules=False,
-        allowed_callers=["other-skill"],
-    )
-    _set_gateway_uses(
-        consumer,
-        [("provider-skill.interface.default", 1)],
-    )
-
-    errors = MOD.validate(tmp_path)
-
-    assert errors == ["unknown-caller-reference:provider-skill:other-skill"]
-
-
-def test_private_source_interface_cannot_cross_module(tmp_path: Path) -> None:
-    _provider, consumer = _two_modules(tmp_path)
-    _set_gateway_uses(
-        consumer,
-        [("provider-skill.source.gateway.interface.default", 1)],
-    )
-
-    errors = MOD.validate(tmp_path)
-
-    assert any("private interface" in error and "cannot be used cross-module" in error for error in errors)
-
-
-def test_cross_module_cycle_is_rejected(tmp_path: Path) -> None:
-    provider, consumer = _two_modules(tmp_path)
-    _set_gateway_uses(
-        provider,
-        [("consumer-skill.interface.default", 1)],
-    )
-    _set_gateway_uses(
-        consumer,
-        [("provider-skill.interface.default", 1)],
-    )
-
-    errors = MOD.validate(tmp_path)
-
-    assert any("cycle" in error for error in errors)
+    for label, mutate, expected in scenarios:
+        snapshots = {path: path.read_bytes() for path in blueprint_paths}
+        try:
+            try:
+                mutate()
+                errors, graph = preflight(repository)
+                assert errors == expected
+                assert (graph is None) == bool(expected)
+            except BaseException as exc:
+                exc.add_note(f"scenario: {label}")
+                raise
+        finally:
+            try:
+                current_paths = {
+                    path
+                    for module in (provider, consumer)
+                    for path in module.rglob("*.yaml")
+                }
+                for path in current_paths - snapshots.keys():
+                    path.unlink()
+                for path, contents in snapshots.items():
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(contents)
+            except BaseException as exc:
+                exc.add_note(f"scenario: {label}; restoration")
+                raise

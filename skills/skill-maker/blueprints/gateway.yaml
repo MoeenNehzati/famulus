@@ -3,7 +3,7 @@ content:
 dependencies: []
 description: Guides creation and editing of personal skills under the canonical skill-module
   standards, including research choice, branch safety, interfaces, validators, and
-  generated contract synchronization.
+  generated interface synchronization.
 gateway:
   language: Markdown
   path: SKILL.md
@@ -82,7 +82,7 @@ interfaces:
           system: agent-runtime
         - access: write
           content: approved skill source, blueprint, tests, runtime, and generated
-            contract artifacts
+            interface artifacts
           formats:
           - markdown
           - yaml
@@ -108,7 +108,7 @@ interfaces:
           medium: subprocess
           path: $repo/{skills/skill-maker/_rtx/_blueprint_syncer.py,validators/runner.py,tests,skills/<skill-name>/tests}
           path_match: glob
-          reason: Verify branch safety, contract synchronization, and behavior before
+          reason: Verify branch safety, interface synchronization, and behavior before
             reporting completion.
           sensitivity: derived-private
           system: repository validators and test runners

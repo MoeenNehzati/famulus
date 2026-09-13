@@ -1,5 +1,524 @@
+import pytest
+
 from officina.visualization.elk_html_renderer import build_html_with_elk
 from test_support.browser import require_chrome, run_html
+
+
+def test_paint_operation_count_cap_batches_cheap_work_and_bounds_cancellation():
+    payload = {
+        "schema_version": 2, "graph_id": "paint-operation-cap",
+        "categories": [{"id": "node", "label": "Node"}], "edge_categories": [],
+        "entities": [
+            {"id": "n", "type": "node", "short_title": "N", "position": 0, "connects_to": []}
+        ],
+    }
+    script = """<script>
+    window.addEventListener("load", () => setTimeout(async () => {
+      try {
+        await window.officinaRendererDiagnostics.whenIdle();
+        if (reconciliationOperationCap(160, 40) !== 128
+            || reconciliationOperationCap(40, 160) !== 48
+            || reconciliationOperationCap(160, 160) !== 48) {
+          throw new Error("scene-size cap selection is incorrect");
+        }
+        const nativeFrame = window.requestAnimationFrame;
+        let frames = 0;
+        window.requestAnimationFrame = callback => setTimeout(() => {
+          frames += 1;
+          callback(performance.now());
+        }, 0);
+        let completedCount = 0;
+        const completedVersion = ++paintVersion;
+        const completed = await runPaintOperations(
+          Array.from({length: 257}, () => () => { completedCount += 1; }),
+          completedVersion, 48,
+        );
+        if (!completed || completedCount !== 257 || frames !== 5) {
+          throw new Error(`cheap batch used ${frames} frames for ${completedCount} operations`);
+        }
+        frames = 0;
+        let reducedCount = 0;
+        const reducedVersion = ++paintVersion;
+        const reduced = await runPaintOperations(
+          Array.from({length: 257}, () => () => { reducedCount += 1; }),
+          reducedVersion, 128,
+        );
+        if (!reduced || reducedCount !== 257 || frames !== 2) {
+          throw new Error(`strong reduction used ${frames} frames for ${reducedCount} operations`);
+        }
+        let cancelledCount = 0;
+        const cancelledVersion = ++paintVersion;
+        const cancelled = await runPaintOperations(
+          Array.from({length: 300}, () => () => {
+            cancelledCount += 1;
+            if (cancelledCount === 1) paintVersion += 1;
+          }),
+          cancelledVersion, 128,
+        );
+        window.requestAnimationFrame = nativeFrame;
+        if (cancelled || cancelledCount !== 1) {
+          throw new Error(`cancellation continued stale batch work: ${cancelledCount}`);
+        }
+        document.body.dataset.testStatus = "PASS";
+      } catch (error) { document.body.dataset.testStatus = "FAIL:" + error.message; }
+    }, 100));
+    </script>"""
+    html = build_html_with_elk(payload).replace("</body>", script + "</body>")
+    result = run_html(require_chrome(), html, virtual_time_budget=5000)
+    marker = 'data-test-status="'
+    start = result.stdout.find(marker)
+    status = result.stdout[start + len(marker):].split('"', 1)[0] if start >= 0 else "MISSING"
+    assert status == "PASS", status
+
+
+def test_scene_finalization_uses_mounted_index_and_bounded_operations():
+    payload = {
+        "schema_version": 2, "graph_id": "bounded-mounted-presentation",
+        "categories": [{"id": "node", "label": "Node"}], "edge_categories": [],
+        "entities": [
+            {"id": f"n{index:02}", "type": "node", "short_title": f"N {index}",
+             "position": index, "connects_to": []}
+            for index in range(96)
+        ],
+    }
+    script = """<script>
+    window.addEventListener("load", () => setTimeout(async () => {
+      try {
+        const idle = window.officinaRendererDiagnostics.whenIdle;
+        await idle();
+        const observedCaps = [];
+        const originalRunPaintOperations = runPaintOperations;
+        runPaintOperations = (operations, version, cap) => {
+          observedCaps.push(cap);
+          return originalRunPaintOperations(operations, version, cap);
+        };
+        let globalNodeMisses = 0;
+        const originalSvgQuery = svgEl.querySelector.bind(svgEl);
+        svgEl.querySelector = selector => {
+          if (String(selector).startsWith('[data-node-id=')) globalNodeMisses += 1;
+          return originalSvgQuery(selector);
+        };
+        let boundedFinalizations = 0;
+        let unboundedFinalizations = 0;
+        let boundedHiddenListOperations = 0;
+        let unboundedHiddenListCalls = 0;
+        const originalRenderHiddenNodes = renderHiddenNodes;
+        renderHiddenNodes = operations => {
+          if (Array.isArray(operations)) {
+            const before = operations.length;
+            const result = originalRenderHiddenNodes(operations);
+            boundedHiddenListOperations += operations.length - before;
+            return result;
+          }
+          unboundedHiddenListCalls += 1;
+          return originalRenderHiddenNodes(operations);
+        };
+        const originalApplyVisibility = applyVisibilityPresentation;
+        applyVisibilityPresentation = operations => {
+          if (Array.isArray(operations)) boundedFinalizations += 1;
+          else unboundedFinalizations += 1;
+          return originalApplyVisibility(operations);
+        };
+        const hiddenIds = docData.entities.slice(0, 30).map(entity => entity.id);
+        hideNodes(hiddenIds);
+        await idle();
+        if (globalNodeMisses !== 0) throw new Error(`${globalNodeMisses} unmounted nodes triggered SVG lookup misses`);
+        if (boundedFinalizations !== 1 || unboundedFinalizations !== 0) {
+          throw new Error(`scene finalized outside paint operations: bounded=${boundedFinalizations} unbounded=${unboundedFinalizations}`);
+        }
+        if (unboundedHiddenListCalls !== 0 || boundedHiddenListOperations < 32) {
+          throw new Error(`hidden list escaped paint operations: bounded=${boundedHiddenListOperations} unbounded=${unboundedHiddenListCalls}`);
+        }
+        const unchangedHiddenListOperations = [];
+        originalRenderHiddenNodes(unchangedHiddenListOperations);
+        if (unchangedHiddenListOperations.length !== 0) throw new Error("unchanged hidden list was rebuilt");
+        const summary = document.getElementById("filter-summary").textContent;
+        if (!summary.includes("Showing 66 of 96 nodes")) throw new Error(`mounted summary is stale: ${summary}`);
+        showNodes(hiddenIds);
+        await idle();
+        if (nodeElementIndex.size !== 96 || Array.from(nodeElementIndex.values()).some(node => !node.isConnected)) {
+          throw new Error("restored scene did not refresh the authoritative mounted index");
+        }
+        if (boundedFinalizations !== 2 || unboundedFinalizations !== 0 || unboundedHiddenListCalls !== 0) {
+          throw new Error("restored scene presentation escaped bounded finalization");
+        }
+        const interruptedIds = docData.entities.slice(0, 80).map(entity => entity.id);
+        let interrupted = false;
+        const originalHiddenAppend = hiddenNodesEl.appendChild.bind(hiddenNodesEl);
+        hiddenNodesEl.appendChild = item => {
+          const appended = originalHiddenAppend(item);
+          if (!interrupted && item.classList.contains("hidden-node-item")) {
+            interrupted = true;
+            showNodes(interruptedIds);
+          }
+          return appended;
+        };
+        hideNodes(interruptedIds);
+        await idle();
+        if (!interrupted) throw new Error("hidden-list paint was not interrupted");
+        if (!observedCaps.includes(128)) throw new Error(`strong hide used caps ${observedCaps.join(",")}`);
+        if (hiddenNodesEl.querySelectorAll(".hidden-node-item").length !== 0
+            || hiddenNodesEl.textContent.trim() !== "None") throw new Error("cancelled hidden list survived newest restore");
+        document.body.dataset.testStatus = "PASS";
+      } catch (error) { document.body.dataset.testStatus = "FAIL:" + error.message; }
+    }, 150));
+    </script>"""
+    html = build_html_with_elk(payload).replace("</body>", script + "</body>")
+    result = run_html(require_chrome(), html, virtual_time_budget=8000)
+    marker = 'data-test-status="'
+    start = result.stdout.find(marker)
+    status = result.stdout[start + len(marker):].split('"', 1)[0] if start >= 0 else "MISSING"
+    assert status == "PASS", status
+
+
+@pytest.mark.parametrize("superseding_action", ["routing", "visibility", "pending-layout"])
+def test_superseded_scene_work_preserves_nodes_and_math(superseding_action):
+    payload = {
+        "schema_version": 2,
+        "graph_id": "superseded-scene-work",
+        "categories": [{"id": "node", "label": "Node"}],
+        "edge_categories": [],
+        "entities": [
+            {"id": f"n{index:03}", "type": "node", "short_title": "$x$",
+             "position": index, "connects_to": []}
+            for index in range(160)
+        ],
+    }
+    script = """<script>
+    window.MathJax = {
+      typesetClear: () => {},
+      typesetPromise: async elements => {
+        elements.forEach(element => { element.dataset.mathComplete = "true"; });
+      },
+    };
+    window.addEventListener("load", () => setTimeout(async () => {
+      try {
+        const idle = window.officinaRendererDiagnostics.whenIdle;
+        await idle();
+        if ("__ACTION__" === "pending-layout") {
+          const originalLayout = computeLayout;
+          let release;
+          computeLayout = (...args) => {
+            computeLayout = originalLayout;
+            return new Promise(resolve => {
+              release = () => originalLayout(...args).then(resolve);
+            });
+          };
+          updateVisibilityFull();
+          hideNodes(["n000"]);
+          await latestPaintPromise;
+          release();
+          await idle();
+          if (!isHiddenNode("n000") || nodeElement("n000")) {
+            throw new Error("delayed layout remounted the newly hidden node");
+          }
+          if (document.querySelectorAll(".graph-node").length !== 159) {
+            throw new Error("delayed layout lost current visible nodes");
+          }
+        } else {
+          const ids = docData.entities.map(entity => entity.id);
+          hideNodes(ids);
+          await idle();
+          showNodes(ids);
+          const partialCount = document.querySelectorAll(".graph-node").length;
+          if (partialCount < 1 || partialCount >= 160) {
+            throw new Error(`paint did not pause with a partial scene: ${partialCount}`);
+          }
+          if ("__ACTION__" === "routing") applyEdgeRoutingChange({geometry: "straight"});
+          else updateVisibilityFast();
+          await idle();
+          const nodes = Array.from(document.querySelectorAll(".graph-node"));
+          if (nodes.length !== 160) throw new Error(`superseding paint mounted ${nodes.length}/160 nodes`);
+          const missingMath = nodes.filter(node => node.dataset.mathComplete !== "true").length;
+          if (missingMath) throw new Error(`superseding paint lost math for ${missingMath} nodes`);
+        }
+        document.body.dataset.testStatus = "PASS";
+      } catch (error) {
+        document.body.dataset.testStatus = "FAIL:" + (error.message || String(error));
+      }
+    }, 150));
+    </script>""".replace("__ACTION__", superseding_action)
+    html = build_html_with_elk(payload).replace("</body>", script + "</body>")
+    result = run_html(require_chrome(), html, virtual_time_budget=15000)
+    marker = 'data-test-status="'
+    start = result.stdout.find(marker)
+    status = result.stdout[start + len(marker):].split('"', 1)[0] if start >= 0 else "MISSING"
+    assert status == "PASS", status
+
+
+@pytest.mark.parametrize("action", ["hide", "routing", "reorder"])
+def test_retained_node_keeps_keyboard_focus_during_reconciliation(action):
+    payload = {
+        "schema_version": 2, "graph_id": "retained-node-focus",
+        "categories": [{"id": "node", "label": "Node"}], "edge_categories": [],
+        "entities": [
+            {"id": node_id, "type": "node", "short_title": node_id,
+             "position": index, "connects_to": []}
+            for index, node_id in enumerate(["a", "b", "c"])
+        ],
+    }
+    script = """<script>
+    window.addEventListener("load", () => setTimeout(async () => {
+      try {
+        const idle = window.officinaRendererDiagnostics.whenIdle;
+        await idle();
+        const focusedNode = nodeElement("__ACTION__" === "reorder" ? "c" : "a");
+        focusedNode.focus();
+        if (document.activeElement !== focusedNode) throw new Error("focus setup failed");
+        const action = "__ACTION__";
+        if (action === "hide") hideNodes(["b"]);
+        else if (action === "routing") applyEdgeRoutingChange({geometry: "straight"});
+        else reconcileVisibleScene(docData.entities, [], ["c", "b", "a"]);
+        await idle();
+        if (document.activeElement !== focusedNode) {
+          throw new Error(`${action} moved keyboard focus to ${document.activeElement.tagName}`);
+        }
+        const order = Array.from(nodeLayer.children).map(node => node.dataset.nodeId).join(",");
+        const expected = action === "hide" ? "a,c" : action === "reorder" ? "c,b,a" : "a,b,c";
+        if (order !== expected) throw new Error(`wrong node order: ${order}`);
+        document.body.dataset.testStatus = "PASS";
+      } catch (error) {
+        document.body.dataset.testStatus = "FAIL:" + (error.message || String(error));
+      }
+    }, 150));
+    </script>""".replace("__ACTION__", action)
+    html = build_html_with_elk(payload).replace("</body>", script + "</body>")
+    result = run_html(require_chrome(), html, virtual_time_budget=6000)
+    marker = 'data-test-status="'
+    start = result.stdout.find(marker)
+    status = result.stdout[start + len(marker):].split('"', 1)[0] if start >= 0 else "MISSING"
+    assert status == "PASS", status
+
+
+def test_nested_containers_keep_ancestry_paint_order_after_fast_updates():
+    payload = {
+        "schema_version": 2, "graph_id": "nested-container-paint-order",
+        "categories": [{"id": "node", "label": "Node"}], "edge_categories": [],
+        "entities": [
+            {"id": "child", "container": "parent", "type": "node", "short_title": "Child", "position": 0},
+            {"id": "parent", "type": "node", "short_title": "Parent", "position": 1},
+            {"id": "leaf", "container": "child", "type": "node", "short_title": "Leaf", "position": 2},
+            {"id": "unrelated", "type": "node", "short_title": "Unrelated", "position": 3},
+        ],
+    }
+    script = """<script>
+    window.addEventListener("load", () => setTimeout(async () => {
+      try {
+        const idle = window.officinaRendererDiagnostics.whenIdle;
+        const check = phase => {
+          const order = Array.from(containerLayer.children).map(node => node.dataset.nodeId).join(",");
+          if (order !== "parent,child") throw new Error(`${phase} painted containers as ${order}`);
+        };
+        await idle();
+        check("full layout");
+        hideNodes(["unrelated"]);
+        await idle();
+        check("unrelated hide");
+        applyEdgeRoutingChange({geometry: "straight"});
+        await idle();
+        check("routing change");
+        document.body.dataset.testStatus = "PASS";
+      } catch (error) {
+        document.body.dataset.testStatus = "FAIL:" + (error.message || String(error));
+      }
+    }, 150));
+    </script>"""
+    html = build_html_with_elk(payload).replace("</body>", script + "</body>")
+    result = run_html(require_chrome(), html, virtual_time_budget=6000)
+    marker = 'data-test-status="'
+    start = result.stdout.find(marker)
+    status = result.stdout[start + len(marker):].split('"', 1)[0] if start >= 0 else "MISSING"
+    assert status == "PASS", status
+
+
+def test_visible_scene_reconciliation_unmounts_restores_and_settles_latest_state():
+    chrome = require_chrome()
+    payload = {
+        "schema_version": 2,
+        "graph_id": "visible-scene-reconciliation",
+        "categories": [{"id": "node", "label": "Node"}],
+        "edge_categories": [{"id": "link", "label": "Link"}],
+        "entities": [
+            {"id": "a", "type": "node", "short_title": "A", "position": 0,
+             "connects_to": [{"to": "b", "type": "link"}]},
+            {"id": "b", "type": "node", "short_title": "B", "position": 1,
+             "connects_to": [{"to": "c", "type": "link"}]},
+            {"id": "c", "type": "node", "short_title": "C", "position": 2,
+             "connects_to": []},
+        ],
+    }
+    html = build_html_with_elk(payload).replace(
+        "</body>",
+        """<script>
+        window.addEventListener("load", () => setTimeout(async () => {
+          try {
+            const diagnostics = window.officinaRendererDiagnostics;
+            if (!diagnostics || typeof diagnostics.whenIdle !== "function") {
+              throw new Error("renderer completion diagnostics are missing");
+            }
+            await diagnostics.whenIdle();
+            const aBefore = nodeElement("a");
+            const bPosition = {...lastNodePositions.get("b")};
+            hideNodes(["b"]);
+            await diagnostics.whenIdle();
+            if (nodeElement("b") || document.querySelector('[data-source-node-id="a"]')) {
+              throw new Error("hidden scene objects remain mounted");
+            }
+            if (nodeElement("a") !== aBefore) throw new Error("unchanged node was replaced");
+
+            showNodes(["b"]);
+            await diagnostics.whenIdle();
+            const restored = nodeElement("b");
+            const restoredPosition = lastNodePositions.get("b");
+            if (!restored || !restoredPosition
+                || restoredPosition.x !== bPosition.x || restoredPosition.y !== bPosition.y) {
+              throw new Error("known-position restore moved the node");
+            }
+            if (document.querySelectorAll(".graph-node").length !== 3
+                || document.querySelectorAll(".edge-path").length !== 2) {
+              throw new Error("restored scene has the wrong mounted ids");
+            }
+
+            hideNodes(["a"]);
+            showNodes(["a"]);
+            await diagnostics.whenIdle();
+            const mountedIds = Array.from(document.querySelectorAll(".graph-node"))
+              .map(node => node.dataset.nodeId).sort().join(",");
+            if (mountedIds !== "a,b,c") throw new Error(`stale paint won: ${mountedIds}`);
+            document.body.dataset.testStatus = "PASS";
+          } catch (error) {
+            document.body.dataset.testStatus = "FAIL:" + (error.message || String(error));
+          }
+        }, 150));
+        </script></body>""",
+    )
+    result = run_html(chrome, html, virtual_time_budget=6000)
+    marker = 'data-test-status="'
+    start = result.stdout.find(marker)
+    status = result.stdout[start + len(marker):].split('"', 1)[0] if start >= 0 else "MISSING"
+    assert status == "PASS", status
+
+
+def test_large_routing_reconciliation_yields_to_input_and_browser_frames():
+    chrome = require_chrome()
+    entities = [
+        {
+            "id": f"node-{index:03d}",
+            "type": "node",
+            "short_title": f"Node {index}",
+            "position": index,
+            "connects_to": (
+                [{"to": f"node-{index + 1:03d}", "type": "link"}]
+                if index < 79 else []
+            ),
+        }
+        for index in range(80)
+    ]
+    payload = {
+        "schema_version": 2,
+        "graph_id": "bounded-routing-reconciliation",
+        "categories": [{"id": "node", "label": "Node"}],
+        "edge_categories": [{"id": "link", "label": "Link"}],
+        "entities": entities,
+    }
+    html = build_html_with_elk(payload).replace(
+        "</body>",
+        """<script>
+        window.addEventListener("load", () => setTimeout(async () => {
+          try {
+            await window.officinaRendererDiagnostics.whenIdle();
+            let inputRan = false;
+            let frameRan = false;
+            window.requestAnimationFrame = callback => setTimeout(() => {
+              frameRan = true;
+              callback(performance.now());
+            }, 0);
+            window.addEventListener("pointermove", () => { inputRan = true; }, {once: true});
+            setTimeout(() => window.dispatchEvent(new PointerEvent("pointermove")), 0);
+            const geometry = document.getElementById("routing-geometry");
+            geometry.value = "straight";
+            geometry.dispatchEvent(new Event("change", {bubbles: true}));
+            await window.officinaRendererDiagnostics.whenIdle();
+            if (!inputRan || !frameRan) throw new Error("routing paint did not yield");
+            if (document.querySelectorAll(".edge-path").length !== 79) {
+              throw new Error("routing paint lost visible edges");
+            }
+            document.body.dataset.testStatus = "PASS";
+          } catch (error) {
+            document.body.dataset.testStatus = "FAIL:" + (error.message || String(error));
+          }
+        }, 150));
+        </script></body>""",
+    )
+    result = run_html(chrome, html, virtual_time_budget=12000, window_size="1440,1000")
+    marker = 'data-test-status="'
+    start = result.stdout.find(marker)
+    status = result.stdout[start + len(marker):].split('"', 1)[0] if start >= 0 else "MISSING"
+    assert status == "PASS", status
+
+
+def test_visible_scene_mathjax_clears_removed_math_and_typesets_only_new_nodes():
+    chrome = require_chrome()
+    payload = {
+        "schema_version": 2,
+        "graph_id": "incremental-scene-math",
+        "categories": [{"id": "node", "label": "Node"}],
+        "edge_categories": [],
+        "entities": [
+            {"id": "math", "type": "node", "short_title": "$x$", "position": 0,
+             "connects_to": []},
+            {"id": "plain", "type": "node", "short_title": "Plain", "position": 1,
+             "connects_to": []},
+        ],
+    }
+    html = build_html_with_elk(payload).replace(
+        "</body>",
+        """<script>
+        const graphTypesets = [];
+        const graphClears = [];
+        window.MathJax = {
+          typesetClear: elements => graphClears.push(...elements),
+          typesetPromise: elements => new Promise(resolve => setTimeout(() => {
+            graphTypesets.push(...elements);
+            elements.forEach(element => { element.dataset.testTypesetComplete = "true"; });
+            resolve();
+          }, 25)),
+        };
+        window.addEventListener("load", () => setTimeout(async () => {
+          try {
+            await window.officinaRendererDiagnostics.whenIdle();
+            graphTypesets.length = 0;
+            graphClears.length = 0;
+            hideNodes(["math"]);
+            await window.officinaRendererDiagnostics.whenIdle();
+            if (graphClears.filter(element => element.dataset.nodeId === "math").length !== 1) {
+              throw new Error("removed math node was not cleared exactly once");
+            }
+            showNodes(["math"]);
+            await window.officinaRendererDiagnostics.whenIdle();
+            const restored = nodeElement("math");
+            const graphNodeTypesets = graphTypesets.filter(element => element.classList?.contains("graph-node"));
+            if (graphNodeTypesets.length !== 1 || graphNodeTypesets[0] !== restored
+                || restored.dataset.testTypesetComplete !== "true") {
+              throw new Error(`restored math node did not settle its own typeset: count=${graphNodeTypesets.length} same=${graphNodeTypesets[0] === restored} complete=${restored?.dataset.testTypesetComplete}`);
+            }
+            dimNodes(["plain"]);
+            await window.officinaRendererDiagnostics.whenIdle();
+            if (graphTypesets.filter(element => element.classList?.contains("graph-node")).length !== 1) {
+              throw new Error("unchanged graph content was retypeset");
+            }
+            document.body.dataset.testStatus = "PASS";
+          } catch (error) {
+            document.body.dataset.testStatus = "FAIL:" + (error.message || String(error));
+          }
+        }, 150));
+        </script></body>""",
+    )
+    result = run_html(chrome, html, virtual_time_budget=6000)
+    marker = 'data-test-status="'
+    start = result.stdout.find(marker)
+    status = result.stdout[start + len(marker):].split('"', 1)[0] if start >= 0 else "MISSING"
+    assert status == "PASS", status
 
 
 def test_filter_interactions_keep_layout_and_explain_projection():
@@ -286,7 +805,7 @@ def test_filter_interactions_keep_layout_and_explain_projection():
             const movedRoot = {...lastNodePositions.get("root"), x: lastNodePositions.get("root").x + 23, y: lastNodePositions.get("root").y + 11};
             manualPositions.set("root", movedRoot);
             hideNodes(["root"]);
-            if (!hiddenNodes.has("root") || nodeElement("root")?.style.display !== "none") throw new Error("restore regression setup did not hide root");
+            if (!hiddenNodes.has("root") || nodeElement("root")) throw new Error("restore regression setup did not unmount root");
             presentationFacet.value = "discovery.domain";
             presentationFacet.dispatchEvent(new Event("change", {bubbles: true}));
             await waitForLayout();
@@ -368,7 +887,10 @@ def test_filter_interactions_keep_layout_and_explain_projection():
             if (!cheatsheetDetails.open || cheatsheetSection.previousElementSibling !== document.getElementById("panel-title")) throw new Error("right-panel collapse changed How to use state or position");
             const bundledEdges = document.querySelectorAll('.edge-path[data-source-node-id="alpha"][data-target-node-id="beta"]');
             if (bundledEdges.length !== 1 || bundledEdges[0].dataset.bundle !== "true") throw new Error("parallel relationships were not bundled into one path");
-            if (getComputedStyle(bundledEdges[0]).strokeDasharray !== "none" || !bundledEdges[0].getAttribute("stroke").startsWith("url(") || getComputedStyle(bundledEdges[0]).strokeWidth !== "4.25px" || !bundledEdges[0].style.filter.includes("edge-presentation-filter")) throw new Error("mixed-relation edges did not use the configured gradient and outline presentation");
+            const bundleUnderlays = edgePresentationUnderlaysForPath(bundledEdges[0]);
+            if (getComputedStyle(bundledEdges[0]).strokeDasharray !== "none" || !bundledEdges[0].getAttribute("stroke").startsWith("url(") || getComputedStyle(bundledEdges[0]).strokeWidth !== "4.25px" || bundleUnderlays.length !== 1) throw new Error("mixed-relation edges did not use the configured gradient and outline presentation");
+            if (bundleUnderlays[0].nextElementSibling !== bundledEdges[0] || getComputedStyle(bundleUnderlays[0]).strokeWidth !== "7.5px" || getComputedStyle(bundleUnderlays[0]).strokeOpacity !== "0.3") throw new Error("mixed-relation outline underlay diverged from metadata or paint order");
+            if (document.querySelector('filter[id^="edge-presentation-filter-"]')) throw new Error("rendered edge presentation retained filter graphs");
                 const mixedGradientId = bundledEdges[0].getAttribute("stroke").match(/#([^)]+)/)?.[1];
             const mixedGradientColors = Array.from(document.getElementById(mixedGradientId)?.querySelectorAll("stop") || []).map(stop => stop.getAttribute("stop-color"));
             if (!mixedGradientColors.includes("#2563eb") || !mixedGradientColors.includes("#b45309")) throw new Error("mixed-relation gradient omitted constituent relation colors");
@@ -399,17 +921,20 @@ def test_filter_interactions_keep_layout_and_explain_projection():
             const lifecycleParentLegend = document.querySelector('.legend-row[data-legend-kind="edge"][data-type="dependency"]');
             const lifecycleChildLegend = document.querySelector('.legend-row[data-legend-kind="edge"][data-type="uses"]');
             lifecycleParentLegend.click();
-            if (bundledEdges[0].style.display !== "none" || arrowForPath(bundledEdges[0])?.style.display !== "none") throw new Error("edge legend did not hide path and arrowhead");
+            if (document.querySelector('.edge-path[data-source-node-id="alpha"][data-target-node-id="beta"]')) throw new Error("edge legend did not unmount hidden path");
             if (renderVersion !== lifecycleRenderVersion) throw new Error("edge legend hide triggered relayout");
             lifecycleParentLegend.click();
-            if (bundledEdges[0].style.display === "none" || arrowForPath(bundledEdges[0])?.style.display === "none") throw new Error("edge legend did not restore path and arrowhead");
-            if (bundledEdges[0].getAttribute("d") !== initialBundlePath || renderVersion !== lifecycleRenderVersion) throw new Error("edge legend restore changed layout");
+            let bundleEdge = document.querySelector('.edge-path[data-source-node-id="alpha"][data-target-node-id="beta"]');
+            if (!bundleEdge || !arrowForPath(bundleEdge)) throw new Error("edge legend did not restore path and arrowhead");
+            if (bundleEdge.getAttribute("d") !== initialBundlePath || renderVersion !== lifecycleRenderVersion) throw new Error("edge legend restore changed layout");
             lifecycleChildLegend.click();
-            if (bundledEdges[0].style.display === "none") throw new Error("hiding one bundle constituent hid surviving relationship types");
-            bundledEdges[0].dispatchEvent(new MouseEvent("click", {bubbles: true}));
-            if (!document.getElementById("details").textContent.includes("1 visible relationship") || document.getElementById("details").textContent.includes("updates records")) throw new Error("bundle inspector ignored constituent visibility");
+            bundleEdge = document.querySelector('.edge-path[data-source-node-id="alpha"][data-target-node-id="beta"]');
+            if (!bundleEdge) throw new Error("hiding one bundle constituent hid surviving relationship types");
+            bundleEdge.dispatchEvent(new MouseEvent("click", {bubbles: true}));
+            if (bundleEdge.__edgeMeta.bundle || bundleEdge.__edgeMeta.type !== "dependency" || !document.getElementById("details").textContent.includes("requires storage") || document.getElementById("details").textContent.includes("updates records")) throw new Error("single surviving relationship did not restore canonical inspector content");
             lifecycleChildLegend.click();
-            bundledEdges[0].dispatchEvent(new MouseEvent("click", {bubbles: true}));
+            bundleEdge = document.querySelector('.edge-path[data-source-node-id="alpha"][data-target-node-id="beta"]');
+            bundleEdge.dispatchEvent(new MouseEvent("click", {bubbles: true}));
             if (!document.getElementById("details").textContent.includes("3 visible relationships")) throw new Error("bundle constituent restore did not restore inspector data");
             const alphaBeforeDrag = {...getEffectivePos("alpha")};
             alpha.dispatchEvent(new MouseEvent("mousedown", {bubbles: true, button: 0, clientX: 200, clientY: 200}));
@@ -417,12 +942,13 @@ def test_filter_interactions_keep_layout_and_explain_projection():
             document.dispatchEvent(new MouseEvent("mouseup", {bubbles: true, clientX: 224, clientY: 212}));
             await delay(20);
             const alphaAfterDrag = getEffectivePos("alpha");
-            const movedBundlePath = bundledEdges[0].getAttribute("d");
+            const movedBundlePath = bundleEdge.getAttribute("d");
             if (!alphaAfterDrag || (alphaAfterDrag.x === alphaBeforeDrag.x && alphaAfterDrag.y === alphaBeforeDrag.y)) throw new Error("node drag did not update effective position");
             if (movedBundlePath === initialBundlePath || renderVersion !== lifecycleRenderVersion) throw new Error("node drag did not reroute edge in place");
+            if (Array.from(edgeLayer.querySelectorAll(".edge-path")).some(path => edgePresentationUnderlaysForPath(path).some(underlay => underlay.getAttribute("d") !== path.getAttribute("d")))) throw new Error("drag reroute left stale underlay geometry");
             alpha.dispatchEvent(new MouseEvent("dblclick", {bubbles: true}));
             await delay(20);
-            if (bundledEdges[0].style.display !== "none") throw new Error("hiding moved node retained incident edge");
+            if (document.querySelector('.edge-path[data-source-node-id="alpha"][data-target-node-id="beta"]')) throw new Error("hiding moved node retained incident edge");
             const indirectAfterHide = document.querySelector('.edge-path[data-source-node-id="zeta"][data-target-node-id="beta"][data-edge-type="indirect"]');
             if (!indirectAfterHide || indirectAfterHide.style.display === "none" || !indirectAfterHide.getAttribute("d")) throw new Error("hiding middle node did not project an indirect edge between its visible neighbors");
             const indirectLegend = document.querySelector('.legend-row[data-legend-kind="edge"][data-type="indirect"] .legend-icon path');
@@ -431,7 +957,9 @@ def test_filter_interactions_keep_layout_and_explain_projection():
             if (!lifecycleRestore) throw new Error("hidden moved node was not restorable");
             lifecycleRestore.dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true}));
             await delay(20);
-            if (bundledEdges[0].style.display === "none" || bundledEdges[0].getAttribute("d") !== movedBundlePath) throw new Error("restoring moved node did not restore edge geometry");
+            alpha = nodeElement("alpha");
+            bundleEdge = document.querySelector('.edge-path[data-source-node-id="alpha"][data-target-node-id="beta"]');
+            if (!bundleEdge || bundleEdge.getAttribute("d") !== movedBundlePath) throw new Error(`restoring moved node changed edge geometry: before=${movedBundlePath} after=${bundleEdge?.getAttribute("d")} edges=${Array.from(document.querySelectorAll('.edge-path[data-source-node-id="alpha"][data-target-node-id="beta"]')).map(edge => edge.dataset.edgeId).join(",")}`);
             if (document.querySelector('.edge-path[data-source-node-id="zeta"][data-target-node-id="beta"][data-edge-type="indirect"]')) throw new Error("restoring middle node retained its obsolete indirect projection");
             const movedContainmentEdge = document.querySelector('.edge-path[data-source-node-id="root"][data-target-node-id="alpha"]');
             const movedCoordinates = (movedContainmentEdge?.getAttribute("d") || "").match(/-?\\d+(?:\\.\\d+)?/g)?.map(Number) || [];
@@ -459,6 +987,8 @@ def test_filter_interactions_keep_layout_and_explain_projection():
               restoreItem.dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true}));
               await delay(20);
             }
+            alpha = nodeElement("alpha");
+            beta = nodeElement("beta");
             const renderVersionBeforeResize = renderVersion;
             const leftWidthBefore = leftPanelWidth;
             document.getElementById("left-panel-resize").dispatchEvent(new KeyboardEvent("keydown", {key: "ArrowRight", bubbles: true}));
@@ -506,10 +1036,15 @@ def test_filter_interactions_keep_layout_and_explain_projection():
             if (relationChild.getAttribute("aria-disabled") !== "true" || relationChild.getAttribute("aria-pressed") !== "false") throw new Error("edge-category child contradicted excluded parent");
             const edge = document.querySelector('.edge-path[data-source-node-id="alpha"][data-target-node-id="beta"]');
             if (edge && edge.style.display !== "none") throw new Error("relation facet did not hide edge");
+            if (edge && edgePresentationUnderlaysForPath(edge).some(underlay => underlay.style.display !== "none")) throw new Error("relation facet left edge underlay visible");
             if (edge && !edge.hasAttribute("tabindex")) throw new Error("edges are not keyboard focusable");
             document.getElementById("visibility-undo-btn").click();
             await delay(20);
             if (relation.getAttribute("aria-pressed") !== "true" || (edge && edge.style.display === "none")) throw new Error("visibility undo did not restore relation");
+            if (edge && edgePresentationUnderlaysForPath(edge).some(underlay => underlay.style.display === "none")) throw new Error("visibility undo did not restore edge underlay");
+            relation.click();
+            document.getElementById("filter-clear").click();
+            if (edge && (edge.style.display === "none" || edgePresentationUnderlaysForPath(edge).some(underlay => underlay.style.display === "none"))) throw new Error("filter clear did not restore edge and underlay together");
             search.focus(); search.value = "beta";
             search.dispatchEvent(new Event("input", {bubbles: true}));
             search.dispatchEvent(new Event("change", {bubbles: true}));
@@ -655,6 +1190,11 @@ def test_filter_interactions_keep_layout_and_explain_projection():
             nodeElement("nested").dispatchEvent(new MouseEvent("dblclick", {bubbles: true, altKey: true}));
             await delay(250);
             if (!nodeElement("alpha") || nodeElement("alpha").style.display === "none") throw new Error("container expansion did not restore descendants");
+            const finalPaths = Array.from(edgeLayer.querySelectorAll(".edge-path"));
+            const ownedUnderlays = finalPaths.flatMap(edgePresentationUnderlaysForPath);
+            const mountedUnderlays = Array.from(edgeLayer.querySelectorAll(".edge-presentation-underlay"));
+            if (mountedUnderlays.length !== ownedUnderlays.length || mountedUnderlays.some(underlay => !ownedUnderlays.includes(underlay))) throw new Error("replacement or cancellation leaked an unowned edge underlay");
+            if (finalPaths.some(path => edgePresentationUnderlaysForPath(path).some(underlay => underlay.getAttribute("d") !== path.getAttribute("d")))) throw new Error("settled scene retained stale underlay geometry");
             pass();
           } catch (error) { fail(error.message || String(error)); }
         }, 100));

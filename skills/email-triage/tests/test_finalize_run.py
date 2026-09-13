@@ -6,11 +6,12 @@ state/ directory. Invoked with `python3 -m _rtx._finalize_run` (rather than
 by path) because the module uses package-relative imports to compose the
 real _write_metrics.py and _watermark_writer.py CLI entry points in-process.
 """
-import importlib
+import importlib.util
 import json
 import os
 import subprocess
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -53,6 +54,43 @@ def status(state_dir):
     return json.loads((state_dir / "status.json").read_text())
 
 
+_FINALIZE_PACKAGE = "_task_41_finalize_run"
+
+
+def _load_finalize_module():
+    """Load finalize under a test-private package alias for relative imports."""
+    package = types.ModuleType(_FINALIZE_PACKAGE)
+    package.__path__ = [str(SCRIPTS_DIR)]
+    sys.modules[_FINALIZE_PACKAGE] = package
+    spec = importlib.util.spec_from_file_location(
+        f"{_FINALIZE_PACKAGE}._finalize_run", SCRIPTS_DIR / "_finalize_run.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture(scope="module")
+def finalize_module():
+    """Keep one alias-scoped import, then remove only its private modules."""
+    try:
+        yield _load_finalize_module()
+    finally:
+        for name in tuple(sys.modules):
+            if name == _FINALIZE_PACKAGE or name.startswith(f"{_FINALIZE_PACKAGE}."):
+                sys.modules.pop(name, None)
+
+
+def _bind_state(module, state_dir):
+    status_file = state_dir / "status.json"
+    module.STATUS_FILE = status_file
+    module.write_metrics.STATUS_FILE = status_file
+    module.watermark_writer.STATUS_FILE = status_file
+    module.watermark_writer.WATERMARK = state_dir / "last_run"
+
+
 # ── ordering ──────────────────────────────────────────────────────────────
 
 
@@ -70,70 +108,76 @@ def test_finalize_writes_metrics_then_advances_watermark(tmp_path):
     assert st["last_finalized_run_id"] == "run-1"
 
 
-def test_finalize_does_not_advance_watermark_when_metrics_args_invalid(tmp_path):
-    # Omit a required metrics flag (--total-scanned) so write_metrics.main()
-    # fails argument parsing. The watermark step must never run.
-    env = os.environ.copy()
-    env["EMAIL_TRIAGE_STATE_DIR"] = str(tmp_path)
-    env["PYTHONPATH"] = f"{REPO_SRC}{os.pathsep}{SKILL_ROOT}"
-    result = subprocess.run(
-        [
-            sys.executable, "-m", "_rtx._finalize_run",
+def test_invalid_arguments_exit_without_writing_state(tmp_path, capsys, finalize_module):
+    _bind_state(finalize_module, tmp_path)
+    with pytest.raises(SystemExit) as excinfo:
+        finalize_module.main([
             "--run-id", "run-bad",
             "--added-todo", "1", "--added-triage", "1", "--skipped", "1",
-        ],
-        capture_output=True, text=True, cwd=str(SKILL_ROOT), env=env,
-    )
+        ])
 
-    assert result.returncode != 0
+    assert excinfo.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.endswith(
+        "error: the following arguments are required: --total-scanned\n"
+    )
+    assert not (tmp_path / "last_run").exists()
+    assert not (tmp_path / "status.json").exists()
+
+    assert finalize_module.main([*BASE_METRICS_ARGS, "--run-id", "  "]) == 1
+    assert capsys.readouterr().err == "error: --run-id must not be empty\n"
     assert not (tmp_path / "last_run").exists()
     assert not (tmp_path / "status.json").exists()
 
 
-def test_finalize_does_not_advance_watermark_when_run_marked_failed(tmp_path):
-    # Simulate a stale, unresolved failure latch from an earlier run.
-    run_script("_failure_sentinel.py", tmp_path, "credentials expired")
+def test_latched_failure_refuses_then_same_run_id_retries_after_recovery(
+    tmp_path, finalize_module
+):
+    """The sentinel/clearer own their writes in test_watermark; exercise the
+    finalize composition against their persisted states here.
+    """
+    refused_root = tmp_path / "refused"
+    _bind_state(finalize_module, refused_root)
+    refused_root.mkdir()
+    (refused_root / "status.json").write_text(json.dumps({
+        "result": "error", "message": "credentials expired"
+    }))
 
-    result = run_finalize(tmp_path, "--run-id", "run-2")
-
-    assert result.returncode != 0
-    assert not (tmp_path / "last_run").exists()
-    st = status(tmp_path)
-    # Existing error state must survive untouched — no corruption, no
-    # silent flip to "ok", and the run-id must not be consumed.
+    assert finalize_module.main([*BASE_METRICS_ARGS, "--run-id", "run-2"]) != 0
+    assert not (refused_root / "last_run").exists()
+    st = status(refused_root)
     assert st["result"] == "error"
     assert st["message"] == "credentials expired"
     assert "last_finalized_run_id" not in st
-    # write_metrics still ran (mirrors the pre-existing script's documented
-    # behavior of merging metrics while preserving error state) — this
-    # proves finalize didn't corrupt state, just correctly refused to
-    # advance the watermark on top of it.
     assert st["metrics"]["total_scanned"] == 10
 
+    recovery_root = tmp_path / "recovery"
+    _bind_state(finalize_module, recovery_root)
+    recovery_root.mkdir()
+    (recovery_root / "status.json").write_text(json.dumps({
+        "result": "error", "message": "credentials expired"
+    }))
+    assert finalize_module.main([*BASE_METRICS_ARGS, "--run-id", "run-2"]) != 0
+    assert not (recovery_root / "last_run").exists()
 
-def test_rejected_call_leaves_valid_json_and_can_be_retried_after_fix(tmp_path):
-    run_script("_failure_sentinel.py", tmp_path, "credentials expired")
-    first = run_finalize(tmp_path, "--run-id", "run-3")
-    assert first.returncode != 0
-
-    # Operator fixes the problem and clears the latch.
-    run_script("_failure_clearer.py", tmp_path, "credentials restored")
-
-    # Same run-id retried — must now succeed since it was never consumed.
-    second = run_finalize(tmp_path, "--run-id", "run-3")
-    assert second.returncode == 0, second.stderr
-    assert (tmp_path / "last_run").exists()
-    st = status(tmp_path)
+    (recovery_root / "status.json").write_text(json.dumps({
+        "result": "ok",
+        "message": "failure cleared: credentials restored; watermark unchanged",
+    }))
+    assert finalize_module.main([*BASE_METRICS_ARGS, "--run-id", "run-2"]) == 0
+    assert (recovery_root / "last_run").exists()
+    st = status(recovery_root)
     assert st["result"] == "ok"
-    assert st["last_finalized_run_id"] == "run-3"
+    assert st["last_finalized_run_id"] == "run-2"
 
 
 # ── idempotency / replay-safety ──────────────────────────────────────────
 
 
-def test_replaying_same_run_id_does_not_double_apply(tmp_path):
-    first = run_finalize(tmp_path, "--run-id", "run-4")
-    assert first.returncode == 0
+def test_replay_is_a_noop_and_different_run_id_applies_again(tmp_path, finalize_module):
+    _bind_state(finalize_module, tmp_path)
+    assert finalize_module.main([*BASE_METRICS_ARGS, "--run-id", "run-4"]) == 0
     watermark_after_first = (tmp_path / "last_run").read_text()
     status_after_first = status(tmp_path)
 
@@ -141,11 +185,10 @@ def test_replaying_same_run_id_does_not_double_apply(tmp_path):
     # accidental-double-call scenario (e.g. a retried tool call after an
     # ambiguous network error). Must be a true no-op, not just "same
     # timestamp by coincidence".
-    second = run_finalize(
-        tmp_path, "--run-id", "run-4",
+    assert finalize_module.main([
+        *BASE_METRICS_ARGS, "--run-id", "run-4",
         "--total-scanned", "999", "--added-todo", "999",
-    )
-    assert second.returncode == 0, second.stderr
+    ]) == 0
     watermark_after_second = (tmp_path / "last_run").read_text()
     status_after_second = status(tmp_path)
 
@@ -153,81 +196,45 @@ def test_replaying_same_run_id_does_not_double_apply(tmp_path):
     assert status_after_second == status_after_first
     assert status_after_second["metrics"]["total_scanned"] == 10  # unchanged
 
-
-def test_different_run_id_applies_again(tmp_path):
-    run_finalize(tmp_path, "--run-id", "run-5")
-    watermark_after_first = (tmp_path / "last_run").read_text()
-
-    result = run_finalize(tmp_path, "--run-id", "run-6")
-    assert result.returncode == 0, result.stderr
     watermark_after_second = (tmp_path / "last_run").read_text()
+    assert finalize_module.main([*BASE_METRICS_ARGS, "--run-id", "run-5"]) == 0
+    watermark_after_third = (tmp_path / "last_run").read_text()
+    assert finalize_module.main([*BASE_METRICS_ARGS, "--run-id", "run-6"]) == 0
+    watermark_after_fourth = (tmp_path / "last_run").read_text()
 
-    assert watermark_after_second >= watermark_after_first
+    assert watermark_after_third >= watermark_after_second
+    assert watermark_after_fourth >= watermark_after_third
     st = status(tmp_path)
     assert st["last_finalized_run_id"] == "run-6"
-
-
-def test_empty_run_id_rejected(tmp_path):
-    result = run_finalize(tmp_path, "--run-id", "  ")
-    assert result.returncode != 0
-    assert not (tmp_path / "last_run").exists()
 
 
 # ── backward compatibility: the two original CLI scripts still work ──────
 
 
-def test_write_metrics_standalone_cli_unaffected(tmp_path):
+def test_standalone_metrics_and_watermark_clis_are_unaffected(tmp_path):
+    metrics_root = tmp_path / "metrics"
     result = run_script(
-        "_write_metrics.py", tmp_path,
+        "_write_metrics.py", metrics_root,
         "--total-scanned", "7", "--added-todo", "1",
         "--added-triage", "1", "--skipped", "5",
     )
     assert result.returncode == 0, result.stderr
-    st = status(tmp_path)
+    st = status(metrics_root)
     assert st["metrics"]["total_scanned"] == 7
     assert "last_finalized_run_id" not in st
 
-
-def test_watermark_writer_standalone_cli_unaffected(tmp_path):
-    result = run_script("_watermark_writer.py", tmp_path)
+    watermark_root = tmp_path / "watermark"
+    result = run_script("_watermark_writer.py", watermark_root)
     assert result.returncode == 0, result.stderr
-    assert (tmp_path / "last_run").exists()
-    assert status(tmp_path)["result"] == "ok"
+    assert (watermark_root / "last_run").exists()
+    assert status(watermark_root)["result"] == "ok"
 
 
 # ── crash safety: no double-advance if the process dies mid-finalize ─────
 
 
-def _load_finalize_module(tmp_path):
-    """Import _rtx._finalize_run (and the _write_metrics / _watermark_writer
-    submodules it composes) fresh, in-process, wired to tmp_path — so the
-    test below can monkeypatch a real write call to simulate a crash at an
-    exact point, something a subprocess-based test can't do.
-    """
-    repo_src = str(REPO_SRC)
-    if repo_src not in sys.path:
-        sys.path.insert(0, repo_src)
-    skill_path = str(SKILL_ROOT)
-    if skill_path in sys.path:
-        sys.path.remove(skill_path)
-    sys.path.insert(0, skill_path)
-    for name in tuple(sys.modules):
-        if name == "_rtx" or name.startswith("_rtx."):
-            sys.modules.pop(name, None)
-
-    module = importlib.import_module("_rtx._finalize_run")
-
-    status_file = tmp_path / "status.json"
-    watermark_file = tmp_path / "last_run"
-    module.STATUS_FILE = status_file
-    module.write_metrics.STATUS_FILE = status_file
-    module.watermark_writer.STATUS_FILE = status_file
-    module.watermark_writer.WATERMARK = watermark_file
-    return module
-
-
 def test_crash_between_status_commit_and_watermark_file_write_is_safe_on_replay(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, finalize_module
 ):
     """Simulate the process dying at the exact point _watermark_writer.py
     has just committed status.json (result + watermark timestamp + run id
@@ -237,7 +244,8 @@ def test_crash_between_status_commit_and_watermark_file_write_is_safe_on_replay(
     crash left it (untouched), and the replay must be recognized as a
     no-op, matching what already-committed status.json says.
     """
-    module = _load_finalize_module(tmp_path)
+    module = finalize_module
+    _bind_state(module, tmp_path)
     watermark_file = tmp_path / "last_run"
 
     # Never let the watermark file itself be written, for the whole test —

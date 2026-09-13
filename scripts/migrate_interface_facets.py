@@ -125,10 +125,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     repo_root = args.repo_root.resolve()
 
     try:
-        inventory = collect_blueprints(
-            repo_root,
-            expected_schema_version=6,
-        )
+        inventory = collect_blueprints(repo_root)
     except BlueprintInventoryError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

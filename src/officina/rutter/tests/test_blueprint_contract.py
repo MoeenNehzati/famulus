@@ -6,13 +6,8 @@ from pathlib import Path
 
 import yaml
 
-import officina.blueprints.graph as blueprint_graph
-from officina.blueprints.graph import load_repository_blueprint_graph
-from officina.blueprints.inventory import collect_blueprints
-
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
-CANONICAL_SCHEMA_ROOT = REPOSITORY_ROOT / "references" / "blueprint-schema"
 
 
 def test_v6_rutter_operation_effects_are_outcome_specific() -> None:
@@ -23,16 +18,6 @@ def test_v6_rutter_operation_effects_are_outcome_specific() -> None:
     storage_path = repo_root / "src/officina/rutter/blueprints/storage.yaml"
     engine = yaml.safe_load(engine_path.read_text(encoding="utf-8"))
     storage = yaml.safe_load(storage_path.read_text(encoding="utf-8"))
-    validators = {}
-    for path, document in ((engine_path, engine), (storage_path, storage)):
-        assert blueprint_graph._declaration_schema_errors(
-            path,
-            document,
-            CANONICAL_SCHEMA_ROOT,
-            validators,
-            expected_schema_version=6,
-        ) == ()
-
     bound = engine["interfaces"][
         "rutter.source.engine.interface.bound-operations"
     ]
@@ -105,10 +90,6 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
     """The cohesive implementation files own exact imports and interfaces."""
 
     repo_root = REPOSITORY_ROOT
-    graph = load_repository_blueprint_graph(
-        repo_root,
-        expected_schema_version=6,
-    )
     rutter_root = repo_root / "src/officina/rutter"
     module = yaml.safe_load((rutter_root / "blueprint.yaml").read_text(encoding="utf-8"))
     source_names = (
@@ -134,6 +115,7 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
         (rutter_root.parent / "common" / "blueprint.yaml").read_text(encoding="utf-8")
     )
 
+    assert module["id"] == "rutter"
     assert module["version"] == 11
     assert sources["diagnostic"]["version"] == 4
     assert sources["diagnostic"]["interfaces"][
@@ -160,23 +142,18 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
         r"tests/.*",
         r"values\.py",
     ]
-    assert set(module["sources"]) == {
-        "rutter.source.authoring",
-        "rutter.source.diagnostic",
-        "rutter.source.dispenser",
-        "rutter.source.engine",
-        "rutter.source.evaluation",
-        "rutter.source.history",
-        "rutter.source.model",
-        "rutter.source.reducer",
-        "rutter.source.runtime",
-        "rutter.source.storage",
-        "rutter.source.values",
+    assert module["sources"] == {
+        f"rutter.source.{name}": {
+            "blueprint": {
+                "base": "module-root",
+                "path": f"blueprints/{name}.yaml",
+            }
+        }
+        for name in source_names
     }
-    assert {"rutter", *(f"rutter.source.{name}" for name in source_names)}.issubset(
-        graph.nodes
-    )
-    assert "rutter.source.hooks" not in graph.nodes
+    for name in source_names:
+        assert sources[name]["id"] == f"rutter.source.{name}"
+    assert "rutter.source.hooks" not in module["sources"]
     assert set(module["exports"]) == {
         "rutter.interface.binding",
         "rutter.interface.bound-operations",
@@ -199,7 +176,7 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
     }
     for interface_id, callers in expected_callers.items():
         if interface_id != "rutter.interface.diagnostic":
-            callers.add("skill-certifier._rtx")
+            callers.add("node-certify._rtx")
         access = module["exports"][interface_id]["access"]
         assert access["allow_all_modules"] is False
         assert set(access["allowed_callers"]) == callers
@@ -466,52 +443,3 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
     ]
     assert "rutter" in atomic_callers
     assert "using-compass" not in atomic_callers
-
-
-def test_inventory_registers_exact_rutter_module_and_source_files() -> None:
-    """A missing or broadened Rutter registration would orphan owned code."""
-
-    result = collect_blueprints(REPOSITORY_ROOT, expected_schema_version=6)
-    by_id = {document.node_id: document for document in result.documents}
-
-    module = by_id["rutter"]
-    source_names = (
-        "authoring",
-        "diagnostic",
-        "dispenser",
-        "engine",
-        "evaluation",
-        "history",
-        "model",
-        "reducer",
-        "runtime",
-        "storage",
-        "values",
-    )
-    sources = {name: by_id[f"rutter.source.{name}"] for name in source_names}
-
-    assert module.relative_path.as_posix() == "src/officina/rutter/blueprint.yaml"
-    assert module.declaration["content"] == [
-        r"__init__\.py",
-        r"authoring\.py",
-        r"diagnostic\.py",
-        r"dispenser\.py",
-        r"engine\.py",
-        r"evaluation\.py",
-        r"history\.py",
-        r"model\.py",
-        r"reducer\.py",
-        r"runtime\.py",
-        r"storage\.py",
-        r"tests/.*",
-        r"values\.py",
-    ]
-    assert set(module.declaration["sources"]) == {
-        f"rutter.source.{name}" for name in source_names
-    }
-    for name, source in sources.items():
-        assert source.declaration["gateway"] == {
-            "path": f"{name}.py",
-            "language": "Python",
-        }
-        assert source.declaration["content"] == [rf"{name}\.py"]

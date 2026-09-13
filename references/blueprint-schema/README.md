@@ -2,7 +2,7 @@
 
 The concrete schemas in this directory are the canonical source for blueprint
 shape and field-level authoring rules. See
-[`docs/officina/skill-blueprints.md`](../../docs/officina/skill-blueprints.md) for the current
+[`docs/officina/blueprints.md`](../../docs/officina/blueprints.md) for the current
 contributor overview and [`docs/officina/certification_and_drift.md`](../../docs/officina/certification_and_drift.md)
 for the version-6 input and certificate contract.
 
@@ -31,10 +31,7 @@ behavioral sources, child topology, namespace exports, and direct routes.
 `schema.annotated-draft.json` is the matching authoring
 entry point; it delegates field-level guidance to those same two concrete
 schemas. Earlier schema families have been retired; their conversion behavior
-is preserved only in the migration engine and its regression evidence. V4
-parsing remains available only for the frozen migration bundle, explicit
-migration/test fixtures, and compatibility checks that request that schema
-family directly.
+is no longer part of the live product surface.
 
 `template.yaml` is the schema-family artifact manifest. Its `examples` name
 the live module root and ordinary behavioral-source blueprints under
@@ -117,5 +114,4 @@ review records belong in `checks`; certificates do not record host-runtime
 evidence or performance observations.
 
 `schema-meta.json` defines the annotation protocol and relationship matrix.
-Pre-v4 declarations and health records are retained only as migration-engine
-evidence; live certification records use `certificate.schema.json`.
+Live certification records use `certificate.schema.json`.

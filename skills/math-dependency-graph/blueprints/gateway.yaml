@@ -1,36 +1,34 @@
 content:
 - SKILL\.md
 dependencies: []
-description: Orchestrates Voyage-based inventory, extraction, proof normalization,
-  and compilation for one notation-faithful direct mathematical graph.
+description: Defines the LLM workflow for extracting a notation-faithful direct mathematical
+  dependency graph, finalizing self-contained canonical JSON, and optionally rendering
+  it.
 gateway:
   language: Markdown
   path: SKILL.md
 id: math-dependency-graph.source.gateway
 interfaces:
   math-dependency-graph.source.gateway.interface.default:
+    uses_interfaces:
+    - interface: math-dependency-graph.interface.extract
+      version: 2
+    - interface: math-dependency-graph._rtx.interface.scripts-finalize-extraction
+      version: 1
+    - interface: math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph
+      version: 2
+    - interface: math-dependency-graph._rtx.interface.scripts-read-tex-labels
+      version: 1
+    - interface: math-dependency-graph._rtx.interface.scripts-serve-graph
+      version: 1
     content:
     - SKILL\.md
-    uses_interfaces:
-    - interface: math-dependency-graph.interface.inventory
-      version: 38
-    - interface: math-dependency-graph.interface.inventory-voyages
-      version: 11
-    - interface: math-dependency-graph.interface.extract
-      version: 29
-    - interface: math-dependency-graph.interface.proof-reconciliation
-      version: 3
-    - interface: math-dependency-graph._rtx.interface.scripts-pool-inventory-chunks
-      version: 1
-    - interface: math-dependency-graph._rtx.interface.scripts-apply-proof-digest
-      version: 1
-    - interface: math-dependency-graph._rtx.interface.scripts-semantic-to-canonical-json
-      version: 1
     contract:
       arguments:
         request:
-          description: User request and TeX or Markdown entrypoint for one fresh
-            mathematical graph run.
+          description: User request, included mathematical content, distinct root TeX
+            entrypoint, and artifact destinations for extracting or optionally rendering
+            a mathematical dependency graph.
           required: true
           sensitivity: user-private
           type:
@@ -57,8 +55,9 @@ interfaces:
           sensitivity: derived-private
       execution:
         consistency:
-          snapshot: The result is derived from one fresh source snapshot whose inventory
-            workers operate one durable Voyage per immutable chunk.
+          snapshot: Semantic results use the included source snapshot; deterministic
+            finalization uses the explicitly identified root TeX tree and optional
+            label map from the same run.
         lifecycle: finite
         state_effect: read-only
         verification:
@@ -68,14 +67,15 @@ interfaces:
       interaction:
         mode: unattended
       outcomes:
-      - caller_action: Review the graph artifacts and unresolved evidence gaps.
+      - caller_action: Review the self-contained canonical graph, optional presentation,
+          and unresolved evidence gaps.
         class: success
         effects: []
         id: completed
         outputs:
         - response
-      - caller_action: Correct the source document or canonical graph input before
-          retrying.
+      - caller_action: Correct the included content, root TeX entrypoint, or canonical
+          graph input before retrying.
         class: error
         effects: []
         id: invalid-source
@@ -85,8 +85,9 @@ interfaces:
         cardinality:
           maximum: 1
           minimum: 1
-        description: Graph artifact locations, represented source scope, record counts,
-          and genuine unresolved gaps.
+        description: Graph-analysis result, semantic and canonical artifact locations,
+          optional render location, and diagnostics status only when browser validation
+          occurred.
         direct_io_ref: write-1
         empty: Never empty on success.
         id: response
@@ -99,24 +100,20 @@ interfaces:
           kind: string
           sensitivity: derived-private
       preconditions: []
-    description: Orchestrate a Voyage inventory, extract, normalize, and compile run.
-    version: 79
+    description: Primary LLM-facing extraction, finalization, and optional-render workflow.
+    version: 3
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
-- interface: math-dependency-graph.interface.inventory
-  version: 38
-- interface: math-dependency-graph.interface.inventory-voyages
-  version: 11
 - interface: math-dependency-graph.interface.extract
-  version: 29
-- interface: math-dependency-graph.interface.proof-reconciliation
-  version: 3
-- interface: math-dependency-graph._rtx.interface.scripts-pool-inventory-chunks
+  version: 2
+- interface: math-dependency-graph._rtx.interface.scripts-finalize-extraction
   version: 1
-- interface: math-dependency-graph._rtx.interface.scripts-apply-proof-digest
+- interface: math-dependency-graph._rtx.interface.scripts-build-math-dependency-graph
+  version: 2
+- interface: math-dependency-graph._rtx.interface.scripts-read-tex-labels
   version: 1
-- interface: math-dependency-graph._rtx.interface.scripts-semantic-to-canonical-json
+- interface: math-dependency-graph._rtx.interface.scripts-serve-graph
   version: 1
-version: 87
+version: 3
 maturity: stable

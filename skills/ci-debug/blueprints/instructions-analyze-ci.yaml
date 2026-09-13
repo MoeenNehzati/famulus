@@ -1,0 +1,78 @@
+content: [instructions/analyze-ci\.md]
+dependencies: []
+description: Collects immutable CI history and produces two sibling offline descriptive reports without dispatching workflows or mutating Git.
+gateway: {language: Markdown, path: instructions/analyze-ci.md}
+id: ci-debug.source.instructions-analyze-ci
+interfaces:
+  ci-debug.source.instructions-analyze-ci.interface.analyze-ci:
+    content: [instructions/analyze-ci\.md]
+    uses_interfaces:
+    - {interface: ci-debug._rtx.interface.fetch-github-actions-history, version: 1}
+    - {interface: ci-debug._rtx.interface.report-test-failures-between-green-runs, version: 1}
+    - {interface: ci-debug._rtx.interface.report-ci-runtime-hotspots, version: 1}
+    contract:
+      arguments:
+        request: {description: Requested analytical emphasis without changing which reports run., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+        repository:
+          description: Local Git repository corresponding to the workflow history.
+          direct_io_ref: repository
+          required: true
+          sensitivity: user-private
+          type: {kind: dir, access: read, must_exist: true, relative_to: caller-cwd, syntax: literal}
+        workflow: {description: "Numeric workflow ID, workflow file, or unique exact display name.", required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+        branch: {description: Exact branch whose history is selected., required: true, sensitivity: user-private, type: {kind: string, sensitivity: user-private}}
+        output-directory:
+          description: New private result root containing snapshot and two sibling report directories outside the repository and every worktree.
+          direct_io_ref: artifacts
+          required: true
+          sensitivity: user-private
+          type: {kind: dir, access: write, must_exist: false, relative_to: caller-cwd, syntax: literal}
+        event: {default: push, description: Additional exact GitHub event filter., required: false, sensitivity: public, type: {kind: string, sensitivity: public}}
+        since: {description: Additional inclusive ISO-8601 lower bound on logical-run creation., required: false, sensitivity: public, type: {kind: string, sensitivity: public}}
+        run-limit: {default: 200, description: Maximum newest matching logical runs retained after exact filters., required: false, sensitivity: public, type: {kind: integer}}
+      caller_warnings:
+      - external-side-effect: Creates a private potentially secret-bearing evidence tree at output-directory; it never dispatches CI or mutates Git or GitHub state.
+      direct_io:
+        network:
+        - {id: github-history, medium: network, system: github-actions, access: read, content: Workflow runs attempts jobs steps and failure logs, formats: [json, zip, text], sensitivity: user-private}
+        reads:
+        - {id: request, medium: prompt, system: agent-runtime, access: read, content: Analysis request and structured arguments, formats: [text], sensitivity: user-private}
+        - {id: repository, medium: repository-filesystem, system: filesystem, access: read, path: <repository>/**, path_match: glob, content: Git identity and bounded provenance objects, formats: [git-metadata, source-code], sensitivity: user-private}
+        writes:
+        - {id: artifacts, medium: local-filesystem, system: filesystem, access: write, path: <output-directory>/**, path_match: glob, content: Private immutable snapshot and derived reports, formats: [json, csv, html, text, zip], sensitivity: derived-private}
+        - {id: response, medium: prompt, system: agent-runtime, access: write, content: Artifact paths metrics coverage and gaps, formats: [markdown], sensitivity: derived-private}
+      execution:
+        consistency: {snapshot: Both offline reports validate and consume the same published snapshot digest.}
+        effects:
+        - {id: write-result-tree, action: create, direct_io_ref: artifacts, may_occur_in_outcomes: [analyzed, analyzed-with-gaps, failed], confirmation_evidence: {kind: output, output_ref: response}, reversibility: {reversible: Remove only the reported invocation-created result tree.}, value_source: {kind: argument, argument_ref: output-directory}}
+        lifecycle: finite
+        state_effect: mutating
+        mutation_safety:
+          atomicity: {per_effect_only: The snapshot and each report publish their own create-once marker independently.}
+          concurrent_invocations: {safe: Distinct non-existing output roots are isolated; a destination collision fails closed.}
+          idempotency: {non_idempotent: A repeated collection observes later remote state and requires a new destination.}
+          on_uncertain_completion: {verify_then_decide: Validate each child publication marker and both report source snapshot digests before accepting or repeating.}
+          partial_effects_on_failure: {possible: One or more independently created child directories may remain and are reported.}
+          rollback_on_failure: {available: Remove only invocation-created result directories.}
+        verification: [{method: output-schema, output_ref: response}, {method: direct-io-state, direct_io_ref: artifacts}]
+      helpers: []
+      interaction: {mode: interactive, channel: tty, unattended_outcome: clarification-required}
+      outcomes:
+      - {id: analyzed, class: success, effects: [write-result-tree], outputs: [response], caller_action: Review both reports and their common snapshot identity.}
+      - {id: analyzed-with-gaps, class: partial, effects: [write-result-tree], outputs: [response], caller_action: Interpret only stated denominators and resolve material evidence gaps before stronger claims.}
+      - {id: clarification-required, class: refusal, effects: [], outputs: [response], caller_action: Supply one repository workflow branch and new out-of-repository destination.}
+      - {id: failed, class: error, effects: [write-result-tree], outputs: [response], caller_action: Resolve the classified collection report or child publication failure and inspect every reported path.}
+      outputs:
+      - {id: response, audience: human, cardinality: {minimum: 1, maximum: 1}, description: Snapshot and report paths identity descriptive metrics coverage gaps and publication state., direct_io_ref: response, empty: Never empty., ordering: stable, pagination: {kind: none}, truncation: {kind: none}, type: {kind: string, sensitivity: derived-private}}
+      preconditions: []
+    description: Collect one bounded immutable workflow-history snapshot and report deduplicated green-to-green failures plus descriptive runtime hotspots without dispatching CI.
+    usage: request=<emphasis> repository=<repo> workflow=<id|file|exact-name> branch=<branch> output-directory=<new-private-dir> [event=push] [since=<ISO-8601>] [run-limit=200]
+    version: 1
+node_type: behavioral_source
+schema_version: 6
+uses_interfaces:
+- {interface: ci-debug._rtx.interface.fetch-github-actions-history, version: 1}
+- {interface: ci-debug._rtx.interface.report-test-failures-between-green-runs, version: 1}
+- {interface: ci-debug._rtx.interface.report-ci-runtime-hotspots, version: 1}
+version: 1
+maturity: experimental

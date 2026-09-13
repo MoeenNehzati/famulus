@@ -7,7 +7,7 @@ from pathlib import Path
 import jsonschema, yaml
 
 HERE=Path(__file__).parent
-OPTIONAL=('imports','domain_facts','schema_authorities','schema_authority_links','checks','tests','assurances','semantic_reviews','links','sources','source_units','evidence_claims','external_exceptions')
+OPTIONAL=('imports','domain_facts','schema_authorities','schema_authority_links','checks','tests','assurances','semantic_reviews','links','evidence_claims','external_exceptions')
 SEMANTIC={'family','rule','assertion','guidance','definition','procedure','step','evidence-claim'}
 
 def _schema():
@@ -293,60 +293,7 @@ def _index(items,errors):
     for st in n['steps']: add('step',f"{n['id']}#{st['id']}",st)
    walk(n.get('children',[]))
  walk(items); return out
-def _ancestry(items):
- """Build ancestor chains for semantic identifiers.
-
- Intent
- ------
- Walk the standards tree and record each node, assertion, and step parent chain.
-
- Rationale
- ---------
- Ancestor data supports checks that depend on semantic containment.
-
- Pseudocode
- ----------
- - set ancestry_index = empty mapping
- - for semantic_node in standards tree:
-   - set identifier_ancestry = parent identifiers
- - return ancestry index
-
- Wraps
- -----
- - none
- """
- out={}
- def walk(xs,parents):
-  """Walk semantic children while carrying parent identifiers.
-
-  Intent
-  ------
-  Record ancestry for nodes, assertions, steps, and descendants.
-
-  Rationale
-  ---------
-  Passing an immutable parent list keeps sibling ancestry independent.
-
-  Pseudocode
-  ----------
-  - for node in semantic nodes:
-    - set node_ancestry = parent identifiers
-    - set descendant_ancestry = parent identifiers plus node identifier
-  - return none
-
-  Wraps
-  -----
-  - none
-  """
-  for n in xs:
-   out[n['id']]=parents
-   if n['kind']=='rule':
-    for a in n['assertions']:out[f"{n['id']}#{a['id']}"]=parents+[n['id']]
-   if n['kind']=='procedure':
-    for st in n['steps']:out[f"{n['id']}#{st['id']}"]=parents+[n['id']]
-   walk(n.get('children',[]),parents+[n['id']])
- walk(items,[]);return out
-def _validate_document(document):
+def _validate_document(document,_semantic_index=None,_semantic_errors=None):
  """Validate standard-v6 semantic references and relationships.
 
  Intent
@@ -376,9 +323,6 @@ def _validate_document(document):
 
  InstantiationsFromRepo
  ----------------------
- ._ancestry:
-   why:
-     constructs: "Builds the ancestry index currently computed alongside the semantic lookup; later checks do not consume it."
  ._index:
    why:
      constructs: "Builds the semantic lookup and duplicate-identifier findings used by reference checks."
@@ -386,7 +330,8 @@ def _validate_document(document):
    why:
      constructs: "Populates optional mappings required by the semantic-check loops."
  """
- d=_maps(copy_document(document)); e=[]; sem=_index(d['standards'],e); ancestry=_ancestry(d['standards'])
+ d=_maps(copy_document(document)); e=list(_semantic_errors or [])
+ sem=_index(d['standards'],e) if _semantic_index is None else _semantic_index
  def local(r,label):
   """Validate one local semantic reference.
 
@@ -414,11 +359,7 @@ def _validate_document(document):
    return
   found=sem.get(r['ref'])
   if not found or found[0]!=r['kind']: e.append(f"{label}: dangling semantic {r['kind']} reference {r['ref']}")
- for uid,u in d['source_units'].items():
-   if u['source']['ref'] not in d['sources']: e.append(f'source_units.{uid}: dangling source')
  for ident,(kind,node) in sem.items():
-  for u in node.get('origin',{}).get('source_units',[]):
-   if u['ref'] not in d['source_units']: e.append(f'{ident}.origin: dangling source unit')
   for r in node.get('origin',{}).get('derived_from',[]): local(r,f'{ident}.origin')
   if kind=='procedure':
    for field in ('invariants','completion_conditions'):
@@ -499,8 +440,6 @@ def _validate_document(document):
     linked=d['links'].get(t['ref'])
     if not linked:e.append(f'semantic_reviews.{rid}: dangling link')
     elif linked['resolution']['state']=='unresolved' and (r['lifecycle']!='planned' or r['resolution']['state']!='unresolved'):e.append(f'semantic_reviews.{rid}: unresolved link requires planned unresolved review')
-   elif kind=='source-unit':
-    if t['ref'] not in d['source_units']:e.append(f'semantic_reviews.{rid}: dangling source unit')
    else:local(t,f'semantic_reviews.{rid}')
    for aspect in c['aspects']:
     sig=(kind,t['ref'],aspect)
@@ -529,7 +468,7 @@ def copy_document(d):
  - none
  """
  import copy; return copy.deepcopy(d)
-def validate_document(document: dict, root: Path) -> list[str]:
+def validate_document(document: dict, root: Path, _schema_validator=None) -> list[str]:
  """Validate one in-memory standard-v6 document.
 
  Intent
@@ -553,9 +492,12 @@ def validate_document(document: dict, root: Path) -> list[str]:
 
  CallsFromRepo
  -------------
- ._schema:
+ ._prepare_schema_validator:
    why:
-     computes: "Provides the standard-v6 schema passed to jsonschema validation."
+     computes: "Provides a checked schema validator when the caller did not supply one."
+ ._validate_with_prepared_schema:
+   why:
+     computes: "Raises the best matching schema error for the in-memory document."
 
  InstantiationsFromRepo
  ----------------------
@@ -563,7 +505,8 @@ def validate_document(document: dict, root: Path) -> list[str]:
    why:
      constructs: "Builds the ordered semantic findings appended before import path checks."
  """
- try:jsonschema.validate(document,_schema())
+ schema_validator=_prepare_schema_validator() if _schema_validator is None else _schema_validator
+ try:_validate_with_prepared_schema(document,schema_validator)
  except jsonschema.ValidationError as x:return [f'schema validation failed: {x.message}']
  errors=_validate_document(document); root=Path(root).resolve()
  for alias,decl in document.get('imports',{}).items():
@@ -577,33 +520,6 @@ def validate_document(document: dict, root: Path) -> list[str]:
    errors.append(f'imports.{alias}: import path escapes repository root');continue
   if not target.is_file():errors.append(f'imports.{alias}: missing import file under root {root}')
  return errors
-def _select(lines,selector):
- """Select bytes for one portable line-range source unit.
-
- Intent
- ------
- Validate inclusive one-based line bounds and encode the selected lines with a final newline.
-
- Rationale
- ---------
- Digest verification requires deterministic bytes and rejects unsupported selector kinds.
-
- Pseudocode
- ----------
- - if selector is not line range:
-   - return unsupported selector finding
- - if bounds are invalid:
-   - return range finding
- - return selected UTF-8 bytes
-
- Wraps
- -----
- - none
- """
- if selector['kind']!='line-range': return None,'unsupported source selector for portable verifier'
- a,b=selector['start'],selector['end']
- if a<1 or b<a or b>len(lines): return None,'selector out of range'
- return ('\n'.join(lines[a-1:b])+'\n').encode(),None
 def _resolve_artifact_path(artifact, root, label):
  """Resolve one safe repository-relative artifact path.
 
@@ -715,12 +631,9 @@ def validate_file(path,root=None,cache=None,_stack=None,_schema_validator=None):
  ._maps:
    why:
      constructs: "Populates optional mappings on root and imported documents before traversal."
- ._select:
-   why:
-     constructs: "Builds deterministic source-unit bytes used for content-digest verification."
  ._resolve_artifact_path:
    why:
-     constructs: "Builds bounded repository artifact paths for authorities, sources, reviews, and imports."
+     constructs: "Builds bounded repository artifact paths for authorities, reviews, and imports."
  ._resolve_json_pointer:
    why:
      constructs: "Builds selected schema-authority fragments or bounded pointer findings."
@@ -735,7 +648,8 @@ def validate_file(path,root=None,cache=None,_stack=None,_schema_validator=None):
  except Exception as x:return [f'cannot load document: {x}']
  try:_validate_with_prepared_schema(d,schema_validator)
  except jsonschema.ValidationError as x:return [f'schema validation failed: {x.message}']
- errors=_validate_document(d); d=_maps(d); stack.append(path)
+ semantic_errors=[];sem=_index(d['standards'],semantic_errors)
+ errors=_validate_document(d,sem,semantic_errors); d=_maps(d); stack.append(path)
  # A schema authority is not merely a named artifact: load the JSON Schema,
  # validate its schema vocabulary, and prove that any selected fragment exists.
  for aid,authority in d['schema_authorities'].items():
@@ -761,23 +675,6 @@ def validate_file(path,root=None,cache=None,_stack=None,_schema_validator=None):
   if artifact:
    _,problem=_resolve_artifact_path(artifact,root,f'semantic_reviews.{rid}.instructions.artifact')
    if problem:errors.append(problem)
- # Verify sources and source units.
- source_bytes={}
- for sid,s in d['sources'].items():
-  art=d['artifacts'].get(s['artifact']['ref'])
-  if not art:continue
-  target,problem=_resolve_artifact_path(art,root,f'sources.{sid}')
-  if problem:errors.append(problem);continue
-  data=target.read_bytes();source_bytes[sid]=(data,target)
-  actual='sha256:'+hashlib.sha256(data).hexdigest()
-  if actual!=s['digest']:errors.append(f'sources.{sid}.digest: source digest mismatch expected {s["digest"]} actual {actual}')
- for uid,u in d['source_units'].items():
-  pair=source_bytes.get(u['source']['ref'])
-  if not pair:continue
-  lines=pair[0].decode().splitlines(); selected,err=_select(lines,u['selector'])
-  if err:errors.append(f'source_units.{uid}: {err}');continue
-  actual='sha256:'+hashlib.sha256(selected).hexdigest()
-  if actual!=u['content_digest']:errors.append(f'source_units.{uid}.content_digest: source-unit digest mismatch expected {u["content_digest"]} actual {actual}')
  # Resolve imports with cache.
  imported={}
  for alias,decl in d['imports'].items():
@@ -804,7 +701,6 @@ def validate_file(path,root=None,cache=None,_stack=None,_schema_validator=None):
  # Every external semantic reference site uses one resolver.
  refs=[]
  for lid,l in d['links'].items():refs += [(f'links.{lid}.source',l['source']),(f'links.{lid}.target',l['target'])]
- sem=_index(d['standards'],[])
  sem.update({ident:('evidence-claim',claim) for ident,claim in d['evidence_claims'].items()})
  for ident,(_,node) in sem.items():
   refs += [(f'{ident}.origin.derived_from',r) for r in node.get('origin',{}).get('derived_from',[]) if r.get('document')]
@@ -815,12 +711,16 @@ def validate_file(path,root=None,cache=None,_stack=None,_schema_validator=None):
  for tid,t in d['tests'].items():
   refs += [(f'tests.{tid}.targets[{i}]',x['target']) for i,x in enumerate(t['targets']) if x['target']['kind'] in SEMANTIC]
  for xid,x in d['external_exceptions'].items():refs.append((f'external_exceptions.{xid}.target',x['target']))
+ imported_sem={}
  for label,r in refs:
   if not r.get('document'):continue
   child=imported.get(r['document'])
   if not child:errors.append(f'{label}: unresolved import alias document={r["document"]}');continue
-  child_sem=_index(child['standards'],[])
-  child_sem.update({ident:('evidence-claim',claim) for ident,claim in child['evidence_claims'].items()})
+  child_sem=imported_sem.get(r['document'])
+  if child_sem is None:
+   child_sem=_index(child['standards'],[])
+   child_sem.update({ident:('evidence-claim',claim) for ident,claim in child['evidence_claims'].items()})
+   imported_sem[r['document']]=child_sem
   found=child_sem.get(r['ref'])
   if not found:errors.append(f'{label}: dangling imported semantic document={r["document"]} ref={r["ref"]}')
   elif found and found[0]!=r['kind']:errors.append(f'{label}: wrong imported semantic kind document={r["document"]} ref={r["ref"]} expected={r["kind"]} actual={found[0]}')

@@ -63,6 +63,36 @@ def test_cli_dispatcher_call_flagged(tmp_path: Path) -> None:
     assert any("dispatcher CLI" in error for error in errors)
 
 
+def test_cli_dispatcher_command_embedded_in_string_is_flagged(tmp_path: Path) -> None:
+    skill = tmp_path / "skills" / "bad-skill"
+    (skill / "_rtx").mkdir(parents=True)
+    (skill / "blueprint.yaml").write_text("name: bad-skill\n", encoding="utf-8")
+    (skill / "_rtx" / "run.py").write_text(
+        'remediation = "dispatcher --caller-skill bad-skill target.interface.run"\n',
+        encoding="utf-8",
+    )
+
+    errors = _mod.validate(tmp_path)
+
+    assert any("dispatcher CLI" in error for error in errors)
+
+
+def test_cli_dispatcher_dry_run_command_embedded_in_string_is_flagged(
+    tmp_path: Path,
+) -> None:
+    skill = tmp_path / "skills" / "bad-skill"
+    (skill / "_rtx").mkdir(parents=True)
+    (skill / "blueprint.yaml").write_text("name: bad-skill\n", encoding="utf-8")
+    (skill / "_rtx" / "run.py").write_text(
+        'remediation = "dispatcher --dry-run --caller-skill bad-skill target.interface.run"\n',
+        encoding="utf-8",
+    )
+
+    errors = _mod.validate(tmp_path)
+
+    assert any("dispatcher CLI" in error for error in errors)
+
+
 def test_sys_path_hack_flagged(tmp_path: Path) -> None:
     skill = tmp_path / "skills" / "hacky-skill"
     (skill / "_rtx").mkdir(parents=True)
@@ -74,21 +104,6 @@ def test_sys_path_hack_flagged(tmp_path: Path) -> None:
     )
     errors = _mod.validate(tmp_path)
     assert any("do not modify sys.path" in error for error in errors)
-
-
-def test_installer_skill_exempt(tmp_path: Path) -> None:
-    # install-assistant-tools manages the launcher and bootstraps imports;
-    # it is exempt as a whole under the Python behavioral-source standard.
-    skill = tmp_path / "skills" / "install-assistant-tools"
-    (skill / "_rtx").mkdir(parents=True)
-    (skill / "blueprint.yaml").write_text("name: install-assistant-tools\n", encoding="utf-8")
-    (skill / "_rtx" / "setup.py").write_text(
-        "import sys\n"
-        "sys.path.insert(0, str(root / 'src'))\n"
-        "launcher = bin_dir / \"dispatcher\"\n",
-        encoding="utf-8",
-    )
-    assert _mod.validate(tmp_path) == []
 
 
 def test_other_skills_not_exempt(tmp_path: Path) -> None:

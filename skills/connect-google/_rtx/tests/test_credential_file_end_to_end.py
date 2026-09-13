@@ -135,7 +135,7 @@ def integration_env(
         refresh_with_test_backend,
     )
 
-    email_dir = tmp_path / ".config" / "email-client"
+    email_dir = tmp_path / "email-client"
     email_path = email_dir / "accounts.json"
     email_dir.mkdir(parents=True)
     email_path.write_text(
@@ -155,10 +155,10 @@ def integration_env(
     monkeypatch.setattr(service_modules.email_accounts, "CONFIG_DIR", email_dir)
     monkeypatch.setattr(service_modules.email_accounts, "ACCOUNTS_FILE", email_path)
 
-    calendar_config = tmp_path / ".config" / "online-calendar" / "config.json"
+    calendar_config = service_modules.calendar_bind._config_paths(tmp_path)[1]
     calendar_config.parent.mkdir(parents=True)
     calendar_config.write_text(json.dumps({"calendar": "primary"}), encoding="utf-8")
-    drive_config = tmp_path / ".config" / "cloud-files" / "config.json"
+    drive_config = service_modules.drive_bind._config_paths(tmp_path)[1]
     drive_config.parent.mkdir(parents=True)
     drive_config.write_text(
         json.dumps({"remote_llm_root": "assistant/", "timeout_seconds": 45}),

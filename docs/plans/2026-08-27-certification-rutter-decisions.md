@@ -415,12 +415,10 @@ This revision supersedes owner projection, lexical `get-root`, and the routine
 
 ## Reuse and implementation baseline
 
-Implementation scope, 2026-09-12: the user restricted all session changes to
-the existing `feat/certification-audit-pool` branch and worktree. Use its
-`skill-certifier`/`skill-drift` APIs throughout; the `node-certify`/`node-drift`
-names below identify their counterparts on the newer baseline. Substitute the
-branch-local names in paths, interface IDs and schema IDs. A repository-wide
-rename or integration of other branches is outside this implementation scope.
+Implementation scope: all session changes remain in the existing
+`feat/certification-audit-pool` branch and worktree. The authorized 2026-09-13
+merge of `master` adopts its `node-certify`/`node-drift` names. Earlier benchmark
+records retain the `skill-certifier`/`skill-drift` identifiers used when measured.
 
 Reuse these existing components:
 

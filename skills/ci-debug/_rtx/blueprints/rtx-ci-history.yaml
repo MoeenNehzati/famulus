@@ -1,0 +1,14 @@
+content: [_ci_history\.py, tests/test_ci_history\.py]
+dependencies:
+- {source: ci-debug._rtx.source.rtx-runner-labels, version: 1, blueprint: {base: module-root, path: blueprints/rtx-runner-labels.yaml}, reason: Uses generic runner-label classifications with exact evidence basis.}
+description: Owns deterministic CI snapshot validation publication failure episodes timing aggregation and safe serialization.
+gateway: {language: Python>=3.11, path: _ci_history.py}
+id: ci-debug._rtx.source.rtx-ci-history
+interfaces: {}
+node_type: behavioral_source
+platform_support: {linux: true, macos: true, windows: true}
+runtime_dependencies: []
+schema_version: 6
+uses_interfaces: []
+version: 1
+maturity: experimental

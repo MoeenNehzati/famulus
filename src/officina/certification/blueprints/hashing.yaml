@@ -10,7 +10,7 @@ dependencies:
 - blueprint:
     base: repository-root
     path: src/officina/blueprints/blueprints/graph.yaml
-  reason: Imports v4 repository graph and node types from graph.py.
+  reason: Imports v6 repository graph and node types from graph.py.
   source: blueprints.source.graph
   version: 1
 - blueprint:

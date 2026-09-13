@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 from pathlib import Path
@@ -1594,29 +1595,20 @@ def test_concurrent_same_predecessor_publishes_exactly_one_successor(
         _example_reckoning(global_revision=1, evolution_id="loser"),
     )
     first.create(previous)
-    start = Barrier(3)
-    outcomes: list[str] = []
+    start = Barrier(2)
 
-    def publish(store: ReckoningStore, successor: Reckoning) -> None:
+    def publish(store: ReckoningStore, successor: Reckoning) -> str:
         start.wait()
         try:
             with store.transaction():
                 store.replace(previous, successor)
         except RutterStateError as error:
             assert "changed" in str(error)
-            outcomes.append("lost")
-        else:
-            outcomes.append("published")
+            return "lost"
+        return "published"
 
-    threads = (
-        Thread(target=publish, args=(first, successors[0])),
-        Thread(target=publish, args=(second, successors[1])),
-    )
-    for thread in threads:
-        thread.start()
-    start.wait()
-    for thread in threads:
-        thread.join(timeout=1)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(publish, (first, second), successors))
 
     assert sorted(outcomes) == ["lost", "published"]
     assert first.read() in successors
@@ -1628,19 +1620,27 @@ def test_transactions_serialize_real_store_instances(tmp_path: Path) -> None:
     first.create(_example_reckoning())
     attempted = Event()
     entered = Event()
+    worker_errors: list[BaseException] = []
 
     def enter_second() -> None:
-        attempted.set()
-        with second.transaction():
-            entered.set()
+        try:
+            attempted.set()
+            with second.transaction():
+                entered.set()
+        except BaseException as error:
+            worker_errors.append(error)
 
-    with first.transaction():
-        thread = Thread(target=enter_second)
-        thread.start()
-        assert attempted.wait(timeout=1)
-        assert not entered.wait(timeout=0.1)
-    thread.join(timeout=1)
+    thread = Thread(target=enter_second)
+    try:
+        with first.transaction():
+            thread.start()
+            assert attempted.wait(timeout=1)
+            assert not entered.wait(timeout=0.1)
+    finally:
+        thread.join(timeout=1)
 
+    assert not thread.is_alive()
+    assert worker_errors == []
     assert entered.is_set()
 
 

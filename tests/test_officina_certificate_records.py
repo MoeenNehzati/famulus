@@ -127,7 +127,7 @@ def test_certificate_signing_material_provisioning_is_idempotent_and_verified(
     tmp_path: Path,
 ) -> None:
     skills_root = tmp_path / "skills"
-    certifier_root = skills_root / "skill-certifier"
+    certifier_root = skills_root / "node-certify"
     certifier_root.mkdir(parents=True)
     if os.name == "posix":
         skills_root.chmod(0o755)

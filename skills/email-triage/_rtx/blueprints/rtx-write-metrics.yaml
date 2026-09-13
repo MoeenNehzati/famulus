@@ -4,7 +4,7 @@ dependencies:
 - blueprint:
     base: module-root
     path: blueprints/rtx-init.yaml
-  reason: Loads Python package support from _rtx/__init__.py.
+  reason: Loads package support and the shared email-triage state-directory resolver.
   source: email-triage._rtx.source.rtx-init
   version: 1
 description: Merges run counters and account names into the skill-local triage status
@@ -17,9 +17,7 @@ interfaces:
   email-triage._rtx.source.rtx-write-metrics.interface.scripts-write-metrics:
     content:
     - _write_metrics\.py
-    uses_interfaces:
-    - interface: common.interface.famulus-paths
-      version: 1
+    uses_interfaces: []
     contract:
       arguments:
         accounts:
@@ -158,7 +156,7 @@ interfaces:
         id: failed
         outputs: []
       outputs:
-      - audience: both
+      - audience: machine
         cardinality:
           maximum: 1
           minimum: 1
@@ -202,8 +200,8 @@ interfaces:
         - --added-todo
         - --added-triage
         - --skipped
-    usage: Write the triage run metrics (counts) to state/status.json with timestamps
-      for post-run reporting.
+    usage: --total-scanned N --added-todo N --added-triage N --skipped N [--deduped
+      N] [--accounts TEXT]
     version: 1
 node_type: behavioral_source
 platform_support:
@@ -212,8 +210,6 @@ platform_support:
   windows: true
 runtime_dependencies: []
 schema_version: 6
-uses_interfaces:
-- interface: common.interface.famulus-paths
-  version: 1
+uses_interfaces: []
 version: 1
 maturity: stable

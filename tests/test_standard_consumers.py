@@ -66,7 +66,7 @@ def test_skill_maker_queries_standards_and_builds_an_authoring_brief() -> None:
         assert standard in skill
     assert "schema-minimum skill" in skill
     assert "items.true" not in skill
-    assert len(skill.split()) < 700
+    assert len(skill.split()) < 850
 
 
 def test_refactor_node_builds_a_refactoring_brief_from_each_selected_root() -> None:
@@ -102,7 +102,24 @@ def test_refactor_node_builds_a_refactoring_brief_from_each_selected_root() -> N
     ):
         assert standard in skill
     assert "items.true" not in skill
-    assert len(skill.split()) < 700
+    assert len(skill.split()) < 750
+
+
+def test_test_code_affecting_skill_work_queries_the_code_testing_standard() -> None:
+    testing_root = "references/node-standards/code-testing.standard.yaml"
+
+    for relative in (
+        "skills/skill-maker/SKILL.md",
+        "skills/refactor-node/SKILL.md",
+    ):
+        skill = _normalized(relative)
+        assert "If selected work touches test files or their fixtures or helpers" in skill
+        assert testing_root in skill
+        assert "additional independent root" in skill
+        assert "task.optimizes-test-performance" in skill
+        assert "configured test or validation runner" in skill
+        assert "Markdown-only means no executable test file, fixture, or helper changes" in skill
+        assert "Test code that validates Markdown" in skill
 
 
 def test_language_routes_use_the_whole_applicable_closure() -> None:

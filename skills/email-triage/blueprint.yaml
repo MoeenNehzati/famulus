@@ -95,6 +95,6 @@ sources:
       path: blueprints/instructions-triage.yaml
 version: 3
 maturity: stable
-installation_tier: core
+installation_tier: optional
 personal_preference:
   applies: false

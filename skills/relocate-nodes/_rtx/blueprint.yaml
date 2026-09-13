@@ -8,24 +8,32 @@ authority:
       - officina.runtime.python_machine_interface_runner
       - _relocate_nodes.py
       - Interface
-      reason: Prevalidate one exact manifest, then publish with atomic replacement
-        per file and possible partial effects if a later publication fails.
+      reason: Prevalidate one exact manifest, then publish one recovery-backed transaction.
+    - command:
+      - python3
+      - -m
+      - officina.runtime.python_machine_interface_runner
+      - _build_review_packet.py
+      - Interface
+      reason: Compile one preflight report into a grouped review packet.
     network: []
 children: {}
 content:
 - __init__\.py
+- _build_review_packet\.py
+- _compact_relocation\.py
 - _relocate_nodes\.py
-- _relocation_addresses\.py
-- _relocation_closure\.py
-- _relocation_engine\.py
-- _relocation_semantics\.py
 - schemas/relocation\.schema\.json
-- tests/test_relocation_addresses\.py
-- tests/test_relocation_closure\.py
-- tests/test_relocation_engine\.py
-- tests/test_relocation_semantics\.py
+- tests/test_build_review_packet\.py
+- tests/test_compact_relocation\.py
 description: Private Python runtime for manifest-driven registered-node relocation.
 exports:
+  relocate-nodes._rtx.interface.build-review-packet:
+    access:
+      allow_all_modules: false
+      allowed_callers:
+      - relocate-nodes
+    source_interface: relocate-nodes._rtx.source.rtx-build-review-packet.interface.build-review-packet
   relocate-nodes._rtx.interface.relocate:
     access:
       allow_all_modules: false
@@ -40,6 +48,10 @@ namespace_exports: {}
 node_type: module
 schema_version: 6
 sources:
+  relocate-nodes._rtx.source.rtx-build-review-packet:
+    blueprint:
+      base: module-root
+      path: blueprints/rtx-build-review-packet.yaml
   relocate-nodes._rtx.source.rtx-relocate-nodes:
     blueprint:
       base: module-root

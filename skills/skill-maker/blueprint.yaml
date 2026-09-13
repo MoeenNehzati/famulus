@@ -5,7 +5,7 @@ children:
 content:
 - SKILL\.md
 description: Defines the personal skill-authoring workflow and owns repository skill
-  conformance validators plus generated blueprint-contract synchronization.
+  conformance validators plus generated blueprint interface synchronization.
 discovery:
   mechanism: skill
   catalog:
@@ -43,7 +43,7 @@ namespace_exports:
       skill-maker._rtx.interface.sync-blueprints:
         allow_all_modules: false
         allowed_callers:
-        - skill-certifier
+        - node-certify
         - relocate-nodes._rtx
 node_type: module
 schema_version: 6

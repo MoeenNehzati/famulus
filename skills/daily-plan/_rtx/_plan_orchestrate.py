@@ -11,9 +11,10 @@ try:
     from ._day_model import (
         DISPATCHES,
         PlanError,
+        PlanNotFound,
         generate_plan,
         get_today_date,
-        plan_exists,
+        plan_path,
         refresh_rendered_plan,
         set_dispatch_interface,
     )
@@ -21,9 +22,10 @@ except ImportError:
     from _day_model import (
         DISPATCHES,
         PlanError,
+        PlanNotFound,
         generate_plan,
         get_today_date,
-        plan_exists,
+        plan_path,
         refresh_rendered_plan,
         set_dispatch_interface,
     )
@@ -45,10 +47,15 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         date_key = get_today_date()
-        if args.forced or not plan_exists(date_key):
+        if args.forced:
             print(generate_plan(date_key), end="")
         else:
-            print(refresh_rendered_plan(date_key), end="")
+            try:
+                print(refresh_rendered_plan(date_key), end="")
+            except PlanNotFound as exc:
+                if exc.path != plan_path(date_key):
+                    raise
+                print(generate_plan(date_key), end="")
         return 0
     except PlanError as exc:
         print(f"Error: {exc}", file=sys.stderr)

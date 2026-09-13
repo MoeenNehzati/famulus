@@ -2,20 +2,28 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 import yaml
 
 import officina.dispatcher as dispatcher_package
+import officina.dispatcher.direct_authorization as direct_authorization
+import officina.dispatcher.direct_runtime as direct_runtime
+from officina.blueprints.process_binding import ProcessBindingDiagnosticError
 from officina.configuration.repository import RepositoryConfiguration
 from officina.dispatcher.direct_authorization import resolve_direct_invocation
+from officina.dispatcher.direct_models import ResolvedInvocationMetadata
 from officina.dispatcher.direct_runtime import (
     _dispatch_host,
     _resolve_host_dispatch_metadata,
     resolve_dispatch_metadata,
 )
 from officina.dispatcher.errors import (
+    DispatcherError,
     DirectBlueprintError,
     UnauthorizedCallerError,
 )
@@ -26,12 +34,174 @@ SOURCE_ID = "root.alpha.leaf.source.runtime"
 SOURCE_INTERFACE_ID = f"{SOURCE_ID}.interface.execute"
 
 
+def test_source_path_failures_are_factual_and_redacted(tmp_path: Path) -> None:
+    with pytest.raises(DirectBlueprintError) as unsafe:
+        direct_authorization._safe_relative_path(
+            "../secret", field_name="blueprint.path", module_id="root"
+        )
+    assert str(unsafe.value) == (
+        "The source `blueprint.path` is not a safe module-relative path."
+    )
+
+    with pytest.raises(DirectBlueprintError) as absent:
+        direct_authorization._require_regular_without_symlinks(
+            tmp_path / "missing", module_id="root"
+        )
+    assert str(absent.value) == (
+        "The dispatcher could not inspect the source path for module `root`."
+    )
+    assert str(tmp_path) not in str(absent.value.as_payload())
+
+    target = tmp_path / "target"
+    target.write_text("safe", encoding="utf-8")
+    linked = tmp_path / "linked"
+    linked.symlink_to(target)
+    with pytest.raises(DirectBlueprintError) as linked_error:
+        direct_authorization._require_regular_without_symlinks(
+            linked, module_id="root"
+        )
+    assert str(linked_error.value) == (
+        "The source for module `root` has a path containing a symbolic link."
+    )
+
+
+@pytest.mark.parametrize("logical_stdin", [None, "", "payload"])
+def test_resolved_invocation_never_inherits_host_stdin(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    logical_stdin: str | None,
+) -> None:
+    observed: dict[str, object] = {}
+
+    class Process:
+        returncode = 0
+
+        def communicate(
+            self,
+            input: bytes | None = None,
+            timeout: float | None = None,
+        ) -> tuple[bytes, bytes]:
+            observed["input"] = input
+            observed["timeout"] = timeout
+            return b"", b""
+
+    def popen(_command: list[str], **kwargs: object) -> Process:
+        observed.update(kwargs)
+        return Process()
+
+    monkeypatch.setattr(direct_runtime.subprocess, "Popen", popen)
+    metadata = ResolvedInvocationMetadata(
+        caller_module_id="root",
+        target_module_id="root.alpha.leaf",
+        script_interface=SOURCE_INTERFACE_ID,
+        target=INTERFACE_ID,
+        pattern="default",
+        cwd=tmp_path,
+        command=["probe"],
+        stdin=logical_stdin is not None,
+    )
+    resolved = direct_runtime.ResolvedInvocation(
+        metadata,
+        [sys.executable, "-P", "-m", "runner", "gateway.py", "Entry"],
+        {},
+    )
+
+    direct_runtime._run_resolved_invocation(
+        resolved,
+        stdin=logical_stdin,
+        text=True,
+        subprocess=True,
+    )
+
+    if logical_stdin is None:
+        assert observed["stdin"] is subprocess.DEVNULL
+        assert observed["input"] is None
+    else:
+        assert observed["input"] == logical_stdin.encode("utf-8")
+        assert observed["stdin"] is subprocess.PIPE
+
+
 def test_dispatcher_package_exports_direct_resolver() -> None:
     assert dispatcher_package.resolve_direct_invocation is resolve_direct_invocation
 
 
+def test_authorize_then_compile_matches_public_direct_resolution(tmp_path: Path) -> None:
+    configuration = _repository(
+        tmp_path,
+        terminal_access=_access(public=True),
+        with_value_argument=True,
+    )
+    expected = resolve_direct_invocation(
+        configuration=configuration,
+        caller_module_id="root",
+        interface_id=INTERFACE_ID,
+        interface_version=3,
+        argv=["value"],
+        stdin_requested=False,
+    )
+
+    authorized = direct_authorization.authorize_direct_invocation(
+        configuration=configuration,
+        caller_module_id="root",
+        interface_id=INTERFACE_ID,
+        interface_version=3,
+    )
+    actual = direct_authorization.compile_direct_invocation(
+        authorized,
+        argv=["value"],
+        stdin_requested=False,
+    )
+
+    assert actual == expected
+
+
 def _access(*callers: str, public: bool = False) -> dict[str, object]:
     return {"allow_all_modules": public, "allowed_callers": list(callers)}
+
+
+@pytest.mark.parametrize("audiences,expected", [
+    (["machine"], "machine"), (["human"], "human"), (["both"], "both"),
+    ([], "machine"), (["human", "machine"], "machine"),
+    (["human", "both"], "machine"), (["unknown"], "machine"),
+    ([None], "machine"), ([{}], "machine"),
+])
+def test_compiled_audiences_follow_implementing_source_output_links(
+    tmp_path: Path, audiences: list[object], expected: str,
+) -> None:
+    configuration = _repository(tmp_path, terminal_access=_access(public=True))
+    path = tmp_path / "skills/root/alpha/leaf/blueprints/runtime.yaml"
+    source = yaml.safe_load(path.read_text())
+    source["interfaces"][SOURCE_INTERFACE_ID]["contract"].update({
+        "direct_io": {"writes": [
+            {"id": "records", "medium": "stdout"},
+            {"id": "diagnostic", "medium": "stderr"},
+            {"id": "file", "medium": "local-filesystem"},
+        ]},
+        "outputs": [
+            *[{"direct_io_ref": "records", "audience": value} for value in audiences],
+            {"direct_io_ref": "diagnostic", "audience": "both"},
+            {"direct_io_ref": "file", "audience": "human"},
+        ],
+    })
+    _write_yaml(path, source)
+    resolved = resolve_direct_invocation(
+        configuration=configuration, caller_module_id="root",
+        interface_id=INTERFACE_ID, interface_version=3,
+        argv=[], stdin_requested=False,
+    )
+    assert resolved.script_interface == SOURCE_INTERFACE_ID
+    assert resolved.as_payload()["output_audiences"] == {
+        "stdout": expected, "stderr": "both",
+    }
+
+
+@pytest.mark.parametrize("contract", [None, {}, {"outputs": []}, {
+    "outputs": None, "direct_io": {"writes": []},
+}, {"outputs": [], "direct_io": {"writes": None}}])
+def test_missing_output_contract_defaults_to_machine(contract: object) -> None:
+    assert direct_authorization._output_audiences(contract) == {
+        "stdout": "machine", "stderr": "machine",
+    }
 
 
 def _write_yaml(path: Path, value: object) -> None:
@@ -88,6 +258,7 @@ def _repository(
     terminal_access: dict[str, object],
     root_gate: dict[str, object] | None = None,
     alpha_gate: dict[str, object] | None = None,
+    with_value_argument: bool = False,
 ) -> RepositoryConfiguration:
     modules = tmp_path / "skills"
     modules.mkdir()
@@ -122,6 +293,39 @@ def _repository(
     }
     for module_id, document in documents.items():
         _write_yaml(modules.joinpath(*module_id.split("."), "blueprint.yaml"), document)
+    source_interface: dict[str, object] = {
+        "version": 3,
+        "contract": {"arguments": {}},
+        "process_binding": {
+            "kind": "process",
+            "entry": "Interface",
+            "args_prefix": ["read"],
+            "arguments": {},
+        },
+    }
+    if with_value_argument:
+        source_interface["contract"] = {
+            "arguments": {
+                "value": {
+                    "description": "Value.",
+                    "required": True,
+                    "sensitivity": "public",
+                    "type": {"kind": "string"},
+                }
+            }
+        }
+        source_interface["process_binding"] = {
+            "kind": "process",
+            "entry": "Interface",
+            "args_prefix": ["read"],
+            "arguments": {
+                "value": {
+                    "kind": "positional",
+                    "position": 0,
+                    "arity": {"minimum": 1, "maximum": 1},
+                }
+            },
+        }
     source = {
         "schema_version": 6,
         "node_type": "behavioral_source",
@@ -132,16 +336,7 @@ def _repository(
         "dependencies": [],
         "uses_interfaces": [],
         "interfaces": {
-            SOURCE_INTERFACE_ID: {
-                "version": 3,
-                "contract": {"arguments": {}},
-                "process_binding": {
-                    "kind": "process",
-                    "entry": "Interface",
-                    "args_prefix": ["read"],
-                    "arguments": {},
-                },
-            }
+            SOURCE_INTERFACE_ID: source_interface
         },
     }
     _write_yaml(modules / "root" / "alpha" / "leaf" / "blueprints" / "runtime.yaml", source)
@@ -277,6 +472,59 @@ def test_hop_local_namespace_owner_replaces_caller(tmp_path: Path) -> None:
     assert [item.owner_module_id for item in invocation.authorization.effective_filters] == ["root", "root.alpha", "root.alpha.leaf"]
 
 
+@pytest.mark.parametrize(
+    ("case", "code", "message"),
+    [
+        (
+            "missing-interface",
+            "dispatcher.interface_not_found",
+            "Interface `root.alpha.leaf.interface.execute` was not found.",
+        ),
+        (
+            "invalid-source-interface",
+            "dispatcher.source_interface_invalid",
+            "Source-interface declaration for `root.alpha.leaf.interface.execute` is invalid.",
+        ),
+        (
+            "missing-namespace-route",
+            "dispatcher.namespace_route_missing",
+            "Namespace export `root->alpha` is missing.",
+        ),
+    ],
+)
+def test_remaining_direct_resolution_producers_are_exact_and_redacted(
+    tmp_path: Path, case: str, code: str, message: str
+) -> None:
+    configuration = _repository(tmp_path, terminal_access=_access(public=True))
+    modules = configuration.module_roots[0]
+    if case == "missing-namespace-route":
+        path = modules / "root" / "blueprint.yaml"
+        declaration = yaml.safe_load(path.read_text())
+        declaration["namespace_exports"].pop("alpha")
+    else:
+        path = modules / "root" / "alpha" / "leaf" / "blueprint.yaml"
+        declaration = yaml.safe_load(path.read_text())
+        if case == "missing-interface":
+            declaration["exports"].pop(INTERFACE_ID)
+        else:
+            declaration["exports"][INTERFACE_ID]["source_interface"] = 17
+    _write_yaml(path, declaration)
+
+    with pytest.raises(DirectBlueprintError) as caught:
+        resolve_direct_invocation(
+            configuration=configuration,
+            caller_module_id="outsider",
+            interface_id=INTERFACE_ID,
+            interface_version=3,
+            argv=[],
+            stdin_requested=False,
+        )
+
+    assert caught.value.code == code
+    assert str(caught.value) == message
+    assert "runtime.yaml" not in str(caught.value.as_payload())
+
+
 def test_relative_callers_resolve_from_declaring_owner(tmp_path: Path) -> None:
     configuration = _repository(
         tmp_path,
@@ -317,6 +565,9 @@ def test_namespace_surface_and_version_are_enforced(tmp_path: Path) -> None:
             stdin_requested=False,
         )
     assert caught.value.code == "dispatcher.namespace_surface_excludes_interface"
+    assert str(caught.value) == (
+        "Namespace surface excludes `root.alpha.leaf.interface.execute@3`."
+    )
 
 
 def test_namespace_version_must_match_registered_child(tmp_path: Path) -> None:
@@ -336,6 +587,7 @@ def test_namespace_version_must_match_registered_child(tmp_path: Path) -> None:
             stdin_requested=False,
         )
     assert caught.value.code == "dispatcher.namespace_version_mismatch"
+    assert str(caught.value) == "Namespace version does not match child `root.alpha`."
 
 
 def test_namespace_version_rejects_boolean_integer_alias(tmp_path: Path) -> None:
@@ -426,6 +678,9 @@ def test_malformed_namespace_interface_access_fails_closed(tmp_path: Path) -> No
             stdin_requested=False,
         )
     assert caught.value.code == "dispatcher.access_invalid"
+    assert str(caught.value) == (
+        "Namespace route `root` has invalid `interface_access`."
+    )
 
 
 def test_source_interface_version_mismatch_is_rejected(tmp_path: Path) -> None:
@@ -440,6 +695,10 @@ def test_source_interface_version_mismatch_is_rejected(tmp_path: Path) -> None:
             stdin_requested=False,
         )
     assert caught.value.code == "dispatcher.interface_version_mismatch"
+    assert str(caught.value) == (
+        "Version mismatch for `root.alpha.leaf.interface.execute`: "
+        "requested 4, available 3."
+    )
 
 
 @pytest.mark.parametrize("invalid_version", [0, -1])
@@ -579,6 +838,11 @@ def test_host_executes_direct_route_with_explicit_config(
 ) -> None:
     configuration = _repository(tmp_path, terminal_access=_access(public=True))
     monkeypatch.setenv("PYTHONPATH", str(Path(__file__).resolve().parents[1] / "src"))
+    monkeypatch.setattr(
+        direct_runtime.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: pytest.fail("default route spawned a subprocess"),
+    )
 
     completed = _dispatch_host(
         caller_skill="root",
@@ -590,7 +854,7 @@ def test_host_executes_direct_route_with_explicit_config(
     )
 
     assert completed.returncode == 0
-    assert completed.stdout == "direct-ok\n"
+    assert completed.stdout == f"direct-ok{os.linesep}"
     assert completed.stderr == ""
 
 
@@ -607,19 +871,45 @@ def test_host_execution_cannot_import_sibling_from_ambient_pythonpath(
         gateway.read_text().replace("from .helper import message", "from secret import message")
     )
     source_root = Path(__file__).resolve().parents[1] / "src"
-    monkeypatch.setenv("PYTHONPATH", f"{sibling}:{source_root}")
+    monkeypatch.setenv(
+        "PYTHONPATH", os.pathsep.join((str(sibling), str(source_root)))
+    )
+    monkeypatch.syspath_prepend(str(sibling))
 
-    completed = _dispatch_host(
-        caller_skill="root",
-        target=INTERFACE_ID,
-        args=[],
-        repository_config=configuration.config_path,
-        capture_output=True,
-        text=True,
+    with pytest.raises(DispatcherError) as caught:
+        _dispatch_host(
+            caller_skill="root",
+            target=INTERFACE_ID,
+            args=[],
+            repository_config=configuration.config_path,
+            capture_output=True,
+            text=True,
+        )
+
+    assert caught.value.code == "dispatcher.runner_import_failed"
+    assert "leaked-sibling" not in str(caught.value.as_payload())
+
+
+def test_in_process_runner_reports_interface_failures(
+    tmp_path: Path,
+) -> None:
+    configuration = _repository(tmp_path, terminal_access=_access(public=True))
+    gateway = configuration.module_roots[0] / "root" / "alpha" / "leaf" / "runtime.py"
+    gateway.write_text(
+        gateway.read_text().replace("print(message)\n        return 0", "raise RuntimeError('boom')")
     )
 
-    assert completed.returncode != 0
-    assert "leaked-sibling" not in completed.stdout
+    with pytest.raises(DispatcherError) as caught:
+        _dispatch_host(
+            caller_skill="root",
+            target=INTERFACE_ID,
+            args=[],
+            repository_config=configuration.config_path,
+            capture_output=True,
+            text=True,
+        )
+
+    assert caught.value.code == "dispatcher.runner_execution_failed"
 
 
 def test_host_rejects_private_child_caller_identity(tmp_path: Path) -> None:
@@ -633,4 +923,90 @@ def test_host_rejects_private_child_caller_identity(tmp_path: Path) -> None:
             repository_config=configuration.config_path,
         )
 
+    assert caught.value.code == "dispatcher.host_caller_invalid"
+    assert str(caught.value) == (
+        "Host caller `root.alpha.leaf` is not a discoverable top-level skill."
+    )
+
+
+def test_argument_compilation_failure_is_exact_and_redacted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    configuration = _repository(
+        tmp_path, terminal_access=_access(public=True), with_value_argument=True
+    )
+    authorized = direct_authorization.authorize_direct_invocation(
+        configuration=configuration,
+        caller_module_id="outsider",
+        interface_id=INTERFACE_ID,
+        interface_version=3,
+    )
+    def reject(*_args: object, **_kwargs: object) -> None:
+        raise ProcessBindingDiagnosticError("unknown option --done")
+
+    monkeypatch.setattr(direct_authorization, "parse_caller_invocation", reject)
+
+    with pytest.raises(direct_authorization.ResolutionFailedError) as caught:
+        direct_authorization.compile_direct_invocation(
+            authorized, argv=[], stdin_requested=False
+        )
+
+    assert caught.value.as_payload() == {
+        "schema_version": 1,
+        "code": "dispatcher.resolution_failed",
+        "message": (
+            "The dispatcher could not compile arguments for "
+            "`root.alpha.leaf.interface.execute`: unknown option --done."
+        ),
+        "caller_module_id": "outsider",
+        "target_module_id": "root.alpha.leaf",
+        "interface_id": INTERFACE_ID,
+    }
+
+
+def test_python_target_construction_failure_is_exact_and_redacted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    configuration = _repository(tmp_path, terminal_access=_access(public=True))
+    authorized = direct_authorization.authorize_direct_invocation(
+        configuration=configuration,
+        caller_module_id="outsider",
+        interface_id=INTERFACE_ID,
+        interface_version=3,
+    )
+    secret = "do-not-echo-python-target-secret"
+
+    def fail_target(*_args: object, **_kwargs: object):
+        raise direct_authorization.PythonProcessTargetError(secret)
+
+    monkeypatch.setattr(direct_authorization, "PythonProcessTarget", fail_target)
+    with pytest.raises(direct_authorization.ResolutionFailedError) as caught:
+        direct_authorization.compile_direct_invocation(
+            authorized, argv=[], stdin_requested=False
+        )
+
+    assert str(caught.value) == (
+        "The dispatcher could not construct the Python target for "
+        "`root.alpha.leaf.interface.execute`."
+    )
+    assert secret not in str(caught.value.as_payload())
+
+
+def test_prebinding_host_authorization_accepts_only_discoverable_top_level_skill(
+    tmp_path: Path,
+) -> None:
+    """Catches lifecycle preflight admitting a nested private module as host caller."""
+    assert dispatcher_package.authorize_host_caller is direct_runtime.authorize_host_caller
+    configuration = _repository(tmp_path, terminal_access=_access(public=True))
+
+    direct_runtime.authorize_host_caller(
+        caller_skill="root",
+        repository_config=configuration.config_path,
+    )
+
+    with pytest.raises(DirectBlueprintError) as caught:
+        direct_runtime.authorize_host_caller(
+            caller_skill="root.alpha.leaf",
+            repository_config=configuration.config_path,
+        )
     assert caught.value.code == "dispatcher.host_caller_invalid"
