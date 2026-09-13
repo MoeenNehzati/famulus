@@ -190,7 +190,7 @@ the Python test environment from `requirements-ci.txt`, then runs:
 1. the full repository suite on Ubuntu;
 2. explicit validator, shared, and performance shards on macOS and Windows;
 3. the complete browser suite in a separate Windows shard;
-4. the portability sentinel on every supported OS;
+4. the portability sentinel after a failed combined or shared check on every supported OS;
 5. on macOS and Windows, the native keyring smoke;
 6. on macOS and Windows, the native recurring-scheduler smoke.
 

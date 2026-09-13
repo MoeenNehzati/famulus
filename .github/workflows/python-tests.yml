@@ -162,7 +162,7 @@ jobs:
 
       - name: Run portability sentinel
         if: >-
-          always() &&
+          failure() &&
           (matrix.task == 'combined' || matrix.task == 'tests:shared')
         run: python3 repo_checks.py --suite full --task tests:portability --jobs 1 --timing-output .repo-checks/portability.json
 
@@ -280,7 +280,7 @@ jobs:
 
       - name: Run probe portability sentinel
         if: >-
-          always() &&
+          failure() &&
           (inputs.selector == '' || inputs.selector == '[]') &&
           (inputs.task == 'combined' || inputs.task == 'tests:shared')
         run: python3 repo_checks.py --suite full --task tests:portability --jobs 1 --timing-output .repo-checks/portability.json

@@ -1278,6 +1278,9 @@ def test_ci_workflow_preserves_execution_dispatch_and_evidence_contracts() -> No
     assert steps["Run repository check shard"]["env"] == {
         "FAMULUS_REQUIRE_BROWSER": "${{ matrix.task == 'tests:browser' && '1' || '0' }}"
     }
+    assert steps["Run portability sentinel"]["if"] == (
+        "failure() && (matrix.task == 'combined' || matrix.task == 'tests:shared')"
+    )
     assert parsed["jobs"]["probe"]["env"] == {
         "FAMULUS_REQUIRE_BROWSER": (
             "${{ (inputs.task == 'tests:browser' || inputs.task == 'combined') "
@@ -1341,6 +1344,13 @@ def test_ci_workflow_dispatches_a_full_matrix_or_one_safe_probe() -> None:
     assert 'command.extend(["--selector", selector])' in workflow
     assert 'if task != "combined":' in workflow
     assert "inputs.selector == '[]'" in workflow
+    probe_steps = {
+        step["name"]: step for step in parsed["jobs"]["probe"]["steps"] if "name" in step
+    }
+    assert probe_steps["Run probe portability sentinel"]["if"] == (
+        "failure() && (inputs.selector == '' || inputs.selector == '[]') && "
+        "(inputs.task == 'combined' || inputs.task == 'tests:shared')"
+    )
     assert workflow.count("Run probe portability sentinel") == 1
     assert workflow.count("Run probe native keyring smoke") == 1
     assert workflow.count("Run probe native recurring scheduler smoke") == 1
