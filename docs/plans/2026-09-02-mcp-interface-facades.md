@@ -39,6 +39,27 @@ server.
   authorization path; they must not enter the host-caller `resolve_dispatch`
   shortcut.
 
+### Codex deferred-tool behavior (current)
+
+Deferring each facade tool is compatible with this plan's per-interface
+permission goal, but it is a context optimization, not a capability boundary.
+
+- A deferred facade is absent from the initial full tool schema and direct
+  callable surface. This reduces baseline tool-context load. Once Codex loads
+  it, the host can apply that facade tool's own saved approval policy.
+- Current Codex deferred-tool support retains a discovery catalog: an agent can
+  discover deferred tools, including their names and descriptions, and then load
+  one. A generated skill that already names its required facade avoids that
+  discovery step in the normal path; it does not prevent discovery.
+- Therefore, deferred facades do **not** mean that the model cannot know unused
+  interfaces exist, and a skill instruction alone is not authorization. The
+  individual facade must be the only model-callable route to its interface;
+  leave `FAMULUS_MCP_INVOKE` unset outside explicit debugging, or `invoke` would
+  bypass the per-facade approval policy.
+- Literal interface hiding requires host-side attachment of only the authorized
+  tools (or separate server/profile/session configurations). It cannot be
+  obtained by ordinary skill text plus deferred MCP tools.
+
 ### Naming
 
 - One `facade_name(interface_id) -> str` and its inverse `interface_id(name)` in
