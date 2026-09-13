@@ -1,6 +1,6 @@
 # Audit a Module
 
-Audit only the assigned task from its scheduler input file. Do not recursively
+Audit only the assigned task from its supplied versioned packet. Do not recursively
 audit, schedule, or delegate dependencies. If required dependency evidence is
 missing, inconsistent, or cannot be evaluated, return `verdict: "abort"`. Do
 not modify or certify repository state.
@@ -10,6 +10,16 @@ The module judgment covers its declaration, directly owned content, exports,
 namespace authority, and composition of already-audited child nodes.
 
 ## Required input
+
+The packet binds the reviewed repository and commit, audited input identity,
+selected declaration and input manifest, and prerequisite reports or reusable
+certificate evidence. Use `prerequisite_declarations` for dependency contracts
+and composition; consume these inline declarations without opening prerequisite
+blueprints or certificate logs. They contain no child implementation. Read only the selected content needed for your judgment.
+Treat authentication, schema checks, canonical hashes, version pins, graph
+membership, and prerequisite pass/currentness as machine-checked facts. Do not
+repeat those checks or request additional tasks. Judge what the supplied
+evidence means for this subject; return `abort` if semantic evidence is inadequate.
 
 Read the current module blueprint, module-owned content, child registrations,
 exports, namespace routes, authority declarations, and child audit results.
@@ -21,7 +31,7 @@ or reusable certificate evidence supplied for each direct child. Return
 
 Establish that:
 
-- every direct child is registered at the correct version and blueprint;
+- the registered children express the intended module decomposition;
 - every export binds the intended intrinsic interface without copying its
   contract or widening its access;
 - namespace routes stay within registered-child and authorization ceilings;
@@ -29,8 +39,7 @@ Establish that:
   accurately;
 - authority and filesystem ownership are complete and do not duplicate child
   declarations; and
-- every required child audit passed and the combined module surface is
-  coherent.
+- the combined module surface is coherent given the supplied child evidence.
 
 Return `abort` for a missing child result or unresolved module evidence. Reject
 invalid exports, authority, topology, or composition.
@@ -40,8 +49,9 @@ invalid exports, authority, topology, or composition.
 Return exactly one `skill-certifier.semantic-audit-result/v1` JSON object and no
 surrounding prose. Use the assigned task ID; set `verdict` to `pass`, `reject`,
 or `abort`; list evidence strings and direct passing dependency results actually
-consumed; use an empty `findings` array only for `pass`.
+consumed, using exactly the task IDs in `prerequisite_reports` (reusable
+certificates have no report task ID); use an empty `findings` array only for `pass`.
 
-Do not sign or write certificate history. A `pass` result authorizes the
-gateway to request deterministic certification; it is not itself a signed
+Do not sign or write certificate history. The machine consumes a `pass` result before
+exact-node certification; it is not itself a signed
 certificate.

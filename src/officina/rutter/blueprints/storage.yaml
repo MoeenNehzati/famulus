@@ -18,7 +18,7 @@ dependencies:
     path: blueprints/history.yaml
   reason: Imports Reckoning, durable run records, and typed recovery and fault authority.
 - source: rutter.source.values
-  version: 1
+  version: 2
   blueprint:
     base: module-root
     path: blueprints/values.yaml
@@ -34,7 +34,7 @@ uses_interfaces:
 - interface: rutter.source.history.interface.python-api
   version: 1
 - interface: rutter.source.values.interface.python-api
-  version: 1
+  version: 2
 - interface: common.interface.atomic-files
   version: 2
 interfaces:
@@ -45,7 +45,7 @@ interfaces:
     - interface: rutter.source.history.interface.python-api
       version: 1
     - interface: rutter.source.values.interface.python-api
-      version: 1
+      version: 2
     - interface: common.interface.atomic-files
       version: 2
     version: 2
@@ -138,7 +138,7 @@ interfaces:
     - interface: rutter.source.history.interface.python-api
       version: 1
     - interface: rutter.source.values.interface.python-api
-      version: 1
+      version: 2
     - interface: common.interface.atomic-files
       version: 2
     version: 2
@@ -234,7 +234,7 @@ interfaces:
     - interface: rutter.source.history.interface.python-api
       version: 1
     - interface: rutter.source.values.interface.python-api
-      version: 1
+      version: 2
     - interface: common.interface.atomic-files
       version: 2
     version: 2

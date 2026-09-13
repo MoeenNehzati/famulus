@@ -1,10 +1,10 @@
 schema_version: 6
 node_type: behavioral_source
 id: rutter.source.dispenser
-version: 5
-description: Declares Voyage initialization modes, creates uniquely identified durable
-  runs with indexed Voyages, exposes uniform ID-scoped operations, and releases one
-  Voyage or run with nonterminal deletion requiring an explicit force.
+version: 6
+description: Declares Voyage initialization modes, creates uniquely identified durable runs with indexed
+  Voyages, exposes uniform ID-scoped operations, and releases one Voyage or run with nonterminal deletion
+  requiring an explicit force.
 gateway:
   path: dispenser.py
   language: Python
@@ -12,35 +12,34 @@ content:
 - dispenser\.py
 dependencies:
 - source: rutter.source.engine
-  version: 3
+  version: 4
   blueprint:
     base: module-root
     path: blueprints/engine.yaml
   reason: Delegates status, validation, and advancement to authorized Voyages.
 - source: rutter.source.values
-  version: 1
+  version: 2
   blueprint:
     base: module-root
     path: blueprints/values.yaml
   reason: Projects public status and validation values without exposing callbacks.
 uses_interfaces:
 - interface: rutter.source.engine.interface.bound-operations
-  version: 6
+  version: 7
 - interface: rutter.source.values.interface.python-api
-  version: 1
+  version: 2
 interfaces:
   rutter.source.dispenser.interface.python-api:
     content:
     - dispenser\.py
     uses_interfaces:
     - interface: rutter.source.engine.interface.bound-operations
-      version: 6
+      version: 7
     - interface: rutter.source.values.interface.python-api
-      version: 1
-    version: 5
-    description: Construct one VoyageDispenser from self-describing modes, unique
-      run initialization, optionally prefix-filtered ID enumeration, Voyage resolution,
-      and Voyage-or-run release callbacks.
+      version: 2
+    version: 6
+    description: Construct one VoyageDispenser from self-describing modes, unique run initialization,
+      optionally prefix-filtered ID enumeration, Voyage resolution, and Voyage-or-run release callbacks.
     contract:
       arguments:
         operation:
@@ -51,15 +50,16 @@ interfaces:
             kind: enum
             values:
             - value: help
-              description: Explain mode discovery, one-time initialization, and
-                one-agent-per-Voyage ownership.
+              description: Explain mode discovery, one-time initialization, and one-agent-per-Voyage ownership.
             - value: get-modes
-              description: Return every supported initialization mode together with its explanation and required named arguments.
+              description: Return every supported initialization mode together with its explanation and
+                required named arguments.
             - value: initiate-voyages
-              description: Generate a fresh run ID and create indexed durable Voyages
-                under it in the selected mode; exposed as the initiate CLI command.
+              description: Generate a fresh run ID and create indexed durable Voyages under it in the
+                selected mode; exposed as the initiate CLI command.
             - value: get-voyage-ids
-              description: Return every currently authorized Voyage ID, or only IDs under a supplied run prefix.
+              description: Return every currently authorized Voyage ID, or only IDs under a supplied run
+                prefix.
             - value: get-status
               description: Read one selected Voyage's public status.
             - value: validate
@@ -67,20 +67,26 @@ interfaces:
             - value: advance
               description: Advance one selected Voyage without affecting another.
             - value: release
-              description: Remove one selected Voyage or every Voyage in one run after terminal results have been read, or remove earlier only when explicitly forced.
+              description: Remove one selected Voyage or every Voyage in one run after terminal results
+                have been read, or remove earlier only when explicitly forced.
             - value: cli
-              description: Map modes, initiate, list, status, validate, advance,
-                and release commands to finite JSON.
+              description: Map modes, initiate, list, status, validate, advance, and release commands
+                to finite JSON.
+            - value: next
+              description: Atomically validate a correlated response and settle machine work, returning
+                a typed message, terminal result or fault. Concurrent calls block on the existing lock.
         mode:
-          description: One exact mode returned by get-modes and consumed only by
-            initiate; omission selects the first declared mode.
+          description: One exact mode returned by get-modes and consumed only by initiate; omission selects
+            the first declared mode.
           required: false
           sensitivity: public
           type:
             kind: string
             sensitivity: public
         mode-arguments:
-          description: Named string arguments required by the selected mode; unknown, missing, or extra names are rejected before initialization.
+          description: String arguments declared by the selected mode. Required arguments must be present;
+            optional_arguments may be omitted for callback defaults. Unknown names and empty values are
+            rejected.
           required: false
           sensitivity: user-private
           type:
@@ -94,14 +100,16 @@ interfaces:
             kind: string
             sensitivity: user-private
         run-id:
-          description: Fresh identifier generated for one initialization, optionally nested under the supplied run prefix.
+          description: Fresh identifier generated for one initialization, optionally nested under the
+            supplied run prefix.
           required: false
           sensitivity: user-private
           type:
             kind: string
             sensitivity: user-private
         voyage-id:
-          description: Indexed ID under one run ID, assigned to one agent and required for every operation by that agent.
+          description: Indexed ID under one run ID, assigned to one agent and required for every operation
+            by that agent.
           required: false
           sensitivity: user-private
           type:
@@ -126,11 +134,13 @@ interfaces:
         mode: unattended
       caller_warnings:
       - external-side-effect: Advance may execute effects owned by the selected Voyage.
-      - external-side-effect: Release permanently removes the selected Voyage's working directory; nonterminal release requires explicit force.
+      - external-side-effect: Release permanently removes the selected Voyage's working directory; nonterminal
+          release requires explicit force.
       outputs:
       - id: result
         audience: both
-        description: Self-describing mode configurations, initialized IDs, or one public Voyage operation result.
+        description: Self-describing mode configurations, initialized IDs, or one public Voyage operation
+          result. Next returns VoyageNextResult; CLI encoding uses rutter.voyage-next/v1.
         direct_io_ref: result
         cardinality:
           minimum: 1
@@ -171,14 +181,15 @@ interfaces:
         class: error
         outputs: []
         effects: []
-        caller_action: Read or advance the Voyage to a terminal result before releasing it, or explicitly force release to abandon it.
+        caller_action: Read or advance the Voyage to a terminal result before releasing it, or explicitly
+          force release to abandon it.
       execution:
         state_effect: mutating
         lifecycle: finite
         consistency:
-          live: Every initiation generates a fresh run ID and persists sequentially indexed
-            Voyages under it; list may filter the optional label, later operations resolve
-            durable Voyage IDs globally, and release accepts one Voyage ID or run ID.
+          live: Every initiation generates a fresh run ID and persists sequentially indexed Voyages under
+            it; list may filter the optional label, later operations resolve durable Voyage IDs globally,
+            and release accepts one Voyage ID or run ID.
         effects:
         - id: voyage-operation
           direct_io_ref: voyage
@@ -197,8 +208,8 @@ interfaces:
           atomicity:
             per_effect_only: Each selected Voyage owns its transaction boundary.
           concurrent_invocations:
-            safe: Agents may operate distinct Voyages concurrently; exactly one agent
-              owns each Voyage for the duration of its run.
+            safe: Agents may operate distinct Voyages concurrently; exactly one agent owns each Voyage
+              for the duration of its run.
           idempotency:
             non_idempotent: Advance may mutate durable state or execute external effects.
           on_uncertain_completion:

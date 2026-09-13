@@ -685,6 +685,25 @@ def test_private_writer_exact_source_does_not_write_parent(tmp_path: Path) -> No
     assert not certifier.certificate_log_path(graph.nodes["demo-skill"]).exists()
 
 
+@pytest.mark.parametrize("changed", ["node_hash", "dependency_hashes", "certification_basis_hash", "facets"])
+def test_exact_writer_rejects_audit_identity_from_different_inputs(tmp_path: Path, changed: str) -> None:
+    """A caller-side drift check cannot bind the writer's independently loaded inputs."""
+
+    graph, states, _commit = create_repository_fixture(tmp_path)
+    target = "demo-skill.source.gateway"
+    expected = certifier.audited_inputs(states[target])
+    expected[changed] = (
+        [{"target": "provider", "hash": "previous-provider-hash"}]
+        if changed in {"dependency_hashes", "facets"} else "sha256:" + "0" * 64
+    )
+    with pytest.raises(certifier.CertificationError, match="audited inputs changed"):
+        _certify(
+            tmp_path, target_node_ids=(target,), exact_target=True,
+            expected_audited_inputs={target: expected},
+        )
+    assert not certifier.certificate_log_path(graph.nodes[target]).exists()
+
+
 @pytest.mark.parametrize(
     "race",
     [
@@ -1536,6 +1555,24 @@ def test_private_writer_orders_dependency_before_exact_target(
     assert result.node_ids == (dependency, target)
 
 
+def test_exact_writer_requires_current_dependency_without_expanding_target(tmp_path: Path) -> None:
+    materialize_repository_fixture(tmp_path)
+    graph = _add_cross_owner_contract(tmp_path)
+    target = "demo-skill.source.gateway"
+    dependency = "demo-skill.source.contract"
+    backend = MemorySecretBackend()
+    options = {"secret_backend": backend, "require_migration_review": False, "exact_target": True}
+    with pytest.raises(certifier.CertificationError, match="requires current dependencies"):
+        _certify(tmp_path, target_node_ids=(target,), **options)
+    assert not certifier.certificate_log_path(graph.nodes[target]).exists()
+    assert not certifier.certificate_log_path(graph.nodes[dependency]).exists()
+    assert _certify(tmp_path, target_node_ids=(dependency,), **options).node_ids == (dependency,)
+    dependency_log = certifier.certificate_log_path(graph.nodes[dependency]).read_bytes()
+    assert _certify(tmp_path, target_node_ids=(target,), **options).node_ids == (target,)
+    assert certifier.certificate_log_path(graph.nodes[dependency]).read_bytes() == dependency_log
+    assert not certifier.certificate_log_path(graph.nodes["demo-skill"]).exists()
+
+
 def test_private_writer_audits_exact_dependency_postorder_twice_before_append(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2170,6 +2207,58 @@ def test_public_certification_resolves_one_target_without_hash_dispatch(
         and node.certificate_path.suffix == ".jsonl"
         for node in outcomes[0].nodes
     )
+
+
+def test_public_exact_node_certification_never_expands_the_selected_source(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Expanding an exact source would allow unaudited siblings to be signed."""
+
+    legacy_graph, _states, commit = create_repository_fixture(tmp_path)
+    graph = _as_current_graph(legacy_graph)
+    source_id = next(
+        source_id
+        for source_ids in graph.module_sources.values()
+        for source_id in source_ids
+    )
+    calls: list[dict[str, object]] = []
+
+    def issue(_repo_root: Path, **kwargs: object):
+        calls.append(dict(kwargs))
+        kwargs["before_stale_issuance"]()
+        return certifier.CertificationResult(
+            node_ids=(source_id,),
+            source_commit=commit,
+        )
+
+    monkeypatch.setattr(certifier, "_certify_repository", issue)
+    monkeypatch.setattr(
+        certifier,
+        "load_repository_blueprint_graph",
+        lambda *_args, **_kwargs: graph,
+    )
+    monkeypatch.setattr(
+        certifier,
+        "run_mechanical_checks",
+        lambda _repo_root: _passed_mechanical_result(),
+    )
+
+    evidence, outcome = certifier.certify_exact_node(
+        node_id=source_id,
+        reviewed_repository=tmp_path,
+        reviewed_commit=commit,
+        expected_audited_inputs=certifier.audited_inputs(_states[source_id]),
+    )
+
+    assert calls[0]["target_node_ids"] == (source_id,)
+    assert calls[0]["exact_target"] is True
+    assert calls[0]["expected_audited_inputs"] == {
+        source_id: certifier.audited_inputs(_states[source_id])
+    }
+    assert evidence == [_passed_mechanical_result()]
+    assert outcome.node_id == source_id
+    assert outcome.status == "certificate-issued"
 
 
 def test_public_certification_propagates_explicit_non_atomic_fallback(

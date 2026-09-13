@@ -67,6 +67,7 @@ from officina.rutter.values import (
     ValidationIssue,
     ValidationReport,
     VoyageResult,
+    VoyageNextResult,
     VoyageStatus,
 )
 
@@ -122,6 +123,7 @@ __all__ = (
     "VoyagesAlreadyInitializedError",
     "VoyagesNotInitializedError",
     "VoyageResult",
+    "VoyageNextResult",
     "VoyageStatus",
     "after",
     "ask_and_diagnose_on",

@@ -21,13 +21,13 @@ interfaces:
     - _check_drift_state\.py
     uses_interfaces:
     - interface: certification.interface.hashing
-      version: 1
+      version: 2
     - interface: certification.interface.records
       version: 1
     - interface: blueprints.interface.graph
       version: 1
     - interface: certification.interface.view
-      version: 1
+      version: 2
     contract:
       arguments:
         json:
@@ -239,13 +239,13 @@ interfaces:
     - interface: common.interface.atomic-files
       version: 2
     - interface: certification.interface.hashing
-      version: 1
+      version: 2
     - interface: certification.interface.records
       version: 1
     - interface: blueprints.interface.graph
       version: 1
     - interface: certification.interface.view
-      version: 1
+      version: 2
     contract:
       arguments:
         dag-file:
@@ -539,12 +539,12 @@ uses_interfaces:
 - interface: common.interface.atomic-files
   version: 2
 - interface: certification.interface.hashing
-  version: 1
+  version: 2
 - interface: certification.interface.records
   version: 1
 - interface: blueprints.interface.graph
   version: 1
 - interface: certification.interface.view
-  version: 1
+  version: 2
 version: 4
 maturity: stable

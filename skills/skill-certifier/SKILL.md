@@ -10,66 +10,52 @@ description: >-
 Catalog: assistant-development; topics: assistant-assurance, assistant-architecture; visibility: listed
 Activation: user-request, skill-workflow; persistent modifier: no
 
-Skill Version: 6
+Skill Version: 7
 
 Uses Interfaces:
-- `skill-certifier.source.gateway -> skill-certifier._rtx.interface.certify@2`
-- `skill-certifier.source.gateway -> skill-certifier._rtx.interface.semantic-audit-scheduler@1`
-- `skill-certifier.source.gateway -> skill-certifier.source.audit-behavioral-source.interface.audit@2`
-- `skill-certifier.source.gateway -> skill-certifier.source.audit-interface.interface.audit@2`
-- `skill-certifier.source.gateway -> skill-certifier.source.audit-module.interface.audit@2`
-- `skill-certifier.source.gateway -> skill-drift._rtx.interface.drift-status@4`
+- `skill-certifier.source.gateway -> skill-certifier._rtx.interface.certification-voyage@1`
+- `skill-certifier.source.gateway -> skill-certifier.source.audit-behavioral-source.interface.audit@3`
+- `skill-certifier.source.gateway -> skill-certifier.source.audit-interface.interface.audit@3`
+- `skill-certifier.source.gateway -> skill-certifier.source.audit-module.interface.audit@3`
 
 Public Interfaces: none
 <!-- END BLUEPRINT CONTRACT -->
 ## Certification algorithm
 
-Resolve the requested target and hold its reviewed repository and commit
-stable. Then:
+Use `skill-certifier._rtx.interface.certification-voyage@1`. Determine available
+worker slots excluding yourself; use one if unknown. Invoke `initiate` with
+`--repository` and `--worker-capacity`. Supply `--targets` only for explicitly
+requested exact module or source IDs. Omission selects the whole graph.
+The optional `--retry-interval-seconds` overrides the default 10 seconds.
+Retain the returned Voyage ID; one live controller owns its workers.
 
-1. Invoke `skill-drift._rtx.interface.drift-status@4` once in JSON mode with
-   `--dag-file`, and save its JSON result for scheduler initialization.
-2. Initialize `skill-certifier._rtx.interface.semantic-audit-scheduler@1` from
-   the DAG and drift result. The
-   scheduler, not the LLM, owns dependency traversal and audit readiness.
-3. Determine available subagent slots `K`, excluding the orchestrator; use one
-   if unknown. Call `claim --capacity K`. For each returned item, spawn one fresh
-   subagent and pass `input_file` unchanged. Map `interface` to
-   `skill-certifier.source.audit-interface.interface.audit@2`,
-   `behavioral-source` to
-   `skill-certifier.source.audit-behavioral-source.interface.audit@2`, and
-   `module` to `skill-certifier.source.audit-module.interface.audit@2`. Never
-   reuse a subagent for another task.
-4. Write each exact final JSON result to its own report file and call
-   `complete PREFIX TASK_ID --report-file FILE`, then claim again to refill the
-   pool. If no task is returned while work remains in progress, wait. On spawn
-   failure or worker loss call `fail`. Stop all remaining work on malformed
-   output, `reject`, `abort`, or scheduler failure; do not infer readiness or
-   recursively audit dependencies.
-5. Only after scheduler status is `complete`, invoke the declared mechanical
-   `certify` interface for the requested target
-   and exact reviewed repository and commit. It independently recomputes
-   currentness, skips current nodes, route-smokes the stale worklist, and issues
-   stale nodes dependency-first.
+Call `next VOYAGE_ID`, then follow its typed result:
 
-With a matching basis, reuse authenticated semantic evidence when its facet
-local hash or module node hash, input manifest, ordinary dependencies, and
-governing semantic `certified-under` claim still match. The mechanical certify
-claim remains required for currentness and issuance but does not by itself
-require semantic re-audit. A remainder-facet cause belongs to
-`audit-behavioral-source`; it does not create a remainder interface.
+- `message`: spawn one fresh subagent for every supplied packet, using its exact
+  instruction interface and version. Pass the packet unchanged. Never reuse a
+  subagent for another task. Keep task-to-worker handles; wait when only
+  outstanding workers remain. Forward one completion at a time using the exact
+  raw final output, even if empty or apparently malformed:
+  `{"outcome":"worker-completed","task_id":"ASSIGNED_ID","raw_output":"EXACT_OUTPUT"}`.
+  For host spawn failure or worker loss only, forward
+  `{"outcome":"worker-failed","task_id":"ASSIGNED_ID","reason":"HOST_FAILURE"}`.
+  Write the envelope as JSON and call `next VOYAGE_ID --response-file PATH
+  --responding-to ENTRY` with the returned message entrance. Retain other handles
+  and raw completions for subsequent messages.
+- `retry-later`: wait the supplied positive delay and resubmit the unchanged
+  envelope and entrance. This is separate from waiting for worker completion.
+- `terminal` or `fault`: cancel and reap remaining workers, then report the exact
+  machine result. A stale-envelope error also stops dispatch; report it without
+  rewriting the envelope or guessing another entrance.
 
-Schema validity is necessary but does not establish semantic accuracy. The
-audit interfaces own semantic judgment. The mechanical interface invokes the
-repository validator runner, reconstructs every payload field, computes hashes,
-signs, appends certificate history, and performs post-write drift verification.
-Never ask it to sign caller-supplied certificate data.
+Do not parse, summarize, repair, or combine worker reports. Do not inspect the
+DAG, choose dependencies, judge readiness or evidence currentness, audit content,
+or invoke signing. `validate` is diagnostic; ordinary operation uses only
+initialization and `next`. Workers own semantic judgment. Machine code owns
+selection, authentication, raw JSON/schema validation, dependency checks,
+exact-node signing, and terminal certification claims. It skips current nodes.
 
-Existing logs must be canonical, schema-valid, signature-valid, unbroken, and
-a dependency-first prefix of the exact closure. New certificates require
-tracked inputs to match the reviewed commit and included local inputs to remain
-byte-stable. Dirty or unready state may be reported but must not be certified.
-
-If synchronization, validation, semantic audit, hashing, signing, or post-write
-verification fails, retain earlier valid append-only history, report the exact
-failure, and do not claim current certification.
+The Voyage retains its Charter, assignments, reports, and signing receipts in one
+Reckoning. Valid earlier certificates remain if a later task fails. Restart an
+abandoned host session with a fresh run; do not infer recovery of old worker
+handles. Preserve the terminal receipt before optionally releasing its Voyage.

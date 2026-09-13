@@ -6,7 +6,7 @@ dependencies:
     path: blueprints/hashing.yaml
   reason: Imports node-hash and certification-basis evaluation from hashing.py.
   source: certification.source.hashing
-  version: 1
+  version: 2
 - blueprint:
     base: repository-root
     path: src/officina/common/blueprints/atomic-files.yaml
@@ -192,9 +192,9 @@ interfaces:
       preconditions: []
     description: Evaluates current certificate state and export certification for
       Python callers.
-    version: 1
+    version: 2
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces: []
-version: 1
+version: 2
 maturity: stable

@@ -1,8 +1,8 @@
 content:
 - instructions/audit-module\.md
 dependencies: []
-description: Owns semantic review of one module as the composition of its exports,
-  namespace authority, directly owned content, and reviewed child nodes.
+description: Owns semantic review of one module as the composition of its exports, namespace authority,
+  directly owned content, and reviewed child nodes.
 gateway:
   language: Markdown
   path: instructions/audit-module.md
@@ -15,8 +15,9 @@ interfaces:
     contract:
       arguments:
         request:
-          description: Current module declaration, bounded module evidence, changes,
-            authority, and completed child-node audit results.
+          description: One skill-certifier.semantic-audit-task/v1 packet with selected declaration and
+            content, exact identity, prerequisite reports and machine-authenticated reusable evidence.
+            Judge semantics only.
           required: true
           sensitivity: user-private
           type:
@@ -34,6 +35,41 @@ interfaces:
           medium: prompt
           sensitivity: user-private
           system: agent-runtime
+        - id: selected-content
+          medium: local-filesystem
+          access: read
+          system: filesystem
+          content: Only the packet-selected declaration, gateway and input-manifest paths needed for this
+            semantic audit
+          formats:
+          - yaml
+          - text
+          - binary
+          sensitivity: user-private
+          path: <reviewed_repository>/<input_manifest.path>
+          path_match: glob
+        - id: selected-blueprint-path
+          medium: local-filesystem
+          access: read
+          system: filesystem
+          content: Exact packet-selected blueprint_path when non-null
+          formats:
+          - yaml
+          - text
+          sensitivity: user-private
+          path: <selected_content.blueprint_path>
+          path_match: exact
+        - id: selected-gateway
+          medium: local-filesystem
+          access: read
+          system: filesystem
+          content: Exact packet-selected gateway when non-null
+          formats:
+          - yaml
+          - text
+          sensitivity: user-private
+          path: <selected_content.gateway>
+          path_match: exact
         writes:
         - access: write
           content: structured module audit result
@@ -45,8 +81,8 @@ interfaces:
           system: agent-runtime
       execution:
         consistency:
-          snapshot: The result applies only to the supplied module declaration, child
-            results, and evidence snapshot.
+          snapshot: The result applies only to the supplied module declaration, child results, and evidence
+            snapshot.
         lifecycle: finite
         state_effect: read-only
         verification:
@@ -56,13 +92,14 @@ interfaces:
       interaction:
         mode: unattended
       outcomes:
-      - caller_action: Use a passing verdict to request deterministic certification.
+      - caller_action: Forward the exact raw JSON result to the Voyage; machines validate and decide subsequent
+          work.
         class: success
         effects: []
         id: audited
         outputs:
         - audit-result
-      - caller_action: Stop the run on an abort or invalid request.
+      - caller_action: Forward the exact raw abort result to the Voyage; its machine step stops the run.
         class: error
         effects: []
         id: invalid-request
@@ -87,9 +124,9 @@ interfaces:
           sensitivity: derived-private
       preconditions: []
     description: Audit one module and return bounded semantic evidence and a verdict.
-    version: 2
+    version: 3
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces: []
-version: 2
+version: 3
 maturity: stable

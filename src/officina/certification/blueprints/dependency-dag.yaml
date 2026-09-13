@@ -7,7 +7,7 @@ description: Projects and validates the neutral semantic certification dependenc
 gateway: {path: dependency_dag.py, language: Python}
 content: [dependency_dag\.py]
 dependencies:
-- {blueprint: {base: module-root, path: blueprints/hashing.yaml}, reason: Uses final canonical node and facet dependency attribution., source: certification.source.hashing, version: 1}
+- {blueprint: {base: module-root, path: blueprints/hashing.yaml}, reason: Uses final canonical node and facet dependency attribution., source: certification.source.hashing, version: 2}
 - {blueprint: {base: repository-root, path: src/officina/blueprints/blueprints/graph.yaml}, reason: Uses canonical repository graph ownership and interface resolution., source: blueprints.source.graph, version: 1}
 uses_interfaces: []
 interfaces:

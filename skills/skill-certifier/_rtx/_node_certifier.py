@@ -3345,6 +3345,8 @@ def _certify_repository(
     require_migration_review: bool = False,
     expected_schema_version: int = 6,
     schema_root: Path | None = None,
+    exact_target: bool = False,
+    expected_audited_inputs: Mapping[str, object] | None = None,
 ) -> CertificationResult:
     """Issue signed certificates for selected repository nodes.
 
@@ -3507,6 +3509,15 @@ def _certify_repository(
     basis_hash = evidence.basis_hash
     basis_paths = evidence.basis_paths
     certifier_identity = evidence.certifier_identity
+    if expected_audited_inputs is not None:
+        if set(expected_audited_inputs) != set(target_node_ids):
+            raise CertificationError("audited inputs must cover the exact targets")
+        for node_id, expected in expected_audited_inputs.items():
+            state = states.get(node_id)
+            if state is None or audited_inputs(state) != expected:
+                raise CertificationError(
+                    f"audited inputs changed before signer entry: {node_id}"
+                )
     if mechanical_commit is not None:
         _validate_semantic_attestation(
             root,
@@ -3518,10 +3529,11 @@ def _certify_repository(
         )
     try:
         expanded_target_ids = set(target_node_ids)
-        for node_id in tuple(expanded_target_ids):
-            node = graph.nodes.get(node_id)
-            if node is not None and node.node_type == "module":
-                expanded_target_ids.update(graph.module_sources[node_id])
+        if not exact_target:
+            for node_id in tuple(expanded_target_ids):
+                node = graph.nodes.get(node_id)
+                if node is not None and node.node_type == "module":
+                    expanded_target_ids.update(graph.module_sources[node_id])
         order = certification_target_postorder(
             graph,
             states,
@@ -3563,6 +3575,20 @@ def _certify_repository(
         for node_id in order
         if certificate_requires_renewal(initial_report.nodes[node_id])
     )
+    if exact_target:
+        selected = set(target_node_ids)
+        stale_dependencies = tuple(
+            node_id for node_id in order
+            if node_id not in selected and not initial_report.nodes[node_id].current
+        )
+        if stale_dependencies:
+            raise CertificationError(
+                "exact-node certification requires current dependencies: "
+                + ", ".join(stale_dependencies)
+            )
+        renewal_order = tuple(
+            node_id for node_id in renewal_order if node_id in selected
+        )
     if renewal_order:
         if callable(before_stale_issuance):
             before_stale_issuance()
@@ -4263,6 +4289,103 @@ def certify(
     return evidence, outcomes
 
 
+def audited_inputs(state: NodeHashState) -> dict[str, object]:
+    """Bind canonical local, dependency, facet and basis state to semantic review."""
+
+    if not isinstance(state.node_hash, str) or not state.node_hash:
+        raise CertificationError("audited node has no canonical hash")
+    return {
+        "node_hash": state.node_hash,
+        "input_manifest": [dict(entry) for entry in state.input_manifest],
+        "dependency_hashes": [dict(entry) for entry in state.dependency_hashes],
+        "certification_basis_hash": state.certification_basis_hash,
+        "facets": [dict(claim) for claim in certification_facet_claims(state)],
+    }
+
+
+def certify_exact_node(
+    *,
+    node_id: str,
+    reviewed_repository: Path,
+    reviewed_commit: str,
+    expected_audited_inputs: Mapping[str, object],
+    timestamp: str | None = None,
+    allow_non_atomic: bool = False,
+) -> tuple[list[CommandResult], NodeCertificationOutcome]:
+    """Certify one exact module or behavioral-source node without renewal expansion.
+
+    Intent
+    ------
+    Expose incremental signing after semantic audit while refusing to renew any
+    dependency or sibling node.
+
+    Rationale
+    ---------
+    A recursive public target can include unaudited siblings, so the
+    certification Voyage needs a narrow exact-node boundary.
+
+    Pseudocode
+    ----------
+    - validate exact reviewed node
+    - require every ordering dependency current
+    - certify at most the selected node
+    - return issued-or-current outcome
+
+    Wraps
+    -----
+    - ._certify_repository
+    """
+
+    repository = Path(reviewed_repository).resolve()
+    graph = load_repository_blueprint_graph(
+        repository,
+        schema_root=repository / "references" / "blueprint-schema",
+        expected_schema_version=6,
+    )
+    if any(
+        node.declaration.get("schema_version") != 6
+        for node in graph.nodes.values()
+    ):
+        raise CertificationError("certification accepts only an all-v6 repository")
+    node = graph.nodes.get(node_id)
+    if node is None or node.node_type not in {"module", "behavioral_source"}:
+        raise CertificationError(f"unknown exact certification target: {node_id}")
+
+    evidence: list[CommandResult] = []
+    result = _certify_repository(
+        repository,
+        target_node_ids=(node_id,),
+        public_key_root=certificate_public_key_root(repository),
+        secret_backend=None,
+        reviewed_commit=reviewed_commit,
+        certified_at=timestamp
+        or datetime.now().astimezone().isoformat(timespec="seconds"),
+        before_stale_issuance=lambda: evidence.append(
+            run_mechanical_checks(repository)
+        ),
+        allow_non_atomic=allow_non_atomic,
+        require_candidate_execution=True,
+        require_migration_review=False,
+        expected_schema_version=6,
+        schema_root=repository / "references" / "blueprint-schema",
+        exact_target=True,
+        expected_audited_inputs={node_id: dict(expected_audited_inputs)},
+    )
+    if node_id in result.node_ids:
+        status = "certificate-issued"
+    elif node_id in result.current_node_ids:
+        status = "certificate-current"
+    else:
+        raise CertificationError(
+            f"exact-node certifier did not satisfy requested certificate: {node_id}"
+        )
+    return evidence, NodeCertificationOutcome(
+        node_id=node_id,
+        certificate_path=certificate_log_path(node),
+        status=status,
+    )
+
+
 def render_text(outcomes: Sequence[CertificationOutcome]) -> str:
     """render_text formats certification outcomes for terminal output.
 
@@ -4446,6 +4569,39 @@ class Interface(PythonArgvMachineInterface):
         """
         return main(argv)
 
+
+
+class ExactNode(PythonArgvMachineInterface):
+    """Sign one exact node only when its frozen inputs equal the audited inputs."""
+
+    def run(self, argv: list[str]) -> int:
+        parser = argparse.ArgumentParser(description=self.__doc__)
+        parser.add_argument("node_id")
+        parser.add_argument("--reviewed-repository", type=Path, required=True)
+        parser.add_argument("--reviewed-commit", required=True)
+        parser.add_argument("--audited-inputs", type=Path, required=True)
+        args = parser.parse_args(argv)
+        try:
+            expected = json.loads(args.audited_inputs.read_text(encoding="utf-8"))
+            if not isinstance(expected, dict) or set(expected) != {
+                "node_hash", "input_manifest", "dependency_hashes",
+                "certification_basis_hash", "facets",
+            }:
+                raise CertificationError("audited inputs require canonical local, dependency, basis and facet state")
+            evidence, outcome = certify_exact_node(
+                node_id=args.node_id,
+                reviewed_repository=args.reviewed_repository,
+                reviewed_commit=args.reviewed_commit,
+                expected_audited_inputs=expected,
+            )
+        except (CertificationError, OSError, ValueError) as error:
+            print(json.dumps({"ok": False, "error": str(error)}))
+            return 2
+        print(json.dumps({
+            "ok": True, "node": outcome.as_payload(),
+            "evidence": [item.as_payload() for item in evidence],
+        }))
+        return 0
 
 if __name__ == "__main__":
     raise SystemExit(main())

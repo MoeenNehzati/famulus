@@ -1,10 +1,10 @@
 schema_version: 6
 node_type: behavioral_source
 id: rutter.source.engine
-version: 3
-description: Owns public Voyage transactions, entrance-correlated flat-response validation,
-  contextual child binding, operational sequencing, effect recovery, and durable
-  publication around pure reduction and authored evaluation.
+version: 4
+description: Owns public Voyage transactions, entrance-correlated flat-response validation, contextual
+  child binding, operational sequencing, effect recovery, and durable publication around pure reduction
+  and authored evaluation.
 gateway:
   path: engine.py
   language: Python
@@ -16,8 +16,7 @@ dependencies:
   blueprint:
     base: module-root
     path: blueprints/authoring.yaml
-  reason: Imports direct Rutter definitions, concrete evolutions, typed contexts,
-    and contextual TransitionHooks.
+  reason: Imports direct Rutter definitions, concrete evolutions, typed contexts, and contextual TransitionHooks.
 - source: rutter.source.evaluation
   version: 1
   blueprint:
@@ -43,7 +42,7 @@ dependencies:
     path: blueprints/storage.yaml
   reason: Imports strict read, transaction, and write operations for bound Reckonings.
 - source: rutter.source.values
-  version: 1
+  version: 2
   blueprint:
     base: module-root
     path: blueprints/values.yaml
@@ -64,7 +63,7 @@ uses_interfaces:
 - interface: rutter.source.storage.interface.write
   version: 2
 - interface: rutter.source.values.interface.python-api
-  version: 1
+  version: 2
 interfaces:
   rutter.source.engine.interface.binding:
     content:
@@ -85,11 +84,10 @@ interfaces:
     - interface: rutter.source.storage.interface.write
       version: 2
     - interface: rutter.source.values.interface.python-api
-      version: 1
+      version: 2
     version: 3
-    description: Creates or opens one direct Rutter binding, snapshots its authored
-      graph, and exposes the definition on the resulting Voyage without granting
-      registry discovery.
+    description: Creates or opens one direct Rutter binding, snapshots its authored graph, and exposes
+      the definition on the resulting Voyage without granting registry discovery.
     contract:
       arguments:
         operation:
@@ -104,18 +102,16 @@ interfaces:
             - value: open
               description: Strictly load and bind one existing Reckoning.
         rutter-definition:
-          description: One exact stateless Rutter definition source; a direct instance
-            is preferred and legacy no-argument classes or factories remain compatible.
+          description: One exact stateless Rutter definition source; a direct instance is preferred and
+            legacy no-argument classes or factories remain compatible.
           required: true
           sensitivity: user-private
           type:
             kind: string
-            description: Python Rutter instance or compatible no-argument definition
-              constructor.
+            description: Python Rutter instance or compatible no-argument definition constructor.
             sensitivity: user-private
         reckoning-path:
-          description: Absolute confined path ending with .reckoning.json; its lock
-            appends .lock.
+          description: Absolute confined path ending with .reckoning.json; its lock appends .lock.
           direct_io_ref: reckoning-store
           required: true
           sensitivity: user-private
@@ -138,13 +134,12 @@ interfaces:
       interaction:
         mode: unattended
       caller_warnings:
-      - external-side-effect: Create atomically publishes one initial Reckoning; open
-          is read-only.
+      - external-side-effect: Create atomically publishes one initial Reckoning; open is read-only.
       outputs:
       - id: bound-rutter
         audience: machine
-        description: One exact public self-describing Voyage instance that owns execution
-          and exposes its bound Rutter read-only.
+        description: One exact public self-describing Voyage instance that owns execution and exposes
+          its bound Rutter read-only.
         direct_io_ref: return-value
         cardinality:
           minimum: 1
@@ -157,8 +152,7 @@ interfaces:
         empty: Never empty on success.
         type:
           kind: string
-          description: Self-describing Voyage Python value with a read-only Rutter
-            definition property.
+          description: Self-describing Voyage Python value with a read-only Rutter definition property.
           sensitivity: user-private
       outcomes:
       - id: created
@@ -183,8 +177,7 @@ interfaces:
         state_effect: mutating
         lifecycle: finite
         consistency:
-          live: Create checks absence atomically and open strictly reloads complete
-            bytes.
+          live: Create checks absence atomically and open strictly reloads complete bytes.
         effects:
         - id: reckoning-create
           direct_io_ref: reckoning-store
@@ -262,11 +255,11 @@ interfaces:
     - interface: rutter.source.storage.interface.write
       version: 2
     - interface: rutter.source.values.interface.python-api
-      version: 1
-    version: 6
-    description: Exposes the self-describing public Voyage status, entrance-correlated
-      validation, and advancement operations used by thin Compass guidance and
-      the inquisitive-inventory CLI without construction authority.
+      version: 2
+    version: 7
+    description: Exposes the self-describing public Voyage status, entrance-correlated validation, and
+      advancement operations used by thin Compass guidance and the inquisitive-inventory CLI without construction
+      authority.
     contract:
       arguments:
         operation:
@@ -277,17 +270,18 @@ interfaces:
             kind: enum
             values:
             - value: help
-              description: Describe the Compass-facing methods, bound signatures,
-                and public docstrings.
+              description: Describe the Compass-facing methods, bound signatures, and public docstrings.
             - value: get-status
               description: Read one coherent VoyageStatus projection in one transaction.
             - value: validate
-              description: Purely validate the operation-specific flat LLMStep response
-                or MachineResult in entrance, formatting, schema, static outcome-map,
-                and contextual-assessment order.
+              description: Purely validate the operation-specific flat LLMStep response or MachineResult
+                in entrance, formatting, schema, static outcome-map, and contextual-assessment order.
             - value: advance
-              description: Advance from the active leaf and optionally settle automatic
-                machine, child, terminal, or continuation work.
+              description: Advance from the active leaf and optionally settle automatic machine, child,
+                terminal, or continuation work.
+            - value: next
+              description: Atomically validate a correlated response and settle machine work, returning
+                a typed message, terminal result or fault. Concurrent calls block on the existing lock.
         binding:
           description: One invoker-provided Voyage instance.
           required: true
@@ -297,26 +291,24 @@ interfaces:
             description: Voyage Python value.
             sensitivity: user-private
         value:
-          description: Operation-specific value comprising a complete flat finite
-            JSON mapping for LLMStep validate or advance, or a MachineResult for
-            MachineStep validate or advance. The LLMStep form contains an outcome
-            but no public revision or evidence wrapper.
+          description: Operation-specific value comprising a complete flat finite JSON mapping for LLMStep
+            validate or advance, or a MachineResult for MachineStep validate or advance. The LLMStep form
+            contains an outcome but no public revision or evidence wrapper.
           required: false
           sensitivity: user-private
           type:
             kind: string
-            description: Flat finite JSON-compatible Python mapping or immutable
-              MachineResult Python value.
+            description: Flat finite JSON-compatible Python mapping or immutable MachineResult Python
+              value.
             sensitivity: user-private
         responding-to:
-          description: Exact Message evolution_entry_id that authorizes an LLMStep
-            response; omit for machine or continuation work.
+          description: Exact Message evolution_entry_id that authorizes an LLMStep response; omit for
+            machine or continuation work.
           required: false
           sensitivity: user-private
           type:
             kind: string
-            description: Stable evolution entrance token passed separately from the
-              flat response.
+            description: Stable evolution entrance token passed separately from the flat response.
             sensitivity: user-private
         continue:
           description: Whether advance settles automatic Python and nested work.
@@ -326,8 +318,8 @@ interfaces:
           type:
             kind: boolean
         dry-run:
-          description: Whether advance previews only the immediate parent-transition
-            destination without mutation.
+          description: Whether advance previews only the immediate parent-transition destination without
+            mutation.
           required: false
           default: false
           sensitivity: public
@@ -337,13 +329,14 @@ interfaces:
       interaction:
         mode: unattended
       caller_warnings:
-      - external-side-effect: Advance with continuation may run automatic external
-          work that cannot be rolled back.
+      - external-side-effect: Advance with continuation may run automatic external work that cannot be
+          rolled back.
       outputs:
       - id: result
         audience: machine
-        description: Help text, VoyageStatus with explicit terminal_result and validated
-          FaultSummary, ValidationReport, or immutable EvolutionView.
+        description: Help text, VoyageStatus with explicit terminal_result and validated FaultSummary,
+          ValidationReport, or immutable EvolutionView. Next returns VoyageNextResult; CLI encoding uses
+          rutter.voyage-next/v1.
         direct_io_ref: return-value
         cardinality:
           minimum: 1
@@ -356,8 +349,7 @@ interfaces:
         empty: Never empty on success.
         type:
           kind: string
-          description: Operation-specific help text, validated VoyageStatus,
-            ValidationReport, or EvolutionView.
+          description: Operation-specific help text, validated VoyageStatus, ValidationReport, or EvolutionView.
           sensitivity: user-private
       outcomes:
       - id: described
@@ -365,8 +357,7 @@ interfaces:
         outputs:
         - result
         effects: []
-        caller_action: Follow only the returned Compass-facing method signatures
-          and docstrings.
+        caller_action: Follow only the returned Compass-facing method signatures and docstrings.
       - id: observed
         class: success
         outputs:
@@ -378,15 +369,15 @@ interfaces:
         outputs:
         - result
         effects: []
-        caller_action: Call advance with the same value only when the returned report
-          is valid; preserve responding-to for an LLMStep and omit it for a MachineStep.
+        caller_action: Call advance with the same value only when the returned report is valid; preserve
+          responding-to for an LLMStep and omit it for a MachineStep.
       - id: previewed
         class: success
         outputs:
         - result
         effects: []
-        caller_action: Inspect the immediate parent-transition preview without treating
-          it as entered or as work authorization.
+        caller_action: Inspect the immediate parent-transition preview without treating it as entered
+          or as work authorization.
       - id: ready
         class: success
         outputs:
@@ -420,22 +411,20 @@ interfaces:
         outputs:
         - result
         effects: []
-        caller_action: 'On RutterValidationError: LLMStep response is required, inspect
-          VoyageStatus from get_status, and perform the LLM instruction;
-          this boundary does not return a ValidationReport.'
+        caller_action: 'On RutterValidationError: LLMStep response is required, inspect VoyageStatus from
+          get_status, and perform the LLM instruction; this boundary does not return a ValidationReport.'
       - id: invalid-input
         class: refusal
         outputs:
         - result
         effects: []
-        caller_action: Correct only from the ValidationReport; the active node and
-          history remain unchanged.
+        caller_action: Correct only from the ValidationReport; the active node and history remain unchanged.
       execution:
         state_effect: mutating
         lifecycle: finite
         consistency:
-          live: Every operation resolves the deepest active evolution; advance revalidates
-            accepted work under the bound Rutter's authority and exact Message entrance.
+          live: Every operation resolves the deepest active evolution; advance revalidates accepted work
+            under the bound Rutter's authority and exact Message entrance.
         effects:
         - id: reckoning-update
           direct_io_ref: reckoning-store
@@ -452,23 +441,20 @@ interfaces:
             kind: direct-io
             direct_io_ref: reckoning-store
           reversibility:
-            irreversible: The engine retains no predecessor and cannot roll back external
-              work.
+            irreversible: The engine retains no predecessor and cannot roll back external work.
         mutation_safety:
           atomicity:
-            per_effect_only: Accepted traversal publishes complete durable updates;
-              external work may require separate durable recovery evidence.
+            per_effect_only: Accepted traversal publishes complete durable updates; external work may
+              require separate durable recovery evidence.
           concurrent_invocations:
             safe: The storage owner serializes cooperating operations per Reckoning.
           idempotency:
-            non_idempotent: Accepted responses advance the internal Reckoning revision
-              and automatic work may change an external system.
+            non_idempotent: Accepted responses advance the internal Reckoning revision and automatic work
+              may change an external system.
           on_uncertain_completion:
-            verify_then_decide: Read the public VoyageStatus condition and stop for
-              manual reconciliation.
+            verify_then_decide: Read the public VoyageStatus condition and stop for manual reconciliation.
           partial_effects_on_failure:
-            possible: External work may complete before post-effect validation or
-              persistence.
+            possible: External work may complete before post-effect validation or persistence.
           rollback_on_failure:
             unavailable: Reckoning replacement does not roll back external effects.
         verification:

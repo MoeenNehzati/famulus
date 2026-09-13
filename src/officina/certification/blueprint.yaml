@@ -70,5 +70,5 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/view.yaml
-version: 2
+version: 3
 maturity: stable

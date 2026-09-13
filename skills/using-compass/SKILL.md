@@ -12,7 +12,7 @@ Activation: user-request, skill-workflow; persistent modifier: no
 Skill Version: 12
 
 Uses Interfaces:
-- `using-compass.source.gateway -> rutter.interface.dispenser@5`
+- `using-compass.source.gateway -> rutter.interface.dispenser@6`
 
 Public Interfaces:
 - `using-compass.interface.default`

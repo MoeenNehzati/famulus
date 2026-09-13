@@ -332,23 +332,36 @@ whole-node semantic-review pass. Selective reuse interprets that pass as
 covering each included unchanged facet; it is not an independent per-facet
 semantic attestation.
 
-Code, not the orchestrating LLM, traverses this graph. The
-`skill-certifier._rtx.interface.semantic-audit-scheduler` keeps one locked run
-state and returns only dependency-ready task IDs, kinds, bounded input-file
-handles, and counts. Each input identifies the exact repository and assigned
-vertex without exposing the full DAG. The orchestrator fills a bounded pool
-with one fresh subagent per task, submits each exact
-`skill-certifier.semantic-audit-result/v1` report, and refills available slots.
-Workers audit only their assigned vertex; they must not recursively audit,
-schedule, or delegate dependencies. Missing or inconsistent prerequisite
-evidence produces `abort`, and any malformed, rejected, aborted, lost, or
-failed task terminates the run before signing.
+`skill-certifier._rtx.interface.certification-voyage@1` owns one immutable
+Charter and one Reckoning. Its machine evolutions select the canonical
+dependency-first node order (including structural child modules), construct
+bounded packets, and fill a bounded pool of semantic workers. There is no
+separate scheduler state or public scheduler operation.
 
-Only a scheduler-complete run reaches the mechanical certifier. The mechanical
-certifier then independently reloads current repository state, skips current
-nodes, route-smokes the stale issuance worklist, and issues certificates
-dependency-first. Semantic scheduling therefore reduces LLM context without
-weakening final freshness checks.
+The controller initializes once, then uses atomic `next` only. Each message
+supplies exact instruction routes, versioned packets and outstanding assignment
+IDs. The controller spawns fresh workers, retains handles, waits and forwards raw
+output unchanged in a correlated host event. It does not parse reports, inspect
+the DAG, judge evidence or request signing. Workers audit only their assigned
+vertex; they must not recursively audit, schedule or delegate dependencies.
+Packets contain actual passing prerequisite reports or machine-authenticated
+certificate claims and selected prerequisite declarations/contracts, rather than
+bare IDs or pass labels.
+
+After all required audits for one exact node pass, the machine calls the exact
+signer with the bound repository, commit, canonical node hash, input manifest, dependency hashes, facets and basis
+hash. Local node hashes alone do not bind dependency state.
+The signer checks that identity inside its normal frozen-input path, requires
+prerequisites current, signs at most that node and rechecks currentness. It never
+recursively issues unreviewed stale dependencies. Source interface facets precede
+the source audit and signing; child nodes precede module audit and signing.
+
+Raw JSON parsing, schema and consumed-dependency validation are machine-owned.
+Malformed, rejected, aborted, lost or failed work terminates the run and the
+controller cancels and reaps outstanding workers. Unknown, old-run, duplicate or
+stale-entrance envelopes are rejected without mutating the Reckoning. Earlier
+valid append-only certificates survive later failure; a fresh run recomputes
+currentness and skips them. Terminal certification claims come from code.
 
 Selectivity applies only while `certification_basis_hash` matches. Because the
 aggregate hash does not identify which basis input changed, a basis mismatch

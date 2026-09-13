@@ -13,13 +13,15 @@ from uuid import uuid4
 
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
-from .engine import Voyage
+from .engine import MISSING, Voyage
 from .values import (
     EvolutionView,
     MachineInstruction,
     Message,
     RutterDefinitionError,
+    RutterValidationError,
     ValidationReport,
+    VoyageNextResult,
     VoyageStatus,
 )
 
@@ -34,8 +36,9 @@ _USAGE_GUIDANCE = (
     "Each initiation creates a fresh run_id and returns only that run's "
     "voyage_ids; invoke list to rediscover them.\n"
     "  3. Assign exactly one agent to each Voyage.\n"
-    "  4. Each agent uses only its assigned voyage_id with status, validate, "
-    "and advance.\n"
+    "  4. Each agent calls next with its assigned voyage_id to atomically "
+    "validate a response and settle machine work. The status, validate, and advance commands "
+    "remain available for diagnostics and existing workflows.\n"
     "  5. Keep that assignment until the Voyage becomes terminal or faulted; "
     "agents must not share or switch Voyage IDs.\n"
     "  6. After capturing terminal results, invoke release with a voyage_id or "
@@ -108,22 +111,26 @@ class VoyageDispenser(PythonArgvMachineInterface):
                 or not mode
                 or mode != mode.strip()
                 or not isinstance(config, Mapping)
-                or set(config) != {"description", "arguments"}
+                or not {"description", "arguments"} <= set(config)
+                or set(config) - {"description", "arguments", "optional_arguments"}
             ):
                 raise RutterDefinitionError(
                     "modes must map trimmed names to description and arguments"
                 )
             description = config["description"]
             arguments = config["arguments"]
+            optional = config.get("optional_arguments", {})
             if type(description) is not str or not description.strip():
                 raise RutterDefinitionError(
                     "mode descriptions must be non-empty strings"
                 )
-            if not isinstance(arguments, Mapping):
+            if not isinstance(arguments, Mapping) or not isinstance(optional, Mapping):
                 raise RutterDefinitionError(
                     "mode arguments must map names to descriptions"
                 )
-            normalized = dict(arguments)
+            if set(arguments) & set(optional):
+                raise RutterDefinitionError("required and optional arguments overlap")
+            normalized = {**arguments, **optional}
             if any(
                 type(name) is not str
                 or not name.isidentifier()
@@ -146,7 +153,8 @@ class VoyageDispenser(PythonArgvMachineInterface):
                     )
             normalized_modes[mode] = {
                 "description": description,
-                "arguments": normalized,
+                "arguments": dict(arguments),
+                **({"optional_arguments": dict(optional)} if optional else {}),
             }
         if not callable(initiate_voyages):
             raise RutterDefinitionError("initiate_voyages must be callable")
@@ -231,6 +239,8 @@ class VoyageDispenser(PythonArgvMachineInterface):
             mode: {
                 "description": config["description"],
                 "arguments": dict(config["arguments"]),
+                **({"optional_arguments": dict(config["optional_arguments"])}
+                   if "optional_arguments" in config else {}),
             }
             for mode, config in self._modes.items()
         }
@@ -257,13 +267,14 @@ class VoyageDispenser(PythonArgvMachineInterface):
             None if run_prefix is None else self._validated_run_prefix(run_prefix)
         )
         required = set(self._modes[mode]["arguments"])
+        allowed = required | set(self._modes[mode].get("optional_arguments", {}))
         provided = set(mode_arguments)
         if missing := sorted(required - provided):
             flags = ", ".join(f"--{name.replace('_', '-')}" for name in missing)
             raise InvalidVoyageModeArgumentsError(
                 f"mode {mode!r} requires {flags}"
             )
-        if unexpected := sorted(provided - required):
+        if unexpected := sorted(provided - allowed):
             flags = ", ".join(
                 f"--{name.replace('_', '-')}" for name in unexpected
             )
@@ -399,6 +410,18 @@ class VoyageDispenser(PythonArgvMachineInterface):
             dry_run=dry_run,
         )
 
+    def next(
+        self,
+        voyage_id: str,
+        response: object = MISSING,
+        *,
+        responding_to: str | None = None,
+    ) -> VoyageNextResult:
+        """Return the next LLM-facing result for one authorized Voyage."""
+
+        voyage = self._resolve(voyage_id)
+        return voyage.next(response, responding_to=responding_to)
+
     def release(self, target_id: str, *, force: bool = False) -> None:
         """Release one Voyage or every Voyage in one run."""
 
@@ -515,6 +538,7 @@ def _parser(dispenser: VoyageDispenser) -> argparse.ArgumentParser:
     argument_descriptions: dict[str, str] = {}
     for config in dispenser.get_modes().values():
         argument_descriptions.update(config["arguments"])
+        argument_descriptions.update(config.get("optional_arguments", {}))
     for name, description in argument_descriptions.items():
         initiate.add_argument(
             f"--{name.replace('_', '-')}",
@@ -541,6 +565,13 @@ def _parser(dispenser: VoyageDispenser) -> argparse.ArgumentParser:
     advance.add_argument("voyage_id")
     advance.add_argument("--response-file")
     advance.add_argument("--responding-to")
+    next_command = commands.add_parser(
+        "next",
+        help="Return one typed LLM-facing Voyage result.",
+    )
+    next_command.add_argument("voyage_id")
+    next_command.add_argument("--response-file")
+    next_command.add_argument("--responding-to")
     release = commands.add_parser(
         "release",
         help="Delete one Voyage or run, requiring terminal results unless forced.",
@@ -589,7 +620,7 @@ def voyage_dispenser_cli(
             argument_names = {
                 name
                 for config in dispenser.get_modes().values()
-                for name in config["arguments"]
+                for name in (*config["arguments"], *config.get("optional_arguments", {}))
             }
             supplied = {
                 name: getattr(arguments, name)
@@ -623,6 +654,26 @@ def voyage_dispenser_cli(
             payload = {
                 "voyage_id": arguments.voyage_id,
                 "validation": report.to_json(),
+            }
+        elif arguments.command == "next":
+            if arguments.response_file is None:
+                if arguments.responding_to is not None:
+                    raise _UsageError(
+                        "--responding-to requires --response-file"
+                    )
+                next_result = dispenser.next(arguments.voyage_id)
+            else:
+                response = _read_json(arguments.response_file)
+                next_result = dispenser.next(
+                    arguments.voyage_id,
+                    response,
+                    responding_to=arguments.responding_to,
+                )
+            payload = {
+                "schema_version": "rutter.voyage-next/v1",
+                **_status_json(arguments.voyage_id, next_result.status),
+                "kind": next_result.kind,
+                "retry_after_seconds": next_result.retry_after_seconds,
             }
         elif arguments.command == "release":
             dispenser.release(arguments.target_id, force=arguments.force)
@@ -688,6 +739,9 @@ def voyage_dispenser_cli(
                 "report": error.report.to_json(),
             }
         }
+        exit_code = 4
+    except RutterValidationError as error:
+        payload = {"error": {"code": "invalid-response", "message": str(error)}}
         exit_code = 4
     except json.JSONDecodeError:
         payload = {

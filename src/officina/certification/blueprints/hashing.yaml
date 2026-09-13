@@ -172,9 +172,9 @@ interfaces:
     description: Computes canonical node and interface certification state and dependency-first
       target order, and maps already observed route-smoke paths for Python callers.
     uses_interfaces: []
-    version: 1
+    version: 2
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces: []
-version: 1
+version: 2
 maturity: stable

@@ -11,14 +11,14 @@ content:
 - history\.py
 dependencies:
 - source: rutter.source.values
-  version: 1
+  version: 2
   blueprint:
     base: module-root
     path: blueprints/values.yaml
   reason: Imports immutable JSON values, results, messages, and state errors.
 uses_interfaces:
 - interface: rutter.source.values.interface.python-api
-  version: 1
+  version: 2
 interfaces:
   rutter.source.history.interface.python-api:
     version: 1
@@ -26,7 +26,7 @@ interfaces:
     - history\.py
     uses_interfaces:
     - interface: rutter.source.values.interface.python-api
-      version: 1
+      version: 2
     description: Constructs durable records, Reckonings, and immutable history projections.
 platform_support:
   linux: true

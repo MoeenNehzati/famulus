@@ -519,7 +519,7 @@ def test_logic_captured_checks_operations_exposed_by_the_live_interface(
 
     assert result.valid is False
     assert any(
-        "operation submit is absent from rutter.interface.bound-operations@6"
+        "operation submit is absent from rutter.interface.bound-operations@7"
         in error
         for error in result.errors
     )
@@ -548,7 +548,7 @@ def test_capability_check_uses_the_artifact_repository_public_api(
 
     assert result.valid is False
     assert any(
-        "rutter.interface.bound-operations@6 is not a current public runtime capability"
+        "rutter.interface.bound-operations@7 is not a current public runtime capability"
         in error
         for error in result.errors
     )

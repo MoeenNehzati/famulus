@@ -672,11 +672,13 @@ def test_registry_and_voyage_expose_only_the_public_operating_protocol(
         "dry_run",
     )
     assert tuple(inspect.signature(voyage.help).parameters) == ()
-    assert voyage.compass_facing_methods == ("get_status", "validate", "advance")
+    assert voyage.compass_facing_methods == ("get_status", "validate", "advance", "next")
     assert {
         name for name in dir(voyage) if not name.startswith("_")
     } == {
         "compass_facing_methods",
+        "next",
+        "retry_interval_seconds",
         "get_status",
         "help",
         "advance",
@@ -687,7 +689,6 @@ def test_registry_and_voyage_expose_only_the_public_operating_protocol(
         "get_current_node",
         "get_instruction",
         "get_instructions",
-        "next",
         "inspect",
         "start",
         "resume",

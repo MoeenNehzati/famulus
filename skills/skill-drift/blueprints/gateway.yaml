@@ -7,7 +7,7 @@ dependencies:
   reason: Defines the exclusive certification writer whose state this read-only module
     inspects.
   source: skill-certifier.source.gateway
-  version: 6
+  version: 7
 description: Defines the LLM-facing rules for reading exact signed-certificate currentness,
   stale worklists, and canonical v6 node hashes.
 gateway:

@@ -12,14 +12,14 @@ content:
 dependencies: []
 uses_interfaces:
 - interface: rutter.interface.dispenser
-  version: 5
+  version: 6
 interfaces:
   using-compass.source.gateway.interface.default:
     content:
     - SKILL\.md
     uses_interfaces:
     - interface: rutter.interface.dispenser
-      version: 5
+      version: 6
     version: 12
     description: Read the dispenser help, initialize one fresh run, assign
       one agent per returned Voyage ID, and keep every agent scoped to its assignment.

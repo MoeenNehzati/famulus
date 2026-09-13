@@ -68,6 +68,24 @@ def _dispenser(tmp_path: Path) -> VoyageDispenser:
     )
 
 
+def test_dispenser_next_owns_the_combined_llm_loop(tmp_path: Path) -> None:
+    """Removing the facade would make every caller reimplement status/advance."""
+
+    dispenser = _dispenser(tmp_path)
+
+    ready = dispenser.next("worker-1")
+
+    assert ready.kind == "message"
+    entrance_id = ready.status.current_evolution.evolution_entry_id
+    assert entrance_id is not None
+    terminal = dispenser.next(
+        "worker-1",
+        {"outcome": "answered"},
+        responding_to=entrance_id,
+    )
+    assert terminal.kind == "terminal"
+
+
 def test_dispenser_rejects_listing_before_voyages_are_initialized() -> None:
     """Treating an empty provider result as a valid collection hides required setup."""
 
@@ -569,6 +587,39 @@ def test_dispenser_routes_operations_by_voyage_id(tmp_path: Path) -> None:
 
     assert dispenser.get_status("worker-1") == first
     assert dispenser.get_status("worker-2").current_evolution.condition == "terminal"
+
+
+def test_cli_next_returns_one_typed_llm_facing_result(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Losing the typed CLI result would expose the old multi-command loop."""
+
+    dispenser = _dispenser(tmp_path)
+
+    assert voyage_dispenser_cli(dispenser, ["next", "worker-1"]) == 0
+    ready = json.loads(capsys.readouterr().out)
+
+    assert ready["kind"] == "message"
+    assert ready["instruction"]["kind"] == "message"
+    entrance_id = ready["evolution"]["evolution_entry_id"]
+    response_file = tmp_path / "next-response.json"
+    response_file.write_text('{"outcome":"answered"}', encoding="utf-8")
+
+    assert voyage_dispenser_cli(
+        dispenser,
+        [
+            "next",
+            "worker-1",
+            "--response-file",
+            str(response_file),
+            "--responding-to",
+            entrance_id,
+        ],
+    ) == 0
+    terminal = json.loads(capsys.readouterr().out)
+    assert terminal["kind"] == "terminal"
+    assert terminal["terminal_result"]["outcome"] == "complete"
 
 
 def test_cli_requires_force_to_release_a_nonterminal_voyage(

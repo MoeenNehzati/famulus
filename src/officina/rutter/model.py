@@ -56,6 +56,7 @@ from officina.rutter.values import (
     ValidationIssue,
     ValidationReport,
     VoyageResult,
+    VoyageNextResult,
     VoyageStatus,
 )
 
@@ -107,6 +108,7 @@ __all__ = (
     "ValidationIssue",
     "ValidationReport",
     "VoyageResult",
+    "VoyageNextResult",
     "VoyageStatus",
     "after",
     "before",

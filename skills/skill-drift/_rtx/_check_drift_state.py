@@ -46,6 +46,7 @@ from officina.certification.view import (
     certificate_log_path,
     certificate_stale_worklist,
     derive_repository_certification_state,
+    semantic_stale_vertices,
 )
 from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 
@@ -760,95 +761,6 @@ def _display_worklist(
         for package_root, node_ids in worklists
         for node_id in node_ids
     )
-
-
-def _module_ancestors(
-    graph: RepositoryBlueprintGraph,
-    module_id: str,
-) -> set[str]:
-    result: set[str] = set()
-    current: str | None = module_id
-    while current is not None:
-        if current in result:
-            raise DriftCheckError(f"module parent cycle at {current}")
-        result.add(current)
-        current = graph.module_parents.get(current)
-    return result
-
-
-def _has_semantic_facet_drift(facet: CertificateFacetDrift) -> bool:
-    return bool(
-        facet.local_hash_changed
-        or facet.declaration_changed
-        or facet.input_files
-        or any(
-            dependency.relation != "certified-under"
-            for dependency in facet.dependencies
-        )
-    )
-
-
-def _mechanical_certifier_only(status: CertificateNodeCurrentness) -> bool:
-    if status.local_hash_changed or status.declaration_changed or status.input_files:
-        return False
-    dependencies = (
-        *status.dependencies,
-        *(
-            dependency
-            for facet in status.facet_drift
-            for dependency in facet.dependencies
-        ),
-    )
-    return bool(dependencies) and all(
-        dependency.relation == "certified-under" for dependency in dependencies
-    ) and not any(_has_semantic_facet_drift(facet) for facet in status.facet_drift)
-
-
-def semantic_stale_vertices(
-    graph: RepositoryBlueprintGraph,
-    currentness: CertificateCurrentnessReport,
-    stale_worklist: Sequence[str],
-) -> tuple[str, ...]:
-    """Conservatively project stale node causes to semantic DAG vertices."""
-
-    selected: set[str] = set()
-    for node_id in stale_worklist:
-        node = graph.nodes.get(node_id)
-        status = currentness.nodes.get(node_id)
-        if node is None or status is None:
-            raise DriftCheckError(f"missing stale node evidence: {node_id}")
-        if _mechanical_certifier_only(status):
-            continue
-        meaningful_facets = tuple(
-            facet
-            for facet in status.facet_drift
-            if _has_semantic_facet_drift(facet)
-        )
-        if node.node_type == "module":
-            selected.update(_module_ancestors(graph, node_id))
-            continue
-        if node.node_type != "behavioral_source":
-            raise DriftCheckError(f"unsupported stale node type: {node.node_type}")
-        module_id = graph.source_modules.get(node_id)
-        if not isinstance(module_id, str):
-            raise DriftCheckError(f"missing source module: {node_id}")
-        selected.update(_module_ancestors(graph, module_id))
-        selected.add(node_id)
-        if meaningful_facets:
-            for facet in meaningful_facets:
-                if facet.facet_type == "interface":
-                    selected.add(facet.facet_id)
-                elif facet.facet_type != "remainder":
-                    raise DriftCheckError(
-                        f"unsupported stale facet type: {facet.facet_type}"
-                    )
-        else:
-            selected.update(
-                interface_id
-                for interface_id, interface in graph.source_interfaces.items()
-                if interface.source_node_id == node_id
-            )
-    return tuple(sorted(selected))
 
 
 def _write_dag(path: Path, payload: dict[str, Any]) -> Path:

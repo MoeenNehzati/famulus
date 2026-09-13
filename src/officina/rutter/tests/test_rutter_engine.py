@@ -682,6 +682,109 @@ def test_public_operations_use_only_the_transaction_bound_validation(
     assert bound_validations == before + 1
 
 
+def test_next_returns_the_current_message_then_the_terminal_result(
+    tmp_path: Path,
+) -> None:
+    """Removing the combined public loop would force callers back to status/advance."""
+
+    voyage = RutterRegistry({"example": ExampleRutter}, tmp_path).create(
+        "example",
+        Path("next-loop.reckoning.json"),
+        {},
+    )
+
+    ready = voyage.next()
+
+    assert ready.kind == "message"
+    assert isinstance(ready.status.instruction, Message)
+    entrance_id = ready.status.current_evolution.evolution_entry_id
+    assert entrance_id is not None
+
+    terminal = voyage.next(
+        {"outcome": "reported"},
+        responding_to=entrance_id,
+    )
+
+    assert terminal.kind == "terminal"
+    assert terminal.status.terminal_result == VoyageResult("completed", {})
+
+
+def test_next_rejects_stale_results_without_a_second_transaction(tmp_path: Path) -> None:
+    """A split status/advance operation could accept a different entrance."""
+
+    from contextlib import contextmanager
+
+    voyage = RutterRegistry({"example": ExampleRutter}, tmp_path).create(
+        "example", Path("atomic-next.reckoning.json"), {}
+    )
+    original = voyage._store.transaction
+    transactions = []
+
+    @contextmanager
+    def counted():
+        transactions.append(True)
+        with original() as reckoning:
+            yield reckoning
+
+    voyage._store.transaction = counted
+    ready = voyage.next()
+    entrance = ready.status.current_evolution.evolution_entry_id
+    transactions.clear()
+    with pytest.raises(RutterValidationError):
+        voyage.next({"outcome": "wrong"}, responding_to=entrance)
+    assert len(transactions) == 1
+    assert voyage.next().status.current_evolution.evolution_entry_id == entrance
+    transactions.clear()
+    assert voyage.next({"outcome": "reported"}, responding_to=entrance).kind == "terminal"
+    assert len(transactions) == 1
+    with pytest.raises(RutterValidationError):
+        voyage.next({"outcome": "reported"}, responding_to=entrance)
+
+
+def test_concurrent_next_accepts_one_correlated_response(tmp_path: Path) -> None:
+    """Two handles racing with one entrance cannot consume its response twice."""
+
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    registry = RutterRegistry({"example": ExampleRutter}, tmp_path)
+    path = Path("concurrent-next.reckoning.json")
+    first = registry.create("example", path, {})
+    second = registry.open(path)
+    entrance = first.next().status.current_evolution.evolution_entry_id
+    barrier = Barrier(2)
+
+    def submit(voyage):
+        barrier.wait(timeout=5)
+        try:
+            return voyage.next({"outcome": "reported"}, responding_to=entrance).kind
+        except RutterValidationError:
+            return "rejected"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(submit, (first, second))) == ["rejected", "terminal"]
+    assert registry.open(path).next().kind == "terminal"
+
+
+def test_voyage_retry_interval_defaults_and_can_be_bound_in_charter(
+    tmp_path: Path,
+) -> None:
+    """Dropping the bound override would make every Voyage retry at one global rate."""
+
+    registry = RutterRegistry({"example": ExampleRutter}, tmp_path)
+    default = registry.create(
+        "example", Path("default-retry.reckoning.json"), {}
+    )
+    overridden = registry.create(
+        "example",
+        Path("override-retry.reckoning.json"),
+        {"retry_interval_seconds": 3},
+    )
+
+    assert default.retry_interval_seconds == 10
+    assert overridden.retry_interval_seconds == 3
+
+
 @pytest.mark.parametrize("operation", ("get_status", "validate", "advance"))
 def test_malformed_recovery_is_rejected_at_transaction_decode_before_callbacks(
     tmp_path: Path,
@@ -1035,10 +1138,10 @@ def test_public_cutover_exports_voyage_and_self_describing_operating_methods(
         "dry_run",
     )
     assert tuple(inspect.signature(voyage.help).parameters) == ()
-    assert voyage.compass_facing_methods == ("get_status", "validate", "advance")
+    assert voyage.compass_facing_methods == ("get_status", "validate", "advance", "next")
     assert not hasattr(voyage, "get_current_node")
     assert not hasattr(voyage, "get_instruction")
-    assert not hasattr(voyage, "next")
+    assert callable(voyage.next)
     assert not hasattr(voyage, "reckoning")
     advance_parameters = inspect.signature(engine._advance).parameters
     assert tuple(advance_parameters) == (
@@ -1047,6 +1150,7 @@ def test_public_cutover_exports_voyage_and_self_describing_operating_methods(
         "responding_to",
         "continue_",
         "dry_run",
+        "_locked_reckoning",
     )
     assert advance_parameters["value"].default is engine.MISSING
 
@@ -1479,16 +1583,16 @@ def test_machine_results_forbid_response_correlation_tokens(tmp_path: Path) -> N
         voyage.advance(result, responding_to="entry-unrelated")
 
 
-def test_voyage_exposes_advance_without_next_and_compass_lists_it(
+def test_voyage_preserves_advance_alongside_atomic_next(
     tmp_path: Path,
 ) -> None:
-    """Retaining next would leave two public advancement contracts."""
+    """The combined loop preserves existing lower-level advancement callers."""
 
     voyage = RutterRegistry({"example": ExampleRutter}, tmp_path).create(
         "example", Path("advance-surface.reckoning.json"), {}
     )
 
-    assert not hasattr(voyage, "next")
+    assert callable(voyage.next)
     assert tuple(inspect.signature(voyage.validate).parameters) == (
         "value",
         "responding_to",
@@ -1499,7 +1603,7 @@ def test_voyage_exposes_advance_without_next_and_compass_lists_it(
         "continue_",
         "dry_run",
     )
-    assert voyage.compass_facing_methods == ("get_status", "validate", "advance")
+    assert voyage.compass_facing_methods == ("get_status", "validate", "advance", "next")
 
 
 def test_transition_hook_constructs_the_child_selected_by_transition_context(

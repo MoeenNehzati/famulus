@@ -1,7 +1,7 @@
 schema_version: 6
 node_type: behavioral_source
 id: rutter.source.model
-version: 2
+version: 3
 description: Provides the public facade over directly constructible Rutter definitions,
   explicit value boundaries, history, and operating projections.
 gateway:
@@ -23,7 +23,7 @@ dependencies:
     path: blueprints/history.yaml
   reason: Re-exports durable records, aggregate authority, and history projections.
 - source: rutter.source.values
-  version: 1
+  version: 2
   blueprint:
     base: module-root
     path: blueprints/values.yaml
@@ -34,7 +34,7 @@ uses_interfaces:
 - interface: rutter.source.history.interface.python-api
   version: 1
 - interface: rutter.source.values.interface.python-api
-  version: 1
+  version: 2
 interfaces:
   rutter.source.model.interface.python-api:
     content:
@@ -45,8 +45,8 @@ interfaces:
     - interface: rutter.source.history.interface.python-api
       version: 1
     - interface: rutter.source.values.interface.python-api
-      version: 1
-    version: 2
+      version: 2
+    version: 3
     description: Constructs direct Rutter definitions, explicitly routed evolutions,
       typed contexts, validated operating values, history, and persistence authority
       through one thin facade.

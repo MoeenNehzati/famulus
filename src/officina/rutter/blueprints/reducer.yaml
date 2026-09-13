@@ -16,7 +16,7 @@ dependencies:
     path: blueprints/history.yaml
   reason: Imports immutable run trees, records, and aggregate authority.
 - source: rutter.source.values
-  version: 1
+  version: 2
   blueprint:
     base: module-root
     path: blueprints/values.yaml
@@ -25,7 +25,7 @@ uses_interfaces:
 - interface: rutter.source.history.interface.python-api
   version: 1
 - interface: rutter.source.values.interface.python-api
-  version: 1
+  version: 2
 interfaces:
   rutter.source.reducer.interface.python-api:
     version: 1
@@ -35,7 +35,7 @@ interfaces:
     - interface: rutter.source.history.interface.python-api
       version: 1
     - interface: rutter.source.values.interface.python-api
-      version: 1
+      version: 2
     description: Selects and replaces active runs and enters or returns child voyages purely.
 platform_support:
   linux: true

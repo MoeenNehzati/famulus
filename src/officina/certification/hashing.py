@@ -52,7 +52,7 @@ CERTIFIER_NODE_ID = "skill-certifier"
 CERTIFIER_INTERFACE_ID = "skill-certifier.interface.certify"
 V6_CERTIFIER_INTERFACE_ID = "skill-certifier._rtx.interface.certify"
 CERTIFIER_INTERFACE_VERSION = 2
-CERTIFIER_AUDIT_INTERFACE_VERSION = 2
+CERTIFIER_AUDIT_INTERFACE_VERSION = 3
 CERTIFIER_AUDIT_INTERFACES = {
     "interface": "skill-certifier.source.audit-interface.interface.audit",
     "remainder": "skill-certifier.source.audit-behavioral-source.interface.audit",
@@ -187,6 +187,9 @@ def certification_target_postorder(
             dependencies.append((relation, target, version))
         for _relation, target, _version in sorted(dependencies):
             visit(target)
+        if graph.nodes[node_id].node_type == "module":
+            for child_id in sorted(graph.module_children.get(node_id, ())):
+                visit(child_id)
         visiting.remove(node_id)
         visited.add(node_id)
         ordered.append(node_id)

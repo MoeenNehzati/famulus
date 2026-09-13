@@ -63,10 +63,10 @@ def test_blueprint_consumes_the_voyage_dispenser_contract() -> None:
     assert root["schema_version"] == gateway["schema_version"] == 6
     assert root["version"] == gateway["version"] == interface["version"] == 12
     assert gateway["uses_interfaces"] == [
-        {"interface": "rutter.interface.dispenser", "version": 5}
+        {"interface": "rutter.interface.dispenser", "version": 6}
     ]
     assert interface["uses_interfaces"] == [
-        {"interface": "rutter.interface.dispenser", "version": 5}
+        {"interface": "rutter.interface.dispenser", "version": 6}
     ]
     assert set(contract["arguments"]) == {"request", "binding", "run-prefix"}
     binding = contract["arguments"]["binding"]

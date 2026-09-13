@@ -55,7 +55,7 @@ logic:
       original_decision_owner: human
       automation_permission: request-owner-decision
       public_runtime_capability: rutter.interface.bound-operations
-      public_runtime_version: 6
+      public_runtime_version: 7
       public_binding_contract_version: 1
       capability_verified: false
       capability_gap:

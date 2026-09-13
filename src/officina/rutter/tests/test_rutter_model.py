@@ -1462,6 +1462,7 @@ def test_public_package_has_the_exact_narrow_new_vocabulary_surface() -> None:
         "VoyagesAlreadyInitializedError",
         "VoyagesNotInitializedError",
         "VoyageResult",
+        "VoyageNextResult",
         "VoyageStatus",
         "after",
         "ask_and_diagnose_on",

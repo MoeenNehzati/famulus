@@ -12,7 +12,7 @@ dependencies:
     path: src/officina/certification/blueprints/view.yaml
   reason: Imports the read-only certification view protocol from view.py.
   source: certification.source.view
-  version: 1
+  version: 2
 description: Renders deterministic generated blueprint reviews from v4 graph declarations
   and current certificates without becoming graph or certification authority.
 gateway:

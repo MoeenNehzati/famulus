@@ -36,7 +36,7 @@ def test_v6_rutter_operation_effects_are_outcome_specific() -> None:
     bound = engine["interfaces"][
         "rutter.source.engine.interface.bound-operations"
     ]
-    assert bound["version"] == 6
+    assert bound["version"] == 7
     assert "inquisitive-inventory CLI" in bound["description"]
     bound_contract = bound["contract"]
     bound_outcomes = {
@@ -134,16 +134,16 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
         (rutter_root.parent / "common" / "blueprint.yaml").read_text(encoding="utf-8")
     )
 
-    assert module["version"] == 10
+    assert module["version"] == 11
     assert sources["diagnostic"]["version"] == 4
     assert sources["diagnostic"]["interfaces"][
         "rutter.source.diagnostic.interface.python-api"
     ]["version"] == 4
-    assert sources["dispenser"]["version"] == 5
+    assert sources["dispenser"]["version"] == 6
     dispenser_interface = sources["dispenser"]["interfaces"][
         "rutter.source.dispenser.interface.python-api"
     ]
-    assert dispenser_interface["version"] == 5
+    assert dispenser_interface["version"] == 6
     assert "run-id" in dispenser_interface["contract"]["arguments"]
     assert module["content"] == [
         r"__init__\.py",
@@ -198,6 +198,8 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
         "rutter.interface.model": {"math-dependency-graph._rtx"},
     }
     for interface_id, callers in expected_callers.items():
+        if interface_id != "rutter.interface.diagnostic":
+            callers.add("skill-certifier._rtx")
         access = module["exports"][interface_id]["access"]
         assert access["allow_all_modules"] is False
         assert set(access["allowed_callers"]) == callers
@@ -289,15 +291,15 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
     expected_uses_interfaces = {
         "authoring": [
             {"interface": "rutter.source.history.interface.python-api", "version": 1},
-            {"interface": "rutter.source.values.interface.python-api", "version": 1},
+            {"interface": "rutter.source.values.interface.python-api", "version": 2},
         ],
         "diagnostic": [
             {"interface": "rutter.source.authoring.interface.python-api", "version": 1},
-            {"interface": "rutter.source.values.interface.python-api", "version": 1},
+            {"interface": "rutter.source.values.interface.python-api", "version": 2},
         ],
         "dispenser": [
-            {"interface": "rutter.source.engine.interface.bound-operations", "version": 6},
-            {"interface": "rutter.source.values.interface.python-api", "version": 1},
+            {"interface": "rutter.source.engine.interface.bound-operations", "version": 7},
+            {"interface": "rutter.source.values.interface.python-api", "version": 2},
         ],
         "engine": [
             {"interface": "rutter.source.authoring.interface.python-api", "version": 1},
@@ -307,33 +309,33 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
             {"interface": "rutter.source.storage.interface.read", "version": 2},
             {"interface": "rutter.source.storage.interface.transaction", "version": 2},
             {"interface": "rutter.source.storage.interface.write", "version": 2},
-            {"interface": "rutter.source.values.interface.python-api", "version": 1},
+            {"interface": "rutter.source.values.interface.python-api", "version": 2},
         ],
         "evaluation": [
             {"interface": "rutter.source.authoring.interface.python-api", "version": 1},
             {"interface": "rutter.source.history.interface.python-api", "version": 1},
-            {"interface": "rutter.source.values.interface.python-api", "version": 1},
+            {"interface": "rutter.source.values.interface.python-api", "version": 2},
         ],
         "history": [
-            {"interface": "rutter.source.values.interface.python-api", "version": 1},
+            {"interface": "rutter.source.values.interface.python-api", "version": 2},
         ],
         "model": [
             {"interface": "rutter.source.authoring.interface.python-api", "version": 1},
             {"interface": "rutter.source.history.interface.python-api", "version": 1},
-            {"interface": "rutter.source.values.interface.python-api", "version": 1},
+            {"interface": "rutter.source.values.interface.python-api", "version": 2},
         ],
         "reducer": [
             {"interface": "rutter.source.history.interface.python-api", "version": 1},
-            {"interface": "rutter.source.values.interface.python-api", "version": 1},
+            {"interface": "rutter.source.values.interface.python-api", "version": 2},
         ],
         "runtime": [
             {"interface": "rutter.source.authoring.interface.python-api", "version": 1},
             {"interface": "rutter.source.engine.interface.binding", "version": 3},
-            {"interface": "rutter.source.values.interface.python-api", "version": 1},
+            {"interface": "rutter.source.values.interface.python-api", "version": 2},
         ],
         "storage": [
             {"interface": "rutter.source.history.interface.python-api", "version": 1},
-            {"interface": "rutter.source.values.interface.python-api", "version": 1},
+            {"interface": "rutter.source.values.interface.python-api", "version": 2},
             {"interface": "common.interface.atomic-files", "version": 2},
         ],
         "values": [],
@@ -377,7 +379,7 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
     bound = engine_interfaces[
         "rutter.source.engine.interface.bound-operations"
     ]
-    assert bound["version"] == 6
+    assert bound["version"] == 7
     assert "inquisitive-inventory CLI" in bound["description"]
     bound_contract = bound["contract"]
     assert set(bound_contract["arguments"]) == {
@@ -400,6 +402,7 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
         "get-status",
         "validate",
         "advance",
+        "next",
     }
     assert "Help text" in bound_contract["outputs"][0]["description"]
     assert bound_outcomes["described"]["effects"] == []

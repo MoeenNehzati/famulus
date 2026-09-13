@@ -16,7 +16,7 @@ dependencies:
     path: blueprints/authoring.yaml
   reason: Imports Rutter evolutions, contexts, TransitionHook, and hook match constructors.
 - source: rutter.source.values
-  version: 1
+  version: 2
   blueprint:
     base: module-root
     path: blueprints/values.yaml
@@ -25,7 +25,7 @@ uses_interfaces:
 - interface: rutter.source.authoring.interface.python-api
   version: 1
 - interface: rutter.source.values.interface.python-api
-  version: 1
+  version: 2
 interfaces:
   rutter.source.diagnostic.interface.python-api:
     content:
@@ -34,7 +34,7 @@ interfaces:
     - interface: rutter.source.authoring.interface.python-api
       version: 1
     - interface: rutter.source.values.interface.python-api
-      version: 1
+      version: 2
     version: 4
     description: Constructs exact attributed diagnostic cases, ordinary diagnostic child Rutters, and reusable TransitionHooks.
     contract:

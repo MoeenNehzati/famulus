@@ -1,7 +1,7 @@
 schema_version: 6
 node_type: behavioral_source
 id: rutter.source.values
-version: 1
+version: 2
 description: Defines immutable JSON-safe Charters, direct-property Messages, machine
   and voyage results, validated fault and status projections, validation reports,
   and errors without sibling dependencies.
@@ -14,7 +14,7 @@ dependencies: []
 uses_interfaces: []
 interfaces:
   rutter.source.values.interface.python-api:
-    version: 1
+    version: 2
     content:
     - values\.py
     uses_interfaces: []

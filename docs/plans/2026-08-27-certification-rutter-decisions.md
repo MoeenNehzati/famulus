@@ -1,13 +1,51 @@
 # Certification Rutter design
 
-Status: green after independent subagent review, 2026-09-12.
+Status: implemented and validated in `feat/certification-audit-pool`, 2026-09-12.
 
 All three reviewers approved revision
 `85d347f33772666bc65bf1b38d33ed72a7facec336abc9951f387b702d80f78c`:
 architecture/Ponytail reuse, LLM responsibility boundaries, and correctness.
 The first review found missing structural-child ordering; it was corrected and
-the complete revision was re-reviewed by all three. Only this review record was
-added after approval. Green covers the plan, not implementation validation.
+the complete revision was re-reviewed by all three and committed as `656030c6`.
+
+Implementation follow-up: all three reviewers returned GREEN after fixes for
+certificate-loss drift, signer-bound dependency/facet/basis identity, bounded
+worker file reads, inline prerequisite declarations, raw abort forwarding and
+large mechanical-only continuations. Their verdicts are code/contract review;
+test results are recorded separately. The branch-specific clarifications below
+were incorporated during implementation.
+
+Latest validation: working-tree precommit suite with 8 workers: 3,894 passed,
+21 skipped (198.49 seconds); all 32 validators passed (40.32 seconds).
+Generated contracts are synchronized
+and `git diff --check` passes. Three independent reviewers are GREEN. The plan
+commit remains `656030c6`; implementation and audit follow-up are recorded together
+in the commit containing this status update. No live certification
+was issued from the dirty worktree. The historical scheduler blueprint filename
+now owns the Voyage declaration; its old public scheduler route is removed.
+
+Post-implementation audit found and corrected two gaps: replay after a successful
+append could reject the source's replaced own-facet certificate, and malformed
+reports could omit the failed assignment/node identity. Replay now reconciles
+current same-owner evidence while retaining external prerequisite checks; failure
+receipts carry the known task and node IDs. A regression reproduced the replay
+failure before the correction. All three independent follow-up reviews are GREEN.
+
+Acceptance coverage now also exercises settled assignments using the current
+entrance, missing/duplicate real prerequisite consumption, propagated-currentness
+restoration, actual exact-writer dependency rejection/issuance, and valid schema-v6
+structural-child/cross-source ordering. The controller boundary is verified through
+code, instructions and declared interfaces; no live host certification was run.
+
+Test optimization followed `docs/contributors/optimizing-code-tests.md` from the
+newer main checkout, read-only. The large mechanical-only fixture uses 51 nodes
+instead of 62 while retaining over 100 actual machine records, zero worker audits,
+complete exact-node coverage and all existing assertions. Three alternating
+eight-worker benchmark pairs reduced median focused-runner time from 12.456 to
+10.692 seconds and aggregate test work from 11.584 to 9.202 seconds, exceeding the
+predeclared 0.5-second threshold. All 25 selected cases remain. Host timings varied;
+this is a focused-selection result, not a full-suite speedup claim. Raw timings and
+the evidence/contract map remain in worktree-local `_build/certification-*` artifacts.
 
 ## Objective and ownership
 
@@ -31,9 +69,12 @@ This revision supersedes owner projection, lexical `get-root`, and the routine
 
 ## Reuse and implementation baseline
 
-Target current `node-certify`/`node-drift` APIs. The older branch uses
-`skill-certifier`/`skill-drift`; reconcile its unfinished edits with current
-code rather than restoring old names.
+Implementation scope, 2026-09-12: the user restricted all session changes to
+the existing `feat/certification-audit-pool` branch and worktree. Use its
+`skill-certifier`/`skill-drift` APIs throughout; the `node-certify`/`node-drift`
+names below identify their counterparts on the newer baseline. Substitute the
+branch-local names in paths, interface IDs and schema IDs. A repository-wide
+rename or integration of other branches is outside this implementation scope.
 
 Reuse these existing components:
 
@@ -129,6 +170,7 @@ and canonical report schema; do not duplicate their definitions.
 | `audited_input_identity` | Canonical selected-input digest. |
 | `input_manifest` | Canonical manifest identifying readable owned inputs and their digests. |
 | `selected_content` | Existing content-selection data specifying declarations, bindings, instruction/implementation content and supplied boundary context to read. |
+| `prerequisite_declarations` | Exact selected declarations/contracts for all direct prerequisites, without child implementation content. |
 | `prerequisite_reports` | Full canonical direct in-run passing reports, with evidence, summaries and run-scoped task IDs. |
 | `prerequisite_certificates` | Authenticated reusable evidence: subject/facet IDs, exact certificate identity, readable reference/digest, and selected facet/manifest/dependency facts needed for semantic composition. |
 
@@ -191,7 +233,9 @@ Accepted reports stay in Reckoning; certificates need not embed their digests.
 
 Finish a narrow public exact-node mode of the existing certifier.
 Inputs include node, reviewed repository/commit and expected audited-input
-identity/manifest from the bound passing audit set.
+identity from the bound passing audit set: canonical node hash, input manifest,
+dependency hashes, facets and certification basis hash. Local node hashes do not
+substitute for dependency identity.
 
 Inside its existing frozen-input issuance path, the signer must:
 
@@ -217,11 +261,24 @@ not a required per-result tool call.
 
 Use existing transaction machinery so status decisions, response validation and
 advancement agree atomically. Concurrent calls may block on the existing lock.
-When a machine effect is already claimed and cannot safely proceed, return
+If an engine exposes a live claimed machine effect that cannot safely proceed, return
 `retry-later` with the configured delay without consuming a supplied response.
 The controller waits and resubmits the unchanged envelope and entrance; code
 rejects stale entrances. No controller state inspection/readiness judgment is
 required. This retry is unrelated to waiting for semantic workers.
+
+Verified branch implementation detail: this store holds the same lock throughout
+machine effects and exposes no live pending claim. Concurrent `next` calls block
+then revalidate; an uncertain non-repeat-safe effect returns a fault. Keep the
+typed retry variant and calibration knob, but do not invent a claimed state or
+nonblocking protocol merely to exercise that variant. Pending-effect retry is
+conditional on an engine that can expose such a state safely.
+
+The existing 100-step automatic continuation limit must also cover a large
+mechanical-only closure. Keep 100 for other workflows; certification binds a
+positive `automatic_transition_limit` of `max(100, 3 * node_count + 3)` from its
+finite selected order. This permits completion without another LLM turn or an
+unbounded continuation loop.
 
 One live session owns dispatch for each Voyage; multiple independent controllers
 and automatic recovery of old worker handles are unsupported.
@@ -247,8 +304,9 @@ There is no final LLM certification judgment.
      usable evidence, valid node-order coverage, exact dependency signing before
      dependents, no sibling/dependency renewal.
    - Two ready audits at bounded capacity: fresh assignments, out-of-order buffered
-     completions settled once, concurrent `next`/stale entrance safety, and claimed
-     machine work retry without response consumption.
+     completions settled once, concurrent `next` blocking and stale entrance safety,
+     positive typed retry-delay validation, and uncertain-effect faults. Live
+     claimed-effect retry applies only if an engine exposes a safely pending claim.
    - Invalid/old/duplicate assignments rejected without mutation; malformed raw
      reports, wrong report IDs, missing/duplicate dependency consumption, semantic
      reject/abort, spawn failure and worker loss fail without signing.
@@ -256,6 +314,8 @@ There is no final LLM certification judgment.
      during issuance rejected by existing guards.
    - Repeat-safe re-entry and fresh runs after interruption skip current
      certificates, including currentness restored by dependency renewal.
+     A mechanical-only closure exceeding 100 transitions completes without
+     dispatching a worker or requiring another controller call.
    - Controller trace contains only initialization, packet dispatch, raw event
      forwarding and host lifecycle. Code alone parses/classifies/signs and builds
      final results. Public/generated-contract checks cover the new route.

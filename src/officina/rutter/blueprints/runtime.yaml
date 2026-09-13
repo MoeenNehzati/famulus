@@ -19,7 +19,7 @@ dependencies:
   reason: Imports direct or legacy Rutter definitions, evolution types, and contextual
     TransitionHooks for binding.
 - source: rutter.source.engine
-  version: 3
+  version: 4
   blueprint:
     base: module-root
     path: blueprints/engine.yaml
@@ -31,7 +31,7 @@ dependencies:
     path: blueprints/storage.yaml
   reason: Confines caller paths beneath the Reckoning root.
 - source: rutter.source.values
-  version: 1
+  version: 2
   blueprint:
     base: module-root
     path: blueprints/values.yaml
@@ -42,7 +42,7 @@ uses_interfaces:
 - interface: rutter.source.engine.interface.binding
   version: 3
 - interface: rutter.source.values.interface.python-api
-  version: 1
+  version: 2
 interfaces:
   rutter.source.runtime.interface.binding:
     content:
@@ -53,7 +53,7 @@ interfaces:
     - interface: rutter.source.engine.interface.binding
       version: 3
     - interface: rutter.source.values.interface.python-api
-      version: 1
+      version: 2
     version: 3
     description: Creates a named Voyage bound to one snapshotted Rutter definition
       or opens one from persisted Charter identity.

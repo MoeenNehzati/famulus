@@ -238,7 +238,7 @@ def _valid_body(stage: str, root: Path | None = None) -> dict[str, Any]:
                     "original_decision_owner": "rutter",
                     "automation_permission": "deterministic",
                     "public_runtime_capability": "rutter.interface.bound-operations",
-                    "public_runtime_version": 6,
+                    "public_runtime_version": 7,
                     "public_binding_contract_version": 1,
                     "capability_verified": True,
                     "owning_evolution": "rutter-main/inspect",

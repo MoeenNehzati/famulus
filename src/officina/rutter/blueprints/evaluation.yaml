@@ -24,7 +24,7 @@ dependencies:
     path: blueprints/history.yaml
   reason: Imports the immutable transition input used by hook evaluation.
 - source: rutter.source.values
-  version: 1
+  version: 2
   blueprint:
     base: module-root
     path: blueprints/values.yaml
@@ -35,7 +35,7 @@ uses_interfaces:
 - interface: rutter.source.history.interface.python-api
   version: 1
 - interface: rutter.source.values.interface.python-api
-  version: 1
+  version: 2
 interfaces:
   rutter.source.evaluation.interface.python-api:
     version: 1
@@ -47,7 +47,7 @@ interfaces:
     - interface: rutter.source.history.interface.python-api
       version: 1
     - interface: rutter.source.values.interface.python-api
-      version: 1
+      version: 2
     description: Evaluates each concrete author callback after applicable engine
       formatting, schema, and static outcome-map checks, then returns immutable
       values or typed faults.

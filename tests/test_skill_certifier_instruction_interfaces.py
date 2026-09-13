@@ -62,104 +62,26 @@ def test_certifier_exposes_three_private_semantic_audit_sources() -> None:
         assert set(source["interfaces"]) == {interface_id}
         assert source["interfaces"][interface_id]["content"] == source["content"]
         assert source["interfaces"][interface_id]["uses_interfaces"] == []
-        assert source["interfaces"][interface_id]["version"] == 2
-        assert source["version"] == 2
+        assert source["interfaces"][interface_id]["version"] == 3
+        assert source["version"] == 3
 
 
-def test_certifier_gateway_orchestrates_audits_without_default_interface() -> None:
-    module = _yaml(SKILL_ROOT / "blueprint.yaml")
-    gateway = _yaml(SKILL_ROOT / "blueprints" / "gateway.yaml")
-    certifier_runtime = _yaml(SKILL_ROOT / "_rtx" / "blueprint.yaml")
-    certifier_source = _yaml(
-        SKILL_ROOT / "_rtx" / "blueprints" / "rtx-certifier.yaml"
-    )
-    drift_module = _yaml(DRIFT_ROOT / "blueprint.yaml")
-    drift_gateway = _yaml(DRIFT_ROOT / "blueprints" / "gateway.yaml")
-    drift_runtime = _yaml(DRIFT_ROOT / "_rtx" / "blueprint.yaml")
-    drift_source = _yaml(
-        DRIFT_ROOT / "_rtx" / "blueprints" / "rtx-check-drift-state.yaml"
-    )
-    interface_ids = {
-        interface_id
-        for _, (_, _, interface_id) in AUDIT_SOURCES.items()
-    }
-    drift_interface = "skill-drift._rtx.interface.drift-status"
-    expected_uses = interface_ids | {
-        drift_interface,
-        "skill-certifier._rtx.interface.certify",
-        "skill-certifier._rtx.interface.semantic-audit-scheduler",
-    }
-
+def test_certifier_gateway_only_dispatches_the_machine_owned_voyage() -> None:
+    graph = load_repository_blueprint_graph(REPO_ROOT)
+    gateway = _yaml(SKILL_ROOT / "blueprints/gateway.yaml")
     assert gateway["interfaces"] == {}
-    assert {
-        use["interface"] for use in gateway["uses_interfaces"]
-    } == expected_uses
-    assert module["version"] == gateway["version"] == 6
-    certifier_interface = "skill-certifier._rtx.interface.certify"
-    certifier_source_interface = (
-        "skill-certifier._rtx.source.rtx-certifier.interface.certify"
-    )
-    certifier_interface_version = certifier_source["interfaces"][
-        certifier_source_interface
-    ]["version"]
-    assert certifier_interface_version == 2
-    assert certifier_source["version"] == 2
-    assert certifier_runtime["version"] == 3
-    assert module["namespace_exports"]["_rtx"]["version"] == 3
-    assert module["namespace_exports"]["_rtx"]["surface"]["only"][
-        certifier_interface
-    ] == certifier_interface_version
-    assert next(
-        use for use in gateway["uses_interfaces"] if use["interface"] == certifier_interface
-    )["version"] == certifier_interface_version
-    assert drift_module["version"] == drift_gateway["version"] == 5
-    drift_source_interface = (
-        "skill-drift._rtx.source.rtx-check-drift-state.interface.drift-status"
-    )
-    drift_status_version = drift_source["interfaces"][drift_source_interface][
-        "version"
-    ]
-    assert drift_status_version == 4
-    assert drift_source["version"] == drift_runtime["version"] == 4
-    assert drift_module["namespace_exports"]["_rtx"]["version"] == 4
-    assert drift_module["namespace_exports"]["_rtx"]["surface"]["only"][
-        drift_interface
-    ] == drift_status_version
-    for use in (*gateway["uses_interfaces"], *drift_gateway["uses_interfaces"]):
-        if use["interface"] == drift_interface:
-            assert use["version"] == drift_status_version
-    assert drift_gateway["interfaces"][
-        "skill-drift.source.gateway.interface.default"
-    ]["uses_interfaces"][1] == {
-        "interface": drift_interface,
-        "version": drift_status_version,
+    assert {use["interface"] for use in gateway["uses_interfaces"]} == {
+        "skill-certifier._rtx.interface.certification-voyage",
+        *(value[2] for value in AUDIT_SOURCES.values()),
     }
-    certifier_dependency = next(
-        dependency
-        for dependency in drift_gateway["dependencies"]
-        if dependency["source"] == "skill-certifier.source.gateway"
-    )
-    assert certifier_dependency["version"] == gateway["version"]
-
-    # The real graph load proves the namespace-exported drift route is authorized
-    # and does not introduce a certification dependency cycle.
-    load_repository_blueprint_graph(REPO_ROOT)
-
-    skill_text = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
-    assert "skill-certifier.interface.default" not in skill_text
-    algorithm = skill_text.split("## Certification algorithm", 1)[1]
-    normalized_algorithm = " ".join(algorithm.split())
-    assert "semantic-audit-scheduler@1" in normalized_algorithm
-    assert "claim --capacity k" in normalized_algorithm.lower()
-    assert "one fresh subagent" in normalized_algorithm.lower()
-    assert "never reuse a subagent" in normalized_algorithm.lower()
-    assert "--report-file" in normalized_algorithm
-    assert "skips current nodes" in normalized_algorithm
-    assert "audit every interface and node" not in normalized_algorithm
-    assert algorithm.index("drift-status") < algorithm.index("semantic-audit-scheduler")
-    assert algorithm.index("semantic-audit-scheduler") < algorithm.index(
-        "mechanical\n   `certify`"
-    )
+    assert "skill-certifier._rtx.interface.semantic-audit-scheduler" not in graph.exports
+    text = (SKILL_ROOT / "SKILL.md").read_text().split("## Certification algorithm", 1)[1]
+    normalized = " ".join(text.split())
+    assert "one fresh subagent" in normalized
+    assert "Never reuse a subagent" in normalized
+    assert "Do not parse, summarize, repair, or combine worker reports" in normalized
+    assert "cancel and reap" in normalized
+    assert "initialization and `next`" in normalized
 
 
 def test_drift_repository_routes_supply_their_subcommands() -> None:
@@ -187,22 +109,21 @@ def test_drift_repository_routes_supply_their_subcommands() -> None:
         )
 
 
-def test_semantic_audit_scheduler_route_preserves_operation_and_capacity() -> None:
+def test_certification_routes_preserve_exact_machine_arguments() -> None:
     graph = load_repository_blueprint_graph(REPO_ROOT)
-    export = graph.exports[
-        "skill-certifier._rtx.interface.semantic-audit-scheduler"
-    ]
-    prefix = SKILL_ROOT / "_build" / "semantic-audit-runs" / "test"
-    parsed = parse_caller_invocation(
-        export,
-        ["claim", str(prefix), "--capacity", "2"],
-        stdin_requested=False,
-    )
-    plan = compile_gateway_invocation(
-        graph.nodes[export.source_node_id], export, parsed
-    )
-
-    assert plan.argv == ("claim", str(prefix), "--capacity", "2")
+    for interface_id, argv in (
+        ("skill-certifier._rtx.interface.certification-voyage",
+         ["initiate", "--repository", str(REPO_ROOT), "--worker-capacity", "2"]),
+        ("skill-certifier._rtx.interface.certification-voyage",
+         ["next", "run/1", "--response-file", "event.json", "--responding-to", "entry"]),
+        ("skill-certifier._rtx.source.rtx-certifier.interface.exact-node",
+         ["example.source", "--reviewed-repository", str(REPO_ROOT),
+          "--reviewed-commit", "a" * 40, "--audited-inputs", "inputs.json"]),
+    ):
+        export = graph.exports.get(interface_id) or graph.source_interfaces[interface_id]
+        parsed = parse_caller_invocation(export, argv, stdin_requested=False)
+        plan = compile_gateway_invocation(graph.nodes[export.source_node_id], export, parsed)
+        assert plan.argv == tuple(argv)
 
 
 def test_drift_status_route_preserves_dag_file() -> None:
@@ -253,7 +174,7 @@ def test_drift_and_canonical_docs_describe_selective_v6_worklist() -> None:
     assert "complete neutral dependency DAG" in normalized_drift
     assert "selective bottom-up semantic review" in normalized_canonical
     assert "officina.certification-dependency-dag/v1" in normalized_canonical
-    assert "semantic-audit-scheduler" in normalized_canonical
+    assert "certification-voyage" in normalized_canonical
     assert "bounded pool" in normalized_canonical
     assert "needs-context" not in normalized_canonical
     assert "route smoke" in normalized_canonical
@@ -288,7 +209,7 @@ def test_each_semantic_audit_instruction_has_one_bounded_job() -> None:
     assert "Do not sign" in interface_text
     assert "remainder content" in source_text
     assert "interface audit results" in source_text
-    assert "authenticated unchanged facet evidence" in normalized_source
+    assert "unchanged facet evidence" in normalized_source
     assert "latest valid payload-v3 certificate" in normalized_source
     assert "not a separately signed per-facet semantic attestation" in normalized_source
     assert "Until authenticated selective reuse exists" not in source_text

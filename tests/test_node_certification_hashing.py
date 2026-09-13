@@ -20,6 +20,7 @@ from officina.certification.hashing import (
     map_route_smoke_dependencies,
     route_smoke_trace_signature,
 )
+from officina.certification.dependency_dag import build_dependency_dag
 from officina.blueprints.graph import (
     BlueprintGraphError,
     load_repository_blueprint_graph,
@@ -323,7 +324,7 @@ def _v6_certifier_repository(tmp_path: Path) -> tuple[Path, Path]:
         if dependency["interface"]
         not in {
             "skill-drift._rtx.interface.drift-status",
-            "skill-certifier._rtx.interface.semantic-audit-scheduler",
+            "skill-certifier._rtx.interface.certification-voyage",
         }
     ]
     _write_yaml(gateway_blueprint_path, gateway_blueprint)
@@ -333,10 +334,10 @@ def _v6_certifier_repository(tmp_path: Path) -> tuple[Path, Path]:
         runtime_blueprint_path.read_text(encoding="utf-8")
     )
     runtime_blueprint["sources"].pop(
-        "skill-certifier._rtx.source.semantic-audit-scheduler"
+        "skill-certifier._rtx.source.certification-voyage"
     )
     runtime_blueprint["exports"].pop(
-        "skill-certifier._rtx.interface.semantic-audit-scheduler"
+        "skill-certifier._rtx.interface.certification-voyage"
     )
     _write_yaml(runtime_blueprint_path, runtime_blueprint)
     (
@@ -352,10 +353,10 @@ def _v6_certifier_repository(tmp_path: Path) -> tuple[Path, Path]:
     )
     runtime_namespace = module_blueprint["namespace_exports"]["_rtx"]
     runtime_namespace["surface"]["only"].pop(
-        "skill-certifier._rtx.interface.semantic-audit-scheduler"
+        "skill-certifier._rtx.interface.certification-voyage"
     )
     runtime_namespace["interface_access"].pop(
-        "skill-certifier._rtx.interface.semantic-audit-scheduler"
+        "skill-certifier._rtx.interface.certification-voyage"
     )
     _write_yaml(module_blueprint_path, module_blueprint)
 
@@ -366,9 +367,8 @@ def _v6_certifier_repository(tmp_path: Path) -> tuple[Path, Path]:
         mechanical_blueprint_path.read_text(encoding="utf-8")
     )
     mechanical_blueprint["uses_interfaces"] = []
-    mechanical_blueprint["interfaces"][
-        "skill-certifier._rtx.source.rtx-certifier.interface.certify"
-    ]["uses_interfaces"] = []
+    for interface in mechanical_blueprint["interfaces"].values():
+        interface["uses_interfaces"] = []
     _write_yaml(mechanical_blueprint_path, mechanical_blueprint)
 
     repository = GitTestRepository(root)
@@ -389,6 +389,45 @@ def _v6_states(root: Path, policy: Path) -> dict[str, NodeHashState]:
         policy_path=policy,
         certification_basis_hash="sha256:" + "b" * 64,
     )
+
+
+def test_v6_postorder_covers_structural_children_and_cross_source_audits(tmp_path: Path) -> None:
+    root, policy = _v6_repository(tmp_path)
+    parent_path = root / "skills/consumer-skill/blueprint.yaml"
+    parent = yaml.safe_load(parent_path.read_text())
+    parent["children"] = {"child": {}}
+    _write_yaml(parent_path, parent)
+    child = parent_path.parent / "child"
+    _write_yaml(child / "blueprint.yaml", {
+        "schema_version": 6, "node_type": "module", "id": "consumer-skill.child",
+        "version": 1, "maturity": "stable",
+        "gateway": {"path": "README.md", "language": "Markdown"},
+        "content": [r"README\.md"], "authority": {"owns_filesystem": []},
+        "sources": {}, "children": {}, "namespace_exports": {}, "exports": {},
+    })
+    (child / "README.md").write_text("Structural child.\n")
+    repository = GitTestRepository(root)
+    repository.git("add", ".")
+    repository.git("commit", "-qm", "add structural child")
+    graph = load_repository_blueprint_graph(
+        root, schema_root=CANONICAL_SCHEMA_ROOT, expected_schema_version=6,
+    )
+    states = compute_node_hash_states(
+        graph, repo_root=root, policy_path=policy, certification_basis_hash="sha256:" + "b" * 64,
+    )
+    order = certification_target_postorder(graph, states, ("consumer-skill",))
+    assert order.index("consumer-skill.child") < order.index("consumer-skill")
+    assert order.index("provider-skill.source.gateway") < order.index("consumer-skill.source.gateway")
+    nodes = {node["id"]: node for node in build_dependency_dag(graph, states, root)["nodes"]}
+    assert nodes["consumer-skill.source.gateway.interface.run"]["dependencies"] == [
+        "provider-skill.source.gateway.interface.run",
+    ]
+    for node in nodes.values():
+        owner = node["owner_node_id"] or node["id"]
+        if owner in order:
+            for dependency in node["dependencies"]:
+                provider = nodes[dependency]["owner_node_id"] or dependency
+                assert provider == owner or order.index(provider) < order.index(owner)
 
 
 def test_v5_hashes_record_static_route_and_facade_edges_without_containment(

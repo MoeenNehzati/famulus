@@ -15,15 +15,15 @@ dependencies:
   blueprint: {base: repository-root, path: src/officina/common/blueprints/atomic-files.yaml}
   reason: Writes cumulative source packets and chunk inventories atomically.
 - source: rutter.source.engine
-  version: 3
+  version: 4
   blueprint: {base: repository-root, path: src/officina/rutter/blueprints/engine.yaml}
   reason: Creates and operates each durable inventory Voyage.
 - source: rutter.source.model
-  version: 2
+  version: 3
   blueprint: {base: repository-root, path: src/officina/rutter/blueprints/model.yaml}
   reason: Declares the Rutter, LLM step, machine step, and terminal result.
 - source: rutter.source.dispenser
-  version: 5
+  version: 6
   blueprint: {base: repository-root, path: src/officina/rutter/blueprints/dispenser.yaml}
   reason: Routes standard operations to authorized chunk Voyages by ID.
 - source: rutter.source.diagnostic
@@ -36,9 +36,9 @@ dependencies:
   reason: Resolves and packets the supplied document entrypoint into internal immutable chunks.
 uses_interfaces:
 - {interface: common.interface.atomic-files, version: 2}
-- {interface: rutter.interface.bound-operations, version: 6}
-- {interface: rutter.interface.model, version: 2}
-- {interface: rutter.interface.dispenser, version: 5}
+- {interface: rutter.interface.bound-operations, version: 7}
+- {interface: rutter.interface.model, version: 3}
+- {interface: rutter.interface.dispenser, version: 6}
 - {interface: math-dependency-graph._rtx.source.rtx-inventory-chunk-extractor.interface.scripts-extract-inventory-chunks, version: 1}
 interfaces:
   math-dependency-graph._rtx.source.rtx-inventory-voyage-dispenser.interface.inventory-voyages:
@@ -50,9 +50,9 @@ interfaces:
     - _inventory_pipeline/_voyage_support\.py
     uses_interfaces:
     - {interface: common.interface.atomic-files, version: 2}
-    - {interface: rutter.interface.bound-operations, version: 6}
-    - {interface: rutter.interface.model, version: 2}
-    - {interface: rutter.interface.dispenser, version: 5}
+    - {interface: rutter.interface.bound-operations, version: 7}
+    - {interface: rutter.interface.model, version: 3}
+    - {interface: rutter.interface.dispenser, version: 6}
     - {interface: math-dependency-graph._rtx.source.rtx-inventory-chunk-extractor.interface.scripts-extract-inventory-chunks, version: 1}
     process_binding:
       kind: process

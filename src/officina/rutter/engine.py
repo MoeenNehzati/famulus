@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, replace
 from inspect import getdoc, signature
 from pathlib import Path
@@ -81,6 +81,7 @@ from officina.rutter.values import (
     ValidationIssue,
     ValidationReport,
     VoyageResult,
+    VoyageNextResult,
     VoyageStatus,
     _freeze_object,
     _require_id,
@@ -1091,6 +1092,7 @@ class Voyage:
         "get_status",
         "validate",
         "advance",
+        "next",
     )
 
     @classmethod
@@ -1590,6 +1592,19 @@ class Voyage:
     def rutter(self) -> Rutter:
         return self._definition.definition
 
+    @property
+    def retry_interval_seconds(self) -> int:
+        """Return this Voyage's positive retry interval, defaulting to 10 seconds."""
+
+        value = self._reckoning.root.charter.data.get(
+            "retry_interval_seconds", 10
+        )
+        if type(value) is not int or value < 1:
+            raise RutterStateError(
+                "retry_interval_seconds must be a positive integer"
+            )
+        return value
+
     def help(self) -> str:
         """Describe the public methods authorized for Compass operation."""
 
@@ -1644,53 +1659,58 @@ class Voyage:
         """
 
         with self._store.transaction() as reckoning:
-            self._reckoning = reckoning
-            leaf = deepest_active_leaf(reckoning)
-            definition = _leaf_definition(self, leaf)
-            evolution = definition.evolutions[
-                leaf.run.entered_evolution.evolution_id
-            ]
-            condition = _condition(reckoning, evolution, leaf=leaf)
-            current = _node_view(
-                reckoning,
-                leaf,
-                evolution,
-                condition=condition,
+            return self._status(reckoning)
+
+    def _status(self, reckoning: Reckoning) -> VoyageStatus:
+        """Build public status from the authority held by the current transaction."""
+
+        self._reckoning = reckoning
+        leaf = deepest_active_leaf(reckoning)
+        definition = _leaf_definition(self, leaf)
+        evolution = definition.evolutions[
+            leaf.run.entered_evolution.evolution_id
+        ]
+        condition = _condition(reckoning, evolution, leaf=leaf)
+        current = _node_view(
+            reckoning,
+            leaf,
+            evolution,
+            condition=condition,
+        )
+        instruction = _instruction_for(
+            self,
+            reckoning,
+            leaf,
+            evolution,
+            condition,
+        )
+        terminal_result = None
+        if condition == "terminal":
+            terminal = HistoryView(
+                leaf.run.history,
+                reckoning.completed_runs,
+            ).terminal()
+            assert terminal is not None
+            terminal_result = terminal.result
+        fault = reckoning.fault
+        if isinstance(fault, KnownFault):
+            summary = FaultSummary(
+                fault.category,
+                fault.evolution_id,
+                fault.evolution_entry_id,
+                fault.target_evolution_id,
+                fault.transition_hook_ids,
             )
-            instruction = _instruction_for(
-                self,
-                reckoning,
-                leaf,
-                evolution,
-                condition,
-            )
-            terminal_result = None
-            if condition == "terminal":
-                terminal = HistoryView(
-                    leaf.run.history,
-                    reckoning.completed_runs,
-                ).terminal()
-                assert terminal is not None
-                terminal_result = terminal.result
-            fault = reckoning.fault
-            if isinstance(fault, KnownFault):
-                summary = FaultSummary(
-                    fault.category,
-                    fault.evolution_id,
-                    fault.evolution_entry_id,
-                    fault.target_evolution_id,
-                    fault.transition_hook_ids,
-                )
-            elif isinstance(fault, OpaqueFault):
-                summary = FaultSummary("opaque", None, None, None, ())
-            else:
-                summary = None
-            return VoyageStatus(
-                current,
-                instruction,
-                terminal_result,
-                summary,
-            )
+        elif isinstance(fault, OpaqueFault):
+            summary = FaultSummary("opaque", None, None, None, ())
+        else:
+            summary = None
+        return VoyageStatus(
+            current,
+            instruction,
+            terminal_result,
+            summary,
+        )
 
     def validate(
         self,
@@ -1732,6 +1752,42 @@ class Voyage:
             continue_=continue_,
             dry_run=dry_run,
         )
+
+    def next(
+        self,
+        value: object = MISSING,
+        *,
+        responding_to: str | None = None,
+    ) -> VoyageNextResult:
+        """Validate, advance and return one LLM-facing result under one lock."""
+
+        with self._store.transaction() as reckoning:
+            self._reckoning = reckoning
+            status = self._status(reckoning)
+            if _is_missing(value):
+                if responding_to is not None:
+                    raise RutterValidationError(
+                        "responding_to requires a response"
+                    )
+                if isinstance(status.instruction, Message):
+                    return VoyageNextResult("message", status)
+                if status.current_evolution.condition == "terminal":
+                    return VoyageNextResult("terminal", status)
+                if status.current_evolution.condition in {"fault", "uncertain"}:
+                    return VoyageNextResult("fault", status)
+            _advance(
+                self,
+                value,
+                responding_to=responding_to,
+                _locked_reckoning=reckoning,
+            )
+            status = self._status(self._reckoning)
+            if isinstance(status.instruction, Message):
+                return VoyageNextResult("message", status)
+            if status.current_evolution.condition == "terminal":
+                return VoyageNextResult("terminal", status)
+            return VoyageNextResult("fault", status)
+
 
 
 def _instruction_for(
@@ -2071,9 +2127,21 @@ def _advance(
     responding_to: str | None = None,
     continue_: bool = True,
     dry_run: bool = False,
+    _locked_reckoning: Reckoning | None = None,
 ) -> EvolutionView:
-    with voyage._store.transaction() as reckoning:
+    transaction = (
+        voyage._store.transaction()
+        if _locked_reckoning is None
+        else nullcontext(_locked_reckoning)
+    )
+    with transaction as reckoning:
         voyage._reckoning = reckoning
+        charter = reckoning.root.charter.data
+        operation_limit = charter.get("automatic_transition_limit", _OPERATION_LIMIT)
+        if "automatic_transition_limit" in charter and (
+            type(operation_limit) is not int or operation_limit < 1
+        ):
+            raise RutterStateError("automatic continuation limit must be a positive integer")
         leaf = deepest_active_leaf(reckoning)
         definition = _leaf_definition(voyage, leaf)
         evolution = definition.evolutions[leaf.run.entered_evolution.evolution_id]
@@ -2227,7 +2295,7 @@ def _advance(
         elif not _is_missing(value):
             raise NotApplicable("Terminal does not accept a response")
 
-        for _ in range(_OPERATION_LIMIT):
+        for _ in range(operation_limit):
             leaf = deepest_active_leaf(reckoning)
             definition = _leaf_definition(voyage, leaf)
             evolution = definition.evolutions[leaf.run.entered_evolution.evolution_id]

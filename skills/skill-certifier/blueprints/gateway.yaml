@@ -1,8 +1,7 @@
 content:
 - SKILL\.md
 dependencies: []
-description: Owns the drift-selected, dependency-first certification algorithm and
-  delegates each semantic judgment to the audit interface for that node kind.
+description: Dispatch-only controller for machine-owned certification Voyages.
 gateway:
   language: Markdown
   path: SKILL.md
@@ -11,17 +10,13 @@ interfaces: {}
 node_type: behavioral_source
 schema_version: 6
 uses_interfaces:
-- interface: skill-certifier._rtx.interface.semantic-audit-scheduler
+- interface: skill-certifier._rtx.interface.certification-voyage
   version: 1
-- interface: skill-drift._rtx.interface.drift-status
-  version: 4
-- interface: skill-certifier.source.audit-behavioral-source.interface.audit
-  version: 2
 - interface: skill-certifier.source.audit-interface.interface.audit
-  version: 2
+  version: 3
+- interface: skill-certifier.source.audit-behavioral-source.interface.audit
+  version: 3
 - interface: skill-certifier.source.audit-module.interface.audit
-  version: 2
-- interface: skill-certifier._rtx.interface.certify
-  version: 2
-version: 6
+  version: 3
+version: 7
 maturity: stable

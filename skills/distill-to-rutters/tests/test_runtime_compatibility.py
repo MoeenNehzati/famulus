@@ -722,8 +722,8 @@ def test_checked_out_runtime_probe_is_honestly_design_blocked(tmp_path: Path) ->
     }
     assert result["bound_operations"] == {
         "interface": "rutter.interface.bound-operations",
-        "version": 6,
-        "operations": ("help", "get-status", "validate", "advance"),
+        "version": 7,
+        "operations": ("help", "get-status", "validate", "advance", "next"),
     }
     assert all(
         profile["ready"] is False
@@ -913,8 +913,8 @@ def test_design_stage_declares_the_same_live_probe_boundary() -> None:
         assert requirement in runtime_read["content"]
     for guessed in (
         "rutter.interface.binding@3",
-        "rutter.interface.bound-operations@6",
-        "rutter.interface.dispenser@5",
+        "rutter.interface.bound-operations@7",
+        "rutter.interface.dispenser@6",
     ):
         assert guessed not in normalized_instruction
         assert guessed not in runtime_read["content"]

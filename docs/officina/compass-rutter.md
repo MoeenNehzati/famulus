@@ -116,3 +116,30 @@ evolution after a process or interaction restart. Because Voyage IDs are
 globally resolvable within the dispenser, a fresh process can reopen an assigned
 ID and continue through the same `status`, `validate`, and `advance` interface.
 Release is the explicit end of that durable working-directory lifetime.
+
+### Atomic controller operation
+
+`Voyage.next(value=MISSING, responding_to=None)` validates and advances under
+one Reckoning transaction, returning `VoyageNextResult`. The dispenser's `next`
+command serializes it as `rutter.voyage-next/v1`, with `kind`, status, and optional
+retry delay. A missing response returns the current message, or settles automatic
+machine work until a message, terminal or fault. Supplied responses require the
+exact entrance and are never accepted twice. `validate` remains a diagnostic
+operation; existing status/validate/advance clients remain supported.
+
+The current store holds its lock throughout machine effects: concurrent calls
+block, then revalidate against the resulting state. There is no observable live
+machine claim requiring retry. An uncertain non-repeat-safe effect is a fault
+requiring reconciliation, not a retry. The typed `retry-later` variant and positive
+Charter `retry_interval_seconds` (default 10) reserve the retry contract for an
+engine that can expose a safely pending effect; this engine does not emit it.
+
+Automatic continuation remains bounded at 100 steps by default. A positive
+integer Charter `automatic_transition_limit` can raise that allowance for a
+known finite workflow. Certification derives `max(100, 3 * node_count + 3)` from
+its selected node order, covering mechanical-only renewal without an LLM turn.
+
+Dispenser modes may add `optional_arguments`, a mapping of argument names to
+descriptions beside required `arguments`. Omitted optional values are supplied
+by the initiation callback's defaults. Run IDs and sequential numeric Voyage
+indexes retain the standard dispenser format.

@@ -4,8 +4,7 @@ authority:
     - skill-drift._rtx.interface.drift-status
     match: regex
     path: ^\.certificates/public-keys/(active-key-id|[0-9a-f]{64}\.pub)$
-    reason: Retained Ed25519 public keys are read-only verification material for certificate
-      consumers.
+    reason: Retained Ed25519 public keys are read-only verification material for certificate consumers.
   - allowed_readers:
     - skill-drift._rtx.interface.drift-status
     match: regex
@@ -15,8 +14,8 @@ children:
   _rtx: {}
 content:
 - (?:SKILL\.md|instructions/audit-(?:behavioral-source|interface|module)\.md)
-description: Orchestrates drift-selected interface, behavioral-source, and module
-  semantic audits, then issues append-only certificates for exact reviewed targets.
+description: Orchestrates drift-selected interface, behavioral-source, and module semantic audits, then
+  issues append-only certificates for exact reviewed targets.
 discovery:
   mechanism: skill
   catalog:
@@ -36,19 +35,19 @@ gateway:
 id: skill-certifier
 namespace_exports:
   _rtx:
-    version: 3
+    version: 4
     access:
       allow_all_modules: true
       allowed_callers: []
     surface:
       only:
         skill-certifier._rtx.interface.certify: 2
-        skill-certifier._rtx.interface.semantic-audit-scheduler: 1
+        skill-certifier._rtx.interface.certification-voyage: 1
     interface_access:
       skill-certifier._rtx.interface.certify:
         allow_all_modules: false
         allowed_callers: []
-      skill-certifier._rtx.interface.semantic-audit-scheduler:
+      skill-certifier._rtx.interface.certification-voyage:
         allow_all_modules: false
         allowed_callers: []
 node_type: module
@@ -70,7 +69,7 @@ sources:
     blueprint:
       base: module-root
       path: blueprints/gateway.yaml
-version: 6
+version: 7
 maturity: stable
 installation_tier: core
 personal_preference:

@@ -472,6 +472,33 @@ class VoyageStatus:
             )
 
 
+@dataclass(frozen=True)
+class VoyageNextResult:
+    """One typed result from the LLM-facing Voyage loop."""
+
+    kind: str
+    status: VoyageStatus
+    retry_after_seconds: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.kind not in {"message", "terminal", "fault", "retry-later"}:
+            raise RutterDefinitionError("VoyageNextResult kind is invalid")
+        if not isinstance(self.status, VoyageStatus):
+            raise RutterDefinitionError(
+                "VoyageNextResult status must be a VoyageStatus"
+            )
+        retry = self.retry_after_seconds
+        if self.kind == "retry-later":
+            if type(retry) is not int or retry < 1:
+                raise RutterDefinitionError(
+                    "retry-later requires a positive retry interval"
+                )
+        elif retry is not None:
+            raise RutterDefinitionError(
+                "retry interval is valid only for retry-later"
+            )
+
+
 __all__ = (
     "Charter",
     "EvolutionView",
@@ -491,5 +518,6 @@ __all__ = (
     "ValidationIssue",
     "ValidationReport",
     "VoyageResult",
+    "VoyageNextResult",
     "VoyageStatus",
 )
