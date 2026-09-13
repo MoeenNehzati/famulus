@@ -46,8 +46,16 @@ async def restore_codex(value):
         })
     finally:
         if process.returncode is None:
-            process.kill()
-        await process.communicate()
+            if sys.platform == "win32":
+                # A .cmd launcher owns a child that inherits our pipes.
+                cleanup = await asyncio.create_subprocess_exec(
+                    "taskkill", "/PID", str(process.pid), "/T", "/F",
+                    stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+                )
+                await cleanup.wait()
+            else:
+                process.kill()
+        await process.communicate(b"")
 
 
 def main():

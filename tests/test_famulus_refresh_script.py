@@ -54,6 +54,7 @@ def run_refresh(*args: str, env: dict[str, str] | None = None) -> subprocess.Com
         text=True,
         capture_output=True,
         check=False,
+        timeout=60,
     )
 
 
@@ -375,9 +376,10 @@ exec "$TEST_PYTHON" "$FAKE_HOST" "$@"
         )
     fake_host = tmp_path / "fake_host.py"
     fake_host.write_text('''
-import json, os, pathlib, sys
+import json, os, pathlib, sys, time
 config = pathlib.Path(os.environ["TEST_CONFIG"])
 if sys.argv[1] == "app-server":
+    config.with_suffix(".pids.json").write_text(json.dumps([os.getpid(), os.getppid()]))
     for line in sys.stdin:
         request = json.loads(line)
         if "id" not in request:
@@ -385,6 +387,7 @@ if sys.argv[1] == "app-server":
         if request["method"] == "config/value/write":
             config.with_suffix(".restored.json").write_text(json.dumps(request["params"]))
         print(json.dumps({"id": request["id"], "result": {}}), flush=True)
+    time.sleep(60)  # Closing stdin alone must not leave the app-server running.
 elif sys.argv[1:3] in (["plugin", "remove"], ["plugin", "uninstall"]):
     config.write_text('theme = "new"\\n' if config.suffix == ".toml" else json.dumps({
         "theme": "new", "enabledPlugins": {"other@market": True},
@@ -406,6 +409,13 @@ elif sys.argv[1:3] in (["plugin", "add"], ["plugin", "install"]):
             "value": preferences, "mergeStrategy": "replace",
         }
         assert config.read_text() == 'theme = "new"\n'
+        if sys.platform == "win32":
+            for pid in json.loads(config.with_suffix(".pids.json").read_text()):
+                processes = subprocess.run(
+                    ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+                    text=True, capture_output=True, check=True, timeout=10,
+                )
+                assert f'"{pid}"' not in processes.stdout, processes.stdout
     else:
         restored = json.loads(config.read_text())
         assert restored["permissions"] == permissions
