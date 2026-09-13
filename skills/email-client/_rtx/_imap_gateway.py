@@ -39,7 +39,6 @@ import imaplib
 import importlib.util
 import json
 import re
-import subprocess
 import sys
 from datetime import datetime, timezone
 from email.header import decode_header
@@ -51,12 +50,16 @@ from officina.runtime.python_machine_interface import PythonArgvMachineInterface
 SCRIPT_DIR = Path(__file__).resolve().parent
 
 try:
-    from . import _oauth_tokens
+    from . import _email_accounts, _oauth_tokens
 except ImportError:
-    spec = importlib.util.spec_from_file_location("_oauth_tokens", SCRIPT_DIR / "_oauth_tokens.py")
-    _oauth_tokens = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(_oauth_tokens)
+    accounts_spec = importlib.util.spec_from_file_location("_email_accounts", SCRIPT_DIR / "_email_accounts.py")
+    _email_accounts = importlib.util.module_from_spec(accounts_spec)
+    assert accounts_spec.loader is not None
+    accounts_spec.loader.exec_module(_email_accounts)
+    oauth_spec = importlib.util.spec_from_file_location("_oauth_tokens", SCRIPT_DIR / "_oauth_tokens.py")
+    _oauth_tokens = importlib.util.module_from_spec(oauth_spec)
+    assert oauth_spec.loader is not None
+    oauth_spec.loader.exec_module(_oauth_tokens)
 
 SECRET_NAMESPACE = "email-client"
 
@@ -75,13 +78,10 @@ def die(msg: str) -> None:
 
 
 def resolve_account(nickname: str) -> dict:
-    result = subprocess.run(
-        [sys.executable, str(SCRIPT_DIR / "_email_accounts.py"), "resolve", "--nickname", nickname],
-        capture_output=True, text=True, encoding="utf-8", errors="strict",
-    )
-    if result.returncode != 0:
-        die(result.stderr.strip() or f"could not resolve account '{nickname}'")
-    return json.loads(result.stdout)
+    accounts = _email_accounts.load()
+    if nickname not in accounts:
+        die(f"unknown account '{nickname}'. Known: {', '.join(accounts) or '(none)'}")
+    return accounts[nickname]
 
 
 def credential_key(nickname: str, purpose: str) -> str:

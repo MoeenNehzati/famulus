@@ -12,12 +12,15 @@ from __future__ import annotations
 
 import json
 import os
+import site
 import subprocess
 import sys
 import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
+from io import BytesIO, TextIOWrapper
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 
 from officina.configuration.repository import (
     RepositoryConfiguration,
@@ -52,6 +55,10 @@ from officina.runtime.dispatch_trace import trace_process
 # inheritance must share this lock so unrelated handles cannot leak.
 _WINDOWS_DIAGNOSTIC_LAUNCH_LOCK = threading.Lock()
 _DIAGNOSTIC_LIMIT = 16 * 1024
+_SUBPROCESS = subprocess
+# ponytail: one interpreter owns cwd, stdio, and import hooks; use persistent
+# isolated workers if concurrent interface execution becomes a bottleneck.
+_IN_PROCESS_EXECUTION_LOCK = threading.RLock()
 
 
 def _collect_diagnostic(
@@ -129,7 +136,7 @@ def _target_module_id(target: str) -> str:
 
 @dataclass(frozen=True)
 class ResolvedInvocation:
-    """One authorized route materialized for subprocess execution.
+    """One authorized route materialized for runtime execution.
 
     ``metadata_value`` is the immutable authorization/compilation result.
     ``command`` and ``env`` are the only launch inputs added here. The object
@@ -627,6 +634,186 @@ def resolve_dispatch_metadata(**kwargs: Any) -> ResolvedInvocationMetadata:
         return resolved.metadata()
 
 
+@contextmanager
+def _in_process_runtime_state(
+    resolved: ResolvedInvocation,
+    stdin: str | bytes | None,
+    capture_output: bool,
+) -> Iterator[tuple[TextIOWrapper | object, TextIOWrapper | object]]:
+    """Apply one resolved runner's process globals for a bounded call."""
+
+    saved_cwd = Path.cwd()
+    saved_environment = os.environ.copy()
+    saved_sys_path = list(sys.path)
+    saved_meta_path = list(sys.meta_path)
+    saved_stdin, saved_stdout, saved_stderr = sys.stdin, sys.stdout, sys.stderr
+    stdout, stderr = (
+        (
+            TextIOWrapper(BytesIO(), encoding="utf-8", errors="strict", write_through=True),
+            TextIOWrapper(BytesIO(), encoding="utf-8", errors="strict", write_through=True),
+        )
+        if capture_output
+        else (saved_stdout, saved_stderr)
+    )
+    input_bytes = (
+        b"" if stdin is None else stdin.encode("utf-8") if isinstance(stdin, str) else stdin
+    )
+    input_stream = TextIOWrapper(BytesIO(input_bytes), encoding="utf-8", errors="strict")
+    try:
+        os.chdir(resolved.cwd)
+        os.environ.clear()
+        os.environ.update(resolved.env)
+        import_paths = [
+            Path(entry).resolve()
+            for entry in resolved.env.get("PYTHONPATH", "").split(os.pathsep)
+            if entry
+        ]
+        retained_paths = list(import_paths)
+        retained_paths.extend(
+            (
+                Path(__file__).resolve().parents[2],
+                Path(sys.prefix).resolve(),
+                Path(sys.base_prefix).resolve(),
+                Path(sys.exec_prefix).resolve(),
+            )
+        )
+        retained_paths.extend(
+            Path(entry).resolve()
+            for entry in (*getattr(site, "getsitepackages", lambda: [])(), site.getusersitepackages())
+        )
+        confined_paths = [path.as_posix() for path in import_paths]
+        retained_set = set(import_paths)
+        for entry in saved_sys_path:
+            if not entry:
+                continue
+            candidate = Path(entry).resolve()
+            if (
+                candidate not in retained_set
+                and any(candidate == root or candidate.is_relative_to(root) for root in retained_paths)
+            ):
+                confined_paths.append(entry)
+                retained_set.add(candidate)
+        sys.path[:] = confined_paths
+        sys.stdin, sys.stdout, sys.stderr = input_stream, stdout, stderr
+        yield stdout, stderr
+    finally:
+        sys.stdin, sys.stdout, sys.stderr = saved_stdin, saved_stdout, saved_stderr
+        sys.path[:] = saved_sys_path
+        sys.meta_path[:] = saved_meta_path
+        os.environ.clear()
+        os.environ.update(saved_environment)
+        os.chdir(saved_cwd)
+        input_stream.close()
+
+
+def _in_process_exit_code(error: SystemExit) -> int:
+    """Match a child Python runner's ordinary ``sys.exit`` result."""
+
+    return error.code if type(error.code) is int else 1
+
+
+def _run_resolved_in_process(
+    resolved: ResolvedInvocation,
+    *,
+    stdin: str | bytes | None,
+    timeout: float | None,
+    capture_output: bool,
+    check: bool,
+    text: bool | None,
+) -> subprocess.CompletedProcess[Any]:
+    """Run one bounded Python gateway without creating a child process."""
+
+    if timeout is not None:
+        resolved.close()
+        raise ValueError("in-process execution cannot enforce a timeout; subprocess=True")
+    text_mode = text if text is not None else isinstance(stdin, str)
+    if text_mode and isinstance(stdin, bytes):
+        resolved.close()
+        raise TypeError("text mode requires string stdin")
+    if not text_mode and isinstance(stdin, str):
+        resolved.close()
+        raise TypeError("binary mode requires bytes stdin")
+
+    diagnosis: DispatcherError | SetupBlocked | None = None
+
+    def receive_diagnosis(
+        entry_id: str | SetupBlocked,
+        **context: object,
+    ) -> int:
+        nonlocal diagnosis
+        diagnosis = (
+            entry_id
+            if isinstance(entry_id, SetupBlocked)
+            else DispatcherError.from_spec(entry_id, **context)
+        )
+        return 70
+
+    try:
+        from officina.runtime import python_machine_interface_runner as runner
+
+        with _IN_PROCESS_EXECUTION_LOCK:
+            with _in_process_runtime_state(
+                resolved, stdin, capture_output
+            ) as (
+                stdout,
+                stderr,
+            ):
+                try:
+                    exit_code = runner.main(
+                        resolved.command[4:], diagnostic_handler=receive_diagnosis
+                    )
+                except SystemExit as exc:
+                    exit_code = _in_process_exit_code(exc)
+        if exit_code == 70:
+            if isinstance(diagnosis, SetupBlocked) and len(diagnosis.call_path) < 32:
+                raise SetupBlocked(
+                    diagnosis.status,
+                    (resolved.target, *diagnosis.call_path),
+                    diagnosis.lifecycle,
+                )
+            if diagnosis is None or isinstance(diagnosis, SetupBlocked):
+                raise DispatcherError.from_spec("D68")
+            diagnosis.caller_module_id = resolved.caller_module_id
+            diagnosis.target_module_id = resolved.target_module_id
+            raise diagnosis
+
+        if capture_output:
+            assert isinstance(stdout, TextIOWrapper) and isinstance(stderr, TextIOWrapper)
+            stdout.flush()
+            stderr.flush()
+            output_stdout, output_stderr = stdout.buffer.getvalue(), stderr.buffer.getvalue()
+        else:
+            output_stdout = output_stderr = None
+        if text_mode and capture_output:
+            try:
+                output_stdout = output_stdout.decode("utf-8")
+                output_stderr = output_stderr.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise DispatcherError.from_spec(
+                    "D71",
+                    caller_module_id=resolved.caller_module_id,
+                    target_module_id=resolved.target_module_id,
+                    interface_id=resolved.target,
+                ) from exc
+        completed = _SUBPROCESS.CompletedProcess(
+            resolved.command,
+            exit_code,
+            output_stdout,
+            output_stderr,
+        )
+        if check and exit_code:
+            raise DispatcherError.from_spec(
+                "D70",
+                caller_module_id=resolved.caller_module_id,
+                target_module_id=resolved.target_module_id,
+                interface_id=resolved.target,
+                returncode=exit_code,
+            )
+        return completed
+    finally:
+        resolved.close()
+
+
 @trace_process
 def _run_resolved_invocation(
     resolved: ResolvedInvocation,
@@ -636,14 +823,28 @@ def _run_resolved_invocation(
     capture_output: bool = True,
     check: bool = False,
     text: bool | None = None,
+    subprocess: bool = False,
 ) -> subprocess.CompletedProcess[Any]:
-    """Launch one resolved command and preserve subprocess I/O semantics.
+    """Run one resolved command, optionally retaining subprocess isolation.
 
     The target module root becomes cwd and the precomputed confined environment
-    replaces ambient repository import exposure. Python launch failures are
-    translated to the structured dispatcher contract; target exit failures are
-    returned or raised according to ``check`` exactly as in ``subprocess.run``.
+    replaces ambient repository import exposure. The default reuses the runner
+    lifecycle in this process; ``subprocess=True`` retains child-process
+    isolation and enforceable timeouts. In-process calls require cooperative
+    interfaces: background threads and arbitrary process-global mutation
+    cannot be isolated. Target exit failures are returned or raised according
+    to ``check`` exactly as in ``subprocess.run``.
     """
+
+    if not subprocess:
+        return _run_resolved_in_process(
+            resolved,
+            stdin=stdin,
+            timeout=timeout,
+            capture_output=capture_output,
+            check=check,
+            text=text,
+        )
 
     text_mode = text if text is not None else isinstance(stdin, str)
     input_bytes = stdin.encode("utf-8") if isinstance(stdin, str) else stdin
@@ -677,9 +878,9 @@ def _run_resolved_invocation(
     popen_kwargs: dict[str, Any] = {
         "cwd": resolved.cwd,
         "env": resolved.env,
-        "stdin": subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
-        "stdout": subprocess.PIPE if capture_output else None,
-        "stderr": subprocess.PIPE if capture_output else None,
+        "stdin": _SUBPROCESS.PIPE if stdin is not None else _SUBPROCESS.DEVNULL,
+        "stdout": _SUBPROCESS.PIPE if capture_output else None,
+        "stderr": _SUBPROCESS.PIPE if capture_output else None,
     }
     windows_writer: int | None = None
     try:
@@ -696,13 +897,13 @@ def _run_resolved_invocation(
                 writer = -1
                 handle = msvcrt.get_osfhandle(windows_writer)
                 command[5] = str(handle)
-                startupinfo = subprocess.STARTUPINFO()
+                startupinfo = _SUBPROCESS.STARTUPINFO()
                 startupinfo.lpAttributeList = {"handle_list": [handle]}
                 popen_kwargs.update(startupinfo=startupinfo, close_fds=True)
                 with _WINDOWS_DIAGNOSTIC_LAUNCH_LOCK:
                     os.set_handle_inheritable(handle, True)
                     try:
-                        process = subprocess.Popen(command, **popen_kwargs)
+                        process = _SUBPROCESS.Popen(command, **popen_kwargs)
                     finally:
                         try:
                             os.set_handle_inheritable(handle, False)
@@ -716,7 +917,7 @@ def _run_resolved_invocation(
                             windows_writer = None
             else:
                 popen_kwargs["pass_fds"] = (writer,)
-                process = subprocess.Popen(command, **popen_kwargs)
+                process = _SUBPROCESS.Popen(command, **popen_kwargs)
         except OSError as exc:
             raise LaunchFailedError.from_spec(
                 "D10",
@@ -733,11 +934,11 @@ def _run_resolved_invocation(
             windows_writer = None
         try:
             stdout, stderr = process.communicate(input=input_bytes, timeout=timeout)
-        except subprocess.TimeoutExpired:
+        except _SUBPROCESS.TimeoutExpired:
             process.terminate()
             try:
                 process.communicate(timeout=1)
-            except subprocess.TimeoutExpired:
+            except _SUBPROCESS.TimeoutExpired:
                 process.kill()
                 process.communicate()
             raise DispatcherError.from_spec(
@@ -771,7 +972,7 @@ def _run_resolved_invocation(
                     target_module_id=resolved.target_module_id,
                     interface_id=resolved.target,
                 ) from exc
-        completed = subprocess.CompletedProcess(
+        completed = _SUBPROCESS.CompletedProcess(
             resolved.command,
             process.returncode,
             stdout,

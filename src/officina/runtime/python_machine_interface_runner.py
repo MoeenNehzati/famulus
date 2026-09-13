@@ -986,7 +986,11 @@ def run_python_machine_interface(
         return run()
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    diagnostic_handler: Callable[..., int] | None = None,
+) -> int:
     """CLI entrypoint used by dispatcher command runtimes.
 
     Expected argv shape:
@@ -998,6 +1002,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv:
+        if diagnostic_handler is not None:
+            return diagnostic_handler("R01")
         print(
             "error: missing Python gateway path or process entry",
             file=sys.stderr,
@@ -1038,6 +1044,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     def reject(entry_id: str, fallback: str, **context: object) -> int:
         nonlocal diagnostic_writer
+        if diagnostic_handler is not None:
+            return diagnostic_handler(entry_id, **context)
         if diagnostic_writer is not None:
             writer = diagnostic_writer
             diagnostic_writer = None
@@ -1196,19 +1204,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         # the way out: in production the process exits here anyway, but tests
         # call main() in-process, and a context left standing would attach
         # itself to the next unrelated interface.
-        set_process_dispatch_context(runtime_dispatch_context(interface))
+        previous_context = set_process_dispatch_context(
+            runtime_dispatch_context(interface)
+        )
         try:
             return run_python_machine_interface(
                 interface,
                 interface_argv,
                 diagnostic_handler=(
                     (lambda entry_id: reject(entry_id, "runner failure"))
-                    if diagnostic_writer is not None
+                    if diagnostic_writer is not None or diagnostic_handler is not None
                     else None
                 ),
             )
         finally:
-            set_process_dispatch_context(None)
+            set_process_dispatch_context(previous_context)
 
     try:
         if package_snapshot is not None:

@@ -92,6 +92,12 @@ def test_resolve_folder_passthrough_for_unknown():
 
 # ── credential lookup ───────────────────────────────────────────────────────
 
+def test_resolve_account_uses_imported_registry(monkeypatch):
+    monkeypatch.setattr(mail._email_accounts, "load", lambda: {"work": {"email": "me@example.com"}})
+
+    assert mail.resolve_account("work") == {"email": "me@example.com"}
+
+
 def test_get_password_uses_canonical_secret_key(monkeypatch):
     calls = []
 
