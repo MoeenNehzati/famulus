@@ -1,8 +1,11 @@
 # Certification Rutter design
 
-Status: cleanup and benchmark complete in `feat/certification-audit-pool`,
-2026-09-13. Production cleanup is committed as `5efa8e37`; independent reviews
-and normal hooks are GREEN. Fresh reducer certification took 258.633 seconds:
+Status: cleanup and full/unchanged-repeat benchmarks complete in
+`feat/certification-audit-pool`, 2026-09-13. Small-change speedup is not yet
+verified: the live incremental scope check below exposed a planner/reuse gap
+and a separate target contract blocker. Production cleanup is committed as
+`5efa8e37`; its independent reviews and normal hooks were GREEN. Fresh reducer
+certification took 258.633 seconds:
 61.359 machine, 197.275 LLM/host/controller combined. A mechanically chained
 current-certificate repeat took 10.312 seconds with zero audits or issuance.
 Pure model-inference time is not exposed by this host. Details and limits are
@@ -680,11 +683,41 @@ remainder facet, but also changed the global certification basis because that
 basis includes Rutter blueprints. The Voyage selected five semantic tasks:
 values interface/source, history interface/source, and reducer source. It
 requested the values interface first. No worker was dispatched and no
-certificate was issued; the unstarted Voyage is retained as diagnostic evidence
+certificate was issued; the Voyage stopped before semantic worker execution
+and is retained as diagnostic evidence
 under `_build/incremental-benchmark/`. This is not a completed speed benchmark.
 The experimental reducer description was restored to avoid leaving existing
 Rutter certificates stale merely for measurement. An ordinary source outside
 the certification basis is needed to isolate incremental audit savings.
+
+Independent code review found a fail-closed planner/reuse mismatch in that
+Rutter trial. `semantic_stale_vertices()` selects only reducer's remainder
+when it sees that meaningful facet drift, omitting its unchanged interface.
+However, `_certification_support._certificate()` disallows reuse when the
+owning source still has `certification-basis-mismatch`. After the four planned
+prerequisite audits, reducer packet construction would therefore reject the
+required interface evidence. That later failure was inferred from the code;
+the four audits were not run. The five-task selection and first values-interface
+dispatch were observed live. This remains an unresolved implementation gap;
+the earlier GREEN cleanup review does not establish readiness for this case.
+
+The fallback `common.source.dates` trial targeted a 60-line, dependency-free
+source outside the certification basis. Its first fresh interface worker
+rejected the contract: `format` accepts Python date/datetime objects and `parse`
+returns a Python date, while the structured input/output types declare strings.
+The machine consumed the unchanged raw rejection and returned terminal `failed`
+without issuing a certificate. Reinterpreting the schema's `date_formats` as
+Python-object union descriptions was not independently justified; this benchmark
+does not change the schema, runtime, or audit standard to obtain a pass.
+
+No successful full-versus-small-change pair was completed, so no audit latency
+reduction or speedup percentage is claimed. The prior 258.633-second cold run
+and 10.312-second unchanged skip do not prove small-change speedup. Retained
+artifacts include exact init/dispatch/terminal receipts, the raw rejection
+envelope, timing records, and before/changed/restored canonical snapshots in
+`_build/incremental-benchmark/`. After restoring the reducer description,
+reducer/history/values certificates were verified current with no concerns and
+unchanged certificate-entry counts. No certifier production code was changed.
 
 ## Non-goals
 
