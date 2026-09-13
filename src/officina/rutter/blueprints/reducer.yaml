@@ -2,7 +2,7 @@ schema_version: 6
 node_type: behavioral_source
 id: rutter.source.reducer
 version: 1
-description: Applies pure definition-independent transformations to immutable Reckonings.
+description: Queries and transforms immutable Reckoning run trees without invoking authored callbacks or persisting state.
 gateway:
   path: reducer.py
   language: Python
