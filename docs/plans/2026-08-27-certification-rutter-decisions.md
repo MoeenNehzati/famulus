@@ -701,7 +701,7 @@ the four audits were not run. The five-task selection and first values-interface
 dispatch were observed live. This remains an unresolved implementation gap;
 the earlier GREEN cleanup review does not establish readiness for this case.
 
-The fallback `common.source.dates` trial targeted a 60-line, dependency-free
+The fallback `common.source.dates` trial targeted a 56-line, dependency-free
 source outside the certification basis. Its first fresh interface worker
 rejected the contract: `format` accepts Python date/datetime objects and `parse`
 returns a Python date, while the structured input/output types declare strings.
