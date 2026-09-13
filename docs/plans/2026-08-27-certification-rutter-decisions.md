@@ -1,10 +1,12 @@
 # Certification Rutter design
 
-Status: accuracy/performance adjustment and the three-source authoring live repeat
-are complete in `feat/certification-audit-pool` at `9beb79a4`, 2026-09-13.
-Six semantic audits passed; machine issuance, fresh zero-audit skip and independent
-currentness verification succeeded. Preparation improved in controlled timings;
-minimum end-to-end latency remains unproven. Details and limits are below.
+Status: cleanup and benchmark complete in `feat/certification-audit-pool`,
+2026-09-13. Production cleanup is committed as `5efa8e37`; independent reviews
+and normal hooks are GREEN. Fresh reducer certification took 258.633 seconds:
+61.359 machine, 197.275 LLM/host/controller combined. A mechanically chained
+current-certificate repeat took 10.312 seconds with zero audits or issuance.
+Pure model-inference time is not exposed by this host. Details and limits are
+in “Cleanup and measured repeat” below; earlier runs remain historical evidence.
 
 Scoped-guard correction was implemented and validated earlier. Rutter contract repairs are committed
 as `1b1c4512`; scoped guards, regressions and documentation are committed as
@@ -209,13 +211,71 @@ also mutates a different bound node immediately after signing and requires failu
 before further dispatch. Other test identities and physical-boundary evidence are
 retained; no test-runtime optimization claim is made.
 
-The fresh benchmark will repeat the same three-source authoring target from
-committed inputs. External timers separately record public CLI wall time,
-observations, exact-signer time, and mechanical checks nested inside signing.
-Fresh workers record their first/final tool boundaries; those intervals include
-semantic work and tool reads, not isolated model inference. Whole-run wall time
-also includes controller and host gaps. Artifacts are confined to
-`_build/readiness-benchmark/`; no production instrumentation is introduced.
+Cleanup commit `5efa8e37` passed its normal hooks: 3,922 tests passed, 21 skipped,
+with one existing fork warning; pytest 63.72 seconds, runner 64.64 seconds.
+Secret scanning passed. No optional docstring validator or extra validator suite
+was run. The test-standard query used `task.optimizes-test-performance=false`.
+
+The same authoring chain then needed only mechanical renewal: existing semantic
+evidence was reusable. The machine issued values, history and authoring in order,
+with zero audits and no worker dispatch. To measure fresh semantic work without
+deleting certificates, the independently approved bounded example was
+`rutter.source.reducer`: 182 lines implementing immutable run-tree transformations,
+with history and values prerequisites already current. Two fresh workers passed
+its interface and source audits. The machine issued only reducer. Saved packets
+and raw envelopes exactly match the corresponding Reckoning records.
+
+Measured on this Linux host, committed inputs at `5efa8e37`, one worker slot,
+with no overlapping test suite. Totals run from initialization subprocess start
+to terminal subprocess exit; later verification and report delivery are excluded.
+These are individual live measurements, not medians or cross-target speedups.
+
+| Case | Total wall | Machine CLI | LLM/host/controller combined | Semantic audits |
+| --- | ---: | ---: | ---: | ---: |
+| Renew authoring chain with reusable evidence | 153.076s | 137.378s | 15.697s | 0 |
+| Certify previously uncertified reducer | 258.633s | 61.359s | 197.275s | 2 |
+| Reducer already current, chained operations | 10.312s | 10.233s | 0.079s | 0 |
+
+For reducer, machine calls took 5.209 seconds to initialize, 5.178 to dispatch,
+10.248 to process the interface report, and 40.723 for the source report and
+signing. Inclusive exact-signer time was 29.892 seconds, including 12.577 seconds
+of mechanical checks. Five full observations totaled 25.542 seconds outside
+the signer; the remaining CLI time includes initialization and transport.
+Mechanical-check duration is nested inside signer duration and must not be added
+again. The source transition has two observations, retaining pre-sign and
+next-reconciliation checks after removal of the redundant middle scan.
+
+The workers' first-to-last tool spans totaled 49.334 seconds (23.722 and 25.612).
+They include semantic work and file/log tools but exclude final JSON generation
+after the last tool call. The remaining 147.940 seconds include that generation,
+spawn/delivery, controller reasoning and raw-report forwarding. Neither number is
+pure inference time or complete subagent runtime; 197.275 seconds is the honest
+combined non-machine elapsed time exposed by this host.
+
+An initial warm repeat took 63.444 seconds despite only 10.241 seconds of machine
+work. That exposed avoidable controller/tool escalation gaps. Chaining the two
+existing initialization/next calls mechanically in one tool orchestration, using
+the default sandbox for this current-certificate path, reduced the repeat to
+10.312 seconds. Both runs had zero audits and zero issuance. Use this batching
+where the next operation is determined by typed machine output; do not insert an
+LLM turn for bookkeeping. Signing calls still use the authorized host-key access.
+
+The measured duplicate machine work is removed. No further actionable machine
+hotspot was identified by the bounded review; this is not proof of minimum
+latency for every repository. Per-node mechanical validators, fresh byte/scope
+checks, locks and append verification remain required. Full semantic runs still
+incur substantial report-generation and host/controller time.
+
+Independent read-only currentness verification reports values, history, authoring
+and reducer current, without concerns. Their log entry counts are respectively
+2, 2, 2 and 1; the skip runs appended nothing. External timer wrappers preserve
+arguments/results and live only in `_build/readiness-benchmark/`, alongside exact
+receipts, `authoring-summary.json`, `reducer-summary.json`, `fast-skip-summary.json`,
+phase JSONL files, raw packets/envelopes and `currentness-before-doc-commit.json`.
+`summarize.py` checks transport equality and interval accounting. No production
+instrumentation, persistent evidence cache or new scheduler was added.
+Independent benchmark review is GREEN, including phase nesting, partial worker
+timing limits and the distinction between first certification and evidence reuse.
 
 The committed-input trial at `e55a3851` initialized successfully and dispatched
 one fresh `audit-interface@3` worker for
