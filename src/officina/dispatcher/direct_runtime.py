@@ -716,16 +716,12 @@ def _run_resolved_in_process(
     resolved: ResolvedInvocation,
     *,
     stdin: str | bytes | None,
-    timeout: float | None,
     capture_output: bool,
     check: bool,
     text: bool | None,
 ) -> subprocess.CompletedProcess[Any]:
-    """Run one bounded Python gateway without creating a child process."""
+    """Run one Python gateway while the execution lock is held."""
 
-    if timeout is not None:
-        resolved.close()
-        raise ValueError("in-process execution cannot enforce a timeout; subprocess=True")
     text_mode = text if text is not None else isinstance(stdin, str)
     if text_mode and isinstance(stdin, bytes):
         resolved.close()
@@ -751,19 +747,18 @@ def _run_resolved_in_process(
     try:
         from officina.runtime import python_machine_interface_runner as runner
 
-        with _IN_PROCESS_EXECUTION_LOCK:
-            with _in_process_runtime_state(
-                resolved, stdin, capture_output
-            ) as (
-                stdout,
-                stderr,
-            ):
-                try:
-                    exit_code = runner.main(
-                        resolved.command[4:], diagnostic_handler=receive_diagnosis
-                    )
-                except SystemExit as exc:
-                    exit_code = _in_process_exit_code(exc)
+        with _in_process_runtime_state(
+            resolved, stdin, capture_output
+        ) as (
+            stdout,
+            stderr,
+        ):
+            try:
+                exit_code = runner.main(
+                    resolved.command[4:], diagnostic_handler=receive_diagnosis
+                )
+            except SystemExit as exc:
+                exit_code = _in_process_exit_code(exc)
         if exit_code == 70:
             if isinstance(diagnosis, SetupBlocked) and len(diagnosis.call_path) < 32:
                 raise SetupBlocked(
@@ -829,22 +824,29 @@ def _run_resolved_invocation(
 
     The target module root becomes cwd and the precomputed confined environment
     replaces ambient repository import exposure. The default reuses the runner
-    lifecycle in this process; ``subprocess=True`` retains child-process
-    isolation and enforceable timeouts. In-process calls require cooperative
-    interfaces: background threads and arbitrary process-global mutation
-    cannot be isolated. Target exit failures are returned or raised according
-    to ``check`` exactly as in ``subprocess.run``.
+    lifecycle in this process when its process-global state is available;
+    ``subprocess=True`` (or another thread holding that state) retains
+    child-process isolation and enforceable timeouts. In-process calls require
+    cooperative interfaces: background threads and arbitrary process-global
+    mutation cannot be isolated. Target exit failures are returned or raised
+    according to ``check`` exactly as in ``subprocess.run``.
     """
 
     if not subprocess:
-        return _run_resolved_in_process(
-            resolved,
-            stdin=stdin,
-            timeout=timeout,
-            capture_output=capture_output,
-            check=check,
-            text=text,
-        )
+        if timeout is not None:
+            resolved.close()
+            raise ValueError("in-process execution cannot enforce a timeout; subprocess=True")
+        if _IN_PROCESS_EXECUTION_LOCK.acquire(blocking=False):
+            try:
+                return _run_resolved_in_process(
+                    resolved,
+                    stdin=stdin,
+                    capture_output=capture_output,
+                    check=check,
+                    text=text,
+                )
+            finally:
+                _IN_PROCESS_EXECUTION_LOCK.release()
 
     text_mode = text if text is not None else isinstance(stdin, str)
     input_bytes = stdin.encode("utf-8") if isinstance(stdin, str) else stdin

@@ -2414,6 +2414,40 @@ class _SuccessfulTransportProcess:
         return b"", b""
 
 
+def test_cross_thread_dispatch_falls_back_to_subprocess(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reached_popen = threading.Event()
+    completed: list[subprocess.CompletedProcess[object]] = []
+    failures: list[BaseException] = []
+
+    def popen(*_args: object, **_kwargs: object) -> _SuccessfulTransportProcess:
+        reached_popen.set()
+        return _SuccessfulTransportProcess()
+
+    def invoke() -> None:
+        try:
+            completed.append(dispatcher_core._run_resolved_invocation(_transport_resolved(tmp_path)))
+        except BaseException as exc:
+            failures.append(exc)
+
+    monkeypatch.setattr(direct_runtime.subprocess, "Popen", popen)
+    lock = direct_runtime._IN_PROCESS_EXECUTION_LOCK
+    lock.acquire()
+    worker = threading.Thread(target=invoke)
+    try:
+        worker.start()
+        assert reached_popen.wait(timeout=1)
+    finally:
+        lock.release()
+        worker.join(timeout=1)
+
+    assert not worker.is_alive()
+    assert not failures
+    assert [result.returncode for result in completed] == [0]
+
+
 def _fake_windows_platform(
     monkeypatch: pytest.MonkeyPatch,
     popen,
@@ -2876,6 +2910,11 @@ def test_dispatch_trace_links_nested_processes_and_drops_sink_failures(
     logs.mkdir()
     monkeypatch.setenv("ASSISTANT_LOGS", str(logs))
     monkeypatch.setenv("FAMULUS_PARENT_SPAN_ID", "f" * 32)
+    monkeypatch.setattr(
+        direct_runtime.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: pytest.fail("same-thread nested route spawned a subprocess"),
+    )
     environment["ASSISTANT_LOGS"] = str(logs)
     with invocation_trace():
         result = dispatcher_core._run_resolved_invocation(
