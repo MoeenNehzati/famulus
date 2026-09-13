@@ -197,15 +197,28 @@ def test_old_assignment_rejected_without_reckoning_mutation(tmp_path, monkeypatc
     assert signed == []
 
 
-def test_drift_after_worker_completion_fails_without_signing(tmp_path, monkeypatch):
+@pytest.mark.parametrize("when", ["worker-completion", "sign-return"])
+def test_drift_stops_progress_before_next_dispatch(tmp_path, monkeypatch, when):
     voyage, observed, signed = _run(tmp_path, monkeypatch)
     message = voyage.next()
+    if when == "sign-return":
+        for interface in _payload(message)["packets"]:
+            message = _submit(voyage, message, _event(interface))
+        sign = support.certifier.certify_exact_node
+
+        def sign_then_drift(**kwargs):
+            result = sign(**kwargs)
+            observed.states["module"] = replace(observed.states["module"], node_hash="changed")
+            return result
+
+        monkeypatch.setattr(support.certifier, "certify_exact_node", sign_then_drift)
+    else:
+        observed.states["source"] = replace(observed.states["source"], node_hash="changed")
     packet = _payload(message)["packets"][0]
-    observed.states["source"] = replace(observed.states["source"], node_hash="changed")
     terminal = _submit(voyage, message, _event(packet))
     assert terminal.status.terminal_result.outcome == "failed"
     assert "audited inputs changed" in terminal.status.terminal_result.value["reason"]
-    assert signed == []
+    assert signed == (["source"] if when == "sign-return" else [])
 
 
 def test_authority_scope_drift_after_worker_completion_fails_without_signing(tmp_path, monkeypatch):

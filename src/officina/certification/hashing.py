@@ -421,7 +421,6 @@ def _certification_input_scope_builder(
         identity_nodes = selected | ({CERTIFIER_NODE_ID} if CERTIFIER_NODE_ID in states else set())
         declarations = set(identity_nodes)
         for node_id in identity_nodes:
-            node = graph.nodes[node_id]
             owner = graph.source_modules.get(node_id)
             if owner is not None:
                 declarations.add(owner)
@@ -431,8 +430,6 @@ def _certification_input_scope_builder(
                     declarations.add(export.module_node_id)
                     if export.terminal_module_node_id is not None:
                         declarations.add(export.terminal_module_node_id)
-            if node.node_type == "module":
-                declarations.add(node_id)
         for node_id in tuple(declarations):
             owner = graph.source_modules.get(node_id, node_id)
             declarations.update(graph.module_ancestry.get(owner, ()))

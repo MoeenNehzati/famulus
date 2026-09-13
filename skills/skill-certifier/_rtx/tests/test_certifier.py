@@ -351,7 +351,7 @@ def _scoped_writer_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(certifier, "load_repository_blueprint_graph", lambda *_a, **_k: graph)
     monkeypatch.setattr(certifier, "compute_node_hash_states", lambda *_a, **_k: states)
     monkeypatch.setattr(certifier, "resolve_certification_basis_paths", lambda *_a, **_k: basis)
-    monkeypatch.setattr(certifier, "compute_certification_basis_hash", lambda *_a, **_k: states["demo-skill"].certification_basis_hash)
+    monkeypatch.setattr(certifier, "_hash_certification_basis_paths", lambda *_a, **_k: states["demo-skill"].certification_basis_hash)
     monkeypatch.setattr(certifier, "derive_certifier_identity", lambda *_a, **_k: identity)
     return graph, states, commit
 
@@ -651,7 +651,7 @@ def test_selected_legacy_writer_issues_current_payload(
     )
     monkeypatch.setattr(
         certifier,
-        "compute_certification_basis_hash",
+        "_hash_certification_basis_paths",
         lambda *_args, **_kwargs: "sha256:" + "c" * 64,
     )
     monkeypatch.setattr(
@@ -1251,11 +1251,7 @@ def test_commit_tree_filter_does_not_scan_the_requested_sequence_for_each_entry(
         )
     )
 
-    entries = certifier.CommitReadinessInspector(
-        snapshot,
-        (),
-        {},
-    )._commit_entries(relative_paths)
+    entries = git_provenance._commit_entries_batch(snapshot, relative_paths)
 
     assert entries is not None
     assert set(entries) == set(relative_paths)
@@ -1421,6 +1417,7 @@ def test_read_worktree_file_uses_native_confined_reader_when_required(
     snapshot = certifier.capture_git_snapshot(tmp_path)
     assert snapshot is not None
     calls: list[tuple[Path, Path, bool]] = []
+    path = tmp_path / "skills" / "demo-skill" / "SKILL.md"
 
     def native_read(
         path: Path,
@@ -1429,20 +1426,20 @@ def test_read_worktree_file_uses_native_confined_reader_when_required(
         allow_non_atomic: bool,
     ) -> bytes:
         calls.append((path, allowed_root, allow_non_atomic))
-        return b"native bytes"
+        return path.read_bytes()
 
-    monkeypatch.setattr(certifier, "read_regular_file_bytes", native_read)
-    monkeypatch.setattr(certifier, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(git_provenance, "read_regular_file_bytes", native_read)
+    monkeypatch.setattr(git_provenance, "_use_native_confined_read", lambda: True)
     inspector = certifier.CommitReadinessInspector(
         snapshot,
-        (),
+        (path,),
         {},
         allow_non_atomic=True,
     )
 
-    result = inspector._read_worktree_file("skills/demo-skill/SKILL.md")
+    result = inspector.inspect()
 
-    assert result == (b"native bytes", None, None)
+    assert result.stamp_worthy, result.reasons
     assert calls == [
         (
             tmp_path / "skills" / "demo-skill" / "SKILL.md",

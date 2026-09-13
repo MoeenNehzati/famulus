@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 from jsonschema import Draft202012Validator, ValidationError
-from officina.certification.dependency_dag import build_dependency_dag, decode_dependency_dag
+from officina.certification.dependency_dag import build_dependency_dag
 from officina.certification.hashing import (
     certification_facet_claims, certification_input_scope, certification_target_postorder,
     resolve_certification_basis_paths,
@@ -137,7 +137,6 @@ def make_charter(
             ):
                 raise ValueError("canonical ordering omits an audit prerequisite")
     scoped_dag = {**dag, "nodes": [indexes[key] for key in sorted(selected)]}
-    decode_dependency_dag(scoped_dag)
     stale = tuple(
         node_id for node_id in order
         if certificate_requires_renewal(observation.currentness.nodes[node_id])
@@ -368,7 +367,7 @@ def prepare(context: MachineContext) -> MachineResult:
         )
         selected = [
             _packet(evolution, observed, target, packets, reports)
-            for target in ready if target in root_tasks
+            for target in ready
         ]
         if not selected and not outstanding:
             raise ValueError(f"no ready semantic audit for {root}")
@@ -442,9 +441,6 @@ def accept_and_certify(context: MachineContext) -> MachineResult:
                 expected_scope_identity=data["certification_scope"],
                 scope_whole_graph=data["whole_graph"],
             )
-            verified = _observation(evolution)
-            if not verified.currentness.nodes[root].current:
-                raise ValueError(f"exact certificate is not current: {root}")
             field = "issued" if outcome.status == "certificate-issued" else "current"
             result[field] = [root]
         return MachineResult("accepted", result)

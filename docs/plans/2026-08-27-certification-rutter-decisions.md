@@ -1,10 +1,221 @@
 # Certification Rutter design
 
-Status: scoped-guard correction implemented and validated in
-`feat/certification-audit-pool`, 2026-09-13. Rutter contract repairs are committed
+Status: accuracy/performance adjustment and the three-source authoring live repeat
+are complete in `feat/certification-audit-pool` at `9beb79a4`, 2026-09-13.
+Six semantic audits passed; machine issuance, fresh zero-audit skip and independent
+currentness verification succeeded. Preparation improved in controlled timings;
+minimum end-to-end latency remains unproven. Details and limits are below.
+
+Scoped-guard correction was implemented and validated earlier. Rutter contract repairs are committed
 as `1b1c4512`; scoped guards, regressions and documentation are committed as
 `48560387`. Default standalone docstring validation became opt-in in `e55a3851`.
-Live certificate issuance remains unverified.
+The small live certification trial is complete at `3c660108`.
+
+The successful target is `tight-mode`, with the previously uncertified
+`tight-mode.source.gateway` ownership prerequisite. Retained machine history
+records source issuance before module issuance. Three fresh workers performed
+the interface, source and module audits; the controller forwarded their raw
+reports unchanged and machine code handled selection, validation and signing.
+The public terminal receipt issued both nodes. A fresh second Voyage returned
+both already current, with zero audits, zero new certificates and no dispatch.
+At that commit, independent read-only drift verification reported both `certificate-current`,
+with no concerns or stale work. Both certificate logs still contain one entry.
+This verifies an ownership dependency, not a cross-module dependency.
+
+Evidence under `_build/interactive-certification/`:
+
+- `small-tight-mode-next-3-terminal.jsonl`: successful issuance receipt.
+- `small-tight-mode-skip-next-0-terminal.jsonl`: fresh current-node skip receipt.
+- `tight-mode-issuance-order.json`: ordered issuance records from the Reckoning.
+- `tight-mode-currentness.json`: summary of independent read-only drift output.
+
+Certificates remain under `skills/tight-mode/.certificates/`; both Voyages,
+exact packets and raw response envelopes are retained in the worktree.
+
+A subsequent monitored trial selected `send-feedback._rtx`: a 207-line Python
+source with two independent interfaces, followed by source and child-module
+audits. This adds real interface concurrency and Python behavior while remaining
+an ownership-dependency case. The top-level feedback skill was excluded because
+its email dependency closure would broaden the trial.
+
+The first run failed closed on the host's second-worker thread-limit refusal.
+Removing the extra controller agent let the main agent dispatch both fresh
+semantic workers directly. The machine selected the packets, and the controller
+passed them unchanged. The first raw completion rejected `file-issue`: publication
+precedes local confirmation, so failure cannot guarantee that nothing was
+published. The unchanged report produced terminal `failed` with no machine fault
+or issuance. The sibling `check-route` worker aborted for insufficient evidence
+supporting the declared absence of network effects; its report was retained but
+not submitted after termination. Independent review is GREEN on rejection handling
+and the publication finding, not on target certification. Read-only currentness
+confirms both selected nodes still lack certificate logs. No external issue was
+created. Source/module auditing, signing and the skip path were not reached.
+
+The direct run took 257.785 seconds: initiation 61.567, first dispatch 59.227,
+and rejection processing 0.890 seconds. The remaining 136.102 seconds cover host
+dispatch, semantic audits, output-format clarification and raw-report transport;
+they are not a measurement of model inference. Both fresh workers were admitted
+and their recorded work overlapped, but exact individual spawn/final-receipt
+times were not captured. Both needed the result schema's location because the
+audit instructions did not give its complete JSON shape.
+
+A separate profile of the shared read-only state derivation took 154.920 seconds
+under instrumentation. Currentness evaluation consumed 89.370 seconds, including
+298 scope builds taking 58.170 seconds and 946 readiness checks taking 28.572
+seconds; 2,850 Git-runner calls took 27.405 seconds. These cumulative timings
+overlap and are not additive or comparable to the unprofiled baseline as a speedup.
+That profile preceded the production optimizations described below. Its bounded
+candidates were explicit result formatting in the existing worker instructions,
+reuse of invariant scope/path work within one observation, and equivalent batched
+Git readiness. Evidence freshness and signing guards remain required.
+
+All monitored receipts, packet files, raw reports, timing summaries and the profile
+are under `_build/complex-certification/`. The direct Voyage is
+`complex-feedback-direct/r-0cd9b481bba349d7865c6d65e07ba163/1`; its terminal receipt is
+`feedback-direct-next-1.stdout.jsonl`. `performance-summary.json`,
+`repository-currentness-profile.txt` and `selected-currentness.json` contain the
+measurements and independent state evidence. This result update remains uncommitted.
+
+### Accuracy and performance adjustment, 2026-09-13
+
+Commit `efe078b7` reuses path conversions within each scope observation, hashes
+already-selected canonical basis paths, and reuses the existing batch Git readers
+for per-path readiness. It adds no persistent evidence cache or scheduling layer.
+Fresh bytes, modes, index stages, object IDs, scope identity and signing guards
+remain checked. The three existing semantic audit instructions now include the
+complete result JSON shape and dependency-consumption shape.
+
+Controlled local comparisons retained exact results: all 298 scope objects matched
+while construction fell from 16.665 to 4.270 seconds. With those scope changes held
+constant, batching retained complete canonical-state/currentness equality and
+reduced an unprofiled observation from 41.966 to 20.228 seconds (51.8% less), with
+provenance Git calls reduced from 2,846 to 11. These are single comparable pairs,
+not medians or whole-Voyage speedups. Mixed clean, dirty, staged, conflicted,
+missing, mismatched, untracked, outside-root and path-alias inputs also retained
+per-path readiness results. Evidence: `scope-performance-comparison.json`,
+`readiness-batching-observation.json`, and `readiness-batching-parity.json`.
+
+Independent correctness and Ponytail reviews are GREEN. Focused verification
+passed the two scope/basis checks and 69 batching-related tests. The normal commit
+hooks passed 3,921 tests with 21 skips and one existing fork warning. No optional
+docstring validator or additional full validator suite was run for these changes.
+
+Commit `9beb79a4` corrects the feedback contract: issue publication may precede
+an unsuccessful local confirmation, and authentication probing may contact the
+configured GitHub hosts. It changes declarations/docstrings only; no issue was
+created. Independent review is GREEN and normal hooks passed 3,921 tests with
+21 skips. Feedback remains uncertified: dependency/access and runtime-binary
+metadata gaps require separate work. Registering its wider dependency closure
+would overscope this experiment; existing PythonMachineInterface code is guarded
+by the certification basis, and whether it requires separate ownership remains
+a policy question. Evidence: `feedback-dependency-scope.json`.
+
+The bounded repeat therefore selects the existing `rutter.source.authoring`
+target, with `rutter.source.values` and `rutter.source.history` prerequisites:
+three sources totaling 2,286 lines. Independent review approved this scope,
+without preapproving its semantic audits. The trial uses committed HEAD
+`9beb79a42d28cd1a7007e974f9e394b4482db10c`; earlier tight-mode currentness is
+historical because certification-authority changes can stale earlier certificates.
+Live receipts and per-call timings use the `authoring-*` prefix. Dispatch and
+completion-handling tool boundaries are in `repeat-controller-events.jsonl`;
+these are not exact inference or host final-message-arrival measurements.
+
+The repeat completed: the machine issued values, then history, then authoring
+after six fresh semantic workers. All six passed without result-format
+clarification. The controller forwarded their raw reports; retained packet and
+raw-envelope equality against the Reckoning passed for all six assignments.
+This transport check compares saved artifacts with machine history, not an
+independent export of host final messages. It is not an additional semantic vote.
+The machine terminal is `complete`, with those three issued nodes and six audits.
+A fresh Voyage returned all three already current, with zero audits, zero new
+certificates and no worker dispatch. Exact receipts:
+`authoring-next-6.stdout.jsonl` and `authoring-skip-next-0.stdout.jsonl`.
+
+The first full run took 1,071.100 seconds (17m51s): 251.105 seconds in public
+machine CLI calls and 819.995 seconds outside them. The latter includes semantic
+work, host operations, controller handling and context compaction; it is not an
+inference measurement and must not be excluded from user-visible latency.
+Initialization took 6.690 seconds, first dispatch 6.558, interface-report
+transitions 13.558–14.602, and source-report/signing transitions 63.514–67.796.
+The fresh skip took 34.511 seconds end to end, including 14.803 seconds in its two
+CLI calls. These live targets differ from the failed feedback baseline, so no
+whole-run speedup is inferred. Machine preparation improved in controlled
+comparisons, but this trial does not establish minimum end-to-end latency:
+outside-CLI time dominates, and source-report/signing transitions are the longest
+measured CLI calls. Signing itself was not timed separately.
+Evidence and runnable transport/timing extraction: `authoring-monitor-summary.json`
+and `summarize-authoring.py`.
+
+One worker's initial milestone command used an incorrect `scripts/` path;
+the correct `_rtx/_milestone_writer.py` path was supplied. No start record was
+fabricated. The first independent reporting helper also failed because the
+skill-drift CLI's displayed skill nodes exclude these non-skill source targets;
+the raw CLI report is retained as `authoring-currentness.stdout.json`. Exact
+source verification therefore uses the existing shared read-only currentness API,
+without changing the production reporting interface or rerunning validators.
+That fresh observation passed in 6.313 seconds: all three exact sources are
+current, have no concerns, and each certificate log contains one entry after the
+skip. The observed source commit remains `9beb79a4`. Evidence:
+`authoring-exact-currentness.json` and `check-authoring-currentness.py`.
+Independent final evidence/Ponytail review is GREEN after distinguishing whole
+CLI transition duration from signing duration. No further production changes or
+experiments are required for this bounded iteration; the plan result update is
+the only remaining tracked modification and is uncommitted.
+
+### Ultra Ponytail and readiness audit, 2026-09-13
+
+The follow-up audit found no architectural blocker. Optional cleanup can remove
+approximately 123 production lines with no dependency change: reuse the shared
+confined-file reader in the signer, remove its three thin batch-reader wrappers,
+drop already-covered scope declarations, and reuse already-selected basis paths
+at signer entry. Two smaller candidates remove a redundant task-membership filter
+and a second DAG validation after closure validation. These are review findings,
+not applied changes or readiness requirements. Preserve distinct readiness error
+diagnostics, fresh observations, append guards, retry calibration and the complete
+worker-local result shapes; none is replaced by a new framework.
+
+The superseded 2026-08-26 scheduler plan now points here instead of advertising its
+retired public scheduler and pending synchronization. No production code changed
+during this audit, and no tests, optional docstring check or additional validator
+suite was rerun. Existing test coverage was inspected against plan acceptance;
+the previous live receipts and currentness evidence were reviewed as retained
+evidence, not described as new executions.
+
+Readiness is bounded to this branch's Linux public CLI. An independent
+correctness review of orchestration and a separate signer/scope review are both
+GREEN, with no actionable blocker in the reviewed changes. A fresh installed
+dispatcher dry-run for `skill-certifier._rtx.interface.certification-voyage@1`
+returned `dispatcher.module_not_found`, `Module not found: skill-certifier`.
+Installed-MCP availability therefore remains unresolved; no plugin was changed.
+Native Windows/macOS signing execution and minimum end-to-end latency remain
+unverified. Feedback/atomic-files/loose-mode declaration findings remain target
+work, not waived requirements or certifier defects. Both plan updates remain
+uncommitted; the committed implementation stays at `9beb79a4`.
+
+### Cleanup and measured repeat
+
+The subsequent requested cleanup implements those cuts: shared confined reads and
+Git batches, already-selected basis paths, redundant scope additions, DAG check
+and task filter. Production code is reduced by 116 lines. The duplicate full
+observation after exact signing is removed: the exact signer still verifies
+authenticated currentness and frozen inputs, and immediate reconciliation still
+observes the whole selected scope before any next dispatch or terminal result.
+No validator result is cached across nodes; unrelated repository changes may
+legitimately occur between scoped observations.
+
+Independent correctness/Ponytail reviews are GREEN. Existing focused owners pass:
+100 signer/hash/readiness checks and 23 Voyage checks. The existing drift case now
+also mutates a different bound node immediately after signing and requires failure
+before further dispatch. Other test identities and physical-boundary evidence are
+retained; no test-runtime optimization claim is made.
+
+The fresh benchmark will repeat the same three-source authoring target from
+committed inputs. External timers separately record public CLI wall time,
+observations, exact-signer time, and mechanical checks nested inside signing.
+Fresh workers record their first/final tool boundaries; those intervals include
+semantic work and tool reads, not isolated model inference. Whole-run wall time
+also includes controller and host gaps. Artifacts are confined to
+`_build/readiness-benchmark/`; no production instrumentation is introduced.
 
 The committed-input trial at `e55a3851` initialized successfully and dispatched
 one fresh `audit-interface@3` worker for
@@ -14,10 +225,14 @@ missing-predecessor support and conflict permission effects, and Windows compare
 replace/delete omitted the promised predecessor ACL checks. No certificate was
 issued. Two independent reviewers confirmed the findings and approved a narrow
 repair: correct the declarations and reuse the existing ACL helper at the Windows
-mutation boundaries. Four focused regression cases passed on Linux; native
-Windows execution remains unverified. Resume with a fresh Voyage after committing
-the repair; the failed Voyage and raw report remain retained under
-`_build/interactive-certification/committed-toml-io-*`.
+mutation boundaries. The repair was committed as `3c660108`; four focused cases
+passed and its normal hooks passed 3,913 tests with 21 skips. Native Windows
+execution remains unverified. A fresh atomic-files audit then found further
+invocation, failure-effect and temporary-file declarations missing. Those
+remaining YAML-only repairs were left outside this small trial. A `loose-mode`
+trial also stopped on undeclared host-selected planning-skill delegation; its
+behavior was preserved. Failed Voyages and raw reports remain retained under
+the `committed-toml-io-*`, `repaired-toml-io-*` and `small-loose-mode-*` prefixes.
 
 Version-6 preparation, signing and currentness now share an evidence scope:
 selected nodes and prerequisites, certification authorities and Voyage machinery,
@@ -41,13 +256,13 @@ agreement between scoped issuance and fresh currentness.
 Final Ponytail reviews are GREEN after removing four redundant ancestry-walk
 lines. The independent contract-repair commit passed its normal staged hook
 suite: 3,895 tests passed, 21 skipped, and no secret-scan findings.
-Staged validation then exposed missing dependency and scope docstrings that the
+An optional staged docstring check exposed missing dependency and scope docstrings that the
 earlier working-tree run had not checked. Those declarations are corrected in
 this follow-up; the other 31 staged validators passed.
 The corrected staged docstring gate passed separately (539.10 seconds).
 
 The first live trial exposed 45 missing contract sections in five Rutter APIs;
-those declarations are repaired. The final subagent trial selected
+those declarations are repaired. An earlier dirty-input subagent trial selected
 `common.source.toml-io`, whose prerequisite is uncertified
 `common.source.atomic-files`. Public initiation exited 2 with
 `tracked certification input changed before certification`, naming 12 changed
@@ -60,8 +275,9 @@ whole-repository cleanliness rule.
 The installed dispatcher does not expose this branch's module name, so live
 trials use the branch's public Voyage CLI. Host-keychain storage was explicitly
 approved; public material, tasks and exact trial/validation evidence remain in
-the worktree under `_build/interactive-certification/`. Live issuance and the
-current-node skip run must still be verified from the committed repair state.
+the worktree. The successful trial verifies this branch's public CLI route;
+installed-MCP invocation remains unverified because that dispatcher lacks the
+branch's module name.
 
 All three reviewers approved revision
 `85d347f33772666bc65bf1b38d33ed72a7facec336abc9951f387b702d80f78c`:
@@ -97,8 +313,9 @@ failure before the correction. All three independent follow-up reviews are GREEN
 Acceptance coverage now also exercises settled assignments using the current
 entrance, missing/duplicate real prerequisite consumption, propagated-currentness
 restoration, actual exact-writer dependency rejection/issuance, and valid schema-v6
-structural-child/cross-source ordering. The controller boundary is verified through
-code, instructions and declared interfaces; no live host certification was run.
+structural-child/cross-source ordering. At that earlier audit, verification covered
+code, instructions and declared interfaces; the successful live CLI trial is
+recorded above.
 
 Test optimization followed `docs/contributors/optimizing-code-tests.md` from the
 newer main checkout, read-only. The large mechanical-only fixture uses 51 nodes

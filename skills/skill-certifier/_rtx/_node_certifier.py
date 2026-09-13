@@ -26,7 +26,7 @@ from officina.certification.hashing import (
     certification_input_scope,
     certification_target_postorder,
     compute_node_hash_states,
-    compute_certification_basis_hash,
+    _hash_certification_basis_paths,
     certifier_check_registry,
     derive_certifier_identity,
     expected_certifier_checks,
@@ -68,6 +68,7 @@ from officina.git.provenance import (
     _commit_entries_batch,
     _index_entries_batch,
     _commit_blobs_batch,
+    _read_descriptor_safe_regular_file,
     GitMaterializationError,
     GitSnapshot,
     blueprint_v4_mechanical_commit as blueprint_mechanical_commit,
@@ -597,129 +598,6 @@ class CommitReadinessInspector:
                 reasons.add("input-outside-repository")
         return tuple(sorted(relative_paths))
 
-    def _commit_entries(self, relative_paths: Sequence[str]) -> dict[str, tuple[str, str]] | None:
-        """Delegate the batch read while retaining inspector failure handling."""
-        assert self._snapshot is not None
-        return _commit_entries_batch(self._snapshot, relative_paths)
-
-    def _index_entries(self, relative_paths: Sequence[str]) -> dict[str, tuple[tuple[str, str, str], ...]] | None:
-        """Delegate the batch read while retaining inspector failure handling."""
-        assert self._snapshot is not None
-        return _index_entries_batch(self._snapshot, relative_paths)
-
-    def _commit_blobs(self, object_ids: Sequence[str]) -> dict[str, bytes] | None:
-        """Delegate the batch read while retaining inspector failure handling."""
-        assert self._snapshot is not None
-        return _commit_blobs_batch(self._snapshot, object_ids)
-
-    @staticmethod
-    def _descriptor_safe_open_supported() -> bool:
-        """Return whether no-follow directory-relative reads are available.
-
-        Intent
-        ------
-        Detect the operating-system primitives required for confined POSIX worktree reads.
-
-        Rationale
-        ---------
-        Readiness must fail closed rather than silently use a path-following fallback.
-
-        Pseudocode
-        ----------
-        - return platform_supports_no_follow_directory_reads
-
-        Wraps
-        -----
-        - none
-        """
-        return (
-            os.name == "posix"
-            and hasattr(os, "O_NOFOLLOW")
-            and os.open in os.supports_dir_fd
-        )
-
-    def _read_worktree_file(
-        self,
-        relative_path: str,
-    ) -> tuple[bytes | None, str | None, str | None]:
-        """Read one worktree file without following path substitutions.
-
-        Intent
-        ------
-        Return confined file bytes, the authoritative worktree mode when available, and any fail-closed reason.
-
-        Rationale
-        ---------
-        Git metadata batching must not weaken the existing descriptor-safe worktree boundary.
-
-        Pseudocode
-        ----------
-        - set worktree_handle = confined_regular_file_handle
-        - set worktree_bytes = bytes_read_from_handle
-        - return worktree_bytes worktree_mode failure_reason
-
-        Wraps
-        -----
-        - none
-
-        InstantiationsFromRepo
-        ----------------------
-        officina.common.atomic_files.read_regular_file_bytes:
-          why:
-            constructs: "Produces confined native-platform bytes returned when descriptor-relative POSIX reads do not apply."
-        """
-        assert self._snapshot is not None
-        if os.name == "nt":
-            try:
-                data = read_regular_file_bytes(
-                    self._snapshot.repo_root / relative_path,
-                    allowed_root=self._snapshot.repo_root,
-                    allow_non_atomic=self._allow_non_atomic,
-                )
-            except (AtomicWriteError, FileNotFoundError, OSError):
-                return None, None, "unsafe-worktree-input"
-            return data, None, None
-        if not self._descriptor_safe_open_supported():
-            return None, None, "descriptor-safe-open-unavailable"
-
-        directory_fd = -1
-        final_fd = -1
-        file_flags = (
-            os.O_RDONLY
-            | os.O_NOFOLLOW
-            | os.O_NONBLOCK
-            | getattr(os, "O_CLOEXEC", 0)
-        )
-        directory_flags = file_flags | getattr(os, "O_DIRECTORY", 0)
-        try:
-            directory_fd = os.open(self._snapshot.repo_root, directory_flags)
-            if not stat.S_ISDIR(os.fstat(directory_fd).st_mode):
-                return None, None, "unsafe-worktree-input"
-            parts = Path(relative_path).parts
-            for component in parts[:-1]:
-                next_fd = os.open(component, directory_flags, dir_fd=directory_fd)
-                if not stat.S_ISDIR(os.fstat(next_fd).st_mode):
-                    os.close(next_fd)
-                    return None, None, "unsafe-worktree-input"
-                os.close(directory_fd)
-                directory_fd = next_fd
-            final_fd = os.open(parts[-1], file_flags, dir_fd=directory_fd)
-            metadata = os.fstat(final_fd)
-            if not stat.S_ISREG(metadata.st_mode):
-                return None, None, "unsafe-worktree-input"
-            chunks: list[bytes] = []
-            while chunk := os.read(final_fd, 1024 * 1024):
-                chunks.append(chunk)
-            mode = "100755" if metadata.st_mode & stat.S_IXUSR else "100644"
-            return b"".join(chunks), mode, None
-        except OSError:
-            return None, None, "unsafe-worktree-input"
-        finally:
-            if final_fd >= 0:
-                os.close(final_fd)
-            if directory_fd >= 0:
-                os.close(directory_fd)
-
     def inspect(self) -> CommitReadiness:
         """Return deterministic readiness evidence for the owned input set.
 
@@ -751,6 +629,18 @@ class CommitReadinessInspector:
 
         InstantiationsFromRepo
         ----------------------
+        officina.git.provenance._commit_entries_batch:
+          why:
+            constructs: "Loads committed modes and object identities for the selected input paths."
+        officina.git.provenance._index_entries_batch:
+          why:
+            constructs: "Loads selected index entries, retaining conflict stages for refusal."
+        officina.git.provenance._commit_blobs_batch:
+          why:
+            constructs: "Loads exact committed bytes for comparison with confined worktree reads."
+        officina.git.provenance._read_descriptor_safe_regular_file:
+          why:
+            transforms: "Reads current input bytes and executable mode through the shared confined boundary."
         officina.git.provenance.CommitReadiness:
           why:
             constructs: "Carries the final source evidence and ordered findings to the repository freeze guard."
@@ -761,8 +651,8 @@ class CommitReadinessInspector:
         reasons: set[str] = set()
         relative_paths = self._normalize_paths(reasons)
         try:
-            commit_entries = self._commit_entries(relative_paths)
-            index_entries = self._index_entries(relative_paths)
+            commit_entries = _commit_entries_batch(self._snapshot, relative_paths)
+            index_entries = _index_entries_batch(self._snapshot, relative_paths)
         except OSError:
             reasons.update(f"git-unavailable:{path}" for path in relative_paths)
             return CommitReadiness(False, None, tuple(sorted(reasons)))
@@ -774,7 +664,8 @@ class CommitReadinessInspector:
             return CommitReadiness(False, None, tuple(sorted(reasons)))
 
         try:
-            commit_blobs = self._commit_blobs(
+            commit_blobs = _commit_blobs_batch(
+                self._snapshot,
                 tuple(object_id for _mode, object_id in commit_entries.values())
             )
         except OSError:
@@ -824,8 +715,9 @@ class CommitReadinessInspector:
                 )
                 reasons.add(f"{reason}:{relative_path}")
                 continue
-            worktree_bytes, worktree_mode, worktree_reason = self._read_worktree_file(
-                relative_path
+            worktree_bytes, worktree_mode, worktree_reason = _read_descriptor_safe_regular_file(
+                self._snapshot.repo_root, relative_path,
+                allow_non_atomic=self._allow_non_atomic,
             )
             if worktree_reason is not None:
                 reasons.add(f"{worktree_reason}:{relative_path}")
@@ -1999,7 +1891,7 @@ class RepositoryEvidenceLoader:
         officina.certification.hashing.resolve_certification_basis_paths:
           why:
             transforms: "Produces basis paths carried into hashing and returned evidence."
-        officina.certification.hashing.compute_certification_basis_hash:
+        officina.certification.hashing._hash_certification_basis_paths:
           why:
             serializes: "Produces the basis digest carried into node-state derivation and returned evidence."
         officina.certification.hashing.compute_node_hash_states:
@@ -2036,9 +1928,8 @@ class RepositoryEvidenceLoader:
                 expected_schema_version=self._expected_schema_version,
                 allow_non_atomic=self._allow_non_atomic,
             )
-            basis_hash = compute_certification_basis_hash(
-                self._repo_root,
-                expected_schema_version=self._expected_schema_version,
+            basis_hash = _hash_certification_basis_paths(
+                self._repo_root, basis_paths,
                 allow_non_atomic=self._allow_non_atomic,
             )
             states = compute_node_hash_states(

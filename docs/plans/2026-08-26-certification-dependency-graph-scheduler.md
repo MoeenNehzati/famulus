@@ -4,10 +4,13 @@
 
 **Scope rule:** This is coordination state, not a new security or snapshot system. Existing certification code remains responsible for repository freshness, dependency-first certificate issuance, signatures, and rejecting changed inputs.
 
-**Implementation status:** Implemented on `feat/certification-audit-pool`. The
-authoritative blueprint sources and focused tests are current. Generated
-contract blocks and the runtime dependency manifest still require the public
-blueprint synchronization interface in this worktree.
+**Status: superseded.** This historical scheduler design was replaced by the
+[certification Rutter plan](2026-08-27-certification-rutter-decisions.md).
+The current implementation has no public scheduler operation or separate pool
+state: one Voyage owns dispatch, raw-report validation and exact-node signing.
+Generated contracts and the dependency manifest were synchronized during that
+implementation. Follow the replacement plan for current status and evidence;
+the sections below preserve the original design rather than pending work.
 
 ## 1. Shared neutral DAG format
 
