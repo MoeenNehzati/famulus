@@ -8,6 +8,7 @@ Usage: famulus-refresh [OPTIONS]
 
 Reinstall the Famulus plugin and nullkit marketplace for Codex, Claude, or both.
 System-level Famulus data and configuration are always preserved.
+Host user settings, including tool permissions, are preserved across reinstall.
 
 Options:
   --codex                 Refresh Codex only (default: both hosts)
@@ -189,16 +190,43 @@ refresh_claude() {
     run claude plugin list --json || return
 }
 
+with_saved_settings() (
+    local selected_host=$1
+    shift
+    if $dry_run; then
+        "$@"
+        return
+    fi
+    local helper saved status
+    helper=$(dirname "${BASH_SOURCE[0]}")/famulus-refresh-settings.py
+    saved=$(mktemp "${TMPDIR:-/tmp}/famulus-settings.XXXXXX") || return
+    if ! python3 "$helper" save "$selected_host" "$saved"; then
+        rm -f -- "$saved"
+        return 1
+    fi
+    trap 'status=$?
+        if python3 "$helper" restore "$selected_host" "$saved"; then
+            rm -f -- "$saved"
+        else
+            warn "settings restoration failed; saved preferences retained at $saved"
+            status=1
+        fi
+        exit "$status"' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    "$@"
+)
+
 if [[ $source_kind == local ]]; then
     package_local_marketplace || die 'could not package the local Famulus checkout'
 fi
 
 case $host in
-    codex) refresh_codex || exit $? ;;
-    claude) refresh_claude || exit $? ;;
+    codex) with_saved_settings codex refresh_codex || exit $? ;;
+    claude) with_saved_settings claude refresh_claude || exit $? ;;
     both)
-        refresh_codex || exit $?
-        refresh_claude || exit $?
+        with_saved_settings codex refresh_codex || exit $?
+        with_saved_settings claude refresh_claude || exit $?
         ;;
 esac
 

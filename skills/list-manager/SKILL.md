@@ -168,7 +168,7 @@ Skill: list-manager
 
 ## Rules
 
-- **Show to user:** use `cloud-read-beautify`; relay stdout **verbatim** — it is pre-formatted nested bullet-list markdown, id-annotated. Do not reformat.
+- **Show to user:** invoke `cloud-read-beautify` through `famulus_dispatcher.invoke`. The tool result is the user-facing output. Do not reproduce or reformat the list in your response unless the user explicitly requests it. A brief acknowledgment is sufficient.
 - **Ids and mutation patches:** every rendered row ends with `#id`. Mutations always use these stable ids, never row numbers. Patch input for `update-list` and `cloud-update` is a YAML list of objects. Every object must contain a string `id`; quote every `id`, never use an id-keyed YAML mapping, and never leave numeric-looking ids unquoted. If ids are not in context, run `cloud-read-beautify` first. For example:
   ```yaml
   - id: "421753"

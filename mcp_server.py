@@ -189,6 +189,10 @@ class ExecutionResult:
     trace_id: str
 
 
+class InvokeOutput(TypedDict):
+    result: dict[str, Any] | ExecutionResult
+
+
 def _renderer_app(repo_root: Path) -> tuple[str, frozenset[str]]:
     """Build one MCP Apps router from repository-declared interface renderers."""
 
@@ -1152,6 +1156,25 @@ def _register_mcp_surface(server: Any) -> None:
 
     from mcp.types import CallToolResult, TextContent
 
+    def invoke_tool(
+        caller: str,
+        interface: str,
+        version: int,
+        arguments: CompactArguments | OrderedArguments,
+        dry_run: bool = False,
+        setup_flow_id: str | None = None,
+    ) -> Annotated[CallToolResult, InvokeOutput]:
+        result = invoke(caller, interface, version, arguments, dry_run, setup_flow_id)
+        text = (
+            result["stdout"]
+            if result.get("exit_code") == 0
+            else json.dumps(result, ensure_ascii=False)
+        )
+        content = [TextContent(type="text", text=text)]
+        if result.get("exit_code") == 0 and result.get("stderr"):
+            content.append(TextContent(type="text", text=result["stderr"]))
+        return CallToolResult(content=content, structuredContent={"result": result})
+
     def render_probe(
         text: str = "Famulus renderer probe",
     ) -> Annotated[CallToolResult, RenderProbeOutput]:
@@ -1166,7 +1189,7 @@ def _register_mcp_surface(server: Any) -> None:
         "ui://famulus/invoke-and-render-"
         f"{sha256(renderer_html.encode('utf-8')).hexdigest()[:16]}.html"
     )
-    server.tool()(invoke)
+    server.tool(name="invoke", description=invoke.__doc__)(invoke_tool)
     server.tool(
         name=CONTRACT["render_tool"]["name"],
         meta={

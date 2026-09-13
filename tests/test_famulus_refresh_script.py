@@ -1,17 +1,27 @@
 from __future__ import annotations
 
 import os
+import json
+import re
 from pathlib import Path
 import shlex
 import shutil
 import subprocess
 import sys
 
+import pytest
+
 from test_support.git_repository import GitTestRepository
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "famulus-refresh"
+
+
+@pytest.fixture(autouse=True)
+def isolated_host_settings(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
 
 
 def _dry_run_commands(stdout: str) -> list[list[str]]:
@@ -327,3 +337,112 @@ def test_reset_refuses_a_codex_data_path_outside_the_agent_plugin_root(tmp_path:
 
     assert result.returncode != 0
     assert "refusing unsafe Codex plugin-data path" in result.stderr
+
+
+@pytest.mark.parametrize("host", ["codex", "claude"])
+@pytest.mark.parametrize("install_status", [0, 7])
+def test_refresh_restores_settings_even_when_install_fails(
+    tmp_path: Path, host: str, install_status: int,
+) -> None:
+    directory = tmp_path / host
+    directory.mkdir()
+    config = directory / ("config.toml" if host == "codex" else "settings.json")
+    preferences = {
+        "enabled": False,
+        "mcp_servers": {"famulus_dispatcher": {"tools": {
+            "invoke": {"approval_mode": "approve"},
+        }}},
+    }
+    permissions = {"allow": ["mcp__plugin_famulus_famulus_dispatcher__invoke"], "deny": ["Bash(rm *)"]}
+    if host == "codex":
+        config.write_text(
+            '[plugins."famulus@nullkit"]\nenabled = false\n'
+            '[plugins."famulus@nullkit".mcp_servers.famulus_dispatcher.tools.invoke]\n'
+            'approval_mode = "approve"\n', encoding="utf-8",
+        )
+    else:
+        config.write_text(json.dumps({
+            "enabledPlugins": {"famulus@nullkit": False},
+            "pluginConfigs": {"famulus@nullkit": {"options": {"label": "kept"}}},
+            "permissions": permissions,
+        }), encoding="utf-8")
+    fake_bin, _log = _write_fake_host(tmp_path, host, '''
+exec "$TEST_PYTHON" "$FAKE_HOST" "$@"
+''')
+    fake_host = tmp_path / "fake_host.py"
+    fake_host.write_text('''
+import json, os, pathlib, sys
+config = pathlib.Path(os.environ["TEST_CONFIG"])
+if sys.argv[1] == "app-server":
+    for line in sys.stdin:
+        request = json.loads(line)
+        if "id" not in request:
+            continue
+        if request["method"] == "config/value/write":
+            config.with_suffix(".restored.json").write_text(json.dumps(request["params"]))
+        print(json.dumps({"id": request["id"], "result": {}}), flush=True)
+elif sys.argv[1:3] in (["plugin", "remove"], ["plugin", "uninstall"]):
+    config.write_text('theme = "new"\\n' if config.suffix == ".toml" else json.dumps({
+        "theme": "new", "enabledPlugins": {"other@market": True},
+        "extraKnownMarketplaces": {"nullkit": {"source": "new"}},
+    }))
+elif sys.argv[1:3] in (["plugin", "add"], ["plugin", "install"]):
+    sys.exit(int(os.environ["INSTALL_STATUS"]))
+''', encoding="utf-8")
+    result = run_refresh(f"--{host}", "--github", env={
+        "PATH": os.pathsep.join((str(fake_bin), os.environ.get("PATH", ""))),
+        "TEST_PYTHON": sys.executable, "FAKE_HOST": str(fake_host),
+        "TEST_CONFIG": str(config), "INSTALL_STATUS": str(install_status),
+    })
+    assert result.returncode == install_status, result.stderr
+    if host == "codex":
+        restored = json.loads(config.with_suffix(".restored.json").read_text())
+        assert restored == {
+            "keyPath": 'plugins."famulus@nullkit"',
+            "value": preferences, "mergeStrategy": "replace",
+        }
+        assert config.read_text() == 'theme = "new"\n'
+    else:
+        restored = json.loads(config.read_text())
+        assert restored["permissions"] == permissions
+        assert restored["enabledPlugins"] == {"other@market": True, "famulus@nullkit": False}
+        assert restored["pluginConfigs"]["famulus@nullkit"]["options"]["label"] == "kept"
+        assert restored["theme"] == "new"
+        assert restored["extraKnownMarketplaces"]["nullkit"]["source"] == "new"
+
+
+def test_refresh_keeps_snapshot_when_settings_restore_fails(tmp_path: Path) -> None:
+    directory = tmp_path / "claude"
+    directory.mkdir()
+    config = directory / "settings.json"
+    original = {"enabledPlugins": {"famulus@nullkit": False}}
+    config.write_text(json.dumps(original), encoding="utf-8")
+    fake_bin, _log = _write_fake_host(tmp_path, "claude", '''
+if [[ "$*" == "plugin install famulus@nullkit --scope user -y" ]]; then
+    printf 'broken json' > "$CLAUDE_CONFIG_DIR/settings.json"
+    exit 7
+fi
+''')
+    result = run_refresh("--claude", "--github", env={
+        "PATH": os.pathsep.join((str(fake_bin), os.environ.get("PATH", ""))),
+        "TMPDIR": str(tmp_path),
+    })
+    assert result.returncode != 0
+    match = re.search(r"saved preferences retained at (.+)", result.stderr)
+    assert match, result.stderr
+    assert json.loads(Path(match[1]).read_text()) == original
+    assert config.read_text() == "broken json"
+
+
+def test_dry_run_leaves_host_settings_untouched(tmp_path: Path) -> None:
+    for directory_name, filename, content in (
+        ("codex", "config.toml", '[plugins."famulus@nullkit"]\nenabled = false\n'),
+        ("claude", "settings.json", '{"enabledPlugins":{"famulus@nullkit":false}}'),
+    ):
+        directory = tmp_path / directory_name
+        directory.mkdir()
+        (directory / filename).write_text(content, encoding="utf-8")
+    before = {path: path.read_bytes() for path in tmp_path.glob("*/*")}
+    result = run_refresh("--github", "--dry-run")
+    assert result.returncode == 0, result.stderr
+    assert {path: path.read_bytes() for path in before} == before
