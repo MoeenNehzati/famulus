@@ -1,8 +1,8 @@
 content:
 - SKILL\.md
 dependencies: []
-description: Implements the persistent certainty-first response policy, evidence labels,
-  edge-case checks, and agreement gate between diagnosis and repair.
+description: Implements the certainty-first response policy that persists until the user
+  switches modes, including evidence labels, edge-case checks, and agreement on a diagnosis before repair.
 gateway:
   language: Markdown
   path: SKILL.md
