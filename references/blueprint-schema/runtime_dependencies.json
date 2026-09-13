@@ -4717,19 +4717,7 @@
       },
       "interfaces": {
         "math-dependency-graph._rtx.interface.inventory-voyage-dispenser": {
-          "dependencies": [
-            {
-              "kind": "python-package",
-              "name": "jsonschema",
-              "version": ">=4,<5",
-              "platforms": {
-                "linux": true,
-                "macos": true,
-                "windows": true
-              },
-              "reason": "Validates complete flat LLMStep responses before contextual assessment."
-            }
-          ]
+          "dependencies": []
         },
         "math-dependency-graph._rtx.interface.scripts-apply-proof-digest": {
           "dependencies": []
@@ -7106,7 +7094,7 @@
                 "macos": true,
                 "windows": true
               },
-              "reason": "Validates complete flat LLMStep responses before contextual assessment."
+              "reason": "Validates declared response schemas and their local references when binding Rutter definitions."
             },
             {
               "kind": "python-package",

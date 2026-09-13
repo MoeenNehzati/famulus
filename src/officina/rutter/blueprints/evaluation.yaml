@@ -51,17 +51,131 @@ interfaces:
     description: Evaluates each concrete author callback after applicable engine
       formatting, schema, and static outcome-map checks, then returns immutable
       values or typed faults.
+    contract:
+      arguments:
+        operation:
+          description: Selected routing, data, response-assessment, child/hook construction, terminal
+            or machine callback wrapper.
+          required: true
+          sensitivity: public
+          type:
+            kind: string
+        inputs:
+          description: Authored callable/step and its typed context/results. The engine supplies
+            applicable response-format, JSON-schema and static-route checks; these wrappers do not
+            perform those checks.
+          required: true
+          sensitivity: user-private
+          type:
+            kind: string
+            description: Python arguments for the selected API call.
+            sensitivity: user-private
+      preconditions: []
+      interaction:
+        mode: unattended
+      caller_warnings:
+      - external-side-effect: Authored callbacks can affect caller-owned state, including transitive
+          filesystem/network state. These wrappers provide no locking, deduplication or rollback.
+      - may-wait: Calls are synchronous and enforce no timeout; an authored callback can block indefinitely.
+      outputs:
+      - id: result
+        audience: machine
+        description: Route string, frozen JSON data, ValidationReport, Rutter, VoyageResult, MachineResult
+          or selected hook/Charter pairs. Callback Exceptions and wrong result types become categorized
+          _RutterFault; BaseException propagates.
+        direct_io_ref: return-value
+        cardinality:
+          minimum: 1
+          maximum: 1
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        empty: Empty JSON, empty selected-hook tuples and optional values follow the selected callback
+          contract.
+        type:
+          kind: string
+          description: Typed Python API return value or finite JSON projection.
+          sensitivity: user-private
+      outcomes:
+      - id: completed
+        class: success
+        outputs:
+        - result
+        effects:
+        - callback-execution
+        caller_action: Use the returned value according to the selected Python API operation.
+      - id: callback-fault
+        class: error
+        outputs: []
+        effects:
+        - callback-execution
+        caller_action: Report the categorized callback fault and inspect any external effects before
+          retrying. The wrapper cannot roll them back.
+      execution:
+        state_effect: mutating
+        lifecycle: finite
+        consistency:
+          live: Callbacks run synchronously against supplied contexts; external state follows callback
+            semantics with no wrapper snapshot or transaction.
+        verification:
+        - method: output-schema
+          output_ref: result
+        effects:
+        - id: callback-execution
+          direct_io_ref: authored-callback
+          action: execute
+          value_source:
+            kind: argument
+            argument_ref: inputs
+          may_occur_in_outcomes:
+          - completed
+          - callback-fault
+          confirmation_evidence:
+            kind: direct-io
+            direct_io_ref: authored-callback
+          reversibility:
+            irreversible: Callback effects have no wrapper-owned rollback.
+        mutation_safety:
+          atomicity:
+            non_atomic: Callbacks may have effects before return or failure.
+          concurrent_invocations:
+            unsafe: The caller must coordinate shared state and callback concurrency.
+          idempotency:
+            non_idempotent: Repeated calls invoke callbacks again; repeat safety belongs to their
+              definitions and engine policy.
+          on_uncertain_completion:
+            verify_then_decide: Inspect callback-owned state before retrying.
+          partial_effects_on_failure:
+            possible: A callback may mutate state before an exception or invalid result.
+          rollback_on_failure:
+            unavailable: This boundary cannot undo authored effects.
+      helpers: []
+      direct_io:
+        reads: []
+        writes:
+        - id: authored-callback
+          medium: local-system
+          access: execute
+          content: Immediate invocation of the supplied Python callback with typed context; transitive
+            callback I/O belongs to its owner.
+          formats:
+          - python-callable
+          sensitivity: user-private
+        - id: return-value
+          medium: local-system
+          access: write
+          content: Route string, frozen JSON data, ValidationReport, Rutter, VoyageResult, MachineResult
+            or selected hook/Charter pairs. Callback Exceptions and wrong result types become categorized
+            _RutterFault; BaseException propagates.
+          formats:
+          - python-object
+          sensitivity: user-private
+        network: []
 platform_support:
   linux: true
   macos: true
   windows: true
-runtime_dependencies:
-- kind: python-package
-  name: jsonschema
-  platforms:
-    linux: true
-    macos: true
-    windows: true
-  reason: Validates complete flat LLMStep responses before contextual assessment.
-  version: '>=4,<5'
+runtime_dependencies: []
 maturity: stable

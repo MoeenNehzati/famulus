@@ -20,6 +20,83 @@ interfaces:
     uses_interfaces: []
     description: Constructs immutable Rutter operating values, direct-property
       Messages, explicit terminal status values, and finite JSON projections.
+    contract:
+      arguments:
+        operation:
+          description: Selected Charter, Message, result, validation/status/fault value constructor
+            or finite JSON projection.
+          required: true
+          sensitivity: public
+          type:
+            kind: string
+        inputs:
+          description: Finite JSON and typed Python arguments with valid identifiers and supported
+            result/status discriminants. MachineInstruction construction retains but does not execute
+            its callable.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            description: Python arguments for the selected API call.
+            sensitivity: user-private
+      preconditions: []
+      interaction:
+        mode: unattended
+      caller_warnings: []
+      outputs:
+      - id: result
+        audience: machine
+        description: Validated Rutter operating value or finite JSON projection with mappings/sequences
+          frozen at value boundaries.
+        direct_io_ref: return-value
+        cardinality:
+          minimum: 1
+          maximum: 1
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        empty: Empty mappings and sequences are valid finite JSON projections; constructors return one value.
+        type:
+          kind: string
+          description: Typed Python API return value or finite JSON projection.
+          sensitivity: user-private
+      outcomes:
+      - id: completed
+        class: success
+        outputs:
+        - result
+        effects: []
+        caller_action: Use the returned value according to the selected Python API operation.
+      - id: invalid-input
+        class: error
+        outputs: []
+        effects: []
+        caller_action: Correct invalid construction reported by RutterDefinitionError or malformed
+          decoded state reported by RutterStateError.
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency:
+          snapshot: Construction snapshots finite JSON values; stored callables are references whose
+            later execution belongs to the caller.
+        verification:
+        - method: output-schema
+          output_ref: result
+      helpers: []
+      direct_io:
+        reads: []
+        writes:
+        - id: return-value
+          medium: local-system
+          access: write
+          content: Validated Rutter operating value or finite JSON projection with mappings/sequences
+            frozen at value boundaries.
+          formats:
+          - python-object
+          sensitivity: user-private
+        network: []
 platform_support:
   linux: true
   macos: true

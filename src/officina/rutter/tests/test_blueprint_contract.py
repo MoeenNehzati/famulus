@@ -204,7 +204,7 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
         assert access["allow_all_modules"] is False
         assert set(access["allowed_callers"]) == callers
     expected_runtime_dependencies = {
-        "evaluation": [
+        "runtime": [
             {
                 "kind": "python-package",
                 "name": "jsonschema",
@@ -214,8 +214,8 @@ def test_v6_rutter_blueprints_split_exact_implementation_ownership() -> None:
                     "windows": True,
                 },
                 "reason": (
-                    "Validates complete flat LLMStep responses before contextual "
-                    "assessment."
+                    "Validates declared response schemas and their local references "
+                    "when binding Rutter definitions."
                 ),
                 "version": ">=4,<5",
             }

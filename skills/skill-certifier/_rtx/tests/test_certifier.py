@@ -2058,6 +2058,19 @@ def test_private_writers_cannot_append_against_one_predecessor(
     assert len(entries) == 1
 
 
+def test_rutter_python_api_contracts_satisfy_signing_completeness() -> None:
+    """Schema-valid Rutter APIs must not block every live certification run."""
+    directory = SRC_ROOT / "officina/rutter/blueprints"
+    nodes = {}
+    for name in ("authoring", "evaluation", "history", "reducer", "values"):
+        path = directory / f"{name}.yaml"
+        declaration = yaml.safe_load(path.read_text(encoding="utf-8"))
+        nodes[declaration["id"]] = SimpleNamespace(
+            declaration=declaration, node_type="behavioral_source", blueprint_path=path,
+        )
+    assert certifier.certification_completeness_findings(SimpleNamespace(nodes=nodes)) == ()
+
+
 def test_completeness_findings_block_structural_draft_signing(
     tmp_path: Path,
 ) -> None:

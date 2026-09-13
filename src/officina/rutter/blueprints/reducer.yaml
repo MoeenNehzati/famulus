@@ -37,6 +37,80 @@ interfaces:
     - interface: rutter.source.values.interface.python-api
       version: 2
     description: Selects and replaces active runs and enters or returns child voyages purely.
+    contract:
+      arguments:
+        operation:
+          description: Selected active-leaf query or immutable run/child/evolution replacement function.
+          required: true
+          sensitivity: public
+          type:
+            kind: string
+        inputs:
+          description: Reckoning and typed replacement run, child, identity or entered evolution.
+            Child entry requires the active leaf and available bounded depth.
+          required: false
+          sensitivity: user-private
+          type:
+            kind: string
+            description: Python arguments for the selected API call.
+            sensitivity: user-private
+      preconditions: []
+      interaction:
+        mode: unattended
+      caller_warnings: []
+      outputs:
+      - id: result
+        audience: machine
+        description: ActiveLeaf projection or replacement Reckoning; inputs remain unchanged and
+          no persistence or authored callback occurs.
+        direct_io_ref: return-value
+        cardinality:
+          minimum: 1
+          maximum: 1
+        ordering: stable
+        pagination:
+          kind: none
+        truncation:
+          kind: none
+        empty: Never empty on success.
+        type:
+          kind: string
+          description: Typed Python API return value or finite JSON projection.
+          sensitivity: user-private
+      outcomes:
+      - id: completed
+        class: success
+        outputs:
+        - result
+        effects: []
+        caller_action: Use the returned value according to the selected Python API operation.
+      - id: invalid-input
+        class: error
+        outputs: []
+        effects: []
+        caller_action: Correct inconsistent run identity, topology, terminal child state or excessive
+          depth reported by RutterStateError.
+      execution:
+        state_effect: read-only
+        lifecycle: finite
+        consistency:
+          snapshot: Pure transformations derive a new immutable run tree from the supplied Reckoning.
+        verification:
+        - method: output-schema
+          output_ref: result
+      helpers: []
+      direct_io:
+        reads: []
+        writes:
+        - id: return-value
+          medium: local-system
+          access: write
+          content: ActiveLeaf projection or replacement Reckoning; inputs remain unchanged and no
+            persistence or authored callback occurs.
+          formats:
+          - python-object
+          sensitivity: user-private
+        network: []
 platform_support:
   linux: true
   macos: true
