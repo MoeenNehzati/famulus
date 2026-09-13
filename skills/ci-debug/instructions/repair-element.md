@@ -5,6 +5,19 @@ ledger. Reuse that context for every targeted invocation so its stable setup and
 request-scoped reports survive agent or session restarts. Keep every known
 failure until a report actually executes and clears it.
 
+Read this element's runner, profile, and worker count from the workflow at the
+repair SHA and use them for targeted and whole-element probes. Do not copy
+local host worker defaults. Record deliberate diagnostic deviations; they do
+not replace qualification at the workflow's settings.
+Record effective settings before dispatch and return them with the run IDs
+and reports, so the coordinator can verify evidence reuse after a restart.
+
+If a tool call times out or polling fails, inspect the existing context and
+correlated run before dispatching again. Recover available reports, completed
+job logs, and artifacts through already-authorized read surfaces. A tool
+timeout alone is not red test evidence; if the run cannot be recovered, return
+its recovery coordinates and a collection blocker without duplicating it.
+
 Treat a stall as a failure class. Record the active element and last completed
 selector, then choose the smallest runnable selector that contains the first
 unresolved work. Run it with an explicit wall-clock bound; exceeding that bound

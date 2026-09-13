@@ -62,6 +62,13 @@ original target branch remains untouched until step 7.
 
 ## 3. Publish only the candidate and bind the context
 
+Choose the push transport before paying for long pre-push hooks. If SSH idle
+disconnects are already evidenced for this origin and authenticated HTTPS is
+available, use it with command-scoped settings for this invocation. Keep
+hooks enabled and credentials out of arguments, logs, and persisted config.
+After a transport error, verify the live destination before retrying; an
+already successful push needs no retry.
+
 Push the new candidate branch to a new branch of the same name on `origin`
 without force, then record its exact SHA and remote tip. This temporary remote
 candidate is required even when `push` is false because GitHub CI can qualify
@@ -81,10 +88,23 @@ the candidate's recorded promotion preconditions. On drift, preserve the
 candidate and recovery evidence, stop dispatch, and ask the user how to
 proceed.
 
+Before each probe, record its exact SHA, selectors, and effective runner, task,
+profile, and worker count in the invocation record; attach its run ID when
+available. Keep this evidence outside the machine-owned context.
+
 Use `ci-debug._rtx.interface.run-ci` for the exact pushed candidate. When it
 returns `state=pending`, invoke it again with the identical repository, ref,
 SHA, context, and timeout until it returns a terminal report. Do not create a
 new context merely to bypass an active request.
+
+For any probe or matrix call that loses its tool connection or returns a
+polling error, inspect the existing context, collector, and correlated GitHub
+run before retrying. A collector error is not a test failure. Record request,
+run, and job IDs as soon as available; recover completed reports, job logs,
+and artifacts through already-authorized read surfaces. Empty enclosing-run
+logs do not establish that a completed job has no logs. Do not redispatch while
+the original request may still be active; if its identity or result cannot be
+established, preserve recovery coordinates and report the collection blocker.
 
 Retire superseded runs before dispatching replacement work through the
 already-authorized CI control surface. If cancellation authority is
@@ -109,7 +129,9 @@ While its report is red:
 2. Group failures by matrix element. Give each repair subagent one element, the
    shared debug context, smallest selector set containing its known failures,
    the report, an invocation-owned repair branch and isolated repair worktree,
-   and an allowed path scope. Before bounded-parallel dispatch, create and record
+   an allowed path scope, and the element's runner, profile, and worker count
+   read from the workflow at the candidate SHA. Local host worker defaults do
+   not apply to remote runners. Before bounded-parallel dispatch, create and record
    one collision-resistant repair branch and worktree per element from the exact
    current candidate SHA. Apply the candidate no-adoption, collision, and
    expected-tip rules to every local and remote repair ref, and pass both the
@@ -125,14 +147,24 @@ While its report is red:
    `git-workflow.interface.default`.
 5. Push the integrated candidate without force and record its exact SHA in the
    invocation record.
-6. Before the next complete matrix, refresh both target tips, then use
+6. Before the next complete matrix, refresh both target tips. Reuse terminal
+   green targeted and whole-element reports when a fast-forward preserves the
+   exact tested SHA and repository, workflow, runner, task, profile, worker
+   count, and selector coverage match, with no later matching red result or
+   changed ref-dependent inputs. Record the reused reports; a branch-name
+   change alone does not require rerunning them. A new integration SHA or
+   changed execution conditions requires fresh affected-element evidence.
+   For settings absent from a report, require the recorded invocation or job
+   logs as proof; unknown settings make that evidence ineligible for reuse.
+   For evidence still missing, use
    `ci-debug._rtx.interface.run-targeted-tests` on the exact integrated
    candidate for every affected matrix element. Submit all independent known
    selectors for one element in one `--selectors-json` request, and dispatch
    independent elements through the existing bounded parallelism. Start with
    the smallest selectors needed to detect integration interactions, batched by
-   element, then run each whole affected element, retaining one complete run of
-   every affected element. Verify every requested selector actually executed
+   element, then run each whole affected element still lacking matching green
+   evidence, retaining one complete run of every affected element. Verify
+   every requested selector actually executed
    and return new or repeated failures to the ledger.
 7. Only after every affected matrix element is green, apply the step 4 drift
    gate and use
@@ -149,6 +181,9 @@ a concrete blocker.
 For each candidate SHA, every terminal response reports elapsed wall time,
 drift-check count, targeted request count, whole-element count, full-matrix
 count, repair rounds, and repeated unchanged failure signatures.
+Record phase start and end times as work happens, including hooks, transport
+retries, and user waits. Label missing timing as unmeasured; do not reconstruct
+per-SHA durations from aggregate session time.
 
 ## 6. Complete the existing prevention review
 
