@@ -17,6 +17,7 @@ from .hashing import (
     NodeHashState,
     certification_facet_claims,
     certification_target_postorder,
+    _certification_input_scope_builder,
     compute_certification_basis_hash,
     compute_node_hash_states,
     derive_certifier_identity,
@@ -778,7 +779,14 @@ def evaluate_certificate_currentness(
     schema_root: Path | None = None,
     allow_non_atomic: bool = False,
 ) -> CertificateCurrentnessReport:
-    """Evaluate the final entry of every v4 log against one derived graph state."""
+    """Evaluate the final entry of every certificate log against one derived graph state.
+
+    InstantiationsFromRepo
+    ----------------------
+    .hashing._certification_input_scope_builder:
+      why:
+        constructs: "Builds the shared authority scope used for v6 node readiness."
+    """
 
     root = Path(repo_root).resolve()
     selected_schema_root = Path(schema_root) if schema_root is not None else _default_schema_root()
@@ -798,56 +806,74 @@ def evaluate_certificate_currentness(
                 allow_non_atomic=allow_non_atomic,
             )
         )
-        global_tracked_paths = {
-            *selected_basis_paths,
-            *(node.blueprint_path for node in graph.nodes.values()),
-        }
-        certifier = graph.nodes.get(CERTIFIER_NODE_ID)
-        if certifier is not None:
+        if graph.schema_version == 6:
+            build_scope = _certification_input_scope_builder(
+                graph, states, repo_root=root,
+                certification_basis_paths=selected_basis_paths,
+            )
+            scopes = {node_id: build_scope((node_id,)) for node_id in graph.nodes}
+            # Observe each shared authority/basis path once, not once per node.
+            path_readiness = {
+                path: check_commit_readiness(
+                    snapshot, (path,), {}, allow_non_atomic=allow_non_atomic,
+                ).stamp_worthy
+                for path in sorted({path for scope in scopes.values() for path in scope.tracked_paths})
+            }
+            node_tracked_inputs_clean = {
+                node_id: snapshot is not None and all(path_readiness[path] for path in scope.tracked_paths)
+                for node_id, scope in scopes.items()
+            }
+        else:
+            global_tracked_paths = {
+                *selected_basis_paths,
+                *(node.blueprint_path for node in graph.nodes.values()),
+            }
+            certifier = graph.nodes.get(CERTIFIER_NODE_ID)
+            if certifier is not None:
+                for node_id, state in states.items():
+                    node = graph.nodes.get(node_id)
+                    if (
+                        node is None
+                        or node.module_root != certifier.module_root
+                        or not isinstance(state, NodeHashState)
+                    ):
+                        continue
+                    global_tracked_paths.update(
+                        root / entry["path"]
+                        for entry in state.input_manifest
+                        if entry.get("git_provenance") == "tracked"
+                    )
+            global_readiness = check_commit_readiness(
+                snapshot,
+                tuple(sorted(global_tracked_paths)),
+                {},
+                allow_non_atomic=allow_non_atomic,
+            )
+            global_inputs_current = (
+                snapshot is not None
+                and global_readiness.stamp_worthy
+            )
             for node_id, state in states.items():
-                node = graph.nodes.get(node_id)
-                if (
-                    node is None
-                    or node.module_root != certifier.module_root
-                    or not isinstance(state, NodeHashState)
+                if node_id not in node_tracked_inputs_clean or not isinstance(
+                    state, NodeHashState
                 ):
                     continue
-                global_tracked_paths.update(
-                    root / entry["path"]
-                    for entry in state.input_manifest
-                    if entry.get("git_provenance") == "tracked"
+                node_paths = tuple(
+                    sorted(
+                        root / entry["path"]
+                        for entry in state.input_manifest
+                        if entry.get("git_provenance") == "tracked"
+                    )
                 )
-        global_readiness = check_commit_readiness(
-            snapshot,
-            tuple(sorted(global_tracked_paths)),
-            {},
-            allow_non_atomic=allow_non_atomic,
-        )
-        global_inputs_current = (
-            snapshot is not None
-            and global_readiness.stamp_worthy
-        )
-        for node_id, state in states.items():
-            if node_id not in node_tracked_inputs_clean or not isinstance(
-                state, NodeHashState
-            ):
-                continue
-            node_paths = tuple(
-                sorted(
-                    root / entry["path"]
-                    for entry in state.input_manifest
-                    if entry.get("git_provenance") == "tracked"
+                node_tracked_inputs_clean[node_id] = (
+                    global_inputs_current
+                    and check_commit_readiness(
+                        snapshot,
+                        node_paths,
+                        {},
+                        allow_non_atomic=allow_non_atomic,
+                    ).stamp_worthy
                 )
-            )
-            node_tracked_inputs_clean[node_id] = (
-                global_inputs_current
-                and check_commit_readiness(
-                    snapshot,
-                    node_paths,
-                    {},
-                    allow_non_atomic=allow_non_atomic,
-                ).stamp_worthy
-            )
     except (CertificationHashError, OSError, TypeError, ValueError):
         pass
 

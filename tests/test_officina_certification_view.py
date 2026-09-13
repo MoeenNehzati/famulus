@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
@@ -907,6 +908,64 @@ def _v6_facet_fixture(
             [sign_certificate_payload(payload, key)],
         )
     return graph, states, commit, public_key_root, key, node_id, interface_id
+
+
+@pytest.mark.parametrize("changed", ["unrelated.py", "unrelated.yaml", "authority.py", "authority.yaml"])
+def test_v6_currentness_scopes_unrelated_dirt_but_requires_voyage_authority(
+    tmp_path: Path, changed: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph, states, commit, public_keys, _key, target, _interface = _v6_facet_fixture(tmp_path)
+    nodes = dict(graph.nodes)
+    for name, node_id in (
+        ("unrelated", "unrelated.source.gateway"),
+        ("authority", "skill-certifier._rtx.source.certification-voyage"),
+    ):
+        source = tmp_path / f"{name}.py"
+        source.write_text("value = 1\n")
+        declaration = tmp_path / f"{name}.yaml"
+        declaration.write_text("description: test node\n")
+        nodes[node_id] = BlueprintNode(
+            node_id, "behavioral_source", 1, tmp_path, declaration, source,
+            {"description": "test node"},
+        )
+        states[node_id] = NodeHashState(
+            node_hash="sha256:" + "3" * 64,
+            input_manifest=({
+                "path": source.name,
+                "digest": "sha256:" + hashlib.sha256(source.read_bytes()).hexdigest(),
+                "git_provenance": "tracked",
+            },),
+        )
+    graph = replace(graph, nodes=nodes)
+    repository = GitTestRepository(tmp_path)
+    repository.git("add", "unrelated.py", "unrelated.yaml", "authority.py", "authority.yaml")
+    repository.git("commit", "-qm", "register scope test inputs")
+    observed_paths = []
+    real_readiness = certification_view_module.check_commit_readiness
+
+    def readiness(snapshot, paths, hashes, **kwargs):
+        observed_paths.extend(paths)
+        return real_readiness(snapshot, paths, hashes, **kwargs)
+
+    monkeypatch.setattr(certification_view_module, "check_commit_readiness", readiness)
+
+    def evaluate():
+        observed_paths.clear()
+        report = evaluate_certificate_currentness(
+            graph, states, repo_root=tmp_path, public_key_root=public_keys,
+            source_commit=commit, certifier_identity=CERTIFIER,
+            checks_by_node={node_id: CHECKS for node_id in graph.nodes},
+            certification_basis_paths=(), schema_root=CANONICAL_SCHEMA_ROOT,
+        )
+        assert len(observed_paths) == len(set(observed_paths))
+        return report.nodes[target]
+
+    assert evaluate().current
+    path = tmp_path / changed
+    path.write_text(path.read_text() + "# work in progress\n")
+    status = evaluate()
+    assert status.current is changed.startswith("unrelated")
+    assert ("source-commit-input-mismatch" in status.concerns) is changed.startswith("authority")
 
 
 @pytest.fixture

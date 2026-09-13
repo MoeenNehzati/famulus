@@ -1,6 +1,53 @@
 # Certification Rutter design
 
-Status: implemented and validated in `feat/certification-audit-pool`, 2026-09-12.
+Status: scoped-guard correction implemented and validated in
+`feat/certification-audit-pool`, 2026-09-13. Rutter contract repairs are committed
+as `1b1c4512`; scoped guards, regressions and documentation form this separate
+follow-up. Live certificate issuance remains unverified.
+
+Version-6 preparation, signing and currentness now share an evidence scope:
+selected nodes and prerequisites, certification authorities and Voyage machinery,
+canonical basis, and declarations needed to resolve them. Unrelated tracked
+edits and unrelated signing-incomplete sources no longer create a blanket veto.
+Complete graph validity and repository mechanical validators still apply.
+Whole-graph requests retain committed module markers, so deleting an independent
+root cannot silently omit it. Legacy version-4/5 guards remain unchanged.
+The basis explicitly covers runtime configuration and the new Voyage/Rutter
+machinery, so committed changes to that machinery invalidate old certificates.
+
+Validation: the working-tree precommit test suite with eight workers passed
+3,908 tests, with 21 skipped and one existing fork warning (212.09 seconds).
+The subsequently added stale-scope signer-entry regression passed separately
+(1.52 seconds). All 32 validators passed (37.31 seconds), and generated artifacts
+are synchronized. Three independent subagents returned GREEN on the implementation;
+the final scope API/dependency declaration and signer-entry test were also reviewed
+GREEN. Coverage includes unrelated staged edits and incomplete contracts,
+authority/target/index/scope-membership drift, whole-graph deleted roots, and
+agreement between scoped issuance and fresh currentness.
+Final Ponytail reviews are GREEN after removing four redundant ancestry-walk
+lines. The independent contract-repair commit passed its normal staged hook
+suite: 3,895 tests passed, 21 skipped, and no secret-scan findings.
+Staged validation then exposed missing dependency and scope docstrings that the
+earlier working-tree run had not checked. Those declarations are corrected in
+this follow-up; the other 31 staged validators passed.
+The corrected staged docstring gate passed separately (539.10 seconds).
+
+The first live trial exposed 45 missing contract sections in five Rutter APIs;
+those declarations are repaired. The final subagent trial selected
+`common.source.toml-io`, whose prerequisite is uncertified
+`common.source.atomic-files`. Public initiation exited 2 with
+`tracked certification input changed before certification`, naming 12 changed
+authority/basis inputs. The plan, test files and dependency-registry edit are
+absent from that refusal. No Voyage ID, worker dispatch or certificate was
+produced. At that trial, the certifier's relevant inputs were still uncommitted.
+The refusal identifies the actual evidence scope rather than applying the former
+whole-repository cleanliness rule.
+
+The installed dispatcher does not expose this branch's module name, so live
+trials use the branch's public Voyage CLI. Host-keychain storage was explicitly
+approved; public material, tasks and exact trial/validation evidence remain in
+the worktree under `_build/interactive-certification/`. Live issuance and the
+current-node skip run must still be verified from the committed repair state.
 
 All three reviewers approved revision
 `85d347f33772666bc65bf1b38d33ed72a7facec336abc9951f387b702d80f78c`:
@@ -15,12 +62,14 @@ large mechanical-only continuations. Their verdicts are code/contract review;
 test results are recorded separately. The branch-specific clarifications below
 were incorporated during implementation.
 
-Latest validation: working-tree precommit suite with 8 workers: 3,894 passed,
+Implementation validation before the live-trial repairs: working-tree precommit
+suite with 8 workers: 3,894 passed,
 21 skipped (198.49 seconds); all 32 validators passed (40.32 seconds).
 Generated contracts are synchronized
 and `git diff --check` passes. Three independent reviewers are GREEN. The plan
-commit remains `656030c6`; implementation and audit follow-up are recorded together
-in the commit containing this status update. No live certification
+commit remains `656030c6`; the original implementation and audit follow-up were
+committed together as `bdb28609`. The scope correction described above is
+the separate follow-up in this plan update. No live certification
 was issued from the dirty worktree. The historical scheduler blueprint filename
 now owns the Voyage declaration; its old public scheduler route is removed.
 
@@ -106,11 +155,17 @@ slots. Code resolves and binds in the Charter:
 - positive integer worker capacity excluding the controller; use one if unknown;
 - positive per-Voyage retry interval, default 10 seconds, optionally overridden;
 - validated dependency closure/DAG, selected input manifests and audit identities.
+- shared certification-scope identity and whether the request covers the whole graph.
 
 Unknown/interface targets, invalid capacity/graphs and inputs the certifier cannot
-sign fail before workers start. Dirty tracked inputs must not be audited for
+sign fail before workers start. Dirty tracked inputs within the evidence scope must not be audited for
 issuance against a different committed version. Permitted local inputs retain
 the existing byte-stability requirements.
+
+The same scope is used for completeness, readiness, append guards and currentness.
+It includes certification machinery as well as the targets; selecting a smaller
+target does not authorize an uncommitted signer. Whole-graph mode also binds the
+committed inventory markers. Unrelated edits outside this scope are permitted.
 
 Reckoning is the sole persisted workflow state. Bound inputs, machine assignment
 records and accepted events reconstruct outstanding tasks, passing reports and
@@ -236,6 +291,9 @@ Inputs include node, reviewed repository/commit and expected audited-input
 identity from the bound passing audit set: canonical node hash, input manifest,
 dependency hashes, facets and certification basis hash. Local node hashes do not
 substitute for dependency identity.
+The Voyage also supplies its bound scope identity, original requested targets
+and whole-graph mode. The signer verifies this scope at entry and around appends;
+including authority nodes in the evidence scope never authorizes signing them.
 
 Inside its existing frozen-input issuance path, the signer must:
 

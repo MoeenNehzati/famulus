@@ -8,7 +8,10 @@ from typing import Mapping, Sequence
 
 from jsonschema import Draft202012Validator, ValidationError
 from officina.certification.dependency_dag import build_dependency_dag, decode_dependency_dag
-from officina.certification.hashing import certification_facet_claims, certification_target_postorder
+from officina.certification.hashing import (
+    certification_facet_claims, certification_input_scope, certification_target_postorder,
+    resolve_certification_basis_paths,
+)
 from officina.certification.records import certificate_entry_hash
 from officina.certification.view import (
     certificate_log_path, certificate_requires_renewal,
@@ -70,35 +73,40 @@ def observe(repository: Path):
     return derive_repository_certification_state(repository, expected_schema_version=6)
 
 
-def _ready_inputs(repository: Path, observation) -> None:
+def _ready_inputs(repository: Path, observation, requested: Sequence[str], whole_graph: bool = False):
     snapshot = certifier.capture_git_snapshot(repository)
     if snapshot is None or snapshot.commit != observation.source_commit:
         raise certifier.CertificationError("repository commit changed during preparation")
-    guard = certifier.RepositoryFreezeGuard(
-        repo_root=repository, snapshot=snapshot, allow_non_atomic=False,
+    scope = certification_input_scope(
+        observation.graph, observation.states, repo_root=repository, requested=requested,
+        whole_graph=whole_graph,
+        certification_basis_paths=resolve_certification_basis_paths(
+            repository, expected_schema_version=6,
+        ),
     )
+    guard = certifier.RepositoryFreezeGuard(
+        repo_root=repository, snapshot=snapshot, allow_non_atomic=False, scoped=True,
+    )
+    guard.configure_inputs(scope.tracked_paths, scope.local_claims)
     guard.capture_initial_state()
-    tracked = set()
-    local = {}
-    for state in observation.states.values():
-        for entry in state.input_manifest:
-            if entry["git_provenance"] == "tracked":
-                tracked.add(repository / entry["path"])
-            else:
-                local[entry["path"]] = entry["digest"]
-    guard.configure_inputs(tuple(sorted(tracked)), local)
-    guard.require_ready_commit(snapshot, "before semantic audit")
-    guard.require_local_inputs("before semantic audit")
-    findings = certifier.certification_completeness_findings(observation.graph)
+    findings = certifier.certification_completeness_findings(observation.graph, scope.node_ids)
     if findings:
-        raise certifier.CertificationError("certification graph is incomplete")
+        raise certifier.CertificationError("certification scope is incomplete")
+    return scope
 
 
 def make_charter(
     repository: Path, targets: Sequence[str], worker_capacity: int,
     run_id: str, retry_interval_seconds: int = 10,
 ) -> dict[str, object]:
-    """Bind one signable repository closure before any worker is dispatched."""
+    """Bind one signable repository closure before any worker is dispatched.
+
+    InstantiationsFromRepo
+    ----------------------
+    ._ready_inputs:
+      why:
+        constructs: "Builds the ready evidence scope bound into the charter."
+    """
 
     if type(worker_capacity) is not int or not 1 <= worker_capacity <= 64:
         raise ValueError("worker_capacity must be an integer between 1 and 64")
@@ -110,7 +118,7 @@ def make_charter(
     requested = tuple(sorted(set(targets))) if targets else tuple(sorted(graph.nodes))
     if any(target not in graph.nodes for target in requested):
         raise ValueError("targets must be registered modules or behavioral sources")
-    _ready_inputs(repository, observation)
+    scope = _ready_inputs(repository, observation, requested, not targets)
     order = certification_target_postorder(graph, observation.states, requested)
     dag = build_dependency_dag(graph, observation.states, repository)
     indexes = {node["id"]: node for node in dag["nodes"]}
@@ -138,6 +146,8 @@ def make_charter(
     return {
         "reviewed_repository": str(repository),
         "reviewed_commit": observation.source_commit,
+        "certification_scope": scope.identity,
+        "whole_graph": not targets,
         "requested_targets": list(requested),
         "run_id": run_id,
         "worker_capacity": worker_capacity,
@@ -162,6 +172,11 @@ def _observation(context: EvolutionContext):
         state = observed.states.get(node_id)
         if state is None or certifier.audited_inputs(state) != plain(expected):
             raise ValueError(f"audited inputs changed: {node_id}")
+    scope = _ready_inputs(
+        Path(data["reviewed_repository"]), observed, data["requested_targets"], data["whole_graph"],
+    )
+    if scope.identity != data["certification_scope"]:
+        raise ValueError("certification scope changed after preparation")
     stale = tuple(
         node_id for node_id in data["node_order"]
         if certificate_requires_renewal(observed.currentness.nodes[node_id])
@@ -423,6 +438,9 @@ def accept_and_certify(context: MachineContext) -> MachineResult:
                 node_id=root, reviewed_repository=Path(data["reviewed_repository"]),
                 reviewed_commit=data["reviewed_commit"],
                 expected_audited_inputs=plain(data["audited_inputs"][root]),
+                scope_target_node_ids=tuple(data["requested_targets"]),
+                expected_scope_identity=data["certification_scope"],
+                scope_whole_graph=data["whole_graph"],
             )
             verified = _observation(evolution)
             if not verified.currentness.nodes[root].current:

@@ -13,7 +13,8 @@ from pathlib import Path
 from pathlib import PurePosixPath
 import stat
 import subprocess
-from typing import Any, Iterable, Mapping, Sequence
+from types import MappingProxyType
+from typing import Any, Callable, Iterable, Mapping, Sequence
 
 import yaml
 
@@ -23,6 +24,7 @@ from ..blueprints.graph import (
     BlueprintNode,
     RepositoryBlueprintGraph,
 )
+from ..blueprints.inventory import _EXCLUDED_INFRASTRUCTURE_DIRECTORIES
 from officina.configuration.configured_schema import ConfiguredSchemaError, load_configuration
 from ..git.provenance import capture_git_snapshot, git_file_provenance_batch, run_git
 from ..common.repository_paths import RepositoryPathError, repository_relative_path
@@ -197,6 +199,319 @@ def certification_target_postorder(
     for node_id in sorted(set(requested)):
         visit(node_id)
     return tuple(ordered)
+
+
+@dataclass(frozen=True)
+class CertificationInputScope:
+    """Committed and local evidence shared by audit, issuance and currentness.
+
+    Intent
+    ------
+    Bind selected node identities to their tracked paths and local digest claims.
+
+    Rationale
+    ---------
+    All certification phases must protect the same inputs while allowing unrelated edits.
+
+    Pseudocode
+    ----------
+    - set evidence_record = node_ids, tracked_paths, local_claims and identity
+
+    Wraps
+    -----
+    - none
+    """
+
+    node_ids: tuple[str, ...]
+    tracked_paths: tuple[Path, ...]
+    local_claims: Mapping[str, str]
+    identity: str
+
+
+def _certification_input_scope_builder(
+    graph: RepositoryBlueprintGraph,
+    states: Mapping[str, NodeHashState],
+    *,
+    repo_root: Path,
+    certification_basis_paths: Sequence[Path],
+    whole_graph: bool = False,
+) -> Callable[[Sequence[str]], CertificationInputScope]:
+    """Prepare shared authority evidence once for a set of node observations.
+
+    Intent
+    ------
+    Return a builder combining requested prerequisites with certification authority.
+
+    Rationale
+    ---------
+    Currentness checks many nodes, so resolve their shared machinery closure once.
+
+    Pseudocode
+    ----------
+    - set basis = confined basis paths and optional committed root inventory
+    - set authority = closure of signer, audit and Voyage declarations
+    - return build
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ..common.repository_paths.repository_relative_path:
+      why:
+        transforms: "Normalize evidence paths for the scope identity."
+    ._repository_path:
+      why:
+        validates: "Confine selected basis and declaration paths to the repository."
+    ._tracked_basis_paths_at_head:
+      why:
+        reads: "Retain committed root declarations removed before a whole-graph observation."
+    .certification_facet_claims:
+      why:
+        transforms: "Bind canonical facet evidence into the scope identity."
+
+    InstantiationsFromRepo
+    ----------------------
+    .CertificationHashError:
+      why:
+        raises: "Reject missing scope nodes, invalid dependencies and conflicting local claims."
+    .CertificationInputScope:
+      why:
+        constructs: "Return selected identities, paths and digest claims as one immutable record."
+    ._hash_value:
+      why:
+        serializes: "Bind evidence membership and content to one deterministic identity."
+    ._repository_path:
+      why:
+        transforms: "Confine manifest paths before they enter the tracked or local evidence sets."
+    """
+
+    root = Path(repo_root).resolve()
+    basis = tuple(sorted({_repository_path(path, root) for path in certification_basis_paths}))
+    # Whole-repository requests must also account for independent roots removed
+    # before observation. A selected-target request does not own those roots.
+    inventory_paths = tuple(
+        root.joinpath(*path.parts)
+        for path in (_tracked_basis_paths_at_head(root) if whole_graph else ())
+        if path.name == "blueprint.yaml"
+        and not any(part in _EXCLUDED_INFRASTRUCTURE_DIRECTORIES for part in path.parts[:-1])
+        and path.parts[:2] != ("skills", ".system")
+    )
+
+    def closure(requested: Sequence[str], known: frozenset[str] = frozenset()) -> frozenset[str]:
+        """Expand dependencies and module children into the protected node set.
+
+        Intent
+        ------
+        Add every authority-bearing dependency reachable from requested nodes.
+
+        Rationale
+        ---------
+        Evidence-only dependencies authorize certificates even when issuance ordering omits them.
+
+        Pseudocode
+        ----------
+        - set selected = known plus requested and their transitive dependencies and module children
+        - return frozen selected
+
+        Wraps
+        -----
+        - none
+
+        InstantiationsFromRepo
+        ----------------------
+        .CertificationHashError:
+          why:
+            raises: "Reject absent node evidence and unresolved dependency targets."
+        """
+        selected = set(known)
+        pending = list(requested)
+        while pending:
+            node_id = pending.pop()
+            if node_id in selected:
+                continue
+            node = graph.nodes.get(node_id)
+            state = states.get(node_id)
+            if node is None or not isinstance(state, NodeHashState):
+                raise CertificationHashError(f"missing certification scope node: {node_id}")
+            selected.add(node_id)
+            # Evidence-only certification edges need no issuance ordering, but
+            # their implementations still authorize the resulting certificate.
+            for dependency in state.dependency_hashes:
+                target = dependency.get("target")
+                if not isinstance(target, str) or target not in graph.nodes:
+                    raise CertificationHashError(f"invalid certification scope dependency: {node_id}")
+                pending.append(target)
+            if node.node_type == "module":
+                pending.extend(graph.module_children.get(node_id, ()))
+        return frozenset(selected)
+
+    authority_roots = []
+    for interface_id in (V6_CERTIFIER_INTERFACE_ID, *CERTIFIER_AUDIT_INTERFACES.values()):
+        export = graph.exports.get(interface_id)
+        if export is not None and export.source_node_id is not None:
+            authority_roots.append(export.source_node_id)
+    voyage = "skill-certifier._rtx.source.certification-voyage"
+    if voyage in graph.nodes:
+        authority_roots.append(voyage)
+    authority = closure(authority_roots) if graph.schema_version == 6 else frozenset(graph.nodes)
+
+    def build(requested: Sequence[str]) -> CertificationInputScope:
+        """Bind one requested closure to its evidence and resolving declarations.
+
+        Intent
+        ------
+        Assemble tracked paths, local digests and a deterministic scope identity.
+
+        Rationale
+        ---------
+        Rechecking this identity detects changed ownership or membership as well as changed bytes.
+
+        Pseudocode
+        ----------
+        - set selected = requested closure plus shared authority
+        - set declarations = resolving declarations and their ancestors
+        - set claims = tracked paths and consistent local digests for selected and certifier identity inputs
+        - set identity = hash of node evidence, declarations and path membership
+        - return immutable scope
+
+        Wraps
+        -----
+        - none
+
+        CallsFromRepo
+        -------------
+        ..common.repository_paths.repository_relative_path:
+          why:
+            transforms: "Encode declaration and evidence paths relative to the repository."
+        .certification_facet_claims:
+          why:
+            transforms: "Include each node's canonical facet evidence in the scope identity."
+
+        InstantiationsFromRepo
+        ----------------------
+        .CertificationHashError:
+          why:
+            raises: "Reject incompatible digest claims for the same local input."
+        .CertificationInputScope:
+          why:
+            constructs: "Return the protected node set, evidence paths, local claims and identity."
+        ._hash_value:
+          why:
+            serializes: "Detect any change to protected evidence or resolving declarations."
+        ._repository_path:
+          why:
+            transforms: "Confine each node's manifest paths to the reviewed repository."
+        """
+        selected = closure(tuple(graph.nodes) if whole_graph else requested, authority)
+        # The signed certifier identity uses the outer module's local hash.
+        # Include those local inputs without pulling in its unrelated children.
+        identity_nodes = selected | ({CERTIFIER_NODE_ID} if CERTIFIER_NODE_ID in states else set())
+        declarations = set(identity_nodes)
+        for node_id in identity_nodes:
+            node = graph.nodes[node_id]
+            owner = graph.source_modules.get(node_id)
+            if owner is not None:
+                declarations.add(owner)
+            for dependency in states[node_id].dependency_hashes:
+                export = graph.exports.get(dependency.get("interface"))
+                if export is not None:
+                    declarations.add(export.module_node_id)
+                    if export.terminal_module_node_id is not None:
+                        declarations.add(export.terminal_module_node_id)
+            if node.node_type == "module":
+                declarations.add(node_id)
+        for node_id in tuple(declarations):
+            owner = graph.source_modules.get(node_id, node_id)
+            declarations.update(graph.module_ancestry.get(owner, ()))
+        tracked = {*basis, *inventory_paths}
+        local: dict[str, str] = {}
+        for node_id in identity_nodes:
+            for entry in states[node_id].input_manifest:
+                path = _repository_path(root / entry["path"], root)
+                if entry["git_provenance"] == "tracked":
+                    tracked.add(path)
+                else:
+                    digest = entry["digest"]
+                    if entry["path"] in local and local[entry["path"]] != digest:
+                        raise CertificationHashError(f"conflicting local scope input: {entry['path']}")
+                    local[entry["path"]] = digest
+        tracked.update(_repository_path(graph.nodes[node_id].blueprint_path, root) for node_id in declarations)
+        node_ids = tuple(sorted(identity_nodes))
+        identity = _hash_value({
+            "whole_graph": whole_graph,
+            "node_ids": node_ids,
+            "states": {
+                node_id: {
+                    "node_hash": states[node_id].node_hash,
+                    "input_manifest": states[node_id].input_manifest,
+                    "dependencies": states[node_id].dependency_hashes,
+                    "basis": states[node_id].certification_basis_hash,
+                    "facets": certification_facet_claims(states[node_id]),
+                }
+                for node_id in node_ids
+            },
+            "declarations": {
+                node_id: {
+                    "path": repository_relative_path(graph.nodes[node_id].blueprint_path, root).as_posix(),
+                    "declaration": graph.nodes[node_id].declaration,
+                    "owner": graph.source_modules.get(node_id),
+                    "parent": graph.module_parents.get(node_id),
+                }
+                for node_id in sorted(declarations)
+            },
+            "tracked_paths": [repository_relative_path(path, root).as_posix() for path in sorted(tracked)],
+            "basis_paths": [repository_relative_path(path, root).as_posix() for path in basis],
+            "local_claims": local,
+        })
+        return CertificationInputScope(node_ids, tuple(sorted(tracked)), MappingProxyType(local), identity)
+
+    return build
+
+
+def certification_input_scope(
+    graph: RepositoryBlueprintGraph,
+    states: Mapping[str, NodeHashState],
+    *,
+    repo_root: Path,
+    requested: Sequence[str],
+    certification_basis_paths: Sequence[Path],
+    whole_graph: bool = False,
+) -> CertificationInputScope:
+    """Bind target prerequisites, certification machinery and resolving declarations.
+
+    Intent
+    ------
+    Build the common readiness and freeze scope for the requested nodes.
+
+    Rationale
+    ---------
+    Version 6 permits unrelated worktree changes. Earlier schema versions retain
+    their repository-wide evidence scope. Metadata-only module declarations do
+    not expand into unrelated owned sources.
+
+    Pseudocode
+    ----------
+    - set builder = shared authority builder for graph, states, repository and basis paths
+    - return builder applied to requested
+
+    Wraps
+    -----
+    - none
+
+    CallsFromRepo
+    -------------
+    ._certification_input_scope_builder:
+      why:
+        computes: "Prepare shared authority before applying the returned builder to requested nodes."
+    """
+
+    return _certification_input_scope_builder(
+        graph, states, repo_root=repo_root,
+        certification_basis_paths=certification_basis_paths,
+        whole_graph=whole_graph,
+    )(requested)
 
 
 @dataclass(frozen=True, order=True)

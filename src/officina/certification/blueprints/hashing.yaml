@@ -15,6 +15,12 @@ dependencies:
   version: 1
 - blueprint:
     base: repository-root
+    path: src/officina/blueprints/blueprints/inventory.yaml
+  reason: Reuses canonical infrastructure exclusions when retaining committed module markers for whole-graph certification.
+  source: blueprints.source.inventory
+  version: 1
+- blueprint:
+    base: repository-root
     path: src/officina/git/blueprints/provenance.yaml
   reason: Imports Git snapshots and file provenance from provenance.py.
   source: git.source.provenance
@@ -26,7 +32,7 @@ dependencies:
   source: common.source.repository-paths
   version: 1
 description: Resolves the canonical certification basis and node inputs, computes
-  deterministic node and interface hashes and dependency-first target order, maps
+  deterministic node and interface hashes, scoped certification inputs and dependency-first target order, maps
   already observed route-smoke paths to declared authority, and derives certifier
   identity and expected checks.
 gateway:
@@ -77,6 +83,8 @@ interfaces:
             - description: Order exact targets after their canonical certification
                 dependencies.
               value: order-certification-targets
+            - description: Bind target, prerequisite and certification-authority inputs and resolving declarations to one scope identity.
+              value: certification-input-scope
         repository-root:
           description: Exact repository root for policy, Git provenance, and certification-basis
             operations.
@@ -153,8 +161,8 @@ interfaces:
         cardinality:
           maximum: 1
           minimum: 1
-        description: Canonical hash, resolved path tuple, node-state mapping, route-smoke
-          mapping, check tuple, or certifier identity.
+        description: Canonical hash, resolved path tuple, node-state mapping, certification
+          input scope, route-smoke mapping, check tuple, or certifier identity.
         direct_io_ref: return-value
         empty: Collection-valued operations can return an empty collection when no
           matching input exists.

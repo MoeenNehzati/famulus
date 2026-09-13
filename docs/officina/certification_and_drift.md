@@ -52,12 +52,12 @@ outcomes, or other guessed defaults merely to satisfy a schema. Missing
 descriptions, contract sections, invocation details, direct-I/O facts, or
 compatibility claims are certifier findings.
 
-The certifier-owned workflow reviews such a draft against the gateway and node
-content. It may repair the candidate blueprint, but each repair invalidates the
-previous review snapshot. The workflow reloads the schema and graph and reruns
-all checks until either the blueprint is complete and exact or it reports
-failure. The signing core accepts no caller-supplied payload and signs only the
-final reconstructed state. No `certified`, `conformant`, or draft-status field
+Missing disclosures within the certification scope stop initialization. Semantic
+workers review the declared contract against the gateway and node content; they
+report findings without editing either. Repairs happen separately and require a
+fresh certification Voyage, since they invalidate the previous review snapshot.
+The signing core accepts no caller-supplied payload and signs only the
+reconstructed state. No `certified`, `conformant`, or draft-status field
 is authored in a blueprint; availability is determined solely from a current
 certificate.
 
@@ -133,6 +133,19 @@ certification runs, but they need not be committed. Consequently,
 when a certificate includes local inputs. Later currentness requires relevant
 tracked inputs to be clean at current `HEAD`, but does not require current
 `HEAD` to equal the certificate's issuance commit.
+
+For version 6, these commit and freeze checks use one explicit evidence scope:
+the selected nodes and prerequisites, the certification basis, the semantic
+audit and signing authorities, the certification Voyage's machinery dependencies,
+and the declarations and registrations needed to resolve them. Unrelated tracked
+edits do not block certification or make a certificate stale. Complete graph
+validation and repository mechanical validators remain separate prerequisites.
+The Voyage binds this scope before dispatch; signing rechecks the same identity,
+including its membership, around certificate appends. Currentness uses the same
+scope for each node. Historical version-4/5 writers retain their original guards.
+Whole-graph requests also retain committed module markers, preventing a deleted
+independent module from silently disappearing before target selection. Explicit
+target requests do not impose this whole-graph inventory requirement.
 
 For a version-6 behavioral source, each explicit interface has a local hash
 covering its canonical declaration and selected input manifest. Unclaimed
@@ -222,6 +235,9 @@ for all other certification machinery: the node-input policy, certifier,
 schemas, hashing and safety implementation, checks, binding compilers, and
 machine evaluators. There is no separate policy, schema, or checker hash in the
 certificate. A change to any basis component changes this one digest.
+The basis includes repository runtime configuration, the certification Voyage, its support and report schemas,
+and Rutter execution sources and declarations; committing a change to this
+machinery therefore also invalidates certificates issued under the previous basis.
 
 Gateway-language, gateway-machine, runtime-dependency, and platform claims are
 audited for blueprint correctness through versioned entries in `checks`. The
@@ -369,8 +385,8 @@ remains semantically invalidating until the separate node/interface-only basis
 migration. Semantic audit instruction-body changes are the current localized
 case; basis-listed mechanical, gateway, blueprint, hashing, and view inputs
 remain global.
-After each repair the certifier discards the prior review snapshot, reloads the
-blueprint and graph, and reruns the checks. It then recomputes currentness,
+After a separate repair, a fresh Voyage reloads the blueprint and graph and
+reruns the checks. It recomputes currentness,
 skips nodes already current, route-smokes the remaining stale worklist, and
 issues those nodes dependency-first. Only after discrepancies are resolved does
 it reconstruct the manifest, node hash, dependencies, basis hash, and checks
@@ -381,8 +397,8 @@ caller-supplied certificate payload.
 
 ## Authority and security boundary
 
-`skill-certifier` is the sole supported writer for blueprint repair,
-certificate signing, and the append-only certificate log. `skill-drift` is
+`skill-certifier` is the sole supported writer for certificate signing
+and the append-only certificate log. `skill-drift` is
 read-only and verifies through the public-key path.
 No broker, service identity, second writer, or parallel signing route is
 introduced. Atomic no-follow writes, user-only permissions, history, and

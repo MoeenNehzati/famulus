@@ -14,14 +14,16 @@ import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from officina.certification.hashing import (
     CANONICAL_NODE_HASH_POLICY,
     CERTIFIER_CHECK_REGISTRY,
     CertificationHashError,
+    CertificationInputScope,
     NodeHashState,
     certification_facet_claims,
+    certification_input_scope,
     certification_target_postorder,
     compute_node_hash_states,
     compute_certification_basis_hash,
@@ -225,6 +227,7 @@ REQUIRED_CONTRACT_SECTIONS = (
 
 def certification_completeness_findings(
     graph: RepositoryBlueprintGraph,
+    node_ids: Sequence[str] | None = None,
 ) -> tuple[CompletenessFinding, ...]:
     """List missing signing disclosures in a repository graph.
 
@@ -255,7 +258,8 @@ def certification_completeness_findings(
     """
 
     findings: list[CompletenessFinding] = []
-    for node_id, node in sorted(graph.nodes.items()):
+    for node_id in sorted(graph.nodes if node_ids is None else set(node_ids)):
+        node = graph.nodes[node_id]
         description = node.declaration.get("description")
         if not isinstance(description, str) or not description.strip():
             findings.append(
@@ -2068,6 +2072,7 @@ class RepositoryEvidence:
     basis_hash: str
     basis_paths: tuple[Path, ...]
     certifier_identity: Mapping[str, object]
+    input_scope: CertificationInputScope | None = None
 
 
 class RepositoryEvidenceLoader:
@@ -2101,6 +2106,8 @@ class RepositoryEvidenceLoader:
         expected_schema_version: int,
         allow_non_atomic: bool,
         require_candidate_execution: bool,
+        target_node_ids: Sequence[str] | None = None,
+        scope_whole_graph: bool = False,
     ) -> None:
         """Initialize stable repository evidence derivation configuration.
 
@@ -2127,6 +2134,8 @@ class RepositoryEvidenceLoader:
         self._expected_schema_version = expected_schema_version
         self._allow_non_atomic = allow_non_atomic
         self._require_candidate_execution = require_candidate_execution
+        self._target_node_ids = target_node_ids
+        self._scope_whole_graph = scope_whole_graph
 
     def load(self) -> RepositoryEvidence:
         """Load and validate one complete repository evidence observation.
@@ -2144,6 +2153,10 @@ class RepositoryEvidenceLoader:
         - set graph = validated_repository_graph
         - set basis = certification_basis_paths_and_hash
         - set states = canonical_node_hash_states
+        - set scope = selected v6 evidence inputs or legacy whole repository
+        - set completeness = findings for contracts within scope
+        - if completeness:
+          - raise %.CertificationError(incomplete_contracts)
         - set identity = certifier_identity_from_states
         - return %.RepositoryEvidence(graph states basis identity)
 
@@ -2156,15 +2169,18 @@ class RepositoryEvidenceLoader:
         ._verify_executing_candidate_certifier:
           why:
             validates: "Checks candidate execution ownership after the complete state is derived."
+        .certification_completeness_findings:
+          why:
+            validates: "Checks completeness within the selected evidence scope."
+        officina.certification.hashing.certification_input_scope:
+          why:
+            computes: "Selects v6 evidence inputs before completeness and identity checks."
 
         InstantiationsFromRepo
         ----------------------
         officina.blueprints.graph.load_repository_blueprint_graph:
           why:
             constructs: "Produces the closed graph carried throughout the returned evidence."
-        .certification_completeness_findings:
-          why:
-            constructs: "Produces completeness findings inspected before hash evidence is accepted."
         officina.certification.hashing.resolve_certification_basis_paths:
           why:
             transforms: "Produces basis paths carried into hashing and returned evidence."
@@ -2200,14 +2216,6 @@ class RepositoryEvidenceLoader:
                     "private certificate writer accepts only a closed "
                     f"all-v{self._expected_schema_version} repository"
                 )
-            completeness = certification_completeness_findings(graph)
-            if completeness:
-                first = completeness[0]
-                raise CertificationError(
-                    f"v{self._expected_schema_version} certification completeness failed: "
-                    f"{first.subject_id}:{first.field} "
-                    f"({len(completeness)} finding(s))"
-                )
             basis_paths = resolve_certification_basis_paths(
                 self._repo_root,
                 expected_schema_version=self._expected_schema_version,
@@ -2226,6 +2234,28 @@ class RepositoryEvidenceLoader:
                 certification_basis_paths=basis_paths,
                 allow_non_atomic=self._allow_non_atomic,
             )
+            input_scope = (
+                certification_input_scope(
+                    graph, states, repo_root=self._repo_root,
+                    requested=self._target_node_ids,
+                    certification_basis_paths=basis_paths,
+                    whole_graph=self._scope_whole_graph,
+                )
+                if self._expected_schema_version == 6 and self._target_node_ids is not None
+                else None
+            )
+            completeness = (
+                certification_completeness_findings(graph)
+                if input_scope is None
+                else certification_completeness_findings(graph, input_scope.node_ids)
+            )
+            if completeness:
+                first = completeness[0]
+                raise CertificationError(
+                    f"v{self._expected_schema_version} certification completeness failed: "
+                    f"{first.subject_id}:{first.field} "
+                    f"({len(completeness)} finding(s))"
+                )
             certifier_identity = derive_certifier_identity(
                 graph,
                 states,
@@ -2245,6 +2275,7 @@ class RepositoryEvidenceLoader:
             basis_hash=basis_hash,
             basis_paths=basis_paths,
             certifier_identity=certifier_identity,
+            input_scope=input_scope,
         )
 
 
@@ -2275,6 +2306,7 @@ class RepositoryFreezeGuard:
         repo_root: Path,
         snapshot: GitSnapshot,
         allow_non_atomic: bool,
+        scoped: bool = False,
     ) -> None:
         """Initialize repository freeze state before its first observation.
 
@@ -2297,6 +2329,8 @@ class RepositoryFreezeGuard:
         self._repo_root = repo_root
         self._snapshot = snapshot
         self._allow_non_atomic = allow_non_atomic
+        self._scoped = scoped
+        self._scope_check: Callable[[], None] | None = None
         self._initial_untracked_records: set[bytes] = set()
         self._tracked_paths: tuple[Path, ...] = ()
         self._local_claims: dict[str, str] = {}
@@ -2351,18 +2385,21 @@ class RepositoryFreezeGuard:
         )
 
     def capture_initial_state(self) -> None:
-        """Record preexisting untracked files and reject tracked dirtiness.
+        """Require scoped input readiness or capture the legacy global baseline.
 
         Intent
         ------
-        Establish the exact untracked baseline tolerated during later certificate writes.
+        Require selected committed and local claims to be ready before work starts; legacy schemas retain the global untracked baseline.
 
         Rationale
         ---------
-        Generated outputs may be added, but unrelated preexisting files must neither appear nor disappear.
+        V6 readiness follows the certification evidence scope, while frozen legacy schemas retain their original repository-wide policy.
 
         Pseudocode
         ----------
+        - if scoped:
+          - set readiness = unchanged HEAD and ready tracked and local inputs
+          - return after enforcing readiness
         - set initial_records = validated_untracked_status_records
         - raise %.CertificationError(tracked_or_undecodable_status)
         - set guard_initial_state = initial_records
@@ -2371,6 +2408,12 @@ class RepositoryFreezeGuard:
         -----
         - none
 
+        CallsFromRepo
+        -------------
+        officina.git.provenance.snapshot_head_matches:
+          why:
+            validates: "Rejects a changed HEAD before scoped certification starts."
+
         InstantiationsFromRepo
         ----------------------
         .CertificationError:
@@ -2378,6 +2421,12 @@ class RepositoryFreezeGuard:
             raises: "Carries invalid initial repository state to the certification boundary."
         """
 
+        if self._scoped:
+            if not snapshot_head_matches(self._snapshot):
+                raise CertificationError("HEAD changed before certification")
+            self.require_ready_commit(self._snapshot, "before certification")
+            self.require_local_inputs("before certification")
+            return
         records: set[bytes] = set()
         for record in self._porcelain_status_records("before certification"):
             if not record.startswith(b"?? "):
@@ -2397,6 +2446,8 @@ class RepositoryFreezeGuard:
         self,
         tracked_paths: Sequence[Path],
         local_claims: Mapping[str, str],
+        *,
+        scope_check: Callable[[], None] | None = None,
     ) -> None:
         """Bind the complete tracked and local input set for later phases.
 
@@ -2419,6 +2470,7 @@ class RepositoryFreezeGuard:
 
         self._tracked_paths = tuple(tracked_paths)
         self._local_claims = dict(local_claims)
+        self._scope_check = scope_check
 
     def require_ready_commit(
         self,
@@ -2652,14 +2704,17 @@ class RepositoryFreezeGuard:
 
         Intent
         ------
-        Recheck status allowances, index identity, and every stored tracked byte and mode claim.
+        Recheck scoped membership, HEAD, index, bytes, modes, and local claims; legacy schemas retain global status allowances.
 
         Rationale
         ---------
-        No certificate may be appended across a repository mutation even between broader batch-boundary checks.
+        No certificate may be appended across a mutation of its evidence scope, even between broader batch-boundary checks.
 
         Pseudocode
         ----------
+        - if scoped:
+          - set readiness = unchanged HEAD scope membership and ready inputs
+          - return after enforcing readiness
         - set status = phase_status_records
         - set index = reviewed_commit_index_comparison
         - set observed_claims = current_tracked_hashes_and_modes
@@ -2674,6 +2729,9 @@ class RepositoryFreezeGuard:
         ._hash_bytes:
           why:
             computes: "Compares current tracked bytes with stored digest claims."
+        officina.git.provenance.snapshot_head_matches:
+          why:
+            validates: "Rejects HEAD drift around each scoped append."
 
         InstantiationsFromRepo
         ----------------------
@@ -2690,6 +2748,14 @@ class RepositoryFreezeGuard:
 
         if self._public_key_relative is None:
             raise CertificationError("certificate public-key root is outside repository")
+        if self._scoped:
+            if not snapshot_head_matches(self._snapshot):
+                raise CertificationError(f"HEAD changed {phase}")
+            if self._scope_check is not None:
+                self._scope_check()
+            self.require_ready_commit(self._snapshot, phase)
+            self.require_local_inputs(phase)
+            return
         current_preexisting_records: set[bytes] = set()
         for record in self._porcelain_status_records(phase):
             if not record:
@@ -3347,6 +3413,9 @@ def _certify_repository(
     schema_root: Path | None = None,
     exact_target: bool = False,
     expected_audited_inputs: Mapping[str, object] | None = None,
+    scope_target_node_ids: Sequence[str] | None = None,
+    expected_scope_identity: str | None = None,
+    scope_whole_graph: bool = False,
 ) -> CertificationResult:
     """Issue signed certificates for selected repository nodes.
 
@@ -3472,8 +3541,10 @@ def _certify_repository(
         repo_root=root,
         snapshot=snapshot,
         allow_non_atomic=allow_non_atomic,
+        scoped=expected_schema_version == 6,
     )
-    freeze_guard.capture_initial_state()
+    if expected_schema_version != 6:
+        freeze_guard.capture_initial_state()
 
     mechanical_commit: str | None = None
     if require_migration_review:
@@ -3502,6 +3573,8 @@ def _certify_repository(
         expected_schema_version=expected_schema_version,
         allow_non_atomic=allow_non_atomic,
         require_candidate_execution=require_candidate_execution,
+        target_node_ids=scope_target_node_ids if scope_target_node_ids is not None else target_node_ids,
+        scope_whole_graph=scope_whole_graph,
     )
     evidence = evidence_loader.load()
     graph = evidence.graph
@@ -3509,6 +3582,14 @@ def _certify_repository(
     basis_hash = evidence.basis_hash
     basis_paths = evidence.basis_paths
     certifier_identity = evidence.certifier_identity
+    if scope_target_node_ids is not None and not set(target_node_ids) <= set(
+        certification_target_postorder(graph, states, scope_target_node_ids)
+    ):
+        raise CertificationError("signing targets are outside the reviewed target closure")
+    if expected_scope_identity is not None and (
+        evidence.input_scope is None or evidence.input_scope.identity != expected_scope_identity
+    ):
+        raise CertificationError("certification input scope changed before signer entry")
     if expected_audited_inputs is not None:
         if set(expected_audited_inputs) != set(target_node_ids):
             raise CertificationError("audited inputs must cover the exact targets")
@@ -3518,6 +3599,18 @@ def _certify_repository(
                 raise CertificationError(
                     f"audited inputs changed before signer entry: {node_id}"
                 )
+    if evidence.input_scope is not None:
+        def require_unchanged_scope() -> None:
+            """Reject changes to the evidence set bound before issuance."""
+            current = evidence_loader.load()
+            if current.input_scope is None or current.input_scope.identity != evidence.input_scope.identity:
+                raise CertificationError("certification input scope changed during certification")
+
+        freeze_guard.configure_inputs(
+            evidence.input_scope.tracked_paths, evidence.input_scope.local_claims,
+            scope_check=require_unchanged_scope,
+        )
+        freeze_guard.capture_initial_state()
     if mechanical_commit is not None:
         _validate_semantic_attestation(
             root,
@@ -3602,22 +3695,23 @@ def _certify_repository(
         )
         route_auditor.require_stable_dependencies()
 
-    tracked_paths: set[Path] = {
-        root / repository_relative_path(path, root)
-        for path in (
-            *basis_paths,
-            *(node.blueprint_path for node in graph.nodes.values()),
-        )
-    }
-    local_claims: dict[str, str] = {}
-    for state in states.values():
-        for entry in state.input_manifest:
-            path = root / entry["path"]
-            if entry["git_provenance"] == "tracked":
-                tracked_paths.add(path)
-            else:
-                local_claims[entry["path"]] = entry["digest"]
-    ordered_tracked_paths = tuple(sorted(tracked_paths))
+    if evidence.input_scope is None:
+        tracked_paths: set[Path] = {
+            root / repository_relative_path(path, root)
+            for path in (
+                *basis_paths,
+                *(node.blueprint_path for node in graph.nodes.values()),
+            )
+        }
+        local_claims: dict[str, str] = {}
+        for state in states.values():
+            for entry in state.input_manifest:
+                path = root / entry["path"]
+                if entry["git_provenance"] == "tracked":
+                    tracked_paths.add(path)
+                else:
+                    local_claims[entry["path"]] = entry["digest"]
+        freeze_guard.configure_inputs(tuple(sorted(tracked_paths)), local_claims)
     pooled_review_relatives = {
         repository_relative_path(
             pooled_review_path(node.module_root),
@@ -3627,7 +3721,6 @@ def _certify_repository(
         if node.node_type == "module"
     }
 
-    freeze_guard.configure_inputs(ordered_tracked_paths, local_claims)
     freeze_guard.require_ready_commit(snapshot, "before certification")
     freeze_guard.require_local_inputs("before certification")
     freeze_guard.capture_tracked_inputs()
@@ -3680,7 +3773,11 @@ def _certify_repository(
     freeze_guard.require_ready_commit(final_snapshot, "after certification")
     freeze_guard.require_local_inputs("after certification")
     final_evidence = evidence_loader.load()
-    if final_evidence != evidence:
+    if (
+        final_evidence != evidence if evidence.input_scope is None
+        else final_evidence.input_scope is None
+        or final_evidence.input_scope.identity != evidence.input_scope.identity
+    ):
         raise CertificationError(
             "graph, dependency, basis, or local input changed during certification"
         )
@@ -4250,6 +4347,7 @@ def certify(
         require_migration_review=False,
         expected_schema_version=6,
         schema_root=repository / "references" / "blueprint-schema",
+        scope_whole_graph=not targets,
     )
     written = set(result.node_ids)
     current = set(result.current_node_ids)
@@ -4309,6 +4407,9 @@ def certify_exact_node(
     reviewed_repository: Path,
     reviewed_commit: str,
     expected_audited_inputs: Mapping[str, object],
+    scope_target_node_ids: Sequence[str] | None = None,
+    expected_scope_identity: str | None = None,
+    scope_whole_graph: bool = False,
     timestamp: str | None = None,
     allow_non_atomic: bool = False,
 ) -> tuple[list[CommandResult], NodeCertificationOutcome]:
@@ -4370,6 +4471,9 @@ def certify_exact_node(
         schema_root=repository / "references" / "blueprint-schema",
         exact_target=True,
         expected_audited_inputs={node_id: dict(expected_audited_inputs)},
+        scope_target_node_ids=scope_target_node_ids,
+        expected_scope_identity=expected_scope_identity,
+        scope_whole_graph=scope_whole_graph,
     )
     if node_id in result.node_ids:
         status = "certificate-issued"

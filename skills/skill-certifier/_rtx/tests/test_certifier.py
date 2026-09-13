@@ -341,6 +341,77 @@ def _as_current_graph(graph):
     )
 
 
+def _scoped_writer_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Inject graph derivation while keeping Git, scoped guards and signing real."""
+    legacy, states, commit = create_repository_fixture(tmp_path, extra_modules=("unrelated-skill",))
+    graph = _as_current_graph(legacy)
+    basis = certifier.resolve_certification_basis_paths(tmp_path, expected_schema_version=4)
+    identity = certifier.derive_certifier_identity(legacy, states, commit)
+    monkeypatch.setattr(certifier, "load_repository_blueprint_graph", lambda *_a, **_k: graph)
+    monkeypatch.setattr(certifier, "compute_node_hash_states", lambda *_a, **_k: states)
+    monkeypatch.setattr(certifier, "resolve_certification_basis_paths", lambda *_a, **_k: basis)
+    monkeypatch.setattr(certifier, "compute_certification_basis_hash", lambda *_a, **_k: states["demo-skill"].certification_basis_hash)
+    monkeypatch.setattr(certifier, "derive_certifier_identity", lambda *_a, **_k: identity)
+    return graph, states, commit
+
+
+def _certify_scoped(tmp_path: Path, **kwargs):
+    return _certify(
+        tmp_path, target_node_ids=("demo-skill.source.gateway",), exact_target=True,
+        expected_schema_version=6, require_migration_review=False,
+        schema_root=SRC_ROOT.parent / "references/blueprint-schema", **kwargs,
+    )
+
+
+def test_scoped_writer_ignores_unrelated_dirt_and_incomplete_contract(tmp_path, monkeypatch):
+    graph, states, commit = _scoped_writer_fixture(tmp_path, monkeypatch)
+    unrelated = graph.nodes["unrelated-skill.source.gateway"]
+    unrelated.declaration["interfaces"]["unrelated-skill.source.gateway.interface.run"].pop("contract")
+    unrelated.gateway_path.write_text("unrelated pending edit\n")
+    GitTestRepository(tmp_path).git("add", str(unrelated.gateway_path))
+    before = unrelated.gateway_path.read_bytes()
+    result = _certify_scoped(tmp_path)
+    target = "demo-skill.source.gateway"
+    assert result.node_ids == (target,)
+    assert unrelated.gateway_path.read_bytes() == before
+    report = certifier.evaluate_certificate_currentness(
+        graph, states, repo_root=tmp_path, public_key_root=tmp_path / "public-keys",
+        source_commit=commit, certifier_identity=certifier.derive_certifier_identity(graph, states, commit),
+        certification_basis_paths=certifier.resolve_certification_basis_paths(tmp_path),
+        checks_by_node={key: certifier.expected_certifier_checks(6) for key in graph.nodes},
+        schema_root=SRC_ROOT.parent / "references/blueprint-schema",
+    )
+    assert report.nodes[target].current, report.nodes[target].concerns
+
+
+@pytest.mark.parametrize("race", ("target", "authority", "index", "membership", "unrelated", "entry-scope"))
+def test_scoped_writer_preserves_relevant_append_guards(tmp_path, monkeypatch, race):
+    graph, states, _commit = _scoped_writer_fixture(tmp_path, monkeypatch)
+    target = "demo-skill.source.gateway"
+
+    def mutate(_node_id):
+        if race == "membership":
+            states[target] = replace(states[target], dependency_hashes=(*states[target].dependency_hashes, {
+                "relation": "scope-test", "target": "unrelated-skill.source.gateway", "version": 1,
+                "node_hash": states["unrelated-skill.source.gateway"].node_hash,
+            }))
+        elif race == "index":
+            GitTestRepository(tmp_path).git("update-index", "--chmod=+x", str(graph.nodes[target].gateway_path))
+        else:
+            node_id = {"target": target, "authority": "skill-certifier", "unrelated": "unrelated-skill.source.gateway"}[race]
+            graph.nodes[node_id].gateway_path.write_text("changed during append\n")
+
+    if race == "unrelated":
+        assert _certify_scoped(tmp_path, before_append=mutate).node_ids == (target,)
+    else:
+        with pytest.raises(certifier.CertificationError, match="changed"):
+            _certify_scoped(
+                tmp_path, before_append=mutate,
+                expected_scope_identity="stale-scope" if race == "entry-scope" else None,
+            )
+        assert not certifier.certificate_log_path(graph.nodes[target]).exists()
+
+
 def test_live_certification_provisions_missing_canonical_key_root(
     tmp_path: Path,
 ) -> None:
@@ -2204,6 +2275,7 @@ def test_public_certification_resolves_one_target_without_hash_dispatch(
     assert calls[0]["repo_root"] == tmp_path.resolve()
     assert calls[0]["allow_non_atomic"] is False
     assert calls[0]["expected_schema_version"] == 6
+    assert calls[0]["scope_whole_graph"] is False
     assert calls[0]["schema_root"] == tmp_path / "references" / "blueprint-schema"
     assert set(calls[0]["target_node_ids"]) == {
         node_id
@@ -2262,10 +2334,16 @@ def test_public_exact_node_certification_never_expands_the_selected_source(
         reviewed_repository=tmp_path,
         reviewed_commit=commit,
         expected_audited_inputs=certifier.audited_inputs(_states[source_id]),
+        scope_target_node_ids=tuple(graph.nodes),
+        expected_scope_identity="reviewed-whole-graph-scope",
+        scope_whole_graph=True,
     )
 
     assert calls[0]["target_node_ids"] == (source_id,)
     assert calls[0]["exact_target"] is True
+    assert calls[0]["scope_target_node_ids"] == tuple(graph.nodes)
+    assert calls[0]["expected_scope_identity"] == "reviewed-whole-graph-scope"
+    assert calls[0]["scope_whole_graph"] is True
     assert calls[0]["expected_audited_inputs"] == {
         source_id: certifier.audited_inputs(_states[source_id])
     }
@@ -2409,6 +2487,7 @@ def test_public_certification_without_targets_selects_all_reviewed_modules(
     assert {outcome.module for outcome in outcomes} == set(expected_modules)
     assert {outcome.source for outcome in outcomes} == {"reviewed-repository"}
     assert calls[0]["target_node_ids"] == tuple(sorted(graph.nodes))
+    assert calls[0]["scope_whole_graph"] is True
 
 
 def test_reviewed_target_resolution_is_exact_deduplicated_and_fail_closed(

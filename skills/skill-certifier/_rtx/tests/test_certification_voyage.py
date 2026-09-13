@@ -74,13 +74,15 @@ def _run(tmp_path, monkeypatch, capacity=2):
     def sign(**kwargs):
         target = kwargs["node_id"]
         assert kwargs["expected_audited_inputs"] == support.certifier.audited_inputs(states[target])
+        assert kwargs["expected_scope_identity"] == "scope"
+        assert "module" in kwargs["scope_target_node_ids"]
         assert target != "module" or statuses["source"].current
         signed.append(target)
         statuses[target] = replace(statuses[target], current=True, concerns=())
         return [], SimpleNamespace(status="certificate-issued")
 
     monkeypatch.setattr(support, "observe", lambda _root: observed)
-    monkeypatch.setattr(support, "_ready_inputs", lambda *_args: None)
+    monkeypatch.setattr(support, "_ready_inputs", lambda *_args: SimpleNamespace(identity="scope"))
     monkeypatch.setattr(support.certifier, "certify_exact_node", sign)
     charter = support.make_charter(tmp_path, ["module"], capacity, "run-one")
     registry = RutterRegistry({"certification": CERTIFICATION_RUTTER}, tmp_path)
@@ -203,6 +205,17 @@ def test_drift_after_worker_completion_fails_without_signing(tmp_path, monkeypat
     terminal = _submit(voyage, message, _event(packet))
     assert terminal.status.terminal_result.outcome == "failed"
     assert "audited inputs changed" in terminal.status.terminal_result.value["reason"]
+    assert signed == []
+
+
+def test_authority_scope_drift_after_worker_completion_fails_without_signing(tmp_path, monkeypatch):
+    voyage, _observed, signed = _run(tmp_path, monkeypatch)
+    message = voyage.next()
+    packet = _payload(message)["packets"][0]
+    monkeypatch.setattr(support, "_ready_inputs", lambda *_args: SimpleNamespace(identity="changed"))
+    terminal = _submit(voyage, message, _event(packet))
+    assert terminal.status.terminal_result.outcome == "failed"
+    assert "certification scope changed" in terminal.status.terminal_result.value["reason"]
     assert signed == []
 
 

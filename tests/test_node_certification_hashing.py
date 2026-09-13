@@ -430,6 +430,96 @@ def test_v6_postorder_covers_structural_children_and_cross_source_audits(tmp_pat
                 assert provider == owner or order.index(provider) < order.index(owner)
 
 
+def test_v6_input_scope_tracks_dependencies_and_registration_without_unrelated_sources(tmp_path: Path) -> None:
+    root, policy = _v6_repository(tmp_path)
+    _write_module(root, "unrelated-skill", schema_version=6)
+    repository = GitTestRepository(root)
+    repository.git("add", ".")
+    repository.git("commit", "-qm", "unrelated module")
+
+    def scope():
+        graph = load_repository_blueprint_graph(
+            root, schema_root=CANONICAL_SCHEMA_ROOT, expected_schema_version=6,
+        )
+        return certification_hashing.certification_input_scope(
+            graph, _v6_states(root, policy), repo_root=root,
+            requested=("consumer-skill.source.gateway",), certification_basis_paths=(policy,),
+        )
+
+    initial = scope()
+    assert set(initial.node_ids) == {"consumer-skill.source.gateway", "provider-skill.source.gateway"}
+    assert policy in initial.tracked_paths
+    assert root / "skills/provider-skill/blueprint.yaml" in initial.tracked_paths
+    assert root / "skills/consumer-skill/blueprint.yaml" in initial.tracked_paths
+    assert root / "skills/consumer-skill/README.md" not in initial.tracked_paths
+    assert not any("unrelated-skill" in path.parts for path in initial.tracked_paths)
+
+    graph = load_repository_blueprint_graph(
+        root, schema_root=CANONICAL_SCHEMA_ROOT, expected_schema_version=6,
+    )
+    states = _v6_states(root, policy)
+    target = "consumer-skill.source.gateway"
+    states[target] = replace(states[target], dependency_hashes=(
+        *states[target].dependency_hashes,
+        {"relation": "certified-under", "target": "unrelated-skill.source.gateway", "version": 1},
+    ))
+    authority_scope = certification_hashing.certification_input_scope(
+        graph, states, repo_root=root, requested=(target,), certification_basis_paths=(policy,),
+    )
+    assert "unrelated-skill.source.gateway" not in certification_target_postorder(graph, states, (target,))
+    assert "unrelated-skill.source.gateway" in authority_scope.node_ids
+
+    unrelated = root / "skills/unrelated-skill/blueprint.yaml"
+    declaration = yaml.safe_load(unrelated.read_text())
+    declaration["description"] = "Unrelated work in progress."
+    _write_yaml(unrelated, declaration)
+    assert scope().identity == initial.identity
+
+    owner = root / "skills/consumer-skill/blueprint.yaml"
+    declaration = yaml.safe_load(owner.read_text())
+    declaration["description"] = "Changed owning registration metadata."
+    _write_yaml(owner, declaration)
+    metadata_changed = scope()
+    assert metadata_changed.node_ids == initial.node_ids
+    assert metadata_changed.identity != initial.identity
+
+    source = root / "skills/consumer-skill/blueprints/gateway.yaml"
+    declaration = yaml.safe_load(source.read_text())
+    declaration["uses_interfaces"].append({"interface": "unrelated-skill.interface.run", "version": 1})
+    _write_yaml(source, declaration)
+    expanded = scope()
+    assert "unrelated-skill.source.gateway" in expanded.node_ids
+    assert unrelated in expanded.tracked_paths
+    assert expanded.identity != metadata_changed.identity
+
+
+def test_v6_whole_graph_scope_retains_deleted_committed_root_markers(tmp_path: Path) -> None:
+    root, policy = _v6_repository(tmp_path)
+    _write_module(root, "independent-skill", schema_version=6)
+    repository = GitTestRepository(root)
+    repository.git("add", ".")
+    repository.git("commit", "-qm", "independent root")
+    shutil.rmtree(root / "skills/independent-skill")
+    graph = load_repository_blueprint_graph(
+        root, schema_root=CANONICAL_SCHEMA_ROOT, expected_schema_version=6,
+    )
+    states = _v6_states(root, policy)
+    selected = certification_hashing.certification_input_scope(
+        graph, states, repo_root=root, requested=("consumer-skill.source.gateway",),
+        certification_basis_paths=(policy,),
+    )
+    whole = certification_hashing.certification_input_scope(
+        graph, states, repo_root=root, requested=tuple(graph.nodes),
+        certification_basis_paths=(policy,), whole_graph=True,
+    )
+    deleted = root / "skills/independent-skill/blueprint.yaml"
+    assert deleted not in selected.tracked_paths
+    assert deleted in whole.tracked_paths
+    snapshot = git_provenance.capture_git_snapshot(root)
+    assert git_provenance.check_commit_readiness(snapshot, selected.tracked_paths, {}).stamp_worthy
+    assert not git_provenance.check_commit_readiness(snapshot, whole.tracked_paths, {}).stamp_worthy
+
+
 def test_v5_hashes_record_static_route_and_facade_edges_without_containment(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
