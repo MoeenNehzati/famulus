@@ -396,7 +396,11 @@ def _manager_call(caller: str, operation: str, arguments: list[str]) -> dict[str
     if not isinstance(payload, dict):
         entry_id = "D56" if result.returncode != 0 else "D57"
         raise DispatcherError.from_spec(entry_id, operation=operation)
-    return _validate_manager_response(payload, operation, result.returncode)
+    try:
+        return _validate_manager_response(payload, operation, result.returncode)
+    except DispatcherError as exc:
+        exc._manager_returncode = result.returncode
+        raise
 
 
 def _original(caller: str, interface: str, version: int) -> dict[str, object]:
@@ -843,18 +847,49 @@ def _ordinary_preflight(
 ) -> dict[str, object] | None:
     """Return a redacted refusal, or ``None`` when launch is authorized."""
 
-    status = _manager_call(caller, "status", [interface]) if status is None else status
+    original = _original(caller, interface, version)
+    ready = {
+        "schema_version": 1,
+        "flow_id": None,
+        "operation": "authorize",
+        "state": "ready",
+        "current_step": None,
+        "original": original,
+        "resume_original": True,
+    }
+
+    def authorize(*, allow_decline: bool) -> dict[str, Any] | None:
+        try:
+            return _manager_call(
+                caller, "authorize", [interface, caller, interface, str(version)]
+            )
+        except DispatcherError as exc:
+            if (
+                allow_decline
+                and getattr(exc, "_entry_id", None) == "D64"
+                and getattr(exc, "_manager_returncode", None) == 2
+                and exc.as_payload().get("setup_error_code")
+                in {"setup.target_not_ready", "setup.flow_busy"}
+            ):
+                return None
+            raise
+
+    declined = False
+    if status is None:
+        authorized = authorize(allow_decline=True)
+        if authorized is not None:
+            if authorized == ready:
+                return None
+            raise DispatcherError.from_spec("D60")
+        status = _manager_call(caller, "status", [interface])
+        declined = True
+
     code = status.get("code")
-    if code == "unmanaged":
-        return None
-    if code == "ready":
-        authorized = _manager_call(
-            caller, "authorize", [interface, caller, interface, str(version)]
-        )
-        if (
-            authorized.get("state") == "ready"
-            and authorized.get("resume_original") is True
-        ):
+    if code in {"ready", "unmanaged"}:
+        if code == "unmanaged" and not declined:
+            return None
+        authorized = authorize(allow_decline=declined)
+        if authorized == ready:
             return None
         raise DispatcherError.from_spec("D60")
     if code == "setup_required":
@@ -886,7 +921,6 @@ def _ordinary_preflight(
                     caller,
                     interface,
                     version,
-                    _manager_call(caller, "status", [interface]),
                     recover_stale=False,
                 )
         if owner is None:

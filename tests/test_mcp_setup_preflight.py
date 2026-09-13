@@ -50,6 +50,19 @@ def _arguments(server, *, secret: str = "original-secret"):
     )
 
 
+def _authorize_decline(server, caller: str, interface: str, *, busy: bool = False):
+    error = DispatcherError.from_spec(
+        "D64", operation="authorize",
+        setup_error=(
+            "Another managed setup flow became active before authorization completed."
+            if busy else "The target requires setup before it can be authorized."
+        ),
+        setup_error_code="setup.flow_busy" if busy else "setup.target_not_ready",
+    )
+    error._manager_returncode = 2
+    return error
+
+
 def _without_trace(result: dict[str, object]) -> dict[str, object]:
     trace_id = result.pop("trace_id")
     assert isinstance(trace_id, str) and len(trace_id) == 32
@@ -295,20 +308,17 @@ def test_pending_child_target_returns_pop_ordered_suffix_and_redacted_begin(
         managed=True,
         interface="root.child.interface.run",
     )
-    monkeypatch.setattr(
-        server,
-        "_manager_call",
-        lambda _caller, operation, _arguments: (
-            events.append(operation)
-            or {
-                "schema_version": 1,
-                "code": "setup_required",
-                "root_setup_interface": "root.interface.setup",
-                "pending_stack": pending_stack,
-                "flow_id": None,
-            }
-        ),
-    )
+    def manager_call(_caller, operation, _arguments):
+        events.append(operation)
+        if operation == "authorize":
+            raise _authorize_decline(server, "root", "root.child.interface.run")
+        return {
+            "schema_version": 1, "code": "setup_required",
+            "root_setup_interface": "root.interface.setup",
+            "pending_stack": pending_stack, "flow_id": None,
+        }
+
+    monkeypatch.setattr(server, "_manager_call", manager_call)
     monkeypatch.setattr(
         server,
         "materialize_authorized_invocation",
@@ -341,7 +351,7 @@ def test_pending_child_target_returns_pop_ordered_suffix_and_redacted_begin(
         },
     }
     assert result["manager"]["arguments"]["positionals"][:5] == ["setup", "root.interface.setup", "root", "root.child.interface.run", "1"]
-    assert events == ["authorize", "status"]
+    assert events == ["authorize", "authorize", "status"]
     assert "original-secret" not in json.dumps(result, sort_keys=True)
 
 
@@ -353,6 +363,8 @@ def test_busy_refusal_identifies_owner_and_recovery_route(
     _install_authorized_path(server, monkeypatch, events, managed=True)
     def manager_call(_caller, operation, _arguments):
         events.append(operation)
+        if operation == "authorize":
+            raise _authorize_decline(server, "root", "root.interface.run", busy=True)
         if operation == "recover-busy":
             raise DispatcherError.from_spec(
                 "D64",
@@ -391,7 +403,7 @@ def test_busy_refusal_identifies_owner_and_recovery_route(
             "arguments": {"positionals": ["flow-7"], "options": {}, "stdin": None},
         },
     }
-    assert events == ["authorize", "status", "recover-busy"]
+    assert events == ["authorize", "authorize", "status", "recover-busy"]
     assert "original-secret" not in json.dumps(result, sort_keys=True)
 
 
@@ -421,12 +433,74 @@ def test_stale_busy_flow_recovers_and_rechecks_once(
                 "pending_stack": [],
                 "flow_id": None,
             }
-        return {"state": "ready", "resume_original": True}
+        return {
+            "schema_version": 1, "flow_id": None, "operation": "authorize",
+            "state": "ready", "current_step": None,
+            "original": {"caller": "root", "interface": "root.interface.run", "version": 1},
+            "resume_original": True,
+        }
 
     monkeypatch.setattr(server, "_manager_call", manager_call)
 
     assert server._ordinary_preflight("root", "root.interface.run", 1, busy) is None
-    assert events == ["recover-busy", "status", "authorize"]
+    assert events == ["recover-busy", "authorize"]
+
+
+@pytest.mark.parametrize("returncode", [2, 64])
+def test_authorize_decline_rechecks_only_exit_two(
+    server, monkeypatch: pytest.MonkeyPatch, returncode: int,
+) -> None:
+    events: list[str] = []
+    ready = {
+        "schema_version": 1, "flow_id": None, "operation": "authorize",
+        "state": "ready", "current_step": None,
+        "original": {"caller": "root", "interface": "root.interface.run", "version": 1},
+        "resume_original": True,
+    }
+
+    def manager_call(_caller, operation, _arguments):
+        events.append(operation)
+        if operation == "status":
+            return {
+                "schema_version": 1, "code": "ready",
+                "root_setup_interface": "root.interface.setup",
+                "pending_stack": [], "flow_id": None,
+            }
+        if len(events) == 1:
+            error = _authorize_decline(server, "root", "root.interface.run")
+            error._manager_returncode = returncode
+            raise error
+        return ready
+
+    monkeypatch.setattr(server, "_manager_call", manager_call)
+    if returncode == 2:
+        assert server._ordinary_preflight("root", "root.interface.run", 1) is None
+        assert events == ["authorize", "status", "authorize"]
+    else:
+        with pytest.raises(DispatcherError):
+            server._ordinary_preflight("root", "root.interface.run", 1)
+        assert events == ["authorize"]
+
+
+def test_authorize_decline_does_not_accept_a_second_decline(
+    server, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+
+    def manager_call(_caller, operation, _arguments):
+        events.append(operation)
+        if operation == "status":
+            return {
+                "schema_version": 1, "code": "ready",
+                "root_setup_interface": "root.interface.setup",
+                "pending_stack": [], "flow_id": None,
+            }
+        raise _authorize_decline(server, "root", "root.interface.run")
+
+    monkeypatch.setattr(server, "_manager_call", manager_call)
+    with pytest.raises(DispatcherError, match="did not confirm"):
+        server._ordinary_preflight("root", "root.interface.run", 1)
+    assert events == ["authorize", "status", "authorize"]
 
 
 def test_busy_validation_error_is_returned_by_mcp(
@@ -455,7 +529,7 @@ def test_busy_validation_error_is_returned_by_mcp(
 
     assert result["exit_code"] == 2
     assert result["dispatcher"] == DispatcherError.from_spec("D62").as_payload()
-    assert events == ["authorize", "status"]
+    assert events == ["authorize", "authorize"]
 
 
 def test_real_manager_nonzero_status_is_a_redacted_refusal(
@@ -484,6 +558,32 @@ def test_real_manager_nonzero_status_is_a_redacted_refusal(
     assert caught.value.as_payload()["code"] == "dispatcher.manager_operation_failed"
     assert caught.value.as_payload()["setup_error_code"] == "setup.ledger_invalid"
     assert secret not in str(caught.value)
+
+
+@pytest.mark.parametrize("returncode", [2, 64])
+def test_manager_authorize_decline_keeps_its_exit_code(
+    server, monkeypatch: pytest.MonkeyPatch, returncode: int,
+) -> None:
+    payload = {
+        "schema_version": 1, "flow_id": None, "operation": "authorize",
+        "state": "failed",
+        "current_step": {
+            "interface": "root.interface.setup", "version": 1,
+            "kind": "python", "action": "run-setup",
+        },
+        "original": {"caller": "root", "interface": "root.interface.run", "version": 1},
+        "resume_original": False,
+        "error_code": "setup.target_not_ready",
+        "error": "The target requires setup before it can be authorized.",
+    }
+    _install_manager_process(
+        server, monkeypatch, returncode=returncode, stdout=json.dumps(payload),
+    )
+    with pytest.raises(DispatcherError) as caught:
+        server._manager_call(
+            "root", "authorize", ["root.interface.run", "root", "root.interface.run", "1"]
+        )
+    assert getattr(caught.value, "_manager_returncode", None) == returncode
 
 
 @pytest.mark.parametrize(
@@ -1654,7 +1754,6 @@ def test_managed_ready_authorizes_atomically_before_compile_and_launch(
     assert result["exit_code"] == 0
     assert events == [
         "authorize",
-        "status",
         "manager-authorize",
         "compile",
         "launch",
@@ -1721,11 +1820,10 @@ def test_generic_setup_words_do_not_activate_lifecycle_redirection(
         lambda _caller, operation, _arguments: (
             events.append(operation)
             or {
-                "schema_version": 1,
-                "code": "unmanaged",
-                "root_setup_interface": None,
-                "pending_stack": [],
-                "flow_id": None,
+                "schema_version": 1, "flow_id": None, "operation": "authorize",
+                "state": "ready", "current_step": None,
+                "original": {"caller": "root", "interface": "root.interface.run", "version": 1},
+                "resume_original": True,
             }
         ),
     )
@@ -1741,7 +1839,7 @@ def test_generic_setup_words_do_not_activate_lifecycle_redirection(
     result = server.invoke("root", "root.interface.run", 1, arguments)
 
     assert result["stdout"] == "ordinary\n"
-    assert events == ["authorize", "status", "compile"]
+    assert events == ["authorize", "authorize", "compile"]
 
 
 def test_setup_flow_id_with_dry_run_is_rejected(server, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2074,6 +2172,8 @@ def test_setup_flow_id_absent_retains_ordinary_preflight_behavior(
 
     def manager_call(_caller: str, operation: str, _arguments: list[str]):
         events.append(operation)
+        if operation == "authorize":
+            raise _authorize_decline(server, "root", "root.interface.run", busy=True)
         return {
             "schema_version": 1,
             "code": "setup_busy",
@@ -2105,4 +2205,4 @@ def test_setup_flow_id_absent_retains_ordinary_preflight_behavior(
             "arguments": {"positionals": ["flow-7"], "options": {"--force": True}, "stdin": None},
         },
     }
-    assert events == ["authorize", "status"]
+    assert events == ["authorize", "authorize", "status"]
