@@ -5,6 +5,7 @@ import asyncio
 import json
 import os
 from pathlib import Path
+import shutil
 import sys
 import tempfile
 import tomllib
@@ -16,7 +17,7 @@ PLUGIN = "famulus@nullkit"
 async def restore_codex(value):
     # Let Codex edit its own TOML, preserving unrelated settings and comments.
     process = await asyncio.create_subprocess_exec(
-        "codex", "app-server", "--stdio",
+        shutil.which("codex") or "codex", "app-server", "--stdio",
         stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL,
     )
