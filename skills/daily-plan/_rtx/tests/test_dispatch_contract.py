@@ -75,3 +75,14 @@ def test_run_dispatcher_still_rejects_an_undeclared_target(recording):
         _day_model.run_dispatcher("cloud-files", "no-such-interface")
 
     assert recording.keys == []
+
+
+def test_run_dispatcher_marks_missing_cloud_files_without_masking_other_failures(recording):
+    recording.dispatch = lambda *_args, **_kwargs: types.SimpleNamespace(
+        returncode=1, stdout="", stderr="plans/2026-08-11.md\n"
+    )
+
+    with pytest.raises(_day_model.PlanNotFound) as raised:
+        _day_model.run_dispatcher("cloud-files", "plans-read", "plans/2026-08-11.md")
+
+    assert raised.value.path == "plans/2026-08-11.md"

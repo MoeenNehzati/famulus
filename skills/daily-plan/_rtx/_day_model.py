@@ -16,8 +16,9 @@ Mutation commands fall into two groups:
 - plan-local only: `hide`, `show`, `keep`, `remove`, `add`
 - master-list backed: `mark-done`, `reject`, `set-deadline`
 
-After every mutation or refresh, this module rewrites both the metadata file
-and the rendered plan so the stored plan remains human-readable and current.
+Every refresh reads the stored plan, metadata, and current master lists from
+Drive. It rewrites metadata or plan files only when their bytes changed, while
+still recording a successful refresh for the scheduled-job contract.
 """
 from __future__ import annotations
 
@@ -54,6 +55,14 @@ SECTION_SPECS = {
 
 class PlanError(Exception):
     pass
+
+
+class PlanNotFound(PlanError):
+    """A missing cloud artifact, distinct from transport or authorization failure."""
+
+    def __init__(self, path: str):
+        self.path = path
+        super().__init__(f"plan file not found: {path}")
 
 
 DISPATCHES = {
@@ -152,6 +161,8 @@ def run_dispatcher(target_skill: str, script_interface: str, *args: str, stdin: 
         raise PlanError(f"Failed to invoke {target_skill}:{script_interface}: {exc}") from exc
     if result.returncode != 0:
         stderr = result.stderr.strip() or result.stdout.strip()
+        if target_skill == "cloud-files" and stderr == (args[0] if args else ""):
+            raise PlanNotFound(args[0])
         raise PlanError(f"dispatcher failed for {target_skill}:{script_interface}: {stderr}")
     return result.stdout
 
@@ -451,16 +462,33 @@ def refresh_rendered_plan(
     plan_text: str | None = None,
     meta: dict[str, list[list[str]]] | None = None,
 ) -> str:
-    current_plan = read_plan_text(date_key) if plan_text is None else plan_text
-    current_meta = read_meta(date_key) if meta is None else meta
-    docs = {spec["list"]: load_list_doc(spec["list"]) for spec in SECTION_SPECS.values()}
+    # The inputs must be fresh, but their independent Drive reads need not be serial.
+    tasks = {
+        "plan": (lambda: read_plan_text(date_key)) if plan_text is None else lambda: plan_text,
+        "meta": (lambda: read_meta(date_key)) if meta is None else lambda: meta,
+    }
+    tasks.update(
+        {spec["list"]: lambda name=spec["list"]: load_list_doc(name) for spec in SECTION_SPECS.values()}
+    )
+    with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
+        futures = {name: executor.submit(task) for name, task in tasks.items()}
+        values = {name: future.result() for name, future in futures.items()}
+    current_plan = values["plan"]
+    current_meta = values["meta"]
+    original_plan = current_plan
+    original_meta = json.dumps(current_meta, indent=2) + "\n"
+    docs = {spec["list"]: values[spec["list"]] for spec in SECTION_SPECS.values()}
     for section, spec in SECTION_SPECS.items():
         new_meta, visible = resolve_section(section, current_meta.get(section, []), docs[spec["list"]])
         current_meta[section] = new_meta
         rendered = render_entries([entry for _, _, _, entry in visible])
         current_plan = inject_block(current_plan, spec["marker"], rendered or spec["none"])
-    write_meta(date_key, current_meta)
-    write_plan_text(date_key, current_plan)
+    if json.dumps(current_meta, indent=2) + "\n" != original_meta:
+        write_meta(date_key, current_meta)
+    if current_plan != original_plan:
+        write_plan_text(date_key, current_plan)
+    else:
+        _record_status_ok(date_key)
     # Keep section markers in storage, but omit them from the displayed plan.
     return re.sub(r"^<!-- (?:BEGIN|END) (?:ACTIONS|TRIAGE) -->\n?", "", current_plan, flags=re.MULTILINE)
 
