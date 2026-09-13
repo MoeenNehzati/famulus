@@ -676,6 +676,38 @@ def authorize_direct_invocation(
     )
 
 
+def _output_audiences(contract: object) -> dict[str, str]:
+    """Resolve stream audiences; missing, invalid or conflicting declarations are machine-only."""
+
+    result = {"stdout": "machine", "stderr": "machine"}
+    if not isinstance(contract, Mapping):
+        return result
+    direct_io = contract.get("direct_io")
+    outputs = contract.get("outputs")
+    if not isinstance(direct_io, Mapping) or not isinstance(outputs, list):
+        return result
+    writes = direct_io.get("writes")
+    if not isinstance(writes, list):
+        return result
+    for stream in result:
+        audiences = []
+        for write in writes:
+            if not isinstance(write, Mapping) or write.get("medium") != stream:
+                continue
+            reference = write.get("id")
+            matching = [
+                output.get("audience") for output in outputs
+                if isinstance(output, Mapping) and isinstance(reference, str)
+                and output.get("direct_io_ref") == reference
+            ]
+            audiences.extend(matching or ["machine"])
+        if audiences and audiences[0] in ("machine", "human", "both") and all(
+            audience == audiences[0] for audience in audiences
+        ):
+            result[stream] = audiences[0]
+    return result
+
+
 def compile_direct_invocation(
     authorized: AuthorizedDirectInvocation,
     *,
@@ -745,6 +777,7 @@ def compile_direct_invocation(
         authorization=authorization,
         schema_version=6,
         diagnostics=authorized.diagnostics,
+        output_audiences=_output_audiences(export.declaration.get("contract")),
     )
 
 

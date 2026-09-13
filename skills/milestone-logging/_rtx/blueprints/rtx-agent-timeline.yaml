@@ -107,7 +107,7 @@ interfaces:
         id: failed
         outputs: [timeline]
       outputs: &timeline_outputs
-      - audience: both
+      - audience: machine
         cardinality: {minimum: 0, maximum: 1}
         description: Timeline, session list, or durable-run reconstruction.
         direct_io_ref: write-1

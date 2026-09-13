@@ -461,7 +461,7 @@ interfaces:
         outputs:
         - diagnostic
       outputs:
-      - audience: both
+      - audience: machine
         cardinality:
           maximum: 1
           minimum: 1
@@ -712,7 +712,7 @@ interfaces:
         type:
           kind: string
           sensitivity: derived-private
-      - audience: both
+      - audience: machine
         cardinality:
           maximum: 1
           minimum: 1
@@ -1969,7 +1969,7 @@ interfaces:
         type:
           kind: string
           sensitivity: derived-private
-      - audience: both
+      - audience: machine
         cardinality:
           maximum: 1
           minimum: 1

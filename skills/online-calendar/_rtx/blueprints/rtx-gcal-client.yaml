@@ -249,7 +249,7 @@ interfaces:
         outputs:
         - diagnostic
       outputs:
-      - audience: both
+      - audience: machine
         cardinality:
           maximum: null
           minimum: 1

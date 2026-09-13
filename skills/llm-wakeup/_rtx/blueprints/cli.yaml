@@ -216,7 +216,7 @@ interfaces:
         - diagnostic
       outputs:
       - id: result
-        audience: both
+        audience: machine
         description: One line reporting whether automatic scheduling is enabled or
           disabled for the resolved session.
         direct_io_ref: result-write
@@ -427,7 +427,7 @@ interfaces:
         - diagnostic
       outputs:
       - id: result
-        audience: both
+        audience: machine
         description: One stable line identifying a new or coalesced wakeup and its
           local delivery time.
         direct_io_ref: result-write
@@ -655,7 +655,7 @@ interfaces:
         - diagnostic
       outputs:
       - id: result
-        audience: both
+        audience: machine
         description: One stable line identifying a new or coalesced wakeup and its
           local delivery time.
         direct_io_ref: result-write

@@ -1039,6 +1039,8 @@ def test_graph_server_survives_invocation_and_follows_host_teardown_lifecycle(
             "invoke",
             "invoke_and_render",
             "render_probe",
+            "audience_probe_text",
+            "audience_probe_structured",
         ]
         assert called.isError is False
         assert result["exit_code"] == 0
@@ -1060,6 +1062,8 @@ def test_graph_server_survives_invocation_and_follows_host_teardown_lifecycle(
             "invoke",
             "invoke_and_render",
             "render_probe",
+            "audience_probe_text",
+            "audience_probe_structured",
         ]
         assert finite.isError is False
         assert finite.structuredContent["result"]["target"] == (
@@ -1127,6 +1131,8 @@ def test_packaged_host_declaration_invokes_dispatcher_through_real_mcp(
         contract["tool"]["name"],
         contract["render_tool"]["name"],
         "render_probe",
+        "audience_probe_text",
+        "audience_probe_structured",
     ]
     tool = listed.tools[0]
     assert tool.description.startswith("Invoke one authorized Famulus interface")
@@ -1196,6 +1202,8 @@ def test_packaged_host_declaration_invokes_dispatcher_through_real_mcp(
         contract["tool"]["name"],
         contract["render_tool"]["name"],
         "render_probe",
+        "audience_probe_text",
+        "audience_probe_structured",
     ]
 
 
@@ -1214,8 +1222,18 @@ def test_mcp_text_chunking_is_bounded_and_lossless(server, text: str) -> None:
 
 
 @pytest.mark.parametrize("exit_code", [0, 2])
-def test_invoke_mcp_chunks_text_but_preserves_structured_result(
-    server, monkeypatch: pytest.MonkeyPatch, exit_code: int
+@pytest.mark.parametrize("tool_name", ["invoke", "invoke_and_render"])
+@pytest.mark.parametrize("audiences,visible", [
+    ({}, ()),
+    ({"stdout": "machine", "stderr": "machine"}, ()),
+    ({"stdout": "human", "stderr": "both"}, ("stdout", "stderr")),
+    ({"stdout": "machine", "stderr": "human"}, ("stderr",)),
+    ({"stdout": "both", "stderr": "machine"}, ("stdout",)),
+    ({"stdout": "invalid"}, ()),
+])
+def test_invoke_mcp_filters_display_but_preserves_structured_result(
+    server, monkeypatch: pytest.MonkeyPatch, exit_code: int,
+    tool_name: str, audiences: dict[str, str], visible: tuple[str, ...],
 ) -> None:
     FastMCP = pytest.importorskip("mcp.server.fastmcp").FastMCP
     mcp = FastMCP("famulus")
@@ -1224,21 +1242,83 @@ def test_invoke_mcp_chunks_text_but_preserves_structured_result(
         "exit_code": exit_code,
         "stdout": "Forecast: 26°C\n" * 100,
         "stderr": "Diagnostic detail\n" * 40,
-        "dispatcher": {},
+        "dispatcher": {"output_audiences": audiences},
         "trace_id": "a" * 32,
     }
     monkeypatch.setattr(server, "invoke", lambda *args, **kwargs: result)
 
-    called = asyncio.run(mcp.call_tool("invoke", {
+    called = asyncio.run(mcp.call_tool(tool_name, {
         "caller": "caller", "interface": "example.interface.read", "version": 1,
         "arguments": {"positionals": [], "options": {}, "stdin": None},
     }))
 
-    assert len(called.content) > 1
     assert all(block.type == "text" and len(block.text) <= 240 for block in called.content)
-    expected = result["stdout"] + result["stderr"] if exit_code == 0 else json.dumps(result, ensure_ascii=False)
+    expected = "".join(result[stream] for stream in visible)
     assert "".join(block.text for block in called.content) == expected
+    if not visible:
+        assert len(called.content) == 1
+        assert called.content[0].text == ""
     assert called.structuredContent == {"result": result}
+
+
+@pytest.mark.parametrize("tool_name", ["invoke", "invoke_and_render"])
+@pytest.mark.parametrize("result", [
+    {"exit_code": 2, "stdout": "", "stderr": "", "dispatcher": {
+        "code": "dispatcher.unauthorized_caller", "message": "Unauthorized caller",
+    }},
+    {"code": "setup_required", "next_setup": {"interface": "example.interface.setup"}},
+    {"target": "example.interface.read", "output_audiences": {"stdout": "human"}},
+])
+def test_control_results_remain_structured_without_display_dump(
+    server, monkeypatch: pytest.MonkeyPatch, tool_name: str, result: dict,
+) -> None:
+    FastMCP = pytest.importorskip("mcp.server.fastmcp").FastMCP
+    mcp = FastMCP("famulus")
+    server._register_mcp_surface(mcp)
+    monkeypatch.setattr(server, "invoke", lambda *args, **kwargs: result)
+    called = asyncio.run(mcp.call_tool(tool_name, {
+        "caller": "caller", "interface": "example.interface.read", "version": 1,
+        "arguments": {"positionals": [], "options": {}, "stdin": None},
+    }))
+    assert [block.text for block in called.content] == [""]
+    assert called.structuredContent == {"result": result}
+
+
+@pytest.mark.parametrize("tool_name", ["audience_probe_text", "audience_probe_structured"])
+@pytest.mark.parametrize("mode,audience", [
+    ("unannotated", None), ("assistant", ["assistant"]),
+    ("user", ["user"]), ("both", ["assistant", "user"]),
+])
+def test_audience_probes_preserve_annotations_without_automatic_text_fallback(
+    server, tool_name: str, mode: str, audience: list[str] | None,
+) -> None:
+    FastMCP = pytest.importorskip("mcp.server.fastmcp").FastMCP
+    mcp = FastMCP("famulus")
+    server._register_mcp_surface(mcp)
+    text = "Audience test: café\nsecond line"
+    called = asyncio.run(mcp.call_tool(tool_name, {"mode": mode, "text": text}))
+    payload = called.model_dump(mode="json", exclude_none=True)
+    block = {"type": "text", "text": text}
+    if audience is not None:
+        block["annotations"] = {"audience": audience}
+    assert payload["content"] == [block]
+    assert payload["isError"] is False
+    if tool_name == "audience_probe_structured":
+        assert payload["structuredContent"] == {
+            "text": text, "structured_only": "FAMULUS_STRUCTURED_ONLY",
+        }
+    else:
+        assert "structuredContent" not in payload
+
+
+@pytest.mark.parametrize("tool_name", ["audience_probe_text", "audience_probe_structured"])
+def test_audience_probes_reject_unknown_modes(server, tool_name: str) -> None:
+    FastMCP = pytest.importorskip("mcp.server.fastmcp").FastMCP
+    ToolError = pytest.importorskip("mcp.server.fastmcp.exceptions").ToolError
+    mcp = FastMCP("famulus")
+    server._register_mcp_surface(mcp)
+    with pytest.raises(ToolError, match="mode"):
+        asyncio.run(mcp.call_tool(tool_name, {"mode": "hidden"}))
 
 
 def test_render_tool_uses_blueprint_renderer_bundle(server) -> None:
@@ -1285,7 +1365,7 @@ def test_invoke_and_render_adds_parsed_data_only_for_declared_renderer(
         frozenset({"example.source.ui.interface.read"}),
     )
 
-    _content, payload = asyncio.run(
+    rendered = asyncio.run(
         mcp.call_tool(
             "invoke_and_render",
             {
@@ -1297,11 +1377,12 @@ def test_invoke_and_render_adds_parsed_data_only_for_declared_renderer(
         )
     )
 
-    assert payload["result"]["render_data"] == {
+    assert [block.text for block in rendered.content] == [""]
+    assert rendered.structuredContent["result"]["render_data"] == {
         "entries": [{"id": "aaaaaa", "title": "Task"}]
     }
     monkeypatch.setattr(server, "_RENDERER_INTERFACES", frozenset())
-    _content, plain = asyncio.run(
+    plain = asyncio.run(
         mcp.call_tool(
             "invoke_and_render",
             {
@@ -1312,7 +1393,7 @@ def test_invoke_and_render_adds_parsed_data_only_for_declared_renderer(
             },
         )
     )
-    assert "render_data" not in plain["result"]
+    assert "render_data" not in plain.structuredContent["result"]
 
 
 def test_contract_keeps_mcp_metadata_separate_from_runtime_requirements() -> None:

@@ -60,7 +60,7 @@ interfaces:
       - {id: timed-out, class: error, effects: [write-reports], outputs: [result], caller_action: Preserve the stable timeout receipt and start a new deliberate context only when another run is authorized.}
       - {id: blocked, class: error, effects: [write-reports], outputs: [result], caller_action: Preserve the stable unavailable-run receipt and resolve the remote evidence gap before authorizing another run.}
       outputs:
-      - {id: result, audience: both, cardinality: {minimum: 1, maximum: 1}, description: "Pending state, stable terminal failure receipt, or canonical terminal matrix report.", direct_io_ref: result, empty: Never empty., ordering: stable, pagination: {kind: none}, truncation: {kind: none}, type: {kind: string, sensitivity: derived-private}}
+      - {id: result, audience: machine, cardinality: {minimum: 1, maximum: 1}, description: "Pending state, stable terminal failure receipt, or canonical terminal matrix report.", direct_io_ref: result, empty: Never empty., ordering: stable, pagination: {kind: none}, truncation: {kind: none}, type: {kind: string, sensitivity: derived-private}}
       preconditions: []
     description: Start or poll one durable complete remote CI matrix for an exact pushed candidate.
     process_binding:

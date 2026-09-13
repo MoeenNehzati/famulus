@@ -158,6 +158,51 @@ def _access(*callers: str, public: bool = False) -> dict[str, object]:
     return {"allow_all_modules": public, "allowed_callers": list(callers)}
 
 
+@pytest.mark.parametrize("audiences,expected", [
+    (["machine"], "machine"), (["human"], "human"), (["both"], "both"),
+    ([], "machine"), (["human", "machine"], "machine"),
+    (["human", "both"], "machine"), (["unknown"], "machine"),
+    ([None], "machine"), ([{}], "machine"),
+])
+def test_compiled_audiences_follow_implementing_source_output_links(
+    tmp_path: Path, audiences: list[object], expected: str,
+) -> None:
+    configuration = _repository(tmp_path, terminal_access=_access(public=True))
+    path = tmp_path / "skills/root/alpha/leaf/blueprints/runtime.yaml"
+    source = yaml.safe_load(path.read_text())
+    source["interfaces"][SOURCE_INTERFACE_ID]["contract"].update({
+        "direct_io": {"writes": [
+            {"id": "records", "medium": "stdout"},
+            {"id": "diagnostic", "medium": "stderr"},
+            {"id": "file", "medium": "local-filesystem"},
+        ]},
+        "outputs": [
+            *[{"direct_io_ref": "records", "audience": value} for value in audiences],
+            {"direct_io_ref": "diagnostic", "audience": "both"},
+            {"direct_io_ref": "file", "audience": "human"},
+        ],
+    })
+    _write_yaml(path, source)
+    resolved = resolve_direct_invocation(
+        configuration=configuration, caller_module_id="root",
+        interface_id=INTERFACE_ID, interface_version=3,
+        argv=[], stdin_requested=False,
+    )
+    assert resolved.script_interface == SOURCE_INTERFACE_ID
+    assert resolved.as_payload()["output_audiences"] == {
+        "stdout": expected, "stderr": "both",
+    }
+
+
+@pytest.mark.parametrize("contract", [None, {}, {"outputs": []}, {
+    "outputs": None, "direct_io": {"writes": []},
+}, {"outputs": [], "direct_io": {"writes": None}}])
+def test_missing_output_contract_defaults_to_machine(contract: object) -> None:
+    assert direct_authorization._output_audiences(contract) == {
+        "stdout": "machine", "stderr": "machine",
+    }
+
+
 def _write_yaml(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")

@@ -55,6 +55,79 @@ nested calls using its immediate canonical module ID through the programmatic
 dispatcher API. A host cannot claim a private child such as `daily-plan._rtx`
 as its identity.
 
+## MCP result audiences
+
+Tool calls should remain visible while output intended for the assistant does
+not fill the user's result preview. Both `invoke` and `invoke_and_render` apply
+the same stream filter at the MCP boundary:
+
+| Declared stream audience | Text `content` | `structuredContent.result` |
+|---|---|---|
+| `machine` | Omit the stream | Preserve the complete stream |
+| `human` | Include the stream | Preserve the complete stream |
+| `both` | Include the stream | Preserve the complete stream |
+
+The dispatcher derives `dispatcher.output_audiences` from the already resolved
+implementing interface's `contract.outputs`: each output's `direct_io_ref` links
+to an entry in `contract.direct_io.writes` whose `medium` is `stdout` or `stderr`.
+This requires no additional blueprint read. Each stream is classified separately;
+all declarations contributing to it must agree on one valid audience. Missing,
+invalid, unmatched or conflicting declarations default to `machine`. The filter
+cannot separate differently intended messages within an unframed stream.
+
+Display text contains qualifying stdout followed by qualifying stderr, split
+into text blocks. If neither contributes nonempty display text, `content` is
+exactly `[{"type":"text","text":""}]`. The complete execution result remains
+under `structuredContent.result`, including stdout, stderr, exit status and
+dispatcher metadata. For example, this abbreviated machine-output response has
+no preview text:
+
+```json
+{
+  "content": [{"type": "text", "text": ""}],
+  "structuredContent": {
+    "result": {
+      "stdout": "query result",
+      "stderr": "",
+      "exit_code": 0,
+      "dispatcher": {"output_audiences": {"stdout": "machine", "stderr": "machine"}}
+    }
+  }
+}
+```
+
+Consumers must read the structured result for machine output, status, dispatcher
+errors, dry-run results and setup continuations. Failed calls use the same
+filter; failure does not trigger a full-result text dump. A machine stdout
+declaration does not suppress separately declared human/both stderr. Declared
+renderers on `invoke_and_render` still receive the complete structured payload
+for explicit rendering.
+
+Audience declarations express intended recipients. Use `machine` for query
+data, receipts, paths, hashes, raw logs and diagnostics the assistant interprets
+or summarizes. Reserve `human`/`both` for finished output intended for direct
+presentation. The stdout cleanup retained `both` for
+`daily-plan._rtx.interface.orchestrate`,
+`daily-plan._rtx.interface.mutate-plan` and
+`relocate-nodes._rtx.interface.build-review-packet`; the other 56 formerly `both`
+stdout interfaces became `machine`. Existing `human` stdout and stderr
+declarations were unchanged.
+
+In the Codex surface tested during development, MCP audience annotations alone
+did not hide text: unannotated, assistant, user and both probes all displayed
+the same preview. An empty text block preserved the call row with a blank
+preview, while structured data remained available through `functions.exec`.
+Fresh MCP processes launched using both Codex and Claude configurations passed
+response-shape checks; Claude's actual UI and model consumption were not
+verified. Preview suppression is host behavior, not an access-control boundary.
+
+Human/both streams currently occur in both response fields. This preserves the
+complete structured-result contract but duplicates those bytes in the MCP
+payload. In the tested `functions.exec` route, execution code can forward only
+the structured result to the model. The MCP adapter itself does not guarantee
+that every host avoids duplicate model tokens, and `human` does not exclude
+the stream from model-accessible data.
+
 ## Repository configuration
 
 The MCP runtime supplies one exact absolute

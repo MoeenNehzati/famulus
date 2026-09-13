@@ -107,7 +107,7 @@ interfaces:
       - {id: failed, class: error, outputs: [], effects: [launcher-state], caller_action: Report the failed selected target without reconciling other launchers.}
       outputs:
       - id: response
-        audience: both
+        audience: machine
         description: Ordered selected installation actions or available-launcher list.
         direct_io_ref: status
         cardinality: {minimum: 1, maximum: null}

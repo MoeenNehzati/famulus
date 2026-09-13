@@ -222,7 +222,7 @@ interfaces:
           rewrite or preserve decisions, and rerun preflight before applying.
       outputs:
       - id: report
-        audience: both
+        audience: machine
         cardinality:
           minimum: 1
           maximum: 1

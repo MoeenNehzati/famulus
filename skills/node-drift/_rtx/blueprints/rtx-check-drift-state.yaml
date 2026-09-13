@@ -175,7 +175,7 @@ interfaces:
         outputs:
         - error
       outputs:
-      - audience: both
+      - audience: machine
         cardinality:
           maximum: 1
           minimum: 1
@@ -463,7 +463,7 @@ interfaces:
         outputs:
         - error
       outputs:
-      - audience: both
+      - audience: machine
         cardinality:
           maximum: 1
           minimum: 1

@@ -100,7 +100,7 @@ interfaces:
           succeeds and no failure is latched, advances the watermark timestamp.
       outputs:
       - id: summary
-        audience: both
+        audience: machine
         description: One-line confirmation of what finalize did (committed, refused,
           or replayed as a no-op).
         direct_io_ref: write-1

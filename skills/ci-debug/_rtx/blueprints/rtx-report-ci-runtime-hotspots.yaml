@@ -54,7 +54,7 @@ interfaces:
       - {id: reported-with-gaps, class: partial, effects: [write-incomplete-result, publish-result], outputs: [result], caller_action: Preserve missing-duration counts and avoid stronger timing claims.}
       - {id: failed, class: error, effects: [write-incomplete-result], outputs: [result], caller_action: Resolve snapshot validation or publication failure before using a report.}
       outputs:
-      - {id: result, audience: both, cardinality: {minimum: 1, maximum: 1}, description: Report state source snapshot digest path analyzed-run count and gaps., direct_io_ref: result, empty: Never empty., ordering: stable, pagination: {kind: none}, truncation: {kind: none}, type: {kind: string, sensitivity: derived-private}}
+      - {id: result, audience: machine, cardinality: {minimum: 1, maximum: 1}, description: Report state source snapshot digest path analyzed-run count and gaps., direct_io_ref: result, empty: Never empty., ordering: stable, pagination: {kind: none}, truncation: {kind: none}, type: {kind: string, sensitivity: derived-private}}
       preconditions: []
     description: Report descriptive API timing observed job execution envelopes job-minutes and heuristic repeated-step hotspots from one snapshot.
     process_binding:

@@ -179,7 +179,7 @@ interfaces:
         outputs:
         - diagnostic
       outputs:
-      - audience: both
+      - audience: machine
         cardinality:
           maximum: 1
           minimum: 1
@@ -518,7 +518,7 @@ interfaces:
         outputs:
         - diagnostic
       outputs:
-      - audience: both
+      - audience: machine
         cardinality:
           maximum: 1
           minimum: 1
@@ -703,7 +703,7 @@ interfaces:
         outputs:
         - diagnostic
       outputs:
-      - audience: both
+      - audience: machine
         cardinality:
           maximum: 1
           minimum: 1
@@ -1017,7 +1017,7 @@ interfaces:
         - status
         - diagnostic
       outputs:
-      - audience: both
+      - audience: machine
         cardinality:
           maximum: 1
           minimum: 0
@@ -1237,7 +1237,7 @@ interfaces:
         outputs:
         - diagnostic
       outputs:
-      - audience: both
+      - audience: machine
         cardinality:
           maximum: 1
           minimum: 1
@@ -1574,7 +1574,7 @@ interfaces:
           untouched.
       outputs:
       - id: result
-        audience: both
+        audience: machine
         description: Confirmation naming the account bound to the shared credential.
         direct_io_ref: write-2
         cardinality:

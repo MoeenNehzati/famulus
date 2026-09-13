@@ -1171,7 +1171,23 @@ def _chunk_text(text: str) -> list[str]:
 def _register_mcp_surface(server: Any) -> None:
     """Register the plain and renderer-backed dispatcher tools."""
 
-    from mcp.types import CallToolResult, TextContent
+    from mcp.types import Annotations, CallToolResult, TextContent
+
+    def format_result(result: dict[str, Any]) -> CallToolResult:
+        """Display only declared human/both streams; retain every field for the model."""
+
+        audiences = result.get("dispatcher", {}).get("output_audiences", {})
+        content = [
+            TextContent(type="text", text=chunk)
+            for stream in ("stdout", "stderr")
+            if audiences.get(stream) in ("human", "both")
+            for chunk in _chunk_text(result.get(stream, ""))
+            if chunk
+        ]
+        return CallToolResult(
+            content=content or [TextContent(type="text", text="")],
+            structuredContent={"result": result},
+        )
 
     def invoke_tool(
         caller: str,
@@ -1182,18 +1198,18 @@ def _register_mcp_surface(server: Any) -> None:
         setup_flow_id: str | None = None,
     ) -> Annotated[CallToolResult, InvokeOutput]:
         result = invoke(caller, interface, version, arguments, dry_run, setup_flow_id)
-        text = (
-            result["stdout"]
-            if result.get("exit_code") == 0
-            else json.dumps(result, ensure_ascii=False)
-        )
-        content = [TextContent(type="text", text=chunk) for chunk in _chunk_text(text)]
-        if result.get("exit_code") == 0 and result.get("stderr"):
-            content.extend(
-                TextContent(type="text", text=chunk)
-                for chunk in _chunk_text(result["stderr"])
-            )
-        return CallToolResult(content=content, structuredContent={"result": result})
+        return format_result(result)
+
+    def invoke_and_render_tool(
+        caller: str,
+        interface: str,
+        version: int,
+        arguments: CompactArguments | OrderedArguments,
+        dry_run: bool = False,
+        setup_flow_id: str | None = None,
+    ) -> Annotated[CallToolResult, InvokeOutput]:
+        result = invoke_and_render(caller, interface, version, arguments, dry_run, setup_flow_id)
+        return format_result(result)
 
     def render_probe(
         text: str = "Famulus renderer probe",
@@ -1202,6 +1218,33 @@ def _register_mcp_surface(server: Any) -> None:
             structuredContent={"text": text},
             content=[TextContent(type="text", text=f"Showing: {text}.")],
         )
+
+    def audience_probe_text(
+        mode: Literal["unannotated", "assistant", "user", "both"] = "unannotated",
+        text: str = "FAMULUS_AUDIENCE_TEXT",
+    ) -> CallToolResult:
+        """Return text with the selected audience annotation; no structured result or widget."""
+
+        audience = {
+            "unannotated": None,
+            "assistant": ["assistant"],
+            "user": ["user"],
+            "both": ["assistant", "user"],
+        }[mode]
+        return CallToolResult(content=[TextContent(
+            type="text", text=text,
+            annotations=None if audience is None else Annotations(audience=audience),
+        )])
+
+    def audience_probe_structured(
+        mode: Literal["unannotated", "assistant", "user", "both"] = "unannotated",
+        text: str = "FAMULUS_AUDIENCE_TEXT",
+    ) -> CallToolResult:
+        """Return the audience-tagged text plus a structured result with a distinct marker."""
+
+        result = audience_probe_text(mode, text)
+        result.structuredContent = {"text": text, "structured_only": "FAMULUS_STRUCTURED_ONLY"}
+        return result
 
     global _RENDERER_INTERFACES
     renderer_html, _RENDERER_INTERFACES = _renderer_app(ROOT)
@@ -1212,6 +1255,7 @@ def _register_mcp_surface(server: Any) -> None:
     server.tool(name="invoke", description=invoke.__doc__)(invoke_tool)
     server.tool(
         name=CONTRACT["render_tool"]["name"],
+        description=invoke_and_render.__doc__,
         meta={
             "ui": {
                 "resourceUri": resource_uri,
@@ -1220,7 +1264,7 @@ def _register_mcp_surface(server: Any) -> None:
             "openai/outputTemplate": resource_uri,
             "openai/visibility": "public",
         },
-    )(invoke_and_render)
+    )(invoke_and_render_tool)
     server.tool(
         name="render_probe",
         title="Render probe",
@@ -1231,6 +1275,8 @@ def _register_mcp_surface(server: Any) -> None:
             "openai/toolInvocation/invoked": "Rendered.",
         },
     )(render_probe)
+    server.tool()(audience_probe_text)
+    server.tool()(audience_probe_structured)
     server.resource(
         resource_uri,
         name="famulus-invoke-and-render",

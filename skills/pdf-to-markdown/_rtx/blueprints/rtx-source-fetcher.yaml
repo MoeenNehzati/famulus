@@ -165,7 +165,7 @@ interfaces:
         id: failed
         outputs: []
       outputs:
-      - audience: both
+      - audience: machine
         cardinality:
           maximum: 1
           minimum: 0

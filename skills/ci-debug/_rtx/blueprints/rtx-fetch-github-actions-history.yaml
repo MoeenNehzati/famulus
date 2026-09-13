@@ -62,7 +62,7 @@ interfaces:
       - {id: collected-with-gaps, class: partial, effects: [write-incomplete-result, publish-result], outputs: [result], caller_action: Preserve gap coverage and do not infer missing evidence as success or absence.}
       - {id: failed, class: error, effects: [write-incomplete-result], outputs: [result], caller_action: Resolve the classified preflight collection or publication failure and inspect any incomplete path.}
       outputs:
-      - {id: result, audience: both, cardinality: {minimum: 1, maximum: 1}, description: Collection state snapshot identity counts path and gap count., direct_io_ref: result, empty: Never empty., ordering: stable, pagination: {kind: none}, truncation: {kind: none}, type: {kind: string, sensitivity: derived-private}}
+      - {id: result, audience: machine, cardinality: {minimum: 1, maximum: 1}, description: Collection state snapshot identity counts path and gap count., direct_io_ref: result, empty: Never empty., ordering: stable, pagination: {kind: none}, truncation: {kind: none}, type: {kind: string, sensitivity: derived-private}}
       preconditions: []
     description: Fetch one bounded GitHub Actions workflow history with complete attempt enumeration and frozen Git provenance into a private snapshot.
     process_binding:

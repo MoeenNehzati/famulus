@@ -63,7 +63,7 @@ interfaces:
       outcomes:
       - {id: reported, class: partial, effects: [write-reports], outputs: [result], caller_action: Update only the probed failures from this report; never infer complete-CI green.}
       outputs:
-      - {id: result, audience: both, cardinality: {minimum: 1, maximum: 1}, description: Canonical targeted runner report., direct_io_ref: result, empty: Never empty on a completed runner invocation., ordering: stable, pagination: {kind: none}, truncation: {kind: none}, type: {kind: string, sensitivity: derived-private}}
+      - {id: result, audience: machine, cardinality: {minimum: 1, maximum: 1}, description: Canonical targeted runner report., direct_io_ref: result, empty: Never empty on a completed runner invocation., ordering: stable, pagination: {kind: none}, truncation: {kind: none}, type: {kind: string, sensitivity: derived-private}}
       preconditions: []
     description: Run one selected failure set or complete matrix element for an exact candidate.
     process_binding:

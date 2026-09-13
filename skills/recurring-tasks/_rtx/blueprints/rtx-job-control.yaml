@@ -146,7 +146,7 @@ interfaces:
         outputs:
         - diagnostic
       outputs:
-      - audience: both
+      - audience: machine
         cardinality:
           maximum: 1
           minimum: 1
@@ -324,7 +324,7 @@ interfaces:
         outputs:
         - diagnostic
       outputs:
-      - audience: both
+      - audience: machine
         cardinality:
           maximum: 1
           minimum: 1
@@ -443,7 +443,7 @@ interfaces:
         id: failed
         outputs: [result]
       outputs:
-      - audience: both
+      - audience: machine
         cardinality: {minimum: 0, maximum: 1}
         description: Teardown result or diagnostic.
         direct_io_ref: write-2
@@ -526,7 +526,7 @@ interfaces:
         outputs:
         - diagnostic
       outputs:
-      - audience: both
+      - audience: machine
         cardinality:
           maximum: null
           minimum: 0
@@ -706,7 +706,7 @@ interfaces:
         outputs:
         - diagnostic
       outputs:
-      - audience: both
+      - audience: machine
         cardinality:
           maximum: null
           minimum: 1
@@ -836,7 +836,7 @@ interfaces:
         outputs:
         - diagnostic
       outputs:
-      - audience: both
+      - audience: machine
         cardinality:
           maximum: null
           minimum: 1
