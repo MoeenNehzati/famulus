@@ -321,10 +321,35 @@ def test_reusable_facet_requires_valid_evidence_and_survives_own_signing(tmp_pat
                             "input_manifest": [], "checks": []}}
     status = CertificateNodeCurrentness(
         "source", False, ("remainder-hash-mismatch", "node-hash-mismatch"), envelope,
+        facet_drift=(CertificateFacetDrift("source", "remainder", local_hash_changed=True),),
     )
     observed.currentness.nodes["source"] = status
     evidence = support._certificate(observed, "source.one")
     assert evidence["facets"] == [next(f for f in facets if f["id"] == "source.one")]
+    assert support.make_charter(tmp_path, ["module"], 2, "selective")["required"] == ["module", "source"]
+    for concern in (
+        "certification-basis-mismatch", "invalid-certificate-schema", "legacy-certificate-payload",
+        "subject-mismatch", "checks-mismatch", "certifier-mismatch", "suspect-certificate-log",
+        "unknown-concern", "node-hash-mismatch:unexpected", "interface-hash-mismatch",
+        "interface-hash-mismatch:",
+    ):
+        observed.currentness.nodes["source"] = replace(status, concerns=(*status.concerns, concern))
+        charter = support.make_charter(tmp_path, ["module"], 2, "full")
+        assert charter["required"] == ["module", "source", "source.one", "source.two"], concern
+        with pytest.raises(ValueError, match="not current"):
+            support._certificate(observed, "source.one")
+    observed.currentness.nodes["source"] = replace(status, certificate=None)
+    assert support.make_charter(tmp_path, ["module"], 2, "missing")["required"] == [
+        "module", "source", "source.one", "source.two",
+    ]
+    # A prerequisite may renew before this source; planning stays selective but
+    # packet consumption must wait for its current certificate.
+    observed.currentness.nodes["source"] = replace(
+        status, concerns=(*status.concerns, "dependency-not-current:provider"),
+    )
+    assert support.make_charter(tmp_path, ["module"], 2, "pending")["required"] == ["module", "source"]
+    with pytest.raises(ValueError, match="not current"):
+        support._certificate(observed, "source.one")
     observed.currentness.nodes["source"] = replace(status, concerns=("invalid-certificate-schema",))
     with pytest.raises(ValueError, match="not current"):
         support._certificate(observed, "source.one")
@@ -467,12 +492,20 @@ def test_large_mechanical_only_renewal_completes_without_an_llm_turn(tmp_path, m
     )
     for target, status in observed.currentness.nodes.items():
         observed.currentness.nodes[target] = replace(
-            status, concerns=("dependency-mismatch",), dependencies=(
+            status, certificate={"payload": {}}, concerns=("dependency-mismatch",), dependencies=(
                 CertificateDependencyDelta("changed", "certified-under", "certifier", None, {}, {}),
             ),
         )
     charter = support.make_charter(tmp_path, ["module"], 2, "mechanical")
     assert charter["required"] == []
+    source_status = observed.currentness.nodes["source"]
+    observed.currentness.nodes["source"] = replace(
+        source_status, concerns=(*source_status.concerns, "certification-basis-mismatch"),
+    )
+    assert support.make_charter(tmp_path, ["module"], 2, "old-basis")["required"] == [
+        "module", "source", "source.one", "source.two",
+    ]
+    observed.currentness.nodes["source"] = source_status
     voyage = RutterRegistry({"certification": CERTIFICATION_RUTTER}, tmp_path).create(
         "certification", Path("mechanical.reckoning.json"), charter,
     )

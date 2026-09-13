@@ -3,7 +3,8 @@
 Status: cleanup and full/unchanged-repeat benchmarks complete in
 `feat/certification-audit-pool`, 2026-09-13. Small-change speedup is not yet
 verified: the live incremental scope check below exposed a planner/reuse gap
-and a separate target contract blocker. Production cleanup is committed as
+and a separate target contract blocker. The shared admissibility correction
+below resolves the planning gap; its live timing repeat is pending. Production cleanup is committed as
 `5efa8e37`; its independent reviews and normal hooks were GREEN. Fresh reducer
 certification took 258.633 seconds:
 61.359 machine, 197.275 LLM/host/controller combined. A mechanically chained
@@ -718,6 +719,28 @@ envelope, timing records, and before/changed/restored canonical snapshots in
 `_build/incremental-benchmark/`. After restoring the reducer description,
 reducer/history/values certificates were verified current with no concerns and
 unchanged certificate-entry counts. No certifier production code was changed.
+
+### Incremental planning correction, 2026-09-13
+
+The shared `certificate_semantic_evidence_reusable()` guard now governs both
+semantic task selection and unchanged-facet packet reuse. Invalid, missing,
+old-basis, or otherwise unrecognized evidence cannot authorize either selective
+facet skipping or a mechanical-only audit skip. Basis changes retain their
+existing full-audit policy; ordinary same-basis remainder changes still select
+only the source. Pending dependency certificates may renew before dispatch,
+but cannot be consumed while stale. Exact facet comparison, signature/schema
+validation, scope/freeze guards, mechanical checks and post-sign currentness
+remain in the existing path.
+
+Regression checks reuse the existing small Voyage fixture and its two-interface
+source. They cover selective remainder versus full selection for basis and
+invalid evidence, unknown qualified concern forms, missing certificates,
+pending dependency consumption, and basis invalidation before mechanical
+skipping. The focused file passed all 23 tests in 1.83 seconds (2.48 seconds
+through the runner, eight workers). No additional test fixture or cache was
+introduced. A live full-versus-remainder comparison will use the already-tested
+`tight-mode.source.gateway`, which has one interface, no dependencies, and no
+inputs in the certification basis.
 
 ## Non-goals
 

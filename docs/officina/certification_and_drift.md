@@ -342,8 +342,14 @@ source, and module ancestors; remainder drift selects its source and module
 ancestors; an unattributed stale source conservatively selects all its
 interfaces. A sole mechanical `certified-under` change selects no semantic
 task. An unchanged facet reuses evidence only when its claim is authenticated
-by the latest valid signed certificate and still matches canonical state. The
-signature covers the facet manifest and dependencies plus the certificate's
+by the latest valid signed certificate and still matches canonical state.
+
+Planning and packet reuse share the same evidence-admissibility check. A basis,
+schema, subject, check, certifier, or unknown concern prevents both selective
+facet skipping and mechanical-only audit skipping. Such a source requires all
+its interfaces and its source audit. Dependency currentness may settle before
+dispatch; packet consumption still requires those prerequisites current.
+The signature covers the facet manifest and dependencies plus the certificate's
 whole-node semantic-review pass. Selective reuse interprets that pass as
 covering each included unchanged facet; it is not an independent per-facet
 semantic attestation.

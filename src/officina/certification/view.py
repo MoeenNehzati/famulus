@@ -1559,6 +1559,31 @@ def _module_ancestors(
     return result
 
 
+def certificate_semantic_evidence_reusable(status: CertificateNodeCurrentness) -> bool:
+    """Allow known content drift, but never reuse invalid or old-basis evidence.
+
+    Dependency currentness is settled before dispatch; callers consuming a
+    certificate must additionally require its prerequisites current.
+    """
+
+    allowed = {
+        "input-manifest-mismatch", "node-hash-mismatch", "dependency-mismatch",
+        "facet-set-mismatch", "facet-order-mismatch", "remainder-hash-mismatch",
+        "remainder-input-manifest-mismatch", "remainder-dependency-mismatch",
+    }
+    qualified = {
+        "interface-hash-mismatch", "interface-input-manifest-mismatch",
+        "interface-dependency-mismatch", "dependency-not-current",
+    }
+    if status.certificate is None:
+        return False
+    for concern in status.concerns:
+        name, _separator, target = concern.partition(":")
+        if concern not in allowed and not (name in qualified and target):
+            return False
+    return True
+
+
 def _has_semantic_facet_drift(facet: CertificateFacetDrift) -> bool:
     return bool(
         facet.local_hash_changed
@@ -1600,7 +1625,8 @@ def semantic_stale_vertices(
         status = currentness.nodes.get(node_id)
         if node is None or status is None:
             raise RepositoryCertificationError(f"missing stale node evidence: {node_id}")
-        if _mechanical_certifier_only(status):
+        reusable = certificate_semantic_evidence_reusable(status)
+        if reusable and _mechanical_certifier_only(status):
             continue
         meaningful_facets = tuple(
             facet
@@ -1617,7 +1643,7 @@ def semantic_stale_vertices(
             raise RepositoryCertificationError(f"missing source module: {node_id}")
         selected.update(_module_ancestors(graph, module_id))
         selected.add(node_id)
-        if meaningful_facets:
+        if reusable and meaningful_facets:
             for facet in meaningful_facets:
                 if facet.facet_type == "interface":
                     selected.add(facet.facet_id)

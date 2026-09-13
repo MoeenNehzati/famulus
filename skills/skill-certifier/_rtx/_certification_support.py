@@ -14,7 +14,7 @@ from officina.certification.hashing import (
 )
 from officina.certification.records import certificate_entry_hash
 from officina.certification.view import (
-    certificate_log_path, certificate_requires_renewal,
+    certificate_log_path, certificate_requires_renewal, certificate_semantic_evidence_reusable,
     derive_repository_certification_state, semantic_stale_vertices,
 )
 from officina.rutter import (
@@ -229,15 +229,9 @@ def _certificate(observation, target: str) -> dict[str, object]:
              if facet["id"] == target),
             None,
         )
-        allowed = {"input-manifest-mismatch", "node-hash-mismatch", "dependency-mismatch",
-                   "facet-set-mismatch", "facet-order-mismatch"}
-        for facet in observation.states[owner].facets:
-            for suffix in ("hash-mismatch", "input-manifest-mismatch", "dependency-mismatch"):
-                allowed.add(
-                    f"interface-{suffix}:{facet.facet_id}"
-                    if facet.facet_type == "interface" else f"remainder-{suffix}"
-                )
-        if interface is None or facets != [expected] or set(status.concerns) - allowed:
+        if (interface is None or facets != [expected]
+                or not certificate_semantic_evidence_reusable(status)
+                or any(concern.startswith("dependency-not-current:") for concern in status.concerns)):
             raise ValueError(f"prerequisite certificate is not current: {target}")
     return {
         "target_id": target, "owner_node_id": owner,
