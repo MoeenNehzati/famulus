@@ -127,5 +127,8 @@ def run_html(
             capture_output=True,
             encoding="utf-8",
             errors="replace",
-            timeout=60 if sys.platform == "win32" else 30,
+            timeout=max(
+                60 if sys.platform == "win32" else 30,
+                virtual_time_budget // 1000 + 15,
+            ),
         )

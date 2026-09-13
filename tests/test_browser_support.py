@@ -57,12 +57,13 @@ def test_required_browser_gate_fails_instead_of_skipping(monkeypatch) -> None:
 
 
 @pytest.mark.parametrize(
-    ("platform", "expected_timeout"),
-    [("linux", 30), ("win32", 60)],
+    ("platform", "virtual_time_budget", "expected_timeout"),
+    [("linux", 2500, 30), ("win32", 2500, 60), ("linux", 20_000, 35)],
 )
 def test_run_html_uses_temporary_paths_and_decodes_chrome_as_utf8(
     monkeypatch,
     platform: str,
+    virtual_time_budget: int,
     expected_timeout: int,
 ) -> None:
     observed: dict[str, object] = {}
@@ -80,7 +81,7 @@ def test_run_html_uses_temporary_paths_and_decodes_chrome_as_utf8(
     result = run_html(
         "/browser",
         "<html>portable</html>",
-        virtual_time_budget=2500,
+        virtual_time_budget=virtual_time_budget,
         window_size="800,600",
     )
 
@@ -96,7 +97,7 @@ def test_run_html_uses_temporary_paths_and_decodes_chrome_as_utf8(
     assert "--no-first-run" in command
     assert "--disable-background-networking" in command
     assert "--disable-component-update" in command
-    assert "--virtual-time-budget=2500" in command
+    assert f"--virtual-time-budget={virtual_time_budget}" in command
     assert "--window-size=800,600" in command
     assert not observed["page"].exists()
 
