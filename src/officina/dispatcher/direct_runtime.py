@@ -326,17 +326,81 @@ def _check_setup(authorized, *, setup_preflight_authorized=False):
         raise SetupBlocked(None, (target,), projection.lifecycle)
     if setup_preflight_authorized:
         return
-    def manager(operation, arguments):
+    original = dict(caller=caller, interface=target, version=version)
+
+    def declined(value):
+        step = value.get("current_step") if isinstance(value, dict) else None
+        valid_step = (
+            type(step) is dict
+            and set(step) == {"interface", "version", "kind", "action"}
+            and isinstance(step["interface"], str) and step["interface"]
+            and type(step["version"]) is int and step["version"] > 0
+            and step["kind"] in {"markdown", "python"}
+            and step["action"] == "run-setup"
+        )
+        return (
+            type(value) is dict
+            and set(value) in (
+                {"schema_version", "flow_id", "operation", "state", "current_step", "original", "resume_original", "error", "error_code"},
+                {"schema_version", "flow_id", "operation", "state", "current_step", "original", "resume_original", "error", "error_code", "clues"},
+            )
+            and type(value["schema_version"]) is int and value["schema_version"] == 1
+            and value["operation"] == "authorize" and value["resume_original"] is False
+            and value.get("clues", []) == [] and valid_step
+            and (
+                value["state"] == "failed" and value["flow_id"] is None
+                and value["original"] == original
+                and value["error_code"] == "setup.target_not_ready"
+                and value["error"] == "The target requires setup before it can be authorized."
+                or value["state"] == "busy" and isinstance(value["flow_id"], str)
+                and value["flow_id"] and value["original"] is None
+                and value["error_code"] == "setup.flow_busy"
+                and value["error"] == "Another managed setup flow became active before authorization completed."
+            )
+        )
+
+    def manager(operation, arguments, *, allow_authorize_decline=False):
         try:
             result = _run_resolved_invocation(_resolve_dispatch(caller_skill=caller, target=f"setup-interface-manager._rtx.interface.{operation}", args=arguments, target_version=1, repository_config=authorized.repository.configuration.config_path), text=True)
-            if result.returncode != 0:
-                raise DispatcherError.from_spec("D56", operation=operation)
-            value = json.loads(result.stdout)
         except (InvocationError, OSError, ValueError) as exc:
-            raise DispatcherError.from_spec("D57" if isinstance(exc, json.JSONDecodeError) else "D56", operation=operation) from exc
-        if not isinstance(value, dict):
-            raise DispatcherError.from_spec("D57", operation=operation)
-        return value
+            raise DispatcherError.from_spec("D56", operation=operation) from exc
+        if result.returncode != 0 and not (
+            allow_authorize_decline and result.returncode == 2
+        ):
+            raise DispatcherError.from_spec("D56", operation=operation)
+        try:
+            value = json.loads(result.stdout)
+        except ValueError as exc:
+            raise DispatcherError.from_spec(
+                "D57" if result.returncode == 0 else "D56",
+                operation=operation,
+            ) from exc
+        if result.returncode == 0:
+            if not isinstance(value, dict):
+                raise DispatcherError.from_spec("D57", operation=operation)
+            return value
+        if (
+            allow_authorize_decline
+            and result.returncode == 2
+            and declined(value)
+        ):
+            return None
+        raise DispatcherError.from_spec("D56", operation=operation)
+
+    def authorization_ready(value):
+        return _exact_setup_value(value, dict(
+            schema_version=1, flow_id=None, operation="authorize", state="ready",
+            current_step=None, original=original, resume_original=True,
+        ))
+
+    response = manager(
+        "authorize", [target, caller, target, str(version)],
+        allow_authorize_decline=True,
+    )
+    if authorization_ready(response):
+        return
+    if response is not None:
+        raise DispatcherError.from_spec("D60")
     status = manager("status", [target])
     if status.get("code") in ("setup_required", "setup_busy"):
         raise SetupBlocked(status, (target,))
@@ -344,10 +408,18 @@ def _check_setup(authorized, *, setup_preflight_authorized=False):
     if not _exact_setup_value(status, dict(schema_version=1, code=code, root_setup_interface=root, pending_stack=[], flow_id=None)) or not (code == "unmanaged" and root is None or code == "ready" and isinstance(root, str) and root):
         raise DispatcherError.from_spec("D58", operation="status")
     if code == "unmanaged":
-        return
+        response = manager(
+            "authorize", [target, caller, target, str(version)],
+            allow_authorize_decline=True,
+        )
+        if authorization_ready(response):
+            return
+        raise DispatcherError.from_spec("D60")
     parse_interface_id(root)
-    original = dict(caller=caller, interface=target, version=version)
-    if not _exact_setup_value(manager("authorize", [target, caller, target, str(version)]), dict(schema_version=1, flow_id=None, operation="authorize", state="ready", current_step=None, original=original, resume_original=True)):
+    if not authorization_ready(manager(
+        "authorize", [target, caller, target, str(version)],
+        allow_authorize_decline=True,
+    )):
         raise DispatcherError.from_spec("D60")
 
 
