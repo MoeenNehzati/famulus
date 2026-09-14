@@ -2,7 +2,12 @@
 from __future__ import annotations
 
 import sys
+import shutil
+from dataclasses import replace
 from pathlib import Path
+
+import pytest
+import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -12,6 +17,8 @@ from validators.contributor_docs_contract import validate as validate_contributo
 from validators.generated_skill_docs import validate as validate_skill_docs  # noqa: E402
 from validators.readme_user_contract import validate as validate_readme  # noqa: E402
 from validators import domain_docs_cover_blueprints as domain_docs_validator  # noqa: E402
+from docs_tooling.catalog import load_catalog  # noqa: E402
+from officina.blueprints.graph import load_repository_blueprint_graph  # noqa: E402
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -310,3 +317,73 @@ def test_readme_validator_reports_distinct_user_contract_violations(
         errors = validate_readme(tmp_path)
         for snippet in expected_snippets:
             assert any(snippet in error for error in errors)
+
+
+@pytest.fixture
+def skill_catalog(tmp_path):
+    return load_catalog(tmp_path)
+
+
+def test_scoped_docs_skip_unselected_contracts_before_catalog_loading(tmp_path, request):
+    _write(tmp_path / "skills/broken/blueprint.yaml", "[malformed\n")
+    _write(tmp_path / "README.md", "broken README\n")
+    paths = ("skills/broken/runtime.py",)
+    assert validate_readme(tmp_path, paths) == []
+    assert validate_skill_docs(tmp_path, paths) == []
+    assert validate_contributor_docs(tmp_path, paths) == []
+    assert domain_docs_validator.test_domain_documents(tmp_path, request, paths) == []
+    assert validate_readme(tmp_path, ("README.md",))
+    assert validate_skill_docs(tmp_path, ("docs/skills.md",)) == ["docs/skills.md: missing"]
+    assert validate_contributor_docs(tmp_path, ("docs/contributors/documentation-system.md",)) == [
+        "docs/contributors/documentation-system.md: missing",
+    ]
+
+
+def test_scoped_system_doc_does_not_load_contributor_catalog(tmp_path):
+    _seed_docs(tmp_path)
+    _write(tmp_path / "skills/broken/blueprint.yaml", "[malformed\n")
+    _write(tmp_path / "skills/broken/SKILL.md", "unreadable catalog subject\n")
+    _write(tmp_path / "docs/contributors/README.md", "broken contributor page\n")
+    assert validate_contributor_docs(tmp_path, ("docs/contributors/documentation-system.md",)) == []
+
+
+def test_selected_missing_domain_document_cannot_use_empty_repo_exemption(tmp_path, request):
+    _seed_docs(tmp_path)
+    shutil.rmtree(tmp_path / "docs")
+    assert domain_docs_validator.test_domain_documents(
+        tmp_path, request, ("docs/domains/research.md",),
+    ) == ["docs/domains/research.md: missing"]
+
+
+def test_selected_aggregate_docs_keep_complete_catalog(tmp_path, request):
+    root = _make_repo(tmp_path)
+    selected = ("docs/domains/research.md",)
+    # A peer domain document is not the selected artifact.
+    _write(root / "docs/domains/personal-assistance.md", "broken peer doc\n")
+    assert domain_docs_validator.test_domain_documents(root, request, selected) == []
+    _write(root / "docs/domains/research.md", "broken selected doc\n")
+    assert domain_docs_validator.test_domain_documents(root, request, selected)
+    _write(root / "docs/skills.md", "stale index\n")
+    assert validate_skill_docs(root, ("docs/skills.md",))
+    assert validate_contributor_docs(root, ("docs/contributors/README.md",)) == []
+
+
+def test_domain_coverage_selects_exact_module_subjects(tmp_path, request):
+    root = _make_repo(tmp_path)
+    graph = load_repository_blueprint_graph(root)
+    assert domain_docs_validator.test_domain_coverage(root, request, graph, None) == []
+    assert domain_docs_validator.test_domain_coverage(root, request, None, ()) == []
+    source_id = "daily-plan.source.runtime"
+    graph.nodes[source_id] = replace(graph.nodes["daily-plan"], node_id=source_id, node_type="behavioral_source")
+    _write(root / "skills/email-client/blueprint.yaml", "[malformed\n")
+    assert domain_docs_validator.test_domain_coverage(
+        root, request, graph, ("daily-plan",),
+    ) == []
+    _write(root / "skills/daily-plan/blueprint.yaml", "[malformed\n")
+    assert domain_docs_validator.test_domain_coverage(
+        root, request, graph, (source_id,),
+    ) == []
+    with pytest.raises(yaml.YAMLError):
+        domain_docs_validator.test_domain_coverage(
+            root, request, graph, ("daily-plan",),
+        )

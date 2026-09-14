@@ -7,17 +7,26 @@ from pathlib import Path
 
 import yaml
 
+from validators.skill_md_body import selected_skill_files
+
+REQUIRES_BLUEPRINT_GRAPH = True
+
 MAX_CODEX_DESCRIPTION_LENGTH = 1024
 
 
-def validate(repo_root: Path) -> list[str]:
+def validate(
+    repo_root: Path, validation_paths: tuple[str, ...] | None = None,
+    validation_node_ids: tuple[str, ...] | None = None, graph: object | None = None,
+) -> list[str]:
     """Return error strings for every skill with invalid frontmatter."""
     errors: list[str] = []
     skills_dir = repo_root / "skills"
-    if not skills_dir.is_dir():
+    if validation_paths is None and not skills_dir.is_dir():
         return errors
 
-    for skill_path in sorted(skills_dir.glob("*/SKILL.md")):
+    paths = (sorted(skills_dir.glob("*/SKILL.md")) if validation_paths is None else
+             selected_skill_files(repo_root, validation_paths, validation_node_ids, graph))
+    for skill_path in paths:
         text = skill_path.read_text(encoding="utf-8")
         match = re.match(r"---\n(.*?)\n---", text, re.DOTALL)
         if not match:
@@ -37,6 +46,11 @@ def validate(repo_root: Path) -> list[str]:
             )
 
     return errors
+
+
+def test_skill_metadata(repo_root, graph, validation_paths, validation_node_ids):
+    """Validate selected entry metadata with the canonical subject selection."""
+    return validate(repo_root, validation_paths, validation_node_ids, graph)
 
 
 def main() -> int:

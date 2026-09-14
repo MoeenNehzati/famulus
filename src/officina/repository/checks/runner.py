@@ -8,7 +8,7 @@ from dataclasses import dataclass
 import importlib.util
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import pickle
 import signal
 import subprocess
@@ -305,6 +305,8 @@ class _ValidatorModule(pytest.Module):
         -----
         - none
         """
+        if self.validator_id not in self.validator_plugin.entry_points:
+            return []
         test_names = tuple(
             name
             for name, value in vars(self.obj).items()
@@ -393,6 +395,10 @@ class ValidatorPytestPlugin:
         display_root: Path,
         selected_paths: Sequence[tuple[str, Path]],
         staged_paths: Sequence[str],
+        prepared_graph: object | None = None,
+        validation_paths: Sequence[str] | None = None,
+        validation_node_ids: Sequence[str] | None = None,
+        graph_checks: bool | None = None,
     ) -> None:
         """Prepare one isolated validator pytest session.
 
@@ -419,6 +425,9 @@ class ValidatorPytestPlugin:
         self.tracked_root = Path(tracked_root).resolve()
         self.display_root = Path(display_root).resolve()
         self.staged_path_values = tuple(staged_paths)
+        self.validation_path_values = _normalize_validation_paths(validation_paths)
+        self.validation_node_values = _normalize_validation_node_ids(validation_node_ids)
+        self.graph_checks = graph_checks
         self.path_ids = {
             path.resolve(): validator_id
             for validator_id, path in selected_paths
@@ -430,6 +439,7 @@ class ValidatorPytestPlugin:
         self._graph_state_value: _GraphState | None = None
         self._graph_views: dict[str, tuple[object, object]] = {}
         self._preflight_owner_id: str | None = None
+        self._prepared_graph = prepared_graph
         self._load_selected_validators(selected_paths)
 
     def _load_selected_validators(
@@ -463,6 +473,9 @@ class ValidatorPytestPlugin:
         for validator_id, path in selected_paths:
             module, validate = self.runner._load_validator(validator_id, path)
             self.modules[validator_id] = module
+            requires_graph = getattr(module, "REQUIRES_BLUEPRINT_GRAPH", False) is True
+            if self.graph_checks is not None and requires_graph != self.graph_checks:
+                continue
             validate_staged = getattr(module, "validate_staged", None)
             graph_hooks = [
                 name
@@ -487,7 +500,8 @@ class ValidatorPytestPlugin:
         graph_consumers = {
             validator_id
             for validator_id, module in self.modules.items()
-            if getattr(module, "REQUIRES_BLUEPRINT_GRAPH", False) is True
+            if validator_id in self.entry_points
+            and getattr(module, "REQUIRES_BLUEPRINT_GRAPH", False) is True
         }
         if graph_consumers:
             available = self.runner._validator_paths(self.tracked_root)
@@ -515,6 +529,9 @@ class ValidatorPytestPlugin:
                 )
                 self.modules[owner_id] = owner_module
             for validator_id in graph_consumers:
+                if any(name.startswith("test_") and callable(value)
+                       for name, value in vars(self.modules[validator_id]).items()):
+                    continue
                 validate_with_graph = getattr(
                     self.modules[validator_id],
                     "validate_with_graph",
@@ -612,7 +629,13 @@ class ValidatorPytestPlugin:
                 f"{owner_id}: blueprint preflight is unavailable"
             )
         try:
-            value = preflight(self.tracked_root)
+            arguments = {}
+            if self._prepared_graph is not None:
+                arguments["prepared_graph"] = self._prepared_graph
+            if self.validation_path_values is not None:
+                arguments.update(validation_paths=self.validation_path_values,
+                    validation_node_ids=self.validation_node_values)
+            value = preflight(self.tracked_root, **arguments)
         except BaseException as exc:
             raise self.runner.ValidatorRunnerError(
                 f"{owner_id}: validator execution failed: {exc}"
@@ -622,6 +645,10 @@ class ValidatorPytestPlugin:
                 f"{owner_id}: preflight must return tuple[list[str], graph | None]"
             )
         errors = self.runner._validated_errors(owner_id, "preflight", value[0])
+        if value[1] is not None and self.validation_node_values is not None:
+            unknown = set(self.validation_node_values) - value[1].nodes.keys()
+            if unknown:
+                errors.append("unknown validation nodes: " + ", ".join(sorted(unknown)))
         normalized = tuple(self._normalized_errors(errors))
         self._graph_state_value = _GraphState(owner_id, normalized, value[1])
         if normalized:
@@ -793,6 +820,16 @@ class ValidatorPytestPlugin:
         return self.staged_path_values
 
     @pytest.fixture(scope="session")
+    def validation_paths(self) -> tuple[str, ...] | None:
+        """Return optional certification subjects; None keeps full validation."""
+        return self.validation_path_values
+
+    @pytest.fixture(scope="session")
+    def validation_node_ids(self) -> tuple[str, ...] | None:
+        """Return selected DFS nodes separately from the complete context graph."""
+        return self.validation_node_values
+
+    @pytest.fixture(scope="session")
     def python_source_cache(self) -> PythonSourceCache:
         """Return lazy Python preparation shared within this staged session.
 
@@ -851,7 +888,7 @@ class ValidatorPytestPlugin:
         view = copy.deepcopy(state.graph)
         self._graph_views[request.node.nodeid] = (
             view,
-            copy.deepcopy(view),
+            state.graph,
         )
         return view
 
@@ -1272,6 +1309,8 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     group.addoption("--officina-validator-root", type=Path)
     group.addoption("--officina-validator-display-root", type=Path)
     group.addoption("--officina-staged-paths-file", type=Path)
+    group.addoption("--officina-validation-scope-file", type=Path)
+    group.addoption("--officina-validator-group", choices=("graph", "local"))
     group.addoption("--officina-validator-graph-snapshot", type=Path)
     group.addoption("--officina-validator", action="append", default=[])
     group.addoption("--officina-exclude-validator", action="append", default=[])
@@ -1349,12 +1388,23 @@ def pytest_configure(config: pytest.Config) -> None:
         tracked_root,
         staged_paths_file,
     )
+    try:
+        validation_paths, validation_node_ids = _load_validation_scope(
+            config.getoption("--officina-validation-scope-file")
+        )
+    except ValueError as exc:
+        raise pytest.UsageError(str(exc)) from exc
     plugin = ValidatorPytestPlugin(
         runner=_validator_snapshot,
         tracked_root=tracked_root,
         display_root=display_root.resolve(),
         selected_paths=selected_paths,
         staged_paths=staged_paths,
+        prepared_graph=getattr(config, "_officina_prepared_graph", None),
+        validation_paths=validation_paths,
+        validation_node_ids=validation_node_ids,
+        graph_checks=(None if config.getoption("--officina-validator-group") is None
+                      else config.getoption("--officina-validator-group") == "graph"),
     )
     graph_snapshot_path = config.getoption(
         "--officina-validator-graph-snapshot"
@@ -1495,6 +1545,55 @@ SELECTABLE_TEST_TASKS = {
     "tests:performance": tuple(sorted(PERFORMANCE_TESTS)),
 }
 SELECTABLE_TASKS = ("validators", *SELECTABLE_TEST_TASKS)
+
+
+def _normalize_validation_paths(paths: Sequence[str] | None) -> tuple[str, ...] | None:
+    """Validate explicit repository-relative file subjects without discovering files."""
+    if paths is None:
+        return None
+    if isinstance(paths, (str, bytes)) or not isinstance(paths, Sequence):
+        raise ValueError("validation paths must be a sequence of strings")
+    for path in paths:
+        if (
+            not isinstance(path, str)
+            or not path
+            or any(ord(character) < 32 for character in path)
+            or "\\" in path
+            or PurePosixPath(path).is_absolute()
+            or PureWindowsPath(path).drive
+            or any(part in {"", ".", ".."} for part in path.split("/"))
+        ):
+            raise ValueError("validation paths must be safe repository-relative files")
+    if len(set(paths)) != len(paths):
+        raise ValueError("validation paths contain duplicates")
+    return tuple(paths)
+
+
+def _normalize_validation_node_ids(nodes: Sequence[str] | None) -> tuple[str, ...] | None:
+    """Check selected node identifiers before worker transport."""
+    if nodes is None:
+        return None
+    if (isinstance(nodes, (str, bytes)) or not isinstance(nodes, Sequence)
+            or any(not isinstance(node, str) or not node or node.strip() != node
+                   or any(ord(character) < 32 for character in node) for node in nodes)):
+        raise ValueError("validation node IDs must be nonempty strings")
+    if len(set(nodes)) != len(nodes):
+        raise ValueError("validation node IDs contain duplicates")
+    return tuple(nodes)
+
+
+def _load_validation_scope(path: Path | None) -> tuple[tuple[str, ...] | None, tuple[str, ...] | None]:
+    """Load file and node subjects together; omission preserves full validation."""
+    if path is None:
+        return None, None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError("validation scope payload is invalid") from exc
+    if (not isinstance(payload, dict) or set(payload) != {"paths", "node_ids"}
+            or not isinstance(payload["paths"], list) or not isinstance(payload["node_ids"], list)):
+        raise ValueError("validation scope requires paths and node_ids lists")
+    return _normalize_validation_paths(payload["paths"]), _normalize_validation_node_ids(payload["node_ids"])
 
 
 def normalize_test_selectors(
@@ -2074,6 +2173,44 @@ def _run_process(
         return 130
 
 
+class _PreparedGraphPlugin:
+    """Carry an in-process graph to the normal validator controller only."""
+
+    def __init__(self, graph: object) -> None:
+        self.graph = graph
+
+    @pytest.hookimpl(tryfirst=True)
+    def pytest_configure(self, config: pytest.Config) -> None:
+        config._officina_prepared_graph = self.graph
+
+
+def _run_validator_session(
+    command: Sequence[str], root: Path, pycache_prefix: Path, graph: object | None,
+) -> int:
+    """Run an isolated validator session, optionally carrying prepared graph context."""
+    previous_environment = dict(os.environ)
+    previous_directory = Path.cwd()
+    previous_pycache = sys.pycache_prefix
+    environment = _validator_snapshot._source_git_environment()
+    environment.pop("PYTHONDONTWRITEBYTECODE", None)
+    environment["PYTHONPYCACHEPREFIX"] = str(pycache_prefix)
+    environment["PYTHONPATH"] = os.pathsep.join(
+        part for part in (str(root / "src"), environment.get("PYTHONPATH")) if part
+    )
+    try:
+        os.environ.clear()
+        os.environ.update(environment)
+        os.chdir(root)
+        sys.pycache_prefix = str(pycache_prefix)
+        plugins = [] if graph is None else [_PreparedGraphPlugin(graph)]
+        return int(pytest.main(list(command[3:]), plugins=plugins))
+    finally:
+        sys.pycache_prefix = previous_pycache
+        os.chdir(previous_directory)
+        os.environ.clear()
+        os.environ.update(previous_environment)
+
+
 def _pytest_phase_command(
     suite: str,
     task_id: str,
@@ -2086,6 +2223,8 @@ def _pytest_phase_command(
     validator_root: Path | None = None,
     validator_display_root: Path | None = None,
     staged_paths_file: Path | None = None,
+    validation_scope_file: Path | None = None,
+    graph_checks: bool | None = None,
     validator_ids: Sequence[str] = (),
     excluded_validator_ids: Sequence[str] = (),
     validator_paths: Sequence[Path] = (),
@@ -2216,6 +2355,14 @@ def _pytest_phase_command(
         )
         for validator_id in validator_ids:
             pytest_args.extend(["--officina-validator", validator_id])
+        if validation_scope_file is not None:
+            pytest_args.extend([
+                "--officina-validation-scope-file", str(validation_scope_file),
+            ])
+        if graph_checks is not None:
+            pytest_args.extend([
+                "--officina-validator-group", "graph" if graph_checks else "local",
+            ])
         for validator_id in excluded_validator_ids:
             pytest_args.extend(["--officina-exclude-validator", validator_id])
         if jobs > 1 and graph_snapshot_path is not None:
@@ -2357,8 +2504,15 @@ def run_suite(
     task_cache_dir: Path | None = None,
     repository_view: str = "auto",
     selectors: Sequence[str] = (),
+    prepared_graph: object | None = None,
+    validation_paths: Sequence[str] | None = None,
+    validation_node_ids: Sequence[str] | None = None,
+    graph_checks: bool | None = None,
 ) -> int:
     """Run one named repository verification suite.
+
+    ``graph_checks`` selects validators with (True) or without (False) the
+    existing blueprint-graph requirement; None keeps the ordinary suite.
 
     Intent
     ------
@@ -2431,7 +2585,24 @@ def run_suite(
     if task_cache_dir is not None and task_id is None:
         raise ValueError("task_cache_dir requires task_id")
     runs = _suite_runs(suite, task_id)
+    if graph_checks is not None and type(graph_checks) is not bool:
+        raise ValueError("graph_checks must be a boolean or None")
+    if graph_checks is not None and not any(run in {"combined", "validators"} for run in runs):
+        raise ValueError("validator group requires a task that includes validators")
+    validation_paths = _normalize_validation_paths(validation_paths)
+    validation_node_ids = _normalize_validation_node_ids(validation_node_ids)
+    if (validation_paths is None) != (validation_node_ids is None):
+        raise ValueError("validation scope requires both paths and node IDs")
+    if validation_paths is not None and not any(
+        run in {"combined", "validators"} for run in runs
+    ):
+        raise ValueError("validation paths require a task that includes validators")
     resolved_view = _resolve_repository_view(suite, repository_view)
+    if prepared_graph is not None and (
+        suite != "validators" or resolved_view != "working" or task_id is not None
+        or validator_ids or excluded_validator_ids or selectors
+    ):
+        raise ValueError("prepared graph requires the working-tree validator suite")
     completed: list[_PhaseResult] = []
     final_status = 0
     with tempfile.TemporaryDirectory(prefix="officina-checks-") as temp_dir:
@@ -2459,6 +2630,11 @@ def run_suite(
             json.dumps(list(staged_paths)),
             encoding="utf-8",
         )
+        validation_scope_file = None
+        if validation_paths is not None:
+            validation_scope_file = artifact_root / "validation-scope.json"
+            validation_scope_file.write_text(json.dumps({"paths": validation_paths,
+                "node_ids": validation_node_ids}), encoding="utf-8")
         tier_exclusions = (
             () if validator_ids else SUITE_EXCLUDED_VALIDATORS.get(suite, ())
         )
@@ -2511,6 +2687,8 @@ def run_suite(
                     validator_root=execution_root,
                     validator_display_root=root,
                     staged_paths_file=staged_paths_file,
+                    validation_scope_file=validation_scope_file,
+                    graph_checks=graph_checks,
                     validator_ids=validator_ids,
                     excluded_validator_ids=effective_exclusions,
                     validator_paths=validator_paths,
@@ -2519,12 +2697,17 @@ def run_suite(
                 phase_pycache_prefix = (
                     artifact_root / "python-cache" / f"{index:04d}"
                 )
-                status = _run_process(
-                    command,
-                    cwd=execution_root,
-                    task_id=report_task_id,
-                    pycache_prefix=phase_pycache_prefix,
-                )
+                if prepared_graph is None and not (phase == "validators" and graph_checks is False):
+                    status = _run_process(
+                        command,
+                        cwd=execution_root,
+                        task_id=report_task_id,
+                        pycache_prefix=phase_pycache_prefix,
+                    )
+                else:
+                    status = _run_validator_session(
+                        command, execution_root, phase_pycache_prefix, prepared_graph,
+                    )
                 duration = time.monotonic() - start
                 completed.append(
                     _PhaseResult(report_task_id, status, duration, timing_path)
@@ -2666,6 +2849,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--display-root", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--result-path", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--staged-paths-file", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--validation-scope-file", type=Path,
+        help="Validate selected subjects from JSON paths and node_ids lists.",
+    )
+    parser.add_argument(
+        "--validator-group", choices=("graph", "local"),
+        help="Run validators with or without the existing blueprint-graph requirement.",
+    )
     args = parser.parse_args(arguments)
     if args.jobs < 1:
         parser.error("--jobs must be at least 1")
@@ -2687,7 +2878,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         ) if args.selectors else ()
     except ValueError as exc:
         parser.error(str(exc))
+    try:
+        validation_paths, validation_node_ids = _load_validation_scope(args.validation_scope_file)
+    except ValueError as exc:
+        parser.error(str(exc))
     if args.tracked_root is not None:
+        if validation_paths is not None or args.validator_group is not None:
+            parser.error("validator scope and group are unavailable with --tracked-root")
         if (
             args.display_root is None
             or args.result_path is None
@@ -2713,6 +2910,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error(
             "validator selection requires a suite that includes validators"
         )
+    if (validation_paths is not None or args.validator_group is not None) and not any(
+        run in {"combined", "validators"} for run in _suite_runs(args.suite, args.task_id)
+    ):
+        parser.error("validator scope and group require a task that includes validators")
     return run_suite(
         args.repo_root,
         args.suite,
@@ -2725,4 +2926,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         task_cache_dir=args.task_cache_dir,
         repository_view=args.repository_view,
         selectors=selectors,
+        validation_paths=validation_paths,
+        validation_node_ids=validation_node_ids,
+        graph_checks=None if args.validator_group is None else args.validator_group == "graph",
     )

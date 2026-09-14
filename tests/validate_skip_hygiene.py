@@ -175,7 +175,7 @@ def test_injected_cache_preserves_os_error(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
         _mod,
         "_iter_python_test_files",
-        lambda _root: iter([(missing, Path("tests/test_missing.py"))]),
+        lambda _root, validation_paths=None: iter([(missing, Path("tests/test_missing.py"))]),
     )
 
     with pytest.raises(FileNotFoundError) as direct:

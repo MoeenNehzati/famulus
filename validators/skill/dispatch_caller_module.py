@@ -15,7 +15,10 @@ REQUIRES_BLUEPRINT_GRAPH = True
 BLUEPRINT_GRAPH_OPTIONAL = True
 
 
-def _python_files(skill_dir: Path) -> list[Path]:
+def _python_files(
+    skill_dir: Path, validation_paths: tuple[str, ...] | None = None,
+    *, repo_root: Path | None = None,
+) -> list[Path]:
     """Collect non-test Python files from a skill's runtime directories.
 
     Intent
@@ -44,13 +47,20 @@ def _python_files(skill_dir: Path) -> list[Path]:
     paths: list[Path] = []
     for subdir in ("_rtx", "bin"):
         root = skill_dir / subdir
-        if not root.is_dir():
+        if validation_paths is None and not root.is_dir():
             continue
         tests_root = root / "tests"
+        candidates = (
+            root.rglob("*.py") if validation_paths is None else
+            (repo_root / relative for relative in validation_paths
+             if (repo_root / relative).is_relative_to(root)
+             and Path(relative).match("*.py"))
+        )
         paths.extend(
             path
-            for path in root.rglob("*.py")
-            if path.is_file() and not path.is_relative_to(tests_root)
+            for path in candidates
+            if (validation_paths is not None or path.is_file())
+            and not path.is_relative_to(tests_root)
         )
     return paths
 
@@ -243,6 +253,7 @@ def _validate(
     repo_root: Path,
     graph: RepositoryBlueprintGraph | None,
     source_cache: PythonSourceCache,
+    validation_paths: tuple[str, ...] | None = None,
 ) -> list[str]:
     """Validate dispatch caller declarations across the selected Python sources.
 
@@ -302,7 +313,7 @@ def _validate(
         return errors
     for blueprint_path in sorted(skills_root.glob("*/blueprint.yaml")):
         skill_name = blueprint_path.parent.name
-        for path in _python_files(blueprint_path.parent):
+        for path in _python_files(blueprint_path.parent, validation_paths, repo_root=repo_root):
             expected_module_id = (
                 _deepest_module_id(graph, path, skill_name)
                 if graph is not None
@@ -448,6 +459,7 @@ def test_dispatch_caller_module(
     repo_root: Path,
     graph: RepositoryBlueprintGraph | None,
     python_source_cache: PythonSourceCache,
+    validation_paths: tuple[str, ...] | None,
 ) -> list[str]:
     """Run dispatch ownership validation with pytest-shared prepared state.
 
@@ -471,7 +483,7 @@ def test_dispatch_caller_module(
     - ._validate -> preprocess: pass through pytest-shared graph and source cache state; postprocess: return findings unchanged; fixed_arguments: none
 
     """
-    return _validate(repo_root, graph, python_source_cache)
+    return _validate(repo_root, graph, python_source_cache, validation_paths)
 
 
 def main() -> int:

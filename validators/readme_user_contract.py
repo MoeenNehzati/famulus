@@ -40,7 +40,7 @@ FORBIDDEN_SNIPPETS = (
 )
 
 
-def validate(repo_root: Path) -> list[str]:
+def validate(repo_root: Path, validation_paths: tuple[str, ...] | None = None) -> list[str]:
     """Report the top-level README's violations of its user-facing contract.
 
     Intent
@@ -72,8 +72,10 @@ def validate(repo_root: Path) -> list[str]:
     - none
     """
 
+    if validation_paths is not None and README.as_posix() not in validation_paths:
+        return []
     path = repo_root / README
-    if not path.exists() and not (repo_root / "docs").exists():
+    if validation_paths is None and not path.exists() and not (repo_root / "docs").exists():
         return []
     if not path.is_file():
         return [f"{README}: missing"]
@@ -86,3 +88,8 @@ def validate(repo_root: Path) -> list[str]:
         if snippet in text:
             errors.append(f"{README}: still contains contributor-only content `{snippet}`")
     return errors
+
+
+def test_readme_user_contract(repo_root: Path, validation_paths: tuple[str, ...] | None) -> list[str]:
+    """Validate the root README only when it is a selected subject."""
+    return validate(repo_root, validation_paths)

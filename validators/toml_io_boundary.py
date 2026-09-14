@@ -17,7 +17,7 @@ _DIRECT_PATH_IO = {
 }
 
 
-def _iter_python_files(repo_root: Path):
+def _iter_python_files(repo_root: Path, validation_paths: tuple[str, ...] | None = None):
     """Yield production Python files subject to the TOML boundary.
 
     Intent
@@ -47,9 +47,14 @@ def _iter_python_files(repo_root: Path):
     """
     for root_name in _CHECK_ROOTS:
         root = repo_root / root_name
-        if not root.exists():
+        if validation_paths is None and not root.exists():
             continue
-        for path in root.rglob("*.py"):
+        candidates = (
+            root.rglob("*.py") if validation_paths is None else
+            (repo_root / rel for rel in validation_paths
+             if Path(rel).is_relative_to(root_name) and Path(rel).match("*.py"))
+        )
+        for path in candidates:
             rel_path = path.relative_to(repo_root)
             if rel_path == _ALLOWED_REL or _is_common_toml_helper(rel_path):
                 continue
@@ -443,7 +448,10 @@ def _validate_file(
     return errors
 
 
-def _validate(repo_root: Path, source_cache: PythonSourceCache) -> list[str]:
+def _validate(
+    repo_root: Path, source_cache: PythonSourceCache,
+    validation_paths: tuple[str, ...] | None = None,
+) -> list[str]:
     """Return repository findings using a prepared Python source cache.
 
     Intent
@@ -477,7 +485,7 @@ def _validate(repo_root: Path, source_cache: PythonSourceCache) -> list[str]:
         constructs: "Builds the ordered boundary findings contributed by each file."
     """
     errors: list[str] = []
-    for path in _iter_python_files(repo_root):
+    for path in _iter_python_files(repo_root, validation_paths):
         errors.extend(
             _validate_file(
                 path,
@@ -526,6 +534,7 @@ def validate(repo_root: Path) -> list[str]:
 def test_toml_io_boundary(
     repo_root: Path,
     python_source_cache: PythonSourceCache,
+    validation_paths: tuple[str, ...] | None,
 ) -> list[str]:
     """Return TOML boundary findings for the repository-check pytest item.
 
@@ -545,4 +554,4 @@ def test_toml_io_boundary(
     -----
     - ._validate -> preprocess: forwards shared fixtures; postprocess: returns findings unchanged; fixed_arguments: none
     """
-    return _validate(repo_root, python_source_cache)
+    return _validate(repo_root, python_source_cache, validation_paths)

@@ -79,16 +79,17 @@ def git_ignored_paths(repo_root: Path) -> frozenset[Path]:
     return frozenset(Path(entry) for entry in result.stdout.split("\0") if entry)
 
 
-def _iter_skill_files(repo_root: Path):
+def _iter_skill_files(repo_root: Path, paths=None, ignored=None):
     skills_root = repo_root / "skills"
     if not skills_root.is_dir():
         return
-    ignored = git_ignored_paths(repo_root)
-    for path in skills_root.rglob("*"):
+    if ignored is None:
+        ignored = git_ignored_paths(repo_root)
+    for path in skills_root.rglob("*") if paths is None else paths:
         if not path.is_file():
             continue
         rel_path = path.relative_to(repo_root)
-        if len(rel_path.parts) < 3:
+        if len(rel_path.parts) < 3 or rel_path.parts[0] != "skills":
             continue
         if rel_path.parts[1] in _SKIP_SKILLS:
             continue
@@ -208,12 +209,40 @@ def _registered_child_artifact(path: Path, graph: object | None) -> bool:
     )
 
 
-def _validate(repo_root: Path, graph: object | None) -> list[str]:
+def _selected_collision_peers(repo_root, rel_path, ignored, child_index):
+    """Find only case-colliding peers of selected runtime path components."""
+    parts = rel_path.parts
+    for depth in range(3, len(parts)):
+        name = parts[depth]
+        if name in EXEMPT_RTX_DIRNAMES or (depth == len(parts) - 1 and name in EXEMPT_RTX_FILENAMES):
+            continue
+        component = repo_root.joinpath(*parts[:depth + 1])
+        for peer in sorted(component.parent.iterdir()):
+            if peer.name == name or peer.name.casefold() != name.casefold():
+                continue
+            if depth == len(parts) - 1 and peer.name in EXEMPT_RTX_FILENAMES:
+                continue
+            candidates = peer.rglob("*") if peer.is_dir() else (peer,)
+            if any(not _is_registered_child_artifact(candidate, *child_index)
+                   for candidate, _relative in _iter_skill_files(repo_root, candidates, ignored)):
+                yield component.relative_to(repo_root), peer.relative_to(repo_root)
+
+
+def _validate(
+    repo_root: Path, graph: object | None,
+    validation_paths: tuple[str, ...] | None = None,
+) -> list[str]:
+    if validation_paths == ():
+        return []
     errors: list[str] = []
     seen_by_parent: dict[tuple[str, ...], dict[str, tuple[str, ...]]] = defaultdict(dict)
     child_roots, non_python_gateways = _build_child_artifact_index(graph)
+    ignored = None if validation_paths is None else git_ignored_paths(repo_root)
+    files = (_iter_skill_files(repo_root) if validation_paths is None else
+             _iter_skill_files(repo_root, (repo_root / path for path in validation_paths), ignored))
+    reported_collisions = set()
 
-    for path, rel_path in _iter_skill_files(repo_root):
+    for path, rel_path in files:
         parts = rel_path.parts
         if len(parts) >= 4 and parts[2] == "scripts" and path.suffix in LEGACY_SCRIPT_SUFFIXES:
             errors.append(
@@ -232,6 +261,18 @@ def _validate(repo_root: Path, graph: object | None) -> list[str]:
             ):
                 continue
             errors.extend(_validate_rtx_path(path, rel_path))
+
+            if validation_paths is not None:
+                for component, peer in _selected_collision_peers(
+                    repo_root, rel_path, ignored, (child_roots, non_python_gateways),
+                ):
+                    pair = tuple(sorted((component, peer)))
+                    if pair not in reported_collisions:
+                        reported_collisions.add(pair)
+                        errors.append(
+                            f"{component.as_posix()}: case-insensitive runtime path collision with {peer.as_posix()}"
+                        )
+                continue
 
             for depth in range(3, len(parts)):
                 component_parts = parts[: depth + 1]
@@ -254,8 +295,15 @@ def _validate(repo_root: Path, graph: object | None) -> list[str]:
     return errors
 
 
-def validate_with_graph(repo_root: Path, graph: object) -> list[str]:
-    return _validate(repo_root, graph)
+def validate_with_graph(
+    repo_root: Path, graph: object, validation_paths: tuple[str, ...] | None = None,
+) -> list[str]:
+    return _validate(repo_root, graph, validation_paths)
+
+
+def test_runtime_files(repo_root, graph, validation_paths):
+    """Validate selected runtime subjects with their collision and ownership context."""
+    return _validate(repo_root, graph, validation_paths)
 
 
 def validate(repo_root: Path) -> list[str]:

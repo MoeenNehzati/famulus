@@ -26,11 +26,13 @@ from officina.common.repository_paths import (  # noqa: E402
     RepositoryPathError,
     repository_relative_path,
 )
+from validators.skill_md_body import selected_skill_files
 
 
 INTERFACES_START = "<!-- BEGIN BLUEPRINT INTERFACES -->"
 INTERFACES_END = "<!-- END BLUEPRINT INTERFACES -->"
 _REGULAR_GIT_MODES = {"100644", "100755"}
+REQUIRES_BLUEPRINT_GRAPH = True
 
 
 def _git_tracked_files(
@@ -67,9 +69,13 @@ def _validate_authored_input_files(
     graph: RepositoryBlueprintGraph,
     repo_root: Path,
     tracked_files: dict[str, tuple[tuple[str, str], ...]],
+    validation_node_ids: tuple[str, ...] | None = None,
 ) -> list[str]:
     errors: list[str] = []
-    for node in graph.nodes.values():
+    nodes = graph.nodes.values() if validation_node_ids is None else (
+        graph.nodes[node_id] for node_id in validation_node_ids
+    )
+    for node in nodes:
         try:
             paths = authored_node_input_paths(node, repo_root)
         except BlueprintGraphError as exc:
@@ -178,6 +184,10 @@ def _load_blueprint_syncer(repo_root: Path) -> ModuleType | None:
 
 def preflight(
     repo_root: Path,
+    *,
+    prepared_graph: RepositoryBlueprintGraph | None = None,
+    validation_paths: tuple[str, ...] | None = None,
+    validation_node_ids: tuple[str, ...] | None = None,
 ) -> tuple[list[str], RepositoryBlueprintGraph | None]:
     """Own repository graph loading and its canonical diagnostics."""
 
@@ -188,25 +198,31 @@ def preflight(
 
     if not skills_root.is_dir():
         return errors, None
-    if not blueprint_template.is_file():
+    if (
+        validation_paths is None
+        or blueprint_template.relative_to(repo_root).as_posix() in validation_paths
+    ) and not blueprint_template.is_file():
         errors.append(f"{blueprint_template}: missing blueprint template reference file")
 
-    for skill_dir in sorted(path for path in skills_root.iterdir() if path.is_dir()):
-        skill_file = skill_dir / "SKILL.md"
-        if not skill_file.is_file():
-            continue
-        if not (skill_dir / "blueprint.yaml").is_file():
-            errors.append(f"{skill_dir}: missing blueprint.yaml")
-            continue
-        errors.extend(_validate_generated_markers(skill_file))
-    if errors:
-        return errors, None
-
     try:
-        graph = load_repository_blueprint_graph(
-            repo_root,
-            schema_root=schema_root,
+        graph = prepared_graph
+        if validation_paths is not None and graph is None:
+            graph = load_repository_blueprint_graph(repo_root, schema_root=schema_root)
+        skill_files = (
+            tuple(path / "SKILL.md" for path in sorted(skills_root.iterdir())
+                  if path.is_dir() and (path / "SKILL.md").is_file())
+            if validation_paths is None else
+            selected_skill_files(repo_root, validation_paths, validation_node_ids, graph)
         )
+        for skill_file in skill_files:
+            if not (skill_file.parent / "blueprint.yaml").is_file():
+                errors.append(f"{skill_file.parent}: missing blueprint.yaml")
+                continue
+            errors.extend(_validate_generated_markers(skill_file))
+        if errors:
+            return errors, None
+        if graph is None:
+            graph = load_repository_blueprint_graph(repo_root, schema_root=schema_root)
     except BlueprintInventoryError as exc:
         errors.extend(
             f"{repo_root / issue.relative_path}: {issue.message}"
@@ -222,6 +238,8 @@ def preflight(
 def validate_with_graph(
     repo_root: Path,
     graph: RepositoryBlueprintGraph,
+    validation_paths: tuple[str, ...] | None = None,
+    validation_node_ids: tuple[str, ...] | None = None,
 ) -> list[str]:
     """Run non-topology blueprint checks against one validated graph."""
 
@@ -232,28 +250,48 @@ def validate_with_graph(
         errors.append("blueprint source validation requires a Git worktree")
     else:
         errors.extend(
-            _validate_authored_input_files(graph, repo_root, tracked_files)
+            _validate_authored_input_files(graph, repo_root, tracked_files, validation_node_ids)
         )
-        errors.extend(_validate_command_file_modes(tracked_files))
+        command_files = tracked_files if validation_paths is None else {
+            path: entries for path, entries in tracked_files.items() if path in validation_paths
+        }
+        errors.extend(_validate_command_file_modes(command_files))
     if errors:
         return errors
 
+    skill_files = None if validation_paths is None else selected_skill_files(
+        repo_root, validation_paths, validation_node_ids, graph,
+    )
+    catalog_path = "references/blueprint-schema/runtime_dependencies.json"
+    if skill_files == () and catalog_path not in validation_paths:
+        return errors
     syncer = _load_blueprint_syncer(repo_root)
     if syncer is not None and graph.schema_version == 6:
-        errors.extend(
-            syncer.validate_sync_state(
-                repository_graph=graph,
-                repository_root=repo_root,
+        if validation_paths is None:
+            errors.extend(syncer.validate_sync_state(
+                repository_graph=graph, repository_root=repo_root,
                 skills_root=repo_root / "skills",
-                runtime_dependencies_path=(
-                    repo_root
-                    / "references"
-                    / "blueprint-schema"
-                    / "runtime_dependencies.json"
-                ),
-            )
-        )
+                runtime_dependencies_path=repo_root / catalog_path,
+            ))
+        else:
+            for node in graph.nodes.values():
+                if node.node_type != "module" or node.module_root / "SKILL.md" not in skill_files:
+                    continue
+                blueprint = syncer.ModuleBlueprint(
+                    node.node_id, node.blueprint_path, dict(node.declaration), graph,
+                )
+                errors.extend(syncer.sync_module(blueprint, check_only=True))
+            if catalog_path in validation_paths:
+                errors.extend(syncer.sync_runtime_dependencies_manifest(
+                    syncer.blueprints_from_graph(graph, skills_root=repo_root / "skills"),
+                    check_only=True, runtime_dependencies_path=repo_root / catalog_path,
+                ))
     return errors
+
+
+def test_blueprints(repo_root, graph, validation_paths, validation_node_ids):
+    """Check selected authored inputs and generated artifacts after scoped preflight."""
+    return validate_with_graph(repo_root, graph, validation_paths, validation_node_ids)
 
 
 def validate(repo_root: Path) -> list[str]:

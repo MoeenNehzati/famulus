@@ -327,7 +327,10 @@ def _git_ignored_paths(repo_root: Path) -> frozenset[Path]:
     return frozenset(Path(entry) for entry in result.stdout.split("\0") if entry)
 
 
-def _iter_files(repo_root: Path, *, excluded_blueprints: frozenset[Path]):
+def _iter_files(
+    repo_root: Path, *, excluded_blueprints: frozenset[Path],
+    validation_paths: tuple[str, ...] | None = None,
+):
     """Yield each scanned file together with its prepared relative path.
 
     Intent
@@ -352,14 +355,19 @@ def _iter_files(repo_root: Path, *, excluded_blueprints: frozenset[Path]):
     ignored = _git_ignored_paths(repo_root)
     for root_name in _CHECK_ROOTS:
         root = repo_root / root_name
-        if root.is_file():
+        if validation_paths is None and root.is_file():
             if root.resolve() not in excluded_blueprints:
                 yield root, root.relative_to(repo_root)
             continue
-        if not root.is_dir():
+        if validation_paths is None and not root.is_dir():
             continue
-        for child in root.rglob("*"):
-            if not child.is_file():
+        candidates = (
+            root.rglob("*") if validation_paths is None else
+            (repo_root / relative for relative in validation_paths
+             if Path(relative).is_relative_to(root_name))
+        )
+        for child in candidates:
+            if validation_paths is None and not child.is_file():
                 continue
             rel_path = child.relative_to(repo_root)
             if rel_path in ignored:
@@ -376,6 +384,7 @@ def _iter_files(repo_root: Path, *, excluded_blueprints: frozenset[Path]):
 def _validate(
     repo_root: Path,
     excluded_blueprints: frozenset[Path],
+    validation_paths: tuple[str, ...] | None = None,
 ) -> list[str]:
     """Return platform-specific references found in shared content.
 
@@ -423,7 +432,9 @@ def _validate(
     """
     repo_root = repo_root.resolve()
     errors: list[str] = []
-    for path, rel in _iter_files(repo_root, excluded_blueprints=excluded_blueprints):
+    for path, rel in _iter_files(
+        repo_root, excluded_blueprints=excluded_blueprints, validation_paths=validation_paths,
+    ):
         if (
             rel in _BINDING_CROSS_HOST_ORCHESTRATION_PATHS
             or rel in _MILESTONE_COMPATIBILITY_RUNTIME_PATHS
@@ -451,7 +462,10 @@ def _validate(
     return errors
 
 
-def validate_with_graph(repo_root: Path, graph: object) -> list[str]:
+def validate_with_graph(
+    repo_root: Path, graph: object,
+    validation_paths: tuple[str, ...] | None = None,
+) -> list[str]:
     """Validate shared content using one prepared repository graph.
 
     Intent
@@ -483,7 +497,13 @@ def validate_with_graph(repo_root: Path, graph: object) -> list[str]:
       why:
         constructs: "Builds the platform-neutral findings."
     """
-    return _validate(repo_root, _validated_blueprint_paths(graph))
+    return _validate(repo_root, _validated_blueprint_paths(graph), validation_paths)
+
+
+def test_platform_neutral(repo_root, graph, validation_paths):
+    """Scan selected content while retaining complete blueprint exemptions."""
+    excluded = frozenset() if graph is None else _validated_blueprint_paths(graph)
+    return _validate(repo_root, excluded, validation_paths)
 
 
 def validate(repo_root: Path) -> list[str]:

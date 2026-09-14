@@ -31,7 +31,7 @@ _DOC_SYSTEM_REQUIRED = (
 )
 
 
-def validate(repo_root: Path) -> list[str]:
+def validate(repo_root: Path, validation_paths: tuple[str, ...] | None = None) -> list[str]:
     """Validate generated contributor documentation and required references.
 
     Intent
@@ -57,13 +57,14 @@ def validate(repo_root: Path) -> list[str]:
 
     """
     errors: list[str] = []
-    if not (repo_root / "docs").exists() and not (repo_root / "skills").exists():
+    if validation_paths is None and not (repo_root / "docs").exists() and not (repo_root / "skills").exists():
         return []
 
     contributor_readme = repo_root / CONTRIBUTOR_DOC
-    if not contributor_readme.is_file():
+    check_contributor = validation_paths is None or CONTRIBUTOR_DOC.as_posix() in validation_paths
+    if check_contributor and not contributor_readme.is_file():
         errors.append(f"{CONTRIBUTOR_DOC}: missing")
-    else:
+    elif check_contributor:
         actual = contributor_readme.read_text(encoding="utf-8")
         try:
             rendered = render_doc_with_updated_blocks(repo_root, CONTRIBUTOR_DOC)
@@ -79,12 +80,18 @@ def validate(repo_root: Path) -> list[str]:
                 errors.append(f"{CONTRIBUTOR_DOC}: missing contributor contract content `{snippet}`")
 
     doc_system = repo_root / DOC_SYSTEM_DOC
-    if not doc_system.is_file():
+    check_system = validation_paths is None or DOC_SYSTEM_DOC.as_posix() in validation_paths
+    if check_system and not doc_system.is_file():
         errors.append(f"{DOC_SYSTEM_DOC}: missing")
-    else:
+    elif check_system:
         text = doc_system.read_text(encoding="utf-8")
         for snippet in _DOC_SYSTEM_REQUIRED:
             if snippet not in text:
                 errors.append(f"{DOC_SYSTEM_DOC}: missing documentation-system content `{snippet}`")
 
     return errors
+
+
+def test_contributor_docs_contract(repo_root: Path, validation_paths: tuple[str, ...] | None) -> list[str]:
+    """Validate only selected contributor documentation artifacts."""
+    return validate(repo_root, validation_paths)

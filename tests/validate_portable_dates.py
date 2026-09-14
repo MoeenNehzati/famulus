@@ -95,7 +95,7 @@ def test_injected_cache_preserves_unicode_error(tmp_path: Path) -> None:
 
 def test_injected_cache_preserves_os_error(tmp_path: Path, monkeypatch) -> None:
     missing = tmp_path / "skills" / "demo" / "missing.py"
-    monkeypatch.setattr(module_under_test, "_iter_files", lambda _root: iter([missing]))
+    monkeypatch.setattr(module_under_test, "_iter_files", lambda _root, validation_paths=None: iter([missing]))
 
     with pytest.raises(FileNotFoundError) as direct:
         validate(tmp_path)

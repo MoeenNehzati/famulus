@@ -28,7 +28,7 @@ _SKIP_PARTS = {"tests", "validators", "__pycache__", ".git", ".claude-plugin", "
 _NON_PORTABLE_STRFTIME = re.compile(r"(?<!%)%[-_#0][A-Za-z]")
 
 
-def _iter_files(repo_root: Path):
+def _iter_files(repo_root: Path, validation_paths: tuple[str, ...] | None = None):
     """Yield repository files eligible for portable-date validation.
 
     Intent
@@ -52,10 +52,15 @@ def _iter_files(repo_root: Path):
     """
     for root_name in _CHECK_ROOTS:
         root = repo_root / root_name
-        if not root.exists():
+        if validation_paths is None and not root.exists():
             continue
-        for path in root.rglob("*"):
-            if not path.is_file():
+        candidates = (
+            root.rglob("*") if validation_paths is None else
+            (repo_root / rel for rel in validation_paths
+             if Path(rel).is_relative_to(root_name) and Path(rel).suffix == ".py")
+        )
+        for path in candidates:
+            if validation_paths is None and not path.is_file():
                 continue
             rel_path = path.relative_to(repo_root)
             if any(part in _SKIP_PARTS for part in rel_path.parts):
@@ -159,7 +164,10 @@ def _validate_python(
     return errors
 
 
-def _validate(repo_root: Path, source_cache: PythonSourceCache) -> list[str]:
+def _validate(
+    repo_root: Path, source_cache: PythonSourceCache,
+    validation_paths: tuple[str, ...] | None = None,
+) -> list[str]:
     """Validate portable date formatting with a prepared source cache.
 
     Intent
@@ -195,7 +203,7 @@ def _validate(repo_root: Path, source_cache: PythonSourceCache) -> list[str]:
         constructs: "Builds portable-date findings for each Python file."
     """
     errors: list[str] = []
-    for path in _iter_files(repo_root):
+    for path in _iter_files(repo_root, validation_paths):
         rel_path = path.relative_to(repo_root)
         if path.suffix == ".py":
             errors.extend(_validate_python(path, rel_path, source_cache))
@@ -240,6 +248,7 @@ def validate(repo_root: Path) -> list[str]:
 def test_portable_dates(
     repo_root: Path,
     python_source_cache: PythonSourceCache,
+    validation_paths: tuple[str, ...] | None,
 ) -> list[str]:
     """Run portable-date validation as a repository pytest item.
 
@@ -259,7 +268,7 @@ def test_portable_dates(
     -----
     - ._validate -> preprocess: forwards shared fixtures; postprocess: returns findings unchanged; fixed_arguments: none
     """
-    return _validate(repo_root, python_source_cache)
+    return _validate(repo_root, python_source_cache, validation_paths)
 
 
 def main() -> int:

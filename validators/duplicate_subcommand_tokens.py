@@ -208,7 +208,10 @@ def find_duplicate_fixed_subcommands(
     ]
 
 
-def validate_with_graph(repo_root: Path, graph: object) -> list[str]:
+def validate_with_graph(
+    repo_root: Path, graph: object,
+    validation_node_ids: tuple[str, ...] | None = None,
+) -> list[str]:
     """Check fixed subcommands in one prepared repository graph.
 
     Intent
@@ -237,7 +240,9 @@ def validate_with_graph(repo_root: Path, graph: object) -> list[str]:
     """
 
     errors: list[str] = []
-    for source_id, source_node in sorted(graph.nodes.items()):
+    node_ids = graph.nodes if validation_node_ids is None else validation_node_ids
+    for source_id in sorted(node_ids):
+        source_node = graph.nodes[source_id]
         if source_node.node_type != "behavioral_source":
             continue
         raw_interfaces = source_node.declaration.get("interfaces")
@@ -254,6 +259,11 @@ def validate_with_graph(repo_root: Path, graph: object) -> list[str]:
             )
 
     return errors
+
+
+def test_duplicate_subcommand_tokens(repo_root, graph, validation_node_ids):
+    """Check selected source declarations using the complete graph as context."""
+    return validate_with_graph(repo_root, graph, validation_node_ids)
 
 
 def validate(repo_root: Path) -> list[str]:

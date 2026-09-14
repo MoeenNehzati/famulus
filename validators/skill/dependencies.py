@@ -18,6 +18,7 @@ from officina.blueprints.graph import (  # noqa: E402
     load_repository_blueprint_graph,
 )
 from officina.blueprints.inventory import BlueprintInventoryError  # noqa: E402
+from validators.skill_md_body import selected_skill_files
 
 
 _PARENT_PATH_RE = re.compile(
@@ -224,6 +225,8 @@ def _has_module_blueprints(repo_root: Path) -> bool:
 def _validate_graph(
     repo_root: Path,
     graph: RepositoryBlueprintGraph,
+    validation_paths: tuple[str, ...] | None = None,
+    validation_node_ids: tuple[str, ...] | None = None,
 ) -> list[str]:
     errors: list[str] = []
     modules = {
@@ -232,11 +235,12 @@ def _validate_graph(
         if node.node_type == "module"
         and node.module_root.parent == repo_root / "skills"
     }
+    source_ids = graph.nodes if validation_node_ids is None else validation_node_ids
     for source in sorted(
         (
-            node
-            for node in graph.nodes.values()
-            if node.node_type == "behavioral_source"
+            graph.nodes[node_id]
+            for node_id in source_ids
+            if graph.nodes[node_id].node_type == "behavioral_source"
         ),
         key=lambda node: node.node_id,
     ):
@@ -247,8 +251,13 @@ def _validate_graph(
         if len(relative_root.parts) >= 1:
             errors.extend(_validate_markdown_source(graph, source))
 
+    selected_files = None if validation_paths is None else set(selected_skill_files(
+        repo_root, validation_paths, validation_node_ids, graph,
+    ))
     for module_id, module in sorted(modules.items()):
         skill_file = module.module_root / "SKILL.md"
+        if selected_files is not None and skill_file not in selected_files:
+            continue
         if not skill_file.is_file():
             continue
         errors.extend(_validate_parent_paths(skill_file, module_id))
@@ -276,6 +285,11 @@ def _validate_graph(
                 f"{undeclared}"
             )
     return errors
+
+
+def test_dependencies(repo_root, graph, validation_paths, validation_node_ids):
+    """Check selected instruction subjects against complete interface context."""
+    return _validate_graph(repo_root, graph, validation_paths, validation_node_ids)
 
 
 def validate_with_graph(

@@ -21,6 +21,7 @@ from validators.skill_md_body import (  # noqa: E402
     generated_interface_block,
     hand_authored_skill_body,
     strip_fenced_code_blocks,
+    selected_skill_files,
 )
 REQUIRES_BLUEPRINT_GRAPH = True
 _DISPATCHER_CLI_RE = re.compile(r"\bdispatcher\b[^\n]*\s--caller-skill\b")
@@ -91,9 +92,15 @@ def _validate_skill_text(
 def _validate_graph(
     graph: RepositoryBlueprintGraph,
     repo_root: Path,
+    validation_paths: tuple[str, ...] | None = None,
+    validation_node_ids: tuple[str, ...] | None = None,
 ) -> list[str]:
     errors: list[str] = []
     skills_root = repo_root / "skills"
+    selected_entries = (None if validation_paths is None else
+                        set(selected_skill_files(repo_root, validation_paths, validation_node_ids, graph)))
+    selected_markdown = (None if validation_paths is None else
+                         {repo_root / path for path in validation_paths if Path(path).suffix == ".md"})
     for module in sorted(
         (
             node
@@ -104,7 +111,11 @@ def _validate_graph(
         key=lambda node: node.node_id,
     ):
         skill_md = module.module_root / "SKILL.md"
-        if not skill_md.is_file():
+        if selected_entries is not None and skill_md not in selected_entries and not any(
+            path.is_relative_to(module.module_root) for path in selected_markdown
+        ):
+            continue
+        if selected_entries is None and not skill_md.is_file():
             continue
         exports = [
             (interface_id, export)
@@ -126,17 +137,20 @@ def _validate_graph(
                 and export.declaration["description"].strip()
             )
         ]
-        errors.extend(
-            _validate_skill_text(
-                skill_md,
-                module.node_id,
-                skill_md.read_text(encoding="utf-8"),
-                all_ids=all_ids,
-                visible_ids=visible_ids,
-                dispatcher_targets=dispatcher_targets,
+        if selected_entries is None or skill_md in selected_entries:
+            errors.extend(
+                _validate_skill_text(
+                    skill_md,
+                    module.node_id,
+                    skill_md.read_text(encoding="utf-8"),
+                    all_ids=all_ids,
+                    visible_ids=visible_ids,
+                    dispatcher_targets=dispatcher_targets,
+                )
             )
-        )
-        for markdown_path in sorted(module.module_root.rglob("*.md")):
+        markdown_paths = (module.module_root.rglob("*.md") if selected_markdown is None else
+                          (path for path in selected_markdown if path.is_relative_to(module.module_root)))
+        for markdown_path in sorted(markdown_paths):
             if markdown_path == skill_md or "plans" in markdown_path.parts:
                 continue
             try:
@@ -174,8 +188,15 @@ def validate(repo_root: Path) -> list[str]:
 def validate_with_graph(
     repo_root: Path,
     graph: RepositoryBlueprintGraph,
+    validation_paths: tuple[str, ...] | None = None,
+    validation_node_ids: tuple[str, ...] | None = None,
 ) -> list[str]:
-    return _validate_graph(graph, repo_root)
+    return _validate_graph(graph, repo_root, validation_paths, validation_node_ids)
+
+
+def test_skill_md_dispatch(repo_root, graph, validation_paths, validation_node_ids):
+    """Check selected documents against their owning module's exports."""
+    return validate_with_graph(repo_root, graph, validation_paths, validation_node_ids)
 
 
 def main() -> int:

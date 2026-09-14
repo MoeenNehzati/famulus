@@ -4,6 +4,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from validators import personal_info as module_under_test  # noqa: E402
 from validators.personal_info import validate  # noqa: E402
@@ -28,6 +30,28 @@ def test_git_repository_scans_only_tracked_files(tmp_path: Path) -> None:
     assert validate(tmp_path) == [
         "tracked.md:1: contains personal-info token 'moeen'"
     ]
+
+
+def test_scoped_personal_info_keeps_exact_tracked_subjects(tmp_path: Path) -> None:
+    repository = GitTestRepository.initialize_existing_empty(tmp_path)
+    for name in ("selected[1].md", "unrelated.md", "untracked.md"):
+        (tmp_path / name).write_text("private: /home/moeen\n", encoding="utf-8")
+    repository.git("add", "--", "selected[1].md", "unrelated.md")
+    assert validate(tmp_path, ("selected[1].md", "untracked.md")) == [
+        "selected[1].md:1: contains personal-info token 'moeen'",
+    ]
+    assert validate(tmp_path, ()) == []
+    (tmp_path / "selected[1].md").unlink()
+    with pytest.raises(FileNotFoundError):
+        validate(tmp_path, ("selected[1].md",))
+
+
+def test_scoped_non_git_personal_info_ignores_unrelated_files(tmp_path: Path) -> None:
+    (tmp_path / "selected.md").write_text("clean\n", encoding="utf-8")
+    (tmp_path / "unrelated.md").write_text("/home/moeen\n", encoding="utf-8")
+    assert validate(tmp_path, ("selected.md",)) == []
+    with pytest.raises(FileNotFoundError):
+        validate(tmp_path, ("missing.md",))
 
 
 def test_allow_patterns_are_scrubbed_only_for_token_candidates(

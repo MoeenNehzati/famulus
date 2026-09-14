@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 
 INTERFACES_START = "<!-- BEGIN BLUEPRINT INTERFACES -->"
@@ -14,6 +15,24 @@ _GENERATED_BLOCK_RE = re.compile(
     r"<!-- END BLUEPRINT INTERFACES -->",
     re.DOTALL,
 )
+
+
+def selected_skill_files(
+    repo_root: Path, validation_paths: tuple[str, ...],
+    validation_node_ids: tuple[str, ...] | None, graph: object | None,
+) -> tuple[Path, ...]:
+    """Select entry documents, retaining missing entries of selected skill modules."""
+    selected = {
+        repo_root / path for path in validation_paths
+        if len(Path(path).parts) == 3 and Path(path).parts[0] == "skills"
+        and Path(path).name == "SKILL.md"
+    }
+    nodes = getattr(graph, "nodes", {})
+    for node_id in validation_node_ids or ():
+        node = nodes[node_id]
+        if node.node_type == "module" and node.module_root.parent == repo_root / "skills":
+            selected.add(node.module_root / "SKILL.md")
+    return tuple(sorted(selected))
 
 
 def strip_frontmatter(text: str) -> str:

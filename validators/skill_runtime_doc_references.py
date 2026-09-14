@@ -483,7 +483,11 @@ def _first_stem_finding(
     return best[1] if best is not None else None
 
 
-def _validate(repo_root: Path, graph: object | None) -> list[str]:
+def _validate(
+    repo_root: Path, graph: object | None,
+    validation_paths: tuple[str, ...] | None = None,
+    validation_node_ids: tuple[str, ...] | None = None,
+) -> list[str]:
     """Return private runtime references found in public skill Markdown.
 
     Intent
@@ -531,14 +535,27 @@ def _validate(repo_root: Path, graph: object | None) -> list[str]:
     """
     errors: list[str] = []
     skills_root = repo_root / "skills"
-    if not skills_root.is_dir():
+    if validation_paths is None and not skills_root.is_dir():
         return errors
 
-    skill_dirs = tuple(
-        skill_dir
-        for skill_dir in sorted(skills_root.iterdir())
-        if skill_dir.is_dir() and skill_dir.name != ".system"
-    )
+    if validation_paths is None:
+        skill_dirs = tuple(
+            skill_dir for skill_dir in sorted(skills_root.iterdir())
+            if skill_dir.is_dir() and skill_dir.name != ".system"
+        )
+        markdown = _iter_skill_markdown(repo_root, skill_dirs)
+    else:
+        from validators.skill_md_body import selected_skill_files
+        selected = {repo_root / path for path in validation_paths}
+        selected.update(selected_skill_files(repo_root, validation_paths, validation_node_ids, graph))
+        markdown = tuple(
+            (path, PurePosixPath(path.relative_to(repo_root).as_posix()))
+            for path in sorted(selected)
+            if path.suffix == ".md" and len(path.relative_to(repo_root).parts) >= 3
+            and path.relative_to(repo_root).parts[0] == "skills"
+            and not any(part in _EXCLUDED_PARTS for part in path.relative_to(repo_root).parts)
+        )
+        skill_dirs = tuple(sorted({repo_root / "skills" / rel.parts[1] for _path, rel in markdown}))
     stems_by_skill = {
         skill_dir.name: _runtime_stems_for_skill(skill_dir, graph)
         for skill_dir in skill_dirs
@@ -558,7 +575,7 @@ def _validate(repo_root: Path, graph: object | None) -> list[str]:
     }
     patterns_by_skill: dict[str, _CombinedSkillPatterns] = {}
 
-    for path, rel_path in _iter_skill_markdown(repo_root, skill_dirs):
+    for path, rel_path in markdown:
         skill_name = rel_path.parts[1]
         if skill_name not in patterns_by_skill:
             patterns_by_skill[skill_name] = _combined_patterns_for_stems(
@@ -599,7 +616,10 @@ def _validate(repo_root: Path, graph: object | None) -> list[str]:
     return errors
 
 
-def validate_with_graph(repo_root: Path, graph: object) -> list[str]:
+def validate_with_graph(
+    repo_root: Path, graph: object, validation_paths: tuple[str, ...] | None = None,
+    validation_node_ids: tuple[str, ...] | None = None,
+) -> list[str]:
     """Validate runtime references with a prepared repository graph.
 
     Intent
@@ -624,7 +644,12 @@ def validate_with_graph(repo_root: Path, graph: object) -> list[str]:
       why:
         constructs: "Builds runtime-reference findings."
     """
-    return _validate(repo_root, graph)
+    return _validate(repo_root, graph, validation_paths, validation_node_ids)
+
+
+def test_runtime_doc_references(repo_root, graph, validation_paths, validation_node_ids):
+    """Scan selected prose using only its owning skill's private-name context."""
+    return _validate(repo_root, graph, validation_paths, validation_node_ids)
 
 
 def validate(repo_root: Path) -> list[str]:

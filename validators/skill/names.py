@@ -7,17 +7,29 @@ from pathlib import Path
 
 import yaml
 
+from validators.skill_md_body import selected_skill_files
+
+REQUIRES_BLUEPRINT_GRAPH = True
+
 _NAME_PATTERN = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)+$")
 _FRONTMATTER_PATTERN = re.compile(r"^---\n(.*?)\n---", re.DOTALL)
 
 
-def validate(repo_root: Path) -> list[str]:
+def validate(
+    repo_root: Path, validation_paths: tuple[str, ...] | None = None,
+    validation_node_ids: tuple[str, ...] | None = None, graph: object | None = None,
+) -> list[str]:
     errors: list[str] = []
     skills_root = repo_root / "skills"
-    if not skills_root.is_dir():
+    if validation_paths is None and not skills_root.is_dir():
         return errors
 
-    for skill_dir in sorted(p for p in skills_root.iterdir() if p.is_dir()):
+    skill_dirs = (
+        sorted(p for p in skills_root.iterdir() if p.is_dir())
+        if validation_paths is None else
+        [path.parent for path in selected_skill_files(repo_root, validation_paths, validation_node_ids, graph)]
+    )
+    for skill_dir in skill_dirs:
         skill_name = skill_dir.name
 
         if not _NAME_PATTERN.match(skill_name):
@@ -50,6 +62,11 @@ def validate(repo_root: Path) -> list[str]:
             )
 
     return errors
+
+
+def test_skill_names(repo_root, graph, validation_paths, validation_node_ids):
+    """Validate only selected skill entry subjects when certification supplies them."""
+    return validate(repo_root, validation_paths, validation_node_ids, graph)
 
 
 def main() -> int:

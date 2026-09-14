@@ -83,6 +83,23 @@ require `pytest-xdist`.
 ## Collection and execution
 
 `repo_checks.py` is the only repository-check entry point.
+
+Certification may pass `--validation-scope-file FILE`, containing JSON
+`{"paths": [...], "node_ids": [...]}`. Paths identify repository-relative
+whole-file subjects; IDs identify selected DFS nodes separately from the full
+graph used as context. Validators select relevant subjects before scanning.
+Owner context alone does not select sibling sources or module documents, and
+aggregate documentation checks apply only to selected artifacts. Omission
+keeps ordinary full validation; two empty lists select no conformance subjects.
+`--validator-group graph|local` selects validators by their existing
+`REQUIRES_BLUEPRINT_GRAPH` declaration. Omission runs both groups. Certification
+shares the graph group across renewal nodes and runs the local group when each
+stale node reaches its audit turn. Local checks skip graph preflight; mixed
+graph/file validators remain entirely in the graph group.
+These options do not change test selection or the default commit/CI gates. See
+[certification scope](officina/certification_and_drift.md) for how subjects are
+derived from nodes and prerequisites.
+
 `src/officina/repository/checks/runner.py` owns suite policy, repository views, pytest
 arguments, and validator integration. `pytest.ini` owns ordinary discovery:
 
@@ -94,6 +111,8 @@ arguments, and validator integration. `pytest.ini` owns ordinary discovery:
 
 The custom plugin adapts repository validators into pytest function items for
 scheduling, reporting, and fixture injection. This does not make them tests.
+Native validator functions may request `graph` with `REQUIRES_BLUEPRINT_GRAPH`;
+only validators using the legacy singleton entry point need `validate_with_graph`.
 Pytest's default collector contributes the test items. When a suite includes
 both, validator and test items enter the same xdist queue and consume one
 worker budget. The runner does not maintain a second inventory of test

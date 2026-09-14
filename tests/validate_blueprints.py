@@ -78,7 +78,7 @@ def test_validate_with_graph_checks_sync_state_in_process(
     monkeypatch.setattr(
         MOD,
         "_validate_authored_input_files",
-        lambda _graph, _root, _tracked_files: [],
+        lambda _graph, _root, _tracked_files, _validation_node_ids=None: [],
     )
 
     def _check_sync_state(**kwargs: object) -> list[str]:

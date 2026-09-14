@@ -9,7 +9,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from validators.skill_md_body import hand_authored_skill_body  # noqa: E402
+from validators.skill_md_body import hand_authored_skill_body, selected_skill_files  # noqa: E402
+
+REQUIRES_BLUEPRINT_GRAPH = True
 
 
 EXECUTABLE_SUFFIXES = (
@@ -73,9 +75,16 @@ def _line_has_execution_context(line: str, in_shell_fence: bool) -> bool:
     return in_shell_fence or bool(_INTERPRETER_RE.search(line)) or bool(_EXECUTION_CONTEXT_RE.search(line))
 
 
-def validate(repo_root: Path) -> list[str]:
+def validate(
+    repo_root: Path, validation_paths: tuple[str, ...] | None = None,
+    validation_node_ids: tuple[str, ...] | None = None, graph: object | None = None,
+) -> list[str]:
     errors: list[str] = []
-    for skill_file in _iter_skill_files(repo_root):
+    paths = (_iter_skill_files(repo_root) if validation_paths is None else
+             selected_skill_files(repo_root, validation_paths, validation_node_ids, graph))
+    for skill_file in paths:
+        if ".system" in skill_file.parts:
+            continue
         try:
             body = hand_authored_skill_body(skill_file.read_text(encoding="utf-8"))
         except UnicodeDecodeError:
@@ -101,6 +110,11 @@ def validate(repo_root: Path) -> list[str]:
                     "put execution behind a blueprint machine interface and refer to the interface name"
                 )
     return errors
+
+
+def test_skill_body_execution(repo_root, graph, validation_paths, validation_node_ids):
+    """Validate selected hand-authored skill instructions."""
+    return validate(repo_root, validation_paths, validation_node_ids, graph)
 
 
 def main() -> int:

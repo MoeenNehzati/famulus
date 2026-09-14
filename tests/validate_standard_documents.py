@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import shutil
 from pathlib import Path
 
@@ -355,3 +356,62 @@ def test_fails_closed_when_generated_view_is_missing(tmp_path, validator_module)
     assert errors == [
         f"{view.relative_to(repo).as_posix()}: missing generated view"
     ]
+
+
+def test_scoped_standards_ignore_unrelated_broken_documents(tmp_path, validator_module):
+    repo = _copy_standard_repo(tmp_path)
+    unrelated = repo / "references/node-standards/unrelated.standard.yaml"
+    unrelated.write_text("[malformed\n", encoding="utf-8")
+    assert validator_module.validate(repo, (STANDARD,)) == []
+    assert validator_module.validate(repo, ()) == []
+    assert validator_module.validate(repo, ("src/runtime.py",)) == []
+    assert validator_module.validate(repo, (unrelated.relative_to(repo).as_posix(),))
+    (repo / STANDARD).unlink()
+    assert any("cannot load document" in error for error in validator_module.validate(repo, (STANDARD,)))
+
+
+def test_scoped_standard_selection_does_not_require_unrelated_tooling(tmp_path, validator_module):
+    assert validator_module.validate(tmp_path, ()) == []
+    assert validator_module.validate(tmp_path, ("src/runtime.py",)) == []
+    assert validator_module.validate(tmp_path, (STANDARD,)) == [
+        "references/standards-schema: missing standards tooling directory",
+    ]
+
+
+def test_scoped_generated_view_selects_its_source_standard(tmp_path, validator_module):
+    repo = _copy_standard_repo(tmp_path, standards=(GENERATED_STANDARD,))
+    view_relative = GENERATED_STANDARD.removesuffix(".standard.yaml") + ".md"
+    assert validator_module.validate(repo, (view_relative,)) == []
+    (repo / view_relative).write_text("stale\n", encoding="utf-8")
+    assert validator_module.validate(repo, (view_relative,)) == [
+        f"{view_relative}: generated view is stale; render {GENERATED_STANDARD}",
+    ]
+
+
+def test_scoped_import_closure_preserves_canonical_paths_and_views(tmp_path, validator_module):
+    repo = _copy_standard_repo(tmp_path, standards=(STANDARD, GENERATED_STANDARD))
+    parent_path = repo / STANDARD
+    child_path = repo / GENERATED_STANDARD
+    parent = yaml.safe_load(parent_path.read_text(encoding="utf-8"))
+    child = yaml.safe_load(child_path.read_text(encoding="utf-8"))
+    parent.setdefault("artifacts", {})["child-standard"] = {
+        "path": GENERATED_STANDARD, "format": "yaml", "roles": ["other"],
+    }
+    parent["imports"] = {"child": {
+        "standard_id": child["id"], "standard_version": child["standard_version"],
+        "revision": child["revision"],
+        "digest": "sha256:" + hashlib.sha256(child_path.read_bytes()).hexdigest(),
+        "artifact": {"kind": "artifact", "ref": "child-standard"},
+    }}
+    parent_path.write_text(yaml.safe_dump(parent, sort_keys=False), encoding="utf-8")
+    assert validator_module.validate(repo, (STANDARD,)) == []
+    view_relative = GENERATED_STANDARD.removesuffix(".standard.yaml") + ".md"
+    (repo / view_relative).write_text("stale imported view\n", encoding="utf-8")
+    assert validator_module.validate(repo, (STANDARD,)) == [
+        f"{view_relative}: generated view is stale; render {GENERATED_STANDARD}",
+    ]
+    child["canonical_path"] = "references/document-standards/wrong.standard.yaml"
+    child_path.write_text(yaml.safe_dump(child, sort_keys=False), encoding="utf-8")
+    parent["imports"]["child"]["digest"] = "sha256:" + hashlib.sha256(child_path.read_bytes()).hexdigest()
+    parent_path.write_text(yaml.safe_dump(parent, sort_keys=False), encoding="utf-8")
+    assert any("canonical_path must equal" in error for error in validator_module.validate(repo, (STANDARD,)))

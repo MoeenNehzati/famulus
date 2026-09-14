@@ -12,6 +12,9 @@ from docs_tooling.catalog import (
     load_catalog,
 )
 from docs_tooling.render import render_doc_with_updated_blocks
+from officina.blueprints.graph import RepositoryBlueprintGraph
+
+REQUIRES_BLUEPRINT_GRAPH = True
 
 
 @pytest.fixture(scope="module")
@@ -95,6 +98,8 @@ def _validate_domain_document(
     repo_root: Path,
     catalog: list[SkillInfo],
     rel_path: Path,
+    *,
+    required: bool = False,
 ) -> list[str]:
     """Return missing, malformed, or stale findings for one domain document.
 
@@ -125,7 +130,7 @@ def _validate_domain_document(
 
     """
 
-    if not catalog and not (repo_root / "docs").exists():
+    if not required and not catalog and not (repo_root / "docs").exists():
         return []
     path = repo_root / rel_path
     if not path.is_file():
@@ -147,9 +152,28 @@ def _validate_domain_document(
     ]
 
 
+def _selected_skill_dirs(
+    repo_root: Path,
+    graph: RepositoryBlueprintGraph | None,
+    validation_node_ids: tuple[str, ...],
+) -> tuple[Path, ...]:
+    """Select top-level skill modules without treating source owners as subjects."""
+    if not validation_node_ids:
+        return ()
+    if graph is None:
+        raise ValueError("scoped domain coverage requires the repository blueprint graph")
+    nodes = (graph.nodes[node_id] for node_id in validation_node_ids)
+    return tuple(sorted({
+        node.module_root for node in nodes
+        if node.node_type == "module" and node.module_root.parent == repo_root / "skills"
+    }))
+
+
 def test_domain_coverage(
     repo_root: Path,
-    skill_catalog: list[SkillInfo],
+    request: pytest.FixtureRequest,
+    graph: RepositoryBlueprintGraph | None,
+    validation_node_ids: tuple[str, ...] | None,
 ) -> list[str]:
     """Check that every live user-facing domain has a documentation block.
 
@@ -170,12 +194,20 @@ def test_domain_coverage(
     ._validate_domain_coverage -> preprocess: none; postprocess: none; fixed_arguments: none
     """
 
-    return _validate_domain_coverage(repo_root, skill_catalog)
+    catalog = (
+        request.getfixturevalue("skill_catalog")
+        if validation_node_ids is None else
+        load_catalog(repo_root, skill_dirs=_selected_skill_dirs(
+            repo_root, graph, validation_node_ids,
+        ))
+    )
+    return _validate_domain_coverage(repo_root, catalog)
 
 
 def test_domain_documents(
     repo_root: Path,
-    skill_catalog: list[SkillInfo],
+    request: pytest.FixtureRequest,
+    validation_paths: tuple[str, ...] | None,
 ) -> list[str]:
     """Check every domain document against blocks rendered from the shared catalog.
 
@@ -199,9 +231,16 @@ def test_domain_documents(
     ._validate_domain_document -> preprocess: none; postprocess: append one document's findings; fixed_arguments: none
     """
 
+    selected = [path for path in DOMAIN_DOCS
+                if validation_paths is None or path.as_posix() in validation_paths]
+    if not selected:
+        return []
+    catalog = request.getfixturevalue("skill_catalog")
     errors: list[str] = []
-    for rel_path in DOMAIN_DOCS:
-        errors.extend(_validate_domain_document(repo_root, skill_catalog, rel_path))
+    for rel_path in selected:
+        errors.extend(_validate_domain_document(
+            repo_root, catalog, rel_path, required=validation_paths is not None,
+        ))
     return errors
 
 

@@ -24,15 +24,26 @@ def _python_files(skill_dir: Path) -> list[Path]:
     return paths
 
 
-def validate(repo_root: Path) -> list[str]:
+def validate(repo_root: Path, validation_paths: tuple[str, ...] | None = None) -> list[str]:
     errors: list[str] = []
     skills_root = repo_root / "skills"
     if not skills_root.is_dir():
         return errors
 
-    for blueprint_path in sorted(skills_root.glob("*/blueprint.yaml")):
+    blueprint_paths = (sorted(skills_root.glob("*/blueprint.yaml")) if validation_paths is None else
+                       sorted({repo_root / Path(path).parts[0] / Path(path).parts[1] / "blueprint.yaml"
+                               for path in validation_paths if len(Path(path).parts) >= 4
+                               and Path(path).parts[0] == "skills"}))
+    for blueprint_path in blueprint_paths:
+        if not blueprint_path.is_file():
+            continue
         skill_dir = blueprint_path.parent
-        for path in _python_files(skill_dir):
+        paths = (_python_files(skill_dir) if validation_paths is None else
+                 [repo_root / path for path in validation_paths
+                  if (repo_root / path).is_relative_to(skill_dir)
+                  and len(Path(path).parts) >= 4 and Path(path).parts[2] in {"_rtx", "bin"}
+                  and Path(path).suffix == ".py" and Path(path).parts[3] != "tests"])
+        for path in paths:
             try:
                 lines = path.read_text(encoding="utf-8").splitlines()
             except UnicodeDecodeError:
@@ -70,6 +81,11 @@ def validate(repo_root: Path) -> list[str]:
                     )
 
     return errors
+
+
+def test_dispatcher_usage(repo_root, validation_paths):
+    """Validate selected Python subjects without scanning sibling implementations."""
+    return validate(repo_root, validation_paths)
 
 
 def main() -> int:

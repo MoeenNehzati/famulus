@@ -95,7 +95,7 @@ _ALLOWED_PATHS = {
 }
 
 
-def _repository_files(repo_root: Path) -> list[Path]:
+def _repository_files(repo_root: Path, validation_paths: tuple[str, ...] | None = None) -> list[Path]:
     """Return tracked files when ``repo_root`` is Git-backed, else all files.
 
     Intent
@@ -120,8 +120,13 @@ def _repository_files(repo_root: Path) -> list[Path]:
     -----
     - git ls-files
     """
+    if validation_paths == ():
+        return []
     try:
-        result = run_git(repo_root, "ls-files", "-z", check=False)
+        arguments = ("ls-files", "-z") if validation_paths is None else (
+            "--literal-pathspecs", "ls-files", "-z", "--", *validation_paths,
+        )
+        result = run_git(repo_root, *arguments, check=False)
     except OSError:
         result = None
     if result is not None and result.returncode == 0:
@@ -130,12 +135,14 @@ def _repository_files(repo_root: Path) -> list[Path]:
             for encoded in result.stdout.split(b"\0")
             if encoded
             for relative in [encoded.decode("utf-8", errors="surrogateescape")]
-            if relative and (repo_root / relative).is_file()
+            if relative and (validation_paths is not None or (repo_root / relative).is_file())
         ]
+    if validation_paths is not None:
+        return [repo_root / relative for relative in validation_paths]
     return sorted(path for path in repo_root.rglob("*") if path.is_file())
 
 
-def validate(repo_root: Path) -> list[str]:
+def validate(repo_root: Path, validation_paths: tuple[str, ...] | None = None) -> list[str]:
     """Return ordered path and line findings for personal tokens.
 
     Intent
@@ -173,7 +180,7 @@ def validate(repo_root: Path) -> list[str]:
         constructs: "Builds each content-line token match used in a finding."
     """
     errors: list[str] = []
-    for path in _repository_files(repo_root):
+    for path in _repository_files(repo_root, validation_paths):
         rel = path.relative_to(repo_root)
         if rel in _ALLOWED_PATHS:
             continue
@@ -181,8 +188,12 @@ def validate(repo_root: Path) -> list[str]:
             errors.append(f"{rel}: file path contains a personal-info token")
         try:
             text = path.read_text(encoding="utf-8")
-        except (UnicodeDecodeError, OSError):
-            continue  # binary or unreadable; gitleaks/other checks cover these
+        except UnicodeDecodeError:
+            continue  # Preserve the validator's binary-content exemption.
+        except OSError:
+            if validation_paths is not None:
+                raise
+            continue
         for lineno, line in enumerate(text.splitlines(), start=1):
             match = _find_disallowed_token(line)
             if match:
@@ -191,3 +202,8 @@ def validate(repo_root: Path) -> list[str]:
                     f"'{match.group(0)}'"
                 )
     return errors
+
+
+def test_personal_info(repo_root: Path, validation_paths: tuple[str, ...] | None) -> list[str]:
+    """Validate personal-info policy on the selected publication subjects."""
+    return validate(repo_root, validation_paths)

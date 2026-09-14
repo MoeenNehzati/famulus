@@ -380,7 +380,7 @@ def _configured_values(
     return tuple(value)
 
 
-def load_catalog(repo_root: Path) -> list[SkillInfo]:
+def load_catalog(repo_root: Path, *, skill_dirs: tuple[Path, ...] | None = None) -> list[SkillInfo]:
     """Return live skills from blueprints and SKILL.md frontmatter.
 
     Intent
@@ -431,16 +431,22 @@ def load_catalog(repo_root: Path) -> list[SkillInfo]:
       why:
         constructs: "Supplies dependency position 5,  configured values, while transforming repo root into the load catalog value."
     """
+    if skill_dirs == ():
+        return []
     vocabulary = load_catalog_vocabulary(repo_root)
     validate_blueprint = prepare_module_blueprint_loader(
         repo_root,
         schema_root=repo_root / "references" / "blueprint-schema",
     )
     skills: list[SkillInfo] = []
-    for blueprint_path in sorted((repo_root / "skills").glob("*/blueprint.yaml")):
+    blueprint_paths = (
+        (repo_root / "skills").glob("*/blueprint.yaml") if skill_dirs is None else
+        (skill_dir / "blueprint.yaml" for skill_dir in skill_dirs)
+    )
+    for blueprint_path in sorted(blueprint_paths):
         skill_dir = blueprint_path.parent
         skill_md = skill_dir / "SKILL.md"
-        if not skill_md.is_file():
+        if skill_dirs is None and not skill_md.is_file():
             continue
         blueprint = yaml.safe_load(blueprint_path.read_text(encoding="utf-8")) or {}
         discovery = blueprint.get("discovery")

@@ -162,7 +162,9 @@ class _PythonAnalysis(NamedTuple):
     parents: Mapping[ast.AST, ast.AST]
 
 
-def _build_path_inventory(repo_root: Path) -> _RepositoryPathInventory:
+def _build_path_inventory(
+    repo_root: Path, validation_paths: tuple[str, ...] | None = None,
+) -> _RepositoryPathInventory:
     """Build immutable path classifications with one walk per live root.
 
     Intent
@@ -211,10 +213,15 @@ def _build_path_inventory(repo_root: Path) -> _RepositoryPathInventory:
     }
     for root_name in live_root_names:
         root = repo_root / root_name
-        if not root.is_dir():
+        if validation_paths is None and not root.is_dir():
             continue
-        for path in root.rglob("*"):
-            if not path.is_file():
+        candidates = (
+            root.rglob("*") if validation_paths is None else
+            (repo_root / relative for relative in validation_paths
+             if Path(relative).is_relative_to(root_name))
+        )
+        for path in candidates:
+            if validation_paths is None and not path.is_file():
                 continue
             rel_path = path.relative_to(repo_root)
             parts = rel_path.parts
@@ -453,6 +460,7 @@ def _command_violations(tokens: list[str], context: str, allowed_commands: set[s
 def _validate_blueprints(
     graph: RepositoryBlueprintGraph,
     repo_root: Path,
+    validation_node_ids: tuple[str, ...] | None = None,
 ) -> list[str]:
     """Validate command portability declarations in a loaded blueprint graph.
 
@@ -489,7 +497,10 @@ def _validate_blueprints(
 
     errors: list[str] = []
     repo_root = repo_root.resolve()
-    for node in graph.nodes.values():
+    nodes = graph.nodes.values() if validation_node_ids is None else (
+        graph.nodes[node_id] for node_id in validation_node_ids
+    )
+    for node in nodes:
         rel_path = repository_relative_path(node.blueprint_path, repo_root)
         owner_relative = repository_relative_path(node.module_root, repo_root)
         is_skill_node = (
@@ -1230,6 +1241,8 @@ def _validate(
     repo_root: Path,
     repository_graph: RepositoryBlueprintGraph | None,
     source_cache: PythonSourceCache,
+    validation_paths: tuple[str, ...] | None = None,
+    validation_node_ids: tuple[str, ...] | None = None,
 ) -> list[str]:
     """Run all cross-platform checks using supplied shared preparation.
 
@@ -1297,7 +1310,7 @@ def _validate(
     """
 
     errors: list[str] = []
-    inventory = _build_path_inventory(repo_root)
+    inventory = _build_path_inventory(repo_root, validation_paths)
     skills_root = repo_root / "skills"
     if repository_graph is None and skills_root.is_dir() and any(
         skills_root.glob("*/blueprint.yaml")
@@ -1321,10 +1334,10 @@ def _validate(
             errors.append(str(exc))
         else:
             errors.extend(
-                _validate_blueprints(repository_graph, repo_root)
+                _validate_blueprints(repository_graph, repo_root, validation_node_ids)
             )
     elif repository_graph is not None:
-        errors.extend(_validate_blueprints(repository_graph, repo_root))
+        errors.extend(_validate_blueprints(repository_graph, repo_root, validation_node_ids))
     child_roots, non_python_gateways = _build_child_artifact_index(
         repository_graph
     )
@@ -1454,6 +1467,8 @@ def test_cross_platform(
     repo_root: Path,
     graph: RepositoryBlueprintGraph | None,
     python_source_cache: PythonSourceCache,
+    validation_paths: tuple[str, ...] | None,
+    validation_node_ids: tuple[str, ...] | None,
 ) -> list[str]:
     """Run cross-platform checks as a pytest item with shared fixtures.
 
@@ -1474,7 +1489,7 @@ def test_cross_platform(
     - ._validate -> preprocess: forwards shared fixtures; postprocess: returns findings unchanged; fixed_arguments: none
     """
 
-    return _validate(repo_root, graph, python_source_cache)
+    return _validate(repo_root, graph, python_source_cache, validation_paths, validation_node_ids)
 
 
 def main() -> int:

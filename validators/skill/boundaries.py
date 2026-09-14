@@ -8,6 +8,9 @@ from pathlib import Path
 
 import yaml
 
+REQUIRES_BLUEPRINT_GRAPH = True
+BLUEPRINT_GRAPH_OPTIONAL = True
+
 RUNTIME_SUFFIXES = {".py", ".sh"}
 _SYS_PATH_TOKEN = re.compile(r"\bsys\s*\.\s*path\b")
 _LANGUAGE_FIELD = re.compile(
@@ -287,7 +290,10 @@ def _gateway_paths(repo_root: Path) -> set[Path]:
     return paths
 
 
-def validate_gateway_sys_path(repo_root: Path) -> list[str]:
+def validate_gateway_sys_path(
+    repo_root: Path, graph: object | None = None,
+    validation_paths: tuple[str, ...] | None = None,
+) -> list[str]:
     """Return unguarded import-path mutations in gateway modules.
 
     Intent
@@ -332,7 +338,18 @@ def validate_gateway_sys_path(repo_root: Path) -> list[str]:
         computes: "Exempts the standalone-mode guard."
     """
     errors: list[str] = []
-    for path in sorted(_gateway_paths(repo_root)):
+    if validation_paths is None:
+        gateways = _gateway_paths(repo_root)
+    else:
+        if graph is None:
+            return ["scoped boundary validation requires a blueprint graph"]
+        selected = {repo_root / relative for relative in validation_paths}
+        gateways = {
+            node.gateway_path for node in graph.nodes.values()
+            if node.gateway_path in selected
+            and node.declaration.get("gateway", {}).get("language") == "Python"
+        }
+    for path in sorted(gateways):
         if not path.is_file():
             continue
         try:
@@ -368,7 +385,10 @@ def validate_gateway_sys_path(repo_root: Path) -> list[str]:
     return errors
 
 
-def validate(repo_root: Path) -> list[str]:
+def validate(
+    repo_root: Path, validation_paths: tuple[str, ...] | None = None,
+    graph: object | None = None,
+) -> list[str]:
     """Return direct cross-skill private-runtime path findings.
 
     Intent
@@ -423,7 +443,12 @@ def validate(repo_root: Path) -> list[str]:
         skill_dir = blueprint_path.parent
         skill_name = skill_dir.name
         other_skills = [name for name in skill_names if name != skill_name]
-        script_files = [path for path in skill_dir.rglob("*") if _is_text_runtime_file(path)]
+        candidates = (
+            skill_dir.rglob("*") if validation_paths is None else
+            (repo_root / relative for relative in validation_paths
+             if (repo_root / relative).is_relative_to(skill_dir))
+        )
+        script_files = [path for path in candidates if _is_text_runtime_file(path)]
 
         for path in script_files:
             try:
@@ -474,8 +499,13 @@ def validate(repo_root: Path) -> list[str]:
                         )
                         break
 
-    errors.extend(validate_gateway_sys_path(repo_root))
+    errors.extend(validate_gateway_sys_path(repo_root, graph, validation_paths))
     return errors
+
+
+def test_boundaries(repo_root, graph, validation_paths):
+    """Check selected runtime files using complete skill and gateway context."""
+    return validate(repo_root, validation_paths, graph)
 
 
 def main() -> int:

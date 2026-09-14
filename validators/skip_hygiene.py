@@ -34,7 +34,7 @@ _ALLOWED_CATEGORIES = {
 _SKIP_TOKENS = ("skip", "SkipTest")
 
 
-def _iter_python_test_files(repo_root: Path):
+def _iter_python_test_files(repo_root: Path, validation_paths: tuple[str, ...] | None = None):
     """Yield eligible Python test paths with repository-relative identities.
 
     Intent
@@ -59,9 +59,14 @@ def _iter_python_test_files(repo_root: Path):
     """
     for root_name in _CHECK_ROOTS:
         root = repo_root / root_name
-        if not root.exists():
+        if validation_paths is None and not root.exists():
             continue
-        for path in root.rglob("*.py"):
+        candidates = (
+            root.rglob("*.py") if validation_paths is None else
+            (repo_root / rel for rel in validation_paths
+             if Path(rel).is_relative_to(root_name) and Path(rel).match("*.py"))
+        )
+        for path in candidates:
             rel_path = path.relative_to(repo_root)
             if any(part in _SKIP_PARTS for part in rel_path.parts):
                 continue
@@ -367,7 +372,10 @@ def _validate_file(
     return errors
 
 
-def _validate(repo_root: Path, source_cache: PythonSourceCache) -> list[str]:
+def _validate(
+    repo_root: Path, source_cache: PythonSourceCache,
+    validation_paths: tuple[str, ...] | None = None,
+) -> list[str]:
     """Validate skip hygiene with a prepared Python source cache.
 
     Intent
@@ -401,7 +409,7 @@ def _validate(repo_root: Path, source_cache: PythonSourceCache) -> list[str]:
         constructs: "Builds skip-hygiene findings for each file."
     """
     errors: list[str] = []
-    for path, rel_path in _iter_python_test_files(repo_root):
+    for path, rel_path in _iter_python_test_files(repo_root, validation_paths):
         errors.extend(_validate_file(path, rel_path, source_cache))
     return errors
 
@@ -444,6 +452,7 @@ def validate(repo_root: Path) -> list[str]:
 def test_skip_hygiene(
     repo_root: Path,
     python_source_cache: PythonSourceCache,
+    validation_paths: tuple[str, ...] | None,
 ) -> list[str]:
     """Run skip-hygiene validation as a pytest item.
 
@@ -463,7 +472,7 @@ def test_skip_hygiene(
     -----
     - ._validate -> preprocess: forwards shared fixtures; postprocess: returns findings unchanged; fixed_arguments: none
     """
-    return _validate(repo_root, python_source_cache)
+    return _validate(repo_root, python_source_cache, validation_paths)
 
 
 def main() -> int:

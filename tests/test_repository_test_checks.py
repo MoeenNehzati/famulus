@@ -235,6 +235,223 @@ def test_worker_metrics_plugin_satisfies_pytest_hook_contract(tmp_path: Path) ->
     )
 
 
+@pytest.mark.parametrize("validation_paths, graph_checks", [
+    (None, None), ((), False), (("src/example.py",), True),
+])
+def test_prepared_validator_suite_reuses_controller_and_restores_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    validation_paths: tuple[str, ...] | None,
+    graph_checks: bool | None,
+) -> None:
+    validators = tmp_path / "validators"
+    validators.mkdir()
+    (validators / "example.py").write_text("def validate(repo_root): return []\n", encoding="utf-8")
+    (validators / "docstrings.py").write_text("", encoding="utf-8")
+    graph = None if graph_checks is False else object()
+    local_exception = False
+    original_directory = Path.cwd()
+    original_environment = dict(os.environ)
+    original_pycache = sys.pycache_prefix
+    monkeypatch.setattr(runner, "_capture_working_staged_paths", lambda _root: ())
+    monkeypatch.setattr(runner, "_pytest_xdist_available", lambda: True)
+    monkeypatch.setattr(runner._validator_snapshot, "_load_staged_paths", lambda *_args: ())
+
+    def run(arguments, *, plugins):
+        assert Path.cwd() == tmp_path
+        assert arguments[arguments.index("-n") + 1] == "8"
+        assert "--officina-validator-graph-snapshot" in arguments
+        config = SimpleNamespace()
+        if graph is None:
+            assert plugins == []
+        else:
+            plugins[0].pytest_configure(config)
+            assert config._officina_prepared_graph is graph
+        assert os.environ["PYTHONPYCACHEPREFIX"] == sys.pycache_prefix
+        option = "--officina-validation-scope-file"
+        assert (option in arguments) is (validation_paths is not None)
+        group_option = "--officina-validator-group"
+        assert (group_option in arguments) is (graph_checks is not None)
+        registered = []
+        options = {
+            "--officina-run-validators": True,
+            "--officina-validator-root": tmp_path,
+            "--officina-validator-display-root": tmp_path,
+            "--officina-staged-paths-file": Path(arguments[arguments.index("--officina-staged-paths-file") + 1]),
+            "--officina-exclude-validator": ["repo/docstrings"],
+            option: Path(arguments[arguments.index(option) + 1]) if option in arguments else None,
+            group_option: arguments[arguments.index(group_option) + 1] if group_option in arguments else None,
+        }
+        worker = SimpleNamespace(
+            workerinput={}, getoption=options.get,
+            pluginmanager=SimpleNamespace(register=lambda plugin, _name: registered.append(plugin)),
+        )
+        runner.pytest_configure(worker)
+        assert registered[0].validation_paths.__wrapped__(registered[0]) == validation_paths
+        assert registered[0].graph_checks is graph_checks
+        assert registered[0].validation_node_ids.__wrapped__(registered[0]) == (None if validation_paths is None else ("example",))
+        if local_exception:
+            raise RuntimeError("validator session failed")
+        return 1
+
+    monkeypatch.setattr(runner.pytest, "main", run)
+    scopes = (validation_paths, ("src/second.py",)) if graph_checks is False else (validation_paths,)
+    for validation_paths in scopes:
+        assert runner.run_suite(
+            tmp_path, "validators", jobs=8, repository_view="working", prepared_graph=graph,
+            validation_paths=validation_paths,
+            validation_node_ids=None if validation_paths is None else ("example",),
+            graph_checks=graph_checks,
+        ) == 1
+    if graph_checks is False:
+        local_exception = True
+        with pytest.raises(RuntimeError, match="validator session failed"):
+            runner.run_suite(tmp_path, "validators", jobs=8, repository_view="working",
+                graph_checks=False, validation_paths=validation_paths, validation_node_ids=("example",))
+    assert Path.cwd() == original_directory
+    assert dict(os.environ) == original_environment
+    assert sys.pycache_prefix == original_pycache
+    with pytest.raises(ValueError, match="working-tree validator suite"):
+        runner.run_suite(tmp_path, "validators", repository_view="staged", prepared_graph=object())
+
+
+@pytest.mark.parametrize("paths", [
+    "src/example.py", (1,), ("",), ("../outside.py",), ("/outside.py",),
+    ("C:/outside.py",), ("src\\example.py",), ("src/./example.py",),
+    ("src//example.py",), ("src/example.py\n",), ("a.py", "a.py"),
+])
+def test_validation_subjects_reject_unsafe_paths(paths: object) -> None:
+    with pytest.raises(ValueError, match="validation paths"):
+        runner._normalize_validation_paths(paths)
+
+
+@pytest.mark.parametrize("payload", ["null", "{}", '"src/example.py"', "[", "[1]",
+    '{"paths": [], "node_ids": [1]}', '{"paths": [], "node_ids": ["", "node"]}',
+    '{"paths": [], "node_ids": ["node", "node"]}'])
+def test_validation_paths_cli_rejects_malformed_payload(
+    tmp_path: Path, payload: str,
+) -> None:
+    path = tmp_path / "paths.json"
+    path.write_text(payload, encoding="utf-8")
+    with pytest.raises(SystemExit) as error:
+        runner.main(["--suite", "validators", "--jobs", "1", "--validation-scope-file", str(path)])
+    assert error.value.code == 2
+
+
+def test_validation_paths_cli_preserves_explicit_empty_scope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "paths.json"
+    path.write_text('{"paths": [], "node_ids": []}', encoding="utf-8")
+    observed = []
+    run_suite = runner.run_suite
+    monkeypatch.setattr(runner, "run_suite", lambda *_args, **kwargs: observed.append(kwargs) or 0)
+    assert runner.main([
+        "--suite", "validators", "--jobs", "1", "--validation-scope-file", str(path),
+        "--validator-group", "local",
+    ]) == 0
+    assert observed[0]["validation_paths"] == ()
+    assert observed[0]["validation_node_ids"] == ()
+    assert observed[0]["graph_checks"] is False
+    with pytest.raises(SystemExit) as error:
+        runner.main([
+            "--suite", "full", "--task", "tests:shared", "--jobs", "1",
+            "--validation-scope-file", str(path),
+        ])
+    assert error.value.code == 2
+    with pytest.raises(ValueError, match="includes validators"):
+        run_suite(tmp_path, "tests", validation_paths=(), validation_node_ids=())
+    with pytest.raises(ValueError, match="both paths and node IDs"):
+        run_suite(tmp_path, "validators", validation_paths=())
+
+
+@pytest.mark.parametrize("native", [True, False])
+def test_graph_fixture_validators_need_no_unused_legacy_entrypoint(tmp_path: Path, native: bool) -> None:
+    directory = tmp_path / "validators"
+    (directory / "skill").mkdir(parents=True)
+    (directory / "skill/blueprints.py").write_text(
+        "from types import SimpleNamespace\n"
+        "def validate(repo_root): return []\n"
+        "def validate_with_graph(repo_root, graph): return []\n"
+        "def preflight(repo_root): return [], SimpleNamespace(nodes={'selected': 'context'})\n",
+        encoding="utf-8",
+    )
+    validator = directory / "example.py"
+    validator.write_text("REQUIRES_BLUEPRINT_GRAPH = True\ndef validate(repo_root): return []\n" + (
+        "def test_example(graph):\n    assert graph.nodes == {'selected': 'context'}\n    return []\n" if native else ""
+    ), encoding="utf-8")
+
+    def register():
+        return runner.ValidatorPytestPlugin(runner=runner._validator_snapshot,
+            tracked_root=tmp_path, display_root=tmp_path,
+            selected_paths=(("repo/example", validator),), staged_paths=())
+
+    if not native:
+        with pytest.raises(runner._validator_snapshot.ValidatorRunnerError, match="no callable validate_with_graph"):
+            register()
+        return
+    plugin = register()
+    graph = plugin.graph.__wrapped__(plugin, SimpleNamespace(node=SimpleNamespace(nodeid="example")))
+    assert plugin.modules["repo/example"].test_example(graph) == []
+    assert plugin._preflight_owner_id == "skill-maker/blueprints"
+
+
+@pytest.mark.parametrize("graph_checks", [None, True, False])
+def test_validator_groups_execute_only_selected_items_and_local_skips_preflight(
+    tmp_path: Path, graph_checks: bool | None,
+) -> None:
+    directory = tmp_path / "validators"
+    (directory / "skill").mkdir(parents=True)
+    owner = directory / "skill/blueprints.py"
+    owner.write_text(
+        "from types import SimpleNamespace\n"
+        "REQUIRES_BLUEPRINT_GRAPH = True\ncalls = []\n"
+        "def validate(repo_root): return []\n"
+        "def preflight(repo_root):\n"
+        "    calls.append('preflight')\n"
+        "    return [], SimpleNamespace(nodes={'selected': 'context'})\n"
+        "def test_graph(graph):\n"
+        "    assert graph.nodes == {'selected': 'context'}\n"
+        "    calls.append('graph')\n    return []\n", encoding="utf-8",
+    )
+    local = directory / "local.py"
+    local.write_text(
+        "calls = []\ndef validate(repo_root): return []\n"
+        "def test_local():\n    calls.append('local')\n    return []\n", encoding="utf-8",
+    )
+    plugin = runner.ValidatorPytestPlugin(
+        runner=runner._validator_snapshot, tracked_root=tmp_path, display_root=tmp_path,
+        selected_paths=(("skill-maker/blueprints", owner), ("repo/local", local)),
+        staged_paths=(), graph_checks=graph_checks,
+    )
+    assert pytest.main([
+        "-q", "-p", "no:cacheprovider", "--import-mode=importlib", str(owner), str(local),
+    ], plugins=[plugin]) == 0
+    assert plugin.modules["skill-maker/blueprints"].calls == ([] if graph_checks is False else ["preflight", "graph"])
+    assert plugin.modules["repo/local"].calls == ([] if graph_checks is True else ["local"])
+    assert (plugin._preflight_owner_id is None) is (graph_checks is False)
+
+
+def test_prepared_blueprint_preflight_retains_marker_checks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = REPO_ROOT / "validators" / "skill" / "blueprints.py"
+    owner, _validate = runner._validator_snapshot._load_validator("skill/blueprints", path)
+    skill = tmp_path / "skills" / "demo"
+    skill.mkdir(parents=True)
+    (skill / "blueprint.yaml").write_text("", encoding="utf-8")
+    skill_file = skill / "SKILL.md"
+    skill_file.write_text("missing generated markers", encoding="utf-8")
+    schema = tmp_path / "references" / "blueprint-schema"
+    schema.mkdir(parents=True)
+    (schema / "template.yaml").write_text("", encoding="utf-8")
+    graph = object()
+    monkeypatch.setattr(owner, "load_repository_blueprint_graph", lambda *_args, **_kwargs: pytest.fail("graph rebuilt"))
+    errors, observed = owner.preflight(tmp_path, prepared_graph=graph)
+    assert errors and observed is None
+    skill_file.write_text(f"{owner.INTERFACES_START}\n{owner.INTERFACES_END}\n", encoding="utf-8")
+    assert owner.preflight(tmp_path, prepared_graph=graph) == ([], graph)
+
+
 def test_shared_graph_snapshot_prepares_once_and_rejects_another_view(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -994,6 +1211,9 @@ def test_timing_output_cli_is_forwarded_to_suite(
                 "task_cache_dir": None,
                 "repository_view": "auto",
                 "selectors": (),
+                "validation_paths": None,
+                "validation_node_ids": None,
+                "graph_checks": None,
             },
         )
     ]

@@ -7,9 +7,11 @@ from docs_tooling.catalog import SKILL_INDEX_PATH
 from docs_tooling.render import render_skill_index
 
 
-def validate(repo_root: Path) -> list[str]:
+def validate(repo_root: Path, validation_paths: tuple[str, ...] | None = None) -> list[str]:
+    if validation_paths is not None and SKILL_INDEX_PATH.as_posix() not in validation_paths:
+        return []
     path = repo_root / SKILL_INDEX_PATH
-    if not path.exists() and not (repo_root / "skills").exists():
+    if validation_paths is None and not path.exists() and not (repo_root / "skills").exists():
         return []
     if not path.is_file():
         return [f"{SKILL_INDEX_PATH}: missing"]
@@ -18,3 +20,8 @@ def validate(repo_root: Path) -> list[str]:
     if actual != expected:
         return [f"{SKILL_INDEX_PATH}: stale or manually edited; run python3 scripts/generate-doc-artifacts.py"]
     return []
+
+
+def test_generated_skill_docs(repo_root: Path, validation_paths: tuple[str, ...] | None) -> list[str]:
+    """Validate a selected full skill index against its complete catalog."""
+    return validate(repo_root, validation_paths)

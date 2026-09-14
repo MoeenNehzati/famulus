@@ -46,7 +46,7 @@ _UNDEFINED_MESSAGES = (
 )
 
 
-def _iter_files(repo_root: Path):
+def _iter_files(repo_root: Path, validation_paths: tuple[str, ...] | None = None):
     """Yield repository Python files eligible for undefined-name validation.
 
     Intent
@@ -72,10 +72,15 @@ def _iter_files(repo_root: Path):
     """
     for root_name in _CHECK_ROOTS:
         root = repo_root / root_name
-        if not root.exists():
+        if validation_paths is None and not root.exists():
             continue
-        for path in sorted(root.rglob("*.py")):
-            if not path.is_file():
+        candidates = (
+            sorted(root.rglob("*.py")) if validation_paths is None else
+            (repo_root / rel for rel in validation_paths
+             if Path(rel).is_relative_to(root_name) and Path(rel).match("*.py"))
+        )
+        for path in candidates:
+            if validation_paths is None and not path.is_file():
                 continue
             rel_path = path.relative_to(repo_root)
             if any(part in _SKIP_PARTS for part in rel_path.parts):
@@ -87,6 +92,8 @@ def _validate_python(
     path: Path,
     rel_path: Path,
     source_cache: PythonSourceCache,
+    *,
+    strict: bool = False,
 ) -> list[str]:
     """Return undefined-name findings for one Python file.
 
@@ -97,14 +104,14 @@ def _validate_python(
 
     Rationale
     ---------
-    A file that cannot be parsed is reported by the repository's syntax
-    checks; this validator should stay silent rather than duplicate them.
+    Full-repository syntax checks own parse failures in unscoped runs.
+    Scoped runs must propagate read and parse failures instead of passing silently.
 
     Pseudocode
     ----------
     - set parsed_source = cached source and syntax tree for path
-    - if Python syntax is invalid:
-      - return no findings
+    - if reading or parsing fails:
+      - raise when strict, otherwise return no findings
     - set messages = pyflakes scope findings for the syntax tree
     - for message in messages:
       - if message is an undefined-name finding:
@@ -118,6 +125,8 @@ def _validate_python(
     try:
         _source, tree = source_cache.read_parse(path)
     except (SyntaxError, OSError, UnicodeDecodeError):
+        if strict:
+            raise
         return []
     checker = pyflakes_checker.Checker(tree, filename=str(path))
     findings = []
@@ -128,7 +137,7 @@ def _validate_python(
     return findings
 
 
-def validate(repo_root: Path) -> list[str]:
+def validate(repo_root: Path, validation_paths: tuple[str, ...] | None = None) -> list[str]:
     """Return undefined-name findings across the repository.
 
     Intent
@@ -167,10 +176,37 @@ def validate(repo_root: Path) -> list[str]:
     """
     source_cache = PythonSourceCache(repo_root)
     findings: list[str] = []
-    for path in _iter_files(repo_root):
+    for path in _iter_files(repo_root, validation_paths):
         rel_path = path.relative_to(repo_root)
-        findings.extend(_validate_python(path, rel_path, source_cache))
+        findings.extend(_validate_python(
+            path, rel_path, source_cache, strict=validation_paths is not None,
+        ))
     return findings
+
+
+def test_undefined_names(
+    repo_root: Path,
+    validation_paths: tuple[str, ...] | None,
+) -> list[str]:
+    """Validate selected whole files with a private Pyflakes source cache.
+
+    Intent
+    ------
+    Restrict findings to the selected files while retaining the repository root.
+
+    Rationale
+    ---------
+    Pyflakes mutates its tree, so it must not receive the shared suite AST cache.
+
+    Pseudocode
+    ----------
+    - return undefined-name findings for the selected whole files
+
+    Wraps
+    -----
+    - .validate -> preprocess: forwards repository and selected paths; postprocess: returns findings unchanged; fixed_arguments: none
+    """
+    return validate(repo_root, validation_paths)
 
 
 def main() -> int:

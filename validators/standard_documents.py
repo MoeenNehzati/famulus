@@ -76,7 +76,35 @@ def _load_tool(repo_root: Path, module_name: str):
     return module
 
 
-def validate(repo_root: Path) -> list[str]:
+def _validate_view(repo_root: Path, relative: Path, document, renderer) -> list[str]:
+    """Check a visited standard's canonical path and registered Markdown view."""
+    errors = []
+    try:
+        if document.get("canonical_path") != relative.as_posix():
+            errors.append(
+                f"{_display(relative)}: canonical_path must equal {_display(relative)}; "
+                f"found {document.get('canonical_path')!r}"
+            )
+    except Exception as exc:
+        return [f"{_display(relative)}: cannot render standard: {exc}"]
+    if relative not in GENERATED_VIEW_STANDARDS:
+        return errors
+    try:
+        rendered = renderer.render_document(document)
+    except Exception as exc:
+        return errors + [f"{_display(relative)}: cannot render standard: {exc}"]
+    view_relative = Path(str(relative).removesuffix(".standard.yaml") + ".md")
+    view_path = repo_root / view_relative
+    if not view_path.is_file():
+        errors.append(f"{_display(view_relative)}: missing generated view")
+    elif view_path.read_text(encoding="utf-8") != rendered:
+        errors.append(
+            f"{_display(view_relative)}: generated view is stale; render {_display(relative)}"
+        )
+    return errors
+
+
+def validate(repo_root: Path, validation_paths: tuple[str, ...] | None = None) -> list[str]:
     """Validate canonical standards and generated Markdown views.
 
     Intent
@@ -112,6 +140,19 @@ def validate(repo_root: Path) -> list[str]:
         constructs: "Builds the repository-local validator and renderer modules used by the scan."
     """
     repo_root = Path(repo_root)
+    if validation_paths is None:
+        discovered = {path.relative_to(repo_root)
+                      for path in (repo_root / "references").rglob("*.standard.yaml")}
+    else:
+        discovered = {Path(path) for path in validation_paths
+                      if Path(path).is_relative_to("references") and path.endswith(".standard.yaml")}
+        discovered.update(path for path in GENERATED_VIEW_STANDARDS
+                          if path.as_posix().removesuffix(".standard.yaml") + ".md" in validation_paths)
+    discovered -= NON_STANDARD_V6_PATHS
+    if validation_paths is not None and not discovered and not any(
+        path.as_posix() in validation_paths for path in TOOLING_ARTIFACTS
+    ):
+        return []
     tooling_root = repo_root / "references" / "standards-schema"
     if not tooling_root.is_dir():
         return ["references/standards-schema: missing standards tooling directory"]
@@ -122,10 +163,6 @@ def validate(repo_root: Path) -> list[str]:
     ]
     if missing_tooling:
         return missing_tooling
-    discovered = {
-        path.relative_to(repo_root)
-        for path in (repo_root / "references").rglob("*.standard.yaml")
-    }
     errors = []
 
     try:
@@ -135,10 +172,9 @@ def validate(repo_root: Path) -> list[str]:
         return errors + [f"references/standards-schema: cannot load standards tooling: {exc}"]
 
     schema_validator = validator._prepare_schema_validator()
+    checked_views = set()
     for relative in sorted(discovered):
         path = repo_root / relative
-        if relative in NON_STANDARD_V6_PATHS:
-            continue
         cache = {}
         errors.extend(
             f"{_display(relative)}: {error}"
@@ -156,29 +192,22 @@ def validate(repo_root: Path) -> list[str]:
                 if cached is not None
                 else yaml.safe_load(path.read_text(encoding="utf-8"))
             )
-            if document.get("canonical_path") != relative.as_posix():
-                errors.append(
-                    f"{_display(relative)}: canonical_path must equal "
-                    f"{_display(relative)}; "
-                    f"found {document.get('canonical_path')!r}"
-                )
         except Exception as exc:
             errors.append(f"{_display(relative)}: cannot render standard: {exc}")
             continue
-        if relative not in GENERATED_VIEW_STANDARDS:
-            continue
-        try:
-            rendered = renderer.render_document(document)
-        except Exception as exc:
-            errors.append(f"{_display(relative)}: cannot render standard: {exc}")
-            continue
-        view_relative = Path(str(relative).removesuffix(".standard.yaml") + ".md")
-        view_path = repo_root / view_relative
-        if not view_path.is_file():
-            errors.append(f"{_display(view_relative)}: missing generated view")
-        elif view_path.read_text(encoding="utf-8") != rendered:
-            errors.append(
-                f"{_display(view_relative)}: generated view is stale; "
-                f"render {_display(relative)}"
-            )
+        if validation_paths is None or path.resolve() not in checked_views:
+            errors.extend(_validate_view(repo_root, relative, document, renderer))
+        checked_views.add(path.resolve())
+        if validation_paths is not None:
+            for imported_path, (imported_document, _findings) in sorted(cache.items()):
+                if imported_path not in checked_views:
+                    errors.extend(_validate_view(
+                        repo_root, imported_path.relative_to(repo_root.resolve()), imported_document, renderer,
+                    ))
+                    checked_views.add(imported_path)
     return errors
+
+
+def test_standard_documents(repo_root: Path, validation_paths: tuple[str, ...] | None) -> list[str]:
+    """Validate selected standards and their real repository dependency closure."""
+    return validate(repo_root, validation_paths)
